@@ -10,11 +10,10 @@ use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use quinn::{RecvStream, SendStream};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpStream, UdpSocket};
 use zyr_proto::net::EnginePorts;
-use zyr_transport::Connexion;
+use zyr_transport::{Connexion, ErreurDatagramme, FluxEnvoi, FluxReception};
 
 use crate::canal::{CanalDatagramme, CanalFlux};
 use crate::trame;
@@ -179,13 +178,13 @@ impl PortsDatagramme {
 }
 
 /// Annonce le canal en tête d'un flux fiable.
-pub async fn annoncer(envoi: &mut SendStream, canal: CanalFlux) -> io::Result<()> {
+pub async fn annoncer(envoi: &mut FluxEnvoi, canal: CanalFlux) -> io::Result<()> {
     envoi.write_all(&[canal.identifiant()]).await?;
     Ok(())
 }
 
 /// Lit l'annonce de canal en tête d'un flux fiable.
-pub async fn lire_annonce(reception: &mut RecvStream) -> io::Result<CanalFlux> {
+pub async fn lire_annonce(reception: &mut FluxReception) -> io::Result<CanalFlux> {
     let mut tete = [0u8; 1];
     reception
         .read_exact(&mut tete)
@@ -200,8 +199,8 @@ pub async fn lire_annonce(reception: &mut RecvStream) -> io::Result<CanalFlux> {
 /// moteur qui a fini de parler attend encore la réponse.
 pub async fn relayer_flux(
     mut local: TcpStream,
-    mut envoi: SendStream,
-    mut reception: RecvStream,
+    mut envoi: FluxEnvoi,
+    mut reception: FluxReception,
 ) -> io::Result<()> {
     let (mut lecture_locale, mut ecriture_locale) = local.split();
 
@@ -229,12 +228,12 @@ pub async fn collecter_datagrammes(
     loop {
         let lus = port.recevoir(&mut tampon).await?;
         let trame = trame::encoder(canal, &tampon[..lus]);
-        match connexion.interne().send_datagram(trame.into()) {
+        match connexion.envoyer_datagramme(trame.into()) {
             Ok(()) => Statistiques::incrementer(&stats.vers_tunnel),
             // Le chemin s'est resserré depuis que la taille de paquet a
             // été demandée au moteur. Jeter vaut mieux que fragmenter :
             // la correction d'erreur du protocole vidéo est faite pour ça.
-            Err(quinn::SendDatagramError::TooLarge) => Statistiques::incrementer(&stats.trop_gros),
+            Err(ErreurDatagramme::TropGros) => Statistiques::incrementer(&stats.trop_gros),
             Err(e) => return Err(io::Error::other(e)),
         }
     }
@@ -251,8 +250,7 @@ pub async fn distribuer_datagrammes(
 ) -> io::Result<()> {
     loop {
         let recu = connexion
-            .interne()
-            .read_datagram()
+            .lire_datagramme()
             .await
             .map_err(io::Error::other)?;
         let Ok((canal, charge)) = trame::decoder(&recu) else {

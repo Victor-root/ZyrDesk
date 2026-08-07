@@ -1,4 +1,9 @@
 //! Établissement de la connexion chiffrée entre deux appareils.
+//!
+//! Ce module est le seul du produit à nommer la bibliothèque de
+//! transport. Tout le reste ne connaît que `Connexion` et les deux types
+//! de flux ci-dessous. Changer de transport, si le relais du jalon M6 le
+//! justifie, ne touchera donc que ce fichier.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -9,6 +14,14 @@ use quinn::{ClientConfig, Connection, Endpoint, ServerConfig, TransportConfig};
 
 use crate::congestion::ProfilMedia;
 use crate::identite::{Empreinte, Identite, PairEpingle};
+
+/// Charge utile transportée, sans copie lorsqu'elle change de mains.
+pub use bytes::Bytes;
+
+/// Moitié émettrice d'un flux fiable.
+pub type FluxEnvoi = quinn::SendStream;
+/// Moitié réceptrice d'un flux fiable.
+pub type FluxReception = quinn::RecvStream;
 
 /// Protocole annoncé à la négociation, pour ne pas répondre à autre chose.
 const PROTOCOLE: &[u8] = b"zyrdesk/1";
@@ -57,6 +70,27 @@ impl std::fmt::Display for ErreurPoint {
 }
 
 impl std::error::Error for ErreurPoint {}
+
+/// Un datagramme n'a pas pu être déposé.
+#[derive(Debug)]
+pub enum ErreurDatagramme {
+    /// Plus gros que ce que le chemin accepte. À jeter : le fragmenter
+    /// coûterait plus cher que de le perdre.
+    TropGros,
+    /// La connexion n'est plus là.
+    Perdue(String),
+}
+
+impl std::fmt::Display for ErreurDatagramme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErreurDatagramme::TropGros => write!(f, "datagramme trop gros pour le chemin"),
+            ErreurDatagramme::Perdue(e) => write!(f, "connexion perdue : {e}"),
+        }
+    }
+}
+
+impl std::error::Error for ErreurDatagramme {}
 
 impl From<std::io::Error> for ErreurPoint {
     fn from(e: std::io::Error) -> Self {
@@ -229,8 +263,41 @@ impl Connexion {
         self.interne.rtt()
     }
 
-    pub fn interne(&self) -> &Connection {
-        &self.interne
+    /// Ouvre un flux fiable vers le pair.
+    pub async fn ouvrir_flux(&self) -> Result<(FluxEnvoi, FluxReception), ErreurPoint> {
+        self.interne
+            .open_bi()
+            .await
+            .map_err(|e| ErreurPoint::Connexion(e.to_string()))
+    }
+
+    /// Attend un flux fiable ouvert par le pair.
+    pub async fn accepter_flux(&self) -> Result<(FluxEnvoi, FluxReception), ErreurPoint> {
+        self.interne
+            .accept_bi()
+            .await
+            .map_err(|e| ErreurPoint::Connexion(e.to_string()))
+    }
+
+    /// Dépose un datagramme, sans garantie de remise ni d'ordre.
+    pub fn envoyer_datagramme(&self, charge: Bytes) -> Result<(), ErreurDatagramme> {
+        self.interne.send_datagram(charge).map_err(|e| match e {
+            quinn::SendDatagramError::TooLarge => ErreurDatagramme::TropGros,
+            autre => ErreurDatagramme::Perdue(autre.to_string()),
+        })
+    }
+
+    /// Attend un datagramme du pair.
+    pub async fn lire_datagramme(&self) -> Result<Bytes, ErreurPoint> {
+        self.interne
+            .read_datagram()
+            .await
+            .map_err(|e| ErreurPoint::Connexion(e.to_string()))
+    }
+
+    /// Attend la rupture de la connexion.
+    pub async fn rupture(&self) {
+        self.interne.closed().await;
     }
 }
 
@@ -309,11 +376,20 @@ mod tests {
     async fn un_datagramme_traverse_le_tunnel() {
         let duo = paire().await;
         duo.cote_client
-            .interne()
-            .send_datagram(b"image".to_vec().into())
+            .envoyer_datagramme(Bytes::from_static(b"image"))
             .unwrap();
-        let recu = duo.cote_hote.interne().read_datagram().await.unwrap();
+        let recu = duo.cote_hote.lire_datagramme().await.unwrap();
         assert_eq!(&recu[..], b"image");
+    }
+
+    #[tokio::test]
+    async fn un_datagramme_plus_gros_que_le_chemin_est_refuse() {
+        let duo = paire().await;
+        let enorme = Bytes::from(vec![0u8; 64 * 1024]);
+        assert!(matches!(
+            duo.cote_client.envoyer_datagramme(enorme),
+            Err(ErreurDatagramme::TropGros)
+        ));
     }
 
     #[tokio::test]
@@ -321,11 +397,11 @@ mod tests {
         let duo = paire().await;
         let recepteur = duo.cote_hote.clone();
         let attente = tokio::spawn(async move {
-            let (_, mut lecture) = recepteur.interne().accept_bi().await.unwrap();
+            let (_, mut lecture) = recepteur.accepter_flux().await.unwrap();
             lecture.read_to_end(64).await.unwrap()
         });
 
-        let (mut ecriture, _) = duo.cote_client.interne().open_bi().await.unwrap();
+        let (mut ecriture, _) = duo.cote_client.ouvrir_flux().await.unwrap();
         ecriture.write_all(b"negociation").await.unwrap();
         ecriture.finish().unwrap();
 
@@ -353,7 +429,7 @@ mod tests {
         // présente son certificat en dernier et n'apprend le refus qu'à
         // la rupture. Rien n'y aura circulé.
         if let Ok(connexion) = tentative {
-            let rompue = tokio::time::timeout(PATIENCE, connexion.interne().closed()).await;
+            let rompue = tokio::time::timeout(PATIENCE, connexion.rupture()).await;
             assert!(rompue.is_ok(), "l'intrus a conservé sa connexion");
         }
     }

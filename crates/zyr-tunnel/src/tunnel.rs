@@ -10,11 +10,10 @@ use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
-use quinn::{RecvStream, SendStream};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use zyr_proto::net::EnginePorts;
-use zyr_transport::Connexion;
+use zyr_transport::{Connexion, FluxEnvoi, FluxReception};
 
 use crate::canal::{CanalDatagramme, CanalFlux};
 use crate::pompe::{self, PortsDatagramme, Releve, Statistiques};
@@ -127,11 +126,7 @@ async fn servir_les_flux(
 ) -> io::Result<()> {
     let mut sessions = JoinSet::new();
     loop {
-        let (envoi, reception) = connexion
-            .interne()
-            .accept_bi()
-            .await
-            .map_err(io::Error::other)?;
+        let (envoi, reception) = connexion.accepter_flux().await.map_err(io::Error::other)?;
 
         // L'échec d'un flux reste sur ce flux : un appairage raté ne doit
         // pas emporter la session en cours.
@@ -143,8 +138,8 @@ async fn servir_les_flux(
 }
 
 async fn remettre_au_moteur(
-    envoi: SendStream,
-    mut reception: RecvStream,
+    envoi: FluxEnvoi,
+    mut reception: FluxReception,
     moteur: IpAddr,
     ports: EnginePorts,
 ) -> io::Result<()> {
@@ -182,11 +177,7 @@ async fn porter_au_tunnel(
     local: TcpStream,
     connexion: Connexion,
 ) -> io::Result<()> {
-    let (mut envoi, reception) = connexion
-        .interne()
-        .open_bi()
-        .await
-        .map_err(io::Error::other)?;
+    let (mut envoi, reception) = connexion.ouvrir_flux().await.map_err(io::Error::other)?;
     pompe::annoncer(&mut envoi, canal).await?;
     pompe::relayer_flux(local, envoi, reception).await
 }

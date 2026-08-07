@@ -1892,6 +1892,7 @@ dependencies = [
 name = "zyr-transport"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "quinn",
  "quinn-proto",
  "rcgen",
@@ -1905,7 +1906,6 @@ dependencies = [
 name = "zyr-tunnel"
 version = "0.1.0"
 dependencies = [
- "quinn",
  "tokio",
  "zyr-proto",
  "zyr-transport",
