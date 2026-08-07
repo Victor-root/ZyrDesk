@@ -7,4 +7,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+quinn = "0.11.11"
+quinn-proto = "0.11.16"
 zyr-proto.workspace = true
