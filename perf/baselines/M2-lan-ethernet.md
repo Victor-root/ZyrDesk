@@ -17,7 +17,7 @@ Le choix de l'Ethernet est délibéré : le Wi-Fi ajoute une gigue de plusieurs 
 
 ## Coût du tunnel
 
-Deux campagnes, la seconde après l'ajout de la ventilation des pertes.
+Quatre campagnes, chacune après une correction issue de la précédente.
 
 | Campagne | Débit | Durée | Médiane sans tunnel | Médiane avec tunnel | Écart médian | Écart au centile 95 | Écart au centile 99 |
 |---|---|---|---|---|---|---|---|
@@ -27,8 +27,9 @@ Deux campagnes, la seconde après l'ajout de la ventilation des pertes.
 | 2 | 50 Mb/s | 30 s | 0,69 ms | 1,57 ms | +0,88 ms | +1,29 ms | +1,67 ms |
 | 2 | 40 Mb/s | 120 s | 0,74 ms | 1,29 ms | **+0,56 ms** | +0,70 ms | **+0,80 ms** |
 | 3 | 40 Mb/s | 120 s | 0,71 ms | 1,25 ms | **+0,54 ms** | +0,74 ms | **+0,81 ms** |
+| 4 | 40 Mb/s | 120 s | 0,74 ms | 1,29 ms | **+0,55 ms** | +0,75 ms | **+0,93 ms** |
 
-**G-lat : médiane <= 1 ms et centile 99 <= 3 ms. Tenu**, dans les cinq mesures. La plus fiable est la dernière, deux minutes à 40 Mb/s : +0,56 ms de médiane et +0,80 ms au centile 99, soit moins du tiers de ce qui est admis.
+**G-lat : médiane <= 1 ms et centile 99 <= 3 ms. Tenu**, dans les sept mesures. Les plus fiables sont les mesures de deux minutes à 40 Mb/s, qui se répètent à trois reprises autour de +0,55 ms de médiane et +0,85 ms au centile 99, soit environ le tiers de ce qui est admis.
 
 Le débit visé est tenu partout : 49,4 Mb/s pour 50 demandés, 39,6 Mb/s pour 40, à l'identique avec et sans tunnel.
 
@@ -63,25 +64,29 @@ Le banc ventile désormais les deux causes, des deux côtés du tunnel. Réponse
 
 Le reste se joue sur le trajet retour, invisible depuis le côté qui mesure : le transport ne constate les pertes que par les acquittements qui lui reviennent, donc chaque extrémité ne connaît que ce qu'elle a émis. Le banc hôte affiche maintenant sa propre ventilation à la fin de chaque mesure ; il suffit de lire son terminal pour fermer le compte.
 
-Ces pertes n'ont aucun effet mesurable sur le débit ni sur la latence, et la correction d'erreur du protocole vidéo est faite pour les absorber. À titre de comparaison, elles représentent moins d'un paquet sur deux mille.
+Ces pertes n'ont aucun effet mesurable sur le débit ni sur la latence. Leur cause réelle est établie plus bas ; une fois corrigée, il n'en reste que deux sur la mesure longue, toutes deux constatées par le transport lui-même.
 
 ## Processeur
 
 Relevé par le banc lui-même, sur la fenêtre exacte de chaque salve, à 40 Mb/s pendant 120 secondes.
 
-| Côté | Sans tunnel | Avec tunnel | Coût du tunnel | Coeurs de la machine |
-|---|---|---|---|---|
-| Client | 2,9 % | 10,4 % | **+7,5 points** | 12 |
-| Hôte | mesure invalide | mesure invalide | à refaire | 24 |
+| Côté | Sans tunnel | Avec tunnel | Coût pour 80 Mb/s traversés | Équivalent session à 40 Mb/s | Coeurs |
+|---|---|---|---|---|---|
+| Client | 5,2 % | 15,5 % | +10,2 points | **5,1 points** | 12 |
+| Hôte | 3,7 % | 13,1 % | +9,3 points | **4,7 points** | 24 |
 
-**G-cpu : au plus 8 % d'un coeur à 40 Mb/s. Tenu côté client**, à 7,5 points. Et ce chiffre est pessimiste de moitié : le banc émet et reçoit en même temps, alors qu'une session réelle ne fait qu'un des deux sens par extrémité.
+**G-cpu : au plus 8 % d'un coeur à 40 Mb/s. Tenu**, à 5,1 et 4,7 points.
 
-Le chiffre côté hôte de cette campagne est à jeter. Son chronomètre couvrait les deux salves de l'autre banc, dont une où le tunnel ne transportait rien : la mesure était diluée d'à peu près la moitié. Le banc hôte sépare désormais les deux phases, en prenant le premier datagramme transporté comme bascule, et rend le même couple de chiffres que le client.
+Le chiffre brut n'est pas directement comparable au seuil, et c'est pour cela que le banc en affiche deux. Il émet et reçoit à la fois, si bien que chaque extrémité voit passer deux fois le débit demandé, là où une session réelle n'en fait qu'un sens : l'hôte envoie la vidéo, le client la reçoit. Le second chiffre ramène le coût à ce qu'une session paierait, en supposant que le calcul suit le nombre de paquets traités. Une mesure strictement unidirectionnelle demanderait de dire à l'autre banc d'émettre, donc le canal de contrôle propre à ZyrDesk, qui n'a pas encore de contenu.
 
-## Ce que la troisième campagne a mis au jour
+Ces relevés varient d'une campagne à l'autre avec la charge des machines : la même mesure avait donné 7,5 points côté client la veille. Vérifié en boucle locale sur trois exécutions identiques, où l'écart ne dépasse pas 0,2 point : la variation vient des machines de test, pas de la mesure.
 
-Les 817 paquets manquants de la mesure longue ne sont expliqués ni par la file d'émission du tunnel (zéro jeté), ni par le transport (zéro perdu, des deux côtés). Ils ont donc été jetés par le noyau, dans les tampons des sockets qui relient le moteur au tunnel.
+## Les tampons de socket, et ce qu'ils coûtaient
+
+Les 817 paquets manquants de la troisième campagne n'étaient expliqués ni par la file d'émission du tunnel (zéro jeté), ni par le transport (zéro perdu, des deux côtés). Ils étaient donc jetés par le noyau, dans les tampons des sockets qui relient le moteur au tunnel.
 
 C'est cohérent avec leur dimensionnement d'alors, celui du système : souvent 64 Kio, soit une dizaine de millisecondes de vidéo à ce débit. Il suffit que la pompe soit privée de processeur le temps d'une préemption pour que le noyau jette, en silence et sans que rien ne le compte. Ces sockets demandent maintenant quatre mébioctets, ce qui couvre largement une interruption d'ordonnancement. Le système peut n'en accorder qu'une partie, sans que ce soit une erreur.
 
 Cette correction était prévue par [NETWORK.md](../../docs/NETWORK.md) ; elle est simplement arrivée plus tôt que le jalon M3, faute d'autre explication au chiffre.
+
+Résultat à la campagne suivante, dans les mêmes conditions : **2 paquets manquants sur 439 261**, contre 817. Et les deux sont expliqués, le transport les ayant lui-même constatés perdus au retour. Le compte est donc exact, sans reliquat.

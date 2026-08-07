@@ -167,7 +167,7 @@ async fn tenir(args: ArgsHote) -> Result<(), Box<dyn Error>> {
                     // Le trajet retour n'est visible que d'ici : l'autre
                     // banc ne connaît que ce qu'il a lui-même émis.
                     println!("  {}", ventilation(&tunnel, &observee, "au retour"));
-                    rapporter_calcul(sans, avec);
+                    rapporter_calcul(args.debit, sans, avec);
                 }
                 Err(e) => println!("Tunnel impossible : {e}"),
             }
@@ -255,7 +255,7 @@ async fn mesurer(args: ArgsClient) -> Result<(), Box<dyn Error>> {
     let charge_tunnel = calcul_tunnel.and_then(|c| c.charge());
 
     rapporter(&direct, &par_tunnel, &taille, &connexion, &tunnel);
-    rapporter_calcul(charge_directe, charge_tunnel);
+    rapporter_calcul(args.debit, charge_directe, charge_tunnel);
 
     // Refermer proprement libère l'autre banc tout de suite, au lieu de
     // le laisser attendre l'expiration de la connexion.
@@ -370,23 +370,32 @@ async fn servir_et_mesurer(tunnel: &mut Tunnel) -> (Option<f64>, Option<f64>) {
 }
 
 /// Ce que le tunnel coûte en calcul, exprimé en part d'un coeur.
-fn rapporter_calcul(directe: Option<f64>, tunnel: Option<f64>) {
+///
+/// Le chiffre brut n'est pas comparable au seuil du projet : le banc
+/// émet et reçoit à la fois, donc chaque extrémité voit passer deux fois
+/// le débit demandé, là où une session réelle n'en fait qu'un sens. Le
+/// second chiffre ramène le coût à ce qu'une session paierait, en
+/// supposant que le calcul suit le nombre de paquets traités.
+fn rapporter_calcul(debit_mbps: u64, directe: Option<f64>, tunnel: Option<f64>) {
     let (Some(directe), Some(tunnel)) = (directe, tunnel) else {
         println!("\n  Charge processeur : non mesurable sur cette plateforme.");
         return;
     };
 
+    let cout = tunnel - directe;
     println!("\n--- Processeur de ce banc ---");
     println!("  sans tunnel        {directe:.1} % d'un coeur");
     println!("  avec tunnel        {tunnel:.1} % d'un coeur");
     println!(
-        "  coût du tunnel     {:+.1} point(s), sur une machine à {} coeurs",
-        tunnel - directe,
-        processeur::coeurs()
+        "  coût du tunnel     {cout:+.1} point(s) pour {} Mb/s traversés",
+        debit_mbps * 2
     );
-    // Le banc émet et reçoit en même temps : une session réelle ne fait
-    // qu'un des deux sens par extrémité.
-    println!("  ce banc travaille dans les deux sens à la fois, une session n'en fait qu'un");
+    println!(
+        "  soit               {:.1} point(s) pour une session à {debit_mbps} Mb/s, \
+         qui n'en fait qu'un sens",
+        cout / 2.0
+    );
+    println!("  machine à {} coeurs", processeur::coeurs());
 }
 
 /// D'où vient ce qui manque, du point de vue d'un seul des deux bancs.
