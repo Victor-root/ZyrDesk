@@ -52,6 +52,15 @@ impl CanalDatagramme {
         }
     }
 
+    /// Place du canal dans `TOUS`, pour ranger une chose par canal.
+    pub fn rang(self) -> usize {
+        match self {
+            CanalDatagramme::Video => 0,
+            CanalDatagramme::Controle => 1,
+            CanalDatagramme::Audio => 2,
+        }
+    }
+
     pub fn depuis_identifiant(octet: u8) -> Result<Self, CanalInconnu> {
         match octet {
             1 => Ok(CanalDatagramme::Video),
@@ -169,6 +178,14 @@ mod tests {
         vus.sort_unstable();
         vus.dedup();
         assert_eq!(vus.len(), CanalFlux::TOUS.len());
+    }
+
+    #[test]
+    fn le_rang_designe_bien_le_canal() {
+        // Sans quoi ce qui est rangé par canal se retrouverait mélangé.
+        for canal in CanalDatagramme::TOUS {
+            assert_eq!(CanalDatagramme::TOUS[canal.rang()], canal);
+        }
     }
 
     #[test]
