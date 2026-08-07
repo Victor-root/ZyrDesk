@@ -131,13 +131,13 @@ Deux PC en Ethernet gigabit, relevés complets dans [perf/baselines/M2-lan-ether
 
 | Mesure | Résultat | Seuil | Verdict |
 |---|---|---|---|
-| M2-R1, coût du tunnel à 50 Mb/s | +0,92 ms de médiane, +1,67 ms au centile 99 | médiane <= 1 ms, centile 99 <= 3 ms | tenu |
-| M2-R1, à 40 Mb/s sur 2 minutes | +0,79 ms de médiane, +1,36 ms au centile 99 | idem | tenu |
+| M2-R1, coût du tunnel à 50 Mb/s | +0,88 ms de médiane, +1,67 ms au centile 99 | médiane <= 1 ms, centile 99 <= 3 ms | tenu |
+| M2-R1, à 40 Mb/s sur 2 minutes | +0,56 ms de médiane, +0,80 ms au centile 99 | idem | tenu |
 | M2-R2, débit sous 1 % et 2 % de perte | 39,6 Mb/s dans les trois cas | >= 38 Mb/s | tenu |
 | M2-R3, processeur | non relevé | <= 8 % d'un coeur | à faire |
 | M2-R4, taille de paquet | 1353 octets | > 1300 | tenu |
 
-Point ouvert : à 50 Mb/s le tunnel perd 0,59 % des paquets là où le chemin nu n'en perd que 0,10 %, alors qu'à 40 Mb/s il en perd moins que lui. Sans effet sur le débit ni la latence, mais la cause reste à établir. Le banc affiche désormais d'où vient chaque perte, file d'émission pleine ou chemin réseau ; refaire une mesure à 50 Mb/s suffira à trancher.
+La question des pertes résiduelles est tranchée : la file d'émission du tunnel n'y est pour rien, zéro datagramme jeté faute de place aux deux débits. Le reste est de la perte réseau ordinaire, moins d'un paquet sur deux mille, sans effet sur le débit ni sur la latence.
 
 Les relevés en boucle locale sur la machine de développement restent dans [perf/baselines/M2-boucle-locale.md](../../perf/baselines/M2-boucle-locale.md). Ils ne servent que de garde contre une régression : ils n'ont ni carte réseau, ni pare-feu, ni aller-retour réaliste.
 

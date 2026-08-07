@@ -159,11 +159,15 @@ async fn tenir(args: ArgsHote) -> Result<(), Box<dyn Error>> {
         // Chaque mesure a sa tâche : le banc doit rester prêt à accepter
         // la suivante, sinon la connexion d'après expire en attendant.
         tokio::spawn(async move {
+            let observee = connexion.clone();
             match Tunnel::hote(connexion, MOTEUR, ports).await {
                 Ok(mut tunnel) => {
                     if let Err(e) = tunnel.attendre().await {
                         println!("Fin de la mesure : {e}");
                     }
+                    // Le trajet retour n'est visible que d'ici : l'autre
+                    // banc ne connaît que ce qu'il a lui-même émis.
+                    println!("  {}", ventilation(&tunnel, &observee, "au retour"));
                 }
                 Err(e) => println!("Tunnel impossible : {e}"),
             }
@@ -273,18 +277,13 @@ fn rapporter(
         millisecondes(connexion.aller_retour())
     );
 
-    // Sans cette ventilation, on ne saurait pas si un paquet manquant a
-    // été perdu par le réseau ou jeté par le tunnel faute de place.
-    let releve = tunnel.releve();
-    let file_pleine = releve
-        .vers_tunnel
-        .saturating_sub(connexion.datagrammes_partis());
     println!(
-        "  d'où vient la perte   {} jetés faute de place, {} perdus sur le chemin",
-        file_pleine,
-        connexion.paquets_perdus()
+        "  ce que ce banc voit   {}",
+        ventilation(tunnel, connexion, "à l'aller")
     );
+    println!("                        le retour est compté par l'autre banc");
 
+    let releve = tunnel.releve();
     if releve.trop_gros > 0 {
         println!(
             "  {} paquets trop gros pour le chemin : la taille demandée au \
@@ -324,6 +323,22 @@ fn rapporter(
         par_tunnel.debit(),
         direct.debit()
     );
+}
+
+/// D'où vient ce qui manque, du point de vue d'un seul des deux bancs.
+///
+/// Chaque extrémité ne connaît que ce qu'elle a émis : le transport ne
+/// détecte les pertes que par les acquittements qui lui reviennent. Les
+/// deux moitiés du trajet demandent donc les deux terminaux.
+fn ventilation(tunnel: &Tunnel, connexion: &zyr_transport::Connexion, sens: &str) -> String {
+    let jetes = tunnel
+        .releve()
+        .vers_tunnel
+        .saturating_sub(connexion.datagrammes_partis());
+    format!(
+        "{jetes} datagramme(s) jeté(s) faute de place, {} paquet(s) perdu(s) {sens}",
+        connexion.paquets_perdus()
+    )
 }
 
 fn detailler(r: &Resultat) {
