@@ -20,7 +20,7 @@ Pourquoi c'est le bon choix :
 - Un seul port UDP à ouvrir ou mapper côté hôte ; les moteurs n'ont besoin d'aucune règle pare-feu.
 - Chiffrement et authentification uniformes, portés par le tunnel (clés d'appareil), quel que soit le chemin.
 - La migration de chemin (relais vers direct) devient possible sans que les moteurs s'en aperçoivent.
-- Coût mesuré, et non plus estimé : en boucle locale, version release, le tunnel complet ajoute 0,48 ms d'aller-retour médian à 5 Mb/s et 1,19 ms à 50 Mb/s, sans perdre un paquet ([perf/baselines/M2-boucle-locale.md](../perf/baselines/M2-boucle-locale.md)). L'estimation initiale de 0,1 à 0,5 ms était optimiste d'un facteur deux à trois. La mesure sur deux vraies machines reste à faire ([testing/M2-PROTOCOLE.md](testing/M2-PROTOCOLE.md)) ; en cas d'échec des seuils, la décision est révisée.
+- Coût mesuré sur deux vraies machines, et non plus estimé : en Ethernet gigabit, à 40 Mb/s sur deux minutes, le tunnel complet ajoute 0,54 ms d'aller-retour médian et 0,81 ms au centile 99, pour un seuil admis à 1 et 3 ms, et coûte 7,5 points d'un coeur pour un seuil à huit ([perf/baselines/M2-lan-ethernet.md](../perf/baselines/M2-lan-ethernet.md)). L'estimation initiale de 0,1 à 0,5 ms était optimiste d'un facteur deux. La décision du tunnel systématique est donc confirmée par la mesure.
 
 Un mode « direct sans tunnel » est conservé UNIQUEMENT comme outil de diagnostic en ligne de commande (`zyr-cli`), pour pouvoir isoler en minutes un problème tunnel d'un problème moteur. Il n'apparaît jamais dans l'interface.
 
