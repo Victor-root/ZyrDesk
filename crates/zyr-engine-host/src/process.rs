@@ -74,6 +74,15 @@ fn chemin_en_argument(chemin: &Path) -> String {
     chemin.to_string_lossy().into_owned()
 }
 
+/// Dossier depuis lequel lancer le moteur.
+///
+/// Le moteur résout ses ressources (nuanciers graphiques, images) par
+/// rapport au dossier courant et non par rapport à son exécutable : le
+/// lancer depuis ailleurs le fait échouer à l'initialisation.
+fn dossier_de_travail(exe: &Path) -> Option<&Path> {
+    exe.parent().filter(|p| !p.as_os_str().is_empty())
+}
+
 pub struct HostEngine {
     exe: PathBuf,
     config: SunshineConfig,
@@ -111,24 +120,29 @@ impl HostEngine {
         if !self.exe.is_file() {
             return Err(ErreurMoteur::ExecutableIntrouvable(self.exe.clone()));
         }
-        for dossier in [
-            self.chemin_parent(&self.config.chemin_conf()),
-            self.chemin_parent(&self.journal),
-        ] {
-            fs::create_dir_all(&dossier)?;
+        for dossier in self.config.dossiers_requis() {
+            fs::create_dir_all(dossier)?;
+        }
+        if let Some(parent) = self.journal.parent() {
+            fs::create_dir_all(parent)?;
         }
         fs::write(self.config.chemin_conf(), self.config.rendu_conf())?;
         fs::write(self.config.chemin_apps(), self.config.rendu_apps())?;
         Ok(())
     }
 
-    fn chemin_parent(&self, chemin: &Path) -> PathBuf {
-        chemin.parent().map(PathBuf::from).unwrap_or_default()
+    fn commande(&self) -> Command {
+        let mut commande = Command::new(&self.exe);
+        if let Some(dossier) = dossier_de_travail(&self.exe) {
+            commande.current_dir(dossier);
+        }
+        commande
     }
 
     /// Écrit les identifiants de l'API locale dans l'état du moteur.
     pub fn provisionner_identifiants(&self) -> Result<(), ErreurMoteur> {
-        let sortie = Command::new(&self.exe)
+        let sortie = self
+            .commande()
             .args(arguments_provision(&self.config, &self.creds))
             .stdin(Stdio::null())
             .output()?;
@@ -152,7 +166,8 @@ impl HostEngine {
         }
         let journal = fs::File::create(&self.journal)?;
         let journal_err = journal.try_clone()?;
-        let enfant = Command::new(&self.exe)
+        let enfant = self
+            .commande()
             .args(arguments_demarrage(&self.config))
             .stdin(Stdio::null())
             .stdout(Stdio::from(journal))
@@ -191,7 +206,7 @@ mod tests {
     use zyr_proto::net::EnginePorts;
 
     fn config() -> SunshineConfig {
-        SunshineConfig::new(EnginePorts::new(42100).unwrap(), "/data/host")
+        SunshineConfig::new(EnginePorts::new(42100).unwrap(), "/data/host", "/data/logs")
     }
 
     #[test]
@@ -237,7 +252,11 @@ mod tests {
         fs::create_dir_all(&base).unwrap();
         fs::write(&faux_exe, b"").unwrap();
 
-        let config = SunshineConfig::new(EnginePorts::new(42100).unwrap(), base.join("host"));
+        let config = SunshineConfig::new(
+            EnginePorts::new(42100).unwrap(),
+            base.join("host"),
+            base.join("logs"),
+        );
         let moteur = HostEngine::nouveau(
             &faux_exe,
             config.clone(),

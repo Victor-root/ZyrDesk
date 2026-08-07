@@ -37,7 +37,7 @@ Tout ce dont ZyrDesk a besoin existe déjà dans Sunshine officiel :
 | Chiffrement interne inutile en loopback | `lan_encryption_mode = 0` (le tunnel chiffre déjà tout ; mode « paranoïaque » possible en passant à 2) |
 | Pas d'UPnP côté moteur | `upnp = off` (le service ZyrDesk gère les mappages de ports lui-même) |
 | Liste d'applications | `apps.json` généré, réduit à « Desktop » |
-| État, identifiants, journaux hors Program Files | options de chemins (`file_state`, `credentials_file`, `log_path`) vers `%ProgramData%\ZyrDesk` |
+| État, identifiants, journaux hors du dossier d'installation | options de chemins (`file_state`, `credentials_file`, `log_path`) vers le dossier de données du produit |
 | Écran cible et GPU | `output_name`, `adapter_name` |
 | Écran virtuel (plus tard) | options `dd_*` (résolution/fréquence du client, `ensure_only_display`, restauration à la déconnexion) : prévues par Sunshine pour piloter un pilote d'écran tiers |
 | Santé | `GET /serverinfo` sur son port HTTP local |
@@ -56,7 +56,7 @@ Mécanismes officiels utilisés :
 
 | Besoin | Mécanisme officiel |
 |---|---|
-| État isolé par appareil distant | fichier `portable.dat` à côté de l'exécutable : tout l'état (réglages, identité client, hôtes appairés) part dans un dossier local que nous plaçons dans `%ProgramData%\ZyrDesk\devices\<id>` |
+| État isolé par appareil distant | fichier `portable.dat` à côté de l'exécutable : tout l'état (réglages, identité client, hôtes appairés) part dans un dossier local que nous plaçons dans `devices\<id>` sous les données du produit |
 | Session sans interface Moonlight | commande `stream <hôte> "Desktop"` avec options : `--resolution WxH`, `--fps N`, `--bitrate K`, `--packet-size B` (force le mode « local », minimum 1025), `--display-mode fullscreen|windowed|borderless`, `--video-codec auto|H.264|HEVC|AV1`, `--video-decoder hardware`, `--frame-pacing`, `--absolute-mouse`, `--capture-system-keys`, `--performance-overlay`, `--hdr`, `--yuv444` |
 | Appairage sans interaction | commande `pair <hôte> --pin NNNN` |
 | Statistiques | overlay de performances + journaux (débit d'images réseau/décodage/rendu, latence hôte, pertes, jitter, temps de décodage, délai de file, temps de rendu) |

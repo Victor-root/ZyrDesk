@@ -1,40 +1,49 @@
 //! Emplacements de fichiers du produit.
 //!
-//! Deux racines distinctes : les données partagées entre tous les
-//! utilisateurs de la machine (moteurs, état de l'hôte, journaux) et les
-//! données propres à l'utilisateur courant (état d'exécution, secrets de
-//! prototypage). Séparer les deux évite qu'un secret lisible par un autre
-//! utilisateur local se retrouve dans un dossier commun.
+//! Tout vit sous un dossier `data` unique, placé à la racine du projet.
+//! Rien n'est éparpillé ailleurs sur la machine : le contenu se lit, se
+//! sauvegarde et s'efface d'un seul geste.
+//!
+//! La variable d'environnement `ZYRDESK_DATA` permet de le déplacer.
+//! L'emplacement système d'un produit installé viendra avec le service
+//! du jalon M3.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
-/// Racine des données partagées : `%ProgramData%\ZyrDesk` sous Windows.
+const VAR_DATA: &str = "ZYRDESK_DATA";
+
+/// Racine de toutes les données du produit.
 pub fn data_dir() -> PathBuf {
-    if cfg!(windows) {
-        std::env::var_os("ProgramData")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
-            .join("ZyrDesk")
-    } else {
-        std::env::temp_dir().join("zyrdesk-dev")
+    resoudre_data_dir(std::env::var_os(VAR_DATA), racine_projet)
+}
+
+/// Règle de résolution, isolée de l'environnement pour être vérifiable.
+fn resoudre_data_dir(surcharge: Option<OsString>, racine: impl FnOnce() -> PathBuf) -> PathBuf {
+    match surcharge {
+        Some(chemin) if !chemin.is_empty() => PathBuf::from(chemin),
+        _ => racine().join("data"),
     }
 }
 
-/// Racine des données de l'utilisateur courant : `%LOCALAPPDATA%\ZyrDesk`.
-pub fn user_dir() -> PathBuf {
-    if cfg!(windows) {
-        std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(data_dir)
-            .join("ZyrDesk")
-    } else {
-        std::env::temp_dir().join("zyrdesk-dev-user")
+/// Racine du projet : premier dossier ancêtre de l'exécutable contenant
+/// un `Cargo.toml`. L'exécutable vivant sous `target/<profil>/`, la
+/// remontée aboutit à la racine du dépôt, quel que soit le profil de
+/// compilation. À défaut, le dossier de l'exécutable lui-même.
+fn racine_projet() -> PathBuf {
+    let Ok(exe) = std::env::current_exe() else {
+        return PathBuf::from(".");
+    };
+    let mut candidat = exe.parent();
+    while let Some(dossier) = candidat {
+        if dossier.join("Cargo.toml").is_file() {
+            return dossier.to_path_buf();
+        }
+        candidat = dossier.parent();
     }
-}
-
-/// Binaires des moteurs, déposés à part de notre propre exécutable.
-pub fn engines_dir() -> PathBuf {
-    data_dir().join("engines")
+    exe.parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// Nom de fichier d'un exécutable, avec l'extension de la plateforme.
@@ -44,6 +53,11 @@ pub fn nom_executable(base: &str) -> String {
     } else {
         base.to_string()
     }
+}
+
+/// Binaires des moteurs.
+pub fn engines_dir() -> PathBuf {
+    data_dir().join("engines")
 }
 
 /// Moteur hôte (dérivé de Sunshine).
@@ -79,6 +93,7 @@ pub fn device_state_dir(device_id: &str) -> PathBuf {
     data_dir().join("devices").join(device_id)
 }
 
+/// Journaux de tous les composants.
 pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
 }
@@ -88,17 +103,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn les_racines_sont_distinctes() {
-        assert_ne!(data_dir(), user_dir());
-    }
-
-    #[test]
-    fn les_sous_dossiers_derivent_de_la_racine_partagee() {
+    fn tout_vit_sous_la_racine_unique() {
         let racine = data_dir();
         for chemin in [
             engines_dir(),
             host_engine_dir(),
+            host_engine_exe(),
             client_engine_dir(),
+            client_engine_exe(),
             host_state_dir(),
             device_state_dir("pc-bureau"),
             logs_dir(),
@@ -109,6 +121,29 @@ mod tests {
                 chemin.display()
             );
         }
+    }
+
+    #[test]
+    fn la_surcharge_prime_sur_la_racine_du_projet() {
+        let projet = || PathBuf::from("/le/projet");
+        assert_eq!(
+            resoudre_data_dir(Some(OsString::from("/ailleurs")), projet),
+            PathBuf::from("/ailleurs")
+        );
+    }
+
+    #[test]
+    fn sans_surcharge_les_donnees_sont_dans_le_projet() {
+        let projet = || PathBuf::from("/le/projet");
+        assert_eq!(
+            resoudre_data_dir(None, projet),
+            PathBuf::from("/le/projet/data")
+        );
+        // Une variable vide vaut absence de surcharge.
+        assert_eq!(
+            resoudre_data_dir(Some(OsString::new()), projet),
+            PathBuf::from("/le/projet/data")
+        );
     }
 
     #[test]

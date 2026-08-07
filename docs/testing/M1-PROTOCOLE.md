@@ -116,7 +116,7 @@ Attention : dans ce mode, les messages d'erreur du moteur risquent de devenir in
 
 Le chiffrement de bout en bout sera porté par le tunnel. Le chiffrement interne des moteurs est donc désactivé pour ne pas chiffrer deux fois. Reste à vérifier que le moteur hôte l'honore, car le moteur client le demande de son côté.
 
-Test : pendant une session, ouvrir le journal du moteur hôte (`%ProgramData%\ZyrDesk\logs\host-engine.log`) et chercher les lignes mentionnant le chiffrement au démarrage de la session.
+Test : pendant une session, ouvrir le journal du moteur hôte (`data\logs\engine.log` dans le dossier du projet) et chercher les lignes mentionnant le chiffrement au démarrage de la session.
 
 > Le journal indique-t-il un chiffrement vidéo actif ? ................................................
 >

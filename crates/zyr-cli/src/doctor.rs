@@ -178,7 +178,7 @@ fn dossier_donnees() -> Verification {
 fn configuration_moteur() -> Verification {
     match ports::base_libre() {
         Some(ports) => {
-            let config = SunshineConfig::new(ports, paths::host_state_dir());
+            let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
             let directives = config.rendu_conf().lines().count();
             Verification {
                 nom: "Configuration moteur",

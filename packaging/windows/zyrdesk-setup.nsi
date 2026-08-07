@@ -48,14 +48,10 @@ VIAddVersionKey "LegalCopyright" "GPLv3"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "French"
 
-; Répertoire de données commun, hors Program Files.
-; SetShellVarContext all fait pointer $APPDATA sur C:\ProgramData.
-Var DossierDonnees
-
-Function .onInit
-  SetShellVarContext all
-  StrCpy $DossierDonnees "$APPDATA\${PRODUIT}"
-FunctionEnd
+; Le produit range ses données dans un sous-dossier « data » de son
+; propre dossier : l'installateur n'a rien à créer ailleurs, et la
+; désinstallation n'a qu'un endroit à nettoyer.
+!define DOSSIER_DONNEES "$INSTDIR\data"
 
 Section "ZyrDesk" SEC_PRINCIPAL
   SectionIn RO
@@ -66,9 +62,6 @@ Section "ZyrDesk" SEC_PRINCIPAL
 
   ; M3 : zyrdeskd.exe et enregistrement du service Windows.
   ; M4 : ZyrDesk.exe (interface) et moteurs rebrandés.
-
-  CreateDirectory "$DossierDonnees"
-  CreateDirectory "$DossierDonnees\logs"
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -93,28 +86,23 @@ Section "Uninstall"
   ; M3 : arrêt et suppression du service avant de toucher aux fichiers.
   ; M3 : suppression des règles de pare-feu créées à l'installation.
 
+  ; Les données ne sont supprimées que si l'utilisateur le demande.
+  ; En mode silencieux, elles sont conservées.
+  IfSilent conserver_donnees
+  MessageBox MB_YESNO|MB_ICONQUESTION \
+    "Supprimer aussi les données ZyrDesk (moteurs, réglages, journaux, appairages) ?" \
+    /SD IDNO IDNO conserver_donnees
+  RMDir /r "${DOSSIER_DONNEES}"
+  Goto donnees_traitees
+  conserver_donnees:
+  DetailPrint "Données conservées dans ${DOSSIER_DONNEES}"
+  donnees_traitees:
+
   Delete "$INSTDIR\zyr-cli.exe"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 
-  ; Les données ne sont supprimées que si l'utilisateur le demande.
-  ; En mode silencieux, elles sont conservées.
-  IfSilent conserver_donnees
-  MessageBox MB_YESNO|MB_ICONQUESTION \
-    "Supprimer aussi les données ZyrDesk (réglages, journaux, appairages) ?" \
-    /SD IDNO IDNO conserver_donnees
-  RMDir /r "$DossierDonnees"
-  Goto donnees_traitees
-  conserver_donnees:
-  DetailPrint "Données conservées dans $DossierDonnees"
-  donnees_traitees:
-
   DeleteRegKey HKLM "${CLE_DESINSTALL}"
   DeleteRegKey HKLM "Software\${PRODUIT}"
 SectionEnd
-
-Function un.onInit
-  SetShellVarContext all
-  StrCpy $DossierDonnees "$APPDATA\${PRODUIT}"
-FunctionEnd

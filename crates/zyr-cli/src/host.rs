@@ -60,13 +60,13 @@ fn start() -> ExitCode {
     };
 
     let chemin_runtime = EngineRuntime::chemin_standard();
-    let config = SunshineConfig::new(ports, paths::host_state_dir());
+    let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
     let creds = Credentials::aleatoires();
     let mut moteur = HostEngine::nouveau(
         &exe,
         config,
         creds.clone(),
-        paths::logs_dir().join("host-engine.log"),
+        paths::logs_dir().join("engine-console.log"),
     );
 
     println!("Démarrage de l'accès distant...");
@@ -87,7 +87,7 @@ fn start() -> ExitCode {
             "le moteur n'a pas fini de démarrer",
             format!(
                 "{e}\n  Journal : {}",
-                paths::logs_dir().join("host-engine.log").display()
+                paths::logs_dir().join("engine-console.log").display()
             ),
         );
     }
@@ -125,7 +125,7 @@ fn surveiller(moteur: &mut HostEngine) -> ExitCode {
                     "le moteur hôte s'est arrêté",
                     format!(
                         "code {code}\n  Journal : {}",
-                        paths::logs_dir().join("host-engine.log").display()
+                        paths::logs_dir().join("engine-console.log").display()
                     ),
                 );
             }

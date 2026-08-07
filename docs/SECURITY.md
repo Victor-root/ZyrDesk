@@ -30,7 +30,7 @@ Résultat : le chiffrement (TLS 1.3 de QUIC) est négocié directement entre les
 | Clé privée d'appareil | Profil du service | DPAPI dans le profil SYSTEM (PAS DPAPI « machine », que tout utilisateur local peut déchiffrer) + ACL SYSTEM et Administrateurs |
 | Identifiants de l'interface web Sunshine | Profil du service | Aléatoires 32 octets, régénérés à chaque démarrage du service, DPAPI profil SYSTEM |
 | Jetons de compte (interface) | Session utilisateur | Gestionnaire d'identifiants Windows de l'utilisateur |
-| État Moonlight (certificats d'appairage internes) | `%ProgramData%\ZyrDesk\devices\<id>` | ACL restreintes |
+| État Moonlight (certificats d'appairage internes) | dossier de données, `devices\<id>` | ACL restreintes une fois le service en place |
 
 ## 5. Surface locale
 

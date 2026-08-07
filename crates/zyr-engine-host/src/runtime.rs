@@ -4,10 +4,11 @@
 //! processus distincts : le premier publie ici de quoi joindre le moteur,
 //! le second le relit.
 //!
-//! Le fichier contient les identifiants de l'API locale : il est écrit
-//! dans l'espace de l'utilisateur courant, jamais dans un dossier commun
-//! à tous les comptes de la machine. Le service du jalon M3 remplacera ce
-//! fichier par un état en mémoire et un stockage protégé.
+//! Le fichier contient les identifiants de l'API locale. Il vit avec le
+//! reste des données du produit, sans protection particulière : c'est
+//! acceptable tant que tout tient dans un dossier de travail. Le service
+//! du jalon M3 remplacera ce fichier par un état en mémoire et un
+//! stockage protégé par le système.
 
 use std::fmt;
 use std::fs;
@@ -57,9 +58,9 @@ pub struct EngineRuntime {
 }
 
 impl EngineRuntime {
-    /// Emplacement standard, propre à l'utilisateur courant.
+    /// Emplacement standard, dans les données du produit.
     pub fn chemin_standard() -> PathBuf {
-        zyr_proto::paths::user_dir().join("host-runtime.conf")
+        zyr_proto::paths::data_dir().join("host-runtime.conf")
     }
 
     pub fn ecrire(&self, chemin: &Path) -> io::Result<()> {

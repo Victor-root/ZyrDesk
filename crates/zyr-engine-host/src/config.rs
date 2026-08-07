@@ -30,16 +30,25 @@ impl ChiffrementInterne {
 pub struct SunshineConfig {
     ports: EnginePorts,
     data_dir: PathBuf,
+    logs_dir: PathBuf,
     chiffrement: ChiffrementInterne,
     output_name: Option<String>,
     adapter_name: Option<String>,
 }
 
 impl SunshineConfig {
-    pub fn new(ports: EnginePorts, data_dir: impl Into<PathBuf>) -> Self {
+    /// `logs_dir` est le dossier de journaux commun à tous les
+    /// composants : le moteur y écrit le sien au lieu de le cacher dans
+    /// son propre état.
+    pub fn new(
+        ports: EnginePorts,
+        data_dir: impl Into<PathBuf>,
+        logs_dir: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             ports,
             data_dir: data_dir.into(),
+            logs_dir: logs_dir.into(),
             chiffrement: ChiffrementInterne::default(),
             output_name: None,
             adapter_name: None,
@@ -75,6 +84,16 @@ impl SunshineConfig {
         self.data_dir.join("apps.json")
     }
 
+    /// Journal écrit par le moteur lui-même.
+    pub fn chemin_journal(&self) -> PathBuf {
+        self.logs_dir.join("engine.log")
+    }
+
+    /// Dossiers que le moteur suppose existants au démarrage.
+    pub fn dossiers_requis(&self) -> [&Path; 2] {
+        [&self.data_dir, &self.logs_dir]
+    }
+
     /// Contenu du fichier `sunshine.conf`.
     pub fn rendu_conf(&self) -> String {
         let d = |p: &Path| p.display().to_string();
@@ -97,7 +116,7 @@ impl SunshineConfig {
                 "credentials_file = {}",
                 d(&self.data_dir.join("engine_state.json"))
             ),
-            format!("log_path = {}", d(&self.data_dir.join("logs/engine.log"))),
+            format!("log_path = {}", d(&self.chemin_journal())),
             "min_log_level = info".to_string(),
         ];
         if let Some(output) = &self.output_name {
@@ -112,14 +131,16 @@ impl SunshineConfig {
     }
 
     /// Contenu du fichier `apps.json` : le bureau uniquement.
+    ///
+    /// Aucune vignette n'est déclarée : elle ne servirait qu'à la liste
+    /// d'applications du moteur client, que le produit n'affiche jamais.
     pub fn rendu_apps(&self) -> String {
         concat!(
             "{\n",
             "  \"env\": {},\n",
             "  \"apps\": [\n",
             "    {\n",
-            "      \"name\": \"Desktop\",\n",
-            "      \"image-path\": \"desktop.png\"\n",
+            "      \"name\": \"Desktop\"\n",
             "    }\n",
             "  ]\n",
             "}\n"
@@ -133,7 +154,11 @@ mod tests {
     use super::*;
 
     fn config_test() -> SunshineConfig {
-        SunshineConfig::new(EnginePorts::new(42100).unwrap(), "/data/zyrdesk/host")
+        SunshineConfig::new(
+            EnginePorts::new(42100).unwrap(),
+            "/data/zyrdesk/host",
+            "/data/zyrdesk/logs",
+        )
     }
 
     #[test]
@@ -154,7 +179,25 @@ mod tests {
         assert!(rendu.contains("file_apps = /data/zyrdesk/host/apps.json"));
         assert!(rendu.contains("file_state = /data/zyrdesk/host/engine_state.json"));
         assert!(rendu.contains("credentials_file = /data/zyrdesk/host/engine_state.json"));
-        assert!(rendu.contains("log_path = /data/zyrdesk/host/logs/engine.log"));
+        assert!(rendu.contains("log_path = /data/zyrdesk/logs/engine.log"));
+    }
+
+    #[test]
+    fn les_dossiers_requis_couvrent_l_etat_et_les_journaux() {
+        let config = config_test();
+        let requis = config.dossiers_requis();
+        for chemin in [
+            config.chemin_conf(),
+            config.chemin_apps(),
+            config.chemin_journal(),
+        ] {
+            let parent = chemin.parent().unwrap();
+            assert!(
+                requis.contains(&parent),
+                "{} n'est couvert par aucun dossier créé",
+                chemin.display()
+            );
+        }
     }
 
     #[test]
