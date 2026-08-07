@@ -83,7 +83,10 @@ pub fn executer(args: Args) -> ExitCode {
     }
 
     let deja_connu = etat.a_un_hote_appaire();
-    let moteur = ClientEngine::nouveau(&exe, etat).masquer_fenetre_attente(args.masquer_attente);
+    let journal = paths::logs_dir().join("session.log");
+    let moteur = ClientEngine::nouveau(&exe, etat)
+        .avec_journal(&journal)
+        .masquer_fenetre_attente(args.masquer_attente);
 
     if !deja_connu && let Err(code) = appairer(&moteur, &args.hote) {
         return code;
@@ -95,7 +98,11 @@ pub fn executer(args: Args) -> ExitCode {
     );
     match moteur.lancer_session(&args.hote, &reglages) {
         Ok(IssueSession::Terminee) => {
+            // Le moteur signale un succès même lorsqu'il a renoncé : le
+            // journal reste la seule source fiable tant que ses codes de
+            // sortie ne sont pas différenciés (patch P-M5).
             println!("Session terminée.");
+            println!("  Journal : {}", journal.display());
             ExitCode::SUCCESS
         }
         Ok(IssueSession::Echec { code }) => {
@@ -104,7 +111,7 @@ pub fn executer(args: Args) -> ExitCode {
                 .unwrap_or_else(|| "interrompu".to_string());
             echec(
                 "la session s'est arrêtée sur une erreur",
-                format!("code {code}"),
+                format!("code {code}\n  Journal : {}", journal.display()),
             )
         }
         Err(e) => echec("démarrage de la session", e),

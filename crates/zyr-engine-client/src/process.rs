@@ -1,7 +1,9 @@
 //! Lancement du moteur client.
 
 use std::fmt;
+use std::fs;
 use std::io;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -64,6 +66,7 @@ impl From<io::Error> for ErreurMoteur {
 pub struct ClientEngine {
     exe: PathBuf,
     etat: DeviceState,
+    journal: Option<PathBuf>,
     masquer_fenetre_attente: bool,
 }
 
@@ -72,8 +75,34 @@ impl ClientEngine {
         Self {
             exe: exe.into(),
             etat,
+            journal: None,
             masquer_fenetre_attente: false,
         }
+    }
+
+    /// Recueille tout ce que le moteur écrit.
+    ///
+    /// Sans cela, ses messages d'erreur ne vivent que dans ses propres
+    /// fenêtres : une session qui échoue ne laisse aucune trace
+    /// exploitable.
+    pub fn avec_journal(mut self, journal: impl Into<PathBuf>) -> Self {
+        self.journal = Some(journal.into());
+        self
+    }
+
+    /// Ouvre le journal en ajout, en créant l'arborescence au besoin.
+    fn ouvrir_journal(&self) -> io::Result<Option<fs::File>> {
+        let Some(chemin) = &self.journal else {
+            return Ok(None);
+        };
+        if let Some(parent) = chemin.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(chemin)
+            .map(Some)
     }
 
     /// Tente de supprimer la fenêtre d'attente affichée par le moteur
@@ -110,6 +139,15 @@ impl ClientEngine {
             .commande(&command::arguments_appairage(hote, pin))?
             .stdin(Stdio::null())
             .output()?;
+
+        // La sortie est consignée quelle que soit l'issue : le moteur
+        // signale un succès même quand l'appairage n'a pas abouti.
+        if let Some(mut journal) = self.ouvrir_journal()? {
+            let _ = writeln!(journal, "--- appairage avec {hote} ---");
+            let _ = journal.write_all(&sortie.stdout);
+            let _ = journal.write_all(&sortie.stderr);
+        }
+
         if sortie.status.success() {
             return Ok(());
         }
@@ -133,6 +171,13 @@ impl ClientEngine {
         self.etat.preparer()?;
         let mut commande = self.commande(&command::arguments_session(hote, reglages))?;
         commande.stdin(Stdio::null());
+        if let Some(mut journal) = self.ouvrir_journal()? {
+            let _ = writeln!(journal, "--- session vers {hote} ---");
+            let erreurs = journal.try_clone()?;
+            commande
+                .stdout(Stdio::from(journal))
+                .stderr(Stdio::from(erreurs));
+        }
         if self.masquer_fenetre_attente {
             commande.env(VAR_PLATEFORME_QT, PLATEFORME_SANS_AFFICHAGE);
         }
