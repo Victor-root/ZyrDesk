@@ -1,92 +1,91 @@
-//! Budget de taille de paquet vidéo.
+//! Video packet size budget.
 //!
-//! Un paquet vidéo trop gros se fragmente en route, et la fragmentation
-//! coûte de la latence : un seul fragment perdu détruit le paquet entier.
-//! La taille demandée au moteur hôte doit donc tenir dans ce que le
-//! tunnel peut transporter d'un bloc.
+//! A video packet that is too big gets fragmented along the way, and
+//! fragmentation costs latency: a single lost fragment destroys the
+//! whole packet. The size we ask the host engine for must therefore fit
+//! in what the tunnel can carry in one piece.
 //!
-//! Le calcul part de la taille réellement annoncée par le transport
-//! plutôt que d'une estimation du surcoût QUIC. Les en-têtes varient avec
-//! la longueur des identifiants de connexion et l'état du chemin : les
-//! deviner reviendrait à refaire, moins bien, un calcul que le transport
-//! tient déjà à jour.
+//! The computation starts from the size the transport actually reports
+//! rather than from a guess at the QUIC overhead. Headers vary with the
+//! length of the connection identifiers and the state of the path:
+//! guessing them would mean redoing, less well, a computation the
+//! transport already keeps up to date.
 
-/// En-tête ZyrDesk devant chaque datagramme : l'identifiant de canal.
-pub const SURCOUT_MUX: u16 = 1;
+/// ZyrDesk header in front of every datagram: the channel identifier.
+pub const MUX_OVERHEAD: u16 = 1;
 
-/// En-têtes ajoutés par le protocole des moteurs à chaque paquet vidéo.
+/// Headers the engines' protocol adds to every video packet.
 ///
-/// Estimation en attendant la mesure réelle par capture réseau. La
-/// vérification V5 du jalon M1 doit la confirmer ; toute erreur ici se
-/// paie en fragmentation.
-pub const EN_TETE_MOTEUR_ESTIME: u16 = 28;
+/// An estimate, pending a real measurement by packet capture. Milestone
+/// M1's check V5 has to confirm it; any error here is paid in
+/// fragmentation.
+pub const ESTIMATED_ENGINE_HEADER: u16 = 28;
 
-/// Marge conservée tant que l'en-tête réel n'est pas mesuré.
+/// Margin kept while the real header size is unmeasured.
 ///
-/// Se réduira à quelques octets une fois la vérification V5 rendue.
-pub const MARGE: u16 = 32;
+/// It shrinks to a few bytes once check V5 comes back.
+pub const MARGIN: u16 = 32;
 
-/// Plafond : la valeur qu'emploie le moteur client en réseau local.
+/// Ceiling: the value the client engine uses on a local network.
 ///
-/// Aller au-delà n'apporte rien et rapproche du seuil de fragmentation.
-pub const TAILLE_NOMINALE: u16 = 1392;
+/// Going beyond brings nothing and moves closer to fragmentation.
+pub const NOMINAL_SIZE: u16 = 1392;
 
-/// Plancher imposé par le moteur client.
+/// Floor imposed by the client engine.
 ///
-/// En dessous, il refuse la valeur. Sa propre valeur pour un réseau
-/// distant est 1024 : rester au-dessus garde le mode « local », c'est-à-
-/// dire sa détection de réseau distant désactivée, puisque c'est nous qui
-/// gérons le chemin.
-pub const TAILLE_MINIMALE: u16 = 1025;
+/// Below this it refuses the value. Its own value for a distant network
+/// is 1024: staying above keeps it in "local" mode, meaning its remote
+/// network detection stays off, since we are the ones handling the path.
+pub const MINIMUM_SIZE: u16 = 1025;
 
-/// Le chemin ne peut pas porter un paquet vidéo exploitable.
+/// The path cannot carry a usable video packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CheminTropEtroit {
-    pub datagramme_disponible: u16,
-    pub datagramme_requis: u16,
+pub struct PathTooNarrow {
+    pub available_datagram: u16,
+    pub required_datagram: u16,
 }
 
-impl std::fmt::Display for CheminTropEtroit {
+impl std::fmt::Display for PathTooNarrow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "chemin trop étroit : {} octets utilisables, {} nécessaires",
-            self.datagramme_disponible, self.datagramme_requis
+            self.available_datagram, self.required_datagram
         )
     }
 }
 
-impl std::error::Error for CheminTropEtroit {}
+impl std::error::Error for PathTooNarrow {}
 
-/// Taille de paquet à demander au moteur hôte.
+/// Packet size to ask the host engine for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TaillePaquet {
-    pub octets: u16,
-    /// Vrai si le chemin a imposé une taille sous la valeur nominale.
+pub struct PacketSize {
+    pub bytes: u16,
+    /// True when the path forced a size below the nominal value.
     ///
-    /// Sans conséquence sur le fonctionnement, mais mérite d'être
-    /// journalisé : le débit de paquets augmente à mesure qu'elle baisse.
-    pub reduite_par_le_chemin: bool,
+    /// It changes nothing functionally, but deserves a log line: the
+    /// packet rate rises as the size falls.
+    pub reduced_by_the_path: bool,
 }
 
-/// Surcoût total retranché à la place utilisable du datagramme.
-const SURCOUT_TOTAL: u16 = SURCOUT_MUX + EN_TETE_MOTEUR_ESTIME + MARGE;
+/// Total overhead taken off the datagram's usable room.
+const TOTAL_OVERHEAD: u16 = MUX_OVERHEAD + ESTIMATED_ENGINE_HEADER + MARGIN;
 
-/// Calcule la taille de paquet tenant dans le datagramme annoncé.
+/// Computes the packet size that fits in the announced datagram.
 ///
-/// `datagramme_utilisable` est la charge utile qu'accepte le transport
-/// sans fragmenter, telle qu'il la rapporte pour le chemin en cours.
-pub fn taille_paquet(datagramme_utilisable: u16) -> Result<TaillePaquet, CheminTropEtroit> {
-    let disponible = datagramme_utilisable.saturating_sub(SURCOUT_TOTAL);
-    if disponible < TAILLE_MINIMALE {
-        return Err(CheminTropEtroit {
-            datagramme_disponible: datagramme_utilisable,
-            datagramme_requis: TAILLE_MINIMALE + SURCOUT_TOTAL,
+/// `usable_datagram` is the payload the transport accepts without
+/// fragmenting, as it reports it for the current path.
+pub fn packet_size(usable_datagram: u16) -> Result<PacketSize, PathTooNarrow> {
+    let available = usable_datagram.saturating_sub(TOTAL_OVERHEAD);
+    if available < MINIMUM_SIZE {
+        return Err(PathTooNarrow {
+            available_datagram: usable_datagram,
+            required_datagram: MINIMUM_SIZE + TOTAL_OVERHEAD,
         });
     }
-    Ok(TaillePaquet {
-        octets: disponible.min(TAILLE_NOMINALE),
-        reduite_par_le_chemin: disponible < TAILLE_NOMINALE,
+    Ok(PacketSize {
+        bytes: available.min(NOMINAL_SIZE),
+        reduced_by_the_path: available < NOMINAL_SIZE,
     })
 }
 
@@ -95,57 +94,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn un_chemin_large_donne_la_taille_nominale() {
-        let t = taille_paquet(TAILLE_NOMINALE + SURCOUT_TOTAL).unwrap();
-        assert_eq!(t.octets, TAILLE_NOMINALE);
-        assert!(!t.reduite_par_le_chemin);
+    fn a_wide_path_gives_the_nominal_size() {
+        let size = packet_size(NOMINAL_SIZE + TOTAL_OVERHEAD).unwrap();
+        assert_eq!(size.bytes, NOMINAL_SIZE);
+        assert!(!size.reduced_by_the_path);
 
-        // Encore plus large : la valeur reste plafonnée.
-        let t = taille_paquet(4000).unwrap();
-        assert_eq!(t.octets, TAILLE_NOMINALE);
-        assert!(!t.reduite_par_le_chemin);
+        // Wider still: the value stays capped.
+        let size = packet_size(4000).unwrap();
+        assert_eq!(size.bytes, NOMINAL_SIZE);
+        assert!(!size.reduced_by_the_path);
     }
 
     #[test]
-    fn un_chemin_ordinaire_reste_confortable() {
-        // Chemin Ethernet courant : le transport annonce environ 1400
-        // octets utilisables une fois son propre surcoût retranché.
-        let t = taille_paquet(1400).unwrap();
-        assert!(t.octets >= 1300, "{} octets seulement", t.octets);
-        assert!(t.reduite_par_le_chemin);
+    fn an_ordinary_path_stays_comfortable() {
+        // A common Ethernet path: the transport announces roughly 1400
+        // usable bytes once its own overhead is taken off.
+        let size = packet_size(1400).unwrap();
+        assert!(size.bytes >= 1300, "only {} bytes", size.bytes);
+        assert!(size.reduced_by_the_path);
     }
 
     #[test]
-    fn un_chemin_etroit_reduit_sans_descendre_sous_le_plancher() {
-        let juste = TAILLE_MINIMALE + SURCOUT_TOTAL;
-        let t = taille_paquet(juste).unwrap();
-        assert_eq!(t.octets, TAILLE_MINIMALE);
-        assert!(t.reduite_par_le_chemin);
+    fn a_narrow_path_shrinks_without_going_under_the_floor() {
+        let just_enough = MINIMUM_SIZE + TOTAL_OVERHEAD;
+        let size = packet_size(just_enough).unwrap();
+        assert_eq!(size.bytes, MINIMUM_SIZE);
+        assert!(size.reduced_by_the_path);
     }
 
     #[test]
-    fn un_chemin_trop_etroit_est_refuse_plutot_que_rabote() {
-        let trop_juste = TAILLE_MINIMALE + SURCOUT_TOTAL - 1;
-        let e = taille_paquet(trop_juste).unwrap_err();
-        assert_eq!(e.datagramme_disponible, trop_juste);
-        assert!(e.datagramme_requis > trop_juste);
+    fn a_path_too_narrow_is_refused_rather_than_trimmed() {
+        let too_tight = MINIMUM_SIZE + TOTAL_OVERHEAD - 1;
+        let refusal = packet_size(too_tight).unwrap_err();
+        assert_eq!(refusal.available_datagram, too_tight);
+        assert!(refusal.required_datagram > too_tight);
 
-        assert!(taille_paquet(0).is_err());
-        assert!(taille_paquet(500).is_err());
+        assert!(packet_size(0).is_err());
+        assert!(packet_size(500).is_err());
     }
 
     #[test]
-    fn la_taille_rendue_tient_toujours_dans_le_datagramme() {
-        for datagramme in (TAILLE_MINIMALE + SURCOUT_TOTAL)..=2000 {
-            let t = taille_paquet(datagramme).unwrap();
-            let occupe = t.octets + SURCOUT_TOTAL;
+    fn the_size_returned_always_fits_the_datagram() {
+        for datagram in (MINIMUM_SIZE + TOTAL_OVERHEAD)..=2000 {
+            let size = packet_size(datagram).unwrap();
+            let occupied = size.bytes + TOTAL_OVERHEAD;
             assert!(
-                occupe <= datagramme,
-                "{} octets occupés pour {} disponibles",
-                occupe,
-                datagramme
+                occupied <= datagram,
+                "{occupied} bytes occupied for {datagram} available"
             );
-            assert!(t.octets >= TAILLE_MINIMALE);
+            assert!(size.bytes >= MINIMUM_SIZE);
         }
     }
 }

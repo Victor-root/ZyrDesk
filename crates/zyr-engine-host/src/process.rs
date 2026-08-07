@@ -1,12 +1,13 @@
-//! Cycle de vie du processus moteur hôte.
+//! Lifecycle of the host engine process.
 //!
-//! Le moteur est lancé tel quel, sans modification de son code : tout se
-//! joue dans le fichier de configuration produit et les arguments passés.
+//! The engine is launched as it comes, with no change to its code:
+//! everything happens in the configuration file we produce and the
+//! arguments we pass.
 //!
-//! Au jalon M1 le superviseur tourne au premier plan, dans la console de
-//! l'utilisateur : une interruption clavier atteint donc aussi le moteur,
-//! qui s'arrête proprement par son propre mécanisme. Le service du jalon
-//! M3 remplacera cela par un arrêt commandé explicitement.
+//! The supervisor still runs in the foreground here, in the user's own
+//! console: a keyboard interrupt therefore reaches the engine too, and
+//! it shuts down through its own mechanism. The Windows service replaces
+//! that with an explicitly commanded stop.
 
 use std::fmt;
 use std::fs;
@@ -18,92 +19,92 @@ use crate::config::SunshineConfig;
 use crate::credentials::Credentials;
 
 #[derive(Debug)]
-pub enum ErreurMoteur {
-    ExecutableIntrouvable(PathBuf),
+pub enum EngineError {
+    ExecutableNotFound(PathBuf),
     Io(io::Error),
-    ProvisionEchouee { code: Option<i32>, sortie: String },
-    DejaDemarre,
+    ProvisioningFailed { code: Option<i32>, output: String },
+    AlreadyStarted,
 }
 
-impl fmt::Display for ErreurMoteur {
+impl fmt::Display for EngineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErreurMoteur::ExecutableIntrouvable(p) => {
-                write!(f, "moteur hôte introuvable : {}", p.display())
+            EngineError::ExecutableNotFound(path) => {
+                write!(f, "moteur hôte introuvable : {}", path.display())
             }
-            ErreurMoteur::Io(e) => write!(f, "erreur système : {e}"),
-            ErreurMoteur::ProvisionEchouee { code, sortie } => {
+            EngineError::Io(e) => write!(f, "erreur système : {e}"),
+            EngineError::ProvisioningFailed { code, output } => {
                 let code = code.map(|c| c.to_string()).unwrap_or("interrompu".into());
                 write!(
                     f,
-                    "provisionnement des identifiants échoué ({code}) : {sortie}"
+                    "provisionnement des identifiants échoué ({code}) : {output}"
                 )
             }
-            ErreurMoteur::DejaDemarre => write!(f, "le moteur est déjà démarré"),
+            EngineError::AlreadyStarted => write!(f, "le moteur est déjà démarré"),
         }
     }
 }
 
-impl std::error::Error for ErreurMoteur {}
+impl std::error::Error for EngineError {}
 
-impl From<io::Error> for ErreurMoteur {
+impl From<io::Error> for EngineError {
     fn from(e: io::Error) -> Self {
-        ErreurMoteur::Io(e)
+        EngineError::Io(e)
     }
 }
 
-/// Arguments de lancement du moteur.
-pub fn arguments_demarrage(config: &SunshineConfig) -> Vec<String> {
-    vec![chemin_en_argument(&config.chemin_conf())]
+/// Arguments that start the engine.
+pub fn start_arguments(config: &SunshineConfig) -> Vec<String> {
+    vec![path_as_argument(&config.conf_path())]
 }
 
-/// Arguments d'écriture des identifiants de l'API locale.
+/// Arguments that write the local API credentials.
 ///
-/// Le moteur écrit le fichier d'identifiants désigné par la
-/// configuration, puis se termine immédiatement.
-pub fn arguments_provision(config: &SunshineConfig, creds: &Credentials) -> Vec<String> {
+/// The engine writes the credentials file named by the configuration,
+/// then exits straight away.
+pub fn provisioning_arguments(config: &SunshineConfig, credentials: &Credentials) -> Vec<String> {
     vec![
-        chemin_en_argument(&config.chemin_conf()),
+        path_as_argument(&config.conf_path()),
         "--creds".to_string(),
-        creds.utilisateur.clone(),
-        creds.mot_de_passe.clone(),
+        credentials.user.clone(),
+        credentials.password.clone(),
     ]
 }
 
-fn chemin_en_argument(chemin: &Path) -> String {
-    chemin.to_string_lossy().into_owned()
+fn path_as_argument(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
-/// Dossier depuis lequel lancer le moteur.
+/// Folder to launch the engine from.
 ///
-/// Le moteur résout ses ressources (nuanciers graphiques, images) par
-/// rapport au dossier courant et non par rapport à son exécutable : le
-/// lancer depuis ailleurs le fait échouer à l'initialisation.
-fn dossier_de_travail(exe: &Path) -> Option<&Path> {
+/// The engine resolves its resources (graphics shaders, images)
+/// relative to the current folder and not to its own executable:
+/// launching it from anywhere else makes it fail at start-up.
+fn working_dir(exe: &Path) -> Option<&Path> {
     exe.parent().filter(|p| !p.as_os_str().is_empty())
 }
 
 pub struct HostEngine {
     exe: PathBuf,
     config: SunshineConfig,
-    creds: Credentials,
-    journal: PathBuf,
-    processus: Option<Child>,
+    credentials: Credentials,
+    log: PathBuf,
+    process: Option<Child>,
 }
 
 impl HostEngine {
-    pub fn nouveau(
+    pub fn new(
         exe: impl Into<PathBuf>,
         config: SunshineConfig,
-        creds: Credentials,
-        journal: impl Into<PathBuf>,
+        credentials: Credentials,
+        log: impl Into<PathBuf>,
     ) -> Self {
         Self {
             exe: exe.into(),
             config,
-            creds,
-            journal: journal.into(),
-            processus: None,
+            credentials,
+            log: log.into(),
+            process: None,
         }
     }
 
@@ -112,83 +113,83 @@ impl HostEngine {
     }
 
     pub fn credentials(&self) -> &Credentials {
-        &self.creds
+        &self.credentials
     }
 
-    /// Écrit la configuration et prépare l'arborescence attendue.
-    pub fn preparer(&self) -> Result<(), ErreurMoteur> {
+    /// Writes the configuration and creates the folders it expects.
+    pub fn prepare(&self) -> Result<(), EngineError> {
         if !self.exe.is_file() {
-            return Err(ErreurMoteur::ExecutableIntrouvable(self.exe.clone()));
+            return Err(EngineError::ExecutableNotFound(self.exe.clone()));
         }
-        for dossier in self.config.dossiers_requis() {
-            fs::create_dir_all(dossier)?;
+        for folder in self.config.required_dirs() {
+            fs::create_dir_all(folder)?;
         }
-        if let Some(parent) = self.journal.parent() {
+        if let Some(parent) = self.log.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(self.config.chemin_conf(), self.config.rendu_conf())?;
-        fs::write(self.config.chemin_apps(), self.config.rendu_apps())?;
+        fs::write(self.config.conf_path(), self.config.render_conf())?;
+        fs::write(self.config.apps_path(), self.config.render_apps())?;
         Ok(())
     }
 
-    fn commande(&self) -> Command {
-        let mut commande = Command::new(&self.exe);
-        if let Some(dossier) = dossier_de_travail(&self.exe) {
-            commande.current_dir(dossier);
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.exe);
+        if let Some(folder) = working_dir(&self.exe) {
+            command.current_dir(folder);
         }
-        commande
+        command
     }
 
-    /// Écrit les identifiants de l'API locale dans l'état du moteur.
-    pub fn provisionner_identifiants(&self) -> Result<(), ErreurMoteur> {
-        let sortie = self
-            .commande()
-            .args(arguments_provision(&self.config, &self.creds))
+    /// Writes the local API credentials into the engine's state.
+    pub fn provision_credentials(&self) -> Result<(), EngineError> {
+        let output = self
+            .command()
+            .args(provisioning_arguments(&self.config, &self.credentials))
             .stdin(Stdio::null())
             .output()?;
-        if sortie.status.success() {
+        if output.status.success() {
             return Ok(());
         }
-        // La sortie peut contenir les identifiants : seule la sortie
-        // d'erreur est remontée, et tronquée.
-        let mut texte = String::from_utf8_lossy(&sortie.stderr).trim().to_string();
-        texte.truncate(500);
-        Err(ErreurMoteur::ProvisionEchouee {
-            code: sortie.status.code(),
-            sortie: texte,
+        // Standard output may carry the credentials: only the error
+        // stream is reported back, and truncated at that.
+        let mut text = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        text.truncate(500);
+        Err(EngineError::ProvisioningFailed {
+            code: output.status.code(),
+            output: text,
         })
     }
 
-    /// Lance le moteur, sa sortie étant redirigée vers notre journal.
-    pub fn demarrer(&mut self) -> Result<(), ErreurMoteur> {
-        if self.processus.is_some() {
-            return Err(ErreurMoteur::DejaDemarre);
+    /// Starts the engine, with its output redirected into our log.
+    pub fn start(&mut self) -> Result<(), EngineError> {
+        if self.process.is_some() {
+            return Err(EngineError::AlreadyStarted);
         }
-        let journal = fs::File::create(&self.journal)?;
-        let journal_err = journal.try_clone()?;
-        let enfant = self
-            .commande()
-            .args(arguments_demarrage(&self.config))
+        let log = fs::File::create(&self.log)?;
+        let log_for_errors = log.try_clone()?;
+        let child = self
+            .command()
+            .args(start_arguments(&self.config))
             .stdin(Stdio::null())
-            .stdout(Stdio::from(journal))
-            .stderr(Stdio::from(journal_err))
+            .stdout(Stdio::from(log))
+            .stderr(Stdio::from(log_for_errors))
             .spawn()?;
-        self.processus = Some(enfant);
+        self.process = Some(child);
         Ok(())
     }
 
-    /// Code de sortie si le moteur s'est arrêté de lui-même.
-    pub fn arret_constate(&mut self) -> Result<Option<Option<i32>>, ErreurMoteur> {
-        match self.processus.as_mut() {
-            Some(enfant) => Ok(enfant.try_wait()?.map(|statut| statut.code())),
+    /// Exit code, if the engine has stopped on its own.
+    pub fn exit_seen(&mut self) -> Result<Option<Option<i32>>, EngineError> {
+        match self.process.as_mut() {
+            Some(child) => Ok(child.try_wait()?.map(|status| status.code())),
             None => Ok(None),
         }
     }
 
-    pub fn arreter(&mut self) -> Result<(), ErreurMoteur> {
-        if let Some(mut enfant) = self.processus.take() {
-            enfant.kill()?;
-            enfant.wait()?;
+    pub fn stop(&mut self) -> Result<(), EngineError> {
+        if let Some(mut child) = self.process.take() {
+            child.kill()?;
+            child.wait()?;
         }
         Ok(())
     }
@@ -196,7 +197,7 @@ impl HostEngine {
 
 impl Drop for HostEngine {
     fn drop(&mut self) {
-        let _ = self.arreter();
+        let _ = self.stop();
     }
 }
 
@@ -210,64 +211,63 @@ mod tests {
     }
 
     #[test]
-    fn le_demarrage_ne_passe_que_le_fichier_de_configuration() {
-        let args = arguments_demarrage(&config());
+    fn starting_passes_the_configuration_file_and_nothing_else() {
+        let args = start_arguments(&config());
         assert_eq!(args.len(), 1);
         assert!(args[0].ends_with("engine.conf"));
     }
 
     #[test]
-    fn la_provision_passe_la_configuration_puis_les_identifiants() {
-        let creds = Credentials {
-            utilisateur: "u".to_string(),
-            mot_de_passe: "p".to_string(),
+    fn provisioning_passes_the_configuration_then_the_credentials() {
+        let credentials = Credentials {
+            user: "u".to_string(),
+            password: "p".to_string(),
         };
-        let args = arguments_provision(&config(), &creds);
+        let args = provisioning_arguments(&config(), &credentials);
         assert!(args[0].ends_with("engine.conf"));
         assert_eq!(&args[1..], ["--creds", "u", "p"]);
     }
 
     #[test]
-    fn preparer_refuse_un_executable_absent() {
-        let creds = Credentials::aleatoires();
-        let moteur = HostEngine::nouveau(
-            "/introuvable/zyrdesk-host-engine",
+    fn preparing_refuses_a_missing_executable() {
+        let engine = HostEngine::new(
+            "/nowhere/zyrdesk-host-engine",
             config(),
-            creds,
+            Credentials::random(),
             "/data/logs/host.log",
         );
         assert!(matches!(
-            moteur.preparer(),
-            Err(ErreurMoteur::ExecutableIntrouvable(_))
+            engine.prepare(),
+            Err(EngineError::ExecutableNotFound(_))
         ));
     }
 
     #[test]
-    fn preparer_ecrit_la_configuration_et_la_liste_d_applications() {
+    fn preparing_writes_the_configuration_and_the_application_list() {
         let base = std::env::temp_dir().join(format!(
             "zyrdesk-test-{}",
-            zyr_proto::alea::chaine_alphanumerique(12)
+            zyr_proto::random::alphanumeric_string(12)
         ));
-        let faux_exe = base.join("moteur");
+        let fake_exe = base.join("engine");
         fs::create_dir_all(&base).unwrap();
-        fs::write(&faux_exe, b"").unwrap();
+        fs::write(&fake_exe, b"").unwrap();
 
         let config = SunshineConfig::new(
             EnginePorts::new(42100).unwrap(),
             base.join("host"),
             base.join("logs"),
         );
-        let moteur = HostEngine::nouveau(
-            &faux_exe,
+        let engine = HostEngine::new(
+            &fake_exe,
             config.clone(),
-            Credentials::aleatoires(),
+            Credentials::random(),
             base.join("logs/host.log"),
         );
-        moteur.preparer().unwrap();
+        engine.prepare().unwrap();
 
-        let conf = fs::read_to_string(config.chemin_conf()).unwrap();
+        let conf = fs::read_to_string(config.conf_path()).unwrap();
         assert!(conf.contains("bind_address = 127.0.0.1"));
-        let apps = fs::read_to_string(config.chemin_apps()).unwrap();
+        let apps = fs::read_to_string(config.apps_path()).unwrap();
         assert!(apps.contains("Desktop"));
         assert!(base.join("logs").is_dir());
 

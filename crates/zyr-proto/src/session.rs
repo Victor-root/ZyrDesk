@@ -1,4 +1,4 @@
-//! Réglages d'une session distante.
+//! Settings of a remote session.
 
 use std::fmt;
 
@@ -12,8 +12,8 @@ pub enum Codec {
 }
 
 impl Codec {
-    /// Valeur attendue par la ligne de commande du moteur client.
-    pub fn valeur_moteur(self) -> &'static str {
+    /// Value the client engine's command line expects.
+    pub fn engine_value(self) -> &'static str {
         match self {
             Codec::Auto => "auto",
             Codec::H264 => "H.264",
@@ -26,91 +26,91 @@ impl Codec {
 impl std::str::FromStr for Codec {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().replace(['.', '-'], "").as_str() {
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text.to_ascii_lowercase().replace(['.', '-'], "").as_str() {
             "auto" => Ok(Codec::Auto),
             "h264" => Ok(Codec::H264),
             "hevc" | "h265" => Ok(Codec::Hevc),
             "av1" => Ok(Codec::Av1),
-            _ => Err(format!("codec inconnu : {s}")),
+            _ => Err(format!("codec inconnu : {text}")),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ModeAffichage {
+pub enum DisplayMode {
     #[default]
-    PleinEcran,
-    SansBordure,
-    Fenetre,
+    Fullscreen,
+    Borderless,
+    Windowed,
 }
 
-impl ModeAffichage {
-    pub fn valeur_moteur(self) -> &'static str {
+impl DisplayMode {
+    pub fn engine_value(self) -> &'static str {
         match self {
-            ModeAffichage::PleinEcran => "fullscreen",
-            ModeAffichage::SansBordure => "borderless",
-            ModeAffichage::Fenetre => "windowed",
+            DisplayMode::Fullscreen => "fullscreen",
+            DisplayMode::Borderless => "borderless",
+            DisplayMode::Windowed => "windowed",
         }
     }
 }
 
-impl std::str::FromStr for ModeAffichage {
+impl std::str::FromStr for DisplayMode {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "fullscreen" | "plein-ecran" => Ok(ModeAffichage::PleinEcran),
-            "borderless" | "sans-bordure" => Ok(ModeAffichage::SansBordure),
-            "windowed" | "fenetre" => Ok(ModeAffichage::Fenetre),
-            _ => Err(format!("mode d'affichage inconnu : {s}")),
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text.to_ascii_lowercase().as_str() {
+            "fullscreen" | "plein-ecran" => Ok(DisplayMode::Fullscreen),
+            "borderless" | "sans-bordure" => Ok(DisplayMode::Borderless),
+            "windowed" | "fenetre" => Ok(DisplayMode::Windowed),
+            _ => Err(format!("mode d'affichage inconnu : {text}")),
         }
     }
 }
 
-/// Réglages d'une session.
+/// Settings of one session.
 ///
-/// Les valeurs par défaut reprennent celles du moteur client pour du
-/// 1080p60, condition nécessaire à la comparaison contre les moteurs non
-/// pilotés exigée au jalon M1.
+/// The defaults mirror the client engine's own for 1080p60, which the
+/// comparison against unmanaged engines required at milestone M1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionSettings {
-    pub largeur: u32,
-    pub hauteur: u32,
+    pub width: u32,
+    pub height: u32,
     pub fps: u32,
     pub bitrate_kbps: u32,
     pub codec: Codec,
-    pub mode_affichage: ModeAffichage,
-    /// Taille de paquet imposée. `None` laisse le moteur décider, ce qui
-    /// est le comportement attendu tant qu'il n'y a pas de tunnel : la
-    /// valeur calculée pour le tunnel arrive au jalon M2.
+    pub display_mode: DisplayMode,
+    /// Packet size to impose. `None` lets the engine decide, which is
+    /// what it did before the tunnel existed; the tunnel now computes it
+    /// from what the path actually carries.
     pub packet_size: Option<u32>,
-    /// Souris absolue : adapté au bureau, pas aux jeux à visée relative.
-    pub souris_absolue: bool,
-    pub overlay_stats: bool,
+    /// Absolute mouse: right for a desktop, wrong for games that aim
+    /// with relative motion.
+    pub absolute_mouse: bool,
+    pub stats_overlay: bool,
 }
 
 impl Default for SessionSettings {
     fn default() -> Self {
         Self {
-            largeur: 1920,
-            hauteur: 1080,
+            width: 1920,
+            height: 1080,
             fps: 60,
             bitrate_kbps: 20_000,
             codec: Codec::Auto,
-            mode_affichage: ModeAffichage::PleinEcran,
+            display_mode: DisplayMode::Fullscreen,
             packet_size: None,
-            souris_absolue: true,
-            overlay_stats: false,
+            absolute_mouse: true,
+            stats_overlay: false,
         }
     }
 }
 
-/// Résolution mal formée.
+/// Malformed resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolutionInvalide(pub String);
+pub struct InvalidResolution(pub String);
 
-impl fmt::Display for ResolutionInvalide {
+impl fmt::Display for InvalidResolution {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -120,18 +120,18 @@ impl fmt::Display for ResolutionInvalide {
     }
 }
 
-impl std::error::Error for ResolutionInvalide {}
+impl std::error::Error for InvalidResolution {}
 
-/// Analyse une résolution du type `1920x1080`.
-pub fn parse_resolution(valeur: &str) -> Result<(u32, u32), ResolutionInvalide> {
-    let invalide = || ResolutionInvalide(valeur.to_string());
-    let (l, h) = valeur.split_once(['x', 'X']).ok_or_else(invalide)?;
-    let largeur: u32 = l.trim().parse().map_err(|_| invalide())?;
-    let hauteur: u32 = h.trim().parse().map_err(|_| invalide())?;
-    if largeur == 0 || hauteur == 0 {
-        return Err(invalide());
+/// Reads a resolution such as `1920x1080`.
+pub fn parse_resolution(value: &str) -> Result<(u32, u32), InvalidResolution> {
+    let invalid = || InvalidResolution(value.to_string());
+    let (left, right) = value.split_once(['x', 'X']).ok_or_else(invalid)?;
+    let width: u32 = left.trim().parse().map_err(|_| invalid())?;
+    let height: u32 = right.trim().parse().map_err(|_| invalid())?;
+    if width == 0 || height == 0 {
+        return Err(invalid());
     }
-    Ok((largeur, hauteur))
+    Ok((width, height))
 }
 
 #[cfg(test)]
@@ -139,16 +139,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valeurs_moteur_des_codecs() {
-        assert_eq!(Codec::Auto.valeur_moteur(), "auto");
-        assert_eq!(Codec::H264.valeur_moteur(), "H.264");
-        assert_eq!(Codec::Hevc.valeur_moteur(), "HEVC");
-        assert_eq!(Codec::Av1.valeur_moteur(), "AV1");
+    fn codecs_carry_the_engine_spelling() {
+        assert_eq!(Codec::Auto.engine_value(), "auto");
+        assert_eq!(Codec::H264.engine_value(), "H.264");
+        assert_eq!(Codec::Hevc.engine_value(), "HEVC");
+        assert_eq!(Codec::Av1.engine_value(), "AV1");
     }
 
     #[test]
-    fn codecs_analyses_avec_tolerance_de_forme() {
-        for (entree, attendu) in [
+    fn codecs_are_read_whatever_their_spelling() {
+        for (written, expected) in [
             ("auto", Codec::Auto),
             ("h264", Codec::H264),
             ("H.264", Codec::H264),
@@ -156,24 +156,27 @@ mod tests {
             ("h265", Codec::Hevc),
             ("AV1", Codec::Av1),
         ] {
-            assert_eq!(entree.parse::<Codec>().unwrap(), attendu, "{entree}");
+            assert_eq!(written.parse::<Codec>().unwrap(), expected, "{written}");
         }
         assert!("vp9".parse::<Codec>().is_err());
     }
 
     #[test]
-    fn resolutions_valides_et_invalides() {
+    fn resolutions_valid_and_malformed() {
         assert_eq!(parse_resolution("1920x1080").unwrap(), (1920, 1080));
         assert_eq!(parse_resolution("2560X1440").unwrap(), (2560, 1440));
-        for mauvais in ["1920", "1920x", "x1080", "0x1080", "axb", ""] {
-            assert!(parse_resolution(mauvais).is_err(), "{mauvais}");
+        for wrong in ["1920", "1920x", "x1080", "0x1080", "axb", ""] {
+            assert!(parse_resolution(wrong).is_err(), "{wrong}");
         }
     }
 
     #[test]
-    fn reglages_par_defaut_en_1080p60_sans_taille_imposee() {
-        let d = SessionSettings::default();
-        assert_eq!((d.largeur, d.hauteur, d.fps), (1920, 1080, 60));
-        assert_eq!(d.packet_size, None);
+    fn defaults_are_1080p60_with_no_imposed_packet_size() {
+        let settings = SessionSettings::default();
+        assert_eq!(
+            (settings.width, settings.height, settings.fps),
+            (1920, 1080, 60)
+        );
+        assert_eq!(settings.packet_size, None);
     }
 }

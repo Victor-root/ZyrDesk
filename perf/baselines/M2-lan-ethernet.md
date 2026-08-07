@@ -1,6 +1,6 @@
 # Coût du tunnel sur deux PC, Ethernet gigabit
 
-Relevés du jalon M2 obtenus avec `zyr-cli banc` sur deux vraies machines, en suivant [docs/testing/M2-PROTOCOLE.md](../../docs/testing/M2-PROTOCOLE.md). Ce sont ces chiffres qui jugent les seuils, pas ceux de la boucle locale.
+Relevés du jalon M2 obtenus avec `zyr-cli bench` sur deux vraies machines, en suivant [docs/testing/M2-PROTOCOLE.md](../../docs/testing/M2-PROTOCOLE.md). Ce sont ces chiffres qui jugent les seuils, pas ceux de la boucle locale.
 
 ## Conditions
 

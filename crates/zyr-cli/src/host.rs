@@ -1,23 +1,23 @@
-//! Rend cet ordinateur accessible à distance.
+//! Makes this computer reachable from elsewhere.
 //!
-//! Au premier plan et sans service : c'est la forme minimale permettant
-//! de mesurer les performances réelles. Le démarrage automatique avec
-//! Windows et l'accès avant ouverture de session arrivent au jalon M3.
+//! In the foreground and without a service: this is the smallest form
+//! that allows real performance to be measured. Starting with Windows
+//! and access before anyone logs in belong to the service.
 
 use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Subcommand;
 use zyr_engine_host::api::EngineApi;
-use zyr_engine_host::{Credentials, Ecoute, EngineRuntime, HostEngine, SunshineConfig, ports};
+use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Listening, SunshineConfig, ports};
 use zyr_proto::paths;
 
-use crate::echec;
+use crate::failure;
 
-/// Marge laissée au moteur pour ouvrir ses ports au démarrage.
-const DELAI_DEMARRAGE: Duration = Duration::from_secs(20);
-/// Période de surveillance du moteur une fois démarré.
-const PERIODE_SURVEILLANCE: Duration = Duration::from_secs(1);
+/// Margin given to the engine to open its ports at start-up.
+const START_DELAY: Duration = Duration::from_secs(20);
+/// How often the engine is checked on once started.
+const WATCH_PERIOD: Duration = Duration::from_secs(1);
 
 #[derive(Subcommand)]
 pub enum Action {
@@ -33,7 +33,7 @@ pub enum Action {
     },
 }
 
-pub fn executer(action: Action) -> ExitCode {
+pub fn run(action: Action) -> ExitCode {
     match action {
         Action::Start => start(),
         Action::Pin { code, nom } => pin(&code, &nom),
@@ -43,7 +43,7 @@ pub fn executer(action: Action) -> ExitCode {
 fn start() -> ExitCode {
     let exe = paths::host_engine_exe();
     if !exe.is_file() {
-        return echec(
+        return failure(
             "moteur hôte introuvable",
             format!(
                 "{}\n  Lancez « zyr-cli engines status » pour la marche à suivre.",
@@ -52,42 +52,42 @@ fn start() -> ExitCode {
         );
     }
 
-    let Some(ports) = ports::base_libre() else {
-        return echec(
+    let Some(ports) = ports::free_base() else {
+        return failure(
             "aucun port disponible",
             "toute la plage réservée aux moteurs est occupée",
         );
     };
 
-    let chemin_runtime = EngineRuntime::chemin_standard();
-    // Sans tunnel, le moteur doit être joignable depuis le réseau local,
-    // sans quoi aucun autre ordinateur ne peut l'atteindre. Le tunnel du
-    // jalon M2 permettra de le refermer sur la machine locale.
+    let runtime_path = EngineRuntime::standard_path();
+    // Without a tunnel, the engine has to be reachable from the local
+    // network, or no other computer can get to it at all. The tunnel
+    // lets it close back onto the local machine.
     let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir())
-        .avec_ecoute(Ecoute::Reseau);
-    let creds = Credentials::aleatoires();
-    let mut moteur = HostEngine::nouveau(
+        .with_listening(Listening::Network);
+    let credentials = Credentials::random();
+    let mut engine = HostEngine::new(
         &exe,
         config,
-        creds.clone(),
+        credentials.clone(),
         paths::logs_dir().join("engine-console.log"),
     );
 
     println!("Démarrage de l'accès distant...");
-    if let Err(e) = moteur.preparer() {
-        return echec("préparation du moteur", e);
+    if let Err(e) = engine.prepare() {
+        return failure("préparation du moteur", e);
     }
-    if let Err(e) = moteur.provisionner_identifiants() {
-        return echec("provisionnement des identifiants du moteur", e);
+    if let Err(e) = engine.provision_credentials() {
+        return failure("provisionnement des identifiants du moteur", e);
     }
-    if let Err(e) = moteur.demarrer() {
-        return echec("démarrage du moteur", e);
+    if let Err(e) = engine.start() {
+        return failure("démarrage du moteur", e);
     }
 
-    let api = EngineApi::nouvelle(ports, creds.clone());
-    if let Err(e) = api.attendre_disponible(DELAI_DEMARRAGE) {
-        let _ = moteur.arreter();
-        return echec(
+    let api = EngineApi::new(ports, credentials.clone());
+    if let Err(e) = api.wait_until_ready(START_DELAY) {
+        let _ = engine.stop();
+        return failure(
             "le moteur n'a pas fini de démarrer",
             format!(
                 "{e}\n  Journal : {}",
@@ -96,13 +96,10 @@ fn start() -> ExitCode {
         );
     }
 
-    let runtime = EngineRuntime {
-        ports,
-        credentials: creds,
-    };
-    if let Err(e) = runtime.ecrire(&chemin_runtime) {
-        let _ = moteur.arreter();
-        return echec("enregistrement de l'état du moteur", e);
+    let runtime = EngineRuntime { ports, credentials };
+    if let Err(e) = runtime.write(&runtime_path) {
+        let _ = engine.stop();
+        return failure("enregistrement de l'état du moteur", e);
     }
 
     println!("\nAccès distant actif.");
@@ -113,21 +110,21 @@ fn start() -> ExitCode {
     println!("  lancez ici : zyr-cli host pin <code affiché sur l'autre ordinateur>");
     println!("\nCtrl+C pour arrêter.\n");
 
-    let code_retour = surveiller(&mut moteur);
-    let _ = EngineRuntime::supprimer(&chemin_runtime);
-    code_retour
+    let exit_code = watch(&mut engine);
+    let _ = EngineRuntime::remove(&runtime_path);
+    exit_code
 }
 
-/// Bloque tant que le moteur tourne, et signale un arrêt inattendu.
-fn surveiller(moteur: &mut HostEngine) -> ExitCode {
+/// Blocks while the engine runs, and reports an unexpected stop.
+fn watch(engine: &mut HostEngine) -> ExitCode {
     loop {
-        match moteur.arret_constate() {
-            Ok(None) => std::thread::sleep(PERIODE_SURVEILLANCE),
+        match engine.exit_seen() {
+            Ok(None) => std::thread::sleep(WATCH_PERIOD),
             Ok(Some(code)) => {
                 let code = code
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "interrompu".to_string());
-                return echec(
+                return failure(
                     "le moteur hôte s'est arrêté",
                     format!(
                         "code {code}\n  Journal : {}",
@@ -135,36 +132,36 @@ fn surveiller(moteur: &mut HostEngine) -> ExitCode {
                     ),
                 );
             }
-            Err(e) => return echec("surveillance du moteur", e),
+            Err(e) => return failure("surveillance du moteur", e),
         }
     }
 }
 
-fn pin(code: &str, nom: &str) -> ExitCode {
+fn pin(code: &str, name: &str) -> ExitCode {
     if code.len() != 4 || !code.chars().all(|c| c.is_ascii_digit()) {
-        return echec(
+        return failure(
             "code d'appairage invalide",
             format!("« {code} » : quatre chiffres attendus"),
         );
     }
 
-    let chemin = EngineRuntime::chemin_standard();
-    let runtime = match EngineRuntime::lire(&chemin) {
-        Ok(r) => r,
+    let path = EngineRuntime::standard_path();
+    let runtime = match EngineRuntime::read(&path) {
+        Ok(runtime) => runtime,
         Err(e) => {
-            return echec(
+            return failure(
                 "aucun accès distant actif",
                 format!("{e}\n  Lancez « zyr-cli host start » dans une autre fenêtre."),
             );
         }
     };
 
-    let api = EngineApi::nouvelle(runtime.ports, runtime.credentials);
-    match api.soumettre_pin(code, nom) {
+    let api = EngineApi::new(runtime.ports, runtime.credentials);
+    match api.submit_pin(code, name) {
         Ok(()) => {
-            println!("Ordinateur autorisé : {nom}");
+            println!("Ordinateur autorisé : {name}");
             ExitCode::SUCCESS
         }
-        Err(e) => echec("appairage refusé", e),
+        Err(e) => failure("appairage refusé", e),
     }
 }

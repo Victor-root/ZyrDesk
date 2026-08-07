@@ -1,18 +1,18 @@
-//! Transport ZyrDesk.
+//! ZyrDesk transport.
 //!
-//! Le tunnel qui relie les deux ordinateurs, et le calcul de ce qu'on
-//! peut y faire passer d'un seul bloc.
+//! The tunnel that joins the two computers, and the computation of what
+//! can be sent through it in one piece.
 
-pub mod chemin;
 pub mod congestion;
-pub mod identite;
+pub mod endpoint;
+pub mod identity;
 pub mod mtu;
-pub mod point;
+pub mod path;
 
-pub use chemin::Chemin;
-pub use congestion::{ControleurMedia, ProfilMedia};
-pub use identite::{Empreinte, Identite};
-pub use mtu::{TaillePaquet, taille_paquet};
-pub use point::{
-    Bytes, Connexion, ErreurDatagramme, ErreurPoint, FluxEnvoi, FluxReception, PointTerminal,
+pub use congestion::{MediaController, MediaProfile};
+pub use endpoint::{
+    Bytes, Connection, DatagramError, EndpointError, RecvStream, SendStream, TunnelEndpoint,
 };
+pub use identity::{Fingerprint, Identity};
+pub use mtu::{PacketSize, packet_size};
+pub use path::Path;

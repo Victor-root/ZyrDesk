@@ -1,117 +1,117 @@
-//! État du moteur client, cloisonné par appareil distant.
+//! Client engine state, kept apart for each remote device.
 //!
-//! Le moteur bascule en mode portable dès qu'un fichier `portable.dat`
-//! est présent dans son répertoire de travail : tout son état (réglages,
-//! identité, hôtes appairés) reste alors dans ce répertoire au lieu de la
-//! base de registre.
+//! The engine switches to portable mode as soon as a `portable.dat` file
+//! sits in its working folder: all of its state, meaning settings,
+//! identity and paired hosts, then stays in that folder instead of the
+//! registry.
 //!
-//! Un répertoire par appareil distant apporte trois choses : aucune
-//! écriture concurrente entre deux sessions sortantes simultanées, une
-//! identité stable dans le temps pour chaque relation, et une remise à
-//! zéro d'une relation qui se réduit à supprimer un dossier.
+//! One folder per remote device buys three things: no concurrent writes
+//! between two simultaneous outgoing sessions, an identity that stays
+//! stable over time for each relationship, and a reset of one
+//! relationship that amounts to deleting a folder.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-const MARQUEUR_PORTABLE: &str = "portable.dat";
+const PORTABLE_MARKER: &str = "portable.dat";
 
-/// Identifiant de dossier dérivé de l'adresse d'un hôte.
+/// Folder identifier derived from a host address.
 ///
-/// Tant qu'il n'y a ni compte ni registre d'appareils, l'adresse tient
-/// lieu d'identité. Elle est réduite à des caractères sûrs pour un nom de
-/// dossier, sur toutes les plateformes.
-pub fn identifiant_depuis_adresse(hote: &str) -> String {
-    let nettoye: String = hote
+/// While there is neither an account nor a device registry, the address
+/// stands in for an identity. It is reduced to characters that are safe
+/// in a folder name on every platform.
+pub fn identifier_from_address(host: &str) -> String {
+    let cleaned: String = host
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
-    let nettoye = nettoye.trim_matches('-').to_ascii_lowercase();
-    if nettoye.is_empty() {
-        "appareil".to_string()
+    let cleaned = cleaned.trim_matches('-').to_ascii_lowercase();
+    if cleaned.is_empty() {
+        "device".to_string()
     } else {
-        nettoye
+        cleaned
     }
 }
 
 pub struct DeviceState {
-    dossier: PathBuf,
+    folder: PathBuf,
 }
 
 impl DeviceState {
-    /// État de l'appareil dans l'emplacement standard du produit.
-    pub fn pour_appareil(device_id: &str) -> Self {
-        Self::dans(zyr_proto::paths::device_state_dir(device_id))
+    /// State of the device in the product's standard location.
+    pub fn for_device(device_id: &str) -> Self {
+        Self::in_folder(zyr_proto::paths::device_state_dir(device_id))
     }
 
-    pub fn dans(dossier: impl Into<PathBuf>) -> Self {
+    pub fn in_folder(folder: impl Into<PathBuf>) -> Self {
         Self {
-            dossier: dossier.into(),
+            folder: folder.into(),
         }
     }
 
-    pub fn dossier(&self) -> &Path {
-        &self.dossier
+    pub fn folder(&self) -> &Path {
+        &self.folder
     }
 
-    /// Crée le répertoire et y pose le marqueur de mode portable.
-    pub fn preparer(&self) -> io::Result<()> {
-        fs::create_dir_all(&self.dossier)?;
-        let marqueur = self.dossier.join(MARQUEUR_PORTABLE);
-        if !marqueur.exists() {
-            fs::write(&marqueur, b"")?;
+    /// Creates the folder and drops the portable-mode marker in it.
+    pub fn prepare(&self) -> io::Result<()> {
+        fs::create_dir_all(&self.folder)?;
+        let marker = self.folder.join(PORTABLE_MARKER);
+        if !marker.exists() {
+            fs::write(&marker, b"")?;
         }
         Ok(())
     }
 
-    pub fn est_prepare(&self) -> bool {
-        self.dossier.join(MARQUEUR_PORTABLE).is_file()
+    pub fn is_prepared(&self) -> bool {
+        self.folder.join(PORTABLE_MARKER).is_file()
     }
 
-    /// Fichiers de réglages écrits par le moteur sous ce répertoire.
+    /// Settings files the engine writes under this folder.
     ///
-    /// Leur emplacement exact dépend de la manière dont le moteur nomme
-    /// son arborescence : la recherche est récursive plutôt que devinée.
-    pub fn fichiers_reglages(&self) -> Vec<PathBuf> {
-        let mut trouves = Vec::new();
-        collecter_ini(&self.dossier, &mut trouves);
-        trouves.sort();
-        trouves
+    /// Where exactly they land depends on how the engine names its own
+    /// tree, so the search is recursive rather than guessed.
+    pub fn settings_files(&self) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        collect_ini(&self.folder, &mut found);
+        found.sort();
+        found
     }
 
-    /// Vrai si le moteur a déjà enregistré un hôte appairé.
+    /// True once the engine has recorded a paired host.
     ///
-    /// Sert à décider s'il faut lancer un appairage avant la session.
-    pub fn a_un_hote_appaire(&self) -> bool {
-        self.fichiers_reglages().iter().any(|f| {
-            fs::read_to_string(f)
-                .map(|contenu| contenu.contains("hosts"))
+    /// Tells us whether a pairing is needed before the session.
+    pub fn has_a_paired_host(&self) -> bool {
+        self.settings_files().iter().any(|file| {
+            fs::read_to_string(file)
+                .map(|contents| contents.contains("hosts"))
                 .unwrap_or(false)
         })
     }
 
-    /// Supprime tout l'état de la relation avec cet appareil.
-    pub fn oublier(&self) -> io::Result<()> {
-        match fs::remove_dir_all(&self.dossier) {
+    /// Erases everything this device relationship holds.
+    pub fn forget(&self) -> io::Result<()> {
+        match fs::remove_dir_all(&self.folder) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-            autre => autre,
+            other => other,
         }
     }
 }
 
-fn collecter_ini(dossier: &Path, sortie: &mut Vec<PathBuf>) {
-    let Ok(entrees) = fs::read_dir(dossier) else {
+fn collect_ini(folder: &Path, found: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(folder) else {
         return;
     };
-    for entree in entrees.flatten() {
-        let chemin = entree.path();
-        if chemin.is_dir() {
-            collecter_ini(&chemin, sortie);
-        } else if chemin
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_ini(&path, found);
+        } else if path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("ini"))
         {
-            sortie.push(chemin);
+            found.push(path);
         }
     }
 }
@@ -120,80 +120,80 @@ fn collecter_ini(dossier: &Path, sortie: &mut Vec<PathBuf>) {
 mod tests {
     use super::*;
 
-    fn dossier_temporaire() -> PathBuf {
-        let chemin = std::env::temp_dir().join(format!(
+    fn temporary_folder() -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
             "zyrdesk-state-{}",
-            zyr_proto::alea::chaine_alphanumerique(12)
+            zyr_proto::random::alphanumeric_string(12)
         ));
-        fs::create_dir_all(&chemin).unwrap();
-        chemin
+        fs::create_dir_all(&path).unwrap();
+        path
     }
 
     #[test]
-    fn preparer_pose_le_marqueur_de_mode_portable() {
-        let base = dossier_temporaire();
-        let etat = DeviceState::dans(base.join("pc-bureau"));
-        assert!(!etat.est_prepare());
-        etat.preparer().unwrap();
-        assert!(etat.est_prepare());
-        // Une seconde préparation ne doit rien casser.
-        etat.preparer().unwrap();
-        assert!(etat.est_prepare());
+    fn preparing_drops_the_portable_mode_marker() {
+        let base = temporary_folder();
+        let state = DeviceState::in_folder(base.join("desk-pc"));
+        assert!(!state.is_prepared());
+        state.prepare().unwrap();
+        assert!(state.is_prepared());
+        // Preparing a second time must break nothing.
+        state.prepare().unwrap();
+        assert!(state.is_prepared());
         fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
-    fn les_reglages_sont_trouves_quelle_que_soit_l_arborescence() {
-        let base = dossier_temporaire();
-        let etat = DeviceState::dans(&base);
-        etat.preparer().unwrap();
-        assert!(etat.fichiers_reglages().is_empty());
-        assert!(!etat.a_un_hote_appaire());
+    fn the_settings_are_found_whatever_the_folder_tree() {
+        let base = temporary_folder();
+        let state = DeviceState::in_folder(&base);
+        state.prepare().unwrap();
+        assert!(state.settings_files().is_empty());
+        assert!(!state.has_a_paired_host());
 
-        let imbrique = base.join("Un Editeur").join("Un Produit");
-        fs::create_dir_all(&imbrique).unwrap();
-        fs::write(imbrique.join("reglages.ini"), "[General]\nhosts\\size=1\n").unwrap();
+        let nested = base.join("Some Vendor").join("Some Product");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("settings.ini"), "[General]\nhosts\\size=1\n").unwrap();
 
-        assert_eq!(etat.fichiers_reglages().len(), 1);
-        assert!(etat.a_un_hote_appaire());
+        assert_eq!(state.settings_files().len(), 1);
+        assert!(state.has_a_paired_host());
         fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
-    fn oublier_efface_tout_et_reste_sans_effet_si_absent() {
-        let base = dossier_temporaire();
-        let etat = DeviceState::dans(base.join("pc"));
-        etat.preparer().unwrap();
-        assert!(etat.dossier().exists());
-        etat.oublier().unwrap();
-        assert!(!etat.dossier().exists());
-        etat.oublier().unwrap();
+    fn forgetting_erases_everything_and_stays_quiet_when_absent() {
+        let base = temporary_folder();
+        let state = DeviceState::in_folder(base.join("pc"));
+        state.prepare().unwrap();
+        assert!(state.folder().exists());
+        state.forget().unwrap();
+        assert!(!state.folder().exists());
+        state.forget().unwrap();
         fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
-    fn chaque_appareil_a_son_propre_etat() {
-        let a = DeviceState::pour_appareil("pc-bureau");
-        let b = DeviceState::pour_appareil("pc-portable");
-        assert_ne!(a.dossier(), b.dossier());
+    fn each_device_gets_its_own_state() {
+        let first = DeviceState::for_device("desk-pc");
+        let second = DeviceState::for_device("laptop");
+        assert_ne!(first.folder(), second.folder());
     }
 
     #[test]
-    fn les_adresses_deviennent_des_noms_de_dossier_surs() {
-        assert_eq!(identifiant_depuis_adresse("192.168.1.10"), "192-168-1-10");
-        assert_eq!(identifiant_depuis_adresse("PC-Bureau"), "pc-bureau");
-        assert_eq!(identifiant_depuis_adresse("fe80::1%eth0"), "fe80--1-eth0");
-        assert_eq!(identifiant_depuis_adresse("..."), "appareil");
-        assert_eq!(identifiant_depuis_adresse(""), "appareil");
+    fn addresses_become_safe_folder_names() {
+        assert_eq!(identifier_from_address("192.168.1.10"), "192-168-1-10");
+        assert_eq!(identifier_from_address("Desk-PC"), "desk-pc");
+        assert_eq!(identifier_from_address("fe80::1%eth0"), "fe80--1-eth0");
+        assert_eq!(identifier_from_address("..."), "device");
+        assert_eq!(identifier_from_address(""), "device");
     }
 
     #[test]
-    fn les_identifiants_ne_contiennent_aucun_caractere_de_chemin() {
-        for entree in ["../evasion", "a/b\\c", "C:\\Windows", "hôte étrange"] {
-            let id = identifiant_depuis_adresse(entree);
+    fn the_identifiers_hold_no_path_character() {
+        for written in ["../escape", "a/b\\c", "C:\\Windows", "strange hôte"] {
+            let id = identifier_from_address(written);
             assert!(
                 id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
-                "{entree} donne {id}"
+                "{written} gives {id}"
             );
         }
     }

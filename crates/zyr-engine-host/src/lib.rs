@@ -1,11 +1,10 @@
-//! Génération de la configuration du moteur hôte (Sunshine officiel, non modifié).
+//! Driving the host engine, which is the official Sunshine, unmodified.
 //!
-//! Le moteur est piloté exclusivement par ses interfaces officielles :
-//! fichier de configuration, ligne de commande et API REST locale.
-//! Les valeurs produites ici appliquent la politique décrite dans
-//! docs/engines/STRATEGY.md : liaison loopback stricte, interface web
-//! verrouillée, icône de zone de notification désactivée, chemins d'état
-//! sous le répertoire de données ZyrDesk.
+//! The engine is steered through its official interfaces only:
+//! configuration file, command line, and local REST API. The values
+//! produced here apply the policy described in docs/engines/STRATEGY.md:
+//! strict loopback binding, locked web interface, disabled tray icon,
+//! and state paths under the ZyrDesk data folder.
 
 pub mod api;
 pub mod config;
@@ -14,7 +13,7 @@ pub mod ports;
 pub mod process;
 pub mod runtime;
 
-pub use config::{ChiffrementInterne, Ecoute, SunshineConfig};
+pub use config::{InnerEncryption, Listening, SunshineConfig};
 pub use credentials::Credentials;
 pub use process::HostEngine;
 pub use runtime::EngineRuntime;

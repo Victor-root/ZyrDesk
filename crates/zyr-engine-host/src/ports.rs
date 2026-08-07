@@ -1,35 +1,35 @@
-//! Choix d'une base de ports libre pour le moteur hôte.
+//! Picking a free port base for the host engine.
 
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, UdpSocket};
 
 use zyr_proto::net::{ENGINE_BASE_PORT_MAX, ENGINE_BASE_PORT_MIN, EnginePorts};
 
-/// Écart entre deux bases essayées.
+/// Gap between two bases we try.
 ///
-/// Les ports d'une instance s'étalent de la base moins 5 à la base plus
-/// 21, soit 27 numéros : un pas plus court ferait se chevaucher deux
-/// instances voisines.
-const PAS: u16 = 32;
+/// One instance spreads its ports from the base minus 5 to the base plus
+/// 21, which is 27 numbers: a shorter step would make two neighbouring
+/// instances overlap.
+const STEP: u16 = 32;
 
-/// Première base de la plage dont tous les ports dérivés sont libres.
-pub fn base_libre() -> Option<EnginePorts> {
+/// First base in the range whose derived ports are all free.
+pub fn free_base() -> Option<EnginePorts> {
     (ENGINE_BASE_PORT_MIN..=ENGINE_BASE_PORT_MAX)
-        .step_by(PAS as usize)
+        .step_by(STEP as usize)
         .filter_map(|base| EnginePorts::new(base).ok())
-        .find(ports_libres)
+        .find(ports_are_free)
 }
 
-/// Vrai si les sept ports de cette instance peuvent être réservés.
-pub fn ports_libres(ports: &EnginePorts) -> bool {
-    let adresse = |port| SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+/// True when the seven ports of this instance can all be reserved.
+pub fn ports_are_free(ports: &EnginePorts) -> bool {
+    let address = |port| SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
     ports
         .tcp_ports()
         .iter()
-        .all(|&p| TcpListener::bind(adresse(p)).is_ok())
+        .all(|&port| TcpListener::bind(address(port)).is_ok())
         && ports
             .udp_ports()
             .iter()
-            .all(|&p| UdpSocket::bind(adresse(p)).is_ok())
+            .all(|&port| UdpSocket::bind(address(port)).is_ok())
 }
 
 #[cfg(test)]
@@ -37,38 +37,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn une_base_est_trouvee_sur_une_machine_ordinaire() {
-        assert!(base_libre().is_some());
+    fn a_base_is_found_on_an_ordinary_machine() {
+        assert!(free_base().is_some());
     }
 
     #[test]
-    fn une_base_occupee_est_ecartee() {
+    fn a_busy_base_is_skipped() {
         let ports = EnginePorts::new(ENGINE_BASE_PORT_MIN).unwrap();
-        let _occupant =
+        let _squatter =
             TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, ports.http())).unwrap();
-        assert!(!ports_libres(&ports));
-        let trouvee = base_libre().expect("une autre base doit être trouvée");
-        assert_ne!(trouvee.base(), ports.base());
+        assert!(!ports_are_free(&ports));
+        let found = free_base().expect("another base must be found");
+        assert_ne!(found.base(), ports.base());
     }
 
     #[test]
-    fn les_bases_essayees_ne_se_chevauchent_pas() {
-        let premiere = EnginePorts::new(ENGINE_BASE_PORT_MIN).unwrap();
-        let suivante = EnginePorts::new(ENGINE_BASE_PORT_MIN + PAS).unwrap();
+    fn the_bases_we_try_never_overlap() {
+        let first = EnginePorts::new(ENGINE_BASE_PORT_MIN).unwrap();
+        let next = EnginePorts::new(ENGINE_BASE_PORT_MIN + STEP).unwrap();
         assert!(
-            premiere.rtsp() < suivante.https(),
-            "instance à {} : ports jusqu'à {}, la suivante commence à {}",
-            premiere.base(),
-            premiere.rtsp(),
-            suivante.https()
+            first.rtsp() < next.https(),
+            "instance at {}: ports up to {}, the next one starts at {}",
+            first.base(),
+            first.rtsp(),
+            next.https()
         );
     }
 
     #[test]
-    fn la_plage_offre_assez_de_bases() {
+    fn the_range_offers_enough_bases() {
         let bases = (ENGINE_BASE_PORT_MIN..=ENGINE_BASE_PORT_MAX)
-            .step_by(PAS as usize)
+            .step_by(STEP as usize)
             .count();
-        assert!(bases >= 20, "seulement {bases} bases candidates");
+        assert!(bases >= 20, "only {bases} candidate bases");
     }
 }

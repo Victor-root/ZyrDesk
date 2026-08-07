@@ -1,10 +1,10 @@
-//! Multiplexage des flux des moteurs dans une connexion unique.
+//! Multiplexing the engines' streams into a single connection.
 
-pub mod canal;
-pub mod pompe;
-pub mod trame;
+pub mod channel;
+pub mod frame;
+pub mod pump;
 pub mod tunnel;
 
-pub use canal::{CanalDatagramme, CanalFlux};
-pub use pompe::{Releve, Statistiques};
+pub use channel::{DatagramChannel, StreamChannel};
+pub use pump::{Counters, Reading};
 pub use tunnel::Tunnel;

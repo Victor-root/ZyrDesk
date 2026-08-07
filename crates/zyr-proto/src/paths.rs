@@ -1,53 +1,53 @@
-//! Emplacements de fichiers du produit.
+//! Where the product keeps its files.
 //!
-//! Tout vit sous un dossier `data` unique, placé à la racine du projet.
-//! Rien n'est éparpillé ailleurs sur la machine : le contenu se lit, se
-//! sauvegarde et s'efface d'un seul geste.
+//! Everything lives under a single `data` folder at the project root.
+//! Nothing is scattered elsewhere on the machine: the contents can be
+//! read, backed up and erased in one move.
 //!
-//! La variable d'environnement `ZYRDESK_DATA` permet de le déplacer.
-//! L'emplacement système d'un produit installé viendra avec le service
-//! du jalon M3.
+//! The `ZYRDESK_DATA` environment variable moves it. The system-wide
+//! location of an installed product comes with the service.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-const VAR_DATA: &str = "ZYRDESK_DATA";
+const DATA_VAR: &str = "ZYRDESK_DATA";
 
-/// Racine de toutes les données du produit.
+/// Root of every file the product owns.
 pub fn data_dir() -> PathBuf {
-    resoudre_data_dir(std::env::var_os(VAR_DATA), racine_projet)
+    resolve_data_dir(std::env::var_os(DATA_VAR), project_root)
 }
 
-/// Règle de résolution, isolée de l'environnement pour être vérifiable.
-fn resoudre_data_dir(surcharge: Option<OsString>, racine: impl FnOnce() -> PathBuf) -> PathBuf {
-    match surcharge {
-        Some(chemin) if !chemin.is_empty() => PathBuf::from(chemin),
-        _ => racine().join("data"),
+/// The resolution rule, kept apart from the environment so it can be
+/// checked.
+fn resolve_data_dir(override_value: Option<OsString>, root: impl FnOnce() -> PathBuf) -> PathBuf {
+    match override_value {
+        Some(path) if !path.is_empty() => PathBuf::from(path),
+        _ => root().join("data"),
     }
 }
 
-/// Racine du projet : premier dossier ancêtre de l'exécutable contenant
-/// un `Cargo.toml`. L'exécutable vivant sous `target/<profil>/`, la
-/// remontée aboutit à la racine du dépôt, quel que soit le profil de
-/// compilation. À défaut, le dossier de l'exécutable lui-même.
-fn racine_projet() -> PathBuf {
+/// Project root: the first ancestor of the executable that holds a
+/// `Cargo.toml`. The executable lives under `target/<profile>/`, so
+/// walking up lands on the repository root whatever the build profile.
+/// Failing that, the executable's own folder.
+fn project_root() -> PathBuf {
     let Ok(exe) = std::env::current_exe() else {
         return PathBuf::from(".");
     };
-    let mut candidat = exe.parent();
-    while let Some(dossier) = candidat {
-        if dossier.join("Cargo.toml").is_file() {
-            return dossier.to_path_buf();
+    let mut candidate = exe.parent();
+    while let Some(folder) = candidate {
+        if folder.join("Cargo.toml").is_file() {
+            return folder.to_path_buf();
         }
-        candidat = dossier.parent();
+        candidate = folder.parent();
     }
     exe.parent()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Nom de fichier d'un exécutable, avec l'extension de la plateforme.
-pub fn nom_executable(base: &str) -> String {
+/// Executable file name, with the platform's extension.
+pub fn executable_name(base: &str) -> String {
     if cfg!(windows) {
         format!("{base}.exe")
     } else {
@@ -55,52 +55,52 @@ pub fn nom_executable(base: &str) -> String {
     }
 }
 
-/// Binaires des moteurs.
+/// Engine binaries.
 pub fn engines_dir() -> PathBuf {
     data_dir().join("engines")
 }
 
-/// Moteur hôte (dérivé de Sunshine).
+/// Host engine, derived from Sunshine.
 pub fn host_engine_dir() -> PathBuf {
     engines_dir().join("host")
 }
 
-/// Exécutable attendu du moteur hôte.
+/// Host engine executable, as expected on disk.
 ///
-/// Le nom est celui du produit, jamais celui du projet amont : c'est ce
-/// que voit l'utilisateur dans le gestionnaire des tâches.
+/// The name is the product's own, never the upstream project's: it is
+/// what the user sees in the task manager.
 pub fn host_engine_exe() -> PathBuf {
-    host_engine_dir().join(nom_executable("zyrdesk-host-engine"))
+    host_engine_dir().join(executable_name("zyrdesk-host-engine"))
 }
 
-/// Moteur client (dérivé de Moonlight).
+/// Client engine, derived from Moonlight.
 pub fn client_engine_dir() -> PathBuf {
     engines_dir().join("client")
 }
 
-/// Exécutable attendu du moteur client.
+/// Client engine executable, as expected on disk.
 pub fn client_engine_exe() -> PathBuf {
-    client_engine_dir().join(nom_executable("zyrdesk-session"))
+    client_engine_dir().join(executable_name("zyrdesk-session"))
 }
 
-/// Identité cryptographique de cette machine.
+/// Cryptographic identity of this machine.
 ///
-/// Elle doit durer : c'est elle que les autres appareils épinglent.
-pub fn identite_dir() -> PathBuf {
-    data_dir().join("identite")
+/// It has to last: this is what other devices pin.
+pub fn identity_dir() -> PathBuf {
+    data_dir().join("identity")
 }
 
-/// Configuration et état générés pour le moteur hôte.
+/// Configuration and state generated for the host engine.
 pub fn host_state_dir() -> PathBuf {
     data_dir().join("host")
 }
 
-/// État isolé du moteur client pour un appareil distant donné.
+/// Isolated client engine state for one remote device.
 pub fn device_state_dir(device_id: &str) -> PathBuf {
     data_dir().join("devices").join(device_id)
 }
 
-/// Journaux de tous les composants.
+/// Logs of every component.
 pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
 }
@@ -110,70 +110,70 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tout_vit_sous_la_racine_unique() {
-        let racine = data_dir();
-        for chemin in [
+    fn everything_lives_under_the_single_root() {
+        let root = data_dir();
+        for path in [
             engines_dir(),
             host_engine_dir(),
             host_engine_exe(),
             client_engine_dir(),
             client_engine_exe(),
-            identite_dir(),
+            identity_dir(),
             host_state_dir(),
-            device_state_dir("pc-bureau"),
+            device_state_dir("desk-pc"),
             logs_dir(),
         ] {
             assert!(
-                chemin.starts_with(&racine),
-                "{} hors racine",
-                chemin.display()
+                path.starts_with(&root),
+                "{} outside the root",
+                path.display()
             );
         }
     }
 
     #[test]
-    fn la_surcharge_prime_sur_la_racine_du_projet() {
-        let projet = || PathBuf::from("/le/projet");
+    fn the_override_wins_over_the_project_root() {
+        let project = || PathBuf::from("/the/project");
         assert_eq!(
-            resoudre_data_dir(Some(OsString::from("/ailleurs")), projet),
-            PathBuf::from("/ailleurs")
+            resolve_data_dir(Some(OsString::from("/elsewhere")), project),
+            PathBuf::from("/elsewhere")
         );
     }
 
     #[test]
-    fn sans_surcharge_les_donnees_sont_dans_le_projet() {
-        let projet = || PathBuf::from("/le/projet");
+    fn without_an_override_the_data_sits_in_the_project() {
+        let project = || PathBuf::from("/the/project");
         assert_eq!(
-            resoudre_data_dir(None, projet),
-            PathBuf::from("/le/projet/data")
+            resolve_data_dir(None, project),
+            PathBuf::from("/the/project/data")
         );
-        // Une variable vide vaut absence de surcharge.
+        // An empty variable counts as no override at all.
         assert_eq!(
-            resoudre_data_dir(Some(OsString::new()), projet),
-            PathBuf::from("/le/projet/data")
+            resolve_data_dir(Some(OsString::new()), project),
+            PathBuf::from("/the/project/data")
         );
     }
 
     #[test]
-    fn chaque_appareil_a_son_dossier() {
+    fn each_device_gets_its_own_folder() {
         assert_ne!(device_state_dir("a"), device_state_dir("b"));
     }
 
     #[test]
-    fn les_executables_portent_le_nom_du_produit() {
+    fn the_executables_carry_the_product_name() {
         for exe in [host_engine_exe(), client_engine_exe()] {
-            let nom = exe.file_name().unwrap().to_string_lossy().to_lowercase();
-            assert!(nom.starts_with("zyrdesk"), "{nom}");
+            let name = exe.file_name().unwrap().to_string_lossy().to_lowercase();
+            assert!(name.starts_with("zyrdesk"), "{name}");
             assert!(
-                !nom.contains("sunshine") && !nom.contains("moonlight"),
-                "{nom}"
+                !name.contains("sunshine") && !name.contains("moonlight"),
+                "{name}"
             );
         }
     }
 
     #[test]
-    fn extension_d_executable_selon_la_plateforme() {
-        let attendu = if cfg!(windows) { "outil.exe" } else { "outil" };
-        assert_eq!(nom_executable("outil"), attendu);
+    fn the_executable_extension_follows_the_platform() {
+        let expected = if cfg!(windows) { "tool.exe" } else { "tool" };
+        assert_eq!(executable_name("tool"), expected);
     }
 }

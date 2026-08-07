@@ -1,12 +1,12 @@
-//! Service ZyrDesk.
+//! The ZyrDesk service.
 //!
-//! Le même exécutable sert de deux façons. Lancé par Windows avec son
-//! argument réservé, il devient le service. Lancé à la main, il sert à
-//! l'installer, le démarrer, l'arrêter ou le retirer.
+//! The same executable serves in two ways. Started by Windows with its
+//! reserved argument, it becomes the service. Started by hand, it serves
+//! to install, start, stop or remove it.
 
-mod journal;
-mod superviseur;
-mod surveillance;
+mod log;
+mod restart;
+mod supervisor;
 
 #[cfg(windows)]
 mod service;
@@ -28,11 +28,11 @@ use clap::{Parser, Subcommand};
 )]
 struct Cli {
     #[command(subcommand)]
-    commande: Option<Commande>,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
-enum Commande {
+enum Command {
     /// Inscrit le service auprès de Windows, démarrage automatique
     Install,
     /// Retire le service
@@ -46,18 +46,18 @@ enum Commande {
 }
 
 fn main() -> ExitCode {
-    // Windows lance le service avec un argument réservé, que clap n'a
-    // pas à connaître : c'est un signal, pas une commande.
+    // Windows starts the service with a reserved argument clap has no
+    // business knowing about: it is a signal, not a command.
     #[cfg(windows)]
-    if std::env::args().any(|a| a == service::ARGUMENT_SERVICE) {
-        return match service::ceder_a_windows() {
+    if std::env::args().any(|a| a == service::SERVICE_ARGUMENT) {
+        return match service::hand_over_to_windows() {
             Ok(()) => ExitCode::SUCCESS,
-            Err(e) => echec("le service n'a pas pu démarrer", e),
+            Err(e) => failure("le service n'a pas pu démarrer", e),
         };
     }
 
-    match Cli::parse().commande {
-        Some(commande) => executer(commande),
+    match Cli::parse().command {
+        Some(command) => run(command),
         None => {
             eprintln!("Ce programme est le service ZyrDesk.");
             eprintln!("Lancez « zyrdeskd --help » pour voir ce qu'il sait faire.");
@@ -67,52 +67,52 @@ fn main() -> ExitCode {
 }
 
 #[cfg(windows)]
-fn executer(commande: Commande) -> ExitCode {
-    match commande {
-        Commande::Install => match service::installer() {
+fn run(command: Command) -> ExitCode {
+    match command {
+        Command::Install => match service::install() {
             Ok(()) => {
                 println!("Service installé. Il démarrera avec Windows.");
                 println!("  Pour le lancer tout de suite : zyrdeskd start");
                 ExitCode::SUCCESS
             }
-            Err(e) => echec("installation du service", e),
+            Err(e) => failure("installation du service", e),
         },
-        Commande::Uninstall => match service::desinstaller() {
+        Command::Uninstall => match service::uninstall() {
             Ok(()) => {
                 println!("Service retiré.");
                 ExitCode::SUCCESS
             }
-            Err(e) => echec("retrait du service", e),
+            Err(e) => failure("retrait du service", e),
         },
-        Commande::Start => match service::demarrer() {
+        Command::Start => match service::start() {
             Ok(()) => {
                 println!("Service démarré.");
                 ExitCode::SUCCESS
             }
-            Err(e) => echec("démarrage du service", e),
+            Err(e) => failure("démarrage du service", e),
         },
-        Commande::Stop => match service::arreter() {
+        Command::Stop => match service::stop() {
             Ok(()) => {
                 println!("Service arrêté.");
                 ExitCode::SUCCESS
             }
-            Err(e) => echec("arrêt du service", e),
+            Err(e) => failure("arrêt du service", e),
         },
-        Commande::Status => match service::etat() {
-            Ok(etat) => {
-                println!("{}", lisible(etat));
-                println!("  Journal : {}", journal_du_service().display());
+        Command::Status => match service::state() {
+            Ok(state) => {
+                println!("{}", readable(state));
+                println!("  Journal : {}", service_log().display());
                 ExitCode::SUCCESS
             }
-            Err(e) => echec("état du service", e),
+            Err(e) => failure("état du service", e),
         },
     }
 }
 
 #[cfg(windows)]
-fn lisible(etat: windows_service::service::ServiceState) -> &'static str {
+fn readable(state: windows_service::service::ServiceState) -> &'static str {
     use windows_service::service::ServiceState::*;
-    match etat {
+    match state {
         Stopped => "Arrêté",
         StartPending => "En cours de démarrage",
         StopPending => "En cours d'arrêt",
@@ -124,22 +124,23 @@ fn lisible(etat: windows_service::service::ServiceState) -> &'static str {
 }
 
 #[cfg(windows)]
-fn journal_du_service() -> std::path::PathBuf {
+fn service_log() -> std::path::PathBuf {
     zyr_proto::paths::logs_dir().join("service.log")
 }
 
-/// Hors de Windows, le service n'a pas d'objet : il n'existe pas de
-/// gestionnaire de services à qui parler, ni de session console à servir.
+/// Outside Windows the service has no purpose: there is no service
+/// control manager to talk to, and no console session to serve.
 #[cfg(not(windows))]
-fn executer(_commande: Commande) -> ExitCode {
-    echec(
+fn run(_command: Command) -> ExitCode {
+    failure(
         "service indisponible",
         "le service ZyrDesk n'existe que sous Windows",
     )
 }
 
-fn echec(contexte: &str, erreur: impl std::fmt::Display) -> ExitCode {
-    eprintln!("Échec : {contexte}");
-    eprintln!("  {erreur}");
+/// Reports a failure the same way everywhere, on the error stream.
+fn failure(context: &str, error: impl std::fmt::Display) -> ExitCode {
+    eprintln!("Échec : {context}");
+    eprintln!("  {error}");
     ExitCode::FAILURE
 }

@@ -14,3 +14,11 @@ time = { version = "0.3.55", default-features = false, features = ["std", "forma
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Environment",
+    "Win32_System_JobObjects",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+] }

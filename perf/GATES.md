@@ -16,7 +16,7 @@ Le banc de mesure existe à partir du jalon M2 : les décisions d'architecture r
 
 ## Outil de mesure
 
-Depuis le jalon M2, `zyr-cli banc` mesure G-lat, G-loss et G-cpu sans qu'aucun moteur soit nécessaire : il envoie ses propres paquets par rafales, une par image, comme le fait un encodeur, et mesure deux fois le même trajet, avec et sans tunnel. Il sait aussi provoquer une perte réelle sous le transport (`--perte`, en pour mille), ce qui exerce ses vrais mécanismes de détection.
+Depuis le jalon M2, `zyr-cli bench` mesure G-lat, G-loss et G-cpu sans qu'aucun moteur soit nécessaire : il envoie ses propres paquets par rafales, une par image, comme le fait un encodeur, et mesure deux fois le même trajet, avec et sans tunnel. Il sait aussi provoquer une perte réelle sous le transport (`--perte`, en pour mille), ce qui exerce ses vrais mécanismes de détection.
 
 Trois chiffres sont relevés par le programme lui-même plutôt que par l'opérateur : le temps processeur, sur la fenêtre exacte de chaque salve ; la part des paquets manquants due à une file d'émission pleine plutôt qu'au réseau ; et la taille de paquet que le chemin permet. Un relevé pris à la main dans un gestionnaire de tâches échantillonne, arrondit, et ne couvre pas la bonne fenêtre.
 

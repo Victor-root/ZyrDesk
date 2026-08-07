@@ -34,12 +34,12 @@ Tant que l'interface n'existe pas (jalon M4), tout passe par `zyr-cli` :
 ```bash
 zyr-cli doctor           # cette machine est-elle prête
 zyr-cli engines status   # où déposer les moteurs, lesquels manquent
-zyr-cli identite         # empreinte de cette machine
+zyr-cli identity         # empreinte de cette machine
 zyr-cli host start       # rendre cet ordinateur accessible
 zyr-cli host pin 1234    # autoriser un ordinateur qui se connecte
 zyr-cli connect <adresse> --stats   # ouvrir une session
-zyr-cli banc hote --pair <empreinte>              # mesurer le tunnel, côté attente
-zyr-cli banc client <adresse> --pair <empreinte>  # mesurer le tunnel, côté mesure
+zyr-cli bench host --pair <empreinte>              # mesurer le tunnel, côté attente
+zyr-cli bench client <adresse> --pair <empreinte>  # mesurer le tunnel, côté mesure
 ```
 
 ## Construire

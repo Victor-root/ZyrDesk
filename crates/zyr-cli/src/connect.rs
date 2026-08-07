@@ -1,20 +1,20 @@
-//! Ouvre une session sur un ordinateur distant.
+//! Opens a session on a remote computer.
 //!
-//! À ce stade il n'y a ni tunnel ni serveur de mise en relation : la
-//! session vise directement une adresse du réseau local, et le code
-//! d'appairage doit être reporté à la main sur l'autre ordinateur. Le
-//! tunnel automatise cet échange au jalon M5.
+//! At this stage there is neither a tunnel nor a rendezvous server: the
+//! session goes straight to an address on the local network, and the
+//! pairing code has to be carried over to the other computer by hand.
+//! The tunnel automates that exchange later on.
 
 use std::process::ExitCode;
 
 use clap::Args as ClapArgs;
-use zyr_engine_client::state::identifiant_depuis_adresse;
-use zyr_engine_client::{ClientEngine, DeviceState, IssueSession};
-use zyr_proto::alea;
+use zyr_engine_client::state::identifier_from_address;
+use zyr_engine_client::{ClientEngine, DeviceState, SessionOutcome};
 use zyr_proto::paths;
-use zyr_proto::session::{Codec, ModeAffichage, SessionSettings, parse_resolution};
+use zyr_proto::random;
+use zyr_proto::session::{Codec, DisplayMode, SessionSettings, parse_resolution};
 
-use crate::echec;
+use crate::failure;
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -54,15 +54,15 @@ pub struct Args {
     reappairer: bool,
 }
 
-pub fn executer(args: Args) -> ExitCode {
-    let reglages = match construire_reglages(&args) {
-        Ok(r) => r,
-        Err(message) => return echec("réglages de session invalides", message),
+pub fn run(args: Args) -> ExitCode {
+    let settings = match build_settings(&args) {
+        Ok(settings) => settings,
+        Err(message) => return failure("réglages de session invalides", message),
     };
 
     let exe = paths::client_engine_exe();
     if !exe.is_file() {
-        return echec(
+        return failure(
             "moteur client introuvable",
             format!(
                 "{}\n  Lancez « zyr-cli engines status » pour la marche à suivre.",
@@ -71,70 +71,70 @@ pub fn executer(args: Args) -> ExitCode {
         );
     }
 
-    let etat = DeviceState::pour_appareil(&identifiant_depuis_adresse(&args.hote));
+    let state = DeviceState::for_device(&identifier_from_address(&args.hote));
     if args.reappairer
-        && let Err(e) = etat.oublier()
+        && let Err(e) = state.forget()
     {
-        return echec("réinitialisation de l'appairage", e);
+        return failure("réinitialisation de l'appairage", e);
     }
 
-    let deja_connu = etat.a_un_hote_appaire();
-    let journal = paths::logs_dir().join("session.log");
-    let moteur = ClientEngine::nouveau(&exe, etat).avec_journal(&journal);
+    let already_known = state.has_a_paired_host();
+    let log = paths::logs_dir().join("session.log");
+    let engine = ClientEngine::new(&exe, state).with_log(&log);
 
-    if !deja_connu && let Err(code) = appairer(&moteur, &args.hote) {
+    if !already_known && let Err(code) = pair(&engine, &args.hote) {
         return code;
     }
 
     println!(
         "Connexion à {} en {}x{} à {} images par seconde...",
-        args.hote, reglages.largeur, reglages.hauteur, reglages.fps
+        args.hote, settings.width, settings.height, settings.fps
     );
-    match moteur.lancer_session(&args.hote, &reglages) {
-        Ok(IssueSession::Terminee) => {
-            // Le moteur signale un succès même lorsqu'il a renoncé : le
-            // journal reste la seule source fiable tant que ses codes de
-            // sortie ne sont pas différenciés (patch P-M5).
+    match engine.start_session(&args.hote, &settings) {
+        Ok(SessionOutcome::Ended) => {
+            // The engine reports success even when it gave up: the log
+            // stays the only reliable source while its exit codes are
+            // undifferentiated (patch P-M5).
             println!("Session terminée.");
-            println!("  Journal : {}", journal.display());
+            println!("  Journal : {}", log.display());
             ExitCode::SUCCESS
         }
-        Ok(IssueSession::Echec { code }) => {
+        Ok(SessionOutcome::Failed { code }) => {
             let code = code
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "interrompu".to_string());
-            echec(
+            failure(
                 "la session s'est arrêtée sur une erreur",
-                format!("code {code}\n  Journal : {}", journal.display()),
+                format!("code {code}\n  Journal : {}", log.display()),
             )
         }
-        Err(e) => echec("démarrage de la session", e),
+        Err(e) => failure("démarrage de la session", e),
     }
 }
 
-fn appairer(moteur: &ClientEngine, hote: &str) -> Result<(), ExitCode> {
-    let pin = alea::pin_appairage();
+fn pair(engine: &ClientEngine, host: &str) -> Result<(), ExitCode> {
+    let pin = random::pairing_pin();
     println!("Premier accès à cet ordinateur : autorisation nécessaire.\n");
-    println!("  Sur {hote}, lancez maintenant :");
+    println!("  Sur {host}, lancez maintenant :");
     println!("\n      zyr-cli host pin {pin}\n");
     println!("  En attente de l'autorisation...");
 
-    match moteur.appairer(hote, &pin) {
+    match engine.pair(host, &pin) {
         Ok(()) => {
             println!("  Autorisé.\n");
             Ok(())
         }
-        Err(e) => Err(echec(
+        Err(e) => Err(failure(
             "appairage",
-            format!("{e}\n  Vérifiez que « zyr-cli host start » tourne sur {hote}."),
+            format!("{e}\n  Vérifiez que « zyr-cli host start » tourne sur {host}."),
         )),
     }
 }
 
-fn construire_reglages(args: &Args) -> Result<SessionSettings, String> {
-    let (largeur, hauteur) = parse_resolution(&args.resolution).map_err(|e| e.to_string())?;
+fn build_settings(args: &Args) -> Result<SessionSettings, String> {
+    let (width, height) = parse_resolution(&args.resolution).map_err(|e| e.to_string())?;
     let codec: Codec = args.codec.parse()?;
-    let mode_affichage: ModeAffichage = args.affichage.parse()?;
+    let display_mode: DisplayMode = args.affichage.parse()?;
     if args.fps == 0 {
         return Err("le nombre d'images par seconde doit être supérieur à zéro".to_string());
     }
@@ -142,14 +142,14 @@ fn construire_reglages(args: &Args) -> Result<SessionSettings, String> {
         return Err("le débit vidéo doit être supérieur à zéro".to_string());
     }
     Ok(SessionSettings {
-        largeur,
-        hauteur,
+        width,
+        height,
         fps: args.fps,
         bitrate_kbps: args.bitrate,
         codec,
-        mode_affichage,
+        display_mode,
         packet_size: None,
-        souris_absolue: !args.souris_relative,
-        overlay_stats: args.stats,
+        absolute_mouse: !args.souris_relative,
+        stats_overlay: args.stats,
     })
 }

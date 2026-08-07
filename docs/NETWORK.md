@@ -36,7 +36,7 @@ Une session = une connexion QUIC entre les deux services :
 
 Ce qui est en place et mesuré :
 
-- Authentification mutuelle par empreinte de certificat épinglée, TLS 1.3 uniquement, protocole annoncé `zyrdesk/1`. Chaque machine a une identité durable, gardée dans `data/identite`, affichée par `zyr-cli identite`.
+- Authentification mutuelle par empreinte de certificat épinglée, TLS 1.3 uniquement, protocole annoncé `zyrdesk/1`. Chaque machine a une identité durable, gardée dans `data/identity`, affichée par `zyr-cli identity`.
 - Contrôleur de congestion média (section 3), file d'émission de datagrammes de 128 Kio, file de réception de 8 Mio, expiration d'inactivité à 30 s, maintien de correspondance toutes les 5 s.
 - Découverte de la taille de paquet attendue avant de la figer (section 4), et pas de retard de Nagle sur les flux fiables relayés.
 

@@ -21,10 +21,10 @@ cargo build --release
 Sur chaque PC, afficher son empreinte :
 
 ```
-zyr-cli identite
+zyr-cli identity
 ```
 
-Chaque machine en a une, créée à la première demande, conservée dans `data\identite`, et qui ne change plus. C'est elle que l'autre ordinateur épingle : les deux PC ne s'acceptent que s'ils connaissent celle d'en face.
+Chaque machine en a une, créée à la première demande, conservée dans `data\identity`, et qui ne change plus. C'est elle que l'autre ordinateur épingle : les deux PC ne s'acceptent que s'ils connaissent celle d'en face.
 
 Noter les deux empreintes. Le plus simple est de copier celle du PC hôte dans un message vers le PC client, et l'inverse.
 
@@ -44,7 +44,7 @@ Sans cette règle, le PC client ne joindra rien et la mesure échouera sur un d�
 Sur le **PC hôte** :
 
 ```
-zyr-cli banc hote --pair <empreinte du PC client>
+zyr-cli bench host --pair <empreinte du PC client>
 ```
 
 Il affiche son port d'écoute et attend. Le laisser tourner : il sert toutes les mesures.
@@ -52,7 +52,7 @@ Il affiche son port d'écoute et attend. Le laisser tourner : il sert toutes les
 Sur le **PC client** :
 
 ```
-zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --duree 30
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --duree 30
 ```
 
 Le banc mesure deux fois le même trajet, avec les mêmes paquets à la même cadence : une fois en UDP nu, une fois à travers le tunnel complet. Les paquets partent par rafales, une par image, comme le fait un encodeur vidéo. Compter environ une minute.
@@ -74,9 +74,9 @@ C'est le point le plus important du jalon. Un contrôle de congestion ordinaire 
 Le banc sait provoquer une perte réelle sous le tunnel, exprimée pour mille paquets émis. Sur le **PC client**, enchaîner :
 
 ```
-zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 0
-zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 10
-zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 20
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 0
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 10
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 20
 ```
 
 > **M2-R2 (débit sous perte)**
@@ -92,7 +92,7 @@ zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --debi
 Rien à ouvrir : le banc lit son propre temps processeur, sur exactement la fenêtre qu'il mesure. Sur le **PC client** :
 
 ```
-zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 120
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 120
 ```
 
 Le PC client affiche un bloc « Processeur de ce banc » à la fin. Le PC hôte affiche sa propre ligne dans sa fenêtre, à la fin de chaque mesure.
@@ -151,6 +151,6 @@ Les relevés en boucle locale sur la machine de développement restent dans [per
 
 **« empreinte du pair inattendue ».** Les deux empreintes ont été inversées, ou recopiées incomplètement. Chacune fait exactement 64 caractères. Le `--pair` du PC hôte est l'empreinte du PC **client**, et inversement.
 
-**« identité incomplète ».** Un des deux fichiers de `data\identite` a été effacé. Effacer le dossier entier pour en refaire une, en sachant que l'autre PC devra recevoir la nouvelle empreinte.
+**« identité incomplète ».** Un des deux fichiers de `data\identity` a été effacé. Effacer le dossier entier pour en refaire une, en sachant que l'autre PC devra recevoir la nouvelle empreinte.
 
 **Des chiffres qui n'ont aucun sens** (médiane de plusieurs millisecondes en Ethernet, débit très en dessous de la consigne). Vérifier d'abord que la compilation est bien en release : `zyr-cli` doit venir de `target\release`, pas de `target\debug`.

@@ -1,75 +1,74 @@
-//! Rendu du fichier `sunshine.conf` et du fichier `apps.json`.
+//! Rendering of the `sunshine.conf` and `apps.json` files.
 
 use std::path::{Path, PathBuf};
 
 use zyr_proto::net::EnginePorts;
 
-/// Mode de chiffrement interne du protocole GameStream sur loopback.
+/// Internal encryption mode of the GameStream protocol over loopback.
 ///
-/// Le chiffrement de bout en bout est porté par le tunnel ZyrDesk ; le
-/// trafic du moteur n'existe qu'en loopback. Le mode obligatoire reste
-/// disponible pour le réglage avancé « paranoïaque ».
+/// End-to-end encryption is carried by the ZyrDesk tunnel, and the
+/// engine's traffic only ever exists on loopback. The mandatory mode
+/// stays available for the advanced "paranoid" setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ChiffrementInterne {
+pub enum InnerEncryption {
     #[default]
-    Desactive,
-    Obligatoire,
+    Off,
+    Mandatory,
 }
 
-impl ChiffrementInterne {
-    fn valeur(self) -> &'static str {
+impl InnerEncryption {
+    fn value(self) -> &'static str {
         match self {
-            ChiffrementInterne::Desactive => "0",
-            ChiffrementInterne::Obligatoire => "2",
+            InnerEncryption::Off => "0",
+            InnerEncryption::Mandatory => "2",
         }
     }
 }
 
-/// Interfaces sur lesquelles le moteur accepte des connexions.
+/// Interfaces the engine accepts connections on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Ecoute {
-    /// Machine locale uniquement.
+pub enum Listening {
+    /// Local machine only.
     ///
-    /// C'est la cible : le tunnel ZyrDesk est alors le seul chemin vers
-    /// le moteur, qui n'expose aucune surface au réseau.
+    /// This is the target: the ZyrDesk tunnel is then the one and only
+    /// way to the engine, which exposes nothing to the network.
     #[default]
-    Locale,
-    /// Toutes les interfaces réseau.
+    Local,
+    /// Every network interface.
     ///
-    /// Nécessaire tant que le tunnel n'existe pas, sans quoi aucun autre
-    /// ordinateur ne peut joindre le moteur.
-    Reseau,
+    /// Needed as long as no tunnel carries the traffic, without which no
+    /// other computer could reach the engine at all.
+    Network,
 }
 
-/// Paramètres d'une instance du moteur hôte.
+/// Settings of one host engine instance.
 #[derive(Debug, Clone)]
 pub struct SunshineConfig {
     ports: EnginePorts,
     data_dir: PathBuf,
     logs_dir: PathBuf,
-    ecoute: Ecoute,
-    chiffrement: ChiffrementInterne,
-    fps_minimum: f64,
+    listening: Listening,
+    encryption: InnerEncryption,
+    minimum_fps: f64,
     output_name: Option<String>,
     adapter_name: Option<String>,
 }
 
-/// Cadence minimale garantie par le moteur, même écran figé.
+/// Frame rate the engine guarantees even on a frozen screen.
 ///
-/// Le moteur n'encode une image que lorsque l'écran change, et ne réémet
-/// spontanément qu'au bout d'un délai. Son défaut correspond à la moitié
-/// de la cadence demandée : un bureau immobile n'arrive alors qu'à trente
-/// images par seconde, et le déplacement de la souris comme les
-/// animations de fenêtres deviennent saccadés.
+/// The engine only encodes a frame when the screen changes, and only
+/// resends on its own after a delay. Its default is half the requested
+/// rate: a still desktop then reaches thirty frames per second, and both
+/// mouse motion and window animations turn choppy.
 ///
-/// Pour du bureau à distance, la fluidité prime sur les quelques images
-/// redondantes économisées : un écran figé se réencode pour presque rien.
-const FPS_MINIMUM_BUREAU: f64 = 60.0;
+/// For a remote desktop, smoothness beats the few redundant frames it
+/// saves: a frozen screen re-encodes for almost nothing.
+const DESKTOP_MINIMUM_FPS: f64 = 60.0;
 
 impl SunshineConfig {
-    /// `logs_dir` est le dossier de journaux commun à tous les
-    /// composants : le moteur y écrit le sien au lieu de le cacher dans
-    /// son propre état.
+    /// `logs_dir` is the log folder shared by every component: the
+    /// engine writes its own there instead of hiding it inside its
+    /// private state.
     pub fn new(
         ports: EnginePorts,
         data_dir: impl Into<PathBuf>,
@@ -79,39 +78,39 @@ impl SunshineConfig {
             ports,
             data_dir: data_dir.into(),
             logs_dir: logs_dir.into(),
-            ecoute: Ecoute::default(),
-            chiffrement: ChiffrementInterne::default(),
-            fps_minimum: FPS_MINIMUM_BUREAU,
+            listening: Listening::default(),
+            encryption: InnerEncryption::default(),
+            minimum_fps: DESKTOP_MINIMUM_FPS,
             output_name: None,
             adapter_name: None,
         }
     }
 
-    /// Ajuste la cadence minimale garantie.
-    pub fn avec_fps_minimum(mut self, fps: f64) -> Self {
-        self.fps_minimum = fps;
+    /// Adjusts the guaranteed minimum frame rate.
+    pub fn with_minimum_fps(mut self, fps: f64) -> Self {
+        self.minimum_fps = fps;
         self
     }
 
-    /// Ouvre le moteur au réseau. À n'utiliser que sans tunnel.
-    pub fn avec_ecoute(mut self, ecoute: Ecoute) -> Self {
-        self.ecoute = ecoute;
+    /// Opens the engine to the network. Only ever without a tunnel.
+    pub fn with_listening(mut self, listening: Listening) -> Self {
+        self.listening = listening;
         self
     }
 
-    pub fn avec_chiffrement(mut self, mode: ChiffrementInterne) -> Self {
-        self.chiffrement = mode;
+    pub fn with_encryption(mut self, mode: InnerEncryption) -> Self {
+        self.encryption = mode;
         self
     }
 
-    /// Écran à capturer (identifiant Windows du périphérique d'affichage).
-    pub fn avec_ecran(mut self, output_name: impl Into<String>) -> Self {
+    /// Screen to capture, by its Windows display device name.
+    pub fn with_screen(mut self, output_name: impl Into<String>) -> Self {
         self.output_name = Some(output_name.into());
         self
     }
 
-    /// GPU d'encodage (utile sur les machines hybrides).
-    pub fn avec_gpu(mut self, adapter_name: impl Into<String>) -> Self {
+    /// Encoding GPU, which matters on hybrid machines.
+    pub fn with_gpu(mut self, adapter_name: impl Into<String>) -> Self {
         self.adapter_name = Some(adapter_name.into());
         self
     }
@@ -120,70 +119,70 @@ impl SunshineConfig {
         self.ports
     }
 
-    pub fn chemin_conf(&self) -> PathBuf {
+    pub fn conf_path(&self) -> PathBuf {
         self.data_dir.join("engine.conf")
     }
 
-    pub fn chemin_apps(&self) -> PathBuf {
+    pub fn apps_path(&self) -> PathBuf {
         self.data_dir.join("apps.json")
     }
 
-    /// Journal écrit par le moteur lui-même.
-    pub fn chemin_journal(&self) -> PathBuf {
+    /// Log the engine writes itself.
+    pub fn log_path(&self) -> PathBuf {
         self.logs_dir.join("engine.log")
     }
 
-    /// Dossiers que le moteur suppose existants au démarrage.
-    pub fn dossiers_requis(&self) -> [&Path; 2] {
+    /// Folders the engine assumes exist when it starts.
+    pub fn required_dirs(&self) -> [&Path; 2] {
         [&self.data_dir, &self.logs_dir]
     }
 
-    /// Contenu du fichier `sunshine.conf`.
-    pub fn rendu_conf(&self) -> String {
-        let d = |p: &Path| p.display().to_string();
-        let mut lignes = Vec::new();
-        // Une adresse absente vaut « toutes les interfaces » pour le moteur.
-        if self.ecoute == Ecoute::Locale {
-            lignes.push("bind_address = 127.0.0.1".to_string());
+    /// Contents of the `sunshine.conf` file.
+    pub fn render_conf(&self) -> String {
+        let shown = |path: &Path| path.display().to_string();
+        let mut lines = Vec::new();
+        // A missing address means "every interface" to the engine.
+        if self.listening == Listening::Local {
+            lines.push("bind_address = 127.0.0.1".to_string());
         }
-        lignes.extend([
+        lines.extend([
             format!("port = {}", self.ports.base()),
             "address_family = ipv4".to_string(),
             "origin_web_ui_allowed = pc".to_string(),
             "system_tray = disabled".to_string(),
             "capture = ddx".to_string(),
-            format!("lan_encryption_mode = {}", self.chiffrement.valeur()),
-            format!("wan_encryption_mode = {}", self.chiffrement.valeur()),
+            format!("lan_encryption_mode = {}", self.encryption.value()),
+            format!("wan_encryption_mode = {}", self.encryption.value()),
             "upnp = disabled".to_string(),
-            format!("file_apps = {}", d(&self.chemin_apps())),
+            format!("file_apps = {}", shown(&self.apps_path())),
             format!(
                 "file_state = {}",
-                d(&self.data_dir.join("engine_state.json"))
+                shown(&self.data_dir.join("engine_state.json"))
             ),
             format!(
                 "credentials_file = {}",
-                d(&self.data_dir.join("engine_state.json"))
+                shown(&self.data_dir.join("engine_state.json"))
             ),
-            format!("log_path = {}", d(&self.chemin_journal())),
+            format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
-            format!("minimum_fps_target = {}", self.fps_minimum),
+            format!("minimum_fps_target = {}", self.minimum_fps),
         ]);
         if let Some(output) = &self.output_name {
-            lignes.push(format!("output_name = {output}"));
+            lines.push(format!("output_name = {output}"));
         }
         if let Some(adapter) = &self.adapter_name {
-            lignes.push(format!("adapter_name = {adapter}"));
+            lines.push(format!("adapter_name = {adapter}"));
         }
-        let mut rendu = lignes.join("\n");
-        rendu.push('\n');
-        rendu
+        let mut rendered = lines.join("\n");
+        rendered.push('\n');
+        rendered
     }
 
-    /// Contenu du fichier `apps.json` : le bureau uniquement.
+    /// Contents of the `apps.json` file: the desktop and nothing else.
     ///
-    /// Aucune vignette n'est déclarée : elle ne servirait qu'à la liste
-    /// d'applications du moteur client, que le produit n'affiche jamais.
-    pub fn rendu_apps(&self) -> String {
+    /// No thumbnail is declared: it would only serve the client engine's
+    /// application list, which the product never shows.
+    pub fn render_apps(&self) -> String {
         concat!(
             "{\n",
             "  \"env\": {},\n",
@@ -202,7 +201,7 @@ impl SunshineConfig {
 mod tests {
     use super::*;
 
-    fn config_test() -> SunshineConfig {
+    fn test_config() -> SunshineConfig {
         SunshineConfig::new(
             EnginePorts::new(42100).unwrap(),
             "/data/zyrdesk/host",
@@ -211,94 +210,93 @@ mod tests {
     }
 
     #[test]
-    fn le_moteur_est_ferme_au_reseau_par_defaut() {
-        let rendu = config_test().rendu_conf();
-        assert!(rendu.contains("bind_address = 127.0.0.1"));
+    fn the_engine_is_closed_to_the_network_by_default() {
+        let rendered = test_config().render_conf();
+        assert!(rendered.contains("bind_address = 127.0.0.1"));
     }
 
     #[test]
-    fn l_ouverture_au_reseau_retire_la_restriction_d_adresse() {
-        let rendu = config_test().avec_ecoute(Ecoute::Reseau).rendu_conf();
-        assert!(!rendu.contains("bind_address"), "{rendu}");
-        // Le reste de la politique ne bouge pas pour autant.
-        assert!(rendu.contains("origin_web_ui_allowed = pc"));
-        assert!(rendu.contains("upnp = disabled"));
+    fn opening_to_the_network_drops_the_address_restriction() {
+        let rendered = test_config()
+            .with_listening(Listening::Network)
+            .render_conf();
+        assert!(!rendered.contains("bind_address"), "{rendered}");
+        // The rest of the policy stays put all the same.
+        assert!(rendered.contains("origin_web_ui_allowed = pc"));
+        assert!(rendered.contains("upnp = disabled"));
     }
 
     #[test]
-    fn conf_applique_la_politique_d_isolement() {
-        let rendu = config_test().rendu_conf();
-        assert!(rendu.contains("port = 42100"));
-        assert!(rendu.contains("origin_web_ui_allowed = pc"));
-        assert!(rendu.contains("system_tray = disabled"));
-        assert!(rendu.contains("capture = ddx"));
-        assert!(rendu.contains("upnp = disabled"));
-        assert!(rendu.contains("lan_encryption_mode = 0"));
+    fn the_conf_applies_the_isolation_policy() {
+        let rendered = test_config().render_conf();
+        assert!(rendered.contains("port = 42100"));
+        assert!(rendered.contains("origin_web_ui_allowed = pc"));
+        assert!(rendered.contains("system_tray = disabled"));
+        assert!(rendered.contains("capture = ddx"));
+        assert!(rendered.contains("upnp = disabled"));
+        assert!(rendered.contains("lan_encryption_mode = 0"));
     }
 
     #[test]
-    fn conf_place_l_etat_dans_le_repertoire_de_donnees() {
-        let rendu = config_test().rendu_conf();
-        assert!(rendu.contains("file_apps = /data/zyrdesk/host/apps.json"));
-        assert!(rendu.contains("file_state = /data/zyrdesk/host/engine_state.json"));
-        assert!(rendu.contains("credentials_file = /data/zyrdesk/host/engine_state.json"));
-        assert!(rendu.contains("log_path = /data/zyrdesk/logs/engine.log"));
+    fn the_conf_keeps_the_state_in_the_data_folder() {
+        let rendered = test_config().render_conf();
+        assert!(rendered.contains("file_apps = /data/zyrdesk/host/apps.json"));
+        assert!(rendered.contains("file_state = /data/zyrdesk/host/engine_state.json"));
+        assert!(rendered.contains("credentials_file = /data/zyrdesk/host/engine_state.json"));
+        assert!(rendered.contains("log_path = /data/zyrdesk/logs/engine.log"));
     }
 
     #[test]
-    fn les_dossiers_requis_couvrent_l_etat_et_les_journaux() {
-        let config = config_test();
-        let requis = config.dossiers_requis();
-        for chemin in [
-            config.chemin_conf(),
-            config.chemin_apps(),
-            config.chemin_journal(),
-        ] {
-            let parent = chemin.parent().unwrap();
+    fn the_required_folders_cover_both_state_and_logs() {
+        let config = test_config();
+        let required = config.required_dirs();
+        for path in [config.conf_path(), config.apps_path(), config.log_path()] {
+            let parent = path.parent().unwrap();
             assert!(
-                requis.contains(&parent),
-                "{} n'est couvert par aucun dossier créé",
-                chemin.display()
+                required.contains(&parent),
+                "{} is covered by no folder we create",
+                path.display()
             );
         }
     }
 
     #[test]
-    fn options_facultatives_absentes_par_defaut() {
-        let rendu = config_test().rendu_conf();
-        assert!(!rendu.contains("output_name"));
-        assert!(!rendu.contains("adapter_name"));
-        let avec = config_test()
-            .avec_ecran(r"\\.\DISPLAY1")
-            .avec_gpu("NVIDIA GeForce RTX 4070")
-            .rendu_conf();
-        assert!(avec.contains(r"output_name = \\.\DISPLAY1"));
-        assert!(avec.contains("adapter_name = NVIDIA GeForce RTX 4070"));
+    fn the_optional_settings_are_absent_by_default() {
+        let rendered = test_config().render_conf();
+        assert!(!rendered.contains("output_name"));
+        assert!(!rendered.contains("adapter_name"));
+
+        let with_both = test_config()
+            .with_screen(r"\\.\DISPLAY1")
+            .with_gpu("NVIDIA GeForce RTX 4070")
+            .render_conf();
+        assert!(with_both.contains(r"output_name = \\.\DISPLAY1"));
+        assert!(with_both.contains("adapter_name = NVIDIA GeForce RTX 4070"));
     }
 
     #[test]
-    fn la_cadence_minimale_vise_la_fluidite_du_bureau() {
-        let rendu = config_test().rendu_conf();
-        // Sans cette directive, le moteur retombe à la moitié de la
-        // cadence demandée dès que l'écran cesse de changer.
-        assert!(rendu.contains("minimum_fps_target = 60"), "{rendu}");
+    fn the_minimum_frame_rate_aims_at_a_smooth_desktop() {
+        let rendered = test_config().render_conf();
+        // Without this setting, the engine falls back to half the
+        // requested rate as soon as the screen stops changing.
+        assert!(rendered.contains("minimum_fps_target = 60"), "{rendered}");
 
-        let rendu = config_test().avec_fps_minimum(30.0).rendu_conf();
-        assert!(rendu.contains("minimum_fps_target = 30"), "{rendu}");
+        let rendered = test_config().with_minimum_fps(30.0).render_conf();
+        assert!(rendered.contains("minimum_fps_target = 30"), "{rendered}");
     }
 
     #[test]
-    fn mode_paranoiaque_active_le_chiffrement_interne() {
-        let rendu = config_test()
-            .avec_chiffrement(ChiffrementInterne::Obligatoire)
-            .rendu_conf();
-        assert!(rendu.contains("lan_encryption_mode = 2"));
-        assert!(rendu.contains("wan_encryption_mode = 2"));
+    fn the_paranoid_mode_turns_the_inner_encryption_on() {
+        let rendered = test_config()
+            .with_encryption(InnerEncryption::Mandatory)
+            .render_conf();
+        assert!(rendered.contains("lan_encryption_mode = 2"));
+        assert!(rendered.contains("wan_encryption_mode = 2"));
     }
 
     #[test]
-    fn apps_json_ne_contient_que_le_bureau() {
-        let apps = config_test().rendu_apps();
+    fn the_apps_file_holds_the_desktop_and_nothing_else() {
+        let apps = test_config().render_apps();
         assert!(apps.contains("\"name\": \"Desktop\""));
         assert_eq!(apps.matches("\"name\"").count(), 1);
     }

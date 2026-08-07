@@ -1,12 +1,12 @@
-//! Le service Windows : installation, cycle de vie, arrêt propre.
+//! The Windows service: installation, lifecycle, clean stop.
 //!
-//! Windows démarre ce programme, lui parle par le gestionnaire de
-//! services, et attend qu'il réponde. Répondre est une obligation : un
-//! service qui met trop longtemps à confirmer un arrêt est tué, et son
-//! moteur avec, sans que rien ne soit rangé.
+//! Windows starts this program, talks to it through the service control
+//! manager, and expects an answer. Answering is compulsory: a service
+//! that takes too long to confirm a stop is killed, and its engine with
+//! it, with nothing put away.
 //!
-//! Tout ce qui touche au gestionnaire de services est ici. Le travail
-//! réel est dans le superviseur, qui ne sait pas qu'il est un service.
+//! Everything touching the service control manager lives here. The real
+//! work is in the supervisor, which does not know it is a service.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -18,169 +18,172 @@ use windows_service::service::{
 };
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
-use windows_service::{Result as ResultatService, define_windows_service, service_dispatcher};
+use windows_service::{Result as ServiceResult, define_windows_service, service_dispatcher};
 
 use zyr_proto::paths;
 
-use crate::journal::Journal;
-use crate::superviseur::{self, Consigne, Fin};
+use crate::log::Log;
+use crate::supervisor::{self, End, StopOrder};
 
-/// Nom interne du service, celui qu'emploie Windows.
-pub const NOM: &str = "ZyrDesk";
+/// Internal service name, the one Windows uses.
+pub const NAME: &str = "ZyrDesk";
 
-/// Nom affiché dans la console des services.
-const NOM_AFFICHE: &str = "ZyrDesk";
+/// Name shown in the services console.
+const DISPLAY_NAME: &str = "ZyrDesk";
 
 const DESCRIPTION: &str =
     "Rend cet ordinateur accessible à distance, y compris avant l'ouverture de session.";
 
-/// Argument par lequel Windows lance ce programme en tant que service.
+/// Argument Windows uses to start this program as a service.
 ///
-/// Sans lui, le même exécutable sert d'outil d'installation en ligne de
-/// commande. Le distinguer explicitement évite de deviner d'où vient le
-/// lancement.
-pub const ARGUMENT_SERVICE: &str = "--execute-comme-service";
+/// Without it, the same executable serves as a command-line installer.
+/// Telling them apart explicitly beats guessing where the launch came
+/// from.
+pub const SERVICE_ARGUMENT: &str = "--run-as-service";
 
-/// Un service ne tourne qu'en un seul exemplaire : ce qu'il partage avec
-/// son gestionnaire est donc légitimement global.
-static CONSIGNE: std::sync::OnceLock<Consigne> = std::sync::OnceLock::new();
+/// A service runs in exactly one copy, so what it shares with its
+/// handler is legitimately global.
+static STOP_ORDER: std::sync::OnceLock<StopOrder> = std::sync::OnceLock::new();
 
-/// Rend la main à Windows, qui appellera le point d'entrée du service.
-pub fn ceder_a_windows() -> ResultatService<()> {
-    service_dispatcher::start(NOM, ffi_service_principal)
+/// Hands control to Windows, which will call the service entry point.
+pub fn hand_over_to_windows() -> ServiceResult<()> {
+    service_dispatcher::start(NAME, ffi_service_main)
 }
 
-define_windows_service!(ffi_service_principal, service_principal);
+define_windows_service!(ffi_service_main, service_main);
 
-fn service_principal(_arguments: Vec<OsString>) {
-    let journal = match Journal::ouvrir(&chemin_journal()) {
-        Ok(j) => j,
-        // Sans journal, il ne reste rien à dire à personne : mieux vaut
-        // ne pas démarrer qu'un service muet et invisible.
+fn service_main(_arguments: Vec<OsString>) {
+    let log = match Log::open(&log_path()) {
+        Ok(log) => log,
+        // Without a log there is nothing left to tell anyone: better not
+        // to start at all than to run mute and invisible.
         Err(_) => return,
     };
 
-    if let Err(e) = tenir_le_service(&journal) {
-        journal.ecrire(&format!("le service s'est arrêté sur une erreur : {e}"));
+    if let Err(e) = hold_the_service(&log) {
+        log.write(&format!("the service stopped on an error: {e}"));
     }
 }
 
-fn tenir_le_service(journal: &Journal) -> ResultatService<()> {
-    let consigne = CONSIGNE.get_or_init(Consigne::nouvelle).clone();
+fn hold_the_service(log: &Log) -> ServiceResult<()> {
+    let order = STOP_ORDER.get_or_init(StopOrder::new).clone();
 
-    let a_la_demande = {
-        let consigne = consigne.clone();
-        move |controle| match controle {
+    let on_request = {
+        let order = order.clone();
+        move |control| match control {
             ServiceControl::Stop | ServiceControl::Shutdown => {
-                consigne.demander_l_arret();
+                order.ask_for_a_stop();
                 ServiceControlHandlerResult::NoError
             }
-            // Windows demande parfois l'état courant : y répondre est ce
-            // qui distingue un service vivant d'un service bloqué.
+            // Windows sometimes asks for the current state: answering is
+            // what tells a live service from a stuck one.
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
             _ => ServiceControlHandlerResult::NotImplemented,
         }
     };
 
-    let etat = service_control_handler::register(NOM, a_la_demande)?;
-    etat.set_service_status(annonce(ServiceState::Running, ServiceExitCode::Win32(0)))?;
-    journal.ecrire("service démarré");
+    let handle = service_control_handler::register(NAME, on_request)?;
+    handle.set_service_status(announcement(
+        ServiceState::Running,
+        ServiceExitCode::Win32(0),
+    ))?;
+    log.write("service started");
 
-    let fin = superviseur::tourner(&consigne, journal);
-    journal.ecrire(&format!("service arrêté : {}", motif(fin)));
+    let end = supervisor::run(&order, log);
+    log.write(&format!("service stopped: {}", reason(end)));
 
-    // Un service qui renonce doit le dire à Windows autrement qu'en
-    // partant sans bruit, sans quoi la console des services le montre
-    // arrêté sans raison.
-    let sortie = match fin {
-        Fin::Demandee | Fin::ExtinctionDeWindows => ServiceExitCode::Win32(0),
-        Fin::MoteurIntenable | Fin::RienALancer => ServiceExitCode::ServiceSpecific(1),
+    // A service that gives up has to tell Windows so, rather than
+    // leaving without a word: the services console would otherwise show
+    // it stopped for no reason.
+    let exit = match end {
+        End::Asked | End::WindowsShutdown => ServiceExitCode::Win32(0),
+        End::EngineWontStand | End::NothingToStart => ServiceExitCode::ServiceSpecific(1),
     };
-    etat.set_service_status(annonce(ServiceState::Stopped, sortie))?;
+    handle.set_service_status(announcement(ServiceState::Stopped, exit))?;
     Ok(())
 }
 
-fn motif(fin: Fin) -> &'static str {
-    match fin {
-        Fin::Demandee => "arrêt demandé",
-        Fin::ExtinctionDeWindows => "extinction de Windows",
-        Fin::MoteurIntenable => "le moteur hôte ne tient pas debout",
-        Fin::RienALancer => "aucun moteur hôte à lancer",
+fn reason(end: End) -> &'static str {
+    match end {
+        End::Asked => "stop asked for",
+        End::WindowsShutdown => "Windows shutting down",
+        End::EngineWontStand => "the host engine will not stand",
+        End::NothingToStart => "no host engine to start",
     }
 }
 
-fn annonce(etat: ServiceState, sortie: ServiceExitCode) -> ServiceStatus {
+fn announcement(state: ServiceState, exit: ServiceExitCode) -> ServiceStatus {
     ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
-        current_state: etat,
+        current_state: state,
         controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
-        exit_code: sortie,
+        exit_code: exit,
         checkpoint: 0,
         wait_hint: Duration::default(),
         process_id: None,
     }
 }
 
-fn chemin_journal() -> PathBuf {
+fn log_path() -> PathBuf {
     paths::logs_dir().join("service.log")
 }
 
-/// Inscrit le service auprès de Windows, démarrage automatique.
-pub fn installer() -> Result<(), Box<dyn std::error::Error>> {
-    let gestionnaire = ServiceManager::local_computer(
+/// Registers the service with Windows, starting automatically.
+pub fn install() -> Result<(), Box<dyn std::error::Error>> {
+    let manager = ServiceManager::local_computer(
         None::<&str>,
         ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
     )?;
 
     let description = ServiceInfo {
-        name: OsString::from(NOM),
-        display_name: OsString::from(NOM_AFFICHE),
+        name: OsString::from(NAME),
+        display_name: OsString::from(DISPLAY_NAME),
         service_type: ServiceType::OWN_PROCESS,
-        // Le PC doit être joignable dès l'allumage, sans que personne
-        // n'ouvre de session : c'est tout l'objet du service.
+        // The computer has to be reachable from the moment it powers on,
+        // without anyone logging in: that is the whole point.
         start_type: ServiceStartType::AutoStart,
         error_control: ServiceErrorControl::Normal,
         executable_path: std::env::current_exe()?,
-        launch_arguments: vec![OsString::from(ARGUMENT_SERVICE)],
+        launch_arguments: vec![OsString::from(SERVICE_ARGUMENT)],
         dependencies: vec![],
-        // Compte par défaut : LocalSystem, seul à pouvoir atteindre le
-        // bureau sécurisé et à survivre aux changements de session.
+        // Default account: LocalSystem, the only one able to reach the
+        // secure desktop and to survive session changes.
         account_name: None,
         account_password: None,
     };
 
-    let service = gestionnaire.create_service(&description, ServiceAccess::CHANGE_CONFIG)?;
+    let service = manager.create_service(&description, ServiceAccess::CHANGE_CONFIG)?;
     service.set_description(DESCRIPTION)?;
     Ok(())
 }
 
-/// Retire le service. Il disparaît une fois arrêté.
-pub fn desinstaller() -> ResultatService<()> {
-    let gestionnaire = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = gestionnaire.open_service(NOM, ServiceAccess::STOP | ServiceAccess::DELETE)?;
-    // Un service en marche ne se retire qu'après son arrêt ; l'échec ici
-    // veut dire qu'il était déjà arrêté, ce qui convient.
+/// Removes the service. It disappears once stopped.
+pub fn uninstall() -> ServiceResult<()> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service = manager.open_service(NAME, ServiceAccess::STOP | ServiceAccess::DELETE)?;
+    // A running service is only removed once stopped; a failure here
+    // means it was already stopped, which suits us.
     let _ = service.stop();
     service.delete()?;
     Ok(())
 }
 
-pub fn demarrer() -> ResultatService<()> {
-    let gestionnaire = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = gestionnaire.open_service(NOM, ServiceAccess::START)?;
+pub fn start() -> ServiceResult<()> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service = manager.open_service(NAME, ServiceAccess::START)?;
     service.start::<&str>(&[])
 }
 
-pub fn arreter() -> ResultatService<()> {
-    let gestionnaire = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = gestionnaire.open_service(NOM, ServiceAccess::STOP)?;
+pub fn stop() -> ServiceResult<()> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service = manager.open_service(NAME, ServiceAccess::STOP)?;
     service.stop()?;
     Ok(())
 }
 
-/// État du service tel que Windows le rapporte.
-pub fn etat() -> ResultatService<ServiceState> {
-    let gestionnaire = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = gestionnaire.open_service(NOM, ServiceAccess::QUERY_STATUS)?;
+/// State of the service, as Windows reports it.
+pub fn state() -> ServiceResult<ServiceState> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service = manager.open_service(NAME, ServiceAccess::QUERY_STATUS)?;
     Ok(service.query_status()?.current_state)
 }

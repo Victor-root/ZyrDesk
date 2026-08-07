@@ -1,12 +1,12 @@
-mod banc;
+mod bench;
 mod connect;
+mod cpu;
 mod doctor;
 mod engines;
 mod host;
-mod identite;
-mod mesure;
-mod processeur;
-mod sonde;
+mod identity;
+mod measurement;
+mod probe;
 
 use clap::{Parser, Subcommand};
 
@@ -22,11 +22,11 @@ use clap::{Parser, Subcommand};
 )]
 struct Cli {
     #[command(subcommand)]
-    commande: Commande,
+    command: Command,
 }
 
 #[derive(Subcommand)]
-enum Commande {
+enum Command {
     /// Vérifie que cette machine est prête pour ZyrDesk
     Doctor,
     /// Inspecte les moteurs installés
@@ -42,28 +42,28 @@ enum Commande {
     /// Ouvre une session sur un ordinateur distant
     Connect(connect::Args),
     /// Affiche l'empreinte de cette machine
-    Identite,
+    Identity,
     /// Mesure ce que coûte le tunnel entre deux ordinateurs
-    Banc {
+    Bench {
         #[command(subcommand)]
-        action: banc::Action,
+        action: bench::Action,
     },
 }
 
 fn main() -> std::process::ExitCode {
-    match Cli::parse().commande {
-        Commande::Doctor => doctor::executer(),
-        Commande::Engines { action } => engines::executer(action),
-        Commande::Host { action } => host::executer(action),
-        Commande::Connect(args) => connect::executer(args),
-        Commande::Identite => identite::executer(),
-        Commande::Banc { action } => banc::executer(action),
+    match Cli::parse().command {
+        Command::Doctor => doctor::run(),
+        Command::Engines { action } => engines::run(action),
+        Command::Host { action } => host::run(action),
+        Command::Connect(args) => connect::run(args),
+        Command::Identity => identity::run(),
+        Command::Bench { action } => bench::run(action),
     }
 }
 
-/// Signale un échec de façon uniforme sur la sortie d'erreur.
-pub fn echec(contexte: &str, erreur: impl std::fmt::Display) -> std::process::ExitCode {
-    eprintln!("Échec : {contexte}");
-    eprintln!("  {erreur}");
+/// Reports a failure the same way everywhere, on the error stream.
+pub fn failure(context: &str, error: impl std::fmt::Display) -> std::process::ExitCode {
+    eprintln!("Échec : {context}");
+    eprintln!("  {error}");
     std::process::ExitCode::FAILURE
 }

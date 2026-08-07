@@ -1,12 +1,13 @@
-//! Supervision du moteur client (Moonlight officiel, non modifié à ce stade).
+//! Driving the client engine, which is the official Moonlight, still
+//! unmodified at this stage.
 //!
-//! Le moteur est piloté par sa ligne de commande et son mode portable :
-//! aucune de ses fenêtres de gestion n'est utilisée, et son état est
-//! cloisonné par appareil distant.
+//! The engine is steered through its command line and its portable
+//! mode: none of its management windows are used, and its state is kept
+//! apart for each remote device.
 
 pub mod command;
 pub mod process;
 pub mod state;
 
-pub use process::{ClientEngine, ErreurMoteur, IssueSession};
+pub use process::{ClientEngine, EngineError, SessionOutcome};
 pub use state::DeviceState;

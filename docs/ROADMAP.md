@@ -31,7 +31,7 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 ## M2 : Banc de mesure + tunnel (décision transport GRAVÉE)
 
 - Objectif : le tunnel prouve qu'il ne coûte rien, ou la décision est révisée.
-- Contenu : banc de mesure (`zyr-cli banc`, comparaison directe contre tunnel sur le même trajet, perte provoquée sous le transport, compteurs du tunnel) ; tunnel complet sur quinn (identité d'appareil épinglée, multiplexage des sept ports des moteurs, budget de taille de paquet) ; contrôleur de congestion média.
+- Contenu : banc de mesure (`zyr-cli bench`, comparaison directe contre tunnel sur le même trajet, perte provoquée sous le transport, compteurs du tunnel) ; tunnel complet sur quinn (identité d'appareil épinglée, multiplexage des sept ports des moteurs, budget de taille de paquet) ; contrôleur de congestion média.
 - Fait : le tunnel transporte de bout en bout, le contrôleur média est écrit et gardé par un test contre le contrôleur ordinaire, la décision transport est écrite (D13). **G-lat, G-loss et G-cpu tenus sur deux PC en Ethernet gigabit** : [perf/baselines/M2-lan-ethernet.md](../perf/baselines/M2-lan-ethernet.md).
 - Reste à faire : simulation d'aller-retour dans le banc (reportée à M5, voir NETWORK.md section 3) ; passage des moteurs en loopback strict, qui vient avec le service du jalon M3 puisque c'est lui qui portera les extrémités de tunnel ; procédure photon-à-photon ; comparaison A/B contre M1.
 - Critères de sortie : G-lat (fait), G-loss sur le débit (fait ; la condition à 25 ms d'aller-retour est reportée à M5), G-cpu (fait), mémo de décision transport (fait). **Jalon atteint pour ce qui dépendait du tunnel** ; le reste ci-dessus est rattaché aux jalons qui le portent.

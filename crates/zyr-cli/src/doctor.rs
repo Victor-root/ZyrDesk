@@ -31,7 +31,7 @@ struct Verification {
     detail: String,
 }
 
-pub fn executer() -> ExitCode {
+pub fn run() -> ExitCode {
     let verifications = [
         plateforme(),
         gpu(),
@@ -130,7 +130,7 @@ fn gpu() -> Verification {
 }
 
 fn ports_moteur() -> Verification {
-    match ports::base_libre() {
+    match ports::free_base() {
         Some(ports) => Verification {
             nom: "Ports moteur",
             etat: Etat::Ok,
@@ -176,10 +176,10 @@ fn dossier_donnees() -> Verification {
 }
 
 fn configuration_moteur() -> Verification {
-    match ports::base_libre() {
+    match ports::free_base() {
         Some(ports) => {
             let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
-            let directives = config.rendu_conf().lines().count();
+            let directives = config.render_conf().lines().count();
             Verification {
                 nom: "Configuration moteur",
                 etat: Etat::Ok,

@@ -1,29 +1,28 @@
-//! Contrôle de congestion adapté à un flux vidéo temps réel.
+//! Congestion control fit for a real-time video stream.
 //!
-//! Les contrôleurs de congestion habituels réduisent leur débit dès
-//! qu'ils constatent une perte : ils supposent que la perte signale une
-//! saturation et qu'il faut ralentir. Pour un transfert de fichier, c'est
-//! juste. Pour de la vidéo interactive, c'est ruineux : à 1 % de perte et
-//! 25 ms d'aller-retour, un tel contrôleur converge vers environ 5 Mb/s,
-//! alors qu'une session confortable en demande quarante. Le flux se
-//! retrouve étranglé, ou sa file d'attente gonfle en secondes de latence.
+//! Ordinary congestion controllers cut their rate the moment they see a
+//! loss: they assume the loss signals saturation and that slowing down
+//! is the answer. For a file transfer, that is right. For interactive
+//! video, it is ruinous: at 1% loss and 25 ms round trip, such a
+//! controller converges to about 5 Mb/s, where a comfortable session
+//! asks for forty. The stream is either strangled or its queue swells
+//! into seconds of latency.
 //!
-//! Ce contrôleur maintient au contraire une fenêtre calée sur ce que la
-//! session a réellement besoin de garder en vol : le produit du débit par
-//! le temps de trajet, doublé pour la marge, plus de quoi absorber une
-//! image entière émise d'un bloc.
+//! This controller instead holds a window sized on what the session
+//! genuinely needs to keep in flight: the rate times the round trip,
+//! doubled for margin, plus enough room for a whole frame sent at once.
 //!
-//! Ne pas réagir aux pertes serait déraisonnable pour un flux capable de
-//! saturer un lien. Ce n'est pas le cas ici : le débit est fixé par
-//! l'encodeur et ne dépasse jamais sa consigne. La fenêtre ne sert donc
-//! pas à émettre davantage, seulement à ne pas bloquer ce que l'encodeur
-//! produit déjà. Les pertes restent traitées par la correction d'erreur
-//! du protocole vidéo, qui est faite pour ça.
+//! Ignoring losses would be unreasonable for a stream able to saturate a
+//! link. This one cannot: the rate is set by the encoder and never goes
+//! past its target. The window is therefore not there to send more, only
+//! to avoid blocking what the encoder already produces. Losses stay the
+//! business of the video protocol's error correction, which exists for
+//! exactly that.
 //!
-//! Effet de bord recherché : une fenêtre large désamorce aussi le
-//! lissage d'émission. Chaque image part en rafale de plusieurs dizaines
-//! de paquets ; un lisseur les étalerait, ajoutant une gigue régulière
-//! que la régulation d'affichage du client devrait ensuite absorber.
+//! Wanted side effect: a wide window also defuses send pacing. Each
+//! frame leaves as a burst of several dozen packets; a pacer would
+//! spread them out, adding a steady jitter that the client's frame
+//! pacing would then have to absorb.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -32,69 +31,69 @@ use std::time::{Duration, Instant};
 use quinn::congestion::{Controller, ControllerFactory};
 use quinn_proto::RttEstimator;
 
-/// Fenêtre plancher, quels que soient débit et temps de trajet.
-const FENETRE_MINIMALE: u64 = 64 * 1024;
+/// Floor for the window, whatever the rate and the round trip.
+const MINIMUM_WINDOW: u64 = 64 * 1024;
 
-/// Temps de trajet maximal retenu pour le calcul.
+/// Largest round trip the computation will take into account.
 ///
-/// Une mesure aberrante, relevée pendant un blocage, produirait sinon
-/// une fenêtre absurde qui mettrait longtemps à redescendre.
-const RTT_MAXIMAL: Duration = Duration::from_millis(500);
+/// A wild reading, taken during a stall, would otherwise produce an
+/// absurd window that takes a long time to come back down.
+const MAXIMUM_RTT: Duration = Duration::from_millis(500);
 
-/// Temps de trajet supposé avant la première mesure.
-const RTT_INITIAL: Duration = Duration::from_millis(25);
+/// Round trip assumed before the first measurement.
+const INITIAL_RTT: Duration = Duration::from_millis(25);
 
-/// Caractéristiques du flux à transporter.
+/// Shape of the stream to carry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ProfilMedia {
-    pub debit_bits_par_seconde: u64,
-    pub images_par_seconde: u32,
+pub struct MediaProfile {
+    pub bits_per_second: u64,
+    pub frames_per_second: u32,
 }
 
-impl Default for ProfilMedia {
+impl Default for MediaProfile {
     fn default() -> Self {
         Self {
-            debit_bits_par_seconde: 20_000_000,
-            images_par_seconde: 60,
+            bits_per_second: 20_000_000,
+            frames_per_second: 60,
         }
     }
 }
 
-impl ProfilMedia {
-    /// Fenêtre nécessaire pour ce profil au temps de trajet donné.
+impl MediaProfile {
+    /// Window this profile needs at the given round trip.
     ///
-    /// Deux fois le produit débit-délai, plus une image entière : le
-    /// premier terme couvre ce qui est en vol, le second la rafale de
-    /// paquets qu'une image représente.
-    pub fn fenetre(&self, rtt: Duration) -> u64 {
-        let rtt = rtt.min(RTT_MAXIMAL);
-        let octets_par_seconde = self.debit_bits_par_seconde / 8;
-        let en_vol = (octets_par_seconde as f64 * rtt.as_secs_f64()) as u64;
-        let image = octets_par_seconde / self.images_par_seconde.max(1) as u64;
-        en_vol
+    /// Twice the bandwidth-delay product, plus one whole frame: the
+    /// first term covers what is in flight, the second the burst of
+    /// packets a frame amounts to.
+    pub fn window(&self, rtt: Duration) -> u64 {
+        let rtt = rtt.min(MAXIMUM_RTT);
+        let bytes_per_second = self.bits_per_second / 8;
+        let in_flight = (bytes_per_second as f64 * rtt.as_secs_f64()) as u64;
+        let frame = bytes_per_second / self.frames_per_second.max(1) as u64;
+        in_flight
             .saturating_mul(2)
-            .saturating_add(image)
-            .max(FENETRE_MINIMALE)
+            .saturating_add(frame)
+            .max(MINIMUM_WINDOW)
     }
 }
 
-/// Contrôleur maintenant la fenêtre nécessaire au flux.
+/// Controller holding the window the stream needs.
 #[derive(Debug, Clone)]
-pub struct ControleurMedia {
-    profil: ProfilMedia,
+pub struct MediaController {
+    profile: MediaProfile,
     rtt: Duration,
 }
 
-impl ControleurMedia {
-    pub fn nouveau(profil: ProfilMedia) -> Self {
+impl MediaController {
+    pub fn new(profile: MediaProfile) -> Self {
         Self {
-            profil,
-            rtt: RTT_INITIAL,
+            profile,
+            rtt: INITIAL_RTT,
         }
     }
 }
 
-impl Controller for ControleurMedia {
+impl Controller for MediaController {
     fn on_ack(
         &mut self,
         _now: Instant,
@@ -106,11 +105,11 @@ impl Controller for ControleurMedia {
         self.rtt = rtt.get();
     }
 
-    /// Les pertes ne réduisent pas la fenêtre.
+    /// Losses do not shrink the window.
     ///
-    /// Ralentir n'accélérerait pas la vidéo : elle est produite à un
-    /// débit fixe, et ses pertes sont réparées par la correction d'erreur
-    /// du protocole. Réduire ne ferait qu'ajouter du retard.
+    /// Slowing down would not speed the video up: it is produced at a
+    /// fixed rate, and its losses are repaired by the protocol's error
+    /// correction. Cutting back would only add delay.
     fn on_congestion_event(
         &mut self,
         _now: Instant,
@@ -123,7 +122,7 @@ impl Controller for ControleurMedia {
     fn on_mtu_update(&mut self, _new_mtu: u16) {}
 
     fn window(&self) -> u64 {
-        self.profil.fenetre(self.rtt)
+        self.profile.window(self.rtt)
     }
 
     fn clone_box(&self) -> Box<dyn Controller> {
@@ -131,7 +130,7 @@ impl Controller for ControleurMedia {
     }
 
     fn initial_window(&self) -> u64 {
-        self.profil.fenetre(RTT_INITIAL)
+        self.profile.window(INITIAL_RTT)
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn Any> {
@@ -139,9 +138,9 @@ impl Controller for ControleurMedia {
     }
 }
 
-impl ControllerFactory for ProfilMedia {
+impl ControllerFactory for MediaProfile {
     fn build(self: Arc<Self>, _now: Instant, _current_mtu: u16) -> Box<dyn Controller> {
-        Box::new(ControleurMedia::nouveau(*self))
+        Box::new(MediaController::new(*self))
     }
 }
 
@@ -149,108 +148,111 @@ impl ControllerFactory for ProfilMedia {
 mod tests {
     use super::*;
 
-    fn profil(mbps: u64) -> ProfilMedia {
-        ProfilMedia {
-            debit_bits_par_seconde: mbps * 1_000_000,
-            images_par_seconde: 60,
+    /// Packet size used when comparing windows.
+    const PACKET_SIZE: u16 = 1350;
+
+    fn profile(mbps: u64) -> MediaProfile {
+        MediaProfile {
+            bits_per_second: mbps * 1_000_000,
+            frames_per_second: 60,
         }
     }
 
     #[test]
-    fn la_fenetre_couvre_ce_qui_est_en_vol() {
-        // À 40 Mb/s et 25 ms, il y a 125 000 octets en vol à tout
-        // instant : une fenêtre plus courte bloquerait l'encodeur.
-        let f = profil(40).fenetre(Duration::from_millis(25));
-        assert!(f >= 250_000, "{f} octets, moins que deux fois le vol");
+    fn the_window_covers_what_is_in_flight() {
+        // At 40 Mb/s and 25 ms there are 125 000 bytes in flight at any
+        // moment: a shorter window would block the encoder.
+        let window = profile(40).window(Duration::from_millis(25));
+        assert!(
+            window >= 250_000,
+            "{window} bytes, less than twice the flight"
+        );
     }
 
     #[test]
-    fn la_fenetre_absorbe_une_image_entiere() {
-        // Même à temps de trajet négligeable, une image part d'un bloc.
-        let p = profil(40);
-        let image = p.debit_bits_par_seconde / 8 / 60;
-        assert!(p.fenetre(Duration::ZERO) >= image);
+    fn the_window_absorbs_a_whole_frame() {
+        // Even at a negligible round trip, a frame leaves in one go.
+        let profile = profile(40);
+        let frame = profile.bits_per_second / 8 / 60;
+        assert!(profile.window(Duration::ZERO) >= frame);
     }
 
     #[test]
-    fn la_fenetre_suit_le_debit_et_le_trajet() {
-        let court = profil(40).fenetre(Duration::from_millis(5));
-        let long = profil(40).fenetre(Duration::from_millis(50));
-        assert!(long > court);
+    fn the_window_follows_the_rate_and_the_round_trip() {
+        let short = profile(40).window(Duration::from_millis(5));
+        let long = profile(40).window(Duration::from_millis(50));
+        assert!(long > short);
 
-        let faible = profil(10).fenetre(Duration::from_millis(25));
-        let fort = profil(80).fenetre(Duration::from_millis(25));
-        assert!(fort > faible);
+        let slow = profile(10).window(Duration::from_millis(25));
+        let fast = profile(80).window(Duration::from_millis(25));
+        assert!(fast > slow);
     }
 
     #[test]
-    fn un_trajet_aberrant_ne_fait_pas_exploser_la_fenetre() {
-        let p = profil(40);
-        let plafonnee = p.fenetre(RTT_MAXIMAL);
-        assert_eq!(p.fenetre(Duration::from_secs(30)), plafonnee);
+    fn a_wild_round_trip_does_not_blow_the_window_up() {
+        let profile = profile(40);
+        let capped = profile.window(MAXIMUM_RTT);
+        assert_eq!(profile.window(Duration::from_secs(30)), capped);
     }
 
     #[test]
-    fn un_profil_degenere_reste_exploitable() {
-        let p = ProfilMedia {
-            debit_bits_par_seconde: 0,
-            images_par_seconde: 0,
+    fn a_degenerate_profile_stays_usable() {
+        let profile = MediaProfile {
+            bits_per_second: 0,
+            frames_per_second: 0,
         };
-        assert_eq!(p.fenetre(Duration::from_millis(25)), FENETRE_MINIMALE);
+        assert_eq!(profile.window(Duration::from_millis(25)), MINIMUM_WINDOW);
     }
 
     #[test]
-    fn les_pertes_ne_reduisent_pas_la_fenetre() {
-        let mut c = ControleurMedia::nouveau(profil(40));
-        let avant = c.window();
-        let maintenant = Instant::now();
+    fn losses_do_not_shrink_the_window() {
+        let mut controller = MediaController::new(profile(40));
+        let before = controller.window();
+        let now = Instant::now();
         for _ in 0..100 {
-            c.on_congestion_event(maintenant, maintenant, true, 100_000);
+            controller.on_congestion_event(now, now, true, 100_000);
         }
-        assert_eq!(c.window(), avant);
+        assert_eq!(controller.window(), before);
     }
 
     #[test]
-    fn la_fenetre_initiale_est_deja_utilisable() {
-        let c = ControleurMedia::nouveau(profil(40));
-        assert_eq!(c.initial_window(), c.window());
-        assert!(c.initial_window() >= FENETRE_MINIMALE);
+    fn the_initial_window_is_already_usable() {
+        let controller = MediaController::new(profile(40));
+        assert_eq!(controller.initial_window(), controller.window());
+        assert!(controller.initial_window() >= MINIMUM_WINDOW);
     }
 
     #[test]
-    fn un_controleur_ordinaire_s_effondre_la_ou_le_notre_tient() {
-        // C'est la raison d'être de tout ce module, et la propriété dont
-        // dépend la décision de tout faire passer par le tunnel. Elle est
-        // vérifiée ici contre le contrôleur par défaut du transport.
-        let p = profil(40);
+    fn an_ordinary_controller_collapses_where_ours_holds() {
+        // This is the whole reason this module exists, and the property
+        // the decision to tunnel everything rests on. It is checked here
+        // against the transport's own default controller.
+        let profile = profile(40);
         let rtt = Duration::from_millis(25);
-        let necessaire = p.debit_bits_par_seconde / 8 * 25 / 1000;
+        let needed = profile.bits_per_second / 8 * 25 / 1000;
 
-        let maintenant = Instant::now();
-        let mut ordinaire =
-            Arc::new(quinn::congestion::CubicConfig::default()).build(maintenant, TAILLE_PAQUET);
-        let mut notre = ControleurMedia::nouveau(p);
+        let now = Instant::now();
+        let mut ordinary =
+            Arc::new(quinn::congestion::CubicConfig::default()).build(now, PACKET_SIZE);
+        let mut ours = MediaController::new(profile);
 
-        // Une trentaine de pertes, soit environ ce que produit 1 % de
-        // perte sur quelques secondes de vidéo.
+        // Thirty-odd losses, roughly what 1% loss produces over a few
+        // seconds of video.
         for _ in 0..30 {
-            ordinaire.on_congestion_event(maintenant, maintenant, false, TAILLE_PAQUET as u64);
-            notre.on_congestion_event(maintenant, maintenant, false, TAILLE_PAQUET as u64);
+            ordinary.on_congestion_event(now, now, false, PACKET_SIZE as u64);
+            ours.on_congestion_event(now, now, false, PACKET_SIZE as u64);
         }
 
         assert!(
-            ordinaire.window() < necessaire,
-            "le contrôleur ordinaire tient {} octets, il n'aurait pas dû",
-            ordinaire.window()
+            ordinary.window() < needed,
+            "the ordinary controller holds {} bytes, it should not have",
+            ordinary.window()
         );
         assert!(
-            notre.window() >= necessaire,
-            "{} octets seulement, il en faut {necessaire} pour tenir 40 Mb/s à 25 ms",
-            notre.window()
+            ours.window() >= needed,
+            "{} bytes only, {needed} are needed to hold 40 Mb/s at 25 ms",
+            ours.window()
         );
-        assert_eq!(notre.window(), p.fenetre(rtt));
+        assert_eq!(ours.window(), profile.window(rtt));
     }
-
-    /// Taille de paquet servant aux comparaisons de fenêtre.
-    const TAILLE_PAQUET: u16 = 1350;
 }

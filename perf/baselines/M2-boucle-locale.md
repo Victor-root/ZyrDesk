@@ -1,6 +1,6 @@
 # Coût du tunnel en boucle locale
 
-Relevés obtenus au jalon M2 avec `zyr-cli banc`, sur la machine de développement, les deux extrémités dans le même ordinateur.
+Relevés obtenus au jalon M2 avec `zyr-cli bench`, sur la machine de développement, les deux extrémités dans le même ordinateur.
 
 Ces chiffres ne valident aucun seuil. Ils servent de point de comparaison pour les mesures sur deux vraies machines, et de garde contre une régression de la même ampleur que celles trouvées ici. Une boucle locale n'a ni carte réseau, ni Wi-Fi, ni pare-feu, ni aller-retour réaliste.
 

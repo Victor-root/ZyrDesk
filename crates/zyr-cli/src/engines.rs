@@ -1,8 +1,8 @@
-//! Inspection des moteurs déposés sur la machine.
+//! Inspecting the engines dropped on the machine.
 //!
-//! Les moteurs ne sont pas encore compilés par le projet : ils sont
-//! déposés manuellement, sous un nom ZyrDesk. Cette commande dit
-//! exactement ce qui est attendu et ce qui manque.
+//! The project does not build the engines yet: they are placed by hand,
+//! under a ZyrDesk name. This command says exactly what is expected and
+//! what is missing.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -16,28 +16,28 @@ pub enum Action {
     Status,
 }
 
-pub fn executer(action: Action) -> ExitCode {
+pub fn run(action: Action) -> ExitCode {
     match action {
         Action::Status => status(),
     }
 }
 
 fn status() -> ExitCode {
-    let hote = paths::host_engine_exe();
+    let host = paths::host_engine_exe();
     let client = paths::client_engine_exe();
 
     println!("Moteurs ZyrDesk\n");
-    let hote_ok = ligne("Moteur hôte", &hote);
-    let client_ok = ligne("Moteur client", &client);
+    let host_ok = line("Moteur hôte", &host);
+    let client_ok = line("Moteur client", &client);
     println!();
 
-    if hote_ok && client_ok {
+    if host_ok && client_ok {
         println!("Les deux moteurs sont en place.");
         return ExitCode::SUCCESS;
     }
 
     println!("Mise en place attendue :\n");
-    if !hote_ok {
+    if !host_ok {
         println!("  Moteur hôte");
         println!("    1. Récupérer la version épinglée dans patches/MANIFEST.md.");
         println!(
@@ -46,7 +46,7 @@ fn status() -> ExitCode {
         );
         println!(
             "    3. Renommer son exécutable en {}",
-            hote.file_name().unwrap_or_default().to_string_lossy()
+            host.file_name().unwrap_or_default().to_string_lossy()
         );
     }
     if !client_ok {
@@ -64,10 +64,10 @@ fn status() -> ExitCode {
     ExitCode::FAILURE
 }
 
-fn ligne(role: &str, chemin: &Path) -> bool {
-    let present = chemin.is_file();
-    let etat = if present { "[ OK ]" } else { "[ !  ]" };
+fn line(role: &str, path: &Path) -> bool {
+    let present = path.is_file();
+    let mark = if present { "[ OK ]" } else { "[ !  ]" };
     let detail = if present { "présent" } else { "absent" };
-    println!("{etat} {role:14} {detail} : {}", chemin.display());
+    println!("{mark} {role:14} {detail} : {}", path.display());
     present
 }
