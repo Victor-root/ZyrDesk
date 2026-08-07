@@ -216,4 +216,41 @@ mod tests {
         assert_eq!(c.initial_window(), c.window());
         assert!(c.initial_window() >= FENETRE_MINIMALE);
     }
+
+    #[test]
+    fn un_controleur_ordinaire_s_effondre_la_ou_le_notre_tient() {
+        // C'est la raison d'être de tout ce module, et la propriété dont
+        // dépend la décision de tout faire passer par le tunnel. Elle est
+        // vérifiée ici contre le contrôleur par défaut du transport.
+        let p = profil(40);
+        let rtt = Duration::from_millis(25);
+        let necessaire = p.debit_bits_par_seconde / 8 * 25 / 1000;
+
+        let maintenant = Instant::now();
+        let mut ordinaire =
+            Arc::new(quinn::congestion::CubicConfig::default()).build(maintenant, TAILLE_PAQUET);
+        let mut notre = ControleurMedia::nouveau(p);
+
+        // Une trentaine de pertes, soit environ ce que produit 1 % de
+        // perte sur quelques secondes de vidéo.
+        for _ in 0..30 {
+            ordinaire.on_congestion_event(maintenant, maintenant, false, TAILLE_PAQUET as u64);
+            notre.on_congestion_event(maintenant, maintenant, false, TAILLE_PAQUET as u64);
+        }
+
+        assert!(
+            ordinaire.window() < necessaire,
+            "le contrôleur ordinaire tient {} octets, il n'aurait pas dû",
+            ordinaire.window()
+        );
+        assert!(
+            notre.window() >= necessaire,
+            "{} octets seulement, il en faut {necessaire} pour tenir 40 Mb/s à 25 ms",
+            notre.window()
+        );
+        assert_eq!(notre.window(), p.fenetre(rtt));
+    }
+
+    /// Taille de paquet servant aux comparaisons de fenêtre.
+    const TAILLE_PAQUET: u16 = 1350;
 }

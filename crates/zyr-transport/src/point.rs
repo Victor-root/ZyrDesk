@@ -12,6 +12,7 @@ use std::time::Duration;
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{ClientConfig, Connection, Endpoint, ServerConfig, TransportConfig};
 
+use crate::chemin::{Chemin, CheminDegrade};
 use crate::congestion::ProfilMedia;
 use crate::identite::{Empreinte, Identite, PairEpingle};
 
@@ -117,6 +118,32 @@ fn fournisseur() -> Arc<rustls::crypto::CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
 }
 
+/// Ouvre le point de connexion sur le chemin demandé.
+fn ouvrir(
+    ecoute: SocketAddr,
+    serveur: Option<ServerConfig>,
+    chemin: Chemin,
+) -> Result<Endpoint, ErreurPoint> {
+    let Chemin::Degrade { perte_pour_mille } = chemin else {
+        return Ok(match serveur {
+            Some(config) => Endpoint::server(config, ecoute)?,
+            None => Endpoint::client(ecoute)?,
+        });
+    };
+
+    let execution = quinn::default_runtime()
+        .ok_or_else(|| ErreurPoint::Configuration("aucune exécution asynchrone".to_string()))?;
+    let socket = execution.wrap_udp_socket(std::net::UdpSocket::bind(ecoute)?)?;
+    let degrade = Arc::new(CheminDegrade::nouveau(socket, perte_pour_mille));
+
+    Ok(Endpoint::new_with_abstract_socket(
+        quinn::EndpointConfig::default(),
+        serveur,
+        degrade,
+        execution,
+    )?)
+}
+
 /// Une extrémité du tunnel.
 pub struct PointTerminal {
     endpoint: Endpoint,
@@ -129,6 +156,20 @@ impl PointTerminal {
         pair: Empreinte,
         profil: ProfilMedia,
         ecoute: SocketAddr,
+    ) -> Result<Self, ErreurPoint> {
+        Self::hote_sur_chemin(identite, pair, profil, ecoute, Chemin::Direct)
+    }
+
+    /// La même chose, sur un chemin dont la qualité est imposée.
+    ///
+    /// Réservé au banc de mesure : c'est ainsi qu'on éprouve le
+    /// contrôle de congestion sans réseau dégradé sous la main.
+    pub fn hote_sur_chemin(
+        identite: &Identite,
+        pair: Empreinte,
+        profil: ProfilMedia,
+        ecoute: SocketAddr,
+        chemin: Chemin,
     ) -> Result<Self, ErreurPoint> {
         let mut tls = rustls::ServerConfig::builder_with_provider(fournisseur())
             .with_protocol_versions(&[&rustls::version::TLS13])
@@ -144,7 +185,7 @@ impl PointTerminal {
         config.transport_config(transport(profil));
 
         Ok(Self {
-            endpoint: Endpoint::server(config, ecoute)?,
+            endpoint: ouvrir(ecoute, Some(config), chemin)?,
         })
     }
 
@@ -154,6 +195,17 @@ impl PointTerminal {
         pair: Empreinte,
         profil: ProfilMedia,
         ecoute: SocketAddr,
+    ) -> Result<Self, ErreurPoint> {
+        Self::client_sur_chemin(identite, pair, profil, ecoute, Chemin::Direct)
+    }
+
+    /// La même chose, sur un chemin dont la qualité est imposée.
+    pub fn client_sur_chemin(
+        identite: &Identite,
+        pair: Empreinte,
+        profil: ProfilMedia,
+        ecoute: SocketAddr,
+        chemin: Chemin,
     ) -> Result<Self, ErreurPoint> {
         let mut tls = rustls::ClientConfig::builder_with_provider(fournisseur())
             .with_protocol_versions(&[&rustls::version::TLS13])
@@ -169,7 +221,7 @@ impl PointTerminal {
         let mut config = ClientConfig::new(Arc::new(quic));
         config.transport_config(transport(profil));
 
-        let mut endpoint = Endpoint::client(ecoute)?;
+        let mut endpoint = ouvrir(ecoute, None, chemin)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })
     }

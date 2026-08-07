@@ -20,7 +20,7 @@ use clap::{Args, Subcommand};
 use tokio::net::UdpSocket;
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
 use zyr_proto::paths;
-use zyr_transport::{Empreinte, Identite, PointTerminal, ProfilMedia};
+use zyr_transport::{Chemin, Empreinte, Identite, PointTerminal, ProfilMedia};
 use zyr_tunnel::Tunnel;
 
 use crate::echec;
@@ -77,6 +77,10 @@ pub struct ArgsClient {
     /// Images par seconde simulées
     #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u32).range(1..=480))]
     fps: u32,
+    /// Perte à provoquer sous le tunnel, pour mille paquets émis.
+    /// Sert à vérifier que la perte n'étrangle pas le débit.
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u16).range(0..=1000))]
+    perte: u16,
 }
 
 const DEBIT_PAR_DEFAUT: u64 = 50;
@@ -179,11 +183,18 @@ async fn mesurer(args: ArgsClient) -> Result<(), Box<dyn Error>> {
     println!("Empreinte de cet ordinateur : {}", identite.empreinte());
     println!("Connexion à {}...", args.adresse);
 
-    let point = PointTerminal::client(
+    // La référence directe n'est jamais dégradée : elle doit rester le
+    // même trajet pour les deux mesures, sinon la comparaison ne dit rien.
+    let chemin = match args.perte {
+        0 => Chemin::Direct,
+        perte_pour_mille => Chemin::Degrade { perte_pour_mille },
+    };
+    let point = PointTerminal::client_sur_chemin(
         &identite,
         args.pair,
         profil(args.debit, args.fps),
         SocketAddr::new(TOUTES_INTERFACES, 0),
+        chemin,
     )?;
     let connexion = point
         .connecter(SocketAddr::new(args.adresse, PORT_TUNNEL))
@@ -208,6 +219,12 @@ async fn mesurer(args: ArgsClient) -> Result<(), Box<dyn Error>> {
         cadence.taille,
         args.duree
     );
+    if args.perte > 0 {
+        println!(
+            "Perte provoquée sous le tunnel : {:.1} % des paquets émis.",
+            args.perte as f64 / 10.0
+        );
+    }
 
     println!("\nMesure directe...");
     let direct = sonde::sonder(
