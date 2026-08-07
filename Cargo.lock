@@ -1857,6 +1857,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "tokio",
+ "windows-sys 0.61.2",
  "zyr-engine-client",
  "zyr-engine-host",
  "zyr-proto",

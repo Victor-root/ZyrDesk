@@ -14,3 +14,6 @@ zyr-transport.workspace = true
 zyr-tunnel.workspace = true
 clap.workspace = true
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "macros", "time"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Threading"] }

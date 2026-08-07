@@ -5,6 +5,7 @@ mod engines;
 mod host;
 mod identite;
 mod mesure;
+mod processeur;
 mod sonde;
 
 use clap::{Parser, Subcommand};

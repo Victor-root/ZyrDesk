@@ -89,21 +89,21 @@ zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --debi
 
 ## 4. Coût en processeur
 
-Pendant une mesure longue, sur les **deux PC**, ouvrir le Gestionnaire des tâches, onglet Détails, et regarder `zyr-cli.exe`.
-
-Sur le **PC client** :
+Rien à ouvrir : le banc lit son propre temps processeur, sur exactement la fenêtre qu'il mesure. Sur le **PC client** :
 
 ```
 zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 120
 ```
 
+Le PC client affiche un bloc « Processeur de ce banc » à la fin. Le PC hôte affiche sa propre ligne dans sa fenêtre, à la fin de chaque mesure.
+
 > **M2-R3 (processeur)**
 >
-> Pourcentage processeur de `zyr-cli.exe` sur chaque PC pendant la mesure, et nombre de coeurs de chaque machine.
+> Recopier le bloc « Processeur de ce banc » du PC client, et la ligne en pourcentage du PC hôte.
 >
-> **Seuil à tenir (G-cpu) : au plus 8 % d'un coeur à 40 Mb/s.** Le Gestionnaire des tâches affiche un pourcentage du total : sur un processeur à 8 coeurs, 8 % d'un coeur s'affiche autour de 1 %.
+> **Seuil à tenir (G-cpu) : au plus 8 % d'un coeur à 40 Mb/s.** Cent pour cent vaut un coeur entier saturé, indépendamment du nombre de coeurs de la machine.
 >
-> Attention : le banc mesure dans les deux sens en même temps, donc il fait deux fois le travail d'une vraie session. Un résultat au double du seuil reste acceptable ; le noter tel quel.
+> Attention : le banc travaille dans les deux sens en même temps, alors qu'une vraie session n'en fait qu'un par extrémité. Un résultat au double du seuil reste donc acceptable ; le noter tel quel.
 
 ---
 

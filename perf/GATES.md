@@ -10,13 +10,17 @@ Le banc de mesure existe à partir du jalon M2 : les décisions d'architecture r
 |---|---|---|
 | G-lat | Latence ajoutée par le tunnel : médiane <= 1 ms, p99 <= 3 ms | Comparaison directe contre le même flux sans tunnel (mode diagnostic), mêmes machines, même session |
 | G-loss | À 40 Mb/s, 25 ms d'aller-retour et 1 % de perte pendant 10 min : débit utile >= 95 % du nominal, aucun gel visible > 250 ms | Profil réseau simulé, statistiques du moteur client + compteurs du tunnel |
-| G-cpu | Processus tunnel <= 8 % d'un cœur à 40 Mb/s | Compteurs Windows par processus, moyenne sur 5 min |
+| G-cpu | Processus tunnel <= 8 % d'un cœur à 40 Mb/s | Temps processeur relevé par le banc lui-même, sur la fenêtre exacte de chaque salve |
 | G-start | Clic « Se connecter » vers première image : <= 4 s en réseau local, <= 8 s via Internet | Chronométrage sur 10 essais, médiane |
 | G-frame | p99 de l'intervalle entre images affichées <= 20 ms sur 5 min | Statistiques du moteur client |
 
 ## Outil de mesure
 
 Depuis le jalon M2, `zyr-cli banc` mesure G-lat, G-loss et G-cpu sans qu'aucun moteur soit nécessaire : il envoie ses propres paquets par rafales, une par image, comme le fait un encodeur, et mesure deux fois le même trajet, avec et sans tunnel. Il sait aussi provoquer une perte réelle sous le transport (`--perte`, en pour mille), ce qui exerce ses vrais mécanismes de détection.
+
+Trois chiffres sont relevés par le programme lui-même plutôt que par l'opérateur : le temps processeur, sur la fenêtre exacte de chaque salve ; la part des paquets manquants due à une file d'émission pleine plutôt qu'au réseau ; et la taille de paquet que le chemin permet. Un relevé pris à la main dans un gestionnaire de tâches échantillonne, arrondit, et ne couvre pas la bonne fenêtre.
+
+Deux réserves de lecture. Le temps processeur porte sur tout le programme, fils compris : le banc enchaîne donc ses deux salves au lieu de les mener de front. Et chaque extrémité ne constate les pertes que sur ce qu'elle a émis, le transport ne les détectant que par les acquittements qui lui reviennent : le trajet retour se lit dans la fenêtre de l'autre banc.
 
 Marche à suivre sur deux PC : [docs/testing/M2-PROTOCOLE.md](../docs/testing/M2-PROTOCOLE.md). Toujours en version release : en mode debug, le tunnel mesure environ quatre fois son coût réel.
 

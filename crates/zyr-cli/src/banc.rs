@@ -25,6 +25,7 @@ use zyr_tunnel::Tunnel;
 
 use crate::echec;
 use crate::mesure::{Resultat, ecart, millisecondes};
+use crate::processeur::{self, Chronometre};
 use crate::sonde::{self, Cadence};
 
 /// Port du banc, hors de la plage réservée aux moteurs.
@@ -162,12 +163,19 @@ async fn tenir(args: ArgsHote) -> Result<(), Box<dyn Error>> {
             let observee = connexion.clone();
             match Tunnel::hote(connexion, MOTEUR, ports).await {
                 Ok(mut tunnel) => {
+                    let calcul = Chronometre::demarrer();
                     if let Err(e) = tunnel.attendre().await {
                         println!("Fin de la mesure : {e}");
                     }
                     // Le trajet retour n'est visible que d'ici : l'autre
                     // banc ne connaît que ce qu'il a lui-même émis.
                     println!("  {}", ventilation(&tunnel, &observee, "au retour"));
+                    if let Some(charge) = calcul.and_then(|c| c.charge()) {
+                        println!(
+                            "  {charge:.1} % d'un coeur, sur une machine à {} coeurs",
+                            processeur::coeurs()
+                        );
+                    }
                 }
                 Err(e) => println!("Tunnel impossible : {e}"),
             }
@@ -230,24 +238,32 @@ async fn mesurer(args: ArgsClient) -> Result<(), Box<dyn Error>> {
         );
     }
 
+    // Le processeur est relevé sur chacune des deux salves : c'est
+    // l'écart entre les deux qui dit ce que le tunnel coûte en calcul,
+    // la sonde elle-même consommant déjà quelque chose.
     println!("\nMesure directe...");
+    let calcul_direct = Chronometre::demarrer();
     let direct = sonde::sonder(
         UdpSocket::bind(SocketAddr::new(TOUTES_INTERFACES, 0)).await?,
         SocketAddr::new(args.adresse, PORT_DIRECT),
         cadence,
     )
     .await?;
+    let charge_directe = calcul_direct.and_then(|c| c.charge());
 
     println!("Mesure à travers le tunnel...");
     let tunnel = Tunnel::client(connexion.clone(), ecoute, ports).await?;
+    let calcul_tunnel = Chronometre::demarrer();
     let par_tunnel = sonde::sonder(
         UdpSocket::bind(SocketAddr::new(ecoute, 0)).await?,
         SocketAddr::new(ecoute, ports.video()),
         cadence,
     )
     .await?;
+    let charge_tunnel = calcul_tunnel.and_then(|c| c.charge());
 
     rapporter(&direct, &par_tunnel, &taille, &connexion, &tunnel);
+    rapporter_calcul(charge_directe, charge_tunnel);
 
     // Refermer proprement libère l'autre banc tout de suite, au lieu de
     // le laisser attendre l'expiration de la connexion.
@@ -323,6 +339,26 @@ fn rapporter(
         par_tunnel.debit(),
         direct.debit()
     );
+}
+
+/// Ce que le tunnel coûte en calcul, exprimé en part d'un coeur.
+fn rapporter_calcul(directe: Option<f64>, tunnel: Option<f64>) {
+    let (Some(directe), Some(tunnel)) = (directe, tunnel) else {
+        println!("\n  Charge processeur : non mesurable sur cette plateforme.");
+        return;
+    };
+
+    println!("\n--- Processeur de ce banc ---");
+    println!("  sans tunnel        {directe:.1} % d'un coeur");
+    println!("  avec tunnel        {tunnel:.1} % d'un coeur");
+    println!(
+        "  coût du tunnel     {:+.1} point(s), sur une machine à {} coeurs",
+        tunnel - directe,
+        processeur::coeurs()
+    );
+    // Le banc émet et reçoit en même temps : une session réelle ne fait
+    // qu'un des deux sens par extrémité.
+    println!("  ce banc travaille dans les deux sens à la fois, une session n'en fait qu'un");
 }
 
 /// D'où vient ce qui manque, du point de vue d'un seul des deux bancs.
