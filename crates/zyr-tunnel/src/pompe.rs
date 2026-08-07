@@ -171,10 +171,6 @@ impl PortsDatagramme {
     pub fn port(&self, canal: CanalDatagramme) -> &PortMoteur {
         &self.0[canal.rang()]
     }
-
-    pub fn tous(&self) -> impl Iterator<Item = (CanalDatagramme, &PortMoteur)> {
-        CanalDatagramme::TOUS.into_iter().zip(self.0.iter())
-    }
 }
 
 /// Annonce le canal en tête d'un flux fiable.
@@ -331,8 +327,9 @@ mod tests {
         let montes = PortsDatagramme::depuis_moteur([127, 0, 0, 1].into(), ports)
             .await
             .unwrap();
-        for (canal, port) in montes.tous() {
-            assert_eq!(port.adresse_locale().unwrap().port(), canal.port(ports));
+        for canal in CanalDatagramme::TOUS {
+            let ouvert = montes.port(canal).adresse_locale().unwrap().port();
+            assert_eq!(ouvert, canal.port(ports));
         }
     }
 }

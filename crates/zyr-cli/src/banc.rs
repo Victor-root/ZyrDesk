@@ -284,6 +284,12 @@ fn rapporter(
     if releve.illisibles > 0 {
         println!("  {} datagrammes illisibles", releve.illisibles);
     }
+    if releve.sans_destinataire > 0 {
+        println!(
+            "  {} datagrammes arrivés sur un canal muet côté local",
+            releve.sans_destinataire
+        );
+    }
 
     println!("\n--- Ce que coûte le tunnel ---");
     println!(

@@ -32,10 +32,6 @@ impl Empreinte {
     pub fn du_certificat(certificat: &CertificateDer<'_>) -> Self {
         Self(Sha256::digest(certificat.as_ref()).into())
     }
-
-    pub fn octets(&self) -> &[u8; 32] {
-        &self.0
-    }
 }
 
 /// Texte qui n'est pas une empreinte.
