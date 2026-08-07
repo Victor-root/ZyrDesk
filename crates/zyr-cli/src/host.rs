@@ -85,7 +85,9 @@ fn start() -> ExitCode {
     }
 
     let api = EngineApi::new(ports, credentials.clone());
-    if let Err(e) = api.wait_until_ready(START_DELAY) {
+    // In the foreground, a keyboard interrupt ends the whole program:
+    // there is nothing to give up on halfway.
+    if let Err(e) = api.wait_until_ready(START_DELAY, || true) {
         let _ = engine.stop();
         return failure(
             "le moteur n'a pas fini de démarrer",

@@ -25,6 +25,8 @@ pub enum ApiError {
     UnreadableAnswer(String),
     PinRefused,
     TimedOut,
+    /// The caller asked us to stop waiting before the delay was over.
+    Abandoned,
 }
 
 impl fmt::Display for ApiError {
@@ -35,6 +37,7 @@ impl fmt::Display for ApiError {
             ApiError::UnreadableAnswer(e) => write!(f, "réponse du moteur illisible : {e}"),
             ApiError::PinRefused => write!(f, "code d'appairage refusé par le moteur"),
             ApiError::TimedOut => write!(f, "le moteur n'a pas répondu dans le délai imparti"),
+            ApiError::Abandoned => write!(f, "attente du moteur abandonnée"),
         }
     }
 }
@@ -124,14 +127,28 @@ impl EngineApi {
     }
 
     /// Waits for the engine to answer, up to the given delay.
-    pub fn wait_until_ready(&self, delay: Duration) -> Result<(), ApiError> {
+    ///
+    /// `keep_waiting` is asked between two attempts. The Windows service
+    /// answers no there once it has been told to stop: a service that
+    /// spends half a minute inside a start-up wait before confirming a
+    /// stop is a service Windows kills, engine included.
+    pub fn wait_until_ready(
+        &self,
+        delay: Duration,
+        keep_waiting: impl Fn() -> bool,
+    ) -> Result<(), ApiError> {
         let deadline = Instant::now() + delay;
         loop {
-            match self.health() {
-                Ok(()) => return Ok(()),
-                Err(_) if Instant::now() < deadline => std::thread::sleep(POLL_INTERVAL),
-                Err(_) => return Err(ApiError::TimedOut),
+            if self.health().is_ok() {
+                return Ok(());
             }
+            if !keep_waiting() {
+                return Err(ApiError::Abandoned);
+            }
+            if Instant::now() >= deadline {
+                return Err(ApiError::TimedOut);
+            }
+            std::thread::sleep(POLL_INTERVAL);
         }
     }
 

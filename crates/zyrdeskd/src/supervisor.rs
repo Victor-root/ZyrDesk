@@ -243,7 +243,7 @@ fn one_engine_life(
     ));
 
     let api = EngineApi::new(ports, credentials.clone());
-    if let Err(e) = api.wait_until_ready(START_DELAY) {
+    if let Err(e) = api.wait_until_ready(START_DELAY, || !order.stop_asked()) {
         let _ = engine.stop();
         return Err(format!("the engine never finished starting: {e}"));
     }
