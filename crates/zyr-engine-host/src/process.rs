@@ -4,19 +4,19 @@
 //! everything happens in the configuration file we produce and the
 //! arguments we pass.
 //!
-//! The supervisor still runs in the foreground here, in the user's own
-//! console: a keyboard interrupt therefore reaches the engine too, and
-//! it shuts down through its own mechanism. The Windows service replaces
-//! that with an explicitly commanded stop.
+//! Where the process actually lands is not decided here: a console
+//! supervisor keeps it in its own session, the Windows service pushes it
+//! into the session carrying the screen. That is what `Launcher` is for.
 
 use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 
 use crate::config::SunshineConfig;
 use crate::credentials::Credentials;
+use crate::launch::{Launch, Launcher, Running, SameSession};
 
 #[derive(Debug)]
 pub enum EngineError {
@@ -89,7 +89,8 @@ pub struct HostEngine {
     config: SunshineConfig,
     credentials: Credentials,
     log: PathBuf,
-    process: Option<Child>,
+    launcher: Box<dyn Launcher>,
+    process: Option<Box<dyn Running>>,
 }
 
 impl HostEngine {
@@ -104,8 +105,15 @@ impl HostEngine {
             config,
             credentials,
             log: log.into(),
+            launcher: Box::new(SameSession),
             process: None,
         }
+    }
+
+    /// Starts the engine somewhere other than the current session.
+    pub fn launched_by(mut self, launcher: impl Launcher + 'static) -> Self {
+        self.launcher = Box::new(launcher);
+        self
     }
 
     pub fn config(&self) -> &SunshineConfig {
@@ -165,31 +173,31 @@ impl HostEngine {
         if self.process.is_some() {
             return Err(EngineError::AlreadyStarted);
         }
-        let log = fs::File::create(&self.log)?;
-        let log_for_errors = log.try_clone()?;
-        let child = self
-            .command()
-            .args(start_arguments(&self.config))
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(log))
-            .stderr(Stdio::from(log_for_errors))
-            .spawn()?;
-        self.process = Some(child);
+        self.process = Some(self.launcher.launch(&Launch {
+            exe: self.exe.clone(),
+            arguments: start_arguments(&self.config),
+            working_dir: working_dir(&self.exe).map(Path::to_path_buf),
+            log: self.log.clone(),
+        })?);
         Ok(())
+    }
+
+    /// Identifier of the engine's process, once started.
+    pub fn process_id(&self) -> Option<u32> {
+        self.process.as_ref().map(|process| process.identifier())
     }
 
     /// Exit code, if the engine has stopped on its own.
     pub fn exit_seen(&mut self) -> Result<Option<Option<i32>>, EngineError> {
         match self.process.as_mut() {
-            Some(child) => Ok(child.try_wait()?.map(|status| status.code())),
+            Some(process) => Ok(process.exit_seen()?),
             None => Ok(None),
         }
     }
 
     pub fn stop(&mut self) -> Result<(), EngineError> {
-        if let Some(mut child) = self.process.take() {
-            child.kill()?;
-            child.wait()?;
+        if let Some(mut process) = self.process.take() {
+            process.stop()?;
         }
         Ok(())
     }
@@ -204,10 +212,36 @@ impl Drop for HostEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
     use zyr_proto::net::EnginePorts;
 
     fn config() -> SunshineConfig {
         SunshineConfig::new(EnginePorts::new(42100).unwrap(), "/data/host", "/data/logs")
+    }
+
+    /// Launcher that starts nothing and only remembers what it was asked
+    /// for.
+    struct Noted(Arc<Mutex<Option<Launch>>>);
+
+    struct Nothing;
+
+    impl Running for Nothing {
+        fn identifier(&self) -> u32 {
+            0
+        }
+        fn exit_seen(&mut self) -> io::Result<Option<Option<i32>>> {
+            Ok(None)
+        }
+        fn stop(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Launcher for Noted {
+        fn launch(&self, launch: &Launch) -> io::Result<Box<dyn Running>> {
+            *self.0.lock().unwrap() = Some(launch.clone());
+            Ok(Box::new(Nothing))
+        }
     }
 
     #[test]
@@ -226,6 +260,30 @@ mod tests {
         let args = provisioning_arguments(&config(), &credentials);
         assert!(args[0].ends_with("engine.conf"));
         assert_eq!(&args[1..], ["--creds", "u", "p"]);
+    }
+
+    #[test]
+    fn the_engine_is_started_by_the_launcher_it_was_given() {
+        // Under the service, this launcher is what puts the engine in
+        // the session carrying the screen: a start that went around it
+        // would give a black picture and nothing to explain it.
+        let seen = Arc::new(Mutex::new(None));
+        let mut engine = HostEngine::new(
+            "/nowhere/zyrdesk-host-engine",
+            config(),
+            Credentials::random(),
+            "/data/logs/host.log",
+        )
+        .launched_by(Noted(Arc::clone(&seen)));
+
+        engine.start().unwrap();
+        let launch = seen.lock().unwrap().clone().expect("nothing was launched");
+        assert_eq!(launch.exe, Path::new("/nowhere/zyrdesk-host-engine"));
+        assert!(launch.arguments[0].ends_with("engine.conf"));
+        assert_eq!(launch.working_dir.as_deref(), Some(Path::new("/nowhere")));
+
+        // Starting twice would leave the first process unwatched.
+        assert!(matches!(engine.start(), Err(EngineError::AlreadyStarted)));
     }
 
     #[test]

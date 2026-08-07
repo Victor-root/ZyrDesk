@@ -1,13 +1,15 @@
 //! Description of the host engine currently running.
 //!
-//! The foreground supervisor and the pairing command are two separate
-//! processes: the first publishes here what it takes to reach the
-//! engine, the second reads it back.
+//! Whoever holds the engine, console supervisor or Windows service, and
+//! the pairing command are two separate processes: the first publishes
+//! here what it takes to reach the engine, the second reads it back.
 //!
-//! The file holds the local API credentials. It lives with the rest of
-//! the product's data, unprotected, which is acceptable while everything
-//! sits in one working folder. The Windows service replaces it with
-//! in-memory state and system-protected storage.
+//! The file holds the local API credentials in clear. It lives with the
+//! rest of the product's data, which is acceptable while everything sits
+//! in one working folder belonging to one person: reading it grants no
+//! more than pairing a device with this engine. Once the interface talks
+//! to the service over a named pipe, the credentials stay in memory and
+//! this file loses its reason to exist.
 
 use std::fmt;
 use std::fs;

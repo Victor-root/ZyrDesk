@@ -23,9 +23,9 @@ Mes ordinateurs
 
 ## État du projet
 
-Jalon en cours : **M2, le tunnel et son banc de mesure**. Le tunnel chiffré est écrit et transporte de bout en bout : identité d'appareil épinglée, les sept ports des moteurs multiplexés dans une seule connexion, contrôleur de congestion adapté à la vidéo temps réel. Le banc mesure ce qu'il coûte, en comparant le même trajet avec et sans lui, avec ou sans perte provoquée. Il reste à mesurer sur deux vraies machines, en suivant [docs/testing/M2-PROTOCOLE.md](docs/testing/M2-PROTOCOLE.md).
+Jalon en cours : **M3, le service Windows**. L'ordinateur hôte devient joignable sans que personne n'ait ouvert de session dessus : le service démarre avec Windows, lance le moteur dans la session attachée à l'écran, et l'y relance quand cette session change. Il reste à le vérifier sur deux vraies machines, en suivant [docs/testing/M3-PROTOCOLE.md](docs/testing/M3-PROTOCOLE.md), et à lui confier les extrémités du tunnel.
 
-Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. Le jalon M1 a produit une première session distante réelle en 1080p ; ses hypothèses restantes sont listées dans [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md). La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
+Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. Le jalon M1 a produit une première session distante réelle en 1080p ; ses hypothèses restantes sont listées dans [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md). Le jalon M2 a livré le tunnel chiffré et son banc de mesure : les trois seuils de performance sont tenus sur deux PC en Ethernet gigabit ([perf/baselines/M2-lan-ethernet.md](perf/baselines/M2-lan-ethernet.md)). La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Utiliser en ligne de commande
 
@@ -40,6 +40,15 @@ zyr-cli host pin 1234    # autoriser un ordinateur qui se connecte
 zyr-cli connect <adresse> --stats   # ouvrir une session
 zyr-cli bench host --pair <empreinte>              # mesurer le tunnel, côté attente
 zyr-cli bench client <adresse> --pair <empreinte>  # mesurer le tunnel, côté mesure
+```
+
+Pour rendre l'ordinateur accessible en permanence, sans avoir à ouvrir de session dessus, le service prend le relais de `host start`. Les commandes ci-dessous demandent une fenêtre administrateur :
+
+```bash
+zyrdeskd install     # inscrire le service, démarrage avec Windows
+zyrdeskd start       # le lancer tout de suite
+zyrdeskd status      # savoir où il en est
+zyrdeskd uninstall   # le retirer
 ```
 
 ## Construire
@@ -76,6 +85,7 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 | [docs/TESTING.md](docs/TESTING.md) | Niveaux de tests, seuils de performance, banc de mesure |
 | [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md) | Première session sur deux PC, et hypothèses à lever |
 | [docs/testing/M2-PROTOCOLE.md](docs/testing/M2-PROTOCOLE.md) | Mesure du coût du tunnel sur deux PC |
+| [docs/testing/M3-PROTOCOLE.md](docs/testing/M3-PROTOCOLE.md) | Accès distant sans personne devant la machine |
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | Licences, obligations, marques, brevets codecs |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Décisions actées et décisions ouvertes |
 | [patches/MANIFEST.md](patches/MANIFEST.md) | Versions de moteurs épinglées et adaptations appliquées |

@@ -40,6 +40,8 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 
 - Objectif : l'hôte fonctionne avant toute ouverture de session et survit aux transitions.
 - Contenu : `zyrdeskd` en service LocalSystem, lancement du moteur dans la session console dès le démarrage, relance au changement de session (verrouillage, changement d'utilisateur), arrêt propre.
+- Fait : le service s'installe, démarre avec Windows, tient son moteur et le relance selon une politique qui distingue un arrêt système d'un incident ; le moteur est lancé dans la session attachée à l'écran, avec le jeton du service déplacé vers cette session, et il est relancé quand cette session change. Marche à suivre sur deux PC : [docs/testing/M3-PROTOCOLE.md](testing/M3-PROTOCOLE.md).
+- Reste à faire : le service porte les extrémités de tunnel, ce qui permet de repasser les moteurs en loopback strict ; règle de pare-feu posée à l'installation ; l'interface parlera au service par tube nommé au jalon M4.
 - Résultat observable : PC hôte redémarré, personne de connecté : on se connecte depuis l'autre PC, on voit l'écran de connexion Windows, on tape le mot de passe, on ouvre la session.
 - Critères de sortie : connexion depuis l'écran de connexion ; invite UAC visible et cliquable à distance ; verrouillage/déverrouillage en cours de session = coupure <= 5 s auto-récupérée.
 

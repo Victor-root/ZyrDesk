@@ -10,6 +10,8 @@ mod supervisor;
 
 #[cfg(windows)]
 mod service;
+#[cfg(windows)]
+mod session;
 
 use std::process::ExitCode;
 

@@ -1,10 +1,17 @@
 //! Keeps the host engine running for as long as the service does.
 //!
-//! The supervisor strings three things together: preparing the engine,
-//! starting it, and deciding what to do when it stops. The decision
-//! itself belongs to the neighbouring module's policy; here we apply it,
-//! write down what happens, and hand back the moment a stop is asked
-//! for.
+//! The supervisor strings four things together: choosing the session the
+//! engine has to live in, preparing it, starting it, and deciding what
+//! to do when it stops. The decision itself belongs to the neighbouring
+//! module's policy; here we apply it, write down what happens, and hand
+//! back the moment a stop is asked for.
+//!
+//! The session is not a detail. A service lives in a session with no
+//! screen: the engine has to be pushed into the one carrying the
+//! display, and that session changes whenever somebody signs in, signs
+//! out or switches user. The supervisor watches it and starts the engine
+//! over in the new one, because an engine left in a dead session shows
+//! nothing at all.
 
 // Outside Windows nothing calls this module: the service does not exist
 // there. It stays compiled and tested everywhere, the logic having
@@ -18,7 +25,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use zyr_engine_host::api::EngineApi;
-use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Listening, SunshineConfig, ports};
+use zyr_engine_host::{
+    Credentials, EngineRuntime, HostEngine, Launcher, Listening, SunshineConfig, ports,
+};
 use zyr_proto::paths;
 
 use crate::log::Log;
@@ -28,8 +37,40 @@ use crate::restart::{Next, Policy};
 const START_DELAY: Duration = Duration::from_secs(30);
 
 /// How often the supervisor takes back control to check the engine's
-/// state and the stop order.
+/// state, the session on screen and the stop order.
 const WATCH_PERIOD: Duration = Duration::from_millis(500);
+
+/// Pause before starting the engine over in a new session.
+///
+/// A user switch hands the screen over in several steps: waiting a
+/// moment lets it settle rather than starting an engine in a session
+/// that is already on its way out.
+const SESSION_SETTLING: Duration = Duration::from_secs(1);
+
+/// Identifier of the session attached to the screen, when there is one.
+#[cfg(windows)]
+fn screen_session() -> Option<u32> {
+    crate::session::session_on_screen()
+}
+
+/// Outside Windows there is no console session, and no service either.
+/// The supervisor stays compiled and tested everywhere, its logic having
+/// nothing platform-specific about it.
+#[cfg(not(windows))]
+fn screen_session() -> Option<u32> {
+    Some(0)
+}
+
+/// How to start the engine in that session.
+#[cfg(windows)]
+fn launcher(session: u32) -> impl Launcher + 'static {
+    crate::session::SessionLauncher::new(session)
+}
+
+#[cfg(not(windows))]
+fn launcher(_session: u32) -> impl Launcher + 'static {
+    zyr_engine_host::SameSession
+}
 
 /// Stop order, shared with whatever commands the service.
 #[derive(Debug, Clone, Default)]
@@ -49,6 +90,16 @@ impl StopOrder {
     pub fn stop_asked(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }
+}
+
+/// How one life of the engine ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Life {
+    /// It stopped, with this exit code.
+    Stopped(Option<i32>),
+    /// The screen moved to another session: the engine was stopped on
+    /// purpose, and belongs over there now.
+    SessionChanged,
 }
 
 /// Why the supervisor handed back.
@@ -74,27 +125,55 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
 
     let mut policy = Policy::new();
     let runtime_path = EngineRuntime::standard_path();
+    let mut screenless = false;
 
     loop {
         if order.stop_asked() {
             return End::Asked;
         }
 
+        let Some(session) = screen_session() else {
+            // Between two sign-ins, no session owns the screen. An
+            // engine started then would capture nothing, so we wait
+            // instead of counting it as a failure.
+            if !screenless {
+                log.write("no session on screen, waiting for one");
+                screenless = true;
+            }
+            if !wait(SESSION_SETTLING, order) {
+                return End::Asked;
+            }
+            continue;
+        };
+        screenless = false;
+
         let start = Instant::now();
-        let stop = match one_engine_life(&exe, &runtime_path, order, log) {
-            Ok(code) => code,
+        let life = match one_engine_life(&exe, &runtime_path, session, order, log) {
+            Ok(life) => life,
             Err(reason) => {
                 log.write(&reason);
                 // An engine that will not start is a failure like any
                 // other: the policy decides whether insisting is worth
                 // it.
-                None
+                Life::Stopped(None)
             }
         };
 
         if order.stop_asked() {
             return End::Asked;
         }
+
+        // A session change is not an incident: the engine did what was
+        // asked of it, and the failure count has no business moving.
+        let Life::Stopped(stop) = life else {
+            log.write(&format!(
+                "the screen left session {session}, the engine starts over in the new one"
+            ));
+            if !wait(SESSION_SETTLING, order) {
+                return End::Asked;
+            }
+            continue;
+        };
 
         let lifetime = start.elapsed();
         match policy.after_stop(stop, lifetime) {
@@ -126,15 +205,16 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     }
 }
 
-/// Starts the engine and follows it until it stops.
+/// Starts the engine in the given session and follows it until it stops.
 ///
-/// Returns the exit code, or why it could not live at all.
+/// Returns how its life ended, or why it could not live at all.
 fn one_engine_life(
     exe: &std::path::Path,
     runtime_path: &std::path::Path,
+    session: u32,
     order: &StopOrder,
     log: &Log,
-) -> Result<Option<i32>, String> {
+) -> Result<Life, String> {
     let Some(ports) = ports::free_base() else {
         return Err("no port available in the range reserved for the engines".to_string());
     };
@@ -150,12 +230,17 @@ fn one_engine_life(
         config,
         credentials.clone(),
         paths::logs_dir().join("engine-console.log"),
-    );
+    )
+    .launched_by(launcher(session));
 
     engine.prepare().map_err(|e| e.to_string())?;
     engine.provision_credentials().map_err(|e| e.to_string())?;
     engine.start().map_err(|e| e.to_string())?;
-    log.write(&format!("engine started on base port {}", ports.base()));
+    log.write(&format!(
+        "engine started in session {session}, process {}, on base port {}",
+        engine.process_id().unwrap_or_default(),
+        ports.base()
+    ));
 
     let api = EngineApi::new(ports, credentials.clone());
     if let Err(e) = api.wait_until_ready(START_DELAY) {
@@ -170,31 +255,43 @@ fn one_engine_life(
     }
     log.write("remote access active");
 
-    let code = wait_for_the_engine_to_stop(&mut engine, order, log);
+    let life = wait_for_the_engine_to_stop(&mut engine, session, order, log);
     let _ = EngineRuntime::remove(runtime_path);
-    Ok(code)
+    Ok(life)
 }
 
-/// Waits for the engine to stop, or stops it when asked to.
+/// Waits for the engine to stop, and stops it when it no longer has a
+/// reason to run where it is.
 fn wait_for_the_engine_to_stop(
     engine: &mut HostEngine,
+    session: u32,
     order: &StopOrder,
     log: &Log,
-) -> Option<i32> {
+) -> Life {
     loop {
         if order.stop_asked() {
             log.write("stop asked for, the engine is being stopped");
             let _ = engine.stop();
-            return None;
+            return Life::Stopped(None);
         }
+
+        // The exit code is asked for first: it is the only thing that
+        // tells a Windows shutdown from an incident, and a shutdown also
+        // takes the session on screen away.
         match engine.exit_seen() {
-            Ok(Some(code)) => return code,
-            Ok(None) => std::thread::sleep(WATCH_PERIOD),
+            Ok(Some(code)) => return Life::Stopped(code),
+            Ok(None) => {}
             Err(e) => {
                 log.write(&format!("cannot watch the engine: {e}"));
-                return None;
+                return Life::Stopped(None);
             }
         }
+
+        if screen_session() != Some(session) {
+            let _ = engine.stop();
+            return Life::SessionChanged;
+        }
+        std::thread::sleep(WATCH_PERIOD);
     }
 }
 
