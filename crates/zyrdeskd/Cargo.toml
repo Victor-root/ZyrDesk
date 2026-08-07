@@ -1,0 +1,16 @@
+[package]
+name = "zyrdeskd"
+description = "Service ZyrDesk : accès distant avant ouverture de session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true
+zyr-engine-host.workspace = true
+clap.workspace = true
+time = { version = "0.3.55", default-features = false, features = ["std", "formatting", "macros"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8.1"
