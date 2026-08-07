@@ -1,0 +1,9 @@
+[package]
+name = "zyr-proto"
+description = "Types et constantes partagés entre les composants ZyrDesk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

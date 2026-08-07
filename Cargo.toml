@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/zyr-proto",
+    "crates/zyr-engine-host",
+    "crates/zyr-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+repository = "https://github.com/Victor-root/ZyrDesk"
+
+[workspace.dependencies]
+zyr-proto = { path = "crates/zyr-proto" }
+zyr-engine-host = { path = "crates/zyr-engine-host" }
+clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

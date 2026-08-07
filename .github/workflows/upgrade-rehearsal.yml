@@ -1,0 +1,100 @@
+name: Suivi des moteurs upstream
+
+# Détecte la dérive entre nos moteurs épinglés et leurs versions upstream.
+# Objectif : découvrir les nouvelles versions en semaines, jamais au moment
+# où une mise à niveau devient urgente. Voir docs/engines/UPGRADING.md.
+
+on:
+  schedule:
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  derive:
+    name: Comparer avec upstream
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: false
+
+      - name: Relever les versions épinglées et upstream
+        id: releve
+        run: |
+          set -euo pipefail
+
+          sunshine_pin=$(git ls-tree HEAD engines/sunshine | awk '{print $3}')
+          moonlight_pin=$(git ls-tree HEAD engines/moonlight-qt | awk '{print $3}')
+
+          sunshine_tag=$(git ls-remote --tags --refs \
+            https://github.com/LizardByte/Sunshine 'v*' \
+            | awk -F/ '{print $NF}' | sort -V | tail -1)
+          sunshine_tag_sha=$(git ls-remote \
+            https://github.com/LizardByte/Sunshine "refs/tags/${sunshine_tag}" \
+            | awk '{print $1}')
+          moonlight_head=$(git ls-remote \
+            https://github.com/moonlight-stream/moonlight-qt HEAD \
+            | awk '{print $1}')
+
+          {
+            echo "sunshine_pin=$sunshine_pin"
+            echo "sunshine_tag=$sunshine_tag"
+            echo "sunshine_tag_sha=$sunshine_tag_sha"
+            echo "moonlight_pin=$moonlight_pin"
+            echo "moonlight_head=$moonlight_head"
+          } >> "$GITHUB_OUTPUT"
+
+          derive=non
+          [ "$sunshine_pin" != "$sunshine_tag_sha" ] && derive=oui
+          [ "$moonlight_pin" != "$moonlight_head" ] && derive=oui
+          echo "derive=$derive" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Moteurs épinglés"
+            echo ""
+            echo "| Moteur | Épinglé | Upstream |"
+            echo "|---|---|---|"
+            echo "| Sunshine | \`${sunshine_pin:0:12}\` | \`${sunshine_tag_sha:0:12}\` (${sunshine_tag}) |"
+            echo "| Moonlight | \`${moonlight_pin:0:12}\` | \`${moonlight_head:0:12}\` (master) |"
+            echo ""
+            echo "Dérive détectée : ${derive}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Signaler la dérive
+        if: steps.releve.outputs.derive == 'oui'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          S_PIN: ${{ steps.releve.outputs.sunshine_pin }}
+          S_TAG: ${{ steps.releve.outputs.sunshine_tag }}
+          S_SHA: ${{ steps.releve.outputs.sunshine_tag_sha }}
+          M_PIN: ${{ steps.releve.outputs.moonlight_pin }}
+          M_HEAD: ${{ steps.releve.outputs.moonlight_head }}
+        run: |
+          set -euo pipefail
+          titre="Moteurs upstream : nouvelles versions disponibles"
+          corps=$(cat <<EOF
+          Le suivi mensuel a détecté des versions upstream plus récentes que nos épinglages.
+
+          | Moteur | Épinglé | Upstream disponible |
+          |---|---|---|
+          | Sunshine | \`${S_PIN}\` | \`${S_SHA}\` (\`${S_TAG}\`) |
+          | Moonlight | \`${M_PIN}\` | \`${M_HEAD}\` (master) |
+
+          Marche à suivre : \`docs/engines/UPGRADING.md\`.
+          Une mise à niveau n'est fusionnée qu'après la suite contrat moteur et le banc de performance.
+
+          Vérifier en priorité si la nouvelle version de Sunshine corrige une faille de sécurité.
+          EOF
+          )
+          existante=$(gh issue list --state open --search "$titre in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existante" ]; then
+            gh issue comment "$existante" --body "$corps"
+          else
+            gh issue create --title "$titre" --body "$corps"
+          fi

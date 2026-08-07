@@ -23,7 +23,26 @@ Mes ordinateurs
 
 ## État du projet
 
-Phase actuelle : architecture. Aucun code applicatif pour l'instant. L'ensemble des choix techniques, l'organisation du dépôt et la feuille de route sont documentés ci-dessous.
+Jalon en cours : **M0, fondations**. Le dépôt est opérationnel : ossature Rust, moteurs upstream épinglés, outil de diagnostic, squelette d'installateur Windows, intégration continue. Aucune session distante n'est encore possible : c'est l'objet du jalon M1. La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Construire
+
+Prérequis : Rust stable. Les moteurs sont des submodules et ne sont pas nécessaires pour compiler la partie ZyrDesk.
+
+```bash
+git clone https://github.com/Victor-root/ZyrDesk
+cd ZyrDesk
+cargo test --workspace
+cargo run -p zyr-cli -- doctor
+```
+
+Pour récupérer aussi les moteurs upstream (volumineux, utiles à partir du jalon M1) :
+
+```bash
+git submodule update --init --recursive
+```
+
+Construction de l'installateur Windows : voir [packaging/windows/README.md](packaging/windows/README.md).
 
 ## Documentation
 
@@ -40,6 +59,8 @@ Phase actuelle : architecture. Aucun code applicatif pour l'instant. L'ensemble 
 | [docs/TESTING.md](docs/TESTING.md) | Niveaux de tests, seuils de performance, banc de mesure |
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | Licences, obligations, marques, brevets codecs |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Décisions actées et décisions ouvertes |
+| [patches/MANIFEST.md](patches/MANIFEST.md) | Versions de moteurs épinglées et adaptations appliquées |
+| [perf/GATES.md](perf/GATES.md) | Seuils de performance chiffrés et protocoles de mesure |
 
 ## Licences
 

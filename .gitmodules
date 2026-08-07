@@ -1,0 +1,6 @@
+[submodule "engines/sunshine"]
+	path = engines/sunshine
+	url = https://github.com/LizardByte/Sunshine
+[submodule "engines/moonlight-qt"]
+	path = engines/moonlight-qt
+	url = https://github.com/moonlight-stream/moonlight-qt
