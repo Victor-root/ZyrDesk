@@ -96,10 +96,12 @@ fn gpu() -> Verification {
                 .map(str::to_string)
                 .collect();
             if noms.is_empty() {
+                // Toute machine Windows réelle expose un adaptateur : une liste
+                // vide traduit une requête sans réponse, pas une absence de GPU.
                 Verification {
                     nom: "Processeur graphique",
-                    etat: Etat::Echec,
-                    detail: "aucun GPU détecté".to_string(),
+                    etat: Etat::Attention,
+                    detail: "aucun adaptateur listé".to_string(),
                 }
             } else {
                 Verification {
