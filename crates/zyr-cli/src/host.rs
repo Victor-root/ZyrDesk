@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use clap::Subcommand;
 use zyr_engine_host::api::EngineApi;
-use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, SunshineConfig, ports};
+use zyr_engine_host::{Credentials, Ecoute, EngineRuntime, HostEngine, SunshineConfig, ports};
 use zyr_proto::paths;
 
 use crate::echec;
@@ -60,7 +60,11 @@ fn start() -> ExitCode {
     };
 
     let chemin_runtime = EngineRuntime::chemin_standard();
-    let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
+    // Sans tunnel, le moteur doit être joignable depuis le réseau local,
+    // sans quoi aucun autre ordinateur ne peut l'atteindre. Le tunnel du
+    // jalon M2 permettra de le refermer sur la machine locale.
+    let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir())
+        .avec_ecoute(Ecoute::Reseau);
     let creds = Credentials::aleatoires();
     let mut moteur = HostEngine::nouveau(
         &exe,
@@ -103,6 +107,8 @@ fn start() -> ExitCode {
 
     println!("\nAccès distant actif.");
     println!("  Cet ordinateur est joignable sur le réseau local.");
+    println!("  Si un autre ordinateur n'arrive pas à se connecter, autorisez le");
+    println!("  moteur dans le pare-feu Windows (voir docs/testing/M1-PROTOCOLE.md).");
     println!("  Pour autoriser un ordinateur qui se connecte pour la première fois,");
     println!("  lancez ici : zyr-cli host pin <code affiché sur l'autre ordinateur>");
     println!("\nCtrl+C pour arrêter.\n");

@@ -14,7 +14,7 @@ pub mod ports;
 pub mod process;
 pub mod runtime;
 
-pub use config::{ChiffrementInterne, SunshineConfig};
+pub use config::{ChiffrementInterne, Ecoute, SunshineConfig};
 pub use credentials::Credentials;
 pub use process::HostEngine;
 pub use runtime::EngineRuntime;

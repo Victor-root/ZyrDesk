@@ -29,6 +29,15 @@ Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis
 
 4. Relancer `zyr-cli engines status` jusqu'à obtenir les deux moteurs en place.
 
+5. Sur le **PC hôte**, autoriser le moteur dans le pare-feu Windows, une seule fois, dans une fenêtre **administrateur** :
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "ZyrDesk (moteur hote)" -Direction Inbound `
+     -Program "$PWD\data\engines\host\zyrdesk-host-engine.exe" -Action Allow
+   ```
+
+   Les binaires officiels déposés à la main n'apportent aucune règle : sans celle-ci, le PC client ne peut joindre aucun port. L'installateur du produit s'en chargera.
+
 ---
 
 ## 2. Première session
@@ -40,6 +49,8 @@ zyr-cli host start
 ```
 
 Attendu : « Accès distant actif ». Laisser cette fenêtre ouverte.
+
+Note sur l'exposition réseau : tant qu'il n'y a pas de tunnel, le moteur écoute sur toutes les interfaces, faute de quoi rien n'est joignable. Le jalon M2 le referme sur la machine locale, le tunnel devenant l'unique chemin. La vérification V2 ci-dessous en tient compte.
 
 Sur le **PC client** :
 
@@ -63,25 +74,21 @@ Attendu : le bureau du PC hôte s'affiche en plein écran sur le PC client, avec
 
 ## 3. Hypothèses à lever
 
-### V2. Le moteur hôte reste-t-il invisible sur le réseau ?
+### V2. Le moteur hôte s'annonce-t-il de lui-même sur le réseau ?
 
-La configuration lie le moteur à `127.0.0.1` seul. Reste à vérifier qu'il ne s'annonce pas malgré tout sur le réseau local.
+À ce stade le moteur écoute sur le réseau, faute de tunnel : ses ports sont donc joignables, c'est attendu. La question porte sur autre chose : s'annonce-t-il **spontanément**, au point d'apparaître dans la liste d'un client de streaming tiers du réseau ? Si oui, un ordinateur nommé d'après la machine surgirait chez les voisins, ce que le produit ne doit jamais faire.
 
-Test : pendant que `host start` tourne, sur le **PC client**, ouvrir un client de streaming tiers standard (ou un explorateur de services réseau) et regarder si un ordinateur apparaît spontanément dans sa liste.
+Test : pendant que `host start` tourne, sur le **PC client**, ouvrir un client de streaming tiers standard (ou un explorateur de services réseau) et regarder si un ordinateur apparaît spontanément dans sa liste, sans qu'on ait saisi d'adresse.
 
-Depuis le PC client, vérifier aussi qu'aucun port du moteur n'est joignable de l'extérieur :
+> Un ordinateur apparaît-il tout seul dans un client tiers ? ................................................
+>
+> **Si oui** : le patch P-S1 devient nécessaire. Le noter dans `patches/MANIFEST.md`.
+
+Ce point sera à revérifier au jalon M2, une fois le moteur refermé sur la machine locale : le contrôle deviendra alors qu'**aucun** de ses ports ne répond depuis un autre ordinateur.
 
 ```
 Test-NetConnection <adresse-du-pc-hote> -Port 42001
 ```
-
-Attendu : échec de connexion (le port n'écoute que sur le PC hôte lui-même).
-
-> Un ordinateur apparaît-il dans un client tiers ? ................................................
->
-> Le port 42001 répond-il depuis l'autre PC ? ................................................
->
-> **Si oui à l'une des deux** : le patch P-S1 devient nécessaire. Le noter dans `patches/MANIFEST.md`.
 
 ---
 

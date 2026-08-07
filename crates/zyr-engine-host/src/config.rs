@@ -25,12 +25,29 @@ impl ChiffrementInterne {
     }
 }
 
+/// Interfaces sur lesquelles le moteur accepte des connexions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Ecoute {
+    /// Machine locale uniquement.
+    ///
+    /// C'est la cible : le tunnel ZyrDesk est alors le seul chemin vers
+    /// le moteur, qui n'expose aucune surface au réseau.
+    #[default]
+    Locale,
+    /// Toutes les interfaces réseau.
+    ///
+    /// Nécessaire tant que le tunnel n'existe pas, sans quoi aucun autre
+    /// ordinateur ne peut joindre le moteur.
+    Reseau,
+}
+
 /// Paramètres d'une instance du moteur hôte.
 #[derive(Debug, Clone)]
 pub struct SunshineConfig {
     ports: EnginePorts,
     data_dir: PathBuf,
     logs_dir: PathBuf,
+    ecoute: Ecoute,
     chiffrement: ChiffrementInterne,
     output_name: Option<String>,
     adapter_name: Option<String>,
@@ -49,10 +66,17 @@ impl SunshineConfig {
             ports,
             data_dir: data_dir.into(),
             logs_dir: logs_dir.into(),
+            ecoute: Ecoute::default(),
             chiffrement: ChiffrementInterne::default(),
             output_name: None,
             adapter_name: None,
         }
+    }
+
+    /// Ouvre le moteur au réseau. À n'utiliser que sans tunnel.
+    pub fn avec_ecoute(mut self, ecoute: Ecoute) -> Self {
+        self.ecoute = ecoute;
+        self
     }
 
     pub fn avec_chiffrement(mut self, mode: ChiffrementInterne) -> Self {
@@ -97,8 +121,12 @@ impl SunshineConfig {
     /// Contenu du fichier `sunshine.conf`.
     pub fn rendu_conf(&self) -> String {
         let d = |p: &Path| p.display().to_string();
-        let mut lignes = vec![
-            "bind_address = 127.0.0.1".to_string(),
+        let mut lignes = Vec::new();
+        // Une adresse absente vaut « toutes les interfaces » pour le moteur.
+        if self.ecoute == Ecoute::Locale {
+            lignes.push("bind_address = 127.0.0.1".to_string());
+        }
+        lignes.extend([
             format!("port = {}", self.ports.base()),
             "address_family = ipv4".to_string(),
             "origin_web_ui_allowed = pc".to_string(),
@@ -118,7 +146,7 @@ impl SunshineConfig {
             ),
             format!("log_path = {}", d(&self.chemin_journal())),
             "min_log_level = info".to_string(),
-        ];
+        ]);
         if let Some(output) = &self.output_name {
             lignes.push(format!("output_name = {output}"));
         }
@@ -162,9 +190,23 @@ mod tests {
     }
 
     #[test]
-    fn conf_verrouille_le_moteur_en_loopback() {
+    fn le_moteur_est_ferme_au_reseau_par_defaut() {
         let rendu = config_test().rendu_conf();
         assert!(rendu.contains("bind_address = 127.0.0.1"));
+    }
+
+    #[test]
+    fn l_ouverture_au_reseau_retire_la_restriction_d_adresse() {
+        let rendu = config_test().avec_ecoute(Ecoute::Reseau).rendu_conf();
+        assert!(!rendu.contains("bind_address"), "{rendu}");
+        // Le reste de la politique ne bouge pas pour autant.
+        assert!(rendu.contains("origin_web_ui_allowed = pc"));
+        assert!(rendu.contains("upnp = disabled"));
+    }
+
+    #[test]
+    fn conf_applique_la_politique_d_isolement() {
+        let rendu = config_test().rendu_conf();
         assert!(rendu.contains("port = 42100"));
         assert!(rendu.contains("origin_web_ui_allowed = pc"));
         assert!(rendu.contains("system_tray = disabled"));
