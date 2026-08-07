@@ -17,8 +17,9 @@ Produit `ZyrDesk-Setup-0.1.0.exe` dans le dossier courant.
 1. Installer : lancer l'exécutable produit, accepter la licence, installer.
 2. Vérifier : `C:\Program Files\ZyrDesk\zyr-cli.exe` existe et l'entrée « ZyrDesk » apparaît dans Applications installées.
 3. Diagnostiquer : ouvrir une invite de commandes et lancer `"C:\Program Files\ZyrDesk\zyr-cli.exe" doctor`.
-4. Désinstaller depuis Applications installées, répondre « Oui » à la suppression des données.
-5. Vérifier l'absence de résidu : le dossier d'installation a disparu, et la clé de registre `HKLM\Software\ZyrDesk` n'existe plus.
+4. Vérifier le service : « ZyrDesk » apparaît dans la console des services (`services.msc`), en démarrage automatique.
+5. Désinstaller depuis Applications installées, répondre « Oui » à la suppression des données.
+6. Vérifier l'absence de résidu : le dossier d'installation a disparu, la clé de registre `HKLM\Software\ZyrDesk` n'existe plus, et « ZyrDesk » a disparu de la console des services.
 
 Le produit range tout ce qu'il écrit (moteurs, réglages, journaux, appairages) dans un sous-dossier `data` de son dossier d'installation. La désinstallation propose de le supprimer.
 

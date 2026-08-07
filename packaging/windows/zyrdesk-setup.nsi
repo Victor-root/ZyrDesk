@@ -1,7 +1,7 @@
 ; Installateur ZyrDesk pour Windows.
 ;
-; Jalon M0 : installe les binaires existants et se désinstalle sans laisser
-; de résidu. Les composants qui n'existent pas encore (service, moteurs,
+; Installe les binaires existants, enregistre le service, et se désinstalle
+; sans laisser de résidu. Les composants qui n'existent pas encore (moteurs,
 ; interface) sont ajoutés à leur jalon respectif aux emplacements marqués.
 ;
 ; Construction : makensis -DVERSION=<version> zyrdesk-setup.nsi
@@ -39,6 +39,7 @@ VIAddVersionKey "LegalCopyright" "GPLv3"
 
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
+!include "LogicLib.nsh"
 
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_LICENSE "..\..\LICENSE"
@@ -58,10 +59,24 @@ Section "ZyrDesk" SEC_PRINCIPAL
   SetOutPath "$INSTDIR"
 
   File "${BIN_DIR}\zyr-cli.exe"
+  File "${BIN_DIR}\zyrdeskd.exe"
   File "..\..\LICENSE"
 
-  ; M3 : zyrdeskd.exe et enregistrement du service Windows.
   ; M4 : ZyrDesk.exe (interface) et moteurs rebrandés.
+  ; La règle de pare-feu viendra quand le service portera le tunnel :
+  ; elle vise alors zyrdeskd et un seul port UDP, pas les moteurs.
+
+  ; Le service s'enregistre lui-même : l'installateur n'a pas à
+  ; connaître son nom interne ni son compte.
+  DetailPrint "Enregistrement du service ZyrDesk..."
+  ExecWait '"$INSTDIR\zyrdeskd.exe" install' $0
+  ${If} $0 <> 0
+    MessageBox MB_OK|MB_ICONEXCLAMATION \
+      "Le service ZyrDesk n'a pas pu être enregistré (code $0).$\n$\n\
+       ZyrDesk est installé, mais l'ordinateur ne sera pas accessible \
+       avant l'ouverture d'une session. Vous pouvez réessayer plus tard \
+       avec « zyrdeskd install » dans une fenêtre administrateur."
+  ${EndIf}
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
@@ -83,8 +98,10 @@ Section "ZyrDesk" SEC_PRINCIPAL
 SectionEnd
 
 Section "Uninstall"
-  ; M3 : arrêt et suppression du service avant de toucher aux fichiers.
-  ; M3 : suppression des règles de pare-feu créées à l'installation.
+  ; Le service tient le fichier programme tant qu'il tourne : il est
+  ; arrêté et retiré avant qu'on touche à quoi que ce soit.
+  DetailPrint "Retrait du service ZyrDesk..."
+  ExecWait '"$INSTDIR\zyrdeskd.exe" uninstall'
 
   ; Les données ne sont supprimées que si l'utilisateur le demande.
   ; En mode silencieux, elles sont conservées.
@@ -99,6 +116,7 @@ Section "Uninstall"
   donnees_traitees:
 
   Delete "$INSTDIR\zyr-cli.exe"
+  Delete "$INSTDIR\zyrdeskd.exe"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"

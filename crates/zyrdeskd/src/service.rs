@@ -10,11 +10,11 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use windows_service::service::{
-    ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode,
-    ServiceInfo, ServiceStartType, ServiceState, ServiceStatus, ServiceType,
+    Service, ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl,
+    ServiceExitCode, ServiceInfo, ServiceStartType, ServiceState, ServiceStatus, ServiceType,
 };
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
@@ -40,6 +40,12 @@ const DESCRIPTION: &str =
 /// Telling them apart explicitly beats guessing where the launch came
 /// from.
 pub const SERVICE_ARGUMENT: &str = "--run-as-service";
+
+/// Time given to the service to stop before it is removed anyway.
+const STOP_DELAY: Duration = Duration::from_secs(30);
+
+/// How often its state is asked for while waiting.
+const STOP_STEP: Duration = Duration::from_millis(250);
 
 /// A service runs in exactly one copy, so what it shares with its
 /// handler is legitimately global.
@@ -160,12 +166,34 @@ pub fn install() -> Result<(), Box<dyn std::error::Error>> {
 /// Removes the service. It disappears once stopped.
 pub fn uninstall() -> ServiceResult<()> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = manager.open_service(NAME, ServiceAccess::STOP | ServiceAccess::DELETE)?;
+    let service = manager.open_service(
+        NAME,
+        ServiceAccess::STOP | ServiceAccess::QUERY_STATUS | ServiceAccess::DELETE,
+    )?;
     // A running service is only removed once stopped; a failure here
     // means it was already stopped, which suits us.
     let _ = service.stop();
+    wait_until_stopped(&service);
     service.delete()?;
     Ok(())
+}
+
+/// Waits for the service to have really stopped.
+///
+/// Asking for a stop only starts one. As long as a copy is still
+/// running, Windows merely notes the removal and keeps the program file
+/// locked: an uninstaller would then leave both of them behind.
+fn wait_until_stopped(service: &Service) {
+    let deadline = Instant::now() + STOP_DELAY;
+    while Instant::now() < deadline {
+        match service.query_status() {
+            Ok(status) if status.current_state == ServiceState::Stopped => return,
+            // An unreadable state is not worth waiting on: the removal
+            // that follows will say what it could not do.
+            Err(_) => return,
+            _ => std::thread::sleep(STOP_STEP),
+        }
+    }
 }
 
 pub fn start() -> ServiceResult<()> {
