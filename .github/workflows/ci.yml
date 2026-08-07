@@ -69,9 +69,12 @@ jobs:
           choco install nsis --no-progress -y
           "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
       - run: cargo build --release --workspace
+      # Les guillemets ne sont pas décoratifs : sans eux, PowerShell coupe
+      # -DVERSION=0.1.0 en deux arguments et makensis cherche un script
+      # nommé « .1.0 ».
       - name: Construire l'installateur
         working-directory: packaging/windows
-        run: makensis -DVERSION=0.1.0 zyrdesk-setup.nsi
+        run: makensis "-DVERSION=0.1.0" zyrdesk-setup.nsi
       - uses: actions/upload-artifact@v4
         with:
           name: zyrdesk-setup

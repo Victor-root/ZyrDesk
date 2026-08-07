@@ -7,10 +7,12 @@ Prérequis : Rust stable et [NSIS](https://nsis.sourceforge.io/) (`makensis` dan
 ```powershell
 cargo build --release
 cd packaging\windows
-makensis -DVERSION=0.1.0 zyrdesk-setup.nsi
+makensis "-DVERSION=0.1.0" zyrdesk-setup.nsi
 ```
 
 Produit `ZyrDesk-Setup-0.1.0.exe` dans le dossier courant.
+
+Les guillemets autour de la version sont nécessaires sous PowerShell, qui couperait sinon l'argument en deux.
 
 ## Vérifier une installation propre (critère de sortie du jalon M0)
 
