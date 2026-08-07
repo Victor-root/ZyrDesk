@@ -14,11 +14,11 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "zyr-cli",
     version = zyr_proto::PRODUCT_VERSION,
-    about = "Outil technique ZyrDesk",
-    long_about = "Outil technique ZyrDesk.\n\n\
-                  À ce stade du projet, il pilote directement les moteurs \
-                  pour valider les performances en réseau local. Le service \
-                  et l'interface prennent le relais aux jalons suivants."
+    about = "ZyrDesk technical tool",
+    long_about = "ZyrDesk technical tool.\n\n\
+                  At this stage of the project it drives the engines \
+                  directly, to check performance on a local network. The \
+                  service and the interface take over at later milestones."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -27,23 +27,23 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Vérifie que cette machine est prête pour ZyrDesk
+    /// Checks that this machine is ready for ZyrDesk
     Doctor,
-    /// Inspecte les moteurs installés
+    /// Inspects the engines in place
     Engines {
         #[command(subcommand)]
         action: engines::Action,
     },
-    /// Rend cet ordinateur accessible à distance
+    /// Makes this computer reachable from elsewhere
     Host {
         #[command(subcommand)]
         action: host::Action,
     },
-    /// Ouvre une session sur un ordinateur distant
+    /// Opens a session on a remote computer
     Connect(connect::Args),
-    /// Affiche l'empreinte de cette machine
+    /// Shows this machine's fingerprint
     Identity,
-    /// Mesure ce que coûte le tunnel entre deux ordinateurs
+    /// Measures what the tunnel costs between two computers
     Bench {
         #[command(subcommand)]
         action: bench::Action,

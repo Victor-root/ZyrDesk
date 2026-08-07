@@ -12,7 +12,7 @@ use zyr_proto::paths;
 
 #[derive(Subcommand)]
 pub enum Action {
-    /// Indique où les moteurs sont attendus et lesquels sont présents
+    /// Says where the engines are expected and which ones are in place
     Status,
 }
 

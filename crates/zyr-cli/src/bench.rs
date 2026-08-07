@@ -10,11 +10,6 @@
 //! The two computers have to know each other's fingerprint.
 //! `zyr-cli identity` shows it on each machine. It never changes once
 //! created.
-//!
-//! The argument names and their doc comments stay in French on purpose:
-//! clap turns them into the flags the user types and the help text the
-//! user reads, so they are interface, not code. The test protocols quote
-//! them line for line.
 
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -63,34 +58,34 @@ pub enum Action {
 #[derive(Args)]
 pub struct HostArgs {
     /// Fingerprint of the computer that will measure
-    #[arg(long, value_name = "EMPREINTE")]
+    #[arg(long, value_name = "FINGERPRINT")]
     pair: Fingerprint,
     /// Target rate in megabits per second. Set it as on the other
     /// computer, or the return path is throttled.
     #[arg(long, default_value_t = DEFAULT_RATE, value_parser = allowed_rate())]
-    debit: u64,
+    rate: u64,
 }
 
 #[derive(Args)]
 pub struct ClientArgs {
     /// Address of the waiting computer
-    adresse: IpAddr,
+    address: IpAddr,
     /// Fingerprint of that computer
-    #[arg(long, value_name = "EMPREINTE")]
+    #[arg(long, value_name = "FINGERPRINT")]
     pair: Fingerprint,
     /// Target rate in megabits per second
     #[arg(long, default_value_t = DEFAULT_RATE, value_parser = allowed_rate())]
-    debit: u64,
+    rate: u64,
     /// Length of each burst, in seconds
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..=3600))]
-    duree: u64,
+    duration: u64,
     /// Simulated frames per second
     #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u32).range(1..=480))]
     fps: u32,
     /// Loss to provoke underneath the tunnel, per thousand packets sent.
     /// Used to check that loss does not strangle the rate.
     #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(u16).range(0..=1000))]
-    perte: u16,
+    loss: u16,
 }
 
 /// Bounds on the rate. A rate of zero would send nothing, and an
@@ -144,13 +139,13 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
     let endpoint = TunnelEndpoint::host(
         &identity,
         args.pair,
-        profile(args.debit, 60),
+        profile(args.rate, 60),
         SocketAddr::new(EVERY_INTERFACE, TUNNEL_PORT),
     )?;
 
     println!("Banc en attente sur le port {TUNNEL_PORT}.");
     println!("  Empreinte de cet ordinateur : {}", identity.fingerprint());
-    println!("  Débit servi : {} Mb/s", args.debit);
+    println!("  Débit servi : {} Mb/s", args.rate);
     println!("\nCtrl+C pour arrêter.\n");
 
     loop {
@@ -175,7 +170,7 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
                     // The return trip is only visible from here: the
                     // other bench knows only what it sent itself.
                     println!("  {}", breakdown(&tunnel, &observed, "au retour"));
-                    report_computation(args.debit, without, with);
+                    report_computation(args.rate, without, with);
                 }
                 Err(e) => println!("Tunnel impossible : {e}"),
             }
@@ -193,23 +188,23 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     );
 
     println!("Empreinte de cet ordinateur : {}", identity.fingerprint());
-    println!("Connexion à {}...", args.adresse);
+    println!("Connexion à {}...", args.address);
 
     // The direct reference is never degraded: it has to stay the same
     // trip for both measurements, or the comparison says nothing.
-    let path = match args.perte {
+    let path = match args.loss {
         0 => Path::Direct,
         loss_per_thousand => Path::Degraded { loss_per_thousand },
     };
     let endpoint = TunnelEndpoint::client_on_path(
         &identity,
         args.pair,
-        profile(args.debit, args.fps),
+        profile(args.rate, args.fps),
         SocketAddr::new(EVERY_INTERFACE, 0),
         path,
     )?;
     let connection = endpoint
-        .connect(SocketAddr::new(args.adresse, TUNNEL_PORT))
+        .connect(SocketAddr::new(args.address, TUNNEL_PORT))
         .await?;
 
     let usable = connection
@@ -220,21 +215,21 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
 
     let cadence = Cadence {
         size: size.bytes,
-        rate_mbps: args.debit,
+        rate_mbps: args.rate,
         frames_per_second: args.fps,
-        duration: Duration::from_secs(args.duree),
+        duration: Duration::from_secs(args.duration),
     };
 
     println!(
         "\n{} paquets de {} octets par seconde, pendant {} s, deux fois.",
         cadence.packets_per_frame() as u64 * cadence.frames_per_second as u64,
         cadence.size,
-        args.duree
+        args.duration
     );
-    if args.perte > 0 {
+    if args.loss > 0 {
         println!(
             "Perte provoquée sous le tunnel : {:.1} % des paquets émis.",
-            args.perte as f64 / 10.0
+            args.loss as f64 / 10.0
         );
     }
 
@@ -245,7 +240,7 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     let direct_computation = Stopwatch::start();
     let direct = probe::probe(
         open_socket(SocketAddr::new(EVERY_INTERFACE, 0))?,
-        SocketAddr::new(args.adresse, DIRECT_PORT),
+        SocketAddr::new(args.address, DIRECT_PORT),
         cadence,
     )
     .await?;
@@ -263,7 +258,7 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     let tunnel_load = tunnel_computation.and_then(|s| s.load());
 
     report(&direct, &through_tunnel, &size, &connection, &tunnel);
-    report_computation(args.debit, direct_load, tunnel_load);
+    report_computation(args.rate, direct_load, tunnel_load);
 
     // Closing cleanly frees the other bench straight away, instead of
     // leaving it to wait for the connection to expire.

@@ -52,7 +52,7 @@ Il affiche son port d'écoute et attend. Le laisser tourner : il sert toutes les
 Sur le **PC client** :
 
 ```
-zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --duree 30
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --duration 30
 ```
 
 Le banc mesure deux fois le même trajet, avec les mêmes paquets à la même cadence : une fois en UDP nu, une fois à travers le tunnel complet. Les paquets partent par rafales, une par image, comme le fait un encodeur vidéo. Compter environ une minute.
@@ -74,9 +74,9 @@ C'est le point le plus important du jalon. Un contrôle de congestion ordinaire 
 Le banc sait provoquer une perte réelle sous le tunnel, exprimée pour mille paquets émis. Sur le **PC client**, enchaîner :
 
 ```
-zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 0
-zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 10
-zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 30 --perte 20
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --rate 40 --duration 30 --loss 0
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --rate 40 --duration 30 --loss 10
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --rate 40 --duration 30 --loss 20
 ```
 
 > **M2-R2 (débit sous perte)**
@@ -92,7 +92,7 @@ zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --deb
 Rien à ouvrir : le banc lit son propre temps processeur, sur exactement la fenêtre qu'il mesure. Sur le **PC client** :
 
 ```
-zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --debit 40 --duree 120
+zyr-cli bench client <adresse IP du PC hote> --pair <empreinte du PC hote> --rate 40 --duration 120
 ```
 
 Le PC client affiche un bloc « Processeur de ce banc » à la fin. Le PC hôte affiche sa propre ligne dans sa fenêtre, à la fin de chaque mesure.

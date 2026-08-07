@@ -19,12 +19,11 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "zyrdeskd",
     version = zyr_proto::PRODUCT_VERSION,
-    about = "Service ZyrDesk",
-    long_about = "Service ZyrDesk.\n\n\
-                  Il rend cet ordinateur accessible à distance, y compris \
-                  avant qu'une session Windows ne soit ouverte. \
-                  L'installation et le retrait demandent les droits \
-                  administrateur."
+    about = "ZyrDesk service",
+    long_about = "ZyrDesk service.\n\n\
+                  It makes this computer reachable from elsewhere, even \
+                  before anyone has logged into Windows. Installing and \
+                  removing it require administrator rights."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -33,15 +32,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Inscrit le service auprès de Windows, démarrage automatique
+    /// Registers the service with Windows, started automatically
     Install,
-    /// Retire le service
+    /// Removes the service
     Uninstall,
-    /// Démarre le service
+    /// Starts the service
     Start,
-    /// Arrête le service
+    /// Stops the service
     Stop,
-    /// Affiche l'état du service
+    /// Shows the state of the service
     Status,
 }
 

@@ -3,11 +3,6 @@
 //! In the foreground and without a service: this is the smallest form
 //! that allows real performance to be measured. Starting with Windows
 //! and access before anyone logs in belong to the service.
-//!
-//! The argument names and their doc comments stay in French on purpose:
-//! clap turns them into the flags the user types and the help text the
-//! user reads, so they are interface, not code. The test protocols quote
-//! them line for line.
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -26,22 +21,22 @@ const WATCH_PERIOD: Duration = Duration::from_secs(1);
 
 #[derive(Subcommand)]
 pub enum Action {
-    /// Démarre le moteur hôte et le garde actif
+    /// Starts the host engine and keeps it running
     Start,
-    /// Accepte un code d'appairage présenté par un ordinateur distant
+    /// Accepts a pairing code shown by a remote computer
     Pin {
-        /// Code à quatre chiffres affiché sur l'ordinateur qui se connecte
+        /// Four-digit code shown on the computer that is connecting
         code: String,
-        /// Nom donné à l'ordinateur distant
+        /// Name given to the remote computer
         #[arg(long, default_value = "Ordinateur ZyrDesk")]
-        nom: String,
+        name: String,
     },
 }
 
 pub fn run(action: Action) -> ExitCode {
     match action {
         Action::Start => start(),
-        Action::Pin { code, nom } => pin(&code, &nom),
+        Action::Pin { code, name } => pin(&code, &name),
     }
 }
 

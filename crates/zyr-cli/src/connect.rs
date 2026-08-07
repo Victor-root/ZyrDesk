@@ -4,11 +4,6 @@
 //! session goes straight to an address on the local network, and the
 //! pairing code has to be carried over to the other computer by hand.
 //! The tunnel automates that exchange later on.
-//!
-//! The argument names and their doc comments stay in French on purpose:
-//! clap turns them into the flags the user types and the help text the
-//! user reads, so they are interface, not code. The test protocols quote
-//! them line for line.
 
 use std::process::ExitCode;
 
@@ -23,40 +18,40 @@ use crate::failure;
 
 #[derive(ClapArgs)]
 pub struct Args {
-    /// Adresse de l'ordinateur distant sur le réseau local
-    hote: String,
+    /// Address of the remote computer on the local network
+    host: String,
 
-    /// Résolution demandée, par exemple 1920x1080
+    /// Requested resolution, for example 1920x1080
     #[arg(long, default_value = "1920x1080")]
     resolution: String,
 
-    /// Images par seconde
+    /// Frames per second
     #[arg(long, default_value_t = 60)]
     fps: u32,
 
-    /// Débit vidéo en kilobits par seconde
+    /// Video rate in kilobits per second
     #[arg(long, default_value_t = 20_000)]
     bitrate: u32,
 
-    /// Codec vidéo : auto, h264, hevc ou av1
+    /// Video codec: auto, h264, hevc or av1
     #[arg(long, default_value = "auto")]
     codec: String,
 
-    /// Affichage : fullscreen, borderless ou windowed
+    /// Display: fullscreen, borderless or windowed
     #[arg(long, default_value = "fullscreen")]
-    affichage: String,
+    display: String,
 
-    /// Affiche les statistiques de performance par-dessus la vidéo
+    /// Shows the performance statistics over the video
     #[arg(long)]
     stats: bool,
 
-    /// Souris relative, adaptée aux jeux, au lieu de la souris de bureau
+    /// Relative mouse, suited to games, instead of the desktop mouse
     #[arg(long)]
-    souris_relative: bool,
+    relative_mouse: bool,
 
-    /// Refait l'appairage même si cet ordinateur est déjà connu
+    /// Pairs again even if this computer is already known
     #[arg(long)]
-    reappairer: bool,
+    pair_again: bool,
 }
 
 pub fn run(args: Args) -> ExitCode {
@@ -76,8 +71,8 @@ pub fn run(args: Args) -> ExitCode {
         );
     }
 
-    let state = DeviceState::for_device(&identifier_from_address(&args.hote));
-    if args.reappairer
+    let state = DeviceState::for_device(&identifier_from_address(&args.host));
+    if args.pair_again
         && let Err(e) = state.forget()
     {
         return failure("réinitialisation de l'appairage", e);
@@ -87,15 +82,15 @@ pub fn run(args: Args) -> ExitCode {
     let log = paths::logs_dir().join("session.log");
     let engine = ClientEngine::new(&exe, state).with_log(&log);
 
-    if !already_known && let Err(code) = pair(&engine, &args.hote) {
+    if !already_known && let Err(code) = pair(&engine, &args.host) {
         return code;
     }
 
     println!(
         "Connexion à {} en {}x{} à {} images par seconde...",
-        args.hote, settings.width, settings.height, settings.fps
+        args.host, settings.width, settings.height, settings.fps
     );
-    match engine.start_session(&args.hote, &settings) {
+    match engine.start_session(&args.host, &settings) {
         Ok(SessionOutcome::Ended) => {
             // The engine reports success even when it gave up: the log
             // stays the only reliable source while its exit codes are
@@ -139,7 +134,7 @@ fn pair(engine: &ClientEngine, host: &str) -> Result<(), ExitCode> {
 fn build_settings(args: &Args) -> Result<SessionSettings, String> {
     let (width, height) = parse_resolution(&args.resolution).map_err(|e| e.to_string())?;
     let codec: Codec = args.codec.parse()?;
-    let display_mode: DisplayMode = args.affichage.parse()?;
+    let display_mode: DisplayMode = args.display.parse()?;
     if args.fps == 0 {
         return Err("le nombre d'images par seconde doit être supérieur à zéro".to_string());
     }
@@ -154,7 +149,7 @@ fn build_settings(args: &Args) -> Result<SessionSettings, String> {
         codec,
         display_mode,
         packet_size: None,
-        absolute_mouse: !args.souris_relative,
+        absolute_mouse: !args.relative_mouse,
         stats_overlay: args.stats,
     })
 }
