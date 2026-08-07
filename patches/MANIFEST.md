@@ -46,6 +46,7 @@ Ces comportements ne sont écrits nulle part dans leur documentation et ont ét�
 | Hôte | Résout ses ressources graphiques par rapport au dossier courant, pas à son exécutable | Il est lancé depuis son propre dossier, sans quoi l'initialisation graphique échoue |
 | Hôte | La restriction d'adresse d'écoute couvre tous ses services : appairage, négociation, vidéo, audio, contrôle | Elle ne peut être posée qu'une fois le tunnel en place |
 | Hôte | N'accepte un code d'appairage que pendant qu'un client l'attend, et signale un succès même sans demande en cours | L'ordre client puis hôte est imposé ; le tunnel supprimera la question |
+| Hôte | Demande une priorité GPU élevée pour sa capture, refusée sans droits administrateur, et le signale dans son journal | Le service du jalon M3 tournant avec les droits système, la question disparaît ; en attendant, une capture irrégulière sous charge est attendue |
 | Hôte | N'encode que lorsque l'écran change, et ne garantit par défaut que la moitié de la cadence demandée | La cadence minimale est portée à 60 dans la configuration générée : sans cela, souris et animations sont saccadées sur un bureau immobile |
 | Client | Sort avec un code de succès même après un échec de session | Le journal est la seule source fiable en attendant P-M5 |
 

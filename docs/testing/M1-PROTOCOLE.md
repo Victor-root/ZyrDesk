@@ -50,6 +50,8 @@ zyr-cli host start
 
 Attendu : « Accès distant actif ». Laisser cette fenêtre ouverte.
 
+Utiliser une fenêtre **administrateur** : le moteur réclame une priorité GPU élevée pour sa capture, que Windows lui refuse autrement. Il le signale dans son journal, et la capture devient irrégulière sous charge. Le service du jalon M3 supprimera cette contrainte.
+
 Note sur l'exposition réseau : tant qu'il n'y a pas de tunnel, le moteur écoute sur toutes les interfaces, faute de quoi rien n'est joignable. Le jalon M2 le referme sur la machine locale, le tunnel devenant l'unique chemin. La vérification V2 ci-dessous en tient compte.
 
 Sur le **PC client** :
