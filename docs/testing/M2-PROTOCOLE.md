@@ -134,7 +134,7 @@ Deux PC en Ethernet gigabit, relevés complets dans [perf/baselines/M2-lan-ether
 | M2-R1, coût du tunnel à 50 Mb/s | +0,88 ms de médiane, +1,67 ms au centile 99 | médiane <= 1 ms, centile 99 <= 3 ms | tenu |
 | M2-R1, à 40 Mb/s sur 2 minutes | +0,56 ms de médiane, +0,80 ms au centile 99 | idem | tenu |
 | M2-R2, débit sous 1 % et 2 % de perte | 39,6 Mb/s dans les trois cas | >= 38 Mb/s | tenu |
-| M2-R3, processeur | non relevé | <= 8 % d'un coeur | à faire |
+| M2-R3, processeur | +7,5 points côté client | <= 8 % d'un coeur | tenu ; hôte à refaire |
 | M2-R4, taille de paquet | 1353 octets | > 1300 | tenu |
 
 La question des pertes résiduelles est tranchée : la file d'émission du tunnel n'y est pour rien, zéro datagramme jeté faute de place aux deux débits. Le reste est de la perte réseau ordinaire, moins d'un paquet sur deux mille, sans effet sur le débit ni sur la latence.

@@ -34,7 +34,7 @@ impl Tunnel {
         moteur: IpAddr,
         ports: EnginePorts,
     ) -> io::Result<Self> {
-        let datagrammes = Arc::new(PortsDatagramme::vers_moteur(moteur, ports).await?);
+        let datagrammes = Arc::new(PortsDatagramme::vers_moteur(moteur, ports)?);
         let stats = Arc::new(Statistiques::default());
         let mut taches = pompes_datagramme(&connexion, &datagrammes, &stats);
 
@@ -61,7 +61,7 @@ impl Tunnel {
             ecoutes.push((canal, liaison));
         }
 
-        let datagrammes = Arc::new(PortsDatagramme::depuis_moteur(ecoute, ports).await?);
+        let datagrammes = Arc::new(PortsDatagramme::depuis_moteur(ecoute, ports)?);
         let stats = Arc::new(Statistiques::default());
         let mut taches = pompes_datagramme(&connexion, &datagrammes, &stats);
 
@@ -75,6 +75,14 @@ impl Tunnel {
 
     pub fn releve(&self) -> Releve {
         self.stats.releve()
+    }
+
+    /// Compteurs partagés, lisibles pendant que le tunnel tourne.
+    ///
+    /// Utile pour surveiller le trafic sans immobiliser le tunnel, par
+    /// exemple pour savoir à quel instant il commence à transporter.
+    pub fn compteurs(&self) -> Arc<Statistiques> {
+        self.stats.clone()
     }
 
     /// Attend l'arrêt du tunnel, et dit pourquoi il s'est arrêté.

@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpStream, UdpSocket};
 use zyr_proto::net::EnginePorts;
@@ -23,6 +24,37 @@ use crate::trame;
 /// Le tampon est dimensionné pour ne jamais tronquer : une troncature
 /// passerait pour un paquet valide et corromprait silencieusement le flux.
 const TAMPON: usize = 65_535;
+
+/// Tampons demandés aux sockets qui parlent au moteur.
+///
+/// Le défaut du système, souvent 64 Kio, ne représente qu'une dizaine de
+/// millisecondes de vidéo à débit courant : il suffit que la pompe soit
+/// privée de processeur le temps d'une préemption pour que le noyau jette
+/// des paquets. Il le fait en silence, sans que le tunnel ni le transport
+/// ne puissent le compter, ce qui rend cette perte particulièrement
+/// pénible à diagnostiquer. Quatre mébioctets couvrent largement une
+/// interruption d'ordonnancement.
+const TAMPON_SOCKET: usize = 4 * 1024 * 1024;
+
+/// Ouvre une socket UDP dimensionnée pour un flux vidéo.
+///
+/// Le système peut n'accorder qu'une partie de ce qui est demandé, voire
+/// refuser : il garde alors sa propre valeur, ce qui reste utilisable.
+///
+/// À appeler depuis une exécution asynchrone en marche : la socket doit
+/// s'inscrire auprès d'elle pour être surveillée.
+pub fn ouvrir_socket(adresse: SocketAddr) -> io::Result<UdpSocket> {
+    let domaine = match adresse {
+        SocketAddr::V4(_) => Domain::IPV4,
+        SocketAddr::V6(_) => Domain::IPV6,
+    };
+    let socket = Socket::new(domaine, Type::DGRAM, Some(Protocol::UDP))?;
+    let _ = socket.set_recv_buffer_size(TAMPON_SOCKET);
+    let _ = socket.set_send_buffer_size(TAMPON_SOCKET);
+    socket.set_nonblocking(true)?;
+    socket.bind(&adresse.into())?;
+    UdpSocket::from_std(socket.into())
+}
 
 /// Compteurs du tunnel, relevés par le banc de mesure.
 #[derive(Debug, Default)]
@@ -80,8 +112,8 @@ pub struct PortMoteur {
 
 impl PortMoteur {
     /// Extrémité côté hôte : le moteur écoute à une adresse connue.
-    pub async fn vers_moteur(moteur: SocketAddr) -> io::Result<Self> {
-        let socket = UdpSocket::bind(SocketAddr::new(moteur.ip(), 0)).await?;
+    pub fn vers_moteur(moteur: SocketAddr) -> io::Result<Self> {
+        let socket = ouvrir_socket(SocketAddr::new(moteur.ip(), 0))?;
         Ok(Self {
             socket,
             moteur: Mutex::new(Some(moteur)),
@@ -91,8 +123,8 @@ impl PortMoteur {
 
     /// Extrémité côté client : le moteur vient à nous, sur le port qu'il
     /// croit être celui de l'hôte distant.
-    pub async fn depuis_moteur(ecoute: SocketAddr) -> io::Result<Self> {
-        let socket = UdpSocket::bind(ecoute).await?;
+    pub fn depuis_moteur(ecoute: SocketAddr) -> io::Result<Self> {
+        let socket = ouvrir_socket(ecoute)?;
         Ok(Self {
             socket,
             moteur: Mutex::new(None),
@@ -139,29 +171,26 @@ pub struct PortsDatagramme([PortMoteur; CanalDatagramme::TOUS.len()]);
 
 impl PortsDatagramme {
     /// Côté hôte : chaque canal parle au port correspondant du moteur.
-    pub async fn vers_moteur(moteur: std::net::IpAddr, ports: EnginePorts) -> io::Result<Self> {
-        Self::monter(ports, |port| async move {
-            PortMoteur::vers_moteur(SocketAddr::new(moteur, port)).await
+    pub fn vers_moteur(moteur: std::net::IpAddr, ports: EnginePorts) -> io::Result<Self> {
+        Self::monter(ports, |port| {
+            PortMoteur::vers_moteur(SocketAddr::new(moteur, port))
         })
-        .await
     }
 
     /// Côté client : chaque canal écoute là où le moteur croit joindre l'hôte.
-    pub async fn depuis_moteur(ecoute: std::net::IpAddr, ports: EnginePorts) -> io::Result<Self> {
-        Self::monter(ports, |port| async move {
-            PortMoteur::depuis_moteur(SocketAddr::new(ecoute, port)).await
+    pub fn depuis_moteur(ecoute: std::net::IpAddr, ports: EnginePorts) -> io::Result<Self> {
+        Self::monter(ports, |port| {
+            PortMoteur::depuis_moteur(SocketAddr::new(ecoute, port))
         })
-        .await
     }
 
-    async fn monter<F, T>(ports: EnginePorts, mut ouvrir: F) -> io::Result<Self>
-    where
-        F: FnMut(u16) -> T,
-        T: Future<Output = io::Result<PortMoteur>>,
-    {
+    fn monter(
+        ports: EnginePorts,
+        mut ouvrir: impl FnMut(u16) -> io::Result<PortMoteur>,
+    ) -> io::Result<Self> {
         let mut montes = Vec::with_capacity(CanalDatagramme::TOUS.len());
         for canal in CanalDatagramme::TOUS {
-            montes.push(ouvrir(canal.port(ports)).await?);
+            montes.push(ouvrir(canal.port(ports))?);
         }
         Ok(Self(
             montes.try_into().expect("un port monté par canal connu"),
@@ -269,11 +298,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn les_sockets_du_moteur_ont_de_quoi_encaisser_une_rafale() {
+        // Le système peut rogner ce qui est demandé, mais il ne doit pas
+        // rester au défaut d'une socket ordinaire : une rafale d'images
+        // le déborderait, et les paquets perdus là ne sont comptés nulle
+        // part.
+        let socket = ouvrir_socket(locale(0)).unwrap();
+        let brute = Socket::from(socket.into_std().unwrap());
+        assert!(
+            brute.recv_buffer_size().unwrap() >= 128 * 1024,
+            "tampon de réception de {} octets",
+            brute.recv_buffer_size().unwrap()
+        );
+    }
+
+    #[tokio::test]
     async fn un_port_cote_hote_vise_le_moteur_sans_attendre() {
         let moteur = UdpSocket::bind(locale(0)).await.unwrap();
         let adresse = moteur.local_addr().unwrap();
 
-        let port = PortMoteur::vers_moteur(adresse).await.unwrap();
+        let port = PortMoteur::vers_moteur(adresse).unwrap();
         assert!(port.envoyer(b"ping").await.unwrap());
 
         let mut recu = [0u8; 16];
@@ -283,7 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn un_port_cote_client_attend_que_le_moteur_se_manifeste() {
-        let port = PortMoteur::depuis_moteur(locale(0)).await.unwrap();
+        let port = PortMoteur::depuis_moteur(locale(0)).unwrap();
         let adresse = port.adresse_locale().unwrap();
 
         // Rien n'est encore arrivé : il n'y a personne à qui répondre.
@@ -302,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn un_port_cote_client_suit_le_moteur_qui_change_de_source() {
-        let port = PortMoteur::depuis_moteur(locale(0)).await.unwrap();
+        let port = PortMoteur::depuis_moteur(locale(0)).unwrap();
         let adresse = port.adresse_locale().unwrap();
         let mut recu = [0u8; 16];
 
@@ -324,9 +368,7 @@ mod tests {
     #[tokio::test]
     async fn chaque_canal_tombe_sur_le_port_attendu_du_moteur() {
         let ports = EnginePorts::new(42500).unwrap();
-        let montes = PortsDatagramme::depuis_moteur([127, 0, 0, 1].into(), ports)
-            .await
-            .unwrap();
+        let montes = PortsDatagramme::depuis_moteur([127, 0, 0, 1].into(), ports).unwrap();
         for canal in CanalDatagramme::TOUS {
             let ouvert = montes.port(canal).adresse_locale().unwrap().port();
             assert_eq!(ouvert, canal.port(ports));

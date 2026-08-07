@@ -17,11 +17,11 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Args, Subcommand};
-use tokio::net::UdpSocket;
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
 use zyr_proto::paths;
 use zyr_transport::{Chemin, Empreinte, Identite, PointTerminal, ProfilMedia};
 use zyr_tunnel::Tunnel;
+use zyr_tunnel::pompe::ouvrir_socket;
 
 use crate::echec;
 use crate::mesure::{Resultat, ecart, millisecondes};
@@ -122,14 +122,14 @@ async fn tenir(args: ArgsHote) -> Result<(), Box<dyn Error>> {
     let ports = EnginePorts::new(BASE_MOTEUR)?;
 
     // Référence : le même écho, joint sans passer par le tunnel.
-    let direct = UdpSocket::bind(SocketAddr::new(TOUTES_INTERFACES, PORT_DIRECT)).await?;
+    let direct = ouvrir_socket(SocketAddr::new(TOUTES_INTERFACES, PORT_DIRECT))?;
     tokio::spawn(async move {
         let _ = sonde::faire_echo(direct).await;
     });
 
     // Faux moteur : le tunnel lui remet ce qu'il reçoit sur le canal
     // vidéo, il le renvoie tel quel.
-    let moteur = UdpSocket::bind(SocketAddr::new(MOTEUR, ports.video())).await?;
+    let moteur = ouvrir_socket(SocketAddr::new(MOTEUR, ports.video()))?;
     tokio::spawn(async move {
         let _ = sonde::faire_echo(moteur).await;
     });
@@ -163,19 +163,11 @@ async fn tenir(args: ArgsHote) -> Result<(), Box<dyn Error>> {
             let observee = connexion.clone();
             match Tunnel::hote(connexion, MOTEUR, ports).await {
                 Ok(mut tunnel) => {
-                    let calcul = Chronometre::demarrer();
-                    if let Err(e) = tunnel.attendre().await {
-                        println!("Fin de la mesure : {e}");
-                    }
+                    let (sans, avec) = servir_et_mesurer(&mut tunnel).await;
                     // Le trajet retour n'est visible que d'ici : l'autre
                     // banc ne connaît que ce qu'il a lui-même émis.
                     println!("  {}", ventilation(&tunnel, &observee, "au retour"));
-                    if let Some(charge) = calcul.and_then(|c| c.charge()) {
-                        println!(
-                            "  {charge:.1} % d'un coeur, sur une machine à {} coeurs",
-                            processeur::coeurs()
-                        );
-                    }
+                    rapporter_calcul(sans, avec);
                 }
                 Err(e) => println!("Tunnel impossible : {e}"),
             }
@@ -244,7 +236,7 @@ async fn mesurer(args: ArgsClient) -> Result<(), Box<dyn Error>> {
     println!("\nMesure directe...");
     let calcul_direct = Chronometre::demarrer();
     let direct = sonde::sonder(
-        UdpSocket::bind(SocketAddr::new(TOUTES_INTERFACES, 0)).await?,
+        ouvrir_socket(SocketAddr::new(TOUTES_INTERFACES, 0))?,
         SocketAddr::new(args.adresse, PORT_DIRECT),
         cadence,
     )
@@ -255,7 +247,7 @@ async fn mesurer(args: ArgsClient) -> Result<(), Box<dyn Error>> {
     let tunnel = Tunnel::client(connexion.clone(), ecoute, ports).await?;
     let calcul_tunnel = Chronometre::demarrer();
     let par_tunnel = sonde::sonder(
-        UdpSocket::bind(SocketAddr::new(ecoute, 0)).await?,
+        ouvrir_socket(SocketAddr::new(ecoute, 0))?,
         SocketAddr::new(ecoute, ports.video()),
         cadence,
     )
@@ -339,6 +331,42 @@ fn rapporter(
         par_tunnel.debit(),
         direct.debit()
     );
+}
+
+/// Rythme auquel le banc hôte guette le début du transport.
+const PAS_DE_GUET: Duration = Duration::from_millis(200);
+
+/// Sert le tunnel jusqu'à sa fin, en séparant les deux phases de la
+/// mesure.
+///
+/// L'autre banc mesure d'abord le chemin nu, puis le tunnel. Vu d'ici,
+/// la bascule est le premier datagramme qui traverse : avant, ce banc ne
+/// fait que répondre à l'écho direct ; après, il fait tourner le tunnel
+/// en plus. L'écart entre les deux dit ce que le tunnel lui coûte, comme
+/// de l'autre côté. Sans cette séparation, la phase inactive diluerait
+/// la mesure de moitié.
+async fn servir_et_mesurer(tunnel: &mut Tunnel) -> (Option<f64>, Option<f64>) {
+    let compteurs = tunnel.compteurs();
+    let mut sans_tunnel = Chronometre::demarrer();
+    let mut avec_tunnel: Option<Chronometre> = None;
+    let mut charge_sans = None;
+
+    loop {
+        tokio::select! {
+            resultat = tunnel.attendre() => {
+                if let Err(e) = resultat {
+                    println!("Fin de la mesure : {e}");
+                }
+                return (charge_sans, avec_tunnel.and_then(|c| c.charge()));
+            }
+            _ = tokio::time::sleep(PAS_DE_GUET) => {
+                if avec_tunnel.is_none() && compteurs.releve().vers_moteur > 0 {
+                    charge_sans = sans_tunnel.take().and_then(|c| c.charge());
+                    avec_tunnel = Chronometre::demarrer();
+                }
+            }
+        }
+    }
 }
 
 /// Ce que le tunnel coûte en calcul, exprimé en part d'un coeur.

@@ -26,6 +26,7 @@ Deux campagnes, la seconde après l'ajout de la ventilation des pertes.
 | 1 | 40 Mb/s | 120 s | 0,69 ms | 1,48 ms | +0,79 ms | +1,04 ms | +1,36 ms |
 | 2 | 50 Mb/s | 30 s | 0,69 ms | 1,57 ms | +0,88 ms | +1,29 ms | +1,67 ms |
 | 2 | 40 Mb/s | 120 s | 0,74 ms | 1,29 ms | **+0,56 ms** | +0,70 ms | **+0,80 ms** |
+| 3 | 40 Mb/s | 120 s | 0,71 ms | 1,25 ms | **+0,54 ms** | +0,74 ms | **+0,81 ms** |
 
 **G-lat : médiane <= 1 ms et centile 99 <= 3 ms. Tenu**, dans les cinq mesures. La plus fiable est la dernière, deux minutes à 40 Mb/s : +0,56 ms de médiane et +0,80 ms au centile 99, soit moins du tiers de ce qui est admis.
 
@@ -64,6 +65,23 @@ Le reste se joue sur le trajet retour, invisible depuis le côté qui mesure : l
 
 Ces pertes n'ont aucun effet mesurable sur le débit ni sur la latence, et la correction d'erreur du protocole vidéo est faite pour les absorber. À titre de comparaison, elles représentent moins d'un paquet sur deux mille.
 
-## Non mesuré
+## Processeur
 
-G-cpu : la charge processeur du banc n'a pas été relevée pendant les mesures. C'est le dernier seuil du jalon qui reste ouvert.
+Relevé par le banc lui-même, sur la fenêtre exacte de chaque salve, à 40 Mb/s pendant 120 secondes.
+
+| Côté | Sans tunnel | Avec tunnel | Coût du tunnel | Coeurs de la machine |
+|---|---|---|---|---|
+| Client | 2,9 % | 10,4 % | **+7,5 points** | 12 |
+| Hôte | mesure invalide | mesure invalide | à refaire | 24 |
+
+**G-cpu : au plus 8 % d'un coeur à 40 Mb/s. Tenu côté client**, à 7,5 points. Et ce chiffre est pessimiste de moitié : le banc émet et reçoit en même temps, alors qu'une session réelle ne fait qu'un des deux sens par extrémité.
+
+Le chiffre côté hôte de cette campagne est à jeter. Son chronomètre couvrait les deux salves de l'autre banc, dont une où le tunnel ne transportait rien : la mesure était diluée d'à peu près la moitié. Le banc hôte sépare désormais les deux phases, en prenant le premier datagramme transporté comme bascule, et rend le même couple de chiffres que le client.
+
+## Ce que la troisième campagne a mis au jour
+
+Les 817 paquets manquants de la mesure longue ne sont expliqués ni par la file d'émission du tunnel (zéro jeté), ni par le transport (zéro perdu, des deux côtés). Ils ont donc été jetés par le noyau, dans les tampons des sockets qui relient le moteur au tunnel.
+
+C'est cohérent avec leur dimensionnement d'alors, celui du système : souvent 64 Kio, soit une dizaine de millisecondes de vidéo à ce débit. Il suffit que la pompe soit privée de processeur le temps d'une préemption pour que le noyau jette, en silence et sans que rien ne le compte. Ces sockets demandent maintenant quatre mébioctets, ce qui couvre largement une interruption d'ordonnancement. Le système peut n'en accorder qu'une partie, sans que ce soit une erreur.
+
+Cette correction était prévue par [NETWORK.md](../../docs/NETWORK.md) ; elle est simplement arrivée plus tôt que le jalon M3, faute d'autre explication au chiffre.

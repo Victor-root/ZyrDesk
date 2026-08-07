@@ -61,7 +61,7 @@ Reste à faire :
 
 - Simulation d'aller-retour dans le banc : c'est le produit perte x aller-retour qui fait s'effondrer un contrôleur ordinaire, et la boucle locale n'a que 0,15 ms. La condition exacte de G-loss (25 ms, 10 minutes) se mesurera sur un vrai chemin au jalon M5.
 - Fréquence d'acquittements réduite : à plusieurs milliers de paquets par seconde en descente, les acquittements par défaut produisent beaucoup de paquets montants inutiles.
-- Priorité temps réel Windows (MMCSS) et tampons socket élargis, à faire avec le service du jalon M3.
+- Priorité temps réel Windows (MMCSS), à faire avec le service du jalon M3. Les tampons des sockets qui relient le moteur au tunnel sont en revanche déjà portés à quatre mébioctets : leur valeur par défaut, souvent 64 Kio, ne couvrait qu'une dizaine de millisecondes de vidéo, et le noyau y jetait des paquets sans que rien ne puisse le compter.
 - Vérification du contrôleur actif à chaque établissement de session, et profil de perte joué en intégration continue sur chaque version publiée.
 
 ## 4. Budget MTU et taille de paquet
