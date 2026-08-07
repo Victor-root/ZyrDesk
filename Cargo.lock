@@ -1624,3 +1624,11 @@ dependencies = [
  "quinn-proto",
  "zyr-proto",
 ]
+
+[[package]]
+name = "zyr-tunnel"
+version = "0.1.0"
+dependencies = [
+ "zyr-proto",
+ "zyr-transport",
+]

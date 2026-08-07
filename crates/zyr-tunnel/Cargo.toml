@@ -1,0 +1,11 @@
+[package]
+name = "zyr-tunnel"
+description = "Multiplexage des flux des moteurs dans une connexion unique"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true
+zyr-transport.workspace = true
