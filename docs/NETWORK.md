@@ -54,21 +54,21 @@ Solution (critère GO/NO-GO du banc M2) :
 
 ## 4. Budget MTU et taille de paquet
 
-Aucune fragmentation IP, jamais. Budget octet par octet :
+Aucune fragmentation IP, jamais : un seul fragment perdu détruirait le paquet entier, et la latence s'en ressentirait.
 
-| Couche | Octets |
+Le surcoût du transport n'est pas calculé à la main. Les en-têtes QUIC varient avec la longueur des identifiants de connexion et l'état du chemin ; les estimer reviendrait à refaire, moins bien, un calcul que le transport tient déjà à jour et corrige au fil de sa découverte de MTU. La taille de paquet part donc de la charge utile que le transport annonce pour le chemin en cours.
+
+| Élément retranché | Octets |
 |---|---|
-| Charge utile UDP maximale (Ethernet IPv4) | 1472 |
-| Cible paquet QUIC externe (marge PPPoE/VPN) | 1392 |
-| En-tête court QUIC (drapeaux 1 + identifiant de connexion 8 + numéro 2) | -11 |
-| Étiquette de chiffrement AEAD | -16 |
-| En-tête de trame DATAGRAM | -3 |
-| En-tête mux ZyrDesk (canal) | -2 |
-| = budget datagramme interne | 1360 |
-| En-têtes GameStream par paquet (RTP + en-tête vidéo, à mesurer précisément en M1) | ~-28 |
-| = `--packet-size` sûr côté Moonlight | 1264 |
+| En-tête ZyrDesk devant chaque datagramme (identifiant de canal) | 1 |
+| En-têtes ajoutés par le protocole des moteurs à chaque paquet vidéo | 28, à confirmer par mesure |
+| Marge conservée tant que l'en-tête réel n'est pas mesuré | 32 |
 
-1264 respecte le minimum de 1025 imposé par Moonlight pour rester en mode « local » (ce qui désactive sa détection de réseau distant : c'est nous qui gérons le chemin). Coût contre les 1392 natifs du LAN : +10 % de paquets, négligeable. À l'établissement, la valeur est recalculée : `packet_size = min(1264, taille_max_datagramme - 32 - 28)`, plancher 1025 avec avertissement journalisé (seuls des chemins à MTU < 1280 le déclencheraient). La découverte de MTU du transport peut sonder vers le haut, jamais fragmenter.
+La valeur obtenue est plafonnée à 1392, celle qu'emploie nativement le moteur client en réseau local : aller au-delà n'apporte rien et rapproche du seuil de fragmentation. Elle est plancher à 1025, minimum accepté par le moteur client ; rester au-dessus garde sa détection de réseau distant désactivée, puisque c'est nous qui gérons le chemin. Un chemin trop étroit pour ce plancher est refusé plutôt que raboté en silence.
+
+Sur un chemin Ethernet ordinaire, le résultat dépasse 1300 octets. Le calcul est implémenté et couvert par des tests dans le module `mtu` du transport, y compris la propriété qui compte : la taille rendue tient toujours dans le datagramme annoncé.
+
+Les deux estimations du tableau se resserreront une fois la taille réelle des en-têtes mesurée par capture réseau (vérification V5 du jalon M1).
 
 ## 5. Établissement de session et chemins
 
