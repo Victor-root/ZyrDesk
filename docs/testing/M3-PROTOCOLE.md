@@ -34,7 +34,7 @@ New-NetFirewallRule -DisplayName "ZyrDesk (moteur hote)" -Direction Inbound `
   -Program "$PWD\data\engines\host\zyrdesk-host-engine.exe" -Action Allow
 ```
 
-Le service ne pose pas encore cette règle lui-même : ce sera l'installateur du produit.
+Personne ne pose encore cette règle automatiquement : elle changera de forme quand le service portera le tunnel, et ne visera plus le moteur mais `zyrdeskd`, sur un seul port.
 
 **Appairer les deux PC maintenant**, pendant qu'une session est ouverte sur l'hôte. Le PC client ne pourra plus faire appairer depuis l'écran de connexion, puisque plus personne ne sera là pour taper le code. Suivre la section 2 de [M1-PROTOCOLE.md](M1-PROTOCOLE.md), puis fermer la session distante.
 
@@ -176,6 +176,8 @@ zyrdeskd uninstall
 ## 10. Si quelque chose ne va pas
 
 **`zyrdeskd install` refuse.** La fenêtre n'est pas administrateur. Le service s'inscrit auprès de Windows, ce qu'un utilisateur ordinaire n'a pas le droit de faire.
+
+**`zyrdeskd install` dit que le service existe déjà.** L'installateur du produit l'enregistre aussi : un ZyrDesk installé et un ZyrDesk compilé se disputent le même nom de service. Retirer celui qui ne sert pas (`zyrdeskd uninstall` depuis son propre dossier) avant d'inscrire l'autre.
 
 **Le journal dit `host engine not found`.** Le service cherche les moteurs au même endroit que `zyr-cli`, à savoir le dossier `data` du projet. Il tourne sous le compte système : si le projet est sur une clé USB, un disque réseau ou dans un dossier d'utilisateur protégé, ce compte peut ne pas y accéder. Déplacer le projet sur un disque local ordinaire.
 
