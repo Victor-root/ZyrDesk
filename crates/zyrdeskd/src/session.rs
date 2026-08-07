@@ -233,7 +233,12 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
 
     // Safe: both handles are valid at this point.
     if unsafe { AssignProcessToJobObject(job.0, process.0) } == 0 {
-        return Err(io::Error::last_os_error());
+        let failure = io::Error::last_os_error();
+        // Held by nothing, this engine would outlive the service with
+        // nobody able to reach it: it is ended here instead.
+        // Safe: the handle is valid and belongs to us alone.
+        unsafe { TerminateProcess(process.0, 1) };
+        return Err(failure);
     }
 
     Ok(SessionProcess {
