@@ -15,6 +15,8 @@
 //! relation en place, elle viendra du ticket de session, ce qui ne
 //! change rien au mécanisme.
 
+use std::path::{Path, PathBuf};
+
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::WebPkiSupportedAlgorithms;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
@@ -36,6 +38,36 @@ impl Empreinte {
     }
 }
 
+/// Texte qui n'est pas une empreinte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmpreinteInvalide;
+
+impl std::fmt::Display for EmpreinteInvalide {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "une empreinte s'écrit avec 64 caractères hexadécimaux")
+    }
+}
+
+impl std::error::Error for EmpreinteInvalide {}
+
+/// Relit une empreinte telle qu'elle s'affiche.
+impl std::str::FromStr for Empreinte {
+    type Err = EmpreinteInvalide;
+
+    fn from_str(texte: &str) -> Result<Self, Self::Err> {
+        let texte = texte.trim();
+        if texte.len() != 64 {
+            return Err(EmpreinteInvalide);
+        }
+        let mut octets = [0u8; 32];
+        for (place, paire) in octets.iter_mut().zip(texte.as_bytes().chunks_exact(2)) {
+            let paire = std::str::from_utf8(paire).map_err(|_| EmpreinteInvalide)?;
+            *place = u8::from_str_radix(paire, 16).map_err(|_| EmpreinteInvalide)?;
+        }
+        Ok(Self(octets))
+    }
+}
+
 /// Affichée en hexadécimal, comme partout ailleurs pour une empreinte.
 impl std::fmt::Display for Empreinte {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -49,17 +81,41 @@ impl std::fmt::Display for Empreinte {
 #[derive(Debug)]
 pub enum ErreurIdentite {
     Generation(String),
+    Fichier(PathBuf, std::io::Error),
+    /// Un des deux fichiers manque : refaire une identité changerait
+    /// l'empreinte de la machine et casserait tous ses appairages.
+    Incomplete(PathBuf),
 }
 
 impl std::fmt::Display for ErreurIdentite {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ErreurIdentite::Generation(e) => write!(f, "génération d'identité impossible : {e}"),
+            ErreurIdentite::Fichier(chemin, e) => write!(f, "{} : {e}", chemin.display()),
+            ErreurIdentite::Incomplete(dossier) => write!(
+                f,
+                "identité incomplète dans {} : effacer le dossier pour en refaire une, \
+                 en sachant que les appairages existants seront perdus",
+                dossier.display()
+            ),
         }
     }
 }
 
 impl std::error::Error for ErreurIdentite {}
+
+/// Certificat de l'appareil, dans le dossier de son identité.
+const FICHIER_CERTIFICAT: &str = "appareil.crt";
+/// Clé privée de l'appareil.
+const FICHIER_CLE: &str = "appareil.key";
+
+fn lire(chemin: &Path) -> Result<Vec<u8>, ErreurIdentite> {
+    std::fs::read(chemin).map_err(|e| ErreurIdentite::Fichier(chemin.to_path_buf(), e))
+}
+
+fn ecrire(chemin: &Path, contenu: &[u8]) -> Result<(), ErreurIdentite> {
+    std::fs::write(chemin, contenu).map_err(|e| ErreurIdentite::Fichier(chemin.to_path_buf(), e))
+}
 
 /// Certificat et clé privée d'un appareil.
 ///
@@ -89,6 +145,49 @@ impl Identite {
             cle,
             empreinte,
         })
+    }
+
+    /// Charge l'identité de cette machine, ou la crée la première fois.
+    ///
+    /// L'empreinte d'un appareil doit durer : c'est elle que le pair
+    /// épingle. Elle est donc gardée sur disque et jamais refaite tant
+    /// que les deux fichiers sont là.
+    ///
+    /// La clé privée est écrite en clair, sous le dossier du projet.
+    /// C'est la même exposition que le reste du projet sur une machine
+    /// que son propriétaire administre. Le service du jalon M3 la mettra
+    /// sous la protection du système, hors de portée des autres comptes.
+    pub fn charger_ou_creer(dossier: &Path) -> Result<Self, ErreurIdentite> {
+        let certificat = dossier.join(FICHIER_CERTIFICAT);
+        let cle = dossier.join(FICHIER_CLE);
+
+        match (certificat.is_file(), cle.is_file()) {
+            (true, true) => Self::charger(&certificat, &cle),
+            (false, false) => Self::creer(dossier, &certificat, &cle),
+            _ => Err(ErreurIdentite::Incomplete(dossier.to_path_buf())),
+        }
+    }
+
+    fn charger(certificat: &Path, cle: &Path) -> Result<Self, ErreurIdentite> {
+        let der_certificat = lire(certificat)?;
+        let der_cle = lire(cle)?;
+        let certificat = CertificateDer::from(der_certificat);
+        let empreinte = Empreinte::du_certificat(&certificat);
+        Ok(Self {
+            certificat,
+            cle: PrivateKeyDer::try_from(der_cle)
+                .map_err(|e| ErreurIdentite::Generation(e.to_string()))?,
+            empreinte,
+        })
+    }
+
+    fn creer(dossier: &Path, certificat: &Path, cle: &Path) -> Result<Self, ErreurIdentite> {
+        let identite = Self::generer()?;
+        std::fs::create_dir_all(dossier)
+            .map_err(|e| ErreurIdentite::Fichier(dossier.to_path_buf(), e))?;
+        ecrire(certificat, identite.certificat.as_ref())?;
+        ecrire(cle, identite.cle.secret_der())?;
+        Ok(identite)
     }
 
     pub fn empreinte(&self) -> Empreinte {
@@ -239,5 +338,59 @@ mod tests {
         let intrus = Identite::generer().unwrap();
         let epingle = PairEpingle::nouveau(attendu.empreinte());
         assert!(epingle.verifier_empreinte(intrus.certificat()).is_err());
+    }
+
+    #[test]
+    fn une_empreinte_affichee_se_relit() {
+        let identite = Identite::generer().unwrap();
+        let e = identite.empreinte();
+        assert_eq!(e.to_string().parse::<Empreinte>().unwrap(), e);
+        // Recopiée d'un terminal, elle traîne souvent des espaces.
+        assert_eq!(format!("  {e}\n").parse::<Empreinte>().unwrap(), e);
+    }
+
+    #[test]
+    fn un_texte_qui_n_est_pas_une_empreinte_est_refuse() {
+        for texte in ["", "abc", &"z".repeat(64), &"ab".repeat(31)] {
+            assert!(texte.parse::<Empreinte>().is_err(), "{texte}");
+        }
+    }
+
+    /// Dossier de travail propre, distinct pour chaque test.
+    fn dossier_neuf(nom: &str) -> PathBuf {
+        let dossier = std::env::temp_dir().join(format!("zyrdesk-{}-{nom}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dossier);
+        dossier
+    }
+
+    #[test]
+    fn l_identite_de_la_machine_ne_change_pas_d_une_fois_sur_l_autre() {
+        let dossier = dossier_neuf("identite-stable");
+        let premiere = Identite::charger_ou_creer(&dossier).unwrap();
+        let seconde = Identite::charger_ou_creer(&dossier).unwrap();
+        assert_eq!(premiere.empreinte(), seconde.empreinte());
+        assert_eq!(seconde.certificat(), premiere.certificat());
+        std::fs::remove_dir_all(&dossier).unwrap();
+    }
+
+    #[test]
+    fn une_identite_a_moitie_effacee_ne_se_refait_pas_en_silence() {
+        // Refaire l'identité changerait l'empreinte de la machine et
+        // casserait ses appairages sans rien dire.
+        let dossier = dossier_neuf("identite-mutilee");
+        let originale = Identite::charger_ou_creer(&dossier).unwrap();
+        std::fs::remove_file(dossier.join(FICHIER_CLE)).unwrap();
+
+        assert!(matches!(
+            Identite::charger_ou_creer(&dossier),
+            Err(ErreurIdentite::Incomplete(_))
+        ));
+        assert_eq!(
+            Empreinte::du_certificat(&CertificateDer::from(
+                std::fs::read(dossier.join(FICHIER_CERTIFICAT)).unwrap()
+            )),
+            originale.empreinte()
+        );
+        std::fs::remove_dir_all(&dossier).unwrap();
     }
 }

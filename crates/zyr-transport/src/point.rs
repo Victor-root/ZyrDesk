@@ -30,6 +30,13 @@ const FILE_EMISSION: usize = 128 * 1024;
 /// File de réception, dimensionnée pour absorber une rafale d'images.
 const FILE_RECEPTION: usize = 8 * 1024 * 1024;
 
+/// Rythme auquel la découverte de chemin est relue.
+const PAS_DE_SONDAGE: Duration = Duration::from_millis(50);
+
+/// Relevés identiques d'affilée après lesquels le chemin est tenu pour
+/// stabilisé.
+const RELEVES_STABLES: u32 = 3;
+
 #[derive(Debug)]
 pub enum ErreurPoint {
     Configuration(String),
@@ -185,12 +192,37 @@ impl Connexion {
 
     /// Charge utile transportable en un datagramme, pour le chemin actuel.
     ///
-    /// Évolue avec la découverte de MTU : c'est elle qui décide de la
+    /// Évolue avec la découverte de chemin : c'est elle qui décide de la
     /// taille de paquet demandée au moteur.
     pub fn datagramme_utilisable(&self) -> Option<u16> {
         self.interne
             .max_datagram_size()
             .map(|t| u16::try_from(t).unwrap_or(u16::MAX))
+    }
+
+    /// Attend que la découverte de chemin se stabilise, puis rend la
+    /// place utilisable qui en résulte.
+    ///
+    /// Le transport part d'une taille prudente et sonde vers le haut.
+    /// Interroger trop tôt donnerait une taille de paquet inutilement
+    /// petite, et le moteur la garderait pour toute la session : il ne
+    /// sait pas en changer en cours de route.
+    pub async fn datagramme_utilisable_stabilise(&self, patience: Duration) -> Option<u16> {
+        let echeance = std::time::Instant::now() + patience;
+        let mut meilleur = self.datagramme_utilisable()?;
+        let mut inchange = 0;
+
+        while inchange < RELEVES_STABLES && std::time::Instant::now() < echeance {
+            tokio::time::sleep(PAS_DE_SONDAGE).await;
+            let actuel = self.datagramme_utilisable()?;
+            if actuel > meilleur {
+                meilleur = actuel;
+                inchange = 0;
+            } else {
+                inchange += 1;
+            }
+        }
+        Some(meilleur)
     }
 
     pub fn aller_retour(&self) -> Duration {
@@ -255,6 +287,22 @@ mod tests {
         let taille = crate::mtu::taille_paquet(utilisable)
             .expect("un chemin local doit permettre un paquet vidéo");
         assert!(taille.octets >= crate::mtu::TAILLE_MINIMALE);
+    }
+
+    #[tokio::test]
+    async fn la_place_utilisable_ne_diminue_pas_une_fois_stabilisee() {
+        let duo = paire().await;
+        let immediat = duo.cote_client.datagramme_utilisable().unwrap();
+        let stabilise = duo
+            .cote_client
+            .datagramme_utilisable_stabilise(PATIENCE)
+            .await
+            .unwrap();
+        assert!(
+            stabilise >= immediat,
+            "{stabilise} après stabilisation contre {immediat} tout de suite"
+        );
+        assert_eq!(stabilise, duo.cote_client.datagramme_utilisable().unwrap());
     }
 
     #[tokio::test]

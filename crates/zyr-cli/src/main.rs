@@ -1,7 +1,11 @@
+mod banc;
 mod connect;
 mod doctor;
 mod engines;
 mod host;
+mod identite;
+mod mesure;
+mod sonde;
 
 use clap::{Parser, Subcommand};
 
@@ -36,6 +40,13 @@ enum Commande {
     },
     /// Ouvre une session sur un ordinateur distant
     Connect(connect::Args),
+    /// Affiche l'empreinte de cette machine
+    Identite,
+    /// Mesure ce que coûte le tunnel entre deux ordinateurs
+    Banc {
+        #[command(subcommand)]
+        action: banc::Action,
+    },
 }
 
 fn main() -> std::process::ExitCode {
@@ -44,6 +55,8 @@ fn main() -> std::process::ExitCode {
         Commande::Engines { action } => engines::executer(action),
         Commande::Host { action } => host::executer(action),
         Commande::Connect(args) => connect::executer(args),
+        Commande::Identite => identite::executer(),
+        Commande::Banc { action } => banc::executer(action),
     }
 }
 

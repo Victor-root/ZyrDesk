@@ -83,6 +83,13 @@ pub fn client_engine_exe() -> PathBuf {
     client_engine_dir().join(nom_executable("zyrdesk-session"))
 }
 
+/// Identité cryptographique de cette machine.
+///
+/// Elle doit durer : c'est elle que les autres appareils épinglent.
+pub fn identite_dir() -> PathBuf {
+    data_dir().join("identite")
+}
+
 /// Configuration et état générés pour le moteur hôte.
 pub fn host_state_dir() -> PathBuf {
     data_dir().join("host")
@@ -111,6 +118,7 @@ mod tests {
             host_engine_exe(),
             client_engine_dir(),
             client_engine_exe(),
+            identite_dir(),
             host_state_dir(),
             device_state_dir("pc-bureau"),
             logs_dir(),

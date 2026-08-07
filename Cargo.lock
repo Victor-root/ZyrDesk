@@ -1856,9 +1856,12 @@ name = "zyr-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "tokio",
  "zyr-engine-client",
  "zyr-engine-host",
  "zyr-proto",
+ "zyr-transport",
+ "zyr-tunnel",
 ]
 
 [[package]]

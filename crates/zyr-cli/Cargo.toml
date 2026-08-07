@@ -10,4 +10,7 @@ repository.workspace = true
 zyr-proto.workspace = true
 zyr-engine-host.workspace = true
 zyr-engine-client.workspace = true
+zyr-transport.workspace = true
+zyr-tunnel.workspace = true
 clap.workspace = true
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "macros", "time"] }
