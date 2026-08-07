@@ -66,9 +66,9 @@ zyr-cli host pin <le-code-affiche>
 
 Attendu : le bureau du PC hôte s'affiche en plein écran sur le PC client, avec les statistiques en surimpression.
 
-> **V1. La session démarre.** Résultat : ................................................
+> **V1. La session démarre.** RÉPONDU : oui. Session 1080p60 en HEVC, décodage matériel, audio, clavier et souris fonctionnels sur réseau local. Premiers relevés dans `perf/baselines/`.
 >
-> Si l'appairage échoue par manque de temps, noter le délai observé : le code doit être saisi avant que le moteur client n'abandonne. C'est justement ce que le tunnel automatisera au jalon M5.
+> Le code d'appairage n'est accepté que pendant que le client l'attend : l'ordre client puis hôte est imposé. Le tunnel du jalon M5 supprimera cette manipulation.
 
 ---
 

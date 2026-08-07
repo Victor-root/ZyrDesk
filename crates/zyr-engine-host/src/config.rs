@@ -49,9 +49,22 @@ pub struct SunshineConfig {
     logs_dir: PathBuf,
     ecoute: Ecoute,
     chiffrement: ChiffrementInterne,
+    fps_minimum: f64,
     output_name: Option<String>,
     adapter_name: Option<String>,
 }
+
+/// Cadence minimale garantie par le moteur, même écran figé.
+///
+/// Le moteur n'encode une image que lorsque l'écran change, et ne réémet
+/// spontanément qu'au bout d'un délai. Son défaut correspond à la moitié
+/// de la cadence demandée : un bureau immobile n'arrive alors qu'à trente
+/// images par seconde, et le déplacement de la souris comme les
+/// animations de fenêtres deviennent saccadés.
+///
+/// Pour du bureau à distance, la fluidité prime sur les quelques images
+/// redondantes économisées : un écran figé se réencode pour presque rien.
+const FPS_MINIMUM_BUREAU: f64 = 60.0;
 
 impl SunshineConfig {
     /// `logs_dir` est le dossier de journaux commun à tous les
@@ -68,9 +81,16 @@ impl SunshineConfig {
             logs_dir: logs_dir.into(),
             ecoute: Ecoute::default(),
             chiffrement: ChiffrementInterne::default(),
+            fps_minimum: FPS_MINIMUM_BUREAU,
             output_name: None,
             adapter_name: None,
         }
+    }
+
+    /// Ajuste la cadence minimale garantie.
+    pub fn avec_fps_minimum(mut self, fps: f64) -> Self {
+        self.fps_minimum = fps;
+        self
     }
 
     /// Ouvre le moteur au réseau. À n'utiliser que sans tunnel.
@@ -146,6 +166,7 @@ impl SunshineConfig {
             ),
             format!("log_path = {}", d(&self.chemin_journal())),
             "min_log_level = info".to_string(),
+            format!("minimum_fps_target = {}", self.fps_minimum),
         ]);
         if let Some(output) = &self.output_name {
             lignes.push(format!("output_name = {output}"));
@@ -253,6 +274,17 @@ mod tests {
             .rendu_conf();
         assert!(avec.contains(r"output_name = \\.\DISPLAY1"));
         assert!(avec.contains("adapter_name = NVIDIA GeForce RTX 4070"));
+    }
+
+    #[test]
+    fn la_cadence_minimale_vise_la_fluidite_du_bureau() {
+        let rendu = config_test().rendu_conf();
+        // Sans cette directive, le moteur retombe à la moitié de la
+        // cadence demandée dès que l'écran cesse de changer.
+        assert!(rendu.contains("minimum_fps_target = 60"), "{rendu}");
+
+        let rendu = config_test().avec_fps_minimum(30.0).rendu_conf();
+        assert!(rendu.contains("minimum_fps_target = 30"), "{rendu}");
     }
 
     #[test]
