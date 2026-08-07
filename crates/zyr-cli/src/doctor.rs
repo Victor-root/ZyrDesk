@@ -1,12 +1,12 @@
 //! Diagnostic de la machine : chaque vérification rend un état et un détail.
 
 use std::fmt;
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, UdpSocket};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use zyr_engine_host::SunshineConfig;
-use zyr_proto::net::{ENGINE_BASE_PORT_MAX, ENGINE_BASE_PORT_MIN, EnginePorts};
+use zyr_engine_host::{SunshineConfig, ports};
+use zyr_proto::net::{ENGINE_BASE_PORT_MAX, ENGINE_BASE_PORT_MIN};
+use zyr_proto::paths;
 
 enum Etat {
     Ok,
@@ -38,6 +38,7 @@ pub fn executer() -> ExitCode {
         ports_moteur(),
         dossier_donnees(),
         configuration_moteur(),
+        moteurs(),
         service(),
     ];
 
@@ -129,7 +130,7 @@ fn gpu() -> Verification {
 }
 
 fn ports_moteur() -> Verification {
-    match base_disponible() {
+    match ports::base_libre() {
         Some(ports) => Verification {
             nom: "Ports moteur",
             etat: Etat::Ok,
@@ -151,39 +152,8 @@ fn ports_moteur() -> Verification {
     }
 }
 
-/// Première base de la plage dont les 7 ports dérivés sont libres en loopback.
-fn base_disponible() -> Option<EnginePorts> {
-    (ENGINE_BASE_PORT_MIN..=ENGINE_BASE_PORT_MAX)
-        .step_by(25)
-        .filter_map(|base| EnginePorts::new(base).ok())
-        .find(base_libre)
-}
-
-fn base_libre(ports: &EnginePorts) -> bool {
-    let adresse = |port| SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
-    ports
-        .tcp_ports()
-        .iter()
-        .all(|&p| TcpListener::bind(adresse(p)).is_ok())
-        && ports
-            .udp_ports()
-            .iter()
-            .all(|&p| UdpSocket::bind(adresse(p)).is_ok())
-}
-
-fn repertoire_donnees() -> PathBuf {
-    if cfg!(windows) {
-        let base = std::env::var_os("ProgramData")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"));
-        base.join("ZyrDesk")
-    } else {
-        std::env::temp_dir().join("zyrdesk-dev")
-    }
-}
-
 fn dossier_donnees() -> Verification {
-    let dossier = repertoire_donnees();
+    let dossier = paths::data_dir();
     let essai = || -> std::io::Result<()> {
         std::fs::create_dir_all(&dossier)?;
         let temoin = dossier.join(".doctor-ecriture");
@@ -206,9 +176,9 @@ fn dossier_donnees() -> Verification {
 }
 
 fn configuration_moteur() -> Verification {
-    match base_disponible() {
+    match ports::base_libre() {
         Some(ports) => {
-            let config = SunshineConfig::new(ports, repertoire_donnees().join("host"));
+            let config = SunshineConfig::new(ports, paths::host_state_dir());
             let directives = config.rendu_conf().lines().count();
             Verification {
                 nom: "Configuration moteur",
@@ -221,6 +191,34 @@ fn configuration_moteur() -> Verification {
             etat: Etat::Echec,
             detail: "impossible sans base de ports libre".to_string(),
         },
+    }
+}
+
+fn moteurs() -> Verification {
+    let manquants: Vec<&str> = [
+        ("hôte", paths::host_engine_exe()),
+        ("client", paths::client_engine_exe()),
+    ]
+    .into_iter()
+    .filter(|(_, chemin): &(&str, PathBuf)| !chemin.is_file())
+    .map(|(role, _)| role)
+    .collect();
+
+    if manquants.is_empty() {
+        Verification {
+            nom: "Moteurs",
+            etat: Etat::Ok,
+            detail: "hôte et client en place".to_string(),
+        }
+    } else {
+        Verification {
+            nom: "Moteurs",
+            etat: Etat::Attention,
+            detail: format!(
+                "absent(s) : {} (voir « zyr-cli engines status »)",
+                manquants.join(", ")
+            ),
+        }
     }
 }
 
@@ -254,25 +252,5 @@ fn service() -> Verification {
         nom: "Service ZyrDesk",
         etat: Etat::Attention,
         detail: "sans objet hors Windows".to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn une_base_est_trouvee_sur_une_machine_ordinaire() {
-        assert!(base_disponible().is_some());
-    }
-
-    #[test]
-    fn une_base_occupee_est_ecartee() {
-        let ports = EnginePorts::new(ENGINE_BASE_PORT_MIN).unwrap();
-        let _occupant =
-            TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, ports.http())).unwrap();
-        assert!(!base_libre(&ports));
-        let trouvee = base_disponible().expect("une autre base doit être trouvée");
-        assert_ne!(trouvee.base(), ports.base());
     }
 }

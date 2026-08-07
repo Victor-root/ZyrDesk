@@ -7,4 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+base64 = "0.23.1"
+serde_json = "1.0.151"
+ureq = { version = "3.3.0", features = ["json"] }
 zyr-proto.workspace = true

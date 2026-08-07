@@ -23,7 +23,21 @@ Mes ordinateurs
 
 ## État du projet
 
-Jalon en cours : **M0, fondations**. Le dépôt est opérationnel : ossature Rust, moteurs upstream épinglés, outil de diagnostic, squelette d'installateur Windows, intégration continue. Aucune session distante n'est encore possible : c'est l'objet du jalon M1. La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
+Jalon en cours : **M1, premier prototype en réseau local**. Le pilotage des deux moteurs est écrit et testé unitairement : configuration de l'hôte, appairage automatisé, lancement de session, état cloisonné par ordinateur distant. Il reste à le valider sur de vraies machines et à lever les hypothèses techniques, en suivant [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md).
+
+Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Utiliser en ligne de commande
+
+Tant que l'interface n'existe pas (jalon M4), tout passe par `zyr-cli` :
+
+```bash
+zyr-cli doctor           # cette machine est-elle prête
+zyr-cli engines status   # où déposer les moteurs, lesquels manquent
+zyr-cli host start       # rendre cet ordinateur accessible
+zyr-cli host pin 1234    # autoriser un ordinateur qui se connecte
+zyr-cli connect <adresse> --stats   # ouvrir une session
+```
 
 ## Construire
 
@@ -57,6 +71,7 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 | [docs/TECH-CHOICES.md](docs/TECH-CHOICES.md) | Choix de technologies et alternatives rejetées |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Jalons M0 à M10 avec critères de sortie mesurables |
 | [docs/TESTING.md](docs/TESTING.md) | Niveaux de tests, seuils de performance, banc de mesure |
+| [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md) | Protocole de test sur deux PC et hypothèses à lever |
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | Licences, obligations, marques, brevets codecs |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Décisions actées et décisions ouvertes |
 | [patches/MANIFEST.md](patches/MANIFEST.md) | Versions de moteurs épinglées et adaptations appliquées |

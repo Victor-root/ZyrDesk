@@ -1,0 +1,10 @@
+[package]
+name = "zyr-engine-client"
+description = "Supervision du moteur client : état par appareil, lancement de session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true

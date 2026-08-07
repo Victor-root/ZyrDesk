@@ -7,6 +7,14 @@
 //! verrouillée, icône de zone de notification désactivée, chemins d'état
 //! sous le répertoire de données ZyrDesk.
 
+pub mod api;
 pub mod config;
+pub mod credentials;
+pub mod ports;
+pub mod process;
+pub mod runtime;
 
 pub use config::{ChiffrementInterne, SunshineConfig};
+pub use credentials::Credentials;
+pub use process::HostEngine;
+pub use runtime::EngineRuntime;

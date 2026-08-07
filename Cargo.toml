@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/zyr-proto",
     "crates/zyr-engine-host",
+    "crates/zyr-engine-client",
     "crates/zyr-cli",
 ]
 
@@ -15,6 +16,7 @@ repository = "https://github.com/Victor-root/ZyrDesk"
 [workspace.dependencies]
 zyr-proto = { path = "crates/zyr-proto" }
 zyr-engine-host = { path = "crates/zyr-engine-host" }
+zyr-engine-client = { path = "crates/zyr-engine-client" }
 clap = { version = "4", features = ["derive"] }
 
 [profile.release]

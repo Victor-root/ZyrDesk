@@ -9,4 +9,5 @@ repository.workspace = true
 [dependencies]
 zyr-proto.workspace = true
 zyr-engine-host.workspace = true
+zyr-engine-client.workspace = true
 clap.workspace = true
