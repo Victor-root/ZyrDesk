@@ -331,7 +331,26 @@ impl Connexion {
             .map_err(|e| ErreurPoint::Connexion(e.to_string()))
     }
 
+    /// Datagrammes réellement partis sur le réseau.
+    ///
+    /// À comparer au nombre de datagrammes déposés : la différence est
+    /// ce que le transport a jeté de sa file d'émission, faute de place.
+    /// Il le fait en silence, en sacrifiant les plus anciens, ce qui est
+    /// le bon choix pour de la vidéo mais reste une perte qu'il faut
+    /// pouvoir distinguer de celle du réseau.
+    pub fn datagrammes_partis(&self) -> u64 {
+        self.interne.stats().frame_tx.datagram
+    }
+
+    /// Paquets que le transport a constatés perdus sur le chemin.
+    pub fn paquets_perdus(&self) -> u64 {
+        self.interne.stats().path.lost_packets
+    }
+
     /// Dépose un datagramme, sans garantie de remise ni d'ordre.
+    ///
+    /// Si la file d'émission est pleine, le transport y fait place en
+    /// jetant les plus anciens : une image périmée ne vaut plus rien.
     pub fn envoyer_datagramme(&self, charge: Bytes) -> Result<(), ErreurDatagramme> {
         self.interne.send_datagram(charge).map_err(|e| match e {
             quinn::SendDatagramError::TooLarge => ErreurDatagramme::TropGros,

@@ -273,7 +273,18 @@ fn rapporter(
         millisecondes(connexion.aller_retour())
     );
 
+    // Sans cette ventilation, on ne saurait pas si un paquet manquant a
+    // été perdu par le réseau ou jeté par le tunnel faute de place.
     let releve = tunnel.releve();
+    let file_pleine = releve
+        .vers_tunnel
+        .saturating_sub(connexion.datagrammes_partis());
+    println!(
+        "  d'où vient la perte   {} jetés faute de place, {} perdus sur le chemin",
+        file_pleine,
+        connexion.paquets_perdus()
+    );
+
     if releve.trop_gros > 0 {
         println!(
             "  {} paquets trop gros pour le chemin : la taille demandée au \

@@ -123,17 +123,27 @@ zyr-cli banc client <adresse IP du PC hote> --pair <empreinte du PC hote> --debi
 - M2-R2 valide le contrôleur de congestion média, sans lequel toute l'architecture réseau tombe.
 - M2-R4 alimente le budget de taille de paquet ([NETWORK.md](../NETWORK.md), section 4).
 
-Les mesures déjà obtenues en boucle locale sur la machine de développement servent de point de comparaison, pas de preuve : elles n'ont ni carte réseau, ni Wi-Fi, ni pare-feu, ni aller-retour réaliste. Relevés complets dans [perf/baselines/M2-boucle-locale.md](../../perf/baselines/M2-boucle-locale.md).
+---
 
-| Condition | Débit tenu | Perte constatée | Coût du tunnel, médiane |
+## 7. Ce que la première campagne a donné
+
+Deux PC en Ethernet gigabit, relevés complets dans [perf/baselines/M2-lan-ethernet.md](../../perf/baselines/M2-lan-ethernet.md).
+
+| Mesure | Résultat | Seuil | Verdict |
 |---|---|---|---|
-| 50 Mb/s, sans perte provoquée | 49,5 Mb/s | 0,00 % | +1,19 ms |
-| 40 Mb/s, 1 % de perte provoquée | 39,7 Mb/s | 0,98 % | sans effet mesurable |
-| 40 Mb/s, 2 % de perte provoquée | 39,7 Mb/s | 1,95 % | sans effet mesurable |
+| M2-R1, coût du tunnel à 50 Mb/s | +0,92 ms de médiane, +1,67 ms au centile 99 | médiane <= 1 ms, centile 99 <= 3 ms | tenu |
+| M2-R1, à 40 Mb/s sur 2 minutes | +0,79 ms de médiane, +1,36 ms au centile 99 | idem | tenu |
+| M2-R2, débit sous 1 % et 2 % de perte | 39,6 Mb/s dans les trois cas | >= 38 Mb/s | tenu |
+| M2-R3, processeur | non relevé | <= 8 % d'un coeur | à faire |
+| M2-R4, taille de paquet | 1353 octets | > 1300 | tenu |
+
+Point ouvert : à 50 Mb/s le tunnel perd 0,59 % des paquets là où le chemin nu n'en perd que 0,10 %, alors qu'à 40 Mb/s il en perd moins que lui. Sans effet sur le débit ni la latence, mais la cause reste à établir. Le banc affiche désormais d'où vient chaque perte, file d'émission pleine ou chemin réseau ; refaire une mesure à 50 Mb/s suffira à trancher.
+
+Les relevés en boucle locale sur la machine de développement restent dans [perf/baselines/M2-boucle-locale.md](../../perf/baselines/M2-boucle-locale.md). Ils ne servent que de garde contre une régression : ils n'ont ni carte réseau, ni pare-feu, ni aller-retour réaliste.
 
 ---
 
-## 7. Si quelque chose ne va pas
+## 8. Si quelque chose ne va pas
 
 **« connexion impossible : timed out » côté client.** Le pare-feu du PC hôte bloque, ou l'adresse IP est mauvaise. Vérifier l'adresse avec `ipconfig` sur le PC hôte, et refaire la règle de pare-feu de la section 1.
 
