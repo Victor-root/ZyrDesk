@@ -142,20 +142,13 @@ Test : pendant une session, éteindre physiquement l'écran du PC hôte, puis at
 
 ---
 
-### V7. Le pilote d'écran virtuel s'installe-t-il proprement ?
+### V7. Le pilote d'écran virtuel s'installe-t-il proprement ? REPORTÉ AU JALON M9
 
-**Ce test décide de toute la stratégie « PC sans écran ».**
+Ce test décide de la stratégie « PC sans écran », mais rien dans l'architecture n'en dépend : le tunnel, le service et l'interface se construisent de la même manière quelle que soit la réponse.
 
-Test, sur le **PC hôte** uniquement, sur un Windows 11 à jour : télécharger la dernière version publiée de Virtual-Display-Driver (projet open source sous licence MIT, signé gratuitement via SignPath) et l'installer en suivant sa procédure officielle.
+Il était placé ici pour découvrir tôt une éventuelle impasse. Le repli en cas d'échec, garder un écran branché sur le PC hôte, est de toute façon la situation de tous les tests jusqu'à ce jalon. Installer puis désinstaller un pilote pour une réponse sans effet immédiat coûte plus qu'il ne rapporte.
 
-> Windows accepte-t-il le pilote sans qu'on ait à modifier la moindre autorisation ou à installer un certificat ? ................................................
->
-> Un écran supplémentaire apparaît-il dans les paramètres d'affichage ? ................................................
->
-> **Si oui aux deux** : la stratégie tient, le jalon M9 est réalisable tel que prévu.
-> **Si non** : la fonction sera désactivée et le PC hôte devra garder un écran branché. À acter dans `docs/DECISIONS.md`.
-
-Désinstaller le pilote après le test pour ne pas fausser les mesures suivantes.
+Il est donc traité au jalon M9, avec le reste de la fonction.
 
 ---
 
@@ -218,6 +211,6 @@ Le jalon M1 est terminé quand :
 
 - [ ] Une session 1080p60 fonctionne, en H.264 et en HEVC, avec décodage matériel, audio, clavier et souris.
 - [ ] L'écart avec les moteurs employés directement est inférieur à 5 %.
-- [ ] Les vérifications V2 à V7 sont toutes renseignées.
-- [ ] Les conséquences sont reportées dans `patches/MANIFEST.md` (patchs devenus nécessaires ou abandonnés) et dans `docs/DECISIONS.md` (stratégie d'écran virtuel).
+- [ ] Les vérifications V2 à V6 sont toutes renseignées (V7 relève du jalon M9).
+- [ ] Les conséquences sont reportées dans `patches/MANIFEST.md` : patchs devenus nécessaires ou abandonnés.
 - [ ] Les mesures de référence sont archivées dans `perf/` : elles servent de base de comparaison à tous les jalons suivants.
