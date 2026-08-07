@@ -30,7 +30,7 @@ Dépasser un plafond est un signal d'architecture : chercher le mécanisme offic
 
 | Id | Moteur | Objet | Jalon | Statut |
 |---|---|---|---|---|
-| P-M1 | Moonlight | Mode sans dialogues en lancement ligne de commande, erreurs vers la sortie d'erreur | M1 | À vérifier d'abord : l'option Qt `-platform offscreen` pourrait suffire et éviter le patch |
+| P-M1 | Moonlight | Suppression de la fenêtre de chargement en lancement ligne de commande, erreurs vers la sortie d'erreur | M4 | **Confirmé nécessaire** : la piste sans patch, qui consistait à neutraliser la couche graphique par l'environnement, est écartée. La version Windows du moteur n'embarque qu'une seule couche d'affichage et refuse de démarrer sans elle |
 | P-M5 | Moonlight | Codes de sortie distincts (sortie utilisateur, perte réseau, erreur fatale) | M1 | **Confirmé nécessaire** : observé sur machine réelle, le moteur sort avec un code de succès alors que la session a échoué, l'erreur ne vivant que dans une fenêtre. Sans ce patch, la reprise automatique ne peut pas décider s'il faut relancer. Fusionne en pratique avec P-M1 |
 | P-M2 | Moonlight | Rebranding : titre de fenêtre, icônes, noms d'organisation et de produit, métadonnées de l'exécutable | M4 | Requis |
 | P-M3 | Moonlight | Ligne de statistiques lisible par machine | M2 | Seulement si les journaux existants ne suffisent pas au banc de mesure |

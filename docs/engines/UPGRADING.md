@@ -35,7 +35,7 @@ Sunshine :
 
 Moonlight :
 - `pair --pin` aboutit sans interaction.
-- `stream` accepte tous les drapeaux que nous passons ; la session démarre ; aucune fenêtre Qt visible en mode session (avec `-platform offscreen` ou P-M1).
+- `stream` accepte tous les drapeaux que nous passons ; la session démarre ; aucune fenêtre de chargement visible en mode session (patch P-M1).
 - Le mode portable isole bien l'état dans le dossier fourni.
 - `--packet-size` est honoré (vérifié par capture de paquets : taille maximale observée conforme).
 - Les statistiques nécessaires au banc sont présentes dans les journaux/overlay au format attendu par notre parseur.

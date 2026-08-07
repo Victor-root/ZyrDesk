@@ -49,10 +49,6 @@ pub struct Args {
     #[arg(long)]
     souris_relative: bool,
 
-    /// Tente de masquer la fenêtre d'attente du moteur (à valider)
-    #[arg(long)]
-    masquer_attente: bool,
-
     /// Refait l'appairage même si cet ordinateur est déjà connu
     #[arg(long)]
     reappairer: bool,
@@ -84,9 +80,7 @@ pub fn executer(args: Args) -> ExitCode {
 
     let deja_connu = etat.a_un_hote_appaire();
     let journal = paths::logs_dir().join("session.log");
-    let moteur = ClientEngine::nouveau(&exe, etat)
-        .avec_journal(&journal)
-        .masquer_fenetre_attente(args.masquer_attente);
+    let moteur = ClientEngine::nouveau(&exe, etat).avec_journal(&journal);
 
     if !deja_connu && let Err(code) = appairer(&moteur, &args.hote) {
         return code;

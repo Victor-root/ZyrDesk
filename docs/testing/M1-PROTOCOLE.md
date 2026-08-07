@@ -92,30 +92,17 @@ Test-NetConnection <adresse-du-pc-hote> -Port 42001
 
 ---
 
-### V3. Peut-on supprimer la fenêtre d'attente du moteur client ?
+### V3. Peut-on supprimer la fenêtre d'attente du moteur client ? RÉPONDU : non
 
-Au lancement d'une session, le moteur client affiche brièvement sa propre fenêtre de chargement avant la fenêtre vidéo. Elle doit disparaître pour que le produit soit crédible.
+Au lancement d'une session, le moteur client affiche sa propre fenêtre de chargement avant la fenêtre vidéo. Elle doit disparaître pour que le produit soit crédible.
 
-L'hypothèse : cette fenêtre dépend de la couche graphique du moteur, alors que la fenêtre vidéo n'en dépend pas. La neutraliser devrait donc masquer la première sans toucher la seconde.
+L'hypothèse testée était de neutraliser sa couche graphique par l'environnement, en pariant que la fenêtre vidéo n'en dépendait pas. **Réfutée sur machine réelle** : la version Windows du moteur n'embarque qu'une seule couche d'affichage, et refuse de démarrer sans elle.
 
-Test, sur le **PC client** :
+Conséquence actée : le patch **P-M1 est nécessaire**, et l'approche par variable d'environnement est écartée définitivement. Le code qui la tentait a été supprimé.
 
-```
-zyr-cli connect <adresse-du-pc-hote> --masquer-attente
-```
+Reste à vérifier, une fois P-M1 écrit : les messages d'erreur du moteur ne doivent pas devenir invisibles. Provoquer volontairement un échec (couper `host start` puis se connecter) et observer.
 
-> La fenêtre de chargement apparaît-elle encore ? ................................................
->
-> La fenêtre vidéo s'affiche-t-elle normalement ? ................................................
->
-> **Si la fenêtre vidéo ne s'affiche plus** : l'hypothèse est fausse, le patch P-M1 est nécessaire.
-> **Si tout est correct** : P-M1 peut être abandonné, à noter dans `patches/MANIFEST.md`.
-
-Attention : dans ce mode, les messages d'erreur du moteur risquent de devenir invisibles. Provoquer volontairement un échec (couper `host start` puis se connecter) et observer.
-
-> En cas d'erreur, obtient-on un message ou un blocage silencieux ? ................................................
->
-> Un blocage silencieux impose le patch P-M5 (codes de sortie distincts), sans lequel la reprise automatique ne peut pas fonctionner.
+> En cas d'erreur, obtient-on un message exploitable ? ................................................
 
 ---
 

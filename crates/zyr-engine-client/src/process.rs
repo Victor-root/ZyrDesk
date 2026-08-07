@@ -12,14 +12,6 @@ use zyr_proto::session::SessionSettings;
 use crate::command;
 use crate::state::DeviceState;
 
-/// Variable d'environnement Qt sélectionnant la couche d'affichage.
-///
-/// Passée par l'environnement plutôt que par la ligne de commande : le
-/// moteur analyse ses propres arguments et refuserait une option qu'il
-/// ne connaît pas.
-const VAR_PLATEFORME_QT: &str = "QT_QPA_PLATFORM";
-const PLATEFORME_SANS_AFFICHAGE: &str = "offscreen";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IssueSession {
     /// Le moteur s'est arrêté normalement.
@@ -67,7 +59,6 @@ pub struct ClientEngine {
     exe: PathBuf,
     etat: DeviceState,
     journal: Option<PathBuf>,
-    masquer_fenetre_attente: bool,
 }
 
 impl ClientEngine {
@@ -76,7 +67,6 @@ impl ClientEngine {
             exe: exe.into(),
             etat,
             journal: None,
-            masquer_fenetre_attente: false,
         }
     }
 
@@ -103,19 +93,6 @@ impl ClientEngine {
             .append(true)
             .open(chemin)
             .map(Some)
-    }
-
-    /// Tente de supprimer la fenêtre d'attente affichée par le moteur
-    /// avant l'ouverture de la fenêtre vidéo.
-    ///
-    /// La fenêtre d'attente relève de la couche graphique du moteur,
-    /// alors que la fenêtre vidéo n'en dépend pas : neutraliser la
-    /// première devrait donc laisser la seconde intacte. Reste à le
-    /// confirmer sur une machine réelle, faute de quoi le patch P-M1
-    /// devient nécessaire.
-    pub fn masquer_fenetre_attente(mut self, actif: bool) -> Self {
-        self.masquer_fenetre_attente = actif;
-        self
     }
 
     pub fn etat(&self) -> &DeviceState {
@@ -177,9 +154,6 @@ impl ClientEngine {
             commande
                 .stdout(Stdio::from(journal))
                 .stderr(Stdio::from(erreurs));
-        }
-        if self.masquer_fenetre_attente {
-            commande.env(VAR_PLATEFORME_QT, PLATEFORME_SANS_AFFICHAGE);
         }
         let statut = commande.spawn()?.wait()?;
         Ok(if statut.success() {

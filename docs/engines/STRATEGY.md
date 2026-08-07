@@ -66,7 +66,7 @@ Pile de patchs prévue (le manifeste `patches/MANIFEST.md` fait foi) :
 
 | Id | Patch | Taille attendue | Statut |
 |---|---|---|---|
-| P-M1 | Mode sans dialogues : en lancement CLI, aucune fenêtre Qt (la fenêtre de chargement QML apparaît sinon avant la fenêtre vidéo) ; erreurs vers stderr | ~40 à 60 lignes | Requis, SAUF si le lancement avec l'option Qt `-platform offscreen` suffit (à tester en M1 avant d'écrire le patch ; attention : les dialogues d'erreur deviennent alors invisibles, d'où P-M5 dans tous les cas) |
+| P-M1 | Suppression de la fenêtre de chargement en lancement ligne de commande, erreurs vers la sortie d'erreur | ~40 à 60 lignes | Confirmé nécessaire sur machine réelle : la piste sans patch, qui neutralisait la couche graphique du moteur, est écartée faute d'alternative embarquée dans sa version Windows |
 | P-M2 | Rebranding : titre de la fenêtre vidéo, icônes, noms d'organisation/produit, métadonnées de l'exécutable (~8 emplacements identifiés, mécaniques) | mécanique | Requis à partir de M4 |
 | P-M5 | Codes de sortie distincts (sortie utilisateur / perte réseau / erreur fatale) câblés dans la fin de session | ~20 lignes | Requis pour la reprise automatique (fusionne en pratique avec P-M1) |
 | P-M3 | Ligne de statistiques périodique lisible par machine sur stdout | ~60 lignes | Seulement si les journaux existants ne suffisent pas au banc de mesure |
