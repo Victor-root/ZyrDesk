@@ -127,6 +127,12 @@ impl SunshineConfig {
         self.data_dir.join("apps.json")
     }
 
+    /// State the engine keeps for itself: paired devices and the local
+    /// API credentials, which it stores in the same file.
+    pub fn state_path(&self) -> PathBuf {
+        self.data_dir.join("engine_state.json")
+    }
+
     /// Log the engine writes itself.
     pub fn log_path(&self) -> PathBuf {
         self.logs_dir.join("engine.log")
@@ -155,14 +161,8 @@ impl SunshineConfig {
             format!("wan_encryption_mode = {}", self.encryption.value()),
             "upnp = disabled".to_string(),
             format!("file_apps = {}", shown(&self.apps_path())),
-            format!(
-                "file_state = {}",
-                shown(&self.data_dir.join("engine_state.json"))
-            ),
-            format!(
-                "credentials_file = {}",
-                shown(&self.data_dir.join("engine_state.json"))
-            ),
+            format!("file_state = {}", shown(&self.state_path())),
+            format!("credentials_file = {}", shown(&self.state_path())),
             format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
             format!("minimum_fps_target = {}", self.minimum_fps),
@@ -239,11 +239,27 @@ mod tests {
 
     #[test]
     fn the_conf_keeps_the_state_in_the_data_folder() {
-        let rendered = test_config().render_conf();
-        assert!(rendered.contains("file_apps = /data/zyrdesk/host/apps.json"));
-        assert!(rendered.contains("file_state = /data/zyrdesk/host/engine_state.json"));
-        assert!(rendered.contains("credentials_file = /data/zyrdesk/host/engine_state.json"));
-        assert!(rendered.contains("log_path = /data/zyrdesk/logs/engine.log"));
+        // The expected paths come from the configuration itself: writing
+        // them out by hand would only test the separator of whichever
+        // system ran the test.
+        let config = test_config();
+        let rendered = config.render_conf();
+        for (key, path) in [
+            ("file_apps", config.apps_path()),
+            ("file_state", config.state_path()),
+            ("credentials_file", config.state_path()),
+            ("log_path", config.log_path()),
+        ] {
+            let line = format!("{key} = {}", path.display());
+            assert!(rendered.contains(&line), "{line} missing from the conf");
+            assert!(
+                config
+                    .required_dirs()
+                    .iter()
+                    .any(|dir| path.starts_with(dir)),
+                "{key} sits outside the folders we create"
+            );
+        }
     }
 
     #[test]

@@ -46,7 +46,10 @@ jobs:
           submodules: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --all-targets
+      # Sans --no-fail-fast, cargo s'arrête au premier binaire de test en
+      # échec : une plateforme qui casse plusieurs choses ne les révèle
+      # qu'une par une, un aller-retour de CI à chaque fois.
+      - run: cargo test --workspace --all-targets --no-fail-fast
       - name: Diagnostic
         run: cargo run -p zyr-cli -- doctor
 
@@ -59,6 +62,12 @@ jobs:
           submodules: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # NSIS n'est plus fourni par l'image Windows du runner, et son
+      # installateur n'ajoute rien au PATH.
+      - name: Installer NSIS
+        run: |
+          choco install nsis --no-progress -y
+          "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
       - run: cargo build --release --workspace
       - name: Construire l'installateur
         working-directory: packaging/windows
