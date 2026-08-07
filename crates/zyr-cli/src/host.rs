@@ -3,6 +3,11 @@
 //! In the foreground and without a service: this is the smallest form
 //! that allows real performance to be measured. Starting with Windows
 //! and access before anyone logs in belong to the service.
+//!
+//! The argument names and their doc comments stay in French on purpose:
+//! clap turns them into the flags the user types and the help text the
+//! user reads, so they are interface, not code. The test protocols quote
+//! them line for line.
 
 use std::process::ExitCode;
 use std::time::Duration;

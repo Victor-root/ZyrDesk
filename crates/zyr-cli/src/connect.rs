@@ -4,6 +4,11 @@
 //! session goes straight to an address on the local network, and the
 //! pairing code has to be carried over to the other computer by hand.
 //! The tunnel automates that exchange later on.
+//!
+//! The argument names and their doc comments stay in French on purpose:
+//! clap turns them into the flags the user types and the help text the
+//! user reads, so they are interface, not code. The test protocols quote
+//! them line for line.
 
 use std::process::ExitCode;
 

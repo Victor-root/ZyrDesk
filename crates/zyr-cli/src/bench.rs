@@ -10,6 +10,11 @@
 //! The two computers have to know each other's fingerprint.
 //! `zyr-cli identity` shows it on each machine. It never changes once
 //! created.
+//!
+//! The argument names and their doc comments stay in French on purpose:
+//! clap turns them into the flags the user types and the help text the
+//! user reads, so they are interface, not code. The test protocols quote
+//! them line for line.
 
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
