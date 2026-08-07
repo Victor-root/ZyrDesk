@@ -31,11 +31,22 @@ Dépasser un plafond est un signal d'architecture : chercher le mécanisme offic
 | Id | Moteur | Objet | Jalon | Statut |
 |---|---|---|---|---|
 | P-M1 | Moonlight | Mode sans dialogues en lancement ligne de commande, erreurs vers la sortie d'erreur | M1 | À vérifier d'abord : l'option Qt `-platform offscreen` pourrait suffire et éviter le patch |
-| P-M5 | Moonlight | Codes de sortie distincts (sortie utilisateur, perte réseau, erreur fatale) | M1 | Requis pour la reprise automatique ; fusionne en pratique avec P-M1 |
+| P-M5 | Moonlight | Codes de sortie distincts (sortie utilisateur, perte réseau, erreur fatale) | M1 | **Confirmé nécessaire** : observé sur machine réelle, le moteur sort avec un code de succès alors que la session a échoué, l'erreur ne vivant que dans une fenêtre. Sans ce patch, la reprise automatique ne peut pas décider s'il faut relancer. Fusionne en pratique avec P-M1 |
 | P-M2 | Moonlight | Rebranding : titre de fenêtre, icônes, noms d'organisation et de produit, métadonnées de l'exécutable | M4 | Requis |
 | P-M3 | Moonlight | Ligne de statistiques lisible par machine | M2 | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Moonlight | Interrupteur pour ne pas demander le chiffrement vidéo interne | M1 | Contingence : seulement si la vérification M1 montre un double chiffrement sur loopback |
 | P-S1 | Sunshine | Désactivation de l'annonce mDNS | M1 | Contingence : seulement si le moteur s'annonce sur le réseau malgré la liaison loopback |
+
+## Contraintes des moteurs relevées sur machine réelle
+
+Ces comportements ne sont écrits nulle part dans leur documentation et ont été découverts à l'usage. Ils sont pris en charge par notre code, sans modification des moteurs.
+
+| Moteur | Contrainte | Conséquence |
+|---|---|---|
+| Hôte | Résout ses ressources graphiques par rapport au dossier courant, pas à son exécutable | Il est lancé depuis son propre dossier, sans quoi l'initialisation graphique échoue |
+| Hôte | La restriction d'adresse d'écoute couvre tous ses services : appairage, négociation, vidéo, audio, contrôle | Elle ne peut être posée qu'une fois le tunnel en place |
+| Hôte | N'accepte un code d'appairage que pendant qu'un client l'attend, et signale un succès même sans demande en cours | L'ordre client puis hôte est imposé ; le tunnel supprimera la question |
+| Client | Sort avec un code de succès même après un échec de session | Le journal est la seule source fiable en attendant P-M5 |
 
 ## Fichiers de patchs
 
