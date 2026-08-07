@@ -23,9 +23,9 @@ Mes ordinateurs
 
 ## État du projet
 
-Jalon en cours : **M1, premier prototype en réseau local**. Le pilotage des deux moteurs est écrit et testé unitairement : configuration de l'hôte, appairage automatisé, lancement de session, état cloisonné par ordinateur distant. Il reste à le valider sur de vraies machines et à lever les hypothèses techniques, en suivant [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md).
+Jalon en cours : **M2, le tunnel et son banc de mesure**. Le tunnel chiffré est écrit et transporte de bout en bout : identité d'appareil épinglée, les sept ports des moteurs multiplexés dans une seule connexion, contrôleur de congestion adapté à la vidéo temps réel. Le banc mesure ce qu'il coûte, en comparant le même trajet avec et sans lui, avec ou sans perte provoquée. Il reste à mesurer sur deux vraies machines, en suivant [docs/testing/M2-PROTOCOLE.md](docs/testing/M2-PROTOCOLE.md).
 
-Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
+Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. Le jalon M1 a produit une première session distante réelle en 1080p ; ses hypothèses restantes sont listées dans [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md). La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Utiliser en ligne de commande
 
@@ -34,9 +34,12 @@ Tant que l'interface n'existe pas (jalon M4), tout passe par `zyr-cli` :
 ```bash
 zyr-cli doctor           # cette machine est-elle prête
 zyr-cli engines status   # où déposer les moteurs, lesquels manquent
+zyr-cli identite         # empreinte de cette machine
 zyr-cli host start       # rendre cet ordinateur accessible
 zyr-cli host pin 1234    # autoriser un ordinateur qui se connecte
 zyr-cli connect <adresse> --stats   # ouvrir une session
+zyr-cli banc hote --pair <empreinte>              # mesurer le tunnel, côté attente
+zyr-cli banc client <adresse> --pair <empreinte>  # mesurer le tunnel, côté mesure
 ```
 
 ## Construire
@@ -71,7 +74,8 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 | [docs/TECH-CHOICES.md](docs/TECH-CHOICES.md) | Choix de technologies et alternatives rejetées |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Jalons M0 à M10 avec critères de sortie mesurables |
 | [docs/TESTING.md](docs/TESTING.md) | Niveaux de tests, seuils de performance, banc de mesure |
-| [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md) | Protocole de test sur deux PC et hypothèses à lever |
+| [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md) | Première session sur deux PC, et hypothèses à lever |
+| [docs/testing/M2-PROTOCOLE.md](docs/testing/M2-PROTOCOLE.md) | Mesure du coût du tunnel sur deux PC |
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | Licences, obligations, marques, brevets codecs |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Décisions actées et décisions ouvertes |
 | [patches/MANIFEST.md](patches/MANIFEST.md) | Versions de moteurs épinglées et adaptations appliquées |

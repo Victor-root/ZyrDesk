@@ -5,7 +5,13 @@ Principe directeur : le serveur met en relation, il ne peut pas espionner. Les c
 ## 1. Identités
 
 - Compte utilisateur : e-mail + mot de passe (haché Argon2id côté broker), jetons d'accès courts + jeton de rafraîchissement. Double authentification TOTP disponible dès que les comptes existent, OBLIGATOIRE avant toute bêta publique (compromission du compte = contrôle des PC).
-- Identité d'appareil : à l'installation, chaque appareil génère une paire de clés Ed25519. La clé privée ne quitte JAMAIS l'appareil. La clé publique est enregistrée auprès du broker à l'enrôlement (appareil rattaché au compte) et sert d'identité réseau.
+- Identité d'appareil : à l'installation, chaque appareil génère une paire de clés. La clé privée ne quitte JAMAIS l'appareil. La clé publique est enregistrée auprès du broker à l'enrôlement (appareil rattaché au compte) et sert d'identité réseau.
+
+  État au jalon M2 : l'identité est un certificat auto-signé, produit à la première demande et conservé dans `data/identite`. Ce qui compte n'est pas le certificat mais son empreinte : chaque extrémité connaît d'avance celle du pair et refuse tout autre certificat, dans les deux sens. Aucune autorité de certification n'entre en jeu, et le nom porté par le certificat n'est jamais vérifié : il n'y a pas de nom de domaine à valider, seulement deux ordinateurs qui doivent se reconnaître. L'empreinte ne change plus une fois créée, sans quoi tous les appairages seraient rompus ; une identité dont un fichier manque est refusée plutôt que refaite en silence.
+
+  Limite assumée à ce stade : la clé privée est écrite en clair sous le dossier du projet, sur une machine que son propriétaire administre. Le service du jalon M3 la mettra sous la protection du système, hors de portée des autres comptes locaux (voir §4).
+
+  D'où vient l'empreinte attendue : sur un réseau local, elle est recopiée à la main entre les deux machines (`zyr-cli identite`). Le ticket de session la fournira une fois le broker en place, ce qui ne change rien au mécanisme de vérification.
 - Identités internes moteurs : le certificat client RSA de Moonlight et le certificat de Sunshine existent toujours (protocole d'appairage officiel conservé), mais ils vivent en loopback derrière le tunnel et sont gérés automatiquement ; ils constituent une couche interne supplémentaire, pas la frontière de sécurité principale.
 
 ## 2. Tickets de session
@@ -17,6 +23,8 @@ Principe directeur : le serveur met en relation, il ne peut pas espionner. Les c
 
 Résultat : le chiffrement (TLS 1.3 de QUIC) est négocié directement entre les deux appareils. Le broker sait QUI parle à QUI et QUAND (métadonnées de mise en relation), jamais le contenu. Le relais transporte des paquets qu'il ne peut pas déchiffrer.
 
+Asymétrie du protocole, à ne pas confondre avec une faille : le client présente son certificat en dernier, et l'hôte ne le juge qu'ensuite. Un appareil refusé voit donc sa connexion réussir avant d'être rompue aussitôt. Rien n'y circule, mais l'interface ne doit jamais annoncer une session établie avant le premier échange réussi. Un test le vérifie dans les deux sens : l'hôte refuse l'inconnu, et l'inconnu perd sa connexion.
+
 ## 3. Chiffrement des flux
 
 - Sur le réseau : tout passe dans le tunnel QUIC (TLS 1.3, AEAD par paquet). Vidéo, audio, entrées, presse-papiers, appairage : une seule enveloppe chiffrée de bout en bout.
@@ -27,7 +35,7 @@ Résultat : le chiffrement (TLS 1.3 de QUIC) est négocié directement entre les
 
 | Secret | Où | Protection |
 |---|---|---|
-| Clé privée d'appareil | Profil du service | DPAPI dans le profil SYSTEM (PAS DPAPI « machine », que tout utilisateur local peut déchiffrer) + ACL SYSTEM et Administrateurs |
+| Clé privée d'appareil | Profil du service | DPAPI dans le profil SYSTEM (PAS DPAPI « machine », que tout utilisateur local peut déchiffrer) + ACL SYSTEM et Administrateurs. Jalon M3 ; jusque-là en clair dans `data\identite` |
 | Identifiants de l'interface web Sunshine | Profil du service | Aléatoires 32 octets, régénérés à chaque démarrage du service, DPAPI profil SYSTEM |
 | Jetons de compte (interface) | Session utilisateur | Gestionnaire d'identifiants Windows de l'utilisateur |
 | État Moonlight (certificats d'appairage internes) | dossier de données, `devices\<id>` | ACL restreintes une fois le service en place |

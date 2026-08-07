@@ -31,9 +31,10 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 ## M2 : Banc de mesure + tunnel (décision transport GRAVÉE)
 
 - Objectif : le tunnel prouve qu'il ne coûte rien, ou la décision est révisée.
-- Contenu : harnais de mesure v1 (parsing des statistiques du lecteur + compteurs du tunnel + profils de perte/latence simulés + procédure photon-à-photon documentée pour l'opérateur) ; implémentation du tunnel avec iroh ET quinn derrière le trait ; contrôleur de congestion média ; moteurs passés en loopback strict.
-- Résultat observable : sessions LAN via tunnel, comparaison A/B scriptée contre M1.
-- Critères de sortie : G-lat, G-loss, G-cpu tenus ; contrôleur média opérationnel confirmé dans l'implémentation retenue (GO/NO-GO iroh) ; mémo de décision transport écrit dans docs/DECISIONS.md.
+- Contenu : banc de mesure (`zyr-cli banc`, comparaison directe contre tunnel sur le même trajet, perte provoquée sous le transport, compteurs du tunnel) ; tunnel complet sur quinn (identité d'appareil épinglée, multiplexage des sept ports des moteurs, budget de taille de paquet) ; contrôleur de congestion média.
+- Fait : le tunnel transporte de bout en bout, le contrôleur média est écrit et gardé par un test contre le contrôleur ordinaire, la décision transport est écrite (D13). Relevés en boucle locale dans [DECISIONS.md](DECISIONS.md).
+- Reste à faire : mesures sur deux vrais PC ([testing/M2-PROTOCOLE.md](testing/M2-PROTOCOLE.md)) ; simulation d'aller-retour dans le banc (reportée à M5, voir NETWORK.md section 3) ; passage des moteurs en loopback strict, qui vient avec le service du jalon M3 puisque c'est lui qui portera les extrémités de tunnel ; procédure photon-à-photon ; comparaison A/B contre M1.
+- Critères de sortie : G-lat, G-loss, G-cpu tenus sur deux vrais PC ; mémo de décision transport écrit dans docs/DECISIONS.md (fait).
 
 ## M3 : Service Windows et accès non supervisé
 

@@ -14,6 +14,14 @@ Le banc de mesure existe à partir du jalon M2 : les décisions d'architecture r
 | G-start | Clic « Se connecter » vers première image : <= 4 s en réseau local, <= 8 s via Internet | Chronométrage sur 10 essais, médiane |
 | G-frame | p99 de l'intervalle entre images affichées <= 20 ms sur 5 min | Statistiques du moteur client |
 
+## Outil de mesure
+
+Depuis le jalon M2, `zyr-cli banc` mesure G-lat, G-loss et G-cpu sans qu'aucun moteur soit nécessaire : il envoie ses propres paquets par rafales, une par image, comme le fait un encodeur, et mesure deux fois le même trajet, avec et sans tunnel. Il sait aussi provoquer une perte réelle sous le transport (`--perte`, en pour mille), ce qui exerce ses vrais mécanismes de détection.
+
+Marche à suivre sur deux PC : [docs/testing/M2-PROTOCOLE.md](../docs/testing/M2-PROTOCOLE.md). Toujours en version release : en mode debug, le tunnel mesure environ quatre fois son coût réel.
+
+Ce que le banc ne sait pas encore faire : simuler un aller-retour. Or c'est le produit perte x aller-retour qui fait s'effondrer un contrôleur de congestion ordinaire. La condition exacte de G-loss (25 ms d'aller-retour, 10 minutes) se mesurera donc sur un vrai chemin distant au jalon M5. En attendant, la partie « le débit ne s'effondre pas sous la perte » est vérifiée, et la propriété du contrôleur est gardée par un test qui le compare au contrôleur ordinaire du transport.
+
 ## Sources de mesure
 
 - Moteur client : images par seconde reçues, décodées et rendues ; latence hôte ; pertes réseau et pertes par gigue ; latence réseau et variance ; temps de décodage ; délai de file ; temps de rendu.
