@@ -464,3 +464,69 @@ Sur le **PC hôte**, fenêtre ZyrDesk ouverte, avec une session en cours depuis 
 **La session ne s'arrête pas quand on coupe.** Regarder `data\logs\service.log` : la ligne « remote access turned off, the engine is being stopped » doit y être.
 
 **L'interrupteur ne réagit pas au clic.** Le service et la fenêtre ne datent pas du même jour : recompiler et relancer le service.
+
+---
+
+## Partie 7 : la fenêtre retrouve une session déjà en cours
+
+### Ce qui change, et pourquoi
+
+Une session n'appartient pas à la fenêtre qui l'a ouverte. C'est le service qui la tient, et c'est pour ça que fermer la fenêtre ne coupe rien depuis la partie 1. Il manquait le retour : jusqu'ici, rouvrir la fenêtre pendant une session donnait un accueil vide, comme si rien ne tournait.
+
+La fenêtre demande donc maintenant au service ce qu'il tient. Elle affiche un bandeau vert nommant l'ordinateur visé et disant depuis combien de temps la session est ouverte, l'ordinateur concerné se marque « Session en cours » dans la liste, et les autres cartes s'éteignent : une seule session à la fois depuis un ordinateur.
+
+Une nuance qui explique ce qu'on voit : une voie ouverte que personne n'utilise encore n'est **pas** annoncée comme une session. Entre le moment où le tunnel s'ouvre et celui où l'image apparaît, c'est la fenêtre qui a lancé la connexion qui raconte l'histoire, avec son bandeau bleu. Le vert n'arrive que quand l'image est là.
+
+**Ce qui n'est pas fait** : il n'y a pas de bouton pour arrêter une session depuis l'accueil. On l'arrête en fermant la fenêtre vidéo, comme aujourd'hui. La pilule de session, dans l'image elle-même, viendra plus tard.
+
+### Préparation
+
+Sur les **deux PC** : mettre à jour le programme ZyrDesk (la commande du haut de ce document). Le service et la fenêtre doivent dater du même jour, sinon la fenêtre demandera quelque chose que le service ne sait pas dire.
+
+### Le test
+
+> **M4-R26 (la session survit à la fenêtre, et se retrouve)**
+>
+> Sur le **PC client** : ouvrir ZyrDesk, cliquer la carte du PC hôte, attendre l'image. Puis **fermer la fenêtre ZyrDesk** (la croix), en laissant l'image tourner.
+>
+> Rouvrir ZyrDesk.
+>
+> Attendu : l'image n'a pas bronché, et l'accueil affiche un bandeau vert « Session en cours vers PC-HÔTE », avec « Ouverte depuis moins d'une minute » ou la durée réelle. La carte du PC hôte porte « Session en cours » en vert ; les autres cartes sont grisées et ne réagissent plus au clic.
+
+> **M4-R27 (le vrai critère du jalon : tuer la fenêtre)**
+>
+> Toujours en session, ouvrir le gestionnaire des tâches du **PC client** et **terminer la tâche** `ZyrDesk.exe` (celle de l'interface, pas `zyrdeskd.exe` ni `zyrdesk-session.exe`).
+>
+> Attendu : l'image continue sans le moindre à-coup. Relancer ZyrDesk : le bandeau vert est là.
+>
+> C'est le critère de sortie du jalon M4 : tuer l'interface en pleine session, le flux survit, l'interface se rattache.
+
+> **M4-R28 (pas deux sessions par-dessus)**
+>
+> Avec le bandeau vert affiché, essayer de cliquer une autre carte d'ordinateur, puis le bouton **Ajouter un ordinateur**.
+>
+> Attendu : rien ne se lance. Les cartes sont inactives tant qu'une session tourne.
+
+> **M4-R29 (la durée avance)**
+>
+> Laisser la fenêtre ouverte quelques minutes pendant la session.
+>
+> Attendu : « Ouverte depuis 3 minutes », puis 4, et ainsi de suite. La carte ne doit pas clignoter ni se redessiner en permanence : elle ne change qu'au changement de minute.
+
+> **M4-R30 (la fin se voit aussi)**
+>
+> Fermer la fenêtre vidéo pour arrêter la session, en gardant l'accueil ZyrDesk ouvert.
+>
+> Attendu : en trois secondes au plus, le bandeau vert disparaît, les cartes se rallument et la carte du PC hôte redit « Se connecter » au survol.
+
+> **M4-R31 (un ordinateur qu'on ne voit pas reste nommé par son adresse)**
+>
+> Facultatif, si le PC hôte a été ajouté à la main plutôt que trouvé sur le réseau : pendant une session vers lui, le bandeau doit dire « Session en cours vers 192.168.1.x » avec l'adresse tapée, faute de mieux. Ce n'est pas une erreur.
+
+### Si quelque chose ne va pas
+
+**L'accueil reste vide alors que l'image tourne.** Le service ne sait probablement pas répondre à la question : c'est qu'il est plus ancien que la fenêtre. Refaire la mise à jour complète du programme, service compris, sur le PC client.
+
+**Le bandeau vert reste affiché après la fin de la session.** Le service referme une voie dans les deux secondes qui suivent la disparition du lecteur. S'il reste, chercher dans `data\logs\service.log` la ligne « way N has nothing left to serve » : son absence dit que le lecteur tourne encore, peut-être sans image.
+
+**Le bandeau vert apparaît alors qu'aucune image n'est visible.** Regarder le gestionnaire des tâches : `zyrdesk-session.exe` est encore là. Une session dont la fenêtre vidéo a disparu sans que le processus s'arrête est un défaut à signaler, avec `data\logs\session.log`.

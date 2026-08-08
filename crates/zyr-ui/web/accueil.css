@@ -125,18 +125,37 @@
     transform var(--duree-courte) var(--courbe);
 }
 
-.ordinateur:hover {
+.ordinateur:hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--surface-2);
 }
 
-.ordinateur:active {
+.ordinateur:active:not(:disabled) {
   transform: translateY(1px);
 }
 
 .ordinateur:focus-visible {
   outline: 2px solid var(--accent-vif);
   outline-offset: 2px;
+}
+
+/* Une seule session à la fois : le reste s'efface le temps qu'elle dure,
+   au lieu de laisser croire à un clic qui ne fera rien. */
+.ordinateur:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Celui qui porte la session n'est pas mis de côté : c'est chez lui que
+   ça se passe. */
+.ordinateur.en-session:disabled {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--en-ligne) 40%, var(--trait));
+}
+
+.ordinateur.en-session .ordinateur-appel {
+  color: var(--en-ligne);
+  opacity: 1;
 }
 
 .ordinateur-nom {
@@ -219,23 +238,49 @@
   margin-top: var(--pas-2);
 }
 
-/* ---- Étape en cours -------------------------------------------------- */
+/* ---- Session en cours ------------------------------------------------ */
 
-.etape {
+.sessions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--pas-4);
-  padding: var(--pas-5);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--trait));
-  background: var(--accent-voile);
+  flex-direction: column;
+  gap: var(--pas-3);
 }
 
-.etape-corps {
+/* Le vert de ce qui est vivant, et non le bleu de ce qui s'ouvre : une
+   session en cours et une session qui démarre ne se confondent pas. */
+.session {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-1);
+  padding: var(--pas-5);
+  border-color: color-mix(in srgb, var(--en-ligne) 40%, var(--trait));
+  background: color-mix(in srgb, var(--en-ligne) 7%, var(--surface-1));
+}
+
+.session-nom {
+  display: flex;
+  align-items: center;
+  gap: var(--pas-2);
+  min-width: 0;
+}
+
+.session-nom > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Étape en cours -------------------------------------------------- */
+
+/* Le bleu de ce qui s'ouvre, quand le vert de la carte du dessus est
+   celui de ce qui tourne déjà. */
+.etape {
   display: flex;
   flex-direction: column;
   gap: var(--pas-2);
-  min-width: 0;
+  padding: var(--pas-5);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--trait));
+  background: var(--accent-voile);
 }
 
 /* ---- Dialogue -------------------------------------------------------- */

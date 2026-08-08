@@ -177,8 +177,8 @@ async fn converse(mut talking: Heard, answering: Answering) {
 /// `Done`; everything else is one.
 async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
     match request {
-        Request::Peers => {
-            let mut said: Vec<Answer> = answering
+        Request::Peers => ended(
+            answering
                 .neighbours
                 .peers()
                 .into_iter()
@@ -190,12 +190,27 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
                         port: peer.port,
                     })
                 })
-                .collect();
-            said.push(Answer::Done);
-            said
-        }
+                .collect(),
+        ),
+        Request::Sessions => ended(
+            answering
+                .ways
+                .held()
+                .into_iter()
+                .map(Answer::Session)
+                .collect(),
+        ),
         other => vec![one(other, answering).await],
     }
+}
+
+/// Closes a list with the ending that says it is whole.
+///
+/// Without it a caller cannot tell an empty list from a service that
+/// stopped talking.
+fn ended(mut said: Vec<Answer>) -> Vec<Answer> {
+    said.push(Answer::Done);
+    said
 }
 
 async fn one(request: Request, answering: &Answering) -> Answer {
@@ -241,7 +256,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             )),
         },
         // Handled above, where several answers can be given.
-        Request::Peers => Answer::Done,
+        Request::Peers | Request::Sessions => Answer::Done,
     }
 }
 
@@ -336,17 +351,19 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_neighbourhood_is_an_empty_list_and_not_a_refusal() {
+    fn nothing_to_list_is_an_empty_list_and_not_a_refusal() {
         // A list answer is several messages ended by « done ». With
         // nothing to list, only the ending is said, and the caller has
         // to come back with an empty list rather than hang or fail.
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let bench = Bench::set_up(runtime.handle(), "peers");
+        let bench = Bench::set_up(runtime.handle(), "lists");
 
         runtime.block_on(async {
             let mut caller = bench.caller().await;
-            let found = caller.ask_for_a_list(&Request::Peers).await.unwrap();
-            assert!(found.is_empty(), "{found:?}");
+            for request in [Request::Peers, Request::Sessions] {
+                let found = caller.ask_for_a_list(&request).await.unwrap();
+                assert!(found.is_empty(), "sur « {request} » : {found:?}");
+            }
 
             // And the channel is still usable afterwards: the ending was
             // consumed, not left in the way of the next question.

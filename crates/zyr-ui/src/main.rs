@@ -13,6 +13,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod desk;
+mod service;
 mod session;
 mod theme;
 
@@ -23,6 +24,7 @@ fn main() {
             desk::peers,
             desk::set_hosting,
             session::connect,
+            session::sessions,
             theme::set_theme
         ])
         .run(tauri::generate_context!())

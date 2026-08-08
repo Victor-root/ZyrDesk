@@ -13,6 +13,7 @@
 use std::fmt;
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::time::Duration;
 
 use zyr_proto::net::EnginePorts;
 use zyr_transport::{Fingerprint, MediaProfile};
@@ -22,7 +23,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 2;
+pub const PROTOCOL: u32 = 3;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -64,6 +65,11 @@ pub enum Request {
     Release { way: WayId },
     /// The ZyrDesk computers seen on the local network.
     Peers,
+    /// The sessions this computer is holding towards others.
+    ///
+    /// What lets a window that was closed, updated or killed find the
+    /// session again instead of opening on an empty home screen.
+    Sessions,
     /// Decides whether this computer accepts being controlled.
     ///
     /// A decision and not a state: it survives a restart, since a
@@ -94,6 +100,7 @@ impl Request {
                 way: WayId(fields.parsed("way")?),
             }),
             "peers" => Ok(Request::Peers),
+            "sessions" => Ok(Request::Sessions),
             "hosting" => Ok(Request::SetHosting {
                 on: fields.text("on")? == "yes",
             }),
@@ -115,6 +122,7 @@ impl fmt::Display for Request {
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
+            Request::Sessions => f.write_str("sessions"),
             Request::SetHosting { on } => {
                 write!(f, "hosting on={}", if *on { "yes" } else { "no" })
             }
@@ -160,6 +168,24 @@ pub struct Peer {
     pub port: u16,
 }
 
+/// A session this computer is holding towards another.
+///
+/// Described from the service's side, which is the only side that
+/// survives everything: it holds the way whether or not the program that
+/// asked for it is still there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Session {
+    pub way: WayId,
+    /// Remote computer, as the person named it when asking.
+    pub towards: String,
+    /// Fingerprint it was recognised by. What matches a session to a
+    /// computer on screen, since an address can change and a name is
+    /// not unique.
+    pub peer: Fingerprint,
+    /// How long the picture has been up.
+    pub since: Duration,
+}
+
 /// What the service answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
@@ -167,6 +193,8 @@ pub enum Answer {
     Reached(Reached),
     /// One computer of a list. The list ends on `Done`.
     Peer(Peer),
+    /// One session of a list. The list ends on `Done`.
+    Session(Session),
     /// Done, with nothing to report.
     Done,
     /// Not done, and why. The text is meant for the person, not the
@@ -198,6 +226,12 @@ impl Answer {
                 fingerprint: fields.parsed("fingerprint")?,
                 address: fields.parsed("address")?,
                 port: fields.parsed("port")?,
+            })),
+            "session" => Ok(Answer::Session(Session {
+                way: WayId(fields.parsed("way")?),
+                towards: unpacked(fields.text("towards")?),
+                peer: fields.parsed("peer")?,
+                since: Duration::from_secs(fields.parsed("since")?),
             })),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
@@ -233,6 +267,14 @@ impl fmt::Display for Answer {
                 peer.fingerprint,
                 peer.address,
                 peer.port
+            ),
+            Answer::Session(session) => write!(
+                f,
+                "session way={} towards={} peer={} since={}",
+                session.way,
+                packed(&session.towards),
+                session.peer,
+                session.since.as_secs()
             ),
             Answer::Done => f.write_str("done"),
             // The reason travels on one line: a newline would be read as
@@ -365,6 +407,7 @@ mod tests {
             },
             Request::Release { way: WayId(3) },
             Request::Peers,
+            Request::Sessions,
             Request::SetHosting { on: true },
             Request::SetHosting { on: false },
         ]
@@ -392,6 +435,12 @@ mod tests {
                 fingerprint: fingerprint(),
                 address: "192.168.1.20".parse().unwrap(),
                 port: 47000,
+            }),
+            Answer::Session(Session {
+                way: WayId(3),
+                towards: "192.168.1.20".to_string(),
+                peer: fingerprint(),
+                since: Duration::from_secs(742),
             }),
             Answer::Done,
             Answer::Refused("cet ordinateur a refusé l'accès".to_string()),
@@ -457,6 +506,9 @@ mod tests {
 
     #[test]
     fn a_name_with_spaces_arrives_whole() {
+        // Le nom d'un ordinateur et l'adresse tapée pour le joindre
+        // portent tous deux du texte libre : les deux traversent le même
+        // champ `clé=valeur` et doivent en ressortir entiers.
         for name in [
             "PC de Victor",
             "  PC  ",
@@ -474,6 +526,18 @@ mod tests {
                 panic!("« {sent} » n'est pas relu comme un ordinateur");
             };
             assert_eq!(read.name, name, "sur « {sent} »");
+
+            let sent = Answer::Session(Session {
+                way: WayId(1),
+                towards: name.to_string(),
+                peer: fingerprint(),
+                since: Duration::from_secs(0),
+            })
+            .to_string();
+            let Ok(Answer::Session(read)) = Answer::parse(&sent) else {
+                panic!("« {sent} » n'est pas relu comme une session");
+            };
+            assert_eq!(read.towards, name, "sur « {sent} »");
         }
     }
 

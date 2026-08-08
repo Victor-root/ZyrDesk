@@ -17,6 +17,7 @@ const vue = {
   serviceAbsent: document.getElementById("service-absent"),
   empreinte: document.getElementById("empreinte"),
   copier: document.getElementById("copier-empreinte"),
+  sessions: document.getElementById("sessions"),
   ordinateurs: document.getElementById("ordinateurs"),
   aucun: document.getElementById("aucun-ordinateur"),
   ouvrirAjout: document.getElementById("ouvrir-ajout"),
@@ -31,7 +32,6 @@ const vue = {
   etapeTitre: document.getElementById("etape-titre"),
   etapeDetail: document.getElementById("etape-detail"),
   etapeCode: document.getElementById("etape-code"),
-  etapeFermer: document.getElementById("etape-fermer"),
   probleme: document.getElementById("probleme"),
   problemeTexte: document.getElementById("probleme-texte"),
 };
@@ -48,10 +48,28 @@ const RYTHME_ETAT = 3000;
    son mot habituel. */
 const TEMPS_COPIE = 1600;
 
-let sessionEnCours = false;
+const MINUTE = 60;
+const HEURE = 3600;
+
+/* Ce que le service dit du réseau et de ce qui tourne. La fenêtre ne
+   s'en souvient pas d'elle-même : une session appartient au service, et
+   survit à cette fenêtre fermée, mise à jour ou plantée. */
+let voisins = [];
+let sessions = [];
+
+/* Vrai entre le moment où cette fenêtre demande une session et celui où
+   le service la tient. Pendant ce temps-là, elle est la seule à savoir
+   qu'il se passe quelque chose. */
+let ouverture = false;
 
 function montre(element, visible) {
   element.classList.toggle("cache", !visible);
+}
+
+/* Une seule session à la fois depuis cet ordinateur : deux fenêtres
+   vidéo en même temps ne se pilotent pas. */
+function occupe() {
+  return ouverture || sessions.length > 0;
 }
 
 /* ---- Cet ordinateur --------------------------------------------------- */
@@ -120,6 +138,98 @@ async function copierEmpreinte() {
   }, TEMPS_COPIE);
 }
 
+/* ---- Ce que tient le service ------------------------------------------ */
+
+/* Une seule demande pour les deux : la session est nommée d'après
+   l'ordinateur qui l'accueille, et les cartes changent d'allure selon
+   qu'une session tourne ou non. Les demander séparément ferait dessiner
+   deux fois de suite avec la moitié de la réponse. */
+async function rafraichirLeReseau() {
+  const [trouves, enCours] = await Promise.all([
+    invoke("peers"),
+    invoke("sessions"),
+  ]);
+  voisins = trouves;
+  sessions = enCours;
+  dessine();
+}
+
+function dessine() {
+  dessineSessions();
+  dessineOrdinateurs();
+  ajusterAjout();
+}
+
+/* ---- Les sessions en cours -------------------------------------------- */
+
+/* Ce qui est déjà à l'écran, pour ne redessiner que si ça a changé. */
+let sessionsAffichees = "";
+
+/* Une session est reconnue à l'empreinte et non à l'adresse : c'est la
+   seule chose qui ne bouge pas d'un réseau à l'autre. */
+function nomDe(session) {
+  const connu = voisins.find(
+    (ordinateur) => ordinateur.fingerprint === session.fingerprint,
+  );
+  return connu ? connu.name : session.towards;
+}
+
+function duree(secondes) {
+  if (secondes < MINUTE) {
+    return "moins d'une minute";
+  }
+  const minutes = Math.floor((secondes % HEURE) / MINUTE);
+  if (secondes < HEURE) {
+    return `${minutes} minute${minutes > 1 ? "s" : ""}`;
+  }
+  const heures = Math.floor(secondes / HEURE);
+  return minutes === 0
+    ? `${heures} h`
+    : `${heures} h ${String(minutes).padStart(2, "0")}`;
+}
+
+function motDeSession(session) {
+  return `Ouverte depuis ${duree(session.since)}. Cette fenêtre peut être fermée : la session continue toute seule.`;
+}
+
+/* La carte de l'ordinateur, juste en dessous, porte déjà son adresse et
+   son état : ce bandeau dit ce qui se passe, il ne le répète pas. */
+function carteSession(session) {
+  const element = document.createElement("div");
+  element.className = "carte session apparait";
+
+  const nom = document.createElement("p");
+  nom.className = "sous-titre session-nom";
+  const pastille = document.createElement("span");
+  pastille.className = "pastille vivante";
+  const texte = document.createElement("span");
+  texte.textContent = `Session en cours vers ${nomDe(session)}`;
+  nom.append(pastille, texte);
+
+  const mot = document.createElement("p");
+  mot.className = "legende session-mot";
+
+  element.append(nom, mot);
+  return element;
+}
+
+function dessineSessions() {
+  const signature = sessions.map((session) => session.fingerprint).join(" ");
+  if (signature !== sessionsAffichees) {
+    sessionsAffichees = signature;
+    vue.sessions.replaceChildren(...sessions.map(carteSession));
+  }
+
+  // La durée avance sans que la carte renaisse : une carte qui
+  // réapparaîtrait à chaque minute attirerait l'oeil pour rien.
+  const mots = vue.sessions.querySelectorAll(".session-mot");
+  sessions.forEach((session, rang) => {
+    mots[rang].textContent = motDeSession(session);
+  });
+
+  montre(vue.sessions, sessions.length > 0);
+}
+
 /* ---- Les ordinateurs du réseau ---------------------------------------- */
 
 /* Redessiner la liste à chaque passage ferait clignoter les cartes et
@@ -145,7 +255,14 @@ function carte(ordinateur) {
 
   const appel = document.createElement("p");
   appel.className = "legende ordinateur-appel";
-  appel.textContent = "Se connecter";
+  const sien = sessions.some(
+    (session) => session.fingerprint === ordinateur.fingerprint,
+  );
+  if (sien) {
+    element.classList.add("en-session");
+  }
+  appel.textContent = sien ? "Session en cours" : "Se connecter";
+  element.disabled = occupe();
 
   element.append(nom, adresse, appel);
   element.addEventListener("click", () =>
@@ -161,6 +278,7 @@ function tuileAjout() {
   const element = document.createElement("button");
   element.type = "button";
   element.className = "carte ordinateur ajout-tuile";
+  element.disabled = occupe();
 
   const signe = document.createElement("p");
   signe.className = "sous-titre";
@@ -175,20 +293,22 @@ function tuileAjout() {
   return element;
 }
 
-async function rafraichirOrdinateurs() {
-  const trouves = await invoke("peers");
-
-  const signature = JSON.stringify(trouves);
+function dessineOrdinateurs() {
+  const signature = JSON.stringify([
+    voisins,
+    sessions.map((session) => session.fingerprint),
+    ouverture,
+  ]);
   if (signature === listeAffichee) {
     return;
   }
   listeAffichee = signature;
 
-  vue.ordinateurs.replaceChildren(...trouves.map(carte), tuileAjout());
-  montre(vue.ordinateurs, trouves.length > 0);
+  vue.ordinateurs.replaceChildren(...voisins.map(carte), tuileAjout());
+  montre(vue.ordinateurs, voisins.length > 0);
   // L'état vide ne s'affiche que s'il n'y a rien à montrer et rien en
-  // cours : une session qui démarre occupe déjà la place.
-  montre(vue.aucun, trouves.length === 0 && !sessionEnCours);
+  // cours : une session occupe déjà la place.
+  montre(vue.aucun, voisins.length === 0 && !occupe());
 }
 
 /* ---- Ajouter un ordinateur -------------------------------------------- */
@@ -211,7 +331,7 @@ function ajusterAjout() {
   }
 
   vue.connecter.disabled =
-    sessionEnCours ||
+    occupe() ||
     vue.adresse.value.trim().length === 0 ||
     longueur !== TAILLE_EMPREINTE;
 }
@@ -223,11 +343,11 @@ function connecter(evenement) {
 }
 
 async function lance(adresse, empreinte) {
-  if (sessionEnCours) {
+  if (occupe()) {
     return;
   }
-  sessionEnCours = true;
-  ajusterAjout();
+  ouverture = true;
+  dessine();
   montre(vue.probleme, false);
   etape("Ouverture du tunnel…", `Vers ${adresse.trim()}.`, null);
 
@@ -240,28 +360,27 @@ async function lance(adresse, empreinte) {
 
 /* ---- Ce qui se passe pendant l'ouverture ------------------------------ */
 
-function etape(titre, detail, code, fini = false) {
+function etape(titre, detail, code) {
   vue.etapeTitre.textContent = titre;
   vue.etapeDetail.textContent = detail;
   vue.etapeCode.textContent = code ?? "";
   montre(vue.etapeCode, code !== null);
-  montre(vue.etapeFermer, fini);
   montre(vue.etape, true);
-  montre(vue.aucun, false);
 }
 
-function rangeEtape() {
-  sessionEnCours = false;
+/* La fenêtre n'a plus rien à raconter : ce qui se passe maintenant se lit
+   dans ce que tient le service. Le bandeau ne s'efface qu'une fois la
+   réponse arrivée, sinon la page se vide le temps d'un aller-retour. */
+async function rangeEtape() {
+  ouverture = false;
+  await rafraichirLeReseau();
   montre(vue.etape, false);
-  listeAffichee = "";
-  ajusterAjout();
-  rafraichirOrdinateurs();
 }
 
 function echoue(texte) {
-  rangeEtape();
   vue.problemeTexte.textContent = texte;
   montre(vue.probleme, true);
+  rangeEtape();
 }
 
 listen("session-step", ({ payload }) => {
@@ -287,11 +406,9 @@ listen("session-step", ({ payload }) => {
       etape("Démarrage de la session…", "", null);
       break;
     case "live":
-      etape(
-        "Session en cours",
-        "Vous pouvez fermer cette fenêtre : la session continue.",
-        null,
-      );
+      // À partir d'ici le service tient la session, et n'importe quelle
+      // fenêtre la retrouve, y compris une autre que celle-ci.
+      rangeEtape();
       break;
   }
 });
@@ -341,7 +458,6 @@ vue.annulerAjout.addEventListener("click", () => vue.ajout.close());
 vue.adresse.addEventListener("input", ajusterAjout);
 vue.empreinteDistante.addEventListener("input", ajusterAjout);
 vue.ajoutForme.addEventListener("submit", connecter);
-vue.etapeFermer.addEventListener("click", rangeEtape);
 
 marqueLeChoix();
 invoke("set_theme", {
@@ -349,8 +465,8 @@ invoke("set_theme", {
 }).catch(() => {});
 
 rafraichirEtat();
-rafraichirOrdinateurs();
+rafraichirLeReseau();
 setInterval(() => {
   rafraichirEtat();
-  rafraichirOrdinateurs();
+  rafraichirLeReseau();
 }, RYTHME_ETAT);

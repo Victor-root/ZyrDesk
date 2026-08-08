@@ -5,7 +5,9 @@
 //! but not running, which is something the person can act on.
 
 use serde::Serialize;
-use zyr_control::{Answer, Request, Service};
+use zyr_control::{Answer, Request};
+
+use crate::service;
 
 /// A ZyrDesk found on the local network.
 #[derive(Serialize)]
@@ -62,26 +64,16 @@ pub async fn standing() -> Standing {
 /// absent is worth saying out loud, and the home card already says it.
 #[tauri::command]
 pub async fn peers() -> Vec<Peer> {
-    listed().await.unwrap_or_default()
-}
-
-async fn listed() -> Result<Vec<Peer>, String> {
-    let mut service = Service::join().await.map_err(|e| e.to_string())?;
-    let found = service
-        .ask_for_a_list(&Request::Peers)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(found
-        .into_iter()
-        .filter_map(|answer| match answer {
-            Answer::Peer(peer) => Some(Peer {
-                name: peer.name,
-                fingerprint: peer.fingerprint.to_string(),
-                address: peer.address.to_string(),
-            }),
-            _ => None,
-        })
-        .collect())
+    service::list(&Request::Peers, |answer| match answer {
+        Answer::Peer(peer) => Some(Peer {
+            name: peer.name,
+            fingerprint: peer.fingerprint.to_string(),
+            address: peer.address.to_string(),
+        }),
+        _ => None,
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Decides whether this computer accepts being controlled.
@@ -90,25 +82,14 @@ async fn listed() -> Result<Vec<Peer>, String> {
 /// moved without anything happening behind it would be a lie.
 #[tauri::command]
 pub async fn set_hosting(on: bool) -> Result<(), String> {
-    let mut service = Service::join().await.map_err(|e| e.to_string())?;
-    match service
-        .ask(&Request::SetHosting { on })
-        .await
-        .map_err(|e| e.to_string())?
-    {
+    match service::ask(&Request::SetHosting { on }).await? {
         Answer::Done => Ok(()),
-        Answer::Refused(reason) => Err(reason),
-        other => Err(format!("réponse inattendue du service : {other}")),
+        other => Err(service::unexpected(other)),
     }
 }
 
 async fn asked() -> Result<Standing, String> {
-    let mut service = Service::join().await.map_err(|e| e.to_string())?;
-    match service
-        .ask(&Request::Standing)
-        .await
-        .map_err(|e| e.to_string())?
-    {
+    match service::ask(&Request::Standing).await? {
         Answer::Standing(standing) => Ok(Standing {
             name: zyr_proto::machine::name(),
             fingerprint: standing.fingerprint.to_string(),
@@ -117,7 +98,6 @@ async fn asked() -> Result<Standing, String> {
             ways: standing.ways,
             unreachable: None,
         }),
-        Answer::Refused(reason) => Err(reason),
-        other => Err(format!("réponse inattendue du service : {other}")),
+        other => Err(service::unexpected(other)),
     }
 }

@@ -73,6 +73,21 @@
       <section class="bloc grandit">
         <h2 class="section">Mes ordinateurs</h2>
 
+        <!-- Ce qui se passe en ce moment passe avant la liste : une
+             session en cours est la première chose à voir en ouvrant la
+             fenêtre, y compris quand ce n'est pas elle qui l'a lancée. -->
+        <div class="sessions cache" id="sessions"></div>
+
+        <div class="carte etape cache apparait" id="etape">
+          <p class="sous-titre" id="etape-titre"></p>
+          <p class="legende" id="etape-detail"></p>
+          <p class="code cache" id="etape-code"></p>
+        </div>
+
+        <div class="bandeau alerte cache apparait" id="probleme">
+          <span id="probleme-texte"></span>
+        </div>
+
         <div class="grille cache" id="ordinateurs"></div>
 
         <div class="carte vide" id="aucun-ordinateur">
@@ -109,19 +124,6 @@
           <button class="bouton principal grand" id="ouvrir-ajout">
             Ajouter un ordinateur
           </button>
-        </div>
-
-        <div class="carte etape cache apparait" id="etape">
-          <div class="etape-corps">
-            <p class="sous-titre" id="etape-titre"></p>
-            <p class="legende" id="etape-detail"></p>
-            <p class="code cache" id="etape-code"></p>
-          </div>
-          <button class="bouton discret cache" id="etape-fermer">Fermer</button>
-        </div>
-
-        <div class="bandeau alerte cache apparait" id="probleme">
-          <span id="probleme-texte"></span>
         </div>
       </section>
     </main>

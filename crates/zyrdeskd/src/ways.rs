@@ -9,6 +9,10 @@
 //! process it serves, and closes on its own once that process is gone.
 //! One that is never tied to anything is closed too, after a short
 //! grace period, since whoever asked for it never came back.
+//!
+//! Each way also remembers which computer it leads to. That is what an
+//! interface opened in the middle of a session reads to name it: it was
+//! not there when it started, and nothing else survived.
 
 // Outside Windows nothing calls this module: the service does not exist
 // there. Its logic has nothing platform-specific about it and stays
@@ -20,7 +24,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use zyr_control::{Reached, WayId};
+use zyr_control::{Reached, Session, WayId};
 use zyr_proto::net::{TUNNEL_PORT, device_loopback_addr};
 use zyr_proto::paths;
 use zyr_transport::{Fingerprint, Identity, MediaProfile, TunnelEndpoint, packet_size};
@@ -52,13 +56,31 @@ struct Open {
     _endpoint: TunnelEndpoint,
 }
 
+/// The computer a way leads to.
+///
+/// Kept because the service is the only thing that outlives everything:
+/// an interface opened after the session started never knew where it
+/// was going, and has to be told.
+struct Towards {
+    /// Address of the remote computer, as the person named it.
+    host: String,
+    peer: Fingerprint,
+}
+
+/// The process a way serves, and since when.
+struct Serving {
+    process: u32,
+    since: Instant,
+}
+
 /// One way, and what it is for.
 struct Kept<T> {
     thing: T,
+    towards: Towards,
     /// Local address it took, so it can be given back.
     device: u16,
     /// Process it serves, once tied to one.
-    user: Option<u32>,
+    user: Option<Serving>,
     opened: Instant,
 }
 
@@ -100,13 +122,14 @@ impl<T> Register<T> {
     }
 
     /// Writes down a way that is now open.
-    fn settle(&mut self, device: u16, thing: T) -> WayId {
+    fn settle(&mut self, device: u16, towards: Towards, thing: T) -> WayId {
         let way = WayId(self.next);
         self.next += 1;
         self.kept.insert(
             way,
             Kept {
                 thing,
+                towards,
                 device,
                 user: None,
                 opened: Instant::now(),
@@ -119,7 +142,10 @@ impl<T> Register<T> {
     fn hold(&mut self, way: WayId, process: u32) -> bool {
         match self.kept.get_mut(&way) {
             Some(kept) => {
-                kept.user = Some(process);
+                kept.user = Some(Serving {
+                    process,
+                    since: Instant::now(),
+                });
                 true
             }
             None => false,
@@ -139,12 +165,39 @@ impl<T> Register<T> {
     fn finished(&self, alive: impl Fn(u32) -> bool, now: Instant) -> Vec<WayId> {
         self.kept
             .iter()
-            .filter(|(_, kept)| match kept.user {
-                Some(process) => !alive(process),
+            .filter(|(_, kept)| match &kept.user {
+                Some(serving) => !alive(serving.process),
                 None => now.duration_since(kept.opened) > GRACE,
             })
             .map(|(way, _)| *way)
             .collect()
+    }
+
+    /// The sessions being served, oldest way first.
+    ///
+    /// A way nobody has claimed yet is left out: it is an attempt under
+    /// way, watched by whoever started it, and gone on its own if they
+    /// never come back. Announcing it as a session would put a picture
+    /// on screen where there is none.
+    fn held(&self, now: Instant) -> Vec<Session> {
+        let mut sessions: Vec<Session> = self
+            .kept
+            .iter()
+            .filter_map(|(way, kept)| {
+                let serving = kept.user.as_ref()?;
+                Some(Session {
+                    way: *way,
+                    towards: kept.towards.host.clone(),
+                    peer: kept.towards.peer,
+                    since: now.duration_since(serving.since),
+                })
+            })
+            .collect();
+        // The register is a map, and its order changes on its own. A
+        // list that reshuffles between two questions would redraw the
+        // interface for nothing.
+        sessions.sort_by_key(|session| session.way);
+        sessions
     }
 
     fn count(&self) -> usize {
@@ -247,6 +300,10 @@ impl Ways {
 
         let way = self.register.lock().expect("registre des voies").settle(
             device,
+            Towards {
+                host: host.to_string(),
+                peer,
+            },
             Open {
                 _tunnel: tunnel,
                 _endpoint: endpoint,
@@ -290,6 +347,14 @@ impl Ways {
 
     pub fn count(&self) -> usize {
         self.register.lock().expect("registre des voies").count()
+    }
+
+    /// The sessions this computer is holding towards others.
+    pub fn held(&self) -> Vec<Session> {
+        self.register
+            .lock()
+            .expect("registre des voies")
+            .held(Instant::now())
     }
 
     /// Closes the ways with nothing left to serve, for as long as the
@@ -358,6 +423,15 @@ mod tests {
         Register::new()
     }
 
+    fn towards(host: &str) -> Towards {
+        Towards {
+            host: host.to_string(),
+            peer: "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237"
+                .parse()
+                .unwrap(),
+        }
+    }
+
     #[test]
     fn each_way_takes_its_own_local_address() {
         let mut register = register();
@@ -374,7 +448,7 @@ mod tests {
     fn a_closed_way_gives_its_address_back() {
         let mut register = register();
         let device = register.reserve().unwrap();
-        let way = register.settle(device, "session");
+        let way = register.settle(device, towards("192.168.1.20"), "session");
         // Taken again straight away would mean the address leaked with
         // every session, and the client engine remembering a new
         // computer each time.
@@ -394,7 +468,7 @@ mod tests {
     fn releasing_a_way_twice_is_not_an_error() {
         let mut register = register();
         let device = register.reserve().unwrap();
-        let way = register.settle(device, "session");
+        let way = register.settle(device, towards("192.168.1.20"), "session");
         assert!(register.release(way).is_some());
         assert!(register.release(way).is_none());
     }
@@ -403,7 +477,7 @@ mod tests {
     fn a_way_whose_process_is_gone_is_finished() {
         let mut register = register();
         let device = register.reserve().unwrap();
-        let way = register.settle(device, "session");
+        let way = register.settle(device, towards("192.168.1.20"), "session");
         assert!(register.hold(way, 4242));
 
         let now = Instant::now();
@@ -415,7 +489,7 @@ mod tests {
     fn a_way_nobody_ever_claimed_is_finished_after_the_grace_period() {
         let mut register = register();
         let device = register.reserve().unwrap();
-        let way = register.settle(device, "session");
+        let way = register.settle(device, towards("192.168.1.20"), "session");
 
         let now = Instant::now();
         assert!(register.finished(|_| true, now).is_empty());
@@ -430,7 +504,7 @@ mod tests {
     fn a_claimed_way_is_not_swept_for_being_old() {
         let mut register = register();
         let device = register.reserve().unwrap();
-        let way = register.settle(device, "session");
+        let way = register.settle(device, towards("192.168.1.20"), "session");
         register.hold(way, 4242);
         // A long session is the normal case, not an abandoned one.
         assert!(
@@ -447,6 +521,60 @@ mod tests {
     }
 
     #[test]
+    fn only_a_way_that_serves_a_process_counts_as_a_session() {
+        let mut register = register();
+        let device = register.reserve().unwrap();
+        let way = register.settle(device, towards("192.168.1.20"), "session");
+
+        // Opened, not yet claimed: an attempt under way, not a picture
+        // on screen.
+        assert!(register.held(Instant::now()).is_empty());
+
+        register.hold(way, 4242);
+        let held = register.held(Instant::now());
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].way, way);
+        assert_eq!(held[0].towards, "192.168.1.20");
+
+        register.release(way);
+        assert!(register.held(Instant::now()).is_empty());
+    }
+
+    #[test]
+    fn a_session_says_how_long_the_picture_has_been_up() {
+        let mut register = register();
+        let device = register.reserve().unwrap();
+        let way = register.settle(device, towards("192.168.1.20"), "session");
+        // A first pairing can take minutes between the way opening and
+        // the player starting: the session is as old as the picture,
+        // not as old as the tunnel.
+        register.hold(way, 4242);
+
+        let held = register.held(Instant::now() + Duration::from_secs(600));
+        assert!(held[0].since >= Duration::from_secs(600), "{:?}", held[0]);
+    }
+
+    #[test]
+    fn the_sessions_come_back_in_the_same_order_every_time() {
+        let mut register = register();
+        for _ in 0..8 {
+            let device = register.reserve().unwrap();
+            let way = register.settle(device, towards("192.168.1.20"), "session");
+            register.hold(way, 4242);
+        }
+        // Ordered by the register itself, since what reads it redraws
+        // only when the list actually changed.
+        let ways: Vec<WayId> = register
+            .held(Instant::now())
+            .into_iter()
+            .map(|session| session.way)
+            .collect();
+        let mut sorted = ways.clone();
+        sorted.sort();
+        assert_eq!(ways, sorted);
+    }
+
+    #[test]
     fn the_count_follows_what_is_open() {
         let mut register = register();
         assert_eq!(register.count(), 0);
@@ -454,7 +582,7 @@ mod tests {
         // An address taken is not yet a way: the count follows what is
         // actually open, which is what the interface shows.
         assert_eq!(register.count(), 0);
-        let way = register.settle(device, "session");
+        let way = register.settle(device, towards("192.168.1.20"), "session");
         assert_eq!(register.count(), 1);
         register.release(way);
         assert_eq!(register.count(), 0);

@@ -1,15 +1,23 @@
-//! Opening a session from the interface.
+//! Sessions, from the interface: opening one, and finding those already
+//! running.
 //!
-//! The whole sequence lives in `zyr-session`, shared with the command
-//! line. What is here is the shape it takes in a window: it runs away
-//! from the interface thread, and what happens on the way is sent back
-//! as events rather than waited for, because pairing shows a code and
-//! then waits for someone to walk to the other computer.
+//! The whole opening sequence lives in `zyr-session`, shared with the
+//! command line. What is here is the shape it takes in a window: it runs
+//! away from the interface thread, and what happens on the way is sent
+//! back as events rather than waited for, because pairing shows a code
+//! and then waits for someone to walk to the other computer.
+//!
+//! A window is not where a session lives, though. Asking the service
+//! what it holds is what lets a window opened afterwards, or reopened
+//! after a crash, show the session instead of an empty home screen.
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use zyr_control::{Answer, Request};
 use zyr_proto::session::SessionSettings;
 use zyr_session::{Outcome, Step, Wanted};
+
+use crate::service;
 
 /// Names the interface listens on. One per moment worth drawing.
 const STEP: &str = "session-step";
@@ -41,6 +49,36 @@ struct Finished {
     ok: bool,
     /// What to show the person. Empty when there is nothing to say.
     message: String,
+}
+
+/// A session already under way, as the service describes it.
+#[derive(Serialize)]
+pub struct Ongoing {
+    /// Remote computer, as it was named when the session was asked for.
+    pub towards: String,
+    /// What matches it to a computer on screen.
+    pub fingerprint: String,
+    /// How long the picture has been up, in seconds.
+    pub since: u64,
+}
+
+/// The sessions this computer is holding.
+///
+/// An empty list is the ordinary answer, and so is the one given when
+/// the service cannot be reached: the home card already says out loud
+/// that it is not running, and saying it twice would only add noise.
+#[tauri::command]
+pub async fn sessions() -> Vec<Ongoing> {
+    service::list(&Request::Sessions, |answer| match answer {
+        Answer::Session(session) => Some(Ongoing {
+            towards: session.towards,
+            fingerprint: session.peer.to_string(),
+            since: session.since.as_secs(),
+        }),
+        _ => None,
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]
