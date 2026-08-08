@@ -51,16 +51,34 @@ La même commande : elle ne retélécharge que ce qui a bougé.
 
 Si Visual Studio est déjà installé, ouvrir **Visual Studio Installer**, cliquer **Modifier**, et vérifier que la case **Développement Desktop en C++** est cochée. Sans elle, le compilateur lui-même est absent.
 
-**2. Qt 6.7.3.**
+**2. Python.**
 
-C'est la version sur laquelle le moteur est construit et testé en amont ; une autre version peut compiler mais ne sera pas ce qui est vérifié. Le plus simple passe par un petit outil en ligne de commande, qui évite de créer un compte Qt :
+Il ne sert à rien dans le projet : il n'est là que pour installer Qt à l'étape suivante, sans avoir à créer de compte Qt. Vérifier d'abord s'il est déjà là :
 
 ```
-pip install aqtinstall
-aqt install-qt windows desktop 6.7.3 win64_msvc2019_64 --outputdir C:\Qt
+py --version
 ```
 
-Qt se retrouve dans `C:\Qt\6.7.3\msvc2019_64`.
+Si la commande répond un numéro de version, passer à l'étape suivante. Sinon :
+
+```
+winget install --id Python.Python.3.13 -e
+```
+
+Puis **fermer et rouvrir la fenêtre PowerShell**, sans quoi Windows ne connaît pas encore la commande.
+
+**3. Qt 6.7.3.**
+
+C'est la version sur laquelle le moteur est construit et testé en amont ; une autre version peut compiler mais ne sera pas ce qui est vérifié.
+
+```
+py -m pip install aqtinstall
+py -m aqt install-qt windows desktop 6.7.3 win64_msvc2019_64 --outputdir C:\Qt
+```
+
+Qt se retrouve dans `C:\Qt\6.7.3\msvc2019_64`. Compter quelques minutes et environ 2 Go.
+
+La forme `py -m` n'est pas une coquetterie : elle évite de dépendre de l'endroit où Python range ses commandes, qui n'est pas toujours connu de Windows.
 
 ### Compiler
 
@@ -143,6 +161,8 @@ Un script qui se termine sur « Moteur ... assemblé dans ... » a donc produit 
 ---
 
 ## En cas de problème
+
+**« pip n'est pas reconnu ».** Python n'est pas installé, ou pas connu de Windows : voir l'étape Python. Une fois installé, utiliser `py -m pip` plutôt que `pip` tout court.
 
 **« qmake n'est pas reconnu ».** La ligne `$env:PATH` n'a pas été passée, ou Qt n'est pas là où elle le dit. Vérifier que `C:\Qt\6.7.3\msvc2019_64\bin\qmake.exe` existe.
 
