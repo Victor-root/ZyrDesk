@@ -1,0 +1,70 @@
+name: Moteurs
+
+# Les moteurs bougent rarement et leur compilation est longue : elle ne
+# se déclenche pas à chaque commit, seulement quand ce qui la décrit
+# change, ou à la demande.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/moteurs.yml"
+      - "packaging/engines/**"
+      - ".gitmodules"
+      - "engines/**"
+
+concurrency:
+  group: moteurs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  client:
+    name: Moteur client
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Seul le moteur client est nécessaire ici, et il tire déjà ses
+          # propres sous-modules pendant la compilation.
+          submodules: false
+
+      - name: Récupérer la source du moteur
+        run: git submodule update --init --depth 1 engines/moonlight-qt
+
+      # La version de Qt n'est pas un détail : c'est celle sur laquelle
+      # la version épinglée du moteur est construite et testée en amont.
+      - name: Installer Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.3"
+          arch: win64_msvc2019_64
+          modules: qtdeclarative qtsvg
+          cache: true
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Compiler le moteur client
+        run: ./packaging/engines/build-client-engine.ps1
+
+      # Ce qui est vérifié ici n'est pas que le fichier existe, mais
+      # qu'il démarre : une dépendance oubliée ne se voit pas autrement
+      # qu'au premier lancement, sur la machine de quelqu'un d'autre.
+      - name: Vérifier que le moteur démarre
+        run: |
+          $engine = "data/engines/client/zyrdesk-session.exe"
+          $ran = & $engine --version 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "le moteur ne démarre pas : $ran"
+            exit 1
+          }
+          Write-Host "Le moteur répond : $ran"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zyrdesk-client-engine
+          path: data/engines/client/
+          if-no-files-found: error
