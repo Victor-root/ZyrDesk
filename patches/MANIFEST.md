@@ -24,7 +24,7 @@ Aucun patch appliqué à ce jour : les deux moteurs sont à l'état upstream exa
 | Moteur | Patchs appliqués | Plafond |
 |---|---|---|
 | Sunshine | 0 | 2 |
-| Moonlight | 0 | 6 |
+| Moonlight | 1 | 6 |
 
 Dépasser un plafond est un signal d'architecture : chercher le mécanisme officiel manquant ou proposer l'interrupteur en amont, jamais empiler.
 
@@ -34,7 +34,7 @@ Dépasser un plafond est un signal d'architecture : chercher le mécanisme offic
 |---|---|---|---|---|
 | P-M1 | Moonlight | Suppression de la fenêtre de chargement en lancement ligne de commande, erreurs vers la sortie d'erreur | M4 | **Confirmé nécessaire** : la piste sans patch, qui consistait à neutraliser la couche graphique par l'environnement, est écartée. La version Windows du moteur n'embarque qu'une seule couche d'affichage et refuse de démarrer sans elle |
 | P-M5 | Moonlight | Codes de sortie distincts (sortie utilisateur, perte réseau, erreur fatale) | M1 | **Confirmé nécessaire** : observé sur machine réelle, le moteur sort avec un code de succès alors que la session a échoué, l'erreur ne vivant que dans une fenêtre. Sans ce patch, la reprise automatique ne peut pas décider s'il faut relancer. Fusionne en pratique avec P-M1 |
-| P-M2 | Moonlight | Rebranding : titre de fenêtre, icônes, noms d'organisation et de produit, métadonnées de l'exécutable | M4 | Requis |
+| P-M2 | Moonlight | Rebranding : titre de fenêtre, icônes, noms d'organisation et de produit, métadonnées de l'exécutable | M4 | **Appliqué** (`e8f6d0c`, branche `zyr/v6.1.0`). Ne touche que des noms et des images, aucun comportement. Le changement des noms d'organisation et d'application déplace aussi l'endroit où le moteur range ses réglages, ce qui est sans effet ici puisqu'il tourne en mode portable. Aucun candidat à une contribution en amont : c'est notre marque |
 | P-M3 | Moonlight | Ligne de statistiques lisible par machine | M2 | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Moonlight | Interrupteur pour ne pas demander le chiffrement vidéo interne | M1 | Contingence : seulement si la vérification M1 montre un double chiffrement sur loopback |
 | P-S1 | Sunshine | Désactivation de l'annonce mDNS | M1 | Contingence : seulement si le moteur s'annonce sur le réseau malgré la liaison loopback |

@@ -95,7 +95,7 @@ $qtArguments = @(
     "--no-quickcontrols2fusionstyleimpl", "--no-quickcontrols2imaginestyleimpl"
     "--no-quickcontrols2universalstyleimpl", "--no-quickcontrols2windowsstyleimpl"
 )
-windeployqt.exe @qtArguments (Join-Path $build "app\$Configuration\Moonlight.exe")
+windeployqt.exe @qtArguments (Join-Path $build "app\$Configuration\zyrdesk-session.exe")
 Assert-Ran "le déploiement des dépendances Qt"
 
 foreach ($unused in @(
@@ -108,10 +108,10 @@ foreach ($unused in @(
     }
 }
 
-# The name the product shows everywhere, and the one the service and the
-# command line look for. What is inside the file still says otherwise
-# until the rebranding patch lands: renaming is not rebranding.
-Copy-Item (Join-Path $build "app\$Configuration\Moonlight.exe") (Join-Path $Output "zyrdesk-session.exe")
+# The compiler already gives it the product's name, and what is inside
+# the file says the same: the rebranding patch sets the executable name
+# alongside the company, product and icon it carries.
+Copy-Item (Join-Path $build "app\$Configuration\zyrdesk-session.exe") $Output
 
 # The engine keeps its settings next to itself when this file is there,
 # instead of in the registry. That is what keeps a ZyrDesk install from
