@@ -148,19 +148,24 @@ pub fn run(args: Args) -> ExitCode {
 
     match outcome {
         Ok(SessionOutcome::Ended) => {
-            // The engine reports success even when it gave up: the log
-            // stays the only reliable source while its exit codes are
-            // undifferentiated (patch P-M5).
             println!("Session terminée.");
             println!("  Journal : {}", log.display());
             ExitCode::SUCCESS
         }
-        Ok(SessionOutcome::Failed { code }) => {
+        Ok(SessionOutcome::Failed) => failure(
+            "la session s'est arrêtée sur une erreur",
+            format!("Journal : {}", log.display()),
+        ),
+        Ok(SessionOutcome::Unreachable) => failure(
+            "l'ordinateur distant n'a pas répondu",
+            format!("Journal : {}", log.display()),
+        ),
+        Ok(SessionOutcome::Unknown { code }) => {
             let code = code
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "interrompu".to_string());
             failure(
-                "la session s'est arrêtée sur une erreur",
+                "le moteur s'est arrêté sans dire pourquoi",
                 format!("code {code}\n  Journal : {}", log.display()),
             )
         }

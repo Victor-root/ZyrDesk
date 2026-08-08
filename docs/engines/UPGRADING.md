@@ -39,7 +39,7 @@ Moonlight :
 - Le mode portable isole bien l'état dans le dossier fourni.
 - `--packet-size` est honoré (vérifié par capture de paquets : taille maximale observée conforme).
 - Les statistiques nécessaires au banc sont présentes dans les journaux/overlay au format attendu par notre parseur.
-- Les codes de sortie distinguent bien sortie utilisateur / perte réseau / erreur fatale.
+- Les codes de sortie distinguent bien fin normale (0), session en échec (2) et machine injoignable (3), tels que posés par P-M5.
 
 ## Répétition mensuelle automatique
 

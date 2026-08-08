@@ -19,12 +19,12 @@ Les deux moteurs sont épinglés sur des versions publiées. Le choix de `v6.1.0
 
 ## Pile de patchs
 
-Aucun patch appliqué à ce jour : les deux moteurs sont à l'état upstream exact. Le pilotage passe uniquement par leurs interfaces officielles (fichier de configuration, ligne de commande, API REST locale).
+Le moteur hôte est à l'état upstream exact. Le moteur client porte notre marque et se lance sans montrer de fenêtre à lui. Tout le reste du pilotage passe par leurs interfaces officielles (fichier de configuration, ligne de commande, API REST locale).
 
 | Moteur | Patchs appliqués | Plafond |
 |---|---|---|
 | Sunshine | 0 | 2 |
-| Moonlight | 1 | 6 |
+| Moonlight | 3 | 6 |
 
 Dépasser un plafond est un signal d'architecture : chercher le mécanisme officiel manquant ou proposer l'interrupteur en amont, jamais empiler.
 
@@ -32,8 +32,8 @@ Dépasser un plafond est un signal d'architecture : chercher le mécanisme offic
 
 | Id | Moteur | Objet | Jalon | Statut |
 |---|---|---|---|---|
-| P-M1 | Moonlight | Suppression de la fenêtre de chargement en lancement ligne de commande, erreurs vers la sortie d'erreur | M4 | **Confirmé nécessaire** : la piste sans patch, qui consistait à neutraliser la couche graphique par l'environnement, est écartée. La version Windows du moteur n'embarque qu'une seule couche d'affichage et refuse de démarrer sans elle |
-| P-M5 | Moonlight | Codes de sortie distincts (sortie utilisateur, perte réseau, erreur fatale) | M1 | **Confirmé nécessaire** : observé sur machine réelle, le moteur sort avec un code de succès alors que la session a échoué, l'erreur ne vivant que dans une fenêtre. Sans ce patch, la reprise automatique ne peut pas décider s'il faut relancer. Fusionne en pratique avec P-M1 |
+| P-M1 | Moonlight | Suppression de la fenêtre de chargement en lancement ligne de commande, erreurs vers la sortie d'erreur | M4 | **Appliqué** (`7ecea76`, branche `zyr/v6.1.0`), avec P-M5. La branche ligne de commande suit désormais le chemin sans interface graphique que le moteur utilisait déjà pour lister les applications : ce que la fenêtre affichait part sur la sortie d'erreur. La vue est supprimée plutôt que laissée inatteignable |
+| P-M5 | Moonlight | Codes de sortie distincts (fin normale, session en échec, machine injoignable) | M1 | **Appliqué** (`7ecea76`, branche `zyr/v6.1.0`), avec P-M1. Le moteur sortait avec un code de succès même après un échec, l'erreur ne vivant que dans une fenêtre. Il rend maintenant 2 quand la session a échoué et 3 quand la machine n'a pas répondu, ce que notre superviseur lit pour décider |
 | P-M2 | Moonlight | Rebranding : titre de fenêtre, icônes, noms d'organisation et de produit, métadonnées de l'exécutable | M4 | **Appliqué** (`e8f6d0c`, branche `zyr/v6.1.0`). Ne touche que des noms et des images, aucun comportement. Le changement des noms d'organisation et d'application déplace aussi l'endroit où le moteur range ses réglages, ce qui est sans effet ici puisqu'il tourne en mode portable. Aucun candidat à une contribution en amont : c'est notre marque |
 | P-M3 | Moonlight | Ligne de statistiques lisible par machine | M2 | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Moonlight | Interrupteur pour ne pas demander le chiffrement vidéo interne | M1 | Contingence : seulement si la vérification M1 montre un double chiffrement sur loopback |
@@ -50,10 +50,9 @@ Ces comportements ne sont écrits nulle part dans leur documentation et ont ét�
 | Hôte | N'accepte un code d'appairage que pendant qu'un client l'attend, et signale un succès même sans demande en cours | L'ordre client puis hôte est imposé ; le tunnel supprimera la question |
 | Hôte | Demande une priorité GPU élevée pour sa capture, refusée sans droits administrateur, et le signale dans son journal | Le service du jalon M3 tournant avec les droits système, la question disparaît ; en attendant, une capture irrégulière sous charge est attendue |
 | Hôte | N'encode que lorsque l'écran change, et ne garantit par défaut que la moitié de la cadence demandée | La cadence minimale est portée à 60 dans la configuration générée : sans cela, souris et animations sont saccadées sur un bureau immobile |
-| Client | Sort avec un code de succès même après un échec de session | Le journal est la seule source fiable en attendant P-M5 |
 
 ## Fichiers de patchs
 
-Ce dossier accueillera les fichiers `.patch` exportés automatiquement à chaque changement d'épinglage (`git format-patch <tag-upstream>..<branche-zyr>`). Il est vide tant que la pile l'est.
+Ce dossier accueillera les fichiers `.patch` exportés automatiquement dès que la pile bouge (`git format-patch <tag-upstream>..<branche-zyr>`). Ils serviront deux usages : relire notre écart complet sans quitter ce dépôt, et documenter publiquement nos modifications comme l'exige la GPL.
 
-Ils servent deux usages : relire notre écart complet sans quitter ce dépôt, et documenter publiquement nos modifications comme l'exige la GPL.
+Il est vide pour l'instant : l'export n'est pas automatisé, et une copie tenue à la main dériverait de la pile réelle sans que personne le voie. En attendant, l'écart se lit dans les forks, entre le tag épinglé et la tête de la branche `zyr/<tag>`. Les sources modifiées y sont publiques, ce qui satisfait déjà la GPL.

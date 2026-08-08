@@ -81,3 +81,80 @@ notepad data\logs\service.log
 **« réponse incompréhensible du service ».** Les deux moitiés du produit ne datent pas du même jour : le service tourne sur un exécutable plus ancien que `zyr-cli`. Recompiler et relancer le service.
 
 **La session se coupe quand même en fermant la fenêtre.** Regarder si un avertissement est apparu au lancement (« le service n'a pas pris la session en charge »). Il signifie que le service n'a pas pu être prévenu du processus à surveiller, et que la session reste attachée à la fenêtre.
+
+---
+
+## Partie 2 : le moteur client devient le nôtre
+
+### Ce qui change, et pourquoi
+
+Jusqu'ici le lecteur était celui du projet d'origine, récupéré tel quel. Il se nommait, s'affichait et se comportait comme lui : son nom dans le gestionnaire des tâches, son icône dans la barre des tâches, son titre de fenêtre, et surtout sa fenêtre de chargement, qui s'affichait une seconde avant l'image à chaque session.
+
+Il est maintenant compilé par nous, à partir de la même version, avec trois modifications et rien d'autre : il porte le nom et l'icône de ZyrDesk, il ne montre plus aucune fenêtre à lui avant l'image, et il dit en s'arrêtant ce qui s'est passé. Ce dernier point compte : jusqu'ici il annonçait une réussite même quand la session avait échoué, ce qui rendait toute reprise automatique impossible.
+
+### Préparation
+
+Sur le **PC client** seulement, le moteur hôte n'étant pas concerné à ce stade.
+
+1. Sur GitHub, onglet **Actions**, workflow **Moteurs**, ouvrir la dernière exécution réussie.
+2. Télécharger l'artefact `zyrdesk-client-engine`.
+3. Décompresser son contenu **par-dessus** `data\engines\client\`, en remplaçant tout.
+4. Vérifier :
+
+```
+zyr-cli engines status
+```
+
+Attendu : les deux moteurs présents.
+
+> **M4-R5 (plus aucune trace de l'autre projet)**
+>
+> Ouvrir `data\engines\client\` dans l'explorateur, clic droit sur `zyrdesk-session.exe`, **Propriétés**, onglet **Détails**.
+>
+> Attendu : nom du produit, description et société parlent de ZyrDesk, et l'icône du fichier est le logo. Aucun de ces champs ne doit nommer l'autre projet.
+
+### Le vrai test de cette partie
+
+Sur le **PC client**, session normale :
+
+```
+zyr-cli connect <adresse IP du PC hote> --pair <empreinte du PC hote>
+```
+
+> **M4-R6 (rien ne s'affiche avant l'image)**
+>
+> Attendu : entre la commande et le bureau du PC hôte, **aucune fenêtre intermédiaire**, pas même un instant. La seule fenêtre qui s'ouvre est celle de l'image.
+>
+> Regarder aussi la barre des tâches et le gestionnaire des tâches pendant la session : le programme doit s'y appeler ZyrDesk et porter le logo.
+>
+> Noter : quelque chose clignote-t-il encore au lancement ? .......................................
+
+### Les messages ne doivent pas avoir disparu avec la fenêtre
+
+C'est le risque de ce changement : une fenêtre en moins peut vouloir dire une erreur qu'on ne voit plus. Les messages partent maintenant dans la fenêtre de commande et dans `data\logs\session.log`.
+
+Sur le **PC hôte**, arrêter le moteur hôte (`zyr-cli host stop`), puis, sur le **PC client**, relancer la même commande `connect`.
+
+> **M4-R7 (la machine injoignable se dit)**
+>
+> Attendu : après une trentaine de secondes d'attente, la commande s'arrête sur **« l'ordinateur distant n'a pas répondu »**, avec le chemin du journal.
+>
+> Le message ne doit surtout pas parler de session terminée normalement.
+
+Relancer `zyr-cli host start` sur le **PC hôte**, ouvrir une session depuis le **PC client**, puis, une fois l'image affichée, tuer le moteur hôte depuis le gestionnaire des tâches du PC hôte.
+
+> **M4-R8 (une session qui casse se dit aussi)**
+>
+> Attendu : l'image s'arrête, et la commande sur le PC client s'arrête sur **« la session s'est arrêtée sur une erreur »**, avec le chemin du journal.
+>
+> Refermer enfin une session normalement (Ctrl+Alt+Maj+Q, ou la croix de la fenêtre vidéo) : cette fois le message doit être **« Session terminée. »**. Ces trois fins doivent se distinguer, c'est tout l'intérêt du changement.
+
+### Si quelque chose ne va pas
+
+**Une fenêtre s'affiche encore avant l'image.** Le moteur en place est l'ancien : l'artefact n'a pas remplacé le contenu de `data\engines\client\`, ou il a été décompressé dans un sous-dossier. Vérifier la date de `zyrdesk-session.exe`.
+
+**Le moteur ne démarre pas du tout, sans message.** Il manque une bibliothèque à côté de lui, presque toujours parce que l'artefact a été décompressé en partie. Tout supprimer dans `data\engines\client\` et recommencer.
+
+**« le moteur s'est arrêté sans dire pourquoi ».** Le moteur s'est arrêté sur un code qu'il ne prévoit pas, ce qui veut dire un plantage. Le journal `data\logs\session.log` est alors la seule piste.
+
+**Toutes les fins donnent « Session terminée. ».** Le moteur en place est l'ancien, comme au premier point.

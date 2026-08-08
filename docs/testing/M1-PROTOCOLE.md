@@ -102,9 +102,7 @@ L'hypothèse testée était de neutraliser sa couche graphique par l'environneme
 
 Conséquence actée : le patch **P-M1 est nécessaire**, et l'approche par variable d'environnement est écartée définitivement. Le code qui la tentait a été supprimé.
 
-Reste à vérifier, une fois P-M1 écrit : les messages d'erreur du moteur ne doivent pas devenir invisibles. Provoquer volontairement un échec (couper `host start` puis se connecter) et observer.
-
-> En cas d'erreur, obtient-on un message exploitable ? ................................................
+P-M1 a été écrit au jalon M4. Le contrôle qui restait à faire, s'assurer que les messages d'erreur ne deviennent pas invisibles en même temps que la fenêtre, est repris en M4-R7 et M4-R8 dans `M4-PROTOCOLE.md`.
 
 ---
 

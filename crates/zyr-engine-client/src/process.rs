@@ -12,17 +12,22 @@ use zyr_proto::session::SessionSettings;
 use crate::command;
 use crate::state::DeviceState;
 
+/// What the engine returns when the session itself went wrong (P-M5).
+const SESSION_FAILED: i32 = 2;
+
+/// What the engine returns when the other computer never answered (P-M5).
+const UNREACHABLE: i32 = 3;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionOutcome {
     /// The engine stopped normally.
     Ended,
-    /// The engine stopped on an error.
-    ///
-    /// The causes cannot be told apart while the engine returns no
-    /// differentiated exit codes: that is what patch P-M5 is for, and
-    /// without it automatic recovery cannot decide on its own whether to
-    /// start again.
-    Failed { code: Option<i32> },
+    /// The session started and then went wrong.
+    Failed,
+    /// The other computer was never reached.
+    Unreachable,
+    /// The engine stopped in a way it does not name, a crash among them.
+    Unknown { code: Option<i32> },
 }
 
 #[derive(Debug)]
@@ -179,12 +184,11 @@ impl Session {
     /// Waits for the session to end.
     pub fn wait(&mut self) -> io::Result<SessionOutcome> {
         let status = self.engine.wait()?;
-        Ok(if status.success() {
-            SessionOutcome::Ended
-        } else {
-            SessionOutcome::Failed {
-                code: status.code(),
-            }
+        Ok(match status.code() {
+            Some(0) => SessionOutcome::Ended,
+            Some(SESSION_FAILED) => SessionOutcome::Failed,
+            Some(UNREACHABLE) => SessionOutcome::Unreachable,
+            code => SessionOutcome::Unknown { code },
         })
     }
 }

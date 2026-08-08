@@ -54,7 +54,8 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 - Objectif : le produit ressemble à ZyrDesk et se pilote à la souris.
 - Contenu : app Tauri (accueil, interrupteur hôte, liste LAN sans compte via mDNS, connexion, réglages minimaux), design system v1 (tokens + composants de base), builds reproductibles des moteurs avec rebranding (patchs P-M2), lecteur lancé détaché + rattachement.
 - Fait : le service tient les deux extrémités de tunnel, y compris sortantes, et se pilote par tube nommé. `zyr-cli connect` ne tient plus rien : il demande une voie, lance le lecteur sur les adresses locales rendues, et dit au service quel processus cette voie sert. Fermer la fenêtre de commande ne coupe plus la session ; une voie que plus personne n'utilise se referme seule. Conséquence attendue de D2 : le service est désormais requis sur le PC client aussi.
-- Reste à faire : découverte mDNS des ZyrDesk du réseau local, application Tauri et design system, moteurs compilés par nos soins avec les patchs P-M1, P-M2 et P-M5, rattachement de l'interface à une session en cours.
+- Fait : le moteur client est compilé par nos soins et porte les patchs P-M2 (marque), P-M1 (aucune fenêtre à lui avant l'image) et P-M5 (codes de sortie distincts, lus par notre superviseur). Le moteur hôte reste à l'état upstream.
+- Reste à faire : découverte mDNS des ZyrDesk du réseau local, application Tauri et design system, rebranding du moteur hôte, rattachement de l'interface à une session en cours.
 - Résultat observable : deux PC, tout en interface, zéro ligne de commande.
 - Critères de sortie : parcours complet à la souris ; tuer l'interface en pleine session -> le flux survit et l'interface se rattache au relancement ; aucune trace visible de Sunshine/Moonlight (fenêtres, titres, icônes, processus au nom trompeur) ; G-start LAN tenu.
 

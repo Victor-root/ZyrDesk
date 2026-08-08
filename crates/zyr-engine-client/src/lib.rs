@@ -1,9 +1,10 @@
-//! Driving the client engine, which is the official Moonlight, still
-//! unmodified at this stage.
+//! Driving the client engine.
 //!
 //! The engine is steered through its command line and its portable
-//! mode: none of its management windows are used, and its state is kept
-//! apart for each remote device.
+//! mode: none of its windows are used, and its state is kept apart for
+//! each remote device. Our own build shows no window of its own before
+//! the picture and says on its way out what became of the session; see
+//! `patches/MANIFEST.md`.
 
 pub mod command;
 pub mod process;

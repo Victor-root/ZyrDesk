@@ -97,7 +97,8 @@ Pourquoi le lecteur est lancé par l'appelant et non par le service, contraireme
 
 - Coupure réseau courte : le tunnel QUIC absorbe (les datagrammes perdus sont couverts par la correction d'erreur du protocole vidéo). Coupure plus longue : fenêtre de reprise de 60 secondes, le lecteur est relancé dans la même géométrie pendant que le tunnel se rétablit ou migre de chemin ; l'utilisateur voit un état « reconnexion » discret.
 - Verrouillage, déconnexion utilisateur, changement d'utilisateur côté hôte : le service détecte le changement de session console Windows et relance le moteur dans la nouvelle session (interruption de quelques secondes, reconnexion automatique du client).
-- Chaque composant est surveillé : le service est relancé par Windows en cas de crash ; le moteur hôte par le service (avec backoff, et respect de son code de sortie spécial « arrêt volontaire ») ; le lecteur par le superviseur de session selon son code de sortie (sortie utilisateur, perte réseau, erreur fatale).
+- Chaque composant est surveillé : le service est relancé par Windows en cas de crash ; le moteur hôte par le service (avec backoff, et respect de son code de sortie spécial « arrêt volontaire ») ; le lecteur par le superviseur de session selon son code de sortie.
+- Le lecteur rapporte des faits, pas un diagnostic : fin normale, session en échec, machine injoignable (patch P-M5). Classer une panne en « perte réseau » ou « erreur fatale » est une décision produit, elle vit dans nos crates et jamais dans un moteur.
 
 ## 8. États dégradés : détectés et expliqués
 
