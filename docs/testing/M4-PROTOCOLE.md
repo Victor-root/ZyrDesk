@@ -20,6 +20,20 @@ git pull && cargo build --release && zyrdeskd install && zyrdeskd start && zyrde
 
 Remplacer un moteur sans refaire cette mise à jour laisse tourner l'ancien `zyr-cli`/`zyrdeskd` : les messages ne correspondront pas à ce que ce document décrit. Le faire sur les deux PC avant chaque partie évite cette confusion.
 
+### Compiler sans `--release`
+
+`cargo build` tout court marche aussi : les mêmes exécutables sortent dans `target\debug\` au lieu de `target\release\`.
+
+```
+git pull && cargo build && .\target\debug\zyrdeskd install && .\target\debug\zyrdeskd start
+```
+
+Les dépendances restent optimisées dans ce mode (`profile.dev.package."*"` dans `Cargo.toml`), sinon le chiffrement et le transport rendraient une session inutilisable et on prendrait un défaut de compilation pour un défaut de produit.
+
+**Trois choses à savoir.** Le service retient le chemin d'où il a été installé : ne pas mélanger les deux dossiers, un `install` depuis `target\debug` fait tourner ce binaire-là jusqu'au prochain `install`. `ZyrDesk.exe` ouvre une fenêtre de commande noire derrière lui dans ce mode, exprès, pour qu'on voie ce qu'il raconte s'il plante : ce n'est pas un défaut, et ça ne compte pas pour les vérifications « aucune fenêtre visible ». Et **tout ce qui se juge à l'oeil se juge en `--release`** : fluidité, latence, temps d'ouverture. Le reste (le bouton apparaît, le réglage est retenu, la fenêtre se rattache) se teste aussi bien dans l'un que dans l'autre.
+
+Il n'y a pas de mode qui exécuterait sans produire d'exécutable : Rust compile à l'avance. `cargo run -p zyr-ui` construit et lance dans la foulée, mais le fichier est créé quand même, dans `target\` qui est le dossier de compilation.
+
 ---
 
 ## Partie 1 : le service tient les sessions, la ligne de commande ne tient plus rien
