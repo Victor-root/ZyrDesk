@@ -82,6 +82,7 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Faisabilité, composants, processus Windows, flux de connexion, cycle de vie |
 | [docs/engines/STRATEGY.md](docs/engines/STRATEGY.md) | Frontières avec Sunshine et Moonlight, liste des points de contact, politique de patchs |
 | [docs/engines/UPGRADING.md](docs/engines/UPGRADING.md) | Procédure de mise à niveau des moteurs upstream |
+| [docs/engines/COMPILER-LES-MOTEURS.md](docs/engines/COMPILER-LES-MOTEURS.md) | Compiler les moteurs sur sa machine plutôt que d'attendre la CI |
 | [docs/NETWORK.md](docs/NETWORK.md) | Tunnel, transport QUIC, traversée NAT, relais, budget latence et MTU |
 | [docs/SECURITY.md](docs/SECURITY.md) | Identités, tickets de session, chiffrement, stockage Windows, modèle de menace |
 | [docs/UI-UX.md](docs/UI-UX.md) | Direction visuelle, écrans, design system |
