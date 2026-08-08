@@ -73,6 +73,11 @@
   --courbe: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
+/* Le thème clair. Il n'est jamais choisi par une requête de média ici :
+   c'est `theme.js` qui tranche, avant le premier affichage, entre ce que
+   demande le système et ce que la personne a choisi. Une seule palette
+   claire existe donc, au lieu d'une pour le système et d'une pour le
+   choix, qui finiraient par diverger. */
 :root[data-theme="clair"] {
   color-scheme: light;
 
@@ -86,7 +91,7 @@
 
   --texte: #12151d;
   --texte-doux: #4d5566;
-  --texte-faible: #79809180;
+  --texte-faible: #798091;
 
   --accent: #2563eb;
   --accent-vif: #1d4ed8;
@@ -256,6 +261,49 @@ p {
   min-height: 44px;
   padding: 0 var(--pas-5);
   font-size: var(--sous-titre);
+}
+
+/* ---- Choix segmenté -------------------------------------------------- */
+
+/* Trois possibilités qui s'excluent, montrées toutes les trois : la
+   personne voit ce qu'elle peut choisir sans avoir à ouvrir un menu. */
+.segments {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--trait);
+  border-radius: var(--rayon-petit);
+}
+
+.segments > button {
+  min-height: 26px;
+  padding: 0 var(--pas-3);
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--texte-faible);
+  font: inherit;
+  font-size: var(--legende);
+  cursor: pointer;
+  transition:
+    background var(--duree-courte) var(--courbe),
+    color var(--duree-courte) var(--courbe);
+}
+
+.segments > button:hover {
+  color: var(--texte-doux);
+}
+
+.segments > button[aria-pressed="true"] {
+  background: var(--surface-1);
+  color: var(--texte);
+  box-shadow: var(--ombre-1);
+}
+
+.segments > button:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: 1px;
 }
 
 /* ---- Champs --------------------------------------------------------- */

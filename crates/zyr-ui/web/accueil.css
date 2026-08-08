@@ -26,6 +26,12 @@
   gap: var(--pas-3);
 }
 
+/* Le choix du thème se range à droite du titre : présent, jamais au
+   centre de l'attention. */
+.entete .segments {
+  margin-left: auto;
+}
+
 .marque {
   border-radius: var(--rayon-petit);
   flex: none;

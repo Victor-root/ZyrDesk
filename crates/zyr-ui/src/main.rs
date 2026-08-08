@@ -14,10 +14,15 @@
 
 mod desk;
 mod session;
+mod theme;
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![desk::standing, session::connect])
+        .invoke_handler(tauri::generate_handler![
+            desk::standing,
+            session::connect,
+            theme::set_theme
+        ])
         .run(tauri::generate_context!())
         .expect("l'interface ZyrDesk n'a pas pu démarrer");
 }

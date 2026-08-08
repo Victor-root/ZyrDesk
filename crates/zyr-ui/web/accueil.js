@@ -194,6 +194,34 @@ listen("session-ended", ({ payload }) => {
   }
 });
 
+/* ---- Thème ------------------------------------------------------------ */
+
+/* Le choix vit dans theme.js, qui l'a déjà appliqué avant que cette page
+   ne soit dessinée. Ce qui reste ici est de montrer lequel est actif et
+   d'accorder les décorations de la fenêtre, qui appartiennent au système
+   et non à la page. */
+function marqueLeChoix() {
+  const actif = window.theme.choisi();
+  for (const bouton of document.querySelectorAll("[data-theme-choix]")) {
+    bouton.setAttribute(
+      "aria-pressed",
+      bouton.dataset.themeChoix === actif ? "true" : "false",
+    );
+  }
+}
+
+for (const bouton of document.querySelectorAll("[data-theme-choix]")) {
+  bouton.addEventListener("click", () => {
+    window.theme.poser(bouton.dataset.themeChoix);
+    marqueLeChoix();
+  });
+}
+
+window.addEventListener("theme-pose", ({ detail }) => {
+  invoke("set_theme", { clair: detail === "clair" }).catch(() => {});
+  marqueLeChoix();
+});
+
 /* ---- Mise en route ---------------------------------------------------- */
 
 vue.copier.addEventListener("click", copierEmpreinte);
@@ -203,6 +231,11 @@ vue.adresse.addEventListener("input", ajusterAjout);
 vue.empreinteDistante.addEventListener("input", ajusterAjout);
 vue.ajoutForme.addEventListener("submit", connecter);
 vue.etapeFermer.addEventListener("click", rangeEtape);
+
+marqueLeChoix();
+invoke("set_theme", {
+  clair: document.documentElement.dataset.theme === "clair",
+}).catch(() => {});
 
 rafraichirEtat();
 setInterval(rafraichirEtat, RYTHME_ETAT);

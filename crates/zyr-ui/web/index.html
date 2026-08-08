@@ -5,12 +5,26 @@
     <title>ZyrDesk</title>
     <link rel="stylesheet" href="design.css" />
     <link rel="stylesheet" href="accueil.css" />
+    <!-- Avant tout le reste : la fenêtre ne doit jamais s'ouvrir dans le
+         mauvais thème, même le temps d'un battement. -->
+    <script src="theme.js"></script>
   </head>
   <body>
     <main class="page">
       <header class="entete">
         <img class="marque" src="zyrdesk.svg" alt="" width="40" height="40" />
         <h1 class="titre">ZyrDesk</h1>
+        <div class="segments" id="choix-theme" role="group" aria-label="Thème">
+          <button type="button" data-theme-choix="systeme" aria-pressed="false">
+            Système
+          </button>
+          <button type="button" data-theme-choix="clair" aria-pressed="false">
+            Clair
+          </button>
+          <button type="button" data-theme-choix="sombre" aria-pressed="false">
+            Sombre
+          </button>
+        </div>
       </header>
 
       <section class="bloc">
