@@ -20,7 +20,7 @@ Alternatives rejetées :
 ## 2. Versions épinglées
 
 - Sunshine : version plancher `v2026.516.143833`. C'est la première version corrigeant une faille critique de validation de certificats clients (score CVSS 9.8) : on ne construit jamais sur une version antérieure.
-- Moonlight : dernière release stable 6.1.0 (2024), mais la branche principale est très en avance (Qt 6.11, AV1, YUV 4:4:4). On épingle un commit précis de master, traité comme un tag interne, et on documente son hash dans le manifeste.
+- Moonlight : dernière release stable `v6.1.0`. Elle porte déjà l'AV1 et le YUV 4:4:4, les deux fonctions dont dépendent nos objectifs de qualité. Le choix de cette version contre la branche principale est motivé en D14.
 - Accélérateur assumé pour démarrer : jusqu'au jalon M4, les binaires officiels préconstruits (renommés) peuvent être utilisés tels quels pour prototyper. Nos propres builds reproductibles (CI MSYS2 pour Sunshine, MSVC + Qt pour Moonlight) deviennent obligatoires à partir de M4 (rebranding + hygiène GPL).
 
 ## 3. Points de contact avec Sunshine (objectif : zéro patch)

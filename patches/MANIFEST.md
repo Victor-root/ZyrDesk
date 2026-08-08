@@ -9,11 +9,11 @@ Règle : voir `docs/engines/STRATEGY.md`. Aucune fonctionnalité ZyrDesk ne vit 
 | Moteur | Upstream | Référence | Commit |
 |---|---|---|---|
 | Sunshine | https://github.com/LizardByte/Sunshine | tag `v2026.516.143833` | `14ffa6fdaa53f7b51512be2b3d24f3939695403c` |
-| Moonlight | https://github.com/moonlight-stream/moonlight-qt | `master` du 2026-08-07 | `2e13ed9977bc31c73caf8428f08f58d793313ece` |
+| Moonlight | https://github.com/moonlight-stream/moonlight-qt | tag `v6.1.0` | `f786e94c7b2f943e24e65d7d74deb539b827fc84` |
 
 Contrainte de sécurité : Sunshine ne doit jamais être épinglé sous `v2026.516.143833`, première version corrigeant un contournement critique de la validation des certificats clients (CVSS 9.8).
 
-Moonlight est épinglé sur un commit de `master` et non sur la dernière version stable (6.1.0, septembre 2024) : `master` apporte l'AV1, le 4:4:4 et un pipeline de rendu nettement plus récent, indispensables aux objectifs de qualité.
+Les deux moteurs sont épinglés sur des versions publiées. Le choix de `v6.1.0` pour Moonlight, plutôt que sa branche principale, est motivé dans [../docs/DECISIONS.md](../docs/DECISIONS.md) (D14).
 
 ## Pile de patchs
 
