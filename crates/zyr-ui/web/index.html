@@ -9,82 +9,148 @@
   <body>
     <main class="page">
       <header class="entete">
+        <img class="marque" src="zyrdesk.svg" alt="" width="40" height="40" />
         <h1 class="titre">ZyrDesk</h1>
       </header>
 
-      <h2 class="section">Cet ordinateur</h2>
-      <section class="carte machine" id="cette-machine">
-        <div class="machine-identite">
-          <p class="sous-titre" id="nom-machine">…</p>
-          <p class="etat">
-            <span class="pastille" id="pastille-hote"></span>
-            <span id="etat-hote">Recherche du service…</span>
+      <section class="bloc">
+        <h2 class="section">Cet ordinateur</h2>
+        <div class="carte machine">
+          <div class="machine-haut">
+            <div class="machine-identite">
+              <p class="sous-titre" id="nom-machine">…</p>
+              <p class="etat">
+                <span class="pastille" id="pastille-hote"></span>
+                <span id="etat-hote">Recherche du service…</span>
+              </p>
+            </div>
+            <div class="machine-acces">
+              <span class="legende">Accès distant</span>
+              <button
+                class="interrupteur"
+                id="interrupteur-hote"
+                role="switch"
+                aria-checked="false"
+                aria-label="Accès distant"
+                disabled
+              ></button>
+            </div>
+          </div>
+
+          <div class="machine-bas">
+            <div class="empreinte-bloc">
+              <span class="legende">Empreinte de cet ordinateur</span>
+              <p class="empreinte" id="empreinte"></p>
+            </div>
+            <button class="bouton discret" id="copier-empreinte" disabled>
+              Copier
+            </button>
+          </div>
+        </div>
+
+        <div class="bandeau alerte cache" id="service-absent">
+          <span>
+            Le service ZyrDesk ne répond pas. Cet ordinateur ne peut ni être
+            contrôlé ni en contrôler un autre tant qu'il ne tourne pas.
+          </span>
+        </div>
+      </section>
+
+      <section class="bloc grandit">
+        <h2 class="section">Mes ordinateurs</h2>
+
+        <div class="carte vide" id="aucun-ordinateur">
+          <svg class="vide-dessin" viewBox="0 0 64 44" aria-hidden="true">
+            <rect
+              x="1.5"
+              y="1.5"
+              width="45"
+              height="32"
+              rx="4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            />
+            <path
+              d="M17 41h27"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+            />
+            <path
+              d="M24 33.5v7"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            />
+          </svg>
+          <p class="sous-titre">Aucun ordinateur pour l'instant</p>
+          <p class="legende vide-mot">
+            Ajoutez celui que vous voulez contrôler. Son empreinte est affichée
+            dans la fenêtre ZyrDesk de cet ordinateur.
           </p>
+          <button class="bouton principal grand" id="ouvrir-ajout">
+            Ajouter un ordinateur
+          </button>
         </div>
-        <div class="machine-acces">
-          <span class="legende">Accès distant</span>
-          <button
-            class="interrupteur"
-            id="interrupteur-hote"
-            role="switch"
-            aria-checked="false"
-            aria-label="Accès distant"
-            disabled
-          ></button>
+
+        <div class="carte etape cache apparait" id="etape">
+          <div class="etape-corps">
+            <p class="sous-titre" id="etape-titre"></p>
+            <p class="legende" id="etape-detail"></p>
+            <p class="code cache" id="etape-code"></p>
+          </div>
+          <button class="bouton discret cache" id="etape-fermer">Fermer</button>
+        </div>
+
+        <div class="bandeau alerte cache apparait" id="probleme">
+          <span id="probleme-texte"></span>
         </div>
       </section>
-
-      <div class="bandeau alerte cache" id="service-absent">
-        <span>
-          Le service ZyrDesk ne répond pas. Cet ordinateur ne peut ni être
-          contrôlé ni en contrôler un autre tant qu'il ne tourne pas.
-        </span>
-      </div>
-
-      <p class="empreinte" id="empreinte" title="Empreinte de cet ordinateur"></p>
-
-      <h2 class="section">Se connecter à un ordinateur</h2>
-      <section class="carte connexion">
-        <div class="champs">
-          <div class="champ">
-            <label for="adresse">Adresse</label>
-            <input
-              id="adresse"
-              type="text"
-              inputmode="numeric"
-              placeholder="192.168.1.20"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </div>
-          <div class="champ">
-            <label for="empreinte-distante">Empreinte de cet ordinateur</label>
-            <input
-              id="empreinte-distante"
-              type="text"
-              placeholder="0829cc7e…"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </div>
-        </div>
-        <button class="bouton principal grand" id="connecter" disabled>
-          Se connecter
-        </button>
-      </section>
-
-      <div class="bandeau attente cache apparait" id="etape">
-        <div class="etape-corps">
-          <p class="sous-titre" id="etape-titre"></p>
-          <p class="legende" id="etape-detail"></p>
-          <p class="code cache" id="etape-code"></p>
-        </div>
-      </div>
-
-      <div class="bandeau alerte cache apparait" id="probleme">
-        <span id="probleme-texte"></span>
-      </div>
     </main>
+
+    <dialog class="dialogue" id="ajout">
+      <form method="dialog" class="dialogue-corps" id="ajout-forme">
+        <h2 class="sous-titre">Ajouter un ordinateur</h2>
+        <p class="legende">
+          Les deux se trouvent dans la fenêtre ZyrDesk de l'ordinateur à
+          contrôler.
+        </p>
+
+        <div class="champ">
+          <label for="adresse">Adresse</label>
+          <input
+            id="adresse"
+            type="text"
+            placeholder="192.168.1.20"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+
+        <div class="champ">
+          <label for="empreinte-distante">Empreinte</label>
+          <input
+            id="empreinte-distante"
+            type="text"
+            placeholder="0829cc7ecb9e9ba5…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <span class="champ-mot" id="mot-empreinte"></span>
+        </div>
+
+        <div class="dialogue-actions">
+          <button class="bouton discret" type="button" id="annuler-ajout">
+            Annuler
+          </button>
+          <button class="bouton principal" id="connecter" disabled>
+            Se connecter
+          </button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="accueil.js"></script>
   </body>

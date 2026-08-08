@@ -109,7 +109,6 @@
 html,
 body {
   margin: 0;
-  height: 100%;
 }
 
 body {
@@ -129,6 +128,14 @@ h2,
 h3,
 p {
   margin: 0;
+}
+
+/* Ce qui est caché doit le rester quoi qu'en dise le composant. C'est la
+   seule règle du projet qui l'emporte de force : sans elle, un composant
+   qui pose son propre affichage réapparaît, et une carte fantôme en bas
+   d'écran ne se voit qu'à l'usage. */
+.cache {
+  display: none !important;
 }
 
 /* ---- Texte ---------------------------------------------------------- */
@@ -224,6 +231,14 @@ p {
 
 .bouton.principal:hover:not(:disabled) {
   background: var(--accent-vif);
+}
+
+/* Un bleu simplement pâli reste un bleu : il continue d'appeler le clic.
+   Une action indisponible perd sa couleur, elle ne perd pas sa place. */
+.bouton.principal:disabled {
+  background: var(--surface-3);
+  color: var(--texte-faible);
+  opacity: 1;
 }
 
 .bouton.discret {

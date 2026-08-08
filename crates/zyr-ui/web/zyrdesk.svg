@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="ZyrDesk">
+  <title>ZyrDesk</title>
+  <!--
+    Deux écrans qui se recouvrent : celui du fond, éteint, et celui de
+    devant qui affiche le Z. La plaque de sable les porte, et sa matière
+    revient dans l'écart entre les deux : ce n'est pas une ombre posée,
+    c'est le fond qu'on voit passer.
+
+    Les trois plans se lisent par la lumière : la plaque est claire,
+    l'écran du fond est sombre, celui de devant est doré. C'est cet
+    escalier qui tient le dessin, y compris quand l'icône est réduite à
+    seize pixels et que seules les masses subsistent.
+  -->
+  <defs>
+    <clipPath id="zd-plaque"><rect x="2" y="2" width="60" height="60" rx="15"/></clipPath>
+    <clipPath id="zd-verre-fond"><rect x="8.6" y="10.6" width="26.8" height="19.8" rx="3"/></clipPath>
+    <clipPath id="zd-verre-avant"><rect x="28.6" y="33.6" width="26.8" height="19.8" rx="3"/></clipPath>
+
+    <linearGradient id="zd-sable" x1="2" y1="2" x2="62" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E2DDD6"/><stop offset="1" stop-color="#A69C90"/>
+    </linearGradient>
+    <linearGradient id="zd-eteint" x1="8.6" y1="10.6" x2="35.4" y2="30.4" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A3B22"/><stop offset="1" stop-color="#1F190F"/>
+    </linearGradient>
+    <linearGradient id="zd-or" x1="28.6" y1="33.6" x2="55.4" y2="53.4" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FDE68A"/><stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#zd-plaque)">
+    <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#zd-sable)"/>
+
+    <rect x="6" y="8" width="32" height="25" rx="5.5" fill="#1C1917"/>
+    <rect x="8.6" y="10.6" width="26.8" height="19.8" rx="3" fill="url(#zd-eteint)"/>
+    <path d="M4 34 L20 8 H27 L11 34 Z" fill="#FFFFFF" opacity=".13" clip-path="url(#zd-verre-fond)"/>
+
+    <rect x="22" y="27" width="40" height="33" rx="9" fill="url(#zd-sable)"/>
+
+    <rect x="26" y="31" width="32" height="25" rx="5.5" fill="#7C3D0C"/>
+    <rect x="28.6" y="33.6" width="26.8" height="19.8" rx="3" fill="url(#zd-or)"/>
+    <path d="M34.5 38 H49.5 L34.5 49 H49.5" fill="none" stroke="#7C3D0C" stroke-width="4.4"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M24 57 L40 31 H47 L31 57 Z" fill="#FFFFFF" opacity=".18" clip-path="url(#zd-verre-avant)"/>
+  </g>
+</svg>

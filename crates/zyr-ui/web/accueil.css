@@ -1,33 +1,57 @@
 /*
   Mise en page de l'accueil. Rien ici ne décide d'une couleur ni d'un
   espacement : tout descend des tokens de design.css.
+
+  La page occupe la fenêtre plutôt que de s'entasser en haut : ce qui
+  reste à faire, ajouter un ordinateur, prend la place laissée libre au
+  lieu de laisser un vide.
 */
 
 .page {
-  max-width: 780px;
+  max-width: 820px;
+  /* Mesurée sur la fenêtre, pas sur un parent : une chaîne de hauteurs
+     en pourcentage se rompt au premier maillon qui ne la relaie pas, et
+     le bas de la page se retrouve vide. */
+  min-height: 100vh;
   margin: 0 auto;
-  padding: var(--pas-6) var(--pas-5) var(--pas-7);
+  padding: var(--pas-6) var(--pas-5) var(--pas-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-5);
+}
+
+.entete {
+  display: flex;
+  align-items: center;
+  gap: var(--pas-3);
+}
+
+.marque {
+  border-radius: var(--rayon-petit);
+  flex: none;
+}
+
+.bloc {
   display: flex;
   flex-direction: column;
   gap: var(--pas-3);
 }
 
-.entete {
-  padding-bottom: var(--pas-2);
-}
-
-/* Une étiquette de section respire au-dessus, pas en dessous. */
-.section {
-  margin-top: var(--pas-4);
-}
-
-.cache {
-  display: none;
+/* Le bloc des ordinateurs prend ce qui reste, pour que l'état vide soit
+   au centre de la fenêtre et non collé sous la carte du dessus. */
+.grandit {
+  flex: 1;
+  min-height: 0;
 }
 
 /* ---- Carte de cette machine ----------------------------------------- */
 
 .machine {
+  display: flex;
+  flex-direction: column;
+}
+
+.machine-haut {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -49,37 +73,71 @@
   flex: none;
 }
 
-.empreinte {
-  padding: 0 var(--pas-1);
+/* L'empreinte est une donnée technique : elle vit en bas de la carte,
+   sur son propre fond, plutôt que de peser sur l'identité. */
+.machine-bas {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pas-4);
+  padding: var(--pas-3) var(--pas-5);
+  border-top: 1px solid var(--trait);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--rayon-grand) var(--rayon-grand);
 }
 
-/* ---- Carte de connexion --------------------------------------------- */
-
-.connexion {
+.empreinte-bloc {
   display: flex;
   flex-direction: column;
-  gap: var(--pas-4);
-  padding: var(--pas-5);
+  gap: var(--pas-1);
+  min-width: 0;
 }
 
-.champs {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
-  gap: var(--pas-4);
+/* ---- État vide ------------------------------------------------------- */
+
+.vide {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pas-3);
+  padding: var(--pas-6) var(--pas-5);
+  text-align: center;
+  /* Un état vide n'est pas une carte pleine : le trait se fait discret
+     pour dire qu'il attend quelque chose. */
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--trait-fort);
+  box-shadow: none;
 }
 
-/* Sous une certaine largeur, deux colonnes serrent trop les champs. */
-@media (max-width: 640px) {
-  .champs {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.vide-dessin {
+  width: 64px;
+  height: 44px;
+  color: var(--texte-faible);
+  opacity: 0.6;
 }
 
-.connexion .bouton {
-  align-self: flex-start;
+.vide-mot {
+  max-width: 42ch;
+}
+
+.vide .bouton {
+  margin-top: var(--pas-2);
 }
 
 /* ---- Étape en cours -------------------------------------------------- */
+
+.etape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pas-4);
+  padding: var(--pas-5);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--trait));
+  background: var(--accent-voile);
+}
 
 .etape-corps {
   display: flex;
@@ -88,6 +146,40 @@
   min-width: 0;
 }
 
-.code {
+/* ---- Dialogue -------------------------------------------------------- */
+
+.dialogue {
+  width: min(460px, calc(100vw - var(--pas-6)));
+  padding: 0;
+  border: 1px solid var(--trait-fort);
+  border-radius: var(--rayon-grand);
+  background: var(--surface-1);
+  color: var(--texte);
+  box-shadow: var(--ombre-2);
+}
+
+.dialogue::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.dialogue-corps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-4);
+  padding: var(--pas-5);
+}
+
+.dialogue-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--pas-3);
   margin-top: var(--pas-1);
+}
+
+/* Ce que le champ a à redire, sous le champ, sans jamais faire sauter la
+   mise en page quand il n'a rien à dire. */
+.champ-mot {
+  min-height: 16px;
+  font-size: var(--legende);
+  color: var(--attention);
 }

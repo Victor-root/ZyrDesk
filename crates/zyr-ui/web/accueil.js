@@ -16,13 +16,21 @@ const vue = {
   interrupteur: document.getElementById("interrupteur-hote"),
   serviceAbsent: document.getElementById("service-absent"),
   empreinte: document.getElementById("empreinte"),
+  copier: document.getElementById("copier-empreinte"),
+  aucun: document.getElementById("aucun-ordinateur"),
+  ouvrirAjout: document.getElementById("ouvrir-ajout"),
+  ajout: document.getElementById("ajout"),
+  ajoutForme: document.getElementById("ajout-forme"),
+  annulerAjout: document.getElementById("annuler-ajout"),
   adresse: document.getElementById("adresse"),
   empreinteDistante: document.getElementById("empreinte-distante"),
+  motEmpreinte: document.getElementById("mot-empreinte"),
   connecter: document.getElementById("connecter"),
   etape: document.getElementById("etape"),
   etapeTitre: document.getElementById("etape-titre"),
   etapeDetail: document.getElementById("etape-detail"),
   etapeCode: document.getElementById("etape-code"),
+  etapeFermer: document.getElementById("etape-fermer"),
   probleme: document.getElementById("probleme"),
   problemeTexte: document.getElementById("probleme-texte"),
 };
@@ -34,6 +42,10 @@ const TAILLE_EMPREINTE = 64;
 /* Le service peut démarrer après l'interface, ou s'arrêter pendant
    qu'elle est ouverte. On redemande, sans jamais bloquer la fenêtre. */
 const RYTHME_ETAT = 3000;
+
+/* Le temps qu'un « Copié » reste lisible avant que le bouton reprenne
+   son mot habituel. */
+const TEMPS_COPIE = 1600;
 
 let sessionEnCours = false;
 
@@ -47,7 +59,8 @@ async function rafraichirEtat() {
   const etat = await invoke("standing");
 
   vue.nom.textContent = etat.name;
-  vue.empreinte.textContent = etat.fingerprint;
+  vue.empreinte.textContent = etat.fingerprint || "indisponible";
+  vue.copier.disabled = etat.fingerprint.length === 0;
   montre(vue.serviceAbsent, etat.unreachable !== null);
 
   if (etat.unreachable !== null) {
@@ -63,23 +76,46 @@ async function rafraichirEtat() {
     vue.etatHote.textContent = "Démarrage en cours…";
     vue.interrupteur.setAttribute("aria-checked", "false");
   }
-
-  ajusterConnexion();
 }
 
-/* ---- Se connecter ------------------------------------------------------ */
-
-function ajusterConnexion() {
-  const pret =
-    !sessionEnCours &&
-    vue.adresse.value.trim().length > 0 &&
-    vue.empreinteDistante.value.trim().length === TAILLE_EMPREINTE;
-  vue.connecter.disabled = !pret;
+async function copierEmpreinte() {
+  await navigator.clipboard.writeText(vue.empreinte.textContent);
+  vue.copier.textContent = "Copié";
+  setTimeout(() => {
+    vue.copier.textContent = "Copier";
+  }, TEMPS_COPIE);
 }
 
-async function connecter() {
+/* ---- Ajouter un ordinateur -------------------------------------------- */
+
+function ouvrirAjout() {
+  vue.motEmpreinte.textContent = "";
+  vue.ajout.showModal();
+  vue.adresse.focus();
+}
+
+/* Dit ce qui manque plutôt que de laisser un bouton éteint sans raison. */
+function ajusterAjout() {
+  const empreinte = vue.empreinteDistante.value.trim();
+  const longueur = empreinte.length;
+
+  if (longueur === 0 || longueur === TAILLE_EMPREINTE) {
+    vue.motEmpreinte.textContent = "";
+  } else {
+    vue.motEmpreinte.textContent = `${longueur} caractères sur ${TAILLE_EMPREINTE}`;
+  }
+
+  vue.connecter.disabled =
+    sessionEnCours ||
+    vue.adresse.value.trim().length === 0 ||
+    longueur !== TAILLE_EMPREINTE;
+}
+
+async function connecter(evenement) {
+  evenement.preventDefault();
   sessionEnCours = true;
-  ajusterConnexion();
+  ajusterAjout();
+  vue.ajout.close();
   montre(vue.probleme, false);
   etape("Ouverture du tunnel…", "", null);
 
@@ -93,23 +129,30 @@ async function connecter() {
   }
 }
 
-function etape(titre, detail, code) {
+/* ---- Ce qui se passe pendant l'ouverture ------------------------------ */
+
+function etape(titre, detail, code, fini = false) {
   vue.etapeTitre.textContent = titre;
   vue.etapeDetail.textContent = detail;
   vue.etapeCode.textContent = code ?? "";
   montre(vue.etapeCode, code !== null);
+  montre(vue.etapeFermer, fini);
   montre(vue.etape, true);
+  montre(vue.aucun, false);
+}
+
+function rangeEtape() {
+  sessionEnCours = false;
+  montre(vue.etape, false);
+  montre(vue.aucun, true);
+  ajusterAjout();
 }
 
 function echoue(texte) {
-  sessionEnCours = false;
-  montre(vue.etape, false);
+  rangeEtape();
   vue.problemeTexte.textContent = texte;
   montre(vue.probleme, true);
-  ajusterConnexion();
 }
-
-/* ---- Ce que le coeur raconte pendant l'ouverture ---------------------- */
 
 listen("session-step", ({ payload }) => {
   switch (payload.kind) {
@@ -145,9 +188,7 @@ listen("session-step", ({ payload }) => {
 
 listen("session-ended", ({ payload }) => {
   if (payload.ok) {
-    sessionEnCours = false;
-    montre(vue.etape, false);
-    ajusterConnexion();
+    rangeEtape();
   } else {
     echoue(payload.message);
   }
@@ -155,9 +196,13 @@ listen("session-ended", ({ payload }) => {
 
 /* ---- Mise en route ---------------------------------------------------- */
 
-vue.adresse.addEventListener("input", ajusterConnexion);
-vue.empreinteDistante.addEventListener("input", ajusterConnexion);
-vue.connecter.addEventListener("click", connecter);
+vue.copier.addEventListener("click", copierEmpreinte);
+vue.ouvrirAjout.addEventListener("click", ouvrirAjout);
+vue.annulerAjout.addEventListener("click", () => vue.ajout.close());
+vue.adresse.addEventListener("input", ajusterAjout);
+vue.empreinteDistante.addEventListener("input", ajusterAjout);
+vue.ajoutForme.addEventListener("submit", connecter);
+vue.etapeFermer.addEventListener("click", rangeEtape);
 
 rafraichirEtat();
 setInterval(rafraichirEtat, RYTHME_ETAT);
