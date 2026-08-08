@@ -7,6 +7,7 @@
 mod control;
 mod gateway;
 mod log;
+mod preferences;
 mod restart;
 mod supervisor;
 mod ways;

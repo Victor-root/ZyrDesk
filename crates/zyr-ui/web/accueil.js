@@ -64,18 +64,51 @@ async function rafraichirEtat() {
   vue.copier.disabled = etat.fingerprint.length === 0;
   montre(vue.serviceAbsent, etat.unreachable !== null);
 
+  // Le service arrêté n'est pas un accès distant désactivé : l'un est un
+  // choix, l'autre une panne. L'interrupteur reste sur la position
+  // choisie et devient inactionnable, plutôt que de sauter à « non » et
+  // de faire croire à une décision que personne n'a prise.
+  vue.interrupteur.disabled = etat.unreachable !== null || bascule;
+  if (!bascule) {
+    vue.interrupteur.setAttribute("aria-checked", etat.wanted ? "true" : "false");
+  }
+
   if (etat.unreachable !== null) {
     vue.pastilleHote.className = "pastille";
     vue.etatHote.textContent = "Service arrêté";
-    vue.interrupteur.setAttribute("aria-checked", "false");
+  } else if (!etat.wanted) {
+    vue.pastilleHote.className = "pastille";
+    vue.etatHote.textContent = "Accès distant désactivé";
   } else if (etat.hosting) {
     vue.pastilleHote.className = "pastille vivante";
     vue.etatHote.textContent = "Prêt à être contrôlé";
-    vue.interrupteur.setAttribute("aria-checked", "true");
   } else {
     vue.pastilleHote.className = "pastille attention";
     vue.etatHote.textContent = "Démarrage en cours…";
-    vue.interrupteur.setAttribute("aria-checked", "false");
+  }
+}
+
+/* Le temps que le service prenne acte, l'état qui revient est encore
+   l'ancien. Sans ce verrou, l'interrupteur reviendrait en arrière sous
+   le doigt avant de repartir. */
+let bascule = false;
+
+async function basculerAcces() {
+  const veut = vue.interrupteur.getAttribute("aria-checked") !== "true";
+  bascule = true;
+  vue.interrupteur.setAttribute("aria-checked", veut ? "true" : "false");
+  vue.interrupteur.disabled = true;
+  montre(vue.probleme, false);
+
+  try {
+    await invoke("set_hosting", { on: veut });
+  } catch (raison) {
+    vue.interrupteur.setAttribute("aria-checked", veut ? "false" : "true");
+    vue.problemeTexte.textContent = String(raison);
+    montre(vue.probleme, true);
+  } finally {
+    bascule = false;
+    await rafraichirEtat();
   }
 }
 
@@ -302,6 +335,7 @@ window.addEventListener("theme-pose", ({ detail }) => {
 /* ---- Mise en route ---------------------------------------------------- */
 
 vue.copier.addEventListener("click", copierEmpreinte);
+vue.interrupteur.addEventListener("click", basculerAcces);
 vue.ouvrirAjout.addEventListener("click", ouvrirAjout);
 vue.annulerAjout.addEventListener("click", () => vue.ajout.close());
 vue.adresse.addEventListener("input", ajusterAjout);

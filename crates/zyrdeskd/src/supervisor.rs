@@ -32,7 +32,7 @@ use zyr_engine_host::api::EngineApi;
 use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Launcher, SunshineConfig, ports};
 use zyr_proto::paths;
 
-use crate::control::{Desk, Hosting};
+use crate::control::{Answering, Desk, Hosting, Wanted};
 use crate::gateway::Gateway;
 use crate::log::Log;
 use crate::restart::{Next, Policy};
@@ -105,6 +105,8 @@ enum Life {
     /// The screen moved to another session: the engine was stopped on
     /// purpose, and belongs over there now.
     SessionChanged,
+    /// Remote access was turned off while it ran.
+    NoLongerWanted,
 }
 
 /// Why the supervisor handed back.
@@ -144,6 +146,9 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     // with this one being reachable.
     let ways = Ways::new(log.clone());
     let hosting = Hosting::new();
+    // What was asked for last time, honoured before anyone has said
+    // anything this time.
+    let wanted = Wanted::remembered_from(paths::preferences());
 
     // The neighbourhood is announced for as long as the service runs,
     // not for as long as an engine does: a computer that only appeared
@@ -168,6 +173,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         runtime.handle(),
         ways.clone(),
         hosting.clone(),
+        wanted.clone(),
         neighbours,
         log,
     ) {
@@ -183,11 +189,43 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
 
     let mut policy = Policy::new();
     let runtime_path = EngineRuntime::standard_path();
+    let around = Around {
+        exe: &exe,
+        runtime_path: &runtime_path,
+        runtime: runtime.handle(),
+        hosting: &hosting,
+        wanted: &wanted,
+        order,
+        log,
+    };
     let mut screenless = false;
+    let mut refused = false;
 
     loop {
         if order.stop_asked() {
             return End::Asked;
+        }
+
+        if !wanted.on() {
+            // Remote access is off. The service stays up: it is still
+            // what opens the ways out, answers the interface and
+            // announces nothing on the network. Only being reachable
+            // stops.
+            if !refused {
+                log.write("remote access is off, this computer cannot be reached");
+                refused = true;
+            }
+            if !wait(SESSION_SETTLING, order) {
+                return End::Asked;
+            }
+            continue;
+        }
+        if refused {
+            log.write("remote access is on again");
+            refused = false;
+            // Turned off and on again is not a string of failures: the
+            // engine deserves its first try back.
+            policy = Policy::new();
         }
 
         let Some(session) = screen_session() else {
@@ -206,15 +244,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         screenless = false;
 
         let start = Instant::now();
-        let life = match one_engine_life(
-            &exe,
-            &runtime_path,
-            session,
-            runtime.handle(),
-            &hosting,
-            order,
-            log,
-        ) {
+        let life = match one_engine_life(session, &around) {
             Ok(life) => life,
             Err(reason) => {
                 log.write(&reason);
@@ -229,12 +259,15 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             return End::Asked;
         }
 
-        // A session change is not an incident: the engine did what was
-        // asked of it, and the failure count has no business moving.
+        // Neither a session change nor a switch turned off is an
+        // incident: the engine did what was asked of it, and the failure
+        // count has no business moving.
         let Life::Stopped(stop) = life else {
-            log.write(&format!(
-                "the screen left session {session}, the engine starts over in the new one"
-            ));
+            if life == Life::SessionChanged {
+                log.write(&format!(
+                    "the screen left session {session}, the engine starts over in the new one"
+                ));
+            }
             if !wait(SESSION_SETTLING, order) {
                 return End::Asked;
             }
@@ -276,6 +309,7 @@ fn desk(
     runtime: &tokio::runtime::Handle,
     ways: Ways,
     hosting: Hosting,
+    wanted: Wanted,
     neighbours: zyr_lan::Found,
     log: &Log,
 ) -> Result<Desk, String> {
@@ -284,11 +318,14 @@ fn desk(
     Desk::open(
         runtime,
         zyr_control::CHANNEL,
-        identity.fingerprint(),
-        ways,
-        hosting,
-        neighbours,
-        log,
+        Answering {
+            fingerprint: identity.fingerprint(),
+            ways,
+            hosting,
+            wanted,
+            neighbours,
+            log: log.clone(),
+        },
     )
     .map_err(|e| e.to_string())
 }
@@ -307,18 +344,31 @@ fn announce(log: &Log) -> Result<zyr_lan::Neighbourhood, String> {
     Ok(neighbourhood)
 }
 
+/// Everything one engine's life is lived against: what does not change
+/// from one engine to the next, gathered so it travels as one thing.
+struct Around<'a> {
+    exe: &'a std::path::Path,
+    runtime_path: &'a std::path::Path,
+    runtime: &'a tokio::runtime::Handle,
+    hosting: &'a Hosting,
+    wanted: &'a Wanted,
+    order: &'a StopOrder,
+    log: &'a Log,
+}
+
 /// Starts the engine in the given session and follows it until it stops.
 ///
 /// Returns how its life ended, or why it could not live at all.
-fn one_engine_life(
-    exe: &std::path::Path,
-    runtime_path: &std::path::Path,
-    session: u32,
-    runtime: &tokio::runtime::Handle,
-    hosting: &Hosting,
-    order: &StopOrder,
-    log: &Log,
-) -> Result<Life, String> {
+fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
+    let Around {
+        exe,
+        runtime_path,
+        runtime,
+        hosting,
+        wanted,
+        order,
+        log,
+    } = around;
     let Some(ports) = ports::free_base() else {
         return Err("no port available in the range reserved for the engines".to_string());
     };
@@ -371,7 +421,7 @@ fn one_engine_life(
     hosting.set(true);
     log.write("remote access active");
 
-    let life = wait_for_the_engine_to_stop(&mut engine, session, order, log);
+    let life = wait_for_the_engine_to_stop(&mut engine, session, wanted, order, log);
     hosting.set(false);
     drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
@@ -383,6 +433,7 @@ fn one_engine_life(
 fn wait_for_the_engine_to_stop(
     engine: &mut HostEngine,
     session: u32,
+    wanted: &Wanted,
     order: &StopOrder,
     log: &Log,
 ) -> Life {
@@ -391,6 +442,12 @@ fn wait_for_the_engine_to_stop(
             log.write("stop asked for, the engine is being stopped");
             let _ = engine.stop();
             return Life::Stopped(None);
+        }
+
+        if !wanted.on() {
+            log.write("remote access turned off, the engine is being stopped");
+            let _ = engine.stop();
+            return Life::NoLongerWanted;
         }
 
         // The exit code is asked for first: it is the only thing that

@@ -47,6 +47,45 @@ impl Hosting {
     }
 }
 
+/// Whether this computer is meant to be reachable at all.
+///
+/// Distinct from `Hosting` on purpose: one is what was asked for, the
+/// other is where the engine has got to. Between the two sits the time
+/// it takes to start, and that gap is what the interface shows as
+/// « démarrage en cours » rather than pretending the switch lied.
+#[derive(Clone)]
+pub struct Wanted {
+    now: Arc<AtomicBool>,
+    /// Where the decision is kept so it survives a restart.
+    remembered: Arc<std::path::PathBuf>,
+}
+
+impl Wanted {
+    /// Picks up what was asked for last time.
+    pub fn remembered_from(path: std::path::PathBuf) -> Self {
+        let asked = crate::preferences::read(&path).remote_access;
+        Self {
+            now: Arc::new(AtomicBool::new(asked)),
+            remembered: Arc::new(path),
+        }
+    }
+
+    pub fn on(&self) -> bool {
+        self.now.load(Ordering::Relaxed)
+    }
+
+    /// Writes the decision down before honouring it: a computer that
+    /// obeyed but forgot would let itself be reached again tomorrow.
+    fn set(&self, on: bool) -> std::io::Result<()> {
+        crate::preferences::write(
+            &self.remembered,
+            crate::preferences::Preferences { remote_access: on },
+        )?;
+        self.now.store(on, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
 /// The desk, open. Dropping it closes the channel.
 pub struct Desk {
     task: JoinHandle<()>,
@@ -63,41 +102,28 @@ impl Desk {
     ///
     /// The fingerprint is handed over rather than read here: this desk
     /// answers questions, it does not own the identity of the computer.
-    pub fn open(
-        runtime: &Handle,
-        channel: &str,
-        fingerprint: Fingerprint,
-        ways: Ways,
-        hosting: Hosting,
-        neighbours: Found,
-        log: &Log,
-    ) -> io::Result<Self> {
+    pub fn open(runtime: &Handle, channel: &str, answering: Answering) -> io::Result<Self> {
         let _guard = runtime.enter();
         let door = Door::open(channel)?;
 
         Ok(Self {
-            task: runtime.spawn(serve(
-                door,
-                Answering {
-                    fingerprint,
-                    ways,
-                    hosting,
-                    neighbours,
-                    log: log.clone(),
-                },
-            )),
+            task: runtime.spawn(serve(door, answering)),
         })
     }
 }
 
 /// Everything an answer is drawn from.
+///
+/// Built by the supervisor, which owns all of it: the desk holds no
+/// state of its own, it reads and reports.
 #[derive(Clone)]
-struct Answering {
-    fingerprint: Fingerprint,
-    ways: Ways,
-    hosting: Hosting,
-    neighbours: Found,
-    log: Log,
+pub struct Answering {
+    pub fingerprint: Fingerprint,
+    pub ways: Ways,
+    pub hosting: Hosting,
+    pub wanted: Wanted,
+    pub neighbours: Found,
+    pub log: Log,
 }
 
 async fn serve(mut door: Door, answering: Answering) {
@@ -178,6 +204,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             protocol: PROTOCOL,
             fingerprint: answering.fingerprint,
             hosting: answering.hosting.open(),
+            wanted: answering.wanted.on(),
             ways: answering.ways.count(),
         }),
         Request::Reach { host, peer, media } => {
@@ -199,6 +226,20 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             // reached: saying no would make closing twice an error.
             Answer::Done
         }
+        Request::SetHosting { on } => match answering.wanted.set(on) {
+            Ok(()) => {
+                answering.log.write(if on {
+                    "remote access turned on"
+                } else {
+                    "remote access turned off"
+                });
+                Answer::Done
+            }
+            Err(e) => Answer::Refused(format!(
+                "le choix n'a pas pu être enregistré : {e}\n  \
+                 Il aurait été oublié au prochain démarrage."
+            )),
+        },
         // Handled above, where several answers can be given.
         Request::Peers => Answer::Done,
     }
@@ -235,11 +276,14 @@ mod tests {
             let desk = Desk::open(
                 runtime,
                 &channel,
-                fingerprint,
-                Ways::new(log.clone()),
-                hosting.clone(),
-                Found::new(),
-                &log,
+                Answering {
+                    fingerprint,
+                    ways: Ways::new(log.clone()),
+                    hosting: hosting.clone(),
+                    wanted: Wanted::remembered_from(folder.join("preferences.conf")),
+                    neighbours: Found::new(),
+                    log: log.clone(),
+                },
             )
             .unwrap();
 
@@ -308,6 +352,36 @@ mod tests {
             // consumed, not left in the way of the next question.
             let answer = caller.ask(&Request::Standing).await.unwrap();
             assert!(matches!(answer, Answer::Standing(_)), "{answer}");
+        });
+    }
+
+    #[test]
+    fn turning_remote_access_off_is_answered_and_remembered() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let bench = Bench::set_up(runtime.handle(), "hosting");
+
+        runtime.block_on(async {
+            let mut caller = bench.caller().await;
+
+            // What was asked for and what the engine has reached are two
+            // different things: only the first moves here.
+            let answer = caller
+                .ask(&Request::SetHosting { on: false })
+                .await
+                .unwrap();
+            assert!(matches!(answer, Answer::Done), "{answer}");
+
+            let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
+                panic!("attendu un état");
+            };
+            assert!(!standing.wanted);
+
+            let answer = caller.ask(&Request::SetHosting { on: true }).await.unwrap();
+            assert!(matches!(answer, Answer::Done), "{answer}");
+            let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
+                panic!("attendu un état");
+            };
+            assert!(standing.wanted);
         });
     }
 

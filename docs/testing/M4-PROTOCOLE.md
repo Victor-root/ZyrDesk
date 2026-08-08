@@ -404,3 +404,63 @@ Puis, sur le **PC hôte**, `zyrdeskd stop`.
 **Un ordinateur apparaît deux fois.** À signaler avec les deux noms affichés : c'est un défaut, une machine ne doit occuper qu'une carte.
 
 **La barre de titre reste sombre en thème clair.** À signaler.
+
+---
+
+## Partie 6 : l'interrupteur d'accès distant
+
+### Ce qui change, et pourquoi
+
+Jusqu'ici l'interrupteur était dessiné mais ne servait à rien : le service hébergeait en permanence, sans qu'on puisse dire non. Il fonctionne maintenant.
+
+Deux choses valent d'être sues.
+
+Le choix est **retenu** : il est écrit sur le disque et honoré au démarrage suivant. Un ordinateur qu'on a rendu injoignable ne redevient pas joignable tout seul le lendemain matin.
+
+Et couper l'accès distant **n'arrête pas le service**. Celui-ci continue d'ouvrir les sessions sortantes, de répondre à la fenêtre et de découvrir le réseau. Seul le fait d'être contrôlable s'arrête. C'est voulu : un ordinateur peut vouloir en contrôler d'autres sans accepter de l'être.
+
+**Ce qui n'est pas fait** : n'importe quelle personne connectée à la machine peut actionner cet interrupteur. La réserver aux administrateurs est prévue au jalon M5, où la décision ouverte O2 la porte déjà.
+
+### Le test
+
+Sur le **PC hôte**, fenêtre ZyrDesk ouverte, avec une session en cours depuis le PC client.
+
+> **M4-R21 (couper coupe vraiment)**
+>
+> Cliquer l'interrupteur **Accès distant** pour le mettre sur non.
+>
+> Attendu : la pastille passe au gris, le texte devient « Accès distant désactivé », et **la session en cours s'arrête** côté client. Dans le gestionnaire des tâches du PC hôte, `zyrdesk-host-engine.exe` disparaît. `zyrdeskd.exe`, lui, reste.
+
+> **M4-R22 (et empêche de revenir)**
+>
+> Depuis le **PC client**, tenter de se reconnecter en cliquant la carte.
+>
+> Attendu : la connexion échoue. C'est le tunnel qui n'a plus personne en face.
+
+> **M4-R23 (le choix survit au redémarrage)**
+>
+> Redémarrer le **PC hôte** entièrement, puis rouvrir ZyrDesk dessus.
+>
+> Attendu : l'interrupteur est **toujours sur non**. C'est le point qui compte le plus de cette partie : un choix oublié au redémarrage rendrait la machine joignable sans que personne l'ait demandé.
+>
+> Vérifier au passage `data\preferences.conf` : il doit contenir `remote_access = no`.
+
+> **M4-R24 (rallumer remarche)**
+>
+> Remettre l'interrupteur sur oui.
+>
+> Attendu : la pastille passe à l'orange (« Démarrage en cours… ») pendant quelques secondes, puis au vert. Une nouvelle session s'ouvre depuis le PC client.
+
+> **M4-R25 (une panne n'est pas un choix)**
+>
+> Sur le **PC hôte**, avec l'accès distant sur oui : `zyrdeskd stop`.
+>
+> Attendu : le texte devient « Service arrêté » et l'interrupteur devient **inactionnable en restant sur oui**. Il ne doit pas sauter sur non : personne n'a pris cette décision, le service est simplement absent.
+
+### Si quelque chose ne va pas
+
+**L'interrupteur revient sur oui tout seul après un redémarrage.** Regarder `data\preferences.conf`. S'il est absent ou dit `yes`, l'écriture a échoué : le journal du service en donnera la raison.
+
+**La session ne s'arrête pas quand on coupe.** Regarder `data\logs\service.log` : la ligne « remote access turned off, the engine is being stopped » doit y être.
+
+**L'interrupteur ne réagit pas au clic.** Le service et la fenêtre ne datent pas du même jour : recompiler et relancer le service.

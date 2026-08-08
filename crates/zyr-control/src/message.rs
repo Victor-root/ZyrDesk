@@ -22,7 +22,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -64,6 +64,12 @@ pub enum Request {
     Release { way: WayId },
     /// The ZyrDesk computers seen on the local network.
     Peers,
+    /// Decides whether this computer accepts being controlled.
+    ///
+    /// A decision and not a state: it survives a restart, since a
+    /// computer that let itself be reached again the next morning
+    /// would be honouring nobody's wish.
+    SetHosting { on: bool },
 }
 
 impl Request {
@@ -88,6 +94,9 @@ impl Request {
                 way: WayId(fields.parsed("way")?),
             }),
             "peers" => Ok(Request::Peers),
+            "hosting" => Ok(Request::SetHosting {
+                on: fields.text("on")? == "yes",
+            }),
             other => Err(Malformed(format!("verbe inconnu « {other} »"))),
         }
     }
@@ -106,6 +115,9 @@ impl fmt::Display for Request {
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
+            Request::SetHosting { on } => {
+                write!(f, "hosting on={}", if *on { "yes" } else { "no" })
+            }
         }
     }
 }
@@ -119,6 +131,9 @@ pub struct Standing {
     pub fingerprint: Fingerprint,
     /// Whether this computer can be reached right now.
     pub hosting: bool,
+    /// Whether it is meant to be. The two differ while the engine is
+    /// starting, and after it has given up.
+    pub wanted: bool,
     /// Ways out currently open.
     pub ways: usize,
 }
@@ -168,6 +183,7 @@ impl Answer {
                 protocol: fields.parsed("protocol")?,
                 fingerprint: fields.parsed("fingerprint")?,
                 hosting: fields.text("hosting")? == "yes",
+                wanted: fields.text("wanted")? == "yes",
                 ways: fields.parsed("ways")?,
             })),
             "reached" => Ok(Answer::Reached(Reached {
@@ -195,10 +211,11 @@ impl fmt::Display for Answer {
         match self {
             Answer::Standing(standing) => write!(
                 f,
-                "standing protocol={} fingerprint={} hosting={} ways={}",
+                "standing protocol={} fingerprint={} hosting={} wanted={} ways={}",
                 standing.protocol,
                 standing.fingerprint,
                 if standing.hosting { "yes" } else { "no" },
+                if standing.wanted { "yes" } else { "no" },
                 standing.ways
             ),
             Answer::Reached(reached) => write!(
@@ -348,6 +365,8 @@ mod tests {
             },
             Request::Release { way: WayId(3) },
             Request::Peers,
+            Request::SetHosting { on: true },
+            Request::SetHosting { on: false },
         ]
     }
 
@@ -357,6 +376,7 @@ mod tests {
                 protocol: PROTOCOL,
                 fingerprint: fingerprint(),
                 hosting: true,
+                wanted: true,
                 ways: 2,
             }),
             Answer::Reached(Reached {

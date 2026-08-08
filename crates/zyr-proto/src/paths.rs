@@ -110,6 +110,11 @@ pub fn authorized_devices() -> PathBuf {
     data_dir().join("authorized-devices.conf")
 }
 
+/// What the person asked the service to do, kept across restarts.
+pub fn preferences() -> PathBuf {
+    data_dir().join("preferences.conf")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,6 +133,7 @@ mod tests {
             device_state_dir("desk-pc"),
             logs_dir(),
             authorized_devices(),
+            preferences(),
         ] {
             assert!(
                 path.starts_with(&root),

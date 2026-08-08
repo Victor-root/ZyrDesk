@@ -21,6 +21,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             desk::standing,
             desk::peers,
+            desk::set_hosting,
             session::connect,
             theme::set_theme
         ])
