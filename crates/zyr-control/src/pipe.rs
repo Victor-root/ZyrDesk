@@ -182,10 +182,34 @@ mod mechanism {
         }
     }
 
+    /// How many times a busy door is tried again before giving up.
+    ///
+    /// A door only ever has one instance genuinely idle at a time; it is
+    /// still busy for the moment between one program being taken in and
+    /// the next spare being made ready. That moment is normally far
+    /// under a millisecond, so this is about tolerating it happening at
+    /// all, not about waiting on a door that is truly not there.
+    const ATTEMPTS: u32 = 50;
+
+    /// How long is left between two tries.
+    const BETWEEN_TRIES: std::time::Duration = std::time::Duration::from_millis(20);
+
     pub async fn call(channel: &str) -> io::Result<Spoken> {
-        Ok(Conversation::over(
-            ClientOptions::new().open(address(channel))?,
-        ))
+        let path = address(channel);
+        for attempt in 0..ATTEMPTS {
+            match ClientOptions::new().open(&path) {
+                Ok(client) => return Ok(Conversation::over(client)),
+                Err(e)
+                    if attempt + 1 < ATTEMPTS
+                        && e.raw_os_error()
+                            == Some(windows_sys::Win32::Foundation::ERROR_PIPE_BUSY as i32) =>
+                {
+                    tokio::time::sleep(BETWEEN_TRIES).await;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!("la boucle rend la main à la dernière tentative")
     }
 }
 
