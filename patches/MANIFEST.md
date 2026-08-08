@@ -19,12 +19,12 @@ Les deux moteurs sont épinglés sur des versions publiées. Le choix de `v6.1.0
 
 ## Pile de patchs
 
-Les deux moteurs portent notre marque, et le moteur client se lance sans montrer de fenêtre à lui. Tout le reste du pilotage passe par leurs interfaces officielles (fichier de configuration, ligne de commande, API REST locale).
+Les deux moteurs portent notre marque, le moteur client n'ouvre aucune fenêtre à lui et ne joint rien hors du tunnel. Tout le reste du pilotage passe par leurs interfaces officielles (fichier de configuration, ligne de commande, API REST locale).
 
 | Moteur | Patchs appliqués | Plafond |
 |---|---|---|
 | Sunshine | 1 | 2 |
-| Moonlight | 3 | 6 |
+| Moonlight | 4 | 6 |
 
 Dépasser un plafond est un signal d'architecture : chercher le mécanisme officiel manquant ou proposer l'interrupteur en amont, jamais empiler.
 
@@ -34,7 +34,8 @@ Dépasser un plafond est un signal d'architecture : chercher le mécanisme offic
 |---|---|---|---|---|
 | P-M1 | Moonlight | Suppression des fenêtres du moteur en lancement ligne de commande (session et appairage), erreurs vers la sortie d'erreur | M4 | **Appliqué** (`7ecea76` puis complété, branche `zyr/v6.1.0`), avec P-M5. Les deux commandes que nous utilisons suivent désormais le chemin sans interface graphique que le moteur utilisait déjà pour lister les applications : ce que les fenêtres affichaient part sur la sortie d'erreur, en UTF-8 pour que les accents survivent au journal. Les vues sont supprimées plutôt que laissées inatteignables |
 | P-M5 | Moonlight | Codes de sortie distincts (fin normale, session en échec, machine injoignable, appairage refusé) | M1 | **Appliqué** (`7ecea76` puis complété, branche `zyr/v6.1.0`), avec P-M1. Le moteur sortait avec un code de succès même après un échec, l'erreur ne vivant que dans une fenêtre. Il rend maintenant 2 quand la session a échoué, 3 quand la machine n'a pas répondu et 4 quand l'appairage a été refusé, ce que notre superviseur lit pour décider |
-| P-M2 | Moonlight | Rebranding : titre de fenêtre, icônes, noms d'organisation et de produit, métadonnées de l'exécutable | M4 | **Appliqué** (`e8f6d0c`, branche `zyr/v6.1.0`). Ne touche que des noms et des images, aucun comportement. Le changement des noms d'organisation et d'application déplace aussi l'endroit où le moteur range ses réglages, ce qui est sans effet ici puisqu'il tourne en mode portable. Aucun candidat à une contribution en amont : c'est notre marque |
+| P-M2 | Moonlight | Rebranding : titre de fenêtre, icônes, noms d'organisation et de produit, métadonnées de l'exécutable, nom affiché par le mélangeur de volume | M4 | **Appliqué** (`e8f6d0c` puis complété, branche `zyr/v6.1.0`). Ne touche que des noms et des images, aucun comportement. Le changement des noms d'organisation et d'application déplace aussi l'endroit où le moteur range ses réglages, ce qui est sans effet ici puisqu'il tourne en mode portable. Aucun candidat à une contribution en amont : c'est notre marque |
+| P-M6 | Moonlight | Le moteur ne s'annonce plus et ne joint plus rien hors du tunnel | M4 | **Appliqué** (`067328a`, branche `zyr/v6.1.0`). Découvert en cherchant les traces visibles : la présence Discord, active par défaut, annonçait chaque session aux contacts de l'utilisateur sous l'identité du projet d'origine ; les données de compatibilité et les correspondances de manettes étaient téléchargées sur son site à chaque session. Retiré aussi la boîte de dialogue qu'une erreur de ligne de commande ouvrait, qui aurait attendu un clic que personne n'est là pour donner. Que du retrait, aucun comportement produit ajouté |
 | P-M3 | Moonlight | Ligne de statistiques lisible par machine | M2 | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Moonlight | Interrupteur pour ne pas demander le chiffrement vidéo interne | M1 | Contingence : seulement si la vérification M1 montre un double chiffrement sur loopback |
 | P-S2 | Sunshine | Rebranding : nom de produit porté par l'exécutable Windows | M4 | **Appliqué** (`67b053b`, branche `zyr/v2026.516.143833`). Huit lignes dans un fichier de compilation, et aucune ne nomme ZyrDesk : le moteur expose déjà son icône et son éditeur en option de compilation, le patch ajoute la troisième de la même série. Notre nom est passé par notre script de compilation. Candidat à une contribution en amont tel quel |

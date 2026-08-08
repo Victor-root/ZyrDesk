@@ -152,6 +152,28 @@ Un code à quatre chiffres s'affiche et la commande attend. **Sans fermer cette 
 >
 > Ce chemin avait été oublié au premier passage : il montrait la fenêtre d'appairage du projet d'origine, code compris.
 
+### Ce que le moteur raconte au reste du monde
+
+Trouvé en cherchant les traces visibles : le moteur se présentait ailleurs que sur l'écran. Ces trois vérifications se font **pendant une session en cours**, sur le PC client.
+
+> **M4-R6c (le son est au nom du produit)**
+>
+> Clic droit sur l'icône de volume de Windows, **Mélangeur de volume**.
+>
+> Attendu : le programme qui joue le son de la session s'appelle ZyrDesk.
+
+> **M4-R6d (rien n'est annoncé à personne)**
+>
+> Si Discord est installé et lancé sur le PC client, regarder son propre profil.
+>
+> Attendu : **aucune activité** affichée. Avant ce correctif, une session apparaissait à tes contacts comme une partie du projet d'origine, avec son nom et son icône. C'était actif par défaut.
+
+> **M4-R6e (le moteur ne sort pas du tunnel)**
+>
+> Plus difficile à voir à l'oeil : le moteur téléchargeait deux fichiers sur le site du projet d'origine à chaque session. Le contrôle indirect est que la session démarre normalement **sans connexion Internet**, les deux PC restant sur le réseau local.
+>
+> Noter : la session démarre-t-elle aussi vite sans Internet ? ....................................
+
 ### Les messages ne doivent pas avoir disparu avec la fenêtre
 
 C'est le risque de ce changement : une fenêtre en moins peut vouloir dire une erreur qu'on ne voit plus. Les messages partent maintenant dans la fenêtre de commande et dans `data\logs\session.log`.

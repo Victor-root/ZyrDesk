@@ -71,9 +71,10 @@ Pile de patchs prévue (le manifeste `patches/MANIFEST.md` fait foi) :
 
 | Id | Patch | Taille attendue | Statut |
 |---|---|---|---|
-| P-M1 | Suppression de la fenêtre de chargement en lancement ligne de commande, erreurs vers la sortie d'erreur | ~100 lignes | Appliqué |
-| P-M2 | Rebranding : titre de la fenêtre vidéo, icônes, noms d'organisation/produit, métadonnées de l'exécutable (~8 emplacements identifiés, mécaniques) | mécanique | Appliqué |
-| P-M5 | Codes de sortie distincts (fin normale / session en échec / machine injoignable) câblés dans la fin de session | inclus dans P-M1 | Appliqué |
+| P-M1 | Suppression des fenêtres du moteur en lancement ligne de commande (session et appairage), erreurs vers la sortie d'erreur | ~140 lignes | Appliqué |
+| P-M2 | Rebranding : titre de la fenêtre vidéo, icônes, noms d'organisation/produit, métadonnées de l'exécutable, nom affiché par le mélangeur de volume | mécanique | Appliqué |
+| P-M5 | Codes de sortie distincts (fin normale / session en échec / machine injoignable / appairage refusé) câblés dans les fins de commande | inclus dans P-M1 | Appliqué |
+| P-M6 | Le moteur ne s'annonce plus (présence Discord) et ne joint plus le site du projet d'origine (compatibilité, correspondances de manettes) | ~15 lignes, que du retrait | Appliqué |
 | P-M3 | Ligne de statistiques périodique lisible par machine sur stdout | ~60 lignes | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Interrupteur pour ne pas demander le chiffrement vidéo interne (Moonlight le demande par défaut sur CPU avec accélération AES) | ~10 lignes | Contingence : seulement si la vérification M1 montre que Sunshine chiffre quand même en mode 0 sur loopback (double chiffrement inutile) |
 
