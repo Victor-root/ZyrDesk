@@ -188,7 +188,9 @@ impl Driving {
             .build()
             .map_err(|e| e.to_string())?;
 
-        let mut service = runtime.block_on(Service::join()).map_err(|e| e.to_string())?;
+        let mut service = runtime
+            .block_on(Service::join())
+            .map_err(|e| e.to_string())?;
         // The window the transport keeps open follows the session that
         // was actually asked for, not a nominal one.
         let request = Request::Reach {

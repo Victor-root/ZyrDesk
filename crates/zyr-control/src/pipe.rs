@@ -155,26 +155,30 @@ mod mechanism {
     }
 
     /// The channel, open and waiting.
+    ///
+    /// One instance always stands ready to be connected to. Windows
+    /// refuses a program that finds none, rather than making it wait:
+    /// the replacement is therefore made and put in place before the
+    /// one being connected to is ever awaited, so the door is never
+    /// caught, even for an instant, with nothing listening on it.
     pub struct Door {
         channel: String,
-        next: NamedPipeServer,
+        waiting: NamedPipeServer,
     }
 
     impl Door {
         pub fn open(channel: &str) -> io::Result<Self> {
             Ok(Self {
                 channel: channel.to_string(),
-                next: instance(channel, true)?,
+                waiting: instance(channel, true)?,
             })
         }
 
         pub async fn accept(&mut self) -> io::Result<Heard> {
-            self.next.connect().await?;
-            // The instance that just took someone in is handed over, and
-            // another put in its place: a pipe with no free instance
-            // refuses the next program instead of making it wait.
-            let taken = std::mem::replace(&mut self.next, instance(&self.channel, false)?);
-            Ok(Conversation::over(taken))
+            let spare = instance(&self.channel, false)?;
+            let connecting = std::mem::replace(&mut self.waiting, spare);
+            connecting.connect().await?;
+            Ok(Conversation::over(connecting))
         }
     }
 
@@ -244,6 +248,8 @@ pub async fn call(channel: &str) -> io::Result<Spoken> {
 mod tests {
     use super::*;
 
+    use tokio::task::JoinSet;
+
     /// Each test gets its own channel: they run at the same time, and a
     /// shared name would make them fight over it.
     fn a_channel_of_its_own(what: &str) -> String {
@@ -290,6 +296,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn programs_arriving_at_the_same_instant_are_all_taken_in() {
+        // Sequential calls do not exercise the door's weak point: the
+        // instant between one instance being connected to and the next
+        // being made ready. Only calls fired together, with nothing
+        // ordering them, land in that gap if it exists.
+        const CALLERS: usize = 12;
+        let channel = a_channel_of_its_own("crowd");
+        let mut door = Door::open(&channel).unwrap();
+        let listening = tokio::spawn(async move {
+            for _ in 0..CALLERS {
+                let mut heard = door.accept().await.unwrap();
+                let message = heard.hear().await.unwrap().unwrap();
+                heard.say(&message).await.unwrap();
+            }
+        });
+
+        let mut callers = JoinSet::new();
+        for turn in 0..CALLERS {
+            let channel = channel.clone();
+            callers.spawn(async move {
+                let mut speaking = call(&channel).await.expect("porte occupée");
+                speaking.say(&turn.to_string()).await.unwrap();
+                assert_eq!(speaking.hear().await.unwrap(), Some(turn.to_string()));
+            });
+        }
+        while let Some(result) = callers.join_next().await {
+            result.unwrap();
+        }
+        listening.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn several_programs_are_taken_in_one_after_another() {
         let channel = a_channel_of_its_own("queue");
         let mut door = Door::open(&channel).unwrap();
@@ -304,10 +342,7 @@ mod tests {
         for turn in 0..3 {
             let mut speaking = call(&channel).await.unwrap();
             speaking.say(&format!("tour {turn}")).await.unwrap();
-            assert_eq!(
-                speaking.hear().await.unwrap(),
-                Some(format!("tour {turn}"))
-            );
+            assert_eq!(speaking.hear().await.unwrap(), Some(format!("tour {turn}")));
         }
         listening.await.unwrap();
     }

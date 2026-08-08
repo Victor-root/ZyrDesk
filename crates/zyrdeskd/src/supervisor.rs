@@ -255,8 +255,8 @@ fn desk(
     hosting: Hosting,
     log: &Log,
 ) -> Result<Desk, String> {
-    let identity =
-        zyr_transport::Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
+    let identity = zyr_transport::Identity::load_or_create(&paths::identity_dir())
+        .map_err(|e| e.to_string())?;
     Desk::open(
         runtime,
         zyr_control::CHANNEL,

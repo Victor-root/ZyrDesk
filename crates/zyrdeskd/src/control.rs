@@ -195,9 +195,7 @@ mod tests {
             ));
             let log = Log::open(&folder.join("service.log")).unwrap();
             let channel = format!("zyrdeskd-test-{}-{what}", std::process::id());
-            let fingerprint = zyr_transport::Identity::generate()
-                .unwrap()
-                .fingerprint();
+            let fingerprint = zyr_transport::Identity::generate().unwrap().fingerprint();
             let hosting = Hosting::new();
 
             let desk = Desk::open(
@@ -286,7 +284,10 @@ mod tests {
         runtime.block_on(async {
             let mut caller = bench.caller().await;
             for _ in 0..2 {
-                let answer = caller.ask(&Request::Release { way: WayId(7) }).await.unwrap();
+                let answer = caller
+                    .ask(&Request::Release { way: WayId(7) })
+                    .await
+                    .unwrap();
                 assert!(matches!(answer, Answer::Done), "reçu {answer}");
             }
         });
