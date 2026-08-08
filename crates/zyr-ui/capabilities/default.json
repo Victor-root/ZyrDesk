@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Sans ce fichier, la fenêtre n'a le droit d'appeler aucune commande du cadre applicatif : nos propres commandes passent, mais l'écoute des événements est refusée en silence. C'est par là qu'arrive tout ce que raconte une session en train de s'ouvrir.",
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

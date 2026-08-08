@@ -655,9 +655,15 @@ Trois choses expliquent ce qu'on va voir.
 
 Sur le **PC client**, mettre à jour le programme, puis ouvrir une session vers le PC hôte.
 
-> **M4-R40 (le bouton est là)**
+> **M4-R40 (le bouton est là, et pas avant)**
 >
-> Attendu : dès que l'image apparaît, le logo ZyrDesk se pose en haut à droite, sur l'image. Il ne clignote pas, ne bouge pas, et l'image continue normalement dessous.
+> Attendu : le logo ZyrDesk se pose en haut à droite **au moment où l'image apparaît**, et pas pendant l'ouverture du tunnel. Il ne clignote pas et l'image continue normalement dessous.
+
+> **M4-R40b (le bouton se déplace)**
+>
+> Attraper le logo à la souris et le faire glisser ailleurs sur l'image, puis le relâcher.
+>
+> Attendu : il suit la souris et reste où on le pose. Un clic net, sans bouger, ouvre le menu comme avant. Fermer la session et en rouvrir une : le bouton revient là où il avait été posé.
 
 > **M4-R41 (il se clique, et il ouvre)**
 >
@@ -708,5 +714,7 @@ Sur le **PC client**, mettre à jour le programme, puis ouvrir une session vers 
 **Le bouton apparaît mais un clic dessus va sur l'ordinateur distant.** Le mode souris est sur Jeu. Ctrl+Alt+Maj+M pour revenir à la souris de bureau.
 
 **Une entrée du menu affiche « la fenêtre de la session n'est pas au premier plan ».** C'est une sécurité : les raccourcis partent vers la fenêtre active, et ZyrDesk refuse de les envoyer ailleurs qu'à la session. Cliquer une fois dans l'image, puis rouvrir le menu.
+
+**Une entrée du menu ne fait rien, sans message.** Ouvrir `data\logs\interface.log` : chaque clic y laisse une ligne. « envoyé au lecteur » veut dire que la combinaison est bien partie et que c'est le moteur qui ne l'a pas prise ; « refusé » dit pourquoi elle n'est pas partie. Joindre ce fichier au signalement, c'est lui qui tranche entre les deux.
 
 **Le bouton reste après la fin de la session.** Il s'en va dans la seconde qui suit. S'il reste, à signaler : c'est que le service croit encore tenir une session.

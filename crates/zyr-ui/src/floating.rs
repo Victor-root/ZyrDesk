@@ -82,10 +82,48 @@ impl Act {
     }
 }
 
+impl std::fmt::Display for Act {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Act::Fullscreen => "plein écran",
+            Act::Stats => "statistiques",
+            Act::MouseMode => "mode de la souris",
+            Act::Stop => "arrêt de la session",
+        })
+    }
+}
+
+/// Writes down what the button did, next to everything else the product
+/// writes down.
+///
+/// The window has nowhere else to say it: during a session it is behind
+/// the picture, and a menu entry that seems to do nothing is exactly the
+/// kind of thing that cannot be diagnosed from a screenshot.
+fn note(what: &str) {
+    use std::io::Write;
+
+    let folder = zyr_proto::paths::logs_dir();
+    if std::fs::create_dir_all(&folder).is_err() {
+        return;
+    }
+    let Ok(mut log) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(folder.join("interface.log"))
+    else {
+        return;
+    };
+    let _ = writeln!(log, "{what}");
+}
+
 /// The session the button belongs to.
 #[derive(Default)]
 pub struct Floating {
     watched: Mutex<Option<Watched>>,
+    /// Where the person dragged the button last, as a distance from the
+    /// corner of the picture. Kept for as long as the program runs, so
+    /// it does not walk back to the corner at every session.
+    nudge: Mutex<(i32, i32)>,
 }
 
 struct Watched {
@@ -93,7 +131,8 @@ struct Watched {
     /// may reach.
     process: u32,
     /// Corner it hangs from, in real pixels: the top right of the
-    /// picture, brought in by a margin.
+    /// picture, brought in by a margin and by whatever dragging moved
+    /// it since.
     anchor: (i32, i32),
 }
 
@@ -113,6 +152,12 @@ pub fn watch(app: AppHandle) {
 }
 
 /// Puts the button up for that player, if it is not up already.
+///
+/// Waits for the player to have a window before showing anything. The
+/// service calls a session held from the moment the player starts, but
+/// the engine only opens its window once the far computer has answered
+/// and the stream stands: showing the button any earlier would put it
+/// over a screen that has no picture on it yet.
 fn raise(app: &AppHandle, process: u32) {
     let state = app.state::<Floating>();
     let mut watched = state.watched.lock().expect("session suivie");
@@ -120,7 +165,11 @@ fn raise(app: &AppHandle, process: u32) {
         return;
     }
 
-    let anchor = corner_of(process).unwrap_or_else(|| screen_corner(app));
+    let Some(picture) = picture_of(process) else {
+        return;
+    };
+    let nudge = *state.nudge.lock().expect("position du bouton");
+    let anchor = hung_from(picture, nudge);
     *watched = Some(Watched { process, anchor });
     drop(watched);
 
@@ -226,6 +275,68 @@ pub fn floating_hide(app: AppHandle) -> Result<(), String> {
     window.hide().map_err(|e| e.to_string())
 }
 
+/// Moves the button by what the mouse dragged it.
+///
+/// The distance from the corner of the picture is what is remembered
+/// rather than the place on screen: a session opened later on another
+/// screen, or at another size, then finds the button where it was left
+/// rather than off the edge.
+#[tauri::command]
+pub fn floating_move(app: AppHandle, dx: i32, dy: i32) -> Result<(), String> {
+    let window = app
+        .get_webview_window(WINDOW)
+        .ok_or("le bouton flottant n'est plus là")?;
+    let state = app.state::<Floating>();
+
+    let mut watched = state.watched.lock().expect("session suivie");
+    let Some(seen) = watched.as_mut() else {
+        return Ok(());
+    };
+    let picture = picture_of(seen.process).ok_or("la fenêtre de la session a disparu")?;
+
+    let wanted = (seen.anchor.0 + dx, seen.anchor.1 + dy);
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    seen.anchor = held_inside(wanted, picture, size.width as i32, size.height as i32);
+    *state.nudge.lock().expect("position du bouton") = (
+        seen.anchor.0 - (picture.2 - MARGIN),
+        seen.anchor.1 - (picture.1 + MARGIN),
+    );
+
+    let anchor = seen.anchor;
+    drop(watched);
+    window
+        .set_position(PhysicalPosition::new(
+            anchor.0 - size.width as i32,
+            anchor.1,
+        ))
+        .map_err(|e| e.to_string())
+}
+
+/// Where the button hangs: the top right of the picture, moved by
+/// whatever dragging has moved it since.
+fn hung_from(picture: (i32, i32, i32, i32), nudge: (i32, i32)) -> (i32, i32) {
+    let corner = (picture.2 - MARGIN + nudge.0, picture.1 + MARGIN + nudge.1);
+    held_inside(corner, picture, BUTTON as i32, BUTTON as i32)
+}
+
+/// Keeps the button against the picture, whatever it was asked.
+///
+/// A button dragged towards an edge, or a session opened on a smaller
+/// screen than the last, would otherwise end up somewhere nobody can
+/// click it.
+fn held_inside(
+    corner: (i32, i32),
+    picture: (i32, i32, i32, i32),
+    width: i32,
+    height: i32,
+) -> (i32, i32) {
+    let (left, top, right, bottom) = picture;
+    (
+        corner.0.clamp(left + width, right),
+        corner.1.clamp(top, (bottom - height).max(top)),
+    )
+}
+
 /// Asks the session for something, in its own language.
 #[tauri::command]
 pub fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
@@ -272,9 +383,17 @@ fn keep_out_of_the_way(window: &tauri::WebviewWindow) {
 #[cfg(not(windows))]
 fn keep_out_of_the_way(_window: &tauri::WebviewWindow) {}
 
-/// The top right corner of that player's window, in real pixels.
+/// That player's biggest window on screen, and where it sits.
+///
+/// The biggest rather than the first: the engine keeps a few small
+/// windows of its own, and the picture is never the small one.
 #[cfg(windows)]
-fn corner_of(process: u32) -> Option<(i32, i32)> {
+fn biggest_window_of(
+    process: u32,
+) -> Option<(
+    windows_sys::Win32::Foundation::HWND,
+    windows_sys::Win32::Foundation::RECT,
+)> {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible,
@@ -283,7 +402,8 @@ fn corner_of(process: u32) -> Option<(i32, i32)> {
 
     struct Looking {
         process: u32,
-        found: Option<RECT>,
+        widest: i64,
+        found: Option<(HWND, RECT)>,
     }
 
     unsafe extern "system" fn consider(window: HWND, carried: LPARAM) -> BOOL {
@@ -307,41 +427,44 @@ fn corner_of(process: u32) -> Option<(i32, i32)> {
             bottom: 0,
         };
         // SAFETY: same window, and the rectangle is ours.
-        if unsafe { GetWindowRect(window, &mut rect) } != 0 && rect.right > rect.left {
-            looking.found = Some(rect);
-            return 0;
+        if unsafe { GetWindowRect(window, &mut rect) } != 0 {
+            let area = i64::from(rect.right - rect.left) * i64::from(rect.bottom - rect.top);
+            if area > looking.widest {
+                looking.widest = area;
+                looking.found = Some((window, rect));
+            }
         }
         TRUE
     }
 
     let mut looking = Looking {
         process,
+        widest: 0,
         found: None,
     };
     // SAFETY: the callback above is what reads the pointer, and the
     // enumeration is over before this function returns.
     unsafe { EnumWindows(Some(consider), &mut looking as *mut Looking as LPARAM) };
-    looking
-        .found
-        .map(|rect| (rect.right - MARGIN, rect.top + MARGIN))
+    looking.found
+}
+
+#[cfg(windows)]
+fn main_window_of(process: u32) -> Option<windows_sys::Win32::Foundation::HWND> {
+    biggest_window_of(process).map(|(window, _)| window)
+}
+
+/// Where that player's picture is, as left, top, right and bottom in
+/// real pixels.
+#[cfg(windows)]
+fn picture_of(process: u32) -> Option<(i32, i32, i32, i32)> {
+    biggest_window_of(process)
+        .map(|(_, rect)| (rect.left, rect.top, rect.right, rect.bottom))
+        .filter(|(left, top, right, bottom)| right > left && bottom > top)
 }
 
 #[cfg(not(windows))]
-fn corner_of(_process: u32) -> Option<(i32, i32)> {
+fn picture_of(_process: u32) -> Option<(i32, i32, i32, i32)> {
     None
-}
-
-/// Where to hang the button when the session's own window cannot be
-/// found: the corner of the screen, which is where it would have been.
-fn screen_corner(app: &AppHandle) -> (i32, i32) {
-    match app.primary_monitor() {
-        Ok(Some(monitor)) => {
-            let position = monitor.position();
-            let size = monitor.size();
-            (position.x + size.width as i32 - MARGIN, position.y + MARGIN)
-        }
-        _ => (MARGIN, MARGIN),
-    }
 }
 
 /// Types the engine's shortcut, at the session and nowhere else.
@@ -352,10 +475,19 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         VK_MENU, VK_SHIFT,
     };
 
-    // Keystrokes go to whatever window is in front. If that is not the
-    // session, they would land in someone else's lap: a quit combo in
-    // the wrong window is not a mistake worth risking.
+    // Keystrokes go to whatever window is in front. Clicking the button
+    // is not supposed to move the picture out of the way, but a webview
+    // can take the focus on its own; bringing the picture back is both
+    // the fix and what the person expects after using the menu.
     if !in_front(process) {
+        bring_forward(process);
+    }
+    // Still not there: the keys would land in someone else's lap, and a
+    // quit combo in the wrong window is not a mistake worth risking.
+    if !in_front(process) {
+        note(&format!(
+            "{act} refusé : la fenêtre au premier plan n'est pas celle du lecteur {process}"
+        ));
         return Err("la fenêtre de la session n'est pas au premier plan.\n  \
              Cliquez d'abord dans l'image."
             .to_string());
@@ -404,10 +536,34 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         )
     };
     if sent as usize == events.len() {
+        // Said out loud because nothing else can say it: if the picture
+        // does not react, this line is what tells a keystroke that never
+        // left from one the engine chose to ignore.
+        note(&format!(
+            "{act} envoyé au lecteur {process} : Ctrl+Alt+Maj+{}",
+            char::from(act.letter() as u8)
+        ));
         Ok(())
     } else {
+        note(&format!(
+            "{act} refusé par Windows pour le lecteur {process}"
+        ));
         Err("Windows a refusé la combinaison de touches".to_string())
     }
+}
+
+/// Brings that player's picture back in front.
+#[cfg(windows)]
+fn bring_forward(process: u32) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+
+    let Some(window) = main_window_of(process) else {
+        return;
+    };
+    // SAFETY: the window comes from the enumeration just above. Windows
+    // may refuse to change the foreground, which the caller checks for
+    // rather than trusts.
+    unsafe { SetForegroundWindow(window) };
 }
 
 /// Whether the window in front belongs to that process.

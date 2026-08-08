@@ -52,8 +52,10 @@
   transform: scale(1.06);
 }
 
+/* Pris en main : le curseur dit qu'il se déplace, pas qu'il se clique. */
 .logo:active {
   transform: scale(0.97);
+  cursor: grabbing;
 }
 
 .logo:focus-visible {

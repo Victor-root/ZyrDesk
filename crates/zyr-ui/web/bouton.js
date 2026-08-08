@@ -67,7 +67,50 @@ async function demande(acte) {
   }
 }
 
-vue.logo.addEventListener("click", () => ouvre(!ouvert));
+/* ---- Déplacer le bouton ------------------------------------------------ */
+
+/* Le bouton se prend et se pose où on veut sur l'image. Un clic net
+   ouvre le menu ; dès que la souris s'écarte un peu, c'est un
+   déplacement et plus un clic. Sans ce seuil, une main qui tremble
+   ouvrirait le menu à chaque fois qu'on veut bouger le bouton, ou
+   l'inverse. */
+const SEUIL = 4;
+
+let prise = null;
+let deplace = false;
+
+vue.logo.addEventListener("pointerdown", (evenement) => {
+  prise = { x: evenement.screenX, y: evenement.screenY };
+  deplace = false;
+  vue.logo.setPointerCapture(evenement.pointerId);
+});
+
+vue.logo.addEventListener("pointermove", (evenement) => {
+  if (prise === null) {
+    return;
+  }
+  const dx = evenement.screenX - prise.x;
+  const dy = evenement.screenY - prise.y;
+  if (!deplace && Math.abs(dx) < SEUIL && Math.abs(dy) < SEUIL) {
+    return;
+  }
+  if (!deplace) {
+    deplace = true;
+    // Une fenêtre qui change de taille pendant qu'on la déplace se
+    // dérobe sous la souris : le menu se referme d'abord.
+    ouvre(false);
+  }
+  prise = { x: evenement.screenX, y: evenement.screenY };
+  invoke("floating_move", { dx, dy }).catch(() => {});
+});
+
+vue.logo.addEventListener("pointerup", (evenement) => {
+  vue.logo.releasePointerCapture(evenement.pointerId);
+  if (prise !== null && !deplace) {
+    ouvre(!ouvert);
+  }
+  prise = null;
+});
 
 for (const item of document.querySelectorAll("[data-acte]")) {
   item.addEventListener("click", () => demande(item.dataset.acte));

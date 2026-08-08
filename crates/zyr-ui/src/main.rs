@@ -51,6 +51,7 @@ fn main() {
             settings::open_logs,
             floating::floating_size,
             floating::floating_hide,
+            floating::floating_move,
             floating::floating_act,
             theme::set_theme
         ])
