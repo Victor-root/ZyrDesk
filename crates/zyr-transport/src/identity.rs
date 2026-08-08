@@ -14,7 +14,9 @@
 //! server exists, it will come from the session ticket, which changes
 //! nothing about the mechanism.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::WebPkiSupportedAlgorithms;
@@ -198,24 +200,62 @@ impl Identity {
     }
 }
 
-/// Lets through only the peer whose fingerprint is known in advance.
+/// Devices whose fingerprint this machine accepts.
+///
+/// A client knows exactly one host. A host serves several computers over
+/// time, and authorising one more must not mean cutting the session
+/// already running: the set is read at each handshake rather than frozen
+/// when the endpoint opens.
+#[derive(Debug, Clone, Default)]
+pub struct AllowedPeers(Arc<Mutex<HashSet<Fingerprint>>>);
+
+impl AllowedPeers {
+    /// Replaces the whole set. What is already connected stays.
+    pub fn replace_with(&self, peers: impl IntoIterator<Item = Fingerprint>) {
+        *self.0.lock().expect("allowed peers lock") = peers.into_iter().collect();
+    }
+
+    pub fn contains(&self, peer: &Fingerprint) -> bool {
+        self.0.lock().expect("allowed peers lock").contains(peer)
+    }
+
+    /// True when no device is allowed, so nothing can connect.
+    pub fn is_empty(&self) -> bool {
+        self.0.lock().expect("allowed peers lock").is_empty()
+    }
+}
+
+impl FromIterator<Fingerprint> for AllowedPeers {
+    fn from_iter<I: IntoIterator<Item = Fingerprint>>(peers: I) -> Self {
+        Self(Arc::new(Mutex::new(peers.into_iter().collect())))
+    }
+}
+
+/// A single expected device, which is what a client always has.
+impl From<Fingerprint> for AllowedPeers {
+    fn from(peer: Fingerprint) -> Self {
+        std::iter::once(peer).collect()
+    }
+}
+
+/// Lets through only the devices whose fingerprints are known in advance.
 #[derive(Debug)]
 pub struct PinnedPeer {
-    expected: Fingerprint,
+    allowed: AllowedPeers,
     algorithms: WebPkiSupportedAlgorithms,
 }
 
 impl PinnedPeer {
-    pub fn new(expected: Fingerprint) -> Self {
+    pub fn new(allowed: impl Into<AllowedPeers>) -> Self {
         Self {
-            expected,
+            allowed: allowed.into(),
             algorithms: rustls::crypto::ring::default_provider().signature_verification_algorithms,
         }
     }
 
     fn check_fingerprint(&self, presented: &CertificateDer<'_>) -> Result<(), rustls::Error> {
         let obtained = Fingerprint::of_certificate(presented);
-        if obtained == self.expected {
+        if self.allowed.contains(&obtained) {
             Ok(())
         } else {
             Err(rustls::Error::General(format!(

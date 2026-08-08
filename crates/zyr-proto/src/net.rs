@@ -9,6 +9,13 @@ use std::net::Ipv4Addr;
 pub const ENGINE_BASE_PORT_MIN: u16 = 42000;
 pub const ENGINE_BASE_PORT_MAX: u16 = 42999;
 
+/// The one port a computer opens to be reachable.
+///
+/// Everything a session needs travels through it: the engines' seven
+/// ports are multiplexed inside a single encrypted connection. That is
+/// what makes one firewall rule enough.
+pub const TUNNEL_PORT: u16 = 47000;
+
 /// Ports of one host engine instance, derived from the base port by the
 /// fixed offsets of the GameStream protocol that Sunshine implements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

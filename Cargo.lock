@@ -1936,8 +1936,11 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "time",
+ "tokio",
  "windows-service",
  "windows-sys 0.61.2",
  "zyr-engine-host",
  "zyr-proto",
+ "zyr-transport",
+ "zyr-tunnel",
 ]

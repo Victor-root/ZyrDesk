@@ -105,6 +105,11 @@ pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
 }
 
+/// Fingerprints of the devices allowed to reach this computer.
+pub fn authorized_devices() -> PathBuf {
+    data_dir().join("authorized-devices.conf")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +127,7 @@ mod tests {
             host_state_dir(),
             device_state_dir("desk-pc"),
             logs_dir(),
+            authorized_devices(),
         ] {
             assert!(
                 path.starts_with(&root),

@@ -17,7 +17,7 @@ zyrdesk-session (Moonlight)                                zyrdesk-host-engine (
 Pourquoi c'est le bon choix :
 
 - Un seul chemin de code à tester et à optimiser (pas de matrice direct-LAN / direct-WAN / relais).
-- Un seul port UDP à ouvrir ou mapper côté hôte ; les moteurs n'ont besoin d'aucune règle pare-feu.
+- Un seul port UDP à ouvrir ou mapper côté hôte, le 47000 ; les moteurs n'ont besoin d'aucune règle pare-feu.
 - Chiffrement et authentification uniformes, portés par le tunnel (clés d'appareil), quel que soit le chemin.
 - La migration de chemin (relais vers direct) devient possible sans que les moteurs s'en aperçoivent.
 - Coût mesuré sur deux vraies machines, et non plus estimé : en Ethernet gigabit, à 40 Mb/s sur deux minutes, le tunnel complet ajoute 0,54 ms d'aller-retour médian et 0,81 ms au centile 99, pour un seuil admis à 1 et 3 ms, et coûte 7,5 points d'un coeur pour un seuil à huit ([perf/baselines/M2-lan-ethernet.md](../perf/baselines/M2-lan-ethernet.md)). L'estimation initiale de 0,1 à 0,5 ms était optimiste d'un facteur deux. La décision du tunnel systématique est donc confirmée par la mesure.
@@ -30,7 +30,8 @@ Le protocole GameStream garde ses hypothèses intactes à travers le tunnel : se
 
 Une session = une connexion QUIC entre les deux services :
 
-- Flux fiables : les trois flux TCP du protocole des moteurs (HTTP, HTTPS, RTSP), un flux par connexion interceptée, plus un canal propre à ZyrDesk (versions, code d'appairage, presse-papiers, statistiques, sonde de débit) qui sera rempli aux jalons suivants. Le canal est annoncé par un octet en tête du flux.
+- Flux fiables : les trois flux TCP du protocole des moteurs (HTTP, HTTPS, RTSP), un flux par connexion interceptée, plus un canal propre à ZyrDesk. Le canal est annoncé par un octet en tête du flux.
+- Le canal ZyrDesk porte depuis le jalon M3 la première parole du tunnel : l'hôte y annonce le port de base de son moteur. Ce n'est pas une convention qu'on pourrait deviner, le moteur choisissant ce port au démarrage et annonçant ensuite ses vrais numéros à chaque étape de son protocole ; les ports locaux qui le remplacent côté client doivent donc porter exactement les mêmes. Cet échange sert aussi de preuve d'autorisation, pour la raison d'asymétrie décrite plus bas. Le reste (versions, presse-papiers, statistiques, sonde de débit) s'y ajoutera aux jalons suivants, un numéro de version ouvrant la salutation.
 - Datagrammes non fiables : vidéo, contrôle temps réel et audio, préfixés du même octet d'identifiant de canal. `[canal u8][données]`.
 - L'interface web du moteur hôte n'est délibérément pas transportée : elle reste joignable depuis la seule machine qui l'héberge. Un test le vérifie.
 
@@ -42,7 +43,7 @@ Ce qui est en place et mesuré :
 
 Asymétrie du protocole à connaître : le client présente son certificat en dernier et l'hôte ne le juge qu'ensuite. Un client refusé voit donc sa connexion réussir, puis se rompre aussitôt. L'interface ne doit jamais annoncer une session établie avant le premier échange réussi.
 
-Le choix de bibliothèque, et la date à laquelle il est réexaminé, sont consignés en D13 dans [DECISIONS.md](DECISIONS.md). Un seul fichier du produit nomme la bibliothèque de transport : `crates/zyr-transport/src/point.rs`. Tout le reste ne connaît que la connexion et les deux types de flux qu'il expose.
+Le choix de bibliothèque, et la date à laquelle il est réexaminé, sont consignés en D13 dans [DECISIONS.md](DECISIONS.md). Un seul fichier du produit nomme la bibliothèque de transport : `crates/zyr-transport/src/endpoint.rs`. Tout le reste ne connaît que la connexion et les deux types de flux qu'il expose.
 
 ## 3. Le point dur : neutraliser le contrôle de congestion pour le média
 

@@ -9,7 +9,10 @@ repository.workspace = true
 [dependencies]
 zyr-proto.workspace = true
 zyr-engine-host.workspace = true
+zyr-transport.workspace = true
+zyr-tunnel.workspace = true
 clap.workspace = true
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time"] }
 time = { version = "0.3.55", default-features = false, features = ["std", "formatting", "macros"] }
 
 [target.'cfg(windows)'.dependencies]

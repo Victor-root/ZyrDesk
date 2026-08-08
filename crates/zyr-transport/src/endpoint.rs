@@ -13,7 +13,7 @@ use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{ClientConfig, Endpoint, ServerConfig, TransportConfig};
 
 use crate::congestion::MediaProfile;
-use crate::identity::{Fingerprint, Identity, PinnedPeer};
+use crate::identity::{AllowedPeers, Fingerprint, Identity, PinnedPeer};
 use crate::path::{DegradedPath, Path};
 
 /// Payload carried around, without a copy when it changes hands.
@@ -150,11 +150,11 @@ impl TunnelEndpoint {
     /// The end that waits for the other device to connect.
     pub fn host(
         identity: &Identity,
-        peer: Fingerprint,
+        allowed: impl Into<AllowedPeers>,
         profile: MediaProfile,
         listen: SocketAddr,
     ) -> Result<Self, EndpointError> {
-        Self::host_on_path(identity, peer, profile, listen, Path::Direct)
+        Self::host_on_path(identity, allowed, profile, listen, Path::Direct)
     }
 
     /// The same, on a path whose quality is imposed.
@@ -163,7 +163,7 @@ impl TunnelEndpoint {
     /// control is tested without a degraded network at hand.
     pub fn host_on_path(
         identity: &Identity,
-        peer: Fingerprint,
+        allowed: impl Into<AllowedPeers>,
         profile: MediaProfile,
         listen: SocketAddr,
         path: Path,
@@ -171,7 +171,7 @@ impl TunnelEndpoint {
         let mut tls = rustls::ServerConfig::builder_with_provider(provider())
             .with_protocol_versions(&[&rustls::version::TLS13])
             .map_err(|e| EndpointError::Configuration(e.to_string()))?
-            .with_client_cert_verifier(Arc::new(PinnedPeer::new(peer)))
+            .with_client_cert_verifier(Arc::new(PinnedPeer::new(allowed)))
             .with_single_cert(vec![identity.certificate().clone()], identity.key())
             .map_err(|e| EndpointError::Configuration(e.to_string()))?;
         tls.alpn_protocols = vec![PROTOCOL.to_vec()];

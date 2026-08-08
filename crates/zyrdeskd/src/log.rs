@@ -20,7 +20,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use time::OffsetDateTime;
 use time::format_description::BorrowedFormatItem;
@@ -30,9 +30,12 @@ const TIMESTAMP: &[BorrowedFormatItem<'static>] =
     format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
 
 /// Log opened in append mode, shared by the whole service.
-#[derive(Debug)]
+///
+/// Copies share the one open file: the tunnel's tasks write to the same
+/// place as the supervisor, and their lines interleave in order.
+#[derive(Debug, Clone)]
 pub struct Log {
-    file: Mutex<File>,
+    file: Arc<Mutex<File>>,
 }
 
 impl Log {
@@ -43,7 +46,7 @@ impl Log {
         }
         let file = OpenOptions::new().create(true).append(true).open(path)?;
         Ok(Self {
-            file: Mutex::new(file),
+            file: Arc::new(Mutex::new(file)),
         })
     }
 

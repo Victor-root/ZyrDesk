@@ -16,6 +16,7 @@ use zyr_proto::net::EnginePorts;
 use zyr_transport::{Connection, RecvStream, SendStream};
 
 use crate::channel::{DatagramChannel, StreamChannel};
+use crate::greeting;
 use crate::pump::{self, Counters, DatagramPorts, Reading};
 
 /// One side of the tunnel, pumps running.
@@ -153,9 +154,11 @@ async fn hand_to_the_engine(
     ports: EnginePorts,
 ) -> io::Result<()> {
     let channel = pump::read_announcement(&mut receiving).await?;
-    let port = channel
-        .port(ports)
-        .ok_or_else(|| io::Error::other(format!("channel {channel:?} targets no engine")))?;
+    let Some(port) = channel.port(ports) else {
+        // ZyrDesk's own channel goes to no engine: it is the tunnel
+        // talking to the tunnel, and this is where it answers.
+        return greeting::answer(sending, ports).await;
+    };
 
     let local = TcpStream::connect(SocketAddr::new(engine, port)).await?;
     local.set_nodelay(true)?;

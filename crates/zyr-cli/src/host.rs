@@ -1,8 +1,13 @@
 //! Makes this computer reachable from elsewhere.
 //!
-//! In the foreground and without a service: this is the smallest form
-//! that allows real performance to be measured. Starting with Windows
-//! and access before anyone logs in belong to the service.
+//! Two things live here. Authorising the computers allowed to reach this
+//! one, by fingerprint, which is what the service consults.
+//!
+//! And starting the engine in the foreground, without a service and
+//! without a tunnel: the diagnostic path, which tells a tunnel problem
+//! from an engine problem in minutes. The engine is then open to the
+//! local network, which the tunnel is precisely there to avoid, so it is
+//! never how a session is opened for real.
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -11,6 +16,7 @@ use clap::Subcommand;
 use zyr_engine_host::api::EngineApi;
 use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Listening, SunshineConfig, ports};
 use zyr_proto::paths;
+use zyr_transport::{Fingerprint, authorized};
 
 use crate::failure;
 
@@ -31,12 +37,79 @@ pub enum Action {
         #[arg(long, default_value = "Ordinateur ZyrDesk")]
         name: String,
     },
+    /// Allows a computer to reach this one
+    Authorize {
+        /// Fingerprint shown by "zyr-cli identity" on the other computer
+        fingerprint: Fingerprint,
+    },
+    /// Takes that permission back
+    Revoke {
+        /// Fingerprint of the computer that loses access
+        fingerprint: Fingerprint,
+    },
+    /// Lists the computers allowed to reach this one
+    Devices,
 }
 
 pub fn run(action: Action) -> ExitCode {
     match action {
         Action::Start => start(),
         Action::Pin { code, name } => pin(&code, &name),
+        Action::Authorize { fingerprint } => authorize(fingerprint),
+        Action::Revoke { fingerprint } => revoke(fingerprint),
+        Action::Devices => devices(),
+    }
+}
+
+fn authorize(device: Fingerprint) -> ExitCode {
+    let list = paths::authorized_devices();
+    match authorized::add(&list, device) {
+        Ok(true) => {
+            println!("Ordinateur autorisé : {device}");
+            println!("  Il peut maintenant se connecter à celui-ci.");
+            ExitCode::SUCCESS
+        }
+        Ok(false) => {
+            println!("Cet ordinateur était déjà autorisé.");
+            ExitCode::SUCCESS
+        }
+        Err(e) => failure("autorisation de l'ordinateur", e),
+    }
+}
+
+fn revoke(device: Fingerprint) -> ExitCode {
+    let list = paths::authorized_devices();
+    match authorized::remove(&list, device) {
+        Ok(true) => {
+            println!("Autorisation retirée.");
+            ExitCode::SUCCESS
+        }
+        Ok(false) => {
+            println!("Cet ordinateur n'était pas autorisé.");
+            ExitCode::SUCCESS
+        }
+        Err(e) => failure("retrait de l'autorisation", e),
+    }
+}
+
+fn devices() -> ExitCode {
+    let list = paths::authorized_devices();
+    match authorized::read(&list) {
+        Ok(devices) if devices.is_empty() => {
+            println!("Aucun ordinateur n'est autorisé à joindre celui-ci.\n");
+            println!("  Sur l'autre ordinateur, lancez « zyr-cli identity » et recopiez");
+            println!("  son empreinte ici : zyr-cli host authorize <empreinte>");
+            ExitCode::SUCCESS
+        }
+        Ok(devices) => {
+            println!("Ordinateurs autorisés à joindre celui-ci :\n");
+            for device in devices {
+                println!("  {device}");
+            }
+            println!("\n  Liste : {}", list.display());
+            ExitCode::SUCCESS
+        }
+        Err(e) => failure("lecture des ordinateurs autorisés", e),
     }
 }
 
@@ -104,12 +177,20 @@ fn start() -> ExitCode {
         return failure("enregistrement de l'état du moteur", e);
     }
 
-    println!("\nAccès distant actif.");
-    println!("  Cet ordinateur est joignable sur le réseau local.");
-    println!("  Si un autre ordinateur n'arrive pas à se connecter, autorisez le");
-    println!("  moteur dans le pare-feu Windows (voir docs/testing/M1-PROTOCOLE.md).");
+    println!("\nMoteur hôte actif, sans tunnel. Mode diagnostic.");
+    println!(
+        "  Le moteur écoute sur le réseau local, port {}.",
+        ports.http()
+    );
+    println!("  Depuis l'autre ordinateur, en indiquant bien ce port :");
+    println!(
+        "\n      zyr-cli connect <adresse de cet ordinateur>:{} --direct\n",
+        ports.http()
+    );
+    println!("  Si rien ne passe, autorisez le moteur dans le pare-feu Windows.");
     println!("  Pour autoriser un ordinateur qui se connecte pour la première fois,");
     println!("  lancez ici : zyr-cli host pin <code affiché sur l'autre ordinateur>");
+    println!("\n  L'accès normal passe par le service : zyrdeskd install, puis start.");
     println!("\nCtrl+C pour arrêter.\n");
 
     let exit_code = watch(&mut engine);

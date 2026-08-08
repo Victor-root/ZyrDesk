@@ -12,6 +12,10 @@
 //! out or switches user. The supervisor watches it and starts the engine
 //! over in the new one, because an engine left in a dead session shows
 //! nothing at all.
+//!
+//! The engine is not reachable from the network: the tunnel the service
+//! holds is the only way in, and it hands everything to the engine over
+//! loopback. The engine's life and the tunnel's are tied together here.
 
 // Outside Windows nothing calls this module: the service does not exist
 // there. It stays compiled and tested everywhere, the logic having
@@ -25,11 +29,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use zyr_engine_host::api::EngineApi;
-use zyr_engine_host::{
-    Credentials, EngineRuntime, HostEngine, Launcher, Listening, SunshineConfig, ports,
-};
+use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Launcher, SunshineConfig, ports};
 use zyr_proto::paths;
 
+use crate::gateway::Gateway;
 use crate::log::Log;
 use crate::restart::{Next, Policy};
 
@@ -123,6 +126,17 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         return End::NothingToStart;
     }
 
+    // One runtime for the whole life of the service: the tunnel is
+    // rebuilt with each engine, but rebuilding the threads underneath it
+    // every time would be waste.
+    let runtime = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            log.write(&format!("no runtime to carry the tunnel: {e}"));
+            return End::NothingToStart;
+        }
+    };
+
     let mut policy = Policy::new();
     let runtime_path = EngineRuntime::standard_path();
     let mut screenless = false;
@@ -148,7 +162,8 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         screenless = false;
 
         let start = Instant::now();
-        let life = match one_engine_life(&exe, &runtime_path, session, order, log) {
+        let life = match one_engine_life(&exe, &runtime_path, session, runtime.handle(), order, log)
+        {
             Ok(life) => life,
             Err(reason) => {
                 log.write(&reason);
@@ -212,6 +227,7 @@ fn one_engine_life(
     exe: &std::path::Path,
     runtime_path: &std::path::Path,
     session: u32,
+    runtime: &tokio::runtime::Handle,
     order: &StopOrder,
     log: &Log,
 ) -> Result<Life, String> {
@@ -219,11 +235,10 @@ fn one_engine_life(
         return Err("no port available in the range reserved for the engines".to_string());
     };
 
-    // The service does not carry a tunnel end yet, so the engine stays
-    // reachable from the local network. It moves to strict loopback once
-    // the service holds the tunnel.
-    let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir())
-        .with_listening(Listening::Network);
+    // The engine binds to the local machine only: the tunnel below is
+    // the sole way to it, and nothing on the network can knock on its
+    // seven ports.
+    let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
     let credentials = Credentials::random();
     let mut engine = HostEngine::new(
         exe,
@@ -248,14 +263,27 @@ fn one_engine_life(
         return Err(format!("the engine never finished starting: {e}"));
     }
 
-    let runtime = EngineRuntime { ports, credentials };
-    if let Err(e) = runtime.write(runtime_path) {
+    let state = EngineRuntime { ports, credentials };
+    if let Err(e) = state.write(runtime_path) {
         let _ = engine.stop();
         return Err(format!("engine state not recorded: {e}"));
     }
+
+    // Opened last: an engine that never answered has nothing to serve,
+    // and dropped first at the end, since a tunnel leading to a stopped
+    // engine only makes the other computer wait.
+    let gateway = match Gateway::open(runtime, ports, log) {
+        Ok(gateway) => gateway,
+        Err(e) => {
+            let _ = engine.stop();
+            let _ = EngineRuntime::remove(runtime_path);
+            return Err(format!("the tunnel could not be opened: {e}"));
+        }
+    };
     log.write("remote access active");
 
     let life = wait_for_the_engine_to_stop(&mut engine, session, order, log);
+    drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
     Ok(life)
 }

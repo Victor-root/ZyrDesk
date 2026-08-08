@@ -12,6 +12,8 @@ Principe directeur : le serveur met en relation, il ne peut pas espionner. Les c
   Limite assumée à ce stade : la clé privée est écrite en clair sous le dossier du projet, sur une machine que son propriétaire administre. Le service du jalon M3 la mettra sous la protection du système, hors de portée des autres comptes locaux (voir §4).
 
   D'où vient l'empreinte attendue : sur un réseau local, elle est recopiée à la main entre les deux machines (`zyr-cli identity`). Le ticket de session la fournira une fois le broker en place, ce qui ne change rien au mécanisme de vérification.
+
+  Côté hôte, depuis le jalon M3, les empreintes admises sont une liste et non une seule : un ordinateur en sert plusieurs au fil du temps. Elle vit dans `data/authorized-devices.conf`, se gère par `zyr-cli host authorize`, `revoke` et `devices`, et le service la relit toutes les cinq secondes. Autoriser une machine de plus ne coupe donc pas la session en cours, et une liste devenue illisible ne révoque personne : elle est signalée dans le journal, l'ensemble précédent restant en vigueur. Une empreinte mal recopiée est refusée avec son numéro de ligne plutôt qu'ignorée en silence, faute de quoi une autorisation absente passerait longtemps pour une panne réseau. Ce fichier ne contient aucun secret : une empreinte est publique et n'ouvre rien à elle seule.
 - Identités internes moteurs : le certificat client RSA de Moonlight et le certificat de Sunshine existent toujours (protocole d'appairage officiel conservé), mais ils vivent en loopback derrière le tunnel et sont gérés automatiquement ; ils constituent une couche interne supplémentaire, pas la frontière de sécurité principale.
 
 ## 2. Tickets de session
@@ -23,7 +25,7 @@ Principe directeur : le serveur met en relation, il ne peut pas espionner. Les c
 
 Résultat : le chiffrement (TLS 1.3 de QUIC) est négocié directement entre les deux appareils. Le broker sait QUI parle à QUI et QUAND (métadonnées de mise en relation), jamais le contenu. Le relais transporte des paquets qu'il ne peut pas déchiffrer.
 
-Asymétrie du protocole, à ne pas confondre avec une faille : le client présente son certificat en dernier, et l'hôte ne le juge qu'ensuite. Un appareil refusé voit donc sa connexion réussir avant d'être rompue aussitôt. Rien n'y circule, mais l'interface ne doit jamais annoncer une session établie avant le premier échange réussi. Un test le vérifie dans les deux sens : l'hôte refuse l'inconnu, et l'inconnu perd sa connexion.
+Asymétrie du protocole, à ne pas confondre avec une faille : le client présente son certificat en dernier, et l'hôte ne le juge qu'ensuite. Un appareil refusé voit donc sa connexion réussir avant d'être rompue aussitôt. Rien n'y circule, mais l'interface ne doit jamais annoncer une session établie avant le premier échange réussi. Un test le vérifie dans les deux sens : l'hôte refuse l'inconnu, et l'inconnu perd sa connexion. En pratique, ce premier échange est la salutation du canal ZyrDesk, que le client attend avant de lancer quoi que ce soit : un ordinateur non autorisé s'en va avec un message qui le dit, et non sur un délai d'attente inexpliqué.
 
 ## 3. Chiffrement des flux
 

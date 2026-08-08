@@ -23,7 +23,7 @@ Mes ordinateurs
 
 ## État du projet
 
-Jalon en cours : **M3, le service Windows**. L'ordinateur hôte devient joignable sans que personne n'ait ouvert de session dessus : le service démarre avec Windows, lance le moteur dans la session attachée à l'écran, et l'y relance quand cette session change. Il reste à le vérifier sur deux vraies machines, en suivant [docs/testing/M3-PROTOCOLE.md](docs/testing/M3-PROTOCOLE.md), et à lui confier les extrémités du tunnel.
+Jalon en cours : **M3, le service Windows**. L'ordinateur hôte devient joignable sans que personne n'ait ouvert de session dessus : le service démarre avec Windows, lance le moteur dans la session attachée à l'écran, et l'y relance quand cette session change. Il porte aussi le tunnel, si bien qu'un seul port est ouvert sur la machine et que les moteurs ne sont plus joignables depuis le réseau. Il reste à le vérifier sur deux vraies machines, en suivant [docs/testing/M3-PROTOCOLE.md](docs/testing/M3-PROTOCOLE.md).
 
 Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. Le jalon M1 a produit une première session distante réelle en 1080p ; ses hypothèses restantes sont listées dans [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md). Le jalon M2 a livré le tunnel chiffré et son banc de mesure : les trois seuils de performance sont tenus sur deux PC en Ethernet gigabit ([perf/baselines/M2-lan-ethernet.md](perf/baselines/M2-lan-ethernet.md)). La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -32,15 +32,18 @@ Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intég
 Tant que l'interface n'existe pas (jalon M4), tout passe par `zyr-cli` :
 
 ```bash
-zyr-cli doctor           # cette machine est-elle prête
-zyr-cli engines status   # où déposer les moteurs, lesquels manquent
-zyr-cli identity         # empreinte de cette machine
-zyr-cli host start       # rendre cet ordinateur accessible
-zyr-cli host pin 1234    # autoriser un ordinateur qui se connecte
-zyr-cli connect <adresse> --stats   # ouvrir une session
+zyr-cli doctor            # cette machine est-elle prête
+zyr-cli engines status    # où déposer les moteurs, lesquels manquent
+zyr-cli identity          # empreinte de cette machine
+zyr-cli host authorize <empreinte>   # laisser un ordinateur joindre celui-ci
+zyr-cli host devices                 # qui est autorisé
+zyr-cli host pin 1234                # autoriser un ordinateur qui se connecte
+zyr-cli connect <adresse> --pair <empreinte> --stats   # ouvrir une session
 zyr-cli bench host --pair <empreinte>              # mesurer le tunnel, côté attente
 zyr-cli bench client <adresse> --pair <empreinte>  # mesurer le tunnel, côté mesure
 ```
+
+Deux autorisations à ne pas confondre. `host authorize` inscrit l'empreinte d'un ordinateur, ce qui lui ouvre le tunnel ; `host pin` répond au code à quatre chiffres que le moteur réclame ensuite, une seule fois par paire d'ordinateurs.
 
 Pour rendre l'ordinateur accessible en permanence, sans avoir à ouvrir de session dessus, le service prend le relais de `host start`. Les commandes ci-dessous demandent une fenêtre administrateur :
 
@@ -50,6 +53,8 @@ zyrdeskd start       # le lancer tout de suite
 zyrdeskd status      # savoir où il en est
 zyrdeskd uninstall   # le retirer
 ```
+
+Le service ouvre un seul port, le 47000 en UDP. L'installateur pose la règle de pare-feu qui va avec ; en compilant depuis les sources, elle se fait à la main.
 
 ## Construire
 

@@ -1,8 +1,8 @@
 # Jalon M3 : accès distant sans personne devant la machine
 
-Ce document se déroule sur les deux mêmes PC Windows qu'aux jalons M1 et M2. Il vérifie une seule chose, mais c'est celle qui sépare un bricolage d'un vrai produit : **le PC hôte est joignable sans que personne n'ait ouvert de session dessus**, et il le reste quand la session change.
+Ce document se déroule sur les deux mêmes PC Windows qu'aux jalons M1 et M2. Il vérifie ce qui sépare un bricolage d'un vrai produit : **le PC hôte est joignable sans que personne n'ait ouvert de session dessus**, il le reste quand la session change, et **un seul port est ouvert sur la machine**.
 
-Jusqu'ici, il fallait ouvrir une session Windows, lancer une fenêtre de commandes en administrateur et laisser `zyr-cli host start` tourner. Autrement dit : il fallait déjà être devant le PC qu'on voulait contrôler à distance. Le service supprime ça.
+Jusqu'ici il fallait ouvrir une session Windows, lancer une fenêtre de commandes en administrateur et laisser `zyr-cli host start` tourner : autrement dit, il fallait déjà être devant le PC qu'on voulait contrôler à distance. Le service supprime ça.
 
 Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis lequel on se connecte.
 
@@ -10,11 +10,13 @@ Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis
 
 ## 1. Ce qui change, et pourquoi c'est délicat
 
-Windows range chaque utilisateur connecté dans une **session** numérotée. Un service, lui, tourne dans une session à part, la session 0, qui n'a ni écran ni bureau. Un moteur de capture démarré là ne verrait rigoureusement rien.
+**La session.** Windows range chaque utilisateur connecté dans une session numérotée. Un service, lui, tourne dans une session à part, la session 0, qui n'a ni écran ni bureau. Un moteur de capture démarré là ne verrait rigoureusement rien.
 
-Le service ZyrDesk démarre donc le moteur **dans la session attachée à l'écran physique**, celle où s'affiche l'écran de connexion Windows. Il le fait avec son propre jeton d'accès, celui du compte système, simplement déplacé vers cette session. C'est ce détail qui permet de voir l'écran de connexion et les invites de sécurité, qu'un jeton d'utilisateur ordinaire n'a pas le droit de capturer.
+Le service ZyrDesk démarre donc le moteur **dans la session attachée à l'écran physique**, celle où s'affiche l'écran de connexion Windows. Il le fait avec son propre jeton d'accès, celui du compte système, simplement déplacé vers cette session. C'est ce détail qui permet de voir l'écran de connexion et les invites de sécurité, qu'un jeton d'utilisateur ordinaire n'a pas le droit de capturer. Cette session change dès que quelqu'un se connecte, se déconnecte ou change d'utilisateur : le service la surveille et relance le moteur dans la nouvelle.
 
-Cette session change dès que quelqu'un se connecte, se déconnecte ou change d'utilisateur. Le service la surveille et relance le moteur dans la nouvelle : un moteur laissé dans une session morte n'affiche plus rien.
+**Le tunnel.** Le moteur n'écoute plus sur le réseau : il est refermé sur la machine locale, injoignable de l'extérieur. Tout passe par le tunnel chiffré que porte le service, qui multiplexe les sept ports du moteur dans une seule connexion. D'où un seul port ouvert dans le pare-feu, le **47000 en UDP**.
+
+**Deux autorisations, à ne pas confondre.** Le tunnel n'accepte que les ordinateurs dont l'empreinte est inscrite sur l'hôte (`zyr-cli host authorize`). Une fois à l'intérieur, le moteur demande en plus son code à quatre chiffres, une seule fois par paire d'ordinateurs. La première est celle de ZyrDesk, la seconde celle du moteur.
 
 ---
 
@@ -27,18 +29,31 @@ cargo build --release
 zyr-cli engines status
 ```
 
-Sur le **PC hôte**, la règle de pare-feu du jalon M1 doit toujours exister. Sinon, dans une fenêtre **administrateur** :
+Sur **chaque PC**, afficher son empreinte et la noter :
 
-```powershell
-New-NetFirewallRule -DisplayName "ZyrDesk (moteur hote)" -Direction Inbound `
-  -Program "$PWD\data\engines\host\zyrdesk-host-engine.exe" -Action Allow
+```
+zyr-cli identity
 ```
 
-Personne ne pose encore cette règle automatiquement : elle changera de forme quand le service portera le tunnel, et ne visera plus le moteur mais `zyrdeskd`, sur un seul port.
+Elle fait 64 caractères, ne change plus une fois créée, et c'est elle que l'autre ordinateur épingle. Le plus simple est de se les envoyer par message.
 
-**Appairer les deux PC maintenant**, pendant qu'une session est ouverte sur l'hôte. Le PC client ne pourra plus faire appairer depuis l'écran de connexion, puisque plus personne ne sera là pour taper le code. Suivre la section 2 de [M1-PROTOCOLE.md](M1-PROTOCOLE.md), puis fermer la session distante.
+Sur le **PC hôte**, autoriser le PC client, puis vérifier :
 
-Enfin, **arrêter tout `zyr-cli host start`** qui traînerait : deux moteurs à la fois se marchent dessus, et le second écrase le fichier qui dit au reste du produit où joindre le premier.
+```
+zyr-cli host authorize <empreinte du PC client>
+zyr-cli host devices
+```
+
+> Attention au sens : sur l'hôte on inscrit l'empreinte du **client**, et sur le client on indiquera celle de l'**hôte**.
+
+Toujours sur le **PC hôte**, ouvrir le port du tunnel dans une fenêtre **administrateur**, une seule fois :
+
+```powershell
+New-NetFirewallRule -DisplayName "ZyrDesk (tunnel)" -Direction Inbound `
+  -Protocol UDP -LocalPort 47000 -Action Allow
+```
+
+L'installateur du produit pose cette règle lui-même ; en compilant depuis les sources, elle se fait à la main. C'est la seule : les moteurs n'écoutent plus sur le réseau.
 
 ---
 
@@ -54,23 +69,64 @@ zyrdeskd status
 
 Attendu : « Service installé. Il démarrera avec Windows. », puis « Service démarré. », puis « En marche ».
 
-Le service écrit tout ce qu'il fait dans `data\logs\service.log`. Ouvrir ce fichier :
+Le service écrit tout ce qu'il fait dans `data\logs\service.log` :
 
 ```
 notepad data\logs\service.log
 ```
 
-> **M3-R1 (le service tient son moteur)**
+> **M3-R1 (le service tient son moteur et ouvre le tunnel)**
 >
-> Recopier les lignes du journal. Attendu, dans l'ordre : `service started`, puis `engine started in session N, process P, on base port ...`, puis `remote access active`.
+> Recopier les lignes du journal. Attendu, dans l'ordre : `service started`, puis `engine started in session N, process P, on base port ...`, puis `tunnel open on port 47000, fingerprint of this computer ...`, puis `remote access active`.
 >
 > Le numéro de session compte : ce ne doit **pas** être 0. Zéro voudrait dire que le moteur est resté dans la session du service, celle sans écran.
 
-Vérifier aussi que le moteur est bien là où on l'attend, dans le gestionnaire des tâches, onglet « Détails » (clic droit sur les en-têtes de colonnes pour ajouter « ID de session ») : `zyrdesk-host-engine.exe` doit porter le numéro de processus du journal et le même numéro de session.
+Vérifier aussi dans le gestionnaire des tâches, onglet « Détails » (clic droit sur les en-têtes de colonnes pour ajouter « ID de session ») : `zyrdesk-host-engine.exe` doit porter le numéro de processus du journal et le même numéro de session.
 
 ---
 
-## 4. Le vrai test : se connecter avant toute ouverture de session
+## 4. Première session, et appairage du moteur
+
+L'appairage du moteur demande quelqu'un devant l'hôte pour taper le code : il se fait donc **maintenant**, avant le test à froid. Une fois fait, il ne se refait plus.
+
+Sur le **PC client** :
+
+```
+zyr-cli connect <adresse IP du PC hote> --pair <empreinte du PC hote> --stats
+```
+
+La commande affiche « Tunnel établi », puis un code à quatre chiffres et la commande exacte à lancer sur l'hôte. Sur le **PC hôte**, dans une autre fenêtre :
+
+```
+zyr-cli host pin <le-code-affiche>
+```
+
+> **M3-R2 (session à travers le tunnel)**
+>
+> Attendu : le bureau du PC hôte s'affiche sur le PC client, comme au jalon M1, mais cette fois par le tunnel.
+>
+> Noter : le tunnel s'établit-il ? La ligne « Taille de paquet réduite par le chemin » apparaît-elle, et avec quelle valeur ? La session est-elle aussi fluide qu'au jalon M1 ?
+
+---
+
+## 5. Le moteur est-il vraiment injoignable ?
+
+C'est la vérification qui donne son sens au tunnel. Sur le **PC client**, session fermée, dans PowerShell :
+
+```powershell
+Test-NetConnection <adresse IP du PC hote> -Port 42000
+Test-NetConnection <adresse IP du PC hote> -Port 47000 -InformationLevel Quiet
+```
+
+> **M3-R3 (une seule porte)**
+>
+> Attendu : le premier test **échoue** (`TcpTestSucceeded : False`), le moteur n'écoutant plus que sur la machine hôte elle-même. Le second ne prouve rien en UDP et sert seulement de contrôle.
+>
+> Si le port 42000 répond, c'est qu'un `zyr-cli host start` traîne quelque part : il ouvre le moteur au réseau, c'est son rôle de mode diagnostic. L'arrêter et refaire le test.
+
+---
+
+## 6. Le vrai test : se connecter avant toute ouverture de session
 
 Sur le **PC hôte** :
 
@@ -80,10 +136,10 @@ Sur le **PC hôte** :
 Sur le **PC client**, une fois l'hôte redémarré, laisser une minute au service puis :
 
 ```
-zyr-cli connect <adresse-du-pc-hote> --stats
+zyr-cli connect <adresse IP du PC hote> --pair <empreinte du PC hote> --stats
 ```
 
-> **M3-R2 (accès avant ouverture de session)**
+> **M3-R4 (accès avant ouverture de session)**
 >
 > Attendu : **l'écran de connexion Windows du PC hôte s'affiche sur le PC client**, et le clavier et la souris y répondent. Taper le mot de passe à distance doit ouvrir la session, et le bureau doit apparaître ensuite.
 >
@@ -91,7 +147,7 @@ zyr-cli connect <adresse-du-pc-hote> --stats
 >
 > C'est le critère principal du jalon. Sans lui, rien d'autre ici ne compte.
 
-L'ouverture de session change la session attachée à l'écran : le service arrête le moteur et le relance dans la nouvelle. Le PC client perd donc l'image quelques secondes, le temps que le moteur redémarre. Relire le journal après coup :
+L'ouverture de session change la session attachée à l'écran : le service arrête le moteur et le relance dans la nouvelle. Le PC client perd donc l'image quelques secondes. Relire le journal après coup :
 
 ```
 notepad data\logs\service.log
@@ -101,11 +157,11 @@ Attendu : une ligne `the screen left session N, the engine starts over in the ne
 
 ---
 
-## 5. Invite de sécurité (UAC)
+## 7. Invite de sécurité (UAC)
 
 Session ouverte, toujours depuis le PC client, lancer sur l'hôte quelque chose qui déclenche une demande d'élévation : par exemple un clic droit sur l'invite de commandes, « Exécuter en tant qu'administrateur ».
 
-> **M3-R3 (bureau sécurisé)**
+> **M3-R5 (bureau sécurisé)**
 >
 > Attendu : l'invite bleue s'affiche sur le PC client, et le bouton « Oui » est cliquable à distance.
 >
@@ -115,14 +171,14 @@ Session ouverte, toujours depuis le PC client, lancer sur l'hôte quelque chose 
 
 ---
 
-## 6. Verrouillage, déverrouillage, changement d'utilisateur
+## 8. Verrouillage, déverrouillage, changement d'utilisateur
 
 Toujours connecté depuis le PC client, sur l'hôte :
 
 1. Verrouiller la session (Windows + L), attendre dix secondes, déverrouiller.
 2. Si le PC hôte a un second compte : changer d'utilisateur, ouvrir l'autre session, puis revenir.
 
-> **M3-R4 (transitions de session)**
+> **M3-R6 (transitions de session)**
 >
 > Pour chacune des deux manipulations : l'image revient-elle toute seule ? Au bout de combien de secondes ? Faut-il relancer quoi que ce soit à la main ?
 >
@@ -130,11 +186,11 @@ Toujours connecté depuis le PC client, sur l'hôte :
 
 ---
 
-## 7. Le service se relève
+## 9. Le service se relève
 
 Toujours sur l'hôte, dans le gestionnaire des tâches, **terminer de force** le processus `zyrdesk-host-engine.exe`.
 
-> **M3-R5 (relance après incident)**
+> **M3-R7 (relance après incident)**
 >
 > Attendu : le service le relance tout seul, et le journal l'écrit (`engine stopped (code ...) after N s, restarting in 0 s`).
 >
@@ -144,7 +200,7 @@ Toujours sur l'hôte, dans le gestionnaire des tâches, **terminer de force** le
 
 ---
 
-## 8. Arrêt et désinstallation propres
+## 10. Arrêt et désinstallation propres
 
 Sur le **PC hôte**, en administrateur :
 
@@ -154,7 +210,7 @@ zyrdeskd status
 zyrdeskd uninstall
 ```
 
-> **M3-R6 (retrait sans résidu)**
+> **M3-R8 (retrait sans résidu)**
 >
 > Attendu : « Service arrêté. », puis « Arrêté », puis « Service retiré. »
 >
@@ -164,25 +220,34 @@ zyrdeskd uninstall
 
 ---
 
-## 9. Ce que ce jalon ne fait pas encore
+## 11. Ce que ce jalon ne fait pas encore
 
-- **Le tunnel ne passe pas encore par le service.** Le moteur écoute donc toujours sur le réseau local, comme aux jalons précédents, et la règle de pare-feu reste nécessaire. Quand le service portera les extrémités de tunnel, le moteur se refermera sur la machine locale et une seule règle suffira, pour `zyrdeskd`.
-- **L'appairage demande encore quelqu'un devant l'hôte.** Le code à quatre chiffres se tape à la main : c'est le serveur de mise en relation, au jalon M5, qui rendra ça automatique.
+- **Les empreintes s'échangent à la main.** C'est le serveur de mise en relation, au jalon M5, qui les fournira automatiquement ; le mécanisme de vérification, lui, ne changera pas.
+- **L'appairage du moteur demande quelqu'un devant l'hôte**, une fois par paire d'ordinateurs, pour la même raison.
+- **Une seule session sortante à la fois** sur le PC client : les ports locaux qui remplacent ceux de l'hôte sont pris par la première.
 - **L'arrêt du moteur est brutal.** Le service le termine au lieu de lui demander poliment de s'en aller. Sans réglage d'affichage à restaurer, ça ne coûte rien aujourd'hui ; ça changera avec l'écran virtuel.
 - **Aucune interface.** Tout passe par la ligne de commande jusqu'au jalon M4.
 
 ---
 
-## 10. Si quelque chose ne va pas
+## 12. Si quelque chose ne va pas
 
 **`zyrdeskd install` refuse.** La fenêtre n'est pas administrateur. Le service s'inscrit auprès de Windows, ce qu'un utilisateur ordinaire n'a pas le droit de faire.
 
 **`zyrdeskd install` dit que le service existe déjà.** L'installateur du produit l'enregistre aussi : un ZyrDesk installé et un ZyrDesk compilé se disputent le même nom de service. Retirer celui qui ne sert pas (`zyrdeskd uninstall` depuis son propre dossier) avant d'inscrire l'autre.
+
+**« a refusé cet ordinateur, ou son empreinte a changé ».** L'hôte n'a pas inscrit l'empreinte du client, ou les deux empreintes ont été inversées. Vérifier avec `zyr-cli host devices` sur l'hôte : la liste doit contenir ce qu'affiche `zyr-cli identity` sur le client.
+
+**« ne répond pas sur le port 47000 ».** Le service n'est pas démarré (`zyrdeskd status`), la règle de pare-feu manque, ou l'adresse IP est mauvaise (`ipconfig` sur l'hôte).
+
+**Le journal dit `no device authorised yet`.** Aucune empreinte n'est inscrite. Le service relit la liste toutes les cinq secondes : après un `zyr-cli host authorize`, il n'y a rien à redémarrer.
 
 **Le journal dit `host engine not found`.** Le service cherche les moteurs au même endroit que `zyr-cli`, à savoir le dossier `data` du projet. Il tourne sous le compte système : si le projet est sur une clé USB, un disque réseau ou dans un dossier d'utilisateur protégé, ce compte peut ne pas y accéder. Déplacer le projet sur un disque local ordinaire.
 
 **Le journal dit `no session on screen, waiting for one`.** Aucune session n'est attachée à l'écran, ce qui arrive brièvement entre deux ouvertures. Si le message se répète sans fin, c'est que la machine n'a pas d'écran de connexion actif : vérifier qu'il ne s'agit pas d'une session Bureau à distance Windows, qui déplace l'écran ailleurs.
 
 **L'image est noire alors que la connexion tient.** Relire le numéro de session du journal et le comparer à celui du gestionnaire des tâches. S'ils diffèrent, le moteur a été lancé dans la mauvaise session.
+
+**« les ports locaux n'ont pas pu être ouverts ».** Une autre session ZyrDesk est déjà ouverte sur le PC client. La fermer d'abord.
 
 **`zyr-cli host pin` dit qu'aucun accès distant n'est actif.** Le fichier `data\host-runtime.conf` est écrit par le service, sous le compte système, et relu par la commande sous le compte utilisateur. Vérifier qu'il existe et qu'il est lisible.

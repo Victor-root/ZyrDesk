@@ -18,7 +18,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
 use zyr_transport::{Identity, MediaProfile, TunnelEndpoint};
-use zyr_tunnel::Tunnel;
+use zyr_tunnel::{Tunnel, greeting};
 
 /// Past this, nothing is getting through.
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -78,7 +78,13 @@ impl Bench {
         let host = Tunnel::host(host_side.unwrap(), ENGINE, ports)
             .await
             .unwrap();
-        let client = Tunnel::client(client_connection.unwrap(), client_side, ports)
+
+        // The real sequence, not a shortcut: the client learns the
+        // host's engine ports before opening the local ones that stand
+        // in for them. Nothing here is allowed to know them in advance.
+        let client_connection = client_connection.unwrap();
+        let greeting = greeting::ask(&client_connection).await.unwrap();
+        let client = Tunnel::client(client_connection, client_side, greeting.engine)
             .await
             .unwrap();
 
@@ -87,7 +93,7 @@ impl Bench {
             _host: host,
             client,
             client_side,
-            ports,
+            ports: greeting.engine,
         }
     }
 
@@ -126,6 +132,16 @@ async fn udp_engine(port: u16) {
             let _ = socket.send_to(answer.as_bytes(), source).await;
         }
     });
+}
+
+#[tokio::test]
+async fn the_client_learns_the_host_engine_ports_from_the_host() {
+    // The base port is picked by the host when its engine starts. A
+    // client that guessed it would open its stand-in ports on the wrong
+    // numbers, and the session would go nowhere with nothing to explain
+    // it.
+    let bench = Bench::bring_up(42700, 5).await;
+    assert_eq!(bench.ports.base(), 42700);
 }
 
 #[tokio::test]

@@ -54,6 +54,11 @@ VIAddVersionKey "LegalCopyright" "GPLv3"
 ; désinstallation n'a qu'un endroit à nettoyer.
 !define DOSSIER_DONNEES "$INSTDIR\data"
 
+; Le seul port ouvert sur la machine. Doit rester égal à TUNNEL_PORT
+; dans crates/zyr-proto/src/net.rs : NSIS ne sait pas lire le code Rust.
+!define PORT_TUNNEL "47000"
+!define REGLE_PARE_FEU "ZyrDesk (tunnel)"
+
 Section "ZyrDesk" SEC_PRINCIPAL
   SectionIn RO
   SetOutPath "$INSTDIR"
@@ -63,8 +68,23 @@ Section "ZyrDesk" SEC_PRINCIPAL
   File "..\..\LICENSE"
 
   ; M4 : ZyrDesk.exe (interface) et moteurs rebrandés.
-  ; La règle de pare-feu viendra quand le service portera le tunnel :
-  ; elle vise alors zyrdeskd et un seul port UDP, pas les moteurs.
+
+  ; Une seule règle, pour un seul programme et un seul port : tout ce
+  ; qu'une session transporte passe par le tunnel, et les moteurs ne
+  ; sont joignables que depuis la machine elle-même.
+  DetailPrint "Ouverture du port ${PORT_TUNNEL} pour ZyrDesk..."
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${REGLE_PARE_FEU}"'
+  Pop $0
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${REGLE_PARE_FEU}" \
+    dir=in action=allow protocol=UDP localport=${PORT_TUNNEL} \
+    program="$INSTDIR\zyrdeskd.exe" description="Accès distant ZyrDesk"'
+  Pop $0
+  ${If} $0 <> 0
+    MessageBox MB_OK|MB_ICONEXCLAMATION \
+      "La règle de pare-feu n'a pas pu être créée (code $0).$\n$\n\
+       Les autres ordinateurs ne pourront pas joindre celui-ci tant que \
+       le port UDP ${PORT_TUNNEL} restera fermé."
+  ${EndIf}
 
   ; Le service s'enregistre lui-même : l'installateur n'a pas à
   ; connaître son nom interne ni son compte.
@@ -102,6 +122,10 @@ Section "Uninstall"
   ; arrêté et retiré avant qu'on touche à quoi que ce soit.
   DetailPrint "Retrait du service ZyrDesk..."
   ExecWait '"$INSTDIR\zyrdeskd.exe" uninstall'
+
+  DetailPrint "Fermeture du port ${PORT_TUNNEL}..."
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${REGLE_PARE_FEU}"'
+  Pop $0
 
   ; Les données ne sont supprimées que si l'utilisateur le demande.
   ; En mode silencieux, elles sont conservées.
