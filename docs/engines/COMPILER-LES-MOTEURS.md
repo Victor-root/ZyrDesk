@@ -80,6 +80,16 @@ Qt se retrouve dans `C:\Qt\6.7.3\msvc2019_64`. Compter quelques minutes et envir
 
 La forme `py -m` n'est pas une coquetterie : elle évite de dépendre de l'endroit où Python range ses commandes, qui n'est pas toujours connu de Windows.
 
+**4. Autoriser les scripts, une seule fois.**
+
+Windows refuse d'exécuter le moindre script PowerShell tant qu'on ne l'a pas autorisé. Dans une fenêtre PowerShell, sans droits administrateur :
+
+```
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+Ce réglage n'autorise que les scripts présents sur la machine, comme celui du projet. Ceux téléchargés depuis Internet restent bloqués s'ils ne sont pas signés, ce qui est la protection qui compte.
+
 ### Compiler
 
 Ouvrir **Developer PowerShell for VS 2022** depuis le menu Démarrer (pas PowerShell normal : c'est ce raccourci qui met le compilateur à disposition), puis :
@@ -163,6 +173,12 @@ Un script qui se termine sur « Moteur ... assemblé dans ... » a donc produit 
 ## En cas de problème
 
 **« pip n'est pas reconnu ».** Python n'est pas installé, ou pas connu de Windows : voir l'étape Python. Une fois installé, utiliser `py -m pip` plutôt que `pip` tout court.
+
+**« l'exécution de scripts est désactivée sur ce système ».** L'autorisation des scripts n'a pas été donnée : voir l'étape 4. Pour ne rien changer au réglage de la machine, on peut aussi lancer la compilation ainsi, à retaper à chaque fois :
+
+```
+powershell -ExecutionPolicy Bypass -File .\packaging\engines\build-client-engine.ps1
+```
 
 **« qmake n'est pas reconnu ».** La ligne `$env:PATH` n'a pas été passée, ou Qt n'est pas là où elle le dit. Vérifier que `C:\Qt\6.7.3\msvc2019_64\bin\qmake.exe` existe.
 
