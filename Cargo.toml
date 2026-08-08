@@ -7,6 +7,7 @@ members = [
     "crates/zyr-transport",
     "crates/zyr-tunnel",
     "crates/zyr-control",
+    "crates/zyr-session",
     "crates/zyr-cli",
     "crates/zyrdeskd",
 ]
@@ -24,6 +25,7 @@ zyr-engine-client = { path = "crates/zyr-engine-client" }
 zyr-transport = { path = "crates/zyr-transport" }
 zyr-tunnel = { path = "crates/zyr-tunnel" }
 zyr-control = { path = "crates/zyr-control" }
+zyr-session = { path = "crates/zyr-session" }
 clap = { version = "4", features = ["derive"] }
 
 [profile.release]

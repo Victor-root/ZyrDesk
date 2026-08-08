@@ -1879,6 +1879,7 @@ dependencies = [
  "zyr-engine-client",
  "zyr-engine-host",
  "zyr-proto",
+ "zyr-session",
  "zyr-transport",
  "zyr-tunnel",
 ]
@@ -1915,6 +1916,17 @@ name = "zyr-proto"
 version = "0.1.0"
 dependencies = [
  "rand",
+]
+
+[[package]]
+name = "zyr-session"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "zyr-control",
+ "zyr-engine-client",
+ "zyr-proto",
+ "zyr-transport",
 ]
 
 [[package]]

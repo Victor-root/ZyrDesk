@@ -1,0 +1,14 @@
+[package]
+name = "zyr-session"
+description = "Ouverture d'une session distante, de la demande de voie au lecteur lancé"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true
+zyr-engine-client.workspace = true
+zyr-transport.workspace = true
+zyr-control.workspace = true
+tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
