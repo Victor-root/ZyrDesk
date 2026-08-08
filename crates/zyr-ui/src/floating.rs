@@ -275,10 +275,11 @@ fn keep_out_of_the_way(_window: &tauri::WebviewWindow) {}
 /// The top right corner of that player's window, in real pixels.
 #[cfg(windows)]
 fn corner_of(process: u32) -> Option<(i32, i32)> {
-    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible,
     };
+    use windows_sys::core::BOOL;
 
     struct Looking {
         process: u32,

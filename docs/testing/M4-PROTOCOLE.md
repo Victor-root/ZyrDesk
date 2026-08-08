@@ -4,13 +4,21 @@ Ce document se remplit au fur et à mesure du jalon. Chaque partie se teste dès
 
 Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis lequel on se connecte.
 
-**Deux choses séparées à tenir à jour, sur les deux PC.** Les moteurs (téléchargés en artefact et décompressés dans `data\engines\...`) sont une chose. Le programme ZyrDesk lui-même (`zyr-cli`, `zyrdeskd`) en est une autre, et se met à jour par :
+**Deux choses séparées à tenir à jour, sur les deux PC.** Les moteurs (téléchargés en artefact et décompressés dans `data\engines\...`) sont une chose. Le programme ZyrDesk lui-même (`zyr-cli`, `zyrdeskd`, et depuis la partie 4 l'application `ZyrDesk.exe`) en est une autre, et se met à jour par :
 
 ```
-git pull && cargo build --release && zyrdeskd stop && zyrdeskd install && zyrdeskd start && zyrdeskd status
+zyrdeskd stop
 ```
 
-Remplacer un moteur sans refaire cette commande laisse tourner l'ancien `zyr-cli`/`zyrdeskd` : les messages ne correspondront pas à ce que ce document décrit. Le faire sur les deux PC avant chaque partie évite cette confusion.
+Fermer ensuite la fenêtre ZyrDesk si elle est ouverte (et vérifier dans le gestionnaire des tâches qu'aucun `ZyrDesk.exe` ne traîne : depuis la partie 9, fermer la croix ne suffit plus toujours, voir plus bas). Puis :
+
+```
+git pull && cargo build --release && zyrdeskd install && zyrdeskd start && zyrdeskd status
+```
+
+**L'ordre compte.** Windows refuse de remplacer un fichier qu'un programme a encore ouvert : compiler avant d'arrêter le service échoue avec « Accès refusé » sur `zyrdeskd.exe`, et compiler pendant que `ZyrDesk.exe` tourne encore échoue pareil sur son propre exécutable. Toujours arrêter le service et fermer l'application avant de lancer `cargo build`.
+
+Remplacer un moteur sans refaire cette mise à jour laisse tourner l'ancien `zyr-cli`/`zyrdeskd` : les messages ne correspondront pas à ce que ce document décrit. Le faire sur les deux PC avant chaque partie évite cette confusion.
 
 ---
 
