@@ -19,11 +19,11 @@ Les deux moteurs sont épinglés sur des versions publiées. Le choix de `v6.1.0
 
 ## Pile de patchs
 
-Le moteur hôte est à l'état upstream exact. Le moteur client porte notre marque et se lance sans montrer de fenêtre à lui. Tout le reste du pilotage passe par leurs interfaces officielles (fichier de configuration, ligne de commande, API REST locale).
+Les deux moteurs portent notre marque, et le moteur client se lance sans montrer de fenêtre à lui. Tout le reste du pilotage passe par leurs interfaces officielles (fichier de configuration, ligne de commande, API REST locale).
 
 | Moteur | Patchs appliqués | Plafond |
 |---|---|---|
-| Sunshine | 0 | 2 |
+| Sunshine | 1 | 2 |
 | Moonlight | 3 | 6 |
 
 Dépasser un plafond est un signal d'architecture : chercher le mécanisme officiel manquant ou proposer l'interrupteur en amont, jamais empiler.
@@ -37,6 +37,7 @@ Dépasser un plafond est un signal d'architecture : chercher le mécanisme offic
 | P-M2 | Moonlight | Rebranding : titre de fenêtre, icônes, noms d'organisation et de produit, métadonnées de l'exécutable | M4 | **Appliqué** (`e8f6d0c`, branche `zyr/v6.1.0`). Ne touche que des noms et des images, aucun comportement. Le changement des noms d'organisation et d'application déplace aussi l'endroit où le moteur range ses réglages, ce qui est sans effet ici puisqu'il tourne en mode portable. Aucun candidat à une contribution en amont : c'est notre marque |
 | P-M3 | Moonlight | Ligne de statistiques lisible par machine | M2 | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Moonlight | Interrupteur pour ne pas demander le chiffrement vidéo interne | M1 | Contingence : seulement si la vérification M1 montre un double chiffrement sur loopback |
+| P-S2 | Sunshine | Rebranding : nom de produit porté par l'exécutable Windows | M4 | **Appliqué** (`67b053b`, branche `zyr/v2026.516.143833`). Huit lignes dans un fichier de compilation, et aucune ne nomme ZyrDesk : le moteur expose déjà son icône et son éditeur en option de compilation, le patch ajoute la troisième de la même série. Notre nom est passé par notre script de compilation. Candidat à une contribution en amont tel quel |
 | P-S1 | Sunshine | Désactivation de l'annonce mDNS | M1 | Contingence : seulement si le moteur s'annonce sur le réseau malgré la liaison loopback |
 
 ## Contraintes des moteurs relevées sur machine réelle

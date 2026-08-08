@@ -21,11 +21,11 @@ Alternatives rejetées :
 
 - Sunshine : version plancher `v2026.516.143833`. C'est la première version corrigeant une faille critique de validation de certificats clients (score CVSS 9.8) : on ne construit jamais sur une version antérieure.
 - Moonlight : dernière release stable `v6.1.0`. Elle porte déjà l'AV1 et le YUV 4:4:4, les deux fonctions dont dépendent nos objectifs de qualité. Le choix de cette version contre la branche principale est motivé en D14.
-- Accélérateur assumé pour démarrer : jusqu'au jalon M4, les binaires officiels préconstruits (renommés) peuvent être utilisés tels quels pour prototyper. Nos propres builds reproductibles (CI MSYS2 pour Sunshine, MSVC + Qt pour Moonlight) deviennent obligatoires à partir de M4 (rebranding + hygiène GPL).
+- Accélérateur assumé pour démarrer : jusqu'au jalon M4, les binaires officiels préconstruits (renommés) pouvaient être utilisés tels quels pour prototyper. Depuis M4, les deux moteurs sortent de nos propres compilations (MSYS2 + GCC pour Sunshine, MSVC + Qt pour Moonlight), pour le rebranding et l'hygiène GPL.
 
-## 3. Points de contact avec Sunshine (objectif : zéro patch)
+## 3. Points de contact avec Sunshine (2 micro-patchs maximum)
 
-Tout ce dont ZyrDesk a besoin existe déjà dans Sunshine officiel :
+À une ligne près, tout ce dont ZyrDesk a besoin existe déjà dans Sunshine officiel :
 
 | Besoin | Mécanisme officiel |
 |---|---|
@@ -44,6 +44,11 @@ Tout ce dont ZyrDesk a besoin existe déjà dans Sunshine officiel :
 | Appairage automatisé | `POST /api/pin` avec `{"pin": "...", "name": "..."}` sur son port web local (authentification Basic ; l'exemption CSRF pour les clients sans en-tête Origin est un comportement documenté) |
 | Surcharges ponctuelles | tout paramètre peut aussi être passé en ligne de commande `nom=valeur` |
 | Arrêt propre | signal console + respect de son code de sortie spécial « arrêt volontaire » (sinon son contrat de supervision attend un respawn) |
+| Icône et éditeur portés par l'exécutable | `SUNSHINE_ICON_PATH`, `SUNSHINE_PUBLISHER_NAME`, `SUNSHINE_PUBLISHER_WEBSITE` et `SUNSHINE_PUBLISHER_ISSUE_URL` à la configuration : Sunshine les prévoit et demande explicitement aux produits tiers de poser les leurs |
+
+Patch appliqué :
+
+- P-S2 : le nom de produit porté par l'exécutable Windows, seul champ de cette série que le moteur n'exposait pas encore.
 
 Contingences identifiées (patchs UNIQUEMENT si la vérification M1 l'exige) :
 

@@ -58,7 +58,7 @@ En fonctionnement normal, le flux média circule directement entre les deux PC. 
 |---|---|---|---|
 | `ZyrDesk.exe` | Interface (Tauri), icône de zone de notification, agent presse-papiers côté hôte | Utilisateur connecté | Session utilisateur |
 | `zyrdeskd.exe` | Service Windows : identité de l'appareil, lien broker, LES DEUX extrémités de tunnel (rôle client et rôle hôte), cycle de vie des moteurs, serveur IPC | LocalSystem | Démarre avec Windows |
-| `zyrdesk-host-engine.exe` | Sunshine (renommé, non modifié), strictement lié à 127.0.0.1 | SYSTEM, dans la session console | Tant que « Autoriser l'accès distant » est actif |
+| `zyrdesk-host-engine.exe` | Sunshine dérivé : capture, encodage, protocole, strictement lié à 127.0.0.1 | SYSTEM, dans la session console | Tant que « Autoriser l'accès distant » est actif |
 | `zyrdesk-session.exe` | Moonlight dérivé : fenêtre vidéo, décodage, entrées | Utilisateur connecté | Une session distante |
 
 Pourquoi le tunnel vit dans le service et pas dans l'interface :

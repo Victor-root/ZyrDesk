@@ -32,6 +32,7 @@ Sunshine :
 - `system_tray=disabled` : aucune icône créée.
 - Arrêt : le signal d'arrêt produit une fin propre ; le code de sortie spécial « arrêt volontaire » est bien celui attendu par notre superviseur.
 - Comportement de chiffrement en mode 0 sur loopback conforme à ce qui est documenté dans le manifeste (pas de double chiffrement surprise).
+- Le binaire produit porte bien notre nom de produit, notre icône et notre éditeur (patch P-S2 et options de configuration).
 
 Moonlight :
 - `pair --pin` aboutit sans interaction.

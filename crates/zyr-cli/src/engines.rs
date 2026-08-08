@@ -1,9 +1,8 @@
 //! Inspecting the engines dropped on the machine.
 //!
-//! The client engine is ours and comes out of our own build, already
-//! carrying the product's name. The host engine is still the upstream
-//! one, placed by hand and renamed. This command says exactly what is
-//! expected and what is missing.
+//! Both come out of our own build and already carry the product's name.
+//! This command says exactly where they are expected and which one is
+//! missing.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -38,26 +37,20 @@ fn status() -> ExitCode {
     }
 
     println!("Mise en place attendue :\n");
+    println!("  Le workflow « Moteurs » produit un artefact par moteur.");
+    println!("  Décompresser celui qui manque dans son dossier ; il porte");
+    println!("  déjà le nom du produit, rien à renommer.\n");
     if !host_ok {
-        println!("  Moteur hôte");
-        println!("    1. Récupérer la version épinglée dans patches/MANIFEST.md.");
         println!(
-            "    2. Copier son contenu dans {}",
+            "  zyrdesk-host-engine   -> {}",
             paths::host_engine_dir().display()
-        );
-        println!(
-            "    3. Renommer son exécutable en {}",
-            host.file_name().unwrap_or_default().to_string_lossy()
         );
     }
     if !client_ok {
-        println!("  Moteur client");
-        println!("    1. Récupérer le moteur produit par le workflow « Moteurs ».");
         println!(
-            "    2. Copier son contenu dans {}",
+            "  zyrdesk-client-engine -> {}",
             paths::client_engine_dir().display()
         );
-        println!("       Il porte déjà le nom du produit, rien à renommer.");
     }
     ExitCode::FAILURE
 }

@@ -62,3 +62,74 @@ jobs:
           name: zyrdesk-client-engine
           path: data/engines/client/
           if-no-files-found: error
+
+  hote:
+    name: Moteur hôte
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Seul le moteur hôte est nécessaire ici, et il tire déjà ses
+          # propres sous-modules pendant la compilation.
+          submodules: false
+
+      - name: Récupérer la source du moteur
+        shell: pwsh
+        run: git submodule update --init --depth 1 engines/sunshine
+
+      # Le moteur hôte ne se compile pas avec le compilateur de Microsoft :
+      # sa propre chaîne de compilation est GCC sous MSYS2, et c'est celle
+      # sur laquelle sa version épinglée est construite et testée en amont.
+      # La liste est la sienne, moins ce qui ne sert qu'à sa documentation
+      # et à ses installateurs, que nous ne produisons pas.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ucrt64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-boost
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-cppwinrt
+            mingw-w64-ucrt-x86_64-curl-winssl
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-MinHook
+            mingw-w64-ucrt-x86_64-miniupnpc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-onevpl
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-opus
+            mingw-w64-ucrt-x86_64-toolchain
+
+      # L'interface de configuration du moteur est construite par un outil
+      # JavaScript, que MSYS2 ne fournit pas. Le shell MSYS2 ne reprend
+      # pas le PATH de Windows, sans quoi ses propres outils se feraient
+      # masquer par leurs homonymes Windows : le chemin de Node lui est
+      # donc passé explicitement.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Relever le chemin de Node
+        shell: pwsh
+        run: |
+          $dossier = Split-Path -Parent (Get-Command node).Source
+          "NODE_DIR=$dossier" >> $env:GITHUB_ENV
+
+      # La compilation vérifie elle-même ce qu'elle produit : un moteur
+      # à qui il manque une bibliothèque ne se voit qu'au premier
+      # lancement, sur la machine de quelqu'un d'autre.
+      - name: Compiler le moteur hôte
+        run: |
+          export PATH="${PATH}:$(cygpath "${NODE_DIR}")"
+          ./packaging/engines/build-host-engine.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zyrdesk-host-engine
+          path: data/engines/host/
+          if-no-files-found: error

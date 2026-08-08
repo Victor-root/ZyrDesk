@@ -35,7 +35,7 @@ Sunshine et Moonlight sont GPLv3 : toute distribution d'une version dérivée (n
 ## 4. Marques et posture vis-à-vis d'upstream
 
 - « Sunshine », « Moonlight », « LizardByte » : ne jamais les utiliser dans le nom, le marketing ou l'interface de manière à suggérer une affiliation ou un endossement. Les citer factuellement dans les crédits et la documentation est correct et souhaitable.
-- Nos exécutables et fenêtres portent des noms ZyrDesk (pas de processus « sunshine.exe » trompeur : le binaire forké est renommé).
+- Nos exécutables et fenêtres portent des noms ZyrDesk. Le nom du fichier ne suffit pas : le gestionnaire des tâches lit le nom de produit compilé dans le binaire, et c'est ce champ que nos compilations posent.
 - Posture recommandée : crédit visible et contributions upstream quand nos patchs peuvent leur servir. Une bonne relation avec les mainteneurs des moteurs est un atout stratégique du projet.
 
 ## 5. Brevets codecs (H.264/HEVC)
