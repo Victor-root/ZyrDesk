@@ -11,6 +11,8 @@ Règle : voir `docs/engines/STRATEGY.md`. Aucune fonctionnalité ZyrDesk ne vit 
 | Sunshine | https://github.com/LizardByte/Sunshine | tag `v2026.516.143833` | `14ffa6fdaa53f7b51512be2b3d24f3939695403c` |
 | Moonlight | https://github.com/moonlight-stream/moonlight-qt | tag `v6.1.0` | `f786e94c7b2f943e24e65d7d74deb539b827fc84` |
 
+Le dépôt référence les forks ([ZyrDesk-Sunshine](https://github.com/Victor-root/ZyrDesk-Sunshine), [ZyrDesk-Moonlight](https://github.com/Victor-root/ZyrDesk-Moonlight)) et non les projets d'origine : c'est là que vit notre pile de correctifs, sur une branche `zyr/<tag>` partant du tag épinglé. Les forks ne servent qu'à ça ; la version de référence reste celle du tableau ci-dessus.
+
 Contrainte de sécurité : Sunshine ne doit jamais être épinglé sous `v2026.516.143833`, première version corrigeant un contournement critique de la validation des certificats clients (CVSS 9.8).
 
 Les deux moteurs sont épinglés sur des versions publiées. Le choix de `v6.1.0` pour Moonlight, plutôt que sa branche principale, est motivé dans [../docs/DECISIONS.md](../docs/DECISIONS.md) (D14).
