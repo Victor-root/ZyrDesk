@@ -235,11 +235,29 @@ pub fn start() -> ServiceResult<()> {
     service.start::<&str>(&[])
 }
 
-pub fn stop() -> ServiceResult<()> {
+/// Code Windows returns when asked to stop a service that is not running.
+const NOT_ACTIVE: i32 = 1062;
+
+/// What stopping actually did.
+pub enum Stopped {
+    /// It was running, and now it is not.
+    WasRunning,
+    /// It already was not: nothing to do.
+    AlreadyStopped,
+}
+
+/// Stops the service.
+///
+/// Asked of a service that already is not running, this is not a
+/// failure: that is the state being asked for, already reached.
+pub fn stop() -> ServiceResult<Stopped> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
     let service = manager.open_service(NAME, ServiceAccess::STOP)?;
-    service.stop()?;
-    Ok(())
+    match service.stop() {
+        Ok(_) => Ok(Stopped::WasRunning),
+        Err(e) if reported(&e) == Some(NOT_ACTIVE) => Ok(Stopped::AlreadyStopped),
+        Err(e) => Err(e),
+    }
 }
 
 /// State of the service, as Windows reports it.

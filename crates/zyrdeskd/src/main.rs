@@ -100,8 +100,12 @@ fn run(command: Command) -> ExitCode {
             Err(e) => failure("démarrage du service", with_causes(&e)),
         },
         Command::Stop => match service::stop() {
-            Ok(()) => {
+            Ok(service::Stopped::WasRunning) => {
                 println!("Service arrêté.");
+                ExitCode::SUCCESS
+            }
+            Ok(service::Stopped::AlreadyStopped) => {
+                println!("Service déjà arrêté.");
                 ExitCode::SUCCESS
             }
             Err(e) => failure("arrêt du service", with_causes(&e)),
