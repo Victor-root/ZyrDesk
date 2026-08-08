@@ -7,6 +7,14 @@
 use serde::Serialize;
 use zyr_control::{Answer, Request, Service};
 
+/// A ZyrDesk found on the local network.
+#[derive(Serialize)]
+pub struct Peer {
+    pub name: String,
+    pub fingerprint: String,
+    pub address: String,
+}
+
 /// What the home screen shows about this computer.
 #[derive(Serialize)]
 pub struct Standing {
@@ -42,6 +50,35 @@ pub async fn standing() -> Standing {
         Ok(standing) => standing,
         Err(reason) => Standing::without_the_service(reason),
     }
+}
+
+/// The computers seen on the local network.
+///
+/// An empty list is an answer, not a failure: a network with nobody else
+/// on it is the ordinary case on a first install. Only the service being
+/// absent is worth saying out loud, and the home card already says it.
+#[tauri::command]
+pub async fn peers() -> Vec<Peer> {
+    listed().await.unwrap_or_default()
+}
+
+async fn listed() -> Result<Vec<Peer>, String> {
+    let mut service = Service::join().await.map_err(|e| e.to_string())?;
+    let found = service
+        .ask_for_a_list(&Request::Peers)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(found
+        .into_iter()
+        .filter_map(|answer| match answer {
+            Answer::Peer(peer) => Some(Peer {
+                name: peer.name,
+                fingerprint: peer.fingerprint.to_string(),
+                address: peer.address.to_string(),
+            }),
+            _ => None,
+        })
+        .collect())
 }
 
 async fn asked() -> Result<Standing, String> {

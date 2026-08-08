@@ -144,10 +144,33 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     // with this one being reachable.
     let ways = Ways::new(log.clone());
     let hosting = Hosting::new();
+
+    // The neighbourhood is announced for as long as the service runs,
+    // not for as long as an engine does: a computer that only appeared
+    // once its owner opened a window would be no use to anyone.
+    let neighbourhood = match announce(log) {
+        Ok(neighbourhood) => Some(neighbourhood),
+        Err(e) => {
+            log.write(&format!(
+                "local network discovery unavailable, computers here will not find each other: {e}"
+            ));
+            None
+        }
+    };
+    let neighbours = neighbourhood
+        .as_ref()
+        .map(|n| n.found())
+        .unwrap_or_default();
     // Not being able to answer the interface leaves this computer
     // reachable all the same, so it is worth saying loudly and carrying
     // on rather than giving up on remote access entirely.
-    let _desk = match desk(runtime.handle(), ways.clone(), hosting.clone(), log) {
+    let _desk = match desk(
+        runtime.handle(),
+        ways.clone(),
+        hosting.clone(),
+        neighbours,
+        log,
+    ) {
         Ok(desk) => Some(desk),
         Err(e) => {
             log.write(&format!(
@@ -253,6 +276,7 @@ fn desk(
     runtime: &tokio::runtime::Handle,
     ways: Ways,
     hosting: Hosting,
+    neighbours: zyr_lan::Found,
     log: &Log,
 ) -> Result<Desk, String> {
     let identity = zyr_transport::Identity::load_or_create(&paths::identity_dir())
@@ -263,9 +287,24 @@ fn desk(
         identity.fingerprint(),
         ways,
         hosting,
+        neighbours,
         log,
     )
     .map_err(|e| e.to_string())
+}
+
+/// Says this computer is here, for the other ZyrDesk on the network.
+///
+/// Nothing depends on this working: two computers whose owners know each
+/// other's address get along without it. It only saves them the reading.
+fn announce(log: &Log) -> Result<zyr_lan::Neighbourhood, String> {
+    let identity = zyr_transport::Identity::load_or_create(&paths::identity_dir())
+        .map_err(|e| e.to_string())?;
+    let name = zyr_proto::machine::name();
+    let neighbourhood =
+        zyr_lan::Neighbourhood::open(&name, identity.fingerprint()).map_err(|e| e.to_string())?;
+    log.write(&format!("announced on the local network as {name}"));
+    Ok(neighbourhood)
 }
 
 /// Starts the engine in the given session and follows it until it stops.

@@ -348,3 +348,59 @@ Enfin, session ouverte : fermer la fenêtre ZyrDesk à la croix.
 **Rien ne se passe au clic sur Se connecter.** Même chose, F12 puis Console.
 
 **La fenêtre s'ouvre sans logo.** Sans conséquence, mais à signaler.
+
+---
+
+## Partie 5 : les ordinateurs se trouvent seuls, et le thème obéit
+
+### Ce qui change, et pourquoi
+
+Deux ajouts à la fenêtre.
+
+Les ZyrDesk allumés sur le même réseau apparaissent d'eux-mêmes, en cartes. Plus d'adresse ni d'empreinte à recopier : un clic sur une carte ouvre la session. C'est le service qui s'annonce et qui écoute, pas la fenêtre, pour qu'un ordinateur reste trouvable même quand personne n'a ouvert ZyrDesk dessus.
+
+Et le thème suit le système par défaut, tout en pouvant être forcé au clair ou au sombre. Le choix est en haut à droite.
+
+### Préparation
+
+Sur les **deux PC**, la mise à jour habituelle, puis ouvrir `ZyrDesk.exe` des deux côtés.
+
+> **M4-R17 (chacun voit l'autre)**
+>
+> Attendu : sur chaque PC, une carte portant le nom de l'autre, sa pastille verte et son adresse. Le PC lui-même n'apparaît jamais dans sa propre liste.
+>
+> Compter le temps entre l'ouverture de la deuxième fenêtre et l'apparition de la carte : ......... s
+
+> **M4-R18 (un clic suffit)**
+>
+> Cliquer la carte sur le **PC client**.
+>
+> Attendu : la session s'ouvre, sans avoir rien tapé. Si les deux ordinateurs ne se connaissent pas encore, le code d'appairage s'affiche d'abord.
+
+Puis, sur le **PC hôte**, `zyrdeskd stop`.
+
+> **M4-R19 (un ordinateur éteint finit par disparaître)**
+>
+> Attendu : la carte disparaît de la liste du PC client. Immédiatement si le service s'est arrêté proprement, sinon au bout d'une minute et demie.
+>
+> C'est le délai voulu : un ordinateur débranché ou en veille ne dit pas au revoir, et une liste qui ne se vide jamais ne vaut rien.
+
+### Le thème
+
+> **M4-R20 (le thème suit, puis obéit)**
+>
+> Dans les paramètres Windows, basculer entre le mode clair et le mode sombre pendant que la fenêtre est ouverte.
+>
+> Attendu : la fenêtre bascule avec, **sans être relancée**, barre de titre comprise.
+>
+> Cliquer ensuite **Clair** puis **Sombre** en haut à droite : la fenêtre obéit et ignore le système. Fermer et rouvrir l'application : le choix est retenu. Revenir sur **Système** rend la main à Windows.
+
+### Si quelque chose ne va pas
+
+**Les cartes n'apparaissent pas.** L'annonce sur le réseau local est bloquée. Regarder `data\logs\service.log` : la ligne « announced on the local network as ... » doit y être. Si elle manque, le message juste après en dit la raison. Le pare-feu Windows peut aussi bloquer la découverte réseau si le réseau est déclaré « public » plutôt que « privé ».
+
+**Une carte reste alors que l'ordinateur est éteint.** Attendre une minute et demie : c'est le délai avant d'oublier une machine qui ne répond plus.
+
+**Un ordinateur apparaît deux fois.** À signaler avec les deux noms affichés : c'est un défaut, une machine ne doit occuper qu'une carte.
+
+**La barre de titre reste sombre en thème clair.** À signaler.

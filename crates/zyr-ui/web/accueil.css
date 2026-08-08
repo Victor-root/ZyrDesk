@@ -99,6 +99,92 @@
   min-width: 0;
 }
 
+/* ---- Cartes d'ordinateurs -------------------------------------------- */
+
+.grille {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--pas-3);
+  align-content: start;
+}
+
+.ordinateur {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-2);
+  padding: var(--pas-4);
+  text-align: left;
+  cursor: pointer;
+  /* La carte entière est le bouton : cliquer un ordinateur, c'est s'y
+     connecter. Le détail viendra ailleurs. */
+  font: inherit;
+  color: inherit;
+  transition:
+    border-color var(--duree-courte) var(--courbe),
+    background var(--duree-courte) var(--courbe),
+    transform var(--duree-courte) var(--courbe);
+}
+
+.ordinateur:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.ordinateur:active {
+  transform: translateY(1px);
+}
+
+.ordinateur:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: 2px;
+}
+
+.ordinateur-nom {
+  display: flex;
+  align-items: center;
+  gap: var(--pas-2);
+  min-width: 0;
+}
+
+.ordinateur-nom > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ce qui n'apparaît qu'au survol ne doit pas faire bouger la carte :
+   la place est réservée d'avance. */
+.ordinateur-appel {
+  min-height: 20px;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity var(--duree-courte) var(--courbe);
+}
+
+.ordinateur:hover .ordinateur-appel,
+.ordinateur:focus-visible .ordinateur-appel {
+  opacity: 1;
+}
+
+/* La tuile qui ajoute suit le rythme des autres sans se faire passer
+   pour un ordinateur : pas de fond, un trait qui attend. */
+.ajout-tuile {
+  align-items: center;
+  justify-content: center;
+  gap: var(--pas-1);
+  text-align: center;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--trait-fort);
+  box-shadow: none;
+  color: var(--texte-doux);
+}
+
+.ajout-tuile:hover {
+  background: var(--surface-2);
+  color: var(--texte);
+}
+
 /* ---- État vide ------------------------------------------------------- */
 
 .vide {

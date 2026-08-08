@@ -1,0 +1,12 @@
+[package]
+name = "zyr-lan"
+description = "Annonce et découverte des ZyrDesk du réseau local"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true
+zyr-transport.workspace = true
+mdns-sd = "0.20.3"

@@ -62,6 +62,8 @@ pub enum Request {
     Hold { way: WayId, process: u32 },
     /// Closes a way.
     Release { way: WayId },
+    /// The ZyrDesk computers seen on the local network.
+    Peers,
 }
 
 impl Request {
@@ -85,6 +87,7 @@ impl Request {
             "release" => Ok(Request::Release {
                 way: WayId(fields.parsed("way")?),
             }),
+            "peers" => Ok(Request::Peers),
             other => Err(Malformed(format!("verbe inconnu « {other} »"))),
         }
     }
@@ -102,6 +105,7 @@ impl fmt::Display for Request {
             ),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
+            Request::Peers => f.write_str("peers"),
         }
     }
 }
@@ -131,11 +135,23 @@ pub struct Reached {
     pub packet: u16,
 }
 
+/// A ZyrDesk seen on the local network.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Peer {
+    /// Name its owner knows it by.
+    pub name: String,
+    pub fingerprint: Fingerprint,
+    pub address: IpAddr,
+    pub port: u16,
+}
+
 /// What the service answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
     Standing(Standing),
     Reached(Reached),
+    /// One computer of a list. The list ends on `Done`.
+    Peer(Peer),
     /// Done, with nothing to report.
     Done,
     /// Not done, and why. The text is meant for the person, not the
@@ -160,6 +176,12 @@ impl Answer {
                 engine: EnginePorts::new(fields.parsed("base")?)
                     .map_err(|e| Malformed(e.to_string()))?,
                 packet: fields.parsed("packet")?,
+            })),
+            "peer" => Ok(Answer::Peer(Peer {
+                name: unpacked(fields.text("name")?),
+                fingerprint: fields.parsed("fingerprint")?,
+                address: fields.parsed("address")?,
+                port: fields.parsed("port")?,
             })),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
@@ -187,6 +209,14 @@ impl fmt::Display for Answer {
                 reached.engine.base(),
                 reached.packet
             ),
+            Answer::Peer(peer) => write!(
+                f,
+                "peer name={} fingerprint={} address={} port={}",
+                packed(&peer.name),
+                peer.fingerprint,
+                peer.address,
+                peer.port
+            ),
             Answer::Done => f.write_str("done"),
             // The reason travels on one line: a newline would be read as
             // the start of another message.
@@ -202,6 +232,40 @@ fn split_verb(line: &str) -> (&str, &str) {
         Some((verb, rest)) => (verb, rest),
         None => (line, ""),
     }
+}
+
+/// Packs a value so it survives inside a `key=value` field.
+///
+/// Spaces are what separate one field from the next, so a computer
+/// called « PC de Victor » would otherwise be read as three fields and
+/// lose everything after the first word.
+fn packed(text: &str) -> String {
+    text.replace('\\', r"\\")
+        .replace(' ', r"\s")
+        .replace('\n', r"\n")
+}
+
+/// Gives a packed value its spaces back.
+fn unpacked(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut pieces = text.chars();
+    while let Some(c) = pieces.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match pieces.next() {
+            Some('s') => out.push(' '),
+            Some('n') => out.push('\n'),
+            Some('\\') => out.push('\\'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 /// Folds a reason onto a single line.
@@ -283,6 +347,7 @@ mod tests {
                 process: 11248,
             },
             Request::Release { way: WayId(3) },
+            Request::Peers,
         ]
     }
 
@@ -299,6 +364,14 @@ mod tests {
                 address: "127.77.0.1".parse().unwrap(),
                 engine: EnginePorts::new(42000).unwrap(),
                 packet: 1353,
+            }),
+            Answer::Peer(Peer {
+                // Un nom d'ordinateur contient des espaces bien plus
+                // souvent qu'on ne le croit.
+                name: "PC de Victor".to_string(),
+                fingerprint: fingerprint(),
+                address: "192.168.1.20".parse().unwrap(),
+                port: 47000,
             }),
             Answer::Done,
             Answer::Refused("cet ordinateur a refusé l'accès".to_string()),
@@ -360,6 +433,28 @@ mod tests {
     fn a_field_added_later_does_not_upset_an_older_reader() {
         let line = "reach host=192.168.1.20 peer=0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 bitrate=20000 fps=60 codec=av1";
         assert!(matches!(Request::parse(line), Ok(Request::Reach { .. })));
+    }
+
+    #[test]
+    fn a_name_with_spaces_arrives_whole() {
+        for name in [
+            "PC de Victor",
+            "  PC  ",
+            r"un nom\avec une barre",
+            "ordinateur",
+        ] {
+            let sent = Answer::Peer(Peer {
+                name: name.to_string(),
+                fingerprint: fingerprint(),
+                address: "192.168.1.20".parse().unwrap(),
+                port: 47000,
+            })
+            .to_string();
+            let Ok(Answer::Peer(read)) = Answer::parse(&sent) else {
+                panic!("« {sent} » n'est pas relu comme un ordinateur");
+            };
+            assert_eq!(read.name, name, "sur « {sent} »");
+        }
     }
 
     #[test]

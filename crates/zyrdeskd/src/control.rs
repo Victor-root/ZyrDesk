@@ -20,6 +20,8 @@ use zyr_control::pipe::Heard;
 use zyr_control::{Answer, Door, PROTOCOL, Request, Standing};
 use zyr_transport::Fingerprint;
 
+use zyr_lan::Found;
+
 use crate::log::Log;
 use crate::ways::Ways;
 
@@ -67,6 +69,7 @@ impl Desk {
         fingerprint: Fingerprint,
         ways: Ways,
         hosting: Hosting,
+        neighbours: Found,
         log: &Log,
     ) -> io::Result<Self> {
         let _guard = runtime.enter();
@@ -79,6 +82,7 @@ impl Desk {
                     fingerprint,
                     ways,
                     hosting,
+                    neighbours,
                     log: log.clone(),
                 },
             )),
@@ -92,6 +96,7 @@ struct Answering {
     fingerprint: Fingerprint,
     ways: Ways,
     hosting: Hosting,
+    neighbours: Found,
     log: Log,
 }
 
@@ -129,18 +134,45 @@ async fn converse(mut talking: Heard, answering: Answering) {
             }
         };
 
-        let answer = match Request::parse(&heard) {
+        let answers = match Request::parse(&heard) {
             Ok(request) => answer(request, &answering).await,
-            Err(e) => Answer::Refused(e.to_string()),
+            Err(e) => vec![Answer::Refused(e.to_string())],
         };
 
-        if talking.say(&answer.to_string()).await.is_err() {
-            return;
+        for answer in answers {
+            if talking.say(&answer.to_string()).await.is_err() {
+                return;
+            }
         }
     }
 }
 
-async fn answer(request: Request, answering: &Answering) -> Answer {
+/// What a request is answered with. A list is several answers, ended by
+/// `Done`; everything else is one.
+async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
+    match request {
+        Request::Peers => {
+            let mut said: Vec<Answer> = answering
+                .neighbours
+                .peers()
+                .into_iter()
+                .map(|peer| {
+                    Answer::Peer(zyr_control::Peer {
+                        name: peer.name,
+                        fingerprint: peer.fingerprint,
+                        address: peer.address,
+                        port: peer.port,
+                    })
+                })
+                .collect();
+            said.push(Answer::Done);
+            said
+        }
+        other => vec![one(other, answering).await],
+    }
+}
+
+async fn one(request: Request, answering: &Answering) -> Answer {
     match request {
         Request::Standing => Answer::Standing(Standing {
             protocol: PROTOCOL,
@@ -167,6 +199,8 @@ async fn answer(request: Request, answering: &Answering) -> Answer {
             // reached: saying no would make closing twice an error.
             Answer::Done
         }
+        // Handled above, where several answers can be given.
+        Request::Peers => Answer::Done,
     }
 }
 
@@ -204,6 +238,7 @@ mod tests {
                 fingerprint,
                 Ways::new(log.clone()),
                 hosting.clone(),
+                Found::new(),
                 &log,
             )
             .unwrap();
@@ -253,6 +288,26 @@ mod tests {
                 panic!("attendu un état, reçu {answer}");
             };
             assert!(standing.hosting);
+        });
+    }
+
+    #[test]
+    fn an_empty_neighbourhood_is_an_empty_list_and_not_a_refusal() {
+        // A list answer is several messages ended by « done ». With
+        // nothing to list, only the ending is said, and the caller has
+        // to come back with an empty list rather than hang or fail.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let bench = Bench::set_up(runtime.handle(), "peers");
+
+        runtime.block_on(async {
+            let mut caller = bench.caller().await;
+            let found = caller.ask_for_a_list(&Request::Peers).await.unwrap();
+            assert!(found.is_empty(), "{found:?}");
+
+            // And the channel is still usable afterwards: the ending was
+            // consumed, not left in the way of the next question.
+            let answer = caller.ask(&Request::Standing).await.unwrap();
+            assert!(matches!(answer, Answer::Standing(_)), "{answer}");
         });
     }
 

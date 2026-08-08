@@ -17,6 +17,7 @@ const vue = {
   serviceAbsent: document.getElementById("service-absent"),
   empreinte: document.getElementById("empreinte"),
   copier: document.getElementById("copier-empreinte"),
+  ordinateurs: document.getElementById("ordinateurs"),
   aucun: document.getElementById("aucun-ordinateur"),
   ouvrirAjout: document.getElementById("ouvrir-ajout"),
   ajout: document.getElementById("ajout"),
@@ -86,6 +87,77 @@ async function copierEmpreinte() {
   }, TEMPS_COPIE);
 }
 
+/* ---- Les ordinateurs du réseau ---------------------------------------- */
+
+/* Redessiner la liste à chaque passage ferait clignoter les cartes et
+   perdrait le survol en cours. On ne touche qu'à ce qui a changé. */
+let listeAffichee = "";
+
+function carte(ordinateur) {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = "carte ordinateur";
+
+  const nom = document.createElement("p");
+  nom.className = "sous-titre ordinateur-nom";
+  const pastille = document.createElement("span");
+  pastille.className = "pastille vivante";
+  const texte = document.createElement("span");
+  texte.textContent = ordinateur.name;
+  nom.append(pastille, texte);
+
+  const adresse = document.createElement("p");
+  adresse.className = "legende";
+  adresse.textContent = ordinateur.address;
+
+  const appel = document.createElement("p");
+  appel.className = "legende ordinateur-appel";
+  appel.textContent = "Se connecter";
+
+  element.append(nom, adresse, appel);
+  element.addEventListener("click", () =>
+    lance(ordinateur.address, ordinateur.fingerprint),
+  );
+  return element;
+}
+
+/* Un ordinateur qui n'est pas sur ce réseau, ou dont l'annonce est
+   bloquée, doit rester ajoutable. Sans cette tuile, la découverte
+   d'un seul voisin ferait disparaître le seul moyen d'en ajouter un. */
+function tuileAjout() {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = "carte ordinateur ajout-tuile";
+
+  const signe = document.createElement("p");
+  signe.className = "sous-titre";
+  signe.textContent = "+";
+
+  const mot = document.createElement("p");
+  mot.className = "legende";
+  mot.textContent = "Ajouter un ordinateur";
+
+  element.append(signe, mot);
+  element.addEventListener("click", ouvrirAjout);
+  return element;
+}
+
+async function rafraichirOrdinateurs() {
+  const trouves = await invoke("peers");
+
+  const signature = JSON.stringify(trouves);
+  if (signature === listeAffichee) {
+    return;
+  }
+  listeAffichee = signature;
+
+  vue.ordinateurs.replaceChildren(...trouves.map(carte), tuileAjout());
+  montre(vue.ordinateurs, trouves.length > 0);
+  // L'état vide ne s'affiche que s'il n'y a rien à montrer et rien en
+  // cours : une session qui démarre occupe déjà la place.
+  montre(vue.aucun, trouves.length === 0 && !sessionEnCours);
+}
+
 /* ---- Ajouter un ordinateur -------------------------------------------- */
 
 function ouvrirAjout() {
@@ -111,19 +183,23 @@ function ajusterAjout() {
     longueur !== TAILLE_EMPREINTE;
 }
 
-async function connecter(evenement) {
+function connecter(evenement) {
   evenement.preventDefault();
+  vue.ajout.close();
+  lance(vue.adresse.value, vue.empreinteDistante.value);
+}
+
+async function lance(adresse, empreinte) {
+  if (sessionEnCours) {
+    return;
+  }
   sessionEnCours = true;
   ajusterAjout();
-  vue.ajout.close();
   montre(vue.probleme, false);
-  etape("Ouverture du tunnel…", "", null);
+  etape("Ouverture du tunnel…", `Vers ${adresse.trim()}.`, null);
 
   try {
-    await invoke("connect", {
-      host: vue.adresse.value,
-      fingerprint: vue.empreinteDistante.value,
-    });
+    await invoke("connect", { host: adresse, fingerprint: empreinte });
   } catch (raison) {
     echoue(String(raison));
   }
@@ -144,8 +220,9 @@ function etape(titre, detail, code, fini = false) {
 function rangeEtape() {
   sessionEnCours = false;
   montre(vue.etape, false);
-  montre(vue.aucun, true);
+  listeAffichee = "";
   ajusterAjout();
+  rafraichirOrdinateurs();
 }
 
 function echoue(texte) {
@@ -166,7 +243,7 @@ listen("session-step", ({ payload }) => {
     case "pairingNeeded":
       etape(
         "Autorisation nécessaire",
-        `Premier accès à cet ordinateur. Sur ${vue.adresse.value.trim()}, tapez ce code :`,
+        "Premier accès à cet ordinateur. Tapez ce code sur celui que vous voulez contrôler :",
         payload.pin,
       );
       break;
@@ -238,4 +315,8 @@ invoke("set_theme", {
 }).catch(() => {});
 
 rafraichirEtat();
-setInterval(rafraichirEtat, RYTHME_ETAT);
+rafraichirOrdinateurs();
+setInterval(() => {
+  rafraichirEtat();
+  rafraichirOrdinateurs();
+}, RYTHME_ETAT);

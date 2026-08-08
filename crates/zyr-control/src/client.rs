@@ -21,6 +21,8 @@ pub enum ControlError {
     Unreadable(Malformed),
     /// It stopped talking mid-exchange.
     LeftOff,
+    /// It understood, and said no. The text is meant to be shown.
+    Refused(String),
 }
 
 impl fmt::Display for ControlError {
@@ -37,6 +39,7 @@ impl fmt::Display for ControlError {
                  Le service est probablement plus ancien que ce programme."
             ),
             ControlError::LeftOff => f.write_str("le service a coupé la conversation"),
+            ControlError::Refused(reason) => f.write_str(reason),
         }
     }
 }
@@ -72,6 +75,28 @@ impl Service {
     /// Asks one thing, and waits for the answer to it.
     pub async fn ask(&mut self, request: &Request) -> Result<Answer, ControlError> {
         self.talking.say(&request.to_string()).await?;
+        self.next_answer().await
+    }
+
+    /// Asks for a list, and collects it until the service says it is
+    /// done.
+    ///
+    /// A list travels as one message per item rather than as one long
+    /// line: the channel keeps its shape, and it stays readable by eye
+    /// when something goes wrong.
+    pub async fn ask_for_a_list(&mut self, request: &Request) -> Result<Vec<Answer>, ControlError> {
+        self.talking.say(&request.to_string()).await?;
+        let mut collected = Vec::new();
+        loop {
+            match self.next_answer().await? {
+                Answer::Done => return Ok(collected),
+                Answer::Refused(reason) => return Err(ControlError::Refused(reason)),
+                item => collected.push(item),
+            }
+        }
+    }
+
+    async fn next_answer(&mut self) -> Result<Answer, ControlError> {
         let line = self.talking.hear().await?.ok_or(ControlError::LeftOff)?;
         Answer::parse(&line).map_err(ControlError::Unreadable)
     }

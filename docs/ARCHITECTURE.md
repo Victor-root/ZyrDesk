@@ -131,6 +131,7 @@ ZyrDesk/
 │  ├─ zyr-engine-host/         # superviseur Sunshine : config générée, lancement en session console, /api/pin, santé
 │  ├─ zyr-engine-client/       # superviseur Moonlight : dossiers d'état par appareil, CLI, parsing stats, codes de sortie
 │  ├─ zyr-session/             # ouverture d'une session de bout en bout, partagée par l'interface et la ligne de commande
+│  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur et découverte des autres
 │  ├─ zyr-device/              # identité Ed25519, secrets DPAPI (profil SYSTEM), enrôlement
 │  ├─ zyr-broker-client/       # client WSS présence/signalisation, tickets
 │  ├─ zyrdeskd/                # binaire service Windows : registre de sessions, serveur pipe, tous les tunnels

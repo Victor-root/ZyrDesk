@@ -57,7 +57,8 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 - Fait : le moteur client est compilé par nos soins et porte les patchs P-M2 (marque), P-M1 (aucune fenêtre à lui avant l'image) et P-M5 (codes de sortie distincts, lus par notre superviseur).
 - Fait : le moteur hôte est compilé par nos soins et porte notre nom, notre icône et notre éditeur. Le patch P-S2 se réduit à exposer le seul champ que le moteur ne laissait pas encore choisir ; le reste est passé à la configuration.
 - Fait : première tranche de l'application. Le design system v1 (couleurs, espacements, typographie, mouvement, composants de base) est posé en tokens, et l'accueil montre cet ordinateur puis ouvre une session vers un autre, sans ligne de commande. L'ouverture d'une session vit dans `zyr-session`, partagée avec la ligne de commande plutôt que réécrite.
-- Reste à faire : interrupteur d'accès distant réel (le service héberge toujours pour l'instant), liste des ordinateurs connus, découverte mDNS des ZyrDesk du réseau local, réglages, rattachement de l'interface à une session en cours.
+- Fait : les ZyrDesk du réseau local se trouvent seuls. Le service s'annonce en mDNS et collecte les autres, l'interface les montre en cartes, et un clic sur une carte ouvre la session. Ni adresse ni empreinte à recopier tant que les deux machines sont sur le même réseau. Le thème suit le système par défaut, et se force au clair ou au sombre.
+- Reste à faire : interrupteur d'accès distant réel (le service héberge toujours pour l'instant), réglages, rattachement de l'interface à une session en cours.
 - Résultat observable : deux PC, tout en interface, zéro ligne de commande.
 - Critères de sortie : parcours complet à la souris ; tuer l'interface en pleine session -> le flux survit et l'interface se rattache au relancement ; aucune trace visible de Sunshine/Moonlight (fenêtres, titres, icônes, processus au nom trompeur) ; G-start LAN tenu.
 
