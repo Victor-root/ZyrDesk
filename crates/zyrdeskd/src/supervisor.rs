@@ -32,9 +32,11 @@ use zyr_engine_host::api::EngineApi;
 use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Launcher, SunshineConfig, ports};
 use zyr_proto::paths;
 
+use crate::control::{Desk, Hosting};
 use crate::gateway::Gateway;
 use crate::log::Log;
 use crate::restart::{Next, Policy};
+use crate::ways::Ways;
 
 /// Margin given to the engine to open its ports at start-up.
 const START_DELAY: Duration = Duration::from_secs(30);
@@ -137,6 +139,25 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         }
     };
 
+    // The desk and the ways out live as long as the service, not as
+    // long as one engine: reaching another computer has nothing to do
+    // with this one being reachable.
+    let ways = Ways::new(log.clone());
+    let hosting = Hosting::new();
+    // Not being able to answer the interface leaves this computer
+    // reachable all the same, so it is worth saying loudly and carrying
+    // on rather than giving up on remote access entirely.
+    let _desk = match desk(runtime.handle(), ways.clone(), hosting.clone(), log) {
+        Ok(desk) => Some(desk),
+        Err(e) => {
+            log.write(&format!(
+                "control channel unavailable, the interface cannot drive this service: {e}"
+            ));
+            None
+        }
+    };
+    runtime.spawn(ways.keep_tidy());
+
     let mut policy = Policy::new();
     let runtime_path = EngineRuntime::standard_path();
     let mut screenless = false;
@@ -162,8 +183,15 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         screenless = false;
 
         let start = Instant::now();
-        let life = match one_engine_life(&exe, &runtime_path, session, runtime.handle(), order, log)
-        {
+        let life = match one_engine_life(
+            &exe,
+            &runtime_path,
+            session,
+            runtime.handle(),
+            &hosting,
+            order,
+            log,
+        ) {
             Ok(life) => life,
             Err(reason) => {
                 log.write(&reason);
@@ -220,6 +248,26 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     }
 }
 
+/// Opens the desk the interface and the command line talk to.
+fn desk(
+    runtime: &tokio::runtime::Handle,
+    ways: Ways,
+    hosting: Hosting,
+    log: &Log,
+) -> Result<Desk, String> {
+    let identity =
+        zyr_transport::Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
+    Desk::open(
+        runtime,
+        zyr_control::CHANNEL,
+        identity.fingerprint(),
+        ways,
+        hosting,
+        log,
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// Starts the engine in the given session and follows it until it stops.
 ///
 /// Returns how its life ended, or why it could not live at all.
@@ -228,6 +276,7 @@ fn one_engine_life(
     runtime_path: &std::path::Path,
     session: u32,
     runtime: &tokio::runtime::Handle,
+    hosting: &Hosting,
     order: &StopOrder,
     log: &Log,
 ) -> Result<Life, String> {
@@ -280,9 +329,11 @@ fn one_engine_life(
             return Err(format!("the tunnel could not be opened: {e}"));
         }
     };
+    hosting.set(true);
     log.write("remote access active");
 
     let life = wait_for_the_engine_to_stop(&mut engine, session, order, log);
+    hosting.set(false);
     drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
     Ok(life)

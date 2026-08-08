@@ -1,45 +1,33 @@
 //! Opens a session on a remote computer.
 //!
-//! Everything travels through the ZyrDesk tunnel. The client engine
-//! talks to local ports standing in for the remote engine's and never
-//! touches the network; the two computers recognise each other by
-//! fingerprint before anything else happens. Until the rendezvous server
-//! exists, those fingerprints are copied across by hand, as is the
-//! engine's own pairing code.
+//! Nothing is held here. The service opens the way to the other computer
+//! and keeps it; this command asks for one, starts the client engine on
+//! the local addresses it was given, and tells the service which process
+//! that way now serves. Closing this window does not end the session,
+//! and losing it does not leave the way open forever.
+//!
+//! The client engine talks to those local addresses and never touches
+//! the network. The two computers recognise each other by fingerprint
+//! before anything else happens; until the rendezvous server exists,
+//! fingerprints are copied across by hand, as is the engine's own
+//! pairing code.
 //!
 //! A direct mode without the tunnel is kept for diagnosis, to tell a
 //! tunnel problem from an engine problem in minutes. It never appears in
 //! the interface.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process::ExitCode;
-use std::time::Duration;
 
 use clap::Args as ClapArgs;
+use zyr_control::{Answer, Request, Service, WayId};
 use zyr_engine_client::state::identifier_from_address;
 use zyr_engine_client::{ClientEngine, DeviceState, SessionOutcome};
-use zyr_proto::net::{TUNNEL_PORT, device_loopback_addr};
 use zyr_proto::paths;
 use zyr_proto::random;
 use zyr_proto::session::{Codec, DisplayMode, SessionSettings, parse_resolution};
-use zyr_transport::{Fingerprint, Identity, MediaProfile, TunnelEndpoint, packet_size};
-use zyr_tunnel::{Tunnel, greeting};
+use zyr_transport::{Fingerprint, MediaProfile};
 
 use crate::failure;
-
-/// Local address the remote engine is made to appear at.
-///
-/// One outgoing session at a time for now, so one address is enough.
-const DEVICE: u16 = 0;
-
-/// Where the tunnel leaves from: any interface, any port.
-const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
-
-/// Time left to path discovery before the packet size is fixed.
-///
-/// The engine keeps that size for the whole session and cannot change it
-/// along the way, so it is worth a moment's wait.
-const PATH_DISCOVERY: Duration = Duration::from_secs(2);
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -50,8 +38,9 @@ pub struct Args {
     #[arg(long, value_name = "FINGERPRINT", required_unless_present = "direct")]
     pair: Option<Fingerprint>,
 
-    /// Goes straight to the remote engine, without the tunnel. For
-    /// diagnosis only: the address then carries the engine's port.
+    /// Goes straight to the remote engine, without the tunnel and
+    /// without the service. For diagnosis only: the address then carries
+    /// the engine's port.
     #[arg(long, conflicts_with = "pair")]
     direct: bool,
 
@@ -105,19 +94,19 @@ pub fn run(args: Args) -> ExitCode {
         );
     }
 
-    // The tunnel stands before the engine is told anything: what the
-    // engine is handed is a local address that only exists once it is up.
-    let carried = match args.pair {
-        Some(peer) => match Carried::open(&args.host, peer, &settings) {
-            Ok(carried) => Some(carried),
+    // The way stands before the engine is told anything: what the engine
+    // is handed is a local address that only exists once it is open.
+    let mut driving = match args.pair {
+        Some(peer) => match Driving::towards(&args.host, peer, &settings) {
+            Ok(driving) => Some(driving),
             Err(message) => return failure("ouverture du tunnel", message),
         },
         None => None,
     };
-    let target = match &carried {
-        Some(carried) => {
-            settings.packet_size = Some(carried.packet_size);
-            carried.engine_target.clone()
+    let target = match &driving {
+        Some(driving) => {
+            settings.packet_size = Some(u32::from(driving.packet));
+            driving.target.clone()
         }
         None => args.host.clone(),
     };
@@ -141,7 +130,23 @@ pub fn run(args: Args) -> ExitCode {
         "Connexion à {} en {}x{} à {} images par seconde...",
         args.host, settings.width, settings.height, settings.fps
     );
-    match engine.start_session(&target, &settings) {
+    let mut session = match engine.start_session(&target, &settings) {
+        Ok(session) => session,
+        Err(e) => return failure("démarrage de la session", e),
+    };
+
+    // From here the session belongs to the engine and to the service.
+    // This window can be closed without ending it.
+    if let Some(driving) = &mut driving {
+        driving.hold(session.process_id());
+    }
+
+    let outcome = session.wait();
+    if let Some(driving) = &mut driving {
+        driving.let_go();
+    }
+
+    match outcome {
         Ok(SessionOutcome::Ended) => {
             // The engine reports success even when it gave up: the log
             // stays the only reliable source while its exit codes are
@@ -159,111 +164,82 @@ pub fn run(args: Args) -> ExitCode {
                 format!("code {code}\n  Journal : {}", log.display()),
             )
         }
-        Err(e) => failure("démarrage de la session", e),
+        Err(e) => failure("surveillance de la session", e),
     }
 }
 
-/// The tunnel held open for the length of the session.
-///
-/// The field order is the drop order: the pumps stop, then the transport,
-/// then the threads that carried them.
-struct Carried {
-    _tunnel: Tunnel,
-    _endpoint: TunnelEndpoint,
-    _runtime: tokio::runtime::Runtime,
-    /// Address the client engine is given, standing in for the remote one.
-    engine_target: String,
+/// The service, and the way it holds for this session.
+struct Driving {
+    runtime: tokio::runtime::Runtime,
+    service: Service,
+    way: WayId,
+    /// Address the client engine is given, standing in for the remote
+    /// computer.
+    target: String,
     /// Packet size the path allows, imposed on the engine.
-    packet_size: u32,
+    packet: u16,
 }
 
-impl Carried {
-    fn open(host: &str, peer: Fingerprint, settings: &SessionSettings) -> Result<Self, String> {
-        let remote = resolve(host)?;
-        let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-        let identity =
-            Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
-        // The window the transport keeps open follows the session that
-        // was actually asked for, not a nominal one.
-        let profile = MediaProfile {
-            bits_per_second: u64::from(settings.bitrate_kbps) * 1000,
-            frames_per_second: settings.fps,
-        };
-
-        let opened = runtime.block_on(async {
-            let endpoint = TunnelEndpoint::client(
-                &identity,
-                peer,
-                profile,
-                SocketAddr::new(EVERY_INTERFACE, 0),
-            )
+impl Driving {
+    /// Asks the service for a way to that computer.
+    fn towards(host: &str, peer: Fingerprint, settings: &SessionSettings) -> Result<Self, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
             .map_err(|e| e.to_string())?;
 
-            let connection = endpoint.connect(remote).await.map_err(|e| {
-                format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}")
-            })?;
+        let mut service = runtime.block_on(Service::join()).map_err(|e| e.to_string())?;
+        // The window the transport keeps open follows the session that
+        // was actually asked for, not a nominal one.
+        let request = Request::Reach {
+            host: host.to_string(),
+            peer,
+            media: MediaProfile {
+                bits_per_second: u64::from(settings.bitrate_kbps) * 1000,
+                frames_per_second: settings.fps,
+            },
+        };
 
-            // The first real exchange, and the moment authorisation is
-            // proven: a connection succeeds before the other computer
-            // has judged our certificate, so nothing may be announced
-            // as established until this answers.
-            let greeting = greeting::ask(&connection).await.map_err(|e| {
-                format!(
-                    "{host} a refusé cet ordinateur, ou son empreinte a changé.\n  \
-                     Sur {host} : zyr-cli host authorize {}\n  Détail : {e}",
-                    identity.fingerprint()
-                )
-            })?;
+        let reached = match runtime
+            .block_on(service.ask(&request))
+            .map_err(|e| e.to_string())?
+        {
+            Answer::Reached(reached) => reached,
+            Answer::Refused(reason) => return Err(reason),
+            other => return Err(format!("réponse inattendue du service : {other}")),
+        };
 
-            let usable = connection
-                .settled_usable_datagram(PATH_DISCOVERY)
-                .await
-                .ok_or("le chemin n'annonce aucune taille de datagramme")?;
-            let size = packet_size(usable).map_err(|e| e.to_string())?;
-
-            let side = IpAddr::V4(
-                device_loopback_addr(DEVICE).ok_or("aucune adresse locale pour cet appareil")?,
-            );
-            let tunnel = Tunnel::client(connection, side, greeting.engine)
-                .await
-                .map_err(|e| {
-                    format!("les ports locaux n'ont pas pu être ouverts : {e}\n  Une autre session ZyrDesk est peut-être déjà ouverte.")
-                })?;
-
-            Ok::<_, String>((
-                endpoint,
-                tunnel,
-                format!("{side}:{}", greeting.engine.http()),
-                size,
-            ))
-        })?;
-
-        let (endpoint, tunnel, engine_target, size) = opened;
         println!("Tunnel établi avec {host}.");
-        if size.reduced_by_the_path {
-            println!(
-                "  Taille de paquet réduite par le chemin : {} octets.",
-                size.bytes
-            );
-        }
+        println!("  Taille de paquet : {} octets.", reached.packet);
+
         Ok(Self {
-            _tunnel: tunnel,
-            _endpoint: endpoint,
-            _runtime: runtime,
-            engine_target,
-            packet_size: u32::from(size.bytes),
+            runtime,
+            service,
+            way: reached.way,
+            target: format!("{}:{}", reached.address, reached.engine.http()),
+            packet: reached.packet,
         })
     }
-}
 
-/// Where the tunnel has to knock. Only the port is ours to add.
-fn resolve(host: &str) -> Result<SocketAddr, String> {
-    use std::net::ToSocketAddrs;
-    format!("{host}:{TUNNEL_PORT}")
-        .to_socket_addrs()
-        .map_err(|e| format!("adresse « {host} » introuvable : {e}"))?
-        .next()
-        .ok_or_else(|| format!("adresse « {host} » introuvable"))
+    /// Tells the service which process the way now serves, so it closes
+    /// on its own whatever becomes of this window.
+    fn hold(&mut self, process: u32) {
+        let request = Request::Hold {
+            way: self.way,
+            process,
+        };
+        if let Err(e) = self.runtime.block_on(self.service.ask(&request)) {
+            eprintln!("Avertissement : le service n'a pas pris la session en charge ({e}).");
+            eprintln!("  Elle se fermera avec cette fenêtre.");
+        }
+    }
+
+    /// Gives the way back at the end of the session. The service would
+    /// close it on its own; saying so frees the address at once.
+    fn let_go(&mut self) {
+        let request = Request::Release { way: self.way };
+        let _ = self.runtime.block_on(self.service.ask(&request));
+    }
 }
 
 /// `target` is where the engine goes, `host` what the user typed: the
@@ -305,7 +281,7 @@ fn build_settings(args: &Args) -> Result<SessionSettings, String> {
         bitrate_kbps: args.bitrate,
         codec,
         display_mode,
-        // Decided by the tunnel once the path is known, left to the
+        // Decided by the service once the path is known, left to the
         // engine when going direct.
         packet_size: None,
         absolute_mouse: !args.relative_mouse,

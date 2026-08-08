@@ -9,5 +9,5 @@ pub mod command;
 pub mod process;
 pub mod state;
 
-pub use process::{ClientEngine, EngineError, SessionOutcome};
+pub use process::{ClientEngine, EngineError, Session, SessionOutcome};
 pub use state::DeviceState;

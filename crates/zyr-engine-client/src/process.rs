@@ -5,7 +5,7 @@ use std::fs;
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use zyr_proto::session::SessionSettings;
 
@@ -138,12 +138,16 @@ impl ClientEngine {
         })
     }
 
-    /// Starts a session and waits for it to end.
+    /// Starts a session, and hands it back running.
+    ///
+    /// It is not waited on here: the session belongs to the engine
+    /// process from that moment, and whoever asked for it may close
+    /// without ending it.
     pub fn start_session(
         &self,
         host: &str,
         settings: &SessionSettings,
-    ) -> Result<SessionOutcome, EngineError> {
+    ) -> Result<Session, EngineError> {
         self.state.prepare()?;
         let mut command = self.command(&command::session_arguments(host, settings))?;
         command.stdin(Stdio::null());
@@ -152,7 +156,29 @@ impl ClientEngine {
             let errors = log.try_clone()?;
             command.stdout(Stdio::from(log)).stderr(Stdio::from(errors));
         }
-        let status = command.spawn()?.wait()?;
+        Ok(Session {
+            engine: command.spawn()?,
+        })
+    }
+}
+
+/// A session under way.
+pub struct Session {
+    engine: Child,
+}
+
+impl Session {
+    /// Number the system knows the engine by.
+    ///
+    /// This is what the service watches to know the session is over,
+    /// whatever became of the program that started it.
+    pub fn process_id(&self) -> u32 {
+        self.engine.id()
+    }
+
+    /// Waits for the session to end.
+    pub fn wait(&mut self) -> io::Result<SessionOutcome> {
+        let status = self.engine.wait()?;
         Ok(if status.success() {
             SessionOutcome::Ended
         } else {
