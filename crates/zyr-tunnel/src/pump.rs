@@ -35,6 +35,12 @@ const BUFFER: usize = 65_535;
 /// mebibytes comfortably cover a scheduling hiccup.
 const SOCKET_BUFFER: usize = 4 * 1024 * 1024;
 
+/// Consecutive failures one channel puts up with before giving up.
+///
+/// A datagram lost to a passing system hiccup must not end a session,
+/// and a socket that has genuinely broken must not spin forever.
+const TOLERATED_FAILURES: u32 = 64;
+
 /// Opens a UDP socket sized for a video stream.
 ///
 /// The system may grant only part of what is asked, or refuse: it then
@@ -51,8 +57,52 @@ pub fn open_socket(address: SocketAddr) -> io::Result<UdpSocket> {
     let _ = socket.set_recv_buffer_size(SOCKET_BUFFER);
     let _ = socket.set_send_buffer_size(SOCKET_BUFFER);
     socket.set_nonblocking(true)?;
+    ignore_unreachable_reports(&socket)?;
     socket.bind(&address.into())?;
     UdpSocket::from_std(socket.into())
+}
+
+/// Stops Windows from failing a receive because of an earlier send.
+///
+/// Sending a datagram to a port nobody listens on draws an ICMP reply,
+/// and Windows hands that back as an error on the *next* receive, on a
+/// socket which is otherwise perfectly fine. The engine only opens its
+/// media ports once the session negotiation is over, so the first
+/// packets the tunnel relays necessarily land nowhere: without this, the
+/// pump dies in the middle of the handshake and takes the session with
+/// it. Every other system keeps those reports away from an unconnected
+/// socket; this asks Windows to do the same.
+#[cfg(windows)]
+fn ignore_unreachable_reports(socket: &Socket) -> io::Result<()> {
+    use std::os::windows::io::AsRawSocket;
+    use windows_sys::Win32::Networking::WinSock::{SIO_UDP_CONNRESET, SOCKET, WSAIoctl};
+
+    let report: u32 = 0;
+    let mut answered: u32 = 0;
+    // Safe: the socket is ours and open, and the value read from lives
+    // until the call returns.
+    let outcome = unsafe {
+        WSAIoctl(
+            socket.as_raw_socket() as SOCKET,
+            SIO_UDP_CONNRESET,
+            (&raw const report).cast(),
+            size_of::<u32>() as u32,
+            std::ptr::null_mut(),
+            0,
+            &mut answered,
+            std::ptr::null_mut(),
+            None,
+        )
+    };
+    if outcome != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn ignore_unreachable_reports(_socket: &Socket) -> io::Result<()> {
+    Ok(())
 }
 
 /// Tunnel counters, read by the measurement bench.
@@ -63,6 +113,7 @@ pub struct Counters {
     too_large: AtomicU64,
     no_recipient: AtomicU64,
     unreadable: AtomicU64,
+    refused: AtomicU64,
 }
 
 /// Snapshot of the counters.
@@ -79,6 +130,10 @@ pub struct Reading {
     pub no_recipient: u64,
     /// Datagrams whose header names no known channel.
     pub unreadable: u64,
+    /// Packets the system refused to hand over or to send. A few at the
+    /// start of a session are normal: the engine has not opened its
+    /// media ports yet.
+    pub refused: u64,
 }
 
 impl Counters {
@@ -93,6 +148,7 @@ impl Counters {
             too_large: self.too_large.load(Ordering::Relaxed),
             no_recipient: self.no_recipient.load(Ordering::Relaxed),
             unreadable: self.unreadable.load(Ordering::Relaxed),
+            refused: self.refused.load(Ordering::Relaxed),
         }
     }
 }
@@ -250,8 +306,25 @@ pub async fn collect_datagrams(
     counters: &Counters,
 ) -> io::Result<()> {
     let mut buffer = vec![0u8; BUFFER];
+    let mut failures = 0;
     loop {
-        let read = port.receive(&mut buffer).await?;
+        // A refused packet concerns that packet alone. Ending the pump
+        // here would end the whole session, video and all, over one
+        // datagram the system did not want.
+        let read = match port.receive(&mut buffer).await {
+            Ok(read) => {
+                failures = 0;
+                read
+            }
+            Err(e) => {
+                Counters::bump(&counters.refused);
+                failures += 1;
+                if failures > TOLERATED_FAILURES {
+                    return Err(e);
+                }
+                continue;
+            }
+        };
         let framed = frame::encode(channel, &buffer[..read]);
         match connection.send_datagram(framed.into()) {
             Ok(()) => Counters::bump(&counters.to_tunnel),
@@ -273,15 +346,30 @@ pub async fn distribute_datagrams(
     ports: &DatagramPorts,
     counters: &Counters,
 ) -> io::Result<()> {
+    let mut failures = 0;
     loop {
         let received = connection.read_datagram().await.map_err(io::Error::other)?;
         let Ok((channel, payload)) = frame::decode(&received) else {
             Counters::bump(&counters.unreadable);
             continue;
         };
-        match ports.port(channel).send(payload).await? {
-            true => Counters::bump(&counters.to_engine),
-            false => Counters::bump(&counters.no_recipient),
+        // The engine opens its media ports late: the first packets of a
+        // session are handed to nobody, and on some systems that is
+        // reported as an error. It concerns one packet, never the
+        // session.
+        match ports.port(channel).send(payload).await {
+            Ok(true) => {
+                failures = 0;
+                Counters::bump(&counters.to_engine);
+            }
+            Ok(false) => Counters::bump(&counters.no_recipient),
+            Err(e) => {
+                Counters::bump(&counters.refused);
+                failures += 1;
+                if failures > TOLERATED_FAILURES {
+                    return Err(e);
+                }
+            }
         }
     }
 }

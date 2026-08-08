@@ -311,6 +311,12 @@ fn report(
             reading.no_recipient
         );
     }
+    if reading.refused > 0 {
+        println!(
+            "  {} paquets refusés par le système, sans conséquence sur la session",
+            reading.refused
+        );
+    }
 
     println!("\n--- Ce que coûte le tunnel ---");
     println!(

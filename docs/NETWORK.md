@@ -40,6 +40,7 @@ Ce qui est en place et mesuré :
 - Authentification mutuelle par empreinte de certificat épinglée, TLS 1.3 uniquement, protocole annoncé `zyrdesk/1`. Chaque machine a une identité durable, gardée dans `data/identity`, affichée par `zyr-cli identity`.
 - Contrôleur de congestion média (section 3), file d'émission de datagrammes de 128 Kio, file de réception de 8 Mio, expiration d'inactivité à 30 s, maintien de correspondance toutes les 5 s.
 - Découverte de la taille de paquet attendue avant de la figer (section 4), et pas de retard de Nagle sur les flux fiables relayés.
+- Un paquet refusé par le système ne coûte que ce paquet. Le moteur n'ouvre ses ports média qu'une fois la négociation finie : tout ce que le tunnel relaie avant n'a personne à qui parler, et Windows le signale par une erreur sur la lecture *suivante* d'une socket par ailleurs saine. La socket demande donc à Windows de se taire là-dessus, comme le font les autres systèmes ; et les pompes comptent ces refus au lieu de s'arrêter, une pompe qui s'arrête emportant toute la session. Sans ces deux points, la négociation RTSP échouait au deuxième message, sans cause visible.
 
 Asymétrie du protocole à connaître : le client présente son certificat en dernier et l'hôte ne le juge qu'ensuite. Un client refusé voit donc sa connexion réussir, puis se rompre aussitôt. L'interface ne doit jamais annoncer une session établie avant le premier échange réussi.
 

@@ -250,4 +250,6 @@ zyrdeskd uninstall
 
 **« les ports locaux n'ont pas pu être ouverts ».** Une autre session ZyrDesk est déjà ouverte sur le PC client. La fermer d'abord.
 
+**« Le démarrage de RTSP handshake a échoué », avec une liste de ports.** Les numéros affichés (48010, 48000) sont ceux du protocole standard, pas ceux d'ici : le moteur client les cite de mémoire quelle que soit la panne. Ne pas ouvrir ces ports dans le pare-feu, ça ne servirait à rien. La vraie cause se lit dans `data\logs\session.log` sur le client, à la ligne qui suit « Starting RTSP handshake ».
+
 **`zyr-cli host pin` dit qu'aucun accès distant n'est actif.** Le fichier `data\host-runtime.conf` est écrit par le service, sous le compte système, et relu par la commande sous le compte utilisateur. Vérifier qu'il existe et qu'il est lisible.

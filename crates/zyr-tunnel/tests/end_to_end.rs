@@ -228,6 +228,43 @@ async fn the_engine_web_interface_stays_out_of_the_tunnel() {
 }
 
 #[tokio::test]
+async fn packets_sent_before_the_engine_listens_do_not_end_the_session() {
+    // The engine opens its media ports only once the negotiation is
+    // over, so everything the tunnel relays until then lands nowhere.
+    // That must cost those packets and nothing else: ending the pump
+    // there would break the negotiation still under way on the reliable
+    // streams, and the session would fail with no visible cause.
+    let bench = Bench::bring_up(42800, 6).await;
+    let client = UdpSocket::bind(SocketAddr::new(bench.client_side, 0))
+        .await
+        .unwrap();
+
+    for _ in 0..20 {
+        client
+            .send_to(b"early", bench.as_the_client_sees(bench.ports.video()))
+            .await
+            .unwrap();
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // The engine shows up late, and the session carries on.
+    udp_engine(bench.ports.video()).await;
+    client
+        .send_to(b"ping", bench.as_the_client_sees(bench.ports.video()))
+        .await
+        .unwrap();
+
+    let mut received = [0u8; 64];
+    let (read, _) = before_the_end(client.recv_from(&mut received))
+        .await
+        .unwrap();
+    assert_eq!(
+        &received[..read],
+        format!("{}:ping", bench.ports.video()).as_bytes()
+    );
+}
+
+#[tokio::test]
 async fn the_counters_follow_what_travels() {
     let bench = Bench::bring_up(42600, 4).await;
     udp_engine(bench.ports.audio()).await;

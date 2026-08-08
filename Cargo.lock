@@ -1926,6 +1926,7 @@ version = "0.1.0"
 dependencies = [
  "socket2",
  "tokio",
+ "windows-sys 0.61.2",
  "zyr-proto",
  "zyr-transport",
 ]
