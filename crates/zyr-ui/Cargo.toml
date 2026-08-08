@@ -23,3 +23,14 @@ zyr-transport.workspace = true
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
+
+[target.'cfg(windows)'.dependencies]
+# Un seul ZyrDesk à la fois : deux programmes voudraient dire deux
+# boutons flottants sur la même session. Le produit ne tourne que sous
+# Windows, et la dépendance n'est tirée que là.
+tauri-plugin-single-instance = "2"
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }

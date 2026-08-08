@@ -622,3 +622,83 @@ Sur le **PC client**, fenêtre ZyrDesk ouverte, aucune session en cours.
 **Les statistiques ne s'affichent pas alors qu'elles sont activées.** Le réglage part bien du service, mais c'est le moteur client qui les dessine : joindre `data\logs\session.log`, où la ligne de commande du moteur est recopiée en tête de session.
 
 **Le bouton de réglages n'ouvre rien.** La fenêtre et le service ne datent pas du même jour : refaire la mise à jour complète du programme.
+
+---
+
+## Partie 9 : le bouton flottant pendant une session
+
+### Ce qui change, et pourquoi
+
+Pendant une session, l'image occupait tout l'écran et il n'y avait plus rien de ZyrDesk : pour en sortir ou changer quoi que ce soit, il fallait connaître les raccourcis clavier du moteur.
+
+Le logo ZyrDesk reste maintenant posé en haut à droite de l'image, en petit. Un clic dessus déplie un menu : plein écran, statistiques, mode de la souris, masquer le bouton, terminer la session. Chaque entrée affiche aussi son raccourci clavier, qui fait exactement la même chose.
+
+Trois choses expliquent ce qu'on va voir.
+
+**Une session s'ouvre désormais en fenêtre sans bordure** et non en plein écran exclusif. Ça se voit à rien du tout, l'image occupe l'écran pareil, mais une fenêtre exclusive possède l'écran et ne laisse rien se dessiner au-dessus, pas même ce bouton. Le mode exclusif reste choisissable dans les réglages, sans le bouton.
+
+**Le curseur reste caché sur l'image** : c'est le curseur de l'ordinateur distant qui sert à viser. Dès qu'il passe sur le bouton, Windows réaffiche le curseur local, et le clic va au bouton et non à l'ordinateur distant. C'est voulu, et c'est ce qui rend le bouton cliquable sans rien changer au moteur.
+
+**En mode souris de jeu**, le pointeur appartient entièrement à l'ordinateur distant : le bouton n'est pas cliquable. Les raccourcis clavier affichés dans le menu font la même chose. Le retour à la souris de bureau se fait par Ctrl+Alt+Maj+M.
+
+**Ce qui n'y est pas** : envoyer Ctrl+Alt+Suppr à l'ordinateur distant. Windows garde cette combinaison pour lui, et l'envoyer demanderait une modification du moteur client, à peser plus tard.
+
+### Le test
+
+Sur le **PC client**, mettre à jour le programme, puis ouvrir une session vers le PC hôte.
+
+> **M4-R40 (le bouton est là)**
+>
+> Attendu : dès que l'image apparaît, le logo ZyrDesk se pose en haut à droite, sur l'image. Il ne clignote pas, ne bouge pas, et l'image continue normalement dessous.
+
+> **M4-R41 (il se clique, et il ouvre)**
+>
+> Amener la souris sur le logo. Le curseur, invisible sur l'image, doit réapparaître en arrivant dessus. Cliquer.
+>
+> Attendu : le menu se déplie sous le logo, avec cinq entrées et leurs raccourcis. Cliquer à côté du menu, sur l'image : le menu se referme et le clic ne part pas sur l'ordinateur distant.
+
+> **M4-R42 (les entrées font ce qu'elles disent)**
+>
+> Une par une : **Statistiques** (des chiffres apparaissent par-dessus l'image, recliquer les enlève), **Plein écran** (l'image passe en fenêtre, recliquer la remet en plein écran), **Souris bureau ou jeu** (le curseur distant change de comportement, remettre comme avant).
+>
+> Attendu : chaque clic agit sur l'image dans la seconde. Refermer le menu entre deux si besoin.
+
+> **M4-R43 (masquer le bouton)**
+>
+> Cliquer **Masquer ce bouton**.
+>
+> Attendu : le logo disparaît pour de bon. Il ne revient pas de lui-même. Terminer la session au clavier (Ctrl+Alt+Maj+Q) et en rouvrir une : le logo est de retour.
+
+> **M4-R44 (terminer la session depuis le menu)**
+>
+> Dans une nouvelle session, cliquer le logo puis **Terminer la session**.
+>
+> Attendu : l'image se ferme proprement, le bouton disparaît avec elle, et la fenêtre d'accueil de ZyrDesk ne montre plus de session en cours. Côté hôte, `zyrdesk-host-engine.exe` revient au repos.
+
+> **M4-R45 (le vrai piège : fermer l'accueil)**
+>
+> Ouvrir une session, puis **fermer la fenêtre d'accueil de ZyrDesk** avec la croix, en laissant l'image tourner.
+>
+> Attendu : l'image continue **et le bouton flottant reste là**, toujours cliquable. Terminer la session par le menu : tout se ferme, et `ZyrDesk.exe` disparaît du gestionnaire des tâches. C'est le point qui compte le plus de cette partie : le bouton est ce qui maintient le programme en vie pendant une session.
+
+> **M4-R46 (le mode exclusif, et ce qu'il coûte)**
+>
+> Dans les réglages, sous Avancé, mettre **Fenêtre de la session** sur **Exclusif**, puis ouvrir une session.
+>
+> Attendu : l'image occupe l'écran et **le bouton n'apparaît pas**. C'est annoncé sous le réglage. Remettre sur **Plein écran** ensuite.
+
+> **M4-R47 (relancer ZyrDesk ne fait pas un deuxième ZyrDesk)**
+>
+> Dans la même situation qu'au test précédent (accueil fermé, session en cours, bouton flottant visible) : relancer ZyrDesk depuis son raccourci.
+>
+> Attendu : la fenêtre d'accueil revient, telle qu'elle était, avec la session en cours affichée. **Un seul** bouton flottant, et un seul `ZyrDesk.exe` dans le gestionnaire des tâches.
+
+### Si quelque chose ne va pas
+
+**Le bouton n'apparaît jamais.** Vérifier d'abord que le réglage n'est pas sur Exclusif. Sinon, le programme ZyrDesk n'est peut-être pas à jour : le bouton vient de lui, pas du moteur.
+
+**Le bouton apparaît mais un clic dessus va sur l'ordinateur distant.** Le mode souris est sur Jeu. Ctrl+Alt+Maj+M pour revenir à la souris de bureau.
+
+**Une entrée du menu affiche « la fenêtre de la session n'est pas au premier plan ».** C'est une sécurité : les raccourcis partent vers la fenêtre active, et ZyrDesk refuse de les envoyer ailleurs qu'à la session. Cliquer une fois dans l'image, puis rouvrir le menu.
+
+**Le bouton reste après la fin de la session.** Il s'en va dans la seconde qui suit. S'il reste, à signaler : c'est que le service croit encore tenir une session.

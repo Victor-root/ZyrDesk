@@ -1,0 +1,151 @@
+/*
+  Le bouton flottant d'une session.
+
+  La fenêtre fait exactement la taille de ce qui se voit : ce qui reste
+  autour est transparent, et transparent ne veut pas dire traversant.
+  Tout espace vide de cette page attrape donc les clics destinés à
+  l'image, ce qui n'est acceptable que le temps du menu ouvert, où il
+  sert justement à le refermer.
+*/
+
+.flottant {
+  /* Le fond de la page n'existe pas : seul ce qui est dessiné se voit
+     par-dessus l'image. */
+  background: transparent;
+  overflow: hidden;
+}
+
+.paquet {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--pas-2);
+  /* La fenêtre est mesurée d'après ce bloc : elle ne peut pas être
+     plus petite que lui, ni plus grande. */
+  width: max-content;
+}
+
+/* ---- Le bouton ------------------------------------------------------- */
+
+/* La marque elle-même, posée sur l'image : pas de carte sous elle, elle
+   en porte déjà une. L'ombre suit ses vrais bords plutôt que ceux de sa
+   boîte, sans quoi un halo carré la cernerait. */
+.logo {
+  display: block;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
+  transition: transform var(--duree-courte) var(--courbe);
+}
+
+.logo > img {
+  display: block;
+  width: 52px;
+  height: 52px;
+}
+
+.logo:hover {
+  transform: scale(1.06);
+}
+
+.logo:active {
+  transform: scale(0.97);
+}
+
+.logo:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: 2px;
+}
+
+/* ---- Le menu --------------------------------------------------------- */
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  /* Aussi large que sa ligne la plus longue, jamais une valeur écrite
+     à la main : un libellé rallongé couperait son raccourci. */
+  width: max-content;
+  padding: var(--pas-2);
+  border: 1px solid var(--trait-fort);
+  border-radius: var(--rayon);
+  background: var(--surface-1);
+  box-shadow: var(--ombre-2);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--pas-3);
+  min-height: 38px;
+  padding: 0 var(--pas-2);
+  border: none;
+  border-radius: var(--rayon-petit);
+  background: transparent;
+  color: var(--texte);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--duree-courte) var(--courbe);
+}
+
+.item:hover {
+  background: var(--surface-3);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: -2px;
+}
+
+.item > svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.item-mot {
+  flex: 1;
+  white-space: nowrap;
+  padding-right: var(--pas-5);
+}
+
+/* Le raccourci du moteur, pour que la même chose se fasse au clavier
+   quand la souris appartient à l'ordinateur d'en face. */
+.item-touche {
+  flex: none;
+  font-size: var(--legende);
+  color: var(--texte-faible);
+}
+
+.separateur {
+  height: 1px;
+  margin: var(--pas-2) var(--pas-2);
+  background: var(--trait);
+}
+
+/* Quitter est la seule action sans retour : elle porte la couleur qui
+   le dit, et se trouve en dernier. */
+.item.quitter {
+  color: var(--erreur);
+}
+
+.item.quitter:hover {
+  background: color-mix(in srgb, var(--erreur) 12%, transparent);
+}
+
+/* Ce que Windows ou le moteur ont refusé, dit sur place : l'accueil est
+   peut-être fermé, et de toute façon il est derrière l'image. */
+.souci {
+  padding: var(--pas-2);
+  font-size: var(--legende);
+  color: var(--erreur);
+}

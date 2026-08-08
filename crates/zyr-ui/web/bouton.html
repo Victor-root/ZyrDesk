@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>ZyrDesk</title>
+    <link rel="stylesheet" href="design.css" />
+    <link rel="stylesheet" href="bouton.css" />
+    <!-- Comme l'accueil : le thème est posé avant le premier affichage. -->
+    <script src="theme.js"></script>
+  </head>
+  <body class="flottant">
+    <div class="paquet" id="paquet">
+      <button class="logo" id="logo" aria-label="Menu de la session">
+        <img src="zyrdesk.svg" alt="" width="52" height="52" />
+      </button>
+
+      <div class="menu cache" id="menu" role="menu">
+        <button
+          class="item"
+          type="button"
+          data-acte="fullscreen"
+          role="menuitem"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3" />
+            <path d="M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+          </svg>
+          <span class="item-mot">Plein écran</span>
+          <span class="item-touche">Ctrl+Alt+Maj+X</span>
+        </button>
+
+        <button class="item" type="button" data-acte="stats" role="menuitem">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 20V10M9 20V4M15 20v-7M21 20V8" />
+          </svg>
+          <span class="item-mot">Statistiques</span>
+          <span class="item-touche">Ctrl+Alt+Maj+S</span>
+        </button>
+
+        <button class="item" type="button" data-acte="mouse" role="menuitem">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="7" y="2.5" width="10" height="19" rx="5" />
+            <path d="M12 7v3" />
+          </svg>
+          <span class="item-mot">Souris bureau ou jeu</span>
+          <span class="item-touche">Ctrl+Alt+Maj+M</span>
+        </button>
+
+        <div class="separateur"></div>
+
+        <button class="item" type="button" data-cacher role="menuitem">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M10.6 6.2A9.9 9.9 0 0 1 12 6c5 0 9 4.5 10 6a15 15 0 0 1-3 3.6M6.1 8.3C4.4 9.5 3.3 11 3 12c1 1.5 5 6 9 6a9.6 9.6 0 0 0 3.6-.7"
+            />
+            <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
+          </svg>
+          <span class="item-mot">Masquer ce bouton</span>
+          <span class="item-touche">jusqu'à la fin</span>
+        </button>
+
+        <button
+          class="item quitter"
+          type="button"
+          data-acte="stop"
+          role="menuitem"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3" />
+            <path d="M15 16l4-4-4-4M19 12H10" />
+          </svg>
+          <span class="item-mot">Terminer la session</span>
+          <span class="item-touche">Ctrl+Alt+Maj+Q</span>
+        </button>
+
+        <p class="souci cache" id="souci"></p>
+      </div>
+    </div>
+
+    <script src="bouton.js"></script>
+  </body>
+</html>

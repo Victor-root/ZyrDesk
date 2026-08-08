@@ -291,6 +291,9 @@ p {
 .segments > button {
   min-height: 26px;
   padding: 0 var(--pas-3);
+  /* Un choix qui passe à la ligne cesse de se lire d'un coup d'oeil :
+     le segment s'élargit, jamais le mot ne se coupe. */
+  white-space: nowrap;
   border: none;
   border-radius: 6px;
   background: transparent;

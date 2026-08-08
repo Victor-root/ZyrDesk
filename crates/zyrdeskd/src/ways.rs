@@ -189,6 +189,7 @@ impl<T> Register<T> {
                     way: *way,
                     towards: kept.towards.host.clone(),
                     peer: kept.towards.peer,
+                    process: serving.process,
                     since: now.duration_since(serving.since),
                 })
             })

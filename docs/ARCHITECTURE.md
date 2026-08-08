@@ -56,14 +56,14 @@ En fonctionnement normal, le flux média circule directement entre les deux PC. 
 
 | Processus | Rôle | Compte | Durée de vie |
 |---|---|---|---|
-| `ZyrDesk.exe` | Interface (Tauri), icône de zone de notification, agent presse-papiers côté hôte | Utilisateur connecté | Session utilisateur |
+| `ZyrDesk.exe` | Interface (Tauri), bouton flottant pendant une session, icône de zone de notification, agent presse-papiers côté hôte | Utilisateur connecté | Session utilisateur |
 | `zyrdeskd.exe` | Service Windows : identité de l'appareil, lien broker, LES DEUX extrémités de tunnel (rôle client et rôle hôte), cycle de vie des moteurs, serveur IPC | LocalSystem | Démarre avec Windows |
 | `zyrdesk-host-engine.exe` | Sunshine dérivé : capture, encodage, protocole, strictement lié à 127.0.0.1 | SYSTEM, dans la session console | Tant que « Autoriser l'accès distant » est actif |
 | `zyrdesk-session.exe` | Moonlight dérivé : fenêtre vidéo, décodage, entrées | Utilisateur connecté | Une session distante |
 
 Pourquoi le tunnel vit dans le service et pas dans l'interface :
 
-- L'interface devient sans état : elle peut planter, être mise à jour ou être fermée sans couper une session en cours. Le lecteur `zyrdesk-session.exe` est lancé détaché, et l'interface se rattache à la session au redémarrage.
+- L'interface devient sans état : elle peut planter, être mise à jour ou être fermée sans couper une session en cours. Le lecteur `zyrdesk-session.exe` est lancé détaché, et l'interface se rattache à la session au redémarrage. Pendant une session, `ZyrDesk.exe` garde une seconde fenêtre, minuscule et toujours au-dessus : le bouton flottant. Fermer l'accueil ne la ferme pas, et c'est elle qui maintient le programme en vie tant que la session dure ([D16](DECISIONS.md)).
 - Côté hôte, le service existe de toute façon (accès non supervisé avant ouverture de session) ; côté client, il porte l'identité de l'appareil et le lien broker. Un seul endroit gère donc l'authentification et les chemins réseau.
 - Conséquence assumée : le service est requis même pour un usage purement client (installation avec droits administrateur). Un mode client sans service pourra être étudié plus tard.
 

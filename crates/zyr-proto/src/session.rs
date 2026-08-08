@@ -47,10 +47,17 @@ impl std::str::FromStr for Codec {
     }
 }
 
+/// How the session window sits on the screen.
+///
+/// `Borderless` is the default rather than `Fullscreen`, which takes the
+/// screen exclusively: nothing can be drawn over an exclusive window,
+/// and the floating button of a session is drawn over it. On Windows 10
+/// and later the two cost the same, the engine's swap chain being of the
+/// kind the compositor hands the screen to directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DisplayMode {
-    #[default]
     Fullscreen,
+    #[default]
     Borderless,
     Windowed,
 }
@@ -87,7 +94,9 @@ impl std::str::FromStr for DisplayMode {
 /// Settings of one session.
 ///
 /// The defaults mirror the client engine's own for 1080p60, which the
-/// comparison against unmanaged engines required at milestone M1.
+/// comparison against unmanaged engines required at milestone M1. The
+/// window it opens in is ours to decide, and is decided once, where
+/// `DisplayMode` says why.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SessionSettings {
     pub width: u32,
@@ -114,7 +123,7 @@ impl Default for SessionSettings {
             fps: 60,
             bitrate_kbps: 20_000,
             codec: Codec::Auto,
-            display_mode: DisplayMode::Fullscreen,
+            display_mode: DisplayMode::default(),
             packet_size: None,
             absolute_mouse: true,
             stats_overlay: false,

@@ -40,15 +40,23 @@ Accueil :
 
 Fiche machine (panneau latéral, pas une page) : statut, GPU, résolution native, chemin réseau (« Direct disponible » / « Via relais »), latence estimée, réglages propres à cette machine (qualité par défaut, écran cible), actions secondaires (renommer, révoquer).
 
-Session (l'écran le plus important) : la fenêtre vidéo est native et plein écran par défaut. Aucune décoration permanente. Une pilule discrète apparaît en haut au survol du bord :
+Session (l'écran le plus important) : la fenêtre vidéo est native et occupe tout l'écran, sans bordure. Aucune décoration permanente. Une seule marque de ZyrDesk reste posée dessus, en haut à droite : le logo, en petit. Un clic dessus déplie le menu de la session.
 
 ```text
-        ┌──────────────────────────────────────────┐
-        │  PC-BUREAU · 8 ms · Direct   ⛶  ⚙  ⏻    │
-        └──────────────────────────────────────────┘
+                                        ┌────┐
+                                        │ ZD │
+                                        └────┘
+        ┌───────────────────────────────────────┐
+        │ ⛶  Plein écran         Ctrl+Alt+Maj+X │
+        │ ▥  Statistiques        Ctrl+Alt+Maj+S │
+        │ ⌖  Souris bureau ou jeu Ctrl+Alt+Maj+M│
+        │ ─────────────────────────────────────  │
+        │ ⦸  Masquer ce bouton      jusqu'à la fin│
+        │ ⏻  Terminer la session  Ctrl+Alt+Maj+Q │
+        └───────────────────────────────────────┘
 ```
 
-Latence et chemin en un coup d'œil ; au clic : statistiques détaillées (fps capturés/reçus/affichés, débit, pertes, jitter, temps de décodage), changement d'écran, préréglage de qualité, déconnexion. Raccourci clavier global pour capturer/libérer la souris et pour la pilule.
+Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Posé en M4 ([D16](DECISIONS.md)). À venir : latence et chemin réseau en un coup d'œil, statistiques détaillées (fps capturés/reçus/affichés, débit, pertes, jitter, temps de décodage), changement d'écran, préréglage de qualité.
 
 Réglages : deux niveaux. Simple par défaut (qualité en préréglages : Fluide / Équilibré / Qualité, audio, démarrage avec Windows, thème). « Avancé » replié : codec, débit manuel, taille de paquet, décodeur, choix du relais, mode paranoïaque, diagnostic. Le jargon reste rangé là.
 
