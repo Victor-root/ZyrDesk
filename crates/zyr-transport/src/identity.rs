@@ -379,6 +379,45 @@ mod tests {
     }
 
     #[test]
+    fn several_devices_are_let_in_and_the_others_are_not() {
+        let first = Identity::generate().unwrap();
+        let second = Identity::generate().unwrap();
+        let intruder = Identity::generate().unwrap();
+
+        let allowed: AllowedPeers = [first.fingerprint(), second.fingerprint()]
+            .into_iter()
+            .collect();
+        let pinned = PinnedPeer::new(allowed);
+
+        assert!(pinned.check_fingerprint(first.certificate()).is_ok());
+        assert!(pinned.check_fingerprint(second.certificate()).is_ok());
+        assert!(pinned.check_fingerprint(intruder.certificate()).is_err());
+    }
+
+    #[test]
+    fn a_device_authorised_afterwards_gets_in_without_reopening() {
+        // The host reads its list again while it runs: authorising one
+        // more computer must not mean cutting the session in progress.
+        let known = Identity::generate().unwrap();
+        let latecomer = Identity::generate().unwrap();
+
+        let allowed: AllowedPeers = known.fingerprint().into();
+        let pinned = PinnedPeer::new(allowed.clone());
+        assert!(pinned.check_fingerprint(latecomer.certificate()).is_err());
+
+        allowed.replace_with([known.fingerprint(), latecomer.fingerprint()]);
+        assert!(pinned.check_fingerprint(latecomer.certificate()).is_ok());
+        assert!(pinned.check_fingerprint(known.certificate()).is_ok());
+    }
+
+    #[test]
+    fn a_machine_that_allows_nobody_lets_nobody_in() {
+        let anyone = Identity::generate().unwrap();
+        let pinned = PinnedPeer::new(AllowedPeers::default());
+        assert!(pinned.check_fingerprint(anyone.certificate()).is_err());
+    }
+
+    #[test]
     fn a_displayed_fingerprint_reads_back() {
         let identity = Identity::generate().unwrap();
         let fingerprint = identity.fingerprint();

@@ -12,12 +12,6 @@
 //! seconds costs nothing next to watching the filesystem on every
 //! platform.
 
-// Outside Windows nothing calls this module: the service does not exist
-// there. It stays compiled and tested everywhere, the logic having
-// nothing platform-specific about it, but with no caller it would pass
-// for dead code.
-#![cfg_attr(not(windows), allow(dead_code))]
-
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
