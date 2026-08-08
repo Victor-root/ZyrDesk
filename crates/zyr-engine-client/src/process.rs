@@ -121,8 +121,8 @@ impl ClientEngine {
             .stdin(Stdio::null())
             .output()?;
 
-        // The output is recorded whatever the outcome: the engine
-        // reports success even when the pairing did not go through.
+        // The output is recorded whatever the outcome: what the engine
+        // has to say about a refused pairing lives nowhere else.
         if let Some(mut log) = self.open_log()? {
             let _ = writeln!(log, "--- pairing with {host} ---");
             let _ = log.write_all(&output.stdout);

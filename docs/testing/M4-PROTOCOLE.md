@@ -138,6 +138,20 @@ zyr-cli connect <adresse IP du PC hote> --pair <empreinte du PC hote>
 >
 > Noter : quelque chose clignote-t-il encore au lancement ? .......................................
 
+L'appairage passe par un deuxième chemin, qui a sa propre fenêtre chez le moteur. Le forcer :
+
+```
+zyr-cli connect <adresse IP du PC hote> --pair <empreinte du PC hote> --pair-again
+```
+
+Un code à quatre chiffres s'affiche et la commande attend. **Sans fermer cette fenêtre**, sur le **PC hôte** : `zyr-cli host pin <le code>`.
+
+> **M4-R6b (l'appairage non plus n'affiche rien)**
+>
+> Attendu : pendant toute l'attente du code, **aucune fenêtre du moteur** ne s'ouvre sur le PC client. La commande dit « Autorisé. » puis enchaîne directement sur l'image.
+>
+> Ce chemin avait été oublié au premier passage : il montrait la fenêtre d'appairage du projet d'origine, code compris.
+
 ### Les messages ne doivent pas avoir disparu avec la fenêtre
 
 C'est le risque de ce changement : une fenêtre en moins peut vouloir dire une erreur qu'on ne voit plus. Les messages partent maintenant dans la fenêtre de commande et dans `data\logs\session.log`.

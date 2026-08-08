@@ -35,12 +35,12 @@ Sunshine :
 - Le binaire produit porte bien notre nom de produit, notre icône et notre éditeur (patch P-S2 et options de configuration).
 
 Moonlight :
-- `pair --pin` aboutit sans interaction.
-- `stream` accepte tous les drapeaux que nous passons ; la session démarre ; aucune fenêtre de chargement visible en mode session (patch P-M1).
+- `pair --pin` aboutit sans interaction et sans fenêtre (patch P-M1).
+- `stream` accepte tous les drapeaux que nous passons ; la session démarre ; aucune fenêtre du moteur avant l'image (patch P-M1).
 - Le mode portable isole bien l'état dans le dossier fourni.
 - `--packet-size` est honoré (vérifié par capture de paquets : taille maximale observée conforme).
 - Les statistiques nécessaires au banc sont présentes dans les journaux/overlay au format attendu par notre parseur.
-- Les codes de sortie distinguent bien fin normale (0), session en échec (2) et machine injoignable (3), tels que posés par P-M5.
+- Les codes de sortie distinguent bien fin normale (0), session en échec (2), machine injoignable (3) et appairage refusé (4), tels que posés par P-M5.
 
 ## Répétition mensuelle automatique
 
