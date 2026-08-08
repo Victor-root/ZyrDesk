@@ -1,4 +1,4 @@
-# Builds the ZyrDesk client engine from the pinned Moonlight source.
+﻿# Builds the ZyrDesk client engine from the pinned Moonlight source.
 #
 # The engine's own build script is not used: it also produces an MSI
 # installer, publishes debugging symbols and signs binaries, none of
