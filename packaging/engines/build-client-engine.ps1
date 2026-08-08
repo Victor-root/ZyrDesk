@@ -142,6 +142,10 @@ $missing = @()
 foreach ($line in $reading) {
     if ($line -notmatch '^\s+(\S+\.dll)\s*$') { continue }
     $library = $Matches[1]
+    # Names in api-ms-win and ext-ms-win are not files at all: Windows
+    # resolves them itself to whatever carries them on that version.
+    # Looking for them on disk finds nothing even when all is well.
+    if ($library -match '^(api|ext)-ms-win-') { continue }
     $besideIt = Test-Path (Join-Path $Output $library)
     $fromWindows = Test-Path (Join-Path $env:SystemRoot "System32\$library")
     if (-not $besideIt -and -not $fromWindows) {
