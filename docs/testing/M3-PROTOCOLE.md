@@ -234,7 +234,13 @@ zyrdeskd uninstall
 
 **`zyrdeskd install` refuse.** La fenêtre n'est pas administrateur. Le service s'inscrit auprès de Windows, ce qu'un utilisateur ordinaire n'a pas le droit de faire.
 
-**`zyrdeskd install` dit que le service existe déjà.** L'installateur du produit l'enregistre aussi : un ZyrDesk installé et un ZyrDesk compilé se disputent le même nom de service. Retirer celui qui ne sert pas (`zyrdeskd uninstall` depuis son propre dossier) avant d'inscrire l'autre.
+**`zyrdeskd install` sur un service déjà installé.** Ce n'est pas une erreur : la commande met simplement à jour l'inscription pour qu'elle pointe sur ce programme, ce qui sert quand le dossier du projet a bougé. Elle le dit, et il reste à faire `zyrdeskd stop` puis `zyrdeskd start` si le service tournait.
+
+**`cargo build --release` refuse d'écrire `zyrdeskd.exe` (« Accès refusé »).** Le service tourne et tient son propre fichier programme. Arrêter le service, recompiler, redémarrer :
+
+```
+zyrdeskd stop && cargo build --release && zyrdeskd start
+```
 
 **« a refusé cet ordinateur, ou son empreinte a changé ».** L'hôte n'a pas inscrit l'empreinte du client, ou les deux empreintes ont été inversées. Vérifier avec `zyr-cli host devices` sur l'hôte : la liste doit contenir ce qu'affiche `zyr-cli identity` sur le client.
 

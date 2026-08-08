@@ -134,8 +134,23 @@ fn log_path() -> PathBuf {
     paths::logs_dir().join("service.log")
 }
 
+/// Code Windows returns for a service it does not know.
+const UNKNOWN_SERVICE: i32 = 1060;
+
+/// What installing actually did.
+pub enum Installed {
+    /// Windows did not know the service and now does.
+    Registered,
+    /// It already knew it, and now points at this program.
+    Updated,
+}
+
 /// Registers the service with Windows, starting automatically.
-pub fn install() -> Result<(), Box<dyn std::error::Error>> {
+///
+/// Run again on a machine that already knows the service, it updates
+/// where the registration points instead of failing: the program moves
+/// when the project folder does, and Windows has to follow.
+pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
     let manager = ServiceManager::local_computer(
         None::<&str>,
         ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
@@ -158,9 +173,27 @@ pub fn install() -> Result<(), Box<dyn std::error::Error>> {
         account_password: None,
     };
 
-    let service = manager.create_service(&description, ServiceAccess::CHANGE_CONFIG)?;
-    service.set_description(DESCRIPTION)?;
-    Ok(())
+    match manager.open_service(NAME, ServiceAccess::CHANGE_CONFIG) {
+        Ok(service) => {
+            service.change_config(&description)?;
+            service.set_description(DESCRIPTION)?;
+            Ok(Installed::Updated)
+        }
+        Err(e) if reported(&e) == Some(UNKNOWN_SERVICE) => {
+            let service = manager.create_service(&description, ServiceAccess::CHANGE_CONFIG)?;
+            service.set_description(DESCRIPTION)?;
+            Ok(Installed::Registered)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Code the system itself gave, when it gave one.
+fn reported(error: &windows_service::Error) -> Option<i32> {
+    match error {
+        windows_service::Error::Winapi(e) => e.raw_os_error(),
+        _ => None,
+    }
 }
 
 /// Removes the service. It disappears once stopped.

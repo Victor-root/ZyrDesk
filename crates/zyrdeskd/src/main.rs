@@ -72,33 +72,39 @@ fn main() -> ExitCode {
 fn run(command: Command) -> ExitCode {
     match command {
         Command::Install => match service::install() {
-            Ok(()) => {
+            Ok(service::Installed::Registered) => {
                 println!("Service installé. Il démarrera avec Windows.");
                 println!("  Pour le lancer tout de suite : zyrdeskd start");
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("installation du service", e),
+            Ok(service::Installed::Updated) => {
+                println!("Service déjà installé, sa configuration a été mise à jour.");
+                println!("  Il pointe maintenant sur ce programme.");
+                println!("  S'il tournait, relancez-le : zyrdeskd stop puis zyrdeskd start");
+                ExitCode::SUCCESS
+            }
+            Err(e) => failure("installation du service", with_causes(&*e)),
         },
         Command::Uninstall => match service::uninstall() {
             Ok(()) => {
                 println!("Service retiré.");
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("retrait du service", e),
+            Err(e) => failure("retrait du service", with_causes(&e)),
         },
         Command::Start => match service::start() {
             Ok(()) => {
                 println!("Service démarré.");
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("démarrage du service", e),
+            Err(e) => failure("démarrage du service", with_causes(&e)),
         },
         Command::Stop => match service::stop() {
             Ok(()) => {
                 println!("Service arrêté.");
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("arrêt du service", e),
+            Err(e) => failure("arrêt du service", with_causes(&e)),
         },
         Command::Status => match service::state() {
             Ok(state) => {
@@ -106,7 +112,7 @@ fn run(command: Command) -> ExitCode {
                 println!("  Journal : {}", service_log().display());
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("état du service", e),
+            Err(e) => failure("état du service", with_causes(&e)),
         },
     }
 }
@@ -145,4 +151,21 @@ fn failure(context: &str, error: impl std::fmt::Display) -> ExitCode {
     eprintln!("Échec : {context}");
     eprintln!("  {error}");
     ExitCode::FAILURE
+}
+
+/// Renders an error together with what caused it.
+///
+/// The service library hides the system's own message behind a generic
+/// wrapper: without the chain, a refused installation reads « IO error
+/// in winapi call » and says nothing at all.
+#[cfg(windows)]
+fn with_causes(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut cause = error.source();
+    while let Some(reason) = cause {
+        text.push_str(" : ");
+        text.push_str(&reason.to_string());
+        cause = reason.source();
+    }
+    text
 }
