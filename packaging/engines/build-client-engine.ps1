@@ -127,4 +127,37 @@ if (-not $redist) {
 }
 Copy-Item (Join-Path $redist "*.dll") $Output
 
+# What breaks a packaged engine is almost always a library left behind,
+# and it only shows on someone else's machine, at the first launch.
+# Starting the engine here would prove nothing: it draws a window, and
+# a build machine has no screen to draw it on. Its dependencies can be
+# read without running it.
+Write-Host "Vérification des dépendances"
+
+$engine = Join-Path $Output "zyrdesk-session.exe"
+$reading = & dumpbin.exe /dependents $engine
+Assert-Ran "la lecture des dépendances du moteur"
+
+$missing = @()
+foreach ($line in $reading) {
+    if ($line -notmatch '^\s+(\S+\.dll)\s*$') { continue }
+    $library = $Matches[1]
+    $besideIt = Test-Path (Join-Path $Output $library)
+    $fromWindows = Test-Path (Join-Path $env:SystemRoot "System32\$library")
+    if (-not $besideIt -and -not $fromWindows) {
+        $missing += $library
+    }
+}
+if ($missing.Count -gt 0) {
+    throw "bibliothèques manquantes à côté du moteur : $($missing -join ', ')"
+}
+
+# Qt loads this one by name at startup rather than declaring it, so it
+# is invisible to the check above. Without it a Qt program stops before
+# showing anything, with a message naming no cause.
+$platform = Join-Path $Output "platforms\qwindows.dll"
+if (-not (Test-Path $platform)) {
+    throw "greffon de plateforme Qt absent : le moteur ne s'ouvrirait pas"
+}
+
 Write-Host "Moteur client assemblé dans $Output"

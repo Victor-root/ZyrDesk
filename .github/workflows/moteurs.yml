@@ -51,21 +51,11 @@ jobs:
         with:
           arch: x64
 
+      # La compilation vérifie elle-même ce qu'elle produit : un moteur
+      # à qui il manque une bibliothèque ne se voit qu'au premier
+      # lancement, sur la machine de quelqu'un d'autre.
       - name: Compiler le moteur client
         run: ./packaging/engines/build-client-engine.ps1
-
-      # Ce qui est vérifié ici n'est pas que le fichier existe, mais
-      # qu'il démarre : une dépendance oubliée ne se voit pas autrement
-      # qu'au premier lancement, sur la machine de quelqu'un d'autre.
-      - name: Vérifier que le moteur démarre
-        run: |
-          $engine = "data/engines/client/zyrdesk-session.exe"
-          $ran = & $engine --version 2>&1
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "le moteur ne démarre pas : $ran"
-            exit 1
-          }
-          Write-Host "Le moteur répond : $ran"
 
       - uses: actions/upload-artifact@v4
         with:
