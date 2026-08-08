@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>ZyrDesk</title>
+    <link rel="stylesheet" href="design.css" />
+    <link rel="stylesheet" href="accueil.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="entete">
+        <h1 class="titre">ZyrDesk</h1>
+      </header>
+
+      <h2 class="section">Cet ordinateur</h2>
+      <section class="carte machine" id="cette-machine">
+        <div class="machine-identite">
+          <p class="sous-titre" id="nom-machine">…</p>
+          <p class="etat">
+            <span class="pastille" id="pastille-hote"></span>
+            <span id="etat-hote">Recherche du service…</span>
+          </p>
+        </div>
+        <div class="machine-acces">
+          <span class="legende">Accès distant</span>
+          <button
+            class="interrupteur"
+            id="interrupteur-hote"
+            role="switch"
+            aria-checked="false"
+            aria-label="Accès distant"
+            disabled
+          ></button>
+        </div>
+      </section>
+
+      <div class="bandeau alerte cache" id="service-absent">
+        <span>
+          Le service ZyrDesk ne répond pas. Cet ordinateur ne peut ni être
+          contrôlé ni en contrôler un autre tant qu'il ne tourne pas.
+        </span>
+      </div>
+
+      <p class="empreinte" id="empreinte" title="Empreinte de cet ordinateur"></p>
+
+      <h2 class="section">Se connecter à un ordinateur</h2>
+      <section class="carte connexion">
+        <div class="champs">
+          <div class="champ">
+            <label for="adresse">Adresse</label>
+            <input
+              id="adresse"
+              type="text"
+              inputmode="numeric"
+              placeholder="192.168.1.20"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="champ">
+            <label for="empreinte-distante">Empreinte de cet ordinateur</label>
+            <input
+              id="empreinte-distante"
+              type="text"
+              placeholder="0829cc7e…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+        </div>
+        <button class="bouton principal grand" id="connecter" disabled>
+          Se connecter
+        </button>
+      </section>
+
+      <div class="bandeau attente cache apparait" id="etape">
+        <div class="etape-corps">
+          <p class="sous-titre" id="etape-titre"></p>
+          <p class="legende" id="etape-detail"></p>
+          <p class="code cache" id="etape-code"></p>
+        </div>
+      </div>
+
+      <div class="bandeau alerte cache apparait" id="probleme">
+        <span id="probleme-texte"></span>
+      </div>
+    </main>
+
+    <script src="accueil.js"></script>
+  </body>
+</html>

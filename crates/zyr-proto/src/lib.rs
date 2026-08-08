@@ -1,5 +1,6 @@
 //! Types and constants shared by the ZyrDesk components.
 
+pub mod machine;
 pub mod net;
 pub mod paths;
 pub mod random;

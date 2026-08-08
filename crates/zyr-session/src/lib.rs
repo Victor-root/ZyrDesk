@@ -28,6 +28,10 @@ use zyr_proto::random;
 use zyr_proto::session::SessionSettings;
 use zyr_transport::{Fingerprint, MediaProfile};
 
+// Handed back by `Running::wait`, so callers do not have to reach past
+// this crate to the engine driver to name what they were given.
+pub use zyr_engine_client::SessionOutcome as Outcome;
+
 /// What is being asked for.
 pub struct Wanted {
     /// Address of the remote computer, as the person wrote it.

@@ -1,3 +1,7 @@
 /target
 /data
 packaging/windows/*.exe
+
+# Schémas régénérés par Tauri à chaque compilation, différents selon la
+# plateforme : les suivre ne ferait que salir l'arbre à chaque build.
+/crates/zyr-ui/gen/schemas

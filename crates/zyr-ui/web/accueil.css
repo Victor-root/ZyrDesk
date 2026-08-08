@@ -1,0 +1,93 @@
+/*
+  Mise en page de l'accueil. Rien ici ne décide d'une couleur ni d'un
+  espacement : tout descend des tokens de design.css.
+*/
+
+.page {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: var(--pas-6) var(--pas-5) var(--pas-7);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-3);
+}
+
+.entete {
+  padding-bottom: var(--pas-2);
+}
+
+/* Une étiquette de section respire au-dessus, pas en dessous. */
+.section {
+  margin-top: var(--pas-4);
+}
+
+.cache {
+  display: none;
+}
+
+/* ---- Carte de cette machine ----------------------------------------- */
+
+.machine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pas-4);
+  padding: var(--pas-5);
+}
+
+.machine-identite {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-1);
+  min-width: 0;
+}
+
+.machine-acces {
+  display: flex;
+  align-items: center;
+  gap: var(--pas-3);
+  flex: none;
+}
+
+.empreinte {
+  padding: 0 var(--pas-1);
+}
+
+/* ---- Carte de connexion --------------------------------------------- */
+
+.connexion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-4);
+  padding: var(--pas-5);
+}
+
+.champs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: var(--pas-4);
+}
+
+/* Sous une certaine largeur, deux colonnes serrent trop les champs. */
+@media (max-width: 640px) {
+  .champs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.connexion .bouton {
+  align-self: flex-start;
+}
+
+/* ---- Étape en cours -------------------------------------------------- */
+
+.etape-corps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-2);
+  min-width: 0;
+}
+
+.code {
+  margin-top: var(--pas-1);
+}

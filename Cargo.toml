@@ -9,6 +9,7 @@ members = [
     "crates/zyr-control",
     "crates/zyr-session",
     "crates/zyr-cli",
+    "crates/zyr-ui",
     "crates/zyrdeskd",
 ]
 

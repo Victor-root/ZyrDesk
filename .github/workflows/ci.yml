@@ -30,6 +30,10 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Installer de quoi compiler l'interface
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets
 
@@ -46,6 +50,14 @@ jobs:
           submodules: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # L'interface s'appuie sur la couche web du système. Sous Windows
+      # elle est déjà là ; sous Linux elle s'installe, et sans elle la
+      # compilation de l'espace de travail entier s'arrête.
+      - name: Installer de quoi compiler l'interface
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev
       # Sans --no-fail-fast, cargo s'arrête au premier binaire de test en
       # échec : une plateforme qui casse plusieurs choses ne les révèle
       # qu'une par une, un aller-retour de CI à chaque fois.

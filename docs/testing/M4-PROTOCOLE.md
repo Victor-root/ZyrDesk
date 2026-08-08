@@ -268,3 +268,83 @@ Le moteur est le même, mais il sort d'une chaîne de compilation différente de
 **Le gestionnaire des tâches dit encore Sunshine.** Le binaire en place est l'ancien, renommé à la main. Vérifier la date de `zyrdesk-host-engine.exe`.
 
 **La capture est saccadée alors qu'elle ne l'était pas.** Noter précisément dans quelles conditions et repasser au binaire officiel renommé pour comparer : c'est le seul moyen de dire si la chaîne de compilation y est pour quelque chose.
+
+---
+
+## Partie 4 : la fenêtre, première tranche
+
+### Ce qui change, et pourquoi
+
+C'est le début de l'application, celle qui remplacera la ligne de commande. Cette première tranche pose deux choses : le design system, qui décide une fois pour toutes des couleurs, des espacements et du rythme de l'ensemble, et l'accueil, qui montre cet ordinateur et permet d'en joindre un autre.
+
+Ce n'est pas encore le produit fini. Ce qui manque et qui viendra ensuite : l'interrupteur d'accès distant est affiché mais pas encore actionnable (le service héberge en permanence pour l'instant), il n'y a pas de liste d'ordinateurs connus, pas de réglages, et rien ne se rattache à une session déjà en cours.
+
+Ce qui marche : ouvrir une session complète, appairage compris, sans taper une seule commande.
+
+### Préparation
+
+Sur les **deux PC**, la mise à jour habituelle :
+
+```
+git pull && cargo build --release && zyrdeskd stop && zyrdeskd install && zyrdeskd start && zyrdeskd status
+```
+
+La compilation sera plus longue que d'habitude cette fois : l'application amène ses propres dépendances, une seule fois.
+
+### Ouvrir la fenêtre
+
+Sur les **deux PC** :
+
+```
+.\target\release\ZyrDesk.exe
+```
+
+> **M4-R12 (la fenêtre s'ouvre et se reconnaît)**
+>
+> Attendu : une fenêtre sombre s'ouvre, avec le nom de l'ordinateur, une pastille verte et **« Prêt à être contrôlé »**. L'empreinte de la machine est affichée en dessous, en petit.
+>
+> Vérifier que la fenêtre porte bien le logo ZyrDesk dans la barre des tâches.
+>
+> Noter : le nom affiché est-il le bon ? ..........................................................
+
+Puis, pour vérifier que la fenêtre dit la vérité et ne se contente pas d'afficher du texte : sur ce même PC, dans une fenêtre administrateur, `zyrdeskd stop`.
+
+> **M4-R13 (la fenêtre suit l'état réel)**
+>
+> Attendu : en quelques secondes, **sans rien toucher**, la pastille passe au gris, le texte devient « Service arrêté » et un bandeau rouge apparaît.
+>
+> Relancer `zyrdeskd start` : tout revient au vert de la même façon.
+
+### Le vrai test de cette partie
+
+Sur le **PC client**, dans la fenêtre ZyrDesk : recopier l'adresse du PC hôte, puis son empreinte, qui est affichée dans la fenêtre ZyrDesk **du PC hôte** (elle se sélectionne à la souris). Cliquer sur **Se connecter**.
+
+> **M4-R14 (une session sans ligne de commande)**
+>
+> Attendu : la fenêtre annonce le tunnel, puis la session démarre et l'image apparaît. Aucune commande n'a été tapée.
+>
+> Le bouton reste éteint tant que l'adresse est vide ou que l'empreinte n'a pas la bonne longueur : c'est voulu.
+
+Pour vérifier le chemin de l'appairage, sur le **PC client** : supprimer le dossier `data\devices`, puis recommencer.
+
+> **M4-R15 (le code d'appairage s'affiche dans la fenêtre)**
+>
+> Attendu : un code à quatre chiffres apparaît en grand dans la fenêtre, avec la consigne. Sur le **PC hôte** : `zyr-cli host pin <le code>`. La fenêtre enchaîne toute seule sur la session.
+>
+> Cette dernière commande disparaîtra quand l'hôte aura sa propre fenêtre pour accepter.
+
+Enfin, session ouverte : fermer la fenêtre ZyrDesk à la croix.
+
+> **M4-R16 (la fenêtre n'est pas la session)**
+>
+> Attendu : **l'image continue**. C'est tout l'intérêt du montage : l'interface peut être fermée, mise à jour ou plantée sans que la session s'arrête.
+
+### Si quelque chose ne va pas
+
+**La fenêtre s'ouvre mais reste vide, ou tout est figé sur « … ».** La partie web n'a pas démarré. Appuyer sur F12 pour ouvrir les outils de développement et me donner ce qui est écrit en rouge dans l'onglet Console.
+
+**« Le service ZyrDesk ne répond pas » alors qu'il tourne.** L'application et le service ne datent pas du même jour : recompiler les deux avec la commande de préparation.
+
+**Rien ne se passe au clic sur Se connecter.** Même chose, F12 puis Console.
+
+**La fenêtre s'ouvre sans logo.** Sans conséquence, mais à signaler.

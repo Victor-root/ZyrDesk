@@ -1,0 +1,424 @@
+/*
+  Design system ZyrDesk, version 1.
+
+  Un seul endroit décide des couleurs, des espacements, des rythmes.
+  Les vues n'écrivent jamais une valeur en dur : elles nomment un rôle.
+  C'est ce qui permet de changer le thème sans relire chaque écran, et
+  ce qui empêche l'interface de dériver écran par écran.
+
+  Les couleurs portent des noms de rôle et non de teinte. « surface-2 »
+  survit à un changement de palette ; « gris-clair » non.
+*/
+
+:root {
+  color-scheme: dark;
+
+  /* Fonds, du plus profond au plus proche. Trois niveaux, pas plus :
+     au-delà l'oeil ne les distingue plus et le calme se perd. */
+  --fond: #0b0d12;
+  --surface-1: #12151d;
+  --surface-2: #191d27;
+  --surface-3: #222735;
+
+  /* Traits. Jamais de bordure dure : une séparation se suggère. */
+  --trait: #262c3a;
+  --trait-fort: #333b4d;
+
+  /* Textes, par importance décroissante. */
+  --texte: #e8eaf0;
+  --texte-doux: #a0a7b8;
+  --texte-faible: #6b7385;
+
+  /* La seule couleur d'accent, réservée à l'action principale et à
+     ce qui est vivant. L'employer ailleurs la dévalue. */
+  --accent: #3b82f6;
+  --accent-vif: #60a5fa;
+  --accent-sourd: #1e40af;
+  --accent-voile: rgba(59, 130, 246, 0.14);
+
+  /* États système. Une palette réduite, jamais décorative. */
+  --en-ligne: #34d399;
+  --attention: #fbbf24;
+  --erreur: #f87171;
+  --hors-ligne: #4b5563;
+
+  /* Grille de 8. Tout espacement en descend. */
+  --pas-1: 4px;
+  --pas-2: 8px;
+  --pas-3: 12px;
+  --pas-4: 16px;
+  --pas-5: 24px;
+  --pas-6: 32px;
+  --pas-7: 48px;
+
+  --rayon-petit: 8px;
+  --rayon: 12px;
+  --rayon-grand: 16px;
+  --rayon-rond: 999px;
+
+  /* Ombres courtes et douces : elles posent, elles ne dramatisent pas. */
+  --ombre-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ombre-2: 0 4px 16px rgba(0, 0, 0, 0.35);
+
+  /* Quatre tailles de texte, pas une de plus. */
+  --titre: 22px;
+  --sous-titre: 15px;
+  --corps: 14px;
+  --legende: 12px;
+
+  /* Mouvement : assez pour être compris, assez court pour ne pas
+     être attendu. */
+  --duree: 180ms;
+  --duree-courte: 120ms;
+  --courbe: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+:root[data-theme="clair"] {
+  color-scheme: light;
+
+  --fond: #f4f5f8;
+  --surface-1: #ffffff;
+  --surface-2: #f7f8fb;
+  --surface-3: #eef0f5;
+
+  --trait: #e2e5ec;
+  --trait-fort: #cdd2dd;
+
+  --texte: #12151d;
+  --texte-doux: #4d5566;
+  --texte-faible: #79809180;
+
+  --accent: #2563eb;
+  --accent-vif: #1d4ed8;
+  --accent-sourd: #bfdbfe;
+  --accent-voile: rgba(37, 99, 235, 0.1);
+
+  --en-ligne: #059669;
+  --attention: #b45309;
+  --erreur: #dc2626;
+  --hors-ligne: #9ca3af;
+
+  --ombre-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --ombre-2: 0 6px 20px rgba(16, 24, 40, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--fond);
+  color: var(--texte);
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-size: var(--corps);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  /* Une interface n'est pas un document : rien ne s'y sélectionne par
+     accident. Ce qui se lit vraiment le redemande. */
+  user-select: none;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+/* ---- Texte ---------------------------------------------------------- */
+
+.titre {
+  font-size: var(--titre);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.sous-titre {
+  font-size: var(--sous-titre);
+  font-weight: 600;
+}
+
+.legende {
+  font-size: var(--legende);
+  color: var(--texte-doux);
+}
+
+/* Une étiquette de section : discrète, jamais criarde. */
+.section {
+  font-size: var(--legende);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--texte-faible);
+}
+
+/* Les chiffres qu'on compare doivent s'aligner. */
+.mesure {
+  font-variant-numeric: tabular-nums;
+}
+
+.empreinte {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: var(--legende);
+  color: var(--texte-faible);
+  letter-spacing: 0.02em;
+  user-select: text;
+  word-break: break-all;
+}
+
+/* ---- Surfaces ------------------------------------------------------- */
+
+.carte {
+  background: var(--surface-1);
+  border: 1px solid var(--trait);
+  border-radius: var(--rayon-grand);
+  box-shadow: var(--ombre-1);
+}
+
+/* ---- Boutons -------------------------------------------------------- */
+
+.bouton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pas-2);
+  min-height: 36px;
+  padding: 0 var(--pas-4);
+  border: 1px solid transparent;
+  border-radius: var(--rayon-petit);
+  background: var(--surface-3);
+  color: var(--texte);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--duree-courte) var(--courbe),
+    border-color var(--duree-courte) var(--courbe),
+    opacity var(--duree-courte) var(--courbe);
+}
+
+.bouton:hover:not(:disabled) {
+  background: var(--trait);
+}
+
+.bouton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bouton:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: 2px;
+}
+
+.bouton.principal {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.bouton.principal:hover:not(:disabled) {
+  background: var(--accent-vif);
+}
+
+.bouton.discret {
+  background: transparent;
+  border-color: var(--trait-fort);
+  color: var(--texte-doux);
+}
+
+.bouton.discret:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--texte);
+}
+
+.bouton.grand {
+  min-height: 44px;
+  padding: 0 var(--pas-5);
+  font-size: var(--sous-titre);
+}
+
+/* ---- Champs --------------------------------------------------------- */
+
+.champ {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-2);
+}
+
+.champ > label {
+  font-size: var(--legende);
+  color: var(--texte-doux);
+}
+
+.champ > input {
+  min-height: 40px;
+  padding: 0 var(--pas-3);
+  background: var(--surface-2);
+  border: 1px solid var(--trait);
+  border-radius: var(--rayon-petit);
+  color: var(--texte);
+  font: inherit;
+  user-select: text;
+  transition:
+    border-color var(--duree-courte) var(--courbe),
+    background var(--duree-courte) var(--courbe);
+}
+
+.champ > input::placeholder {
+  color: var(--texte-faible);
+}
+
+.champ > input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
+
+/* ---- Pastille de présence ------------------------------------------- */
+
+.pastille {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--rayon-rond);
+  background: var(--hors-ligne);
+  flex: none;
+}
+
+.pastille.vivante {
+  background: var(--en-ligne);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--en-ligne) 18%, transparent);
+}
+
+.pastille.attention {
+  background: var(--attention);
+}
+
+.pastille.erreur {
+  background: var(--erreur);
+}
+
+/* L'état ne se lit jamais à la couleur seule : le texte à côté le dit. */
+.etat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pas-2);
+  color: var(--texte-doux);
+}
+
+/* ---- Interrupteur --------------------------------------------------- */
+
+.interrupteur {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--trait-fort);
+  border-radius: var(--rayon-rond);
+  background: var(--surface-3);
+  cursor: pointer;
+  transition:
+    background var(--duree) var(--courbe),
+    border-color var(--duree) var(--courbe);
+}
+
+.interrupteur::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--rayon-rond);
+  background: var(--texte-doux);
+  transition:
+    transform var(--duree) var(--courbe),
+    background var(--duree) var(--courbe);
+}
+
+.interrupteur[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.interrupteur[aria-checked="true"]::after {
+  transform: translateX(18px);
+  background: #ffffff;
+}
+
+.interrupteur:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: 2px;
+}
+
+.interrupteur:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- Bandeau d'information ------------------------------------------ */
+
+.bandeau {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pas-3);
+  padding: var(--pas-3) var(--pas-4);
+  border: 1px solid var(--trait);
+  border-radius: var(--rayon);
+  background: var(--surface-2);
+  color: var(--texte-doux);
+}
+
+.bandeau.alerte {
+  border-color: color-mix(in srgb, var(--erreur) 40%, var(--trait));
+  background: color-mix(in srgb, var(--erreur) 8%, var(--surface-2));
+}
+
+.bandeau.attente {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--trait));
+  background: var(--accent-voile);
+  color: var(--texte);
+}
+
+/* ---- Code d'appairage ----------------------------------------------- */
+
+.code {
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: var(--accent-vif);
+  user-select: text;
+}
+
+/* ---- Apparitions ----------------------------------------------------- */
+
+@keyframes apparait {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.apparait {
+  animation: apparait var(--duree) var(--courbe);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

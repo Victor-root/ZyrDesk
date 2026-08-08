@@ -1,0 +1,25 @@
+[package]
+name = "zyr-ui"
+description = "Application ZyrDesk : la seule fenêtre que l'utilisateur voit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Le nom du produit, pas celui de la caisse : c'est ce que la personne
+# lit dans la barre des tâches et dans le gestionnaire des tâches.
+[[bin]]
+name = "ZyrDesk"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+zyr-proto.workspace = true
+zyr-control.workspace = true
+zyr-session.workspace = true
+zyr-transport.workspace = true
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
