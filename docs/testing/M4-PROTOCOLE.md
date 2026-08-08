@@ -4,6 +4,14 @@ Ce document se remplit au fur et à mesure du jalon. Chaque partie se teste dès
 
 Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis lequel on se connecte.
 
+**Deux choses séparées à tenir à jour, sur les deux PC.** Les moteurs (téléchargés en artefact et décompressés dans `data\engines\...`) sont une chose. Le programme ZyrDesk lui-même (`zyr-cli`, `zyrdeskd`) en est une autre, et se met à jour par :
+
+```
+git pull && cargo build --release && zyrdeskd stop && zyrdeskd install && zyrdeskd start && zyrdeskd status
+```
+
+Remplacer un moteur sans refaire cette commande laisse tourner l'ancien `zyr-cli`/`zyrdeskd` : les messages ne correspondront pas à ce que ce document décrit. Le faire sur les deux PC avant chaque partie évite cette confusion.
+
 ---
 
 ## Partie 1 : le service tient les sessions, la ligne de commande ne tient plus rien
@@ -96,10 +104,11 @@ Il est maintenant compilé par nous, à partir de la même version, avec trois m
 
 Sur le **PC client** seulement, le moteur hôte n'étant pas concerné à ce stade.
 
-1. Sur GitHub, onglet **Actions**, workflow **Moteurs**, ouvrir la dernière exécution réussie.
-2. Télécharger l'artefact `zyrdesk-client-engine`.
-3. Décompresser son contenu **par-dessus** `data\engines\client\`, en remplaçant tout.
-4. Vérifier :
+1. Mettre à jour le programme ZyrDesk lui-même (voir en haut de ce document).
+2. Sur GitHub, onglet **Actions**, workflow **Moteurs**, ouvrir la dernière exécution réussie.
+3. Télécharger l'artefact `zyrdesk-client-engine`.
+4. Décompresser son contenu **par-dessus** `data\engines\client\`, en remplaçant tout.
+5. Vérifier :
 
 ```
 zyr-cli engines status
@@ -133,7 +142,7 @@ zyr-cli connect <adresse IP du PC hote> --pair <empreinte du PC hote>
 
 C'est le risque de ce changement : une fenêtre en moins peut vouloir dire une erreur qu'on ne voit plus. Les messages partent maintenant dans la fenêtre de commande et dans `data\logs\session.log`.
 
-Sur le **PC hôte**, arrêter le moteur hôte (`zyr-cli host stop`), puis, sur le **PC client**, relancer la même commande `connect`.
+Sur le **PC hôte**, arrêter tout le service (`zyrdeskd stop`), ce qui coupe l'accès distant entièrement, puis, sur le **PC client**, relancer la même commande `connect`.
 
 > **M4-R7 (la machine injoignable se dit)**
 >
@@ -141,7 +150,7 @@ Sur le **PC hôte**, arrêter le moteur hôte (`zyr-cli host stop`), puis, sur l
 >
 > Le message ne doit surtout pas parler de session terminée normalement.
 
-Relancer `zyr-cli host start` sur le **PC hôte**, ouvrir une session depuis le **PC client**, puis, une fois l'image affichée, tuer le moteur hôte depuis le gestionnaire des tâches du PC hôte.
+Relancer `zyrdeskd start` sur le **PC hôte**, ouvrir une session depuis le **PC client**, puis, une fois l'image affichée, tuer le processus `zyrdesk-host-engine.exe` depuis le gestionnaire des tâches du PC hôte.
 
 > **M4-R8 (une session qui casse se dit aussi)**
 >
@@ -175,11 +184,12 @@ Rien d'autre ne change dans son comportement.
 
 Sur le **PC hôte** cette fois.
 
-1. Sur GitHub, onglet **Actions**, workflow **Moteurs**, ouvrir la dernière exécution réussie.
-2. Télécharger l'artefact `zyrdesk-host-engine`.
-3. Arrêter ce qui tourne : `zyr-cli host stop && zyrdeskd stop`.
-4. Vider `data\engines\host\`, puis y décompresser le contenu de l'artefact.
-5. Vérifier :
+1. Mettre à jour le programme ZyrDesk lui-même (voir en haut de ce document).
+2. Sur GitHub, onglet **Actions**, workflow **Moteurs**, ouvrir la dernière exécution réussie.
+3. Télécharger l'artefact `zyrdesk-host-engine`.
+4. Arrêter le service : `zyrdeskd stop`.
+5. Vider `data\engines\host\`, puis y décompresser le contenu de l'artefact.
+6. Vérifier :
 
 ```
 zyr-cli engines status && zyrdeskd start
