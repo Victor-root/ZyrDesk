@@ -34,6 +34,15 @@ const vue = {
   etapeCode: document.getElementById("etape-code"),
   probleme: document.getElementById("probleme"),
   problemeTexte: document.getElementById("probleme-texte"),
+  ouvrirReglages: document.getElementById("ouvrir-reglages"),
+  reglages: document.getElementById("reglages"),
+  fermerReglages: document.getElementById("fermer-reglages"),
+  qualiteDetail: document.getElementById("qualite-detail"),
+  stats: document.getElementById("stats"),
+  dossierJournaux: document.getElementById("dossier-journaux"),
+  ouvrirJournaux: document.getElementById("ouvrir-journaux"),
+  reglagesProbleme: document.getElementById("reglages-probleme"),
+  reglagesProblemeTexte: document.getElementById("reglages-probleme-texte"),
 };
 
 /* Longueur d'une empreinte, en caractères. Elle ne varie pas : la
@@ -421,6 +430,125 @@ listen("session-ended", ({ payload }) => {
   }
 });
 
+/* ---- Réglages ---------------------------------------------------------- */
+
+/* Ce que le service a retenu. La fenêtre ne décide de rien ici non plus :
+   elle montre ce qui revient et renvoie ce qui a été cliqué. Un réglage
+   choisi ici survit donc à la fenêtre, et vaut pour la prochaine session
+   comme pour toutes les suivantes. */
+let reglages = null;
+
+async function rafraichirReglages() {
+  reglages = await invoke("settings");
+  dessineReglages();
+}
+
+function dessineReglages() {
+  if (reglages === null) {
+    return;
+  }
+
+  // Ce que la qualité veut dire, dit par le produit et non recalculé
+  // ici : une seconde table de qualités s'écarterait de la vraie.
+  const debit = Math.round(reglages.bitrateKbps / 1000);
+  vue.qualiteDetail.textContent = `${reglages.width} x ${reglages.height}, ${reglages.fps} images par seconde, ${debit} Mb/s`;
+
+  marque("quality", reglages.quality);
+  marque("codec", reglages.codec);
+  marque("display", reglages.display);
+  marque("mouse", reglages.absoluteMouse ? "desktop" : "game");
+  vue.stats.setAttribute(
+    "aria-checked",
+    reglages.statsOverlay ? "true" : "false",
+  );
+}
+
+function marque(nom, valeur) {
+  for (const bouton of document.querySelectorAll(
+    `[data-reglage="${nom}"] [data-valeur]`,
+  )) {
+    bouton.setAttribute(
+      "aria-pressed",
+      bouton.dataset.valeur === valeur ? "true" : "false",
+    );
+  }
+}
+
+/* Un réglage change, les autres ne bougent pas : le service reçoit
+   l'ensemble pour n'avoir jamais à deviner ce qui est resté. */
+async function change(comment) {
+  if (reglages === null) {
+    return;
+  }
+  const veut = {
+    quality: reglages.quality,
+    codec: reglages.codec,
+    display: reglages.display,
+    absoluteMouse: reglages.absoluteMouse,
+    statsOverlay: reglages.statsOverlay,
+  };
+  comment(veut);
+
+  // Pris en compte tout de suite : deux clics rapprochés doivent
+  // s'ajouter au lieu de s'annuler, et le bouton doit répondre sans
+  // attendre l'aller-retour. Ce qui fait foi revient juste après.
+  reglages = { ...reglages, ...veut };
+  dessineReglages();
+
+  montre(vue.reglagesProbleme, false);
+  try {
+    await invoke("choose", { chosen: veut });
+  } catch (raison) {
+    soucis(String(raison));
+  }
+  // Redemandé plutôt que supposé : ce qui s'affiche est ce qui a été
+  // retenu, y compris quand rien ne l'a été.
+  await rafraichirReglages();
+}
+
+function soucis(texte) {
+  vue.reglagesProblemeTexte.textContent = texte;
+  montre(vue.reglagesProbleme, true);
+}
+
+async function ouvrirReglages() {
+  montre(vue.reglagesProbleme, false);
+  vue.reglages.showModal();
+  await rafraichirReglages();
+}
+
+async function ouvrirJournaux() {
+  montre(vue.reglagesProbleme, false);
+  try {
+    await invoke("open_logs");
+  } catch (raison) {
+    soucis(String(raison));
+  }
+}
+
+for (const bouton of vue.reglages.querySelectorAll(
+  "[data-reglage] [data-valeur]",
+)) {
+  bouton.addEventListener("click", () => {
+    const nom = bouton.closest("[data-reglage]").dataset.reglage;
+    const valeur = bouton.dataset.valeur;
+    change((veut) => {
+      if (nom === "mouse") {
+        veut.absoluteMouse = valeur === "desktop";
+      } else {
+        veut[nom] = valeur;
+      }
+    });
+  });
+}
+
+vue.stats.addEventListener("click", () => {
+  const actif = vue.stats.getAttribute("aria-checked") !== "true";
+  change((veut) => {
+    veut.statsOverlay = actif;
+  });
+});
+
 /* ---- Thème ------------------------------------------------------------ */
 
 /* Le choix vit dans theme.js, qui l'a déjà appliqué avant que cette page
@@ -458,11 +586,20 @@ vue.annulerAjout.addEventListener("click", () => vue.ajout.close());
 vue.adresse.addEventListener("input", ajusterAjout);
 vue.empreinteDistante.addEventListener("input", ajusterAjout);
 vue.ajoutForme.addEventListener("submit", connecter);
+vue.ouvrirReglages.addEventListener("click", ouvrirReglages);
+vue.fermerReglages.addEventListener("click", () => vue.reglages.close());
+vue.ouvrirJournaux.addEventListener("click", ouvrirJournaux);
 
 marqueLeChoix();
 invoke("set_theme", {
   clair: document.documentElement.dataset.theme === "clair",
 }).catch(() => {});
+
+// Le dossier des journaux ne bouge pas de toute la vie du programme :
+// demandé une fois, et non à chaque ouverture des réglages.
+invoke("logs_folder").then((dossier) => {
+  vue.dossierJournaux.textContent = dossier;
+});
 
 rafraichirEtat();
 rafraichirLeReseau();

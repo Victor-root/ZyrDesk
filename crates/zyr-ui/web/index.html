@@ -14,17 +14,25 @@
       <header class="entete">
         <img class="marque" src="zyrdesk.svg" alt="" width="40" height="40" />
         <h1 class="titre">ZyrDesk</h1>
-        <div class="segments" id="choix-theme" role="group" aria-label="Thème">
-          <button type="button" data-theme-choix="systeme" aria-pressed="false">
-            Système
-          </button>
-          <button type="button" data-theme-choix="clair" aria-pressed="false">
-            Clair
-          </button>
-          <button type="button" data-theme-choix="sombre" aria-pressed="false">
-            Sombre
-          </button>
-        </div>
+        <button
+          class="bouton discret icone"
+          type="button"
+          id="ouvrir-reglages"
+          aria-label="Réglages"
+          title="Réglages"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3" />
+            <path d="M14 2v4M8 10v4M16 18v4" />
+          </svg>
+        </button>
       </header>
 
       <section class="bloc">
@@ -168,6 +176,221 @@
           </button>
         </div>
       </form>
+    </dialog>
+
+    <dialog class="dialogue reglages" id="reglages">
+      <!-- Sans cible d'ouverture, le navigateur pose le focus sur la
+           première commande venue et l'entoure : ici la croix, qui
+           passerait alors pour l'action principale. -->
+      <div class="dialogue-corps" tabindex="-1" autofocus>
+        <div class="reglages-entete">
+          <div class="reglage-mot">
+            <h2 class="sous-titre">Réglages</h2>
+            <span class="legende">
+              Ils valent pour les prochaines sessions, pas pour celle en cours.
+            </span>
+          </div>
+          <button
+            class="bouton discret icone"
+            type="button"
+            id="fermer-reglages"
+            aria-label="Fermer les réglages"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="reglages-liste">
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Qualité d'image</span>
+              <span class="legende" id="qualite-detail"></span>
+            </div>
+            <div
+              class="segments"
+              data-reglage="quality"
+              role="group"
+              aria-label="Qualité d'image"
+            >
+              <button type="button" data-valeur="smooth" aria-pressed="false">
+                Fluide
+              </button>
+              <button type="button" data-valeur="balanced" aria-pressed="false">
+                Équilibré
+              </button>
+              <button type="button" data-valeur="detailed" aria-pressed="false">
+                Qualité
+              </button>
+            </div>
+          </div>
+
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Thème</span>
+              <span class="legende"
+                >Suit Windows tant qu'on ne choisit pas.</span
+              >
+            </div>
+            <div
+              class="segments"
+              id="choix-theme"
+              role="group"
+              aria-label="Thème"
+            >
+              <button
+                type="button"
+                data-theme-choix="systeme"
+                aria-pressed="false"
+              >
+                Système
+              </button>
+              <button
+                type="button"
+                data-theme-choix="clair"
+                aria-pressed="false"
+              >
+                Clair
+              </button>
+              <button
+                type="button"
+                data-theme-choix="sombre"
+                aria-pressed="false"
+              >
+                Sombre
+              </button>
+            </div>
+          </div>
+
+          <details class="avance">
+            <summary class="section">Avancé</summary>
+
+            <div class="reglage">
+              <div class="reglage-mot">
+                <span>Codec vidéo</span>
+                <span class="legende">
+                  Auto prend le meilleur que les deux ordinateurs savent lire.
+                </span>
+              </div>
+              <div
+                class="segments"
+                data-reglage="codec"
+                role="group"
+                aria-label="Codec vidéo"
+              >
+                <button type="button" data-valeur="auto" aria-pressed="false">
+                  Auto
+                </button>
+                <button type="button" data-valeur="H.264" aria-pressed="false">
+                  H.264
+                </button>
+                <button type="button" data-valeur="HEVC" aria-pressed="false">
+                  HEVC
+                </button>
+                <button type="button" data-valeur="AV1" aria-pressed="false">
+                  AV1
+                </button>
+              </div>
+            </div>
+
+            <div class="reglage">
+              <div class="reglage-mot">
+                <span>Fenêtre de la session</span>
+              </div>
+              <div
+                class="segments"
+                data-reglage="display"
+                role="group"
+                aria-label="Fenêtre de la session"
+              >
+                <button
+                  type="button"
+                  data-valeur="fullscreen"
+                  aria-pressed="false"
+                >
+                  Plein écran
+                </button>
+                <button
+                  type="button"
+                  data-valeur="borderless"
+                  aria-pressed="false"
+                >
+                  Sans bordure
+                </button>
+                <button
+                  type="button"
+                  data-valeur="windowed"
+                  aria-pressed="false"
+                >
+                  Fenêtre
+                </button>
+              </div>
+            </div>
+
+            <div class="reglage">
+              <div class="reglage-mot">
+                <span>Souris</span>
+                <span class="legende">
+                  La souris de jeu vise en mouvements plutôt qu'en position.
+                </span>
+              </div>
+              <div
+                class="segments"
+                data-reglage="mouse"
+                role="group"
+                aria-label="Souris"
+              >
+                <button
+                  type="button"
+                  data-valeur="desktop"
+                  aria-pressed="false"
+                >
+                  Bureau
+                </button>
+                <button type="button" data-valeur="game" aria-pressed="false">
+                  Jeu
+                </button>
+              </div>
+            </div>
+
+            <div class="reglage">
+              <div class="reglage-mot">
+                <span>Statistiques par-dessus l'image</span>
+                <span class="legende">Images par seconde, débit, pertes.</span>
+              </div>
+              <button
+                class="interrupteur"
+                id="stats"
+                role="switch"
+                aria-checked="false"
+                aria-label="Statistiques par-dessus l'image"
+              ></button>
+            </div>
+
+            <div class="reglage">
+              <div class="reglage-mot">
+                <span>Journaux</span>
+                <span class="legende empreinte" id="dossier-journaux"></span>
+              </div>
+              <button class="bouton discret" type="button" id="ouvrir-journaux">
+                Ouvrir
+              </button>
+            </div>
+          </details>
+        </div>
+
+        <div class="bandeau alerte cache" id="reglages-probleme">
+          <span id="reglages-probleme-texte"></span>
+        </div>
+      </div>
     </dialog>
 
     <script src="accueil.js"></script>

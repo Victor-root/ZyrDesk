@@ -14,7 +14,6 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use zyr_control::{Answer, Request};
-use zyr_proto::session::SessionSettings;
 use zyr_session::{Outcome, Step, Wanted};
 
 use crate::service;
@@ -82,7 +81,7 @@ pub async fn sessions() -> Vec<Ongoing> {
 }
 
 #[tauri::command]
-pub fn connect(app: AppHandle, host: String, fingerprint: String) -> Result<(), String> {
+pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Result<(), String> {
     let peer = fingerprint
         .trim()
         .parse()
@@ -91,7 +90,9 @@ pub fn connect(app: AppHandle, host: String, fingerprint: String) -> Result<(), 
     let wanted = Wanted {
         host: host.trim().to_string(),
         peer: Some(peer),
-        settings: SessionSettings::default(),
+        // Read at the last moment rather than held: the settings screen
+        // may have changed them since this window opened.
+        settings: crate::settings::preferred().await.settings(),
         pair_again: false,
     };
 

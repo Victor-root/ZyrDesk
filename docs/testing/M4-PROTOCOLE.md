@@ -393,7 +393,9 @@ Puis, sur le **PC hôte**, `zyrdeskd stop`.
 >
 > Attendu : la fenêtre bascule avec, **sans être relancée**, barre de titre comprise.
 >
-> Cliquer ensuite **Clair** puis **Sombre** en haut à droite : la fenêtre obéit et ignore le système. Fermer et rouvrir l'application : le choix est retenu. Revenir sur **Système** rend la main à Windows.
+> Cliquer ensuite **Clair** puis **Sombre** : la fenêtre obéit et ignore le système. Fermer et rouvrir l'application : le choix est retenu. Revenir sur **Système** rend la main à Windows.
+>
+> Le choix du thème se trouvait en haut à droite de la fenêtre quand cette partie a été écrite ; il vit depuis dans les réglages, derrière le bouton en haut à droite (partie 8).
 
 ### Si quelque chose ne va pas
 
@@ -530,3 +532,93 @@ Sur les **deux PC** : mettre à jour le programme ZyrDesk (la commande du haut d
 **Le bandeau vert reste affiché après la fin de la session.** Le service referme une voie dans les deux secondes qui suivent la disparition du lecteur. S'il reste, chercher dans `data\logs\service.log` la ligne « way N has nothing left to serve » : son absence dit que le lecteur tourne encore, peut-être sans image.
 
 **Le bandeau vert apparaît alors qu'aucune image n'est visible.** Regarder le gestionnaire des tâches : `zyrdesk-session.exe` est encore là. Une session dont la fenêtre vidéo a disparu sans que le processus s'arrête est un défaut à signaler, avec `data\logs\session.log`.
+
+---
+
+## Partie 8 : les réglages
+
+### Ce qui change, et pourquoi
+
+Jusqu'ici, une session s'ouvrait toujours de la même façon : 1080p, 60 images par seconde, 20 Mb/s. Le bouton de réglages, en haut à droite de la fenêtre, permet maintenant de choisir.
+
+Deux niveaux, comme prévu. **Simple** : la qualité d'image et le thème. **Avancé**, replié : codec, fenêtre de la session, souris, statistiques, et l'accès au dossier des journaux.
+
+La qualité est un barreau d'échelle et non trois molettes. Taille de l'image et débit montent ensemble, parce qu'une image plus grande sans le débit pour la porter est simplement plus floue :
+
+| Préréglage | Image | Débit |
+| --- | --- | --- |
+| Fluide | 1280 x 720 | 10 Mb/s |
+| Équilibré | 1920 x 1080 | 20 Mb/s |
+| Qualité | 2560 x 1440 | 40 Mb/s |
+
+Ce que donne le préréglage choisi est écrit sous lui, en clair : rien n'est caché derrière un mot.
+
+Trois choses valent d'être sues.
+
+Les réglages **vivent dans le service**, à côté de l'accès distant, dans `data\preferences.conf`. Ils survivent donc à la fenêtre fermée et au redémarrage, et se corrigent à la main dans un éditeur de texte.
+
+Ils valent **pour les prochaines sessions**. Changer la qualité pendant qu'une session tourne ne change rien à l'image en cours : le moteur a été lancé avec des valeurs, il les garde jusqu'au bout.
+
+**Ce qui n'y est pas, volontairement** : l'audio, qu'aucun réglage du produit ne pilote encore, et le démarrage avec Windows, qui n'aura de sens qu'avec l'icône de la zone de notification. La ligne de commande, elle, garde ses propres options : c'est l'outil de diagnostic, et un banc d'essai qui lirait un fichier de réglages ne serait plus comparable d'une machine à l'autre.
+
+### Le test
+
+Sur le **PC client**, fenêtre ZyrDesk ouverte, aucune session en cours.
+
+> **M4-R32 (les réglages s'ouvrent et disent ce qu'ils font)**
+>
+> Cliquer le bouton en haut à droite de la fenêtre.
+>
+> Attendu : un panneau « Réglages ». Sous « Qualité d'image », « Équilibré » est marqué et la ligne en dessous dit « 1920 x 1080, 60 images par seconde, 20 Mb/s ». Le thème est là aussi, à l'endroit où il vit désormais : il a quitté l'en-tête.
+
+> **M4-R33 (la qualité se choisit et se voit)**
+>
+> Cliquer « Fluide », puis « Qualité », puis revenir sur « Équilibré ».
+>
+> Attendu : à chaque clic, la ligne du dessous suit sans délai perceptible : 1280 x 720 / 10 Mb/s, puis 2560 x 1440 / 40 Mb/s, puis 1920 x 1080 / 20 Mb/s.
+
+> **M4-R34 (le choix est retenu, et par le service)**
+>
+> Choisir « Fluide », fermer le panneau, **fermer la fenêtre ZyrDesk entièrement**, puis la rouvrir et rouvrir les réglages.
+>
+> Attendu : « Fluide » est toujours marqué. Ouvrir `data\preferences.conf` : il doit contenir `quality = smooth` **et** `remote_access` inchangé. C'est le point qui compte le plus de cette partie : les deux réglages partagent un fichier, et enregistrer l'un ne doit jamais effacer l'autre.
+
+> **M4-R35 (l'interrupteur d'accès distant n'a pas été emporté)**
+>
+> Toujours sur le PC client : basculer l'accès distant sur non, puis rouvrir les réglages et changer la qualité, puis refermer.
+>
+> Attendu : l'accès distant est toujours sur non, et `data\preferences.conf` dit `remote_access = no` avec la nouvelle qualité. Remettre l'accès distant sur oui pour la suite.
+
+> **M4-R36 (le réglage arrive vraiment au moteur)**
+>
+> Dans « Avancé », activer **Statistiques par-dessus l'image**, choisir la qualité **Fluide**, fermer le panneau, puis ouvrir une session vers le PC hôte.
+>
+> Attendu : la session s'ouvre avec un affichage de statistiques par-dessus l'image, et celles-ci annoncent une image de 1280 x 720. Fermer la session, remettre les statistiques sur non et la qualité sur Équilibré.
+
+> **M4-R37 (les réglages ne touchent pas la session en cours)**
+>
+> Ouvrir une session, puis, pendant qu'elle tourne, changer la qualité dans les réglages.
+>
+> Attendu : l'image en cours ne bouge pas. Le changement prendra effet à la session suivante, ce que le panneau annonce sous son titre.
+
+> **M4-R38 (les journaux s'ouvrent)**
+>
+> Dans « Avancé », cliquer **Ouvrir** en face de « Journaux ».
+>
+> Attendu : l'explorateur Windows s'ouvre sur `data\logs`, avec `service.log` et `session.log` dedans. Le chemin affiché à gauche du bouton doit être le même.
+
+> **M4-R39 (le thème n'a rien perdu au déménagement)**
+>
+> Dans les réglages, basculer entre Système, Clair et Sombre.
+>
+> Attendu : la fenêtre change de thème immédiatement, barre de titre comprise, exactement comme au test M4-R20.
+
+### Si quelque chose ne va pas
+
+**Un réglage revient tout seul à sa valeur d'avant.** Le service ne l'a pas enregistré. Le panneau affiche alors la raison en rouge, en bas ; s'il n'affiche rien, regarder `data\logs\service.log` et l'horodatage de `data\preferences.conf`.
+
+**Changer la qualité remet l'accès distant sur oui, ou l'inverse.** C'est exactement ce que M4-R34 cherche : à signaler avec le contenu de `data\preferences.conf` avant et après.
+
+**Les statistiques ne s'affichent pas alors qu'elles sont activées.** Le réglage part bien du service, mais c'est le moteur client qui les dessine : joindre `data\logs\session.log`, où la ligne de commande du moteur est recopiée en tête de session.
+
+**Le bouton de réglages n'ouvre rien.** La fenêtre et le service ne datent pas du même jour : refaire la mise à jour complète du programme.

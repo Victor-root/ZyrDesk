@@ -15,6 +15,7 @@
 mod desk;
 mod service;
 mod session;
+mod settings;
 mod theme;
 
 fn main() {
@@ -25,6 +26,10 @@ fn main() {
             desk::set_hosting,
             session::connect,
             session::sessions,
+            settings::settings,
+            settings::choose,
+            settings::logs_folder,
+            settings::open_logs,
             theme::set_theme
         ])
         .run(tauri::generate_context!())

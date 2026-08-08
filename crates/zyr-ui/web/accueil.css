@@ -26,9 +26,9 @@
   gap: var(--pas-3);
 }
 
-/* Le choix du thème se range à droite du titre : présent, jamais au
+/* Les réglages se rangent à droite du titre : à portée, jamais au
    centre de l'attention. */
-.entete .segments {
+.entete .icone {
   margin-left: auto;
 }
 
@@ -287,12 +287,20 @@
 
 .dialogue {
   width: min(460px, calc(100vw - var(--pas-6)));
+  /* Une fenêtre courte ne doit pas couper le bas d'un dialogue : il
+     défile chez lui plutôt que de déborder. */
+  max-height: calc(100vh - var(--pas-6));
+  overflow-y: auto;
   padding: 0;
   border: 1px solid var(--trait-fort);
   border-radius: var(--rayon-grand);
   background: var(--surface-1);
   color: var(--texte);
   box-shadow: var(--ombre-2);
+}
+
+.dialogue.reglages {
+  width: min(560px, calc(100vw - var(--pas-6)));
 }
 
 .dialogue::backdrop {
@@ -319,4 +327,56 @@
   min-height: 16px;
   font-size: var(--legende);
   color: var(--attention);
+}
+
+/* ---- Réglages -------------------------------------------------------- */
+
+.reglages-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pas-4);
+}
+
+/* Les réglages se suivent sans espace : c'est leur trait de séparation
+   qui les sépare, et un écart en plus les ferait flotter. */
+.reglages-liste {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Un réglage : ce dont il s'agit à gauche, de quoi en décider à droite.
+   Une seule mise en page pour tous, qu'ils portent un choix segmenté,
+   un interrupteur ou un bouton. */
+.reglage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pas-4);
+  padding: var(--pas-3) 0;
+  border-top: 1px solid var(--trait);
+}
+
+.reglage-mot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-1);
+  min-width: 0;
+}
+
+/* Le jargon se range ici : replié par défaut, il ne pèse pas sur ceux
+   qui n'en veulent pas et reste à un clic pour les autres. */
+.avance > summary {
+  padding: var(--pas-3) 0;
+  border-top: 1px solid var(--trait);
+  cursor: pointer;
+}
+
+.avance > summary:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: 2px;
+}
+
+.avance[open] > summary {
+  color: var(--texte-doux);
 }

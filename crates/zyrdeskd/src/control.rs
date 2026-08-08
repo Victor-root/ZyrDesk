@@ -23,6 +23,7 @@ use zyr_transport::Fingerprint;
 use zyr_lan::Found;
 
 use crate::log::Log;
+use crate::preferences::Remembered;
 use crate::ways::Ways;
 
 /// Whether this computer can be reached right now.
@@ -44,45 +45,6 @@ impl Hosting {
 
     fn open(&self) -> bool {
         self.0.load(Ordering::Relaxed)
-    }
-}
-
-/// Whether this computer is meant to be reachable at all.
-///
-/// Distinct from `Hosting` on purpose: one is what was asked for, the
-/// other is where the engine has got to. Between the two sits the time
-/// it takes to start, and that gap is what the interface shows as
-/// « démarrage en cours » rather than pretending the switch lied.
-#[derive(Clone)]
-pub struct Wanted {
-    now: Arc<AtomicBool>,
-    /// Where the decision is kept so it survives a restart.
-    remembered: Arc<std::path::PathBuf>,
-}
-
-impl Wanted {
-    /// Picks up what was asked for last time.
-    pub fn remembered_from(path: std::path::PathBuf) -> Self {
-        let asked = crate::preferences::read(&path).remote_access;
-        Self {
-            now: Arc::new(AtomicBool::new(asked)),
-            remembered: Arc::new(path),
-        }
-    }
-
-    pub fn on(&self) -> bool {
-        self.now.load(Ordering::Relaxed)
-    }
-
-    /// Writes the decision down before honouring it: a computer that
-    /// obeyed but forgot would let itself be reached again tomorrow.
-    fn set(&self, on: bool) -> std::io::Result<()> {
-        crate::preferences::write(
-            &self.remembered,
-            crate::preferences::Preferences { remote_access: on },
-        )?;
-        self.now.store(on, Ordering::Relaxed);
-        Ok(())
     }
 }
 
@@ -121,7 +83,7 @@ pub struct Answering {
     pub fingerprint: Fingerprint,
     pub ways: Ways,
     pub hosting: Hosting,
-    pub wanted: Wanted,
+    pub remembered: Remembered,
     pub neighbours: Found,
     pub log: Log,
 }
@@ -213,13 +175,27 @@ fn ended(mut said: Vec<Answer>) -> Vec<Answer> {
     said
 }
 
+/// Turns a choice that could not be written down into a refusal.
+///
+/// A choice honoured but not kept would come back to haunt whoever made
+/// it at the next restart, so it is answered as a failure and not as a
+/// success with a footnote.
+fn kept(written: std::io::Result<()>) -> Result<(), Answer> {
+    written.map_err(|e| {
+        Answer::Refused(format!(
+            "le choix n'a pas pu être enregistré : {e}\n  \
+             Il aurait été oublié au prochain démarrage."
+        ))
+    })
+}
+
 async fn one(request: Request, answering: &Answering) -> Answer {
     match request {
         Request::Standing => Answer::Standing(Standing {
             protocol: PROTOCOL,
             fingerprint: answering.fingerprint,
             hosting: answering.hosting.open(),
-            wanted: answering.wanted.on(),
+            wanted: answering.remembered.remote_access(),
             ways: answering.ways.count(),
         }),
         Request::Reach { host, peer, media } => {
@@ -241,7 +217,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             // reached: saying no would make closing twice an error.
             Answer::Done
         }
-        Request::SetHosting { on } => match answering.wanted.set(on) {
+        Request::SetHosting { on } => match kept(answering.remembered.set_remote_access(on)) {
             Ok(()) => {
                 answering.log.write(if on {
                     "remote access turned on"
@@ -250,11 +226,18 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 });
                 Answer::Done
             }
-            Err(e) => Answer::Refused(format!(
-                "le choix n'a pas pu être enregistré : {e}\n  \
-                 Il aurait été oublié au prochain démarrage."
-            )),
+            Err(refusal) => refusal,
         },
+        Request::Settings => Answer::Settings(answering.remembered.read().preferred),
+        Request::Choose { preferred } => {
+            match kept(answering.remembered.set_preferred(preferred)) {
+                Ok(()) => {
+                    answering.log.write("session settings changed");
+                    Answer::Done
+                }
+                Err(refusal) => refusal,
+            }
+        }
         // Handled above, where several answers can be given.
         Request::Peers | Request::Sessions => Answer::Done,
     }
@@ -295,7 +278,7 @@ mod tests {
                     fingerprint,
                     ways: Ways::new(log.clone()),
                     hosting: hosting.clone(),
-                    wanted: Wanted::remembered_from(folder.join("preferences.conf")),
+                    remembered: Remembered::at(folder.join("preferences.conf")),
                     neighbours: Found::new(),
                     log: log.clone(),
                 },
@@ -395,6 +378,46 @@ mod tests {
 
             let answer = caller.ask(&Request::SetHosting { on: true }).await.unwrap();
             assert!(matches!(answer, Answer::Done), "{answer}");
+            let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
+                panic!("attendu un état");
+            };
+            assert!(standing.wanted);
+        });
+    }
+
+    #[test]
+    fn what_a_session_looks_like_is_chosen_once_and_answered_after() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let bench = Bench::set_up(runtime.handle(), "settings");
+
+        runtime.block_on(async {
+            use zyr_proto::session::{Preferred, Quality};
+
+            let mut caller = bench.caller().await;
+
+            let Ok(Answer::Settings(before)) = caller.ask(&Request::Settings).await else {
+                panic!("attendu des réglages");
+            };
+            assert_eq!(before, Preferred::default());
+
+            let wanted = Preferred {
+                quality: Quality::Detailed,
+                stats_overlay: true,
+                ..before
+            };
+            let answer = caller
+                .ask(&Request::Choose { preferred: wanted })
+                .await
+                .unwrap();
+            assert!(matches!(answer, Answer::Done), "{answer}");
+
+            let Ok(Answer::Settings(after)) = caller.ask(&Request::Settings).await else {
+                panic!("attendu des réglages");
+            };
+            assert_eq!(after, wanted);
+
+            // Et l'accès distant, qui partage le même fichier, n'a pas
+            // été emporté au passage.
             let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
                 panic!("attendu un état");
             };

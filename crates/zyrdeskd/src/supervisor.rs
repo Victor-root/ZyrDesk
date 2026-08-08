@@ -32,9 +32,10 @@ use zyr_engine_host::api::EngineApi;
 use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Launcher, SunshineConfig, ports};
 use zyr_proto::paths;
 
-use crate::control::{Answering, Desk, Hosting, Wanted};
+use crate::control::{Answering, Desk, Hosting};
 use crate::gateway::Gateway;
 use crate::log::Log;
+use crate::preferences::Remembered;
 use crate::restart::{Next, Policy};
 use crate::ways::Ways;
 
@@ -148,7 +149,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     let hosting = Hosting::new();
     // What was asked for last time, honoured before anyone has said
     // anything this time.
-    let wanted = Wanted::remembered_from(paths::preferences());
+    let remembered = Remembered::at(paths::preferences());
 
     // The neighbourhood is announced for as long as the service runs,
     // not for as long as an engine does: a computer that only appeared
@@ -173,7 +174,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         runtime.handle(),
         ways.clone(),
         hosting.clone(),
-        wanted.clone(),
+        remembered.clone(),
         neighbours,
         log,
     ) {
@@ -194,7 +195,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         runtime_path: &runtime_path,
         runtime: runtime.handle(),
         hosting: &hosting,
-        wanted: &wanted,
+        remembered: &remembered,
         order,
         log,
     };
@@ -206,7 +207,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             return End::Asked;
         }
 
-        if !wanted.on() {
+        if !remembered.remote_access() {
             // Remote access is off. The service stays up: it is still
             // what opens the ways out, answers the interface and
             // announces nothing on the network. Only being reachable
@@ -309,7 +310,7 @@ fn desk(
     runtime: &tokio::runtime::Handle,
     ways: Ways,
     hosting: Hosting,
-    wanted: Wanted,
+    remembered: Remembered,
     neighbours: zyr_lan::Found,
     log: &Log,
 ) -> Result<Desk, String> {
@@ -322,7 +323,7 @@ fn desk(
             fingerprint: identity.fingerprint(),
             ways,
             hosting,
-            wanted,
+            remembered,
             neighbours,
             log: log.clone(),
         },
@@ -351,7 +352,7 @@ struct Around<'a> {
     runtime_path: &'a std::path::Path,
     runtime: &'a tokio::runtime::Handle,
     hosting: &'a Hosting,
-    wanted: &'a Wanted,
+    remembered: &'a Remembered,
     order: &'a StopOrder,
     log: &'a Log,
 }
@@ -365,7 +366,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         runtime_path,
         runtime,
         hosting,
-        wanted,
+        remembered,
         order,
         log,
     } = around;
@@ -421,7 +422,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     hosting.set(true);
     log.write("remote access active");
 
-    let life = wait_for_the_engine_to_stop(&mut engine, session, wanted, order, log);
+    let life = wait_for_the_engine_to_stop(&mut engine, session, remembered, order, log);
     hosting.set(false);
     drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
@@ -433,7 +434,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
 fn wait_for_the_engine_to_stop(
     engine: &mut HostEngine,
     session: u32,
-    wanted: &Wanted,
+    remembered: &Remembered,
     order: &StopOrder,
     log: &Log,
 ) -> Life {
@@ -444,7 +445,7 @@ fn wait_for_the_engine_to_stop(
             return Life::Stopped(None);
         }
 
-        if !wanted.on() {
+        if !remembered.remote_access() {
             log.write("remote access turned off, the engine is being stopped");
             let _ = engine.stop();
             return Life::NoLongerWanted;

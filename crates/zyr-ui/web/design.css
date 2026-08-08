@@ -263,6 +263,18 @@ p {
   font-size: var(--sous-titre);
 }
 
+/* Un bouton qui ne porte qu'un dessin reste carré, et garde la même
+   hauteur que ceux qui portent un mot. */
+.bouton.icone {
+  width: 36px;
+  padding: 0;
+}
+
+.bouton.icone > svg {
+  width: 18px;
+  height: 18px;
+}
+
 /* ---- Choix segmenté -------------------------------------------------- */
 
 /* Trois possibilités qui s'excluent, montrées toutes les trois : la

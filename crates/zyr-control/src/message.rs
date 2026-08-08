@@ -16,6 +16,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use zyr_proto::net::EnginePorts;
+use zyr_proto::session::Preferred;
 use zyr_transport::{Fingerprint, MediaProfile};
 
 /// Version of this dialect.
@@ -23,7 +24,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 3;
+pub const PROTOCOL: u32 = 4;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -76,6 +77,10 @@ pub enum Request {
     /// computer that let itself be reached again the next morning
     /// would be honouring nobody's wish.
     SetHosting { on: bool },
+    /// What a session opened from this computer is set to.
+    Settings,
+    /// Changes it, for this session and all the ones after.
+    Choose { preferred: Preferred },
 }
 
 impl Request {
@@ -104,6 +109,10 @@ impl Request {
             "hosting" => Ok(Request::SetHosting {
                 on: fields.text("on")? == "yes",
             }),
+            "settings" => Ok(Request::Settings),
+            "choose" => Ok(Request::Choose {
+                preferred: fields.preferred(),
+            }),
             other => Err(Malformed(format!("verbe inconnu « {other} »"))),
         }
     }
@@ -126,8 +135,27 @@ impl fmt::Display for Request {
             Request::SetHosting { on } => {
                 write!(f, "hosting on={}", if *on { "yes" } else { "no" })
             }
+            Request::Settings => f.write_str("settings"),
+            Request::Choose { preferred } => write!(f, "choose {}", spelled(preferred)),
         }
     }
+}
+
+/// The fields a set of preferences travels as, shared by the question
+/// and the answer so the two can never drift apart.
+fn spelled(preferred: &Preferred) -> String {
+    format!(
+        "quality={} codec={} display={} mouse={} stats={}",
+        preferred.quality,
+        preferred.codec,
+        preferred.display_mode,
+        if preferred.absolute_mouse {
+            "desktop"
+        } else {
+            "game"
+        },
+        if preferred.stats_overlay { "yes" } else { "no" }
+    )
 }
 
 /// What this computer is doing, and who it is.
@@ -195,6 +223,8 @@ pub enum Answer {
     Peer(Peer),
     /// One session of a list. The list ends on `Done`.
     Session(Session),
+    /// What a session opened from this computer is set to.
+    Settings(Preferred),
     /// Done, with nothing to report.
     Done,
     /// Not done, and why. The text is meant for the person, not the
@@ -233,6 +263,7 @@ impl Answer {
                 peer: fields.parsed("peer")?,
                 since: Duration::from_secs(fields.parsed("since")?),
             })),
+            "settings" => Ok(Answer::Settings(fields.preferred())),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
             other => Err(Malformed(format!("réponse inconnue « {other} »"))),
@@ -276,6 +307,7 @@ impl fmt::Display for Answer {
                 session.peer,
                 session.since.as_secs()
             ),
+            Answer::Settings(preferred) => write!(f, "settings {}", spelled(preferred)),
             Answer::Done => f.write_str("done"),
             // The reason travels on one line: a newline would be read as
             // the start of another message.
@@ -378,6 +410,31 @@ impl<'a> Fields<'a> {
             .parse()
             .map_err(|_| Malformed(format!("champ « {key} » illisible")))
     }
+
+    /// Reads a whole set of preferences.
+    ///
+    /// A missing field falls back to what the product does by default
+    /// rather than refusing the message: an older half of the product
+    /// then loses one setting instead of the whole exchange.
+    fn preferred(&self) -> Preferred {
+        let fallback = Preferred::default();
+        Preferred {
+            quality: self.parsed("quality").unwrap_or(fallback.quality),
+            codec: self.parsed("codec").unwrap_or(fallback.codec),
+            display_mode: self.parsed("display").unwrap_or(fallback.display_mode),
+            // Only a plain word turns a setting away from what the
+            // product does by default, here as in the settings file: a
+            // value nobody understands must not decide anything.
+            absolute_mouse: match self.text("mouse") {
+                Ok(mouse) => mouse != "game",
+                Err(_) => fallback.absolute_mouse,
+            },
+            stats_overlay: match self.text("stats") {
+                Ok(stats) => stats == "yes",
+                Err(_) => fallback.stats_overlay,
+            },
+        }
+    }
 }
 
 #[cfg(test)]
@@ -410,7 +467,25 @@ mod tests {
             Request::Sessions,
             Request::SetHosting { on: true },
             Request::SetHosting { on: false },
+            Request::Settings,
+            Request::Choose {
+                preferred: preferred(),
+            },
+            Request::Choose {
+                preferred: Preferred::default(),
+            },
         ]
+    }
+
+    fn preferred() -> Preferred {
+        use zyr_proto::session::{Codec, DisplayMode, Quality};
+        Preferred {
+            quality: Quality::Detailed,
+            codec: Codec::Hevc,
+            display_mode: DisplayMode::Windowed,
+            absolute_mouse: false,
+            stats_overlay: true,
+        }
     }
 
     fn every_answer() -> Vec<Answer> {
@@ -442,6 +517,8 @@ mod tests {
                 peer: fingerprint(),
                 since: Duration::from_secs(742),
             }),
+            Answer::Settings(preferred()),
+            Answer::Settings(Preferred::default()),
             Answer::Done,
             Answer::Refused("cet ordinateur a refusé l'accès".to_string()),
         ]
@@ -502,6 +579,25 @@ mod tests {
     fn a_field_added_later_does_not_upset_an_older_reader() {
         let line = "reach host=192.168.1.20 peer=0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 bitrate=20000 fps=60 codec=av1";
         assert!(matches!(Request::parse(line), Ok(Request::Reach { .. })));
+    }
+
+    #[test]
+    fn a_setting_the_other_half_never_heard_of_falls_back() {
+        // Une moitié du produit plus ancienne que l'autre perd le
+        // réglage qu'elle ne connaît pas, pas la conversation.
+        let Ok(Answer::Settings(read)) = Answer::parse("settings quality=detailed") else {
+            panic!("« settings quality=detailed » n'est pas relu comme des réglages");
+        };
+        assert_eq!(read.quality, zyr_proto::session::Quality::Detailed);
+        assert_eq!(read.codec, Preferred::default().codec);
+        assert_eq!(read.absolute_mouse, Preferred::default().absolute_mouse);
+
+        // Et une valeur que personne ne comprend ne vaut pas mieux
+        // qu'une absente : le défaut, et la session s'ouvre quand même.
+        let Ok(Answer::Settings(read)) = Answer::parse("settings quality=ultra") else {
+            panic!("« settings quality=ultra » n'est pas relu comme des réglages");
+        };
+        assert_eq!(read.quality, Preferred::default().quality);
     }
 
     #[test]
