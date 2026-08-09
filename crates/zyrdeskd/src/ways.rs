@@ -65,6 +65,9 @@ struct Towards {
     /// Address of the remote computer, as the person named it.
     host: String,
     peer: Fingerprint,
+    /// Where the client engine finds that computer on this machine: the
+    /// local address the way stands on, and the engine's own port.
+    at: String,
 }
 
 /// The process a way serves, and since when.
@@ -190,6 +193,7 @@ impl<T> Register<T> {
                     towards: kept.towards.host.clone(),
                     peer: kept.towards.peer,
                     process: serving.process,
+                    at: kept.towards.at.clone(),
                     since: now.duration_since(serving.since),
                 })
             })
@@ -304,6 +308,7 @@ impl Ways {
             Towards {
                 host: host.to_string(),
                 peer,
+                at: format!("{address}:{}", greeting.engine.http()),
             },
             Open {
                 _tunnel: tunnel,
@@ -430,6 +435,7 @@ mod tests {
             peer: "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237"
                 .parse()
                 .unwrap(),
+            at: "127.77.0.1:47989".to_string(),
         }
     }
 

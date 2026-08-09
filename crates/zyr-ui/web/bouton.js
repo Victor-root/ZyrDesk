@@ -106,10 +106,19 @@ vue.logo.addEventListener("pointermove", (evenement) => {
 
 vue.logo.addEventListener("pointerup", (evenement) => {
   vue.logo.releasePointerCapture(evenement.pointerId);
-  if (prise !== null && !deplace) {
-    ouvre(!ouvert);
-  }
   prise = null;
+});
+
+/* L'ouverture reste sur le clic et non sur le relâchement : c'est aussi
+   ce que produit la touche Entrée sur un bouton, et le menu doit
+   s'ouvrir au clavier comme à la souris. Un déplacement qui vient de se
+   terminer produit un clic lui aussi, qu'on laisse passer. */
+vue.logo.addEventListener("click", () => {
+  if (deplace) {
+    deplace = false;
+    return;
+  }
+  ouvre(!ouvert);
 });
 
 for (const item of document.querySelectorAll("[data-acte]")) {

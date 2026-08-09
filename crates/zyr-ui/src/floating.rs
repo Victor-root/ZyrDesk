@@ -50,14 +50,17 @@ const BUTTON: u32 = 52;
 
 /// What the menu can ask of the session.
 ///
-/// Each one is a shortcut the engine already answers to, so nothing here
-/// asks the engine to learn anything new.
+/// All but the last are shortcuts the engine already answers to, so
+/// nothing here asks it to learn anything new. Leaving and closing are
+/// two entries and not one: leaving keeps the far computer's desktop
+/// open and waiting, closing hands it back.
 #[derive(Clone, Copy)]
 enum Act {
     Fullscreen,
     Stats,
     MouseMode,
-    Stop,
+    Leave,
+    Close,
 }
 
 impl Act {
@@ -66,18 +69,23 @@ impl Act {
             "fullscreen" => Some(Act::Fullscreen),
             "stats" => Some(Act::Stats),
             "mouse" => Some(Act::MouseMode),
-            "stop" => Some(Act::Stop),
+            "leave" => Some(Act::Leave),
+            "close" => Some(Act::Close),
             _ => None,
         }
     }
 
-    /// Letter of the engine's Ctrl+Alt+Shift shortcut.
-    fn letter(self) -> u16 {
+    /// Letter of the engine's Ctrl+Alt+Shift shortcut, for the ones that
+    /// have one.
+    fn letter(self) -> Option<u16> {
         match self {
-            Act::Fullscreen => b'X' as u16,
-            Act::Stats => b'S' as u16,
-            Act::MouseMode => b'M' as u16,
-            Act::Stop => b'Q' as u16,
+            Act::Fullscreen => Some(b'X' as u16),
+            Act::Stats => Some(b'S' as u16),
+            Act::MouseMode => Some(b'M' as u16),
+            Act::Leave => Some(b'Q' as u16),
+            // Asked of the far computer over the tunnel, not of the
+            // player through its keyboard.
+            Act::Close => None,
         }
     }
 }
@@ -88,7 +96,8 @@ impl std::fmt::Display for Act {
             Act::Fullscreen => "plein écran",
             Act::Stats => "statistiques",
             Act::MouseMode => "mode de la souris",
-            Act::Stop => "arrêt de la session",
+            Act::Leave => "départ de la session",
+            Act::Close => "fermeture sur l'ordinateur distant",
         })
     }
 }
@@ -339,7 +348,7 @@ fn held_inside(
 
 /// Asks the session for something, in its own language.
 #[tauri::command]
-pub fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
+pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
     let act = Act::read(&what).ok_or_else(|| format!("action inconnue : {what}"))?;
     let process = app
         .state::<Floating>()
@@ -349,7 +358,45 @@ pub fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
         .as_ref()
         .map(|watched| watched.process)
         .ok_or("aucune session en cours")?;
-    shortcut(act, process)
+
+    match act.letter() {
+        Some(_) => shortcut(act, process),
+        None => close_on_the_far_computer().await,
+    }
+}
+
+/// Hands the far computer's desktop back, instead of merely leaving it.
+///
+/// Where to ask comes from the service rather than from anything this
+/// window remembers: the tunnel address is the only one the engine can
+/// reach that computer at, and it exists for exactly as long as the way
+/// does.
+async fn close_on_the_far_computer() -> Result<(), String> {
+    let session = crate::session::sessions()
+        .await
+        .into_iter()
+        .next()
+        .ok_or("aucune session en cours")?;
+
+    note(&format!(
+        "fermeture demandée sur {} à travers {}",
+        session.towards, session.at
+    ));
+    // On a thread of its own: this asks the far computer a question over
+    // the network, and the window must not stop drawing while it waits.
+    let answered = tauri::async_runtime::spawn_blocking(move || {
+        zyr_session::close_on_the_far_computer(&session.towards, &session.at)
+    })
+    .await;
+
+    match answered {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => {
+            note(&format!("fermeture refusée : {e}"));
+            Err(e.to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /* ---- Ce qui appartient à Windows ------------------------------------- */
@@ -493,15 +540,11 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
             .to_string());
     }
 
+    let Some(letter) = act.letter() else {
+        return Ok(());
+    };
     let keys = [
-        VK_CONTROL,
-        VK_MENU,
-        VK_SHIFT,
-        act.letter(),
-        act.letter(),
-        VK_SHIFT,
-        VK_MENU,
-        VK_CONTROL,
+        VK_CONTROL, VK_MENU, VK_SHIFT, letter, letter, VK_SHIFT, VK_MENU, VK_CONTROL,
     ];
     let events: Vec<INPUT> = keys
         .iter()
@@ -541,7 +584,7 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         // left from one the engine chose to ignore.
         note(&format!(
             "{act} envoyé au lecteur {process} : Ctrl+Alt+Maj+{}",
-            char::from(act.letter() as u8)
+            char::from(letter as u8)
         ));
         Ok(())
     } else {
@@ -602,11 +645,14 @@ mod tests {
             ("fullscreen", b'X'),
             ("stats", b'S'),
             ("mouse", b'M'),
-            ("stop", b'Q'),
+            ("leave", b'Q'),
         ] {
             let act = Act::read(name).expect(name);
-            assert_eq!(act.letter(), u16::from(letter), "sur « {name} »");
+            assert_eq!(act.letter(), Some(u16::from(letter)), "sur « {name} »");
         }
+        // Fermer pour de bon ne passe pas par le clavier du lecteur : ça
+        // se demande à l'ordinateur d'en face, à travers le tunnel.
+        assert_eq!(Act::read("close").expect("close").letter(), None);
         assert!(Act::read("teleport").is_none());
     }
 }

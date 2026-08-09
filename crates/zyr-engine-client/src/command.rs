@@ -21,6 +21,15 @@ pub fn pairing_arguments(host: &str, pin: &str) -> Vec<String> {
     ]
 }
 
+/// Arguments that tell a host to close what it is showing.
+///
+/// Leaving a session and closing it are two different things: the host
+/// keeps the desktop it opened, ready for an immediate return, until it
+/// is told otherwise. This is how it is told (P-M7).
+pub fn quit_arguments(host: &str) -> Vec<String> {
+    vec!["quit".to_string(), host.to_string()]
+}
+
 /// Arguments that start a session.
 ///
 /// Hardware decoding is imposed: a silent fallback to software would

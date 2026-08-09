@@ -663,7 +663,19 @@ Trois choses expliquent ce qu'on va voir.
 
 **En mode souris de jeu**, le pointeur appartient entièrement à l'ordinateur distant : le bouton n'est pas cliquable. Les raccourcis clavier affichés dans le menu font la même chose. Le retour à la souris de bureau se fait par Ctrl+Alt+Maj+M.
 
+**Quitter et fermer ne sont pas la même chose**, et le menu porte les deux. Quitter s'en va : l'ordinateur distant garde son bureau ouvert et prêt, donc revenir est immédiat. Fermer le lui rend, ce qu'on fait quand on a fini. C'est le comportement du moteur, qu'on garde parce qu'il est utile, mais rendu visible au lieu d'être subi.
+
 **Ce qui n'y est pas** : envoyer Ctrl+Alt+Suppr à l'ordinateur distant. Windows garde cette combinaison pour lui, et l'envoyer demanderait une modification du moteur client, à peser plus tard.
+
+### Préparation
+
+Sur le **PC client**, le moteur client doit être à jour : fermer sur l'ordinateur distant passe par un chemin du moteur qui ouvrait encore une fenêtre du projet d'origine, et qui porte maintenant le patch P-M7.
+
+1. Sur GitHub, onglet **Actions**, workflow **Moteurs**, ouvrir la dernière exécution réussie.
+2. Télécharger l'artefact `zyrdesk-client-engine`.
+3. Décompresser son contenu **par-dessus** `data\engines\client\`, en remplaçant tout.
+
+Le reste de la partie se teste sans ça ; seule la vérification M4-R44b le demande.
 
 ### Le test
 
@@ -697,11 +709,23 @@ Sur le **PC client**, mettre à jour le programme, puis ouvrir une session vers 
 >
 > Attendu : le logo disparaît pour de bon. Il ne revient pas de lui-même. Terminer la session au clavier (Ctrl+Alt+Maj+Q) et en rouvrir une : le logo est de retour.
 
-> **M4-R44 (terminer la session depuis le menu)**
+> **M4-R44 (quitter la session depuis le menu)**
 >
-> Dans une nouvelle session, cliquer le logo puis **Terminer la session**.
+> Dans une nouvelle session, cliquer le logo puis **Quitter la session**.
 >
-> Attendu : l'image se ferme proprement, le bouton disparaît avec elle, et la fenêtre d'accueil de ZyrDesk ne montre plus de session en cours. Côté hôte, `zyrdesk-host-engine.exe` revient au repos.
+> Attendu : l'image se ferme proprement, le bouton disparaît avec elle, et la fenêtre d'accueil de ZyrDesk ne montre plus de session en cours.
+>
+> Rouvrir une session tout de suite : elle doit s'ouvrir **plus vite que la première fois**, l'ordinateur distant ayant gardé son bureau prêt. C'est voulu, et c'est la différence avec la vérification suivante.
+
+> **M4-R44b (fermer pour de bon sur l'ordinateur distant)**
+>
+> Cette vérification demande le moteur client à jour (voir la préparation de cette partie).
+>
+> En session, cliquer le logo puis **Fermer sur l'ordinateur distant**.
+>
+> Attendu : l'image se ferme, comme pour quitter. La différence est de l'autre côté : sur le **PC hôte**, le bureau n'est plus tenu par personne. Rouvrir une session ensuite prend le même temps que la toute première.
+>
+> Si un message rouge apparaît dans le menu, le noter tel quel et joindre `data\logs\session.log` : c'est le moteur qui a refusé, et il dit pourquoi.
 
 > **M4-R45 (le vrai piège : fermer l'accueil)**
 >

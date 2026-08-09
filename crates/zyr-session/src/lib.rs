@@ -71,6 +71,8 @@ pub enum Error {
     Pairing(EngineError),
     /// The engine could not be started.
     Engine(EngineError),
+    /// The far computer would not let go of what it was showing.
+    Closing(EngineError),
     /// The device's own state could not be reset.
     State(io::Error),
 }
@@ -84,6 +86,7 @@ impl fmt::Display for Error {
             Error::Service(reason) => f.write_str(reason),
             Error::Pairing(e) => write!(f, "appairage refusé : {e}"),
             Error::Engine(e) => write!(f, "démarrage de la session : {e}"),
+            Error::Closing(e) => write!(f, "fermeture sur l'ordinateur distant : {e}"),
             Error::State(e) => write!(f, "réinitialisation de l'appairage : {e}"),
         }
     }
@@ -122,6 +125,29 @@ impl Running {
         }
         outcome
     }
+}
+
+/// Tells the far computer to close what it was showing.
+///
+/// Leaving a session and closing it are two different things, and both
+/// are worth having. Leaving keeps the far computer's desktop open and
+/// waiting, so coming back takes no time at all; closing hands it back,
+/// which is what to do when one is done for the day.
+///
+/// `host` is the computer as the person named it, which is what its
+/// stored pairing is filed under. `at` is where the tunnel puts it on
+/// this machine, which is the only address the engine can reach it at,
+/// and it only exists while that tunnel stands.
+pub fn close_on_the_far_computer(host: &str, at: &str) -> Result<(), Error> {
+    let exe = paths::client_engine_exe();
+    if !exe.is_file() {
+        return Err(Error::EngineMissing(exe));
+    }
+    let state = DeviceState::for_device(&identifier_from_address(host));
+    ClientEngine::new(&exe, state)
+        .with_log(paths::logs_dir().join("session.log"))
+        .quit(at)
+        .map_err(Error::Closing)
 }
 
 /// Opens a session, reporting what happens as it happens.

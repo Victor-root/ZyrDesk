@@ -24,7 +24,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 5;
+pub const PROTOCOL: u32 = 6;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -213,6 +213,10 @@ pub struct Session {
     /// Number the system knows the player by. What lets a window find
     /// the session's own window among all the others.
     pub process: u32,
+    /// Local address the client engine reaches that computer at, through
+    /// the tunnel. What anything else driving the same engine has to be
+    /// given: from outside, the far computer only exists there.
+    pub at: String,
     /// How long the picture has been up.
     pub since: Duration,
 }
@@ -265,6 +269,7 @@ impl Answer {
                 towards: unpacked(fields.text("towards")?),
                 peer: fields.parsed("peer")?,
                 process: fields.parsed("process")?,
+                at: fields.text("at")?.to_string(),
                 since: Duration::from_secs(fields.parsed("since")?),
             })),
             "settings" => Ok(Answer::Settings(fields.preferred())),
@@ -305,11 +310,12 @@ impl fmt::Display for Answer {
             ),
             Answer::Session(session) => write!(
                 f,
-                "session way={} towards={} peer={} process={} since={}",
+                "session way={} towards={} peer={} process={} at={} since={}",
                 session.way,
                 packed(&session.towards),
                 session.peer,
                 session.process,
+                session.at,
                 session.since.as_secs()
             ),
             Answer::Settings(preferred) => write!(f, "settings {}", spelled(preferred)),
@@ -521,6 +527,7 @@ mod tests {
                 towards: "192.168.1.20".to_string(),
                 peer: fingerprint(),
                 process: 11248,
+                at: "127.77.0.1:47989".to_string(),
                 since: Duration::from_secs(742),
             }),
             Answer::Settings(preferred()),
@@ -634,6 +641,7 @@ mod tests {
                 towards: name.to_string(),
                 peer: fingerprint(),
                 process: 11248,
+                at: "127.77.0.1:47989".to_string(),
                 since: Duration::from_secs(0),
             })
             .to_string();

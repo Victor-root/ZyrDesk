@@ -61,6 +61,8 @@ pub struct Ongoing {
     pub since: u64,
     /// Player showing it, so its window can be found among the others.
     pub process: u32,
+    /// Where the tunnel puts that computer on this machine.
+    pub at: String,
 }
 
 /// The sessions this computer is holding.
@@ -76,6 +78,7 @@ pub async fn sessions() -> Vec<Ongoing> {
             fingerprint: session.peer.to_string(),
             since: session.since.as_secs(),
             process: session.process,
+            at: session.at,
         }),
         _ => None,
     })

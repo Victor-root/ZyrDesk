@@ -34,7 +34,15 @@ pub enum SessionOutcome {
 pub enum EngineError {
     ExecutableNotFound(PathBuf),
     Io(io::Error),
-    PairingFailed { code: Option<i32>, output: String },
+    PairingFailed {
+        code: Option<i32>,
+        output: String,
+    },
+    /// The host would not let go of what it was showing (P-M7).
+    QuitFailed {
+        code: Option<i32>,
+        output: String,
+    },
 }
 
 impl fmt::Display for EngineError {
@@ -47,6 +55,13 @@ impl fmt::Display for EngineError {
             EngineError::PairingFailed { code, output } => {
                 let code = code.map(|c| c.to_string()).unwrap_or("interrompu".into());
                 write!(f, "appairage échoué ({code}) : {output}")
+            }
+            EngineError::QuitFailed { code, output } => {
+                let code = code.map(|c| c.to_string()).unwrap_or("interrompu".into());
+                write!(
+                    f,
+                    "fermeture refusée par l'ordinateur distant ({code}) : {output}"
+                )
             }
         }
     }
@@ -138,6 +153,38 @@ impl ClientEngine {
         }
         text.truncate(500);
         Err(EngineError::PairingFailed {
+            code: output.status.code(),
+            output: text,
+        })
+    }
+
+    /// Tells the host to close what it is showing.
+    ///
+    /// Nothing is streaming through this: it is one question asked over
+    /// the same tunnel the session uses, so it only works while that
+    /// tunnel is still standing.
+    pub fn quit(&self, host: &str) -> Result<(), EngineError> {
+        self.state.prepare()?;
+        let output = self
+            .command(&command::quit_arguments(host))?
+            .stdin(Stdio::null())
+            .output()?;
+
+        if let Some(mut log) = self.open_log()? {
+            let _ = writeln!(log, "--- closing the session on {host} ---");
+            let _ = log.write_all(&output.stdout);
+            let _ = log.write_all(&output.stderr);
+        }
+
+        if output.status.success() {
+            return Ok(());
+        }
+        let mut text = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if text.is_empty() {
+            text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        }
+        text.truncate(500);
+        Err(EngineError::QuitFailed {
             code: output.status.code(),
             output: text,
         })

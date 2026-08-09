@@ -59,18 +59,27 @@
           <span class="item-touche">jusqu'à la fin</span>
         </button>
 
-        <button
-          class="item quitter"
-          type="button"
-          data-acte="stop"
-          role="menuitem"
-        >
+        <button class="item" type="button" data-acte="leave" role="menuitem">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3" />
             <path d="M15 16l4-4-4-4M19 12H10" />
           </svg>
-          <span class="item-mot">Terminer la session</span>
+          <span class="item-mot">Quitter la session</span>
           <span class="item-touche">Ctrl+Alt+Maj+Q</span>
+        </button>
+
+        <button
+          class="item quitter"
+          type="button"
+          data-acte="close"
+          role="menuitem"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3v9" />
+            <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
+          </svg>
+          <span class="item-mot">Fermer sur l'ordinateur distant</span>
+          <span class="item-touche">libère le bureau</span>
         </button>
 
         <p class="souci cache" id="souci"></p>
