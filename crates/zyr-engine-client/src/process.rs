@@ -272,9 +272,14 @@ fn last_words(said: &str, most: usize) -> String {
     kept.reverse();
     let mut text = kept.join("\n");
     // A single line longer than the whole budget: keep its end, which is
-    // where a reason sits, and not its beginning.
+    // where a reason sits, and not its beginning. Cut on a character and
+    // never inside one: the engine speaks whatever language it was
+    // started in, and an accent is two bytes.
     if text.len() > most {
-        text = text.split_off(text.len() - most);
+        let from = (text.len() - most..=text.len())
+            .find(|at| text.is_char_boundary(*at))
+            .unwrap_or(text.len());
+        text = text.split_off(from);
     }
     text
 }
@@ -313,8 +318,7 @@ impl Pairing {
                 None => {}
             }
             if Instant::now() >= deadline {
-                let _ = self.engine.kill();
-                let _ = self.engine.wait();
+                // The engine is stopped on the way out, by `Drop`.
                 return Err(EngineError::PairingTimedOut(patience));
             }
             std::thread::sleep(PAIRING_POLL);
@@ -335,6 +339,24 @@ impl Pairing {
             return String::new();
         }
         last_words(said.trim(), TOLD)
+    }
+}
+
+impl Drop for Pairing {
+    /// A pairing nobody waited for does not get to outlive the program
+    /// that started it.
+    ///
+    /// The engine puts no limit on how long it waits for a code, so a
+    /// pairing dropped along the way would leave a process alive until
+    /// the machine is restarted. That is a session opening on nothing,
+    /// invisible, and impossible to guess at.
+    ///
+    /// A pairing that has already ended is dropped this way too: killing
+    /// what has exited says so and does nothing, which is exactly what
+    /// is wanted here.
+    fn drop(&mut self) {
+        let _ = self.engine.kill();
+        let _ = self.engine.wait();
     }
 }
 
@@ -414,6 +436,16 @@ PC-VICTOR is already paired";
         let kept = last_words(&format!("{}refusé", "x".repeat(500)), 20);
         assert!(kept.ends_with("refusé"), "{kept}");
         assert_eq!(kept.len(), 20);
+
+        // Et la coupe tombe entre deux caractères, jamais au milieu
+        // d'un : le moteur parle la langue dans laquelle il a démarré,
+        // et couper un accent en deux ferait paniquer le programme au
+        // pire moment, celui où il a une panne à raconter.
+        for budget in 1..40 {
+            let kept = last_words(&"é".repeat(60), budget);
+            assert!(kept.len() <= budget, "{budget} : {kept}");
+            assert!(kept.chars().all(|c| c == 'é'), "{budget} : {kept}");
+        }
     }
 
     #[test]

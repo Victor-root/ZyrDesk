@@ -162,6 +162,26 @@ fn unreadable(reason: impl fmt::Display) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, reason.to_string())
 }
 
+/// A refusal cut to fit this channel, and flattened onto one message.
+///
+/// A reason longer than the channel takes would not arrive at all, and
+/// the other computer would show a transport fault where it should have
+/// shown the reason. Better shortened than lost. Cut on a character and
+/// never inside one: these reasons are written in French.
+fn shortened(reason: &str) -> String {
+    let flat = reason.replace('\n', " ");
+    if flat.len() <= ROOM {
+        return flat;
+    }
+    let mut kept = flat;
+    let upto = (0..=ROOM).rev().find(|at| kept.is_char_boundary(*at));
+    kept.truncate(upto.unwrap_or(0));
+    kept
+}
+
+/// How long a refusal may be, the rest of its message deducted.
+const ROOM: usize = LIMIT - 32;
+
 /// Asks the far ZyrDesk something. Client side.
 ///
 /// A refusal comes back as a failure carrying what the other computer
@@ -241,9 +261,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
 async fn say(mut sending: SendStream, told: Result<Told, String>) -> io::Result<()> {
     let message = match told {
         Ok(told) => told.to_string(),
-        // Folded onto one line: the whole message is the answer, and a
-        // reason spread over several lines would read as several.
-        Err(reason) => format!("{VERSION} no {}", reason.replace('\n', " ")),
+        Err(reason) => format!("{VERSION} no {}", shortened(&reason)),
     };
     sending.write_all(message.as_bytes()).await?;
     sending.shutdown().await?;
@@ -325,10 +343,32 @@ mod tests {
     fn a_reason_written_over_two_lines_arrives_whole() {
         // Un refus est écrit pour être lu, parfois sur plusieurs lignes.
         // Il voyage à plat et doit rester entièrement lisible.
-        let folded = format!("{VERSION} no {}", "deux\nlignes".replace('\n', " "));
+        let folded = format!("{VERSION} no {}", shortened("deux\nlignes"));
         let Ok(Err(reason)) = Told::parse(&folded) else {
             panic!("« {folded} » n'est pas relu comme un refus");
         };
         assert_eq!(reason, "deux lignes");
+    }
+
+    #[test]
+    fn a_reason_too_long_for_the_channel_is_shortened_rather_than_lost() {
+        // Sans ça, le message dépasserait ce que le canal accepte et
+        // l'autre ordinateur verrait une panne de transport là où il
+        // devait lire une explication.
+        for reason in [
+            "é".repeat(600),
+            "x".repeat(600),
+            format!("{}é", "x".repeat(ROOM - 1)),
+        ] {
+            let message = format!("{VERSION} no {}", shortened(&reason));
+            assert!(message.len() <= LIMIT, "{} octets", message.len());
+            assert!(matches!(Told::parse(&message), Ok(Err(_))), "{message}");
+        }
+
+        // Et une raison qui tient n'est pas touchée.
+        assert_eq!(
+            shortened("le moteur n'attend aucun code"),
+            "le moteur n'attend aucun code"
+        );
     }
 }
