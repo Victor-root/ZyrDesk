@@ -295,6 +295,12 @@ async function rafraichirLesMoteurs() {
 let versionFenetre = "";
 
 function dessineLaVersion() {
+  // Tant que la fenêtre ne connaît pas la sienne, elle ne peut comparer
+  // quoi que ce soit : afficher un désaccord ici le ferait clignoter en
+  // ambre à chaque ouverture, pour rien.
+  if (versionFenetre.length === 0) {
+    return;
+  }
   const service = etat === null ? "" : etat.serviceBuild;
   const sien = versionFenetre.includes(service);
 
