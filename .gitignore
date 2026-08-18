@@ -5,3 +5,7 @@ packaging/windows/*.exe
 # Schémas régénérés par Tauri à chaque compilation, différents selon la
 # plateforme : les suivre ne ferait que salir l'arbre à chaque build.
 /crates/zyr-ui/gen/schemas
+
+# Trace laissée par l'installation de Qt, que la procédure de compilation
+# des moteurs sur sa propre machine fait passer par ici.
+/aqtinstall.log
