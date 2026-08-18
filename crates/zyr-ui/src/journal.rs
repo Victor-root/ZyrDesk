@@ -90,6 +90,9 @@ async fn heading() -> String {
     let engines = crate::folders::engines();
     say(&mut text, "Moteur hôte", present(engines.host_here));
     say(&mut text, "Moteur client", present(engines.client_here));
+    if !engines.build.is_empty() {
+        say(&mut text, "Moteurs", &engines.build);
+    }
     say(
         &mut text,
         "Journaux",

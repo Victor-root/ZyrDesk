@@ -13,6 +13,8 @@ Règle : voir `docs/engines/STRATEGY.md`. Aucune fonctionnalité ZyrDesk ne vit 
 
 Le dépôt référence les forks ([ZyrDesk-Sunshine](https://github.com/Victor-root/ZyrDesk-Sunshine), [ZyrDesk-Moonlight](https://github.com/Victor-root/ZyrDesk-Moonlight)) et non les projets d'origine : c'est là que vit notre pile de correctifs, sur une branche `zyr/<tag>` partant du tag épinglé. Les forks ne servent qu'à ça ; la version de référence reste celle du tableau ci-dessus.
 
+**Un patch n'est appliqué que lorsque le sous-module pointe dessus.** Écrire le correctif dans le fork et l'inscrire ici ne suffit pas : la compilation part de ce que le sous-module désigne, et un correctif écrit mais non épinglé produit un moteur qui ne le porte pas, sans que rien ne le dise. Le déplacement du sous-module est ce qui déclenche le workflow **Moteurs**, donc le seul geste qui met vraiment un patch en circulation. C'est arrivé une fois, avec P-M7, resté dix jours dans le fork sans jamais sortir en compilation.
+
 Contrainte de sécurité : Sunshine ne doit jamais être épinglé sous `v2026.516.143833`, première version corrigeant un contournement critique de la validation des certificats clients (CVSS 9.8).
 
 Les deux moteurs sont épinglés sur des versions publiées. Le choix de `v6.1.0` pour Moonlight, plutôt que sa branche principale, est motivé dans [../docs/DECISIONS.md](../docs/DECISIONS.md) (D14).

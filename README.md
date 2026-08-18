@@ -79,6 +79,14 @@ Pour récupérer aussi les moteurs upstream (volumineux, utiles à partir du jal
 git submodule update --init --recursive
 ```
 
+Les moteurs compilés, eux, viennent du workflow « Moteurs » et se mettent en place tout seuls :
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\packaging\engines\fetch-engines.ps1
+```
+
+Il faut le programme `gh` une fois (`winget install --id GitHub.cli && gh auth login`), le dépôt étant privé. Les compiler soi-même est décrit dans [docs/engines/COMPILER-LES-MOTEURS.md](docs/engines/COMPILER-LES-MOTEURS.md).
+
 Construction de l'installateur Windows : voir [packaging/windows/README.md](packaging/windows/README.md).
 
 ## Documentation

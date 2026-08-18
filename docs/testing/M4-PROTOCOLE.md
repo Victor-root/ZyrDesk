@@ -10,28 +10,33 @@ Ce protocole remplace celui des versions précédentes, qui passait par `zyr-cli
 
 ## Avant de commencer
 
-### Les moteurs, une fois pour toutes
+### Le programme qui récupère les moteurs, une fois pour toutes
 
-Deux fichiers à déposer, sur **les deux PC**. Ils viennent du workflow « Moteurs » de GitHub, un artefact par moteur, et portent déjà le bon nom :
+Les moteurs ne se compilent pas sur la machine qui s'en sert : l'un veut MSYS2 et GCC, l'autre Qt et Visual Studio, et chacun prend près d'une heure. La CI les compile une fois, et un script les met en place. Comme le dépôt est privé, ce script passe par le programme GitHub officiel, qui a déjà les accès.
 
-| Fichier | Où le déposer |
-|---|---|
-| `zyrdesk-host-engine.exe` et ce qui l'accompagne | `data\engines\host\` |
-| `zyrdesk-session.exe` et ce qui l'accompagne | `data\engines\client\` |
+À faire une seule fois, sur **les deux PC** :
 
-Si l'un des deux manque, la fenêtre le dira en clair et proposera d'ouvrir le dossier : rien à chercher.
+```
+winget install --id GitHub.cli && gh auth login
+```
 
-### Mettre à jour ZyrDesk
+Ensuite, les moteurs suivent la mise à jour ci-dessous et il n'y a plus jamais rien à télécharger à la main. Si tu préfères t'en passer, les artefacts du workflow « Moteurs » se décompressent dans `data\engines\host\` et `data\engines\client\` : le résultat est le même, et la fenêtre dit en clair ce qui manque.
+
+### Mettre à jour ZyrDesk et les moteurs
 
 Sur **les deux PC**, dans une fenêtre PowerShell **administrateur** placée dans le dossier du projet, une seule ligne :
 
 ```
-taskkill /IM ZyrDesk.exe /F 2>$null; .\target\release\zyrdeskd stop; git pull && cargo build --release && .\target\release\zyrdeskd start
+taskkill /IM ZyrDesk.exe /F 2>$null; .\target\release\zyrdeskd stop; git pull && cargo build --release && pwsh -NoProfile -ExecutionPolicy Bypass -File .\packaging\engines\fetch-engines.ps1 && .\target\release\zyrdeskd start
 ```
 
-Elle ferme l'application, arrête le service, récupère les changements, compile, et remet le service en marche. L'ordre compte : Windows refuse de remplacer un fichier qu'un programme tient encore ouvert, et compiler avant d'arrêter échoue sur « Accès refusé ».
+Elle ferme l'application, arrête le service, récupère les changements, compile, met les moteurs à jour s'ils ont bougé, et remet le service en marche.
 
-**La toute première fois**, le service n'existe pas encore : la ligne se réduit à `git pull && cargo build --release`, et c'est la fenêtre qui l'installera (vérification R2).
+L'ordre compte : Windows refuse de remplacer un fichier qu'un programme tient encore ouvert, et compiler ou remplacer un moteur avant d'avoir arrêté échoue sur « Accès refusé ».
+
+Les moteurs ne sont retéléchargés que s'ils ont changé, ce qui arrive une poignée de fois sur la vie du projet. Le journal de la fenêtre dit toujours de quelle compilation viennent ceux qui sont en place.
+
+**La toute première fois**, le service n'existe pas encore : la ligne se réduit à `git pull && cargo build --release && pwsh -NoProfile -ExecutionPolicy Bypass -File .\packaging\engines\fetch-engines.ps1`, et c'est la fenêtre qui installera le service (vérification R2).
 
 ### Lancer l'application
 
@@ -259,7 +264,7 @@ Quand quelque chose ne marche pas, la première question est toujours la même :
 >
 > Cliquer l'icône **journal** en haut de la fenêtre.
 >
-> Attendu, dans l'entête : la version de la fenêtre, celle du service, le nom de l'ordinateur, son empreinte, l'état de l'accès distant, celui du réseau local, la présence des deux moteurs, le nombre de sessions. Puis le contenu des quatre journaux, la fin de chacun.
+> Attendu, dans l'entête : la version de la fenêtre, celle du service, le nom de l'ordinateur, son empreinte, l'état de l'accès distant, celui du réseau local, la présence des deux moteurs et la compilation dont ils viennent, le nombre de sessions. Puis le contenu des quatre journaux, la fin de chacun.
 >
 > Cliquer **Copier tout**, coller dans un bloc-notes : tout doit s'y retrouver, tel quel.
 

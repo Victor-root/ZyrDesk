@@ -1,8 +1,8 @@
 # Compiler les moteurs sur sa propre machine
 
-Les moteurs sont normalement compilés par le workflow **Moteurs** sur GitHub, et récupérés en artefact. C'est pratique mais lent : la machine de GitHub a quatre coeurs, et le moteur hôte y prend une demi-heure.
+Les moteurs sont normalement compilés par le workflow **Moteurs** sur GitHub, et mis en place par `packaging\engines\fetch-engines.ps1`, qui va chercher la dernière compilation réussie et la décompresse au bon endroit. C'est pratique mais lent : la machine de GitHub a quatre coeurs, et le moteur hôte y prend une demi-heure.
 
-Les compiler soi-même est possible, et sur une machine récente c'est plusieurs fois plus rapide. Le prix à payer est une installation à faire une fois.
+Les compiler soi-même est possible, et sur une machine récente c'est plusieurs fois plus rapide. Le prix à payer est une installation à faire une fois. Un moteur compilé sur place remplace celui que le script aurait posé, et le fichier `data\engines\build.txt` qu'il écrit devient faux : le supprimer, la fenêtre dira alors simplement que les moteurs sont présents sans prétendre savoir d'où ils viennent.
 
 Ce document décrit cette installation. Le workflow reste la référence : c'est lui qui dit si le projet compile ailleurs que sur une seule machine, et c'est de lui que sortent les moteurs qu'on distribue.
 

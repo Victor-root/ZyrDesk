@@ -53,6 +53,8 @@ pub struct Engines {
     pub client_here: bool,
     pub host_folder: String,
     pub client_folder: String,
+    /// Which build the engines in place came from, when that is known.
+    pub build: String,
 }
 
 #[tauri::command]
@@ -62,6 +64,40 @@ pub fn engines() -> Engines {
         client_here: paths::client_engine_exe().is_file(),
         host_folder: paths::host_engine_dir().display().to_string(),
         client_folder: paths::client_engine_dir().display().to_string(),
+        build: which_build(),
+    }
+}
+
+/// Which build produced the engines sitting on this machine.
+///
+/// Written by the script that fetches them. Without it, an engine that
+/// is present says nothing about whether it is the one this code
+/// expects, and the two drift apart in silence: the engines are the one
+/// half of the product that a `git pull` does not carry.
+fn which_build() -> String {
+    match std::fs::read_to_string(paths::engines_dir().join("build.txt")) {
+        Ok(text) => build_from(&text),
+        // No file at all: engines put there by hand, which stays
+        // perfectly valid and simply says nothing about where they came
+        // from.
+        Err(_) => String::new(),
+    }
+}
+
+/// What that file says, kept apart from the disk so that what the script
+/// writes and what the window reads can be checked against each other.
+fn build_from(text: &str) -> String {
+    let said = |key: &str| {
+        text.lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .filter_map(|line| line.split_once('='))
+            .find(|(name, _)| name.trim() == key)
+            .map(|(_, value)| value.trim().to_string())
+    };
+    match (said("run"), said("date")) {
+        (Some(run), Some(date)) => format!("compilation {run} du {date}"),
+        (Some(run), None) => format!("compilation {run}"),
+        _ => String::new(),
     }
 }
 
@@ -106,6 +142,33 @@ mod tests {
         for named in ["C:\\Windows", "..", "", "identity"] {
             assert!(Which::read(named).is_err(), "{named}");
         }
+    }
+
+    #[test]
+    fn the_engines_build_is_read_from_what_the_script_writes() {
+        // Mot pour mot ce que packaging/engines/fetch-engines.ps1 écrit :
+        // les deux doivent parler de la même chose, faute de quoi le
+        // journal dirait « moteurs présents » sans jamais dire lesquels.
+        let written = "# Moteurs ZyrDesk : d'où viennent ceux qui sont en place.\n\
+             # Écrit par packaging/engines/fetch-engines.ps1, à ne pas corriger à la main.\n\
+             run = 17392044\n\
+             commit = a9f7db93c1\n\
+             branche = develop\n\
+             date = 2026-08-18T20:31:00Z\n";
+        assert_eq!(
+            build_from(written),
+            "compilation 17392044 du 2026-08-18T20:31:00Z"
+        );
+    }
+
+    #[test]
+    fn engines_put_there_by_hand_say_nothing_rather_than_lie() {
+        // Déposer les moteurs soi-même reste parfaitement valable : il
+        // n'y a alors rien à dire de leur provenance, et surtout rien à
+        // inventer.
+        assert!(build_from("").is_empty());
+        assert!(build_from("n'importe quoi").is_empty());
+        assert!(build_from("# run = 1\n").is_empty());
     }
 
     #[test]
