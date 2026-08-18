@@ -61,6 +61,8 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Attendu : la demande d'autorisation de Windows apparaît, une fois. Après avoir accepté, le bandeau disparaît de lui-même en quelques secondes et l'état passe à « Prêt à être contrôlé ».
 >
+> Ce même geste pose les deux règles de pare-feu dont le service a besoin : le port du tunnel, et celui de la découverte du réseau local. Le journal (partie 7) le dit en toutes lettres, ligne `firewall opened for …`.
+>
 > À vérifier aussi : refuser la demande de Windows doit afficher « les droits administrateur ont été refusés » et rien de plus. Pas de plantage, pas de bandeau bloqué.
 
 > **R3 (le service survit au redémarrage)**
@@ -291,7 +293,7 @@ La marche à suivre est toujours la même : ouvrir le journal, cliquer **Copier 
 
 Deux cas courants, et leur cause habituelle :
 
-- **Les ordinateurs ne se voient pas.** Le pare-feu Windows bloque la découverte du réseau local (mDNS, UDP 5353), ou les deux machines ne sont pas sur le même sous-réseau. Le rattrapage R6bis permet de continuer sans attendre.
+- **Les ordinateurs ne se voient pas.** Regarder le journal : si la ligne `firewall opened for ZyrDesk (réseau local)` n'y est pas, la règle n'a pas été posée, et un autre pare-feu que celui de Windows est probablement en cause. Sinon, les deux machines ne sont peut-être pas sur le même sous-réseau. Le rattrapage R6bis permet de continuer sans attendre.
 - **La session est refusée avec un message d'ordinateur refusé.** La confiance au réseau local est coupée sur l'hôte (R19), ou son accès distant est désactivé (R20).
 
 Deux entrées du menu flottant méritent leur propre explication :

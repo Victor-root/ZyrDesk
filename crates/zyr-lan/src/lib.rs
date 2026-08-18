@@ -30,6 +30,13 @@ use zyr_transport::Fingerprint;
 /// engines are never reachable from the network.
 const SERVICE: &str = "_zyrdesk._udp.local.";
 
+/// Port mDNS itself uses, which nobody gets to choose.
+///
+/// Named here because the firewall has to let it through: a computer
+/// that cannot hear the announcements never finds anyone, and that looks
+/// exactly like a product that does not work.
+pub const PORT: u16 = 5353;
+
 /// Key the fingerprint travels under.
 const CLE_EMPREINTE: &str = "fp";
 

@@ -17,7 +17,7 @@ zyrdesk-session (Moonlight)                                zyrdesk-host-engine (
 Pourquoi c'est le bon choix :
 
 - Un seul chemin de code à tester et à optimiser (pas de matrice direct-LAN / direct-WAN / relais).
-- Un seul port UDP à ouvrir ou mapper côté hôte, le 47000 ; les moteurs n'ont besoin d'aucune règle pare-feu.
+- Un seul port UDP à ouvrir ou mapper côté hôte pour une session, le 47000 ; les moteurs n'ont besoin d'aucune règle pare-feu. S'y ajoute le 5353 en entrée, que mDNS réserve pour la découverte du réseau local et qui ne sort jamais de celui-ci. Les deux règles sont posées par le service lui-même à l'installation, bornées à son propre programme.
 - Chiffrement et authentification uniformes, portés par le tunnel (clés d'appareil), quel que soit le chemin.
 - La migration de chemin (relais vers direct) devient possible sans que les moteurs s'en aperçoivent.
 - Coût mesuré sur deux vraies machines, et non plus estimé : en Ethernet gigabit, à 40 Mb/s sur deux minutes, le tunnel complet ajoute 0,54 ms d'aller-retour médian et 0,81 ms au centile 99, pour un seuil admis à 1 et 3 ms, et coûte 7,5 points d'un coeur pour un seuil à huit ([perf/baselines/M2-lan-ethernet.md](../perf/baselines/M2-lan-ethernet.md)). L'estimation initiale de 0,1 à 0,5 ms était optimiste d'un facteur deux. La décision du tunnel systématique est donc confirmée par la mesure.

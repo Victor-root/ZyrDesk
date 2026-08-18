@@ -174,19 +174,23 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
         account_password: None,
     };
 
-    match manager.open_service(NAME, ServiceAccess::CHANGE_CONFIG) {
+    let program = description.executable_path.clone();
+    let installed = match manager.open_service(NAME, ServiceAccess::CHANGE_CONFIG) {
         Ok(service) => {
             service.change_config(&description)?;
             service.set_description(DESCRIPTION)?;
-            Ok(Installed::Updated)
+            Installed::Updated
         }
         Err(e) if reported(&e) == Some(UNKNOWN_SERVICE) => {
             let service = manager.create_service(&description, ServiceAccess::CHANGE_CONFIG)?;
             service.set_description(DESCRIPTION)?;
-            Ok(Installed::Registered)
+            Installed::Registered
         }
-        Err(e) => Err(e.into()),
-    }
+        Err(e) => return Err(e.into()),
+    };
+
+    open_the_firewall(&program);
+    Ok(installed)
 }
 
 /// Registers the service, points it at this program, and starts it.
@@ -209,6 +213,76 @@ pub fn set_up() -> Result<Installed, Box<dyn std::error::Error>> {
     Ok(installed)
 }
 
+/// What the service listens on, and what Windows calls each rule.
+///
+/// Two ports, not one. The tunnel carries everything a session needs,
+/// and mDNS is what lets two ZyrDesk find each other on a local network
+/// without anybody reading an address out loud. Leaving the second one
+/// closed does not break a session, it stops the other computer from
+/// ever appearing, which looks exactly like a product that does not
+/// work.
+const OPENINGS: [(&str, u16); 2] = [
+    ("ZyrDesk (tunnel)", zyr_proto::net::TUNNEL_PORT),
+    ("ZyrDesk (réseau local)", zyr_lan::PORT),
+];
+
+/// Lets the outside reach the service, through the Windows firewall.
+///
+/// Each rule is bound to this program alone, so nothing else on the
+/// machine gains anything by it, and each is removed before being added
+/// so that installing again from another folder repoints it instead of
+/// leaving a rule aimed at a program that has moved.
+///
+/// A failure here is written down and not raised: a machine whose
+/// firewall is managed by someone else is not a machine that should
+/// refuse to install a service. What it costs, if it comes to that, is
+/// said in the journal.
+fn open_the_firewall(program: &std::path::Path) {
+    let log = Log::open(&log_path()).ok();
+    let say = |what: &str| {
+        if let Some(log) = &log {
+            log.write(what);
+        }
+    };
+
+    for (rule, port) in OPENINGS {
+        let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
+        let added = netsh(&[
+            "add",
+            "rule",
+            &format!("name={rule}"),
+            "dir=in",
+            "action=allow",
+            "protocol=UDP",
+            &format!("localport={port}"),
+            &format!("program={}", program.display()),
+            &format!("description={DESCRIPTION}"),
+        ]);
+        match added {
+            Ok(true) => say(&format!("firewall opened for {rule} on UDP {port}")),
+            Ok(false) => say(&format!(
+                "firewall rule {rule} refused, UDP {port} stays closed"
+            )),
+            Err(e) => say(&format!("firewall untouched for {rule}: {e}")),
+        }
+    }
+}
+
+/// Runs one netsh command, quietly. `false` when netsh said no.
+fn netsh(arguments: &[&str]) -> std::io::Result<bool> {
+    use std::os::windows::process::CommandExt;
+
+    /// Keeps a console window from flashing up behind the interface.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    std::process::Command::new("netsh")
+        .args(["advfirewall", "firewall"])
+        .args(arguments)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|said| said.status.success())
+}
+
 /// Code the system itself gave, when it gave one.
 fn reported(error: &windows_service::Error) -> Option<i32> {
     match error {
@@ -229,6 +303,12 @@ pub fn uninstall() -> ServiceResult<()> {
     let _ = service.stop();
     wait_until_stopped(&service);
     service.delete()?;
+
+    // What was opened is closed again: a rule left behind would point at
+    // a program that no longer runs.
+    for (rule, _) in OPENINGS {
+        let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
+    }
     Ok(())
 }
 

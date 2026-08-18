@@ -33,7 +33,7 @@ Lancer `ZyrDesk.exe` sur les deux ordinateurs. La première fois, un bouton de l
 
 Chaque ordinateur apparaît alors dans la fenêtre de l'autre. Un clic sur sa carte ouvre la session. Rien d'autre n'est demandé à personne.
 
-Le service ouvre un seul port, le 47000 en UDP. L'installateur pose la règle de pare-feu qui va avec ; en compilant depuis les sources, elle se fait à la main.
+Tout ce qu'une session transporte passe par un seul port, le 47000 en UDP. Le service en écoute un second, le 5353, celui que mDNS réserve pour que deux ordinateurs se trouvent sur un réseau local. Les deux règles de pare-feu correspondantes sont posées par le service au moment où il s'installe, et retirées quand on le retire ; elles ne valent que pour lui.
 
 ## En ligne de commande, pour diagnostiquer
 
