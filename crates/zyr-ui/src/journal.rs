@@ -132,6 +132,11 @@ async fn heading() -> String {
         Err(reason) => say(&mut text, "Service", &reason.replace('\n', " ")),
     }
 
+    // Qui est vu sur le réseau, nommément. C'est la première chose qu'on
+    // se demande quand rien n'apparaît, et la liste à l'écran ne dit pas
+    // si elle est vide faute de voisin ou faute de réponse.
+    say(&mut text, "Ordinateurs vus", &neighbours().await);
+
     let engines = crate::folders::engines();
     say(&mut text, "Moteur hôte", present(engines.host_here));
     say(&mut text, "Moteur client", present(engines.client_here));
@@ -144,6 +149,18 @@ async fn heading() -> String {
         &paths::logs_dir().display().to_string(),
     );
     text
+}
+
+/// The computers this one sees on the local network, by name.
+async fn neighbours() -> String {
+    let seen = crate::desk::peers().await;
+    if seen.is_empty() {
+        return "aucun".to_string();
+    }
+    seen.iter()
+        .map(|peer| format!("{} ({})", peer.name, peer.address))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// One line of the heading, its label padded so the values line up.

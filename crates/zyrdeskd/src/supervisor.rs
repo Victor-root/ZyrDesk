@@ -384,8 +384,14 @@ fn announce(log: &Log) -> Result<zyr_lan::Neighbourhood, String> {
     let identity = zyr_transport::Identity::load_or_create(&paths::identity_dir())
         .map_err(|e| e.to_string())?;
     let name = zyr_proto::machine::name();
+    // What the network carries is written down as it arrives. Two
+    // computers that never see each other is the one fault where
+    // everything looks normal on both sides, and only this says whether
+    // anything is being heard at all.
+    let heard = log.clone();
     let neighbourhood =
-        zyr_lan::Neighbourhood::open(&name, identity.fingerprint()).map_err(|e| e.to_string())?;
+        zyr_lan::Neighbourhood::open(&name, identity.fingerprint(), move |what| heard.write(what))
+            .map_err(|e| e.to_string())?;
     log.write(&format!("announced on the local network as {name}"));
     Ok(neighbourhood)
 }

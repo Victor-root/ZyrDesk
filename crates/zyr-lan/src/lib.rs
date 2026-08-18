@@ -87,20 +87,30 @@ impl Found {
         peers
     }
 
-    fn note(&self, peer: Peer, now: Instant) {
+    /// Writes a computer down. `true` when it was not already there.
+    ///
+    /// A machine re-announces itself for as long as it runs, so only the
+    /// first time is worth telling anyone about.
+    fn note(&self, peer: Peer, now: Instant) -> bool {
         self.0
             .lock()
             .expect("found peers")
-            .insert(peer.fingerprint, (peer, now));
+            .insert(peer.fingerprint, (peer, now))
+            .is_none()
     }
 
-    fn forget(&self, name: &str) {
+    /// Takes a computer off the list, and hands back the name it was
+    /// known by when there was one to take off.
+    fn forget(&self, name: &str) -> Option<String> {
         // The goodbye carries the announced name, not the fingerprint,
         // so the entry is found by what it was announced under.
-        self.0
-            .lock()
-            .expect("found peers")
-            .retain(|_, (peer, _)| announced_as(&peer.fingerprint) != name);
+        let mut found = self.0.lock().expect("found peers");
+        let gone = found
+            .values()
+            .find(|(peer, _)| announced_as(&peer.fingerprint) == name)
+            .map(|(peer, _)| peer.name.clone())?;
+        found.retain(|_, (peer, _)| announced_as(&peer.fingerprint) != name);
+        Some(gone)
     }
 }
 
@@ -125,7 +135,16 @@ pub struct Neighbourhood {
 
 impl Neighbourhood {
     /// Says this computer is here, and starts listening for others.
-    pub fn open(name: &str, fingerprint: Fingerprint) -> Result<Self, mdns_sd::Error> {
+    ///
+    /// `noticed` is told what the network carries, as it arrives. Without
+    /// it, a computer that never appears looks exactly like a computer
+    /// that is switched off, and there is nothing to tell the two apart
+    /// from the outside.
+    pub fn open(
+        name: &str,
+        fingerprint: Fingerprint,
+        noticed: impl Fn(&str) + Send + 'static,
+    ) -> Result<Self, mdns_sd::Error> {
         let daemon = ServiceDaemon::new()?;
         let instance = announced_as(&fingerprint);
 
@@ -151,8 +170,13 @@ impl Neighbourhood {
         let collecting = found.clone();
         let mine = fingerprint;
         std::thread::spawn(move || {
+            // What has already been mentioned, so that a machine
+            // re-announcing itself every minute does not fill the
+            // journal with the same line. One entry per computer on the
+            // network, which is a handful at worst.
+            let mut mentioned = std::collections::HashSet::new();
             while let Ok(event) = listening.recv() {
-                collect(event, &collecting, mine);
+                collect(event, &collecting, mine, &mut mentioned, &noticed);
             }
         });
 
@@ -179,10 +203,28 @@ impl Drop for Neighbourhood {
 }
 
 /// Turns what the network said into what we keep, or ignores it.
-fn collect(event: ServiceEvent, found: &Found, mine: Fingerprint) {
+///
+/// What is worth telling apart, and why each stage is reported: hearing
+/// an announcement proves the network carries them at all, and reading
+/// one proves it carries ours. A computer that never appears is one of
+/// two very different faults, and only these lines say which.
+fn collect(
+    event: ServiceEvent,
+    found: &Found,
+    mine: Fingerprint,
+    mentioned: &mut std::collections::HashSet<String>,
+    noticed: &dyn Fn(&str),
+) {
     match event {
+        ServiceEvent::ServiceFound(_, fullname) => {
+            let instance = instance_of(&fullname).to_string();
+            if instance != announced_as(&mine) && mentioned.insert(instance.clone()) {
+                noticed(&format!("an announcement was heard from {instance}"));
+            }
+        }
         ServiceEvent::ServiceResolved(info) => {
             let Some(peer) = read(&info) else {
+                noticed("an announcement arrived incomplete and was left aside");
                 return;
             };
             // This computer hears its own announcement: showing it in
@@ -190,13 +232,26 @@ fn collect(event: ServiceEvent, found: &Found, mine: Fingerprint) {
             if peer.fingerprint == mine {
                 return;
             }
-            found.note(peer, Instant::now());
+            let named = format!("{} at {}", peer.name, peer.address);
+            if found.note(peer, Instant::now()) {
+                noticed(&format!("found {named} on the local network"));
+            }
         }
-        ServiceEvent::ServiceRemoved(_, name) => {
-            found.forget(name.split('.').next().unwrap_or(&name));
+        ServiceEvent::ServiceRemoved(_, fullname) => {
+            let instance = instance_of(&fullname);
+            mentioned.remove(instance);
+            if let Some(gone) = found.forget(instance) {
+                noticed(&format!("{gone} left the local network"));
+            }
         }
         _ => {}
     }
+}
+
+/// The instance part of a full mDNS name, which is what a computer is
+/// announced under.
+fn instance_of(fullname: &str) -> &str {
+    fullname.split('.').next().unwrap_or(fullname)
 }
 
 /// Reads a record, keeping only what is complete and makes sense.
@@ -256,6 +311,37 @@ mod tests {
         found.note(peer(1, "PC-BUREAU"), Instant::now());
         assert_eq!(found.peers().len(), 1);
         assert_eq!(found.peers()[0].name, "PC-BUREAU");
+    }
+
+    #[test]
+    fn only_the_first_sight_of_a_computer_is_worth_reporting() {
+        // Une machine se réannonce tant qu'elle tourne : sans ça, le
+        // journal se remplirait de la même ligne toutes les minutes.
+        let found = Found::new();
+        assert!(found.note(peer(1, "PC-BUREAU"), Instant::now()));
+        assert!(!found.note(peer(1, "PC-BUREAU"), Instant::now()));
+    }
+
+    #[test]
+    fn a_departure_names_who_left_and_stays_quiet_otherwise() {
+        let found = Found::new();
+        found.note(peer(1, "PC-BUREAU"), Instant::now());
+
+        assert_eq!(
+            found.forget(&announced_as(&fingerprint(1))).as_deref(),
+            Some("PC-BUREAU")
+        );
+        // Un départ annoncé deux fois, ou celui d'une machine qu'on n'a
+        // jamais vue, ne doit rien raconter du tout.
+        assert!(found.forget(&announced_as(&fingerprint(1))).is_none());
+        assert!(found.forget("une-machine-inconnue").is_none());
+    }
+
+    #[test]
+    fn a_full_mdns_name_gives_back_what_the_computer_is_announced_under() {
+        let announced = announced_as(&fingerprint(1));
+        assert_eq!(instance_of(&format!("{announced}.{SERVICE}")), announced);
+        assert_eq!(instance_of("sans-point"), "sans-point");
     }
 
     #[test]
