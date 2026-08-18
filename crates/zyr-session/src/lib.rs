@@ -11,14 +11,21 @@
 //! do exactly the same thing here, and the difference between them is
 //! only how they say it: one prints, the other draws.
 //!
-//! Progress is reported as it happens rather than returned at the end.
-//! Pairing is the reason: it shows a code and then waits for someone to
-//! type it on the other computer, so the code has to reach the person
-//! before the waiting starts.
+//! Progress is reported as it happens rather than returned at the end:
+//! opening a session takes seconds, and a window with nothing to say for
+//! all of them looks stuck.
+//!
+//! Pairing happens here too, and nobody is asked for anything. The
+//! engines demand that a code shown on one computer be typed on the
+//! other; the tunnel already recognised both computers by fingerprint
+//! before it opened, so the code goes through it. The order is the whole
+//! mechanism: the far engine refuses a code as long as nobody is asking
+//! it for one, so ours is started and left waiting first.
 
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use zyr_control::{Answer, Request, Service, WayId};
 use zyr_engine_client::state::identifier_from_address;
@@ -52,14 +59,27 @@ pub struct Wanted {
 pub enum Step {
     /// The way is open, and the path takes packets of that size.
     Reached { packet: u16 },
-    /// The two computers have never met: this code has to be typed on
-    /// the other one before anything else can happen.
+    /// The two computers have never met, and are being introduced.
+    /// Nothing is asked of anyone.
+    Pairing,
+    /// The same, without a tunnel to carry the code: it has to be typed
+    /// on the other computer. Only the diagnostic path ever gets here.
     PairingNeeded { pin: String },
-    /// It was typed, and accepted.
+    /// They know each other now.
     Paired,
     /// The engine is starting.
     Starting,
 }
+
+/// How long the engines are given to meet, the code having travelled on
+/// its own.
+///
+/// Generous: what is being waited on is two engines exchanging
+/// certificates over a tunnel, not a person.
+const PAIRING_PATIENCE: Duration = Duration::from_secs(30);
+
+/// The same, when somebody has to walk to the other computer.
+const PAIRING_BY_HAND: Duration = Duration::from_secs(180);
 
 #[derive(Debug)]
 pub enum Error {
@@ -69,6 +89,9 @@ pub enum Error {
     Service(String),
     /// The engine refused the pairing, or could not be run.
     Pairing(EngineError),
+    /// The far computer would not take the code its engine was waiting
+    /// for.
+    Handover(String),
     /// The engine could not be started.
     Engine(EngineError),
     /// The far computer would not let go of what it was showing.
@@ -85,6 +108,7 @@ impl fmt::Display for Error {
             }
             Error::Service(reason) => f.write_str(reason),
             Error::Pairing(e) => write!(f, "appairage refusé : {e}"),
+            Error::Handover(reason) => f.write_str(reason),
             Error::Engine(e) => write!(f, "démarrage de la session : {e}"),
             Error::Closing(e) => write!(f, "fermeture sur l'ordinateur distant : {e}"),
             Error::State(e) => write!(f, "réinitialisation de l'appairage : {e}"),
@@ -190,9 +214,7 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
     let engine = ClientEngine::new(&exe, state).with_log(&log);
 
     if !already_known {
-        let pin = random::pairing_pin();
-        told(Step::PairingNeeded { pin: pin.clone() });
-        engine.pair(&target, &pin).map_err(Error::Pairing)?;
+        introduce(&engine, &target, driving.as_mut(), told)?;
         told(Step::Paired);
     }
 
@@ -212,6 +234,37 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
         driving,
         log,
     })
+}
+
+/// Introduces two engines that have never met.
+///
+/// Ours is started first and left waiting, because the far one refuses a
+/// code as long as nobody is asking it for one. The code then goes
+/// through the tunnel, which recognised both computers before it opened,
+/// and only then is the outcome waited for.
+fn introduce(
+    engine: &ClientEngine,
+    target: &str,
+    driving: Option<&mut Driving>,
+    told: &mut dyn FnMut(Step),
+) -> Result<(), Error> {
+    let pin = random::pairing_pin();
+
+    let Some(driving) = driving else {
+        // No tunnel, so no channel to carry the code: the diagnostic
+        // path, and the only place anybody still types one.
+        told(Step::PairingNeeded { pin: pin.clone() });
+        return engine
+            .start_pairing(target, &pin)
+            .map_err(Error::Pairing)?
+            .settled(PAIRING_BY_HAND)
+            .map_err(Error::Pairing);
+    };
+
+    told(Step::Pairing);
+    let pairing = engine.start_pairing(target, &pin).map_err(Error::Pairing)?;
+    driving.hand_over_the_code(&pin).map_err(Error::Handover)?;
+    pairing.settled(PAIRING_PATIENCE).map_err(Error::Pairing)
 }
 
 /// The service, and the way it holds for this session.
@@ -264,6 +317,26 @@ impl Driving {
             target: format!("{}:{}", reached.address, reached.engine.http()),
             packet: reached.packet,
         })
+    }
+
+    /// Hands the far computer the code its engine is waiting for.
+    ///
+    /// The service does the sending: it is the one holding the way, and
+    /// the way is the only thing that already knows both computers.
+    fn hand_over_the_code(&mut self, pin: &str) -> Result<(), String> {
+        let request = Request::Pair {
+            way: self.way,
+            pin: pin.to_string(),
+        };
+        match self
+            .runtime
+            .block_on(self.service.ask(&request))
+            .map_err(|e| e.to_string())?
+        {
+            Answer::Done => Ok(()),
+            Answer::Refused(reason) => Err(reason),
+            other => Err(format!("réponse inattendue du service : {other}")),
+        }
     }
 
     /// Tells the service which process the way now serves, so it closes

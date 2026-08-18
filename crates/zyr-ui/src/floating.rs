@@ -32,6 +32,12 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 
+// What the button did goes into the same journal as everything else: the
+// window has nowhere else to say it, standing behind the picture, and a
+// menu entry that seems to do nothing is exactly the kind of thing that
+// cannot be diagnosed from a screenshot.
+use crate::journal::note;
+
 /// Name this window is known by, inside the program.
 pub const WINDOW: &str = "flottant";
 
@@ -100,29 +106,6 @@ impl std::fmt::Display for Act {
             Act::Close => "fermeture sur l'ordinateur distant",
         })
     }
-}
-
-/// Writes down what the button did, next to everything else the product
-/// writes down.
-///
-/// The window has nowhere else to say it: during a session it is behind
-/// the picture, and a menu entry that seems to do nothing is exactly the
-/// kind of thing that cannot be diagnosed from a screenshot.
-fn note(what: &str) {
-    use std::io::Write;
-
-    let folder = zyr_proto::paths::logs_dir();
-    if std::fs::create_dir_all(&folder).is_err() {
-        return;
-    }
-    let Ok(mut log) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(folder.join("interface.log"))
-    else {
-        return;
-    };
-    let _ = writeln!(log, "{what}");
 }
 
 /// The session the button belongs to.

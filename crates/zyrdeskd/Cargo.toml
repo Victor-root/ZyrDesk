@@ -15,7 +15,6 @@ zyr-control.workspace = true
 zyr-lan.workspace = true
 clap.workspace = true
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time"] }
-time = { version = "0.3.55", default-features = false, features = ["std", "formatting", "macros"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"

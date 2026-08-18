@@ -1,0 +1,224 @@
+//! The journal, gathered onto one screen.
+//!
+//! Everything the product writes down lives in four files nobody should
+//! have to go looking for. This puts them behind one button, under the
+//! build that produced them, so that reporting a fault is one copy and
+//! one paste rather than an expedition through a disk.
+//!
+//! The build at the top is not decoration. Two halves of the product
+//! compiled at different times is the fault nobody thinks to check for
+//! and the one that wastes the most time; here it is simply written
+//! down, for the window and for the service, every time.
+//!
+//! The window writes to it as well. During a session it stands behind
+//! the picture, where anything it put on screen would be read by nobody.
+
+use std::fmt::Write as _;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+
+use zyr_control::{Answer, Holdup, Request};
+use zyr_proto::log::Log;
+use zyr_proto::paths;
+
+use crate::service;
+
+/// How many lines are kept from each file.
+///
+/// The end of each, which is where a fault is. Enough to hold a session
+/// that has just gone wrong, short enough to stay one readable paste.
+const KEPT: usize = 120;
+
+/// The files gathered, in the order they are read.
+const FILES: [(&str, &str); 4] = [
+    ("service.log", "Le service"),
+    ("session.log", "Le moteur client"),
+    ("engine-console.log", "Le moteur hôte"),
+    ("interface.log", "La fenêtre"),
+];
+
+/// The whole journal, ready to be copied out.
+#[tauri::command]
+pub async fn journal() -> String {
+    let mut text = heading().await;
+    for (file, what) in FILES {
+        let path = paths::logs_dir().join(file);
+        let _ = write!(text, "\n\n--- {what} ({file}) ---\n");
+        text.push_str(&last_lines(&path));
+    }
+    text
+}
+
+/// What this computer is, in a dozen lines.
+async fn heading() -> String {
+    let mut text = String::new();
+    let _ = writeln!(text, "{}", zyr_proto::version_line());
+    say(&mut text, "Ordinateur", &zyr_proto::machine::name());
+
+    match service::ask(&Request::Standing).await {
+        Ok(Answer::Standing(standing)) => {
+            say(
+                &mut text,
+                "Service",
+                &format!(
+                    "{}, dialecte {}",
+                    if standing.build.is_empty() {
+                        "compilation inconnue".to_string()
+                    } else {
+                        standing.build.clone()
+                    },
+                    standing.protocol
+                ),
+            );
+            say(&mut text, "Empreinte", &standing.fingerprint.to_string());
+            say(&mut text, "Accès distant", &remote_access(&standing));
+            say(
+                &mut text,
+                "Réseau local",
+                if standing.trusting {
+                    "ordinateurs de confiance"
+                } else {
+                    "aucune confiance accordée"
+                },
+            );
+            say(&mut text, "Sessions ouvertes", &standing.ways.to_string());
+        }
+        Ok(other) => say(&mut text, "Service", &service::unexpected(other)),
+        Err(reason) => say(&mut text, "Service", &reason.replace('\n', " ")),
+    }
+
+    let engines = crate::folders::engines();
+    say(&mut text, "Moteur hôte", present(engines.host_here));
+    say(&mut text, "Moteur client", present(engines.client_here));
+    say(
+        &mut text,
+        "Journaux",
+        &paths::logs_dir().display().to_string(),
+    );
+    text
+}
+
+/// One line of the heading, its label padded so the values line up.
+fn say(text: &mut String, label: &str, value: &str) {
+    let _ = writeln!(text, "{label:<17}: {value}");
+}
+
+fn present(here: bool) -> &'static str {
+    if here { "présent" } else { "absent" }
+}
+
+/// What remote access amounts to right now, in the same words the home
+/// screen uses.
+fn remote_access(standing: &zyr_control::Standing) -> String {
+    if !standing.wanted {
+        return "désactivé".to_string();
+    }
+    if standing.hosting {
+        return "activé, prêt à être contrôlé".to_string();
+    }
+    match standing.holdup {
+        Holdup::Starting => "activé, démarrage en cours".to_string(),
+        Holdup::EngineMissing => "activé, mais le moteur hôte est absent".to_string(),
+        Holdup::EngineWontStand => "activé, mais le moteur hôte ne tient pas".to_string(),
+    }
+}
+
+/// The end of a file, or a word saying why there is none.
+fn last_lines(path: &std::path::Path) -> String {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        // Not written yet, most of the time: a computer that has never
+        // hosted has no host engine log, and that is worth saying rather
+        // than leaving an empty gap.
+        return "(rien d'écrit pour l'instant)".to_string();
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let from = lines.len().saturating_sub(KEPT);
+    let mut kept = lines[from..].join("\n");
+    if from > 0 {
+        kept.insert_str(0, &format!("({from} lignes plus anciennes non montrées)\n"));
+    }
+    kept
+}
+
+/// Where the window writes its own trace.
+///
+/// Opened once and kept: a window during a session writes a line every
+/// time a button is pressed, and reopening the file each time would be
+/// waste.
+fn own_log() -> Option<&'static Log> {
+    static LOG: OnceLock<Option<Log>> = OnceLock::new();
+    LOG.get_or_init(|| Log::open(&interface_log()).ok())
+        .as_ref()
+}
+
+fn interface_log() -> PathBuf {
+    paths::logs_dir().join("interface.log")
+}
+
+/// Writes down what the window just did.
+///
+/// Never fails and never says so: a trace that could stop the thing it
+/// is watching would be worse than no trace.
+pub fn note(what: &str) {
+    if let Some(log) = own_log() {
+        log.write(what);
+    }
+}
+
+/// Says which build this window is, the moment it opens.
+pub fn opened() {
+    note(&format!("window opened, {}", zyr_proto::version_line()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_that_does_not_exist_is_said_rather_than_left_blank() {
+        let nowhere = std::path::Path::new("/nowhere/zyrdesk/none.log");
+        assert!(last_lines(nowhere).contains("rien d'écrit"));
+    }
+
+    #[test]
+    fn only_the_end_of_a_long_file_is_kept_and_it_says_so() {
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdesk-journal-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("long.log");
+
+        let written: Vec<String> = (0..KEPT + 40).map(|line| format!("ligne {line}")).collect();
+        std::fs::write(&path, written.join("\n")).unwrap();
+
+        let kept = last_lines(&path);
+        // La fin, qui est là où se trouve la panne, et jamais le début.
+        assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
+        assert!(!kept.contains("ligne 0\n"), "{kept}");
+        // Et ce qui a été laissé de côté est annoncé : un journal amputé
+        // en silence se lit comme un journal complet.
+        assert!(kept.starts_with("(40 lignes plus anciennes"), "{kept}");
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn the_heading_lines_up() {
+        // Compté en caractères et non en octets : « ô » en occupe deux,
+        // et une colonne mesurée à l'octet se croirait de travers là où
+        // elle est parfaitement droite.
+        let mut text = String::new();
+        say(&mut text, "Service", "en marche");
+        say(&mut text, "Moteur hôte", "présent");
+        let colonnes: Vec<usize> = text
+            .lines()
+            .map(|line| {
+                line.chars()
+                    .position(|c| c == ':')
+                    .expect("un séparateur par ligne")
+            })
+            .collect();
+        assert_eq!(colonnes[0], colonnes[1], "{text}");
+    }
+}

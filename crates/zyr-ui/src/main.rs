@@ -16,10 +16,15 @@
 
 mod desk;
 mod floating;
+mod folders;
+mod journal;
 mod service;
 mod session;
 mod settings;
 mod theme;
+
+#[cfg(windows)]
+mod elevated;
 
 use tauri::{Manager, WindowEvent};
 
@@ -41,14 +46,19 @@ fn main() {
         .manage(floating::Floating::default())
         .invoke_handler(tauri::generate_handler![
             desk::standing,
+            desk::build,
             desk::peers,
             desk::set_hosting,
+            desk::set_trust,
+            desk::start_service,
+            folders::engines,
+            folders::logs_folder,
+            folders::open_folder,
+            journal::journal,
             session::connect,
             session::sessions,
             settings::settings,
             settings::choose,
-            settings::logs_folder,
-            settings::open_logs,
             floating::floating_size,
             floating::floating_hide,
             floating::floating_move,
@@ -56,6 +66,7 @@ fn main() {
             theme::set_theme
         ])
         .setup(|app| {
+            journal::opened();
             floating::watch(app.handle().clone());
             Ok(())
         })

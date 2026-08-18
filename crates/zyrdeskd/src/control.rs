@@ -11,40 +11,49 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::io;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_control::pipe::Heard;
-use zyr_control::{Answer, Door, PROTOCOL, Request, Standing};
+use zyr_control::{Answer, Door, Holdup, PROTOCOL, Request, Standing};
+use zyr_lan::Found;
+use zyr_proto::log::Log;
 use zyr_transport::Fingerprint;
 
-use zyr_lan::Found;
-
-use crate::log::Log;
 use crate::preferences::Remembered;
 use crate::ways::Ways;
 
-/// Whether this computer can be reached right now.
+/// Whether this computer can be reached right now, and what is in the
+/// way when it is not.
 ///
-/// The supervisor raises it once the engine answers and the tunnel is
-/// open, and lowers it whenever the engine is being started over. It is
-/// the one thing the desk cannot work out on its own.
-#[derive(Clone, Default)]
-pub struct Hosting(Arc<AtomicBool>);
+/// The supervisor opens it once the engine answers and the tunnel is
+/// standing, and holds it back whenever something stops that from
+/// happening. It is the one thing the desk cannot work out on its own,
+/// and the reason matters as much as the fact: an engine that is missing
+/// and an engine that is starting look alike from a window, and only one
+/// of the two is worth waiting for.
+#[derive(Clone)]
+pub struct Hosting(Arc<Mutex<Option<Holdup>>>);
 
 impl Hosting {
+    /// Not reachable yet, and nothing wrong with that.
     pub fn new() -> Self {
-        Self::default()
+        Self(Arc::new(Mutex::new(Some(Holdup::Starting))))
     }
 
-    pub fn set(&self, open: bool) {
-        self.0.store(open, Ordering::Relaxed);
+    /// The tunnel stands: this computer can be reached.
+    pub fn open(&self) {
+        *self.0.lock().expect("état de l'accès distant") = None;
     }
 
-    fn open(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
+    /// It cannot, for this reason.
+    pub fn held_by(&self, holdup: Holdup) {
+        *self.0.lock().expect("état de l'accès distant") = Some(holdup);
+    }
+
+    fn standing(&self) -> Option<Holdup> {
+        *self.0.lock().expect("état de l'accès distant")
     }
 }
 
@@ -191,19 +200,29 @@ fn kept(written: std::io::Result<()>) -> Result<(), Answer> {
 
 async fn one(request: Request, answering: &Answering) -> Answer {
     match request {
-        Request::Standing => Answer::Standing(Standing {
-            protocol: PROTOCOL,
-            fingerprint: answering.fingerprint,
-            hosting: answering.hosting.open(),
-            wanted: answering.remembered.remote_access(),
-            ways: answering.ways.count(),
-        }),
+        Request::Standing => {
+            let held = answering.hosting.standing();
+            Answer::Standing(Standing {
+                protocol: PROTOCOL,
+                build: zyr_proto::BUILD.to_string(),
+                fingerprint: answering.fingerprint,
+                hosting: held.is_none(),
+                holdup: held.unwrap_or_default(),
+                wanted: answering.remembered.remote_access(),
+                trusting: answering.remembered.trust_local_network(),
+                ways: answering.ways.count(),
+            })
+        }
         Request::Reach { host, peer, media } => {
             match answering.ways.open(&host, peer, media).await {
                 Ok(reached) => Answer::Reached(reached),
                 Err(reason) => Answer::Refused(reason),
             }
         }
+        Request::Pair { way, pin } => match answering.ways.hand_over_the_code(way, &pin).await {
+            Ok(()) => Answer::Done,
+            Err(reason) => Answer::Refused(reason),
+        },
         Request::Hold { way, process } => {
             if answering.ways.hold(way, process) {
                 Answer::Done
@@ -223,6 +242,17 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                     "remote access turned on"
                 } else {
                     "remote access turned off"
+                });
+                Answer::Done
+            }
+            Err(refusal) => refusal,
+        },
+        Request::SetTrust { on } => match kept(answering.remembered.set_trust_local_network(on)) {
+            Ok(()) => {
+                answering.log.write(if on {
+                    "the local network is trusted again"
+                } else {
+                    "the local network is no longer trusted"
                 });
                 Answer::Done
             }
@@ -323,8 +353,17 @@ mod tests {
             // No engine has answered here, so this computer is not
             // reachable and must not claim otherwise.
             assert!(!standing.hosting);
+            assert_eq!(standing.holdup, Holdup::Starting);
 
-            bench.hosting.set(true);
+            // Et l'empêchement voyage : sans lui, un moteur absent se
+            // lit comme un moteur qui démarre, indéfiniment.
+            bench.hosting.held_by(Holdup::EngineMissing);
+            let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
+                panic!("attendu un état");
+            };
+            assert_eq!(standing.holdup, Holdup::EngineMissing);
+
+            bench.hosting.open();
             let answer = caller.ask(&Request::Standing).await.unwrap();
             let Answer::Standing(standing) = answer else {
                 panic!("attendu un état, reçu {answer}");

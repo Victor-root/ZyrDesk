@@ -465,6 +465,24 @@ p {
   color: var(--texte);
 }
 
+/* Un bandeau qui porte de quoi y remédier : le texte prend la place, le
+   bouton reste à sa taille, et les deux s'alignent au milieu plutôt que
+   de laisser le bouton pendre en haut. */
+.bandeau.avec-action {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pas-4);
+}
+
+.bandeau-mot {
+  flex: 1;
+  min-width: 0;
+}
+
+.bandeau.avec-action > .bouton {
+  flex: none;
+}
+
 /* ---- Code d'appairage ----------------------------------------------- */
 
 .code {

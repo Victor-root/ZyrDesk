@@ -6,27 +6,39 @@
 //! back onto the local machine, where nothing on the network can reach
 //! it, and what leaves a single rule to write in a firewall.
 //!
-//! Who may come in is decided by fingerprint, from a list the service
-//! reads again as it runs. Authorising one more computer must not mean
-//! cutting the session in progress, and asking a small file every few
-//! seconds costs nothing next to watching the filesystem on every
-//! platform.
+//! Who may come in is decided by fingerprint. Two things put a
+//! fingerprint on that list: it was written down, or its owner announced
+//! itself on this local network while this computer was trusting it.
+//! The list is read again as the service runs, so one more computer
+//! appearing on the network does not mean cutting the session in
+//! progress, and asking a small file every few seconds costs nothing
+//! next to watching the filesystem on every platform.
+//!
+//! The door also answers for the engine on ZyrDesk's own channel: the
+//! far computer hands over the code its engine is waiting for, and it is
+//! passed on here. That is the whole of what replaced a code shown on
+//! one screen and typed on the other.
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
+use zyr_engine_host::Credentials;
+use zyr_engine_host::api::EngineApi;
+use zyr_lan::Found;
+use zyr_proto::log::Log;
 use zyr_proto::net::{EnginePorts, TUNNEL_PORT};
 use zyr_proto::paths;
 use zyr_transport::{
-    AllowedPeers, EndpointError, Identity, MediaProfile, TunnelEndpoint, authorized,
+    AllowedPeers, EndpointError, Fingerprint, Identity, MediaProfile, TunnelEndpoint, authorized,
 };
-use zyr_tunnel::Tunnel;
+use zyr_tunnel::{Answers, Tunnel};
 
-use crate::log::Log;
+use crate::preferences::Remembered;
 
 /// Every network interface: the computer is reachable from wherever the
 /// other one is.
@@ -36,8 +48,57 @@ const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 /// anything.
 const ENGINE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
-/// How often the list of authorised devices is read again.
+/// How often the list of authorised devices is worked out again.
 const AUTHORIZED_REFRESH: Duration = Duration::from_secs(5);
+
+/// How long a pairing code is offered to the local engine.
+///
+/// The far computer starts its own engine and then hands the code over,
+/// so the two arrive within a hair of each other and in no fixed order.
+/// The engine refuses a code as long as nobody is asking it for one, so
+/// it is offered again until somebody is.
+const PAIRING_PATIENCE: Duration = Duration::from_secs(10);
+
+/// Pause between two offers.
+const PAIRING_RETRY: Duration = Duration::from_millis(200);
+
+/// The local engine, as the tunnel has to see it.
+pub struct AtHand {
+    pub ports: EnginePorts,
+    pub credentials: Credentials,
+}
+
+/// The local engine, and the one thing a far computer may ask of it.
+struct Attending {
+    ports: EnginePorts,
+    api: EngineApi,
+    log: Log,
+}
+
+impl Answers for Attending {
+    fn engine(&self) -> EnginePorts {
+        self.ports
+    }
+
+    fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String> {
+        let deadline = Instant::now() + PAIRING_PATIENCE;
+        loop {
+            let refused = match self.api.submit_pin(pin, name) {
+                Ok(()) => {
+                    self.log.write(&format!("{name} paired with this computer"));
+                    return Ok(());
+                }
+                Err(e) => e.to_string(),
+            };
+            if Instant::now() >= deadline {
+                self.log
+                    .write(&format!("pairing refused to {name}: {refused}"));
+                return Err(refused);
+            }
+            std::thread::sleep(PAIRING_RETRY);
+        }
+    }
+}
 
 /// The open door, and the sessions coming through it.
 ///
@@ -58,7 +119,13 @@ impl Drop for Gateway {
 
 impl Gateway {
     /// Opens the tunnel and serves whoever is authorised.
-    pub fn open(runtime: &Handle, engine: EnginePorts, log: &Log) -> io::Result<Self> {
+    pub fn open(
+        runtime: &Handle,
+        engine: AtHand,
+        neighbours: Found,
+        remembered: Remembered,
+        log: &Log,
+    ) -> io::Result<Self> {
         // The transport registers with the runtime as it is built, so it
         // has to be built from inside it.
         let _guard = runtime.enter();
@@ -66,11 +133,13 @@ impl Gateway {
         let identity =
             Identity::load_or_create(&paths::identity_dir()).map_err(io::Error::other)?;
         let list = paths::authorized_devices();
-        let allowed: AllowedPeers = authorized::read(&list)?.into_iter().collect();
+        let allowed: AllowedPeers = let_in(authorized::read(&list)?, &neighbours, &remembered)
+            .into_iter()
+            .collect();
         if allowed.is_empty() {
             log.write(
-                "no device authorised yet, nothing can connect: \
-                 run zyr-cli host authorize with the other computer's fingerprint",
+                "nobody can reach this computer yet: no device written down, \
+                 and no other ZyrDesk seen on the local network",
             );
         }
 
@@ -87,23 +156,36 @@ impl Gateway {
             identity.fingerprint()
         ));
 
+        let attending: Arc<dyn Answers> = Arc::new(Attending {
+            ports: engine.ports,
+            api: EngineApi::new(engine.ports, engine.credentials),
+            log: log.clone(),
+        });
+
         Ok(Self {
             tasks: vec![
-                runtime.spawn(keep_the_list_fresh(list, allowed, log.clone())),
-                runtime.spawn(serve(endpoint, engine, log.clone())),
+                runtime.spawn(keep_the_list_fresh(
+                    list,
+                    allowed,
+                    neighbours,
+                    remembered,
+                    log.clone(),
+                )),
+                runtime.spawn(serve(endpoint, attending, log.clone())),
             ],
         })
     }
 }
 
 /// Takes in the devices that connect, one session each.
-async fn serve(endpoint: TunnelEndpoint, engine: EnginePorts, log: Log) {
+async fn serve(endpoint: TunnelEndpoint, attending: Arc<dyn Answers>, log: Log) {
     let mut sessions = JoinSet::new();
     loop {
         match endpoint.accept().await {
             Ok(connection) => {
                 let log = log.clone();
-                sessions.spawn(async move { one_session(connection, engine, log).await });
+                let attending = attending.clone();
+                sessions.spawn(async move { one_session(connection, attending, log).await });
                 while sessions.try_join_next().is_some() {}
             }
             // A refused device is not the end of the door: it must not
@@ -118,8 +200,8 @@ async fn serve(endpoint: TunnelEndpoint, engine: EnginePorts, log: Log) {
     }
 }
 
-async fn one_session(connection: zyr_transport::Connection, engine: EnginePorts, log: Log) {
-    let mut tunnel = match Tunnel::host(connection, ENGINE, engine).await {
+async fn one_session(connection: zyr_transport::Connection, attending: Arc<dyn Answers>, log: Log) {
+    let mut tunnel = match Tunnel::host(connection, ENGINE, attending).await {
         Ok(tunnel) => tunnel,
         Err(e) => {
             log.write(&format!("session not opened: {e}"));
@@ -139,17 +221,23 @@ async fn one_session(connection: zyr_transport::Connection, engine: EnginePorts,
     }
 }
 
-/// Reads the authorised devices again, so a new one gets in without the
-/// service being restarted.
-async fn keep_the_list_fresh(list: PathBuf, allowed: AllowedPeers, log: Log) {
+/// Works the list of authorised devices out again, so a computer that
+/// has just appeared gets in without the service being restarted.
+async fn keep_the_list_fresh(
+    list: PathBuf,
+    allowed: AllowedPeers,
+    neighbours: Found,
+    remembered: Remembered,
+    log: Log,
+) {
     let mut reported: Option<String> = None;
     loop {
         match authorized::read(&list) {
-            Ok(devices) => {
+            Ok(written) => {
                 if reported.take().is_some() {
                     log.write("authorised devices readable again");
                 }
-                allowed.replace_with(devices);
+                allowed.replace_with(let_in(written, &neighbours, &remembered));
             }
             // What was already allowed stays allowed: a file being
             // rewritten must not cut the session in progress.
@@ -162,5 +250,91 @@ async fn keep_the_list_fresh(list: PathBuf, allowed: AllowedPeers, log: Log) {
             }
         }
         tokio::time::sleep(AUTHORIZED_REFRESH).await;
+    }
+}
+
+/// Everyone this computer lets in.
+///
+/// The devices written down, plus the ZyrDesk announcing themselves on
+/// this local network when it is trusted. That trust is what spares
+/// anyone carrying a fingerprint from one computer to the other, and it
+/// covers exactly what the network already carries: a machine that can
+/// speak on it. Nothing arriving from outside it is ever let in this
+/// way, and the day sessions cross the Internet an account takes over.
+fn let_in(
+    written: Vec<Fingerprint>,
+    neighbours: &Found,
+    remembered: &Remembered,
+) -> Vec<Fingerprint> {
+    if !remembered.trust_local_network() {
+        return written;
+    }
+    let seen = neighbours
+        .peers()
+        .into_iter()
+        .map(|peer| peer.fingerprint)
+        .collect();
+    joined(written, seen)
+}
+
+/// Two lists of fingerprints as one, without repeats.
+///
+/// The same computer is very often on both: written down once, and
+/// announcing itself ever since.
+fn joined(written: Vec<Fingerprint>, seen: Vec<Fingerprint>) -> Vec<Fingerprint> {
+    let mut devices = written;
+    for device in seen {
+        if !devices.contains(&device) {
+            devices.push(device);
+        }
+    }
+    devices
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fingerprint(seed: u8) -> Fingerprint {
+        format!("{seed:02x}").repeat(32).parse().unwrap()
+    }
+
+    fn remembered(what: &str) -> (Remembered, PathBuf) {
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdeskd-gateway-{}-{what}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        let path = folder.join("preferences.conf");
+        (Remembered::at(path), folder)
+    }
+
+    #[test]
+    fn a_neighbour_is_let_in_without_anyone_writing_it_down() {
+        // C'est tout l'intérêt du réseau local : deux ZyrDesk allumés
+        // sur le même réseau se joignent sans rien recopier.
+        let devices = joined(vec![fingerprint(1)], vec![fingerprint(2)]);
+        assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
+    }
+
+    #[test]
+    fn a_device_both_written_down_and_seen_is_one_device() {
+        // Sinon la même empreinte entrerait deux fois dans la liste que
+        // le transport consulte à chaque connexion.
+        let devices = joined(vec![fingerprint(1)], vec![fingerprint(1), fingerprint(2)]);
+        assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
+    }
+
+    #[test]
+    fn trust_turned_off_leaves_only_what_was_written_down() {
+        let (remembered, folder) = remembered("sans-confiance");
+        assert!(remembered.trust_local_network());
+        remembered.set_trust_local_network(false).unwrap();
+
+        // Rien de ce que le réseau annonce ne doit plus entrer : c'est
+        // le seul effet attendu de cet interrupteur.
+        let devices = let_in(vec![fingerprint(1)], &Found::new(), &remembered);
+        assert_eq!(devices, vec![fingerprint(1)]);
+
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

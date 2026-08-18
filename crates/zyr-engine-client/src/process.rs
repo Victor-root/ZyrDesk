@@ -3,9 +3,10 @@
 use std::fmt;
 use std::fs;
 use std::io;
-use std::io::Write;
+use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
 use zyr_proto::session::SessionSettings;
 
@@ -38,6 +39,8 @@ pub enum EngineError {
         code: Option<i32>,
         output: String,
     },
+    /// The far computer never accepted the code, nor refused it.
+    PairingTimedOut(Duration),
     /// The host would not let go of what it was showing (P-M7).
     QuitFailed {
         code: Option<i32>,
@@ -53,17 +56,38 @@ impl fmt::Display for EngineError {
             }
             EngineError::Io(e) => write!(f, "erreur système : {e}"),
             EngineError::PairingFailed { code, output } => {
-                let code = code.map(|c| c.to_string()).unwrap_or("interrompu".into());
-                write!(f, "appairage échoué ({code}) : {output}")
+                write!(f, "appairage échoué ({}){}", named(*code), after(output))
             }
-            EngineError::QuitFailed { code, output } => {
-                let code = code.map(|c| c.to_string()).unwrap_or("interrompu".into());
-                write!(
-                    f,
-                    "fermeture refusée par l'ordinateur distant ({code}) : {output}"
-                )
-            }
+            EngineError::PairingTimedOut(patience) => write!(
+                f,
+                "l'ordinateur distant n'a pas répondu à l'appairage en {} secondes",
+                patience.as_secs()
+            ),
+            EngineError::QuitFailed { code, output } => write!(
+                f,
+                "fermeture refusée par l'ordinateur distant ({}){}",
+                named(*code),
+                after(output)
+            ),
         }
+    }
+}
+
+/// How a stop is named when the system gave no code for it.
+fn named(code: Option<i32>) -> String {
+    code.map(|c| c.to_string())
+        .unwrap_or_else(|| "interrompu".to_string())
+}
+
+/// What the engine said, introduced, or nothing at all.
+///
+/// An engine that stopped without a word must not leave a message
+/// trailing off after a colon.
+fn after(output: &str) -> String {
+    if output.is_empty() {
+        String::new()
+    } else {
+        format!(" : {output}")
     }
 }
 
@@ -128,28 +152,35 @@ impl ClientEngine {
         Ok(command)
     }
 
-    /// Pairs with a host, without asking anything.
-    pub fn pair(&self, host: &str, pin: &str) -> Result<(), EngineError> {
+    /// Starts pairing with a host, and hands the engine back running.
+    ///
+    /// The engine asks the far computer to pair and then waits, with no
+    /// limit of its own, for it to accept a code. Nobody has given it
+    /// one at this point: whoever starts this is the one who hands the
+    /// code over, and only then waits for the outcome. Starting the
+    /// engine first is not an ordering detail, it is the whole
+    /// mechanism: the far engine refuses a code as long as nobody is
+    /// asking it for one.
+    pub fn start_pairing(&self, host: &str, pin: &str) -> Result<Pairing, EngineError> {
         self.state.prepare()?;
-        let output = self
-            .command(&command::pairing_arguments(host, pin))?
-            .stdin(Stdio::null())
-            .output()?;
+        let mut command = self.command(&command::pairing_arguments(host, pin))?;
+        command.stdin(Stdio::null());
 
-        // The output is recorded whatever the outcome: what the engine
-        // has to say about a refused pairing lives nowhere else.
+        // Collected as it is said rather than at the end: the engine is
+        // still talking while we wait, and what it says about a refused
+        // pairing lives nowhere else.
+        let mut said_from = 0;
         if let Some(mut log) = self.open_log()? {
             let _ = writeln!(log, "--- pairing with {host} ---");
-            let _ = log.write_all(&output.stdout);
-            let _ = log.write_all(&output.stderr);
+            said_from = log.metadata().map(|about| about.len()).unwrap_or(0);
+            let errors = log.try_clone()?;
+            command.stdout(Stdio::from(log)).stderr(Stdio::from(errors));
         }
 
-        if output.status.success() {
-            return Ok(());
-        }
-        Err(EngineError::PairingFailed {
-            code: output.status.code(),
-            output: what_went_wrong(&output),
+        Ok(Pairing {
+            engine: command.spawn()?,
+            log: self.log.clone(),
+            said_from,
         })
     }
 
@@ -248,6 +279,65 @@ fn last_words(said: &str, most: usize) -> String {
     text
 }
 
+/// How often a pairing under way is looked in on.
+const PAIRING_POLL: Duration = Duration::from_millis(100);
+
+/// A pairing under way.
+pub struct Pairing {
+    engine: Child,
+    /// Where everything the engine says is collected.
+    log: Option<PathBuf>,
+    /// Where in that log this pairing's own words begin. Without it the
+    /// reason shown would be whatever the previous session left behind.
+    said_from: u64,
+}
+
+impl Pairing {
+    /// Waits for the two engines to have met.
+    ///
+    /// The wait is cut short rather than left to run forever: the engine
+    /// puts no limit of its own on it, so a far computer that stops
+    /// answering halfway would leave a session opening with nothing on
+    /// screen and nothing to say.
+    pub fn settled(mut self, patience: Duration) -> Result<(), EngineError> {
+        let deadline = Instant::now() + patience;
+        loop {
+            match self.engine.try_wait()? {
+                Some(status) if status.success() => return Ok(()),
+                Some(status) => {
+                    return Err(EngineError::PairingFailed {
+                        code: status.code(),
+                        output: self.what_was_said(),
+                    });
+                }
+                None => {}
+            }
+            if Instant::now() >= deadline {
+                let _ = self.engine.kill();
+                let _ = self.engine.wait();
+                return Err(EngineError::PairingTimedOut(patience));
+            }
+            std::thread::sleep(PAIRING_POLL);
+        }
+    }
+
+    /// The last thing the engine said since this pairing started.
+    fn what_was_said(&self) -> String {
+        let Some(path) = &self.log else {
+            return String::new();
+        };
+        let mut said = String::new();
+        let read = fs::File::open(path).and_then(|mut file| {
+            file.seek(io::SeekFrom::Start(self.said_from))?;
+            file.read_to_string(&mut said)
+        });
+        if read.is_err() {
+            return String::new();
+        }
+        last_words(said.trim(), TOLD)
+    }
+}
+
 /// A session under way.
 pub struct Session {
     engine: Child,
@@ -290,7 +380,7 @@ mod tests {
     fn a_missing_engine_is_reported_before_anything_is_tried() {
         let engine = missing_engine();
         assert!(matches!(
-            engine.pair("127.0.0.1", "1234"),
+            engine.start_pairing("127.0.0.1", "1234"),
             Err(EngineError::ExecutableNotFound(_))
         ));
         assert!(matches!(
@@ -330,8 +420,46 @@ PC-VICTOR is already paired";
     fn the_state_is_prepared_before_the_launch() {
         let engine = missing_engine();
         assert!(!engine.state().is_prepared());
-        let _ = engine.pair("127.0.0.1", "1234");
+        let _ = engine.start_pairing("127.0.0.1", "1234");
         assert!(engine.state().is_prepared());
         engine.state().forget().unwrap();
+    }
+
+    #[test]
+    fn a_pairing_nobody_answers_is_cut_short_rather_than_waited_on() {
+        // Le moteur n'impose aucune limite à cette attente-là : sans
+        // celle-ci, une session s'ouvrirait indéfiniment sur rien.
+        let pairing = Pairing {
+            engine: patient_program().spawn().unwrap(),
+            log: None,
+            said_from: 0,
+        };
+
+        let started = Instant::now();
+        let outcome = pairing.settled(Duration::from_millis(300));
+        assert!(
+            matches!(outcome, Err(EngineError::PairingTimedOut(_))),
+            "{outcome:?}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// A program that does nothing and does not stop, standing in for an
+    /// engine waiting on a computer that has gone quiet.
+    fn patient_program() -> Command {
+        let mut command = if cfg!(windows) {
+            let mut ping = Command::new("ping");
+            ping.args(["-n", "30", "127.0.0.1"]);
+            ping
+        } else {
+            let mut sleep = Command::new("sleep");
+            sleep.arg("30");
+            sleep
+        };
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        command
     }
 }

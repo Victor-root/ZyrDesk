@@ -26,9 +26,14 @@
   gap: var(--pas-3);
 }
 
-/* Les réglages se rangent à droite du titre : à portée, jamais au
-   centre de l'attention. */
+/* Les commandes se rangent à droite du titre : à portée, jamais au
+   centre de l'attention. La première pousse tout le groupe, les
+   suivantes se rangent derrière elle. */
 .entete .icone {
+  margin-left: var(--pas-2);
+}
+
+.entete .icone:first-of-type {
   margin-left: auto;
 }
 
@@ -97,6 +102,36 @@
   flex-direction: column;
   gap: var(--pas-1);
   min-width: 0;
+}
+
+/* ---- Ce qu'il reste à faire ------------------------------------------ */
+
+/* Vide la plupart du temps, et alors il n'occupe rien : sans cette
+   règle, un conteneur en colonne laisserait un écart là où il n'y a
+   rien. */
+.a-faire:not(:empty) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-3);
+}
+
+/* ---- Version --------------------------------------------------------- */
+
+/* Sous les yeux, sans jamais peser : c'est la première question quand
+   quelque chose ne marche pas, et la dernière chose à regarder quand
+   tout va bien. */
+.version {
+  margin-top: auto;
+  padding-top: var(--pas-2);
+  text-align: center;
+  color: var(--texte-faible);
+  user-select: text;
+}
+
+/* Les deux moitiés du produit ne datent pas du même jour : c'est la
+   panne que personne ne pense à vérifier, alors elle se voit. */
+.version.desaccord {
+  color: var(--attention);
 }
 
 /* ---- Cartes d'ordinateurs -------------------------------------------- */
@@ -301,6 +336,33 @@
 
 .dialogue.reglages {
   width: min(560px, calc(100vw - var(--pas-6)));
+}
+
+/* Le journal se lit sur des lignes entières, souvent longues : il prend
+   toute la fenêtre plutôt que de replier chaque ligne en trois. */
+.dialogue.journal {
+  width: min(880px, calc(100vw - var(--pas-5)));
+}
+
+/* ---- Journal ---------------------------------------------------------- */
+
+.journal-texte {
+  margin: 0;
+  padding: var(--pas-4);
+  max-height: min(60vh, 560px);
+  overflow: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--trait);
+  border-radius: var(--rayon-petit);
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: var(--legende);
+  line-height: 1.5;
+  color: var(--texte-doux);
+  /* Ce qui est là pour être copié doit pouvoir être sélectionné, et une
+     ligne de journal ne se coupe pas : elle défile. */
+  user-select: text;
+  white-space: pre;
+  tab-size: 4;
 }
 
 .dialogue::backdrop {

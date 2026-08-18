@@ -6,7 +6,6 @@
 
 mod control;
 mod gateway;
-mod log;
 mod preferences;
 mod restart;
 mod supervisor;
@@ -38,6 +37,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Registers the service and starts it, in one go
+    Setup,
     /// Registers the service with Windows, started automatically
     Install,
     /// Removes the service
@@ -74,6 +75,21 @@ fn main() -> ExitCode {
 #[cfg(windows)]
 fn run(command: Command) -> ExitCode {
     match command {
+        // Asked for by the interface, through an elevation that shows no
+        // console: whatever happens is written down as well as said, or
+        // a failure here would leave nothing at all behind.
+        Command::Setup => match service::set_up() {
+            Ok(_) => {
+                noted("service installed and started from the interface");
+                println!("Service installé et démarré.");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                let reason = with_causes(&*e);
+                noted(&format!("service could not be set up: {reason}"));
+                failure("mise en service", reason)
+            }
+        },
         Command::Install => match service::install() {
             Ok(service::Installed::Registered) => {
                 println!("Service installé. Il démarrera avec Windows.");
@@ -141,6 +157,18 @@ fn readable(state: windows_service::service::ServiceState) -> &'static str {
 #[cfg(windows)]
 fn service_log() -> std::path::PathBuf {
     zyr_proto::paths::logs_dir().join("service.log")
+}
+
+/// Writes a line into the service's own log.
+///
+/// For what is done to the service from outside it, where nothing else
+/// would keep a trace: an elevation started from the interface shows no
+/// console, so anything printed there is read by nobody.
+#[cfg(windows)]
+fn noted(what: &str) {
+    if let Ok(log) = zyr_proto::log::Log::open(&service_log()) {
+        log.write(&format!("{what}, {}", zyr_proto::version_line()));
+    }
 }
 
 /// Outside Windows the service has no purpose: there is no service

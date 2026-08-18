@@ -26,6 +26,7 @@ use zyr_proto::session::Preferred;
 
 /// Keys, in the order they are written.
 const REMOTE_ACCESS: &str = "remote_access";
+const TRUST_LOCAL_NETWORK: &str = "trust_local_network";
 const QUALITY: &str = "quality";
 const CODEC: &str = "codec";
 const DISPLAY: &str = "display";
@@ -37,6 +38,9 @@ const STATS_OVERLAY: &str = "stats_overlay";
 pub struct Preferences {
     /// Whether this computer accepts being controlled.
     pub remote_access: bool,
+    /// Whether the ZyrDesk announcing themselves on the local network
+    /// are let in without anyone recognising them one by one.
+    pub trust_local_network: bool,
     /// What a session opened from this computer looks like.
     pub preferred: Preferred,
 }
@@ -45,10 +49,17 @@ impl Default for Preferences {
     /// What a computer does before anyone has said otherwise.
     ///
     /// Reachable, because the product is installed to be reached: a
-    /// first install that answered nothing would look broken.
+    /// first install that answered nothing would look broken. And
+    /// trusting its own network, because that is what turns two ZyrDesk
+    /// on one network into two computers that can already reach each
+    /// other, with nothing to copy across and nobody to ask. It is the
+    /// local network's own trust that is borrowed here; the day sessions
+    /// cross the Internet, that trust stops covering them and an account
+    /// takes over.
     fn default() -> Self {
         Self {
             remote_access: true,
+            trust_local_network: true,
             preferred: Preferred::default(),
         }
     }
@@ -92,6 +103,15 @@ impl Remembered {
 
     pub fn set_remote_access(&self, on: bool) -> io::Result<()> {
         self.change(|preferences| preferences.remote_access = on)
+    }
+
+    /// Whether the neighbours are let in on sight.
+    pub fn trust_local_network(&self) -> bool {
+        self.read().trust_local_network
+    }
+
+    pub fn set_trust_local_network(&self, on: bool) -> io::Result<()> {
+        self.change(|preferences| preferences.trust_local_network = on)
     }
 
     pub fn set_preferred(&self, preferred: Preferred) -> io::Result<()> {
@@ -140,6 +160,10 @@ fn rendered(preferences: Preferences) -> String {
          # Cet ordinateur accepte d'être contrôlé à distance.\n\
          {REMOTE_ACCESS} = {}\n\
          \n\
+         # Les ZyrDesk du réseau local peuvent joindre celui-ci sans\n\
+         # autorisation à recopier. Vaut pour le réseau local seul.\n\
+         {TRUST_LOCAL_NETWORK} = {}\n\
+         \n\
          # Ce à quoi ressemble une session ouverte depuis cet ordinateur.\n\
          # Qualité : smooth, balanced ou detailed.\n\
          {QUALITY} = {}\n\
@@ -152,6 +176,7 @@ fn rendered(preferences: Preferences) -> String {
          # Statistiques affichées par-dessus l'image.\n\
          {STATS_OVERLAY} = {}\n",
         yes_no(preferences.remote_access),
+        yes_no(preferences.trust_local_network),
         preferred.quality,
         preferred.codec,
         preferred.display_mode,
@@ -193,6 +218,12 @@ fn parsed(text: &str) -> Preferences {
             REMOTE_ACCESS => {
                 preferences.remote_access = !matches!(value, "no" | "non" | "false" | "0");
             }
+            // Turning trust off is a deliberate act, so only a plain no
+            // does it; but unlike remote access, it does not decide
+            // whether the computer answers at all.
+            TRUST_LOCAL_NETWORK => {
+                preferences.trust_local_network = told(value, preferences.trust_local_network);
+            }
             // The rest is a comfort setting: a value nobody understands
             // leaves the default in place, and the session still opens.
             QUALITY => preferred.quality = value.parse().unwrap_or_default(),
@@ -224,6 +255,7 @@ mod tests {
     fn chosen() -> Preferences {
         Preferences {
             remote_access: false,
+            trust_local_network: false,
             preferred: Preferred {
                 quality: Quality::Detailed,
                 codec: Codec::Hevc,
@@ -238,6 +270,9 @@ mod tests {
     fn a_computer_answers_before_anyone_has_said_otherwise() {
         // A first install that let nobody in would look broken.
         assert!(Preferences::default().remote_access);
+        // And two ZyrDesk on one network find each other with nothing
+        // to copy across: that is the whole point of the local network.
+        assert!(Preferences::default().trust_local_network);
     }
 
     #[test]
@@ -259,6 +294,7 @@ mod tests {
 
         remembered.set_preferred(chosen().preferred).unwrap();
         remembered.set_remote_access(false).unwrap();
+        remembered.set_trust_local_network(false).unwrap();
 
         assert_eq!(from_disk(&path), chosen());
         assert_eq!(remembered.read(), chosen());
@@ -277,6 +313,9 @@ mod tests {
         remembered.set_preferred(chosen().preferred).unwrap();
         remembered
             .set_remote_access(chosen().remote_access)
+            .unwrap();
+        remembered
+            .set_trust_local_network(chosen().trust_local_network)
             .unwrap();
         // Le service redémarre : rien en mémoire, tout sur le disque.
         assert_eq!(Remembered::at(path.clone()).read(), chosen());
@@ -333,6 +372,7 @@ mod tests {
         // that what they would read is what the product understands.
         let rendered = rendered(chosen());
         assert!(rendered.contains("remote_access = no"), "{rendered}");
+        assert!(rendered.contains("trust_local_network = no"), "{rendered}");
         assert!(rendered.contains("quality = detailed"), "{rendered}");
         assert!(rendered.contains("codec = HEVC"), "{rendered}");
         assert_eq!(parsed(&rendered), chosen());

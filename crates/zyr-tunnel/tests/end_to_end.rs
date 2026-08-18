@@ -12,13 +12,14 @@
 
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
 use zyr_transport::{Identity, MediaProfile, TunnelEndpoint};
-use zyr_tunnel::{Tunnel, greeting};
+use zyr_tunnel::{Answers, Tunnel, aside};
 
 /// Past this, nothing is getting through.
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -32,6 +33,34 @@ async fn before_the_end<T>(work: impl Future<Output = T>) -> T {
         .expect("the tunnel let nothing through")
 }
 
+/// Code the fake engine refuses, standing in for an engine that has
+/// nobody waiting on one.
+const REFUSED_PIN: &str = "9999";
+
+/// The host engine as the tunnel sees it: its ports, and a pairing code
+/// written down instead of handed to anything.
+struct FakeEngine {
+    ports: EnginePorts,
+    handed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+}
+
+impl Answers for FakeEngine {
+    fn engine(&self) -> EnginePorts {
+        self.ports
+    }
+
+    fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String> {
+        if pin == REFUSED_PIN {
+            return Err("le moteur n'attend aucun code".to_string());
+        }
+        self.handed
+            .lock()
+            .unwrap()
+            .push((pin.to_string(), name.to_string()));
+        Ok(())
+    }
+}
+
 /// The tunnel brought up on both sides, kept alive for the test.
 ///
 /// Everything is dropped together at the end: the pumps stop with it.
@@ -42,6 +71,11 @@ struct Bench {
     /// Address the client engine believes the host to be at.
     client_side: IpAddr,
     ports: EnginePorts,
+    /// The way, still open, to speak to the far ZyrDesk rather than to
+    /// its engine.
+    connection: zyr_transport::Connection,
+    /// What the host engine was handed.
+    handed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
 }
 
 impl Bench {
@@ -75,16 +109,24 @@ impl Bench {
             client_endpoint.connect(meeting_point)
         );
 
-        let host = Tunnel::host(host_side.unwrap(), ENGINE, ports)
-            .await
-            .unwrap();
+        let handed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let host = Tunnel::host(
+            host_side.unwrap(),
+            ENGINE,
+            Arc::new(FakeEngine {
+                ports,
+                handed: handed.clone(),
+            }),
+        )
+        .await
+        .unwrap();
 
         // The real sequence, not a shortcut: the client learns the
         // host's engine ports before opening the local ones that stand
         // in for them. Nothing here is allowed to know them in advance.
         let client_connection = client_connection.unwrap();
-        let greeting = greeting::ask(&client_connection).await.unwrap();
-        let client = Tunnel::client(client_connection, client_side, greeting.engine)
+        let engine = aside::ask_the_ports(&client_connection).await.unwrap();
+        let client = Tunnel::client(client_connection.clone(), client_side, engine)
             .await
             .unwrap();
 
@@ -93,7 +135,9 @@ impl Bench {
             _host: host,
             client,
             client_side,
-            ports: greeting.engine,
+            ports: engine,
+            connection: client_connection,
+            handed,
         }
     }
 
@@ -142,6 +186,51 @@ async fn the_client_learns_the_host_engine_ports_from_the_host() {
     // it.
     let bench = Bench::bring_up(42700, 5).await;
     assert_eq!(bench.ports.base(), 42700);
+}
+
+#[tokio::test]
+async fn the_pairing_code_travels_through_the_tunnel() {
+    // C'est ce qui remplace un code affiché sur un écran et tapé sur
+    // l'autre. Le tunnel a déjà reconnu les deux ordinateurs à leur
+    // empreinte avant de s'ouvrir : le code ne prouve rien de plus, et
+    // personne n'a plus à se lever.
+    let bench = Bench::bring_up(42850, 8).await;
+
+    before_the_end(aside::ask_to_pair(
+        &bench.connection,
+        "0429",
+        "PC de Victor",
+    ))
+    .await
+    .unwrap();
+
+    let handed = bench.handed.lock().unwrap().clone();
+    assert_eq!(
+        handed,
+        vec![("0429".to_string(), "PC de Victor".to_string())]
+    );
+}
+
+#[tokio::test]
+async fn an_engine_that_refuses_the_code_says_so_rather_than_going_quiet() {
+    // Sinon l'ordinateur qui se connecte attendrait sur un moteur qui
+    // n'attend rien, sans rien à montrer.
+    let bench = Bench::bring_up(42900, 9).await;
+
+    let refusal = before_the_end(aside::ask_to_pair(&bench.connection, REFUSED_PIN, "PC"))
+        .await
+        .unwrap_err();
+    assert!(
+        refusal.to_string().contains("n'attend aucun code"),
+        "{refusal}"
+    );
+
+    // Et la voie tient toujours : un appairage raté n'emporte pas la
+    // session avec lui.
+    let ports = before_the_end(aside::ask_the_ports(&bench.connection))
+        .await
+        .unwrap();
+    assert_eq!(ports.base(), 42900);
 }
 
 #[tokio::test]

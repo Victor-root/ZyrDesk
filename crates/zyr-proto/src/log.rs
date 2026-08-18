@@ -1,21 +1,16 @@
-//! The service's log.
+//! What the product writes down.
 //!
 //! A service has no console. Without a written trace, a start-up that
 //! fails before anyone logs in leaves nothing to examine: no message, no
-//! window, nobody to read it. Everything the service does goes through
-//! here.
+//! window, nobody to read it. The window is barely better off: during a
+//! session it sits behind the picture, where a message would be seen by
+//! nobody. Both write here, in the same shape, so that the two traces
+//! can be read side by side.
 //!
 //! Timestamps are in universal time, without exception. A log that
 //! follows local time steps back an hour once a year, and the lines end
 //! up out of order at the exact moment one is trying to understand a
 //! nighttime incident.
-
-// Outside Windows nothing calls this module: the service does not exist
-// there. It stays compiled and tested everywhere, the logic having
-// nothing platform-specific about it, but with no caller it would pass
-// for dead code. The exception stops at platforms without a service: on
-// Windows, genuinely dead code is still reported.
-#![cfg_attr(not(windows), allow(dead_code))]
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};

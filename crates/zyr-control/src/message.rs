@@ -24,7 +24,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 6;
+pub const PROTOCOL: u32 = 7;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -33,6 +33,43 @@ pub struct WayId(pub u64);
 impl fmt::Display for WayId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+/// What stands between a computer meant to be reachable and being one.
+///
+/// Only ever read when it is not reachable. Without it, an engine that
+/// is missing and an engine that is starting look exactly alike from a
+/// window, and the second one never stops looking like it is about to
+/// work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Holdup {
+    /// Nothing is wrong: it is on its way up.
+    #[default]
+    Starting,
+    /// The host engine is not on this machine.
+    EngineMissing,
+    /// It is there, and it will not stay up.
+    EngineWontStand,
+}
+
+impl Holdup {
+    fn spelled(self) -> &'static str {
+        match self {
+            Holdup::Starting => "starting",
+            Holdup::EngineMissing => "engine-missing",
+            Holdup::EngineWontStand => "engine-wont-stand",
+        }
+    }
+
+    /// What a word means, the ordinary case standing in for anything
+    /// this half of the product has never heard of.
+    fn read(said: &str) -> Self {
+        match said {
+            "engine-missing" => Holdup::EngineMissing,
+            "engine-wont-stand" => Holdup::EngineWontStand,
+            _ => Holdup::Starting,
+        }
     }
 }
 
@@ -59,6 +96,14 @@ pub enum Request {
         peer: Fingerprint,
         media: MediaProfile,
     },
+    /// Hands the far computer, through an open way, the code its engine
+    /// is waiting for.
+    ///
+    /// This is what spares the person a walk to the other computer. The
+    /// two computers recognised each other by fingerprint before the way
+    /// opened, so the code proves nothing they have not already proven,
+    /// and nobody is ever shown one.
+    Pair { way: WayId, pin: String },
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
     Hold { way: WayId, process: u32 },
@@ -77,6 +122,9 @@ pub enum Request {
     /// computer that let itself be reached again the next morning
     /// would be honouring nobody's wish.
     SetHosting { on: bool },
+    /// Decides whether the ZyrDesk of the local network are let in
+    /// without anyone having to recognise them one by one.
+    SetTrust { on: bool },
     /// What a session opened from this computer is set to.
     Settings,
     /// Changes it, for this session and all the ones after.
@@ -97,6 +145,10 @@ impl Request {
                     frames_per_second: fields.parsed("fps")?,
                 },
             }),
+            "pair" => Ok(Request::Pair {
+                way: WayId(fields.parsed("way")?),
+                pin: fields.text("pin")?.to_string(),
+            }),
             "hold" => Ok(Request::Hold {
                 way: WayId(fields.parsed("way")?),
                 process: fields.parsed("process")?,
@@ -107,6 +159,9 @@ impl Request {
             "peers" => Ok(Request::Peers),
             "sessions" => Ok(Request::Sessions),
             "hosting" => Ok(Request::SetHosting {
+                on: fields.text("on")? == "yes",
+            }),
+            "trusting" => Ok(Request::SetTrust {
                 on: fields.text("on")? == "yes",
             }),
             "settings" => Ok(Request::Settings),
@@ -128,17 +183,22 @@ impl fmt::Display for Request {
                 media.bits_per_second / 1000,
                 media.frames_per_second
             ),
+            Request::Pair { way, pin } => write!(f, "pair way={way} pin={pin}"),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
             Request::Sessions => f.write_str("sessions"),
-            Request::SetHosting { on } => {
-                write!(f, "hosting on={}", if *on { "yes" } else { "no" })
-            }
+            Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
+            Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
             Request::Settings => f.write_str("settings"),
             Request::Choose { preferred } => write!(f, "choose {}", spelled(preferred)),
         }
     }
+}
+
+/// How a yes-or-no travels.
+fn said(yes: bool) -> &'static str {
+    if yes { "yes" } else { "no" }
 }
 
 /// The fields a set of preferences travels as, shared by the question
@@ -154,7 +214,7 @@ fn spelled(preferred: &Preferred) -> String {
         } else {
             "game"
         },
-        if preferred.stats_overlay { "yes" } else { "no" }
+        said(preferred.stats_overlay)
     )
 }
 
@@ -163,13 +223,25 @@ fn spelled(preferred: &Preferred) -> String {
 pub struct Standing {
     /// Dialect the service speaks.
     pub protocol: u32,
+    /// The code the service was built from.
+    ///
+    /// The window shows it beside its own. Two halves of the product
+    /// built at different times is the one fault nobody thinks to check
+    /// for, and the one that wastes the most time.
+    pub build: String,
     /// What other computers pin to reach this one.
     pub fingerprint: Fingerprint,
     /// Whether this computer can be reached right now.
     pub hosting: bool,
+    /// What is in the way when it is not, which is meaningless when it
+    /// is.
+    pub holdup: Holdup,
     /// Whether it is meant to be. The two differ while the engine is
     /// starting, and after it has given up.
     pub wanted: bool,
+    /// Whether the ZyrDesk of the local network are let in without
+    /// anyone recognising them one by one.
+    pub trusting: bool,
     /// Ways out currently open.
     pub ways: usize,
 }
@@ -246,9 +318,12 @@ impl Answer {
         match verb {
             "standing" => Ok(Answer::Standing(Standing {
                 protocol: fields.parsed("protocol")?,
+                build: unpacked(fields.text("build").unwrap_or_default()),
                 fingerprint: fields.parsed("fingerprint")?,
                 hosting: fields.text("hosting")? == "yes",
+                holdup: Holdup::read(fields.text("holdup").unwrap_or_default()),
                 wanted: fields.text("wanted")? == "yes",
+                trusting: fields.flag("trusting", false),
                 ways: fields.parsed("ways")?,
             })),
             "reached" => Ok(Answer::Reached(Reached {
@@ -285,11 +360,14 @@ impl fmt::Display for Answer {
         match self {
             Answer::Standing(standing) => write!(
                 f,
-                "standing protocol={} fingerprint={} hosting={} wanted={} ways={}",
+                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} ways={}",
                 standing.protocol,
+                packed(&standing.build),
                 standing.fingerprint,
-                if standing.hosting { "yes" } else { "no" },
-                if standing.wanted { "yes" } else { "no" },
+                said(standing.hosting),
+                standing.holdup.spelled(),
+                said(standing.wanted),
+                said(standing.trusting),
                 standing.ways
             ),
             Answer::Reached(reached) => write!(
@@ -422,6 +500,19 @@ impl<'a> Fields<'a> {
             .map_err(|_| Malformed(format!("champ « {key} » illisible")))
     }
 
+    /// Reads a yes-or-no, falling back when it is absent.
+    ///
+    /// How every field added after the fact is read: an older half of
+    /// the product then costs the newer one that one thing instead of
+    /// the whole exchange. Only a plain « yes » says yes, so a value
+    /// nobody understands decides nothing either.
+    fn flag(&self, key: &str, fallback: bool) -> bool {
+        match self.text(key) {
+            Ok(value) => value == "yes",
+            Err(_) => fallback,
+        }
+    }
+
     /// Reads a whole set of preferences.
     ///
     /// A missing field falls back to what the product does by default
@@ -440,10 +531,7 @@ impl<'a> Fields<'a> {
                 Ok(mouse) => mouse != "game",
                 Err(_) => fallback.absolute_mouse,
             },
-            stats_overlay: match self.text("stats") {
-                Ok(stats) => stats == "yes",
-                Err(_) => fallback.stats_overlay,
-            },
+            stats_overlay: self.flag("stats", fallback.stats_overlay),
         }
     }
 }
@@ -469,6 +557,10 @@ mod tests {
                     frames_per_second: 60,
                 },
             },
+            Request::Pair {
+                way: WayId(3),
+                pin: "0429".to_string(),
+            },
             Request::Hold {
                 way: WayId(3),
                 process: 11248,
@@ -478,6 +570,8 @@ mod tests {
             Request::Sessions,
             Request::SetHosting { on: true },
             Request::SetHosting { on: false },
+            Request::SetTrust { on: true },
+            Request::SetTrust { on: false },
             Request::Settings,
             Request::Choose {
                 preferred: preferred(),
@@ -503,10 +597,25 @@ mod tests {
         vec![
             Answer::Standing(Standing {
                 protocol: PROTOCOL,
+                // Une empreinte de compilation porte une espace : elle
+                // traverse le même champ « clé=valeur » que le reste.
+                build: "599c1c4 2026-08-18".to_string(),
                 fingerprint: fingerprint(),
                 hosting: true,
+                holdup: Holdup::Starting,
                 wanted: true,
+                trusting: true,
                 ways: 2,
+            }),
+            Answer::Standing(Standing {
+                protocol: PROTOCOL,
+                build: String::new(),
+                fingerprint: fingerprint(),
+                hosting: false,
+                holdup: Holdup::EngineMissing,
+                wanted: true,
+                trusting: false,
+                ways: 0,
             }),
             Answer::Reached(Reached {
                 way: WayId(3),
@@ -592,6 +701,41 @@ mod tests {
     fn a_field_added_later_does_not_upset_an_older_reader() {
         let line = "reach host=192.168.1.20 peer=0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 bitrate=20000 fps=60 codec=av1";
         assert!(matches!(Request::parse(line), Ok(Request::Reach { .. })));
+    }
+
+    #[test]
+    fn an_older_service_is_still_understood_minus_what_it_cannot_do() {
+        // Le service d'avant ne connaît ni sa propre empreinte de
+        // compilation ni la confiance réseau. La fenêtre doit perdre ces
+        // deux choses-là, pas la conversation.
+        let line = format!(
+            "standing protocol=6 fingerprint={} hosting=yes wanted=yes ways=0",
+            fingerprint()
+        );
+        let Ok(Answer::Standing(standing)) = Answer::parse(&line) else {
+            panic!("« {line} » n'est pas relu comme un état");
+        };
+        assert_eq!(standing.protocol, 6);
+        assert!(standing.build.is_empty());
+        assert!(!standing.trusting);
+        assert_eq!(standing.holdup, Holdup::Starting);
+        assert!(standing.hosting);
+    }
+
+    #[test]
+    fn a_holdup_nobody_understands_reads_as_the_ordinary_case() {
+        // Une moitié plus ancienne du produit ne doit pas afficher un
+        // empêchement inventé : elle montre « démarrage », qui est vrai
+        // le temps qu'on la mette à jour.
+        assert_eq!(Holdup::read("un-empechement-inedit"), Holdup::Starting);
+        assert_eq!(Holdup::read(""), Holdup::Starting);
+        for holdup in [
+            Holdup::Starting,
+            Holdup::EngineMissing,
+            Holdup::EngineWontStand,
+        ] {
+            assert_eq!(Holdup::read(holdup.spelled()), holdup);
+        }
     }
 
     #[test]

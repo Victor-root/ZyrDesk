@@ -15,8 +15,8 @@ use tokio::task::JoinSet;
 use zyr_proto::net::EnginePorts;
 use zyr_transport::{Connection, RecvStream, SendStream};
 
+use crate::aside::{self, Answers};
 use crate::channel::{DatagramChannel, StreamChannel};
-use crate::greeting;
 use crate::pump::{self, Counters, DatagramPorts, Reading};
 
 /// One side of the tunnel, pumps running.
@@ -31,17 +31,21 @@ pub struct Tunnel {
 impl Tunnel {
     /// Host side: what comes out of the tunnel is handed to the local
     /// engine.
+    ///
+    /// `answering` is the local engine seen from the tunnel: its ports,
+    /// and what it can be asked on ZyrDesk's own channel.
     pub async fn host(
         connection: Connection,
         engine: IpAddr,
-        ports: EnginePorts,
+        answering: Arc<dyn Answers>,
     ) -> io::Result<Self> {
+        let ports = answering.engine();
         let datagrams = Arc::new(DatagramPorts::towards_engine(engine, ports)?);
         let counters = Arc::new(Counters::default());
         let mut tasks = datagram_pumps(&connection, &datagrams, &counters);
 
         let towards_engine = connection.clone();
-        tasks.spawn(async move { serve_the_streams(&towards_engine, engine, ports).await });
+        tasks.spawn(async move { serve_the_streams(&towards_engine, engine, answering).await });
 
         Ok(Self { tasks, counters })
     }
@@ -132,7 +136,7 @@ fn datagram_pumps(
 async fn serve_the_streams(
     connection: &Connection,
     engine: IpAddr,
-    ports: EnginePorts,
+    answering: Arc<dyn Answers>,
 ) -> io::Result<()> {
     let mut sessions = JoinSet::new();
     loop {
@@ -140,8 +144,9 @@ async fn serve_the_streams(
 
         // One stream's failure stays on that stream: a botched pairing
         // must not take the running session with it.
+        let answering = answering.clone();
         sessions.spawn(async move {
-            let _ = hand_to_the_engine(sending, receiving, engine, ports).await;
+            let _ = hand_to_the_engine(sending, receiving, engine, answering).await;
         });
         while sessions.try_join_next().is_some() {}
     }
@@ -151,13 +156,13 @@ async fn hand_to_the_engine(
     sending: SendStream,
     mut receiving: RecvStream,
     engine: IpAddr,
-    ports: EnginePorts,
+    answering: Arc<dyn Answers>,
 ) -> io::Result<()> {
     let channel = pump::read_announcement(&mut receiving).await?;
-    let Some(port) = channel.port(ports) else {
+    let Some(port) = channel.port(answering.engine()) else {
         // ZyrDesk's own channel goes to no engine: it is the tunnel
         // talking to the tunnel, and this is where it answers.
-        return greeting::answer(sending, ports).await;
+        return aside::answer(sending, receiving, answering).await;
     };
 
     let local = TcpStream::connect(SocketAddr::new(engine, port)).await?;

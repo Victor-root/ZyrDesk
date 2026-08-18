@@ -10,12 +10,8 @@
 //! working it out: the table lives in one place, in `zyr-proto`, and a
 //! second copy in JavaScript would drift from it.
 
-use std::path::Path;
-use std::process::Command;
-
 use serde::{Deserialize, Serialize};
 use zyr_control::{Answer, Request};
-use zyr_proto::paths;
 use zyr_proto::session::{Codec, DisplayMode, Preferred, Quality};
 
 use crate::service;
@@ -102,33 +98,6 @@ pub async fn preferred() -> Preferred {
         Ok(Answer::Settings(preferred)) => preferred,
         _ => Preferred::default(),
     }
-}
-
-/// Where the product writes what it has to say.
-#[tauri::command]
-pub fn logs_folder() -> String {
-    paths::logs_dir().display().to_string()
-}
-
-/// Opens that folder, so a problem can be looked at without anyone
-/// having to be told where to click.
-#[tauri::command]
-pub fn open_logs() -> Result<(), String> {
-    let folder = paths::logs_dir();
-    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
-    shown(&folder).map_err(|e| format!("le dossier n'a pas pu être ouvert : {e}"))
-}
-
-#[cfg(windows)]
-fn shown(folder: &Path) -> std::io::Result<()> {
-    // The file explorer answers with a code of its own whatever happens,
-    // so only the launch is worth checking.
-    Command::new("explorer").arg(folder).spawn().map(|_| ())
-}
-
-#[cfg(not(windows))]
-fn shown(folder: &Path) -> std::io::Result<()> {
-    Command::new("xdg-open").arg(folder).spawn().map(|_| ())
 }
 
 #[cfg(test)]

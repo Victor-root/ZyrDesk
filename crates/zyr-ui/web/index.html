@@ -17,6 +17,25 @@
         <button
           class="bouton discret icone"
           type="button"
+          id="ouvrir-journal"
+          aria-label="Journal"
+          title="Journal"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M5 3h11l3 3v15H5z" stroke-linejoin="round" />
+            <path d="M9 9h6M9 13h6M9 17h4" />
+          </svg>
+        </button>
+        <button
+          class="bouton discret icone"
+          type="button"
           id="ouvrir-reglages"
           aria-label="Réglages"
           title="Réglages"
@@ -70,12 +89,10 @@
           </div>
         </div>
 
-        <div class="bandeau alerte cache" id="service-absent">
-          <span>
-            Le service ZyrDesk ne répond pas. Cet ordinateur ne peut ni être
-            contrôlé ni en contrôler un autre tant qu'il ne tourne pas.
-          </span>
-        </div>
+        <!-- Ce qu'il reste à faire pour que le produit marche : le service
+             qui ne tourne pas, un moteur qui manque. Rempli par le code,
+             parce que ce qui manque change d'un ordinateur à l'autre. -->
+        <div class="a-faire" id="a-faire"></div>
       </section>
 
       <section class="bloc grandit">
@@ -126,22 +143,27 @@
           </svg>
           <p class="sous-titre">Aucun ordinateur pour l'instant</p>
           <p class="legende vide-mot">
-            Les ZyrDesk allumés sur ce réseau apparaissent ici tout seuls.
-            Sinon, ajoutez celui que vous voulez contrôler par son adresse.
+            Les ZyrDesk allumés sur ce réseau apparaissent ici tout seuls, sans
+            rien à recopier. Sinon, ajoutez celui que vous voulez contrôler par
+            son adresse.
           </p>
           <button class="bouton principal grand" id="ouvrir-ajout">
             Ajouter un ordinateur
           </button>
         </div>
       </section>
+
+      <!-- La version est toujours sous les yeux : quand quelque chose ne
+           va pas, la première question est de savoir laquelle tourne. -->
+      <p class="legende version" id="version"></p>
     </main>
 
     <dialog class="dialogue" id="ajout">
       <form method="dialog" class="dialogue-corps" id="ajout-forme">
         <h2 class="sous-titre">Ajouter un ordinateur</h2>
         <p class="legende">
-          Les deux se trouvent dans la fenêtre ZyrDesk de l'ordinateur à
-          contrôler.
+          À n'utiliser que si l'ordinateur n'apparaît pas tout seul. Les deux
+          informations se lisent dans sa fenêtre ZyrDesk.
         </p>
 
         <div class="champ">
@@ -176,6 +198,51 @@
           </button>
         </div>
       </form>
+    </dialog>
+
+    <dialog class="dialogue journal" id="journal">
+      <div class="dialogue-corps" tabindex="-1" autofocus>
+        <div class="reglages-entete">
+          <div class="reglage-mot">
+            <h2 class="sous-titre">Journal</h2>
+            <span class="legende">
+              Tout ce que le produit a écrit, à copier tel quel en cas de
+              problème.
+            </span>
+          </div>
+          <button
+            class="bouton discret icone"
+            type="button"
+            id="fermer-journal"
+            aria-label="Fermer le journal"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <pre class="journal-texte" id="journal-texte">Lecture…</pre>
+
+        <div class="dialogue-actions">
+          <button class="bouton discret" type="button" id="ouvrir-journaux">
+            Ouvrir le dossier
+          </button>
+          <button class="bouton discret" type="button" id="rafraichir-journal">
+            Actualiser
+          </button>
+          <button class="bouton principal" type="button" id="copier-journal">
+            Copier tout
+          </button>
+        </div>
+      </div>
     </dialog>
 
     <dialog class="dialogue reglages" id="reglages">
@@ -268,6 +335,24 @@
                 Sombre
               </button>
             </div>
+          </div>
+
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Ordinateurs du réseau local</span>
+              <span class="legende">
+                Ceux qui s'annoncent sur ce réseau peuvent joindre celui-ci sans
+                rien à recopier. Ne concerne que le réseau local.
+              </span>
+            </div>
+            <button
+              class="interrupteur"
+              id="confiance"
+              role="switch"
+              aria-checked="false"
+              aria-label="Ordinateurs du réseau local"
+              disabled
+            ></button>
           </div>
 
           <details class="avance">
@@ -384,7 +469,7 @@
                 <span>Journaux</span>
                 <span class="legende empreinte" id="dossier-journaux"></span>
               </div>
-              <button class="bouton discret" type="button" id="ouvrir-journaux">
+              <button class="bouton discret" type="button" id="ouvrir-dossier">
                 Ouvrir
               </button>
             </div>

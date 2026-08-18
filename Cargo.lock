@@ -5852,6 +5852,7 @@ name = "zyr-proto"
 version = "0.1.0"
 dependencies = [
  "rand",
+ "time",
 ]
 
 [[package]]
@@ -5911,7 +5912,6 @@ name = "zyrdeskd"
 version = "0.1.0"
 dependencies = [
  "clap",
- "time",
  "tokio",
  "windows-service",
  "windows-sys 0.61.2",

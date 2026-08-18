@@ -20,9 +20,9 @@ use windows_service::service_control_handler::{self, ServiceControlHandlerResult
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 use windows_service::{Result as ServiceResult, define_windows_service, service_dispatcher};
 
+use zyr_proto::log::Log;
 use zyr_proto::paths;
 
-use crate::log::Log;
 use crate::supervisor::{self, End, StopOrder};
 
 /// Internal service name, the one Windows uses.
@@ -93,7 +93,9 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
         ServiceState::Running,
         ServiceExitCode::Win32(0),
     ))?;
-    log.write("service started");
+    // The build opens the log: a fault read against the wrong version of
+    // the product is a fault chased for nothing.
+    log.write(&format!("service started, {}", zyr_proto::version_line()));
 
     let end = supervisor::run(&order, log);
     log.write(&format!("service stopped: {}", reason(end)));
@@ -103,7 +105,7 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // it stopped for no reason.
     let exit = match end {
         End::Asked | End::WindowsShutdown => ServiceExitCode::Win32(0),
-        End::EngineWontStand | End::NothingToStart => ServiceExitCode::ServiceSpecific(1),
+        End::NoRuntime => ServiceExitCode::ServiceSpecific(1),
     };
     handle.set_service_status(announcement(ServiceState::Stopped, exit))?;
     Ok(())
@@ -113,8 +115,7 @@ fn reason(end: End) -> &'static str {
     match end {
         End::Asked => "stop asked for",
         End::WindowsShutdown => "Windows shutting down",
-        End::EngineWontStand => "the host engine will not stand",
-        End::NothingToStart => "no host engine to start",
+        End::NoRuntime => "nothing to run the service on",
     }
 }
 
@@ -186,6 +187,26 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
         }
         Err(e) => Err(e.into()),
     }
+}
+
+/// Registers the service, points it at this program, and starts it.
+///
+/// One move rather than three because it is asked for from the
+/// interface, and each move on its own would mean another elevation
+/// prompt. A service already installed is stopped first: it may point at
+/// another copy of this program, and starting it again is the only way
+/// it picks this one up.
+pub fn set_up() -> Result<Installed, Box<dyn std::error::Error>> {
+    let installed = install()?;
+    if matches!(installed, Installed::Updated) {
+        let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+        let service =
+            manager.open_service(NAME, ServiceAccess::STOP | ServiceAccess::QUERY_STATUS)?;
+        let _ = service.stop();
+        wait_until_stopped(&service);
+    }
+    start()?;
+    Ok(installed)
 }
 
 /// Code the system itself gave, when it gave one.

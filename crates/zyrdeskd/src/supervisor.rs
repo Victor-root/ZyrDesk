@@ -28,13 +28,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use zyr_control::Holdup;
 use zyr_engine_host::api::EngineApi;
 use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Launcher, SunshineConfig, ports};
+use zyr_proto::log::Log;
 use zyr_proto::paths;
 
 use crate::control::{Answering, Desk, Hosting};
-use crate::gateway::Gateway;
-use crate::log::Log;
+use crate::gateway::{AtHand, Gateway};
 use crate::preferences::Remembered;
 use crate::restart::{Next, Policy};
 use crate::ways::Ways;
@@ -52,6 +53,12 @@ const WATCH_PERIOD: Duration = Duration::from_millis(500);
 /// moment lets it settle rather than starting an engine in a session
 /// that is already on its way out.
 const SESSION_SETTLING: Duration = Duration::from_secs(1);
+
+/// How often a missing or unusable engine is looked in on again.
+///
+/// It can be dropped onto the machine at any moment, so it is worth
+/// checking; and doing so every second would be noise.
+const ENGINE_WATCH: Duration = Duration::from_secs(5);
 
 /// Identifier of the session attached to the screen, when there is one.
 #[cfg(windows)]
@@ -111,25 +118,24 @@ enum Life {
 }
 
 /// Why the supervisor handed back.
+///
+/// Nothing about the host engine ends the service. A computer whose
+/// engine is missing, or will not stand, is still a computer that opens
+/// sessions towards others: taking the whole service down would cost it
+/// that, and the interface with it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum End {
     /// A stop was asked for.
     Asked,
     /// Windows is shutting down.
     WindowsShutdown,
-    /// The engine will not stand, even after several restarts.
-    EngineWontStand,
-    /// There was nothing to start.
-    NothingToStart,
+    /// There was nothing to run the service on.
+    NoRuntime,
 }
 
-/// Runs until a stop is asked for, or the engine gives up.
+/// Runs until a stop is asked for.
 pub fn run(order: &StopOrder, log: &Log) -> End {
     let exe = paths::host_engine_exe();
-    if !exe.is_file() {
-        log.write(&format!("host engine not found: {}", exe.display()));
-        return End::NothingToStart;
-    }
 
     // One runtime for the whole life of the service: the tunnel is
     // rebuilt with each engine, but rebuilding the threads underneath it
@@ -138,7 +144,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         Ok(runtime) => runtime,
         Err(e) => {
             log.write(&format!("no runtime to carry the tunnel: {e}"));
-            return End::NothingToStart;
+            return End::NoRuntime;
         }
     };
 
@@ -167,6 +173,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         .as_ref()
         .map(|n| n.found())
         .unwrap_or_default();
+    let around_here = neighbours.clone();
     // Not being able to answer the interface leaves this computer
     // reachable all the same, so it is worth saying loudly and carrying
     // on rather than giving up on remote access entirely.
@@ -196,11 +203,14 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         runtime: runtime.handle(),
         hosting: &hosting,
         remembered: &remembered,
+        neighbours: &around_here,
         order,
         log,
     };
     let mut screenless = false;
     let mut refused = false;
+    let mut engineless = false;
+    let mut given_up = false;
 
     loop {
         if order.stop_asked() {
@@ -215,6 +225,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             if !refused {
                 log.write("remote access is off, this computer cannot be reached");
                 refused = true;
+                hosting.held_by(Holdup::Starting);
             }
             if !wait(SESSION_SETTLING, order) {
                 return End::Asked;
@@ -225,8 +236,40 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             log.write("remote access is on again");
             refused = false;
             // Turned off and on again is not a string of failures: the
-            // engine deserves its first try back.
+            // engine deserves its first try back. It is also the one way
+            // back from an engine this service has stopped insisting on.
             policy = Policy::new();
+            given_up = false;
+        }
+
+        if !exe.is_file() {
+            // The engine can be dropped in later, and everything this
+            // computer needs to reach another one works without it. So
+            // it is waited for rather than given up on.
+            if !engineless {
+                log.write(&format!("host engine not found: {}", exe.display()));
+                engineless = true;
+                hosting.held_by(Holdup::EngineMissing);
+            }
+            if !wait(ENGINE_WATCH, order) {
+                return End::Asked;
+            }
+            continue;
+        }
+        if engineless {
+            log.write("host engine found");
+            engineless = false;
+            policy = Policy::new();
+        }
+
+        if given_up {
+            // The engine will not stand. Trying forever would fill the
+            // log and load the machine for nothing; the way back is the
+            // remote access switch, read at the top of this loop.
+            if !wait(ENGINE_WATCH, order) {
+                return End::Asked;
+            }
+            continue;
         }
 
         let Some(session) = screen_session() else {
@@ -283,10 +326,12 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             }
             Next::GiveUp => {
                 log.write(&format!(
-                    "the engine fell {} times in a row without holding, giving up",
+                    "the engine fell {} times in a row without holding, this computer stays \
+                     unreachable until remote access is turned off and on again",
                     policy.failures()
                 ));
-                return End::EngineWontStand;
+                hosting.held_by(Holdup::EngineWontStand);
+                given_up = true;
             }
             Next::Restart(delay) => {
                 let code = stop
@@ -353,6 +398,7 @@ struct Around<'a> {
     runtime: &'a tokio::runtime::Handle,
     hosting: &'a Hosting,
     remembered: &'a Remembered,
+    neighbours: &'a zyr_lan::Found,
     order: &'a StopOrder,
     log: &'a Log,
 }
@@ -367,6 +413,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         runtime,
         hosting,
         remembered,
+        neighbours,
         order,
         log,
     } = around;
@@ -402,7 +449,10 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         return Err(format!("the engine never finished starting: {e}"));
     }
 
-    let state = EngineRuntime { ports, credentials };
+    let state = EngineRuntime {
+        ports,
+        credentials: credentials.clone(),
+    };
     if let Err(e) = state.write(runtime_path) {
         let _ = engine.stop();
         return Err(format!("engine state not recorded: {e}"));
@@ -411,7 +461,14 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // Opened last: an engine that never answered has nothing to serve,
     // and dropped first at the end, since a tunnel leading to a stopped
     // engine only makes the other computer wait.
-    let gateway = match Gateway::open(runtime, ports, log) {
+    let at_hand = AtHand { ports, credentials };
+    let gateway = match Gateway::open(
+        runtime,
+        at_hand,
+        (*neighbours).clone(),
+        (*remembered).clone(),
+        log,
+    ) {
         Ok(gateway) => gateway,
         Err(e) => {
             let _ = engine.stop();
@@ -419,11 +476,11 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
             return Err(format!("the tunnel could not be opened: {e}"));
         }
     };
-    hosting.set(true);
+    hosting.open();
     log.write("remote access active");
 
     let life = wait_for_the_engine_to_stop(&mut engine, session, remembered, order, log);
-    hosting.set(false);
+    hosting.held_by(Holdup::Starting);
     drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
     Ok(life)
@@ -522,14 +579,25 @@ mod tests {
     }
 
     #[test]
-    fn without_an_engine_the_supervisor_says_so_instead_of_looping() {
+    fn without_an_engine_the_service_waits_for_one_instead_of_stopping() {
+        // Un ordinateur sans moteur hôte reste un client à part entière.
+        // Un service qui s'arrêterait là lui coûterait le tunnel, la
+        // découverte du réseau et son interface, pour une moitié du
+        // produit dont il n'a peut-être aucun usage.
+        if paths::host_engine_exe().is_file() {
+            return;
+        }
         let folder = std::env::temp_dir().join(format!("zyrdeskd-{}-none", std::process::id()));
         let log = Log::open(&folder.join("service.log")).unwrap();
-        // The engine is not installed on the test machine: that is
-        // exactly the case the service has to report without insisting.
-        if !paths::host_engine_exe().is_file() {
-            assert_eq!(run(&StopOrder::new(), &log), End::NothingToStart);
-        }
+
+        let order = StopOrder::new();
+        let asking = order.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            asking.ask_for_a_stop();
+        });
+
+        assert_eq!(run(&order, &log), End::Asked);
         let _ = std::fs::remove_dir_all(&folder);
     }
 }

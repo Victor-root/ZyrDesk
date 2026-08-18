@@ -14,9 +14,10 @@ const vue = {
   pastilleHote: document.getElementById("pastille-hote"),
   etatHote: document.getElementById("etat-hote"),
   interrupteur: document.getElementById("interrupteur-hote"),
-  serviceAbsent: document.getElementById("service-absent"),
   empreinte: document.getElementById("empreinte"),
   copier: document.getElementById("copier-empreinte"),
+  aFaire: document.getElementById("a-faire"),
+  version: document.getElementById("version"),
   sessions: document.getElementById("sessions"),
   ordinateurs: document.getElementById("ordinateurs"),
   aucun: document.getElementById("aucun-ordinateur"),
@@ -34,13 +35,21 @@ const vue = {
   etapeCode: document.getElementById("etape-code"),
   probleme: document.getElementById("probleme"),
   problemeTexte: document.getElementById("probleme-texte"),
+  ouvrirJournal: document.getElementById("ouvrir-journal"),
+  journal: document.getElementById("journal"),
+  fermerJournal: document.getElementById("fermer-journal"),
+  journalTexte: document.getElementById("journal-texte"),
+  copierJournal: document.getElementById("copier-journal"),
+  rafraichirJournal: document.getElementById("rafraichir-journal"),
+  ouvrirJournaux: document.getElementById("ouvrir-journaux"),
   ouvrirReglages: document.getElementById("ouvrir-reglages"),
   reglages: document.getElementById("reglages"),
   fermerReglages: document.getElementById("fermer-reglages"),
   qualiteDetail: document.getElementById("qualite-detail"),
+  confiance: document.getElementById("confiance"),
   stats: document.getElementById("stats"),
   dossierJournaux: document.getElementById("dossier-journaux"),
-  ouvrirJournaux: document.getElementById("ouvrir-journaux"),
+  ouvrirDossier: document.getElementById("ouvrir-dossier"),
   reglagesProbleme: document.getElementById("reglages-probleme"),
   reglagesProblemeTexte: document.getElementById("reglages-probleme-texte"),
 };
@@ -65,6 +74,8 @@ const HEURE = 3600;
    survit à cette fenêtre fermée, mise à jour ou plantée. */
 let voisins = [];
 let sessions = [];
+let etat = null;
+let moteurs = null;
 
 /* Vrai entre le moment où cette fenêtre demande une session et celui où
    le service la tient. Pendant ce temps-là, elle est la seule à savoir
@@ -84,12 +95,11 @@ function occupe() {
 /* ---- Cet ordinateur --------------------------------------------------- */
 
 async function rafraichirEtat() {
-  const etat = await invoke("standing");
+  etat = await invoke("standing");
 
   vue.nom.textContent = etat.name;
   vue.empreinte.textContent = etat.fingerprint || "indisponible";
   vue.copier.disabled = etat.fingerprint.length === 0;
-  montre(vue.serviceAbsent, etat.unreachable !== null);
 
   // Le service arrêté n'est pas un accès distant désactivé : l'un est un
   // choix, l'autre une panne. L'interrupteur reste sur la position
@@ -97,22 +107,47 @@ async function rafraichirEtat() {
   // de faire croire à une décision que personne n'a prise.
   vue.interrupteur.disabled = etat.unreachable !== null || bascule;
   if (!bascule) {
-    vue.interrupteur.setAttribute("aria-checked", etat.wanted ? "true" : "false");
+    vue.interrupteur.setAttribute(
+      "aria-checked",
+      etat.wanted ? "true" : "false",
+    );
   }
 
+  vue.etatHote.textContent = motDeLEtat();
+  vue.pastilleHote.className = `pastille ${couleurDeLEtat()}`;
+
+  dessineCeQuiManque();
+  dessineLaVersion();
+}
+
+function motDeLEtat() {
   if (etat.unreachable !== null) {
-    vue.pastilleHote.className = "pastille";
-    vue.etatHote.textContent = "Service arrêté";
-  } else if (!etat.wanted) {
-    vue.pastilleHote.className = "pastille";
-    vue.etatHote.textContent = "Accès distant désactivé";
-  } else if (etat.hosting) {
-    vue.pastilleHote.className = "pastille vivante";
-    vue.etatHote.textContent = "Prêt à être contrôlé";
-  } else {
-    vue.pastilleHote.className = "pastille attention";
-    vue.etatHote.textContent = "Démarrage en cours…";
+    return "Service arrêté";
   }
+  if (!etat.wanted) {
+    return "Accès distant désactivé";
+  }
+  if (etat.hosting) {
+    return "Prêt à être contrôlé";
+  }
+  switch (etat.holdup) {
+    case "engineMissing":
+      return "Moteur hôte absent";
+    case "engineWontStand":
+      return "Le moteur hôte ne démarre pas";
+    default:
+      return "Démarrage en cours…";
+  }
+}
+
+function couleurDeLEtat() {
+  if (etat.unreachable !== null || !etat.wanted) {
+    return "";
+  }
+  if (etat.hosting) {
+    return "vivante";
+  }
+  return etat.holdup === "starting" ? "attention" : "erreur";
 }
 
 /* Le temps que le service prenne acte, l'état qui revient est encore
@@ -145,6 +180,131 @@ async function copierEmpreinte() {
   setTimeout(() => {
     vue.copier.textContent = "Copier";
   }, TEMPS_COPIE);
+}
+
+/* ---- Ce qu'il reste à faire -------------------------------------------- */
+
+/* Ce qui empêche le produit de marcher, dit en clair et avec de quoi y
+   remédier. Sans ça, un moteur absent se lit « démarrage en cours » pour
+   toujours, et un service arrêté ne se répare que par une commande. */
+let manquesAffiches = "";
+
+function dessineCeQuiManque() {
+  if (etat === null) {
+    return;
+  }
+  const manques = [];
+
+  if (etat.unreachable !== null) {
+    manques.push({
+      texte:
+        "Le service ZyrDesk ne tourne pas. Cet ordinateur ne peut ni être contrôlé ni en contrôler un autre.",
+      bouton: "Démarrer le service",
+      action: demarrerService,
+    });
+  } else if (etat.wanted && etat.holdup === "engineMissing") {
+    manques.push({
+      texte:
+        "Le moteur hôte n'est pas installé : cet ordinateur ne peut pas être contrôlé. Déposez-le dans son dossier, il sera repris tout seul.",
+      bouton: "Ouvrir le dossier",
+      action: () => ouvreDossier("host-engine"),
+    });
+  } else if (etat.wanted && etat.holdup === "engineWontStand") {
+    manques.push({
+      texte:
+        "Le moteur hôte ne tient pas en marche. Coupez puis rallumez l'accès distant pour réessayer ; le journal dit pourquoi.",
+      bouton: "Voir le journal",
+      action: ouvrirJournal,
+    });
+  }
+
+  if (moteurs !== null && !moteurs.clientHere) {
+    manques.push({
+      texte:
+        "Le moteur client n'est pas installé : cet ordinateur ne peut en contrôler aucun autre.",
+      bouton: "Ouvrir le dossier",
+      action: () => ouvreDossier("client-engine"),
+    });
+  }
+
+  const signature = JSON.stringify(manques.map((manque) => manque.texte));
+  if (signature === manquesAffiches) {
+    return;
+  }
+  manquesAffiches = signature;
+  vue.aFaire.replaceChildren(...manques.map(bandeau));
+}
+
+function bandeau(manque) {
+  const element = document.createElement("div");
+  element.className = "bandeau alerte avec-action apparait";
+
+  const mot = document.createElement("span");
+  mot.className = "bandeau-mot";
+  mot.textContent = manque.texte;
+
+  const commande = document.createElement("button");
+  commande.type = "button";
+  commande.className = "bouton discret";
+  commande.textContent = manque.bouton;
+  commande.addEventListener("click", () => manque.action(commande));
+
+  element.append(mot, commande);
+  return element;
+}
+
+/* Windows demande les droits administrateur, et personne d'autre que la
+   personne devant l'écran ne peut répondre : le bouton attend, en le
+   disant. */
+async function demarrerService(bouton) {
+  const mot = bouton.textContent;
+  bouton.disabled = true;
+  bouton.textContent = "Démarrage…";
+  montre(vue.probleme, false);
+
+  try {
+    await invoke("start_service");
+  } catch (raison) {
+    echoue(String(raison));
+  } finally {
+    bouton.disabled = false;
+    bouton.textContent = mot;
+    await rafraichirEtat();
+    await rafraichirLesMoteurs();
+  }
+}
+
+async function ouvreDossier(lequel) {
+  try {
+    await invoke("open_folder", { which: lequel });
+  } catch (raison) {
+    echoue(String(raison));
+  }
+}
+
+async function rafraichirLesMoteurs() {
+  moteurs = await invoke("engines");
+  dessineCeQuiManque();
+}
+
+/* ---- Version ----------------------------------------------------------- */
+
+/* Ce que fait tourner cette fenêtre, et ce que fait tourner le service.
+   Les deux se compilent ensemble : le jour où ils diffèrent, c'est la
+   panne, et il vaut mieux la lire que la chercher. */
+let versionFenetre = "";
+
+function dessineLaVersion() {
+  const service = etat === null ? "" : etat.serviceBuild;
+  const sien = versionFenetre.includes(service);
+
+  if (service.length === 0 || sien) {
+    vue.version.textContent = versionFenetre;
+    vue.version.classList.remove("desaccord");
+    return;
+  }
+  vue.version.textContent = `${versionFenetre}, mais le service tourne encore en ${service}`;
+  vue.version.classList.add("desaccord");
 }
 
 /* ---- Ce que tient le service ------------------------------------------ */
@@ -401,10 +561,17 @@ listen("session-step", ({ payload }) => {
         null,
       );
       break;
+    case "pairing":
+      etape(
+        "Premier accès à cet ordinateur",
+        "Les deux ordinateurs font connaissance. Rien à faire.",
+        null,
+      );
+      break;
     case "pairingNeeded":
       etape(
         "Autorisation nécessaire",
-        "Premier accès à cet ordinateur. Tapez ce code sur celui que vous voulez contrôler :",
+        "Tapez ce code sur l'ordinateur que vous voulez contrôler :",
         payload.pin,
       );
       break;
@@ -429,6 +596,29 @@ listen("session-ended", ({ payload }) => {
     echoue(payload.message);
   }
 });
+
+/* ---- Journal ----------------------------------------------------------- */
+
+async function ouvrirJournal() {
+  vue.journal.showModal();
+  await rafraichirJournal();
+}
+
+async function rafraichirJournal() {
+  vue.journalTexte.textContent = "Lecture…";
+  vue.journalTexte.textContent = await invoke("journal");
+  // Le plus récent est en bas : c'est là que se trouve ce qui vient
+  // d'arriver, et c'est ce qu'on ouvre le journal pour lire.
+  vue.journalTexte.scrollTop = vue.journalTexte.scrollHeight;
+}
+
+async function copierJournal() {
+  await navigator.clipboard.writeText(vue.journalTexte.textContent);
+  vue.copierJournal.textContent = "Copié";
+  setTimeout(() => {
+    vue.copierJournal.textContent = "Copier tout";
+  }, TEMPS_COPIE);
+}
 
 /* ---- Réglages ---------------------------------------------------------- */
 
@@ -506,6 +696,43 @@ async function change(comment) {
   await rafraichirReglages();
 }
 
+/* La confiance au réseau local ne vit pas dans les mêmes réglages que
+   l'image : elle appartient à cette machine, comme l'accès distant, et
+   c'est l'état de la machine qui la porte. */
+let basculeConfiance = false;
+
+function dessineConfiance() {
+  if (etat === null) {
+    return;
+  }
+  vue.confiance.disabled = etat.unreachable !== null || basculeConfiance;
+  if (!basculeConfiance) {
+    vue.confiance.setAttribute(
+      "aria-checked",
+      etat.trusting ? "true" : "false",
+    );
+  }
+}
+
+async function basculerConfiance() {
+  const veut = vue.confiance.getAttribute("aria-checked") !== "true";
+  basculeConfiance = true;
+  vue.confiance.setAttribute("aria-checked", veut ? "true" : "false");
+  vue.confiance.disabled = true;
+  montre(vue.reglagesProbleme, false);
+
+  try {
+    await invoke("set_trust", { on: veut });
+  } catch (raison) {
+    vue.confiance.setAttribute("aria-checked", veut ? "false" : "true");
+    soucis(String(raison));
+  } finally {
+    basculeConfiance = false;
+    await rafraichirEtat();
+    dessineConfiance();
+  }
+}
+
 function soucis(texte) {
   vue.reglagesProblemeTexte.textContent = texte;
   montre(vue.reglagesProbleme, true);
@@ -514,13 +741,14 @@ function soucis(texte) {
 async function ouvrirReglages() {
   montre(vue.reglagesProbleme, false);
   vue.reglages.showModal();
+  dessineConfiance();
   await rafraichirReglages();
 }
 
-async function ouvrirJournaux() {
+async function ouvrirLesJournaux() {
   montre(vue.reglagesProbleme, false);
   try {
-    await invoke("open_logs");
+    await invoke("open_folder", { which: "logs" });
   } catch (raison) {
     soucis(String(raison));
   }
@@ -586,24 +814,35 @@ vue.annulerAjout.addEventListener("click", () => vue.ajout.close());
 vue.adresse.addEventListener("input", ajusterAjout);
 vue.empreinteDistante.addEventListener("input", ajusterAjout);
 vue.ajoutForme.addEventListener("submit", connecter);
+vue.ouvrirJournal.addEventListener("click", ouvrirJournal);
+vue.fermerJournal.addEventListener("click", () => vue.journal.close());
+vue.rafraichirJournal.addEventListener("click", rafraichirJournal);
+vue.copierJournal.addEventListener("click", copierJournal);
+vue.ouvrirJournaux.addEventListener("click", () => ouvreDossier("logs"));
 vue.ouvrirReglages.addEventListener("click", ouvrirReglages);
 vue.fermerReglages.addEventListener("click", () => vue.reglages.close());
-vue.ouvrirJournaux.addEventListener("click", ouvrirJournaux);
+vue.confiance.addEventListener("click", basculerConfiance);
+vue.ouvrirDossier.addEventListener("click", ouvrirLesJournaux);
 
 marqueLeChoix();
 invoke("set_theme", {
   clair: document.documentElement.dataset.theme === "clair",
 }).catch(() => {});
 
-// Le dossier des journaux ne bouge pas de toute la vie du programme :
-// demandé une fois, et non à chaque ouverture des réglages.
+// Ce qui ne bouge pas de toute la vie du programme : demandé une fois.
 invoke("logs_folder").then((dossier) => {
   vue.dossierJournaux.textContent = dossier;
+});
+invoke("build").then((version) => {
+  versionFenetre = version;
+  dessineLaVersion();
 });
 
 rafraichirEtat();
 rafraichirLeReseau();
+rafraichirLesMoteurs();
 setInterval(() => {
   rafraichirEtat();
   rafraichirLeReseau();
+  rafraichirLesMoteurs();
 }, RYTHME_ETAT);

@@ -14,14 +14,15 @@
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Args, Subcommand};
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
 use zyr_proto::paths;
 use zyr_transport::{Fingerprint, Identity, MediaProfile, Path, TunnelEndpoint};
-use zyr_tunnel::Tunnel;
 use zyr_tunnel::pump::open_socket;
+use zyr_tunnel::{Answers, Tunnel};
 
 use crate::cpu::{self, Stopwatch};
 use crate::failure;
@@ -38,6 +39,24 @@ const ENGINE_BASE: u16 = 42900;
 const DEVICE: u16 = 0;
 /// The host engine listens on the local machine only.
 const ENGINE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+/// What the bench answers on ZyrDesk's own channel.
+///
+/// Its engines are echo sockets: they have ports and nothing else, so
+/// there is nobody here to hand a pairing code to.
+struct NoEngine {
+    ports: EnginePorts,
+}
+
+impl Answers for NoEngine {
+    fn engine(&self) -> EnginePorts {
+        self.ports
+    }
+
+    fn hand_over_the_code(&self, _pin: &str, _name: &str) -> Result<(), String> {
+        Err("le banc de mesure n'a pas de moteur à appairer".to_string())
+    }
+}
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 /// Time given to the transport to find the path's packet size.
@@ -164,7 +183,7 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
         // while waiting.
         tokio::spawn(async move {
             let observed = connection.clone();
-            match Tunnel::host(connection, ENGINE, ports).await {
+            match Tunnel::host(connection, ENGINE, Arc::new(NoEngine { ports })).await {
                 Ok(mut tunnel) => {
                     let (without, with) = serve_and_measure(&mut tunnel).await;
                     // The return trip is only visible from here: the

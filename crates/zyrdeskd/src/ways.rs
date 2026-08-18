@@ -25,12 +25,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use zyr_control::{Reached, Session, WayId};
+use zyr_proto::log::Log;
 use zyr_proto::net::{TUNNEL_PORT, device_loopback_addr};
 use zyr_proto::paths;
-use zyr_transport::{Fingerprint, Identity, MediaProfile, TunnelEndpoint, packet_size};
-use zyr_tunnel::{Tunnel, greeting};
-
-use crate::log::Log;
+use zyr_transport::{Connection, Fingerprint, Identity, MediaProfile, TunnelEndpoint, packet_size};
+use zyr_tunnel::{Tunnel, aside};
 
 /// Where the tunnel leaves from: any interface, any port.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
@@ -54,6 +53,9 @@ const SWEEP: Duration = Duration::from_secs(2);
 struct Open {
     _tunnel: Tunnel,
     _endpoint: TunnelEndpoint,
+    /// The way itself, kept open to speak to the far ZyrDesk rather than
+    /// to its engine: the pairing code travels this way.
+    connection: Connection,
 }
 
 /// The computer a way leads to.
@@ -139,6 +141,11 @@ impl<T> Register<T> {
             },
         );
         way
+    }
+
+    /// What a way stands on, for as long as it stands.
+    fn thing(&self, way: WayId) -> Option<&T> {
+        self.kept.get(&way).map(|kept| &kept.thing)
     }
 
     /// Ties a way to the process using it.
@@ -282,11 +289,11 @@ impl Ways {
         // proven: a connection succeeds before the other computer has
         // judged our certificate, so nothing may be announced as
         // established until this answers.
-        let greeting = greeting::ask(&connection).await.map_err(|e| {
+        let engine = aside::ask_the_ports(&connection).await.map_err(|e| {
             format!(
                 "{host} a refusé cet ordinateur, ou son empreinte a changé.\n  \
-                 Sur {host} : zyr-cli host authorize {}\n  Détail : {e}",
-                identity.fingerprint()
+                 Sur {host}, vérifiez que l'accès distant est actif et que\n  \
+                 la confiance au réseau local l'est aussi.\n  Détail : {e}"
             )
         })?;
 
@@ -299,7 +306,7 @@ impl Ways {
         let address = IpAddr::V4(
             device_loopback_addr(device).ok_or("aucune adresse locale pour cet appareil")?,
         );
-        let tunnel = Tunnel::client(connection, address, greeting.engine)
+        let tunnel = Tunnel::client(connection.clone(), address, engine)
             .await
             .map_err(|e| format!("les ports locaux n'ont pas pu être ouverts : {e}"))?;
 
@@ -308,11 +315,12 @@ impl Ways {
             Towards {
                 host: host.to_string(),
                 peer,
-                at: format!("{address}:{}", greeting.engine.http()),
+                at: format!("{address}:{}", engine.http()),
             },
             Open {
                 _tunnel: tunnel,
                 _endpoint: endpoint,
+                connection,
             },
         );
         self.log
@@ -321,9 +329,34 @@ impl Ways {
         Ok(Reached {
             way,
             address,
-            engine: greeting.engine,
+            engine,
             packet: packet.bytes,
         })
+    }
+
+    /// Hands the far computer the code its engine is waiting for.
+    ///
+    /// The name it files this computer under is this computer's own: it
+    /// is the only side that knows it, and nobody should have to type it
+    /// in.
+    pub async fn hand_over_the_code(&self, way: WayId, pin: &str) -> Result<(), String> {
+        // Taken out from under the lock before waiting on the network:
+        // every other way is queueing behind that lock.
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        let name = zyr_proto::machine::name();
+        aside::ask_to_pair(&connection, pin, &name)
+            .await
+            .map_err(|e| format!("l'ordinateur distant a refusé l'appairage : {e}"))?;
+        self.log
+            .write(&format!("way {way} handed its pairing code over"));
+        Ok(())
     }
 
     pub fn hold(&self, way: WayId, process: u32) -> bool {

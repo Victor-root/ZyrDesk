@@ -30,7 +30,10 @@ enum Told {
     Reached {
         packet: u16,
     },
-    /// This code has to be typed on the other computer.
+    /// The two computers have never met, and are being introduced.
+    Pairing,
+    /// The same, without a tunnel to carry the code. Only the diagnostic
+    /// path gets here, and the window never opens one.
     PairingNeeded {
         pin: String,
     },
@@ -141,6 +144,7 @@ fn drive(app: &AppHandle, wanted: Wanted) {
 fn told(step: Step) -> Told {
     match step {
         Step::Reached { packet } => Told::Reached { packet },
+        Step::Pairing => Told::Pairing,
         Step::PairingNeeded { pin } => Told::PairingNeeded { pin },
         Step::Paired => Told::Paired,
         Step::Starting => Told::Starting,

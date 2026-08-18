@@ -122,13 +122,16 @@ fn tell(step: Step, host: &str) {
             println!("Tunnel établi avec {host}.");
             println!("  Taille de paquet : {packet} octets.");
         }
+        Step::Pairing => {
+            println!("Premier accès à cet ordinateur : présentation en cours...");
+        }
         Step::PairingNeeded { pin } => {
-            println!("Premier accès à cet ordinateur : autorisation nécessaire.\n");
+            println!("Premier accès à cet ordinateur, sans tunnel pour porter le code.\n");
             println!("  Sur {host}, lancez maintenant :");
             println!("\n      zyr-cli host pin {pin}\n");
             println!("  En attente de l'autorisation...");
         }
-        Step::Paired => println!("  Autorisé.\n"),
+        Step::Paired => println!("  Les deux ordinateurs se connaissent.\n"),
         Step::Starting => println!("Connexion à {host}..."),
     }
 }
@@ -145,12 +148,17 @@ fn reported(e: zyr_session::Error, host: &str) -> ExitCode {
             ),
         ),
         Error::Service(reason) => failure("ouverture du tunnel", reason),
-        Error::Pairing(reason) => failure(
-            "appairage",
-            format!("{reason}\n  Vérifiez que l'accès distant est actif sur {host}."),
-        ),
+        Error::Pairing(reason) => pairing_failed(reason, host),
+        Error::Handover(reason) => pairing_failed(reason, host),
         other => failure("ouverture de la session", other),
     }
+}
+
+fn pairing_failed(reason: impl std::fmt::Display, host: &str) -> ExitCode {
+    failure(
+        "appairage",
+        format!("{reason}\n  Vérifiez que l'accès distant est actif sur {host}."),
+    )
 }
 
 fn build_settings(args: &Args) -> Result<SessionSettings, String> {
