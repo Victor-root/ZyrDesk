@@ -257,6 +257,13 @@ p {
   color: var(--texte);
 }
 
+/* Un bouton qui attend une confirmation le dit par la couleur autant que
+   par le mot : le mot change sous le doigt, la couleur se voit avant. */
+.bouton.attention {
+  border-color: color-mix(in srgb, var(--attention) 55%, var(--trait));
+  color: var(--attention);
+}
+
 .bouton.grand {
   min-height: 44px;
   padding: 0 var(--pas-5);

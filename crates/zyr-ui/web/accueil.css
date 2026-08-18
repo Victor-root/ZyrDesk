@@ -344,6 +344,12 @@
   width: min(880px, calc(100vw - var(--pas-5)));
 }
 
+/* Écarte ce qui suit de ce qui précède, dans une rangée d'actions : ce
+   qui détruit ne doit pas se trouver sous le doigt qui vise à côté. */
+.pousse {
+  flex: 1;
+}
+
 /* ---- Journal ---------------------------------------------------------- */
 
 .journal-texte {

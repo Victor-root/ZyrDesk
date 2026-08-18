@@ -55,6 +55,7 @@ fn main() {
             folders::logs_folder,
             folders::open_folder,
             journal::journal,
+            journal::clear_journal,
             session::connect,
             session::sessions,
             settings::settings,

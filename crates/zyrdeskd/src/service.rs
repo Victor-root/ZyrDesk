@@ -97,6 +97,12 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // the product is a fault chased for nothing.
     log.write(&format!("service started, {}", zyr_proto::version_line()));
 
+    // Whatever the firewall is missing is put back here rather than only
+    // when the service is registered. A machine where the service was
+    // installed before this existed would otherwise never get its rules,
+    // and would show, forever, a network on which nobody else appears.
+    keep_the_firewall_open(log);
+
     let end = supervisor::run(&order, log);
     log.write(&format!("service stopped: {}", reason(end)));
 
@@ -239,33 +245,57 @@ const OPENINGS: [(&str, u16); 2] = [
 /// said in the journal.
 fn open_the_firewall(program: &std::path::Path) {
     let log = Log::open(&log_path()).ok();
-    let say = |what: &str| {
-        if let Some(log) = &log {
-            log.write(what);
-        }
-    };
-
     for (rule, port) in OPENINGS {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
-        let added = netsh(&[
-            "add",
-            "rule",
-            &format!("name={rule}"),
-            "dir=in",
-            "action=allow",
-            "protocol=UDP",
-            &format!("localport={port}"),
-            &format!("program={}", program.display()),
-            &format!("description={DESCRIPTION}"),
-        ]);
-        match added {
-            Ok(true) => say(&format!("firewall opened for {rule} on UDP {port}")),
-            Ok(false) => say(&format!(
-                "firewall rule {rule} refused, UDP {port} stays closed"
-            )),
-            Err(e) => say(&format!("firewall untouched for {rule}: {e}")),
-        }
+        told(log.as_ref(), rule, port, add_rule(rule, port, program));
     }
+}
+
+/// Puts back whatever the firewall is missing, and touches nothing else.
+///
+/// Called every time the service starts, because being registered once
+/// is not the same as being reachable now: a machine set up before these
+/// rules existed never had them laid, and a rule can be swept away by
+/// anything that manages a firewall. A rule already in place is left
+/// exactly as it is, deliberately, so that nothing here fights whoever
+/// tightened it on purpose.
+fn keep_the_firewall_open(log: &Log) {
+    let Ok(program) = std::env::current_exe() else {
+        return;
+    };
+    for (rule, port) in OPENINGS {
+        if netsh(&["show", "rule", &format!("name={rule}")]).unwrap_or(false) {
+            continue;
+        }
+        told(Some(log), rule, port, add_rule(rule, port, &program));
+    }
+}
+
+/// Adds one rule, bound to this program alone.
+fn add_rule(rule: &str, port: u16, program: &std::path::Path) -> std::io::Result<bool> {
+    netsh(&[
+        "add",
+        "rule",
+        &format!("name={rule}"),
+        "dir=in",
+        "action=allow",
+        "protocol=UDP",
+        &format!("localport={port}"),
+        &format!("program={}", program.display()),
+        &format!("description={DESCRIPTION}"),
+    ])
+}
+
+/// Writes down what became of one rule, when there is anywhere to write.
+fn told(log: Option<&Log>, rule: &str, port: u16, outcome: std::io::Result<bool>) {
+    let Some(log) = log else {
+        return;
+    };
+    log.write(&match outcome {
+        Ok(true) => format!("firewall opened for {rule} on UDP {port}"),
+        Ok(false) => format!("firewall rule {rule} refused, UDP {port} stays closed"),
+        Err(e) => format!("firewall untouched for {rule}: {e}"),
+    });
 }
 
 /// Runs one netsh command, quietly. `false` when netsh said no.

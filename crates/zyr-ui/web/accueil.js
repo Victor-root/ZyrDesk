@@ -41,6 +41,7 @@ const vue = {
   journalTexte: document.getElementById("journal-texte"),
   copierJournal: document.getElementById("copier-journal"),
   rafraichirJournal: document.getElementById("rafraichir-journal"),
+  viderJournal: document.getElementById("vider-journal"),
   ouvrirJournaux: document.getElementById("ouvrir-journaux"),
   ouvrirReglages: document.getElementById("ouvrir-reglages"),
   reglages: document.getElementById("reglages"),
@@ -65,6 +66,9 @@ const RYTHME_ETAT = 3000;
 /* Le temps qu'un « Copié » reste lisible avant que le bouton reprenne
    son mot habituel. */
 const TEMPS_COPIE = 1600;
+
+/* Le temps qu'une demande de confirmation reste ouverte. */
+const TEMPS_CONFIRMATION = 4000;
 
 const MINUTE = 60;
 const HEURE = 3600;
@@ -626,6 +630,39 @@ async function copierJournal() {
   }, TEMPS_COPIE);
 }
 
+/* Vider efface la seule trace de ce qui vient de se passer. Un deuxième
+   clic est demandé, et l'attente retombe d'elle-même : c'est assez pour
+   qu'un clic de travers ne coûte rien, et trop peu pour gêner celui qui
+   voulait vraiment vider. */
+let videEnAttente = null;
+
+function reposeLeVidage() {
+  clearTimeout(videEnAttente);
+  videEnAttente = null;
+  vue.viderJournal.textContent = "Vider";
+  vue.viderJournal.classList.remove("attention");
+}
+
+async function viderJournal() {
+  if (videEnAttente === null) {
+    vue.viderJournal.textContent = "Confirmer";
+    vue.viderJournal.classList.add("attention");
+    videEnAttente = setTimeout(reposeLeVidage, TEMPS_CONFIRMATION);
+    return;
+  }
+  reposeLeVidage();
+
+  try {
+    await invoke("clear_journal");
+  } catch (raison) {
+    // Montré dans le journal lui-même : c'est là que regarde la personne
+    // qui vient de cliquer, et il est sur le point d'être relu.
+    vue.journalTexte.textContent = String(raison);
+    return;
+  }
+  await rafraichirJournal();
+}
+
 /* ---- Réglages ---------------------------------------------------------- */
 
 /* Ce que le service a retenu. La fenêtre ne décide de rien ici non plus :
@@ -821,9 +858,13 @@ vue.adresse.addEventListener("input", ajusterAjout);
 vue.empreinteDistante.addEventListener("input", ajusterAjout);
 vue.ajoutForme.addEventListener("submit", connecter);
 vue.ouvrirJournal.addEventListener("click", ouvrirJournal);
-vue.fermerJournal.addEventListener("click", () => vue.journal.close());
+vue.fermerJournal.addEventListener("click", () => {
+  reposeLeVidage();
+  vue.journal.close();
+});
 vue.rafraichirJournal.addEventListener("click", rafraichirJournal);
 vue.copierJournal.addEventListener("click", copierJournal);
+vue.viderJournal.addEventListener("click", viderJournal);
 vue.ouvrirJournaux.addEventListener("click", () => ouvreDossier("logs"));
 vue.ouvrirReglages.addEventListener("click", ouvrirReglages);
 vue.fermerReglages.addEventListener("click", () => vue.reglages.close());

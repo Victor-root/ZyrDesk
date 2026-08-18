@@ -49,6 +49,51 @@ pub async fn journal() -> String {
     text
 }
 
+/// Empties everything the product has written.
+///
+/// Asked for before a test, so that what comes out afterwards is that
+/// test and nothing else: a journal carrying three weeks of unrelated
+/// lines is a journal nobody reads to the end.
+///
+/// Emptied rather than deleted. The service and the engines hold these
+/// files open while they run, and Windows does not let go of a file
+/// somebody is writing to; emptying works all the same, the next line
+/// appended landing at the start of a file that is now blank.
+#[tauri::command]
+pub fn clear_journal() -> Result<(), String> {
+    let mut refused = Vec::new();
+    for (file, what) in FILES {
+        if let Err(e) = emptied(&paths::logs_dir().join(file)) {
+            refused.push(format!("{what} ({file}) : {e}"));
+        }
+    }
+
+    // Written after the emptying, so the journal opens on the moment it
+    // was cleared rather than on nothing at all.
+    note("journal cleared");
+
+    if refused.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "une partie du journal n'a pas pu être vidée :\n  {}",
+        refused.join("\n  ")
+    ))
+}
+
+/// Empties one file. One that was never written is already empty.
+fn emptied(path: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(path)
+    {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 /// What this computer is, in a dozen lines.
 async fn heading() -> String {
     let mut text = String::new();
