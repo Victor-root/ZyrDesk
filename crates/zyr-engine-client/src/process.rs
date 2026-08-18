@@ -147,14 +147,9 @@ impl ClientEngine {
         if output.status.success() {
             return Ok(());
         }
-        let mut text = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if text.is_empty() {
-            text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        }
-        text.truncate(500);
         Err(EngineError::PairingFailed {
             code: output.status.code(),
-            output: text,
+            output: what_went_wrong(&output),
         })
     }
 
@@ -179,14 +174,9 @@ impl ClientEngine {
         if output.status.success() {
             return Ok(());
         }
-        let mut text = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if text.is_empty() {
-            text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        }
-        text.truncate(500);
         Err(EngineError::QuitFailed {
             code: output.status.code(),
-            output: text,
+            output: what_went_wrong(&output),
         })
     }
 
@@ -212,6 +202,50 @@ impl ClientEngine {
             engine: command.spawn()?,
         })
     }
+}
+
+/// The last thing the engine said before giving up.
+///
+/// Its output starts with pages of graphics and translation notes and
+/// ends with the reason. Keeping the first characters, which is what
+/// this did at first, showed the person a wall of start-up noise and
+/// threw away the one line they needed. The whole of it is in the log
+/// either way; this is what fits in a message.
+fn what_went_wrong(output: &std::process::Output) -> String {
+    let mut said = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if said.is_empty() {
+        said = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    }
+    last_words(&said, TOLD)
+}
+
+/// How much of the engine's last words a message carries.
+const TOLD: usize = 400;
+
+/// The end of a text, cut on a line boundary.
+fn last_words(said: &str, most: usize) -> String {
+    let lines: Vec<&str> = said
+        .lines()
+        .map(str::trim_end)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut kept: Vec<&str> = Vec::new();
+    let mut room = most;
+    for line in lines.iter().rev() {
+        if line.len() + 1 > room && !kept.is_empty() {
+            break;
+        }
+        room = room.saturating_sub(line.len() + 1);
+        kept.push(line);
+    }
+    kept.reverse();
+    let mut text = kept.join("\n");
+    // A single line longer than the whole budget: keep its end, which is
+    // where a reason sits, and not its beginning.
+    if text.len() > most {
+        text = text.split_off(text.len() - most);
+    }
+    text
 }
 
 /// A session under way.
@@ -264,6 +298,32 @@ mod tests {
             Err(EngineError::ExecutableNotFound(_))
         ));
         let _ = engine.state().forget();
+    }
+
+    #[test]
+    fn what_the_engine_said_last_is_what_is_kept() {
+        // Le moteur ouvre sur des pages de notes graphiques et finit par
+        // la raison. Garder le début, ce qu'on faisait, montrait le bruit
+        // de démarrage et jetait la seule ligne utile.
+        let said = "\
+00:00:00 - Qt Warning: SetProcessDpiAwarenessContext() failed
+00:00:00 - SDL Info (0): Compiled with SDL 2.31.0
+00:00:00 - Qt Info: Successfully loaded translation for \"fr_FR\"
+PC-VICTOR is already paired";
+        let kept = last_words(said, 400);
+        assert!(kept.ends_with("is already paired"), "{kept}");
+
+        // Serré, il ne reste que la fin, et jamais rien de plus long que
+        // ce qui était demandé.
+        let kept = last_words(said, 30);
+        assert!(kept.contains("already paired"), "{kept}");
+        assert!(kept.len() <= 30, "{} caractères : {kept}", kept.len());
+
+        // Une seule ligne, plus longue que tout le budget : c'est sa fin
+        // qui porte la raison.
+        let kept = last_words(&format!("{}refusé", "x".repeat(500)), 20);
+        assert!(kept.ends_with("refusé"), "{kept}");
+        assert_eq!(kept.len(), 20);
     }
 
     #[test]
