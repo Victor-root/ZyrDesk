@@ -24,7 +24,7 @@ jobs:
     name: Moteur client
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           # Seul le moteur client est nécessaire ici, et il tire déjà ses
           # propres sous-modules pendant la compilation.
@@ -57,7 +57,7 @@ jobs:
       - name: Compiler le moteur client
         run: ./packaging/engines/build-client-engine.ps1
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zyrdesk-client-engine
           path: data/engines/client/
@@ -70,7 +70,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           # Seul le moteur hôte est nécessaire ici, et il tire déjà ses
           # propres sous-modules pendant la compilation.
@@ -110,9 +110,14 @@ jobs:
       # pas le PATH de Windows, sans quoi ses propres outils se feraient
       # masquer par leurs homonymes Windows : le chemin de Node lui est
       # donc passé explicitement.
-      - uses: actions/setup-node@v4
+      #
+      # La version suivie est celle que le moteur emploie lui-même pour
+      # construire cette interface, et non un numéro choisi ici : ce
+      # Node-là ne compile rien qui nous appartienne. Le moteur demande
+      # la version en service longue durée du moment, donc nous aussi.
+      - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "lts/*"
 
       - name: Relever le chemin de Node
         shell: pwsh
@@ -128,7 +133,7 @@ jobs:
           export PATH="${PATH}:$(cygpath "${NODE_DIR}")"
           ./packaging/engines/build-host-engine.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: zyrdesk-host-engine
           path: data/engines/host/
