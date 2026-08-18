@@ -267,6 +267,8 @@ Quand quelque chose ne marche pas, la première question est toujours la même :
 > Attendu, dans l'entête : la version de la fenêtre, celle du service, le nom de l'ordinateur, son empreinte, l'état de l'accès distant, celui du réseau local, la présence des deux moteurs et la compilation dont ils viennent, le nombre de sessions. Puis le contenu des quatre journaux, la fin de chacun.
 >
 > Cliquer **Copier tout**, coller dans un bloc-notes : tout doit s'y retrouver, tel quel.
+>
+> Le bouton **Vider** sert à partir d'une page blanche avant un essai. L'ordre compte : vider, **puis** relancer le service, puis lire. Vider après coup efface ce que le service a écrit en démarrant, c'est-à-dire précisément ce qu'on voulait lire.
 
 > **R24 (le journal raconte l'appairage)**
 >
