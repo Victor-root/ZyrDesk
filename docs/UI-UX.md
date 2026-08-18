@@ -18,25 +18,34 @@ Accueil :
 
 ```text
 ┌─────────────────────────────────────────────────────┐
-│  ZyrDesk                                   ⚙  👤    │
+│  ZyrDesk                                   ▤  ⚙     │
 │                                                     │
 │  CET ORDINATEUR                                     │
 │  ┌───────────────────────────────────────────────┐  │
 │  │  PC-BUREAU                    Accès distant   │  │
 │  │  ● Prêt à être contrôlé            [ ◉ ON ]   │  │
+│  │  Empreinte de cet ordinateur       [ Copier ] │  │
+│  └───────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────┐  │
+│  │  Le moteur hôte n'est pas installé…  [Ouvrir] │  │
 │  └───────────────────────────────────────────────┘  │
 │                                                     │
 │  MES ORDINATEURS                                    │
 │  ┌─────────────────────┐  ┌─────────────────────┐   │
 │  │ ● PC-PORTABLE       │  │ ○ PC-ATELIER        │   │
-│  │ RTX 4070 · 1440p    │  │ Hors ligne · 3 j    │   │
-│  │   [ Se connecter ]  │  │                     │   │
+│  │ 192.168.1.31        │  │ Hors ligne · 3 j    │   │
+│  │   Se connecter      │  │                     │   │
 │  └─────────────────────┘  └─────────────────────┘   │
+│                                                     │
+│           ZyrDesk 0.1.0 (599c1c4 2026-08-18)        │
 └─────────────────────────────────────────────────────┘
 ```
 
-- La carte « Cet ordinateur » porte l'interrupteur Accès distant et son état en langage humain (« Prêt », « Désactivé », « Écran de connexion visible », états dégradés expliqués).
-- Les cartes machines : pastille de présence, nom, GPU, dernière connexion, bouton Se connecter proéminent au survol. Clic simple = connexion (le détail est secondaire, accessible par clic droit ou icône).
+- La carte « Cet ordinateur » porte l'interrupteur Accès distant et son état en langage humain (« Prêt », « Désactivé », « Moteur hôte absent », « Démarrage en cours »). Ce qui empêche d'être joignable est dit, jamais laissé à deviner ([D18](DECISIONS.md)).
+- Sous la carte, ce qu'il reste à faire pour que le produit marche, avec de quoi le faire : le service qui ne tourne pas se démarre d'un bouton, un moteur qui manque ouvre son dossier. Rien de tout cela ne demande de ligne de commande.
+- Les cartes machines : pastille de présence, nom, adresse, bouton Se connecter proéminent au survol. Clic simple = connexion (le détail est secondaire, accessible par clic droit ou icône). Elles se remplissent seules à partir des annonces du réseau local ; « Ajouter un ordinateur » ne sert qu'aux réseaux où l'annonce ne passe pas.
+- La version tient au bas de l'écran, discrète. Quand la fenêtre et le service ne datent pas du même jour, elle le dit en ambre : c'est la panne que personne ne pense à vérifier.
+- Le journal (icône ▤) rassemble tout ce que le produit a écrit, sous la compilation qui l'a produit, avec un bouton qui copie l'ensemble. Rapporter un problème est un clic et un collage.
 
 Fiche machine (panneau latéral, pas une page) : statut, GPU, résolution native, chemin réseau (« Direct disponible » / « Via relais »), latence estimée, réglages propres à cette machine (qualité par défaut, écran cible), actions secondaires (renommer, révoquer).
 
@@ -58,9 +67,9 @@ Session (l'écran le plus important) : la fenêtre vidéo est native et occupe t
 
 Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Posé en M4 ([D16](DECISIONS.md)). À venir : latence et chemin réseau en un coup d'œil, statistiques détaillées (fps capturés/reçus/affichés, débit, pertes, jitter, temps de décodage), changement d'écran, préréglage de qualité.
 
-Réglages : deux niveaux. Simple par défaut (qualité en préréglages : Fluide / Équilibré / Qualité, audio, démarrage avec Windows, thème). « Avancé » replié : codec, débit manuel, taille de paquet, décodeur, choix du relais, mode paranoïaque, diagnostic. Le jargon reste rangé là.
+Réglages : deux niveaux. Simple par défaut (qualité en préréglages : Fluide / Équilibré / Qualité, thème, confiance aux ordinateurs du réseau local). « Avancé » replié : codec, fenêtre de la session, souris, statistiques, dossier des journaux, et plus tard débit manuel, taille de paquet, décodeur, choix du relais, mode paranoïaque. Le jargon reste rangé là.
 
-Premier lancement : trois choix clairs : créer un compte, se connecter, « utiliser uniquement en réseau local » (sans compte). Deux minutes maximum jusqu'au premier succès.
+Premier lancement : trois choix clairs : créer un compte, se connecter, « utiliser uniquement en réseau local » (sans compte). Deux minutes maximum jusqu'au premier succès. Sur un réseau local, aucun code ni empreinte n'est demandé à personne ([D17](DECISIONS.md)) : les ordinateurs apparaissent, on clique.
 
 États vides et erreurs : illustrés sobrement, avec l'action suivante évidente (« Aucun ordinateur pour l'instant : installez ZyrDesk sur l'autre PC et connectez-vous au même compte »). Les erreurs réseau disent ce qui se passe et ce que ZyrDesk fait (« Chemin direct indisponible, connexion via relais... »).
 

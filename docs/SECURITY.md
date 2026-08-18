@@ -11,9 +11,19 @@ Principe directeur : le serveur met en relation, il ne peut pas espionner. Les c
 
   Limite assumée à ce stade : la clé privée est écrite en clair sous le dossier du projet, sur une machine que son propriétaire administre. Le service du jalon M3 la mettra sous la protection du système, hors de portée des autres comptes locaux (voir §4).
 
-  D'où vient l'empreinte attendue : sur un réseau local, elle est recopiée à la main entre les deux machines (`zyr-cli identity`). Le ticket de session la fournira une fois le broker en place, ce qui ne change rien au mécanisme de vérification.
+  D'où vient l'empreinte attendue : sur un réseau local, de l'annonce mDNS que chaque service émet (voir §1.1). Le ticket de session la fournira une fois le broker en place, ce qui ne change rien au mécanisme de vérification. Elle reste recopiable à la main quand l'annonce ne passe pas, l'interface l'affichant sur chaque machine.
 
   Côté hôte, depuis le jalon M3, les empreintes admises sont une liste et non une seule : un ordinateur en sert plusieurs au fil du temps. Elle vit dans `data/authorized-devices.conf`, se gère par `zyr-cli host authorize`, `revoke` et `devices`, et le service la relit toutes les cinq secondes. Autoriser une machine de plus ne coupe donc pas la session en cours, et une liste devenue illisible ne révoque personne : elle est signalée dans le journal, l'ensemble précédent restant en vigueur. Une empreinte mal recopiée est refusée avec son numéro de ligne plutôt qu'ignorée en silence, faute de quoi une autorisation absente passerait longtemps pour une panne réseau. Ce fichier ne contient aucun secret : une empreinte est publique et n'ouvre rien à elle seule.
+
+### 1.1 Confiance au réseau local (jalon M4)
+
+Le service admet, en plus de cette liste, les ZyrDesk qui s'annoncent sur le réseau local. Un interrupteur des réglages le décide, activé par défaut, et l'état s'affiche dans le journal comme sur l'écran d'accueil.
+
+Ce que cela suppose : que le réseau local soit celui de son propriétaire. C'est la même hypothèse que celle de la découverte mDNS elle-même, et que celle de l'imprimante ou du partage de fichiers de la même machine. Ce que cela n'ouvre pas : rien qui vienne d'ailleurs que du réseau local. Seule une machine capable de parler sur ce réseau peut s'y annoncer, et une annonce ne donne accès qu'à ce que l'accès distant laisse passer par ailleurs.
+
+Ce que cela remplace : l'obligation de recopier une empreinte de soixante-quatre caractères d'un ordinateur à l'autre avant la première session. Cette étape n'apportait aucune garantie que le réseau local ne donnait pas déjà, et elle coûtait à chaque installation.
+
+Ce que cela ne couvrira pas : les sessions passant par Internet. Le jour où le broker existe (jalon M5), les appareils d'un compte se reconnaissent par leur enregistrement auprès de lui, et cette confiance-là cesse de s'appliquer au-delà du réseau local. L'interrupteur permet, dès aujourd'hui, de s'en passer sur un réseau dont on ne répond pas : la liste écrite reprend alors seule la main.
 - Identités internes moteurs : le certificat client RSA de Moonlight et le certificat de Sunshine existent toujours (protocole d'appairage officiel conservé), mais ils vivent en loopback derrière le tunnel et sont gérés automatiquement ; ils constituent une couche interne supplémentaire, pas la frontière de sécurité principale.
 
 ## 2. Tickets de session
@@ -31,7 +41,7 @@ Asymétrie du protocole, à ne pas confondre avec une faille : le client présen
 
 - Sur le réseau : tout passe dans le tunnel QUIC (TLS 1.3, AEAD par paquet). Vidéo, audio, entrées, presse-papiers, appairage : une seule enveloppe chiffrée de bout en bout.
 - À l'intérieur des machines : les moteurs parlent en loopback. Le chiffrement interne GameStream est désactivé (mode 0) pour éviter un double chiffrement inutile : le trafic en clair n'existe que sur 127.0.0.1, jamais sur un fil. Un mode « paranoïaque » (chiffrement interne en mode obligatoire, en plus du tunnel) reste disponible dans les réglages avancés.
-- Le PIN d'appairage initial transite par le canal de contrôle DU TUNNEL authentifié : le broker ne le voit jamais.
+- Le code d'appairage initial des moteurs transite par le canal ZyrDesk DU TUNNEL authentifié : le broker ne le voit jamais, et personne ne le lit non plus. Depuis le jalon M4, il est tiré au sort par le client, envoyé dans le tunnel, et remis par le service hôte à son moteur ; il n'est plus jamais affiché ni saisi. Le tunnel ayant reconnu les deux ordinateurs à leur empreinte avant qu'un seul octet ne passe, ce code ne prouve rien que le tunnel n'ait déjà prouvé : il n'est là que parce que les moteurs le réclament.
 
 ## 4. Stockage des secrets sous Windows
 

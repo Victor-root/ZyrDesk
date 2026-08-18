@@ -31,7 +31,8 @@ Le protocole GameStream garde ses hypothèses intactes à travers le tunnel : se
 Une session = une connexion QUIC entre les deux services :
 
 - Flux fiables : les trois flux TCP du protocole des moteurs (HTTP, HTTPS, RTSP), un flux par connexion interceptée, plus un canal propre à ZyrDesk. Le canal est annoncé par un octet en tête du flux.
-- Le canal ZyrDesk porte depuis le jalon M3 la première parole du tunnel : l'hôte y annonce le port de base de son moteur. Ce n'est pas une convention qu'on pourrait deviner, le moteur choisissant ce port au démarrage et annonçant ensuite ses vrais numéros à chaque étape de son protocole ; les ports locaux qui le remplacent côté client doivent donc porter exactement les mêmes. Cet échange sert aussi de preuve d'autorisation, pour la raison d'asymétrie décrite plus bas. Le reste (versions, presse-papiers, statistiques, sonde de débit) s'y ajoutera aux jalons suivants, un numéro de version ouvrant la salutation.
+- Le canal ZyrDesk porte depuis le jalon M3 la première parole du tunnel : le client demande les ports du moteur d'en face, l'hôte répond. Ce n'est pas une convention qu'on pourrait deviner, le moteur choisissant son port de base au démarrage et annonçant ensuite ses vrais numéros à chaque étape de son protocole ; les ports locaux qui le remplacent côté client doivent donc porter exactement les mêmes. Cet échange sert aussi de preuve d'autorisation, pour la raison d'asymétrie décrite plus bas.
+- Depuis le jalon M4, ce même canal porte le code d'appairage des moteurs : le client l'envoie, l'hôte le remet au sien et répond quand c'est fait. C'est ce qui remplace un code affiché sur un écran et tapé sur l'autre (D17). Une question, un stream, un message dans chaque sens, en texte clair à l'intérieur du tunnel chiffré : un canal qui se lit à l'oeil est un canal qui se diagnostique. Chaque message s'ouvre sur le numéro de version du dialecte, de sorte que deux moitiés du produit installées à des dates différentes le disent au lieu de se mécomprendre. Le presse-papiers, les statistiques et la sonde de débit s'y ajouteront aux jalons suivants.
 - Datagrammes non fiables : vidéo, contrôle temps réel et audio, préfixés du même octet d'identifiant de canal. `[canal u8][données]`.
 - L'interface web du moteur hôte n'est délibérément pas transportée : elle reste joignable depuis la seule machine qui l'héberge. Un test le vérifie.
 
@@ -96,7 +97,7 @@ Modèle « relais d'abord, direct en parallèle » (zéro attente perçue, leço
 4. En LAN pur, le direct est établi d'emblée (mDNS + adresses locales) ; le relais n'est même pas contacté.
 5. L'interface affiche toujours le chemin actif (Direct ou Relais) et la latence.
 
-Découverte LAN sans compte : mDNS (crate mdns-sd) annonce et découvre les appareils ZyrDesk du réseau local ; l'appairage local suit le même mécanisme de PIN par tunnel, avec confirmation visuelle côté hôte (pas de broker impliqué).
+Découverte LAN sans compte : mDNS (crate mdns-sd) annonce et découvre les appareils ZyrDesk du réseau local, chaque annonce portant le nom de la machine et son empreinte. Depuis le jalon M4, le service hôte admet les empreintes ainsi annoncées, sous un interrupteur activé par défaut, et le code d'appairage des moteurs voyage dans le tunnel : sur un réseau local, il n'y a donc rien à recopier ni à taper d'un ordinateur à l'autre (D17, [SECURITY.md](SECURITY.md) §1.1). Aucun broker n'est impliqué.
 
 ## 6. Relais
 

@@ -23,38 +23,44 @@ Mes ordinateurs
 
 ## État du projet
 
-Jalon en cours : **M3, le service Windows**. L'ordinateur hôte devient joignable sans que personne n'ait ouvert de session dessus : le service démarre avec Windows, lance le moteur dans la session attachée à l'écran, et l'y relance quand cette session change. Il porte aussi le tunnel, si bien qu'un seul port est ouvert sur la machine et que les moteurs ne sont plus joignables depuis le réseau. Il reste à le vérifier sur deux vraies machines, en suivant [docs/testing/M3-PROTOCOLE.md](docs/testing/M3-PROTOCOLE.md).
+Jalon en cours : **M4, l'interface**. Le produit se pilote entièrement à la souris. Sur un réseau local, deux ZyrDesk se trouvent seuls, s'autorisent seuls et s'appairent seuls : aucune adresse à recopier, aucune empreinte à transporter, aucun code à quatre chiffres à taper d'un écran à l'autre. Le service s'installe depuis la fenêtre, et un journal complet se copie en un clic. Il reste à le vérifier sur deux vraies machines, en suivant [docs/testing/M4-PROTOCOLE.md](docs/testing/M4-PROTOCOLE.md).
 
-Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. Le jalon M1 a produit une première session distante réelle en 1080p ; ses hypothèses restantes sont listées dans [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md). Le jalon M2 a livré le tunnel chiffré et son banc de mesure : les trois seuils de performance sont tenus sur deux PC en Ethernet gigabit ([perf/baselines/M2-lan-ethernet.md](perf/baselines/M2-lan-ethernet.md)). La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
+Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. Le jalon M1 a produit une première session distante réelle en 1080p ; ses hypothèses restantes sont listées dans [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md). Le jalon M2 a livré le tunnel chiffré et son banc de mesure : les trois seuils de performance sont tenus sur deux PC en Ethernet gigabit ([perf/baselines/M2-lan-ethernet.md](perf/baselines/M2-lan-ethernet.md)). Le jalon M3 a livré le service Windows, qui rend la machine joignable avant qu'on y ouvre une session. La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
 
-## Utiliser en ligne de commande
+## Utiliser
 
-Tant que l'interface n'existe pas (jalon M4), tout passe par `zyr-cli` :
+Lancer `ZyrDesk.exe` sur les deux ordinateurs. La première fois, un bouton de la fenêtre installe le service, ce qui demande une autorisation Windows ; ensuite il démarre tout seul avec la machine.
+
+Chaque ordinateur apparaît alors dans la fenêtre de l'autre. Un clic sur sa carte ouvre la session. Rien d'autre n'est demandé à personne.
+
+Le service ouvre un seul port, le 47000 en UDP. L'installateur pose la règle de pare-feu qui va avec ; en compilant depuis les sources, elle se fait à la main.
+
+## En ligne de commande, pour diagnostiquer
+
+Rien de ce qui suit n'est nécessaire à l'usage du produit : c'est l'outillage qui sert à isoler une panne, et il ne passe pas toujours par les mêmes chemins que l'interface.
 
 ```bash
 zyr-cli doctor            # cette machine est-elle prête
 zyr-cli engines status    # où déposer les moteurs, lesquels manquent
 zyr-cli identity          # empreinte de cette machine
-zyr-cli host authorize <empreinte>   # laisser un ordinateur joindre celui-ci
-zyr-cli host devices                 # qui est autorisé
-zyr-cli host pin 1234                # autoriser un ordinateur qui se connecte
+zyr-cli host devices                 # qui est autorisé par écrit
+zyr-cli host authorize <empreinte>   # ajouter une autorisation écrite
 zyr-cli connect <adresse> --pair <empreinte> --stats   # ouvrir une session
+zyr-cli connect <adresse>:<port> --direct              # sans tunnel ni service
 zyr-cli bench host --pair <empreinte>              # mesurer le tunnel, côté attente
 zyr-cli bench client <adresse> --pair <empreinte>  # mesurer le tunnel, côté mesure
 ```
 
-Deux autorisations à ne pas confondre. `host authorize` inscrit l'empreinte d'un ordinateur, ce qui lui ouvre le tunnel ; `host pin` répond au code à quatre chiffres que le moteur réclame ensuite, une seule fois par paire d'ordinateurs.
+Les autorisations écrites s'ajoutent à celles que le réseau local accorde de lui-même, et servent quand la découverte ne passe pas ou quand on préfère s'en passer ([docs/SECURITY.md](docs/SECURITY.md) §1.1). `zyr-cli host pin` ne sert plus qu'au chemin `--direct`, seul cas où le code d'appairage ne peut pas voyager par le tunnel.
 
-Pour rendre l'ordinateur accessible en permanence, sans avoir à ouvrir de session dessus, le service prend le relais de `host start`. Les commandes ci-dessous demandent une fenêtre administrateur :
+Le service se gère aussi à la main, en fenêtre administrateur :
 
 ```bash
-zyrdeskd install     # inscrire le service, démarrage avec Windows
-zyrdeskd start       # le lancer tout de suite
+zyrdeskd setup       # inscrire le service et le lancer, ce que fait la fenêtre
 zyrdeskd status      # savoir où il en est
+zyrdeskd stop        # l'arrêter, avant de recompiler
 zyrdeskd uninstall   # le retirer
 ```
-
-Le service ouvre un seul port, le 47000 en UDP. L'installateur pose la règle de pare-feu qui va avec ; en compilant depuis les sources, elle se fait à la main.
 
 ## Construire
 
@@ -92,6 +98,7 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 | [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md) | Première session sur deux PC, et hypothèses à lever |
 | [docs/testing/M2-PROTOCOLE.md](docs/testing/M2-PROTOCOLE.md) | Mesure du coût du tunnel sur deux PC |
 | [docs/testing/M3-PROTOCOLE.md](docs/testing/M3-PROTOCOLE.md) | Accès distant sans personne devant la machine |
+| [docs/testing/M4-PROTOCOLE.md](docs/testing/M4-PROTOCOLE.md) | Le produit piloté entièrement à la souris, sur deux PC |
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | Licences, obligations, marques, brevets codecs |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Décisions actées et décisions ouvertes |
 | [patches/MANIFEST.md](patches/MANIFEST.md) | Versions de moteurs épinglées et adaptations appliquées |
