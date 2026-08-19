@@ -216,6 +216,20 @@ L'ordre entre les deux tient à un seul fait : le bouton est marqué toujours au
 
 **Ce qui reste ouvert.** Le moteur client garde son propre raccourci de départ, celui qui laisse le bureau distant ouvert : il l'intercepte lui-même et rien de ce côté ne peut le lui retirer sans un patch. Il ne figure plus nulle part dans le produit.
 
+## D25. Un septième patch au moteur client, contre le plafond de D5 (2026-08-19, pendant M4)
+
+**Décision.** Le plafond de six micro-patchs pour Moonlight, posé par [D5](#décisions-actées-2026-08-07-étude-darchitecture), passe à sept. Le septième, P-M9, apprend au moteur de rendu D3D11 à encaisser un changement de taille de fenêtre au lieu de tout reconstruire.
+
+**Ce qui l'a rendu nécessaire.** Redimensionner la fenêtre d'une session saccadait, au point d'être inutilisable. La cause a été cherchée deux fois de travers avant d'être mesurée : l'interface chronomètre maintenant chaque partie d'un redimensionnement et écrit une ligne dans le journal quand la main lâche. Le verdict est sans appel : onze crans en cinq secondes, 2394 ms sur 2399 passés à déplacer la fenêtre du moteur, jusqu'à 351 ms pour un seul cran ; le système et la vue web, 12 ms en tout.
+
+**Ce que fait le moteur.** À chaque changement de taille, il détruit et reconstruit son décodeur : appareil D3D11, chaîne d'échange, sept nuanceurs, et une image clé redemandée à l'ordinateur d'en face. Non par accident, mais parce que l'appelant n'a aucun moyen de savoir ce qu'un moteur de rendu sait encaisser et suppose donc qu'il n'encaisse rien. Le moteur de rendu SDL, lui, renonce explicitement aux changements de taille sur Windows, avec un commentaire qui dit ne pas savoir pourquoi cela casse ; la réponse est le fil de dessin, et c'est ce que P-M9 traite en prenant le verrou du dessin.
+
+**Pourquoi le plafond cède plutôt que la fonctionnalité.** Le plafond existe pour protéger la remontée de version ([C3](#contraintes-posées-par-victor-non-négociables)), et la règle attachée dit d'aller chercher le mécanisme officiel manquant plutôt que d'empiler. Il a été cherché : il n'y en a pas. Le moteur ne propose aucun réglage, aucun interrupteur, aucune façon depuis l'extérieur d'éviter la reconstruction, et rien de ce qui peut être fait à notre bout n'atteint la fenêtre avant que le moteur ne la reconstruise. Renoncer aurait voulu dire une fenêtre de session qui ne se redimensionne pas en temps réel, ce que la contrainte [C1](#contraintes-posées-par-victor-non-négociables) ne permet pas de laisser passer.
+
+**Ce qui limite le risque.** Le patch tient dans un fichier, ne touche qu'un moteur de rendu sur six, et n'ajoute aucune notion de ZyrDesk : c'est un défaut de performance de Moonlight, mesurable sans ZyrDesk, et un candidat direct à une contribution en amont. Le chemin d'échec est celui qui existait : tout ce qui n'est pas un simple changement de taille, et toute erreur en route, repart par la reconstruction complète.
+
+**Ce qu'il faut surveiller.** Sept patchs sur sept. Le prochain besoin d'un patch client n'a plus de marge : il faudra soit remonter le correctif en amont et attendre une version qui le porte, soit rouvrir D5 pour de bon.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

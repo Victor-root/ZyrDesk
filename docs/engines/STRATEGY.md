@@ -2,12 +2,12 @@
 
 Objectif : utiliser les moteurs officiels comme fondations invisibles, avec un nombre de points de contact volontairement minimal, pour que leurs mises à niveau restent simples pendant des années.
 
-Règle absolue : AUCUNE fonctionnalité ZyrDesk ne vit dans le code des moteurs. Un patch ne peut que retirer de l'habillage (fenêtre, marque) ou exposer un interrupteur. Toute logique produit vit dans nos crates Rust et pilote les moteurs par leurs interfaces officielles : fichier de configuration, ligne de commande, API REST locale, journaux, codes de sortie.
+Règle absolue : AUCUNE fonctionnalité ZyrDesk ne vit dans le code des moteurs. Un patch ne peut que retirer de l'habillage (fenêtre, marque), exposer un interrupteur, ou corriger un défaut du moteur qui se mesure sans ZyrDesk et se propose en amont. Cette troisième porte a été ouverte une fois, par [D25](../DECISIONS.md), et le registre dit à quel prix. Toute logique produit vit dans nos crates Rust et pilote les moteurs par leurs interfaces officielles : fichier de configuration, ligne de commande, API REST locale, journaux, codes de sortie.
 
 ## 1. Intégration retenue : forks légers en submodules
 
 - Deux forks GitHub : [ZyrDesk-Sunshine](https://github.com/Victor-root/ZyrDesk-Sunshine) et [ZyrDesk-Moonlight](https://github.com/Victor-root/ZyrDesk-Moonlight).
-- Dans chaque fork, une branche `zyr/<tag-upstream>` = le tag officiel épinglé + notre petite pile de commits (0 à 2 pour Sunshine, 6 maximum pour Moonlight).
+- Dans chaque fork, une branche `zyr/<tag-upstream>` = le tag officiel épinglé + notre petite pile de commits (0 à 2 pour Sunshine, 7 maximum pour Moonlight).
 - Le monorepo les référence en submodules (`engines/sunshine`, `engines/moonlight-qt`). Les submodules imbriqués des moteurs (Moonlight embarque moonlight-common-c, qui embarque enet ; Sunshine embarque un arbre third-party complet) restent intacts.
 - À chaque bump de submodule, la CI exporte le delta en fichiers `.patch` lisibles dans `patches/` du monorepo, avec un manifeste (identifiant, raison d'être, candidat à une contribution upstream ou non). On voit ainsi notre écart complet sans ouvrir les forks, et cela documente publiquement nos modifications (obligation GPL de clarté sur les sources correspondantes).
 
@@ -56,7 +56,7 @@ Contingences identifiées (patchs UNIQUEMENT si la vérification M1 l'exige) :
 - P-S1 : désactiver l'annonce mDNS si Sunshine s'annonce sur le réseau malgré la liaison loopback et qu'aucune option ne le contrôle.
 - Aucune autre contingence connue.
 
-## 4. Points de contact avec Moonlight (6 micro-patchs maximum)
+## 4. Points de contact avec Moonlight (7 micro-patchs maximum, plafond relevé par [D25](../DECISIONS.md))
 
 Mécanismes officiels utilisés :
 

@@ -401,7 +401,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Regarder aussi que **les deux ne se décalent jamais** : le bord de l'image et le bord de la fenêtre bougent ensemble, sans que l'un traîne derrière l'autre.
 >
-> Trois choses le rendaient impossible. La forme était corrigée après coup, donc chaque cran du geste redimensionnait la fenêtre deux fois : elle est maintenant tenue pendant le geste, sur le rectangle que le système propose avant de le prendre. Poser l'image passait par la file d'événements de la boîte à outils, qui arrive une file plus tard que la fenêtre elle-même : c'est fait maintenant dans le gestionnaire de messages de la fenêtre, donc dans le même souffle. Et le bouton flottant était déplacé en demandant deux fois à la boîte à outils, cent fois par seconde ; il est déplacé directement.
+> Quatre choses le rendaient impossible, et la dernière était de loin la plus lourde : le moteur détruisait et reconstruisait tout son décodeur à chaque changement de taille, soit 350 ms par cran, mesurés. Il encaisse maintenant un changement de taille ([D25](../DECISIONS.md)). Les trois autres : la forme corrigée après coup, qui redimensionnait la fenêtre deux fois par cran ; l'image posée à travers la file d'événements de la boîte à outils, qui arrive une file plus tard que la fenêtre elle-même ; et le bouton flottant déplacé en demandant deux fois à cette même boîte, cent fois par seconde.
+>
+> **Le journal chiffre le geste.** Après avoir lâché, ouvrir le journal : une ligne `redimensionnement :` dit combien de crans le geste a pris et ce que chaque partie a coûté. C'est par là qu'on saura, sans deviner, si quelque chose se remet à traîner un jour.
 
 > **S8ter (les coins de la fenêtre)**
 >

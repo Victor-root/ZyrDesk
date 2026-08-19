@@ -399,8 +399,8 @@ fn lay_it_out(
     use windows_sys::Win32::Foundation::{POINT, RECT};
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
-        SWP_NOCOPYBITS, SWP_SHOWWINDOW, SetWindowPos,
+        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_NOACTIVATE, SWP_NOCOPYBITS,
+        SWP_SHOWWINDOW, SetWindowPos,
     };
 
     // Nothing to lay the picture on. Minimised, our window has no inside
@@ -445,17 +445,11 @@ fn lay_it_out(
     // new frame and leave it there until the engine draws again, which
     // is a torn image on every step of a resize.
     //
-    // Handed over rather than waited for while a hand is dragging. That
-    // window belongs to another program, so moving it the ordinary way
-    // means standing still until that program has answered, and it is
-    // busy decoding and drawing sixty pictures a second. Once at the end
-    // of the drag nobody notices; a hundred times while the hand moves,
-    // it is our own window that stops following the mouse.
-    //
-    // Only while dragging. Handed over, the picture arrives a frame
-    // behind, which is invisible under a moving hand and would not be
-    // when the hand stops: the last word is always the ordinary way,
-    // said from the end of the drag.
+    // Waited for, and not handed over. That window belongs to another
+    // program, so this stands still until that program has answered; it
+    // is what keeps the picture and the frame that carries it in the
+    // same step, and the answer is quick now that a resize no longer
+    // makes the engine rebuild everything it draws with.
     unsafe {
         SetWindowPos(
             engine,
@@ -464,10 +458,7 @@ fn lay_it_out(
             corner.y,
             width,
             height,
-            SWP_NOACTIVATE
-                | SWP_SHOWWINDOW
-                | SWP_NOCOPYBITS
-                | if dragged { SWP_ASYNCWINDOWPOS } else { 0 },
+            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOCOPYBITS,
         )
     };
     let laid = started.elapsed();
