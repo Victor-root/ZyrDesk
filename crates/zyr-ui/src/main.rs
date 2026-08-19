@@ -104,6 +104,7 @@ fn main() {
                 && window.label() == HOME
             {
                 api.prevent_close();
+                floating::Floating::put_away_on_purpose(window.app_handle());
                 let _ = window.hide();
             }
         })
@@ -117,6 +118,13 @@ pub fn show_home(app: &tauri::AppHandle) {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
+    }
+}
+
+/// Puts the home window aside, without ending anything.
+pub fn hide_home(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(HOME) {
+        let _ = window.hide();
     }
 }
 

@@ -184,6 +184,15 @@ pub struct Floating {
     /// seconds after the picture. Whoever started the engine knows its
     /// number straight away, and the button hangs on nothing else.
     expected: Mutex<Option<u32>>,
+    /// Set while the home window is out of the way for a session.
+    ///
+    /// Two windows for one thing is one too many: the picture takes the
+    /// screen, and the window that asked for it has nothing left to say
+    /// until it is over. It steps aside when the picture arrives and
+    /// comes back when it goes. Told apart from a window the person put
+    /// away themselves, which must stay away, and which is also what
+    /// keeps a session from ending the whole program.
+    stepped_aside: std::sync::atomic::AtomicBool,
 }
 
 impl Floating {
@@ -202,6 +211,14 @@ impl Floating {
         app.state::<Floating>()
             .closing
             .swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Says the home window was put away by the person and not by a
+    /// session, so nothing brings it back on its own.
+    pub fn put_away_on_purpose(app: &AppHandle) {
+        app.state::<Floating>()
+            .stepped_aside
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -287,6 +304,17 @@ fn raise(app: &AppHandle, process: u32) {
     *watched = Some(Watched { process, anchor });
     drop(watched);
 
+    // The picture is up, so the window that asked for it steps aside:
+    // one thing is happening and it takes the screen. It comes back when
+    // the session does, and the icon beside the clock brings it back at
+    // any time in between.
+    if !crate::home_is_hidden(app) {
+        state
+            .stepped_aside
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        crate::hide_home(app);
+    }
+
     // A leftover window from a session that ended in a way we did not
     // see: put it where the new one is rather than open a second.
     if let Some(window) = app.get_webview_window(WINDOW) {
@@ -341,8 +369,17 @@ fn lower(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
-    // The home window had stepped aside for the session, and only the
-    // button was keeping the program up. Nothing is left to keep.
+    // It stepped aside for this session, so it comes back with the end of
+    // it, and the person finds the window they left.
+    if state
+        .stepped_aside
+        .swap(false, std::sync::atomic::Ordering::Relaxed)
+    {
+        crate::show_home(app);
+        return;
+    }
+    // Put away on purpose instead, and only the button was keeping the
+    // program up. Nothing is left to keep.
     if crate::home_is_hidden(app) {
         app.exit(0);
     }
