@@ -34,8 +34,8 @@ use serde::{Deserialize, Serialize};
 /// picture. Everything else is one click away in the floating menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Doing {
-    /// Leaves the session, and lets the far desktop stand.
-    Leave,
+    /// Ends the session, and hands the far desktop back.
+    End,
     /// Brings the floating button back and opens its menu.
     Menu,
     /// Switches the picture between a window and the whole screen.
@@ -44,13 +44,13 @@ pub enum Doing {
 
 impl Doing {
     /// All of them, in the order the settings screen shows them.
-    pub const ALL: [Doing; 3] = [Doing::Leave, Doing::Menu, Doing::Fullscreen];
+    pub const ALL: [Doing; 3] = [Doing::End, Doing::Menu, Doing::Fullscreen];
 
     /// Name this is filed under, in the file and between the window and
     /// the program.
     pub fn name(self) -> &'static str {
         match self {
-            Doing::Leave => "leave",
+            Doing::End => "end",
             Doing::Menu => "menu",
             Doing::Fullscreen => "fullscreen",
         }
@@ -148,7 +148,7 @@ impl FromStr for Combination {
 /// state two of the three start in.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Bound {
-    pub leave: Option<Combination>,
+    pub end: Option<Combination>,
     pub menu: Option<Combination>,
     pub fullscreen: Option<Combination>,
 }
@@ -156,13 +156,13 @@ pub struct Bound {
 impl Bound {
     /// What a machine that has never been told anything answers to.
     ///
-    /// One only. A shortcut that leaves a session, or resizes the
+    /// One only. A shortcut that ends a session, or resizes the
     /// picture, is a matter of taste and is left to be chosen; the one
     /// that brings the floating button back is not, because hiding that
     /// button is otherwise a decision without a way back.
     pub fn out_of_the_box() -> Self {
         Self {
-            leave: None,
+            end: None,
             menu: Some(Combination {
                 held: Held {
                     alt: true,
@@ -176,7 +176,7 @@ impl Bound {
 
     pub fn get(&self, doing: Doing) -> Option<&Combination> {
         match doing {
-            Doing::Leave => self.leave.as_ref(),
+            Doing::End => self.end.as_ref(),
             Doing::Menu => self.menu.as_ref(),
             Doing::Fullscreen => self.fullscreen.as_ref(),
         }
@@ -184,7 +184,7 @@ impl Bound {
 
     fn set(&mut self, doing: Doing, combination: Option<Combination>) {
         let slot = match doing {
-            Doing::Leave => &mut self.leave,
+            Doing::End => &mut self.end,
             Doing::Menu => &mut self.menu,
             Doing::Fullscreen => &mut self.fullscreen,
         };
@@ -526,7 +526,7 @@ fn do_it(app: &tauri::AppHandle, doing: Doing) {
                 crate::journal::note(&format!("raccourci du menu sans effet : {e}"));
             }
         }
-        Doing::Leave => on_the_session(app, crate::floating::Act::Leave),
+        Doing::End => on_the_session(app, crate::floating::Act::End),
         Doing::Fullscreen => on_the_session(app, crate::floating::Act::Fullscreen),
     }
 }
@@ -559,7 +559,7 @@ mod tests {
         let menu = bound.menu.expect("le menu a une combinaison d'origine");
         assert_eq!(menu.to_string(), "Alt+Backquote");
         assert!(menu.stands());
-        assert!(bound.leave.is_none());
+        assert!(bound.end.is_none());
         assert!(bound.fullscreen.is_none());
     }
 
@@ -589,7 +589,7 @@ mod tests {
     #[test]
     fn what_is_written_comes_back_the_same() {
         let mut bound = Bound::out_of_the_box();
-        bound.leave = Some("Ctrl+Alt+Shift+KeyQ".parse().expect("combinaison"));
+        bound.end = Some("Ctrl+Alt+Shift+KeyQ".parse().expect("combinaison"));
         let folder = std::env::temp_dir().join(format!(
             "zyrdesk-raccourcis-{}",
             zyr_proto::random::alphanumeric_string(8)
@@ -605,7 +605,7 @@ mod tests {
         let bound = read_lines("menu Alt+Backquote\nfullscreen\n");
         assert!(bound.menu.is_some());
         assert!(bound.fullscreen.is_none());
-        assert!(bound.leave.is_none());
+        assert!(bound.end.is_none());
     }
 
     #[test]

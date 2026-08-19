@@ -80,7 +80,7 @@ Aucune amplification de perte, aucun effondrement de débit. Un test compare en 
 
 > Révisée par [D21](#d21-limage-du-bureau-distant-saffiche-dans-la-fenêtre-de-zyrdesk-2026-08-19-pendant-m4) sur un point : l'image ne s'affiche plus dans une fenêtre du moteur posée à part, mais dans la fenêtre de ZyrDesk. Le plein écran exclusif a disparu avec, et l'entrée « plein écran » du menu bascule notre fenêtre au lieu d'envoyer une combinaison au moteur.
 >
-> Et par [D23](#d23-la-croix-de-la-fenêtre-termine-la-session-2026-08-19-pendant-m4) sur le paragraphe « ce qui en découle pour la fenêtre d'accueil » : la croix termine désormais la session au lieu d'effacer la fenêtre. Le reste tient.
+> Et par [D23](#d23-la-croix-de-la-fenêtre-termine-la-session-2026-08-19-pendant-m4) sur le paragraphe « ce qui en découle pour la fenêtre d'accueil » : la croix termine désormais la session au lieu d'effacer la fenêtre. Puis par [D24](#d24-une-session-est-en-cours-ou-terminée-jamais-entre-les-deux-2026-08-19-pendant-m4) : partir et fermer ne font plus deux entrées, mais une. Le reste tient.
 
 **Décision.** Pendant une session, la seule chose de ZyrDesk visible par-dessus l'image est une petite fenêtre à nous, toujours au-dessus, qui ne prend jamais le premier plan. Ce qu'elle propose, elle le demande au moteur client par les raccourcis clavier que celui-ci expose déjà, envoyés à la fenêtre de la session et vérifiés avant l'envoi. En conséquence, une session s'ouvre par défaut en fenêtre sans bordure et non en plein écran exclusif.
 
@@ -184,17 +184,35 @@ L'ajout par empreinte écrit l'ordinateur dans les deux sens : il le laisse entr
 
 **Ce que ça remplace.** [D16](#d16-le-bouton-flottant-est-une-fenêtre-à-nous-et-les-sessions-souvrent-sans-bordure-2026-08-08-pendant-m4) posait qu'une croix ne devait jamais couper une session, et c'était juste tant que la session avait sa propre fenêtre : fermer l'accueil ne touchait pas à l'image. Depuis [D21](#d21-limage-du-bureau-distant-saffiche-dans-la-fenêtre-de-zyrdesk-2026-08-19-pendant-m4), l'image est dans cette fenêtre-là, et le geste ne veut plus dire la même chose.
 
-**Quitter et non fermer.** L'ordinateur d'en face garde son bureau ouvert, prêt pour un retour immédiat. C'est ce qu'une croix doit coûter et pas plus ; lui rendre son bureau reste une demande à part, portée par le menu flottant. Et c'est le chemin du menu qui est repris tel quel, sans en ouvrir un second : le moteur est prié dans sa propre langue, à sa propre fenêtre, après l'avoir remise au premier plan et attendue.
+**Le même geste que le menu, et pas un second.** La croix reprend le chemin de l'entrée « terminer la session », qui rend son bureau à l'ordinateur d'en face ([D24](#d24-une-session-est-en-cours-ou-terminée-jamais-entre-les-deux-2026-08-19-pendant-m4)).
 
 **Deux fenêtres, une seule aux yeux du système.** Trois choses restaient à rendre, et aucune n'est cosmétique.
 
-La barre de titre. Le système donne le premier plan à la fenêtre de l'image, parce que c'est là que le moteur doit être pour tenir le clavier et la souris, et il dessine en atténué toute fenêtre qui perd le premier plan. Ce qui le lui prenait étant notre propre image dans notre propre fenêtre, cet atténuement disait quelque chose de faux, à chaque session fenêtrée. Le message par lequel le système pose la question est intercepté et répondu « active ». C'est à cela que sert ce message : le système demande au lieu de décider, précisément pour qu'une fenêtre dont la compagne tient l'activation puisse dire qu'elle reste celle qu'on utilise. La question n'est retournée que tant que le premier plan est réellement à nous, donc passer sur un autre programme atténue la barre comme il se doit.
+La barre de titre. Le système donne le premier plan à la fenêtre de l'image, parce que c'est là que le moteur doit être pour tenir le clavier et la souris, et il dessine en atténué toute fenêtre qui perd le premier plan. Ce qui le lui prenait étant notre propre image dans notre propre fenêtre, cet atténuement disait quelque chose de faux, à chaque session fenêtrée. Le message par lequel le système pose la question est intercepté et répondu « active ». C'est à cela que sert ce message : le système demande au lieu de décider, précisément pour qu'une fenêtre dont la compagne tient l'activation puisse dire qu'elle reste celle qu'on utilise. La question n'est retournée que tant que le premier plan appartient à l'image, donc passer sur un autre programme atténue la barre comme il se doit.
+
+Et une question ne se pose qu'une fois. Le premier plan part au moment même où la session s'ouvre, c'est-à-dire avant qu'il y ait une image à connaître et donc avant qu'il y ait quelqu'un pour répondre : la barre naissait atténuée et le restait jusqu'à ce qu'autre chose fasse reposer la question, un clic dessus par exemple. Elle est donc dite active à voix haute juste après, chaque fois que le premier plan est remis à l'image.
+
+Les coins. Le système arrondit les coins de toutes les fenêtres, et l'image en est une, à part, qui reste un rectangle : un cadre arrondi montrait une image à angles droits, et les deux coins du bas vendaient la mèche. C'est l'arrondi de notre fenêtre qui est retiré le temps d'une session, plutôt que l'image qui serait découpée pour lui ressembler : ce rayon appartient au système et n'est pas à nous de deviner, et découper une fenêtre où un flux se dessine se paierait ailleurs.
+
+Le redimensionnement. Tenir la forme en corrigeant après coup redimensionnait la fenêtre deux fois par cran du geste, et chaque redimensionnement est un message au programme du moteur et une chaîne d'échange reconstruite là-bas. La forme est maintenant tenue pendant le geste, sur le rectangle que le système propose avant de le prendre, ce qui n'en laisse qu'un ; et l'image est déposée sans attendre que le moteur ait répondu, au lieu de faire attendre notre propre fenêtre cent fois par seconde.
 
 Le bouton flottant. C'était une fenêtre sans attache : réduire ZyrDesk le laissait seul dans un coin de bureau vide, par-dessus le travail des autres, et il était placé une fois pour toutes, donc une session repassée en fenêtre le laissait suspendu au milieu de l'écran, sur rien. Il est maintenant possédé par la fenêtre d'accueil, comme l'image, donc il descend et remonte avec elle sans qu'on ait à s'en occuper ; et il est reposé à chaque fois que l'image l'est, sur le même rectangle qu'elle, calculé une fois pour les deux.
 
 L'ordre entre les deux tient à un seul fait : le bouton est marqué toujours au-dessus et l'image ne l'est pas.
 
 **Ce que ça a coûté ailleurs.** Ces deux fenêtres possédées s'en vont avec la fenêtre réduite, ce qui est voulu, mais un bureau à distance ne se pose pas sur une fenêtre qui n'est pas là : poser l'image sur une fenêtre réduite reviendrait à la réduire à rien et à demander au moteur de dessiner pour une surface sans taille, une fois par seconde. Rien n'est posé tant que la fenêtre n'est pas debout, et tout revient de soi-même quand elle revient.
+
+## D24. Une session est en cours ou terminée, jamais entre les deux (2026-08-19, pendant M4)
+
+**Décision.** Le produit n'offre qu'une façon de finir une session, et elle rend son bureau à l'ordinateur distant. Il n'y a plus d'entrée « quitter » à côté d'une entrée « fermer », ni dans le menu flottant, ni dans les raccourcis clavier, ni sur la croix de la fenêtre.
+
+**Ce que ça remplace.** Les moteurs distinguent partir et fermer : partir arrête le flux et laisse l'ordinateur d'en face tenir son bureau, prêt pour un retour immédiat ; fermer le lui rend. Cette distinction a été portée telle quelle jusqu'à la personne, et c'était une erreur : elle laissait une session ni en cours ni terminée, un état qu'il fallait connaître pour savoir dans lequel des deux on se trouvait, et que rien à l'écran ne montrait.
+
+**Pourquoi c'est celle-là qui reste.** Entre les deux, une seule répond à la question que la personne se pose en cliquant. « J'ai fini » veut dire que la machine d'en face est libre, pas qu'elle attend. Garder l'autre aurait voulu dire l'expliquer, et une explication est le prix d'un mauvais modèle.
+
+**Ce que ça coûte.** Terminer une session demande maintenant un aller-retour à l'ordinateur d'en face, là où partir se faisait sur place. Quelques dixièmes de seconde, et une réponse qui peut ne pas revenir : demander à un ordinateur de lâcher son bureau emporte le chemin par lequel la question a été posée, donc un silence qui ne laisse pas d'image derrière lui est un succès et non une panne.
+
+**Ce qui reste ouvert.** Le moteur client garde son propre raccourci de départ, celui qui laisse le bureau distant ouvert : il l'intercepte lui-même et rien de ce côté ne peut le lui retirer sans un patch. Il ne figure plus nulle part dans le produit.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

@@ -57,16 +57,16 @@ Session (l'écran le plus important) : l'image est native et s'affiche dans la f
                                         │ ZD │
                                         └────┘
         ┌───────────────────────────────────────┐
-        │ ⛶  Plein écran         Ctrl+Alt+Maj+X │
+        │ ⛶  Fenêtré ou plein écran   Ctrl+Alt+F │
         │ ▥  Statistiques        Ctrl+Alt+Maj+S │
         │ ⌖  Souris bureau ou jeu Ctrl+Alt+Maj+M│
         │ ─────────────────────────────────────  │
-        │ ⦸  Masquer ce bouton      jusqu'à la fin│
-        │ ⏻  Terminer la session  Ctrl+Alt+Maj+Q │
+        │ ⦸  Masquer ce bouton             Alt+² │
+        │ ⏻  Terminer la session      Ctrl+Alt+W │
         └───────────────────────────────────────┘
 ```
 
-Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Posé en M4 ([D16](DECISIONS.md)). À venir : latence et chemin réseau en un coup d'œil, statistiques détaillées (fps capturés/reçus/affichés, débit, pertes, jitter, temps de décodage), changement d'écran, préréglage de qualité.
+Cinq entrées, et une seule façon de finir : la distinction des moteurs entre partir et fermer ne remonte pas jusqu'ici ([D24](DECISIONS.md)). Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Les trois qui parlent au moteur portent ses combinaisons à lui ; les nôtres se choisissent dans les réglages, et ce sont celles qui s'affichent. Posé en M4 ([D16](DECISIONS.md)). À venir : latence et chemin réseau en un coup d'œil, statistiques détaillées (fps capturés/reçus/affichés, débit, pertes, jitter, temps de décodage), changement d'écran, préréglage de qualité.
 
 Réglages : deux niveaux. Simple par défaut (qualité en préréglages : Fluide / Équilibré / Qualité, thème, confiance aux ordinateurs du réseau local). « Avancé » replié : codec, fenêtre de la session, souris, statistiques, dossier des journaux, et plus tard débit manuel, taille de paquet, décodeur, choix du relais, mode paranoïaque. Le jargon reste rangé là.
 

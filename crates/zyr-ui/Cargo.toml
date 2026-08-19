@@ -34,6 +34,10 @@ tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
 tauri-plugin-single-instance = "2"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    # Les coins arrondis des fenêtres appartiennent au compositeur, et
+    # c'est à lui qu'on demande de ne pas les arrondir le temps d'une
+    # session.
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_System_Com",
     # SHELLEXECUTEINFOW porte un champ de registre, et windows-sys range

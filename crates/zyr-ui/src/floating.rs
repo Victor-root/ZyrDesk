@@ -21,8 +21,9 @@
 //! What the menu asks of the engine, it asks through the engine's own
 //! keyboard shortcuts, aimed at the session window and at nothing else.
 //! Two entries never reach it: covering the screen is done to our own
-//! window, and handing the far desktop back is asked of the far computer
-//! over the tunnel.
+//! window, and ending the session is asked of the far computer over the
+//! tunnel, since what ends it there is that computer letting its desktop
+//! go.
 
 // Off Windows there is no session to float over, and the shortcut the
 // letters belong to is never typed. The rest stays compiled and tested
@@ -91,17 +92,17 @@ const AT_MOST: Duration = Duration::from_secs(60);
 
 /// What the menu can ask of the session.
 ///
-/// All but the last are shortcuts the engine already answers to, so
-/// nothing here asks it to learn anything new. Leaving and closing are
-/// two entries and not one: leaving keeps the far computer's desktop
-/// open and waiting, closing hands it back.
+/// Ending a session is one entry and not two. The engines offer both a
+/// leaving that keeps the far desktop open and waiting and a closing
+/// that hands it back, and carrying that difference up to the person
+/// would leave them with a session that is neither running nor over. A
+/// session is on or it is not.
 #[derive(Clone, Copy)]
 pub enum Act {
     Fullscreen,
     Stats,
     MouseMode,
-    Leave,
-    Close,
+    End,
 }
 
 impl Act {
@@ -110,8 +111,7 @@ impl Act {
             "fullscreen" => Some(Act::Fullscreen),
             "stats" => Some(Act::Stats),
             "mouse" => Some(Act::MouseMode),
-            "leave" => Some(Act::Leave),
-            "close" => Some(Act::Close),
+            "end" => Some(Act::End),
             _ => None,
         }
     }
@@ -119,15 +119,15 @@ impl Act {
     /// Letter of the engine's Ctrl+Alt+Shift shortcut, for the ones that
     /// have one.
     ///
-    /// Two do not. Closing the far computer's desktop is asked of that
-    /// computer over the tunnel, and covering the screen is done to our
-    /// own window, the engine's having gone inside it.
+    /// Two do not. Ending a session is asked of the far computer over
+    /// the tunnel, since what ends it there is that computer letting its
+    /// desktop go; and covering the screen is done to our own window,
+    /// the engine's having gone inside it.
     fn letter(self) -> Option<u8> {
         match self {
             Act::Stats => Some(b'S'),
             Act::MouseMode => Some(b'M'),
-            Act::Leave => Some(b'Q'),
-            Act::Fullscreen | Act::Close => None,
+            Act::Fullscreen | Act::End => None,
         }
     }
 
@@ -144,8 +144,7 @@ impl Act {
         match self {
             Act::Stats => Some(0x1F),
             Act::MouseMode => Some(0x32),
-            Act::Leave => Some(0x10),
-            Act::Fullscreen | Act::Close => None,
+            Act::Fullscreen | Act::End => None,
         }
     }
 }
@@ -156,8 +155,7 @@ impl std::fmt::Display for Act {
             Act::Fullscreen => "plein écran",
             Act::Stats => "statistiques",
             Act::MouseMode => "mode de la souris",
-            Act::Leave => "départ de la session",
-            Act::Close => "fermeture sur l'ordinateur distant",
+            Act::End => "fin de la session",
         })
     }
 }
@@ -454,7 +452,12 @@ fn button_size(app: &AppHandle) -> u32 {
 }
 
 /// Takes the button down.
-fn lower(app: &AppHandle) {
+///
+/// Called by the watch when the session is no longer there, and by
+/// whoever ended it the moment they know: a second of a button hanging
+/// over a picture that has gone is a second too many, and the watch only
+/// comes round once a second.
+pub fn lower(app: &AppHandle) {
     let state = app.state::<Floating>();
     if state
         .watched
@@ -655,7 +658,7 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
     // keyboard.
     match act {
         Act::Fullscreen => return crate::picture::toggle_the_screen(app),
-        Act::Close => return close_on_the_far_computer(app).await,
+        Act::End => return end_it_on_the_far_computer(app).await,
         _ => {}
     }
 
@@ -728,7 +731,7 @@ async fn the_picture_is_gone(process: u32) -> bool {
 /// window remembers: the tunnel address is the only one the engine can
 /// reach that computer at, and it exists for exactly as long as the way
 /// does.
-async fn close_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
+async fn end_it_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
     let session = crate::session::sessions()
         .await
         .into_iter()
@@ -1099,20 +1102,16 @@ mod tests {
         // Et les places sont celles d'un clavier, indépendantes de ce
         // qui est gravé dessus : c'est par là que le moteur reconnaît
         // une touche en premier.
-        for (name, letter, place) in [
-            ("stats", b'S', 0x1Fu16),
-            ("mouse", b'M', 0x32),
-            ("leave", b'Q', 0x10),
-        ] {
+        for (name, letter, place) in [("stats", b'S', 0x1Fu16), ("mouse", b'M', 0x32)] {
             let act = Act::read(name).expect(name);
             assert_eq!(act.letter(), Some(letter), "sur « {name} »");
             assert_eq!(act.where_it_sits(), Some(place), "sur « {name} »");
         }
-        // Deux ne passent pas par le clavier du lecteur : fermer pour de
-        // bon se demande à l'ordinateur d'en face à travers le tunnel, et
+        // Deux ne passent pas par le clavier du lecteur : terminer se
+        // demande à l'ordinateur d'en face à travers le tunnel, et
         // couvrir l'écran se fait à notre propre fenêtre, celle du moteur
         // étant posée dedans.
-        for name in ["close", "fullscreen"] {
+        for name in ["end", "fullscreen"] {
             assert_eq!(
                 Act::read(name).expect(name).letter(),
                 None,
@@ -1120,5 +1119,14 @@ mod tests {
             );
         }
         assert!(Act::read("teleport").is_none());
+    }
+
+    #[test]
+    fn there_is_one_way_to_end_a_session_and_not_two() {
+        // Les moteurs en offrent deux : partir en laissant le bureau
+        // distant ouvert, et le rendre. Porter cette différence jusqu'à
+        // la personne lui laisserait une session ni en cours ni finie.
+        assert!(Act::read("leave").is_none());
+        assert!(Act::read("close").is_none());
     }
 }

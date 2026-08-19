@@ -109,7 +109,7 @@ fn main() {
                 // The cross means two different things, and which one it
                 // is depends on what the window is showing.
                 //
-                // Showing a session, it closes the session and stays: the
+                // Showing a session, it ends the session and stays: the
                 // picture is inside this window, so a cross that only
                 // hid the window would leave the far computer held by
                 // something with nothing left on screen to give it back.
@@ -122,7 +122,7 @@ fn main() {
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     if floating::a_session_is_up(window.app_handle()) {
-                        session::leave(window.app_handle());
+                        session::end_it(window.app_handle());
                     } else {
                         let _ = window.hide();
                     }

@@ -198,21 +198,14 @@ fn drive(app: &AppHandle, wanted: Wanted) {
 /// Ends the session in progress, the person having closed the window on
 /// it.
 ///
-/// Leaving rather than closing: the far computer keeps its desktop open,
-/// ready for an immediate return, which is what the cross of a window
-/// should cost and no more. Handing that desktop back is a separate ask,
-/// and the floating button carries it.
-///
-/// The same path the menu takes, and no second one: the engine is asked
-/// in its own language, at its own window, after that window has been
-/// put back in front and waited for.
-pub fn leave(app: &AppHandle) {
+/// The same path the menu takes, and no second one.
+pub fn end_it(app: &AppHandle) {
     let asked = app.clone();
     tauri::async_runtime::spawn(async move {
-        crate::journal::note("session left from the window's cross");
-        if let Err(reason) = crate::floating::ask(&asked, crate::floating::Act::Leave).await {
+        crate::journal::note("session ended from the window's cross");
+        if let Err(reason) = crate::floating::ask(&asked, crate::floating::Act::End).await {
             crate::journal::note(&format!(
-                "session not left from the cross: {}",
+                "session not ended from the cross: {}",
                 reason.replace('\n', " ")
             ));
         }
@@ -289,6 +282,12 @@ fn say(app: &AppHandle, what: Told) {
 
 fn finish(app: &AppHandle, ok: bool, message: String) {
     crate::floating::expect_nothing(app);
+    // Taken down here rather than left to the watch. The watch comes
+    // round once a second and asks the service what it holds, and until
+    // it does the button hangs over a picture that has gone. Whoever
+    // drove the session knows it is over the instant it is.
+    crate::picture::let_go(app);
+    crate::floating::lower(app);
     // The screen goes back to the person: what took it was the session.
     let _ = crate::picture::take_the_screen(app, false);
     let _ = app.emit(ENDED, Finished { ok, message });

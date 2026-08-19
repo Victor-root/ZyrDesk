@@ -35,6 +35,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicIsize, Ordering};
 
 use tauri::{AppHandle, Manager};
 use zyr_proto::session::DisplayMode;
@@ -43,6 +44,36 @@ use zyr_proto::session::DisplayMode;
 #[derive(Default)]
 pub struct Picture {
     held: Mutex<Option<Held>>,
+}
+
+/// The same picture, and its shape, where our window's own message
+/// handler can reach them.
+///
+/// That handler runs inside the system's call into our window and cannot
+/// wait on anything: a lock held by a thread that is itself waiting on
+/// the window would stop both for good. What it needs is two numbers, so
+/// two numbers are what it is given.
+static ENGINE: AtomicIsize = AtomicIsize::new(0);
+static SHAPE: AtomicI64 = AtomicI64::new(0);
+
+/// Set while the person is dragging an edge of our window.
+///
+/// The shape is held during the drag, before each resize; tidying it up
+/// afterwards as well would resize the window a second time for nothing.
+static DRAGGED: AtomicBool = AtomicBool::new(false);
+
+/// Width and height of the picture, as the handler reads them.
+fn shape() -> (i32, i32) {
+    let both = SHAPE.load(Ordering::Relaxed);
+    ((both >> 32) as i32, both as i32)
+}
+
+fn remember_the_shape(engine: isize, shape: (i32, i32)) {
+    SHAPE.store(
+        (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
+        Ordering::Relaxed,
+    );
+    ENGINE.store(engine, Ordering::Relaxed);
 }
 
 /// A window taken in hand, and what is known of it.
@@ -93,7 +124,8 @@ pub fn hold(app: &AppHandle, process: u32) -> bool {
             "image du lecteur {process} posée dans la fenêtre de ZyrDesk, en {}x{}",
             shape.0, shape.1
         ));
-        keep_lighting_the_bar(app, window);
+        remember_the_shape(window, shape);
+        take_the_window_in_hand(app);
         hold_the_shape(app);
     }
     fit(app);
@@ -109,7 +141,8 @@ pub fn let_go(app: &AppHandle) {
         .expect("image tenue")
         .take();
     if held.is_some() {
-        stop_lighting_the_bar(app);
+        remember_the_shape(0, (0, 0));
+        give_the_window_back(app);
     }
 }
 
@@ -175,13 +208,22 @@ const ROUNDING: u32 = 1;
 /// the far computer's picture in the shape it arrives in and never in
 /// another: given a window of a different shape, it centres the picture
 /// and fills what is left with black. So the window is given the
-/// picture's shape rather than the picture the window's, and dragging a
-/// corner then changes how big the session is and never how it looks.
+/// picture's shape rather than the picture the window's.
+///
+/// This is the tidying-up, not the mechanism. A window being dragged is
+/// held to shape while it is dragged, before the resize happens, which is
+/// the only way that is smooth; see `the_drag_keeps_the_shape`. What is
+/// left for here is everything that resizes a window without dragging it:
+/// the picture arriving, the screen being given back, the system putting
+/// the window against an edge.
 ///
 /// Only the height moves. Both would fight whichever edge is being
 /// dragged, and a window that resists in two directions at once cannot
 /// be resized at all.
 pub fn hold_the_shape(app: &AppHandle) {
+    if DRAGGED.load(Ordering::Relaxed) {
+        return;
+    }
     let Some(held) = taken(app) else {
         return;
     };
@@ -317,8 +359,8 @@ pub fn fit(app: &AppHandle) {
     use windows_sys::Win32::Foundation::{POINT, RECT};
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_NOACTIVATE, SWP_SHOWWINDOW,
-        SetWindowPos,
+        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+        SWP_SHOWWINDOW, SetWindowPos,
     };
 
     let Some(held) = taken(app) else {
@@ -362,8 +404,16 @@ pub fn fit(app: &AppHandle) {
 
     let (width, height) = (inside.right - inside.left, inside.bottom - inside.top);
     // SAFETY: the engine's window is one we have already taken in hand.
+    //
     // Shown without being activated: asked to show itself the ordinary
     // way, it would take the front, and this runs every second.
+    //
+    // And handed over rather than waited for. That window belongs to
+    // another program, so moving it the ordinary way means posting to
+    // that program and standing still until it has answered. Once a
+    // second nobody would notice; a hundred times a second, which is
+    // what dragging an edge comes to, it is our own window that stops
+    // following the mouse while the engine rebuilds what it draws into.
     unsafe {
         SetWindowPos(
             engine,
@@ -372,7 +422,7 @@ pub fn fit(app: &AppHandle) {
             corner.y,
             width,
             height,
-            SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_ASYNCWINDOWPOS,
         )
     };
     crate::floating::follow(
@@ -393,30 +443,34 @@ fn hand_the_keyboard_back(app: &AppHandle) {
     // SAFETY: a window this program took in hand. Windows may refuse to
     // change the front window, which costs nothing here.
     unsafe { SetForegroundWindow(held.window as windows_sys::Win32::Foundation::HWND) };
+
+    // Handing the front to the picture is what dims our title bar, and
+    // the system only asks about it while it is doing so. Said again
+    // straight after, so the answer is given with the front already
+    // where it was being put.
+    let asked = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(home) = home_window(&asked) {
+            light_the_bar(home);
+        }
+    });
 }
 
-/// Keeps our title bar drawn as an active window for as long as the
-/// picture is in it.
+/// Makes our window behave as the one window a session is, and steps in
+/// front of its messages for as long as the picture is in it.
 ///
-/// The picture is a window of its own, and it is the one the system puts
-/// at the front, because that is where the engine has to be to hold the
-/// keyboard and the mouse. Ours therefore loses the front, and Windows
-/// draws a window that has lost the front with a dimmed title bar. What
-/// took it is our own picture, inside our own window, so that dimming
-/// says something untrue and says it during every windowed session.
+/// Three things, all of them because two windows laid on one another are
+/// not one window until the system is told so: its corners are squared
+/// off to match the picture's, its title bar is lit, and it starts
+/// answering the two questions the system asks before acting rather than
+/// after, which are the only place either can be answered.
 ///
-/// The message that decides it is intercepted and answered « active ».
-/// That is what the message is for: the system asks rather than decides,
-/// precisely so a window whose companion holds the activation can say it
-/// is still the one being used. The question is only answered that way
-/// while the front really is ours, so switching to another program dims
-/// the bar as it should.
 /// Stepping in front of a window's messages is done from the thread that
 /// draws it, and none of the callers here is that thread: one drives the
 /// session, the other watches it. Handed over rather than done on the
 /// spot.
 #[cfg(windows)]
-fn keep_lighting_the_bar(app: &AppHandle, engine: isize) {
+fn take_the_window_in_hand(app: &AppHandle) {
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
 
     let asked = app.clone();
@@ -427,13 +481,15 @@ fn keep_lighting_the_bar(app: &AppHandle, engine: isize) {
         // SAFETY: our own window, from the thread that owns it, and the
         // handler outlives the subclass: it is a plain function of this
         // program.
-        unsafe { SetWindowSubclass(home, Some(lit), LIT, engine as usize) };
+        unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
+        square_the_corners(home, true);
+        light_the_bar(home);
     });
 }
 
-/// Puts that back the way it was, the session being over.
+/// Puts all of that back the way it was, the session being over.
 #[cfg(windows)]
-fn stop_lighting_the_bar(app: &AppHandle) {
+fn give_the_window_back(app: &AppHandle) {
     use windows_sys::Win32::UI::Shell::RemoveWindowSubclass;
 
     let asked = app.clone();
@@ -444,7 +500,64 @@ fn stop_lighting_the_bar(app: &AppHandle) {
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
+        square_the_corners(home, false);
     });
+}
+
+/// Squares off our window's corners while it holds a picture, and rounds
+/// them again after.
+///
+/// The picture is a window of its own, laid over the inside of ours, and
+/// a window of its own is a plain rectangle. Ours is not: the system
+/// rounds the corners of every window, so a rounded frame showed a square
+/// picture inside it, and the two bottom corners gave the whole thing
+/// away.
+///
+/// Squared rather than rounded to match. The rounding belongs to the
+/// system and its exact radius is not ours to know; asking for the same
+/// curve on the picture would mean guessing that radius, and clipping a
+/// window that a stream is being drawn into to boot. Turning it off is
+/// one call, exact, and costs the picture nothing.
+#[cfg(windows)]
+fn square_the_corners(home: windows_sys::Win32::Foundation::HWND, square: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DEFAULT, DWMWCP_DONOTROUND, DwmSetWindowAttribute,
+    };
+
+    let wanted: i32 = if square {
+        DWMWCP_DONOTROUND
+    } else {
+        DWMWCP_DEFAULT
+    };
+    // SAFETY: our own window, and the value handed in is one the
+    // attribute takes, of the size the call is told to expect.
+    unsafe {
+        DwmSetWindowAttribute(
+            home,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            (&raw const wanted).cast(),
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
+}
+
+/// Says out loud that our window is active, and has its title bar
+/// redrawn.
+///
+/// Needed because the handler below only answers a question, and the
+/// question is asked once, when the front is taken away. The picture
+/// takes the front at the very moment the session opens, which is before
+/// there is a picture to know about and therefore before the handler is
+/// there to answer: the bar was drawn dim and stayed dim until something
+/// else made the system ask again. Clicking the title bar was that
+/// something else.
+#[cfg(windows)]
+fn light_the_bar(home: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_NCACTIVATE};
+
+    // SAFETY: our own window, from the thread that owns it, and the
+    // message is the one the system itself sends to say « active ».
+    unsafe { SendMessageW(home, WM_NCACTIVATE, 1, 0) };
 }
 
 /// Name our handler answers to, so it can be taken off again.
@@ -458,44 +571,122 @@ unsafe extern "system" fn lit(
     wparam: usize,
     lparam: isize,
     _name: usize,
-    engine: usize,
+    _data: usize,
 ) -> isize {
+    use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
-    use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE;
-
-    // Told to dim, while the front belongs to the picture or to us: the
-    // answer is that this window is still the one being used.
-    let lie = message == WM_NCACTIVATE && wparam == 0 && ours_is_at_the_front(engine);
-    // SAFETY: the arguments are the ones the system handed in, with at
-    // most a boolean turned around.
-    unsafe { DefSubclassProc(window, message, if lie { 1 } else { wparam }, lparam) }
-}
-
-/// Whether the window at the front is the picture, or another of ours.
-///
-/// Both answers mean the same thing here. The picture is ours in all but
-/// the process it runs in, and the moment the system takes the front
-/// away it has not always given it to anybody yet, which reads as ours.
-#[cfg(windows)]
-fn ours_is_at_the_front(engine: usize) -> bool {
-    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId,
+        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SIZING,
     };
 
+    match message {
+        // Told to dim, while the front belongs to the picture: what took
+        // it is our own picture inside our own window, so this window is
+        // still the one being used. Answered « active ».
+        //
+        // Only the picture counts, and not merely anything of ours. Read
+        // any wider, this would keep the bar lit after switching to
+        // another program.
+        WM_NCACTIVATE if wparam == 0 && the_picture_is_at_the_front() => {
+            // SAFETY: the arguments the system handed in, with one
+            // boolean turned around.
+            unsafe { DefSubclassProc(window, message, 1, lparam) }
+        }
+        // A window being dragged by a corner, before it is resized: the
+        // system offers the rectangle it is about to take, and takes
+        // back whatever is written there.
+        //
+        // This is the only place the shape can be held without it
+        // costing anything. Corrected afterwards instead, every step of
+        // the drag resized the window twice, and every resize is a
+        // message to the engine's own process and a swap chain rebuilt
+        // there. That was the whole of the stutter.
+        WM_SIZING => {
+            // SAFETY: for this message the system passes a rectangle of
+            // ours to fill in, and it lives for the length of the call.
+            let wanted = unsafe { &mut *(lparam as *mut RECT) };
+            the_drag_keeps_the_shape(window, wparam as u32, wanted);
+            1
+        }
+        WM_ENTERSIZEMOVE | WM_EXITSIZEMOVE => {
+            DRAGGED.store(message == WM_ENTERSIZEMOVE, Ordering::Relaxed);
+            // SAFETY: the arguments the system handed in, untouched.
+            unsafe { DefSubclassProc(window, message, wparam, lparam) }
+        }
+        // SAFETY: same.
+        _ => unsafe { DefSubclassProc(window, message, wparam, lparam) },
+    }
+}
+
+/// Holds the rectangle a drag is about to take to the shape of the
+/// picture.
+///
+/// Which side moves depends on which edge is being dragged: a corner or a
+/// vertical edge sets the height from the width, a horizontal edge does
+/// the opposite. Anything else would fight the hand.
+#[cfg(windows)]
+fn the_drag_keeps_the_shape(
+    window: windows_sys::Win32::Foundation::HWND,
+    edge: u32,
+    wanted: &mut windows_sys::Win32::Foundation::RECT,
+) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClientRect, GetWindowRect, WMSZ_BOTTOM, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
+    };
+
+    let (wide, high) = shape();
+    if wide <= 0 || high <= 0 {
+        return;
+    }
+
+    // What the frame costs, so the shape is held on the inside of the
+    // window and not on its outside: the title bar is not part of the
+    // picture.
+    let mut outside = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let mut inside = outside;
+    // SAFETY: our own window, and both rectangles are ours.
+    if unsafe { GetWindowRect(window, &mut outside) } == 0
+        || unsafe { GetClientRect(window, &mut inside) } == 0
+    {
+        return;
+    }
+    let frame = (
+        (outside.right - outside.left) - (inside.right - inside.left),
+        (outside.bottom - outside.top) - (inside.bottom - inside.top),
+    );
+
+    if edge == WMSZ_TOP || edge == WMSZ_BOTTOM {
+        let height = (wanted.bottom - wanted.top - frame.1).max(1);
+        let width = (i64::from(height) * i64::from(wide) / i64::from(high)) as i32 + frame.0;
+        wanted.right = wanted.left + width;
+        return;
+    }
+
+    let width = (wanted.right - wanted.left - frame.0).max(1);
+    let height = (i64::from(width) * i64::from(high) / i64::from(wide)) as i32 + frame.1;
+    // Dragged from the top: the bottom stays where it is and the top
+    // moves, or the window would walk down the screen under the hand.
+    if edge == WMSZ_TOPLEFT || edge == WMSZ_TOPRIGHT {
+        wanted.top = wanted.bottom - height;
+    } else {
+        wanted.bottom = wanted.top + height;
+    }
+}
+
+/// Whether the window at the front is the picture.
+#[cfg(windows)]
+fn the_picture_is_at_the_front() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    let engine = ENGINE.load(Ordering::Relaxed);
     // SAFETY: no argument, and a null answer is one of the answers.
-    let front = unsafe { GetForegroundWindow() };
-    if front.is_null() {
-        return false;
-    }
-    if front as usize == engine {
-        return true;
-    }
-    let mut owner = 0u32;
-    // SAFETY: the window comes from the call above and the slot is ours.
-    unsafe { GetWindowThreadProcessId(front, &mut owner) };
-    // SAFETY: no argument.
-    owner == unsafe { GetCurrentProcessId() }
+    engine != 0 && unsafe { GetForegroundWindow() } as isize == engine
 }
 
 /// Our own window, as the system knows it.
@@ -520,10 +711,10 @@ fn alive(_held: &Held) -> bool {
 fn hand_the_keyboard_back(_app: &AppHandle) {}
 
 #[cfg(not(windows))]
-fn keep_lighting_the_bar(_app: &AppHandle, _engine: isize) {}
+fn take_the_window_in_hand(_app: &AppHandle) {}
 
 #[cfg(not(windows))]
-fn stop_lighting_the_bar(_app: &AppHandle) {}
+fn give_the_window_back(_app: &AppHandle) {}
 
 #[cfg(not(windows))]
 pub fn fit(_app: &AppHandle) {}

@@ -162,7 +162,7 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 
 > **R6ter (un ordinateur ajouté reste à l'écran)**
 >
-> Après R6bis, quitter la session et fermer l'application sur le **PC client**, puis la relancer.
+> Après R6bis, terminer la session et fermer l'application sur le **PC client**, puis la relancer.
 >
 > Attendu : le PC hôte est là, sur une carte, avec sa pastille grise et la mention « ajouté à la main ». Un clic dessus rouvre la session. **Plus rien à ressaisir, jamais.** La pastille est grise parce que ce réseau ne porte pas les annonces, pas parce que la machine serait éteinte, et c'est écrit à côté.
 >
@@ -197,7 +197,7 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 
 > **R8 (la deuxième session est directe)**
 >
-> Quitter la session (Ctrl+Alt+Maj+Q), puis se reconnecter.
+> Terminer la session par le menu flottant, puis se reconnecter.
 >
 > Attendu : plus d'étape « Premier accès ». Le tunnel s'établit et l'image arrive. Les deux ordinateurs se connaissent maintenant.
 >
@@ -265,7 +265,9 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > | Statistiques | Les chiffres apparaissent puis disparaissent sur l'image |
 > | Souris bureau ou jeu | Le pointeur change de comportement |
 > | Masquer ce bouton | Le logo disparaît, et l'entrée dit par quelle combinaison le rappeler |
-> | Quitter la session | L'image se ferme, la fenêtre ZyrDesk revient |
+> | Terminer la session | L'image se ferme, la fenêtre ZyrDesk revient sur l'accueil, et le PC hôte rend son bureau |
+>
+> **Cinq entrées, pas six.** Il n'y a plus qu'une façon de finir : les moteurs en offraient deux, dont une qui laissait le bureau distant ouvert et en attente. Une session est en cours ou terminée.
 >
 > Si une entrée ne fait rien : ouvrir le journal (partie 7) et regarder les lignes de « La fenêtre ». Elles disent ce que le bouton a demandé, et à quelle fenêtre. Une entrée ne peut agir que si l'image est au premier plan ; la remettre devant est fait avant chaque envoi, et attendu, parce que Windows ne change pas de fenêtre de tête sur-le-champ.
 
@@ -285,11 +287,11 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Ce qui est retenu est la place de la touche et non le signe dessus : une combinaison choisie sur un clavier français reste sous les mêmes doigts sur un clavier anglais.
 
-> **R13 (fermer, et pas seulement quitter)**
+> **R13 (le bouton s'en va avec l'image)**
 >
-> Rouvrir une session, puis choisir **Fermer sur l'ordinateur distant** dans le menu.
+> Terminer la session par le menu, et regarder le coin où était le bouton.
 >
-> Attendu : l'image se ferme, et le PC hôte rend réellement son bureau. La différence avec « Quitter » : quitter laisse le bureau distant ouvert, prêt pour un retour immédiat.
+> Attendu : le logo disparaît **en même temps que l'image**, pas une seconde après. Ce qui suit une session était surveillé une fois par seconde, et cette seconde se voyait.
 
 ---
 
@@ -339,7 +341,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : **rien d'autre que la fenêtre ZyrDesk ne doit apparaître**. Ni une fenêtre à barre de titre au milieu de l'écran, ni un cadre vide, ni un retour en fenêtre avant de reprendre le plein écran.
 >
-> Ce qui apparaissait là avant : le moteur crée sa fenêtre à la taille de l'image et centrée, et nous la prenons en main après. L'attente était d'une seconde, elle est maintenant de l'ordre d'une image. Si un éclair reste visible, il est à noter tel quel dans le journal de recette : la suite serait un correctif au moteur, et cela se décide, cela ne se fait pas au passage.
+> Ce qui apparaissait là avant : le moteur crée sa fenêtre à la taille de l'image et centrée, et nous la prenons en main après. L'attente était d'une seconde, elle est maintenant de l'ordre d'une image.
+>
+> **Défaut connu, sur deux écrans.** Le moteur crée toujours sa fenêtre sur l'**écran principal**, quel que soit celui où ZyrDesk se trouve : sur un deuxième écran, l'éclair de cadre blanc se voit donc sur le premier. Cela ne se règle pas de notre côté, la place étant choisie par le moteur avant que nous puissions l'atteindre. Le correctif est un ajustement du patch P-M1 déjà appliqué (une fenêtre qui naît cachée, montrée une fois posée) et demande une recompilation des moteurs : voir `patches/MANIFEST.md`.
 
 > **S5 (l'écran n'est pris qu'une fois)**
 >
@@ -349,7 +353,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 > **S5bis (la session s'ouvre comme la dernière a été laissée)**
 >
-> Session ouverte en plein écran : basculer en fenêtre par le menu flottant, quitter la session, en rouvrir une.
+> Session ouverte en plein écran : basculer en fenêtre par le menu flottant, terminer la session, en rouvrir une.
 >
 > Attendu : elle s'ouvre **en fenêtre**. Refaire dans l'autre sens : basculer en plein écran, quitter, rouvrir. Elle s'ouvre en plein écran.
 >
@@ -380,6 +384,22 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : la fenêtre **change de hauteur toute seule** en même temps que de largeur, pour garder la forme de l'image. L'image remplit toujours la fenêtre entière, sans bande noire et sans déformation.
 >
 > C'est le comportement d'un lecteur vidéo, et c'est voulu : une fenêtre libre de sa forme redemanderait une bande noire à chaque geste.
+
+> **S8bis (redimensionner est fluide)**
+>
+> En fenêtre : prendre le coin en bas à droite et le promener, largement et vite, pendant plusieurs secondes sans lâcher.
+>
+> Attendu : la fenêtre suit la souris **sans à-coups**, et l'image dedans suit la fenêtre. Ni saccade, ni fenêtre qui s'arrête pour rattraper ensuite.
+>
+> Deux choses le rendaient impossible et les deux sont réglées. La forme était corrigée après coup, donc chaque cran du geste redimensionnait la fenêtre deux fois ; elle est maintenant tenue pendant le geste, avant que le redimensionnement n'ait lieu. Et poser l'image attendait que le programme du moteur ait répondu, cent fois par seconde ; c'est maintenant déposé sans attendre.
+
+> **S8ter (les coins de la fenêtre)**
+>
+> En fenêtre, regarder les deux coins du bas de la fenêtre ZyrDesk pendant une session.
+>
+> Attendu : **le coin de l'image et le coin de la fenêtre sont le même coin**. Pas de rectangle à angles droits dans un rectangle à angles arrondis.
+>
+> Windows arrondit les coins de toutes les fenêtres, et l'image est une fenêtre à part qui reste un rectangle. Le temps d'une session, ZyrDesk demande donc à ne pas être arrondi. En dehors d'une session, la fenêtre retrouve ses coins arrondis : le vérifier après S17.
 
 > **S9 (l'image suit la fenêtre partout)**
 >
@@ -441,11 +461,11 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 ### La fin
 
-> **S17 (quitter la session)**
+> **S17 (terminer la session)**
 >
-> Menu flottant, **Quitter la session**.
+> Menu flottant, **Terminer la session**.
 >
-> Attendu : l'image se ferme, la fenêtre ZyrDesk revient à sa taille d'accueil et quitte le plein écran, le bouton flottant disparaît. **Aucune ligne rouge** ne traverse l'écran au passage.
+> Attendu : l'image se ferme, la fenêtre ZyrDesk revient à sa taille d'accueil et quitte le plein écran, et le bouton flottant disparaît **en même temps que l'image** et non une seconde après. **Aucune ligne rouge** ne traverse l'écran au passage.
 >
 > L'écran d'accueil réaffiche les cartes des ordinateurs, cliquables à nouveau.
 
@@ -465,13 +485,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Le moteur hôte attend sinon l'arrêt de ce qu'il diffuse pour remettre en place, et ce qu'il diffuse est le bureau lui-même, qui ne s'arrête jamais. Il lui est demandé de remettre en place dès que le client s'en va.
 
-> **S20 (fermer, et pas seulement quitter)**
+> **S20 (rien ne reste en attente sur le PC hôte)**
 >
-> Rouvrir une session, puis **Fermer sur l'ordinateur distant**.
+> Après S17 ou S18, aller sur le **PC hôte** et regarder le gestionnaire des tâches.
 >
-> Attendu : comme S17, plus le bureau distant réellement rendu (R13), plus la définition remise comme en S19.
+> Attendu : plus aucun `zyrdesk-host-engine.exe` qui tiendrait encore un bureau. Terminer une session la termine des deux côtés.
 >
-> C'est la différence que la croix ne fait pas : elle quitte, elle ne ferme pas. L'ordinateur d'en face garde son bureau ouvert, prêt pour un retour immédiat.
+> Il n'y a plus qu'une façon de finir. Les moteurs en offrent deux, dont une qui laisse le bureau distant ouvert et en attente d'un retour : c'était une session ni en cours ni terminée, et ce troisième état n'existe plus dans le produit.
 
 > **S21 (quitter ZyrDesk pendant une session)**
 >

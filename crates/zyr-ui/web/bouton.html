@@ -64,27 +64,24 @@
           <span class="item-touche" id="retour"></span>
         </button>
 
-        <button class="item" type="button" data-acte="leave" role="menuitem">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3" />
-            <path d="M15 16l4-4-4-4M19 12H10" />
-          </svg>
-          <span class="item-mot">Quitter la session</span>
-          <span class="item-touche">Ctrl+Alt+Maj+Q</span>
-        </button>
-
+        <!-- Une seule façon de finir. Les moteurs en offrent deux, dont
+             une qui laisse le bureau distant ouvert et en attente : ce
+             serait une session ni en cours ni terminée, et personne n'a
+             demandé ce troisième état. -->
         <button
           class="item quitter"
           type="button"
-          data-acte="close"
+          data-acte="end"
           role="menuitem"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3v9" />
             <path d="M18.4 6.6a9 9 0 1 1-12.8 0" />
           </svg>
-          <span class="item-mot">Fermer sur l'ordinateur distant</span>
-          <span class="item-touche">libère le bureau</span>
+          <span class="item-mot">Terminer la session</span>
+          <!-- Rempli au chargement : c'est notre raccourci et il se
+               choisit dans les réglages. -->
+          <span class="item-touche" id="touche-fin"></span>
         </button>
 
         <p class="souci cache" id="souci"></p>

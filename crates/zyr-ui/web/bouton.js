@@ -17,6 +17,7 @@ const vue = {
   souci: document.getElementById("souci"),
   retour: document.getElementById("retour"),
   touchePleinEcran: document.getElementById("touche-plein-ecran"),
+  toucheFin: document.getElementById("touche-fin"),
 };
 
 /* Le temps qu'un refus reste lisible avant de laisser la place. */
@@ -158,6 +159,7 @@ async function ditLesRaccourcis() {
   };
   dit("menu", vue.retour, "jusqu'à la fin");
   dit("fullscreen", vue.touchePleinEcran, "");
+  dit("end", vue.toucheFin, "rend le bureau distant");
 }
 
 ditLesRaccourcis();
