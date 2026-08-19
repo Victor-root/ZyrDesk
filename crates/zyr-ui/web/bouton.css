@@ -8,11 +8,28 @@
   sert justement à le refermer.
 */
 
+/* Le canevas du navigateur suit le schéma de couleurs de la racine, et
+   WebView2 le peint opaque dès que la racine se dit sombre, fond
+   transparent demandé ou non. Ce carré-là n'est pas un fond de page :
+   aucun style n'en vient à bout tant que la racine porte le schéma. Sur
+   cette page la racine reste donc neutre, et le schéma descend sur le
+   corps, où tout ce qui se dessine le lit aussi bien. */
+:root,
+:root[data-theme="clair"] {
+  color-scheme: normal;
+}
+
 .flottant {
   /* Le fond de la page n'existe pas : seul ce qui est dessiné se voit
      par-dessus l'image. */
   background: transparent;
   overflow: hidden;
+  /* Le schéma repris de la racine, qui vient d'en être déchargée. */
+  color-scheme: dark;
+}
+
+:root[data-theme="clair"] .flottant {
+  color-scheme: light;
 }
 
 .paquet {
