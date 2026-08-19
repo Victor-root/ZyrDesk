@@ -31,6 +31,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicIsize, Ordering};
 use std::time::Duration;
 
 use tauri::{
@@ -163,7 +164,9 @@ impl std::fmt::Display for Act {
 /// The session the button belongs to.
 #[derive(Default)]
 pub struct Floating {
-    watched: Mutex<Option<Watched>>,
+    /// Player the button hangs on, and the only window our keystrokes
+    /// may reach.
+    watched: Mutex<Option<u32>>,
     /// Set while this window is asking the far computer to close the
     /// session.
     ///
@@ -172,16 +175,6 @@ pub struct Floating {
     /// broke looks like. Without this, the one thing the person asked for
     /// would be reported back to them as an error.
     closing: std::sync::atomic::AtomicBool,
-    /// Where the person dragged the button last, as a distance from the
-    /// corner of the picture. Kept for as long as the program runs, so
-    /// it does not walk back to the corner at every session.
-    nudge: Mutex<(i32, i32)>,
-    /// Set while the person has hidden the button from its own menu.
-    ///
-    /// A choice they made stands until they ask for the button back.
-    /// ZyrDesk being minimised and restored is not that ask, and the
-    /// system would otherwise put the button back up with the window.
-    hidden_by_hand: std::sync::atomic::AtomicBool,
     /// Player this window has just started and the service does not know
     /// about yet.
     ///
@@ -190,6 +183,40 @@ pub struct Floating {
     /// seconds after the picture. Whoever started the engine knows its
     /// number straight away, and the button hangs on nothing else.
     expected: Mutex<Option<u32>>,
+}
+
+/// Everything the button's place is worked out from, kept where the
+/// system's own call into our window can reach it.
+///
+/// That call happens on every step of a drag, and it cannot wait for
+/// anything: no lock, no message to another thread, no toolkit. Three
+/// numbers do it, so three numbers are what is kept.
+///
+/// `NUDGE` is where the person dragged the button last, as a distance
+/// from the corner of the picture rather than a place on screen: a
+/// session opened later on another screen, or at another size, then finds
+/// it where it was left rather than off the edge. It outlives every
+/// session, on purpose.
+static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
+static NUDGE: AtomicI64 = AtomicI64::new(0);
+
+/// Set while the person has hidden the button from its own menu.
+///
+/// A choice they made stands until they ask for the button back. ZyrDesk
+/// being minimised and restored is not that ask, and the system would
+/// otherwise put the button back up with the window.
+static HIDDEN: AtomicBool = AtomicBool::new(false);
+
+fn nudge() -> (i32, i32) {
+    let both = NUDGE.load(Ordering::Relaxed);
+    ((both >> 32) as i32, both as i32)
+}
+
+fn nudged_to(dx: i32, dy: i32) {
+    NUDGE.store(
+        (i64::from(dx) << 32) | i64::from(dy) & 0xFFFF_FFFF,
+        Ordering::Relaxed,
+    );
 }
 
 impl Floating {
@@ -211,16 +238,6 @@ impl Floating {
     }
 }
 
-struct Watched {
-    /// Player the button hangs on, and the only window our keystrokes
-    /// may reach.
-    process: u32,
-    /// Corner it hangs from, in real pixels: the top right of the
-    /// picture, brought in by a margin and by whatever dragging moved
-    /// it since.
-    anchor: (i32, i32),
-}
-
 /// Whether a session is running right now.
 ///
 /// Read from what the button hangs on rather than asked of the service:
@@ -232,60 +249,6 @@ pub fn a_session_is_up(app: &AppHandle) -> bool {
         .lock()
         .expect("session suivie")
         .is_some()
-}
-
-/// Puts the button back on the corner of the picture it hangs from.
-///
-/// Called every time the picture is laid, which is every time our window
-/// moves, is resized or changes between covering the screen and not. The
-/// button used to be placed once, when it went up, and stayed there: a
-/// session switched back to a window left it hanging in mid-screen, over
-/// nothing.
-///
-/// Nothing is held while the window is asked anything. Both are needed at
-/// once, what the button knows and what the system knows, and holding one
-/// while waiting on the other is how two threads stop for good.
-pub fn follow(app: &AppHandle, picture: (i32, i32, i32, i32)) {
-    let Some(window) = app.get_webview_window(WINDOW) else {
-        return;
-    };
-    let state = app.state::<Floating>();
-    // The system puts an owned window back up with the one that owns it,
-    // which is right for a button that is only down because the window
-    // is. It is not right for one the person hid on purpose, so that
-    // choice is put back.
-    //
-    // Put back, and then followed all the same: a hidden button still
-    // has a place, and one left behind while it was hidden would show
-    // itself in the wrong corner the moment it is called back.
-    if state
-        .hidden_by_hand
-        .load(std::sync::atomic::Ordering::Relaxed)
-        && window.is_visible().unwrap_or(false)
-    {
-        let _ = window.hide();
-    }
-    let Ok(size) = window.outer_size() else {
-        return;
-    };
-    let nudge = *state.nudge.lock().expect("position du bouton");
-    let corner = (picture.2 - MARGIN + nudge.0, picture.1 + MARGIN + nudge.1);
-    let anchor = held_inside(corner, picture, size.width as i32, size.height as i32);
-
-    {
-        let mut watched = state.watched.lock().expect("session suivie");
-        let Some(seen) = watched.as_mut() else {
-            return;
-        };
-        if seen.anchor == anchor {
-            return;
-        }
-        seen.anchor = anchor;
-    }
-    let _ = window.set_position(PhysicalPosition::new(
-        anchor.0 - size.width as i32,
-        anchor.1,
-    ));
 }
 
 /// Says which player this window has just started, before anybody else
@@ -361,7 +324,7 @@ fn raise(app: &AppHandle, process: u32) {
         .lock()
         .expect("session suivie")
         .as_ref()
-        .is_some_and(|seen| seen.process == process);
+        .is_some_and(|seen| *seen == process);
     if already {
         return;
     }
@@ -384,22 +347,18 @@ fn raise(app: &AppHandle, process: u32) {
     // Asked before anything is held. This runs on a thread of its own and
     // the answer comes from the one that draws: waiting for it while
     // holding what that thread may want next is how both stop for good.
-    let size = button_size(app) as i32;
+    let size = button_size(app);
 
     // A new session starts with the button on screen, whatever was done
     // with the one before.
-    state
-        .hidden_by_hand
-        .store(false, std::sync::atomic::Ordering::Relaxed);
-    let nudge = *state.nudge.lock().expect("position du bouton");
-    let anchor = hung_from(picture, nudge, size);
-    *state.watched.lock().expect("session suivie") = Some(Watched { process, anchor });
+    HIDDEN.store(false, Ordering::Relaxed);
+    *state.watched.lock().expect("session suivie") = Some(process);
 
     // A leftover window from a session that ended in a way we did not
     // see: put it where the new one is rather than open a second.
     if let Some(window) = app.get_webview_window(WINDOW) {
-        let _ = window.set_position(PhysicalPosition::new(anchor.0 - size, anchor.1));
         let _ = window.show();
+        lay_the_button(picture);
         return;
     }
 
@@ -425,8 +384,9 @@ fn raise(app: &AppHandle, process: u32) {
     match built {
         Ok(window) => {
             keep_out_of_the_way(app, &window);
-            let _ = window.set_size(PhysicalSize::new(size as u32, size as u32));
-            let _ = window.set_position(PhysicalPosition::new(anchor.0 - size, anchor.1));
+            remember_the_button(&window);
+            let _ = window.set_size(PhysicalSize::new(size, size));
+            lay_the_button(picture);
             let _ = window.show();
         }
         // A button that could not be drawn is not a reason to disturb a
@@ -468,6 +428,7 @@ pub fn lower(app: &AppHandle) {
     {
         return;
     }
+    ITS_WINDOW.store(0, Ordering::Relaxed);
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
@@ -484,18 +445,14 @@ pub fn floating_size(app: AppHandle, width: u32, height: u32) -> Result<(), Stri
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("le bouton flottant n'est plus là")?;
+    // Read before the resize and not after: what is kept is the corner
+    // the button hangs from, and a menu that unfolds downwards moves the
+    // opposite corner.
+    let corner = where_it_hangs();
     window
         .set_size(PhysicalSize::new(width, height))
         .map_err(|e| e.to_string())?;
-
-    let anchor = app
-        .state::<Floating>()
-        .watched
-        .lock()
-        .expect("session suivie")
-        .as_ref()
-        .map(|watched| watched.anchor);
-    let Some((right, top)) = anchor else {
+    let Some((right, top)) = corner else {
         return Ok(());
     };
     let size = window.outer_size().map_err(|e| e.to_string())?;
@@ -510,9 +467,7 @@ pub fn floating_hide(app: AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("le bouton flottant n'est plus là")?;
-    app.state::<Floating>()
-        .hidden_by_hand
-        .store(true, std::sync::atomic::Ordering::Relaxed);
+    HIDDEN.store(true, Ordering::Relaxed);
     window.hide().map_err(|e| e.to_string())
 }
 
@@ -530,12 +485,12 @@ pub fn floating_hide(app: AppHandle) -> Result<(), String> {
 /// from it.
 #[tauri::command]
 pub async fn floating_grab(app: AppHandle) -> Result<bool, String> {
-    let held = {
-        let state = app.state::<Floating>();
-        let watched = state.watched.lock().expect("session suivie");
-        watched.as_ref().map(|seen| (seen.process, seen.anchor))
-    };
-    let Some((process, from)) = held else {
+    let held = *app
+        .state::<Floating>()
+        .watched
+        .lock()
+        .expect("session suivie");
+    let (Some(process), Some(from)) = (held, where_it_hangs()) else {
         return Ok(true);
     };
     // The picture is read once: it does not move while the button is
@@ -586,11 +541,7 @@ fn slide(
         size.height as i32,
     );
 
-    let state = app.state::<Floating>();
-    if let Some(seen) = state.watched.lock().expect("session suivie").as_mut() {
-        seen.anchor = anchor;
-    }
-    *state.nudge.lock().expect("position du bouton") = (
+    nudged_to(
         anchor.0 - (picture.2 - MARGIN),
         anchor.1 - (picture.1 + MARGIN),
     );
@@ -605,9 +556,9 @@ fn slide(
 
 /// Where the button hangs: the top right of the picture, moved by
 /// whatever dragging has moved it since.
-fn hung_from(picture: (i32, i32, i32, i32), nudge: (i32, i32), size: i32) -> (i32, i32) {
+fn hung_from(picture: (i32, i32, i32, i32), nudge: (i32, i32), size: (i32, i32)) -> (i32, i32) {
     let corner = (picture.2 - MARGIN + nudge.0, picture.1 + MARGIN + nudge.1);
-    held_inside(corner, picture, size, size)
+    held_inside(corner, picture, size.0, size.1)
 }
 
 /// Keeps the button against the picture, whatever it was asked.
@@ -638,9 +589,14 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
         .get_webview_window(WINDOW)
         .ok_or("aucune session en cours")?;
     // Asked for by name, which takes back the choice of hiding it.
-    app.state::<Floating>()
-        .hidden_by_hand
-        .store(false, std::sync::atomic::Ordering::Relaxed);
+    HIDDEN.store(false, Ordering::Relaxed);
+    // In game mouse mode the pointer belongs entirely to the far
+    // computer: it is held inside the picture and warped back to the
+    // middle of it at every movement, so it cannot be brought to this
+    // button at all. Asking for the menu is asking to do something, so
+    // the pointer comes back first. The entry that gives it away again is
+    // in that very menu.
+    give_the_pointer_back(app);
     window.show().map_err(|e| e.to_string())?;
     window.emit(OPEN, ()).map_err(|e| e.to_string())
 }
@@ -668,7 +624,7 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
         .lock()
         .expect("session suivie")
         .as_ref()
-        .map(|watched| watched.process)
+        .copied()
         .ok_or("aucune session en cours")?;
 
     put_the_picture_in_front(process).await?;
@@ -783,6 +739,159 @@ async fn end_it_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
 
 /* ---- Ce qui appartient à Windows ------------------------------------- */
 
+/// Remembers the button's window, so it can be moved without asking the
+/// toolkit.
+#[cfg(windows)]
+fn remember_the_button(window: &tauri::WebviewWindow) {
+    if let Ok(handle) = window.hwnd() {
+        ITS_WINDOW.store(handle.0 as isize, Ordering::Relaxed);
+    }
+}
+
+/// Lays the button on the corner of the picture it hangs from.
+///
+/// Called every time the picture is laid, which is every step of a drag
+/// of our window. So: no lock, no message to another thread, nothing of
+/// the toolkit. Asking the toolkit where a window is and putting it
+/// somewhere else are two trips through its message queue, and doing
+/// that a hundred times a second is what made resizing a session judder.
+#[cfg(windows)]
+pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
+    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowRect, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+    };
+
+    let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
+    if button.is_null() {
+        return;
+    }
+    let mut own = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: a window of ours, and the rectangle is ours.
+    if unsafe { GetWindowRect(button, &mut own) } == 0 {
+        return;
+    }
+    let size = (own.right - own.left, own.bottom - own.top);
+    let anchor = hung_from(picture, nudge(), size);
+
+    // The system puts an owned window back up with the one that owns it,
+    // which is right for a button that is only down because the window
+    // is. It is not right for one the person hid on purpose, so that
+    // choice is put back here, where everything else about its place is
+    // decided. Its place is settled all the same: a hidden button left
+    // behind would show itself in the wrong corner when called back.
+    let hidden = if HIDDEN.load(Ordering::Relaxed) {
+        SWP_HIDEWINDOW
+    } else {
+        0
+    };
+    // SAFETY: a window of ours, moved without being resized or
+    // activated.
+    unsafe {
+        SetWindowPos(
+            button,
+            std::ptr::null_mut(),
+            anchor.0 - size.0,
+            anchor.1,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | hidden,
+        )
+    };
+}
+
+/// The corner the button hangs from right now, read from the button
+/// itself rather than remembered beside it.
+#[cfg(windows)]
+fn where_it_hangs() -> Option<(i32, i32)> {
+    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
+    if button.is_null() {
+        return None;
+    }
+    let mut own = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: a window of ours, and the rectangle is ours.
+    if unsafe { GetWindowRect(button, &mut own) } == 0 {
+        return None;
+    }
+    Some((own.right, own.top))
+}
+
+/// Hands the pointer back when the far computer is holding it.
+///
+/// In game mouse mode the engine keeps the cursor inside the picture and
+/// puts it back in the middle at every movement, so nothing on screen can
+/// be pointed at any more, this button included. Asked of the engine in
+/// its own language, and only when it is really holding it: whether it is
+/// shows in where the system says the pointer may go.
+#[cfg(windows)]
+fn give_the_pointer_back(app: &AppHandle) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClipCursor, GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    };
+
+    let Some(process) = *app
+        .state::<Floating>()
+        .watched
+        .lock()
+        .expect("session suivie")
+    else {
+        return;
+    };
+    let mut allowed = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: the rectangle is ours.
+    if unsafe { GetClipCursor(&mut allowed) } == 0 {
+        return;
+    }
+    // SAFETY: no argument beyond the metric asked for.
+    let whole = unsafe {
+        (
+            GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        )
+    };
+    let held = allowed.right - allowed.left < whole.0 || allowed.bottom - allowed.top < whole.1;
+    if !held {
+        return;
+    }
+    note("le pointeur est tenu par la session : rendu avant d'ouvrir le menu");
+    if let Err(reason) = shortcut(Act::MouseMode, process) {
+        note(&format!("pointeur non rendu : {reason}"));
+    }
+}
+
+#[cfg(not(windows))]
+fn remember_the_button(_window: &tauri::WebviewWindow) {}
+
+#[cfg(not(windows))]
+pub fn lay_the_button(_picture: (i32, i32, i32, i32)) {}
+
+#[cfg(not(windows))]
+fn where_it_hangs() -> Option<(i32, i32)> {
+    None
+}
+
+#[cfg(not(windows))]
+fn give_the_pointer_back(_app: &AppHandle) {}
+
 /// Keeps the button from ever taking the place of the picture, and ties
 /// it to the window it hangs over.
 ///
@@ -873,10 +982,16 @@ fn held_down() -> bool {
     false
 }
 
-/// That player's biggest window on screen, and where it sits.
+/// That player's biggest window, and where it sits.
 ///
 /// The biggest rather than the first: the engine keeps a few small
 /// windows of its own, and the picture is never the small one.
+///
+/// On screen or not. The engine's picture window is born hidden and is
+/// only shown once everything about it has been settled, which is the
+/// whole point: taken in hand while it is still hidden, it is never seen
+/// anywhere but where it belongs. A window that had to be visible to be
+/// found would be found too late, every time.
 #[cfg(windows)]
 fn biggest_window_of(
     process: u32,
@@ -886,7 +1001,7 @@ fn biggest_window_of(
 )> {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible,
+        EnumWindows, GetWindowRect, GetWindowThreadProcessId,
     };
     use windows_sys::core::BOOL;
 
@@ -905,8 +1020,7 @@ fn biggest_window_of(
         // SAFETY: the window comes from the enumeration and the slot is
         // ours.
         unsafe { GetWindowThreadProcessId(window, &mut owner) };
-        // SAFETY: same window.
-        if owner != looking.process || unsafe { IsWindowVisible(window) } == 0 {
+        if owner != looking.process {
             return TRUE;
         }
 

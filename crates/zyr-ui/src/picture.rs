@@ -62,6 +62,17 @@ static SHAPE: AtomicI64 = AtomicI64::new(0);
 /// afterwards as well would resize the window a second time for nothing.
 static DRAGGED: AtomicBool = AtomicBool::new(false);
 
+/// Size the picture was last given a shape for, so it is only reshaped
+/// when it really changes size.
+static LAID: AtomicI64 = AtomicI64::new(0);
+
+/// Radius the system rounds a window's corners by, in page pixels.
+///
+/// Windows has never offered it as a number to ask for; this is the one
+/// it uses for an ordinary window, and it is scaled to the screen the
+/// window is on.
+const CORNER: i32 = 8;
+
 /// Width and height of the picture, as the handler reads them.
 fn shape() -> (i32, i32) {
     let both = SHAPE.load(Ordering::Relaxed);
@@ -69,6 +80,9 @@ fn shape() -> (i32, i32) {
 }
 
 fn remember_the_shape(engine: isize, shape: (i32, i32)) {
+    // The next picture is a different window and has never been given a
+    // shape, whatever size this one was left at.
+    LAID.store(0, Ordering::Relaxed);
     SHAPE.store(
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
@@ -356,24 +370,37 @@ fn alive(held: &Held) -> bool {
 /// apart exactly when the window moves.
 #[cfg(windows)]
 pub fn fit(app: &AppHandle) {
-    use windows_sys::Win32::Foundation::{POINT, RECT};
-    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
-        SWP_SHOWWINDOW, SetWindowPos,
-    };
-
     let Some(held) = taken(app) else {
         return;
     };
     if !alive(&held) {
         return;
     }
-    let engine = held.window as windows_sys::Win32::Foundation::HWND;
-
     let Some(home) = home_window(app) else {
         return;
     };
+    lay_it_out(home, held.window as windows_sys::Win32::Foundation::HWND);
+}
+
+/// The one place a session is laid out, and the only one.
+///
+/// Nothing of the toolkit and nothing that waits: this runs on every step
+/// of a drag of our window, called from that window's own message
+/// handler. Asking the toolkit where a window is and putting another one
+/// somewhere else are trips through its event queue, and doing that a
+/// hundred times a second is most of what made resizing a session judder.
+#[cfg(windows)]
+fn lay_it_out(
+    home: windows_sys::Win32::Foundation::HWND,
+    engine: windows_sys::Win32::Foundation::HWND,
+) {
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_NOACTIVATE, SWP_NOCOPYBITS,
+        SWP_SHOWWINDOW, SetWindowPos,
+    };
+
     // Nothing to lay the picture on. Minimised, our window has no inside
     // left: laying it there would squeeze the picture to nothing and ask
     // the engine to draw for a surface of no size, once a second, for as
@@ -408,12 +435,10 @@ pub fn fit(app: &AppHandle) {
     // Shown without being activated: asked to show itself the ordinary
     // way, it would take the front, and this runs every second.
     //
-    // And handed over rather than waited for. That window belongs to
-    // another program, so moving it the ordinary way means posting to
-    // that program and standing still until it has answered. Once a
-    // second nobody would notice; a hundred times a second, which is
-    // what dragging an edge comes to, it is our own window that stops
-    // following the mouse while the engine rebuilds what it draws into.
+    // Nothing of what was drawn is carried over to the new size. The
+    // system would otherwise copy a corner of the old picture into the
+    // new frame and leave it there until the engine draws again, which
+    // is a torn image on every step of a resize.
     unsafe {
         SetWindowPos(
             engine,
@@ -422,13 +447,57 @@ pub fn fit(app: &AppHandle) {
             corner.y,
             width,
             height,
-            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_ASYNCWINDOWPOS,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOCOPYBITS,
         )
     };
-    crate::floating::follow(
-        app,
-        (corner.x, corner.y, corner.x + width, corner.y + height),
-    );
+    round_the_bottom(home, engine, width, height);
+    crate::floating::lay_the_button((corner.x, corner.y, corner.x + width, corner.y + height));
+}
+
+/// Rounds the two bottom corners of the picture, to the curve the system
+/// gives our own window.
+///
+/// The picture is a window of its own and a window of its own is a plain
+/// rectangle, so a rounded frame showed square corners inside it. Only
+/// the bottom two: the top of the picture sits under the title bar, where
+/// the frame is straight.
+///
+/// Applied only when the size changes. A window given a shape is redrawn
+/// on the spot, and doing that once a second on a picture would show.
+#[cfg(windows)]
+fn round_the_bottom(
+    home: windows_sys::Win32::Foundation::HWND,
+    engine: windows_sys::Win32::Foundation::HWND,
+    width: i32,
+    height: i32,
+) {
+    use windows_sys::Win32::Graphics::Gdi::{
+        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, SetWindowRgn,
+    };
+    use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+
+    let laid = (i64::from(width) << 32) | i64::from(height) & 0xFFFF_FFFF;
+    if LAID.swap(laid, Ordering::Relaxed) == laid || width <= 0 || height <= 0 {
+        return;
+    }
+    // SAFETY: our own window.
+    let dpi = unsafe { GetDpiForWindow(home) };
+    let round = (CORNER * dpi.max(1) as i32 / 96).min(height);
+
+    // SAFETY: both are ours until the system takes the combined one.
+    unsafe {
+        // The rectangle is given one more pixel each way: a shape is cut
+        // exclusive of its right and bottom edge, and a picture short of
+        // its last row is a picture with a line missing.
+        let shape = CreateRoundRectRgn(0, 0, width + 1, height + 1, round * 2, round * 2);
+        let square = CreateRectRgn(0, 0, width, height - round);
+        CombineRgn(shape, shape, square, RGN_OR as i32);
+        DeleteObject(square.into());
+        // The system owns the shape from here and frees it itself. Not
+        // asked to redraw on the spot: this happens on every step of a
+        // resize, and the engine is drawing sixty times a second anyway.
+        SetWindowRgn(engine, shape, 0);
+    }
 }
 
 /// Puts the picture back in front, so the engine gets the keyboard and
@@ -459,11 +528,11 @@ fn hand_the_keyboard_back(app: &AppHandle) {
 /// Makes our window behave as the one window a session is, and steps in
 /// front of its messages for as long as the picture is in it.
 ///
-/// Three things, all of them because two windows laid on one another are
-/// not one window until the system is told so: its corners are squared
-/// off to match the picture's, its title bar is lit, and it starts
-/// answering the two questions the system asks before acting rather than
-/// after, which are the only place either can be answered.
+/// Two windows laid on one another are not one window until the system is
+/// told so, and this is where it is told: the title bar is lit, and from
+/// here on the window answers the three questions the system asks before
+/// acting rather than after. Those three are the whole of it, because
+/// before is the only moment any of them can be answered.
 ///
 /// Stepping in front of a window's messages is done from the thread that
 /// draws it, and none of the callers here is that thread: one drives the
@@ -482,7 +551,6 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
-        square_the_corners(home, true);
         light_the_bar(home);
     });
 }
@@ -500,45 +568,7 @@ fn give_the_window_back(app: &AppHandle) {
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
-        square_the_corners(home, false);
     });
-}
-
-/// Squares off our window's corners while it holds a picture, and rounds
-/// them again after.
-///
-/// The picture is a window of its own, laid over the inside of ours, and
-/// a window of its own is a plain rectangle. Ours is not: the system
-/// rounds the corners of every window, so a rounded frame showed a square
-/// picture inside it, and the two bottom corners gave the whole thing
-/// away.
-///
-/// Squared rather than rounded to match. The rounding belongs to the
-/// system and its exact radius is not ours to know; asking for the same
-/// curve on the picture would mean guessing that radius, and clipping a
-/// window that a stream is being drawn into to boot. Turning it off is
-/// one call, exact, and costs the picture nothing.
-#[cfg(windows)]
-fn square_the_corners(home: windows_sys::Win32::Foundation::HWND, square: bool) {
-    use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DEFAULT, DWMWCP_DONOTROUND, DwmSetWindowAttribute,
-    };
-
-    let wanted: i32 = if square {
-        DWMWCP_DONOTROUND
-    } else {
-        DWMWCP_DEFAULT
-    };
-    // SAFETY: our own window, and the value handed in is one the
-    // attribute takes, of the size the call is told to expect.
-    unsafe {
-        DwmSetWindowAttribute(
-            home,
-            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
-            (&raw const wanted).cast(),
-            std::mem::size_of::<i32>() as u32,
-        )
-    };
 }
 
 /// Says out loud that our window is active, and has its title bar
@@ -576,7 +606,7 @@ unsafe extern "system" fn lit(
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SIZING,
+        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SIZING, WM_WINDOWPOSCHANGED,
     };
 
     match message {
@@ -612,6 +642,24 @@ unsafe extern "system" fn lit(
             DRAGGED.store(message == WM_ENTERSIZEMOVE, Ordering::Relaxed);
             // SAFETY: the arguments the system handed in, untouched.
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
+        }
+        // Our window has just moved, been resized, shown or hidden: the
+        // picture and the button go with it, here and now.
+        //
+        // Here rather than through the toolkit's own account of the same
+        // thing. That account arrives a queue later, and a picture a
+        // queue behind the window it lives in is a picture that visibly
+        // lags the frame during a drag.
+        WM_WINDOWPOSCHANGED => {
+            // SAFETY: the arguments the system handed in, untouched. Let
+            // the system finish moving this window before the picture is
+            // laid on what it has become.
+            let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
+            let engine = ENGINE.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
+            if !engine.is_null() {
+                lay_it_out(window, engine);
+            }
+            answer
         }
         // SAFETY: same.
         _ => unsafe { DefSubclassProc(window, message, wparam, lparam) },

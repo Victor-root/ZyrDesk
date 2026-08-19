@@ -127,18 +127,18 @@ fn main() {
                         let _ = window.hide();
                     }
                 }
-                // The picture is laid over the inside of this window and
-                // has to be laid again wherever the window goes, and at
-                // whatever size it takes. The shape first: a window that
-                // is about to be put back on the picture's shape would
-                // otherwise be fitted twice, once at a size it is not
-                // going to keep.
+                // Laying the picture where the window went is not done
+                // from here: it is done inside the window's own message
+                // handler, which runs a queue earlier than this and is
+                // the difference between a picture glued to the frame
+                // and one visibly trailing it.
+                //
+                // What is left here is putting the window back on the
+                // picture's shape, for the resizes that are not a hand
+                // dragging an edge: a hand is held to shape while it
+                // drags, before the resize happens.
                 WindowEvent::Resized(_) => {
                     picture::hold_the_shape(window.app_handle());
-                    picture::fit(window.app_handle());
-                }
-                WindowEvent::Moved(_) => {
-                    picture::fit(window.app_handle());
                 }
                 _ => {}
             }

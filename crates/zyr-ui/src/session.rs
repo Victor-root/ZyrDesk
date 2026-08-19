@@ -216,7 +216,14 @@ pub fn end_it(app: &AppHandle) {
 const WINDOW_TAKES: Duration = Duration::from_secs(20);
 
 /// How often it is looked for while it does.
-const WINDOW_STEP: Duration = Duration::from_millis(16);
+///
+/// Once a millisecond, which is a lot to ask of a machine and is asked
+/// for a few seconds at most. What is being raced is the engine settling
+/// its own window: it creates it hidden and shows it once its size, its
+/// place and its icon are done, and everything of ours has to happen
+/// inside that. Losing that race costs an empty frame on screen, which is
+/// the one thing this whole arrangement exists to avoid.
+const WINDOW_STEP: Duration = Duration::from_millis(1);
 
 /// Lays the picture in our window the moment the engine opens it.
 ///

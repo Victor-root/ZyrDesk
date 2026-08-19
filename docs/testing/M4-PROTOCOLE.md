@@ -279,6 +279,14 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Si rien ne se passe, le journal dit si Windows a pris la combinaison : elle peut être déjà tenue par un autre programme. Elle se change alors dans **Réglages, Raccourcis clavier**.
 
+> **R12quater (le bouton reste joignable en souris de jeu)**
+>
+> Passer en **souris de jeu** par le menu, puis essayer de pointer le bouton : impossible, et c'est normal, le pointeur appartient entièrement à l'ordinateur distant. Taper alors la combinaison qui ouvre le menu.
+>
+> Attendu : le pointeur revient, le menu s'ouvre, et tout redevient cliquable. L'entrée qui redonne la souris à la session est dans ce menu.
+>
+> Demander le menu, c'est demander à faire quelque chose : le pointeur est rendu d'abord. Il ne l'est que s'il était réellement tenu, ce qui se lit dans les limites que le système donne au curseur, et non deviné.
+
 > **R12ter (les raccourcis se choisissent)**
 >
 > Dans **Réglages**, section **Raccourcis clavier** : cliquer sur la combinaison en face de « Fenêtré ou plein écran », taper Ctrl + Alt + F, puis ouvrir une session et l'essayer.
@@ -341,9 +349,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : **rien d'autre que la fenêtre ZyrDesk ne doit apparaître**. Ni une fenêtre à barre de titre au milieu de l'écran, ni un cadre vide, ni un retour en fenêtre avant de reprendre le plein écran.
 >
-> Ce qui apparaissait là avant : le moteur crée sa fenêtre à la taille de l'image et centrée, et nous la prenons en main après. L'attente était d'une seconde, elle est maintenant de l'ordre d'une image.
+> **Sur deux écrans surtout.** Mettre ZyrDesk sur le deuxième écran et refaire l'essai en regardant le **premier**. C'est là que le défaut se voyait : le moteur choisit l'écran principal pour sa fenêtre, sans égard pour celui où ZyrDesk se trouve, donc l'éclair de cadre blanc apparaissait sur l'écran que personne ne regardait.
 >
-> **Défaut connu, sur deux écrans.** Le moteur crée toujours sa fenêtre sur l'**écran principal**, quel que soit celui où ZyrDesk se trouve : sur un deuxième écran, l'éclair de cadre blanc se voit donc sur le premier. Cela ne se règle pas de notre côté, la place étant choisie par le moteur avant que nous puissions l'atteindre. Le correctif est un ajustement du patch P-M1 déjà appliqué (une fenêtre qui naît cachée, montrée une fois posée) et demande une recompilation des moteurs : voir `patches/MANIFEST.md`.
+> La fenêtre du moteur naît maintenant cachée et n'est montrée qu'une fois tout réglé ; ZyrDesk la prend en main pendant ce temps-là et la pose avant que quiconque puisse la voir. Cela demande les **moteurs recompilés** : si l'éclair est toujours là, vérifier dans le journal que le moteur client en place est bien celui de la compilation du jour.
 
 > **S5 (l'écran n'est pris qu'une fois)**
 >
@@ -391,15 +399,17 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : la fenêtre suit la souris **sans à-coups**, et l'image dedans suit la fenêtre. Ni saccade, ni fenêtre qui s'arrête pour rattraper ensuite.
 >
-> Deux choses le rendaient impossible et les deux sont réglées. La forme était corrigée après coup, donc chaque cran du geste redimensionnait la fenêtre deux fois ; elle est maintenant tenue pendant le geste, avant que le redimensionnement n'ait lieu. Et poser l'image attendait que le programme du moteur ait répondu, cent fois par seconde ; c'est maintenant déposé sans attendre.
+> Regarder aussi que **les deux ne se décalent jamais** : le bord de l'image et le bord de la fenêtre bougent ensemble, sans que l'un traîne derrière l'autre.
+>
+> Trois choses le rendaient impossible. La forme était corrigée après coup, donc chaque cran du geste redimensionnait la fenêtre deux fois : elle est maintenant tenue pendant le geste, sur le rectangle que le système propose avant de le prendre. Poser l'image passait par la file d'événements de la boîte à outils, qui arrive une file plus tard que la fenêtre elle-même : c'est fait maintenant dans le gestionnaire de messages de la fenêtre, donc dans le même souffle. Et le bouton flottant était déplacé en demandant deux fois à la boîte à outils, cent fois par seconde ; il est déplacé directement.
 
 > **S8ter (les coins de la fenêtre)**
 >
 > En fenêtre, regarder les deux coins du bas de la fenêtre ZyrDesk pendant une session.
 >
-> Attendu : **le coin de l'image et le coin de la fenêtre sont le même coin**. Pas de rectangle à angles droits dans un rectangle à angles arrondis.
+> Attendu : **les deux coins du bas de l'image sont arrondis**, exactement comme ceux de la fenêtre, comme n'importe quelle fenêtre de Windows 11. Pas de rectangle à angles droits dans un rectangle à angles arrondis.
 >
-> Windows arrondit les coins de toutes les fenêtres, et l'image est une fenêtre à part qui reste un rectangle. Le temps d'une session, ZyrDesk demande donc à ne pas être arrondi. En dehors d'une session, la fenêtre retrouve ses coins arrondis : le vérifier après S17.
+> Windows arrondit les coins de toutes les fenêtres, et l'image est une fenêtre à part qui reste un rectangle : c'est elle qui est découpée pour suivre. Seulement en bas, le haut de l'image étant sous la barre de titre, là où le cadre est droit. À vérifier aussi sur un écran agrandi : la courbe grandit avec le reste.
 
 > **S9 (l'image suit la fenêtre partout)**
 >
@@ -419,7 +429,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 > **S11 (le menu flottant)**
 >
-> Dérouler la partie 4 en entier sans fermer la session : R10, R11, R12, R12bis, R12ter.
+> Dérouler la partie 4 en entier sans fermer la session : R10, R11, R12, R12bis, R12quater, R12ter.
 >
 > Attendu : rien n'a changé de ce côté. Le bouton se prend, se déplace, se masque, se rappelle, et chaque entrée fait ce qu'elle dit.
 
