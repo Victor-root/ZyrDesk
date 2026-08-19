@@ -46,6 +46,9 @@ pub enum EngineError {
         code: Option<i32>,
         output: String,
     },
+    /// The question never got an answer, and the engine that asked it
+    /// was stopped rather than left waiting for good.
+    QuitTimedOut(Duration),
 }
 
 impl fmt::Display for EngineError {
@@ -68,6 +71,11 @@ impl fmt::Display for EngineError {
                 "fermeture refusée par l'ordinateur distant ({}){}",
                 named(*code),
                 after(output)
+            ),
+            EngineError::QuitTimedOut(patience) => write!(
+                f,
+                "l'ordinateur distant n'a pas répondu à la fermeture en {} secondes",
+                patience.as_secs()
             ),
         }
     }
@@ -193,10 +201,31 @@ impl ClientEngine {
     /// tunnel is still standing.
     pub fn quit(&self, host: &str) -> Result<(), EngineError> {
         self.state.prepare()?;
-        let output = self
+        let mut engine = self
             .command(&command::quit_arguments(host))?
             .stdin(Stdio::null())
-            .output()?;
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        tie_to_this_program(&engine);
+
+        // The question travels through the tunnel the session used, and
+        // that tunnel closes the moment the session's engine dies, which
+        // is very often what happens while this is being asked. The
+        // engine then waits on an answer that will never come, with no
+        // limit of its own, and stays for as long as the machine runs.
+        // Waited for rather than trusted: it is stopped when the wait is
+        // over, and what it never said is reported as the failure it is.
+        let waiting = Instant::now() + QUIT_TAKES;
+        while engine.try_wait()?.is_none() {
+            if Instant::now() >= waiting {
+                let _ = engine.kill();
+                let _ = engine.wait();
+                return Err(EngineError::QuitTimedOut(QUIT_TAKES));
+            }
+            std::thread::sleep(PAIRING_POLL);
+        }
+        let output = engine.wait_with_output()?;
 
         if let Some(mut log) = self.open_log()? {
             let _ = writeln!(log, "--- closing the session on {host} ---");
@@ -358,6 +387,14 @@ fn last_words(said: &str, most: usize) -> String {
 
 /// How often a pairing under way is looked in on.
 const PAIRING_POLL: Duration = Duration::from_millis(100);
+
+/// How long the far computer is given to answer a request to close what
+/// it is showing.
+///
+/// Longer than the engine takes to give up on finding that computer,
+/// which is ten seconds, so a refusal it can name is preferred to one
+/// this end had to make up.
+const QUIT_TAKES: Duration = Duration::from_secs(15);
 
 /// A pairing under way.
 pub struct Pairing {

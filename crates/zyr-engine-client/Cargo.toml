@@ -15,4 +15,7 @@ zyr-proto.workspace = true
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_System_JobObjects",
+    # CreateJobObjectW prend des attributs de sécurité, et windows-sys
+    # range donc toute la fonction derrière cette porte-là.
+    "Win32_Security",
 ] }
