@@ -31,7 +31,11 @@ enum Told {
         packet: u16,
     },
     /// The two computers have never met, and are being introduced.
-    Pairing,
+    Pairing {
+        /// They believed they knew each other, and the far one did not
+        /// agree.
+        again: bool,
+    },
     /// The same, without a tunnel to carry the code. Only the diagnostic
     /// path gets here, and the window never opens one.
     PairingNeeded {
@@ -113,16 +117,35 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
 }
 
 fn drive(app: &AppHandle, wanted: Wanted) {
-    let running = match zyr_session::open(&wanted, &mut |step| say(app, told(step))) {
+    crate::journal::note(&format!("session asked for towards {}", wanted.host));
+    let running = match zyr_session::open(&wanted, &mut |step| {
+        crate::journal::note(&written(&step));
+        say(app, told(step));
+    }) {
         Ok(running) => running,
-        Err(e) => return finish(app, false, e.to_string()),
+        Err(e) => {
+            crate::journal::note(&format!(
+                "session not opened: {}",
+                e.to_string().replace('\n', " ")
+            ));
+            return finish(app, false, e.to_string());
+        }
     };
 
+    crate::journal::note(&format!(
+        "session live, engine process {}",
+        running.process_id()
+    ));
     say(app, Told::Live);
 
     // Waiting costs nothing here and buys the one thing the person wants
     // afterwards: whether the session ended by itself or fell over.
-    match running.wait() {
+    let ended = running.wait();
+    crate::journal::note(&match &ended {
+        Ok(outcome) => format!("session ended: {outcome:?}"),
+        Err(e) => format!("session ended on a system error: {e}"),
+    });
+    match ended {
         Ok(Outcome::Ended) => finish(app, true, String::new()),
         Ok(Outcome::Failed) => finish(
             app,
@@ -144,10 +167,31 @@ fn drive(app: &AppHandle, wanted: Wanted) {
 fn told(step: Step) -> Told {
     match step {
         Step::Reached { packet } => Told::Reached { packet },
-        Step::Pairing => Told::Pairing,
+        Step::Pairing { again } => Told::Pairing { again },
         Step::PairingNeeded { pin } => Told::PairingNeeded { pin },
         Step::Paired => Told::Paired,
         Step::Starting => Told::Starting,
+    }
+}
+
+/// The same moment, in the journal.
+///
+/// The window shows it for as long as it is on screen and then draws
+/// something else over it. Opening a session is where most of what can go
+/// wrong goes wrong, and every step of it is worth having in writing
+/// afterwards, when there is nothing left on screen to look at.
+fn written(step: &Step) -> String {
+    match step {
+        Step::Reached { packet } => format!("tunnel open, packets of {packet} bytes"),
+        Step::Pairing { again: false } => "introducing the two computers".to_string(),
+        Step::Pairing { again: true } => {
+            "the far computer no longer knows this one, introducing them again".to_string()
+        }
+        Step::PairingNeeded { .. } => {
+            "waiting for the code to be typed on the far computer".to_string()
+        }
+        Step::Paired => "the two computers know each other".to_string(),
+        Step::Starting => "starting the client engine".to_string(),
     }
 }
 

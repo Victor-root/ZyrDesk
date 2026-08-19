@@ -79,13 +79,14 @@ impl DeviceState {
         found
     }
 
-    /// True once the engine has recorded a paired host.
+    /// True once the engine has paired with a host, and not merely seen
+    /// one.
     ///
     /// Tells us whether a pairing is needed before the session.
     pub fn has_a_paired_host(&self) -> bool {
         self.settings_files().iter().any(|file| {
             fs::read_to_string(file)
-                .map(|contents| contents.contains("hosts"))
+                .map(|contents| names_a_certificate(&contents))
                 .unwrap_or(false)
         })
     }
@@ -97,6 +98,45 @@ impl DeviceState {
             other => other,
         }
     }
+}
+
+/// Key the engine files a host's certificate under.
+const CERTIFICATE: &str = "srvcert";
+
+/// How the engine writes a certificate it does not have.
+const NO_CERTIFICATE: &str = "@ByteArray()";
+
+/// Whether a settings file names a certificate a host proved itself by.
+///
+/// This is what tells a paired host from one merely pointed at. The
+/// engine writes down every computer it has been given, paired or not,
+/// so the presence of a host record means nothing at all; what it only
+/// ever holds after a pairing has gone through is that host's
+/// certificate, and it records having none by writing an empty one.
+///
+/// Reading the record for the word « hosts », which is what this did at
+/// first, therefore called every computer paired from the moment it had
+/// been named once. Every session after the first attempt then went
+/// straight to the picture without introducing anybody, and the far
+/// engine turned it away in under a second, from a log nobody reads.
+fn names_a_certificate(contents: &str) -> bool {
+    contents.lines().any(|line| {
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        // The key is written under the host's place in the list, as
+        // « hosts\1\srvcert », so what matters is how it ends. On a
+        // boundary and not on any letters that happen to line up: a key
+        // ending in something else entirely must not be read as this one.
+        let Some(before) = key.trim_end().strip_suffix(CERTIFICATE) else {
+            return false;
+        };
+        if !before.is_empty() && !before.ends_with('\\') {
+            return false;
+        }
+        let value = value.trim();
+        !value.is_empty() && value != NO_CERTIFICATE
+    })
 }
 
 fn collect_ini(folder: &Path, found: &mut Vec<PathBuf>) {
@@ -152,11 +192,56 @@ mod tests {
 
         let nested = base.join("Some Vendor").join("Some Product");
         fs::create_dir_all(&nested).unwrap();
-        fs::write(nested.join("settings.ini"), "[General]\nhosts\\size=1\n").unwrap();
+        fs::write(nested.join("settings.ini"), PAIRED).unwrap();
 
         assert_eq!(state.settings_files().len(), 1);
         assert!(state.has_a_paired_host());
         fs::remove_dir_all(&base).unwrap();
+    }
+
+    /// What the engine writes about a computer it was pointed at once and
+    /// never paired with. It is written down all the same, with an empty
+    /// certificate, and that is the whole difference.
+    const MERELY_SEEN: &str = "[General]\n\
+        hosts\\size=1\n\
+        hosts\\1\\hostname=PC-VICTOR\n\
+        hosts\\1\\manualaddress=127.77.0.1\n\
+        hosts\\1\\srvcert=@ByteArray()\n";
+
+    /// The same computer, once the two have met.
+    const PAIRED: &str = "[General]\n\
+        hosts\\size=1\n\
+        hosts\\1\\hostname=PC-VICTOR\n\
+        hosts\\1\\manualaddress=127.77.0.1\n\
+        hosts\\1\\srvcert=@ByteArray(-----BEGIN CERTIFICATE-----\\nMIIC…\\n-----END CERTIFICATE-----\\n)\n";
+
+    #[test]
+    fn a_computer_merely_seen_is_not_a_computer_paired_with() {
+        // La panne exacte, et la raison pour laquelle plus aucune session
+        // ne s'ouvrait : le moteur écrit tout ordinateur qu'on lui a
+        // donné, appairé ou non. Le croire appairé revient à sauter les
+        // présentations, et le moteur d'en face raccroche en moins d'une
+        // seconde.
+        assert!(!names_a_certificate(MERELY_SEEN));
+        assert!(names_a_certificate(PAIRED));
+
+        // Un fichier de réglages sans le moindre ordinateur.
+        assert!(!names_a_certificate("[General]\nhosts\\size=0\n"));
+        assert!(!names_a_certificate(""));
+    }
+
+    #[test]
+    fn a_certificate_is_recognised_wherever_it_sits_in_the_list() {
+        // La clé porte le rang de l'ordinateur : c'est sa fin qui compte,
+        // jamais son début.
+        assert!(names_a_certificate(
+            "hosts\\4\\srvcert=@ByteArray(quelque chose)"
+        ));
+        // Et une clé qui finit autrement ne doit rien déclencher, sans
+        // quoi on revient à la panne d'avant.
+        assert!(!names_a_certificate("hosts\\1\\srvcertificatethumb=abc"));
+        assert!(!names_a_certificate("hosts\\1\\hostname=srvcert"));
+        assert!(!names_a_certificate("hosts\\1\\autresrvcert=@ByteArray(x)"));
     }
 
     #[test]

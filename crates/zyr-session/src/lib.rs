@@ -21,6 +21,11 @@
 //! before it opened, so the code goes through it. The order is the whole
 //! mechanism: the far engine refuses a code as long as nobody is asking
 //! it for one, so ours is started and left waiting first.
+//!
+//! And what this computer remembers of a pairing is only a note it wrote
+//! to itself: the far one decides, and can have forgotten. A session that
+//! stops before showing anything is therefore taken as that, and the two
+//! are introduced again rather than the person being told it failed.
 
 use std::fmt;
 use std::io;
@@ -61,7 +66,11 @@ pub enum Step {
     Reached { packet: u16 },
     /// The two computers have never met, and are being introduced.
     /// Nothing is asked of anyone.
-    Pairing,
+    ///
+    /// `again` when they believed they already knew each other and the
+    /// far one turned out not to agree, which is what a pairing forgotten
+    /// on the other side looks like from here.
+    Pairing { again: bool },
     /// The same, without a tunnel to carry the code: it has to be typed
     /// on the other computer. Only the diagnostic path ever gets here.
     PairingNeeded { pin: String },
@@ -80,6 +89,15 @@ const PAIRING_PATIENCE: Duration = Duration::from_secs(30);
 
 /// The same, when somebody has to walk to the other computer.
 const PAIRING_BY_HAND: Duration = Duration::from_secs(180);
+
+/// How long a session is watched before it is believed.
+///
+/// Long enough that an engine turned away at the door has stopped, which
+/// it does in well under a second, and short enough to disappear behind
+/// the engine's own start-up, which takes longer than this anyway. It is
+/// only ever waited when the pairing was skipped, so a first session
+/// never pays it.
+const SESSION_TAKES: Duration = Duration::from_secs(3);
 
 #[derive(Debug)]
 pub enum Error {
@@ -214,14 +232,33 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
     let engine = ClientEngine::new(&exe, state).with_log(&log);
 
     if !already_known {
-        introduce(&engine, &target, driving.as_mut(), told)?;
+        introduce(&engine, &target, driving.as_mut(), false, told)?;
         told(Step::Paired);
     }
 
     told(Step::Starting);
-    let session = engine
+    let mut session = engine
         .start_session(&target, &settings)
         .map_err(Error::Engine)?;
+
+    // What this computer remembers of a pairing is a note it wrote to
+    // itself, and the far computer is the only one that decides. It can
+    // have been reinstalled, reset, or simply have forgotten, and the
+    // engine then turns the session away in under a second, into a log
+    // nobody reads. Watched here rather than believed: the two are
+    // introduced again, and the session opens.
+    //
+    // Only when the pairing was skipped. Having just been introduced and
+    // still being turned away is another fault entirely, and doing it
+    // twice would not make it any better.
+    if already_known && gave_up_at_once(&mut session)? {
+        introduce(&engine, &target, driving.as_mut(), true, told)?;
+        told(Step::Paired);
+        told(Step::Starting);
+        session = engine
+            .start_session(&target, &settings)
+            .map_err(Error::Engine)?;
+    }
 
     // From here the session belongs to the engine and to the service.
     // Whoever asked for it may go.
@@ -246,6 +283,7 @@ fn introduce(
     engine: &ClientEngine,
     target: &str,
     driving: Option<&mut Driving>,
+    again: bool,
     told: &mut dyn FnMut(Step),
 ) -> Result<(), Error> {
     let pin = random::pairing_pin();
@@ -261,10 +299,35 @@ fn introduce(
             .map_err(Error::Pairing);
     };
 
-    told(Step::Pairing);
+    told(Step::Pairing { again });
     let pairing = engine.start_pairing(target, &pin).map_err(Error::Pairing)?;
     driving.hand_over_the_code(&pin).map_err(Error::Handover)?;
     pairing.settled(PAIRING_PATIENCE).map_err(Error::Pairing)
+}
+
+/// Whether the engine stopped before showing anything.
+///
+/// A session that has taken is still running when this returns, and one
+/// the far engine turned away is long gone. Ending straight away of its
+/// own accord is not a failure and is left alone: somebody closed it.
+fn gave_up_at_once(session: &mut Session) -> Result<bool, Error> {
+    let stopped = session
+        .settled(SESSION_TAKES)
+        .map_err(|e| Error::Engine(EngineError::Io(e)))?;
+    Ok(worth_introducing_again(stopped))
+}
+
+/// Whether what the engine stopped on is worth introducing the two
+/// computers again.
+///
+/// Still running is a session that has taken. Ending of its own accord is
+/// somebody who closed it, and pairing over that would reopen a session
+/// they had just left.
+fn worth_introducing_again(stopped: Option<SessionOutcome>) -> bool {
+    matches!(
+        stopped,
+        Some(SessionOutcome::Failed | SessionOutcome::Unreachable | SessionOutcome::Unknown { .. })
+    )
 }
 
 /// The service, and the way it holds for this session.
@@ -385,6 +448,26 @@ mod tests {
         let outcome = open(&wanted(), &mut |step| steps.push(step));
         assert!(matches!(outcome, Err(Error::EngineMissing(_))));
         assert!(steps.is_empty(), "{steps:?}");
+    }
+
+    #[test]
+    fn a_session_that_never_took_is_worth_a_second_introduction() {
+        // Ce que cet ordinateur retient d'un appairage n'est qu'une note
+        // qu'il s'est écrite à lui-même : la machine d'en face peut avoir
+        // été réinstallée, remise à zéro, ou simplement avoir oublié. Le
+        // moteur repart alors en moins d'une seconde, et c'est le seul
+        // signe qu'on en ait.
+        assert!(worth_introducing_again(Some(Outcome::Failed)));
+        assert!(worth_introducing_again(Some(Outcome::Unreachable)));
+        assert!(worth_introducing_again(Some(Outcome::Unknown {
+            code: Some(9)
+        })));
+
+        // Toujours en cours : la session a pris, on n'y touche pas.
+        assert!(!worth_introducing_again(None));
+        // Terminée toute seule : quelqu'un l'a fermée. Réappairer
+        // rouvrirait une session qu'on vient de quitter.
+        assert!(!worth_introducing_again(Some(Outcome::Ended)));
     }
 
     #[test]

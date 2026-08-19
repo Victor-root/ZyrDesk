@@ -166,6 +166,16 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Attendu : plus d'étape « Premier accès ». Le tunnel s'établit et l'image arrive. Les deux ordinateurs se connaissent maintenant.
 
+> **R8bis (l'ordinateur d'en face a oublié)**
+>
+> Sur le **PC hôte**, en fenêtre administrateur, une ligne : `.\target\release\zyrdeskd stop; Remove-Item -Recurse -Force .\data\host; .\target\release\zyrdeskd start`. Le moteur hôte repart sans se souvenir de personne, ce qui est exactement ce que produit une réinstallation.
+>
+> Depuis le **PC client**, se reconnecter normalement.
+>
+> Attendu : « Cet ordinateur ne nous reconnaît plus », puis les deux se représentent tout seuls, puis l'image. Toujours aucun code, et rien à faire d'aucun côté.
+>
+> C'est la seule panne que le produit ne peut pas prévoir : ce que le client retient d'un appairage n'est qu'une note qu'il s'est écrite, et l'hôte est le seul à décider.
+
 > **R9 (l'image est bonne)**
 >
 > Pendant la session : bouger la souris, taper du texte, ouvrir une fenêtre, lancer une vidéo.
@@ -331,6 +341,7 @@ Deux cas courants, et leur cause habituelle :
 
   Le rattrapage R6bis permet de continuer sans attendre.
 - **La session est refusée avec un message d'ordinateur refusé.** La confiance au réseau local est coupée sur l'hôte (R19), ou son accès distant est désactivé (R20).
+- **La session s'ouvre puis se referme aussitôt, sans image.** Le journal de la fenêtre le raconte pas à pas, de `session asked for towards …` à `session ended: …`. Si la ligne `the far computer no longer knows this one` y figure, le produit s'est rattrapé tout seul et il n'y a rien à faire. Sinon, la fin du journal du moteur client (`session.log`) porte le dernier mot du moteur, qui est toujours la vraie raison.
 
 Deux entrées du menu flottant méritent leur propre explication :
 

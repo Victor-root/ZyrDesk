@@ -122,8 +122,11 @@ fn tell(step: Step, host: &str) {
             println!("Tunnel établi avec {host}.");
             println!("  Taille de paquet : {packet} octets.");
         }
-        Step::Pairing => {
+        Step::Pairing { again: false } => {
             println!("Premier accès à cet ordinateur : présentation en cours...");
+        }
+        Step::Pairing { again: true } => {
+            println!("Cet ordinateur ne nous reconnaît plus : nouvelle présentation...");
         }
         Step::PairingNeeded { pin } => {
             println!("Premier accès à cet ordinateur, sans tunnel pour porter le code.\n");

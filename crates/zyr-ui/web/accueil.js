@@ -603,7 +603,9 @@ listen("session-step", ({ payload }) => {
       break;
     case "pairing":
       etape(
-        "Premier accès à cet ordinateur",
+        payload.again
+          ? "Cet ordinateur ne nous reconnaît plus"
+          : "Premier accès à cet ordinateur",
         "Les deux ordinateurs font connaissance. Rien à faire.",
         null,
       );

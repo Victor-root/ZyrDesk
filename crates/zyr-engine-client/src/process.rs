@@ -377,12 +377,59 @@ impl Session {
     /// Waits for the session to end.
     pub fn wait(&mut self) -> io::Result<SessionOutcome> {
         let status = self.engine.wait()?;
-        Ok(match status.code() {
-            Some(0) => SessionOutcome::Ended,
-            Some(SESSION_FAILED) => SessionOutcome::Failed,
-            Some(UNREACHABLE) => SessionOutcome::Unreachable,
-            code => SessionOutcome::Unknown { code },
-        })
+        Ok(outcome_of(status.code()))
+    }
+
+    /// Watches the session just long enough to know it has taken.
+    ///
+    /// `None` once it is still running at the end of the wait, which is
+    /// what a session on its way to the screen looks like. Anything else
+    /// is an engine that gave up before showing a thing, and what it gave
+    /// up on is worth acting upon rather than reporting as a session that
+    /// has ended.
+    pub fn settled(&mut self, patience: Duration) -> io::Result<Option<SessionOutcome>> {
+        let deadline = Instant::now() + patience;
+        loop {
+            if let Some(status) = self.engine.try_wait()? {
+                return Ok(Some(outcome_of(status.code())));
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+            std::thread::sleep(PAIRING_POLL);
+        }
+    }
+}
+
+/// What the engine's parting code means.
+fn outcome_of(code: Option<i32>) -> SessionOutcome {
+    match code {
+        Some(0) => SessionOutcome::Ended,
+        Some(SESSION_FAILED) => SessionOutcome::Failed,
+        Some(UNREACHABLE) => SessionOutcome::Unreachable,
+        code => SessionOutcome::Unknown { code },
+    }
+}
+
+#[cfg(test)]
+mod outcomes {
+    use super::*;
+
+    #[test]
+    fn every_parting_code_the_engine_gives_is_named() {
+        // Les codes viennent du correctif P-M5 posé sur le moteur : s'ils
+        // changent d'un côté sans l'autre, une session ratée passerait
+        // pour une session normale, et personne ne verrait rien.
+        assert_eq!(outcome_of(Some(0)), SessionOutcome::Ended);
+        assert_eq!(outcome_of(Some(SESSION_FAILED)), SessionOutcome::Failed);
+        assert_eq!(outcome_of(Some(UNREACHABLE)), SessionOutcome::Unreachable);
+        assert_eq!(
+            outcome_of(Some(42)),
+            SessionOutcome::Unknown { code: Some(42) }
+        );
+        // Tué par le système : aucun code, et ce n'est pas une fin
+        // normale pour autant.
+        assert_eq!(outcome_of(None), SessionOutcome::Unknown { code: None });
     }
 }
 
