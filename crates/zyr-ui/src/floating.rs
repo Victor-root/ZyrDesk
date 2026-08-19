@@ -982,31 +982,58 @@ fn held_down() -> bool {
     false
 }
 
-/// That player's biggest window, and where it sits.
+/// Which of a player's windows is being looked for.
 ///
-/// The biggest rather than the first: the engine keeps a few small
-/// windows of its own, and the picture is never the small one.
-///
-/// On screen or not. The engine's picture window is born hidden and is
-/// only shown once everything about it has been settled, which is the
-/// whole point: taken in hand while it is still hidden, it is never seen
-/// anywhere but where it belongs. A window that had to be visible to be
-/// found would be found too late, every time.
+/// It has more than one, and the answer changes with the moment: before
+/// the picture is taken in hand it still carries the engine's title, and
+/// afterwards it carries nothing at all, that title having gone with the
+/// frame it was written on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Looked {
+    /// The one the engine has just opened, still its own.
+    ///
+    /// Recognised by its title, which our own rebranding put there
+    /// (patch P-M2, `patches/MANIFEST.md`) and which no other window of
+    /// that process carries. Nothing weaker will do: the engine opens
+    /// other windows, one of them larger than the picture, and taking
+    /// the biggest one meant laying an empty window inside ours and
+    /// leaving the picture standing beside it.
+    ///
+    /// On screen or not, because it is born hidden and only shown once
+    /// everything about it is settled. That is the whole point: taken in
+    /// hand while still hidden, it is never seen anywhere but where it
+    /// belongs.
+    Fresh,
+    /// The one already laid inside our window.
+    ///
+    /// Recognised by being the biggest on screen, which it is by then:
+    /// it fills our window, and it is the only one of that process the
+    /// system shows at all.
+    Taken,
+}
+
+/// The mark our own rebranding leaves on the engine's picture window.
 #[cfg(windows)]
-fn biggest_window_of(
+const TITLED: &str = " - ZyrDesk";
+
+/// That player's picture window, and where it sits.
+#[cfg(windows)]
+fn window_and_place_of(
     process: u32,
+    looked: Looked,
 ) -> Option<(
     windows_sys::Win32::Foundation::HWND,
     windows_sys::Win32::Foundation::RECT,
 )> {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowRect, GetWindowThreadProcessId,
+        EnumWindows, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
     };
     use windows_sys::core::BOOL;
 
     struct Looking {
         process: u32,
+        looked: Looked,
         widest: i64,
         found: Option<(HWND, RECT)>,
     }
@@ -1022,6 +1049,12 @@ fn biggest_window_of(
         unsafe { GetWindowThreadProcessId(window, &mut owner) };
         if owner != looking.process {
             return TRUE;
+        }
+        match looking.looked {
+            // SAFETY: same window.
+            Looked::Taken if unsafe { IsWindowVisible(window) } == 0 => return TRUE,
+            Looked::Fresh if !titled(window) => return TRUE,
+            _ => {}
         }
 
         let mut rect = RECT {
@@ -1041,8 +1074,26 @@ fn biggest_window_of(
         TRUE
     }
 
+    /// Whether that window carries the engine's own title.
+    ///
+    /// Asked of another program's window, which the system answers from
+    /// the caption it is drawing rather than by asking that program: it
+    /// therefore only answers while the window still has a caption, which
+    /// is exactly as long as it is still the engine's.
+    fn titled(window: HWND) -> bool {
+        let mut written = [0u16; 256];
+        // SAFETY: the window comes from the enumeration and the buffer is
+        // ours, of the length the call is told.
+        let taken = unsafe { GetWindowTextW(window, written.as_mut_ptr(), written.len() as i32) };
+        if taken <= 0 {
+            return false;
+        }
+        String::from_utf16_lossy(&written[..taken as usize]).ends_with(TITLED)
+    }
+
     let mut looking = Looking {
         process,
+        looked,
         widest: 0,
         found: None,
     };
@@ -1052,22 +1103,17 @@ fn biggest_window_of(
     looking.found
 }
 
-#[cfg(windows)]
-fn main_window_of(process: u32) -> Option<windows_sys::Win32::Foundation::HWND> {
-    biggest_window_of(process).map(|(window, _)| window)
-}
-
 /// That player's picture window, for whoever else needs to reach it.
 #[cfg(windows)]
-pub fn window_of(process: u32) -> Option<windows_sys::Win32::Foundation::HWND> {
-    main_window_of(process)
+pub fn window_of(process: u32, looked: Looked) -> Option<windows_sys::Win32::Foundation::HWND> {
+    window_and_place_of(process, looked).map(|(window, _)| window)
 }
 
 /// Where that player's picture is, as left, top, right and bottom in
 /// real pixels.
 #[cfg(windows)]
 fn picture_of(process: u32) -> Option<(i32, i32, i32, i32)> {
-    biggest_window_of(process)
+    window_and_place_of(process, Looked::Taken)
         .map(|(_, rect)| (rect.left, rect.top, rect.right, rect.bottom))
         .filter(|(left, top, right, bottom)| right > left && bottom > top)
 }
@@ -1164,7 +1210,7 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
 fn bring_forward(process: u32) {
     use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
 
-    let Some(window) = main_window_of(process) else {
+    let Some(window) = window_of(process, Looked::Taken) else {
         return;
     };
     // SAFETY: the window comes from the enumeration just above. Windows

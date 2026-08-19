@@ -23,12 +23,14 @@
 //! only way not to show one is not to ask for one.
 //!
 //! The window is remembered once taken, and never looked for again.
-//! Looking for it means going through every window on the machine and
-//! keeping the biggest visible one, which is how it is found the first
-//! time and which stops working the moment it leaves the screen: a
-//! window that is not on screen is not among the ones that answer, and
-//! minimising ZyrDesk takes the picture down with it. Remembering it is
-//! what makes coming back from that possible.
+//! Finding it in the first place means going through every window on the
+//! machine and picking the one the engine has just opened, which is
+//! recognised by the title our own rebranding put on it: the engine
+//! opens other windows, one of them larger than the picture, and taking
+//! the biggest meant laying an empty window inside ours and leaving the
+//! picture beside it. Remembering it afterwards is what makes coming back
+//! from a minimised window possible, since a window that is not on screen
+//! is not among the ones that answer.
 
 // Windows only, and only ever a session: the rest of the product is
 // tested everywhere all the same.
@@ -283,7 +285,7 @@ fn take_the_frame_away(app: &AppHandle, process: u32) -> Option<(isize, (i32, i3
         WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
-    let engine = crate::floating::window_of(process)?;
+    let engine = crate::floating::window_of(process, crate::floating::Looked::Fresh)?;
     let home = home_window(app)?;
 
     // Read before anything of ours moves that window: what it was born
