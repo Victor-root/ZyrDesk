@@ -24,10 +24,11 @@
 //!
 //! The window is remembered once taken, and never looked for again.
 //! Looking for it means going through every window on the machine and
-//! keeping the biggest visible one, which is how it was found the first
-//! time and which stops working the moment it is put away: a window that
-//! is not on screen is not among the ones that answer. Remembering it is
-//! what makes putting it away something one can come back from.
+//! keeping the biggest visible one, which is how it is found the first
+//! time and which stops working the moment it leaves the screen: a
+//! window that is not on screen is not among the ones that answer, and
+//! minimising ZyrDesk takes the picture down with it. Remembering it is
+//! what makes coming back from that possible.
 
 // Windows only, and only ever a session: the rest of the product is
 // tested everywhere all the same.
@@ -36,6 +37,7 @@
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager};
+use zyr_proto::session::DisplayMode;
 
 /// The engine window this program has taken in hand.
 #[derive(Default)]
@@ -61,8 +63,6 @@ struct Held {
     /// computer answers with what its screen turned out to be able to
     /// do.
     shape: (i32, i32),
-    /// Put away with the home window rather than laid over it.
-    aside: bool,
 }
 
 /// Takes that player's window in hand and lays it over ours, and says
@@ -84,7 +84,6 @@ pub fn hold(app: &AppHandle, process: u32) -> bool {
             process,
             window,
             shape,
-            aside: false,
         });
         // The shape is worth writing down: it is the size the far
         // computer's picture actually arrives at, which is the answer to
@@ -94,6 +93,7 @@ pub fn hold(app: &AppHandle, process: u32) -> bool {
             "image du lecteur {process} posée dans la fenêtre de ZyrDesk, en {}x{}",
             shape.0, shape.1
         ));
+        keep_lighting_the_bar(app, window);
         hold_the_shape(app);
     }
     fit(app);
@@ -102,25 +102,15 @@ pub fn hold(app: &AppHandle, process: u32) -> bool {
 
 /// Lets go, the session being over.
 pub fn let_go(app: &AppHandle) {
-    *app.state::<Picture>().held.lock().expect("image tenue") = None;
-}
-
-/// Puts the picture away with the home window, or brings it back.
-///
-/// Closing the home window would otherwise leave the picture standing on
-/// screen with nothing left to reach it by: it has no frame, no buttons
-/// and no place in alt-tab any more, those having been taken away when
-/// it was laid over ours.
-pub fn put_aside(app: &AppHandle, aside: bool) {
-    let state = app.state::<Picture>();
-    {
-        let mut held = state.held.lock().expect("image tenue");
-        let Some(held) = held.as_mut() else {
-            return;
-        };
-        held.aside = aside;
+    let held = app
+        .state::<Picture>()
+        .held
+        .lock()
+        .expect("image tenue")
+        .take();
+    if held.is_some() {
+        stop_lighting_the_bar(app);
     }
-    fit(app);
 }
 
 /// Puts our window on the whole screen, or takes it back off.
@@ -143,13 +133,31 @@ pub fn take_the_screen(app: &AppHandle, whole: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// The same, the other way from wherever it is.
+/// The same, the other way from wherever it is, and remembered.
+///
+/// This one is a person deciding, which the two calls above are not: one
+/// applies what was decided before, the other takes the screen back at
+/// the end of a session. So this is the only one that writes anything
+/// down, and what it writes is what the next session opens as.
 pub fn toggle_the_screen(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(crate::HOME)
         .ok_or("la fenêtre de ZyrDesk n'est plus là")?;
-    let whole = window.is_fullscreen().map_err(|e| e.to_string())?;
-    take_the_screen(app, !whole)
+    let whole = !window.is_fullscreen().map_err(|e| e.to_string())?;
+    take_the_screen(app, whole)?;
+
+    // Writing it down means asking the service, which is a round trip
+    // over a pipe: the picture has already moved, and nothing waits for
+    // this.
+    tauri::async_runtime::spawn(async move {
+        crate::settings::remember_display(if whole {
+            DisplayMode::Fullscreen
+        } else {
+            DisplayMode::Windowed
+        })
+        .await;
+    });
+    Ok(())
 }
 
 /// How far the window may be off the picture's shape before it is put
@@ -293,19 +301,24 @@ fn alive(held: &Held) -> bool {
     owner == held.process
 }
 
-/// Lays the picture over the inside of our window, exactly, or puts it
-/// away when that is what was asked.
+/// Lays the picture over the inside of our window, exactly, and takes
+/// the floating button along.
 ///
 /// Called on every move and every resize of our window, and at every
 /// turn of the session watch: the engine has its own reasons to move its
 /// window, and this is what puts it back.
+///
+/// The button follows from here rather than on its own. It hangs from a
+/// corner of the picture, and the picture is this rectangle: worked out
+/// twice, it would be worked out once too many, and the two would come
+/// apart exactly when the window moves.
 #[cfg(windows)]
 pub fn fit(app: &AppHandle) {
     use windows_sys::Win32::Foundation::{POINT, RECT};
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, HWND_TOP, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
+        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_NOACTIVATE, SWP_SHOWWINDOW,
+        SetWindowPos,
     };
 
     let Some(held) = taken(app) else {
@@ -316,26 +329,22 @@ pub fn fit(app: &AppHandle) {
     }
     let engine = held.window as windows_sys::Win32::Foundation::HWND;
 
-    if held.aside {
-        // SAFETY: a window this program took in hand, and nothing here
-        // moves, resizes or activates it.
-        unsafe {
-            SetWindowPos(
-                engine,
-                std::ptr::null_mut(),
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW,
-            )
-        };
-        return;
-    }
-
     let Some(home) = home_window(app) else {
         return;
     };
+    // Nothing to lay the picture on. Minimised, our window has no inside
+    // left: laying it there would squeeze the picture to nothing and ask
+    // the engine to draw for a surface of no size, once a second, for as
+    // long as the window stays down. Put away, it is not on screen at
+    // all, and the picture would be the only thing left showing.
+    //
+    // Both come back on their own: the system puts an owned window back
+    // up with the one that owns it, and the watch lays this one again a
+    // second later.
+    // SAFETY: our own window, and both calls only read its state.
+    if unsafe { IsIconic(home) } != 0 || unsafe { IsWindowVisible(home) } == 0 {
+        return;
+    }
     let mut inside = RECT {
         left: 0,
         top: 0,
@@ -351,6 +360,7 @@ pub fn fit(app: &AppHandle) {
     // position inside the window and comes back as one on the screen.
     unsafe { ClientToScreen(home, &mut corner) };
 
+    let (width, height) = (inside.right - inside.left, inside.bottom - inside.top);
     // SAFETY: the engine's window is one we have already taken in hand.
     // Shown without being activated: asked to show itself the ordinary
     // way, it would take the front, and this runs every second.
@@ -360,11 +370,15 @@ pub fn fit(app: &AppHandle) {
             HWND_TOP,
             corner.x,
             corner.y,
-            inside.right - inside.left,
-            inside.bottom - inside.top,
+            width,
+            height,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
         )
     };
+    crate::floating::follow(
+        app,
+        (corner.x, corner.y, corner.x + width, corner.y + height),
+    );
 }
 
 /// Puts the picture back in front, so the engine gets the keyboard and
@@ -373,12 +387,115 @@ pub fn fit(app: &AppHandle) {
 fn hand_the_keyboard_back(app: &AppHandle) {
     use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
 
-    let Some(held) = taken(app).filter(|held| !held.aside && alive(held)) else {
+    let Some(held) = taken(app).filter(alive) else {
         return;
     };
     // SAFETY: a window this program took in hand. Windows may refuse to
     // change the front window, which costs nothing here.
     unsafe { SetForegroundWindow(held.window as windows_sys::Win32::Foundation::HWND) };
+}
+
+/// Keeps our title bar drawn as an active window for as long as the
+/// picture is in it.
+///
+/// The picture is a window of its own, and it is the one the system puts
+/// at the front, because that is where the engine has to be to hold the
+/// keyboard and the mouse. Ours therefore loses the front, and Windows
+/// draws a window that has lost the front with a dimmed title bar. What
+/// took it is our own picture, inside our own window, so that dimming
+/// says something untrue and says it during every windowed session.
+///
+/// The message that decides it is intercepted and answered « active ».
+/// That is what the message is for: the system asks rather than decides,
+/// precisely so a window whose companion holds the activation can say it
+/// is still the one being used. The question is only answered that way
+/// while the front really is ours, so switching to another program dims
+/// the bar as it should.
+/// Stepping in front of a window's messages is done from the thread that
+/// draws it, and none of the callers here is that thread: one drives the
+/// session, the other watches it. Handed over rather than done on the
+/// spot.
+#[cfg(windows)]
+fn keep_lighting_the_bar(app: &AppHandle, engine: isize) {
+    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
+
+    let asked = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(home) = home_window(&asked) else {
+            return;
+        };
+        // SAFETY: our own window, from the thread that owns it, and the
+        // handler outlives the subclass: it is a plain function of this
+        // program.
+        unsafe { SetWindowSubclass(home, Some(lit), LIT, engine as usize) };
+    });
+}
+
+/// Puts that back the way it was, the session being over.
+#[cfg(windows)]
+fn stop_lighting_the_bar(app: &AppHandle) {
+    use windows_sys::Win32::UI::Shell::RemoveWindowSubclass;
+
+    let asked = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(home) = home_window(&asked) else {
+            return;
+        };
+        // SAFETY: same window, same thread and same handler as were put
+        // on it.
+        unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
+    });
+}
+
+/// Name our handler answers to, so it can be taken off again.
+#[cfg(windows)]
+const LIT: usize = 1;
+
+#[cfg(windows)]
+unsafe extern "system" fn lit(
+    window: windows_sys::Win32::Foundation::HWND,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+    _name: usize,
+    engine: usize,
+) -> isize {
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE;
+
+    // Told to dim, while the front belongs to the picture or to us: the
+    // answer is that this window is still the one being used.
+    let lie = message == WM_NCACTIVATE && wparam == 0 && ours_is_at_the_front(engine);
+    // SAFETY: the arguments are the ones the system handed in, with at
+    // most a boolean turned around.
+    unsafe { DefSubclassProc(window, message, if lie { 1 } else { wparam }, lparam) }
+}
+
+/// Whether the window at the front is the picture, or another of ours.
+///
+/// Both answers mean the same thing here. The picture is ours in all but
+/// the process it runs in, and the moment the system takes the front
+/// away it has not always given it to anybody yet, which reads as ours.
+#[cfg(windows)]
+fn ours_is_at_the_front(engine: usize) -> bool {
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId,
+    };
+
+    // SAFETY: no argument, and a null answer is one of the answers.
+    let front = unsafe { GetForegroundWindow() };
+    if front.is_null() {
+        return false;
+    }
+    if front as usize == engine {
+        return true;
+    }
+    let mut owner = 0u32;
+    // SAFETY: the window comes from the call above and the slot is ours.
+    unsafe { GetWindowThreadProcessId(front, &mut owner) };
+    // SAFETY: no argument.
+    owner == unsafe { GetCurrentProcessId() }
 }
 
 /// Our own window, as the system knows it.
@@ -401,6 +518,12 @@ fn alive(_held: &Held) -> bool {
 
 #[cfg(not(windows))]
 fn hand_the_keyboard_back(_app: &AppHandle) {}
+
+#[cfg(not(windows))]
+fn keep_lighting_the_bar(_app: &AppHandle, _engine: isize) {}
+
+#[cfg(not(windows))]
+fn stop_lighting_the_bar(_app: &AppHandle) {}
 
 #[cfg(not(windows))]
 pub fn fit(_app: &AppHandle) {}

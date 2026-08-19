@@ -88,6 +88,28 @@ pub async fn choose(chosen: Chosen) -> Result<(), String> {
     }
 }
 
+/// Writes down how a session is shown, the person having just changed it
+/// from inside one.
+///
+/// A choice made in the middle of a session is a choice all the same: the
+/// next one opens the way the last one was left, without anybody having
+/// to go back to the settings screen to say so twice.
+pub async fn remember_display(mode: DisplayMode) {
+    let mut preferred = preferred().await;
+    if preferred.display_mode == mode {
+        return;
+    }
+    preferred.display_mode = mode;
+    match service::ask(&Request::Choose { preferred }).await {
+        Ok(Answer::Done) => crate::journal::note(&format!("sessions will open {mode} from now on")),
+        Ok(other) => crate::journal::note(&format!(
+            "display mode not written down: {}",
+            service::unexpected(other)
+        )),
+        Err(reason) => crate::journal::note(&format!("display mode not written down: {reason}")),
+    }
+}
+
 /// What the service has been told a session should look like.
 ///
 /// The ordinary settings when it cannot be asked: a session is about to

@@ -52,8 +52,14 @@
   transform: scale(1.06);
 }
 
-/* Pris en main : le curseur dit qu'il se déplace, pas qu'il se clique. */
-.logo:active {
+/* Pris en main : le curseur dit qu'il se déplace, pas qu'il se clique.
+
+   Une classe à nous et non « :active », que le navigateur pose et retire
+   lui-même : cette fenêtre fait cinquante pixels, la souris en sort au
+   premier mouvement, et le relâchement se produit alors ailleurs. Le
+   bouton restait « appuyé » jusqu'à la fin de la session, main agrippée
+   comprise. Ici c'est la fin du geste, connue de Rust, qui l'enlève. */
+.logo.pris {
   transform: scale(0.97);
   cursor: grabbing;
 }

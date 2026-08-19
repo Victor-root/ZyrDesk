@@ -299,9 +299,9 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 
 Cette partie suit une session entière, dans l'ordre, du premier clic au gestionnaire des tâches après coup. Elle est numérotée **S** pour se lire d'une traite : chaque essai suppose le précédent, et sauter un rang fait rater ce qu'il préparait.
 
-Deux choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre du début à la fin, ce qui veut dire qu'à aucun instant, même un dixième de seconde, une deuxième fenêtre ne doit se voir. Et aucune bande noire, ce qui se règle aux deux bouts à la fois et ne se voit qu'ici.
+Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre du début à la fin, ce qui veut dire qu'à aucun instant, même un dixième de seconde, une deuxième fenêtre ne doit se voir, et que tout ce qui arrive à cette fenêtre doit arriver à la session dedans : la réduire, la déplacer, la fermer. Aucune bande noire, ce qui se règle aux deux bouts à la fois. Et ce que la session retient d'une fois sur l'autre.
 
-**Ce qu'il faut sous la main.** Le PC hôte doit être visible : les essais S7 et S16 regardent sa définition d'écran pendant et après la session. S'il est dans une autre pièce, faire ces deux-là en dernier, en s'y déplaçant.
+**Ce qu'il faut sous la main.** Le PC hôte doit être visible : les essais S7 et S19 regardent sa définition d'écran pendant et après la session. S'il est dans une autre pièce, faire ces deux-là en dernier, en s'y déplaçant.
 
 ### Avant
 
@@ -346,6 +346,14 @@ Deux choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre 
 > Refaire S3 avec le réglage sur **Fenêtre**.
 >
 > Attendu : la fenêtre **ne prend jamais l'écran entier**, ni à l'ouverture ni à l'arrivée de l'image. Elle reste une fenêtre ordinaire, et l'image se pose dedans.
+
+> **S5bis (la session s'ouvre comme la dernière a été laissée)**
+>
+> Session ouverte en plein écran : basculer en fenêtre par le menu flottant, quitter la session, en rouvrir une.
+>
+> Attendu : elle s'ouvre **en fenêtre**. Refaire dans l'autre sens : basculer en plein écran, quitter, rouvrir. Elle s'ouvre en plein écran.
+>
+> Ce qui est basculé pendant une session est un choix comme un autre, et il s'écrit à côté des autres : les réglages doivent montrer la même valeur après coup, dans **Avancé, Fenêtre de la session**.
 
 ### Pendant : l'image
 
@@ -395,37 +403,45 @@ Deux choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre 
 >
 > Attendu : rien n'a changé de ce côté. Le bouton se prend, se déplace, se masque, se rappelle, et chaque entrée fait ce qu'elle dit.
 
-> **S12 (la croix range tout)**
+> **S12 (le bouton ne quitte jamais l'image)**
 >
-> Pendant la session, fermer la fenêtre ZyrDesk par sa croix.
+> Session en plein écran. Basculer en fenêtre par le menu flottant, puis déplacer la fenêtre, la redimensionner, la repasser en plein écran, y revenir.
 >
-> Attendu : **l'écran redevient l'écran**. Ni fenêtre ZyrDesk, ni image, ni bouton flottant. La session, elle, continue : l'icône à côté de l'horloge est toujours là.
+> Attendu : à chaque instant le bouton est **dans le coin de l'image**, à la distance où il a été laissé. Jamais au milieu de l'écran, jamais en dehors de la fenêtre.
 >
-> Rien ne doit rester à l'écran. L'image n'a plus ni cadre, ni bouton, ni place dans Alt+Tab, tout cela lui ayant été retiré pour la poser dans notre fenêtre : laissée seule à l'écran, elle serait inatteignable.
+> Il était posé une fois pour toutes quand il montait, sur le coin qu'avait l'image à ce moment-là. Une session repassée en fenêtre le laissait donc suspendu là où le plein écran l'avait mis.
 
-> **S13 (l'icône dit ce qui se passe)**
+> **S13 (la barre de titre reste allumée)**
+>
+> Session en fenêtre. Regarder la barre de titre de la fenêtre ZyrDesk, puis cliquer dans l'image, puis passer sur un autre programme et revenir.
+>
+> Attendu : tant que ZyrDesk est devant, sa barre de titre est celle d'une fenêtre **active**, image cliquée ou non. Passer sur un autre programme l'atténue, comme n'importe quelle fenêtre. Revenir la rallume.
+>
+> Le premier plan appartient à l'image, parce que c'est là que le moteur doit être pour tenir le clavier. Ce qui prend le devant étant notre propre image dans notre propre fenêtre, une barre atténuée disait quelque chose de faux.
+
+> **S14 (réduire emporte tout)**
+>
+> Pendant la session, réduire la fenêtre ZyrDesk dans la barre des tâches.
+>
+> Attendu : **l'écran redevient l'écran**. Ni image, ni bouton flottant nulle part. Restaurer la fenêtre : les deux reviennent avec elle, à leur place, sans passer par ailleurs.
+>
+> Le bouton flottant restait seul dans le coin d'un bureau vide, par-dessus le travail des autres, et il devenait alors impossible à déplacer comme à ouvrir.
+
+> **S15 (l'icône dit ce qui se passe)**
 >
 > Poser la souris sur l'icône ZyrDesk à côté de l'horloge, sans cliquer.
 >
-> Attendu : « ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre ».
->
-> C'est la seule chose à l'écran qui dit encore que l'ordinateur d'en face est tenu. Sans elle, une fenêtre fermée par distraction serait une session oubliée.
+> Attendu : « ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre ». Cliquer dessus ramène la fenêtre réduite, image comprise.
 
-> **S14 (et tout revient)**
+> **S16 (un deuxième lancement ne fait pas un deuxième ZyrDesk)**
 >
-> Cliquer sur l'icône.
->
-> Attendu : la fenêtre revient **avec l'image dedans**, telle qu'elle était, et le bouton flottant avec. L'image ne doit pas apparaître un instant ailleurs avant de se remettre en place.
-
-> **S15 (un deuxième lancement ne fait pas un deuxième ZyrDesk)**
->
-> Fermer la fenêtre par la croix, puis relancer `ZyrDesk.exe`.
+> Réduire la fenêtre, puis relancer `ZyrDesk.exe`.
 >
 > Attendu : la même fenêtre revient, avec la session dedans. **Un seul** bouton flottant, **une seule** icône à côté de l'horloge.
 
 ### La fin
 
-> **S16 (quitter la session)**
+> **S17 (quitter la session)**
 >
 > Menu flottant, **Quitter la session**.
 >
@@ -433,7 +449,15 @@ Deux choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre 
 >
 > L'écran d'accueil réaffiche les cartes des ordinateurs, cliquables à nouveau.
 
-> **S17 (le bureau distant retrouve sa définition)**
+> **S18 (la croix termine la session, elle aussi)**
+>
+> Rouvrir une session, en plein écran puis en fenêtre, et la fermer par la **croix** de la fenêtre.
+>
+> Attendu : exactement le résultat de S17. La session se termine, et la fenêtre **reste, sur l'accueil**. Elle ne disparaît pas, et il ne faut rien rouvrir.
+>
+> Sur l'accueil, en revanche, la croix range la fenêtre sans rien arrêter : l'icône à côté de l'horloge reste, et un clic dessus ramène la fenêtre. Le vérifier dans la foulée, c'est l'autre moitié de l'essai.
+
+> **S19 (le bureau distant retrouve sa définition)**
 >
 > Sur le **PC hôte**, quelques secondes après : **Paramètres d'affichage**.
 >
@@ -441,19 +465,21 @@ Deux choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre 
 >
 > Le moteur hôte attend sinon l'arrêt de ce qu'il diffuse pour remettre en place, et ce qu'il diffuse est le bureau lui-même, qui ne s'arrête jamais. Il lui est demandé de remettre en place dès que le client s'en va.
 
-> **S18 (fermer, et pas seulement quitter)**
+> **S20 (fermer, et pas seulement quitter)**
 >
 > Rouvrir une session, puis **Fermer sur l'ordinateur distant**.
 >
-> Attendu : comme S16, plus le bureau distant réellement rendu (R13), plus la définition remise comme en S17.
+> Attendu : comme S17, plus le bureau distant réellement rendu (R13), plus la définition remise comme en S19.
+>
+> C'est la différence que la croix ne fait pas : elle quitte, elle ne ferme pas. L'ordinateur d'en face garde son bureau ouvert, prêt pour un retour immédiat.
 
-> **S19 (quitter ZyrDesk pendant une session)**
+> **S21 (quitter ZyrDesk pendant une session)**
 >
 > Rouvrir une session. Sur le **PC client**, clic droit sur l'icône à côté de l'horloge, **Quitter**.
 >
 > Attendu : tout s'arrête. L'image, la fenêtre, le bouton, l'icône.
 
-> **S20 (rien ne traîne)**
+> **S22 (rien ne traîne)**
 >
 > Sur les deux PC, gestionnaire des tâches, onglet **Détails**.
 >

@@ -78,7 +78,9 @@ Aucune amplification de perte, aucun effondrement de débit. Un test compare en 
 
 ## D16. Le bouton flottant est une fenêtre à nous, et les sessions s'ouvrent sans bordure (2026-08-08, pendant M4)
 
-> Révisée par [D21](#d21-limage-du-bureau-distant-saffiche-dans-la-fenêtre-de-zyrdesk-2026-08-19-pendant-m4) sur un point : l'image ne s'affiche plus dans une fenêtre du moteur posée à part, mais dans la fenêtre de ZyrDesk. Le plein écran exclusif a disparu avec, et l'entrée « plein écran » du menu bascule notre fenêtre au lieu d'envoyer une combinaison au moteur. Le reste tient.
+> Révisée par [D21](#d21-limage-du-bureau-distant-saffiche-dans-la-fenêtre-de-zyrdesk-2026-08-19-pendant-m4) sur un point : l'image ne s'affiche plus dans une fenêtre du moteur posée à part, mais dans la fenêtre de ZyrDesk. Le plein écran exclusif a disparu avec, et l'entrée « plein écran » du menu bascule notre fenêtre au lieu d'envoyer une combinaison au moteur.
+>
+> Et par [D23](#d23-la-croix-de-la-fenêtre-termine-la-session-2026-08-19-pendant-m4) sur le paragraphe « ce qui en découle pour la fenêtre d'accueil » : la croix termine désormais la session au lieu d'effacer la fenêtre. Le reste tient.
 
 **Décision.** Pendant une session, la seule chose de ZyrDesk visible par-dessus l'image est une petite fenêtre à nous, toujours au-dessus, qui ne prend jamais le premier plan. Ce qu'elle propose, elle le demande au moteur client par les raccourcis clavier que celui-ci expose déjà, envoyés à la fenêtre de la session et vérifiés avant l'envoi. En conséquence, une session s'ouvre par défaut en fenêtre sans bordure et non en plein écran exclusif.
 
@@ -158,7 +160,7 @@ L'ajout par empreinte écrit l'ordinateur dans les deux sens : il le laisse entr
 
 **Ce que ça emporte.** Le plein écran exclusif du moteur disparaît, avec le réglage à trois valeurs qui le proposait. C'est notre fenêtre qui prend l'écran maintenant, et l'entrée « plein écran » du menu flottant, comme le raccourci clavier qui lui correspond, bascule cette fenêtre-là au lieu d'envoyer une combinaison au moteur. Le bouton flottant, lui, ne change pas : il reste une fenêtre à nous, toujours au-dessus, y compris au-dessus de l'image.
 
-**Ce que ça coûte.** Une fenêtre redimensionnée pendant une session redimensionne l'image, sans changer la définition du flux, qui reste celle de la qualité choisie.
+**Ce que ça coûte, et ce qu'il a fallu rendre au système.** Une fenêtre redimensionnée pendant une session redimensionne l'image, sans changer la définition du flux, qui reste celle de la qualité choisie. Et deux fenêtres posées l'une sur l'autre ne font une seule fenêtre que si le système les traite comme telle, ce qui ne va pas de soi et se paie en trois endroits, tous décrits par [D23](#d23-la-croix-de-la-fenêtre-termine-la-session-2026-08-19-pendant-m4) : la barre de titre, le bouton flottant et la croix.
 
 ## D22. Plus une seule bande noire (2026-08-19, pendant M4)
 
@@ -175,6 +177,24 @@ L'ajout par empreinte écrit l'ordinateur dans les deux sens : il le laisse entr
 **Où la forme de l'image est lue.** Dans la fenêtre du moteur, à l'instant où nous la prenons et avant d'y toucher : il la crée à la forme de l'image qui va y arriver. Pas dans ce que la session a demandé, qui n'est qu'un souhait : l'ordinateur d'en face répond avec ce que son écran s'est révélé capable de faire.
 
 **Ce que ça coûte.** En fenêtre, tirer un coin change la hauteur en même temps que la largeur. C'est ce que font les lecteurs vidéo, et c'est le seul moyen de ne pas redemander une bande noire à chaque geste.
+
+## D23. La croix de la fenêtre termine la session (2026-08-19, pendant M4)
+
+**Décision.** La croix veut dire deux choses selon ce que la fenêtre montre. Sur une session, elle quitte la session et rend l'accueil : l'image est dans cette fenêtre, et une croix qui se contenterait de ranger la fenêtre laisserait l'ordinateur d'en face tenu par quelque chose que plus rien à l'écran ne permet de lâcher. Sur l'accueil, elle range la fenêtre sans rien arrêter : cet ordinateur peut être joignable sans que personne ne regarde une fenêtre, l'icône à côté de l'horloge le dit, et « Quitter » dans son menu reste le seul geste qui arrête le produit.
+
+**Ce que ça remplace.** [D16](#d16-le-bouton-flottant-est-une-fenêtre-à-nous-et-les-sessions-souvrent-sans-bordure-2026-08-08-pendant-m4) posait qu'une croix ne devait jamais couper une session, et c'était juste tant que la session avait sa propre fenêtre : fermer l'accueil ne touchait pas à l'image. Depuis [D21](#d21-limage-du-bureau-distant-saffiche-dans-la-fenêtre-de-zyrdesk-2026-08-19-pendant-m4), l'image est dans cette fenêtre-là, et le geste ne veut plus dire la même chose.
+
+**Quitter et non fermer.** L'ordinateur d'en face garde son bureau ouvert, prêt pour un retour immédiat. C'est ce qu'une croix doit coûter et pas plus ; lui rendre son bureau reste une demande à part, portée par le menu flottant. Et c'est le chemin du menu qui est repris tel quel, sans en ouvrir un second : le moteur est prié dans sa propre langue, à sa propre fenêtre, après l'avoir remise au premier plan et attendue.
+
+**Deux fenêtres, une seule aux yeux du système.** Trois choses restaient à rendre, et aucune n'est cosmétique.
+
+La barre de titre. Le système donne le premier plan à la fenêtre de l'image, parce que c'est là que le moteur doit être pour tenir le clavier et la souris, et il dessine en atténué toute fenêtre qui perd le premier plan. Ce qui le lui prenait étant notre propre image dans notre propre fenêtre, cet atténuement disait quelque chose de faux, à chaque session fenêtrée. Le message par lequel le système pose la question est intercepté et répondu « active ». C'est à cela que sert ce message : le système demande au lieu de décider, précisément pour qu'une fenêtre dont la compagne tient l'activation puisse dire qu'elle reste celle qu'on utilise. La question n'est retournée que tant que le premier plan est réellement à nous, donc passer sur un autre programme atténue la barre comme il se doit.
+
+Le bouton flottant. C'était une fenêtre sans attache : réduire ZyrDesk le laissait seul dans un coin de bureau vide, par-dessus le travail des autres, et il était placé une fois pour toutes, donc une session repassée en fenêtre le laissait suspendu au milieu de l'écran, sur rien. Il est maintenant possédé par la fenêtre d'accueil, comme l'image, donc il descend et remonte avec elle sans qu'on ait à s'en occuper ; et il est reposé à chaque fois que l'image l'est, sur le même rectangle qu'elle, calculé une fois pour les deux.
+
+L'ordre entre les deux tient à un seul fait : le bouton est marqué toujours au-dessus et l'image ne l'est pas.
+
+**Ce que ça a coûté ailleurs.** Ces deux fenêtres possédées s'en vont avec la fenêtre réduite, ce qui est voulu, mais un bureau à distance ne se pose pas sur une fenêtre qui n'est pas là : poser l'image sur une fenêtre réduite reviendrait à la réduire à rien et à demander au moteur de dessiner pour une surface sans taille, une fois par seconde. Rien n'est posé tant que la fenêtre n'est pas debout, et tout revient de soi-même quand elle revient.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

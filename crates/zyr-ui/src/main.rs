@@ -102,25 +102,30 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the home window never ends anything. It steps
-            // aside, the icon beside the clock stays, and « Quitter »
-            // there is the one thing that stops the product. A window
-            // whose cross cut a session in progress would be worse than
-            // one that does not close at all.
             if window.label() != HOME {
                 return;
             }
             match event {
+                // The cross means two different things, and which one it
+                // is depends on what the window is showing.
+                //
+                // Showing a session, it closes the session and stays: the
+                // picture is inside this window, so a cross that only
+                // hid the window would leave the far computer held by
+                // something with nothing left on screen to give it back.
+                //
+                // Showing the home screen, it puts the window away
+                // without stopping anything. This computer can be
+                // reachable while nobody is looking at a window, the
+                // icon beside the clock says so, and « Quitter » there
+                // is the one thing that stops the product.
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    // The picture is a window of its own, laid over this
-                    // one: hiding this one alone would leave it standing
-                    // on screen with nothing left to reach it by, its
-                    // frame, its buttons and its place in alt-tab having
-                    // been taken away to put it there.
-                    picture::put_aside(window.app_handle(), true);
-                    floating::put_aside(window.app_handle(), true);
-                    let _ = window.hide();
+                    if floating::a_session_is_up(window.app_handle()) {
+                        session::leave(window.app_handle());
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
                 // The picture is laid over the inside of this window and
                 // has to be laid again wherever the window goes, and at
@@ -143,6 +148,10 @@ fn main() {
 }
 
 /// Brings the home window back, wherever it was left.
+///
+/// The picture and the floating button come back with it without being
+/// told: both are windows the system knows this one owns, and it puts
+/// them back up when it puts this one back up.
 pub fn show_home(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window(HOME) else {
         return;
@@ -150,9 +159,4 @@ pub fn show_home(app: &tauri::AppHandle) {
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
-    // In this order: our window has to be on screen before the picture
-    // comes back over it, or the picture shows for an instant somewhere
-    // it does not belong.
-    picture::put_aside(app, false);
-    floating::put_aside(app, false);
 }

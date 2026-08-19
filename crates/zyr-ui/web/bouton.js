@@ -84,13 +84,29 @@ async function demande(acte) {
    ce pointeur se trouve à l'écran. La page dit seulement quand le
    bouton est pris, et apprend à la fin si c'était un déplacement ou un
    simple clic. */
+let pris = false;
+
 vue.logo.addEventListener("pointerdown", async (evenement) => {
   if (evenement.button !== 0) {
     return;
   }
-  const clic = await invoke("floating_grab").catch(() => false);
-  if (clic) {
-    ouvre(!ouvert);
+  // Un geste à la fois. Le relâchement se produit souvent hors de cette
+  // fenêtre, donc la page ne le voit pas : sans ce verrou, deux prises
+  // se superposaient et le bouton finissait par ne plus répondre.
+  if (pris) {
+    return;
+  }
+  pris = true;
+  vue.logo.classList.add("pris");
+  try {
+    if (await invoke("floating_grab")) {
+      ouvre(!ouvert);
+    }
+  } catch {
+    /* Une prise refusée n'est pas un déplacement : rien à dire. */
+  } finally {
+    pris = false;
+    vue.logo.classList.remove("pris");
   }
 });
 

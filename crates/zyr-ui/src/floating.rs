@@ -180,8 +180,9 @@ pub struct Floating {
     nudge: Mutex<(i32, i32)>,
     /// Set while the person has hidden the button from its own menu.
     ///
-    /// A choice they made stands until they ask for the button back. The
-    /// home window coming back from being put away is not that ask.
+    /// A choice they made stands until they ask for the button back.
+    /// ZyrDesk being minimised and restored is not that ask, and the
+    /// system would otherwise put the button back up with the window.
     hidden_by_hand: std::sync::atomic::AtomicBool,
     /// Player this window has just started and the service does not know
     /// about yet.
@@ -235,24 +236,58 @@ pub fn a_session_is_up(app: &AppHandle) -> bool {
         .is_some()
 }
 
-/// Puts the button away with the home window, or brings it back.
+/// Puts the button back on the corner of the picture it hangs from.
 ///
-/// The session is untouched: what says a session is up is elsewhere, and
-/// this only says whether its button is on screen. A button the person
-/// hid themselves stays hidden.
-pub fn put_aside(app: &AppHandle, aside: bool) {
+/// Called every time the picture is laid, which is every time our window
+/// moves, is resized or changes between covering the screen and not. The
+/// button used to be placed once, when it went up, and stayed there: a
+/// session switched back to a window left it hanging in mid-screen, over
+/// nothing.
+///
+/// Nothing is held while the window is asked anything. Both are needed at
+/// once, what the button knows and what the system knows, and holding one
+/// while waiting on the other is how two threads stop for good.
+pub fn follow(app: &AppHandle, picture: (i32, i32, i32, i32)) {
     let Some(window) = app.get_webview_window(WINDOW) else {
         return;
     };
-    if aside {
-        let _ = window.hide();
-    } else if !app
-        .state::<Floating>()
+    let state = app.state::<Floating>();
+    // The system puts an owned window back up with the one that owns it,
+    // which is right for a button that is only down because the window
+    // is. It is not right for one the person hid on purpose, so that
+    // choice is put back.
+    //
+    // Put back, and then followed all the same: a hidden button still
+    // has a place, and one left behind while it was hidden would show
+    // itself in the wrong corner the moment it is called back.
+    if state
         .hidden_by_hand
         .load(std::sync::atomic::Ordering::Relaxed)
+        && window.is_visible().unwrap_or(false)
     {
-        let _ = window.show();
+        let _ = window.hide();
     }
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let nudge = *state.nudge.lock().expect("position du bouton");
+    let corner = (picture.2 - MARGIN + nudge.0, picture.1 + MARGIN + nudge.1);
+    let anchor = held_inside(corner, picture, size.width as i32, size.height as i32);
+
+    {
+        let mut watched = state.watched.lock().expect("session suivie");
+        let Some(seen) = watched.as_mut() else {
+            return;
+        };
+        if seen.anchor == anchor {
+            return;
+        }
+        seen.anchor = anchor;
+    }
+    let _ = window.set_position(PhysicalPosition::new(
+        anchor.0 - size.width as i32,
+        anchor.1,
+    ));
 }
 
 /// Says which player this window has just started, before anybody else
@@ -323,24 +358,44 @@ pub fn watch(app: AppHandle) {
 /// over a screen that has no picture on it yet.
 fn raise(app: &AppHandle, process: u32) {
     let state = app.state::<Floating>();
-    let mut watched = state.watched.lock().expect("session suivie");
-    if watched.as_ref().is_some_and(|seen| seen.process == process) {
+    let already = state
+        .watched
+        .lock()
+        .expect("session suivie")
+        .as_ref()
+        .is_some_and(|seen| seen.process == process);
+    if already {
         return;
     }
 
     let Some(picture) = picture_of(process) else {
         return;
     };
+    // A button over a window that is not on screen would be the only
+    // thing showing, hanging in a corner over somebody else's work. It
+    // goes up when the window does, which the watch sees a second later.
+    // Minimised counts as not on screen and has to be asked for
+    // separately: a window down in the taskbar still calls itself
+    // visible.
+    let Some(home) = app.get_webview_window(crate::HOME) else {
+        return;
+    };
+    if !home.is_visible().unwrap_or(false) || home.is_minimized().unwrap_or(false) {
+        return;
+    }
+    // Asked before anything is held. This runs on a thread of its own and
+    // the answer comes from the one that draws: waiting for it while
+    // holding what that thread may want next is how both stop for good.
+    let size = button_size(app) as i32;
+
     // A new session starts with the button on screen, whatever was done
     // with the one before.
     state
         .hidden_by_hand
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    let size = button_size(app) as i32;
     let nudge = *state.nudge.lock().expect("position du bouton");
     let anchor = hung_from(picture, nudge, size);
-    *watched = Some(Watched { process, anchor });
-    drop(watched);
+    *state.watched.lock().expect("session suivie") = Some(Watched { process, anchor });
 
     // A leftover window from a session that ended in a way we did not
     // see: put it where the new one is rather than open a second.
@@ -371,7 +426,7 @@ fn raise(app: &AppHandle, process: u32) {
 
     match built {
         Ok(window) => {
-            keep_out_of_the_way(&window);
+            keep_out_of_the_way(app, &window);
             let _ = window.set_size(PhysicalSize::new(size as u32, size as u32));
             let _ = window.set_position(PhysicalPosition::new(anchor.0 - size, anchor.1));
             let _ = window.show();
@@ -725,34 +780,56 @@ async fn close_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
 
 /* ---- Ce qui appartient à Windows ------------------------------------- */
 
-/// Keeps the button from ever taking the place of the picture.
+/// Keeps the button from ever taking the place of the picture, and ties
+/// it to the window it hangs over.
 ///
-/// Without this, clicking it would put the session window in the
-/// background: the engine would let go of the keyboard, and the next
-/// keystroke would land who knows where.
+/// Two things, and neither is optional. Without the first, clicking the
+/// button would put the session window in the background: the engine
+/// would let go of the keyboard, and the next keystroke would land who
+/// knows where.
+///
+/// Without the second, the button is a window of its own with no ties to
+/// anything, and behaves like one: minimising ZyrDesk left it hanging
+/// alone in the corner of an empty desktop, over other people's windows,
+/// with the picture it belongs to nowhere in sight. Handed to the home
+/// window as its owner, it goes down with it and comes back up with it,
+/// and the system does that part without being asked. It stays in front
+/// of the picture all the same: the picture is owned by that same window
+/// and this one is marked always on top, which the picture is not.
 #[cfg(windows)]
-fn keep_out_of_the_way(window: &tauri::WebviewWindow) {
+fn keep_out_of_the_way(app: &AppHandle, window: &tauri::WebviewWindow) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        GWL_EXSTYLE, GWLP_HWNDPARENT, GetWindowLongPtrW, SetWindowLongPtrW, WS_EX_NOACTIVATE,
+        WS_EX_TOOLWINDOW,
     };
 
     let Ok(handle) = window.hwnd() else {
         return;
     };
+    let button = handle.0 as _;
     // SAFETY: the handle belongs to a window we have just built, and
     // only its extended style is read and written back.
     unsafe {
-        let style = GetWindowLongPtrW(handle.0 as _, GWL_EXSTYLE);
+        let style = GetWindowLongPtrW(button, GWL_EXSTYLE);
         SetWindowLongPtrW(
-            handle.0 as _,
+            button,
             GWL_EXSTYLE,
             style | (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) as isize,
         );
     }
+
+    let Some(home) = app
+        .get_webview_window(crate::HOME)
+        .and_then(|home| home.hwnd().ok())
+    else {
+        return;
+    };
+    // SAFETY: both windows are ours, and only the owner is written.
+    unsafe { SetWindowLongPtrW(button, GWLP_HWNDPARENT, home.0 as isize) };
 }
 
 #[cfg(not(windows))]
-fn keep_out_of_the_way(_window: &tauri::WebviewWindow) {}
+fn keep_out_of_the_way(_app: &AppHandle, _window: &tauri::WebviewWindow) {}
 
 /// Where the mouse is on the screen, in real pixels.
 #[cfg(windows)]
