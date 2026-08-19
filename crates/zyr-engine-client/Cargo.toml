@@ -8,3 +8,11 @@ repository.workspace = true
 
 [dependencies]
 zyr-proto.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Un moteur ne survit pas au programme qui l'a lancé, et Windows ne
+# l'assure pas tout seul : il faut le lui demander.
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+] }

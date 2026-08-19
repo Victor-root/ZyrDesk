@@ -127,10 +127,27 @@ impl SunshineConfig {
         self.data_dir.join("apps.json")
     }
 
-    /// State the engine keeps for itself: paired devices and the local
-    /// API credentials, which it stores in the same file.
+    /// State the engine keeps for itself, paired computers above all.
     pub fn state_path(&self) -> PathBuf {
         self.data_dir.join("engine_state.json")
+    }
+
+    /// Identifiers of the engine's local API, apart from its state.
+    ///
+    /// The engine puts both in one file unless told otherwise, and that
+    /// default costs every pairing on the machine. We write fresh
+    /// identifiers at every start of the service, and the engine writes
+    /// them by reading the whole file and writing it back out through a
+    /// library that cannot keep a JSON list: the list of paired
+    /// computers comes back as something nothing can read. The far
+    /// computer was therefore forgotten at every start, and every session
+    /// after one ended on « l'ordinateur distant n'a pas répondu » until
+    /// the two had been introduced again.
+    ///
+    /// Two files, and the state is never rewritten by anything but the
+    /// engine itself.
+    pub fn credentials_path(&self) -> PathBuf {
+        self.data_dir.join("engine_credentials.json")
     }
 
     /// Log the engine writes itself.
@@ -162,7 +179,7 @@ impl SunshineConfig {
             "upnp = disabled".to_string(),
             format!("file_apps = {}", shown(&self.apps_path())),
             format!("file_state = {}", shown(&self.state_path())),
-            format!("credentials_file = {}", shown(&self.state_path())),
+            format!("credentials_file = {}", shown(&self.credentials_path())),
             format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
             format!("minimum_fps_target = {}", self.minimum_fps),
@@ -238,6 +255,17 @@ mod tests {
     }
 
     #[test]
+    fn the_state_and_the_identifiers_are_two_files() {
+        // Un seul fichier pour les deux coûtait tous les appairages de
+        // la machine à chaque démarrage du service : le moteur relit et
+        // réécrit ce fichier pour y poser ses identifiants, à travers
+        // une bibliothèque qui ne sait pas rendre une liste JSON telle
+        // qu'elle l'a lue.
+        let config = test_config();
+        assert_ne!(config.state_path(), config.credentials_path());
+    }
+
+    #[test]
     fn the_conf_keeps_the_state_in_the_data_folder() {
         // The expected paths come from the configuration itself: writing
         // them out by hand would only test the separator of whichever
@@ -247,7 +275,7 @@ mod tests {
         for (key, path) in [
             ("file_apps", config.apps_path()),
             ("file_state", config.state_path()),
-            ("credentials_file", config.state_path()),
+            ("credentials_file", config.credentials_path()),
             ("log_path", config.log_path()),
         ] {
             let line = format!("{key} = {}", path.display());

@@ -92,12 +92,24 @@ const PAIRING_BY_HAND: Duration = Duration::from_secs(180);
 
 /// How long a session is watched before it is believed.
 ///
-/// Long enough that an engine turned away at the door has stopped, which
-/// it does in well under a second, and short enough to disappear behind
-/// the engine's own start-up, which takes longer than this anyway. It is
-/// only ever waited when the pairing was skipped, so a first session
-/// never pays it.
-const SESSION_TAKES: Duration = Duration::from_secs(3);
+/// Long enough that an engine turned away at the door has stopped. That
+/// is not always quick: the engine reaches the far computer over plain
+/// text, is refused the encrypted channel that says the two have met,
+/// and then takes about five seconds to call that computer offline and
+/// give up. Three seconds, which is what this was, ran out first: the
+/// session was called live, the engine died just after, and the person
+/// read that the far computer had not answered instead of the two being
+/// introduced again.
+///
+/// The cost of waiting longer is that the floating button, which the
+/// service only knows about once this is over, arrives a few seconds
+/// after the picture. That is the right way round: a button that is late
+/// is a nuisance, a session declared live and dead in the same breath is
+/// a fault.
+///
+/// It is only ever waited when the pairing was skipped, so a first
+/// session never pays it.
+const SESSION_TAKES: Duration = Duration::from_secs(6);
 
 #[derive(Debug)]
 pub enum Error {

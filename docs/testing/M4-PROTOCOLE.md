@@ -108,7 +108,11 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Couper l'interrupteur **Accès distant**. Attendu : l'icône s'atténue, et son infobulle dit « cet ordinateur n'est pas joignable ». Le rallumer la rend nette à nouveau.
 >
-> Clic droit sur l'icône, **Quitter**. Attendu : l'icône disparaît, et depuis le **PC client** l'ordinateur hôte disparaît de la liste en moins d'une minute. Vérifier dans le gestionnaire des tâches qu'il ne reste **ni `ZyrDesk`, ni `zyrdeskd`, ni `zyrdesk-host-engine`**.
+> Clic droit sur l'icône, **Quitter**. Attendu : l'icône disparaît, et depuis le **PC client** l'ordinateur hôte disparaît de la liste en moins d'une minute. Vérifier dans le gestionnaire des tâches qu'il ne reste **ni `ZyrDesk`, ni `zyrdeskd`, ni `zyrdesk-host-engine`, ni `zyrdesk-session`**.
+>
+> Le dernier est celui qui manquait : Windows ne ferme pas un programme parce que celui qui l'a lancé s'en va, et chaque moteur de session survivait à l'application, invisible, jusqu'au redémarrage de la machine. Ils sont maintenant tenus en laisse par le système, qui les ramasse même quand l'application est tuée sans ménagement.
+>
+> À vérifier aussi, et c'est le cas qui les accumulait : **pendant une session**, tuer `ZyrDesk.exe` par le gestionnaire des tâches. Attendu : l'image se ferme d'elle-même dans la seconde.
 
 > **R4 (un moteur qui manque se dit, et ne casse rien d'autre)**
 >
@@ -198,6 +202,14 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > Attendu : plus d'étape « Premier accès ». Le tunnel s'établit et l'image arrive. Les deux ordinateurs se connaissent maintenant.
 >
 > Deux choses se regardent ici, parce que c'est la session ordinaire. Le temps entre le clic et l'image se compte en secondes et non en dizaines de secondes : le moteur client s'arrêtait cinq à huit secondes à chaque session pour laisser lire des messages sur une fenêtre qu'il n'a pas. Et entre l'écran d'ouverture et l'image, sa fenêtre doit être sombre : un cadre clair, même un instant, veut dire que le moteur installé n'est pas celui que nous compilons.
+
+> **R8ter (l'appairage survit au redémarrage du service)**
+>
+> Après une session réussie, sur le **PC hôte** : quitter ZyrDesk par l'icône, le rouvrir, puis se reconnecter depuis le **PC client**.
+>
+> Attendu : **aucune étape « Cet ordinateur ne nous reconnaît plus »**. L'image arrive directement.
+>
+> Le moteur hôte rangeait ses appairages et les identifiants de son interface locale dans le même fichier, ce qu'il fait par défaut. Poser des identifiants neufs, ce que le service fait à chaque démarrage, lui faisait relire et réécrire ce fichier à travers une bibliothèque qui ne rend pas une liste JSON telle qu'elle l'a lue : la liste des ordinateurs appairés revenait illisible. Deux fichiers désormais.
 
 > **R8bis (l'ordinateur d'en face a oublié)**
 >

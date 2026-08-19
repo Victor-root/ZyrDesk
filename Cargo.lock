@@ -5861,6 +5861,7 @@ dependencies = [
 name = "zyr-engine-client"
 version = "0.1.0"
 dependencies = [
+ "windows-sys 0.61.2",
  "zyr-proto",
 ]
 

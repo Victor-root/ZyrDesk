@@ -177,8 +177,10 @@ impl ClientEngine {
             command.stdout(Stdio::from(log)).stderr(Stdio::from(errors));
         }
 
+        let engine = command.spawn()?;
+        tie_to_this_program(&engine);
         Ok(Pairing {
-            engine: command.spawn()?,
+            engine,
             log: self.log.clone(),
             said_from,
         })
@@ -229,11 +231,81 @@ impl ClientEngine {
             let errors = log.try_clone()?;
             command.stdout(Stdio::from(log)).stderr(Stdio::from(errors));
         }
-        Ok(Session {
-            engine: command.spawn()?,
-        })
+        let engine = command.spawn()?;
+        tie_to_this_program(&engine);
+        Ok(Session { engine })
     }
 }
+
+/// Makes an engine die with the program that started it.
+///
+/// Windows does not end a child when its parent goes. An engine started
+/// here therefore outlives whoever started it, and outlives it for good:
+/// nothing else knows it exists, it holds no window once its session has
+/// failed, and it sits in the task manager until the machine is
+/// restarted. Closing the interface, updating it, or killing it all left
+/// one behind, and they piled up.
+///
+/// A job object ties them together. Every engine is put in it, and the
+/// system empties it the moment the last handle to it closes, which is
+/// when this program ends, whatever the reason and even when nothing of
+/// this program is left running to notice.
+#[cfg(windows)]
+fn tie_to_this_program(engine: &Child) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+
+    let Some(leash) = leash() else {
+        return;
+    };
+    // SAFETY: the job is one this program made, and the handle belongs
+    // to the process just started.
+    unsafe { AssignProcessToJobObject(leash as _, engine.as_raw_handle() as _) };
+}
+
+/// The job every engine of this program is put in, made once.
+///
+/// Nothing closes it: it is meant to be closed by the system taking the
+/// program's handles back, which is exactly what has to kill the
+/// engines.
+#[cfg(windows)]
+fn leash() -> Option<isize> {
+    use std::sync::OnceLock;
+    use windows_sys::Win32::System::JobObjects::{
+        CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+        SetInformationJobObject,
+    };
+
+    static JOB: OnceLock<isize> = OnceLock::new();
+    let job = *JOB.get_or_init(|| {
+        // SAFETY: a job with no name and no particular rights.
+        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if job.is_null() {
+            return 0;
+        }
+
+        // SAFETY: the structure is plain data and is filled with zeroes
+        // before the one field that matters is set.
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        // SAFETY: the job is the one just made, and the structure and
+        // its size are ours.
+        unsafe {
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                (&raw mut limits).cast(),
+                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        job as isize
+    });
+    (job != 0).then_some(job)
+}
+
+#[cfg(not(windows))]
+fn tie_to_this_program(_engine: &Child) {}
 
 /// The last thing the engine said before giving up.
 ///
