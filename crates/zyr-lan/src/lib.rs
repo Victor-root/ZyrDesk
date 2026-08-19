@@ -20,7 +20,7 @@ use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use mdns_sd::{DaemonEvent, ServiceDaemon, ServiceEvent, ServiceInfo};
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_transport::Fingerprint;
 
@@ -143,10 +143,19 @@ impl Neighbourhood {
     pub fn open(
         name: &str,
         fingerprint: Fingerprint,
-        noticed: impl Fn(&str) + Send + 'static,
+        noticed: impl Fn(&str) + Send + Sync + 'static,
     ) -> Result<Self, mdns_sd::Error> {
         let daemon = ServiceDaemon::new()?;
         let instance = announced_as(&fingerprint);
+        let noticed = Arc::new(noticed);
+
+        // What the announcement itself is doing, before anything is
+        // heard back. A computer can announce itself perfectly and be
+        // announcing it on a card nobody else is on, and from both ends
+        // that looks exactly like a computer switched off.
+        let watching = daemon.monitor()?;
+        let telling = noticed.clone();
+        std::thread::spawn(move || watch(&watching, telling.as_ref()));
 
         let mut fields = std::collections::HashMap::new();
         fields.insert(CLE_EMPREINTE.to_string(), fingerprint.to_string());
@@ -176,7 +185,7 @@ impl Neighbourhood {
             // network, which is a handful at worst.
             let mut mentioned = std::collections::HashSet::new();
             while let Ok(event) = listening.recv() {
-                collect(event, &collecting, mine, &mut mentioned, &noticed);
+                collect(event, &collecting, mine, &mut mentioned, noticed.as_ref());
             }
         });
 
@@ -202,6 +211,36 @@ impl Drop for Neighbourhood {
     }
 }
 
+/// Reports what the announcement itself is doing.
+///
+/// The other half of the diagnosis. The lines below say which addresses
+/// this computer is announcing on and which cards the announcements
+/// leave by, so a machine announcing itself only on a virtual adapter or
+/// a VPN says so instead of looking switched off from every side.
+///
+/// An announcement goes out again for as long as the service runs, and
+/// what is worth reading is the list of cards, not how many times each
+/// was used: each is said once and then left alone. Addresses appearing
+/// and disappearing are rare enough to be said every time.
+fn watch(watching: &mdns_sd::Receiver<DaemonEvent>, noticed: &dyn Fn(&str)) {
+    let mut already = std::collections::HashSet::new();
+    while let Ok(event) = watching.recv() {
+        let (line, every_time) = match event {
+            DaemonEvent::IpAdd(address) => (format!("announcing on {address}"), true),
+            DaemonEvent::IpDel(address) => (format!("{address} is no longer answering"), true),
+            DaemonEvent::Announce(_, whence) => (format!("announcement sent from {whence}"), false),
+            DaemonEvent::Respond(whence) => {
+                (format!("a question was answered from {whence}"), false)
+            }
+            DaemonEvent::Error(e) => (format!("the local network refused something: {e}"), false),
+            _ => continue,
+        };
+        if every_time || already.insert(line.clone()) {
+            noticed(&line);
+        }
+    }
+}
+
 /// Turns what the network said into what we keep, or ignores it.
 ///
 /// What is worth telling apart, and why each stage is reported: hearing
@@ -223,7 +262,7 @@ fn collect(
             }
         }
         ServiceEvent::ServiceResolved(info) => {
-            let Some(peer) = read(&info) else {
+            let Some((peer, announced)) = read(&info) else {
                 noticed("an announcement arrived incomplete and was left aside");
                 return;
             };
@@ -232,7 +271,7 @@ fn collect(
             if peer.fingerprint == mine {
                 return;
             }
-            let named = format!("{} at {}", peer.name, peer.address);
+            let named = named(&peer, &announced);
             if found.note(peer, Instant::now()) {
                 noticed(&format!("found {named} on the local network"));
             }
@@ -259,31 +298,60 @@ fn instance_of(fullname: &str) -> &str {
 /// Anything on the network can announce anything: a record missing a
 /// field, or carrying something that is not a fingerprint, is dropped
 /// rather than shown half-empty.
-fn read(info: &mdns_sd::ResolvedService) -> Option<Peer> {
+///
+/// Hands back the computer and every address it announced: the second is
+/// worth writing down even though only the first is used, since a
+/// machine reached at the wrong one of its addresses is otherwise a
+/// silent failure with nothing to look at.
+fn read(info: &mdns_sd::ResolvedService) -> Option<(Peer, Vec<IpAddr>)> {
     let fingerprint: Fingerprint = info.get_property_val_str(CLE_EMPREINTE)?.parse().ok()?;
     let name = info.get_property_val_str(CLE_NOM)?.trim();
     if name.is_empty() {
         return None;
     }
-    // Une machine annonce toutes ses adresses. La première d'entre
-    // elles en version 4 est celle que le tunnel saura joindre.
-    let address = info
-        .addresses
-        .iter()
-        .map(|scoped| scoped.to_ip_addr())
-        .find(IpAddr::is_ipv4)
-        .or_else(|| {
-            info.addresses
-                .iter()
-                .map(|scoped| scoped.to_ip_addr())
-                .next()
-        })?;
-    Some(Peer {
+    let announced = in_order(
+        info.addresses
+            .iter()
+            .map(|scoped| scoped.to_ip_addr())
+            .collect(),
+    );
+    let peer = Peer {
         name: name.to_string(),
         fingerprint,
-        address,
+        address: *announced.first()?,
         port: info.port,
-    })
+    };
+    Some((peer, announced))
+}
+
+/// Puts the addresses a computer announced into a settled order.
+///
+/// A machine with a second card, a virtual adapter or a VPN announces
+/// every address it has, and they arrive as a set, in no order at all:
+/// taking « the first » would reach the same computer somewhere else
+/// from one time to the next. Version four leads, being what the tunnel
+/// is opened on.
+fn in_order(mut announced: Vec<IpAddr>) -> Vec<IpAddr> {
+    announced.sort_by_key(|address| (!address.is_ipv4(), *address));
+    announced
+}
+
+/// How a computer just found is named in the journal.
+///
+/// Every address it announced, and not only the one that will be used:
+/// the day a computer is reached at the wrong one of its addresses, this
+/// line is what says so.
+fn named(peer: &Peer, announced: &[IpAddr]) -> String {
+    let elsewhere: Vec<String> = announced.iter().skip(1).map(ToString::to_string).collect();
+    if elsewhere.is_empty() {
+        return format!("{} at {}", peer.name, peer.address);
+    }
+    format!(
+        "{} at {}, also announced at {}",
+        peer.name,
+        peer.address,
+        elsewhere.join(", ")
+    )
 }
 
 #[cfg(test)]
@@ -382,6 +450,34 @@ mod tests {
         found.note(peer(1, "PC-BUREAU"), Instant::now());
         found.forget(&announced_as(&fingerprint(1)));
         assert!(found.peers().is_empty());
+    }
+
+    #[test]
+    fn a_computer_with_several_cards_is_always_reached_at_the_same_one() {
+        // Une machine à deux cartes annonce ses deux adresses, et elles
+        // arrivent en vrac : sans ordre arrêté, on la joindrait tantôt
+        // d'un côté tantôt de l'autre, et un essai sur deux échouerait
+        // sans que rien ne l'explique.
+        let un: IpAddr = "192.168.1.20".parse().unwrap();
+        let deux: IpAddr = "192.168.2.20".parse().unwrap();
+        let six: IpAddr = "fe80::1".parse().unwrap();
+        assert_eq!(in_order(vec![deux, un]), vec![un, deux]);
+        assert_eq!(in_order(vec![six, deux, un]), vec![un, deux, six]);
+        // La version quatre d'abord : c'est là-dessus que le tunnel est
+        // ouvert.
+        assert_eq!(in_order(vec![six, deux]), vec![deux, six]);
+    }
+
+    #[test]
+    fn a_computer_found_says_where_else_it_answers() {
+        let un: IpAddr = "192.168.1.20".parse().unwrap();
+        let deux: IpAddr = "192.168.2.20".parse().unwrap();
+        let found = peer(1, "PC-BUREAU");
+        assert_eq!(named(&found, &[un]), "PC-BUREAU at 192.168.1.20");
+        assert_eq!(
+            named(&found, &[un, deux]),
+            "PC-BUREAU at 192.168.1.20, also announced at 192.168.2.20"
+        );
     }
 
     #[test]

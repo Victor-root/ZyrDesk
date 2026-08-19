@@ -99,6 +99,7 @@ async fn heading() -> String {
     let mut text = String::new();
     let _ = writeln!(text, "{}", zyr_proto::version_line());
     say(&mut text, "Ordinateur", &zyr_proto::machine::name());
+    say(&mut text, "Adresses", &own_addresses());
 
     match service::ask(&Request::Standing).await {
         Ok(Answer::Standing(standing)) => {
@@ -149,6 +150,24 @@ async fn heading() -> String {
         &paths::logs_dir().display().to_string(),
     );
     text
+}
+
+/// Where this computer answers, card by card.
+///
+/// Two machines that never find each other are almost always two
+/// machines on two different networks, and nothing else in a journal
+/// says so. Written down here so the answer travels with the journal
+/// instead of costing an evening and a command to go and fetch.
+fn own_addresses() -> String {
+    let answering = zyr_proto::machine::addresses();
+    if answering.is_empty() {
+        return "aucune".to_string();
+    }
+    answering
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The computers this one sees on the local network, by name.

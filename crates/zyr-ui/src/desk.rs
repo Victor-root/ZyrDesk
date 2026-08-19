@@ -133,6 +133,27 @@ pub async fn set_trust(on: bool) -> Result<(), String> {
     }
 }
 
+/// Writes a computer down as one this one lets in.
+///
+/// The way back when the network announces nothing. Everything else here
+/// rests on two ZyrDesk hearing each other on the local network, and a
+/// network that drops those announcements would otherwise leave the
+/// product with no way in at all.
+#[tauri::command]
+pub async fn authorize(fingerprint: String) -> Result<(), String> {
+    let peer = fingerprint
+        .trim()
+        .parse()
+        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+    match service::ask(&Request::Authorize { peer }).await? {
+        Answer::Done => {
+            crate::journal::note(&format!("{peer} written down as allowed in"));
+            Ok(())
+        }
+        other => Err(service::unexpected(other)),
+    }
+}
+
 /// Installs the ZyrDesk service and starts it.
 ///
 /// The one moment the product asks Windows for administrator rights, and

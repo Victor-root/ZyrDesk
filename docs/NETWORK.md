@@ -99,6 +99,10 @@ Modèle « relais d'abord, direct en parallèle » (zéro attente perçue, leço
 
 Découverte LAN sans compte : mDNS (crate mdns-sd) annonce et découvre les appareils ZyrDesk du réseau local, chaque annonce portant le nom de la machine et son empreinte. Depuis le jalon M4, le service hôte admet les empreintes ainsi annoncées, sous un interrupteur activé par défaut, et le code d'appairage des moteurs voyage dans le tunnel : sur un réseau local, il n'y a donc rien à recopier ni à taper d'un ordinateur à l'autre (D17, [SECURITY.md](SECURITY.md) §1.1). Aucun broker n'est impliqué.
 
+Ce que la découverte suppose, et qui ne dépend pas de nous : le multicast doit traverser le réseau, et Windows doit classer la carte en réseau **privé**. Sur un profil public il coupe la découverte quelles que soient les règles de pare-feu, et un portable en Wi-Fi hérite souvent de ce classement. Une machine portant plusieurs cartes (seconde carte, adaptateur virtuel, VPN) annonce toutes ses adresses : elles sont triées, version 4 d'abord puis par ordre croissant, pour qu'un même ordinateur soit toujours joint au même endroit. Le service écrit dans son journal les adresses sur lesquelles il annonce et les cartes par lesquelles chaque annonce sort : c'est la seule chose qui distingue « personne en face » de « personne ne nous entend ».
+
+Quand le réseau ne laisse rien passer, une empreinte saisie à la main dans la fenêtre remplace l'annonce, sur chacune des deux machines. Elle est écrite dans la liste des appareils admis, que le service relit toutes les cinq secondes : rien à redémarrer, et l'autorisation survit à tout.
+
 ## 6. Relais
 
 - Rôle : transporter des paquets chiffrés, rien d'autre. Pas de GPU, pas de décodage, pas d'accès aux clés (le chiffrement est de bout en bout entre les deux appareils ; voir [SECURITY.md](SECURITY.md)). CPU très léger, débit réseau dimensionnant.

@@ -144,8 +144,8 @@
           <p class="sous-titre">Aucun ordinateur pour l'instant</p>
           <p class="legende vide-mot">
             Les ZyrDesk allumés sur ce réseau apparaissent ici tout seuls, sans
-            rien à recopier. Sinon, ajoutez celui que vous voulez contrôler par
-            son adresse.
+            rien à recopier. Si le réseau ne laisse pas passer les annonces,
+            ajoutez l'autre ordinateur à la main, sur les deux machines.
           </p>
           <button class="bouton principal grand" id="ouvrir-ajout">
             Ajouter un ordinateur
@@ -163,19 +163,9 @@
         <h2 class="sous-titre">Ajouter un ordinateur</h2>
         <p class="legende">
           À n'utiliser que si l'ordinateur n'apparaît pas tout seul. Les deux
-          informations se lisent dans sa fenêtre ZyrDesk.
+          informations se lisent dans sa fenêtre ZyrDesk. À faire sur les deux
+          machines : chacune doit connaître l'autre.
         </p>
-
-        <div class="champ">
-          <label for="adresse">Adresse</label>
-          <input
-            id="adresse"
-            type="text"
-            placeholder="192.168.1.20"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </div>
 
         <div class="champ">
           <label for="empreinte-distante">Empreinte</label>
@@ -187,6 +177,20 @@
             spellcheck="false"
           />
           <span class="champ-mot" id="mot-empreinte"></span>
+        </div>
+
+        <div class="champ">
+          <label for="adresse">Adresse</label>
+          <input
+            id="adresse"
+            type="text"
+            placeholder="192.168.1.20"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <span class="legende">
+            Seulement si vous voulez contrôler cet ordinateur depuis ici.
+          </span>
         </div>
 
         <div class="dialogue-actions">

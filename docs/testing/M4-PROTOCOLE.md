@@ -1,6 +1,6 @@
 # Jalon M4 : le produit se pilote entièrement à la souris
 
-Ce document se déroule sur les deux mêmes PC Windows que les jalons précédents. Il ne demande **aucune ligne de commande en dehors de la mise à jour** : tout le reste se passe dans la fenêtre ZyrDesk.
+Ce document se déroule sur les deux mêmes PC Windows que les jalons précédents. Il ne demande **aucune ligne de commande en dehors de la mise à jour et d'un réglage Windows à faire une seule fois** : tout le reste se passe dans la fenêtre ZyrDesk.
 
 Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis lequel on se connecte. La plupart des étapes se font sur les deux, et c'est écrit à chaque fois.
 
@@ -37,6 +37,24 @@ L'ordre compte : Windows refuse de remplacer un fichier qu'un programme tient en
 Les moteurs ne sont retéléchargés que s'ils ont changé, ce qui arrive une poignée de fois sur la vie du projet. Le journal de la fenêtre dit toujours de quelle compilation viennent ceux qui sont en place.
 
 **La toute première fois**, le service n'existe pas encore : la ligne se réduit à `git pull && cargo build --release && pwsh -NoProfile -ExecutionPolicy Bypass -File .\packaging\engines\fetch-engines.ps1`, et c'est la fenêtre qui installera le service (vérification R2).
+
+### Le réseau doit être privé
+
+Windows classe chaque carte réseau en **privé** ou en **public**, et sur un réseau public il coupe la découverte : les deux ZyrDesk ne se verront jamais, quelles que soient les règles de pare-feu. Un portable en Wi-Fi hérite très souvent de « public » sans que personne ne le lui demande.
+
+À vérifier sur **les deux PC**, dans une fenêtre PowerShell administrateur :
+
+```
+Get-NetConnectionProfile | Select-Object Name, InterfaceAlias, NetworkCategory
+```
+
+Si la carte utilisée dit `Public`, la passer en privé, toujours sur le PC concerné :
+
+```
+Set-NetConnectionProfile -InterfaceAlias "Wi-Fi" -NetworkCategory Private
+```
+
+Remplacer `"Wi-Fi"` par ce que dit la colonne `InterfaceAlias`. Les cartes virtuelles d'autres logiciels peuvent rester en public : seule compte celle qui porte l'adresse du réseau local.
 
 ### Lancer l'application
 
@@ -108,9 +126,17 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 
 > **R6bis (le rattrapage quand le réseau n'annonce rien)**
 >
-> À ne faire que si R5 a échoué. Sur le **PC hôte**, copier l'empreinte affichée sur la carte « Cet ordinateur ». Sur le **PC client**, cliquer la tuile **Ajouter un ordinateur**, saisir l'adresse du PC hôte et coller l'empreinte.
+> À ne faire que si R5 a échoué. Le geste est le même des deux côtés : chacun doit connaître l'autre, sinon la machine d'en face est refusée à l'arrivée et on n'a fait que la moitié du chemin.
 >
-> Attendu : la session s'ouvre quand même. Ce chemin existe pour les réseaux qui bloquent la découverte ; il ne devrait servir à personne d'autre.
+> Sur le **PC hôte**, cliquer **Ajouter un ordinateur**, coller l'empreinte du PC client, laisser l'adresse vide, cliquer **Autoriser**.
+>
+> Sur le **PC client**, cliquer **Ajouter un ordinateur**, coller l'empreinte du PC hôte, saisir son adresse, cliquer **Se connecter**.
+>
+> L'empreinte se lit sur la carte « Cet ordinateur » de l'autre fenêtre, bouton **Copier**.
+>
+> Attendu : le PC hôte affiche « Cet ordinateur est autorisé à venir sur celui-ci », et la session s'ouvre depuis le client. Ce chemin existe pour les réseaux qui bloquent la découverte ; il ne devrait servir à personne d'autre.
+>
+> Une empreinte écrite le reste : elle survit au redémarrage du service et n'est plus à ressaisir.
 
 ---
 
@@ -264,7 +290,7 @@ Quand quelque chose ne marche pas, la première question est toujours la même :
 >
 > Cliquer l'icône **journal** en haut de la fenêtre.
 >
-> Attendu, dans l'entête : la version de la fenêtre, celle du service, le nom de l'ordinateur, son empreinte, l'état de l'accès distant, celui du réseau local, la présence des deux moteurs et la compilation dont ils viennent, le nombre de sessions. Puis le contenu des quatre journaux, la fin de chacun.
+> Attendu, dans l'entête : la version de la fenêtre, celle du service, le nom de l'ordinateur, ses adresses carte par carte, son empreinte, l'état de l'accès distant, celui du réseau local, les ordinateurs vus, la présence des deux moteurs et la compilation dont ils viennent, le nombre de sessions. Puis le contenu des quatre journaux, la fin de chacun.
 >
 > Cliquer **Copier tout**, coller dans un bloc-notes : tout doit s'y retrouver, tel quel.
 >
@@ -300,7 +326,13 @@ La marche à suivre est toujours la même : ouvrir le journal, cliquer **Copier 
 
 Deux cas courants, et leur cause habituelle :
 
-- **Les ordinateurs ne se voient pas.** Regarder le journal : si la ligne `firewall opened for ZyrDesk (réseau local)` n'y est pas, la règle n'a pas été posée, et un autre pare-feu que celui de Windows est probablement en cause. Sinon, les deux machines ne sont peut-être pas sur le même sous-réseau. Le rattrapage R6bis permet de continuer sans attendre.
+- **Les ordinateurs ne se voient pas.** Le journal porte de quoi trancher, dans l'ordre où il faut le lire :
+  1. La ligne `Adresses` de l'entête, sur les deux machines : si les deux adresses ne sont pas sur le même sous-réseau, rien d'autre ne peut marcher.
+  2. Les lignes `announcing on …` et `announcement sent from …` du journal du service : elles nomment les cartes par lesquelles l'annonce sort réellement. Une machine qui n'annonce que par une carte virtuelle ou un VPN ne sera entendue de personne.
+  3. La ligne `firewall opened for ZyrDesk (réseau local)` : si elle manque, la règle n'a pas été posée, et un autre pare-feu que celui de Windows est probablement en cause.
+  4. Le profil du réseau, dans Windows : sur un réseau classé **public**, Windows coupe la découverte. Il doit être **privé** sur les deux machines. Cette classification se fait par carte, et un portable en Wi-Fi hérite très souvent de « public ».
+
+  Le rattrapage R6bis permet de continuer sans attendre.
 - **La session est refusée avec un message d'ordinateur refusé.** La confiance au réseau local est coupée sur l'hôte (R19), ou son accès distant est désactivé (R20).
 
 Deux entrées du menu flottant méritent leur propre explication :

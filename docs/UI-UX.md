@@ -43,7 +43,7 @@ Accueil :
 
 - La carte « Cet ordinateur » porte l'interrupteur Accès distant et son état en langage humain (« Prêt », « Désactivé », « Moteur hôte absent », « Démarrage en cours »). Ce qui empêche d'être joignable est dit, jamais laissé à deviner ([D18](DECISIONS.md)).
 - Sous la carte, ce qu'il reste à faire pour que le produit marche, avec de quoi le faire : le service qui ne tourne pas se démarre d'un bouton, un moteur qui manque ouvre son dossier. Rien de tout cela ne demande de ligne de commande.
-- Les cartes machines : pastille de présence, nom, adresse, bouton Se connecter proéminent au survol. Clic simple = connexion (le détail est secondaire, accessible par clic droit ou icône). Elles se remplissent seules à partir des annonces du réseau local ; « Ajouter un ordinateur » ne sert qu'aux réseaux où l'annonce ne passe pas.
+- Les cartes machines : pastille de présence, nom, adresse, bouton Se connecter proéminent au survol. Clic simple = connexion (le détail est secondaire, accessible par clic droit ou icône). Elles se remplissent seules à partir des annonces du réseau local ; « Ajouter un ordinateur » ne sert qu'aux réseaux où l'annonce ne passe pas. Ce geste-là écrit l'ordinateur dans les deux sens, et se fait donc sur les deux machines : l'adresse n'est demandée que si on veut aussi le contrôler depuis ici.
 - La version tient au bas de l'écran, discrète. Quand la fenêtre et le service ne datent pas du même jour, elle le dit en ambre : c'est la panne que personne ne pense à vérifier.
 - Le journal (icône ▤) rassemble tout ce que le produit a écrit, sous la compilation qui l'a produit, avec un bouton qui copie l'ensemble. Rapporter un problème est un clic et un collage.
 

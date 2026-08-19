@@ -19,7 +19,8 @@ use zyr_control::pipe::Heard;
 use zyr_control::{Answer, Door, Holdup, PROTOCOL, Request, Standing};
 use zyr_lan::Found;
 use zyr_proto::log::Log;
-use zyr_transport::Fingerprint;
+use zyr_proto::paths;
+use zyr_transport::{Fingerprint, authorized};
 
 use crate::preferences::Remembered;
 use crate::ways::Ways;
@@ -258,6 +259,28 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             }
             Err(refusal) => refusal,
         },
+        Request::Authorize { peer } => {
+            // Cette empreinte est déjà celle de cet ordinateur : l'écrire
+            // n'ouvrirait rien et laisserait croire à un appairage fait.
+            if peer == answering.fingerprint {
+                return Answer::Refused(
+                    "c'est l'empreinte de cet ordinateur.\n  \
+                     Celle à saisir se lit dans la fenêtre de l'autre machine."
+                        .to_string(),
+                );
+            }
+            match authorized::add(&paths::authorized_devices(), peer) {
+                Ok(true) => {
+                    answering.log.write(&format!("{peer} may now come in"));
+                    Answer::Done
+                }
+                // Déjà écrite : c'est l'état demandé, atteint.
+                Ok(false) => Answer::Done,
+                Err(e) => Answer::Refused(format!(
+                    "cet ordinateur n'a pas pu être écrit dans la liste : {e}"
+                )),
+            }
+        }
         Request::Settings => Answer::Settings(answering.remembered.read().preferred),
         Request::Choose { preferred } => {
             match kept(answering.remembered.set_preferred(preferred)) {

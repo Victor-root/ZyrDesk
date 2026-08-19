@@ -170,8 +170,7 @@ async function basculerAcces() {
     await invoke("set_hosting", { on: veut });
   } catch (raison) {
     vue.interrupteur.setAttribute("aria-checked", veut ? "false" : "true");
-    vue.problemeTexte.textContent = String(raison);
-    montre(vue.probleme, true);
+    annonce(String(raison), true);
   } finally {
     bascule = false;
     await rafraichirEtat();
@@ -494,14 +493,17 @@ function dessineOrdinateurs() {
 
 function ouvrirAjout() {
   vue.motEmpreinte.textContent = "";
+  ajusterAjout();
   vue.ajout.showModal();
-  vue.adresse.focus();
+  vue.empreinteDistante.focus();
 }
 
-/* Dit ce qui manque plutôt que de laisser un bouton éteint sans raison. */
+/* Dit ce qui manque plutôt que de laisser un bouton éteint sans raison,
+   et dit ce que le bouton va faire : écrire l'ordinateur pour qu'il
+   puisse venir, et s'y connecter dans la foulée si une adresse est là. */
 function ajusterAjout() {
-  const empreinte = vue.empreinteDistante.value.trim();
-  const longueur = empreinte.length;
+  const longueur = vue.empreinteDistante.value.trim().length;
+  const versLui = vue.adresse.value.trim().length > 0;
 
   if (longueur === 0 || longueur === TAILLE_EMPREINTE) {
     vue.motEmpreinte.textContent = "";
@@ -509,16 +511,36 @@ function ajusterAjout() {
     vue.motEmpreinte.textContent = `${longueur} caractères sur ${TAILLE_EMPREINTE}`;
   }
 
+  vue.connecter.textContent = versLui ? "Se connecter" : "Autoriser";
   vue.connecter.disabled =
-    occupe() ||
-    vue.adresse.value.trim().length === 0 ||
-    longueur !== TAILLE_EMPREINTE;
+    longueur !== TAILLE_EMPREINTE || (versLui && occupe());
 }
 
-function connecter(evenement) {
+/* Écrire l'empreinte va dans les deux sens : elle laisse entrer cet
+   ordinateur-là, et elle sert de repère pour aller vers lui. Sans le
+   premier des deux, la machine d'en face serait refusée à l'arrivée et
+   on n'aurait fait que la moitié du chemin. */
+async function connecter(evenement) {
   evenement.preventDefault();
   vue.ajout.close();
-  lance(vue.adresse.value, vue.empreinteDistante.value);
+  montre(vue.probleme, false);
+
+  const empreinte = vue.empreinteDistante.value;
+  const adresse = vue.adresse.value.trim();
+  try {
+    await invoke("authorize", { fingerprint: empreinte });
+  } catch (raison) {
+    echoue(String(raison));
+    return;
+  }
+
+  if (adresse.length === 0) {
+    // Autoriser ne se voit nulle part ailleurs : sans un mot, le geste
+    // ferait exactement le même effet à l'écran que ne rien faire.
+    annonce("Cet ordinateur est autorisé à venir sur celui-ci.");
+    return;
+  }
+  lance(adresse, empreinte);
 }
 
 async function lance(adresse, empreinte) {
@@ -556,9 +578,17 @@ async function rangeEtape() {
   montre(vue.etape, false);
 }
 
-function echoue(texte) {
+/* Le bandeau du haut. Il sert aux deux : ce qui a échoué, et ce qui a
+   réussi sans laisser de trace ailleurs à l'écran. Un message rouge pour
+   dire que tout va bien se lirait comme une panne. */
+function annonce(texte, ennui = false) {
   vue.problemeTexte.textContent = texte;
+  vue.probleme.classList.toggle("alerte", ennui);
   montre(vue.probleme, true);
+}
+
+function echoue(texte) {
+  annonce(texte, true);
   rangeEtape();
 }
 

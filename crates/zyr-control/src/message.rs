@@ -24,7 +24,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 7;
+pub const PROTOCOL: u32 = 8;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -125,6 +125,13 @@ pub enum Request {
     /// Decides whether the ZyrDesk of the local network are let in
     /// without anyone having to recognise them one by one.
     SetTrust { on: bool },
+    /// Writes a computer down as one this one lets in.
+    ///
+    /// What is left when the network announces nothing: on a network
+    /// that drops the announcements, recognising the other machine by
+    /// hand is the only way in, and it has to be doable from a window
+    /// like everything else.
+    Authorize { peer: Fingerprint },
     /// What a session opened from this computer is set to.
     Settings,
     /// Changes it, for this session and all the ones after.
@@ -164,6 +171,9 @@ impl Request {
             "trusting" => Ok(Request::SetTrust {
                 on: fields.text("on")? == "yes",
             }),
+            "authorize" => Ok(Request::Authorize {
+                peer: fields.parsed("peer")?,
+            }),
             "settings" => Ok(Request::Settings),
             "choose" => Ok(Request::Choose {
                 preferred: fields.preferred(),
@@ -190,6 +200,7 @@ impl fmt::Display for Request {
             Request::Sessions => f.write_str("sessions"),
             Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
+            Request::Authorize { peer } => write!(f, "authorize peer={peer}"),
             Request::Settings => f.write_str("settings"),
             Request::Choose { preferred } => write!(f, "choose {}", spelled(preferred)),
         }
@@ -572,6 +583,9 @@ mod tests {
             Request::SetHosting { on: false },
             Request::SetTrust { on: true },
             Request::SetTrust { on: false },
+            Request::Authorize {
+                peer: fingerprint(),
+            },
             Request::Settings,
             Request::Choose {
                 preferred: preferred(),

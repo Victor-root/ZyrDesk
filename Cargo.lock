@@ -5851,6 +5851,7 @@ dependencies = [
 name = "zyr-proto"
 version = "0.1.0"
 dependencies = [
+ "if-addrs",
  "rand",
  "time",
 ]
