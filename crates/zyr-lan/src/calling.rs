@@ -45,7 +45,12 @@ const VERSION: u32 = 1;
 const MARK: &str = "zyrdesk";
 
 /// How often this computer calls out.
-const ROUND: Duration = Duration::from_secs(10);
+///
+/// Short, because it is also what keeps the list honest: every computer
+/// already on it is asked directly at this rhythm, and a green dot that
+/// stood for a machine gone half a minute ago would be a lie the whole
+/// screen rests on.
+const ROUND: Duration = Duration::from_secs(3);
 
 /// How often the whole network is asked one address at a time, while
 /// nobody has answered.
@@ -77,6 +82,13 @@ enum Said {
         fingerprint: Fingerprint,
         name: String,
     },
+    /// This computer is leaving, now.
+    ///
+    /// Waiting for it to stop answering works and takes ten seconds;
+    /// saying so takes one packet and none at all. A machine that
+    /// crashes says nothing, which is what the waiting is still there
+    /// for.
+    Bye { fingerprint: Fingerprint },
 }
 
 impl Said {
@@ -90,6 +102,9 @@ impl Said {
         }
         match pieces.next()? {
             "who" => Some(Said::Who),
+            "bye" => Some(Said::Bye {
+                fingerprint: pieces.next()?.trim().parse().ok()?,
+            }),
             "here" => {
                 let port = pieces.next()?.parse().ok()?;
                 // The fingerprint and the name travel together in what is
@@ -119,6 +134,7 @@ impl Said {
                 fingerprint,
                 name,
             } => format!("{MARK} {VERSION} here {port} {fingerprint} {name}"),
+            Said::Bye { fingerprint } => format!("{MARK} {VERSION} bye {fingerprint}"),
         }
     }
 }
@@ -126,13 +142,38 @@ impl Said {
 /// The calling, for as long as it is held.
 pub struct Calling {
     stop: Arc<AtomicBool>,
+    /// The same socket the loop listens on, kept to say one last thing.
+    saying_goodbye: UdpSocket,
+    fingerprint: Fingerprint,
+    found: Found,
 }
 
 impl Drop for Calling {
-    /// A calling nobody holds any more must not keep answering for a
-    /// computer that has stopped announcing itself.
+    /// Stops answering, and says so.
+    ///
+    /// The goodbye is the whole difference between a card that goes the
+    /// moment somebody quits and one that lingers until the others have
+    /// noticed the silence. It is sent to the computers already known,
+    /// each at its own address, and to the network at large for whoever
+    /// is not on that list yet.
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        let goodbye = Said::Bye {
+            fingerprint: self.fingerprint,
+        }
+        .spoken();
+        for peer in self.found.peers() {
+            let _ = self
+                .saying_goodbye
+                .send_to(goodbye.as_bytes(), SocketAddr::new(peer.address, PORT));
+        }
+        for card in zyr_proto::machine::addresses() {
+            if let Some(everyone) = card.broadcast {
+                let _ = self
+                    .saying_goodbye
+                    .send_to(goodbye.as_bytes(), SocketAddr::from((everyone, PORT)));
+            }
+        }
     }
 }
 
@@ -147,8 +188,10 @@ pub fn start(
     socket.set_broadcast(true)?;
     socket.set_read_timeout(Some(WAKE))?;
 
+    let saying_goodbye = socket.try_clone()?;
     let stop = Arc::new(AtomicBool::new(false));
     let watching = stop.clone();
+    let listing = found.clone();
     std::thread::spawn(move || {
         let mut me = Calls {
             socket,
@@ -158,12 +201,18 @@ pub fn start(
             noticed,
             called: None,
             swept: None,
+            listed: Vec::new(),
         };
         while !watching.load(Ordering::Relaxed) {
             me.once();
         }
     });
-    Ok(Calling { stop })
+    Ok(Calling {
+        stop,
+        saying_goodbye,
+        fingerprint,
+        found: listing,
+    })
 }
 
 /// Everything one round of calling needs.
@@ -177,6 +226,11 @@ struct Calls {
     /// the network one address at a time.
     called: Option<Instant>,
     swept: Option<Instant>,
+    /// Who was on the list at the end of the last round, so that a
+    /// computer leaving is written down as plainly as one arriving. A
+    /// list that only ever reports arrivals leaves the reader guessing
+    /// when something went.
+    listed: Vec<(Fingerprint, String)>,
 }
 
 impl Calls {
@@ -194,11 +248,21 @@ impl Calls {
     /// Asks the networks this computer is on who else is there.
     fn call_out(&mut self, now: Instant) {
         let question = Said::Who.spoken();
+        let around = self.found.peers();
+
+        // Those already known are asked to their face, every round. It is
+        // what keeps the list honest: a broadcast that a box drops would
+        // otherwise leave a computer on the screen until it timed out,
+        // and one that stopped answering has to fall off it quickly.
+        for peer in &around {
+            self.say(&question, SocketAddr::new(peer.address, PORT));
+        }
+        self.say_who_came_and_went(&around);
+
         // One address at a time only while nobody has answered: a network
         // that carries a broadcast never needs it, and one that does not
         // is not worth knocking on twice a minute forever.
-        let alone = self.found.peers().is_empty();
-        let one_by_one = alone && self.swept.is_none_or(|last| now >= last + SWEEP);
+        let one_by_one = around.is_empty() && self.swept.is_none_or(|last| now >= last + SWEEP);
         if one_by_one {
             self.swept = Some(now);
         }
@@ -214,6 +278,20 @@ impl Calls {
                 self.say(&question, SocketAddr::from((address, PORT)));
             }
         }
+    }
+
+    /// Writes down what changed on the list, and only that.
+    fn say_who_came_and_went(&mut self, around: &[Peer]) {
+        let now: Vec<(Fingerprint, String)> = around
+            .iter()
+            .map(|peer| (peer.fingerprint, peer.name.clone()))
+            .collect();
+        for (fingerprint, name) in &self.listed {
+            if !now.iter().any(|(seen, _)| seen == fingerprint) {
+                (self.noticed)(&format!("{name} left the local network"));
+            }
+        }
+        self.listed = now;
     }
 
     /// Takes in whatever arrived, or comes back when nothing did.
@@ -239,6 +317,15 @@ impl Calls {
                 fingerprint,
                 name,
             } => self.note(from, port, fingerprint, name),
+            Said::Bye { fingerprint } => self.goodbye(fingerprint, from),
+        }
+    }
+
+    /// Takes a computer off the list, on its own say-so.
+    fn goodbye(&mut self, fingerprint: Fingerprint, from: SocketAddr) {
+        if let Some(name) = self.found.forget_the_one_at(fingerprint, from.ip()) {
+            (self.noticed)(&format!("{name} said goodbye and left the local network"));
+            self.listed.retain(|(seen, _)| *seen != fingerprint);
         }
     }
 
@@ -330,6 +417,7 @@ mod tests {
             noticed: Arc::new(|_: &str| {}),
             called: None,
             swept: None,
+            listed: Vec::new(),
         }
     }
 
@@ -370,6 +458,32 @@ mod tests {
         me.listen();
         me.listen();
 
+        assert!(list.peers().is_empty(), "{:?}", list.peers());
+    }
+
+    #[test]
+    fn a_computer_that_says_goodbye_is_off_the_list_at_once() {
+        // Sans cela, une machine qu'on vient de quitter reste affichée en
+        // vert le temps que les autres remarquent son silence, et on leur
+        // propose de s'y connecter.
+        let list = Found::new();
+        let mut asking = computer("PC-PORTABLE", 1, list.clone());
+        let mut answering = computer("PC de Victor", 2, Found::new());
+
+        let door = answering.socket.local_addr().unwrap();
+        asking.say(&Said::Who.spoken(), door);
+        answering.listen();
+        asking.listen();
+        assert_eq!(list.peers().len(), 1);
+
+        answering.say(
+            &Said::Bye {
+                fingerprint: answering.fingerprint,
+            }
+            .spoken(),
+            asking.socket.local_addr().unwrap(),
+        );
+        asking.listen();
         assert!(list.peers().is_empty(), "{:?}", list.peers());
     }
 

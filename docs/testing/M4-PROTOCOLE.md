@@ -134,11 +134,13 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Si la liste reste vide des deux côtés : voir R6bis.
 
-> **R6 (une machine éteinte disparaît)**
+> **R6 (une machine qui s'en va disparaît tout de suite)**
 >
-> Éteindre le PC hôte, ou y arrêter le service en fenêtre administrateur (`.\target\release\zyrdeskd stop`).
+> Sur le **PC hôte**, clic droit sur l'icône en bas à droite, **Quitter**.
 >
-> Attendu : au bout d'une à deux minutes, il disparaît de la liste sur le PC client. Une liste qui ne ferait que grandir serait inutilisable.
+> Attendu : sur le **PC client**, il disparaît de la liste **en une seconde ou deux**. Une pastille verte doit vouloir dire joignable maintenant, pas joignable il y a une minute.
+>
+> Puis, pour le cas de la machine qui ne dit rien : éteindre brutalement le PC hôte, ou le débrancher du réseau. Attendu : il disparaît en une quinzaine de secondes. Personne ne peut faire mieux sans harceler le réseau.
 >
 > Le remettre en marche avant de continuer.
 

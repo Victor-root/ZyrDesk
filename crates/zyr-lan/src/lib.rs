@@ -49,10 +49,15 @@ const CLE_NOM: &str = "nom";
 
 /// How long a computer stays listed after it was last heard from.
 ///
-/// mDNS says goodbye when a machine leaves properly, but a machine
-/// unplugged, asleep or crashed says nothing at all. Without this, the
-/// list would only ever grow.
-const OUBLI: Duration = Duration::from_secs(90);
+/// A computer that leaves properly says goodbye and is gone at once. This
+/// is for the others: unplugged, asleep, crashed, out of range. Every
+/// computer on the list is asked directly every few seconds, so missing
+/// a handful of those is enough to conclude, and a green dot never
+/// stands for a machine that went away a minute ago.
+///
+/// Short, and not shorter: a wireless card that stumbles for two seconds
+/// must not take the card off the screen and put it back.
+const OUBLI: Duration = Duration::from_secs(12);
 
 /// A ZyrDesk found on the local network.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +106,24 @@ impl Found {
             .expect("found peers")
             .insert(peer.fingerprint, (peer, now))
             .is_none()
+    }
+
+    /// Takes a computer off the list on its own say-so.
+    ///
+    /// Only from where that computer is known to be. Saying goodbye is
+    /// the difference between a card that disappears the moment somebody
+    /// quits and one that lingers for ten seconds, and it must not become
+    /// a way for anyone on the network to sweep somebody else off a
+    /// screen: the next round would bring it back, but the flicker would
+    /// be a nuisance to inflict.
+    fn forget_the_one_at(&self, fingerprint: Fingerprint, from: IpAddr) -> Option<String> {
+        let mut found = self.0.lock().expect("found peers");
+        let gone = found
+            .get(&fingerprint)
+            .filter(|(peer, _)| peer.address == from)
+            .map(|(peer, _)| peer.name.clone())?;
+        found.remove(&fingerprint);
+        Some(gone)
     }
 
     /// Takes a computer off the list, and hands back the name it was
@@ -491,6 +514,30 @@ mod tests {
         found.note(peer(1, "PC-BUREAU"), Instant::now());
         found.forget(&announced_as(&fingerprint(1)));
         assert!(found.peers().is_empty());
+    }
+
+    #[test]
+    fn a_goodbye_is_only_believed_from_where_that_computer_is() {
+        // Ce port est ouvert sur le réseau : sans cette vérification,
+        // n'importe qui ferait disparaître n'importe quel ordinateur de
+        // l'écran de n'importe qui d'autre.
+        let found = Found::new();
+        found.note(peer(1, "PC-BUREAU"), Instant::now());
+
+        let ailleurs: IpAddr = "192.168.1.99".parse().unwrap();
+        assert_eq!(found.forget_the_one_at(fingerprint(1), ailleurs), None);
+        assert_eq!(found.peers().len(), 1);
+
+        let chez_lui: IpAddr = "192.168.1.20".parse().unwrap();
+        assert_eq!(
+            found.forget_the_one_at(fingerprint(1), chez_lui),
+            Some("PC-BUREAU".to_string())
+        );
+        assert!(found.peers().is_empty());
+
+        // Déjà parti : rien à dire, et surtout pas une seconde ligne dans
+        // le journal.
+        assert_eq!(found.forget_the_one_at(fingerprint(1), chez_lui), None);
     }
 
     #[test]
