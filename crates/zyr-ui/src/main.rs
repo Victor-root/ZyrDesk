@@ -1,9 +1,13 @@
 //! The ZyrDesk application: the only window the user ever sees.
 //!
-//! It holds nothing. The service owns the identity, the tunnels and the
-//! engines; this program asks it questions and shows the answers. That
-//! is what lets the window be closed, updated or killed in the middle of
-//! a session without the picture stopping.
+//! It holds almost nothing. The service owns the identity, the tunnels
+//! and the far computer's side of everything; this program asks it
+//! questions and shows the answers.
+//!
+//! The one thing it does hold is the player of a session, which it
+//! starts and which goes when it goes. That is deliberate: a player left
+//! running behind a window that is no longer there would hold the far
+//! computer's desktop with nothing on screen to give it back.
 //!
 //! The video is never drawn here either: the player draws it in a window
 //! of its own, so nothing about this interface is on the path of a
@@ -109,12 +113,26 @@ fn main() {
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
+                    // The picture is a window of its own, laid over this
+                    // one: hiding this one alone would leave it standing
+                    // on screen with nothing left to reach it by, its
+                    // frame, its buttons and its place in alt-tab having
+                    // been taken away to put it there.
+                    picture::put_aside(window.app_handle(), true);
+                    floating::put_aside(window.app_handle(), true);
                     let _ = window.hide();
                 }
                 // The picture is laid over the inside of this window and
                 // has to be laid again wherever the window goes, and at
-                // whatever size it takes.
-                WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
+                // whatever size it takes. The shape first: a window that
+                // is about to be put back on the picture's shape would
+                // otherwise be fitted twice, once at a size it is not
+                // going to keep.
+                WindowEvent::Resized(_) => {
+                    picture::hold_the_shape(window.app_handle());
+                    picture::fit(window.app_handle());
+                }
+                WindowEvent::Moved(_) => {
                     picture::fit(window.app_handle());
                 }
                 _ => {}
@@ -126,16 +144,15 @@ fn main() {
 
 /// Brings the home window back, wherever it was left.
 pub fn show_home(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window(HOME) {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
-}
-
-/// Whether the home window is standing aside, waiting for a session to
-/// end.
-pub fn home_is_hidden(app: &tauri::AppHandle) -> bool {
-    app.get_webview_window(HOME)
-        .is_some_and(|window| !window.is_visible().unwrap_or(true))
+    let Some(window) = app.get_webview_window(HOME) else {
+        return;
+    };
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    // In this order: our window has to be on screen before the picture
+    // comes back over it, or the picture shows for an instant somewhere
+    // it does not belong.
+    picture::put_aside(app, false);
+    floating::put_aside(app, false);
 }

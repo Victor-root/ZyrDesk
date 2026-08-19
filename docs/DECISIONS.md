@@ -148,6 +148,8 @@ L'ajout par empreinte écrit l'ordinateur dans les deux sens : il le laisse entr
 
 ## D21. L'image du bureau distant s'affiche dans la fenêtre de ZyrDesk (2026-08-19, pendant M4)
 
+> Révisée par [D22](#d22-plus-une-seule-bande-noire-2026-08-19-pendant-m4) sur son dernier paragraphe : les bandes noires n'étaient pas le prix à payer, et il n'y en a plus. Le reste tient.
+
 **Décision.** Une session n'ouvre plus de deuxième fenêtre. Le moteur client continue de dessiner dans une fenêtre à lui, ce qui est indispensable, mais cette fenêtre est dépouillée de son cadre, posée exactement sur l'intérieur de la nôtre et contrainte à la suivre. Ce qui se voit à l'écran est une seule fenêtre : la nôtre, avec sa barre de titre, et l'image dedans. Le moteur est donc toujours lancé en mode fenêtré, et le réglage d'affichage ne parle plus que de notre fenêtre : plein écran ou fenêtre.
 
 **Ce qui a été écarté.** Faire de la fenêtre du moteur un enfant de la nôtre, ce que Windows appelle une fenêtre fille. C'est la façon évidente et c'était la mauvaise : une fenêtre fille n'est jamais au premier plan, et ce que le moteur obtient du système pour prendre le clavier et la souris dépend précisément du fait que sa fenêtre soit celle de devant. Ç'aurait coûté la chose même pour laquelle un bureau à distance existe. La fenêtre est donc « possédée » et non « fille » : elle reste une fenêtre de plein droit, qui ne quitte jamais le devant de la nôtre, se minimise avec elle, et disparaît de la barre des tâches et d'alt-tab où elle passait pour un second ZyrDesk.
@@ -156,7 +158,23 @@ L'ajout par empreinte écrit l'ordinateur dans les deux sens : il le laisse entr
 
 **Ce que ça emporte.** Le plein écran exclusif du moteur disparaît, avec le réglage à trois valeurs qui le proposait. C'est notre fenêtre qui prend l'écran maintenant, et l'entrée « plein écran » du menu flottant, comme le raccourci clavier qui lui correspond, bascule cette fenêtre-là au lieu d'envoyer une combinaison au moteur. Le bouton flottant, lui, ne change pas : il reste une fenêtre à nous, toujours au-dessus, y compris au-dessus de l'image.
 
-**Ce que ça coûte.** Le ratio de l'image ne suit pas la forme de la fenêtre : le moteur centre l'image en gardant ses proportions et laisse des bandes noires, ce qui est le comportement juste et celui qu'il avait déjà. Et une fenêtre redimensionnée pendant une session redimensionne l'image, sans changer la définition du flux, qui reste celle de la qualité choisie.
+**Ce que ça coûte.** Une fenêtre redimensionnée pendant une session redimensionne l'image, sans changer la définition du flux, qui reste celle de la qualité choisie.
+
+## D22. Plus une seule bande noire (2026-08-19, pendant M4)
+
+**Décision.** Une session ne montre jamais de bande noire, ni en haut, ni en bas, ni sur les côtés. Cela se joue aux deux bouts et il faut les deux : l'ordinateur d'en face met son bureau à la forme demandée pendant la session et le remet après, et notre fenêtre prend la forme de l'image qu'elle contient au lieu de la lui imposer.
+
+**Ce qui les fabriquait.** Le moteur hôte filmait le bureau tel quel et le faisait entrer dans le flux en gardant ses proportions, donc en remplissant le reste de noir. Un écran seize-dixièmes regardé en seize-neuvièmes perdait quatre-vingt-seize pixels d'image de chaque côté, gravés dans chaque trame, avant même le moindre encodage : plus rien à notre bout ne pouvait les enlever. Et de notre côté, le moteur client fait la même chose dans l'autre sens, avec le même raisonnement, dès que la fenêtre n'a pas la forme de l'image.
+
+**Ce qu'il a fallu comprendre pour le bout distant.** Quatre lignes de configuration, pas une, et chacune fait une moitié différente : la première autorise le moteur à toucher aux écrans, sans quoi les trois autres ne sont même pas lues ; les deux suivantes disent ce qui peut changer, taille et fréquence ; la dernière dit quand remettre en place, et ce n'est pas la réponse évidente. Le moteur attend sinon l'arrêt de l'application qu'il diffuse, et celle que nous diffusons est le bureau lui-même, qui ne s'arrête jamais : quitter une session sans la fermer aurait rendu un ordinateur resté à la taille qu'on lui avait donnée.
+
+**Et une cinquième, du côté client.** Le moteur hôte ne touche à rien tant que le client ne l'a pas autorisé, par un drapeau dont le nom vient des jeux vidéo et qui ne veut plus rien dire d'autre que ça face à ce moteur-là. Il est donc envoyé explicitement à chaque session, plutôt que laissé au réglage que le moteur garde dans un fichier à lui.
+
+**Ce qui a été écarté.** Demander la définition de notre écran plutôt qu'une définition choisie. Ce serait juste sur un écran seize-neuvièmes et faux ailleurs, et cela retirerait à la personne le seul réglage qui décide vraiment de ce que le réseau doit porter.
+
+**Où la forme de l'image est lue.** Dans la fenêtre du moteur, à l'instant où nous la prenons et avant d'y toucher : il la crée à la forme de l'image qui va y arriver. Pas dans ce que la session a demandé, qui n'est qu'un souhait : l'ordinateur d'en face répond avec ce que son écran s'est révélé capable de faire.
+
+**Ce que ça coûte.** En fenêtre, tirer un coin change la hauteur en même temps que la largeur. C'est ce que font les lecteurs vidéo, et c'est le seul moyen de ne pas redemander une bande noire à chaque geste.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

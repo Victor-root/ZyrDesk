@@ -38,8 +38,11 @@ const DIMMED: u16 = 90;
 /// Windows redraws the notification area on every change, and a product
 /// that rewrote its own icon twice a second would be visible for that
 /// alone.
+///
+/// Two things are said, so both are remembered: whether this computer can
+/// be reached, and whether a session is running from it.
 #[derive(Default)]
-pub struct Shown(Mutex<Option<bool>>);
+pub struct Shown(Mutex<Option<(bool, bool)>>);
 
 /// Puts the icon up, for as long as the program runs.
 pub fn raise(app: &AppHandle) -> tauri::Result<()> {
@@ -75,17 +78,24 @@ pub fn watch(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             let standing = crate::desk::standing().await;
-            says(&app, standing.hosting);
+            let playing = crate::floating::a_session_is_up(&app);
+            says(&app, standing.hosting, playing);
             tokio::time::sleep(LOOK).await;
         }
     });
 }
 
 /// Says what this computer is doing, in the icon and in its tooltip.
-fn says(app: &AppHandle, reachable: bool) {
+///
+/// A session in progress comes before anything else in the tooltip, and
+/// for one reason: the window can be closed while it runs, the picture
+/// goes away with it, and this icon is then the only thing on screen that
+/// says the far computer is still being held. Somebody who has forgotten
+/// that has to be able to read it here.
+fn says(app: &AppHandle, reachable: bool, playing: bool) {
     let shown = app.state::<Shown>();
     let mut last = shown.0.lock().expect("état de l'icône");
-    if *last == Some(reachable) {
+    if *last == Some((reachable, playing)) {
         return;
     }
     let Some(icon) = app.tray_by_id(NAME) else {
@@ -94,12 +104,12 @@ fn says(app: &AppHandle, reachable: bool) {
     if let Ok(drawing) = drawn(!reachable) {
         let _ = icon.set_icon(Some(drawing));
     }
-    let _ = icon.set_tooltip(Some(if reachable {
-        "ZyrDesk : cet ordinateur peut être contrôlé"
-    } else {
-        "ZyrDesk : cet ordinateur n'est pas joignable"
+    let _ = icon.set_tooltip(Some(match (playing, reachable) {
+        (true, _) => "ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre",
+        (false, true) => "ZyrDesk : cet ordinateur peut être contrôlé",
+        (false, false) => "ZyrDesk : cet ordinateur n'est pas joignable",
     }));
-    *last = Some(reachable);
+    *last = Some((reachable, playing));
 }
 
 /// The icon, bright or dimmed.

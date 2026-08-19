@@ -57,6 +57,18 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         "--video-decoder".to_string(),
         "hardware".to_string(),
         "--frame-pacing".to_string(),
+        // What tells the far computer it may put its desktop at the size
+        // being asked for. Its name comes from playing games, where it
+        // meant letting the far machine choose its own settings; with the
+        // host engine it means nothing else than this, and without it the
+        // far desktop keeps whatever shape it had and the black bars that
+        // fitting it into the stream costs are burned into every frame.
+        //
+        // Said out loud rather than left to the engine's own default: the
+        // engine keeps that answer in a settings file of its own, where a
+        // single stray click in a screen the product never shows would
+        // take it back.
+        "--game-optimization".to_string(),
     ];
     if let Some(size) = settings.packet_size {
         args.push("--packet-size".to_string());
@@ -121,6 +133,17 @@ mod tests {
         let args = session_arguments("host", &SessionSettings::default());
         assert_eq!(value_of(&args, "--video-decoder"), Some("hardware"));
         assert!(args.iter().any(|a| a == "--frame-pacing"));
+    }
+
+    #[test]
+    fn the_far_desktop_is_always_asked_to_take_the_shape_of_the_session() {
+        // C'est ce drapeau, et lui seul, qui autorise l'ordinateur d'en
+        // face à mettre son bureau à la taille demandée. Sans lui il
+        // garde la sienne, et l'écart entre les deux formes est gravé en
+        // bandes noires dans chaque image envoyée.
+        let args = session_arguments("host", &SessionSettings::default());
+        assert!(args.iter().any(|a| a == "--game-optimization"));
+        assert!(!args.iter().any(|a| a == "--no-game-optimization"));
     }
 
     #[test]

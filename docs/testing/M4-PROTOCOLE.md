@@ -237,7 +237,7 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Attendu : **une seule entrée ZyrDesk**, jamais deux. L'image est dans la fenêtre ZyrDesk, qui garde sa barre de titre.
 >
-> Réglages, **Fenêtre de la session** sur « Fenêtre » : déplacer la fenêtre, la redimensionner, la passer d'un écran à l'autre. Attendu : l'image suit sans décoller, et elle n'est **jamais déformée** : elle garde ses proportions et laisse des bandes noires si la fenêtre n'a pas la même forme. Réduire la fenêtre puis la restaurer : l'image revient à sa place.
+> Réglages, **Fenêtre de la session** sur « Fenêtre » : déplacer la fenêtre, la redimensionner, la passer d'un écran à l'autre. Attendu : l'image suit sans décoller, et elle n'est **jamais déformée**. Réduire la fenêtre puis la restaurer : l'image revient à sa place. Les bandes noires font l'objet de la partie 5.
 >
 > Réglages sur « Plein écran » : à l'ouverture de la session, la fenêtre prend l'écran entier avant même l'image, et le rend à la fin de la session.
 >
@@ -293,25 +293,173 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 
 ---
 
-## Partie 5 : la fenêtre n'est pas la session
+## Partie 5 : la session du début à la fin
 
-> **R14 (fermer la fenêtre ne coupe rien)**
->
-> Pendant une session, fermer la fenêtre ZyrDesk par sa croix.
->
-> Attendu : l'image continue, le bouton flottant reste.
+### Ce qui change, et pourquoi
 
-> **R15 (elle retrouve la session)**
->
-> Toujours pendant la session, relancer `ZyrDesk.exe`.
->
-> Attendu : la fenêtre revient et affiche « Session en cours vers … » avec sa durée, au lieu d'un accueil vide. Les cartes des ordinateurs sont grisées : une seule session à la fois. Et **un seul** bouton flottant à l'écran.
+Cette partie suit une session entière, dans l'ordre, du premier clic au gestionnaire des tâches après coup. Elle est numérotée **S** pour se lire d'une traite : chaque essai suppose le précédent, et sauter un rang fait rater ce qu'il préparait.
 
-> **R16 (elle survit à pire)**
+Deux choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre du début à la fin, ce qui veut dire qu'à aucun instant, même un dixième de seconde, une deuxième fenêtre ne doit se voir. Et aucune bande noire, ce qui se règle aux deux bouts à la fois et ne se voit qu'ici.
+
+**Ce qu'il faut sous la main.** Le PC hôte doit être visible : les essais S7 et S16 regardent sa définition d'écran pendant et après la session. S'il est dans une autre pièce, faire ces deux-là en dernier, en s'y déplaçant.
+
+### Avant
+
+> **S1 (départ propre)**
 >
-> Tuer `ZyrDesk.exe` dans le gestionnaire des tâches, pendant une session, puis le relancer.
+> Les deux ZyrDesk fermés. Sur chaque PC, ouvrir le gestionnaire des tâches, onglet **Détails**, trier par nom.
 >
-> Attendu : même résultat qu'en R15. C'est le service qui tient la session, pas la fenêtre.
+> Attendu : aucun `zyrdesk-session.exe`, aucun `zyrdesk-host-engine.exe`, aucun `ZyrDesk.exe`. Seul `zyrdeskd.exe` peut tourner, c'est le service.
+>
+> Tout ce qui traîne ici fausse la suite : un moteur resté d'une session précédente tient encore le bureau distant et sa définition.
+
+> **S2 (noter la définition du PC hôte)**
+>
+> Sur le **PC hôte** : clic droit sur le bureau, **Paramètres d'affichage**, noter la définition affichée. Sur un portable seize-dixièmes ce sera `1920 x 1200`.
+>
+> C'est le point de comparaison de S7 et de S16. Sans lui, ces deux essais ne veulent rien dire.
+
+### L'ouverture
+
+> **S3 (le clic et l'attente)**
+>
+> Sur le **PC client**, réglage **Fenêtre de la session** sur **Plein écran**. Cliquer sur la carte du PC hôte, et regarder l'écran sans le quitter des yeux.
+>
+> Attendu, dans cet ordre et rien d'autre entre :
+>
+> 1. La fenêtre passe **immédiatement** en plein écran, avec « Établissement de la connexion » au milieu.
+> 2. Les lignes d'avancement défilent dessous (voir R7).
+> 3. L'image du PC hôte remplace l'écran d'ouverture, **dans la même fenêtre**.
+>
+> Du clic à l'image : quelques secondes, pas des dizaines.
+
+> **S4 (aucune deuxième fenêtre, à aucun moment)**
+>
+> Le même essai que S3, mais en ne regardant que cela, et en le refaisant deux ou trois fois : c'est un défaut qui ne se voit qu'un instant.
+>
+> Attendu : **rien d'autre que la fenêtre ZyrDesk ne doit apparaître**. Ni une fenêtre à barre de titre au milieu de l'écran, ni un cadre vide, ni un retour en fenêtre avant de reprendre le plein écran.
+>
+> Ce qui apparaissait là avant : le moteur crée sa fenêtre à la taille de l'image et centrée, et nous la prenons en main après. L'attente était d'une seconde, elle est maintenant de l'ordre d'une image. Si un éclair reste visible, il est à noter tel quel dans le journal de recette : la suite serait un correctif au moteur, et cela se décide, cela ne se fait pas au passage.
+
+> **S5 (l'écran n'est pris qu'une fois)**
+>
+> Refaire S3 avec le réglage sur **Fenêtre**.
+>
+> Attendu : la fenêtre **ne prend jamais l'écran entier**, ni à l'ouverture ni à l'arrivée de l'image. Elle reste une fenêtre ordinaire, et l'image se pose dedans.
+
+### Pendant : l'image
+
+> **S6 (aucune bande noire en plein écran)**
+>
+> Session ouverte en plein écran. Regarder les quatre bords de l'écran.
+>
+> Attendu : **l'image touche les quatre bords**. Aucune bande noire, ni en haut, ni en bas, ni sur les côtés.
+>
+> C'est l'essai qui compte le plus sur un grand écran regardant un portable : les deux n'ont pas la même forme, et jusqu'ici la différence était remplie de noir.
+
+> **S7 (le bureau distant a bien changé de définition)**
+>
+> Toujours pendant la session, **dans l'image** : clic droit sur le bureau distant, **Paramètres d'affichage**.
+>
+> Attendu : la définition n'est plus celle notée en S2. Elle est celle de la qualité choisie dans les réglages : `1280 x 720` en Fluidité, `1920 x 1080` en Équilibre, `2560 x 1440` en Qualité.
+>
+> Si elle n'a pas changé, c'est la cause des bandes noires et rien d'autre ne la corrigera : le moteur hôte filme le bureau tel quel et remplit de noir ce qui manque. Le journal du moteur hôte le dit, sur le PC hôte, dans `logs\engine.log`.
+
+> **S8 (aucune bande noire en fenêtre)**
+>
+> Passer en fenêtre par le menu flottant, puis tirer le coin en bas à droite, largement, dans les deux sens.
+>
+> Attendu : la fenêtre **change de hauteur toute seule** en même temps que de largeur, pour garder la forme de l'image. L'image remplit toujours la fenêtre entière, sans bande noire et sans déformation.
+>
+> C'est le comportement d'un lecteur vidéo, et c'est voulu : une fenêtre libre de sa forme redemanderait une bande noire à chaque geste.
+
+> **S9 (l'image suit la fenêtre partout)**
+>
+> En fenêtre : déplacer la fenêtre, la passer sur l'autre écran s'il y en a deux, la réduire dans la barre des tâches, la restaurer.
+>
+> Attendu : l'image reste exactement dans la fenêtre à chaque instant, ne décolle jamais, ne reste jamais derrière.
+
+> **S10 (le plein écran va et vient)**
+>
+> Basculer plein écran et retour, cinq ou six fois de suite, au bouton flottant puis au raccourci clavier.
+>
+> Attendu : chaque bascule est nette, l'image reste dedans, et **le clavier continue d'aller à l'ordinateur distant** après chaque bascule. Taper quelques lettres pour le vérifier à chaque fois.
+>
+> Prendre l'écran ramène notre fenêtre devant, et le moteur perd alors le clavier qu'il avait demandé au système. Il lui est rendu tout de suite après, et c'est ce rendu que cet essai vérifie.
+
+### Pendant : ce qui est à nous
+
+> **S11 (le menu flottant)**
+>
+> Dérouler la partie 4 en entier sans fermer la session : R10, R11, R12, R12bis, R12ter.
+>
+> Attendu : rien n'a changé de ce côté. Le bouton se prend, se déplace, se masque, se rappelle, et chaque entrée fait ce qu'elle dit.
+
+> **S12 (la croix range tout)**
+>
+> Pendant la session, fermer la fenêtre ZyrDesk par sa croix.
+>
+> Attendu : **l'écran redevient l'écran**. Ni fenêtre ZyrDesk, ni image, ni bouton flottant. La session, elle, continue : l'icône à côté de l'horloge est toujours là.
+>
+> Rien ne doit rester à l'écran. L'image n'a plus ni cadre, ni bouton, ni place dans Alt+Tab, tout cela lui ayant été retiré pour la poser dans notre fenêtre : laissée seule à l'écran, elle serait inatteignable.
+
+> **S13 (l'icône dit ce qui se passe)**
+>
+> Poser la souris sur l'icône ZyrDesk à côté de l'horloge, sans cliquer.
+>
+> Attendu : « ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre ».
+>
+> C'est la seule chose à l'écran qui dit encore que l'ordinateur d'en face est tenu. Sans elle, une fenêtre fermée par distraction serait une session oubliée.
+
+> **S14 (et tout revient)**
+>
+> Cliquer sur l'icône.
+>
+> Attendu : la fenêtre revient **avec l'image dedans**, telle qu'elle était, et le bouton flottant avec. L'image ne doit pas apparaître un instant ailleurs avant de se remettre en place.
+
+> **S15 (un deuxième lancement ne fait pas un deuxième ZyrDesk)**
+>
+> Fermer la fenêtre par la croix, puis relancer `ZyrDesk.exe`.
+>
+> Attendu : la même fenêtre revient, avec la session dedans. **Un seul** bouton flottant, **une seule** icône à côté de l'horloge.
+
+### La fin
+
+> **S16 (quitter la session)**
+>
+> Menu flottant, **Quitter la session**.
+>
+> Attendu : l'image se ferme, la fenêtre ZyrDesk revient à sa taille d'accueil et quitte le plein écran, le bouton flottant disparaît. **Aucune ligne rouge** ne traverse l'écran au passage.
+>
+> L'écran d'accueil réaffiche les cartes des ordinateurs, cliquables à nouveau.
+
+> **S17 (le bureau distant retrouve sa définition)**
+>
+> Sur le **PC hôte**, quelques secondes après : **Paramètres d'affichage**.
+>
+> Attendu : la définition est revenue à celle notée en S2.
+>
+> Le moteur hôte attend sinon l'arrêt de ce qu'il diffuse pour remettre en place, et ce qu'il diffuse est le bureau lui-même, qui ne s'arrête jamais. Il lui est demandé de remettre en place dès que le client s'en va.
+
+> **S18 (fermer, et pas seulement quitter)**
+>
+> Rouvrir une session, puis **Fermer sur l'ordinateur distant**.
+>
+> Attendu : comme S16, plus le bureau distant réellement rendu (R13), plus la définition remise comme en S17.
+
+> **S19 (quitter ZyrDesk pendant une session)**
+>
+> Rouvrir une session. Sur le **PC client**, clic droit sur l'icône à côté de l'horloge, **Quitter**.
+>
+> Attendu : tout s'arrête. L'image, la fenêtre, le bouton, l'icône.
+
+> **S20 (rien ne traîne)**
+>
+> Sur les deux PC, gestionnaire des tâches, onglet **Détails**.
+>
+> Attendu : exactement l'état de S1. Aucun `zyrdesk-session.exe`, aucun `zyrdesk-host-engine.exe`, aucun `ZyrDesk.exe`.
+>
+> C'est l'essai qui a le plus servi : des moteurs restaient en vie après un « Quitter », et la mise à jour suivante butait dessus sans dire pourquoi. Ils sont maintenant attachés au programme qui les lance et s'en vont avec lui, quelle que soit la façon dont il s'en va.
 
 ---
 

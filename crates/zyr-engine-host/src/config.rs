@@ -180,6 +180,30 @@ impl SunshineConfig {
             format!("file_apps = {}", shown(&self.apps_path())),
             format!("file_state = {}", shown(&self.state_path())),
             format!("credentials_file = {}", shown(&self.credentials_path())),
+            // The far desktop is put at the size and the rate the session
+            // asks for, and put back afterwards.
+            //
+            // Without this the engine leaves the desktop as it is and
+            // squeezes it into the stream, keeping its shape by burning
+            // black bars into every frame it sends. A sixteen by ten
+            // laptop watched on a sixteen by nine screen loses ninety-six
+            // pixels of picture down each side, for good, before anything
+            // is even encoded, and no amount of care at this end can put
+            // them back.
+            //
+            // Four lines and not one, because each does a different half
+            // of it. The first turns the whole thing on: left alone the
+            // engine touches nothing, whatever the three others say. The
+            // next two say what may be changed. The last says when to put
+            // it back, and it is not the obvious answer: the engine
+            // otherwise waits for the application it is showing to stop,
+            // and the one we show is the far desktop itself, which never
+            // stops. Leaving a session without closing it would hand back
+            // a laptop still at the size we gave it.
+            "dd_configuration_option = ensure_active".to_string(),
+            "dd_resolution_option = auto".to_string(),
+            "dd_refresh_rate_option = auto".to_string(),
+            "dd_config_revert_on_disconnect = enabled".to_string(),
             format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
             format!("minimum_fps_target = {}", self.minimum_fps),
@@ -252,6 +276,24 @@ mod tests {
         assert!(rendered.contains("capture = ddx"));
         assert!(rendered.contains("upnp = disabled"));
         assert!(rendered.contains("lan_encryption_mode = 0"));
+    }
+
+    #[test]
+    fn the_far_desktop_is_resized_for_the_session_and_put_back_after() {
+        // Sans ces quatre lignes, le moteur garde le bureau tel quel et
+        // grave des bandes noires dans chaque image pour lui garder sa
+        // forme. Et sans la dernière, il ne remet jamais rien : le
+        // bureau que nous montrons ne s'arrête pas, et c'est à son arrêt
+        // qu'il rendrait la main.
+        let rendered = test_config().render_conf();
+        for line in [
+            "dd_configuration_option = ensure_active",
+            "dd_resolution_option = auto",
+            "dd_refresh_rate_option = auto",
+            "dd_config_revert_on_disconnect = enabled",
+        ] {
+            assert!(rendered.contains(line), "{line} manque dans la conf");
+        }
     }
 
     #[test]

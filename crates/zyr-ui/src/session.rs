@@ -11,6 +11,8 @@
 //! what it holds is what lets a window opened afterwards, or reopened
 //! after a crash, show the session instead of an empty home screen.
 
+use std::time::Duration;
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use zyr_control::{Answer, Request};
@@ -137,6 +139,7 @@ fn drive(app: &AppHandle, wanted: Wanted) {
         // the only one that knows its number until the service does.
         if let Step::Showing { process } = step {
             crate::floating::expect(app, process);
+            lay_the_picture_as_soon_as_it_opens(app.clone(), process);
         }
         say(app, told(step));
     }) {
@@ -190,6 +193,35 @@ fn drive(app: &AppHandle, wanted: Wanted) {
         ),
         Err(e) => finish(app, false, e.to_string()),
     }
+}
+
+/// How long the engine is given to open its window.
+const WINDOW_TAKES: Duration = Duration::from_secs(20);
+
+/// How often it is looked for while it does.
+const WINDOW_STEP: Duration = Duration::from_millis(16);
+
+/// Lays the picture in our window the moment the engine opens it.
+///
+/// The session watch would do it too, but it comes round once a second,
+/// and that second is exactly what is seen: an ordinary window with a
+/// title bar, at the size of the stream, in the middle of whichever
+/// screen the system calls first, over the top of ours. Waited for at
+/// the rhythm of a frame instead.
+///
+/// On a thread of its own and never on the spot: this is called from
+/// inside the opening, and holding it there would hold back everything
+/// the window is waiting to be told.
+fn lay_the_picture_as_soon_as_it_opens(app: AppHandle, process: u32) {
+    std::thread::spawn(move || {
+        let until = std::time::Instant::now() + WINDOW_TAKES;
+        while std::time::Instant::now() < until {
+            if crate::picture::hold(&app, process) {
+                return;
+            }
+            std::thread::sleep(WINDOW_STEP);
+        }
+    });
 }
 
 fn told(step: Step) -> Told {

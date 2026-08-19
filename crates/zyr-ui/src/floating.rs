@@ -1,7 +1,7 @@
 //! The floating button of a session.
 //!
-//! During a session the picture takes the whole screen and belongs to
-//! the engine. This is the one thing of ours left on top of it: a small
+//! During a session the picture fills the window and belongs to the
+//! engine. This is the one thing of ours left on top of it: a small
 //! button, hanging in a corner, that opens what can be done without
 //! leaving the picture.
 //!
@@ -18,8 +18,11 @@
 //! far computer's own cursor stands in for it, and the system shows it
 //! again the moment it crosses onto this button.
 //!
-//! What the menu does, it asks of the engine through the engine's own
+//! What the menu asks of the engine, it asks through the engine's own
 //! keyboard shortcuts, aimed at the session window and at nothing else.
+//! Two entries never reach it: covering the screen is done to our own
+//! window, and handing the far desktop back is asked of the far computer
+//! over the tunnel.
 
 // Off Windows there is no session to float over, and the shortcut the
 // letters belong to is never typed. The rest stays compiled and tested
@@ -54,9 +57,9 @@ const LOOK: Duration = Duration::from_secs(1);
 /// Distance kept from the corner of the picture.
 const MARGIN: i32 = 16;
 
-/// Size of the button alone, in real pixels, before the page has had a
-/// chance to measure itself.
-const BUTTON: u32 = 52;
+/// Size of the button alone, as the page draws it, before the page has
+/// had a chance to measure itself and say better.
+const BUTTON: f64 = 52.0;
 
 /// How far the mouse has to travel, while holding the button, before it
 /// is a drag and no longer a click.
@@ -175,6 +178,11 @@ pub struct Floating {
     /// corner of the picture. Kept for as long as the program runs, so
     /// it does not walk back to the corner at every session.
     nudge: Mutex<(i32, i32)>,
+    /// Set while the person has hidden the button from its own menu.
+    ///
+    /// A choice they made stands until they ask for the button back. The
+    /// home window coming back from being put away is not that ask.
+    hidden_by_hand: std::sync::atomic::AtomicBool,
     /// Player this window has just started and the service does not know
     /// about yet.
     ///
@@ -212,6 +220,39 @@ struct Watched {
     /// picture, brought in by a margin and by whatever dragging moved
     /// it since.
     anchor: (i32, i32),
+}
+
+/// Whether a session is running right now.
+///
+/// Read from what the button hangs on rather than asked of the service:
+/// it is the same answer, it is already kept up to date every second, and
+/// it costs nothing to whoever asks.
+pub fn a_session_is_up(app: &AppHandle) -> bool {
+    app.state::<Floating>()
+        .watched
+        .lock()
+        .expect("session suivie")
+        .is_some()
+}
+
+/// Puts the button away with the home window, or brings it back.
+///
+/// The session is untouched: what says a session is up is elsewhere, and
+/// this only says whether its button is on screen. A button the person
+/// hid themselves stays hidden.
+pub fn put_aside(app: &AppHandle, aside: bool) {
+    let Some(window) = app.get_webview_window(WINDOW) else {
+        return;
+    };
+    if aside {
+        let _ = window.hide();
+    } else if !app
+        .state::<Floating>()
+        .hidden_by_hand
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        let _ = window.show();
+    }
 }
 
 /// Says which player this window has just started, before anybody else
@@ -290,23 +331,27 @@ fn raise(app: &AppHandle, process: u32) {
     let Some(picture) = picture_of(process) else {
         return;
     };
+    // A new session starts with the button on screen, whatever was done
+    // with the one before.
+    state
+        .hidden_by_hand
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let size = button_size(app) as i32;
     let nudge = *state.nudge.lock().expect("position du bouton");
-    let anchor = hung_from(picture, nudge);
+    let anchor = hung_from(picture, nudge, size);
     *watched = Some(Watched { process, anchor });
     drop(watched);
 
     // A leftover window from a session that ended in a way we did not
     // see: put it where the new one is rather than open a second.
     if let Some(window) = app.get_webview_window(WINDOW) {
-        let _ = window.set_position(PhysicalPosition::new(anchor.0 - BUTTON as i32, anchor.1));
+        let _ = window.set_position(PhysicalPosition::new(anchor.0 - size, anchor.1));
         let _ = window.show();
         return;
     }
 
     let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
         .title("ZyrDesk")
-        .inner_size(f64::from(BUTTON), f64::from(BUTTON))
-        .position(f64::from(anchor.0 - BUTTON as i32), f64::from(anchor.1))
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -316,22 +361,41 @@ fn raise(app: &AppHandle, process: u32) {
         // Never takes the picture's place: the engine keeps the keyboard
         // and the mouse, and this only catches what is clicked on it.
         .focused(false)
+        // Neither its size nor its place can be given here: both are
+        // counted in real pixels everywhere in this file, and a window
+        // builder counts them in page pixels, which are not the same
+        // number on a screen that is magnified. Built out of sight and
+        // shown once put right.
+        .visible(false)
         .build();
 
     match built {
         Ok(window) => {
-            // Everything here is counted in real pixels, and the size
-            // asked for at build time is counted in the other kind. On a
-            // screen at a hundred and seventy-five per cent the window
-            // came out that much bigger than the button drawn in it, and
-            // what showed around the button was the window itself.
-            let _ = window.set_size(PhysicalSize::new(BUTTON, BUTTON));
             keep_out_of_the_way(&window);
+            let _ = window.set_size(PhysicalSize::new(size as u32, size as u32));
+            let _ = window.set_position(PhysicalPosition::new(anchor.0 - size, anchor.1));
+            let _ = window.show();
         }
         // A button that could not be drawn is not a reason to disturb a
         // session that is otherwise fine.
         Err(e) => eprintln!("le bouton flottant n'a pas pu s'ouvrir : {e}"),
     }
+}
+
+/// What the button comes to in real pixels, on the screen it hangs over.
+///
+/// Everything in this file is counted in real pixels: the picture is
+/// measured with the system's own ruler, and so is the mouse. What the
+/// page draws is counted in the other kind, and on a screen magnified to
+/// a hundred and seventy-five per cent the same button is fifty-two of
+/// one and ninety-one of the other. A window taken to be the smaller of
+/// the two shows its own background all around the button.
+fn button_size(app: &AppHandle) -> u32 {
+    let scale = app
+        .get_webview_window(crate::HOME)
+        .and_then(|window| window.scale_factor().ok())
+        .unwrap_or(1.0);
+    (BUTTON * scale).ceil() as u32
 }
 
 /// Takes the button down.
@@ -348,11 +412,6 @@ fn lower(app: &AppHandle) {
     }
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
-    }
-    // The home window had stepped aside for the session, and only the
-    // button was keeping the program up. Nothing is left to keep.
-    if crate::home_is_hidden(app) {
-        app.exit(0);
     }
 }
 
@@ -393,6 +452,9 @@ pub fn floating_hide(app: AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("le bouton flottant n'est plus là")?;
+    app.state::<Floating>()
+        .hidden_by_hand
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     window.hide().map_err(|e| e.to_string())
 }
 
@@ -485,9 +547,9 @@ fn slide(
 
 /// Where the button hangs: the top right of the picture, moved by
 /// whatever dragging has moved it since.
-fn hung_from(picture: (i32, i32, i32, i32), nudge: (i32, i32)) -> (i32, i32) {
+fn hung_from(picture: (i32, i32, i32, i32), nudge: (i32, i32), size: i32) -> (i32, i32) {
     let corner = (picture.2 - MARGIN + nudge.0, picture.1 + MARGIN + nudge.1);
-    held_inside(corner, picture, BUTTON as i32, BUTTON as i32)
+    held_inside(corner, picture, size, size)
 }
 
 /// Keeps the button against the picture, whatever it was asked.
@@ -517,6 +579,10 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("aucune session en cours")?;
+    // Asked for by name, which takes back the choice of hiding it.
+    app.state::<Floating>()
+        .hidden_by_hand
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     window.show().map_err(|e| e.to_string())?;
     window.emit(OPEN, ()).map_err(|e| e.to_string())
 }

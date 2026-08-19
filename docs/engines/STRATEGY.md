@@ -39,7 +39,8 @@ Alternatives rejetées :
 | Liste d'applications | `apps.json` généré, réduit à « Desktop » |
 | État, identifiants, journaux hors du dossier d'installation | options de chemins (`file_state`, `credentials_file`, `log_path`) vers le dossier de données du produit |
 | Écran cible et GPU | `output_name`, `adapter_name` |
-| Écran virtuel (plus tard) | options `dd_*` (résolution/fréquence du client, `ensure_only_display`, restauration à la déconnexion) : prévues par Sunshine pour piloter un pilote d'écran tiers |
+| Bureau distant à la forme de la session, et remis après | `dd_configuration_option = ensure_active` (sans quoi les trois suivantes ne sont pas même lues), `dd_resolution_option = auto` et `dd_refresh_rate_option = auto` (la taille et la fréquence demandées par le client), `dd_config_revert_on_disconnect = enabled` (le moteur attend sinon l'arrêt de l'application diffusée, et la nôtre est le bureau, qui ne s'arrête jamais). C'est ce qui retire les bandes noires gravées dans le flux ([D22](../DECISIONS.md)) |
+| Écran virtuel (plus tard) | la même série `dd_*`, avec `ensure_only_display` et `output_name` : Sunshine la prévoit aussi pour piloter un pilote d'écran tiers |
 | Santé | `GET /serverinfo` sur son port HTTP local |
 | Appairage automatisé | `POST /api/pin` avec `{"pin": "...", "name": "..."}` sur son port web local (authentification Basic ; l'exemption CSRF pour les clients sans en-tête Origin est un comportement documenté) |
 | Surcharges ponctuelles | tout paramètre peut aussi être passé en ligne de commande `nom=valeur` |
@@ -62,7 +63,8 @@ Mécanismes officiels utilisés :
 | Besoin | Mécanisme officiel |
 |---|---|
 | État isolé par appareil distant | fichier `portable.dat` à côté de l'exécutable : tout l'état (réglages, identité client, hôtes appairés) part dans un dossier local que nous plaçons dans `devices\<id>` sous les données du produit |
-| Session sans interface Moonlight | commande `stream <hôte> "Desktop"` avec options : `--resolution WxH`, `--fps N`, `--bitrate K`, `--packet-size B` (force le mode « local », minimum 1025), `--display-mode fullscreen|windowed|borderless`, `--video-codec auto|H.264|HEVC|AV1`, `--video-decoder hardware`, `--frame-pacing`, `--absolute-mouse`, `--capture-system-keys`, `--performance-overlay`, `--hdr`, `--yuv444` |
+| Session sans interface Moonlight | commande `stream <hôte> "Desktop"` avec options : `--resolution WxH`, `--fps N`, `--bitrate K`, `--packet-size B` (force le mode « local », minimum 1025), `--display-mode fullscreen|windowed|borderless`, `--video-codec auto|H.264|HEVC|AV1`, `--video-decoder hardware`, `--frame-pacing`, `--absolute-mouse`, `--capture-system-keys`, `--performance-overlay`, `--hdr`, `--yuv444`, `--game-optimization` |
+| Autoriser l'hôte à changer la définition de son bureau | `--game-optimization` : nom hérité des jeux, mais face au moteur hôte c'est le seul et unique sens qu'il a gardé. Sans lui, les options `dd_*` de l'hôte restent lettre morte et il grave des bandes noires dans le flux |
 | Appairage sans interaction | commande `pair <hôte> --pin NNNN` |
 | Statistiques | overlay de performances + journaux (débit d'images réseau/décodage/rendu, latence hôte, pertes, jitter, temps de décodage, délai de file, temps de rendu) |
 | Réglages fins non exposés en CLI | clés du fichier INI portable (écrites avant lancement, jamais pendant une session) |
