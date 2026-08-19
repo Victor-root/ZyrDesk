@@ -29,7 +29,26 @@ import cairosvg
 from PIL import Image
 
 # The sizes Windows actually asks for.
-SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
+#
+# Not a round handful. Windows asks for a logical size, 16 for a title
+# bar, 24 for the taskbar, 32 and 48 for the explorer, and multiplies it
+# by the scaling of the screen it is drawing on: 125, 150, 175 and 200
+# per cent are all ordinary. A screen at 175 per cent asks the taskbar
+# icon at 42 pixels, and a file that stops at 40 makes Windows stretch
+# the 40 by two pixels, or fall back to the 32 and stretch that. Either
+# way the diagonals of the Z go to staircases, on the one icon that is
+# under the eye all day.
+#
+# So every product of the four logical sizes by the six usual scalings,
+# plus the large ones the explorer wants.
+SIZES = sorted(
+    {
+        logical * scale // 100
+        for logical in (16, 24, 32, 48)
+        for scale in (100, 125, 150, 175, 200, 250)
+    }
+    | {128, 192, 256}
+)
 
 # Rendering above the target size and reducing afterwards is what keeps
 # the small sizes readable; rendering straight at 16 pixels loses the
