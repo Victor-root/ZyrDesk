@@ -601,6 +601,14 @@ fn tell_the_drag() {
 /// the bottom two: the top of the picture sits under the title bar, where
 /// the frame is straight.
 ///
+/// The cut runs along the frame the system actually draws, asked of the
+/// system itself. Cut along a curve of our own, anchored on the picture,
+/// it fell a pixel or two short of the frame's curve, and what showed in
+/// between was the page behind the picture: a pale bite in each corner.
+/// Anchored on the drawn frame, the picture reaches the corner, and the
+/// pixels our cut can still miss land on the frame's own border, where a
+/// window's content ends anyway.
+///
 /// And only while the frame really is round. A window covering the screen
 /// or pushed out to its edges has square corners, which is the system's
 /// own rule and not a choice of ours; rounding the picture there took two
@@ -642,20 +650,78 @@ fn round_the_bottom(
     let dpi = unsafe { GetDpiForWindow(home) };
     let round = (CORNER * dpi.max(1) as i32 / 96).min(height);
 
+    // Without an answer the picture's own rectangle stands in: a cut a
+    // pixel short is still the curve, and the alternative is a square
+    // corner sticking out of a round one.
+    let (left, top, right, bottom) = the_drawn_frame(home, engine).unwrap_or((0, 0, width, height));
+
     // SAFETY: both are ours until the system takes the combined one.
     unsafe {
-        // The rectangle is given one more pixel each way: a shape is cut
-        // exclusive of its right and bottom edge, and a picture short of
-        // its last row is a picture with a line missing.
-        let shape = CreateRoundRectRgn(0, 0, width + 1, height + 1, round * 2, round * 2);
-        let squared = CreateRectRgn(0, 0, width, height - round);
-        CombineRgn(shape, shape, squared, RGN_OR);
-        DeleteObject(squared);
+        // One more pixel right and bottom: a shape is cut exclusive of
+        // those two edges, and a picture short of its last row is a
+        // picture with a line missing.
+        let shape = CreateRoundRectRgn(left, top, right + 1, bottom + 1, round * 2, round * 2);
+        // Everything above the arcs stays a plain rectangle. Anchored on
+        // the frame the top arcs fall on the title bar, above the picture,
+        // and this adds nothing; anchored on the picture they would fall
+        // inside it, and the top of the picture is straight.
+        let straight = CreateRectRgn(0, 0, width, bottom - round);
+        CombineRgn(shape, shape, straight, RGN_OR);
+        DeleteObject(straight);
         // The system owns the shape from here and frees it itself. Not
         // asked to redraw on the spot: this happens on every step of a
         // resize, and the engine is drawing sixty times a second anyway.
         SetWindowRgn(engine, shape, 0);
     }
+}
+
+/// The frame the system draws for our window, in the picture's own
+/// coordinates.
+///
+/// Not the rectangle the system reserves for it: that one is wider by the
+/// invisible bands a resize can be grabbed in, and no curve runs there.
+/// The corners turn on the drawn frame, so that is the one the picture is
+/// cut against.
+#[cfg(windows)]
+fn the_drawn_frame(
+    home: windows_sys::Win32::Foundation::HWND,
+    engine: windows_sys::Win32::Foundation::HWND,
+) -> Option<(i32, i32, i32, i32)> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute};
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let mut drawn = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let mut picture = drawn;
+    // SAFETY: our own window, an attribute made to be asked for, and the
+    // slot is ours, of the size the call is told.
+    if unsafe {
+        DwmGetWindowAttribute(
+            home,
+            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
+            (&raw mut drawn).cast(),
+            std::mem::size_of::<RECT>() as u32,
+        )
+    } != 0
+    {
+        return None;
+    }
+    // SAFETY: a window this program took in hand, and the rectangle is
+    // ours.
+    if unsafe { GetWindowRect(engine, &mut picture) } == 0 {
+        return None;
+    }
+    Some((
+        drawn.left - picture.left,
+        drawn.top - picture.top,
+        drawn.right - picture.left,
+        drawn.bottom - picture.top,
+    ))
 }
 
 /// Whether the system is drawing our window with square corners.

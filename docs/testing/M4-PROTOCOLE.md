@@ -413,6 +413,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Windows arrondit les coins de toutes les fenêtres, et l'image est une fenêtre à part qui reste un rectangle : c'est elle qui est découpée pour suivre. Seulement en bas, le haut de l'image étant sous la barre de titre, là où le cadre est droit. À vérifier aussi sur un écran agrandi : la courbe grandit avec le reste.
 >
+> Regarder l'angle de près : **l'image remplit le coin jusqu'au cadre**, sans liseré clair entre le bord de l'image et la courbe. La découpe suit le cadre que Windows dessine vraiment, demandé à Windows lui-même ; une courbe à nous, ancrée sur l'image, tombait un ou deux pixels trop court et laissait voir la page blanche derrière.
+>
 > **Puis l'inverse**, qui compte tout autant : passer en plein écran, et maximiser la fenêtre (double-clic sur la barre de titre). Dans ces deux cas, Windows dessine la fenêtre à **angles droits**, et l'image doit l'être aussi : aucun coin rogné, aucune morsure dans le bas de l'écran distant. Revenir en fenêtre : les coins se réarrondissent.
 
 > **S8quater (la fenêtre ne peut pas être réduite à un filet)**
