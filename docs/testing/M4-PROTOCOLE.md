@@ -80,7 +80,7 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Attendu : la demande d'autorisation de Windows apparaît, une fois. Après avoir accepté, le bandeau disparaît de lui-même en quelques secondes et l'état passe à « Prêt à être contrôlé ».
 >
-> Ce même geste pose les deux règles de pare-feu dont le service a besoin : le port du tunnel, et celui de la découverte du réseau local. Le journal (partie 7) le dit en toutes lettres, ligne `firewall opened for …`.
+> Ce même geste pose les trois règles de pare-feu dont le service a besoin : le port du tunnel, celui de l'annonce sur le réseau local, et celui de l'appel direct qui la remplace quand le réseau ne la porte pas. Elles sont d'ailleurs réécrites à chaque démarrage du service. Le journal (partie 7) le dit en toutes lettres, ligne `firewall opened for …`.
 >
 > À vérifier aussi : refuser la demande de Windows doit afficher « les droits administrateur ont été refusés » et rien de plus. Pas de plantage, pas de bandeau bloqué.
 
@@ -109,6 +109,8 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 > Les deux applications ouvertes, sur le même réseau.
 >
 > Attendu : sur **chaque** PC, l'autre apparaît dans « Mes ordinateurs » avec son nom Windows, son adresse et une pastille verte. Aucune adresse à taper, aucune empreinte à recopier.
+>
+> Cela peut passer par l'un ou l'autre des deux chemins, et le journal dit lequel : `found … on the local network` pour l'annonce, `… answered a call on the local network` pour l'appel direct. Le second met jusqu'à une trentaine de secondes la première fois.
 >
 > Si la liste reste vide des deux côtés : voir R6bis.
 
@@ -342,8 +344,9 @@ Deux cas courants, et leur cause habituelle :
   1. `this computer answers at …`, sur les deux machines : si les deux adresses ne sont pas sur le même sous-réseau, rien d'autre ne peut marcher.
   2. `network <carte> : Public` : sur un réseau classé public, Windows coupe la découverte, quelles que soient les règles de pare-feu. Il faut `Private` sur la carte qui porte l'adresse du réseau local, sur les deux machines.
   3. `announcement sent from …` : les cartes par lesquelles l'annonce sort réellement. Une machine qui n'annonce que par une carte virtuelle ou un VPN ne sera entendue de personne.
-  4. `firewall rules laid for …` puis `firewall opened for …` : les règles sont réécrites à chaque démarrage, pour le programme nommé sur la ligne. Si elles manquent, un autre pare-feu que celui de Windows est probablement en cause.
-  5. `a question was answered from …` : cette machine reçoit bien du trafic sur cette carte. Si ces lignes sont là et qu'aucun ordinateur n'apparaît, ce qui est envoyé ne traverse pas le réseau entre les deux machines, ce qui arrive couramment entre le Wi-Fi et l'Ethernet d'une box.
+  4. `calling on <carte> through <adresse>` : l'appel direct, celui qui marche quand le multicast ne traverse pas. Si la ligne dit `with no broadcast address` et `0 addresses`, cette carte ne peut appeler personne.
+  5. `firewall rules laid for …` puis `firewall opened for …`, trois fois : les règles sont réécrites à chaque démarrage, pour le programme nommé sur la ligne. Si elles manquent, un autre pare-feu que celui de Windows est probablement en cause.
+  6. `a question was answered from …` : cette machine reçoit bien du trafic sur cette carte. Si ces lignes sont là et qu'aucun ordinateur n'apparaît, le multicast ne traverse pas entre les deux machines, ce qui arrive couramment entre le Wi-Fi et l'Ethernet d'une box. C'est précisément le cas que l'appel direct rattrape : la ligne à chercher alors est `… answered a call on the local network`.
 
   Le rattrapage R6bis permet de continuer sans attendre.
 - **La session est refusée avec un message d'ordinateur refusé.** La confiance au réseau local est coupée sur l'hôte (R19), ou son accès distant est désactivé (R20).

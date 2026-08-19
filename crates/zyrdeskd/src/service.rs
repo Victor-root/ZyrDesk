@@ -231,15 +231,18 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// What the service listens on, and what Windows calls each rule.
 ///
-/// Two ports, not one. The tunnel carries everything a session needs,
-/// and mDNS is what lets two ZyrDesk find each other on a local network
-/// without anybody reading an address out loud. Leaving the second one
-/// closed does not break a session, it stops the other computer from
-/// ever appearing, which looks exactly like a product that does not
-/// work.
-const OPENINGS: [(&str, u16); 2] = [
+/// Three ports, not one. The tunnel carries everything a session needs.
+/// The other two are how two ZyrDesk find each other without anybody
+/// reading an address out loud: mDNS asks a whole network at once, and
+/// the third is where this computer answers a call made to it directly,
+/// for the many networks that quietly drop a multicast between a wired
+/// card and a wireless one. Leaving either of the last two closed does
+/// not break a session, it stops the other computer from ever appearing,
+/// which looks exactly like a product that does not work.
+const OPENINGS: [(&str, u16); 3] = [
     ("ZyrDesk (tunnel)", zyr_proto::net::TUNNEL_PORT),
     ("ZyrDesk (réseau local)", zyr_lan::PORT),
+    ("ZyrDesk (voisinage)", zyr_lan::CALLING_PORT),
 ];
 
 /// Lets the outside reach the service, through the Windows firewall.

@@ -24,6 +24,10 @@ use mdns_sd::{DaemonEvent, ServiceDaemon, ServiceEvent, ServiceInfo};
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_transport::Fingerprint;
 
+mod calling;
+
+pub use calling::PORT as CALLING_PORT;
+
 /// The kind of service ZyrDesk answers to, in the shape mDNS expects.
 ///
 /// The tunnel speaks UDP, and what is announced here is the tunnel: the
@@ -131,6 +135,12 @@ pub struct Neighbourhood {
     daemon: ServiceDaemon,
     announced: String,
     found: Found,
+    /// Held for as long as this is: dropping it stops the calling.
+    ///
+    /// Nothing else reads it. A computer that has stopped announcing
+    /// itself must stop answering calls at the same moment, and this is
+    /// what ties the two together.
+    _calling: Option<calling::Calling>,
 }
 
 impl Neighbourhood {
@@ -178,6 +188,7 @@ impl Neighbourhood {
         let listening = daemon.browse(SERVICE)?;
         let collecting = found.clone();
         let mine = fingerprint;
+        let collecting_told = noticed.clone();
         std::thread::spawn(move || {
             // What has already been mentioned, so that a machine
             // re-announcing itself every minute does not fill the
@@ -185,14 +196,44 @@ impl Neighbourhood {
             // network, which is a handful at worst.
             let mut mentioned = std::collections::HashSet::new();
             while let Ok(event) = listening.recv() {
-                collect(event, &collecting, mine, &mut mentioned, noticed.as_ref());
+                collect(
+                    event,
+                    &collecting,
+                    mine,
+                    &mut mentioned,
+                    collecting_told.as_ref(),
+                );
             }
         });
+
+        // Beside the announcement, and never instead of it. A great many
+        // boxes drop a multicast between a wired card and a wireless one
+        // while carrying everything else perfectly, and on such a network
+        // nothing above this line will ever find anybody.
+        for line in calling::where_calls_go() {
+            noticed(&line);
+        }
+        let _calling = match calling::start(
+            name.to_string(),
+            fingerprint,
+            found.clone(),
+            noticed.clone(),
+        ) {
+            Ok(calling) => Some(calling),
+            Err(e) => {
+                noticed(&format!(
+                    "calling out is unavailable on port {}: {e}",
+                    calling::PORT
+                ));
+                None
+            }
+        };
 
         Ok(Self {
             daemon,
             announced: instance,
             found,
+            _calling,
         })
     }
 

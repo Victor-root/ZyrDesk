@@ -118,6 +118,18 @@ L'ajout par empreinte écrit l'ordinateur dans les deux sens : il le laisse entr
 
 **Ce que ça coûte.** Un service qui ne s'arrête plus de lui-même. Il se relit toutes les cinq secondes plutôt que d'insister, et le retour en arrière après un moteur qui ne tient pas est l'interrupteur d'accès distant, coupé puis rallumé.
 
+## D19. La découverte appelle, au lieu d'attendre d'être entendue (2026-08-19, pendant M4)
+
+**Décision.** En plus de l'annonce mDNS, le service pose un petit port à lui, UDP 47001, sur lequel il répond à qui l'appelle, et il appelle : un datagramme vers l'adresse de diffusion de chaque carte toutes les dix secondes et, tant que personne n'a répondu, vers chaque adresse du réseau une par une, au plus toutes les trente secondes. Ce qui répond entre dans la même liste que ce qui s'annonce, et un ordinateur trouvé deux fois reste un seul ordinateur.
+
+**Ce que ça corrige.** Deux machines du même sous-réseau, l'une en Ethernet et l'autre en Wi-Fi, ne se sont jamais vues : les journaux montrent les deux qui annoncent correctement par la bonne carte, les deux qui reçoivent bien du trafic sur cette même carte, et rien qui traverse. Le pare-feu est ouvert des deux côtés, le classement Windows est privé des deux côtés, aucun VPN ne tourne, et une session manuelle entre les deux fonctionne parfaitement à 0 % de perte. Le multicast, lui, ne passe pas : beaucoup de box et de points d'accès le jettent entre le filaire et le sans-fil, et rien dans les deux machines ne peut y changer quoi que ce soit.
+
+**Pourquoi ça marche là où l'autre échoue.** Une diffusion dirigée et un datagramme adressé sont du trafic ordinaire, routé comme le reste : un réseau qui porte une session porte cela. Le multicast, lui, dépend d'un relayage que l'équipement décide seul.
+
+**Ce que ça coûte, et ce qui le borne.** Un port de plus à ouvrir, posé par le service comme les deux autres. Un datagramme par carte toutes les dix secondes, ce qui n'est rien. Le passage adresse par adresse est le seul geste bruyant : il ne se fait que tant que la liste est vide, jamais plus d'une fois toutes les trente secondes, et seulement sur un réseau d'au plus 256 adresses. Un réseau plus large n'est jamais parcouru ainsi ; un tel réseau relaie de toute façon presque toujours le multicast.
+
+**Ce que ça n'ouvre pas.** Ce port ne dit que ce que l'annonce disait déjà : un nom, une empreinte, un numéro de port. Rien n'y entre, rien ne s'y décide, et une empreinte connue n'ouvre toujours rien à elle seule. Ce qui arrive sans le mot de passe du format est jeté sans être lu.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -16,6 +16,36 @@ pub struct Address {
     /// virtual adapter calls itself.
     pub interface: String,
     pub address: Ipv4Addr,
+    /// What tells this card's network apart from the rest of the world.
+    pub netmask: Ipv4Addr,
+    /// The one address every computer of that network answers to at
+    /// once, when the card has one.
+    pub broadcast: Option<Ipv4Addr>,
+}
+
+impl Address {
+    /// Every address of this card's network, this one left out.
+    ///
+    /// Empty for a network too wide to go through one by one: a card on a
+    /// sixteen-bit network holds sixty-five thousand addresses, and
+    /// knocking on all of them would be a nuisance rather than a search.
+    pub fn neighbourhood(&self, most: u32) -> Vec<Ipv4Addr> {
+        let mask = u32::from(self.netmask);
+        let mine = u32::from(self.address);
+        // Zero would mean the whole Internet, and a full mask a network
+        // of one: neither is a neighbourhood.
+        let held = (!mask).checked_add(1).unwrap_or(0);
+        if held < 3 || held > most {
+            return Vec::new();
+        }
+        let network = mine & mask;
+        // The first address names the network and the last is the
+        // broadcast: neither belongs to a computer.
+        (1..held - 1)
+            .map(|step| Ipv4Addr::from(network + step))
+            .filter(|address| *address != self.address)
+            .collect()
+    }
 }
 
 impl fmt::Display for Address {
@@ -44,6 +74,8 @@ pub fn addresses() -> Vec<Address> {
             if_addrs::IfAddr::V4(addr) => Some(Address {
                 interface: interface.name,
                 address: addr.ip,
+                netmask: addr.netmask,
+                broadcast: addr.broadcast,
             }),
             if_addrs::IfAddr::V6(_) => None,
         })
@@ -115,6 +147,51 @@ mod tests {
                 .all(|two| two[0].address <= two[1].address),
             "{answering:?}"
         );
+    }
+
+    #[test]
+    fn a_neighbourhood_holds_every_address_but_this_one() {
+        let card = Address {
+            interface: "Ethernet".to_string(),
+            address: "192.168.1.20".parse().unwrap(),
+            netmask: "255.255.255.0".parse().unwrap(),
+            broadcast: Some("192.168.1.255".parse().unwrap()),
+        };
+        let around = card.neighbourhood(256);
+        // 254 machines possibles, moins la nôtre.
+        assert_eq!(around.len(), 253);
+        assert_eq!(around[0], "192.168.1.1".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(
+            *around.last().unwrap(),
+            "192.168.1.254".parse::<Ipv4Addr>().unwrap()
+        );
+        assert!(!around.contains(&card.address));
+        // Ni l'adresse du réseau ni celle de diffusion : personne n'y
+        // répond, et frapper à ces deux portes-là ne sert à rien.
+        assert!(!around.contains(&"192.168.1.0".parse().unwrap()));
+        assert!(!around.contains(&"192.168.1.255".parse().unwrap()));
+    }
+
+    #[test]
+    fn a_network_too_wide_is_left_alone() {
+        // Frapper à soixante-cinq mille portes toutes les trente secondes
+        // serait une nuisance, pas une recherche.
+        let wide = Address {
+            interface: "Ethernet".to_string(),
+            address: "10.0.0.5".parse().unwrap(),
+            netmask: "255.255.0.0".parse().unwrap(),
+            broadcast: None,
+        };
+        assert!(wide.neighbourhood(256).is_empty());
+
+        // Et un masque qui ne laisse la place à personne non plus.
+        let alone = Address {
+            interface: "Tunnel".to_string(),
+            address: "10.1.1.1".parse().unwrap(),
+            netmask: "255.255.255.255".parse().unwrap(),
+            broadcast: None,
+        };
+        assert!(alone.neighbourhood(256).is_empty());
     }
 
     #[test]
