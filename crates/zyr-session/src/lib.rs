@@ -78,6 +78,14 @@ pub enum Step {
     Paired,
     /// The engine is starting.
     Starting,
+    /// The engine is running, and this is the process it runs as.
+    ///
+    /// Said as soon as it is known and long before the session is
+    /// believed: whoever asked is the only one who knows this number
+    /// until the service is told, and the floating button hangs on that
+    /// process. Waiting for the session to be believed would put the
+    /// button up several seconds after the picture.
+    Showing { process: u32 },
 }
 
 /// How long the engines are given to meet, the code having travelled on
@@ -252,6 +260,9 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
     let mut session = engine
         .start_session(&target, &settings)
         .map_err(Error::Engine)?;
+    told(Step::Showing {
+        process: session.process_id(),
+    });
 
     // What this computer remembers of a pairing is a note it wrote to
     // itself, and the far computer is the only one that decides. It can
@@ -270,6 +281,9 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
         session = engine
             .start_session(&target, &settings)
             .map_err(Error::Engine)?;
+        told(Step::Showing {
+            process: session.process_id(),
+        });
     }
 
     // From here the session belongs to the engine and to the service.

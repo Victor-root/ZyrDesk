@@ -30,7 +30,9 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder,
+};
 
 // What the button did goes into the same journal as everything else: the
 // window has nowhere else to say it, standing behind the picture, and a
@@ -74,6 +76,10 @@ const FRONT_TAKES: Duration = Duration::from_millis(400);
 /// Pause between two looks at which window is in front.
 const FRONT_STEP: Duration = Duration::from_millis(10);
 
+/// How long the picture is given to go once the far computer has been
+/// asked to hand its desktop back.
+const CLOSING_SHOWS: Duration = Duration::from_secs(3);
+
 /// How long a drag may last before it is called over.
 ///
 /// A mouse unplugged mid-drag, or a button released where nothing
@@ -110,14 +116,33 @@ impl Act {
 
     /// Letter of the engine's Ctrl+Alt+Shift shortcut, for the ones that
     /// have one.
-    fn letter(self) -> Option<u16> {
+    fn letter(self) -> Option<u8> {
         match self {
-            Act::Fullscreen => Some(b'X' as u16),
-            Act::Stats => Some(b'S' as u16),
-            Act::MouseMode => Some(b'M' as u16),
-            Act::Leave => Some(b'Q' as u16),
+            Act::Fullscreen => Some(b'X'),
+            Act::Stats => Some(b'S'),
+            Act::MouseMode => Some(b'M'),
+            Act::Leave => Some(b'Q'),
             // Asked of the far computer over the tunnel, not of the
             // player through its keyboard.
+            Act::Close => None,
+        }
+    }
+
+    /// Where that letter sits on the keyboard.
+    ///
+    /// The engine is built on a library that reads a key by its place
+    /// before it reads it by its name, and the two come apart on the
+    /// keyboards this product is used on: the key engraved A in France
+    /// is the key engraved Q elsewhere. A key sent by name leaves the
+    /// place to be worked out by whatever the system happens to think
+    /// the keyboard is, which is one guess too many for a keystroke
+    /// nobody typed.
+    fn where_it_sits(self) -> Option<u16> {
+        match self {
+            Act::Fullscreen => Some(0x2D),
+            Act::Stats => Some(0x1F),
+            Act::MouseMode => Some(0x32),
+            Act::Leave => Some(0x10),
             Act::Close => None,
         }
     }
@@ -151,6 +176,14 @@ pub struct Floating {
     /// corner of the picture. Kept for as long as the program runs, so
     /// it does not walk back to the corner at every session.
     nudge: Mutex<(i32, i32)>,
+    /// Player this window has just started and the service does not know
+    /// about yet.
+    ///
+    /// A session is only handed to the service once it has been watched
+    /// long enough to be believed, and the button would arrive that many
+    /// seconds after the picture. Whoever started the engine knows its
+    /// number straight away, and the button hangs on nothing else.
+    expected: Mutex<Option<u32>>,
 }
 
 impl Floating {
@@ -182,15 +215,50 @@ struct Watched {
     anchor: (i32, i32),
 }
 
+/// Says which player this window has just started, before anybody else
+/// knows.
+pub fn expect(app: &AppHandle, process: u32) {
+    *app.state::<Floating>()
+        .expected
+        .lock()
+        .expect("session attendue") = Some(process);
+}
+
+/// Forgets it, the session being over one way or another.
+pub fn expect_nothing(app: &AppHandle) {
+    *app.state::<Floating>()
+        .expected
+        .lock()
+        .expect("session attendue") = None;
+}
+
+/// The player the button belongs to right now.
+///
+/// The service first: it knows every session on this computer, including
+/// those another window opened. Failing that, the one this window has
+/// just started, for as long as it has a picture up. That second answer
+/// is what puts the button on screen with the picture rather than
+/// several seconds behind it.
+async fn player(app: &AppHandle) -> Option<u32> {
+    if let Some(session) = crate::session::sessions().await.into_iter().next() {
+        return Some(session.process);
+    }
+    let expected = *app
+        .state::<Floating>()
+        .expected
+        .lock()
+        .expect("session attendue");
+    expected.filter(|process| picture_of(*process).is_some())
+}
+
 /// Follows the sessions for as long as the program runs, and puts the
 /// button up and down with them.
 pub fn watch(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(LOOK).await;
-            let session = crate::session::sessions().await.into_iter().next();
-            match session {
-                Some(session) => raise(&app, session.process),
+            match player(&app).await {
+                Some(process) => raise(&app, process),
                 None => lower(&app),
             }
         }
@@ -243,7 +311,15 @@ fn raise(app: &AppHandle, process: u32) {
         .build();
 
     match built {
-        Ok(window) => keep_out_of_the_way(&window),
+        Ok(window) => {
+            // Everything here is counted in real pixels, and the size
+            // asked for at build time is counted in the other kind. On a
+            // screen at a hundred and seventy-five per cent the window
+            // came out that much bigger than the button drawn in it, and
+            // what showed around the button was the window itself.
+            let _ = window.set_size(PhysicalSize::new(BUTTON, BUTTON));
+            keep_out_of_the_way(&window);
+        }
         // A button that could not be drawn is not a reason to disturb a
         // session that is otherwise fine.
         Err(e) => eprintln!("le bouton flottant n'a pas pu s'ouvrir : {e}"),
@@ -279,12 +355,12 @@ fn lower(app: &AppHandle) {
 /// height depends on what is in it, and a number written twice would
 /// stop matching the first time an entry is added.
 #[tauri::command]
-pub fn floating_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+pub fn floating_size(app: AppHandle, width: u32, height: u32) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("le bouton flottant n'est plus là")?;
     window
-        .set_size(tauri::LogicalSize::new(width, height))
+        .set_size(PhysicalSize::new(width, height))
         .map_err(|e| e.to_string())?;
 
     let anchor = app
@@ -499,6 +575,21 @@ async fn put_the_picture_in_front(process: u32) -> Result<(), String> {
         .to_string())
 }
 
+/// Whether that player has stopped showing anything.
+///
+/// Given a moment: the picture does not go the instant the far computer
+/// is asked to let go of its desktop.
+async fn the_picture_is_gone(process: u32) -> bool {
+    let until = std::time::Instant::now() + CLOSING_SHOWS;
+    while std::time::Instant::now() < until {
+        if picture_of(process).is_none() {
+            return true;
+        }
+        tokio::time::sleep(FRONT_STEP).await;
+    }
+    false
+}
+
 /// Hands the far computer's desktop back, instead of merely leaving it.
 ///
 /// Where to ask comes from the service rather than from anything this
@@ -521,6 +612,7 @@ async fn close_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
     // reported as broken to whoever just closed it would be a lie.
     Floating::closing(app, true);
 
+    let process = session.process;
     // On a thread of its own: this asks the far computer a question over
     // the network, and the window must not stop drawing while it waits.
     let answered = tauri::async_runtime::spawn_blocking(move || {
@@ -531,6 +623,16 @@ async fn close_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
     match answered {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => {
+            // Asking this well is what takes the answer away. The far
+            // computer lets its desktop go, the stream stops, the tunnel
+            // that carried the question goes with it, and nothing comes
+            // back. A silence that leaves no picture behind is the thing
+            // having worked, and saying otherwise would put a red line
+            // across the screen every time it did.
+            if the_picture_is_gone(process).await {
+                note(&format!("fermeture faite, sans réponse ({e})"));
+                return Ok(());
+            }
             note(&format!("fermeture refusée : {e}"));
             // Refused, so the session is still standing: whatever befalls
             // it later is nobody's doing but its own.
@@ -702,8 +804,8 @@ fn picture_of(_process: u32) -> Option<(i32, i32, i32, i32)> {
 #[cfg(windows)]
 fn shortcut(act: Act, process: u32) -> Result<(), String> {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VK_CONTROL,
-        VK_MENU, VK_SHIFT,
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE,
+        SendInput,
     };
 
     // The picture was brought in front and waited for by the caller. If
@@ -719,12 +821,16 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
             .to_string());
     }
 
-    let Some(letter) = act.letter() else {
+    let (Some(letter), Some(key)) = (act.letter(), act.where_it_sits()) else {
         return Ok(());
     };
-    let keys = [
-        VK_CONTROL, VK_MENU, VK_SHIFT, letter, letter, VK_SHIFT, VK_MENU, VK_CONTROL,
-    ];
+    // Where the modifiers sit, in the same numbering: the left-hand ones,
+    // which is what a person would press.
+    const CTRL: u16 = 0x1D;
+    const ALT: u16 = 0x38;
+    const SHIFT: u16 = 0x2A;
+
+    let keys = [CTRL, ALT, SHIFT, key, key, SHIFT, ALT, CTRL];
     let events: Vec<INPUT> = keys
         .iter()
         .enumerate()
@@ -732,15 +838,18 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
                 ki: KEYBDINPUT {
-                    wVk: *key,
-                    wScan: 0,
+                    // The place is what is sent, and the name is left for
+                    // the far end to work out from its own keyboard.
+                    wVk: 0,
+                    wScan: *key,
                     // The first half presses, the second half releases,
                     // in the mirror order: no key is left down.
-                    dwFlags: if rank >= keys.len() / 2 {
-                        KEYEVENTF_KEYUP
-                    } else {
-                        0
-                    },
+                    dwFlags: KEYEVENTF_SCANCODE
+                        | if rank >= keys.len() / 2 {
+                            KEYEVENTF_KEYUP
+                        } else {
+                            0
+                        },
                     time: 0,
                     dwExtraInfo: 0,
                 },
@@ -762,8 +871,8 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         // does not react, this line is what tells a keystroke that never
         // left from one the engine chose to ignore.
         note(&format!(
-            "{act} envoyé au lecteur {process} : Ctrl+Alt+Maj+{}",
-            char::from(letter as u8)
+            "{act} envoyé au lecteur {process} : Ctrl+Alt+Maj+{}, à la place {key:#04x}",
+            char::from(letter)
         ));
         Ok(())
     } else {
@@ -828,14 +937,18 @@ mod tests {
         // Les lettres sont celles du moteur client : les changer sans le
         // moteur ferait taper une combinaison qui ne fait rien, ou pire,
         // une autre que celle voulue.
-        for (name, letter) in [
-            ("fullscreen", b'X'),
-            ("stats", b'S'),
-            ("mouse", b'M'),
-            ("leave", b'Q'),
+        // Et les places sont celles d'un clavier, indépendantes de ce
+        // qui est gravé dessus : c'est par là que le moteur reconnaît
+        // une touche en premier.
+        for (name, letter, place) in [
+            ("fullscreen", b'X', 0x2Du16),
+            ("stats", b'S', 0x1F),
+            ("mouse", b'M', 0x32),
+            ("leave", b'Q', 0x10),
         ] {
             let act = Act::read(name).expect(name);
-            assert_eq!(act.letter(), Some(u16::from(letter)), "sur « {name} »");
+            assert_eq!(act.letter(), Some(letter), "sur « {name} »");
+            assert_eq!(act.where_it_sits(), Some(place), "sur « {name} »");
         }
         // Fermer pour de bon ne passe pas par le clavier du lecteur : ça
         // se demande à l'ordinateur d'en face, à travers le tunnel.

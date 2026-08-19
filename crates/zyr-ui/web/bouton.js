@@ -29,12 +29,17 @@ function montre(element, visible) {
 }
 
 /* La fenêtre suit ce que la page occupe, mesuré et non deviné : le menu
-   n'a pas la même hauteur selon ce qu'il contient. */
+   n'a pas la même hauteur selon ce qu'il contient.
+
+   En vrais pixels et non en pixels de page : sur un écran agrandi les
+   deux ne valent pas la même chose, et une fenêtre taillée dans la
+   mauvaise unité laisse voir son propre fond tout autour du bouton. */
 function ajusteLaFenetre() {
   const boite = vue.paquet.getBoundingClientRect();
+  const echelle = window.devicePixelRatio || 1;
   invoke("floating_size", {
-    width: Math.ceil(boite.width),
-    height: Math.ceil(boite.height),
+    width: Math.ceil(boite.width * echelle),
+    height: Math.ceil(boite.height * echelle),
   }).catch(() => {});
 }
 

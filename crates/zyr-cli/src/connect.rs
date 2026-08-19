@@ -136,6 +136,9 @@ fn tell(step: Step, host: &str) {
         }
         Step::Paired => println!("  Les deux ordinateurs se connaissent.\n"),
         Step::Starting => println!("Connexion à {host}..."),
+        // Rien à en dire ici : la ligne de commande n'a pas de
+        // bouton flottant à accrocher dessus.
+        Step::Showing { .. } => {}
     }
 }
 

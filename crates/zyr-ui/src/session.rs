@@ -43,6 +43,10 @@ enum Told {
     },
     Paired,
     Starting,
+    /// The engine is running, as that process.
+    Showing {
+        process: u32,
+    },
     /// The picture is up and the session belongs to the service now.
     Live,
 }
@@ -120,6 +124,11 @@ fn drive(app: &AppHandle, wanted: Wanted) {
     crate::journal::note(&format!("session asked for towards {}", wanted.host));
     let running = match zyr_session::open(&wanted, &mut |step| {
         crate::journal::note(&written(&step));
+        // The floating button hangs on that process, and this window is
+        // the only one that knows its number until the service does.
+        if let Step::Showing { process } = step {
+            crate::floating::expect(app, process);
+        }
         say(app, told(step));
     }) {
         Ok(running) => running,
@@ -181,6 +190,7 @@ fn told(step: Step) -> Told {
         Step::PairingNeeded { pin } => Told::PairingNeeded { pin },
         Step::Paired => Told::Paired,
         Step::Starting => Told::Starting,
+        Step::Showing { process } => Told::Showing { process },
     }
 }
 
@@ -202,6 +212,7 @@ fn written(step: &Step) -> String {
         }
         Step::Paired => "the two computers know each other".to_string(),
         Step::Starting => "starting the client engine".to_string(),
+        Step::Showing { process } => format!("client engine running as process {process}"),
     }
 }
 
@@ -212,5 +223,6 @@ fn say(app: &AppHandle, what: Told) {
 }
 
 fn finish(app: &AppHandle, ok: bool, message: String) {
+    crate::floating::expect_nothing(app);
     let _ = app.emit(ENDED, Finished { ok, message });
 }
