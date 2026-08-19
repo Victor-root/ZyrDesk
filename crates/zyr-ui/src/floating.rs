@@ -112,10 +112,37 @@ impl std::fmt::Display for Act {
 #[derive(Default)]
 pub struct Floating {
     watched: Mutex<Option<Watched>>,
+    /// Set while this window is asking the far computer to close the
+    /// session.
+    ///
+    /// The engine loses its stream when that happens and stops on a
+    /// failure, which from the outside is exactly what a session that
+    /// broke looks like. Without this, the one thing the person asked for
+    /// would be reported back to them as an error.
+    closing: std::sync::atomic::AtomicBool,
     /// Where the person dragged the button last, as a distance from the
     /// corner of the picture. Kept for as long as the program runs, so
     /// it does not walk back to the corner at every session.
     nudge: Mutex<(i32, i32)>,
+}
+
+impl Floating {
+    /// Says a close is being asked for, and takes it back when it was
+    /// refused: a session still running must be told apart from one this
+    /// window brought down.
+    fn closing(app: &AppHandle, asked: bool) {
+        app.state::<Floating>()
+            .closing
+            .store(asked, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether the session that just ended was closed on purpose, and
+    /// forgets it either way.
+    pub fn was_closed_on_purpose(app: &AppHandle) -> bool {
+        app.state::<Floating>()
+            .closing
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 struct Watched {
@@ -344,7 +371,7 @@ pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
 
     match act.letter() {
         Some(_) => shortcut(act, process),
-        None => close_on_the_far_computer().await,
+        None => close_on_the_far_computer(&app).await,
     }
 }
 
@@ -354,7 +381,7 @@ pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
 /// window remembers: the tunnel address is the only one the engine can
 /// reach that computer at, and it exists for exactly as long as the way
 /// does.
-async fn close_on_the_far_computer() -> Result<(), String> {
+async fn close_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
     let session = crate::session::sessions()
         .await
         .into_iter()
@@ -365,6 +392,11 @@ async fn close_on_the_far_computer() -> Result<(), String> {
         "fermeture demandée sur {} à travers {}",
         session.towards, session.at
     ));
+    // Said before the asking. The engine can lose its stream and stop
+    // before the far computer has finished answering, and a session
+    // reported as broken to whoever just closed it would be a lie.
+    Floating::closing(app, true);
+
     // On a thread of its own: this asks the far computer a question over
     // the network, and the window must not stop drawing while it waits.
     let answered = tauri::async_runtime::spawn_blocking(move || {
@@ -376,9 +408,15 @@ async fn close_on_the_far_computer() -> Result<(), String> {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => {
             note(&format!("fermeture refusée : {e}"));
+            // Refused, so the session is still standing: whatever befalls
+            // it later is nobody's doing but its own.
+            Floating::closing(app, false);
             Err(e.to_string())
         }
-        Err(e) => Err(e.to_string()),
+        Err(e) => {
+            Floating::closing(app, false);
+            Err(e.to_string())
+        }
     }
 }
 

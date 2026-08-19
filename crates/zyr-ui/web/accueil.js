@@ -26,9 +26,12 @@ const vue = {
   ajoutForme: document.getElementById("ajout-forme"),
   annulerAjout: document.getElementById("annuler-ajout"),
   adresse: document.getElementById("adresse"),
+  nomAjout: document.getElementById("nom-ajout"),
   empreinteDistante: document.getElementById("empreinte-distante"),
   motEmpreinte: document.getElementById("mot-empreinte"),
   connecter: document.getElementById("connecter"),
+  ecrits: document.getElementById("ecrits"),
+  listeEcrits: document.getElementById("liste-ecrits"),
   etape: document.getElementById("etape"),
   etapeTitre: document.getElementById("etape-titre"),
   etapeDetail: document.getElementById("etape-detail"),
@@ -422,14 +425,19 @@ function carte(ordinateur) {
   const nom = document.createElement("p");
   nom.className = "sous-titre ordinateur-nom";
   const pastille = document.createElement("span");
-  pastille.className = "pastille vivante";
+  pastille.className = ordinateur.seen ? "pastille vivante" : "pastille";
   const texte = document.createElement("span");
   texte.textContent = ordinateur.name;
   nom.append(pastille, texte);
 
   const adresse = document.createElement("p");
   adresse.className = "legende";
-  adresse.textContent = ordinateur.address;
+  /* La pastille grise ne dit rien à elle seule : ce qui l'explique est
+     écrit à côté. Cet ordinateur n'est pas absent, c'est ce réseau qui ne
+     porte pas les annonces. */
+  adresse.textContent = ordinateur.seen
+    ? ordinateur.address
+    : `${ordinateur.address} · ajouté à la main`;
 
   const appel = document.createElement("p");
   appel.className = "legende ordinateur-appel";
@@ -494,8 +502,48 @@ function dessineOrdinateurs() {
 function ouvrirAjout() {
   vue.motEmpreinte.textContent = "";
   ajusterAjout();
+  dessineEcrits();
   vue.ajout.showModal();
   vue.empreinteDistante.focus();
+}
+
+/* Les ordinateurs écrits à la main, et de quoi les retirer. */
+function dessineEcrits() {
+  const ecrits = voisins.filter((ordinateur) => ordinateur.written);
+  montre(vue.ecrits, ecrits.length > 0);
+  vue.listeEcrits.replaceChildren(...ecrits.map(ligneEcrite));
+}
+
+function ligneEcrite(ordinateur) {
+  const ligne = document.createElement("li");
+
+  const nom = document.createElement("span");
+  nom.className = "legende ecrit-nom";
+  nom.textContent = `${ordinateur.name} · ${ordinateur.address}`;
+
+  const oubli = document.createElement("button");
+  oubli.type = "button";
+  oubli.className = "bouton discret";
+  oubli.textContent = "Oublier";
+  oubli.addEventListener("click", () => oublier(ordinateur));
+
+  ligne.append(nom, oubli);
+  return ligne;
+}
+
+/* Oublier retire des deux listes : celle de l'accueil et celle des
+   ordinateurs admis. Un ordinateur disparu de l'écran mais toujours
+   capable d'entrer serait une promesse non tenue. */
+async function oublier(ordinateur) {
+  try {
+    await invoke("forget", { fingerprint: ordinateur.fingerprint });
+  } catch (raison) {
+    vue.ajout.close();
+    echoue(String(raison));
+    return;
+  }
+  await rafraichirLeReseau();
+  dessineEcrits();
 }
 
 /* Dit ce qui manque plutôt que de laisser un bouton éteint sans raison,
@@ -528,11 +576,16 @@ async function connecter(evenement) {
   const empreinte = vue.empreinteDistante.value;
   const adresse = vue.adresse.value.trim();
   try {
-    await invoke("authorize", { fingerprint: empreinte });
+    await invoke("authorize", {
+      fingerprint: empreinte,
+      host: adresse.length > 0 ? adresse : null,
+      name: vue.nomAjout.value.trim() || null,
+    });
   } catch (raison) {
     echoue(String(raison));
     return;
   }
+  await rafraichirLeReseau();
 
   if (adresse.length === 0) {
     // Autoriser ne se voit nulle part ailleurs : sans un mot, le geste

@@ -141,10 +141,20 @@ fn drive(app: &AppHandle, wanted: Wanted) {
     // Waiting costs nothing here and buys the one thing the person wants
     // afterwards: whether the session ended by itself or fell over.
     let ended = running.wait();
+    let on_purpose = crate::floating::Floating::was_closed_on_purpose(app);
     crate::journal::note(&match &ended {
+        Ok(outcome) if on_purpose => format!("session closed on purpose, engine said {outcome:?}"),
         Ok(outcome) => format!("session ended: {outcome:?}"),
         Err(e) => format!("session ended on a system error: {e}"),
     });
+
+    // Closing the far computer's desktop takes the stream away from the
+    // engine, which stops the only way it knows how: on a failure. It is
+    // still exactly what was asked for.
+    if on_purpose {
+        return finish(app, true, String::new());
+    }
+
     match ended {
         Ok(Outcome::Ended) => finish(app, true, String::new()),
         Ok(Outcome::Failed) => finish(

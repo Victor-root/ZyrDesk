@@ -189,8 +189,19 @@
             spellcheck="false"
           />
           <span class="legende">
-            Seulement si vous voulez contrôler cet ordinateur depuis ici.
+            Seulement si vous voulez contrôler cet ordinateur depuis ici. Il
+            restera alors sur l'accueil, et il n'y aura plus rien à ressaisir.
           </span>
+        </div>
+
+        <div class="champ">
+          <label for="nom-ajout">Nom (facultatif)</label>
+          <input
+            id="nom-ajout"
+            type="text"
+            placeholder="PC du bureau"
+            autocomplete="off"
+          />
         </div>
 
         <div class="dialogue-actions">
@@ -202,6 +213,14 @@
           </button>
         </div>
       </form>
+
+      <!-- Ce qui a été ajouté à la main se retire là où il a été ajouté :
+           une carte d'accueil est un bouton entier, et rien ne peut s'y
+           glisser sans lui prendre son clic. -->
+      <div class="bloc-ecrits cache" id="ecrits">
+        <p class="section">Ordinateurs ajoutés à la main</p>
+        <ul class="liste-ecrits" id="liste-ecrits"></ul>
+      </div>
     </dialog>
 
     <dialog class="dialogue journal" id="journal">

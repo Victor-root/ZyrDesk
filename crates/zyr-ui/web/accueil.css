@@ -389,6 +389,39 @@
   margin-top: var(--pas-1);
 }
 
+/* Ce qui a été ajouté à la main se retire là où il a été ajouté. Une
+   carte d'accueil est un bouton entier : un second bouton posé dessus lui
+   prendrait son clic, et l'oubli est trop définitif pour se jouer à la
+   visée. */
+.bloc-ecrits {
+  padding: var(--pas-4) var(--pas-5) var(--pas-5);
+  border-top: 1px solid var(--trait);
+}
+
+.liste-ecrits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pas-2);
+  margin: var(--pas-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.liste-ecrits > li {
+  display: flex;
+  align-items: center;
+  gap: var(--pas-3);
+}
+
+/* Un nom long ne doit pas pousser le bouton hors du dialogue. */
+.ecrit-nom {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Ce que le champ a à redire, sous le champ, sans jamais faire sauter la
    mise en page quand il n'a rien à dire. */
 .champ-mot {

@@ -126,13 +126,19 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Sur le **PC hôte**, cliquer **Ajouter un ordinateur**, coller l'empreinte du PC client, laisser l'adresse vide, cliquer **Autoriser**.
 >
-> Sur le **PC client**, cliquer **Ajouter un ordinateur**, coller l'empreinte du PC hôte, saisir son adresse, cliquer **Se connecter**.
+> Sur le **PC client**, cliquer **Ajouter un ordinateur**, coller l'empreinte du PC hôte, saisir son adresse, éventuellement un nom, cliquer **Se connecter**.
 >
 > L'empreinte se lit sur la carte « Cet ordinateur » de l'autre fenêtre, bouton **Copier**.
 >
 > Attendu : le PC hôte affiche « Cet ordinateur est autorisé à venir sur celui-ci », et la session s'ouvre depuis le client. Ce chemin existe pour les réseaux qui bloquent la découverte ; il ne devrait servir à personne d'autre.
+
+> **R6ter (un ordinateur ajouté reste à l'écran)**
 >
-> Une empreinte écrite le reste : elle survit au redémarrage du service et n'est plus à ressaisir.
+> Après R6bis, quitter la session et fermer l'application sur le **PC client**, puis la relancer.
+>
+> Attendu : le PC hôte est là, sur une carte, avec sa pastille grise et la mention « ajouté à la main ». Un clic dessus rouvre la session. **Plus rien à ressaisir, jamais.** La pastille est grise parce que ce réseau ne porte pas les annonces, pas parce que la machine serait éteinte, et c'est écrit à côté.
+>
+> Pour le retirer : **Ajouter un ordinateur**, puis **Oublier** en bas du dialogue. Il disparaît de l'accueil et n'a plus le droit d'entrer.
 
 ---
 

@@ -22,6 +22,7 @@ use zyr_proto::log::Log;
 use zyr_proto::paths;
 use zyr_transport::{Fingerprint, authorized};
 
+use crate::known;
 use crate::preferences::Remembered;
 use crate::ways::Ways;
 
@@ -149,21 +150,7 @@ async fn converse(mut talking: Heard, answering: Answering) {
 /// `Done`; everything else is one.
 async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
     match request {
-        Request::Peers => ended(
-            answering
-                .neighbours
-                .peers()
-                .into_iter()
-                .map(|peer| {
-                    Answer::Peer(zyr_control::Peer {
-                        name: peer.name,
-                        fingerprint: peer.fingerprint,
-                        address: peer.address,
-                        port: peer.port,
-                    })
-                })
-                .collect(),
-        ),
+        Request::Peers => ended(on_screen(answering).into_iter().map(Answer::Peer).collect()),
         Request::Sessions => ended(
             answering
                 .ways
@@ -174,6 +161,58 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
         ),
         other => vec![one(other, answering).await],
     }
+}
+
+/// The computers the home screen shows.
+///
+/// Those announcing themselves on the local network, and then those
+/// written down by hand that are not announcing anything. A computer on
+/// both lists is announced once: what the network says of it is fresher
+/// than what was written down months ago, its address most of all.
+fn on_screen(answering: &Answering) -> Vec<zyr_control::Peer> {
+    let written = match known::read(&paths::known_computers()) {
+        Ok(written) => written,
+        Err(e) => {
+            answering
+                .log
+                .write(&format!("written-down computers unreadable: {e}"));
+            Vec::new()
+        }
+    };
+
+    let mut shown: Vec<zyr_control::Peer> = answering
+        .neighbours
+        .peers()
+        .into_iter()
+        .map(|peer| zyr_control::Peer {
+            written: written
+                .iter()
+                .any(|known| known.fingerprint == peer.fingerprint),
+            name: peer.name,
+            fingerprint: peer.fingerprint,
+            host: peer.address.to_string(),
+            port: peer.port,
+            seen: true,
+        })
+        .collect();
+
+    for computer in written {
+        if shown
+            .iter()
+            .any(|peer| peer.fingerprint == computer.fingerprint)
+        {
+            continue;
+        }
+        shown.push(zyr_control::Peer {
+            name: computer.name,
+            fingerprint: computer.fingerprint,
+            host: computer.host,
+            port: zyr_proto::net::TUNNEL_PORT,
+            seen: false,
+            written: true,
+        });
+    }
+    shown
 }
 
 /// Closes a list with the ending that says it is whole.
@@ -259,7 +298,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             }
             Err(refusal) => refusal,
         },
-        Request::Authorize { peer } => {
+        Request::Authorize { peer, host, name } => {
             // Cette empreinte est déjà celle de cet ordinateur : l'écrire
             // n'ouvrirait rien et laisserait croire à un appairage fait.
             if peer == answering.fingerprint {
@@ -269,18 +308,51 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                         .to_string(),
                 );
             }
-            match authorized::add(&paths::authorized_devices(), peer) {
-                Ok(true) => {
-                    answering
-                        .log
-                        .write(&format!("{peer} written down as allowed in"));
+            if let Err(e) = authorized::add(&paths::authorized_devices(), peer) {
+                return Answer::Refused(format!(
+                    "cet ordinateur n'a pas pu être écrit dans la liste : {e}"
+                ));
+            }
+            answering
+                .log
+                .write(&format!("{peer} written down as allowed in"));
+
+            // L'adresse est ce qui le fait rester à l'écran. Sans elle,
+            // il faudrait la retaper à chaque session, et c'est
+            // exactement ce que ce produit existe pour supprimer.
+            let Some(host) = host else {
+                return Answer::Done;
+            };
+            let name = name.filter(|name| !name.trim().is_empty());
+            let computer = known::Known {
+                fingerprint: peer,
+                name: name.unwrap_or_else(|| host.clone()),
+                host,
+            };
+            match known::add(&paths::known_computers(), computer) {
+                Ok(()) => {
+                    answering.log.write(&format!("{peer} kept on the screen"));
                     Answer::Done
                 }
-                // Déjà écrite : c'est l'état demandé, atteint.
-                Ok(false) => Answer::Done,
                 Err(e) => Answer::Refused(format!(
-                    "cet ordinateur n'a pas pu être écrit dans la liste : {e}"
+                    "cet ordinateur est autorisé, mais n'a pas pu être gardé à l'écran : {e}\n  \
+                     Il faudra le saisir à nouveau à la prochaine session."
                 )),
+            }
+        }
+        Request::Forget { peer } => {
+            // Les deux listes, sinon un ordinateur retiré de l'écran
+            // continuerait d'entrer, ce que personne ne devinerait.
+            let taken_off = known::remove(&paths::known_computers(), peer);
+            let no_longer_allowed = authorized::remove(&paths::authorized_devices(), peer);
+            match (taken_off, no_longer_allowed) {
+                (Ok(_), Ok(_)) => {
+                    answering.log.write(&format!("{peer} forgotten"));
+                    Answer::Done
+                }
+                (Err(e), _) | (_, Err(e)) => {
+                    Answer::Refused(format!("cet ordinateur n'a pas pu être oublié : {e}"))
+                }
             }
         }
         Request::Settings => Answer::Settings(answering.remembered.read().preferred),

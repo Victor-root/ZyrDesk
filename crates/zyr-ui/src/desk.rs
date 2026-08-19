@@ -13,12 +13,18 @@ use zyr_proto::paths;
 
 use crate::service;
 
-/// A ZyrDesk found on the local network.
+/// A ZyrDesk the home screen shows.
 #[derive(Serialize)]
 pub struct Peer {
     pub name: String,
     pub fingerprint: String,
     pub address: String,
+    /// Whether it is announcing itself right now. One written down by
+    /// hand shows on a network that carries no announcement at all.
+    pub seen: bool,
+    /// Whether somebody wrote it down by hand. Only those can be taken
+    /// off again.
+    pub written: bool,
 }
 
 /// What the home screen shows about this computer.
@@ -104,7 +110,9 @@ pub async fn peers() -> Vec<Peer> {
         Answer::Peer(peer) => Some(Peer {
             name: peer.name,
             fingerprint: peer.fingerprint.to_string(),
-            address: peer.address.to_string(),
+            address: peer.host,
+            seen: peer.seen,
+            written: peer.written,
         }),
         _ => None,
     })
@@ -133,21 +141,56 @@ pub async fn set_trust(on: bool) -> Result<(), String> {
     }
 }
 
-/// Writes a computer down as one this one lets in.
+/// Writes a computer down.
 ///
 /// The way back when the network announces nothing. Everything else here
 /// rests on two ZyrDesk hearing each other on the local network, and a
 /// network that drops those announcements would otherwise leave the
 /// product with no way in at all.
+///
+/// With an address, the computer also stays on the home screen: writing
+/// it down once has to be enough, or the copying this replaces would
+/// simply happen at every session instead of at the first.
 #[tauri::command]
-pub async fn authorize(fingerprint: String) -> Result<(), String> {
+pub async fn authorize(
+    fingerprint: String,
+    host: Option<String>,
+    name: Option<String>,
+) -> Result<(), String> {
     let peer = fingerprint
         .trim()
         .parse()
         .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
-    match service::ask(&Request::Authorize { peer }).await? {
+    let host = host
+        .map(|host| host.trim().to_string())
+        .filter(|host| !host.is_empty());
+    let name = name
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty());
+
+    match service::ask(&Request::Authorize { peer, host, name }).await? {
         Answer::Done => {
-            crate::journal::note(&format!("{peer} written down as allowed in"));
+            crate::journal::note(&format!("{peer} written down"));
+            Ok(())
+        }
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// Takes a computer written down by hand off the home screen.
+///
+/// And out of the list of those allowed in, at the same time: one that
+/// disappeared from the screen while still being able to reach this
+/// computer would be a promise the product does not keep.
+#[tauri::command]
+pub async fn forget(fingerprint: String) -> Result<(), String> {
+    let peer = fingerprint
+        .trim()
+        .parse()
+        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+    match service::ask(&Request::Forget { peer }).await? {
+        Answer::Done => {
+            crate::journal::note(&format!("{peer} forgotten"));
             Ok(())
         }
         other => Err(service::unexpected(other)),

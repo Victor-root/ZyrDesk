@@ -110,6 +110,14 @@ pub fn authorized_devices() -> PathBuf {
     data_dir().join("authorized-devices.conf")
 }
 
+/// Computers written down by hand, kept on the home screen.
+///
+/// Apart from the authorised devices on purpose: one decides who may come
+/// in, the other only spares somebody a copying.
+pub fn known_computers() -> PathBuf {
+    data_dir().join("known-computers.conf")
+}
+
 /// What the person asked the service to do, kept across restarts.
 pub fn preferences() -> PathBuf {
     data_dir().join("preferences.conf")
@@ -133,6 +141,7 @@ mod tests {
             device_state_dir("desk-pc"),
             logs_dir(),
             authorized_devices(),
+            known_computers(),
             preferences(),
         ] {
             assert!(

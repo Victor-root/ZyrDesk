@@ -51,6 +51,7 @@ fn main() {
             desk::set_hosting,
             desk::set_trust,
             desk::authorize,
+            desk::forget,
             desk::start_service,
             folders::engines,
             folders::logs_folder,

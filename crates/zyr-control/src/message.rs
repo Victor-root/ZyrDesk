@@ -24,7 +24,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 8;
+pub const PROTOCOL: u32 = 9;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -125,13 +125,24 @@ pub enum Request {
     /// Decides whether the ZyrDesk of the local network are let in
     /// without anyone having to recognise them one by one.
     SetTrust { on: bool },
-    /// Writes a computer down as one this one lets in.
+    /// Writes a computer down.
     ///
     /// What is left when the network announces nothing: on a network
     /// that drops the announcements, recognising the other machine by
     /// hand is the only way in, and it has to be doable from a window
     /// like everything else.
-    Authorize { peer: Fingerprint },
+    ///
+    /// The fingerprint alone lets that computer come in. With an address
+    /// it is also kept on the home screen, so that reaching it again
+    /// never costs anybody a second copying.
+    Authorize {
+        peer: Fingerprint,
+        host: Option<String>,
+        name: Option<String>,
+    },
+    /// Takes a computer written down off both lists: it no longer shows,
+    /// and it no longer comes in.
+    Forget { peer: Fingerprint },
     /// What a session opened from this computer is set to.
     Settings,
     /// Changes it, for this session and all the ones after.
@@ -173,6 +184,11 @@ impl Request {
             }),
             "authorize" => Ok(Request::Authorize {
                 peer: fields.parsed("peer")?,
+                host: fields.text("host").ok().map(unpacked),
+                name: fields.text("name").ok().map(unpacked),
+            }),
+            "forget" => Ok(Request::Forget {
+                peer: fields.parsed("peer")?,
             }),
             "settings" => Ok(Request::Settings),
             "choose" => Ok(Request::Choose {
@@ -200,7 +216,17 @@ impl fmt::Display for Request {
             Request::Sessions => f.write_str("sessions"),
             Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
-            Request::Authorize { peer } => write!(f, "authorize peer={peer}"),
+            Request::Authorize { peer, host, name } => {
+                write!(f, "authorize peer={peer}")?;
+                if let Some(host) = host {
+                    write!(f, " host={}", packed(host))?;
+                }
+                if let Some(name) = name {
+                    write!(f, " name={}", packed(name))?;
+                }
+                Ok(())
+            }
+            Request::Forget { peer } => write!(f, "forget peer={peer}"),
             Request::Settings => f.write_str("settings"),
             Request::Choose { preferred } => write!(f, "choose {}", spelled(preferred)),
         }
@@ -269,14 +295,31 @@ pub struct Reached {
     pub packet: u16,
 }
 
-/// A ZyrDesk seen on the local network.
+/// A ZyrDesk this computer can show on its home screen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Peer {
     /// Name its owner knows it by.
     pub name: String,
     pub fingerprint: Fingerprint,
-    pub address: IpAddr,
+    /// Where to reach it, as it was announced or as it was written.
+    ///
+    /// Text and not an address: a computer written down by hand is
+    /// reached at whatever was typed, which is not always something this
+    /// program gets to interpret.
+    pub host: String,
     pub port: u16,
+    /// Whether it is announcing itself right now.
+    ///
+    /// A computer written down by hand shows on a network that carries
+    /// no announcement at all, and there it is never seen. Saying so is
+    /// the difference between a machine that is off and one this network
+    /// simply cannot hear.
+    pub seen: bool,
+    /// Whether somebody wrote it down by hand.
+    ///
+    /// Only those can be taken off again: what the network announces
+    /// comes back the moment it is removed.
+    pub written: bool,
 }
 
 /// A session this computer is holding towards another.
@@ -347,8 +390,10 @@ impl Answer {
             "peer" => Ok(Answer::Peer(Peer {
                 name: unpacked(fields.text("name")?),
                 fingerprint: fields.parsed("fingerprint")?,
-                address: fields.parsed("address")?,
+                host: unpacked(fields.text("address")?),
                 port: fields.parsed("port")?,
+                seen: fields.flag("seen", true),
+                written: fields.flag("written", false),
             })),
             "session" => Ok(Answer::Session(Session {
                 way: WayId(fields.parsed("way")?),
@@ -391,11 +436,13 @@ impl fmt::Display for Answer {
             ),
             Answer::Peer(peer) => write!(
                 f,
-                "peer name={} fingerprint={} address={} port={}",
+                "peer name={} fingerprint={} address={} port={} seen={} written={}",
                 packed(&peer.name),
                 peer.fingerprint,
-                peer.address,
-                peer.port
+                packed(&peer.host),
+                peer.port,
+                said(peer.seen),
+                said(peer.written)
             ),
             Answer::Session(session) => write!(
                 f,
@@ -585,6 +632,16 @@ mod tests {
             Request::SetTrust { on: false },
             Request::Authorize {
                 peer: fingerprint(),
+                host: None,
+                name: None,
+            },
+            Request::Authorize {
+                peer: fingerprint(),
+                host: Some("192.168.1.20".to_string()),
+                name: Some("PC de Victor".to_string()),
+            },
+            Request::Forget {
+                peer: fingerprint(),
             },
             Request::Settings,
             Request::Choose {
@@ -642,8 +699,18 @@ mod tests {
                 // souvent qu'on ne le croit.
                 name: "PC de Victor".to_string(),
                 fingerprint: fingerprint(),
-                address: "192.168.1.20".parse().unwrap(),
+                host: "192.168.1.20".to_string(),
                 port: 47000,
+                seen: true,
+                written: false,
+            }),
+            Answer::Peer(Peer {
+                name: "PC fixe".to_string(),
+                fingerprint: fingerprint(),
+                host: "192.168.1.20".to_string(),
+                port: 47000,
+                seen: false,
+                written: true,
             }),
             Answer::Session(Session {
                 way: WayId(3),
@@ -785,8 +852,10 @@ mod tests {
             let sent = Answer::Peer(Peer {
                 name: name.to_string(),
                 fingerprint: fingerprint(),
-                address: "192.168.1.20".parse().unwrap(),
+                host: "192.168.1.20".to_string(),
                 port: 47000,
+                seen: true,
+                written: false,
             })
             .to_string();
             let Ok(Answer::Peer(read)) = Answer::parse(&sent) else {

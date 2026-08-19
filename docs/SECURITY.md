@@ -15,6 +15,8 @@ Principe directeur : le serveur met en relation, il ne peut pas espionner. Les c
 
   Côté hôte, depuis le jalon M3, les empreintes admises sont une liste et non une seule : un ordinateur en sert plusieurs au fil du temps. Elle vit dans `data/authorized-devices.conf`, s'écrit depuis la fenêtre par « Ajouter un ordinateur » ou en ligne de commande par `zyr-cli host authorize`, `revoke` et `devices`, et le service la relit toutes les cinq secondes. Autoriser une machine de plus ne coupe donc pas la session en cours, et une liste devenue illisible ne révoque personne : elle est signalée dans le journal, l'ensemble précédent restant en vigueur. Une empreinte mal recopiée est refusée avec son numéro de ligne plutôt qu'ignorée en silence, faute de quoi une autorisation absente passerait longtemps pour une panne réseau. Ce fichier ne contient aucun secret : une empreinte est publique et n'ouvre rien à elle seule.
 
+  Un second fichier, `data/known-computers.conf`, garde l'adresse et le nom des ordinateurs saisis à la main pour qu'ils restent sur l'accueil. Il est tenu à part exprès : il ne décide de rien, personne n'entre parce qu'il y figure, et une ligne qu'il ne comprend pas est ignorée là où la liste des appareils admis, elle, refuse tout le fichier. Oublier un ordinateur depuis la fenêtre le retire des deux.
+
 ### 1.1 Confiance au réseau local (jalon M4)
 
 Le service admet, en plus de cette liste, les ZyrDesk qui s'annoncent sur le réseau local. Un interrupteur des réglages le décide, activé par défaut, et l'état s'affiche dans le journal comme sur l'écran d'accueil.

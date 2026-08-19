@@ -6,6 +6,7 @@
 
 mod control;
 mod gateway;
+mod known;
 mod preferences;
 mod restart;
 mod supervisor;
