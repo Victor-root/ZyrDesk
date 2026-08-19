@@ -68,6 +68,11 @@ static DRAGGED: AtomicBool = AtomicBool::new(false);
 /// when it really changes size.
 static LAID: AtomicI64 = AtomicI64::new(0);
 
+/// Whether that shape was the square one, for the same reason: covering
+/// the screen and coming back are the two moves that change it without
+/// necessarily changing anything else.
+static SQUARED: AtomicBool = AtomicBool::new(false);
+
 /// Radius the system rounds a window's corners by, in page pixels.
 ///
 /// Windows has never offered it as a number to ask for; this is the one
@@ -85,6 +90,12 @@ fn remember_the_shape(engine: isize, shape: (i32, i32)) {
     // The next picture is a different window and has never been given a
     // shape, whatever size this one was left at.
     LAID.store(0, Ordering::Relaxed);
+    SQUARED.store(false, Ordering::Relaxed);
+    // A session can end with a hand still on an edge, and nothing else
+    // would ever put this down: left standing, it silently switches off
+    // holding the window to the picture's shape for the rest of the
+    // program's life.
+    DRAGGED.store(false, Ordering::Relaxed);
     SHAPE.store(
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
@@ -258,11 +269,14 @@ pub fn hold_the_shape(app: &AppHandle) {
     let Ok(inside) = window.inner_size() else {
         return;
     };
-    let wanted = (u64::from(inside.width) * high as u64 / wide as u64) as u32;
-    if wanted == 0 || inside.height.abs_diff(wanted) <= ROUNDING {
+    let Ok(width) = i32::try_from(inside.width) else {
+        return;
+    };
+    let wanted = across(width, wide, high);
+    if wanted <= 0 || inside.height.abs_diff(wanted as u32) <= ROUNDING {
         return;
     }
-    let _ = window.set_size(tauri::PhysicalSize::new(inside.width, wanted));
+    let _ = window.set_size(tauri::PhysicalSize::new(inside.width, wanted as u32));
 }
 
 /// What is held right now, if anything.
@@ -488,7 +502,7 @@ fn lay_it_out(
 /// said out loud when it lets go.
 ///
 /// Kept because there is no other way to know. Everything a resize moves
-/// belongs to somebody else — the system, another program, a web view —
+/// belongs to somebody else (the system, another program, a web view),
 /// and which of them is slow cannot be guessed at from the outside; it
 /// has been guessed at twice already, wrongly both times. One line at the
 /// end of a drag settles it, and costs nothing until somebody drags.
@@ -541,8 +555,14 @@ static BUTTON: Cost = Cost::new();
 /// take the new size.
 static SYSTEM: Cost = Cost::new();
 
+/// Whether the drag under way is resizing the window rather than only
+/// moving it. Told apart by the system asking about a rectangle, which it
+/// only does for a resize.
+static RESIZED: AtomicBool = AtomicBool::new(false);
+
 /// Starts counting, a drag having begun.
 fn count_the_drag() {
+    RESIZED.store(false, Ordering::Relaxed);
     for what in [&LAYING, &PICTURE, &BUTTON, &SYSTEM] {
         Cost::forget(what);
     }
@@ -557,22 +577,36 @@ fn tell_the_drag() {
     let (_, picture, picture_worst) = Cost::told(&PICTURE);
     let (_, button, _) = Cost::told(&BUTTON);
     let (_, system, system_worst) = Cost::told(&SYSTEM);
+    // A hand on the title bar and a hand on an edge are the same gesture
+    // to the system, and cost the same work here. Only one of them is a
+    // resize, and this line is read to answer a question about resizing:
+    // it says which it was rather than calling both by the louder name.
+    let gesture = if RESIZED.load(Ordering::Relaxed) {
+        "redimensionnement"
+    } else {
+        "déplacement"
+    };
     crate::journal::note(&format!(
-        "redimensionnement : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
+        "{gesture} : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
          dont image {picture:.0} ms (pire {picture_worst:.1}) et bouton {button:.0} ms ; \
          système et vue web {system:.0} ms (pire {system_worst:.1})"
     ));
 }
 
 /// Rounds the two bottom corners of the picture, to the curve the system
-/// gives our own window.
+/// gives our own window, and squares them again when it stops giving it.
 ///
 /// The picture is a window of its own and a window of its own is a plain
 /// rectangle, so a rounded frame showed square corners inside it. Only
 /// the bottom two: the top of the picture sits under the title bar, where
 /// the frame is straight.
 ///
-/// Applied only when the size changes. A window given a shape is redrawn
+/// And only while the frame really is round. A window covering the screen
+/// or pushed out to its edges has square corners, which is the system's
+/// own rule and not a choice of ours; rounding the picture there took two
+/// bites out of the far computer's screen with nothing to justify them.
+///
+/// Applied only when something changes. A window given a shape is redrawn
 /// on the spot, and doing that once a second on a picture would show.
 #[cfg(windows)]
 fn round_the_bottom(
@@ -587,9 +621,23 @@ fn round_the_bottom(
     use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 
     let laid = (i64::from(width) << 32) | i64::from(height) & 0xFFFF_FFFF;
-    if LAID.swap(laid, Ordering::Relaxed) == laid || width <= 0 || height <= 0 {
+    let square = the_frame_is_square(home);
+    // Both are put down whatever happens: they are what « unchanged »
+    // means next time, and one left behind would answer for a window that
+    // is no longer there.
+    let same_size = LAID.swap(laid, Ordering::Relaxed) == laid;
+    let same_frame = SQUARED.swap(square, Ordering::Relaxed) == square;
+    if (same_size && same_frame) || width <= 0 || height <= 0 {
         return;
     }
+
+    if square {
+        // SAFETY: a window this program took in hand; no shape means the
+        // whole rectangle, which is what a window is without one.
+        unsafe { SetWindowRgn(engine, std::ptr::null_mut(), 0) };
+        return;
+    }
+
     // SAFETY: our own window.
     let dpi = unsafe { GetDpiForWindow(home) };
     let round = (CORNER * dpi.max(1) as i32 / 96).min(height);
@@ -600,14 +648,31 @@ fn round_the_bottom(
         // exclusive of its right and bottom edge, and a picture short of
         // its last row is a picture with a line missing.
         let shape = CreateRoundRectRgn(0, 0, width + 1, height + 1, round * 2, round * 2);
-        let square = CreateRectRgn(0, 0, width, height - round);
-        CombineRgn(shape, shape, square, RGN_OR as i32);
-        DeleteObject(square.into());
+        let squared = CreateRectRgn(0, 0, width, height - round);
+        CombineRgn(shape, shape, squared, RGN_OR);
+        DeleteObject(squared);
         // The system owns the shape from here and frees it itself. Not
         // asked to redraw on the spot: this happens on every step of a
         // resize, and the engine is drawing sixty times a second anyway.
         SetWindowRgn(engine, shape, 0);
     }
+}
+
+/// Whether the system is drawing our window with square corners.
+///
+/// It rounds an ordinary window and squares one that covers the screen or
+/// has been pushed out to its edges. There is no number to ask for, so
+/// the two cases are read where they show: a window at its full size, and
+/// a window whose title bar has been taken away, which is what covering
+/// the screen does to it.
+#[cfg(windows)]
+fn the_frame_is_square(home: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_STYLE, GetWindowLongPtrW, IsZoomed, WS_CAPTION,
+    };
+
+    // SAFETY: our own window, and both calls only read its state.
+    unsafe { IsZoomed(home) != 0 || GetWindowLongPtrW(home, GWL_STYLE) & WS_CAPTION as isize == 0 }
 }
 
 /// Puts the picture back in front, so the engine gets the keyboard and
@@ -742,6 +807,7 @@ unsafe extern "system" fn lit(
         // message to the engine's own process and a swap chain rebuilt
         // there. That was the whole of the stutter.
         WM_SIZING => {
+            RESIZED.store(true, Ordering::Relaxed);
             // SAFETY: for this message the system passes a rectangle of
             // ours to fill in, and it lives for the length of the call.
             let wanted = unsafe { &mut *(lparam as *mut RECT) };
@@ -820,6 +886,9 @@ fn the_drag_keeps_the_shape(
         return;
     }
 
+    let (least_wide, least_high) =
+        the_least_picture(crate::floating::room_for_the_button(), (wide, high));
+
     // What the frame costs, so the shape is held on the inside of the
     // window and not on its outside: the title bar is not part of the
     // picture.
@@ -842,14 +911,13 @@ fn the_drag_keeps_the_shape(
     );
 
     if edge == WMSZ_TOP || edge == WMSZ_BOTTOM {
-        let height = (wanted.bottom - wanted.top - frame.1).max(1);
-        let width = (i64::from(height) * i64::from(wide) / i64::from(high)) as i32 + frame.0;
-        wanted.right = wanted.left + width;
+        let height = (wanted.bottom - wanted.top - frame.1).max(least_high);
+        wanted.right = wanted.left + across(height, high, wide) + frame.0;
         return;
     }
 
-    let width = (wanted.right - wanted.left - frame.0).max(1);
-    let height = (i64::from(width) * i64::from(high) / i64::from(wide)) as i32 + frame.1;
+    let width = (wanted.right - wanted.left - frame.0).max(least_wide);
+    let height = across(width, wide, high) + frame.1;
     // Dragged from the top: the bottom stays where it is and the top
     // moves, or the window would walk down the screen under the hand.
     if edge == WMSZ_TOPLEFT || edge == WMSZ_TOPRIGHT {
@@ -857,6 +925,51 @@ fn the_drag_keeps_the_shape(
     } else {
         wanted.bottom = wanted.top + height;
     }
+}
+
+/// One side of the picture worked out from the other, keeping its shape.
+///
+/// Counted wide so that a large window at a narrow shape cannot run past
+/// what a whole number holds on the way.
+fn across(side: i32, of: i32, to: i32) -> i32 {
+    (i64::from(side) * i64::from(to) / i64::from(of)) as i32
+}
+
+/// The same, never falling short.
+///
+/// A shape is held by dividing down, which is right for following a hand:
+/// the picture may end a pixel narrow and nobody sees it. It is wrong for
+/// working out a floor, where a pixel short is not a floor at all.
+fn across_at_least(side: i32, of: i32, to: i32) -> i32 {
+    let (side, of, to) = (i64::from(side), i64::from(of), i64::from(to));
+    ((side * to + of - 1) / of) as i32
+}
+
+/// The smallest the picture may be taken down to, at its own shape.
+///
+/// The system bounds a window it is resizing before offering the
+/// rectangle to us, and does not bound it again after: whatever is
+/// written back is taken as it stands. Holding a shape therefore means
+/// holding a floor as well, or the window walks straight through the
+/// smallest size Windows would ever have allowed and comes out the other
+/// side a sliver with nothing usable in it.
+///
+/// The floor is the floating button, which is the one thing of ours left
+/// on the picture and the first to stop fitting. Both of its sides count,
+/// since a shape ties the two together: the width has to leave room for
+/// the button, and so has the height that width works out to.
+///
+/// No button means no session, and a picture with no shape to hold is
+/// never taken down this road at all; the floor is then whatever the
+/// shape makes of a single pixel, which is as good as no floor and is
+/// still never zero.
+fn the_least_picture(room: Option<(i32, i32)>, shape: (i32, i32)) -> (i32, i32) {
+    let (wide, high) = shape;
+    let room = room.unwrap_or((1, 1));
+    (
+        room.0.max(across_at_least(room.1, high, wide)),
+        room.1.max(across_at_least(room.0, wide, high)),
+    )
 }
 
 /// Whether the window at the front is the picture.
@@ -898,3 +1011,55 @@ fn give_the_window_back(_app: &AppHandle) {}
 
 #[cfg(not(windows))]
 pub fn fit(_app: &AppHandle) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_side_worked_out_from_the_other_keeps_the_shape() {
+        assert_eq!(across(1920, 1920, 1080), 1080);
+        assert_eq!(across(960, 1920, 1080), 540);
+        assert_eq!(across(1080, 1080, 1920), 1920);
+    }
+
+    #[test]
+    fn a_wide_window_at_a_narrow_shape_does_not_run_past_a_whole_number() {
+        // 3840 x 1080 tenu par un entier de 32 bits ferait 4 milliards en
+        // chemin. Compté large, la réponse est juste.
+        assert_eq!(across(3_000_000, 1080, 1920), 5_333_333);
+    }
+
+    #[test]
+    fn the_floor_leaves_room_for_the_button_whichever_edge_is_pulled() {
+        // Le bouton fait 91 pixels de côté sur un écran agrandi, plus sa
+        // marge. Tirer un bord fixe une des deux tailles et laisse l'autre
+        // suivre la forme : les deux doivent laisser la place au bouton,
+        // sinon il n'y a plus de sortie qu'au clavier.
+        let room = (107, 107);
+        for shape in [(1920, 1080), (1080, 1920), (2560, 1080), (1024, 1024)] {
+            let (wide, high) = the_least_picture(Some(room), shape);
+            assert!(wide >= room.0, "largeur {wide} sur {shape:?}");
+            assert!(high >= room.1, "hauteur {high} sur {shape:?}");
+            // Un bord vertical tiré : la largeur tient, la hauteur suit.
+            assert!(
+                across(wide, shape.0, shape.1) >= room.1,
+                "hauteur suivie sur {shape:?}"
+            );
+            // Un bord horizontal tiré : l'inverse.
+            assert!(
+                across(high, shape.1, shape.0) >= room.0,
+                "largeur suivie sur {shape:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn without_a_button_the_floor_is_still_a_real_size() {
+        // Aucun bouton veut dire aucune session, donc aucune forme à
+        // tenir : il reste qu'une taille de zéro ferait diviser par zéro
+        // plus loin.
+        let (wide, high) = the_least_picture(None, (1920, 1080));
+        assert!(wide >= 1 && high >= 1);
+    }
+}

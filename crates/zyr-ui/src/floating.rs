@@ -356,7 +356,13 @@ fn raise(app: &AppHandle, process: u32) {
 
     // A leftover window from a session that ended in a way we did not
     // see: put it where the new one is rather than open a second.
+    //
+    // Taken hold of again first. Letting the last session go forgets the
+    // window, and everything that places this button reaches it by that
+    // one number: without this the button would sit wherever the previous
+    // session left it and follow nothing for the whole of this one.
     if let Some(window) = app.get_webview_window(WINDOW) {
+        remember_the_button(&window);
         let _ = window.show();
         lay_the_button(picture);
         return;
@@ -566,6 +572,15 @@ fn hung_from(picture: (i32, i32, i32, i32), nudge: (i32, i32), size: (i32, i32))
 /// A button dragged towards an edge, or a session opened on a smaller
 /// screen than the last, would otherwise end up somewhere nobody can
 /// click it.
+///
+/// A picture smaller than the button is answered rather than refused.
+/// The window is held to a size that leaves room for the button while a
+/// hand is resizing it, but a window can change size in ways no hand
+/// asked for, and this runs inside the system's own call into that
+/// window: there is nowhere for a refusal to go, and a panic there takes
+/// the whole program with it. So the button keeps the corner it belongs
+/// to and hangs over the edge, which is what the other side of this
+/// already did.
 fn held_inside(
     corner: (i32, i32),
     picture: (i32, i32, i32, i32),
@@ -574,7 +589,7 @@ fn held_inside(
 ) -> (i32, i32) {
     let (left, top, right, bottom) = picture;
     (
-        corner.0.clamp(left + width, right),
+        corner.0.clamp((left + width).min(right), right),
         corner.1.clamp(top, (bottom - height).max(top)),
     )
 }
@@ -757,25 +772,15 @@ fn remember_the_button(window: &tauri::WebviewWindow) {
 /// that a hundred times a second is what made resizing a session judder.
 #[cfg(windows)]
 pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
-    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowRect, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
     };
 
     let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
-    if button.is_null() {
+    let Some(own) = its_place() else {
         return;
-    }
-    let mut own = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
     };
-    // SAFETY: a window of ours, and the rectangle is ours.
-    if unsafe { GetWindowRect(button, &mut own) } == 0 {
-        return;
-    }
     let size = (own.right - own.left, own.bottom - own.top);
     let anchor = hung_from(picture, nudge(), size);
 
@@ -805,10 +810,14 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
     };
 }
 
-/// The corner the button hangs from right now, read from the button
-/// itself rather than remembered beside it.
+/// Where the button is on screen, in real pixels, or nothing when there
+/// is no button.
+///
+/// Read from the window itself rather than remembered beside it, and
+/// asked of the system rather than of the toolkit: this is called from
+/// inside the system's own call into our window, where nothing may wait.
 #[cfg(windows)]
-fn where_it_hangs() -> Option<(i32, i32)> {
+fn its_place() -> Option<windows_sys::Win32::Foundation::RECT> {
     use windows_sys::Win32::Foundation::{HWND, RECT};
     use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
@@ -826,7 +835,26 @@ fn where_it_hangs() -> Option<(i32, i32)> {
     if unsafe { GetWindowRect(button, &mut own) } == 0 {
         return None;
     }
-    Some((own.right, own.top))
+    Some(own)
+}
+
+/// The corner the button hangs from right now.
+#[cfg(windows)]
+fn where_it_hangs() -> Option<(i32, i32)> {
+    its_place().map(|own| (own.right, own.top))
+}
+
+/// The smallest picture the button still fits in, in real pixels.
+///
+/// What a session window may not be resized below: the button is the one
+/// thing of ours left on top of the picture, and a picture it cannot hang
+/// on is a session with no way out but the keyboard.
+///
+/// Nothing when there is no button, which is every moment there is no
+/// session to hold to a shape either.
+#[cfg(windows)]
+pub fn room_for_the_button() -> Option<(i32, i32)> {
+    its_place().map(|own| (own.right - own.left + MARGIN, own.bottom - own.top + MARGIN))
 }
 
 /// Hands the pointer back when the far computer is holding it.
@@ -886,6 +914,11 @@ pub fn lay_the_button(_picture: (i32, i32, i32, i32)) {}
 
 #[cfg(not(windows))]
 fn where_it_hangs() -> Option<(i32, i32)> {
+    None
+}
+
+#[cfg(not(windows))]
+pub fn room_for_the_button() -> Option<(i32, i32)> {
     None
 }
 
@@ -1279,6 +1312,41 @@ mod tests {
             );
         }
         assert!(Act::read("teleport").is_none());
+    }
+
+    #[test]
+    fn a_picture_smaller_than_the_button_is_answered_and_not_refused() {
+        // Ceci tourne dans l'appel du système à notre fenêtre : une
+        // panique y emporte tout le programme. Une fenêtre peut changer
+        // de taille sans qu'une main l'ait demandé, donc le cas doit
+        // avoir une réponse.
+        let bouton = (91, 91);
+        for image in [
+            (100, 100, 160, 134),
+            (0, 0, 1, 1),
+            (500, 500, 500, 500),
+            (-50, -50, 10, 10),
+        ] {
+            let ou = hung_from(image, (0, 0), bouton);
+            assert!(ou.0 >= image.0 && ou.0 <= image.2, "sur {image:?} : {ou:?}");
+            assert!(ou.1 >= image.1, "sur {image:?} : {ou:?}");
+        }
+    }
+
+    #[test]
+    fn the_button_hangs_in_the_top_right_corner_of_the_picture() {
+        let image = (100, 200, 1_000, 800);
+        let ou = hung_from(image, (0, 0), (91, 91));
+        assert_eq!(ou, (1_000 - MARGIN, 200 + MARGIN));
+    }
+
+    #[test]
+    fn a_button_dragged_past_an_edge_comes_back_against_it() {
+        let image = (100, 200, 1_000, 800);
+        let loin = hung_from(image, (5_000, 5_000), (91, 91));
+        assert_eq!(loin, (1_000, 800 - 91));
+        let avant = hung_from(image, (-5_000, -5_000), (91, 91));
+        assert_eq!(avant, (100 + 91, 200));
     }
 
     #[test]

@@ -412,6 +412,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : **les deux coins du bas de l'image sont arrondis**, exactement comme ceux de la fenêtre, comme n'importe quelle fenêtre de Windows 11. Pas de rectangle à angles droits dans un rectangle à angles arrondis.
 >
 > Windows arrondit les coins de toutes les fenêtres, et l'image est une fenêtre à part qui reste un rectangle : c'est elle qui est découpée pour suivre. Seulement en bas, le haut de l'image étant sous la barre de titre, là où le cadre est droit. À vérifier aussi sur un écran agrandi : la courbe grandit avec le reste.
+>
+> **Puis l'inverse**, qui compte tout autant : passer en plein écran, et maximiser la fenêtre (double-clic sur la barre de titre). Dans ces deux cas, Windows dessine la fenêtre à **angles droits**, et l'image doit l'être aussi : aucun coin rogné, aucune morsure dans le bas de l'écran distant. Revenir en fenêtre : les coins se réarrondissent.
+
+> **S8quater (la fenêtre ne peut pas être réduite à un filet)**
+>
+> En fenêtre, pendant une session : attraper le bord **du bas** et le remonter aussi haut que la souris veut bien aller. Recommencer avec le bord du **haut**, puis avec un coin.
+>
+> Attendu : la fenêtre **s'arrête** à une taille où l'image et le bouton flottant tiennent encore. Elle ne devient jamais un filet, et **ZyrDesk ne se ferme pas**.
+>
+> Windows borne la taille d'une fenêtre qu'on redimensionne, puis nous laisse corriger la forme, et ne reborne pas ce qu'on lui rend : tenir une forme oblige donc à tenir aussi un plancher. Sans lui, tirer le bord du bas emmenait la fenêtre bien en dessous de tout ce que Windows aurait permis, et le bouton flottant n'ayant plus de place où se poser, le programme s'arrêtait net.
 
 > **S9 (l'image suit la fenêtre partout)**
 >
