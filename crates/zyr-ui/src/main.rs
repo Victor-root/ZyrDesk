@@ -5,10 +5,11 @@
 //! is what lets the window be closed, updated or killed in the middle of
 //! a session without the picture stopping.
 //!
-//! The video is never here either: the player is a separate native
-//! window, so nothing about this interface is on the path of a frame.
-//! The one thing this program keeps on screen during a session is the
-//! floating button, which is a window of its own.
+//! The video is never drawn here either: the player draws it in a window
+//! of its own, so nothing about this interface is on the path of a
+//! frame. That window is laid over the inside of this one and made to
+//! follow it, which is what puts one window on screen instead of two
+//! without a picture ever passing through a web view.
 
 // A second console window opening behind the interface would give the
 // game away immediately.
@@ -18,6 +19,7 @@ mod desk;
 mod floating;
 mod folders;
 mod journal;
+mod picture;
 mod service;
 mod session;
 mod settings;
@@ -47,6 +49,7 @@ fn main() {
 
     building
         .manage(floating::Floating::default())
+        .manage(picture::Picture::default())
         .manage(tray::Shown::default())
         .invoke_handler(tauri::generate_handler![
             desk::standing,
@@ -100,12 +103,21 @@ fn main() {
             // there is the one thing that stops the product. A window
             // whose cross cut a session in progress would be worse than
             // one that does not close at all.
-            if let WindowEvent::CloseRequested { api, .. } = event
-                && window.label() == HOME
-            {
-                api.prevent_close();
-                floating::Floating::put_away_on_purpose(window.app_handle());
-                let _ = window.hide();
+            if window.label() != HOME {
+                return;
+            }
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                // The picture is laid over the inside of this window and
+                // has to be laid again wherever the window goes, and at
+                // whatever size it takes.
+                WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
+                    picture::fit(window.app_handle());
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())
@@ -118,13 +130,6 @@ pub fn show_home(app: &tauri::AppHandle) {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
-    }
-}
-
-/// Puts the home window aside, without ending anything.
-pub fn hide_home(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window(HOME) {
-        let _ = window.hide();
     }
 }
 

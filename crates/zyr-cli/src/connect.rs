@@ -52,8 +52,8 @@ pub struct Args {
     #[arg(long, default_value = "auto")]
     codec: String,
 
-    /// Display: borderless, fullscreen (exclusive) or windowed
-    #[arg(long, default_value = "borderless")]
+    /// Display: fullscreen or windowed
+    #[arg(long, default_value = "fullscreen")]
     display: String,
 
     /// Shows the performance statistics over the video

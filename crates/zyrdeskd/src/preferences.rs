@@ -169,7 +169,7 @@ fn rendered(preferences: Preferences) -> String {
          {QUALITY} = {}\n\
          # Codec : auto, H.264, HEVC ou AV1.\n\
          {CODEC} = {}\n\
-         # Affichage : fullscreen, borderless ou windowed.\n\
+         # Affichage : fullscreen ou windowed.\n\
          {DISPLAY} = {}\n\
          # Souris du bureau plutôt que souris de jeu.\n\
          {ABSOLUTE_MOUSE} = {}\n\
@@ -259,7 +259,7 @@ mod tests {
             preferred: Preferred {
                 quality: Quality::Detailed,
                 codec: Codec::Hevc,
-                display_mode: DisplayMode::Borderless,
+                display_mode: DisplayMode::Windowed,
                 absolute_mouse: false,
                 stats_overlay: true,
             },

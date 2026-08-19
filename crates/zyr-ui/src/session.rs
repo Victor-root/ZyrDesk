@@ -104,12 +104,21 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         .parse()
         .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
 
+    let preferred = crate::settings::preferred().await;
+    // The window takes the screen before anything else does, so the
+    // opening is read on the same surface the picture will land on
+    // rather than in a small window that grows under the eye.
+    let _ = crate::picture::take_the_screen(
+        &app,
+        preferred.display_mode == zyr_proto::session::DisplayMode::Fullscreen,
+    );
+
     let wanted = Wanted {
         host: host.trim().to_string(),
         peer: Some(peer),
         // Read at the last moment rather than held: the settings screen
         // may have changed them since this window opened.
-        settings: crate::settings::preferred().await.settings(),
+        settings: preferred.settings(),
         pair_again: false,
     };
 
@@ -224,5 +233,7 @@ fn say(app: &AppHandle, what: Told) {
 
 fn finish(app: &AppHandle, ok: bool, message: String) {
     crate::floating::expect_nothing(app);
+    // The screen goes back to the person: what took it was the session.
+    let _ = crate::picture::take_the_screen(app, false);
     let _ = app.emit(ENDED, Finished { ok, message });
 }

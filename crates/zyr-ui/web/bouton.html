@@ -25,8 +25,11 @@
             <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3" />
             <path d="M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
           </svg>
-          <span class="item-mot">Plein écran</span>
-          <span class="item-touche">Ctrl+Alt+Maj+X</span>
+          <span class="item-mot">Fenêtré ou plein écran</span>
+          <!-- Rempli au chargement, comme celui du bas : c'est la fenêtre
+               de ZyrDesk qui bascule maintenant, et son raccourci se
+               choisit dans les réglages. -->
+          <span class="item-touche" id="touche-plein-ecran"></span>
         </button>
 
         <button class="item" type="button" data-acte="stats" role="menuitem">

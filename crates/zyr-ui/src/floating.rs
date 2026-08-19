@@ -11,13 +11,12 @@
 //! window of ours can be hit by the mouse without the engine having to
 //! hand it over.
 //!
-//! Two things make that work, and both are why a session runs in a
-//! borderless window rather than an exclusive one. A window that owns
-//! the screen exclusively lets nothing be drawn above it. And the
-//! pointer, in the ordinary desktop mode, stays free to leave the
-//! picture: it is hidden over the picture, where the far computer's own
-//! cursor stands in for it, and the system shows it again the moment it
-//! crosses onto this button.
+//! Two things make that work, and both are why no session ever takes the
+//! screen exclusively. A window that owns the screen lets nothing be
+//! drawn above it. And the pointer, in the ordinary desktop mode, stays
+//! free to leave the picture: it is hidden over the picture, where the
+//! far computer's own cursor stands in for it, and the system shows it
+//! again the moment it crosses onto this button.
 //!
 //! What the menu does, it asks of the engine through the engine's own
 //! keyboard shortcuts, aimed at the session window and at nothing else.
@@ -116,15 +115,16 @@ impl Act {
 
     /// Letter of the engine's Ctrl+Alt+Shift shortcut, for the ones that
     /// have one.
+    ///
+    /// Two do not. Closing the far computer's desktop is asked of that
+    /// computer over the tunnel, and covering the screen is done to our
+    /// own window, the engine's having gone inside it.
     fn letter(self) -> Option<u8> {
         match self {
-            Act::Fullscreen => Some(b'X'),
             Act::Stats => Some(b'S'),
             Act::MouseMode => Some(b'M'),
             Act::Leave => Some(b'Q'),
-            // Asked of the far computer over the tunnel, not of the
-            // player through its keyboard.
-            Act::Close => None,
+            Act::Fullscreen | Act::Close => None,
         }
     }
 
@@ -139,11 +139,10 @@ impl Act {
     /// nobody typed.
     fn where_it_sits(self) -> Option<u16> {
         match self {
-            Act::Fullscreen => Some(0x2D),
             Act::Stats => Some(0x1F),
             Act::MouseMode => Some(0x32),
             Act::Leave => Some(0x10),
-            Act::Close => None,
+            Act::Fullscreen | Act::Close => None,
         }
     }
 }
@@ -184,15 +183,6 @@ pub struct Floating {
     /// seconds after the picture. Whoever started the engine knows its
     /// number straight away, and the button hangs on nothing else.
     expected: Mutex<Option<u32>>,
-    /// Set while the home window is out of the way for a session.
-    ///
-    /// Two windows for one thing is one too many: the picture takes the
-    /// screen, and the window that asked for it has nothing left to say
-    /// until it is over. It steps aside when the picture arrives and
-    /// comes back when it goes. Told apart from a window the person put
-    /// away themselves, which must stay away, and which is also what
-    /// keeps a session from ending the whole program.
-    stepped_aside: std::sync::atomic::AtomicBool,
 }
 
 impl Floating {
@@ -211,14 +201,6 @@ impl Floating {
         app.state::<Floating>()
             .closing
             .swap(false, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Says the home window was put away by the person and not by a
-    /// session, so nothing brings it back on its own.
-    pub fn put_away_on_purpose(app: &AppHandle) {
-        app.state::<Floating>()
-            .stepped_aside
-            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -275,8 +257,17 @@ pub fn watch(app: AppHandle) {
         loop {
             tokio::time::sleep(LOOK).await;
             match player(&app).await {
-                Some(process) => raise(&app, process),
-                None => lower(&app),
+                Some(process) => {
+                    // The picture first: the button hangs from the corner
+                    // of it, and a corner read before the picture has
+                    // been laid in our window is the wrong corner.
+                    crate::picture::hold(&app, process);
+                    raise(&app, process);
+                }
+                None => {
+                    crate::picture::let_go(&app);
+                    lower(&app);
+                }
             }
         }
     });
@@ -303,17 +294,6 @@ fn raise(app: &AppHandle, process: u32) {
     let anchor = hung_from(picture, nudge);
     *watched = Some(Watched { process, anchor });
     drop(watched);
-
-    // The picture is up, so the window that asked for it steps aside:
-    // one thing is happening and it takes the screen. It comes back when
-    // the session does, and the icon beside the clock brings it back at
-    // any time in between.
-    if !crate::home_is_hidden(app) {
-        state
-            .stepped_aside
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        crate::hide_home(app);
-    }
 
     // A leftover window from a session that ended in a way we did not
     // see: put it where the new one is rather than open a second.
@@ -369,17 +349,8 @@ fn lower(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
-    // It stepped aside for this session, so it comes back with the end of
-    // it, and the person finds the window they left.
-    if state
-        .stepped_aside
-        .swap(false, std::sync::atomic::Ordering::Relaxed)
-    {
-        crate::show_home(app);
-        return;
-    }
-    // Put away on purpose instead, and only the button was keeping the
-    // program up. Nothing is left to keep.
+    // The home window had stepped aside for the session, and only the
+    // button was keeping the program up. Nothing is left to keep.
     if crate::home_is_hidden(app) {
         app.exit(0);
     }
@@ -559,6 +530,14 @@ pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
 
 /// The same, from anywhere in the program rather than from the menu.
 pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
+    // Ours to do, both of them, and neither goes through the engine's
+    // keyboard.
+    match act {
+        Act::Fullscreen => return crate::picture::toggle_the_screen(app),
+        Act::Close => return close_on_the_far_computer(app).await,
+        _ => {}
+    }
+
     let process = app
         .state::<Floating>()
         .watched
@@ -568,13 +547,8 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
         .map(|watched| watched.process)
         .ok_or("aucune session en cours")?;
 
-    match act.letter() {
-        Some(_) => {
-            put_the_picture_in_front(process).await?;
-            shortcut(act, process)
-        }
-        None => close_on_the_far_computer(app).await,
-    }
+    put_the_picture_in_front(process).await?;
+    shortcut(act, process)
 }
 
 /// Puts the picture back in front, and waits for it to actually be
@@ -823,6 +797,12 @@ fn main_window_of(process: u32) -> Option<windows_sys::Win32::Foundation::HWND> 
     biggest_window_of(process).map(|(window, _)| window)
 }
 
+/// That player's picture window, for whoever else needs to reach it.
+#[cfg(windows)]
+pub fn window_of(process: u32) -> Option<windows_sys::Win32::Foundation::HWND> {
+    main_window_of(process)
+}
+
 /// Where that player's picture is, as left, top, right and bottom in
 /// real pixels.
 #[cfg(windows)]
@@ -977,8 +957,7 @@ mod tests {
         // qui est gravé dessus : c'est par là que le moteur reconnaît
         // une touche en premier.
         for (name, letter, place) in [
-            ("fullscreen", b'X', 0x2Du16),
-            ("stats", b'S', 0x1F),
+            ("stats", b'S', 0x1Fu16),
             ("mouse", b'M', 0x32),
             ("leave", b'Q', 0x10),
         ] {
@@ -986,9 +965,17 @@ mod tests {
             assert_eq!(act.letter(), Some(letter), "sur « {name} »");
             assert_eq!(act.where_it_sits(), Some(place), "sur « {name} »");
         }
-        // Fermer pour de bon ne passe pas par le clavier du lecteur : ça
-        // se demande à l'ordinateur d'en face, à travers le tunnel.
-        assert_eq!(Act::read("close").expect("close").letter(), None);
+        // Deux ne passent pas par le clavier du lecteur : fermer pour de
+        // bon se demande à l'ordinateur d'en face à travers le tunnel, et
+        // couvrir l'écran se fait à notre propre fenêtre, celle du moteur
+        // étant posée dedans.
+        for name in ["close", "fullscreen"] {
+            assert_eq!(
+                Act::read(name).expect(name).letter(),
+                None,
+                "sur « {name} »"
+            );
+        }
         assert!(Act::read("teleport").is_none());
     }
 }

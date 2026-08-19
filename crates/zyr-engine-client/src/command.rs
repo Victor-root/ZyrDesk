@@ -46,8 +46,12 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         settings.fps.to_string(),
         "--bitrate".to_string(),
         settings.bitrate_kbps.to_string(),
+        // Always windowed: the picture is shown inside the product's
+        // own window, which puts the engine's window over it and takes
+        // its frame away. Whether that window covers the screen is a
+        // question for the window, not for the engine.
         "--display-mode".to_string(),
-        settings.display_mode.engine_value().to_string(),
+        "windowed".to_string(),
         "--video-codec".to_string(),
         settings.codec.engine_value().to_string(),
         "--video-decoder".to_string(),
@@ -101,7 +105,7 @@ mod tests {
             fps: 120,
             bitrate_kbps: 80_000,
             codec: Codec::Hevc,
-            display_mode: DisplayMode::Borderless,
+            display_mode: DisplayMode::Fullscreen,
             ..SessionSettings::default()
         };
         let args = session_arguments("host", &settings);
@@ -109,7 +113,7 @@ mod tests {
         assert_eq!(value_of(&args, "--fps"), Some("120"));
         assert_eq!(value_of(&args, "--bitrate"), Some("80000"));
         assert_eq!(value_of(&args, "--video-codec"), Some("HEVC"));
-        assert_eq!(value_of(&args, "--display-mode"), Some("borderless"));
+        assert_eq!(value_of(&args, "--display-mode"), Some("windowed"));
     }
 
     #[test]

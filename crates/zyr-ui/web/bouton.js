@@ -16,6 +16,7 @@ const vue = {
   menu: document.getElementById("menu"),
   souci: document.getElementById("souci"),
   retour: document.getElementById("retour"),
+  touchePleinEcran: document.getElementById("touche-plein-ecran"),
 };
 
 /* Le temps qu'un refus reste lisible avant de laisser la place. */
@@ -126,21 +127,23 @@ document.addEventListener("click", (evenement) => {
    retour après avoir masqué le bouton. */
 listen("floating-open", () => ouvre(true));
 
-/* Et il est écrit dans le menu, à côté de ce qui masque le bouton :
-   masquer sans savoir comment revenir est un aller simple. Lu à chaque
-   ouverture de session plutôt que gravé, puisqu'il se change dans les
-   réglages. */
-async function ditParOuOnRevient() {
+/* Les combinaisons se lisent dans le menu, à côté de ce qu'elles font.
+   Lues à chaque ouverture de session plutôt que gravées, puisqu'elles se
+   choisissent dans les réglages. Celle qui ramène le bouton compte
+   double : masquer sans savoir comment revenir est un aller simple. */
+async function ditLesRaccourcis() {
   const raccourcis = await invoke("shortcuts").catch(() => []);
-  const menu = raccourcis.find((raccourci) => raccourci.doing === "menu");
-  if (!menu?.combination) {
-    vue.retour.textContent = "jusqu'à la fin";
-    return;
-  }
   await litLePlanDuClavier();
-  vue.retour.textContent = ecritLaCombinaison(menu.combination);
+  const dit = (quoi, ou, sinon) => {
+    const trouve = raccourcis.find((raccourci) => raccourci.doing === quoi);
+    ou.textContent = trouve?.combination
+      ? ecritLaCombinaison(trouve.combination)
+      : sinon;
+  };
+  dit("menu", vue.retour, "jusqu'à la fin");
+  dit("fullscreen", vue.touchePleinEcran, "");
 }
 
-ditParOuOnRevient();
+ditLesRaccourcis();
 
 ajusteLaFenetre();

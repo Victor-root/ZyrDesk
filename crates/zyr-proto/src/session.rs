@@ -47,26 +47,32 @@ impl std::str::FromStr for Codec {
     }
 }
 
-/// How the session window sits on the screen.
+/// How the session sits on the screen.
 ///
-/// `Borderless` is the default rather than `Fullscreen`, which takes the
-/// screen exclusively: nothing can be drawn over an exclusive window,
-/// and the floating button of a session is drawn over it. On Windows 10
-/// and later the two cost the same, the engine's swap chain being of the
-/// kind the compositor hands the screen to directly.
+/// Two, and they describe the product's own window: the picture is shown
+/// inside it rather than in a window of the engine's, so how it is shown
+/// is a question about that window and not about the engine. The engine
+/// is always started windowed, its window is stripped of its frame and
+/// laid over ours, and it follows ours wherever it goes.
+///
+/// The exclusive full screen the engine can do is gone with that.
+/// Nothing can be drawn over a window that owns the screen exclusively,
+/// and the floating button of a session is drawn over it. It cost
+/// nothing to lose: on Windows 10 and later the compositor hands the
+/// screen straight to a swap chain of the kind the engine uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DisplayMode {
-    Fullscreen,
+    /// The window takes the whole screen.
     #[default]
-    Borderless,
+    Fullscreen,
+    /// An ordinary window, which can be moved and resized.
     Windowed,
 }
 
 impl DisplayMode {
-    pub fn engine_value(self) -> &'static str {
+    fn written(self) -> &'static str {
         match self {
             DisplayMode::Fullscreen => "fullscreen",
-            DisplayMode::Borderless => "borderless",
             DisplayMode::Windowed => "windowed",
         }
     }
@@ -74,7 +80,7 @@ impl DisplayMode {
 
 impl fmt::Display for DisplayMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.engine_value())
+        f.write_str(self.written())
     }
 }
 
@@ -84,7 +90,6 @@ impl std::str::FromStr for DisplayMode {
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         match text.to_ascii_lowercase().as_str() {
             "fullscreen" | "plein-ecran" => Ok(DisplayMode::Fullscreen),
-            "borderless" | "sans-bordure" => Ok(DisplayMode::Borderless),
             "windowed" | "fenetre" => Ok(DisplayMode::Windowed),
             _ => Err(format!("mode d'affichage inconnu : {text}")),
         }
@@ -308,11 +313,7 @@ mod tests {
         for codec in [Codec::Auto, Codec::H264, Codec::Hevc, Codec::Av1] {
             assert_eq!(codec.to_string().parse::<Codec>().unwrap(), codec);
         }
-        for mode in [
-            DisplayMode::Fullscreen,
-            DisplayMode::Borderless,
-            DisplayMode::Windowed,
-        ] {
+        for mode in [DisplayMode::Fullscreen, DisplayMode::Windowed] {
             assert_eq!(mode.to_string().parse::<DisplayMode>().unwrap(), mode);
         }
     }

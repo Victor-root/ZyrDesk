@@ -231,6 +231,18 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 
 ## Partie 4 : le bouton flottant
 
+> **R9bis (une seule fenêtre)**
+>
+> Pendant une session : regarder la barre des tâches et faire Alt+Tab.
+>
+> Attendu : **une seule entrée ZyrDesk**, jamais deux. L'image est dans la fenêtre ZyrDesk, qui garde sa barre de titre.
+>
+> Réglages, **Fenêtre de la session** sur « Fenêtre » : déplacer la fenêtre, la redimensionner, la passer d'un écran à l'autre. Attendu : l'image suit sans décoller, et elle n'est **jamais déformée** : elle garde ses proportions et laisse des bandes noires si la fenêtre n'a pas la même forme. Réduire la fenêtre puis la restaurer : l'image revient à sa place.
+>
+> Réglages sur « Plein écran » : à l'ouverture de la session, la fenêtre prend l'écran entier avant même l'image, et le rend à la fin de la session.
+>
+> L'entrée **Fenêtré ou plein écran** du menu flottant bascule cette fenêtre. Elle ne parle plus au moteur : c'est notre fenêtre qui change.
+
 > **R10 (il arrive avec l'image, pas avant)**
 >
 > Attendu : le logo ZyrDesk apparaît en haut à droite **une fois l'image affichée**, et pas pendant l'ouverture du tunnel.
