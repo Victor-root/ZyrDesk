@@ -21,6 +21,7 @@ mod journal;
 mod service;
 mod session;
 mod settings;
+mod shortcuts;
 mod startup;
 mod theme;
 mod tray;
@@ -67,9 +68,11 @@ fn main() {
             session::sessions,
             settings::settings,
             settings::choose,
+            shortcuts::shortcuts,
+            shortcuts::bind,
             floating::floating_size,
             floating::floating_hide,
-            floating::floating_move,
+            floating::floating_grab,
             floating::floating_act,
             theme::set_theme
         ])
@@ -85,6 +88,10 @@ fn main() {
             service::wake_the_service();
             tray::watch(app.handle().clone());
             floating::watch(app.handle().clone());
+            // A session gives the keyboard to the far computer, so what
+            // is left to us has to be asked of the system rather than
+            // waited for as an ordinary key press.
+            shortcuts::listen(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {

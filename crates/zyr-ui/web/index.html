@@ -398,6 +398,51 @@
             ></button>
           </div>
 
+          <!-- Pendant une session, le clavier appartient à l'ordinateur
+               distant : ces combinaisons sont retenues par Windows avant
+               d'arriver à quoi que ce soit, sinon elles partiraient en
+               face avec le reste. -->
+          <p class="section raccourcis-titre">Raccourcis clavier</p>
+          <p class="legende raccourcis-mot">
+            Ils marchent pendant une session, par-dessus l'image. Cliquez sur
+            une combinaison pour la changer, puis tapez-la. Échap annule,
+            Retour arrière la retire.
+          </p>
+
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Se déconnecter</span>
+              <span class="legende">
+                Quitte la session et laisse le bureau distant ouvert.
+              </span>
+            </div>
+            <button class="touche" type="button" data-raccourci="leave"></button>
+          </div>
+
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Ouvrir le menu flottant</span>
+              <span class="legende">
+                Le seul chemin de retour après avoir masqué le bouton.
+              </span>
+            </div>
+            <button class="touche" type="button" data-raccourci="menu"></button>
+          </div>
+
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Fenêtré ou plein écran</span>
+              <span class="legende">
+                Bascule l'image de l'un à l'autre.
+              </span>
+            </div>
+            <button
+              class="touche"
+              type="button"
+              data-raccourci="fullscreen"
+            ></button>
+          </div>
+
           <details class="avance">
             <summary class="section">Avancé</summary>
 
@@ -547,6 +592,7 @@
       <p class="code cache" id="ouverture-code"></p>
     </div>
 
+    <script src="touches.js"></script>
     <script src="accueil.js"></script>
   </body>
 </html>

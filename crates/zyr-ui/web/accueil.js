@@ -889,8 +889,115 @@ async function ouvrirReglages() {
   vue.reglages.showModal();
   dessineConfiance();
   dessineAuDemarrage();
-  await rafraichirReglages();
+  await Promise.all([rafraichirReglages(), rafraichirRaccourcis()]);
 }
+
+/* ---- Raccourcis clavier ------------------------------------------------ */
+
+/* Lire et écrire une combinaison vit dans « touches.js » : le bouton
+   flottant en a besoin aussi, pour dire lequel le ramène. */
+
+async function rafraichirRaccourcis() {
+  await litLePlanDuClavier();
+  const raccourcis = await invoke("shortcuts");
+  for (const raccourci of raccourcis) {
+    const bouton = vue.reglages.querySelector(
+      `[data-raccourci="${raccourci.doing}"]`,
+    );
+    if (bouton !== null) {
+      dessineRaccourci(bouton, raccourci.combination);
+    }
+  }
+}
+
+function dessineRaccourci(bouton, combinaison) {
+  bouton.dataset.combinaison = combinaison;
+  bouton.classList.remove("ecoute");
+  bouton.classList.toggle("vide", combinaison.length === 0);
+  bouton.textContent =
+    combinaison.length === 0 ? "Aucune" : ecritLaCombinaison(combinaison);
+}
+
+/* Une seule écoute à la fois : deux boutons qui attendent la même touche
+   se la partageraient. */
+let ecoute = null;
+
+function ecouteUneCombinaison(bouton) {
+  if (ecoute !== null) {
+    arreteDEcouter();
+  }
+  ecoute = bouton;
+  bouton.classList.add("ecoute");
+  bouton.textContent = "Tapez la combinaison…";
+  document.addEventListener("keydown", surLaTouche, true);
+}
+
+function arreteDEcouter() {
+  document.removeEventListener("keydown", surLaTouche, true);
+  const bouton = ecoute;
+  ecoute = null;
+  if (bouton !== null) {
+    dessineRaccourci(bouton, bouton.dataset.combinaison ?? "");
+  }
+}
+
+/* Les touches tenues seules ne valent rien : on les laisse passer et on
+   attend celle qui vient avec. */
+const TENUES = new Set(["Control", "Alt", "Shift", "Meta", "AltGraph"]);
+
+function surLaTouche(evenement) {
+  evenement.preventDefault();
+  evenement.stopPropagation();
+  if (TENUES.has(evenement.key)) {
+    return;
+  }
+
+  const bouton = ecoute;
+  if (evenement.key === "Escape") {
+    arreteDEcouter();
+    return;
+  }
+  if (evenement.key === "Backspace" || evenement.key === "Delete") {
+    poseLaCombinaison(bouton, "");
+    return;
+  }
+
+  const morceaux = [];
+  if (evenement.ctrlKey) morceaux.push("Ctrl");
+  if (evenement.altKey) morceaux.push("Alt");
+  if (evenement.shiftKey) morceaux.push("Shift");
+  if (evenement.metaKey) morceaux.push("Win");
+  morceaux.push(evenement.code);
+  poseLaCombinaison(bouton, morceaux.join("+"));
+}
+
+async function poseLaCombinaison(bouton, combinaison) {
+  document.removeEventListener("keydown", surLaTouche, true);
+  ecoute = null;
+  montre(vue.reglagesProbleme, false);
+  try {
+    await invoke("bind", {
+      doing: bouton.dataset.raccourci,
+      combination: combinaison,
+    });
+    dessineRaccourci(bouton, combinaison);
+  } catch (raison) {
+    soucis(String(raison));
+    dessineRaccourci(bouton, bouton.dataset.combinaison ?? "");
+  }
+}
+
+for (const bouton of vue.reglages.querySelectorAll("[data-raccourci]")) {
+  bouton.addEventListener("click", () => ecouteUneCombinaison(bouton));
+}
+
+/* Un clic ailleurs pendant qu'un bouton attend veut dire qu'on a changé
+   d'avis. */
+vue.reglages.addEventListener("click", (evenement) => {
+  if (ecoute !== null && !ecoute.contains(evenement.target)) {
+    arreteDEcouter();
+  }
+});
 
 async function ouvrirLesJournaux() {
   montre(vue.reglagesProbleme, false);

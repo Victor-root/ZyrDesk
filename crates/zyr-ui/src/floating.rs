@@ -30,7 +30,7 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 
 // What the button did goes into the same journal as everything else: the
 // window has nowhere else to say it, standing behind the picture, and a
@@ -40,6 +40,9 @@ use crate::journal::note;
 
 /// Name this window is known by, inside the program.
 pub const WINDOW: &str = "flottant";
+
+/// Name the page listens on to be told to show its menu.
+const OPEN: &str = "floating-open";
 
 /// How often the session is looked for.
 ///
@@ -54,6 +57,30 @@ const MARGIN: i32 = 16;
 /// chance to measure itself.
 const BUTTON: u32 = 52;
 
+/// How far the mouse has to travel, while holding the button, before it
+/// is a drag and no longer a click.
+///
+/// Without it a hand that shakes would move the button every time
+/// somebody wanted to open the menu, and the other way round.
+const GRIP: i32 = 4;
+
+/// How often the button catches up with the mouse while being dragged.
+const FOLLOW: Duration = Duration::from_millis(8);
+
+/// How long the picture is given to come back in front before an entry
+/// of the menu gives up on it.
+const FRONT_TAKES: Duration = Duration::from_millis(400);
+
+/// Pause between two looks at which window is in front.
+const FRONT_STEP: Duration = Duration::from_millis(10);
+
+/// How long a drag may last before it is called over.
+///
+/// A mouse unplugged mid-drag, or a button released where nothing
+/// noticed, would otherwise leave the button following a cursor nobody
+/// is holding for as long as the program runs.
+const AT_MOST: Duration = Duration::from_secs(60);
+
 /// What the menu can ask of the session.
 ///
 /// All but the last are shortcuts the engine already answers to, so
@@ -61,7 +88,7 @@ const BUTTON: u32 = 52;
 /// two entries and not one: leaving keeps the far computer's desktop
 /// open and waiting, closing hands it back.
 #[derive(Clone, Copy)]
-enum Act {
+pub enum Act {
     Fullscreen,
     Stats,
     MouseMode,
@@ -285,35 +312,85 @@ pub fn floating_hide(app: AppHandle) -> Result<(), String> {
     window.hide().map_err(|e| e.to_string())
 }
 
-/// Moves the button by what the mouse dragged it.
+/// Takes hold of the button, moves it with the mouse until it is let go,
+/// and says whether the whole thing turned out to be a plain click.
+///
+/// The gesture is followed here and not in the page. That window is
+/// fifty pixels wide: the mouse leaves it on the first movement, and
+/// what a web view reports as the place of a pointer is not always where
+/// that pointer is on the screen. Where the system says the cursor is is
+/// neither of those things, and it is always true.
+///
+/// Nothing is asked of the page while this runs, and the menu is left
+/// open if it was: a window that changes size under the mouse gets away
+/// from it.
+#[tauri::command]
+pub async fn floating_grab(app: AppHandle) -> Result<bool, String> {
+    let held = {
+        let state = app.state::<Floating>();
+        let watched = state.watched.lock().expect("session suivie");
+        watched.as_ref().map(|seen| (seen.process, seen.anchor))
+    };
+    let Some((process, from)) = held else {
+        return Ok(true);
+    };
+    // The picture is read once: it does not move while the button is
+    // being dragged over it, and looking for it again at every step
+    // would mean enumerating every window on the machine a hundred times
+    // a second.
+    let (Some(start), Some(picture)) = (cursor_now(), picture_of(process)) else {
+        return Ok(true);
+    };
+
+    let until = std::time::Instant::now() + AT_MOST;
+    let mut moved = false;
+    while held_down() && std::time::Instant::now() < until {
+        let Some(now) = cursor_now() else {
+            break;
+        };
+        let (dx, dy) = (now.0 - start.0, now.1 - start.1);
+        if moved || dx.abs() >= GRIP || dy.abs() >= GRIP {
+            moved = true;
+            slide(&app, picture, from, dx, dy)?;
+        }
+        tokio::time::sleep(FOLLOW).await;
+    }
+    Ok(!moved)
+}
+
+/// Puts the button where the mouse has dragged it to.
 ///
 /// The distance from the corner of the picture is what is remembered
 /// rather than the place on screen: a session opened later on another
 /// screen, or at another size, then finds the button where it was left
 /// rather than off the edge.
-#[tauri::command]
-pub fn floating_move(app: AppHandle, dx: i32, dy: i32) -> Result<(), String> {
+fn slide(
+    app: &AppHandle,
+    picture: (i32, i32, i32, i32),
+    from: (i32, i32),
+    dx: i32,
+    dy: i32,
+) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("le bouton flottant n'est plus là")?;
-    let state = app.state::<Floating>();
-
-    let mut watched = state.watched.lock().expect("session suivie");
-    let Some(seen) = watched.as_mut() else {
-        return Ok(());
-    };
-    let picture = picture_of(seen.process).ok_or("la fenêtre de la session a disparu")?;
-
-    let wanted = (seen.anchor.0 + dx, seen.anchor.1 + dy);
     let size = window.outer_size().map_err(|e| e.to_string())?;
-    seen.anchor = held_inside(wanted, picture, size.width as i32, size.height as i32);
-    *state.nudge.lock().expect("position du bouton") = (
-        seen.anchor.0 - (picture.2 - MARGIN),
-        seen.anchor.1 - (picture.1 + MARGIN),
+    let anchor = held_inside(
+        (from.0 + dx, from.1 + dy),
+        picture,
+        size.width as i32,
+        size.height as i32,
     );
 
-    let anchor = seen.anchor;
-    drop(watched);
+    let state = app.state::<Floating>();
+    if let Some(seen) = state.watched.lock().expect("session suivie").as_mut() {
+        seen.anchor = anchor;
+    }
+    *state.nudge.lock().expect("position du bouton") = (
+        anchor.0 - (picture.2 - MARGIN),
+        anchor.1 - (picture.1 + MARGIN),
+    );
+
     window
         .set_position(PhysicalPosition::new(
             anchor.0 - size.width as i32,
@@ -347,10 +424,28 @@ fn held_inside(
     )
 }
 
+/// Brings the button back and opens its menu.
+///
+/// What a shortcut needs to be able to do above all else: hiding the
+/// button is otherwise a decision with no way back before the session
+/// ends.
+pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(WINDOW)
+        .ok_or("aucune session en cours")?;
+    window.show().map_err(|e| e.to_string())?;
+    window.emit(OPEN, ()).map_err(|e| e.to_string())
+}
+
 /// Asks the session for something, in its own language.
 #[tauri::command]
 pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
     let act = Act::read(&what).ok_or_else(|| format!("action inconnue : {what}"))?;
+    ask(&app, act).await
+}
+
+/// The same, from anywhere in the program rather than from the menu.
+pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
     let process = app
         .state::<Floating>()
         .watched
@@ -361,9 +456,47 @@ pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
         .ok_or("aucune session en cours")?;
 
     match act.letter() {
-        Some(_) => shortcut(act, process),
-        None => close_on_the_far_computer(&app).await,
+        Some(_) => {
+            put_the_picture_in_front(process).await?;
+            shortcut(act, process)
+        }
+        None => close_on_the_far_computer(app).await,
     }
+}
+
+/// Puts the picture back in front, and waits for it to actually be
+/// there.
+///
+/// Keystrokes go to whatever window is in front. Clicking the button is
+/// not supposed to move the picture out of the way, but a web view can
+/// take the focus on its own; bringing the picture back is both the fix
+/// and what the person expects after using the menu.
+///
+/// The waiting is the whole point. Windows does not always change the
+/// front window on the spot: the ask is posted, the call returns, and a
+/// window read straight afterwards is still the old one. Asking once and
+/// believing the answer immediately is why every entry in this menu
+/// reported that the picture was not in front and did nothing.
+async fn put_the_picture_in_front(process: u32) -> Result<(), String> {
+    if in_front(process) {
+        return Ok(());
+    }
+    bring_forward(process);
+
+    let until = std::time::Instant::now() + FRONT_TAKES;
+    while std::time::Instant::now() < until {
+        tokio::time::sleep(FRONT_STEP).await;
+        if in_front(process) {
+            return Ok(());
+        }
+    }
+
+    note(&format!(
+        "la fenêtre du lecteur {process} n'est pas passée au premier plan"
+    ));
+    Err("la fenêtre de la session n'est pas au premier plan.\n  \
+         Cliquez d'abord dans l'image."
+        .to_string())
 }
 
 /// Hands the far computer's desktop back, instead of merely leaving it.
@@ -441,6 +574,45 @@ fn keep_out_of_the_way(window: &tauri::WebviewWindow) {
 
 #[cfg(not(windows))]
 fn keep_out_of_the_way(_window: &tauri::WebviewWindow) {}
+
+/// Where the mouse is on the screen, in real pixels.
+#[cfg(windows)]
+fn cursor_now() -> Option<(i32, i32)> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    let mut point = POINT { x: 0, y: 0 };
+    // SAFETY: the slot is ours, and a refusal is one of the answers.
+    if unsafe { GetCursorPos(&mut point) } != 0 {
+        Some((point.x, point.y))
+    } else {
+        None
+    }
+}
+
+/// Whether the left mouse button is down right now.
+///
+/// Asked of the system rather than waited for as an event: the window
+/// this is dragging is too small to keep the mouse inside it, and a
+/// release that happened over the picture is a release all the same.
+#[cfg(windows)]
+fn held_down() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+
+    // SAFETY: no argument, and the answer is a plain bit field.
+    let state = unsafe { GetAsyncKeyState(i32::from(VK_LBUTTON)) };
+    state as u16 & 0x8000 != 0
+}
+
+#[cfg(not(windows))]
+fn cursor_now() -> Option<(i32, i32)> {
+    None
+}
+
+#[cfg(not(windows))]
+fn held_down() -> bool {
+    false
+}
 
 /// That player's biggest window on screen, and where it sits.
 ///
@@ -534,15 +706,10 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         VK_MENU, VK_SHIFT,
     };
 
-    // Keystrokes go to whatever window is in front. Clicking the button
-    // is not supposed to move the picture out of the way, but a webview
-    // can take the focus on its own; bringing the picture back is both
-    // the fix and what the person expects after using the menu.
-    if !in_front(process) {
-        bring_forward(process);
-    }
-    // Still not there: the keys would land in someone else's lap, and a
-    // quit combo in the wrong window is not a mistake worth risking.
+    // The picture was brought in front and waited for by the caller. If
+    // it slipped away since, the keys would land in someone else's lap,
+    // and a quit combo in the wrong window is not a mistake worth
+    // risking.
     if !in_front(process) {
         note(&format!(
             "{act} refusé : la fenêtre au premier plan n'est pas celle du lecteur {process}"
@@ -642,6 +809,14 @@ fn in_front(process: u32) -> bool {
 #[cfg(not(windows))]
 fn shortcut(_act: Act, _process: u32) -> Result<(), String> {
     Err("les sessions ne tournent que sous Windows".to_string())
+}
+
+#[cfg(not(windows))]
+fn bring_forward(_process: u32) {}
+
+#[cfg(not(windows))]
+fn in_front(_process: u32) -> bool {
+    false
 }
 
 #[cfg(test)]

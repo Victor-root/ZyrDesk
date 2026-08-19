@@ -56,7 +56,9 @@
             <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
           </svg>
           <span class="item-mot">Masquer ce bouton</span>
-          <span class="item-touche">jusqu'à la fin</span>
+          <!-- Rempli au chargement par le raccourci réellement en place :
+               masquer sans dire comment revenir serait sans retour. -->
+          <span class="item-touche" id="retour"></span>
         </button>
 
         <button class="item" type="button" data-acte="leave" role="menuitem">
@@ -86,6 +88,7 @@
       </div>
     </div>
 
+    <script src="touches.js"></script>
     <script src="bouton.js"></script>
   </body>
 </html>

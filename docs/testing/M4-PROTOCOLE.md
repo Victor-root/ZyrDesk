@@ -227,7 +227,9 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Prendre le logo et le faire glisser ailleurs sur l'écran.
 >
-> Attendu : il suit la souris, se pose où on le lâche, et **n'ouvre pas** le menu à la fin du déplacement. Un clic net, sans bouger, ouvre le menu.
+> Attendu : il suit la souris sans décrocher, y compris quand le geste est rapide et large, se pose où on le lâche, et **n'ouvre pas** le menu à la fin du déplacement. Un clic net, sans bouger, ouvre le menu.
+>
+> Le geste est suivi par le système et non par la page : c'est ce qui permet à un bouton de cinquante pixels de rester sous une souris qui en sort au premier centimètre.
 
 > **R12 (chaque entrée du menu fait ce qu'elle dit)**
 >
@@ -238,10 +240,26 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > | Plein écran | La fenêtre de la session bascule |
 > | Statistiques | Les chiffres apparaissent puis disparaissent sur l'image |
 > | Souris bureau ou jeu | Le pointeur change de comportement |
-> | Masquer ce bouton | Le logo disparaît jusqu'à la fin de la session |
+> | Masquer ce bouton | Le logo disparaît, et l'entrée dit par quelle combinaison le rappeler |
 > | Quitter la session | L'image se ferme, la fenêtre ZyrDesk revient |
 >
-> Si une entrée ne fait rien : ouvrir le journal (partie 7) et regarder les lignes de « La fenêtre ». Elles disent ce que le bouton a demandé, et à quelle fenêtre.
+> Si une entrée ne fait rien : ouvrir le journal (partie 7) et regarder les lignes de « La fenêtre ». Elles disent ce que le bouton a demandé, et à quelle fenêtre. Une entrée ne peut agir que si l'image est au premier plan ; la remettre devant est fait avant chaque envoi, et attendu, parce que Windows ne change pas de fenêtre de tête sur-le-champ.
+
+> **R12bis (le bouton masqué revient)**
+>
+> Après avoir masqué le bouton, taper **Alt + ²** (la touche à gauche du 1).
+>
+> Attendu : le bouton reparaît, menu déjà ouvert. C'est le seul chemin de retour, et sans lui masquer serait un aller simple jusqu'à la fin de la session.
+>
+> Si rien ne se passe, le journal dit si Windows a pris la combinaison : elle peut être déjà tenue par un autre programme. Elle se change alors dans **Réglages, Raccourcis clavier**.
+
+> **R12ter (les raccourcis se choisissent)**
+>
+> Dans **Réglages**, section **Raccourcis clavier** : cliquer sur la combinaison en face de « Fenêtré ou plein écran », taper Ctrl + Alt + F, puis ouvrir une session et l'essayer.
+>
+> Attendu : la combinaison s'affiche telle qu'elle est gravée sur ce clavier, elle survit à la fermeture de la fenêtre, et elle bascule l'image. Échap pendant l'attente annule, Retour arrière retire la combinaison.
+>
+> Ce qui est retenu est la place de la touche et non le signe dessus : une combinaison choisie sur un clavier français reste sous les mêmes doigts sur un clavier anglais.
 
 > **R13 (fermer, et pas seulement quitter)**
 >

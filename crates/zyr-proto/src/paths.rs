@@ -123,6 +123,15 @@ pub fn preferences() -> PathBuf {
     data_dir().join("preferences.conf")
 }
 
+/// Key combinations the window answers to during a session.
+///
+/// Apart from the preferences because nobody else needs them: they say
+/// what a keyboard does on this machine, while the preferences say what
+/// a session looks like, which the service has to know.
+pub fn keyboard_shortcuts() -> PathBuf {
+    data_dir().join("keyboard-shortcuts.conf")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

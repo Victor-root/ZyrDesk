@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Builds the product icons from the two logo sources.
+"""Builds the product icons from the logo.
 
 Windows reads several sizes out of one .ico file and picks whichever
-fits the place it is drawing: the taskbar, the task manager, alt-tab,
-the desktop, the file properties dialog. Shipping only a large one makes
-Windows shrink it itself, badly, exactly where the icon is seen most.
+fits the place it is drawing: the taskbar, the title bar, the task
+manager, alt-tab, the desktop, the file properties dialog. Shipping only
+a large one makes Windows shrink it itself, badly, exactly where the
+icon is seen most.
 
-Two sources, because reducing a drawing is not the same as simplifying
-it. The full logo holds from forty-eight pixels up; below that its two
-overlapping screens touch and its Z falls under the pixel, so the small
-sizes are drawn from a mark made for them.
+One source for every size. A mark drawn for small sizes used to take
+over below forty-eight pixels, on the grounds that reducing a drawing is
+not the same as simplifying it. That is true and it was still the wrong
+call: it put a different logo in the taskbar and the title bar from the
+one beside the clock and inside the window, and two logos for one
+product is what the eye catches first. A logo is recognised before it is
+read.
 
-Every size is rendered from its own source at four times its final
-dimensions and then reduced, which keeps the diagonals of the Z clean
-instead of stepped. Each of those renders is handed to the .ico as it
-is: letting the file be built from the largest one alone would throw the
-whole point away.
+Every size is rendered at four times its final dimensions and then
+reduced, which keeps the diagonals of the Z clean instead of stepped.
+Each of those renders is handed to the .ico as it is: letting the file
+be built from the largest one alone would throw the whole point away.
 """
 
 import io
@@ -27,10 +30,6 @@ from PIL import Image
 
 # The sizes Windows actually asks for.
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-
-# Below this, the full logo stops being readable and the mark made for
-# small sizes takes over.
-DETAIL_HOLDS_FROM = 48
 
 # Rendering above the target size and reducing afterwards is what keeps
 # the small sizes readable; rendering straight at 16 pixels loses the
@@ -49,17 +48,12 @@ def drawn(source: pathlib.Path, size: int) -> Image.Image:
 
 
 def main() -> int:
-    full = HERE / "zyrdesk.svg"
-    small = HERE / "zyrdesk-petit.svg"
-    for source in (full, small):
-        if not source.is_file():
-            print(f"logo introuvable : {source}", file=sys.stderr)
-            return 1
+    logo = HERE / "zyrdesk.svg"
+    if not logo.is_file():
+        print(f"logo introuvable : {logo}", file=sys.stderr)
+        return 1
 
-    layers = [
-        drawn(full if size >= DETAIL_HOLDS_FROM else small, size) for size in SIZES
-    ]
-    by_size = dict(zip(SIZES, layers))
+    by_size = {size: drawn(logo, size) for size in SIZES}
 
     # The largest carries the file; the others ride along and are used
     # as they are, each at its own size.

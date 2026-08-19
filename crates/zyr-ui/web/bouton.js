@@ -8,12 +8,14 @@
 */
 
 const invoke = window.__TAURI__.core.invoke;
+const listen = window.__TAURI__.event.listen;
 
 const vue = {
   paquet: document.getElementById("paquet"),
   logo: document.getElementById("logo"),
   menu: document.getElementById("menu"),
   souci: document.getElementById("souci"),
+  retour: document.getElementById("retour"),
 };
 
 /* Le temps qu'un refus reste lisible avant de laisser la place. */
@@ -67,58 +69,31 @@ async function demande(acte) {
   }
 }
 
-/* ---- Déplacer le bouton ------------------------------------------------ */
+/* ---- Prendre et déplacer le bouton ------------------------------------- */
 
-/* Le bouton se prend et se pose où on veut sur l'image. Un clic net
-   ouvre le menu ; dès que la souris s'écarte un peu, c'est un
-   déplacement et plus un clic. Sans ce seuil, une main qui tremble
-   ouvrirait le menu à chaque fois qu'on veut bouger le bouton, ou
-   l'inverse. */
-const SEUIL = 4;
-
-let prise = null;
-let deplace = false;
-
-vue.logo.addEventListener("pointerdown", (evenement) => {
-  prise = { x: evenement.screenX, y: evenement.screenY };
-  deplace = false;
-  vue.logo.setPointerCapture(evenement.pointerId);
-});
-
-vue.logo.addEventListener("pointermove", (evenement) => {
-  if (prise === null) {
+/* Le bouton se prend et se pose où on veut sur l'image. Tout le geste
+   est suivi côté Rust, et non ici : cette fenêtre fait cinquante
+   pixels, la souris en sort au premier mouvement, et ce qu'une vue web
+   rapporte de la position d'un pointeur n'est pas toujours l'endroit où
+   ce pointeur se trouve à l'écran. La page dit seulement quand le
+   bouton est pris, et apprend à la fin si c'était un déplacement ou un
+   simple clic. */
+vue.logo.addEventListener("pointerdown", async (evenement) => {
+  if (evenement.button !== 0) {
     return;
   }
-  const dx = evenement.screenX - prise.x;
-  const dy = evenement.screenY - prise.y;
-  if (!deplace && Math.abs(dx) < SEUIL && Math.abs(dy) < SEUIL) {
-    return;
+  const clic = await invoke("floating_grab").catch(() => false);
+  if (clic) {
+    ouvre(!ouvert);
   }
-  if (!deplace) {
-    deplace = true;
-    // Une fenêtre qui change de taille pendant qu'on la déplace se
-    // dérobe sous la souris : le menu se referme d'abord.
-    ouvre(false);
-  }
-  prise = { x: evenement.screenX, y: evenement.screenY };
-  invoke("floating_move", { dx, dy }).catch(() => {});
 });
 
-vue.logo.addEventListener("pointerup", (evenement) => {
-  vue.logo.releasePointerCapture(evenement.pointerId);
-  prise = null;
-});
-
-/* L'ouverture reste sur le clic et non sur le relâchement : c'est aussi
-   ce que produit la touche Entrée sur un bouton, et le menu doit
-   s'ouvrir au clavier comme à la souris. Un déplacement qui vient de se
-   terminer produit un clic lui aussi, qu'on laisse passer. */
-vue.logo.addEventListener("click", () => {
-  if (deplace) {
-    deplace = false;
-    return;
+/* Le clavier ne passe pas par le pointeur : la touche Entrée produit un
+   clic sans lui, et c'est le seul qui arrive jusqu'ici. */
+vue.logo.addEventListener("click", (evenement) => {
+  if (evenement.detail === 0) {
+    ouvre(!ouvert);
   }
-  ouvre(!ouvert);
 });
 
 for (const item of document.querySelectorAll("[data-acte]")) {
@@ -140,5 +115,27 @@ document.addEventListener("click", (evenement) => {
     ouvre(false);
   }
 });
+
+/* Le raccourci clavier : la fenêtre a déjà été remontrée quand ceci
+   arrive, il ne reste que le menu à ouvrir. C'est le seul chemin de
+   retour après avoir masqué le bouton. */
+listen("floating-open", () => ouvre(true));
+
+/* Et il est écrit dans le menu, à côté de ce qui masque le bouton :
+   masquer sans savoir comment revenir est un aller simple. Lu à chaque
+   ouverture de session plutôt que gravé, puisqu'il se change dans les
+   réglages. */
+async function ditParOuOnRevient() {
+  const raccourcis = await invoke("shortcuts").catch(() => []);
+  const menu = raccourcis.find((raccourci) => raccourci.doing === "menu");
+  if (!menu?.combination) {
+    vue.retour.textContent = "jusqu'à la fin";
+    return;
+  }
+  await litLePlanDuClavier();
+  vue.retour.textContent = ecritLaCombinaison(menu.combination);
+}
+
+ditParOuOnRevient();
 
 ajusteLaFenetre();

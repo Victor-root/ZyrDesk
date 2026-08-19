@@ -538,6 +538,51 @@
   min-width: 0;
 }
 
+/* ---- Raccourcis clavier ---------------------------------------------- */
+
+.raccourcis-titre {
+  padding-top: var(--pas-4);
+}
+
+.raccourcis-mot {
+  padding-bottom: var(--pas-2);
+}
+
+/* Une combinaison se lit comme des touches, pas comme une phrase : le
+   caractère fixe met le même espace sous chaque signe, et le cadre dit
+   qu'on peut cliquer dessus pour la changer. */
+.touche {
+  flex: none;
+  min-width: 150px;
+  padding: var(--pas-2) var(--pas-3);
+  border: 1px solid var(--trait-fort);
+  border-radius: var(--rayon-petit);
+  background: var(--surface-2);
+  font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: var(--legende);
+  color: var(--texte);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--duree-courte) var(--courbe),
+    color var(--duree-courte) var(--courbe);
+}
+
+.touche:hover {
+  border-color: var(--accent);
+}
+
+.touche.vide {
+  color: var(--texte-faible);
+}
+
+/* Pendant qu'elle attend la combinaison, elle est la seule chose qui
+   compte à l'écran et le dit. */
+.touche.ecoute {
+  border-color: var(--accent);
+  color: var(--accent-vif);
+}
+
 /* Le jargon se range ici : replié par défaut, il ne pèse pas sur ceux
    qui n'en veulent pas et reste à un clic pour les autres. */
 .avance > summary {
