@@ -75,8 +75,12 @@ Pile de patchs prévue (le manifeste `patches/MANIFEST.md` fait foi) :
 | P-M2 | Rebranding : titre de la fenêtre vidéo, icônes, noms d'organisation/produit, métadonnées de l'exécutable, nom affiché par le mélangeur de volume | mécanique | Appliqué |
 | P-M5 | Codes de sortie distincts (fin normale / session en échec / machine injoignable / appairage refusé) câblés dans les fins de commande | inclus dans P-M1 | Appliqué |
 | P-M6 | Le moteur ne s'annonce plus (présence Discord) et ne joint plus le site du projet d'origine (compatibilité, correspondances de manettes) | ~15 lignes, que du retrait | Appliqué |
+| P-M7 | Fermeture de l'application sur l'hôte en ligne de commande, sans fenêtre, avec un code de sortie propre | ~40 lignes | Appliqué |
+| P-M8 | L'appairage réussi est écrit sur le disque avant que le moteur ne s'arrête | ~15 lignes | Appliqué |
 | P-M3 | Ligne de statistiques périodique lisible par machine sur stdout | ~60 lignes | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Interrupteur pour ne pas demander le chiffrement vidéo interne (Moonlight le demande par défaut sur CPU avec accélération AES) | ~10 lignes | Contingence : seulement si la vérification M1 montre que Sunshine chiffre quand même en mode 0 sur loopback (double chiffrement inutile) |
+
+Le plafond de six est atteint. Le prochain besoin qui semble demander un patch se traite en amont ou par une interface officielle, pas en empilant un septième : c'est exactement le signal que ce plafond existe pour donner.
 
 ## 5. Schéma d'adressage loopback côté client
 
