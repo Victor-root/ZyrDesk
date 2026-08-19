@@ -399,8 +399,8 @@ fn lay_it_out(
     use windows_sys::Win32::Foundation::{POINT, RECT};
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_NOACTIVATE, SWP_NOCOPYBITS,
-        SWP_SHOWWINDOW, SetWindowPos,
+        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+        SWP_NOCOPYBITS, SWP_SHOWWINDOW, SetWindowPos,
     };
 
     // Nothing to lay the picture on. Minimised, our window has no inside
@@ -432,6 +432,9 @@ fn lay_it_out(
     unsafe { ClientToScreen(home, &mut corner) };
 
     let (width, height) = (inside.right - inside.left, inside.bottom - inside.top);
+    let dragged = DRAGGED.load(Ordering::Relaxed);
+
+    let started = std::time::Instant::now();
     // SAFETY: the engine's window is one we have already taken in hand.
     //
     // Shown without being activated: asked to show itself the ordinary
@@ -441,6 +444,18 @@ fn lay_it_out(
     // system would otherwise copy a corner of the old picture into the
     // new frame and leave it there until the engine draws again, which
     // is a torn image on every step of a resize.
+    //
+    // Handed over rather than waited for while a hand is dragging. That
+    // window belongs to another program, so moving it the ordinary way
+    // means standing still until that program has answered, and it is
+    // busy decoding and drawing sixty pictures a second. Once at the end
+    // of the drag nobody notices; a hundred times while the hand moves,
+    // it is our own window that stops following the mouse.
+    //
+    // Only while dragging. Handed over, the picture arrives a frame
+    // behind, which is invisible under a moving hand and would not be
+    // when the hand stops: the last word is always the ordinary way,
+    // said from the end of the drag.
     unsafe {
         SetWindowPos(
             engine,
@@ -449,11 +464,113 @@ fn lay_it_out(
             corner.y,
             width,
             height,
-            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOCOPYBITS,
+            SWP_NOACTIVATE
+                | SWP_SHOWWINDOW
+                | SWP_NOCOPYBITS
+                | if dragged { SWP_ASYNCWINDOWPOS } else { 0 },
         )
     };
-    round_the_bottom(home, engine, width, height);
+    let laid = started.elapsed();
+
+    // Not while a hand is dragging. Giving a window a shape costs a
+    // shape built, a shape handed over and a window told to think again,
+    // and the two corners it buys are two corners nobody is looking at
+    // during a drag. Done once, when the hand lets go.
+    let shaped = std::time::Instant::now();
+    if !dragged {
+        round_the_bottom(home, engine, width, height);
+    }
+    let shaped = shaped.elapsed();
+
+    let buttoned = std::time::Instant::now();
     crate::floating::lay_the_button((corner.x, corner.y, corner.x + width, corner.y + height));
+    let buttoned = buttoned.elapsed();
+
+    if dragged {
+        Cost::add(&LAYING, laid + shaped + buttoned);
+        Cost::add(&PICTURE, laid);
+        Cost::add(&BUTTON, buttoned);
+    }
+}
+
+/// What one part of a resize costs, counted while a hand is dragging and
+/// said out loud when it lets go.
+///
+/// Kept because there is no other way to know. Everything a resize moves
+/// belongs to somebody else — the system, another program, a web view —
+/// and which of them is slow cannot be guessed at from the outside; it
+/// has been guessed at twice already, wrongly both times. One line at the
+/// end of a drag settles it, and costs nothing until somebody drags.
+struct Cost {
+    times: std::sync::atomic::AtomicU32,
+    total: std::sync::atomic::AtomicU64,
+    worst: std::sync::atomic::AtomicU64,
+}
+
+impl Cost {
+    const fn new() -> Self {
+        Self {
+            times: std::sync::atomic::AtomicU32::new(0),
+            total: std::sync::atomic::AtomicU64::new(0),
+            worst: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    fn add(what: &Cost, took: std::time::Duration) {
+        let micros = took.as_micros() as u64;
+        what.times.fetch_add(1, Ordering::Relaxed);
+        what.total.fetch_add(micros, Ordering::Relaxed);
+        what.worst.fetch_max(micros, Ordering::Relaxed);
+    }
+
+    fn forget(what: &Cost) {
+        what.times.store(0, Ordering::Relaxed);
+        what.total.store(0, Ordering::Relaxed);
+        what.worst.store(0, Ordering::Relaxed);
+    }
+
+    /// Total and worst of it, in milliseconds, and how many times.
+    fn told(what: &Cost) -> (u32, f64, f64) {
+        (
+            what.times.load(Ordering::Relaxed),
+            what.total.load(Ordering::Relaxed) as f64 / 1000.0,
+            what.worst.load(Ordering::Relaxed) as f64 / 1000.0,
+        )
+    }
+}
+
+/// Laying the whole session out: the picture, its shape and the button.
+static LAYING: Cost = Cost::new();
+/// Of that, moving the picture, which belongs to the engine's own program.
+static PICTURE: Cost = Cost::new();
+/// Of that, moving the floating button, which is ours.
+static BUTTON: Cost = Cost::new();
+/// What the system and the toolkit do with the resize before we get to
+/// it: our own window moved, and the web view under the picture told to
+/// take the new size.
+static SYSTEM: Cost = Cost::new();
+
+/// Starts counting, a drag having begun.
+fn count_the_drag() {
+    for what in [&LAYING, &PICTURE, &BUTTON, &SYSTEM] {
+        Cost::forget(what);
+    }
+}
+
+/// Says what the drag cost, and where.
+fn tell_the_drag() {
+    let (steps, laying, worst) = Cost::told(&LAYING);
+    if steps == 0 {
+        return;
+    }
+    let (_, picture, picture_worst) = Cost::told(&PICTURE);
+    let (_, button, _) = Cost::told(&BUTTON);
+    let (_, system, system_worst) = Cost::told(&SYSTEM);
+    crate::journal::note(&format!(
+        "redimensionnement : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
+         dont image {picture:.0} ms (pire {picture_worst:.1}) et bouton {button:.0} ms ; \
+         système et vue web {system:.0} ms (pire {system_worst:.1})"
+    ));
 }
 
 /// Rounds the two bottom corners of the picture, to the curve the system
@@ -640,10 +757,24 @@ unsafe extern "system" fn lit(
             the_drag_keeps_the_shape(window, wparam as u32, wanted);
             1
         }
-        WM_ENTERSIZEMOVE | WM_EXITSIZEMOVE => {
-            DRAGGED.store(message == WM_ENTERSIZEMOVE, Ordering::Relaxed);
+        WM_ENTERSIZEMOVE => {
+            DRAGGED.store(true, Ordering::Relaxed);
+            count_the_drag();
             // SAFETY: the arguments the system handed in, untouched.
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
+        }
+        WM_EXITSIZEMOVE => {
+            DRAGGED.store(false, Ordering::Relaxed);
+            tell_the_drag();
+            // SAFETY: the arguments the system handed in, untouched.
+            let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
+            // The shape was left alone while the hand was moving; the
+            // hand has stopped.
+            let engine = ENGINE.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
+            if !engine.is_null() {
+                lay_it_out(window, engine);
+            }
+            answer
         }
         // Our window has just moved, been resized, shown or hidden: the
         // picture and the button go with it, here and now.
@@ -655,8 +786,16 @@ unsafe extern "system" fn lit(
         WM_WINDOWPOSCHANGED => {
             // SAFETY: the arguments the system handed in, untouched. Let
             // the system finish moving this window before the picture is
-            // laid on what it has become.
+            // laid on what it has become. What that costs is counted:
+            // most of it is not ours, our own window being carried by the
+            // toolkit and a web view under the picture being told to take
+            // the new size, and knowing which is which is the whole point
+            // of counting.
+            let waited = std::time::Instant::now();
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
+            if DRAGGED.load(Ordering::Relaxed) {
+                Cost::add(&SYSTEM, waited.elapsed());
+            }
             let engine = ENGINE.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
             if !engine.is_null() {
                 lay_it_out(window, engine);
