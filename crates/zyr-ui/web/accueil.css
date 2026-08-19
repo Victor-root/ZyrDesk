@@ -305,17 +305,90 @@
   white-space: nowrap;
 }
 
-/* ---- Étape en cours -------------------------------------------------- */
+/* ---- Ouverture d'une session ----------------------------------------- */
 
-/* Le bleu de ce qui s'ouvre, quand le vert de la carte du dessus est
-   celui de ce qui tourne déjà. */
-.etape {
+/* Elle couvre la fenêtre. Une session met quelques secondes à s'ouvrir
+   et la seule question pendant ce temps est de savoir si ça avance :
+   une carte parmi d'autres y répond moins bien que l'écran entier. Le
+   fond est opaque, pas voilé, parce que ce qu'il y a derrière n'est plus
+   d'actualité. */
+.ouverture {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: var(--pas-2);
-  padding: var(--pas-5);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--trait));
-  background: var(--accent-voile);
+  align-items: center;
+  justify-content: center;
+  gap: var(--pas-4);
+  padding: var(--pas-6);
+  text-align: center;
+  background: var(--fond);
+  animation: apparait var(--duree) var(--courbe);
+}
+
+.ouverture-marque {
+  opacity: 0.9;
+}
+
+.ouverture-titre {
+  font-size: var(--titre);
+  font-weight: 600;
+  color: var(--texte);
+}
+
+.ouverture-vers {
+  font-size: var(--corps);
+  color: var(--texte-doux);
+  max-width: 32ch;
+  overflow-wrap: anywhere;
+}
+
+/* Une barre qui va et vient. Elle ne mesure rien : ce qu'on attend ici
+   ne se découpe pas en pourcentages, et une barre qui prétendrait le
+   contraire mentirait. Elle dit seulement que ce n'est pas figé. */
+.ouverture-fil {
+  width: min(260px, 60vw);
+  height: 3px;
+  border-radius: var(--rayon-rond);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.ouverture-fil > span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: va-et-vient 1.4s var(--courbe) infinite;
+}
+
+@keyframes va-et-vient {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+.ouverture-detail {
+  font-size: var(--legende);
+  color: var(--texte-faible);
+  max-width: 44ch;
+  min-height: 1.4em;
+}
+
+/* Le réglage général raccourcit les animations à un battement, ce qui
+   suffit pour celles qui se jouent une fois. Une boucle raccourcie de la
+   même façon se met à clignoter : celle-ci s'arrête, et la barre reste
+   pleine. */
+@media (prefers-reduced-motion: reduce) {
+  .ouverture-fil > span {
+    width: 100%;
+    animation: none !important;
+  }
 }
 
 /* ---- Dialogue -------------------------------------------------------- */

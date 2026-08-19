@@ -32,10 +32,10 @@ const vue = {
   connecter: document.getElementById("connecter"),
   ecrits: document.getElementById("ecrits"),
   listeEcrits: document.getElementById("liste-ecrits"),
-  etape: document.getElementById("etape"),
-  etapeTitre: document.getElementById("etape-titre"),
-  etapeDetail: document.getElementById("etape-detail"),
-  etapeCode: document.getElementById("etape-code"),
+  ouverture: document.getElementById("ouverture"),
+  ouvertureVers: document.getElementById("ouverture-vers"),
+  ouvertureDetail: document.getElementById("ouverture-detail"),
+  ouvertureCode: document.getElementById("ouverture-code"),
   probleme: document.getElementById("probleme"),
   problemeTexte: document.getElementById("probleme-texte"),
   ouvrirJournal: document.getElementById("ouvrir-journal"),
@@ -604,7 +604,11 @@ async function lance(adresse, empreinte) {
   ouverture = true;
   dessine();
   montre(vue.probleme, false);
-  etape("Ouverture du tunnel…", `Vers ${adresse.trim()}.`, null);
+  // Le nom plutôt que l'adresse quand on l'a : personne ne reconnaît son
+  // ordinateur portable à ses quatre nombres.
+  const vise = voisins.find((v) => v.fingerprint === empreinte);
+  vue.ouvertureVers.textContent = vise?.name || adresse.trim();
+  etape("Ouverture du tunnel…", null);
 
   try {
     await invoke("connect", { host: adresse, fingerprint: empreinte });
@@ -615,21 +619,23 @@ async function lance(adresse, empreinte) {
 
 /* ---- Ce qui se passe pendant l'ouverture ------------------------------ */
 
-function etape(titre, detail, code) {
-  vue.etapeTitre.textContent = titre;
-  vue.etapeDetail.textContent = detail;
-  vue.etapeCode.textContent = code ?? "";
-  montre(vue.etapeCode, code !== null);
-  montre(vue.etape, true);
+/* Le titre de cet écran ne bouge pas : ce qui s'y passe est toujours la
+   même chose, et un titre qui change à chaque étape se lit comme des
+   nouvelles alors que ce n'en est pas. Seule la ligne du bas suit. */
+function etape(detail, code) {
+  vue.ouvertureDetail.textContent = detail;
+  vue.ouvertureCode.textContent = code ?? "";
+  montre(vue.ouvertureCode, code !== null);
+  montre(vue.ouverture, true);
 }
 
 /* La fenêtre n'a plus rien à raconter : ce qui se passe maintenant se lit
    dans ce que tient le service. Le bandeau ne s'efface qu'une fois la
    réponse arrivée, sinon la page se vide le temps d'un aller-retour. */
-async function rangeEtape() {
+async function rangeOuverture() {
   ouverture = false;
   await rafraichirLeReseau();
-  montre(vue.etape, false);
+  montre(vue.ouverture, false);
 }
 
 /* Le bandeau du haut. Il sert aux deux : ce qui a échoué, et ce qui a
@@ -643,51 +649,45 @@ function annonce(texte, ennui = false) {
 
 function echoue(texte) {
   annonce(texte, true);
-  rangeEtape();
+  rangeOuverture();
 }
 
 listen("session-step", ({ payload }) => {
   switch (payload.kind) {
     case "reached":
-      etape(
-        "Tunnel établi",
-        `Taille de paquet : ${payload.packet} octets.`,
-        null,
-      );
+      etape(`Tunnel établi, paquets de ${payload.packet} octets.`, null);
       break;
     case "pairing":
       etape(
         payload.again
-          ? "Cet ordinateur ne nous reconnaît plus"
-          : "Premier accès à cet ordinateur",
-        "Les deux ordinateurs font connaissance. Rien à faire.",
+          ? "Cet ordinateur ne nous reconnaît plus : les deux font connaissance à nouveau. Rien à faire."
+          : "Premier accès à cet ordinateur : les deux font connaissance. Rien à faire.",
         null,
       );
       break;
     case "pairingNeeded":
       etape(
-        "Autorisation nécessaire",
         "Tapez ce code sur l'ordinateur que vous voulez contrôler :",
         payload.pin,
       );
       break;
     case "paired":
-      etape("Autorisé", "Démarrage de la session…", null);
+      etape("Les deux ordinateurs se connaissent.", null);
       break;
     case "starting":
-      etape("Démarrage de la session…", "", null);
+      etape("Démarrage de l'image…", null);
       break;
     case "live":
       // À partir d'ici le service tient la session, et n'importe quelle
       // fenêtre la retrouve, y compris une autre que celle-ci.
-      rangeEtape();
+      rangeOuverture();
       break;
   }
 });
 
 listen("session-ended", ({ payload }) => {
   if (payload.ok) {
-    rangeEtape();
+    rangeOuverture();
   } else {
     echoue(payload.message);
   }

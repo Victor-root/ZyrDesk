@@ -178,13 +178,14 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Relancer l'application, cliquer sur la carte du PC hôte.
 >
-> Attendu, dans l'ordre, sur le PC client :
+> Attendu sur le PC client : la fenêtre entière passe sur « Établissement de la connexion », avec en dessous le nom de l'ordinateur visé (son adresse s'il n'a pas de nom), et une ligne qui suit ce qui se passe, dans l'ordre :
 >
 > 1. « Ouverture du tunnel… »
-> 2. « Tunnel établi », avec une taille de paquet
-> 3. « Premier accès à cet ordinateur : les deux ordinateurs font connaissance. Rien à faire. »
-> 4. « Démarrage de la session… »
-> 5. L'image du PC hôte, en plein écran
+> 2. « Tunnel établi, paquets de N octets. »
+> 3. « Premier accès à cet ordinateur : les deux font connaissance. Rien à faire. »
+> 4. « Les deux ordinateurs se connaissent. »
+> 5. « Démarrage de l'image… »
+> 6. L'image du PC hôte, en plein écran
 >
 > **Aucun code à quatre chiffres ne doit apparaître nulle part**, ni sur le PC client, ni sur le PC hôte. Et rien à faire sur le PC hôte pendant tout ce temps.
 >
@@ -195,6 +196,8 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > Quitter la session (Ctrl+Alt+Maj+Q), puis se reconnecter.
 >
 > Attendu : plus d'étape « Premier accès ». Le tunnel s'établit et l'image arrive. Les deux ordinateurs se connaissent maintenant.
+>
+> Deux choses se regardent ici, parce que c'est la session ordinaire. Le temps entre le clic et l'image se compte en secondes et non en dizaines de secondes : le moteur client s'arrêtait cinq à huit secondes à chaque session pour laisser lire des messages sur une fenêtre qu'il n'a pas. Et entre l'écran d'ouverture et l'image, sa fenêtre doit être sombre : un cadre clair, même un instant, veut dire que le moteur installé n'est pas celui que nous compilons.
 
 > **R8bis (l'ordinateur d'en face a oublié)**
 >

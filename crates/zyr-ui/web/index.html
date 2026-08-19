@@ -103,12 +103,6 @@
              fenêtre, y compris quand ce n'est pas elle qui l'a lancée. -->
         <div class="sessions cache" id="sessions"></div>
 
-        <div class="carte etape cache apparait" id="etape">
-          <p class="sous-titre" id="etape-titre"></p>
-          <p class="legende" id="etape-detail"></p>
-          <p class="code cache" id="etape-code"></p>
-        </div>
-
         <div class="bandeau alerte cache apparait" id="probleme">
           <span id="probleme-texte"></span>
         </div>
@@ -530,6 +524,28 @@
         </div>
       </div>
     </dialog>
+
+    <!-- Ce qui est à l'écran pendant qu'une session s'ouvre. Il prend la
+         fenêtre entière parce que c'est la seule chose qui se passe, et
+         parce que c'est la dernière chose qu'on lit avant que le moteur
+         pose sa propre fenêtre par-dessus : entre les deux il ne doit
+         jamais y avoir de trou où l'on se demande si ça marche. Le titre
+         ne bouge pas de toute l'ouverture ; ce qui change se lit en
+         dessous. -->
+    <div class="ouverture cache" id="ouverture">
+      <img
+        class="ouverture-marque"
+        src="zyrdesk.svg"
+        alt=""
+        width="56"
+        height="56"
+      />
+      <p class="ouverture-titre">Établissement de la connexion</p>
+      <p class="ouverture-vers" id="ouverture-vers"></p>
+      <div class="ouverture-fil" aria-hidden="true"><span></span></div>
+      <p class="ouverture-detail" id="ouverture-detail"></p>
+      <p class="code cache" id="ouverture-code"></p>
+    </div>
 
     <script src="accueil.js"></script>
   </body>
