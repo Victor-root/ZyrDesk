@@ -242,6 +242,13 @@ impl Ways {
         media: MediaProfile,
     ) -> Result<Reached, String> {
         let remote = resolve(host)?;
+        // Written down before anything is tried. What the person sees of
+        // a failure is a sentence in a window they will have closed by
+        // the time anyone looks; the trace is what remains, and it is
+        // worth as much as the attempt itself.
+        self.log
+            .write(&format!("opening a way to {remote}, expecting {peer}"));
+
         let identity =
             Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
 
@@ -259,6 +266,11 @@ impl Ways {
                     .lock()
                     .expect("registre des voies")
                     .give_back(device);
+                // Sur une ligne : un refus est écrit pour être lu à
+                // l'écran, sur plusieurs lignes, et le journal en compte
+                // une par événement.
+                self.log
+                    .write(&format!("no way to {remote}: {}", e.replace('\n', " ")));
                 Err(e)
             }
         }

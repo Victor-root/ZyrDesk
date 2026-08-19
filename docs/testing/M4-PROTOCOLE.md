@@ -42,19 +42,15 @@ Les moteurs ne sont retéléchargés que s'ils ont changé, ce qui arrive une po
 
 Windows classe chaque carte réseau en **privé** ou en **public**, et sur un réseau public il coupe la découverte : les deux ZyrDesk ne se verront jamais, quelles que soient les règles de pare-feu. Un portable en Wi-Fi hérite très souvent de « public » sans que personne ne le lui demande.
 
-À vérifier sur **les deux PC**, dans une fenêtre PowerShell administrateur :
+Rien à vérifier à la main : le journal le dit à chaque démarrage du service, une ligne par carte, `network Wi-Fi : Public` ou `network Ethernet : Private`.
 
-```
-Get-NetConnectionProfile | Select-Object Name, InterfaceAlias, NetworkCategory
-```
-
-Si la carte utilisée dit `Public`, la passer en privé, toujours sur le PC concerné :
+Si la carte qui porte l'adresse du réseau local dit `Public`, une ligne la passe en privé, dans une fenêtre PowerShell administrateur, sur le PC concerné :
 
 ```
 Set-NetConnectionProfile -InterfaceAlias "Wi-Fi" -NetworkCategory Private
 ```
 
-Remplacer `"Wi-Fi"` par ce que dit la colonne `InterfaceAlias`. Les cartes virtuelles d'autres logiciels peuvent rester en public : seule compte celle qui porte l'adresse du réseau local.
+Remplacer `"Wi-Fi"` par le nom de carte que donne le journal. Les cartes virtuelles d'autres logiciels peuvent rester en public : seule compte celle qui porte l'adresse du réseau local.
 
 ### Lancer l'application
 
@@ -326,11 +322,12 @@ La marche à suivre est toujours la même : ouvrir le journal, cliquer **Copier 
 
 Deux cas courants, et leur cause habituelle :
 
-- **Les ordinateurs ne se voient pas.** Le journal porte de quoi trancher, dans l'ordre où il faut le lire :
-  1. La ligne `Adresses` de l'entête, sur les deux machines : si les deux adresses ne sont pas sur le même sous-réseau, rien d'autre ne peut marcher.
-  2. Les lignes `announcing on …` et `announcement sent from …` du journal du service : elles nomment les cartes par lesquelles l'annonce sort réellement. Une machine qui n'annonce que par une carte virtuelle ou un VPN ne sera entendue de personne.
-  3. La ligne `firewall opened for ZyrDesk (réseau local)` : si elle manque, la règle n'a pas été posée, et un autre pare-feu que celui de Windows est probablement en cause.
-  4. Le profil du réseau, dans Windows : sur un réseau classé **public**, Windows coupe la découverte. Il doit être **privé** sur les deux machines. Cette classification se fait par carte, et un portable en Wi-Fi hérite très souvent de « public ».
+- **Les ordinateurs ne se voient pas.** Le journal porte de quoi trancher, sans rien lancer d'autre, dans l'ordre où il faut le lire :
+  1. `this computer answers at …`, sur les deux machines : si les deux adresses ne sont pas sur le même sous-réseau, rien d'autre ne peut marcher.
+  2. `network <carte> : Public` : sur un réseau classé public, Windows coupe la découverte, quelles que soient les règles de pare-feu. Il faut `Private` sur la carte qui porte l'adresse du réseau local, sur les deux machines.
+  3. `announcement sent from …` : les cartes par lesquelles l'annonce sort réellement. Une machine qui n'annonce que par une carte virtuelle ou un VPN ne sera entendue de personne.
+  4. `firewall rules laid for …` puis `firewall opened for …` : les règles sont réécrites à chaque démarrage, pour le programme nommé sur la ligne. Si elles manquent, un autre pare-feu que celui de Windows est probablement en cause.
+  5. `a question was answered from …` : cette machine reçoit bien du trafic sur cette carte. Si ces lignes sont là et qu'aucun ordinateur n'apparaît, ce qui est envoyé ne traverse pas le réseau entre les deux machines, ce qui arrive couramment entre le Wi-Fi et l'Ethernet d'une box.
 
   Le rattrapage R6bis permet de continuer sans attendre.
 - **La session est refusée avec un message d'ordinateur refusé.** La confiance au réseau local est coupée sur l'hôte (R19), ou son accès distant est désactivé (R20).

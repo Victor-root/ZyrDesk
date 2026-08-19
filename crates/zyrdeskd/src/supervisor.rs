@@ -393,7 +393,26 @@ fn announce(log: &Log) -> Result<zyr_lan::Neighbourhood, String> {
         zyr_lan::Neighbourhood::open(&name, identity.fingerprint(), move |what| heard.write(what))
             .map_err(|e| e.to_string())?;
     log.write(&format!("announced on the local network as {name}"));
+    say_where_this_computer_answers(log);
     Ok(neighbourhood)
+}
+
+/// Writes down where this computer answers, card by card.
+///
+/// The window's journal carries the same line, read live. It belongs
+/// here as well so that the service's own trace is enough on its own:
+/// two machines that never find each other are most often two machines
+/// on two different networks, and a trace that does not say which
+/// network turns that into an evening of questions.
+fn say_where_this_computer_answers(log: &Log) {
+    let answering = zyr_proto::machine::addresses();
+    if answering.is_empty() {
+        log.write("this computer has no address of its own on any network");
+        return;
+    }
+    for address in answering {
+        log.write(&format!("this computer answers at {address}"));
+    }
 }
 
 /// Everything one engine's life is lived against: what does not change

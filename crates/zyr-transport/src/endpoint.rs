@@ -248,11 +248,17 @@ impl TunnelEndpoint {
     }
 
     /// Waits for the remote device to connect.
+    ///
+    /// A refusal names where it came from. The address is read before the
+    /// handshake is awaited, since nothing of it survives a failure, and
+    /// without it « somebody was turned away » reads exactly like
+    /// « nobody came », which are the two halves of every fault here.
     pub async fn accept(&self) -> Result<Connection, EndpointError> {
         let incoming = self.endpoint.accept().await.ok_or(EndpointError::Closed)?;
+        let from = incoming.remote_address();
         let connection = incoming
             .await
-            .map_err(|e| EndpointError::Connection(e.to_string()))?;
+            .map_err(|e| EndpointError::Connection(format!("{from} : {e}")))?;
         Ok(Connection::new(connection))
     }
 
@@ -272,6 +278,11 @@ pub struct Connection {
 impl Connection {
     fn new(inner: quinn::Connection) -> Self {
         Self { inner }
+    }
+
+    /// Where the other end of this connection is.
+    pub fn remote_address(&self) -> SocketAddr {
+        self.inner.remote_address()
     }
 
     /// Payload one datagram can carry on the current path.

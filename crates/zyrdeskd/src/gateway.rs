@@ -133,14 +133,18 @@ impl Gateway {
         let identity =
             Identity::load_or_create(&paths::identity_dir()).map_err(io::Error::other)?;
         let list = paths::authorized_devices();
-        let allowed: AllowedPeers = let_in(authorized::read(&list)?, &neighbours, &remembered)
-            .into_iter()
-            .collect();
-        if allowed.is_empty() {
+        let starting = let_in(authorized::read(&list)?, &neighbours, &remembered);
+        let allowed: AllowedPeers = starting.iter().copied().collect();
+        if starting.is_empty() {
             log.write(
                 "nobody can reach this computer yet: no device written down, \
                  and no other ZyrDesk seen on the local network",
             );
+        }
+        // Nommés un par un. Une session refusée et une liste vide se
+        // ressemblent trop pour qu'on se contente d'un nombre.
+        for device in &starting {
+            log.write(&format!("{device} may come in"));
         }
 
         let endpoint = TunnelEndpoint::host(
@@ -167,6 +171,7 @@ impl Gateway {
                 runtime.spawn(keep_the_list_fresh(
                     list,
                     allowed,
+                    starting,
                     neighbours,
                     remembered,
                     log.clone(),
@@ -201,14 +206,15 @@ async fn serve(endpoint: TunnelEndpoint, attending: Arc<dyn Answers>, log: Log) 
 }
 
 async fn one_session(connection: zyr_transport::Connection, attending: Arc<dyn Answers>, log: Log) {
+    let from = connection.remote_address();
     let mut tunnel = match Tunnel::host(connection, ENGINE, attending).await {
         Ok(tunnel) => tunnel,
         Err(e) => {
-            log.write(&format!("session not opened: {e}"));
+            log.write(&format!("session from {from} not opened: {e}"));
             return;
         }
     };
-    log.write("session open");
+    log.write(&format!("session open with {from}"));
 
     let outcome = tunnel.wait().await;
     let reading = tunnel.reading();
@@ -223,21 +229,34 @@ async fn one_session(connection: zyr_transport::Connection, attending: Arc<dyn A
 
 /// Works the list of authorised devices out again, so a computer that
 /// has just appeared gets in without the service being restarted.
+///
+/// Every change is written down, and only the changes: the list is
+/// worked out afresh every few seconds, and saying so each time would
+/// bury everything else. What matters is the moment a computer starts or
+/// stops being let in, which is exactly what a refused session needs
+/// explaining.
 async fn keep_the_list_fresh(
     list: PathBuf,
     allowed: AllowedPeers,
+    starting: Vec<Fingerprint>,
     neighbours: Found,
     remembered: Remembered,
     log: Log,
 ) {
     let mut reported: Option<String> = None;
+    let mut known = starting;
     loop {
         match authorized::read(&list) {
             Ok(written) => {
                 if reported.take().is_some() {
                     log.write("authorised devices readable again");
                 }
-                allowed.replace_with(let_in(written, &neighbours, &remembered));
+                let now = let_in(written, &neighbours, &remembered);
+                for said in apart(&known, &now) {
+                    log.write(&said);
+                }
+                known = now.clone();
+                allowed.replace_with(now);
             }
             // What was already allowed stays allowed: a file being
             // rewritten must not cut the session in progress.
@@ -251,6 +270,25 @@ async fn keep_the_list_fresh(
         }
         tokio::time::sleep(AUTHORIZED_REFRESH).await;
     }
+}
+
+/// What changed between two states of the list, in words.
+///
+/// Nothing when nothing moved, which is the ordinary case a few times a
+/// minute for as long as the service runs.
+fn apart(before: &[Fingerprint], now: &[Fingerprint]) -> Vec<String> {
+    let mut said = Vec::new();
+    for device in now {
+        if !before.contains(device) {
+            said.push(format!("{device} may now come in"));
+        }
+    }
+    for device in before {
+        if !now.contains(device) {
+            said.push(format!("{device} may no longer come in"));
+        }
+    }
+    said
 }
 
 /// Everyone this computer lets in.
@@ -322,6 +360,26 @@ mod tests {
         // le transport consulte à chaque connexion.
         let devices = joined(vec![fingerprint(1)], vec![fingerprint(1), fingerprint(2)]);
         assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
+    }
+
+    #[test]
+    fn only_what_changed_in_the_list_is_worth_a_line() {
+        // La liste est refaite toutes les cinq secondes : le journal ne
+        // doit porter que les moments où elle bouge, sinon il n'y aura
+        // plus rien d'autre à y lire.
+        let un = fingerprint(1);
+        let deux = fingerprint(2);
+        assert!(apart(&[un, deux], &[un, deux]).is_empty());
+        assert!(apart(&[], &[]).is_empty());
+
+        let arrive = apart(&[un], &[un, deux]);
+        assert_eq!(arrive.len(), 1);
+        assert!(arrive[0].starts_with(&deux.to_string()), "{arrive:?}");
+        assert!(arrive[0].contains("may now come in"), "{arrive:?}");
+
+        let part = apart(&[un, deux], &[un]);
+        assert_eq!(part.len(), 1);
+        assert!(part[0].contains("may no longer come in"), "{part:?}");
     }
 
     #[test]

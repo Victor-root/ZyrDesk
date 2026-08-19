@@ -271,7 +271,9 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             }
             match authorized::add(&paths::authorized_devices(), peer) {
                 Ok(true) => {
-                    answering.log.write(&format!("{peer} may now come in"));
+                    answering
+                        .log
+                        .write(&format!("{peer} written down as allowed in"));
                     Answer::Done
                 }
                 // Déjà écrite : c'est l'état demandé, atteint.

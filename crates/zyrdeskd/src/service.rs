@@ -97,11 +97,14 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // the product is a fault chased for nothing.
     log.write(&format!("service started, {}", zyr_proto::version_line()));
 
-    // Whatever the firewall is missing is put back here rather than only
-    // when the service is registered. A machine where the service was
-    // installed before this existed would otherwise never get its rules,
-    // and would show, forever, a network on which nobody else appears.
-    keep_the_firewall_open(log);
+    // The rules are laid here rather than only when the service is
+    // registered. A machine where the service was installed before this
+    // existed would otherwise never get its rules, and would show,
+    // forever, a network on which nobody else appears.
+    if let Ok(program) = std::env::current_exe() {
+        lay_the_firewall(&program, Some(log));
+    }
+    say_how_the_networks_are_classed(log);
 
     let end = supervisor::run(&order, log);
     log.write(&format!("service stopped: {}", reason(end)));
@@ -195,7 +198,7 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
         Err(e) => return Err(e.into()),
     };
 
-    open_the_firewall(&program);
+    lay_the_firewall(&program, Log::open(&log_path()).ok().as_ref());
     Ok(installed)
 }
 
@@ -219,6 +222,13 @@ pub fn set_up() -> Result<Installed, Box<dyn std::error::Error>> {
     Ok(installed)
 }
 
+/// Keeps a console window from flashing up behind the interface.
+///
+/// Everything this file asks of Windows goes through a program of its
+/// own, and every one of them would otherwise show a black window on
+/// somebody's screen for a fraction of a second.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// What the service listens on, and what Windows calls each rule.
 ///
 /// Two ports, not one. The tunnel carries everything a session needs,
@@ -235,40 +245,80 @@ const OPENINGS: [(&str, u16); 2] = [
 /// Lets the outside reach the service, through the Windows firewall.
 ///
 /// Each rule is bound to this program alone, so nothing else on the
-/// machine gains anything by it, and each is removed before being added
-/// so that installing again from another folder repoints it instead of
-/// leaving a rule aimed at a program that has moved.
+/// machine gains anything by it.
+///
+/// Written again at every start, and not merely put back when missing. A
+/// rule that exists is not a rule that lets this program through: it may
+/// name a copy of the service that has since been moved, or a port from
+/// a version that is no longer this one. Either way it fails without a
+/// word, the machine shows nobody on its network, and nothing anywhere
+/// says why. Removing it and writing it again costs two calls at start
+/// and leaves no room for that.
 ///
 /// A failure here is written down and not raised: a machine whose
 /// firewall is managed by someone else is not a machine that should
-/// refuse to install a service. What it costs, if it comes to that, is
-/// said in the journal.
-fn open_the_firewall(program: &std::path::Path) {
-    let log = Log::open(&log_path()).ok();
+/// refuse to run. What it costs, if it comes to that, is said in the
+/// journal.
+fn lay_the_firewall(program: &std::path::Path, log: Option<&Log>) {
+    if let Some(log) = log {
+        log.write(&format!("firewall rules laid for {}", program.display()));
+    }
     for (rule, port) in OPENINGS {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
-        told(log.as_ref(), rule, port, add_rule(rule, port, program));
+        told(log, rule, port, add_rule(rule, port, program));
     }
 }
 
-/// Puts back whatever the firewall is missing, and touches nothing else.
+/// Says how Windows classes each network this computer is on.
 ///
-/// Called every time the service starts, because being registered once
-/// is not the same as being reachable now: a machine set up before these
-/// rules existed never had them laid, and a rule can be swept away by
-/// anything that manages a firewall. A rule already in place is left
-/// exactly as it is, deliberately, so that nothing here fights whoever
-/// tightened it on purpose.
-fn keep_the_firewall_open(log: &Log) {
-    let Ok(program) = std::env::current_exe() else {
-        return;
-    };
-    for (rule, port) in OPENINGS {
-        if netsh(&["show", "rule", &format!("name={rule}")]).unwrap_or(false) {
-            continue;
+/// The one thing that decides whether two ZyrDesk ever find each other
+/// and that nothing in the product could see: on a network classed
+/// public, Windows cuts discovery whatever the firewall rules say, and a
+/// laptop on Wi-Fi inherits that classing without being asked. Written
+/// down here so a journal answers the question instead of costing
+/// another evening and another command.
+///
+/// On a thread of its own, and never waited for: this asks Windows
+/// through a program of its own, which is slow to start and has no
+/// business holding up a service.
+fn say_how_the_networks_are_classed(log: &Log) {
+    let log = log.clone();
+    std::thread::spawn(move || {
+        let said = asked_of_windows(
+            "Get-NetConnectionProfile | ForEach-Object { $_.InterfaceAlias + ' : ' + $_.NetworkCategory }",
+        )
+        .unwrap_or_default();
+        let classed: Vec<&str> = said
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect();
+        // Une absence de réponse est elle-même une réponse : sans cette
+        // ligne, on ne saurait pas distinguer « Windows n'a rien dit »
+        // de « le service est trop vieux pour le demander ».
+        if classed.is_empty() {
+            log.write("Windows did not say how it classes these networks");
+            return;
         }
-        told(Some(log), rule, port, add_rule(rule, port, &program));
+        for line in classed {
+            log.write(&format!("network {line}"));
+        }
+    });
+}
+
+/// Runs one question through Windows' own shell, quietly.
+fn asked_of_windows(question: &str) -> Option<String> {
+    use std::os::windows::process::CommandExt;
+
+    let said = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", question])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !said.status.success() {
+        return None;
     }
+    Some(String::from_utf8_lossy(&said.stdout).into_owned())
 }
 
 /// Adds one rule, bound to this program alone.
@@ -301,9 +351,6 @@ fn told(log: Option<&Log>, rule: &str, port: u16, outcome: std::io::Result<bool>
 /// Runs one netsh command, quietly. `false` when netsh said no.
 fn netsh(arguments: &[&str]) -> std::io::Result<bool> {
     use std::os::windows::process::CommandExt;
-
-    /// Keeps a console window from flashing up behind the interface.
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     std::process::Command::new("netsh")
         .args(["advfirewall", "firewall"])
