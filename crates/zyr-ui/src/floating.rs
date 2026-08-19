@@ -804,8 +804,7 @@ fn picture_of(_process: u32) -> Option<(i32, i32, i32, i32)> {
 #[cfg(windows)]
 fn shortcut(act: Act, process: u32) -> Result<(), String> {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE,
-        SendInput,
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
     };
 
     // The picture was brought in front and waited for by the caller. If

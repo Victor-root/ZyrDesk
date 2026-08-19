@@ -372,9 +372,11 @@ pub fn bind(doing: String, combination: String) -> Result<(), String> {
             .parse::<Combination>()
             .map_err(|()| format!("combinaison illisible : {combination}"))?;
         if !read.stands() {
-            return Err("cette combinaison ne peut pas être prise : il faut au moins une touche \
+            return Err(
+                "cette combinaison ne peut pas être prise : il faut au moins une touche \
                         tenue, et une touche que ZyrDesk sait placer sur un clavier."
-                .to_string());
+                    .to_string(),
+            );
         }
         Some(read)
     };
@@ -471,7 +473,10 @@ fn hold_them(app: &tauri::AppHandle) -> bool {
         // SAFETY: no window, so the combination belongs to this thread,
         // and the identifier is ours and unique within it.
         if unsafe { RegisterHotKey(null_mut(), id, modifiers, key) } != 0 {
-            crate::journal::note(&format!("raccourci {combination} tenu pour {}", doing.name()));
+            crate::journal::note(&format!(
+                "raccourci {combination} tenu pour {}",
+                doing.name()
+            ));
             taken.push((id, doing));
         } else {
             // Said out loud: another program holding the same
