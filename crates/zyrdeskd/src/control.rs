@@ -24,6 +24,7 @@ use zyr_transport::{Fingerprint, authorized};
 
 use crate::known;
 use crate::preferences::Remembered;
+use crate::supervisor::StopOrder;
 use crate::ways::Ways;
 
 /// Whether this computer can be reached right now, and what is in the
@@ -96,7 +97,33 @@ pub struct Answering {
     pub hosting: Hosting,
     pub remembered: Remembered,
     pub neighbours: Found,
+    /// What ends the service. Held here so that quitting the interface
+    /// can take the service with it without asking Windows, which would
+    /// mean an administrator prompt at every quit.
+    pub order: StopOrder,
     pub log: Log,
+}
+
+/// Whether Windows starts the service on its own.
+#[cfg(windows)]
+fn at_boot() -> bool {
+    crate::service::starts_with_windows().unwrap_or(false)
+}
+
+/// Outside Windows there is no service to start.
+#[cfg(not(windows))]
+fn at_boot() -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn set_at_boot(on: bool) -> Result<(), String> {
+    crate::service::start_with_windows(on).map_err(|e| e.to_string())
+}
+
+#[cfg(not(windows))]
+fn set_at_boot(_on: bool) -> Result<(), String> {
+    Err("le service ZyrDesk n'existe que sous Windows".to_string())
 }
 
 async fn serve(mut door: Door, answering: Answering) {
@@ -250,6 +277,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 holdup: held.unwrap_or_default(),
                 wanted: answering.remembered.remote_access(),
                 trusting: answering.remembered.trust_local_network(),
+                at_boot: at_boot(),
                 ways: answering.ways.count(),
             })
         }
@@ -355,6 +383,24 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 }
             }
         }
+        Request::SetAtBoot { on } => match set_at_boot(on) {
+            Ok(()) => {
+                answering.log.write(if on {
+                    "this computer will be reachable from the moment it powers on"
+                } else {
+                    "this computer will only be reachable while ZyrDesk is open"
+                });
+                Answer::Done
+            }
+            Err(reason) => {
+                Answer::Refused(format!("ce réglage n'a pas pu être enregistré : {reason}"))
+            }
+        },
+        Request::Stop => {
+            answering.log.write("stop asked for by the interface");
+            answering.order.ask_for_a_stop();
+            Answer::Done
+        }
         Request::Settings => Answer::Settings(answering.remembered.read().preferred),
         Request::Choose { preferred } => {
             match kept(answering.remembered.set_preferred(preferred)) {
@@ -407,6 +453,7 @@ mod tests {
                     hosting: hosting.clone(),
                     remembered: Remembered::at(folder.join("preferences.conf")),
                     neighbours: Found::new(),
+                    order: StopOrder::new(),
                     log: log.clone(),
                 },
             )

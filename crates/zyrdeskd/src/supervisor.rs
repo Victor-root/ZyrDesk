@@ -183,6 +183,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         hosting.clone(),
         remembered.clone(),
         neighbours,
+        order.clone(),
         log,
     ) {
         Ok(desk) => Some(desk),
@@ -351,12 +352,14 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
 }
 
 /// Opens the desk the interface and the command line talk to.
+#[allow(clippy::too_many_arguments)]
 fn desk(
     runtime: &tokio::runtime::Handle,
     ways: Ways,
     hosting: Hosting,
     remembered: Remembered,
     neighbours: zyr_lan::Found,
+    order: StopOrder,
     log: &Log,
 ) -> Result<Desk, String> {
     let identity = zyr_transport::Identity::load_or_create(&paths::identity_dir())
@@ -370,6 +373,7 @@ fn desk(
             hosting,
             remembered,
             neighbours,
+            order,
             log: log.clone(),
         },
     )

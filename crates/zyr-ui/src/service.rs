@@ -37,3 +37,63 @@ pub async fn list<T>(
 pub fn unexpected(answer: Answer) -> String {
     format!("réponse inattendue du service : {answer}")
 }
+
+/// Puts the service back on its feet, if it is not already standing.
+///
+/// Nothing of this product runs while nobody is using it, so opening the
+/// window is what starts it. Without administrator rights: registering
+/// the service grants whoever is signed in the right to start and stop
+/// it, precisely so that this costs nobody a prompt.
+///
+/// On a thread of its own and never waited for. A service takes a moment
+/// to come up, the home screen already knows how to show a service that
+/// is not answering yet, and a window that stayed grey until Windows had
+/// finished would look broken.
+pub fn wake_the_service() {
+    tauri::async_runtime::spawn(async {
+        // Already standing: opening the window a second time must not
+        // shake a service that is holding a session.
+        if Service::join().await.is_ok() {
+            return;
+        }
+        crate::journal::note("service not answering, starting it");
+        let outcome = tauri::async_runtime::spawn_blocking(started).await;
+        crate::journal::note(&match outcome {
+            Ok(Ok(())) => "service asked to start".to_string(),
+            Ok(Err(e)) => format!("service could not be started: {e}"),
+            Err(e) => format!("service could not be started: {e}"),
+        });
+    });
+}
+
+/// Asks the service program to start the service.
+///
+/// The program beside this one, which is where it is: the two are built
+/// and shipped together.
+#[cfg(windows)]
+fn started() -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+
+    /// Keeps a console window from flashing up behind the interface.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let here = std::env::current_exe()?;
+    let program = here.with_file_name(zyr_proto::paths::executable_name("zyrdeskd"));
+    let said = std::process::Command::new(program)
+        .arg("start")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()?;
+    if said.status.success() {
+        return Ok(());
+    }
+    Err(std::io::Error::other(
+        String::from_utf8_lossy(&said.stdout).trim().to_string(),
+    ))
+}
+
+#[cfg(not(windows))]
+fn started() -> std::io::Result<()> {
+    Err(std::io::Error::other(
+        "le service ZyrDesk n'existe que sous Windows",
+    ))
+}

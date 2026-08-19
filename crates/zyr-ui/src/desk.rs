@@ -45,6 +45,9 @@ pub struct Standing {
     /// Whether the ZyrDesk of this network are let in without anyone
     /// recognising them one by one.
     pub trusting: bool,
+    /// Whether this computer answers from the moment it powers on,
+    /// before anybody has signed in.
+    pub at_boot: bool,
     /// Sessions this computer has open towards others.
     pub ways: usize,
     /// The build the service is running, which is not always this
@@ -65,6 +68,7 @@ impl Standing {
             holdup: named(Holdup::Starting),
             wanted: false,
             trusting: false,
+            at_boot: false,
             ways: 0,
             service_build: String::new(),
             unreachable: Some(reason),
@@ -136,6 +140,41 @@ pub async fn set_hosting(on: bool) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_trust(on: bool) -> Result<(), String> {
     match service::ask(&Request::SetTrust { on }).await? {
+        Answer::Done => Ok(()),
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// Decides whether ZyrDesk comes back on its own with Windows.
+///
+/// Two things at once, deliberately, because they are one thing to the
+/// person: the service starts with the machine, so it answers before
+/// anybody has signed in, and this window starts with the session, so
+/// the icon is there to say so. Turned off, nothing of this product runs
+/// until somebody opens it.
+#[tauri::command]
+pub async fn set_at_boot(on: bool) -> Result<(), String> {
+    match service::ask(&Request::SetAtBoot { on }).await? {
+        Answer::Done => {}
+        other => return Err(service::unexpected(other)),
+    }
+    crate::startup::with_windows(on)?;
+    crate::journal::note(if on {
+        "ZyrDesk will come back with Windows"
+    } else {
+        "ZyrDesk will not come back on its own"
+    });
+    Ok(())
+}
+
+/// Stops the service, and with it everything this computer was holding.
+///
+/// Asked of the service rather than of Windows: stopping a service the
+/// ordinary way wants administrator rights, and a product that asked for
+/// them every time somebody quit would be unusable.
+#[tauri::command]
+pub async fn stop_service() -> Result<(), String> {
+    match service::ask(&Request::Stop).await? {
         Answer::Done => Ok(()),
         other => Err(service::unexpected(other)),
     }
@@ -259,6 +298,7 @@ async fn asked() -> Result<Standing, String> {
             holdup: named(standing.holdup),
             wanted: standing.wanted,
             trusting: standing.trusting,
+            at_boot: standing.at_boot,
             ways: standing.ways,
             service_build: standing.build,
             unreachable: None,

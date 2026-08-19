@@ -104,6 +104,10 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     if let Ok(program) = std::env::current_exe() {
         lay_the_firewall(&program, Some(log));
     }
+    // Same reason: a machine whose service was registered before this
+    // existed would ask for administrator rights every time ZyrDesk was
+    // opened, and nothing would ever put that right on its own.
+    let_the_person_start_and_stop_it(Some(log));
     say_how_the_networks_are_classed(log);
 
     let end = supervisor::run(&order, log);
@@ -155,24 +159,20 @@ pub enum Installed {
     Updated,
 }
 
-/// Registers the service with Windows, starting automatically.
+/// How the service is described to Windows.
 ///
-/// Run again on a machine that already knows the service, it updates
-/// where the registration points instead of failing: the program moves
-/// when the project folder does, and Windows has to follow.
-pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
-    let manager = ServiceManager::local_computer(
-        None::<&str>,
-        ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
-    )?;
-
-    let description = ServiceInfo {
+/// `at_boot` is the one thing that ever changes: whether Windows starts
+/// it on its own, or waits to be asked. Everything else is fixed.
+fn described(at_boot: bool) -> Result<ServiceInfo, std::io::Error> {
+    Ok(ServiceInfo {
         name: OsString::from(NAME),
         display_name: OsString::from(DISPLAY_NAME),
         service_type: ServiceType::OWN_PROCESS,
-        // The computer has to be reachable from the moment it powers on,
-        // without anyone logging in: that is the whole point.
-        start_type: ServiceStartType::AutoStart,
+        start_type: if at_boot {
+            ServiceStartType::AutoStart
+        } else {
+            ServiceStartType::OnDemand
+        },
         error_control: ServiceErrorControl::Normal,
         executable_path: std::env::current_exe()?,
         launch_arguments: vec![OsString::from(SERVICE_ARGUMENT)],
@@ -181,12 +181,35 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
         // secure desktop and to survive session changes.
         account_name: None,
         account_password: None,
-    };
+    })
+}
 
+/// Registers the service with Windows.
+///
+/// Run again on a machine that already knows the service, it updates
+/// where the registration points instead of failing: the program moves
+/// when the project folder does, and Windows has to follow.
+///
+/// It is registered waiting to be asked, not starting on its own. The
+/// interface starts it when it opens and stops it when it is quit, so
+/// that nothing of this product runs while nobody is using it. Being
+/// reachable before anybody has signed in is worth having and is a
+/// deliberate choice, made from the settings screen, which is what turns
+/// this the other way round.
+pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
+    let manager = ServiceManager::local_computer(
+        None::<&str>,
+        ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
+    )?;
+
+    let description = described(false)?;
     let program = description.executable_path.clone();
     let installed = match manager.open_service(NAME, ServiceAccess::CHANGE_CONFIG) {
         Ok(service) => {
-            service.change_config(&description)?;
+            // What was already decided about starting with Windows is
+            // kept: installing again is an update, not a change of mind.
+            let carried = described(starts_with_windows().unwrap_or(false))?;
+            service.change_config(&carried)?;
             service.set_description(DESCRIPTION)?;
             Installed::Updated
         }
@@ -198,8 +221,71 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
         Err(e) => return Err(e.into()),
     };
 
-    lay_the_firewall(&program, Log::open(&log_path()).ok().as_ref());
+    let log = Log::open(&log_path()).ok();
+    lay_the_firewall(&program, log.as_ref());
+    let_the_person_start_and_stop_it(log.as_ref());
     Ok(installed)
+}
+
+/// Lets whoever is signed in start and stop this service.
+///
+/// Without it, quitting ZyrDesk and opening it again would ask Windows
+/// for administrator rights every single time, which is not a product
+/// anybody wants to use. Starting and stopping a service is not a way
+/// into anything: what would be one, changing where the service points,
+/// is deliberately left out of this and stays with the administrators.
+///
+/// Said once, when the service is registered, since that is the one
+/// moment those rights are already in hand.
+fn let_the_person_start_and_stop_it(log: Option<&Log>) {
+    use std::os::windows::process::CommandExt;
+
+    /// Windows' own wording for it. The three entries are the system,
+    /// the administrators, and whoever is signed in; the last one is the
+    /// only one this adds anything to, `RP` for starting and `WP` for
+    /// stopping.
+    const WHO_MAY: &str = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)\
+        (A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)\
+        (A;;CCLCSWRPWPDTLOCRRC;;;IU)";
+
+    let said = std::process::Command::new("sc")
+        .args(["sdset", NAME, WHO_MAY])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    let Some(log) = log else {
+        return;
+    };
+    log.write(&match said {
+        Ok(said) if said.status.success() => {
+            "the signed-in person may start and stop the service".to_string()
+        }
+        Ok(said) => format!(
+            "the signed-in person may not start or stop the service: {}",
+            String::from_utf8_lossy(&said.stdout)
+                .trim()
+                .replace('\n', " ")
+        ),
+        Err(e) => format!("service rights untouched: {e}"),
+    });
+}
+
+/// Whether Windows starts the service on its own.
+pub fn starts_with_windows() -> Result<bool, windows_service::Error> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service = manager.open_service(NAME, ServiceAccess::QUERY_CONFIG)?;
+    Ok(service.query_config()?.start_type == ServiceStartType::AutoStart)
+}
+
+/// Decides whether it does.
+///
+/// Asked of the service and not of the interface: the service runs as
+/// the system, which is the one identity allowed to change this without
+/// anybody being asked for administrator rights.
+pub fn start_with_windows(on: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
+    let service = manager.open_service(NAME, ServiceAccess::CHANGE_CONFIG)?;
+    service.change_config(&described(on)?)?;
+    Ok(())
 }
 
 /// Registers the service, points it at this program, and starts it.

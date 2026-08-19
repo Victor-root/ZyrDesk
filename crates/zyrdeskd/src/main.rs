@@ -93,7 +93,7 @@ fn run(command: Command) -> ExitCode {
         },
         Command::Install => match service::install() {
             Ok(service::Installed::Registered) => {
-                println!("Service installé. Il démarrera avec Windows.");
+                println!("Service installé. Il attend d'être démarré.");
                 println!("  Pour le lancer tout de suite : zyrdeskd start");
                 ExitCode::SUCCESS
             }

@@ -24,7 +24,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 9;
+pub const PROTOCOL: u32 = 10;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -143,6 +143,20 @@ pub enum Request {
     /// Takes a computer written down off both lists: it no longer shows,
     /// and it no longer comes in.
     Forget { peer: Fingerprint },
+    /// Decides whether this computer is reachable from the moment it
+    /// powers on, before anybody has signed in.
+    ///
+    /// The service registers itself with Windows either way; this is the
+    /// difference between Windows starting it on its own and it waiting
+    /// to be asked.
+    SetAtBoot { on: bool },
+    /// Asks the service to stop.
+    ///
+    /// What « quit » means, from an interface: closing the window has to
+    /// be able to take everything with it. Stopping a service through
+    /// Windows asks for administrator rights every single time, so the
+    /// service stops itself instead, on a channel it already answers.
+    Stop,
     /// What a session opened from this computer is set to.
     Settings,
     /// Changes it, for this session and all the ones after.
@@ -190,6 +204,10 @@ impl Request {
             "forget" => Ok(Request::Forget {
                 peer: fields.parsed("peer")?,
             }),
+            "at-boot" => Ok(Request::SetAtBoot {
+                on: fields.text("on")? == "yes",
+            }),
+            "stop" => Ok(Request::Stop),
             "settings" => Ok(Request::Settings),
             "choose" => Ok(Request::Choose {
                 preferred: fields.preferred(),
@@ -227,6 +245,8 @@ impl fmt::Display for Request {
                 Ok(())
             }
             Request::Forget { peer } => write!(f, "forget peer={peer}"),
+            Request::SetAtBoot { on } => write!(f, "at-boot on={}", said(*on)),
+            Request::Stop => f.write_str("stop"),
             Request::Settings => f.write_str("settings"),
             Request::Choose { preferred } => write!(f, "choose {}", spelled(preferred)),
         }
@@ -279,6 +299,9 @@ pub struct Standing {
     /// Whether the ZyrDesk of the local network are let in without
     /// anyone recognising them one by one.
     pub trusting: bool,
+    /// Whether Windows starts the service on its own, so that this
+    /// computer answers before anybody has signed in.
+    pub at_boot: bool,
     /// Ways out currently open.
     pub ways: usize,
 }
@@ -378,6 +401,7 @@ impl Answer {
                 holdup: Holdup::read(fields.text("holdup").unwrap_or_default()),
                 wanted: fields.text("wanted")? == "yes",
                 trusting: fields.flag("trusting", false),
+                at_boot: fields.flag("at-boot", true),
                 ways: fields.parsed("ways")?,
             })),
             "reached" => Ok(Answer::Reached(Reached {
@@ -416,7 +440,7 @@ impl fmt::Display for Answer {
         match self {
             Answer::Standing(standing) => write!(
                 f,
-                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} ways={}",
+                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} at-boot={} ways={}",
                 standing.protocol,
                 packed(&standing.build),
                 standing.fingerprint,
@@ -424,6 +448,7 @@ impl fmt::Display for Answer {
                 standing.holdup.spelled(),
                 said(standing.wanted),
                 said(standing.trusting),
+                said(standing.at_boot),
                 standing.ways
             ),
             Answer::Reached(reached) => write!(
@@ -643,6 +668,9 @@ mod tests {
             Request::Forget {
                 peer: fingerprint(),
             },
+            Request::SetAtBoot { on: true },
+            Request::SetAtBoot { on: false },
+            Request::Stop,
             Request::Settings,
             Request::Choose {
                 preferred: preferred(),
@@ -676,6 +704,7 @@ mod tests {
                 holdup: Holdup::Starting,
                 wanted: true,
                 trusting: true,
+                at_boot: true,
                 ways: 2,
             }),
             Answer::Standing(Standing {
@@ -686,6 +715,7 @@ mod tests {
                 holdup: Holdup::EngineMissing,
                 wanted: true,
                 trusting: false,
+                at_boot: false,
                 ways: 0,
             }),
             Answer::Reached(Reached {

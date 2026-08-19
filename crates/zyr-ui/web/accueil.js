@@ -51,6 +51,7 @@ const vue = {
   fermerReglages: document.getElementById("fermer-reglages"),
   qualiteDetail: document.getElementById("qualite-detail"),
   confiance: document.getElementById("confiance"),
+  auDemarrage: document.getElementById("au-demarrage"),
   stats: document.getElementById("stats"),
   dossierJournaux: document.getElementById("dossier-journaux"),
   ouvrirDossier: document.getElementById("ouvrir-dossier"),
@@ -827,39 +828,56 @@ async function change(comment) {
 /* La confiance au réseau local ne vit pas dans les mêmes réglages que
    l'image : elle appartient à cette machine, comme l'accès distant, et
    c'est l'état de la machine qui la porte. */
-let basculeConfiance = false;
+/* Un interrupteur qui appartient à la machine : il se dessine d'après ce
+   que le service dit, et il se fige le temps d'une réponse plutôt que de
+   montrer un état qui n'a pas encore pris. Rend de quoi le redessiner. */
+function interrupteurMachine(element, commande, lu) {
+  let bascule = false;
 
-function dessineConfiance() {
-  if (etat === null) {
-    return;
+  function dessine() {
+    if (etat === null) {
+      return;
+    }
+    element.disabled = etat.unreachable !== null || bascule;
+    if (!bascule) {
+      element.setAttribute("aria-checked", lu(etat) ? "true" : "false");
+    }
   }
-  vue.confiance.disabled = etat.unreachable !== null || basculeConfiance;
-  if (!basculeConfiance) {
-    vue.confiance.setAttribute(
-      "aria-checked",
-      etat.trusting ? "true" : "false",
-    );
+
+  async function basculer() {
+    const veut = element.getAttribute("aria-checked") !== "true";
+    bascule = true;
+    element.setAttribute("aria-checked", veut ? "true" : "false");
+    element.disabled = true;
+    montre(vue.reglagesProbleme, false);
+
+    try {
+      await invoke(commande, { on: veut });
+    } catch (raison) {
+      element.setAttribute("aria-checked", veut ? "false" : "true");
+      soucis(String(raison));
+    } finally {
+      bascule = false;
+      await rafraichirEtat();
+      dessine();
+    }
   }
+
+  element.addEventListener("click", basculer);
+  return dessine;
 }
 
-async function basculerConfiance() {
-  const veut = vue.confiance.getAttribute("aria-checked") !== "true";
-  basculeConfiance = true;
-  vue.confiance.setAttribute("aria-checked", veut ? "true" : "false");
-  vue.confiance.disabled = true;
-  montre(vue.reglagesProbleme, false);
+const dessineConfiance = interrupteurMachine(
+  vue.confiance,
+  "set_trust",
+  (machine) => machine.trusting,
+);
 
-  try {
-    await invoke("set_trust", { on: veut });
-  } catch (raison) {
-    vue.confiance.setAttribute("aria-checked", veut ? "false" : "true");
-    soucis(String(raison));
-  } finally {
-    basculeConfiance = false;
-    await rafraichirEtat();
-    dessineConfiance();
-  }
-}
+const dessineAuDemarrage = interrupteurMachine(
+  vue.auDemarrage,
+  "set_at_boot",
+  (machine) => machine.atBoot,
+);
 
 function soucis(texte) {
   vue.reglagesProblemeTexte.textContent = texte;
@@ -870,6 +888,7 @@ async function ouvrirReglages() {
   montre(vue.reglagesProbleme, false);
   vue.reglages.showModal();
   dessineConfiance();
+  dessineAuDemarrage();
   await rafraichirReglages();
 }
 
@@ -953,7 +972,6 @@ vue.viderJournal.addEventListener("click", viderJournal);
 vue.ouvrirJournaux.addEventListener("click", () => ouvreDossier("logs"));
 vue.ouvrirReglages.addEventListener("click", ouvrirReglages);
 vue.fermerReglages.addEventListener("click", () => vue.reglages.close());
-vue.confiance.addEventListener("click", basculerConfiance);
 vue.ouvrirDossier.addEventListener("click", ouvrirLesJournaux);
 
 marqueLeChoix();

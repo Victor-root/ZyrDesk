@@ -21,7 +21,9 @@ mod journal;
 mod service;
 mod session;
 mod settings;
+mod startup;
 mod theme;
+mod tray;
 
 #[cfg(windows)]
 mod elevated;
@@ -44,6 +46,7 @@ fn main() {
 
     building
         .manage(floating::Floating::default())
+        .manage(tray::Shown::default())
         .invoke_handler(tauri::generate_handler![
             desk::standing,
             desk::build,
@@ -52,7 +55,9 @@ fn main() {
             desk::set_trust,
             desk::authorize,
             desk::forget,
+            desk::set_at_boot,
             desk::start_service,
+            desk::stop_service,
             folders::engines,
             folders::logs_folder,
             folders::open_folder,
@@ -70,16 +75,26 @@ fn main() {
         ])
         .setup(|app| {
             journal::opened();
+            // The icon first: from here on, something on screen says this
+            // program is running, whatever becomes of the window.
+            if let Err(e) = tray::raise(app.handle()) {
+                journal::note(&format!("no icon in the notification area: {e}"));
+            }
+            // Nothing of this product runs while nobody is using it, so
+            // opening it is what puts the service back on its feet.
+            service::wake_the_service();
+            tray::watch(app.handle().clone());
             floating::watch(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the home window during a session must not take the
-            // floating button with it. The window steps aside instead,
-            // and comes back whole when ZyrDesk is started again.
+            // Closing the home window never ends anything. It steps
+            // aside, the icon beside the clock stays, and « Quitter »
+            // there is the one thing that stops the product. A window
+            // whose cross cut a session in progress would be worse than
+            // one that does not close at all.
             if let WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == HOME
-                && floating::busy(window.app_handle())
             {
                 api.prevent_close();
                 let _ = window.hide();

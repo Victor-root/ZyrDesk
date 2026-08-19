@@ -74,7 +74,7 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 
 > **R2 (le service se démarre depuis la fenêtre)**
 >
-> À faire une fois par PC, la première fois seulement. Si le service tourne déjà, l'accueil affiche « Prêt à être contrôlé » et il n'y a rien à faire ici.
+> À faire une fois par PC, la première fois seulement. Le service s'enregistre alors, et c'est la seule fois où Windows demande quelque chose : ensuite, ouvrir ZyrDesk le démarre et « Quitter » l'arrête, sans jamais rien redemander. Si le service tourne déjà, l'accueil affiche « Prêt à être contrôlé » et il n'y a rien à faire ici.
 >
 > Sur le **PC où le service n'est pas installé** : l'accueil affiche un bandeau rouge « Le service ZyrDesk ne tourne pas ». Cliquer **Démarrer le service**.
 >
@@ -84,11 +84,31 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > À vérifier aussi : refuser la demande de Windows doit afficher « les droits administrateur ont été refusés » et rien de plus. Pas de plantage, pas de bandeau bloqué.
 
-> **R3 (le service survit au redémarrage)**
+> **R3 (rien ne tourne quand personne ne s'en sert)**
 >
-> Redémarrer le **PC hôte**. Sans ouvrir de session Windows dessus, attendre une minute.
+> Sur le **PC hôte**, réglages : **Démarrer avec Windows** doit être décoché, ce qui est le cas par défaut. Redémarrer la machine, et sans ouvrir de session Windows dessus, attendre une minute.
 >
-> Attendu : depuis le **PC client**, l'ordinateur hôte apparaît toujours dans « Mes ordinateurs » avec sa pastille verte. C'est tout l'intérêt du service : la machine répond avant que quiconque s'y soit connecté.
+> Attendu : depuis le **PC client**, l'ordinateur hôte **n'apparaît pas**. Rien de ZyrDesk ne tourne, et c'est le but ([D20](../DECISIONS.md)).
+>
+> Ouvrir une session Windows sur le PC hôte, puis ZyrDesk. Attendu : l'icône apparaît en bas à droite, l'état passe à « Prêt à être contrôlé » sans aucune demande de droits administrateur, et le PC réapparaît côté client.
+
+> **R3bis (l'ordinateur répond avant l'ouverture de session)**
+>
+> Sur le **PC hôte**, réglages : cocher **Démarrer avec Windows**. Redémarrer la machine et, sans ouvrir de session dessus, attendre une minute.
+>
+> Attendu : depuis le **PC client**, l'ordinateur hôte apparaît avec sa pastille verte. C'est tout l'intérêt du service : la machine répond avant que quiconque s'y soit connecté.
+>
+> Ouvrir une session Windows dessus. Attendu : ZyrDesk revient tout seul, fenêtre fermée, icône présente en bas à droite.
+
+> **R3ter (l'icône dit la vérité, et « Quitter » arrête tout)**
+>
+> Sur le **PC hôte**, ZyrDesk ouvert : fermer la fenêtre par sa croix.
+>
+> Attendu : la fenêtre disparaît, l'icône reste, et le PC reste joignable depuis le client. Un clic sur l'icône ramène la fenêtre.
+>
+> Couper l'interrupteur **Accès distant**. Attendu : l'icône s'atténue, et son infobulle dit « cet ordinateur n'est pas joignable ». Le rallumer la rend nette à nouveau.
+>
+> Clic droit sur l'icône, **Quitter**. Attendu : l'icône disparaît, et depuis le **PC client** l'ordinateur hôte disparaît de la liste en moins d'une minute. Vérifier dans le gestionnaire des tâches qu'il ne reste **ni `ZyrDesk`, ni `zyrdeskd`, ni `zyrdesk-host-engine`**.
 
 > **R4 (un moteur qui manque se dit, et ne casse rien d'autre)**
 >

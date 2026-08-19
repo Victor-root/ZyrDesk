@@ -223,15 +223,6 @@ fn raise(app: &AppHandle, process: u32) {
     }
 }
 
-/// Whether a session is under way, and the button with it.
-pub fn busy(app: &AppHandle) -> bool {
-    app.state::<Floating>()
-        .watched
-        .lock()
-        .expect("session suivie")
-        .is_some()
-}
-
 /// Takes the button down.
 fn lower(app: &AppHandle) {
     let state = app.state::<Floating>();

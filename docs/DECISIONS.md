@@ -130,6 +130,18 @@ L'ajout par empreinte écrit l'ordinateur dans les deux sens : il le laisse entr
 
 **Ce que ça n'ouvre pas.** Ce port ne dit que ce que l'annonce disait déjà : un nom, une empreinte, un numéro de port. Rien n'y entre, rien ne s'y décide, et une empreinte connue n'ouvre toujours rien à elle seule. Ce qui arrive sans le mot de passe du format est jeté sans être lu.
 
+## D20. Rien ne tourne quand personne ne s'en sert (2026-08-19, pendant M4)
+
+**Décision.** Le service n'est plus enregistré pour démarrer avec Windows. C'est la fenêtre qui le lance en s'ouvrant et qui l'arrête en étant quittée, et une icône dans la zone de notification dit, tant que le produit tourne, si cet ordinateur peut être pris en main. Fermer la fenêtre la range sans rien arrêter ; « Quitter », dans le menu de cette icône, arrête tout. Un réglage, décoché par défaut, rétablit l'ancien comportement : le service démarre alors avec la machine, l'ordinateur répond avant même qu'on ouvre une session dessus, et ZyrDesk revient tout seul avec son icône.
+
+**Ce que ça corrige.** Un service qui rend la machine joignable tournait en permanence sans que rien à l'écran ne le dise, et l'arrêter demandait une ligne de commande. Ce n'est pas une question de goût : un produit de prise en main à distance qui tourne invisiblement est un produit dont personne ne peut dire s'il est actif.
+
+**Pourquoi l'icône n'est pas un ornement.** Elle est la réponse à la seule question qu'un tel produit ne doit jamais laisser sans réponse. Elle est nette quand la machine est joignable, atténuée quand elle ne l'est pas, et son infobulle le dit en toutes lettres, parce qu'un état ne se lit jamais à la couleur seule.
+
+**Ce que ça suppose.** Que démarrer et arrêter le service ne demande pas les droits administrateur à chaque fois, sans quoi le produit serait inutilisable. L'enregistrement du service, qui est le seul moment où ces droits sont déjà en main, accorde donc à la personne connectée le droit de le démarrer et de l'arrêter, et rien d'autre. Changer où le service pointe reste réservé aux administrateurs : c'est le droit qui ouvrirait une élévation de privilèges, et il n'est pas donné. L'arrêt passe d'ailleurs par le canal de commande plutôt que par Windows, le service se coupant lui-même.
+
+**Ce que ça coûte.** Un ordinateur qui redémarre pendant une absence n'est plus joignable, réglage décoché, tant que personne ne va ouvrir ZyrDesk dessus. C'est exactement ce que ce réglage sert à choisir, et le mot en dessous le dit sans détour.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

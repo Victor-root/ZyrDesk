@@ -20,7 +20,10 @@ zyr-proto.workspace = true
 zyr-control.workspace = true
 zyr-session.workspace = true
 zyr-transport.workspace = true
-tauri = { version = "2", features = [] }
+# La zone de notification est la seule trace que ZyrDesk laisse quand sa
+# fenêtre est fermée : sans elle, un produit qui rend la machine
+# joignable tournerait sans que rien ne le dise.
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
 
