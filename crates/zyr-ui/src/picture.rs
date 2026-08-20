@@ -600,7 +600,7 @@ fn lay_on(
     if GROWS.load(Ordering::Relaxed) {
         GROWING.with_borrow_mut(|growing| {
             if let Some(growing) = growing.as_mut() {
-                growing.picture = growing.picture.max(laid);
+                growing.this_picture = growing.this_picture.max(laid);
             }
         });
     }
@@ -1778,14 +1778,29 @@ struct Growing {
     /// step is slow every time, or it is not, and the slow one wanders.
     slowest: std::time::Duration,
     slowest_at: usize,
-    /// Of that, what waiting on the player cost. A step is mostly a
-    /// window belonging to another program being told to take a new
-    /// size, and that program answers when it can.
+    /// What waiting on the player cost **on that same step**, the
+    /// player's window belonging to another program which answers when
+    /// it can.
+    ///
+    /// On that same step and not the worst anywhere in the move, which
+    /// is what these two were at first and which made them useless for
+    /// the one thing they are for. Three separate worsts cannot be
+    /// taken from one another: the slowest step said twenty-five
+    /// milliseconds while the two shares said four and four, and what
+    /// the missing seventeen were spent on could not be answered,
+    /// because the four and the four had happened on other steps
+    /// entirely. Read off the slowest step itself, the three numbers
+    /// add up and the remainder is a real quantity.
     picture: std::time::Duration,
-    /// And what the rest of the machinery cost: our own window carried
-    /// by the toolkit, and the web view under the picture being told to
-    /// take the new size although the picture hides it whole.
+    /// And what the rest of the machinery cost on that same step: our
+    /// own window carried by the toolkit, and the web view under the
+    /// picture being told to take the new size although the picture
+    /// hides it whole.
     system: std::time::Duration,
+    /// The two above for the step being played right now, which become
+    /// the two above if this step turns out to be the slowest.
+    this_picture: std::time::Duration,
+    this_system: std::time::Duration,
     /// How long each step waited for its turn, in milliseconds.
     ///
     /// The pacing, written out beside the shape. A screen draws every
@@ -1947,6 +1962,8 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
                 slowest_at: 0,
                 picture: std::time::Duration::ZERO,
                 system: std::time::Duration::ZERO,
+                this_picture: std::time::Duration::ZERO,
+                this_system: std::time::Duration::ZERO,
                 beats: Vec::new(),
             })
             .is_some()
@@ -2269,6 +2286,10 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         let waited = growing.moved.elapsed();
         growing.moved = std::time::Instant::now();
         growing.beats.push(waited.as_millis() as u32);
+        // The shares of the step about to be played, gathered from
+        // inside the call that plays it.
+        growing.this_picture = std::time::Duration::ZERO;
+        growing.this_system = std::time::Duration::ZERO;
         let gone = growing.began.elapsed();
         let part = eased(gone, LASTS);
         let step = along(growing.from, growing.stops_at, part);
@@ -2313,6 +2334,8 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         {
             growing.slowest = carried;
             growing.slowest_at = growing.strides.len();
+            growing.picture = growing.this_picture;
+            growing.system = growing.this_system;
         }
     });
     if !done {
@@ -2331,10 +2354,19 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         // covered at each step, which is its shape, and how long each
         // step waited for its turn, which is its pacing. An eye can
         // report neither, and each has been the fault once.
+        //
+        // Then the slowest step split three ways, and the three add up:
+        // whatever is left once the player and the toolkit are taken
+        // out is ours, and is named as such rather than left to be
+        // worked out by subtracting numbers that came from elsewhere.
+        let rest = played
+            .slowest
+            .saturating_sub(played.picture)
+            .saturating_sub(played.system);
         crate::journal::note(&format!(
             "{} joué en {:.0} ms, {} pas ; crans {} px ; cadence {} ms ; \
              pas le plus long {:.1} ms au pas {} \
-             (dont image {:.1} ms et système avec vue web {:.1} ms)",
+             (image {:.1} ms, système avec vue web {:.1} ms, reste {:.1} ms)",
             if played.then == SC_MAXIMIZE as usize {
                 "agrandissement"
             } else {
@@ -2348,6 +2380,7 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
             played.slowest_at,
             played.picture.as_secs_f64() * 1000.0,
             played.system.as_secs_f64() * 1000.0,
+            rest.as_secs_f64() * 1000.0,
         ));
     }
     if let Some(played) = played {
@@ -2709,7 +2742,7 @@ unsafe extern "system" fn lit(
                 let waited = waited.elapsed();
                 GROWING.with_borrow_mut(|growing| {
                     if let Some(growing) = growing.as_mut() {
-                        growing.system = growing.system.max(waited);
+                        growing.this_system = growing.this_system.max(waited);
                     }
                 });
             }

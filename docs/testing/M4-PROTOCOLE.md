@@ -534,7 +534,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Le journal chiffre le geste.** Une ligne est écrite à chaque fois :
 >
 > ```
-> agrandissement joué en 204 ms, 12 pas ; crans 12, 34, 51, 63, 71, 75, 75, 70, 61, 47, 29, 7 px ; cadence 17, 16, 17, 17, 16, 17, 17, 16, 17, 17, 16, 17 ms ; pas le plus long 12.1 ms au pas 11 (dont image 6.0 ms et système avec vue web 3.3 ms)
+> agrandissement joué en 221 ms, 13 pas ; crans 3, 22, 40, 56, 64, 71, 71, 69, 65, 55, 39, 22, 2 px ; cadence 8, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16 ms ; pas le plus long 14.7 ms au pas 12 (image 8.7 ms, système avec vue web 3.1 ms, reste 2.9 ms)
 > ```
 >
 > et `retour en fenêtre joué en ...` dans l'autre sens, suivie de `fenêtre agrandie` ou `fenêtre en fenêtre après le mouvement`, qui dit dans quel état la fenêtre a réellement fini. Deux cents millisecondes environ est ce qui est visé, en une douzaine de pas.
@@ -543,9 +543,10 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > 1. **Les crans**, en pixels, dans l'ordre : c'est l'allure du geste, écrite. Ils doivent **monter puis redescendre**, sans jamais tomber à zéro au milieu. Une rangée qui commence à deux cents et finit à deux est le défaut décrit plus haut, un mouvement fini avant d'avoir commencé qui rampe ensuite. Une rangée en cloche est un mouvement joué.
 > 2. **La cadence**, en millisecondes, dans l'ordre : le temps que chaque cran a attendu son tour. Un écran se redessine toutes les 16,7 ms, donc une rangée de **16 et de 17 est un mouvement qui tombe sur chaque image dessinée**. Un **33 au milieu** est une image manquée, et c'est la seule chose qu'un œil appelle un accroc. Une rangée qui alterne 16 et 31 est le battement de deux horloges, le défaut décrit plus haut.
-> 3. **Le pas le plus long**, en millisecondes, et **à quel pas** il est tombé. C'est le travail du cran lui-même, sans l'attente. Au-delà de 16 ms, ce cran-là ne tient pas dans une image dessinée et en fait manquer une : c'est ce qui met un 33 dans la cadence.
-> 4. **Dont image** : la part de ce travail passée à attendre le lecteur, qui appartient à un autre programme et répond quand il peut. Grandir lui coûte à peu près le double de rétrécir, parce qu'agrandir veut dire lui faire allouer de plus grandes surfaces sur une carte graphique qui n'en a pas beaucoup.
-> 5. **Et système avec vue web** : le reste, c'est-à-dire notre propre fenêtre portée par la boîte à outils et la page web sous l'image à qui l'on redit sa taille, alors que l'image la cache entièrement pendant toute la session. Si ce nombre est le gros du cran, c'est de ce côté qu'il faut creuser et pas du côté du lecteur.
+> 3. **Le pas le plus long**, en millisecondes, et **à quel pas** il est tombé. C'est le travail du cran lui-même, sans l'attente. Au-delà de 16 ms, ce cran-là ne tient pas dans une image dessinée et en fait manquer une : c'est ce qui met un 33 dans la cadence. Le rang dit quelque chose de simple : le coût suit la **taille** de la fenêtre, donc il tombe à la fin d'un agrandissement et au début d'un retour, aux deux moments où elle couvre l'écran.
+> 4. **Image, système avec vue web, reste** : ce même pas découpé en trois, et **les trois font le total**. L'image, c'est l'attente du lecteur, qui appartient à un autre programme et répond quand il peut. Le système avec vue web, c'est notre propre fenêtre portée par la boîte à outils et la page web sous l'image à qui l'on redit sa taille, alors que l'image la cache entièrement. Le reste est à nous.
+>
+> Ce découpage-là est lu **sur le pas le plus long lui-même** et pas ailleurs, ce qui n'a pas toujours été le cas et rendait les trois nombres inutilisables : trois maxima pris séparément ne se soustraient pas. Le pas le plus long annonçait 25 ms pendant que les deux parts annonçaient 4 et 4, et les 17 ms manquantes n'étaient attribuables à personne, puisque les 4 et les 4 étaient tombés sur d'autres crans.
 
 > **S9quinquies (Alt+Tab montre la session, pas l'écran d'accueil)**
 >
