@@ -158,11 +158,21 @@ pub async fn set_at_boot(on: bool) -> Result<(), String> {
         Answer::Done => {}
         other => return Err(service::unexpected(other)),
     }
-    crate::startup::with_windows(on)?;
+    if let Err(e) = crate::startup::with_windows(on) {
+        // The two halves move together or not at all: the service half
+        // is put back before the failure is reported, or the computer
+        // would answer at power-on with no window anywhere to say so.
+        let put_back = service::ask(&Request::SetAtBoot { on: !on }).await;
+        crate::journal::note(&format!(
+            "démarrage avec Windows non enregistré ({e}), service remis : {}",
+            if put_back.is_ok() { "oui" } else { "non" }
+        ));
+        return Err(e);
+    }
     crate::journal::note(if on {
-        "ZyrDesk will come back with Windows"
+        "ZyrDesk reviendra avec Windows"
     } else {
-        "ZyrDesk will not come back on its own"
+        "ZyrDesk ne reviendra pas tout seul"
     });
     Ok(())
 }
@@ -209,7 +219,7 @@ pub async fn authorize(
 
     match service::ask(&Request::Authorize { peer, host, name }).await? {
         Answer::Done => {
-            crate::journal::note(&format!("{peer} written down"));
+            crate::journal::note(&format!("{peer} écrit dans la liste"));
             Ok(())
         }
         other => Err(service::unexpected(other)),
@@ -229,7 +239,7 @@ pub async fn forget(fingerprint: String) -> Result<(), String> {
         .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
     match service::ask(&Request::Forget { peer }).await? {
         Answer::Done => {
-            crate::journal::note(&format!("{peer} forgotten"));
+            crate::journal::note(&format!("{peer} oublié"));
             Ok(())
         }
         other => Err(service::unexpected(other)),
@@ -245,16 +255,21 @@ pub async fn forget(fingerprint: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn start_service() -> Result<(), String> {
     let program = service_program()?;
-    crate::journal::note(&format!("asking to set up {}", program.display()));
+    crate::journal::note(&format!("mise en service demandée : {}", program.display()));
 
     // On a thread where waiting is allowed: this holds until the person
     // has answered the elevation prompt and the service has started.
     let outcome = tokio::task::spawn_blocking(move || set_up(&program))
         .await
-        .map_err(|e| format!("la mise en service n'a pas pu être menée : {e}"))?;
+        .map_err(|e| {
+            // What broke is a thread of ours, in words meant for a log:
+            // the person gets a sentence, the journal gets the detail.
+            crate::journal::note(&format!("mise en service interrompue : {e}"));
+            "la mise en service ne s'est pas terminée. Le journal dit pourquoi.".to_string()
+        })?;
     crate::journal::note(&match &outcome {
-        Ok(()) => "service set up".to_string(),
-        Err(reason) => format!("service not set up: {reason}"),
+        Ok(()) => "service mis en place".to_string(),
+        Err(reason) => format!("service non mis en place : {reason}"),
     });
     outcome
 }

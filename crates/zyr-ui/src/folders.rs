@@ -112,7 +112,8 @@ pub fn logs_folder() -> String {
 #[tauri::command]
 pub fn open_folder(which: String) -> Result<(), String> {
     let folder = Which::read(&which)?.path();
-    std::fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&folder)
+        .map_err(|e| format!("le dossier n'a pas pu être créé : {e}"))?;
     shown(&folder).map_err(|e| format!("le dossier n'a pas pu être ouvert : {e}"))
 }
 

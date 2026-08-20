@@ -88,7 +88,7 @@ fn main() {
             // The icon first: from here on, something on screen says this
             // program is running, whatever becomes of the window.
             if let Err(e) = tray::raise(app.handle()) {
-                journal::note(&format!("no icon in the notification area: {e}"));
+                journal::note(&format!("pas d'icône dans la zone de notification : {e}"));
             }
             // Nothing of this product runs while nobody is using it, so
             // opening it is what puts the service back on its feet.
@@ -121,7 +121,13 @@ fn main() {
                 // is the one thing that stops the product.
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    if floating::a_session_is_up(window.app_handle()) {
+                    if floating::a_session_is_up(window.app_handle()) || session::opening() {
+                        // While a session is merely opening there may be
+                        // nothing to end yet; the ask then only reaches
+                        // the journal, and the window stays. Hiding it
+                        // instead let the opening run on unseen, and the
+                        // session arrived as a bare rectangle on the
+                        // desktop with no window to live in.
                         session::end_it(window.app_handle());
                     } else {
                         let _ = window.hide();

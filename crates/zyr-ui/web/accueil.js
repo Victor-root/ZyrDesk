@@ -9,6 +9,10 @@
 const invoke = window.__TAURI__.core.invoke;
 const listen = window.__TAURI__.event.listen;
 
+/* La page d'accueil elle-même, pour l'éteindre sous l'écran
+   d'ouverture. */
+const page = document.querySelector("main");
+
 const vue = {
   nom: document.getElementById("nom-machine"),
   pastilleHote: document.getElementById("pastille-hote"),
@@ -74,6 +78,9 @@ const TEMPS_COPIE = 1600;
 /* Le temps qu'une demande de confirmation reste ouverte. */
 const TEMPS_CONFIRMATION = 4000;
 
+/* Le temps qu'une bonne nouvelle reste à l'écran avant de s'effacer. */
+const TEMPS_ANNONCE = 6000;
+
 const MINUTE = 60;
 const HEURE = 3600;
 
@@ -104,6 +111,11 @@ function occupe() {
 
 async function rafraichirEtat() {
   etat = await invoke("standing");
+  // Les interrupteurs des réglages lisent le même état : redessinés
+  // ici, un service qui s'arrête pendant que les réglages sont ouverts
+  // les fige au lieu de les laisser mentir.
+  dessineConfiance();
+  dessineAuDemarrage();
 
   vue.nom.textContent = etat.name;
   vue.empreinte.textContent = etat.fingerprint || "indisponible";
@@ -182,10 +194,20 @@ async function basculerAcces() {
 }
 
 async function copierEmpreinte() {
-  await navigator.clipboard.writeText(vue.empreinte.textContent);
-  vue.copier.textContent = "Copié";
+  await copie(vue.empreinte.textContent, vue.copier, "Copier");
+}
+
+/* Le presse-papiers peut refuser, et un bouton qui dit « Copié » sur un
+   refus enverrait quelqu'un coller du vide sur l'autre ordinateur. */
+async function copie(texte, bouton, motDeRepos) {
+  try {
+    await navigator.clipboard.writeText(texte);
+    bouton.textContent = "Copié";
+  } catch {
+    bouton.textContent = "Copie refusée";
+  }
   setTimeout(() => {
-    vue.copier.textContent = "Copier";
+    bouton.textContent = motDeRepos;
   }, TEMPS_COPIE);
 }
 
@@ -371,7 +393,7 @@ function duree(secondes) {
 }
 
 function motDeSession(session) {
-  return `Ouverte depuis ${duree(session.since)}. Cette fenêtre peut être fermée : la session continue toute seule.`;
+  return `Ouverte depuis ${duree(session.since)}. Fermer la fenêtre termine la session.`;
 }
 
 /* La carte de l'ordinateur, juste en dessous, porte déjà son adresse et
@@ -396,7 +418,12 @@ function carteSession(session) {
 }
 
 function dessineSessions() {
-  const signature = sessions.map((session) => session.fingerprint).join(" ");
+  // Le nom en fait partie : il vient de la liste des voisins, qui peut
+  // répondre après la session. Sans lui, la carte née sur l'adresse
+  // gardait l'adresse pour toute la session.
+  const signature = sessions
+    .map((session) => `${session.fingerprint} ${nomDe(session)}`)
+    .join("|");
   if (signature !== sessionsAffichees) {
     sessionsAffichees = signature;
     vue.sessions.replaceChildren(...sessions.map(carteSession));
@@ -501,6 +528,12 @@ function dessineOrdinateurs() {
 /* ---- Ajouter un ordinateur -------------------------------------------- */
 
 function ouvrirAjout() {
+  // Vidé à chaque ouverture : rouvert plein de la machine précédente,
+  // le dialogue laissait ajouter deux fois le même ordinateur d'un
+  // simple double clic sur « Se connecter ».
+  vue.adresse.value = "";
+  vue.nomAjout.value = "";
+  vue.empreinteDistante.value = "";
   vue.motEmpreinte.textContent = "";
   ajusterAjout();
   dessineEcrits();
@@ -574,7 +607,9 @@ async function connecter(evenement) {
   vue.ajout.close();
   montre(vue.probleme, false);
 
-  const empreinte = vue.empreinteDistante.value;
+  // Taillée comme elle a été comptée : une espace collée en trop ferait
+  // chercher l'ordinateur sous une empreinte que personne ne porte.
+  const empreinte = vue.empreinteDistante.value.trim();
   const adresse = vue.adresse.value.trim();
   try {
     await invoke("authorize", {
@@ -627,6 +662,10 @@ function etape(detail, code) {
   vue.ouvertureCode.textContent = code ?? "";
   montre(vue.ouvertureCode, code !== null);
   montre(vue.ouverture, true);
+  // La page derrière est éteinte pour de bon : l'écran d'ouverture la
+  // recouvre des yeux, mais le clavier savait encore y entrer à la
+  // tabulation et cliquer des boutons que personne ne voyait.
+  page.inert = true;
 }
 
 /* La fenêtre n'a plus rien à raconter : ce qui se passe maintenant se lit
@@ -636,15 +675,28 @@ async function rangeOuverture() {
   ouverture = false;
   await rafraichirLeReseau();
   montre(vue.ouverture, false);
+  page.inert = false;
 }
 
 /* Le bandeau du haut. Il sert aux deux : ce qui a échoué, et ce qui a
    réussi sans laisser de trace ailleurs à l'écran. Un message rouge pour
    dire que tout va bien se lirait comme une panne. */
+let effacementAnnonce = null;
+
 function annonce(texte, ennui = false) {
   vue.problemeTexte.textContent = texte;
   vue.probleme.classList.toggle("alerte", ennui);
   montre(vue.probleme, true);
+  // Une bonne nouvelle s'efface toute seule : restée à l'écran, elle
+  // finit par se lire comme un état. Un ennui reste jusqu'au geste
+  // suivant, puisqu'il attend qu'on y réponde.
+  clearTimeout(effacementAnnonce);
+  effacementAnnonce = null;
+  if (!ennui) {
+    effacementAnnonce = setTimeout(() => {
+      montre(vue.probleme, false);
+    }, TEMPS_ANNONCE);
+  }
 }
 
 function echoue(texte) {
@@ -653,6 +705,12 @@ function echoue(texte) {
 }
 
 listen("session-step", ({ payload }) => {
+  // Une étape n'a de sens que pendant une ouverture. Un événement en
+  // retard, arrivé après l'échec ou après la fin, remettait l'écran
+  // d'ouverture par-dessus l'accueil, et plus rien ne l'enlevait.
+  if (!ouverture) {
+    return;
+  }
   switch (payload.kind) {
     case "reached":
       etape(`Tunnel établi, paquets de ${payload.packet} octets.`, null);
@@ -676,6 +734,9 @@ listen("session-step", ({ payload }) => {
       break;
     case "starting":
       etape("Démarrage de l'image…", null);
+      break;
+    case "showing":
+      etape("L'image arrive…", null);
       break;
     case "live":
       // À partir d'ici le service tient la session, et n'importe quelle
@@ -709,11 +770,7 @@ async function rafraichirJournal() {
 }
 
 async function copierJournal() {
-  await navigator.clipboard.writeText(vue.journalTexte.textContent);
-  vue.copierJournal.textContent = "Copié";
-  setTimeout(() => {
-    vue.copierJournal.textContent = "Copier tout";
-  }, TEMPS_COPIE);
+  await copie(vue.journalTexte.textContent, vue.copierJournal, "Copier tout");
 }
 
 /* Vider efface la seule trace de ce qui vient de se passer. Un deuxième
@@ -794,8 +851,18 @@ function marque(nom, valeur) {
 }
 
 /* Un réglage change, les autres ne bougent pas : le service reçoit
-   l'ensemble pour n'avoir jamais à deviner ce qui est resté. */
-async function change(comment) {
+   l'ensemble pour n'avoir jamais à deviner ce qui est resté.
+
+   Un choix à la fois, dans l'ordre des clics. Deux demandes parties
+   ensemble voyagent chacune de leur côté, et la première écrite en
+   dernier annulerait le clic le plus récent sans un mot. */
+let choixEnCours = Promise.resolve();
+
+function change(comment) {
+  choixEnCours = choixEnCours.then(() => envoieLeChoix(comment));
+}
+
+async function envoieLeChoix(comment) {
   if (reglages === null) {
     return;
   }
@@ -882,6 +949,9 @@ const dessineAuDemarrage = interrupteurMachine(
 function soucis(texte) {
   vue.reglagesProblemeTexte.textContent = texte;
   montre(vue.reglagesProbleme, true);
+  // Le bandeau vit en bas d'un dialogue qui défile : amené sous les
+  // yeux, sinon un refus prononcé en haut du dialogue reste invisible.
+  vue.reglagesProbleme.scrollIntoView({ block: "nearest" });
 }
 
 async function ouvrirReglages() {
@@ -1069,10 +1139,13 @@ vue.adresse.addEventListener("input", ajusterAjout);
 vue.empreinteDistante.addEventListener("input", ajusterAjout);
 vue.ajoutForme.addEventListener("submit", connecter);
 vue.ouvrirJournal.addEventListener("click", ouvrirJournal);
-vue.fermerJournal.addEventListener("click", () => {
-  reposeLeVidage();
-  vue.journal.close();
-});
+vue.fermerJournal.addEventListener("click", () => vue.journal.close());
+// Sur la fermeture du dialogue et non sur son bouton : la touche Échap
+// ferme aussi, et laissait la confirmation de vidage armée derrière un
+// dialogue clos. Rouvert dans les quatre secondes, « Vider » vidait au
+// premier clic.
+vue.journal.addEventListener("close", reposeLeVidage);
+vue.reglages.addEventListener("close", () => arreteDEcouter());
 vue.rafraichirJournal.addEventListener("click", rafraichirJournal);
 vue.copierJournal.addEventListener("click", copierJournal);
 vue.viderJournal.addEventListener("click", viderJournal);

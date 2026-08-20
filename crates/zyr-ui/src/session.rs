@@ -11,6 +11,7 @@
 //! what it holds is what lets a window opened afterwards, or reopened
 //! after a crash, show the session instead of an empty home screen.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -99,12 +100,31 @@ pub async fn sessions() -> Vec<Ongoing> {
     .unwrap_or_default()
 }
 
+/// Set from the moment a session is asked for to the moment it is over.
+///
+/// The window's own screen refuses to ask for two sessions at once, but
+/// a screen is not a guard: reloaded, it forgets, and two engines opened
+/// on the same desktop cannot both be driven. This is the guard.
+static OPENING: AtomicBool = AtomicBool::new(false);
+
+/// Whether a session is being opened right now.
+pub fn opening() -> bool {
+    OPENING.load(Ordering::Relaxed)
+}
+
 #[tauri::command]
 pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Result<(), String> {
     let peer = fingerprint
         .trim()
         .parse()
         .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+
+    // One at a time, held here and not merely on the screen. Taken
+    // before anything moves, and given back by `finish`, which every
+    // road out of `drive` ends at.
+    if crate::floating::a_session_is_up(&app) || OPENING.swap(true, Ordering::SeqCst) {
+        return Err("une session est déjà en cours".to_string());
+    }
 
     let preferred = crate::settings::preferred().await;
     // The window takes the screen before anything else does, so the
@@ -132,21 +152,24 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
 }
 
 fn drive(app: &AppHandle, wanted: Wanted) {
-    crate::journal::note(&format!("session asked for towards {}", wanted.host));
+    crate::journal::note(&format!("session demandée vers {}", wanted.host));
+    let towards = wanted.host.clone();
     let running = match zyr_session::open(&wanted, &mut |step| {
         crate::journal::note(&written(&step));
         // The floating button hangs on that process, and this window is
-        // the only one that knows its number until the service does.
-        if let Step::Showing { process } = step {
-            crate::floating::expect(app, process);
-            lay_the_picture_as_soon_as_it_opens(app.clone(), process);
+        // the only one that knows its number until the service does; the
+        // way travels with it, so the session can be ended during the
+        // seconds the service does not believe in it yet.
+        if let Step::Showing { process, at } = &step {
+            crate::floating::expect(app, *process, &towards, at);
+            lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
         }
         say(app, told(step));
     }) {
         Ok(running) => running,
         Err(e) => {
             crate::journal::note(&format!(
-                "session not opened: {}",
+                "session non ouverte : {}",
                 e.to_string().replace('\n', " ")
             ));
             return finish(app, false, e.to_string());
@@ -154,7 +177,7 @@ fn drive(app: &AppHandle, wanted: Wanted) {
     };
 
     crate::journal::note(&format!(
-        "session live, engine process {}",
+        "session en cours, lecteur {}",
         running.process_id()
     ));
     say(app, Told::Live);
@@ -164,9 +187,11 @@ fn drive(app: &AppHandle, wanted: Wanted) {
     let ended = running.wait();
     let on_purpose = crate::floating::Floating::was_closed_on_purpose(app);
     crate::journal::note(&match &ended {
-        Ok(outcome) if on_purpose => format!("session closed on purpose, engine said {outcome:?}"),
-        Ok(outcome) => format!("session ended: {outcome:?}"),
-        Err(e) => format!("session ended on a system error: {e}"),
+        Ok(outcome) if on_purpose => {
+            format!("session fermée volontairement, le lecteur a dit {outcome:?}")
+        }
+        Ok(outcome) => format!("session terminée : {outcome:?}"),
+        Err(e) => format!("session terminée sur une erreur système : {e}"),
     });
 
     // Closing the far computer's desktop takes the stream away from the
@@ -202,10 +227,10 @@ fn drive(app: &AppHandle, wanted: Wanted) {
 pub fn end_it(app: &AppHandle) {
     let asked = app.clone();
     tauri::async_runtime::spawn(async move {
-        crate::journal::note("session ended from the window's cross");
+        crate::journal::note("session terminée par la croix de la fenêtre");
         if let Err(reason) = crate::floating::ask(&asked, crate::floating::Act::End).await {
             crate::journal::note(&format!(
-                "session not ended from the cross: {}",
+                "la croix n'a pas pu terminer la session : {}",
                 reason.replace('\n', " ")
             ));
         }
@@ -255,7 +280,7 @@ fn told(step: Step) -> Told {
         Step::PairingNeeded { pin } => Told::PairingNeeded { pin },
         Step::Paired => Told::Paired,
         Step::Starting => Told::Starting,
-        Step::Showing { process } => Told::Showing { process },
+        Step::Showing { process, .. } => Told::Showing { process },
     }
 }
 
@@ -267,17 +292,17 @@ fn told(step: Step) -> Told {
 /// afterwards, when there is nothing left on screen to look at.
 fn written(step: &Step) -> String {
     match step {
-        Step::Reached { packet } => format!("tunnel open, packets of {packet} bytes"),
-        Step::Pairing { again: false } => "introducing the two computers".to_string(),
+        Step::Reached { packet } => format!("tunnel ouvert, paquets de {packet} octets"),
+        Step::Pairing { again: false } => "présentation des deux ordinateurs".to_string(),
         Step::Pairing { again: true } => {
-            "the far computer no longer knows this one, introducing them again".to_string()
+            "l'ordinateur distant ne reconnaît plus celui-ci, nouvelle présentation".to_string()
         }
         Step::PairingNeeded { .. } => {
-            "waiting for the code to be typed on the far computer".to_string()
+            "en attente du code à taper sur l'ordinateur distant".to_string()
         }
-        Step::Paired => "the two computers know each other".to_string(),
-        Step::Starting => "starting the client engine".to_string(),
-        Step::Showing { process } => format!("client engine running as process {process}"),
+        Step::Paired => "les deux ordinateurs se connaissent".to_string(),
+        Step::Starting => "démarrage du lecteur".to_string(),
+        Step::Showing { process, .. } => format!("lecteur en marche, processus {process}"),
     }
 }
 
@@ -288,6 +313,7 @@ fn say(app: &AppHandle, what: Told) {
 }
 
 fn finish(app: &AppHandle, ok: bool, message: String) {
+    OPENING.store(false, Ordering::SeqCst);
     crate::floating::expect_nothing(app);
     // Taken down here rather than left to the watch. The watch comes
     // round once a second and asks the service what it holds, and until

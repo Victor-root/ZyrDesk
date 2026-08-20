@@ -170,7 +170,7 @@ impl Request {
         match verb {
             "standing" => Ok(Request::Standing),
             "reach" => Ok(Request::Reach {
-                host: fields.text("host")?.to_string(),
+                host: unpacked(fields.text("host")?),
                 peer: fields.parsed("peer")?,
                 media: MediaProfile {
                     bits_per_second: u64::from(fields.parsed::<u32>("bitrate")?) * 1000,
@@ -223,7 +223,8 @@ impl fmt::Display for Request {
             Request::Standing => f.write_str("standing"),
             Request::Reach { host, peer, media } => write!(
                 f,
-                "reach host={host} peer={peer} bitrate={} fps={}",
+                "reach host={} peer={peer} bitrate={} fps={}",
+                packed(host),
                 media.bits_per_second / 1000,
                 media.frames_per_second
             ),
@@ -634,6 +635,16 @@ mod tests {
             Request::Standing,
             Request::Reach {
                 host: "192.168.1.20".to_string(),
+                peer: fingerprint(),
+                media: MediaProfile {
+                    bits_per_second: 20_000_000,
+                    frames_per_second: 60,
+                },
+            },
+            Request::Reach {
+                // Une adresse écrite à la main peut porter une espace :
+                // elle traverse le même champ que les autres textes.
+                host: "pc de victor.local".to_string(),
                 peer: fingerprint(),
                 media: MediaProfile {
                     bits_per_second: 20_000_000,

@@ -42,9 +42,15 @@ const PATH_DISCOVERY: Duration = Duration::from_secs(2);
 
 /// How long a way may stay tied to nothing before it is closed.
 ///
-/// It covers the moment between the way being opened and the player
-/// being started with it. Whoever asked has that long to come back.
-const GRACE: Duration = Duration::from_secs(30);
+/// It covers everything between the way being opened and the player
+/// being handed over: at worst a session that starts, is turned away
+/// because the far computer forgot the pairing, waits six seconds to be
+/// sure, pairs again with thirty seconds of patience, and starts a
+/// second time before it is believed. Cutting the way anywhere along
+/// that road closes the tunnel under a session that was going to make
+/// it; whoever really abandoned an attempt costs a closed loopback for
+/// two minutes, which nothing else is waiting on.
+const GRACE: Duration = Duration::from_secs(120);
 
 /// How often the ways are looked over.
 const SWEEP: Duration = Duration::from_secs(2);
@@ -109,14 +115,26 @@ impl<T> Register<T> {
         }
     }
 
-    /// Takes the lowest free local address.
+    /// Takes the local address that stands for that computer.
     ///
-    /// Lowest rather than next: the addresses are what the client engine
-    /// remembers a computer by, and reusing them keeps its stored state
-    /// from growing without end.
-    fn reserve(&mut self) -> Option<u16> {
-        let device = (0..u16::MAX).find(|index| !self.taken.contains(index))?;
-        device_loopback_addr(device)?;
+    /// Drawn from the computer's fingerprint, so the same computer lands
+    /// on the same address session after session, whatever order the
+    /// sessions were opened in. The engine's stored pairing names the
+    /// address it paired with and nothing else: an address that moved
+    /// with connection order made the engine treat a known computer as a
+    /// stranger and pair with it again, silently, every time the order
+    /// changed.
+    ///
+    /// When the drawn address is taken, the next free one is used: two
+    /// computers landing on the same number is rare, and only costs that
+    /// stability while both are open at once.
+    fn reserve(&mut self, peer: Fingerprint) -> Option<u16> {
+        let slots = u32::from(u16::MAX);
+        let bytes = peer.as_bytes();
+        let drawn = u32::from(u16::from_be_bytes([bytes[0], bytes[1]]));
+        let device = (0..slots)
+            .map(|step| ((drawn + step) % slots) as u16)
+            .find(|index| !self.taken.contains(index) && device_loopback_addr(*index).is_some())?;
         self.taken.insert(device);
         Some(device)
     }
@@ -256,7 +274,7 @@ impl Ways {
             .register
             .lock()
             .expect("registre des voies")
-            .reserve()
+            .reserve(peer)
             .ok_or("plus d'adresse locale disponible pour une session de plus")?;
 
         match self.dig(remote, host, peer, media, device, &identity).await {
@@ -474,12 +492,22 @@ mod tests {
         Register::new()
     }
 
+    fn peer() -> Fingerprint {
+        "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237"
+            .parse()
+            .unwrap()
+    }
+
+    fn other_peer() -> Fingerprint {
+        "f145a3b2c89cf2370829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d79"
+            .parse()
+            .unwrap()
+    }
+
     fn towards(host: &str) -> Towards {
         Towards {
             host: host.to_string(),
-            peer: "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237"
-                .parse()
-                .unwrap(),
+            peer: peer(),
             at: "127.77.0.1:47989".to_string(),
         }
     }
@@ -487,8 +515,8 @@ mod tests {
     #[test]
     fn each_way_takes_its_own_local_address() {
         let mut register = register();
-        let first = register.reserve().unwrap();
-        let second = register.reserve().unwrap();
+        let first = register.reserve(peer()).unwrap();
+        let second = register.reserve(peer()).unwrap();
         assert_ne!(first, second);
         assert_ne!(
             device_loopback_addr(first).unwrap(),
@@ -497,29 +525,48 @@ mod tests {
     }
 
     #[test]
+    fn a_computer_keeps_the_same_local_address_from_one_session_to_the_next() {
+        // Le moteur retient l'appairage sous l'adresse qu'il a composée :
+        // une adresse qui bougerait avec l'ordre des connexions lui
+        // ferait prendre un ordinateur connu pour un inconnu, et
+        // réappairer en silence.
+        let mut register = register();
+        let first = register.reserve(peer()).unwrap();
+        register.give_back(first);
+
+        // Un autre ordinateur ouvre une session entre-temps : il prend
+        // sa propre adresse, pas celle du premier.
+        let second = register.reserve(other_peer()).unwrap();
+        assert_ne!(first, second);
+
+        // Et le premier retrouve la sienne.
+        assert_eq!(register.reserve(peer()), Some(first));
+    }
+
+    #[test]
     fn a_closed_way_gives_its_address_back() {
         let mut register = register();
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         let way = register.settle(device, towards("192.168.1.20"), "session");
         // Taken again straight away would mean the address leaked with
         // every session, and the client engine remembering a new
         // computer each time.
         assert_eq!(register.release(way), Some("session"));
-        assert_eq!(register.reserve(), Some(device));
+        assert_eq!(register.reserve(peer()), Some(device));
     }
 
     #[test]
     fn an_abandoned_attempt_gives_its_address_back() {
         let mut register = register();
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         register.give_back(device);
-        assert_eq!(register.reserve(), Some(device));
+        assert_eq!(register.reserve(peer()), Some(device));
     }
 
     #[test]
     fn releasing_a_way_twice_is_not_an_error() {
         let mut register = register();
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         let way = register.settle(device, towards("192.168.1.20"), "session");
         assert!(register.release(way).is_some());
         assert!(register.release(way).is_none());
@@ -528,7 +575,7 @@ mod tests {
     #[test]
     fn a_way_whose_process_is_gone_is_finished() {
         let mut register = register();
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         let way = register.settle(device, towards("192.168.1.20"), "session");
         assert!(register.hold(way, 4242));
 
@@ -540,7 +587,7 @@ mod tests {
     #[test]
     fn a_way_nobody_ever_claimed_is_finished_after_the_grace_period() {
         let mut register = register();
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         let way = register.settle(device, towards("192.168.1.20"), "session");
 
         let now = Instant::now();
@@ -555,7 +602,7 @@ mod tests {
     #[test]
     fn a_claimed_way_is_not_swept_for_being_old() {
         let mut register = register();
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         let way = register.settle(device, towards("192.168.1.20"), "session");
         register.hold(way, 4242);
         // A long session is the normal case, not an abandoned one.
@@ -575,7 +622,7 @@ mod tests {
     #[test]
     fn only_a_way_that_serves_a_process_counts_as_a_session() {
         let mut register = register();
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         let way = register.settle(device, towards("192.168.1.20"), "session");
 
         // Opened, not yet claimed: an attempt under way, not a picture
@@ -595,7 +642,7 @@ mod tests {
     #[test]
     fn a_session_says_how_long_the_picture_has_been_up() {
         let mut register = register();
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         let way = register.settle(device, towards("192.168.1.20"), "session");
         // A first pairing can take minutes between the way opening and
         // the player starting: the session is as old as the picture,
@@ -610,7 +657,7 @@ mod tests {
     fn the_sessions_come_back_in_the_same_order_every_time() {
         let mut register = register();
         for _ in 0..8 {
-            let device = register.reserve().unwrap();
+            let device = register.reserve(peer()).unwrap();
             let way = register.settle(device, towards("192.168.1.20"), "session");
             register.hold(way, 4242);
         }
@@ -630,7 +677,7 @@ mod tests {
     fn the_count_follows_what_is_open() {
         let mut register = register();
         assert_eq!(register.count(), 0);
-        let device = register.reserve().unwrap();
+        let device = register.reserve(peer()).unwrap();
         // An address taken is not yet a way: the count follows what is
         // actually open, which is what the interface shows.
         assert_eq!(register.count(), 0);

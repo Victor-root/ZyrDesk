@@ -48,6 +48,7 @@ function ajusteLaFenetre() {
 function ouvre(veut) {
   ouvert = veut;
   montre(vue.menu, veut);
+  vue.logo.setAttribute("aria-expanded", veut ? "true" : "false");
   if (!veut) {
     montre(vue.souci, false);
   }
@@ -143,6 +144,16 @@ document.addEventListener("click", (evenement) => {
    arrive, il ne reste que le menu à ouvrir. C'est le seul chemin de
    retour après avoir masqué le bouton. */
 listen("floating-open", () => ouvre(true));
+
+/* Une nouvelle session reprend cette fenêtre telle que la précédente
+   l'a laissée. Ce qui restait d'elle part : le menu ouvert surtout, qui
+   gardait la fenêtre à sa taille de menu, une nappe invisible posée sur
+   l'image qui avalait les clics. */
+listen("floating-reset", () => {
+  clearTimeout(effacement);
+  montre(vue.souci, false);
+  ouvre(false);
+});
 
 /* Les combinaisons se lisent dans le menu, à côté de ce qu'elles font.
    Lues à chaque ouverture de session plutôt que gravées, puisqu'elles se

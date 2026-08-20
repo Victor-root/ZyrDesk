@@ -58,6 +58,15 @@ pub struct Picture {
 static ENGINE: AtomicIsize = AtomicIsize::new(0);
 static SHAPE: AtomicI64 = AtomicI64::new(0);
 
+/// The player the picture belongs to, next to it.
+///
+/// The handler cannot take the lock the full answer lives under, and a
+/// window number alone is not an answer: the system hands numbers back
+/// out when their window goes, so the number alone can name a stranger's
+/// window minutes after the engine died. Owner checked against this
+/// before the number is acted on.
+static PLAYER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 /// Set while the person is dragging an edge of our window.
 ///
 /// The shape is held during the drag, before each resize; tidying it up
@@ -86,7 +95,7 @@ fn shape() -> (i32, i32) {
     ((both >> 32) as i32, both as i32)
 }
 
-fn remember_the_shape(engine: isize, shape: (i32, i32)) {
+fn remember_the_shape(engine: isize, shape: (i32, i32), process: u32) {
     // The next picture is a different window and has never been given a
     // shape, whatever size this one was left at.
     LAID.store(0, Ordering::Relaxed);
@@ -100,6 +109,7 @@ fn remember_the_shape(engine: isize, shape: (i32, i32)) {
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
     );
+    PLAYER.store(process, Ordering::Relaxed);
     ENGINE.store(engine, Ordering::Relaxed);
 }
 
@@ -131,29 +141,38 @@ struct Held {
 /// remembered in that case: the next call tries again.
 pub fn hold(app: &AppHandle, process: u32) -> bool {
     let state = app.state::<Picture>();
-    let known = *state.held.lock().expect("image tenue");
-    let already = known.filter(|held| held.process == process && alive(held));
-
-    if already.is_none() {
-        let Some((window, shape)) = take_the_frame_away(app, process) else {
-            return false;
-        };
-        *state.held.lock().expect("image tenue") = Some(Held {
-            process,
-            window,
-            shape,
-        });
-        // The shape is worth writing down: it is the size the far
-        // computer's picture actually arrives at, which is the answer to
-        // what a black band on screen means, and it exists nowhere else
-        // once the window has been laid in ours.
-        crate::journal::note(&format!(
-            "image du lecteur {process} posée dans la fenêtre de ZyrDesk, en {}x{}",
-            shape.0, shape.1
-        ));
-        remember_the_shape(window, shape);
-        take_the_window_in_hand(app);
-        hold_the_shape(app);
+    // The lock is held from the reading to the writing. Two callers race
+    // here every second a session opens, the watch and the opening's own
+    // thread; each reading « nothing held », both took the frame away,
+    // and the second one read the window's size AFTER the first had laid
+    // it in ours, writing the window's incidental size down as the shape
+    // of the picture. The session then held its window to the wrong
+    // shape for as long as it lasted.
+    {
+        let mut held = state.held.lock().expect("image tenue");
+        let already = held.filter(|held| held.process == process && alive(held));
+        if already.is_none() {
+            let Some((window, shape)) = take_the_frame_away(app, process) else {
+                return false;
+            };
+            *held = Some(Held {
+                process,
+                window,
+                shape,
+            });
+            // The shape is worth writing down: it is the size the far
+            // computer's picture actually arrives at, which is the
+            // answer to what a black band on screen means, and it exists
+            // nowhere else once the window has been laid in ours.
+            crate::journal::note(&format!(
+                "image du lecteur {process} posée dans la fenêtre de ZyrDesk, en {}x{}",
+                shape.0, shape.1
+            ));
+            remember_the_shape(window, shape, process);
+            drop(held);
+            take_the_window_in_hand(app);
+            hold_the_shape(app);
+        }
     }
     fit(app);
     true
@@ -168,7 +187,7 @@ pub fn let_go(app: &AppHandle) {
         .expect("image tenue")
         .take();
     if held.is_some() {
-        remember_the_shape(0, (0, 0));
+        remember_the_shape(0, (0, 0), 0);
         give_the_window_back(app);
     }
 }
@@ -661,17 +680,25 @@ fn round_the_bottom(
         // those two edges, and a picture short of its last row is a
         // picture with a line missing.
         let shape = CreateRoundRectRgn(left, top, right + 1, bottom + 1, round * 2, round * 2);
+        if shape.is_null() {
+            return;
+        }
         // Everything above the arcs stays a plain rectangle. Anchored on
         // the frame the top arcs fall on the title bar, above the picture,
         // and this adds nothing; anchored on the picture they would fall
         // inside it, and the top of the picture is straight.
         let straight = CreateRectRgn(0, 0, width, bottom - round);
-        CombineRgn(shape, shape, straight, RGN_OR);
-        DeleteObject(straight);
-        // The system owns the shape from here and frees it itself. Not
-        // asked to redraw on the spot: this happens on every step of a
-        // resize, and the engine is drawing sixty times a second anyway.
-        SetWindowRgn(engine, shape, 0);
+        if !straight.is_null() {
+            CombineRgn(shape, shape, straight, RGN_OR);
+            DeleteObject(straight);
+        }
+        // The system owns the shape from here and frees it itself, but
+        // only once it has taken it: refused, it is still ours to free.
+        // Not asked to redraw on the spot: this happens on every step of
+        // a resize, and the engine is drawing sixty times a second anyway.
+        if SetWindowRgn(engine, shape, 0) == 0 {
+            DeleteObject(shape);
+        }
     }
 }
 
@@ -898,8 +925,7 @@ unsafe extern "system" fn lit(
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
             // The shape was left alone while the hand was moving; the
             // hand has stopped.
-            let engine = ENGINE.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
-            if !engine.is_null() {
+            if let Some(engine) = the_engines_window() {
                 lay_it_out(window, engine);
             }
             answer
@@ -924,8 +950,7 @@ unsafe extern "system" fn lit(
             if DRAGGED.load(Ordering::Relaxed) {
                 Cost::add(&SYSTEM, waited.elapsed());
             }
-            let engine = ENGINE.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
-            if !engine.is_null() {
+            if let Some(engine) = the_engines_window() {
                 lay_it_out(window, engine);
             }
             answer
@@ -1072,6 +1097,32 @@ fn the_least_picture(room: Option<(i32, i32)>, shape: (i32, i32)) -> (i32, i32) 
         room.0.max(across_at_least(room.1, high, wide)),
         room.1.max(across_at_least(room.0, wide, high)),
     )
+}
+
+/// The engine's window as the handler may act on it, or nothing.
+///
+/// Nothing when there is none, and nothing when the number no longer
+/// names the engine's window: the system hands numbers back out when
+/// their window goes, and for the seconds between the engine dying and
+/// the session being tidied away, this number can come to name a
+/// stranger's window. Acting on it then would move that window, resize
+/// it to our inside and force it shown.
+#[cfg(windows)]
+fn the_engines_window() -> Option<windows_sys::Win32::Foundation::HWND> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
+
+    let engine = ENGINE.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
+    if engine.is_null() {
+        return None;
+    }
+    // SAFETY: a window number, which the call is made to weigh.
+    if unsafe { IsWindow(engine) } == 0 {
+        return None;
+    }
+    let mut owner = 0u32;
+    // SAFETY: same window, and the slot is ours.
+    unsafe { GetWindowThreadProcessId(engine, &mut owner) };
+    (owner == PLAYER.load(Ordering::Relaxed)).then_some(engine)
 }
 
 /// Whether the window at the front is the picture.

@@ -56,12 +56,12 @@ pub fn wake_the_service() {
         if Service::join().await.is_ok() {
             return;
         }
-        crate::journal::note("service not answering, starting it");
+        crate::journal::note("service muet, démarrage demandé");
         let outcome = tauri::async_runtime::spawn_blocking(started).await;
         crate::journal::note(&match outcome {
-            Ok(Ok(())) => "service asked to start".to_string(),
-            Ok(Err(e)) => format!("service could not be started: {e}"),
-            Err(e) => format!("service could not be started: {e}"),
+            Ok(Ok(())) => "service demandé au démarrage".to_string(),
+            Ok(Err(e)) => format!("service non démarré : {e}"),
+            Err(e) => format!("service non démarré : {e}"),
         });
     });
 }
@@ -86,9 +86,13 @@ fn started() -> std::io::Result<()> {
     if said.status.success() {
         return Ok(());
     }
-    Err(std::io::Error::other(
-        String::from_utf8_lossy(&said.stdout).trim().to_string(),
-    ))
+    // Failures land on the error output; the ordinary one is read only
+    // when there is nothing there, so the reason is never an empty line.
+    let mut words = String::from_utf8_lossy(&said.stderr).trim().to_string();
+    if words.is_empty() {
+        words = String::from_utf8_lossy(&said.stdout).trim().to_string();
+    }
+    Err(std::io::Error::other(words))
 }
 
 #[cfg(not(windows))]

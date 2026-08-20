@@ -94,21 +94,25 @@ pub fn remove(path: &Path, fingerprint: Fingerprint) -> io::Result<bool> {
 }
 
 fn write(path: &Path, computers: &[Known]) -> io::Result<()> {
-    if let Some(folder) = path.parent() {
-        fs::create_dir_all(folder)?;
-    }
     let mut text = String::from(
         "# Ordinateurs ajoutés à la main, pour les réseaux qui ne portent\n\
          # pas les annonces. Une ligne par ordinateur :\n\
          #   empreinte adresse nom\n",
     );
     for known in computers {
+        // One computer per line, whatever its name was pasted with: a
+        // line break in a name would split it into a line nobody can
+        // read and cost the computers after it.
         text.push_str(&format!(
             "{} {} {}\n",
-            known.fingerprint, known.host, known.name
+            known.fingerprint,
+            known.host,
+            known.name.replace(['\n', '\r'], " ")
         ));
     }
-    fs::write(path, text)
+    // Whole or not at all: this list and the door it mirrors must not be
+    // resettable by a power cut.
+    zyr_proto::files::replace(path, &text)
 }
 
 #[cfg(test)]

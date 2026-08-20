@@ -154,12 +154,12 @@ fn chosen(app: &AppHandle, event: MenuEvent) {
 /// than stopped through Windows, which would want administrator rights
 /// every single time.
 fn quit(app: &AppHandle) {
-    crate::journal::note("quit asked for from the notification area");
+    crate::journal::note("fermeture demandée depuis la zone de notification");
     let leaving = app.clone();
     tauri::async_runtime::spawn(async move {
         match crate::desk::stop_service().await {
-            Ok(()) => crate::journal::note("service stopped, leaving"),
-            Err(reason) => crate::journal::note(&format!("service not stopped: {reason}")),
+            Ok(()) => crate::journal::note("service arrêté, fermeture"),
+            Err(reason) => crate::journal::note(&format!("service non arrêté : {reason}")),
         }
         leaving.exit(0);
     });

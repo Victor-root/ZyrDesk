@@ -13,7 +13,7 @@
 //! nighttime incident.
 
 use std::fs::{File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -23,6 +23,18 @@ use time::macros::format_description;
 
 const TIMESTAMP: &[BorrowedFormatItem<'static>] =
     format_description!("[year]-[month]-[day] [hour]:[minute]:[second]");
+
+/// Size past which the log is cut back.
+///
+/// A service runs for months, and a file nothing ever trims grows for
+/// exactly that long: reading it back into a window, or asking someone
+/// to send it, stops being reasonable long before anyone notices.
+const AT_MOST: u64 = 4 * 1024 * 1024;
+
+/// What is kept of the old lines when it is.
+///
+/// The end, where whatever is being investigated lives.
+const KEPT: u64 = 256 * 1024;
 
 /// Log opened in append mode, shared by the whole service.
 ///
@@ -39,7 +51,13 @@ impl Log {
         if let Some(folder) = path.parent() {
             std::fs::create_dir_all(folder)?;
         }
-        let file = OpenOptions::new().create(true).append(true).open(path)?;
+        // Readable as well as appendable: trimming reads the end back
+        // before the file is cut.
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .append(true)
+            .open(path)?;
         Ok(Self {
             file: Arc::new(Mutex::new(file)),
         })
@@ -53,9 +71,36 @@ impl Log {
         let Ok(mut file) = self.file.lock() else {
             return;
         };
+        let _ = trimmed(&mut file);
         let _ = writeln!(file, "{} {message}", now());
         let _ = file.flush();
     }
+}
+
+/// Cuts the log back once it has grown past reason, keeping its end.
+///
+/// Done through the open handle and never by replacing the file: other
+/// copies of this log hold the same file, and a file swapped out from
+/// under them would take their lines to a ghost.
+fn trimmed(file: &mut File) -> io::Result<()> {
+    let written = file.metadata()?.len();
+    if written <= AT_MOST {
+        return Ok(());
+    }
+    let mut end = vec![0u8; KEPT as usize];
+    file.seek(SeekFrom::Start(written - KEPT))?;
+    file.read_exact(&mut end)?;
+    // From the first whole line: the cut lands mid-line, and half a line
+    // at the top would read as a corrupted file.
+    let from = end
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map_or(0, |at| at + 1);
+    file.set_len(0)?;
+    // The file is in append mode, so writes land at the end wherever the
+    // cursor stands; said out loud so the cut is never taken for a loss.
+    file.write_all("(le début de ce journal a été retiré)\n".as_bytes())?;
+    file.write_all(&end[from..])
 }
 
 /// Universal timestamp, or an explicit marker when the clock is
@@ -107,5 +152,36 @@ mod tests {
         let timestamp = now();
         assert_eq!(timestamp.len(), 19, "{timestamp}");
         assert!(timestamp.contains('-') && timestamp.contains(':'));
+    }
+
+    #[test]
+    fn a_log_grown_past_reason_is_cut_back_to_its_end() {
+        let path = fresh_path("taille");
+        let log = Log::open(&path).unwrap();
+
+        // Grossi au-delà de la limite par le fichier directement : y
+        // aller ligne à ligne prendrait le plus clair du test.
+        {
+            let mut file = log.file.lock().unwrap();
+            let line = format!("{} du remplissage sans intérêt\n", now());
+            let times = (AT_MOST / line.len() as u64) + 2;
+            for _ in 0..times {
+                file.write_all(line.as_bytes()).unwrap();
+            }
+        }
+
+        log.write("la ligne qui compte");
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.len() as u64 <= KEPT + 256, "{}", contents.len());
+        // La fin est là, le début est parti, et la coupe est annoncée.
+        assert!(contents.ends_with("la ligne qui compte\n"));
+        assert!(contents.starts_with("(le début"), "{}", &contents[..60]);
+        // Et jamais de demi-ligne en tête : la coupe tombe sur une
+        // frontière.
+        let second = contents.lines().nth(1).unwrap();
+        assert!(second.starts_with(char::is_numeric), "{second}");
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

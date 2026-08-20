@@ -33,6 +33,12 @@ impl Fingerprint {
     pub fn of_certificate(certificate: &CertificateDer<'_>) -> Self {
         Self(Sha256::digest(certificate.as_ref()).into())
     }
+
+    /// The fingerprint as its bytes, for whoever needs a stable number
+    /// derived from it rather than its spelling.
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 /// Text that is not a fingerprint.

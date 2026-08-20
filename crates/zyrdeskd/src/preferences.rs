@@ -145,10 +145,10 @@ fn from_disk(path: &Path) -> Preferences {
 }
 
 fn onto_disk(path: &Path, preferences: Preferences) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, rendered(preferences))
+    // Replaced whole or not at all: a service killed mid-write, or a
+    // power cut, would otherwise leave a blank file, and every choice in
+    // it silently back at its default the next morning.
+    zyr_proto::files::replace(path, &rendered(preferences))
 }
 
 fn rendered(preferences: Preferences) -> String {

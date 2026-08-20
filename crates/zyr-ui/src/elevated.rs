@@ -21,12 +21,6 @@ use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 /// What Windows says when the person turns the prompt down.
 const REFUSED: i32 = 1223;
 
-/// What COM says when this thread is already in another apartment.
-///
-/// Written out rather than imported: it is one number, and it decides
-/// whether this thread is ours to put back the way it was.
-const RPC_E_CHANGED_MODE: i32 = -2_147_417_850;
-
 /// COM, initialised for as long as this lasts.
 ///
 /// The shell expects it. The thread this runs on is ours alone, so it is
@@ -38,12 +32,11 @@ struct Com {
 impl Com {
     fn entered() -> Self {
         let outcome = unsafe { CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32) };
-        // A thread already in another apartment stays in it: the shell
-        // works either way, and taking it over would break whoever set
-        // it up.
-        Self {
-            ours: outcome != RPC_E_CHANGED_MODE,
-        }
+        // Only an entry that happened is ours to undo. A thread already
+        // in another apartment stays in it, and a refusal of any kind
+        // entered nothing: paying it back anyway would take one entry
+        // too many off whoever really made one.
+        Self { ours: outcome >= 0 }
     }
 }
 

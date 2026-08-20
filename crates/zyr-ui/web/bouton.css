@@ -170,7 +170,13 @@
 /* Ce que Windows ou le moteur ont refusé, dit sur place : l'accueil est
    peut-être fermé, et de toute façon il est derrière l'image. */
 .souci {
+  /* Le menu prend la largeur de son contenu : un refus d'une phrase,
+     laissé libre, l'étirait sur tout l'écran. Il plie à la largeur des
+     entrées et la fenêtre grandit vers le bas, mesurée comme toujours. */
+  max-width: 240px;
   padding: var(--pas-2);
   font-size: var(--legende);
   color: var(--erreur);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

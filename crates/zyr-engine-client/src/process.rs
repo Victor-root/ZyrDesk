@@ -4,7 +4,7 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::io::{Read, Seek, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -18,6 +18,10 @@ const SESSION_FAILED: i32 = 2;
 
 /// What the engine returns when the other computer never answered (P-M5).
 const UNREACHABLE: i32 = 3;
+
+/// What the engine returns when the far computer refused the pairing
+/// (P-M5).
+const PAIRING_REFUSED: i32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionOutcome {
@@ -58,6 +62,20 @@ impl fmt::Display for EngineError {
                 write!(f, "moteur client introuvable : {}", path.display())
             }
             EngineError::Io(e) => write!(f, "erreur système : {e}"),
+            EngineError::PairingFailed {
+                code: Some(PAIRING_REFUSED),
+                output,
+            } => {
+                // The one failure the engine names (P-M5), worded rather
+                // than numbered: it is the person's own doing on the far
+                // computer, and a number would send them to a search
+                // engine instead of to that computer.
+                write!(
+                    f,
+                    "appairage refusé par l'ordinateur distant{}",
+                    after(output)
+                )
+            }
             EngineError::PairingFailed { code, output } => {
                 write!(f, "appairage échoué ({}){}", named(*code), after(output))
             }
@@ -132,12 +150,22 @@ impl ClientEngine {
     }
 
     /// Opens the log in append mode, creating the folders it needs.
+    ///
+    /// A log grown past reason is emptied first. Sessions append to it
+    /// for as long as the product is used, and nothing else ever trims
+    /// it; emptying at a session boundary costs the oldest sessions,
+    /// which is what a cap is. An engine still writing through its own
+    /// handle is unharmed: its handle appends, and appending to an
+    /// emptied file starts at the top.
     fn open_log(&self) -> io::Result<Option<fs::File>> {
         let Some(path) = &self.log else {
             return Ok(None);
         };
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
+        }
+        if fs::metadata(path).is_ok_and(|about| about.len() > LOG_AT_MOST) {
+            fs::write(path, "(le début de ce journal a été retiré)\n")?;
         }
         fs::OpenOptions::new()
             .create(true)
@@ -201,12 +229,22 @@ impl ClientEngine {
     /// tunnel is still standing.
     pub fn quit(&self, host: &str) -> Result<(), EngineError> {
         self.state.prepare()?;
-        let mut engine = self
-            .command(&command::quit_arguments(host))?
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+        let mut command = self.command(&command::quit_arguments(host))?;
+        command.stdin(Stdio::null());
+
+        // Straight into the log, and never through a pipe held here. A
+        // pipe is only as deep as the system makes it: an engine chatty
+        // enough to fill one before exiting would block on its own
+        // words, never exit, and be reported as the far computer not
+        // answering. The log takes everything as it is said.
+        let mut said_from = 0;
+        if let Some(mut log) = self.open_log()? {
+            let _ = writeln!(log, "--- closing the session on {host} ---");
+            said_from = log.metadata().map(|about| about.len()).unwrap_or(0);
+            let errors = log.try_clone()?;
+            command.stdout(Stdio::from(log)).stderr(Stdio::from(errors));
+        }
+        let mut engine = command.spawn()?;
         tie_to_this_program(&engine);
 
         // The question travels through the tunnel the session used, and
@@ -217,29 +255,30 @@ impl ClientEngine {
         // Waited for rather than trusted: it is stopped when the wait is
         // over, and what it never said is reported as the failure it is.
         let waiting = Instant::now() + QUIT_TAKES;
-        while engine.try_wait()?.is_none() {
+        let status = loop {
+            if let Some(status) = engine.try_wait()? {
+                break status;
+            }
             if Instant::now() >= waiting {
                 let _ = engine.kill();
                 let _ = engine.wait();
                 return Err(EngineError::QuitTimedOut(QUIT_TAKES));
             }
             std::thread::sleep(PAIRING_POLL);
-        }
-        let output = engine.wait_with_output()?;
+        };
 
-        if let Some(mut log) = self.open_log()? {
-            let _ = writeln!(log, "--- closing the session on {host} ---");
-            let _ = log.write_all(&output.stdout);
-            let _ = log.write_all(&output.stderr);
-        }
-
-        if output.status.success() {
+        if status.success() {
             return Ok(());
         }
         Err(EngineError::QuitFailed {
-            code: output.status.code(),
-            output: what_went_wrong(&output),
+            code: status.code(),
+            output: self.said_since(said_from),
         })
+    }
+
+    /// The last thing the engine wrote to the log since that point.
+    fn said_since(&self, from: u64) -> String {
+        said_in(self.log.as_deref(), from)
     }
 
     /// Starts a session, and hands it back running.
@@ -335,23 +374,33 @@ fn leash() -> Option<isize> {
 #[cfg(not(windows))]
 fn tie_to_this_program(_engine: &Child) {}
 
-/// The last thing the engine said before giving up.
+/// The last thing the engine said, read back from the log it wrote to.
 ///
 /// Its output starts with pages of graphics and translation notes and
 /// ends with the reason. Keeping the first characters, which is what
 /// this did at first, showed the person a wall of start-up noise and
 /// threw away the one line they needed. The whole of it is in the log
 /// either way; this is what fits in a message.
-fn what_went_wrong(output: &std::process::Output) -> String {
-    let mut said = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if said.is_empty() {
-        said = String::from_utf8_lossy(&output.stdout).trim().to_string();
+fn said_in(log: Option<&Path>, from: u64) -> String {
+    let Some(path) = log else {
+        return String::new();
+    };
+    let mut said = String::new();
+    let read = fs::File::open(path).and_then(|mut file| {
+        file.seek(io::SeekFrom::Start(from))?;
+        file.read_to_string(&mut said)
+    });
+    if read.is_err() {
+        return String::new();
     }
-    last_words(&said, TOLD)
+    last_words(said.trim(), TOLD)
 }
 
 /// How much of the engine's last words a message carries.
 const TOLD: usize = 400;
+
+/// Size past which the session log is emptied at the next opening.
+const LOG_AT_MOST: u64 = 4 * 1024 * 1024;
 
 /// The end of a text, cut on a line boundary.
 fn last_words(said: &str, most: usize) -> String {
@@ -435,18 +484,7 @@ impl Pairing {
 
     /// The last thing the engine said since this pairing started.
     fn what_was_said(&self) -> String {
-        let Some(path) = &self.log else {
-            return String::new();
-        };
-        let mut said = String::new();
-        let read = fs::File::open(path).and_then(|mut file| {
-            file.seek(io::SeekFrom::Start(self.said_from))?;
-            file.read_to_string(&mut said)
-        });
-        if read.is_err() {
-            return String::new();
-        }
-        last_words(said.trim(), TOLD)
+        said_in(self.log.as_deref(), self.said_from)
     }
 }
 

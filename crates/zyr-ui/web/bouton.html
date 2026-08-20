@@ -10,7 +10,13 @@
   </head>
   <body class="flottant">
     <div class="paquet" id="paquet">
-      <button class="logo" id="logo" aria-label="Menu de la session">
+      <button
+        class="logo"
+        id="logo"
+        aria-label="Menu de la session"
+        aria-haspopup="menu"
+        aria-expanded="false"
+      >
         <img src="zyrdesk.svg" alt="" width="52" height="52" />
       </button>
 
@@ -49,7 +55,7 @@
           <span class="item-touche">Ctrl+Alt+Maj+M</span>
         </button>
 
-        <div class="separateur"></div>
+        <div class="separateur" role="separator"></div>
 
         <button class="item" type="button" data-cacher role="menuitem">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -84,7 +90,7 @@
           <span class="item-touche" id="touche-fin"></span>
         </button>
 
-        <p class="souci cache" id="souci"></p>
+        <p class="souci cache" id="souci" role="status"></p>
       </div>
     </div>
 

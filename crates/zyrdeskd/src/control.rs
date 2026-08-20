@@ -371,16 +371,24 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         Request::Forget { peer } => {
             // Les deux listes, sinon un ordinateur retiré de l'écran
             // continuerait d'entrer, ce que personne ne devinerait.
-            let taken_off = known::remove(&paths::known_computers(), peer);
-            let no_longer_allowed = authorized::remove(&paths::authorized_devices(), peer);
-            match (taken_off, no_longer_allowed) {
-                (Ok(_), Ok(_)) => {
+            //
+            // L'autorisation d'abord. Si la seconde écriture échoue,
+            // l'ordinateur reste visible sans plus pouvoir entrer, et le
+            // refus dit de recommencer ; dans l'autre ordre, il aurait
+            // disparu de l'écran en gardant le droit d'entrer, invisible
+            // et impossible à deviner.
+            if let Err(e) = authorized::remove(&paths::authorized_devices(), peer) {
+                return Answer::Refused(format!("cet ordinateur n'a pas pu être oublié : {e}"));
+            }
+            match known::remove(&paths::known_computers(), peer) {
+                Ok(_) => {
                     answering.log.write(&format!("{peer} forgotten"));
                     Answer::Done
                 }
-                (Err(e), _) | (_, Err(e)) => {
-                    Answer::Refused(format!("cet ordinateur n'a pas pu être oublié : {e}"))
-                }
+                Err(e) => Answer::Refused(format!(
+                    "cet ordinateur ne peut plus entrer, mais n'a pas pu être retiré \
+                     de l'écran : {e}\n  Réessayez « Oublier »."
+                )),
             }
         }
         Request::SetAtBoot { on } => match set_at_boot(on) {

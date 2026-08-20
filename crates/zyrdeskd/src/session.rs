@@ -24,8 +24,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
-    WAIT_TIMEOUT,
+    CloseHandle, GENERIC_READ, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Security::{
     DuplicateTokenEx, SECURITY_ATTRIBUTES, SecurityImpersonation, SetTokenInformation,
@@ -33,8 +32,8 @@ use windows_sys::Win32::Security::{
     TOKEN_QUERY, TokenPrimary, TokenSessionId,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CREATE_ALWAYS, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_CREATION_DISPOSITION, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, OPEN_EXISTING,
+    CREATE_ALWAYS, CreateFileW, FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL, FILE_CREATION_DISPOSITION,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
 use windows_sys::Win32::System::Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock};
 use windows_sys::Win32::System::JobObjects::{
@@ -186,7 +185,12 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
     let job = job_object()?;
 
     let nothing = inheritable_file(OsStr::new(NOTHING), GENERIC_READ, OPEN_EXISTING)?;
-    let log = inheritable_file(launch.log.as_os_str(), GENERIC_WRITE, CREATE_ALWAYS)?;
+    // Append access and not plain write: every line the engine writes
+    // then lands at the end of the file as it stands, wherever its own
+    // cursor was. With plain write, emptying the journal from the window
+    // while the engine ran made its next line land at its old position,
+    // behind a gap of nothing, and the file never read clean again.
+    let log = inheritable_file(launch.log.as_os_str(), FILE_APPEND_DATA, CREATE_ALWAYS)?;
 
     let mut line = command_line(&launch.exe, &launch.arguments);
     let mut desktop: Vec<u16> = wide(DESKTOP);

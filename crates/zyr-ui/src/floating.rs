@@ -50,14 +50,44 @@ pub const WINDOW: &str = "flottant";
 /// Name the page listens on to be told to show its menu.
 const OPEN: &str = "floating-open";
 
+/// Name the page listens on to be told a new session begins: the menu
+/// closes, the last session's refusal goes, the window shrinks back to
+/// the button.
+const RESET: &str = "floating-reset";
+
 /// How often the session is looked for.
 ///
 /// Short enough that the button is there by the time the picture is, and
 /// gone shortly after it.
 const LOOK: Duration = Duration::from_secs(1);
 
-/// Distance kept from the corner of the picture.
+/// Distance kept from the corner of the picture, in page pixels.
+///
+/// Everything else in this file is real pixels: what this margin comes
+/// to on a given screen is asked of `margin()`, which scales it the way
+/// the button itself is scaled. Unscaled, the gap shrank visibly on a
+/// magnified screen while the button grew.
 const MARGIN: i32 = 16;
+
+/// That distance in real pixels, on the screen the button hangs over.
+#[cfg(windows)]
+fn margin() -> i32 {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+
+    let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
+    if button.is_null() {
+        return MARGIN;
+    }
+    // SAFETY: a window of ours, and only its scale is read.
+    let dpi = unsafe { GetDpiForWindow(button) };
+    MARGIN * dpi.max(96) as i32 / 96
+}
+
+#[cfg(not(windows))]
+fn margin() -> i32 {
+    MARGIN
+}
 
 /// Size of the button alone, as the page draws it, before the page has
 /// had a chance to measure itself and say better.
@@ -182,7 +212,35 @@ pub struct Floating {
     /// long enough to be believed, and the button would arrive that many
     /// seconds after the picture. Whoever started the engine knows its
     /// number straight away, and the button hangs on nothing else.
-    expected: Mutex<Option<u32>>,
+    ///
+    /// The way to the far computer travels with it, for the same reason:
+    /// during those seconds this window is the only thing that can end
+    /// the session, and ending is asked at that address. Without it, the
+    /// cross and the menu both answered « aucune session en cours » over
+    /// a running picture until the service caught up.
+    expected: Mutex<Option<Expected>>,
+    /// Whether the session's mouse is in game mode right now.
+    ///
+    /// Kept by this program because this program is what sets it: the
+    /// mode starts from the settings the session was opened with, and
+    /// every toggle goes through this window. It cannot be read from the
+    /// system. Game mode pins the pointer inside the picture, but a
+    /// session covering the only screen pins it to a rectangle exactly
+    /// the size of the screen, which is what no pinning at all looks
+    /// like; read from there, the menu shortcut left the pointer with
+    /// the far computer and the menu it had just opened could not be
+    /// clicked.
+    game_mouse: AtomicBool,
+}
+
+/// What this window knows of a session it started, before the service
+/// believes it.
+struct Expected {
+    process: u32,
+    /// The far computer, as the person named it.
+    towards: String,
+    /// Where the tunnel puts it on this machine.
+    at: String,
 }
 
 /// Everything the button's place is worked out from, kept where the
@@ -252,12 +310,16 @@ pub fn a_session_is_up(app: &AppHandle) -> bool {
 }
 
 /// Says which player this window has just started, before anybody else
-/// knows.
-pub fn expect(app: &AppHandle, process: u32) {
+/// knows, and where the session it shows can be ended.
+pub fn expect(app: &AppHandle, process: u32, towards: &str, at: &str) {
     *app.state::<Floating>()
         .expected
         .lock()
-        .expect("session attendue") = Some(process);
+        .expect("session attendue") = Some(Expected {
+        process,
+        towards: towards.to_string(),
+        at: at.to_string(),
+    });
 }
 
 /// Forgets it, the session being over one way or another.
@@ -279,11 +341,13 @@ async fn player(app: &AppHandle) -> Option<u32> {
     if let Some(session) = crate::session::sessions().await.into_iter().next() {
         return Some(session.process);
     }
-    let expected = *app
+    let expected = app
         .state::<Floating>()
         .expected
         .lock()
-        .expect("session attendue");
+        .expect("session attendue")
+        .as_ref()
+        .map(|expected| expected.process);
     expected.filter(|process| picture_of(*process).is_some())
 }
 
@@ -299,7 +363,16 @@ pub fn watch(app: AppHandle) {
                     // of it, and a corner read before the picture has
                     // been laid in our window is the wrong corner.
                     crate::picture::hold(&app, process);
-                    raise(&app, process);
+                    if raise(&app, process) {
+                        // A session just adopted starts in the mouse mode
+                        // its settings asked for; every toggle after that
+                        // goes through this window and is counted as it
+                        // is sent.
+                        let game = !crate::settings::preferred().await.absolute_mouse;
+                        app.state::<Floating>()
+                            .game_mouse
+                            .store(game, Ordering::Relaxed);
+                    }
                 }
                 None => {
                     crate::picture::let_go(&app);
@@ -310,14 +383,15 @@ pub fn watch(app: AppHandle) {
     });
 }
 
-/// Puts the button up for that player, if it is not up already.
+/// Puts the button up for that player, if it is not up already, and says
+/// whether it just adopted a new session.
 ///
 /// Waits for the player to have a window before showing anything. The
 /// service calls a session held from the moment the player starts, but
 /// the engine only opens its window once the far computer has answered
 /// and the stream stands: showing the button any earlier would put it
 /// over a screen that has no picture on it yet.
-fn raise(app: &AppHandle, process: u32) {
+fn raise(app: &AppHandle, process: u32) -> bool {
     let state = app.state::<Floating>();
     let already = state
         .watched
@@ -326,11 +400,11 @@ fn raise(app: &AppHandle, process: u32) {
         .as_ref()
         .is_some_and(|seen| *seen == process);
     if already {
-        return;
+        return false;
     }
 
     let Some(picture) = picture_of(process) else {
-        return;
+        return false;
     };
     // A button over a window that is not on screen would be the only
     // thing showing, hanging in a corner over somebody else's work. It
@@ -339,10 +413,10 @@ fn raise(app: &AppHandle, process: u32) {
     // separately: a window down in the taskbar still calls itself
     // visible.
     let Some(home) = app.get_webview_window(crate::HOME) else {
-        return;
+        return false;
     };
     if !home.is_visible().unwrap_or(false) || home.is_minimized().unwrap_or(false) {
-        return;
+        return false;
     }
     // Asked before anything is held. This runs on a thread of its own and
     // the answer comes from the one that draws: waiting for it while
@@ -361,11 +435,17 @@ fn raise(app: &AppHandle, process: u32) {
     // window, and everything that places this button reaches it by that
     // one number: without this the button would sit wherever the previous
     // session left it and follow nothing for the whole of this one.
+    //
+    // And told to start over. The page still shows whatever the previous
+    // session left on it, an open menu most of all, and a window sized
+    // for a menu is a sheet of nothing laid over the picture that
+    // swallows every click meant for it.
     if let Some(window) = app.get_webview_window(WINDOW) {
         remember_the_button(&window);
+        let _ = window.emit(RESET, ());
         let _ = window.show();
         lay_the_button(picture);
-        return;
+        return true;
     }
 
     let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
@@ -399,6 +479,7 @@ fn raise(app: &AppHandle, process: u32) {
         // session that is otherwise fine.
         Err(e) => eprintln!("le bouton flottant n'a pas pu s'ouvrir : {e}"),
     }
+    true
 }
 
 /// What the button comes to in real pixels, on the screen it hangs over.
@@ -547,9 +628,10 @@ fn slide(
         size.height as i32,
     );
 
+    let margin = margin();
     nudged_to(
-        anchor.0 - (picture.2 - MARGIN),
-        anchor.1 - (picture.1 + MARGIN),
+        anchor.0 - (picture.2 - margin),
+        anchor.1 - (picture.1 + margin),
     );
 
     window
@@ -562,8 +644,13 @@ fn slide(
 
 /// Where the button hangs: the top right of the picture, moved by
 /// whatever dragging has moved it since.
-fn hung_from(picture: (i32, i32, i32, i32), nudge: (i32, i32), size: (i32, i32)) -> (i32, i32) {
-    let corner = (picture.2 - MARGIN + nudge.0, picture.1 + MARGIN + nudge.1);
+fn hung_from(
+    picture: (i32, i32, i32, i32),
+    nudge: (i32, i32),
+    size: (i32, i32),
+    margin: i32,
+) -> (i32, i32) {
+    let corner = (picture.2 - margin + nudge.0, picture.1 + margin + nudge.1);
     held_inside(corner, picture, size.0, size.1)
 }
 
@@ -603,6 +690,16 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("aucune session en cours")?;
+    // The session first, when it was put away: the button hangs on the
+    // picture, and a menu opened over an empty desktop, picture down in
+    // the taskbar, is a button floating over somebody else's work. The
+    // shortcut asks to do something with the session, so the session
+    // comes back.
+    if let Some(home) = app.get_webview_window(crate::HOME)
+        && (!home.is_visible().unwrap_or(false) || home.is_minimized().unwrap_or(false))
+    {
+        crate::show_home(app);
+    }
     // Asked for by name, which takes back the choice of hiding it.
     HIDDEN.store(false, Ordering::Relaxed);
     // In game mouse mode the pointer belongs entirely to the far
@@ -626,9 +723,17 @@ pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
 /// The same, from anywhere in the program rather than from the menu.
 pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
     // Ours to do, both of them, and neither goes through the engine's
-    // keyboard.
+    // keyboard. Covering the screen is still a session matter: the
+    // shortcut is registered with the system for the whole life of the
+    // program, and without a session it would fullscreen the empty home
+    // screen and write that down as the choice for the next session.
     match act {
-        Act::Fullscreen => return crate::picture::toggle_the_screen(app),
+        Act::Fullscreen => {
+            if !a_session_is_up(app) {
+                return Err("aucune session en cours".to_string());
+            }
+            return crate::picture::toggle_the_screen(app);
+        }
         Act::End => return end_it_on_the_far_computer(app).await,
         _ => {}
     }
@@ -643,7 +748,16 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
         .ok_or("aucune session en cours")?;
 
     put_the_picture_in_front(process).await?;
-    shortcut(act, process)
+    shortcut(act, process)?;
+    // The keystroke left, so the engine will act on it: the mode this
+    // window believes the mouse is in follows the keystrokes it sends.
+    if matches!(act, Act::MouseMode) {
+        let state = app.state::<Floating>();
+        let _ = state
+            .game_mouse
+            .fetch_xor(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    Ok(())
 }
 
 /// Puts the picture back in front, and waits for it to actually be
@@ -698,31 +812,65 @@ async fn the_picture_is_gone(process: u32) -> bool {
 
 /// Hands the far computer's desktop back, instead of merely leaving it.
 ///
-/// Where to ask comes from the service rather than from anything this
-/// window remembers: the tunnel address is the only one the engine can
-/// reach that computer at, and it exists for exactly as long as the way
-/// does.
+/// Where to ask comes from the service first: it knows every session on
+/// this computer, including those another window opened. And it is the
+/// session the button hangs on that is ended, never merely the first of
+/// the list: with two sessions open, ending from this window must end
+/// this window's.
+///
+/// The service is not the only source, because for the first seconds of
+/// a session it does not believe in it yet: until then the way is what
+/// this window wrote down when it started the player, and without that
+/// fallback the cross and the menu answered « aucune session en cours »
+/// over a running picture.
 async fn end_it_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
-    let session = crate::session::sessions()
-        .await
-        .into_iter()
-        .next()
-        .ok_or("aucune session en cours")?;
+    let watched = *app
+        .state::<Floating>()
+        .watched
+        .lock()
+        .expect("session suivie");
 
-    note(&format!(
-        "fermeture demandée sur {} à travers {}",
-        session.towards, session.at
-    ));
+    let mut sessions = crate::session::sessions().await;
+    let ours = watched
+        .and_then(|process| {
+            sessions
+                .iter()
+                .position(|session| session.process == process)
+        })
+        .or_else(|| (!sessions.is_empty()).then_some(0));
+
+    let (process, towards, at) = match ours {
+        Some(place) => {
+            let session = sessions.swap_remove(place);
+            (session.process, session.towards, session.at)
+        }
+        None => {
+            let expected = app
+                .state::<Floating>()
+                .expected
+                .lock()
+                .expect("session attendue")
+                .as_ref()
+                .map(|expected| {
+                    (
+                        expected.process,
+                        expected.towards.clone(),
+                        expected.at.clone(),
+                    )
+                });
+            expected.ok_or("aucune session en cours")?
+        }
+    };
+    note(&format!("fermeture demandée sur {towards} à travers {at}"));
     // Said before the asking. The engine can lose its stream and stop
     // before the far computer has finished answering, and a session
     // reported as broken to whoever just closed it would be a lie.
     Floating::closing(app, true);
 
-    let process = session.process;
     // On a thread of its own: this asks the far computer a question over
     // the network, and the window must not stop drawing while it waits.
     let answered = tauri::async_runtime::spawn_blocking(move || {
-        zyr_session::close_on_the_far_computer(&session.towards, &session.at)
+        zyr_session::close_on_the_far_computer(&towards, &at)
     })
     .await;
 
@@ -782,7 +930,7 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
         return;
     };
     let size = (own.right - own.left, own.bottom - own.top);
-    let anchor = hung_from(picture, nudge(), size);
+    let anchor = hung_from(picture, nudge(), size, margin());
 
     // The system puts an owned window back up with the one that owns it,
     // which is right for a button that is only down because the window
@@ -854,7 +1002,8 @@ fn where_it_hangs() -> Option<(i32, i32)> {
 /// session to hold to a shape either.
 #[cfg(windows)]
 pub fn room_for_the_button() -> Option<(i32, i32)> {
-    its_place().map(|own| (own.right - own.left + MARGIN, own.bottom - own.top + MARGIN))
+    let margin = margin();
+    its_place().map(|own| (own.right - own.left + margin, own.bottom - own.top + margin))
 }
 
 /// Hands the pointer back when the far computer is holding it.
@@ -862,47 +1011,31 @@ pub fn room_for_the_button() -> Option<(i32, i32)> {
 /// In game mouse mode the engine keeps the cursor inside the picture and
 /// puts it back in the middle at every movement, so nothing on screen can
 /// be pointed at any more, this button included. Asked of the engine in
-/// its own language, and only when it is really holding it: whether it is
-/// shows in where the system says the pointer may go.
+/// its own language.
+///
+/// Whether the mouse is in that mode is read from what this window has
+/// sent, never from the system. It was read from the pointer's cage
+/// once, and that lied both ways: a session covering the only screen
+/// cages the pointer to a rectangle exactly the size of the screen,
+/// which is what no cage at all looks like, and a third program caging
+/// the pointer for its own reasons looked like ours.
 #[cfg(windows)]
 fn give_the_pointer_back(app: &AppHandle) {
-    use windows_sys::Win32::Foundation::RECT;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClipCursor, GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-    };
-
-    let Some(process) = *app
-        .state::<Floating>()
-        .watched
-        .lock()
-        .expect("session suivie")
-    else {
+    let state = app.state::<Floating>();
+    let Some(process) = *state.watched.lock().expect("session suivie") else {
         return;
     };
-    let mut allowed = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    // SAFETY: the rectangle is ours.
-    if unsafe { GetClipCursor(&mut allowed) } == 0 {
-        return;
-    }
-    // SAFETY: no argument beyond the metric asked for.
-    let whole = unsafe {
-        (
-            GetSystemMetrics(SM_CXVIRTUALSCREEN),
-            GetSystemMetrics(SM_CYVIRTUALSCREEN),
-        )
-    };
-    let held = allowed.right - allowed.left < whole.0 || allowed.bottom - allowed.top < whole.1;
-    if !held {
+    if !state.game_mouse.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
     note("le pointeur est tenu par la session : rendu avant d'ouvrir le menu");
-    if let Err(reason) = shortcut(Act::MouseMode, process) {
-        note(&format!("pointeur non rendu : {reason}"));
+    match shortcut(Act::MouseMode, process) {
+        Ok(()) => {
+            state
+                .game_mouse
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+        Err(reason) => note(&format!("pointeur non rendu : {reason}")),
     }
 }
 
@@ -991,17 +1124,32 @@ fn cursor_now() -> Option<(i32, i32)> {
     }
 }
 
-/// Whether the left mouse button is down right now.
+/// Whether the primary mouse button is down right now.
 ///
 /// Asked of the system rather than waited for as an event: the window
 /// this is dragging is too small to keep the mouse inside it, and a
 /// release that happened over the picture is a release all the same.
+///
+/// Primary, not left. The page starts this on the button the person
+/// clicks with, and for a left-handed mouse that is the physical right
+/// one; the raw key state names physical buttons and ignores the swap,
+/// so read as « left » it answered « up » the whole drag, and the button
+/// could never be moved by anyone with a swapped mouse.
 #[cfg(windows)]
 fn held_down() -> bool {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
 
+    // SAFETY: no argument beyond the metric asked for.
+    let primary = if unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0 {
+        VK_RBUTTON
+    } else {
+        VK_LBUTTON
+    };
     // SAFETY: no argument, and the answer is a plain bit field.
-    let state = unsafe { GetAsyncKeyState(i32::from(VK_LBUTTON)) };
+    let state = unsafe { GetAsyncKeyState(i32::from(primary)) };
     state as u16 & 0x8000 != 0
 }
 
@@ -1327,7 +1475,7 @@ mod tests {
             (500, 500, 500, 500),
             (-50, -50, 10, 10),
         ] {
-            let ou = hung_from(image, (0, 0), bouton);
+            let ou = hung_from(image, (0, 0), bouton, MARGIN);
             assert!(ou.0 >= image.0 && ou.0 <= image.2, "sur {image:?} : {ou:?}");
             assert!(ou.1 >= image.1, "sur {image:?} : {ou:?}");
         }
@@ -1336,16 +1484,16 @@ mod tests {
     #[test]
     fn the_button_hangs_in_the_top_right_corner_of_the_picture() {
         let image = (100, 200, 1_000, 800);
-        let ou = hung_from(image, (0, 0), (91, 91));
+        let ou = hung_from(image, (0, 0), (91, 91), MARGIN);
         assert_eq!(ou, (1_000 - MARGIN, 200 + MARGIN));
     }
 
     #[test]
     fn a_button_dragged_past_an_edge_comes_back_against_it() {
         let image = (100, 200, 1_000, 800);
-        let loin = hung_from(image, (5_000, 5_000), (91, 91));
+        let loin = hung_from(image, (5_000, 5_000), (91, 91), MARGIN);
         assert_eq!(loin, (1_000, 800 - 91));
-        let avant = hung_from(image, (-5_000, -5_000), (91, 91));
+        let avant = hung_from(image, (-5_000, -5_000), (91, 91), MARGIN);
         assert_eq!(avant, (100 + 91, 200));
     }
 

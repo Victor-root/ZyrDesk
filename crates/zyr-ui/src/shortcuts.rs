@@ -212,6 +212,22 @@ pub fn read(path: &Path) -> io::Result<Bound> {
     Ok(read_lines(&contents))
 }
 
+/// The same, standing on the shipped combinations when the file cannot
+/// be read at all.
+///
+/// Falling back to nothing instead, which is what a plain default is,
+/// silently took every combination away, the one that brings the hidden
+/// floating button back among them: a disk hiccup turned hiding the
+/// button into a one-way door.
+fn read_or_shipped(path: &Path) -> Bound {
+    read(path).unwrap_or_else(|e| {
+        crate::journal::note(&format!(
+            "raccourcis illisibles ({e}), combinaisons d'origine en attendant"
+        ));
+        Bound::out_of_the_box()
+    })
+}
+
 /// One line per thing, `what combination`, and nothing at all for a
 /// thing left without one.
 ///
@@ -346,7 +362,7 @@ pub struct Shown {
 
 #[tauri::command]
 pub fn shortcuts() -> Vec<Shown> {
-    let bound = read(&zyr_proto::paths::keyboard_shortcuts()).unwrap_or_default();
+    let bound = read_or_shipped(&zyr_proto::paths::keyboard_shortcuts());
     Doing::ALL
         .into_iter()
         .map(|doing| Shown {
@@ -411,6 +427,22 @@ pub fn listen(app: tauri::AppHandle) {
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 
     std::thread::spawn(move || {
+        // The thread's message queue exists from its first look at it,
+        // and not before. A change posted in the gap between this
+        // thread's name being written down and its first wait would be
+        // refused by the system and lost; looking once, at nothing, is
+        // the documented way to make the queue exist now.
+        let mut message = std::mem::MaybeUninit::uninit();
+        // SAFETY: the slot is ours, and peeking removes nothing.
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::PeekMessageW(
+                message.as_mut_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0,
+                windows_sys::Win32::UI::WindowsAndMessaging::PM_NOREMOVE,
+            )
+        };
         // SAFETY: no argument, and the answer is this thread's own name.
         *BOARD.lock().expect("fil des raccourcis") = Some(unsafe { GetCurrentThreadId() });
         while hold_them(&app) {}
@@ -441,7 +473,7 @@ fn hold_them(app: &tauri::AppHandle) -> bool {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, WM_HOTKEY};
 
-    let bound = read(&zyr_proto::paths::keyboard_shortcuts()).unwrap_or_default();
+    let bound = read_or_shipped(&zyr_proto::paths::keyboard_shortcuts());
     let mut taken: Vec<(i32, Doing)> = Vec::new();
     for (rank, (doing, combination)) in bound.in_force().into_iter().enumerate() {
         let Some(scan) = scan_code_of(&combination.key) else {

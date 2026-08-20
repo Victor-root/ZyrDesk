@@ -70,7 +70,7 @@ pub fn clear_journal() -> Result<(), String> {
 
     // Written after the emptying, so the journal opens on the moment it
     // was cleared rather than on nothing at all.
-    note("journal cleared");
+    note("journal vidé");
 
     if refused.is_empty() {
         return Ok(());
@@ -208,18 +208,52 @@ fn remote_access(standing: &zyr_control::Standing) -> String {
 }
 
 /// The end of a file, or a word saying why there is none.
+///
+/// Only the end is ever read from disk. A log can have grown for months,
+/// and reading the whole of it to keep a hundred lines would hold the
+/// window on a file nobody asked to see all of.
 fn last_lines(path: &std::path::Path) -> String {
-    let Ok(text) = std::fs::read_to_string(path) else {
+    use std::io::{Read, Seek, SeekFrom};
+
+    // How much of the end is read, at most. Far more than the lines
+    // kept can need, so the cap never shows in an ordinary journal.
+    const READ_AT_MOST: u64 = 256 * 1024;
+
+    let read = std::fs::File::open(path).and_then(|mut file| {
+        let written = file.metadata()?.len();
+        let skipped = written.saturating_sub(READ_AT_MOST);
+        file.seek(SeekFrom::Start(skipped))?;
+        let mut end = Vec::new();
+        file.read_to_end(&mut end)?;
+        Ok((skipped, end))
+    });
+    let (skipped, end) = match read {
+        Ok(read) => read,
         // Not written yet, most of the time: a computer that has never
         // hosted has no host engine log, and that is worth saying rather
-        // than leaving an empty gap.
-        return "(rien d'écrit pour l'instant)".to_string();
+        // than leaving an empty gap. Anything else is worth its reason:
+        // an existing file this window cannot read is not « nothing ».
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return "(rien d'écrit pour l'instant)".to_string();
+        }
+        Err(e) => return format!("(illisible : {e})"),
     };
+
+    // Read as it comes, accents or not: a log the engine wrote in
+    // another encoding is shown with holes rather than refused whole.
+    let text = String::from_utf8_lossy(&end);
     let lines: Vec<&str> = text.lines().collect();
-    let from = lines.len().saturating_sub(KEPT);
-    let mut kept = lines[from..].join("\n");
-    if from > 0 {
-        kept.insert_str(0, &format!("({from} lignes plus anciennes non montrées)\n"));
+    // The first line of a cut read is half a line: dropped with the rest
+    // of the beginning.
+    let whole = if skipped > 0 && !lines.is_empty() {
+        &lines[1..]
+    } else {
+        &lines[..]
+    };
+    let from = whole.len().saturating_sub(KEPT);
+    let mut kept = whole[from..].join("\n");
+    if from > 0 || skipped > 0 {
+        kept.insert_str(0, "(le début n'est pas montré)\n");
     }
     kept
 }
@@ -251,7 +285,7 @@ pub fn note(what: &str) {
 
 /// Says which build this window is, the moment it opens.
 pub fn opened() {
-    note(&format!("window opened, {}", zyr_proto::version_line()));
+    note(&format!("fenêtre ouverte, {}", zyr_proto::version_line()));
 }
 
 #[cfg(test)]
@@ -282,8 +316,57 @@ mod tests {
         assert!(!kept.contains("ligne 0\n"), "{kept}");
         // Et ce qui a été laissé de côté est annoncé : un journal amputé
         // en silence se lit comme un journal complet.
-        assert!(kept.starts_with("(40 lignes plus anciennes"), "{kept}");
+        assert!(kept.starts_with("(le début n'est pas montré)"), "{kept}");
 
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_huge_file_costs_only_its_end() {
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdesk-journal-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("enorme.log");
+
+        // Bien au-delà de ce que la lecture s'autorise : si elle lisait
+        // tout, ce test se verrait au chronomètre et à la mémoire.
+        let mut written = String::new();
+        for line in 0..40_000 {
+            written.push_str(&format!("ligne {line} avec un peu de matière autour\n"));
+        }
+        std::fs::write(&path, &written).unwrap();
+
+        let kept = last_lines(&path);
+        assert!(
+            kept.ends_with("ligne 39999 avec un peu de matière autour"),
+            "fin : {}",
+            &kept[kept.len().saturating_sub(80)..]
+        );
+        assert!(
+            kept.starts_with("(le début n'est pas montré)"),
+            "{}",
+            &kept[..60]
+        );
+        // Jamais de demi-ligne en tête après la coupe.
+        let second = kept.lines().nth(1).unwrap();
+        assert!(second.starts_with("ligne "), "{second}");
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_file_says_so_rather_than_nothing() {
+        // Un dossier n'est pas lisible comme un fichier : c'est le
+        // moyen portable d'obtenir un refus qui n'est pas « absent ».
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdesk-journal-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        let read = last_lines(&folder);
+        assert!(read.starts_with("(illisible"), "{read}");
         std::fs::remove_dir_all(&folder).unwrap();
     }
 

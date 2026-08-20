@@ -71,7 +71,7 @@ pub struct AtHand {
 /// The local engine, and the one thing a far computer may ask of it.
 struct Attending {
     ports: EnginePorts,
-    api: EngineApi,
+    api: Arc<EngineApi>,
     log: Log,
 }
 
@@ -80,14 +80,24 @@ impl Answers for Attending {
         self.ports
     }
 
+    /// Offers the far computer's code to the engine, and keeps offering
+    /// it after answering.
+    ///
+    /// The engine only takes a code while a client is asking it for one,
+    /// and reports success either way (`patches/MANIFEST.md`). The far
+    /// engine was started before the code was sent, but started is not
+    /// yet asking: a code offered in that gap is swallowed with a
+    /// straight face, and stopping there left the real request, arriving
+    /// a moment later, waiting for a code nobody would offer again. So
+    /// the first successful offer answers the caller, and the offering
+    /// goes on quietly for the rest of the patience: offering a code
+    /// nobody is waiting for does nothing, which is exactly why it is
+    /// safe to insist.
     fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String> {
         let deadline = Instant::now() + PAIRING_PATIENCE;
         loop {
             let refused = match self.api.submit_pin(pin, name) {
-                Ok(()) => {
-                    self.log.write(&format!("{name} paired with this computer"));
-                    return Ok(());
-                }
+                Ok(()) => break,
                 Err(e) => e.to_string(),
             };
             if Instant::now() >= deadline {
@@ -97,6 +107,19 @@ impl Answers for Attending {
             }
             std::thread::sleep(PAIRING_RETRY);
         }
+        self.log
+            .write(&format!("pairing code offered to the engine for {name}"));
+
+        let api = self.api.clone();
+        let pin = pin.to_string();
+        let name = name.to_string();
+        std::thread::spawn(move || {
+            while Instant::now() < deadline {
+                std::thread::sleep(PAIRING_RETRY);
+                let _ = api.submit_pin(&pin, &name);
+            }
+        });
+        Ok(())
     }
 }
 
@@ -162,7 +185,7 @@ impl Gateway {
 
         let attending: Arc<dyn Answers> = Arc::new(Attending {
             ports: engine.ports,
-            api: EngineApi::new(engine.ports, engine.credentials),
+            api: Arc::new(EngineApi::new(engine.ports, engine.credentials)),
             log: log.clone(),
         });
 

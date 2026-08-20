@@ -85,7 +85,12 @@ pub enum Step {
     /// until the service is told, and the floating button hangs on that
     /// process. Waiting for the session to be believed would put the
     /// button up several seconds after the picture.
-    Showing { process: u32 },
+    ///
+    /// `at` is where the engine reaches the far computer on this
+    /// machine. Carried for the same reason as the process: until the
+    /// service believes the session, whoever asked is the only one who
+    /// can end it, and ending is asked at that address.
+    Showing { process: u32, at: String },
 }
 
 /// How long the engines are given to meet, the code having travelled on
@@ -262,6 +267,7 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
         .map_err(Error::Engine)?;
     told(Step::Showing {
         process: session.process_id(),
+        at: target.clone(),
     });
 
     // What this computer remembers of a pairing is a note it wrote to
@@ -283,6 +289,7 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
             .map_err(Error::Engine)?;
         told(Step::Showing {
             process: session.process_id(),
+            at: target.clone(),
         });
     }
 
@@ -435,10 +442,16 @@ impl Driving {
             way: self.way,
             process,
         };
-        if let Err(e) = self.runtime.block_on(self.service.ask(&request)) {
-            eprintln!("Avertissement : le service n'a pas pris la session en charge ({e}).");
-            eprintln!("  Elle se fermera avec le programme qui l'a lancée.");
-        }
+        // A refusal counts as much as a channel that broke: either way
+        // nothing watches the session, and saying so is the only thing
+        // that keeps that from being discovered at the next restart.
+        let unwatched = match self.runtime.block_on(self.service.ask(&request)) {
+            Ok(Answer::Done) => return,
+            Ok(other) => other.to_string(),
+            Err(e) => e.to_string(),
+        };
+        eprintln!("Avertissement : le service n'a pas pris la session en charge ({unwatched}).");
+        eprintln!("  Elle se fermera avec le programme qui l'a lancée.");
     }
 
     /// Gives the way back at the end of the session. The service would
