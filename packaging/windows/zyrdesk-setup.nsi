@@ -88,6 +88,9 @@ Section "ZyrDesk" SEC_PRINCIPAL
   File /nonfatal "${ECRAN_DIR}\MttVDD.inf"
   File /nonfatal "${ECRAN_DIR}\MttVDD.cat"
   File /nonfatal "${ECRAN_DIR}\MttVDD.dll"
+  ; Sa licence MIT voyage avec lui : elle exige de conserver son avis de
+  ; copyright dans toute redistribution.
+  File /nonfatal /oname=LICENSE-ecran-virtuel "${ECRAN_DIR}\LICENSE"
   IfFileExists "${DOSSIER_PILOTE_ECRAN}\MttVDD.inf" ecran_present 0
   DetailPrint "Pilote d'écran virtuel absent de la construction : les sessions \
     demandant un écran plus grand que celui de cet ordinateur seront agrandies."

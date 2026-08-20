@@ -14,7 +14,7 @@
 | Qt (moonlight-qt) | LGPLv3 (édition open source) | Lien dynamique : DLL remplaçables par l'utilisateur, obligation LGPL satisfaite |
 | SDL2 | zlib | |
 | Dépendances MIT des moteurs (ViGEmClient, Simple-Web-Server, inputtino, tray, nvapi) | MIT | Notices à conserver |
-| Virtual-Display-Driver (écran virtuel, optionnel) | MIT | Signé par SignPath Foundation ; installé séparément avec consentement, jamais redistribué modifié |
+| Virtual-Display-Driver (écran virtuel) | MIT | Signé par SignPath Foundation. Redistribué **tel quel** dans `vendor/ecran-virtuel/` avec sa licence, jamais modifié ni recompressé : ses trois fichiers sont signés comme un tout. Voir [ECRAN-VIRTUEL.md](ECRAN-VIRTUEL.md) |
 | ZyrDesk (application, moteurs forkés, outillage) | GPLv3 | Le dépôt est déjà sous GPLv3 |
 | ZyrDesk broker et relais | AGPLv3 | Copyleft réseau : un service hébergé modifié doit publier ses modifications |
 
@@ -27,7 +27,7 @@ Sunshine et Moonlight sont GPLv3 : toute distribution d'une version dérivée (n
 ## 3. Obligations concrètes (liste de contrôle)
 
 - Publier le code source correspondant de CHAQUE binaire distribué, y compris les forks moteurs exacts (tags + nos commits) : garanti par les forks publics épinglés et les miroirs de patchs dans `patches/`.
-- Conserver toutes les notices de copyright et fichiers de licence des composants dans les binaires distribués (dossier `licenses/` de l'installateur).
+- Conserver toutes les notices de copyright et fichiers de licence des composants dans les binaires distribués (dossier `licenses/` de l'installateur). Le pilote d'écran virtuel y compris : sa licence MIT voyage avec lui dans `vendor/ecran-virtuel/LICENSE`, et exige de conserver son avis de copyright dans toute redistribution.
 - Marquer nos modifications des moteurs (GPL §5a) : fait par les messages de commits `zyr:` et le manifeste de patchs.
 - Écran « À propos » dans l'application : versions, crédits (« ZyrDesk s'appuie sur les projets open source Sunshine et Moonlight »), licences complètes consultables, lien vers le code source. La discrétion des moteurs dans l'expérience utilisateur ne dispense PAS des mentions légales : elles vivent ici.
 - Pas de restriction supplémentaire à la GPL dans nos conditions d'utilisation éventuelles.
