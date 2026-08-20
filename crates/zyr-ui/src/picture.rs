@@ -512,6 +512,7 @@ fn lay_it_out(
     // never while the window is moving, where every step is counted and
     // told in one line at the end instead.
     if !moving && laid > A_FRAME {
+        WAS_BUSY.store(true, Ordering::Relaxed);
         crate::journal::note(&format!(
             "image posée en {:.0} ms, soit plus d'une image : le lecteur a tardé à répondre",
             laid.as_secs_f64() * 1000.0
@@ -755,11 +756,16 @@ fn round_the_bottom(
     if (same_size && same_frame) || width <= 0 || height <= 0 {
         return;
     }
+    // Said whichever way it goes: a window spread over a screen has
+    // square corners and one standing on its own has round ones, and
+    // both halves of that have to be told.
+    round_the_window(home);
 
     if square {
         // SAFETY: a window this program took in hand; no shape means the
         // whole rectangle, which is what a window is without one.
-        unsafe { SetWindowRgn(engine, std::ptr::null_mut(), 0) };
+        let taken = unsafe { SetWindowRgn(engine, std::ptr::null_mut(), 0) };
+        tell_the_cut(engine, "retirée", taken, (width, height));
         return;
     }
 
@@ -787,7 +793,6 @@ fn round_the_bottom(
         .unwrap_or(0);
     let round = (round - border).clamp(0, height.min(width));
     tell_the_corner(width, height, border, round);
-    round_the_window(home);
 
     // SAFETY: both are ours until the system takes the combined one.
     unsafe {
@@ -809,9 +814,11 @@ fn round_the_bottom(
         // only once it has taken it: refused, it is still ours to free.
         // Not asked to redraw on the spot: this happens on every step of
         // a resize, and the engine is drawing sixty times a second anyway.
-        if SetWindowRgn(engine, shape, 0) == 0 {
+        let taken = SetWindowRgn(engine, shape, 0);
+        if taken == 0 {
             DeleteObject(shape);
         }
+        tell_the_cut(engine, "posée", taken, (width, height));
     }
 }
 
@@ -1200,6 +1207,40 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND) {
 #[cfg(windows)]
 static CORNERS: AtomicI64 = AtomicI64::new(-1);
 
+/// Says what the picture is really cut to, asked of the system after the
+/// cut rather than assumed from what was handed to it.
+///
+/// Everything the picture shows or fails to show comes down to this one
+/// rectangle. Short of the window at the bottom, a strip of the page
+/// behind shows through as a pale line; level with the window at the
+/// corners, the picture covers the curve the frame turns on and the
+/// coloured border with it. Both are what has been reported, and neither
+/// can be told from the other without the numbers.
+#[cfg(windows)]
+fn tell_the_cut(
+    engine: windows_sys::Win32::Foundation::HWND,
+    what: &str,
+    taken: i32,
+    asked: (i32, i32),
+) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::GetWindowRgnBox;
+
+    let mut box_of = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: a window this program took in hand, and the rectangle is
+    // ours. A window with no shape answers that it has none.
+    let kind = unsafe { GetWindowRgnBox(engine, &mut box_of) };
+    crate::journal::note(&format!(
+        "découpe de l'image {what} ({taken}) sur {}x{} : elle couvre ({}, {}, {}, {}), sorte {kind}",
+        asked.0, asked.1, box_of.left, box_of.top, box_of.right, box_of.bottom
+    ));
+}
+
 /// Tells the player the size of its own window, once more, out loud.
 ///
 /// The player throws away the size changes that reach it while it is
@@ -1226,13 +1267,28 @@ static CORNERS: AtomicI64 = AtomicI64::new(-1);
 #[cfg(windows)]
 static SIZE_SAID: AtomicBool = AtomicBool::new(false);
 
+/// Whether the player has been seen busy at all yet.
+///
+/// It answers quickly before it starts building its decoder as well as
+/// after, and the journal caught this out: the size was said on that
+/// first quick answer, which is earlier than the moment being waited
+/// for. So a slow answer has to have been seen first. Busy, then not
+/// busy, is a start-up that has finished; not busy from the outset is a
+/// start-up that has not begun.
+#[cfg(windows)]
+static WAS_BUSY: AtomicBool = AtomicBool::new(false);
+
 #[cfg(windows)]
 fn say_the_size_again(engine: windows_sys::Win32::Foundation::HWND, size: (i32, i32)) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SetWindowPos,
     };
 
-    if size.0 <= 1 || size.1 <= 1 || SIZE_SAID.swap(true, Ordering::Relaxed) {
+    if size.0 <= 1
+        || size.1 <= 1
+        || !WAS_BUSY.load(Ordering::Relaxed)
+        || SIZE_SAID.swap(true, Ordering::Relaxed)
+    {
         return;
     }
     for said in [(size.0 - 1, size.1 - 1), size] {
