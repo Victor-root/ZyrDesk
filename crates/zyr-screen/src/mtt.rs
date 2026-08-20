@@ -74,6 +74,10 @@ impl Driver for Mtt {
         "MttVDD.inf"
     }
 
+    fn catalog_file(&self) -> &'static str {
+        "MttVDD.cat"
+    }
+
     fn package_files(&self) -> &'static [&'static str] {
         // The signature covers exactly this set: a package short of one
         // of them, or carrying one that was touched, is a package

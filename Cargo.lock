@@ -5965,6 +5965,7 @@ dependencies = [
  "zyr-engine-host",
  "zyr-lan",
  "zyr-proto",
+ "zyr-screen",
  "zyr-transport",
  "zyr-tunnel",
 ]

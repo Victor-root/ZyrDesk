@@ -32,6 +32,8 @@ pub mod mtt;
 
 #[cfg(windows)]
 mod place;
+#[cfg(windows)]
+mod vouching;
 
 use std::fmt;
 use std::path::Path;
@@ -42,14 +44,36 @@ pub use engine::Screen;
 /// Sizes the virtual screen always offers, whatever a session asks for.
 ///
 /// A screen with no size at all is not a screen: Windows needs one it
-/// can show before anybody has asked for anything. These are also what
-/// spares most sessions a restart, since a screen that already offers
-/// what is being asked for has nothing to be told.
+/// can show before anybody has asked for anything.
+///
+/// Long on purpose. A size that is already offered costs a session
+/// nothing; one that is not costs it a screen restart, which the person
+/// sitting at the host computer sees. These are the shapes screens are
+/// actually sold in, so the restart is what an unusual screen pays and
+/// everybody else never meets.
 pub const ALWAYS_OFFERED: &[Mode] = &[
+    // Sixteen by nine.
     Mode::new(1280, 720, 60),
+    Mode::new(1366, 768, 60),
+    Mode::new(1600, 900, 60),
     Mode::new(1920, 1080, 60),
     Mode::new(2560, 1440, 60),
+    Mode::new(3200, 1800, 60),
     Mode::new(3840, 2160, 60),
+    // Sixteen by ten, which most laptops are again.
+    Mode::new(1280, 800, 60),
+    Mode::new(1680, 1050, 60),
+    Mode::new(1920, 1200, 60),
+    Mode::new(2560, 1600, 60),
+    Mode::new(3840, 2400, 60),
+    // Three by two, the other laptop shape.
+    Mode::new(2256, 1504, 60),
+    Mode::new(3000, 2000, 60),
+    // Wide and very wide.
+    Mode::new(2560, 1080, 60),
+    Mode::new(3440, 1440, 60),
+    Mode::new(3840, 1600, 60),
+    Mode::new(5120, 1440, 60),
 ];
 
 /// What went wrong, said in the language of the person who reads it.
@@ -125,16 +149,33 @@ pub fn install(driver: &dyn Driver, package: &Path, home: &Path) -> Result<Done,
     ));
     driver.settle_in(home, &mut done)?;
     driver.write_modes(home, ALWAYS_OFFERED, &mut done)?;
+    // Before laying the driver down and not after: what this answers is
+    // a question Windows asks while laying it down, on a desktop nobody
+    // is watching.
+    vouching::vouch_for(&package.join(driver.catalog_file()), &mut done)?;
     place::put_in_place(driver, package, home, &mut done)?;
     Ok(done)
 }
 
 /// Takes the virtual screen back off, leaving nothing of it behind.
+///
+/// `package` is wanted here too, and only to read who signed the driver
+/// so that publisher can stop being named as one this computer expects.
 #[cfg(windows)]
-pub fn uninstall(driver: &dyn Driver, home: &Path) -> Result<Done, Trouble> {
+pub fn uninstall(driver: &dyn Driver, package: &Path, home: &Path) -> Result<Done, Trouble> {
     let mut done = Done::default();
     place::take_away(driver, home, &mut done)?;
     driver.move_out(home, &mut done)?;
+    let catalog = package.join(driver.catalog_file());
+    if catalog.is_file() {
+        vouching::stop_vouching_for(&catalog, &mut done)?;
+    } else {
+        done.step(format!(
+            "the driver's signature is no longer on disk ({}), its publisher stays named as \
+             expected",
+            catalog.display()
+        ));
+    }
     Ok(done)
 }
 
@@ -168,7 +209,7 @@ pub fn install(_driver: &dyn Driver, _package: &Path, _home: &Path) -> Result<Do
 }
 
 #[cfg(not(windows))]
-pub fn uninstall(_driver: &dyn Driver, _home: &Path) -> Result<Done, Trouble> {
+pub fn uninstall(_driver: &dyn Driver, _package: &Path, _home: &Path) -> Result<Done, Trouble> {
     Err(Trouble::NotHere)
 }
 

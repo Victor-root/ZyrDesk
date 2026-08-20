@@ -54,6 +54,14 @@ VIAddVersionKey "LegalCopyright" "GPLv3"
 ; désinstallation n'a qu'un endroit à nettoyer.
 !define DOSSIER_DONNEES "$INSTDIR\data"
 
+; L'écran virtuel : ses fichiers signés, et l'endroit où ils sont posés.
+; Doit rester égal à paths::virtual_screen_driver_dir() dans
+; crates/zyr-proto/src/paths.rs : NSIS ne sait pas lire le code Rust.
+!ifndef ECRAN_DIR
+  !define ECRAN_DIR "..\..\vendor\ecran-virtuel"
+!endif
+!define DOSSIER_PILOTE_ECRAN "${DOSSIER_DONNEES}\screen\driver"
+
 ; Le seul port ouvert sur la machine. Doit rester égal à TUNNEL_PORT
 ; dans crates/zyr-proto/src/net.rs : NSIS ne sait pas lire le code Rust.
 !define PORT_TUNNEL "47000"
@@ -68,6 +76,23 @@ Section "ZyrDesk" SEC_PRINCIPAL
   File "..\..\LICENSE"
 
   ; M4 : ZyrDesk.exe (interface) et moteurs rebrandés.
+
+  ; L'écran virtuel voyage avec le produit : rien à télécharger, rien à
+  ; installer à part. Ses fichiers sont signés comme un tout, donc ils
+  ; sont posés tels quels, sans être renommés ni retouchés.
+  ;
+  ; C'est le service qui les pose ensuite dans Windows, à son
+  ; enregistrement, parce que c'est lui qui sait ce qu'il en fait et lui
+  ; qui sait le retirer.
+  SetOutPath "${DOSSIER_PILOTE_ECRAN}"
+  File /nonfatal "${ECRAN_DIR}\MttVDD.inf"
+  File /nonfatal "${ECRAN_DIR}\MttVDD.cat"
+  File /nonfatal "${ECRAN_DIR}\MttVDD.dll"
+  IfFileExists "${DOSSIER_PILOTE_ECRAN}\MttVDD.inf" ecran_present 0
+  DetailPrint "Pilote d'écran virtuel absent de la construction : les sessions \
+    demandant un écran plus grand que celui de cet ordinateur seront agrandies."
+  ecran_present:
+  SetOutPath "$INSTDIR"
 
   ; Une seule règle, pour un seul programme et un seul port : tout ce
   ; qu'une session transporte passe par le tunnel, et les moteurs ne
@@ -138,6 +163,11 @@ Section "Uninstall"
   conserver_donnees:
   DetailPrint "Données conservées dans ${DOSSIER_DONNEES}"
   donnees_traitees:
+
+  ; Le service vient de retirer le pilote de l'écran virtuel de Windows ;
+  ; ses fichiers ne servent plus à rien. Ce ne sont pas des données de
+  ; l'utilisateur, donc ils partent dans tous les cas.
+  RMDir /r "${DOSSIER_PILOTE_ECRAN}"
 
   Delete "$INSTDIR\zyr-cli.exe"
   Delete "$INSTDIR\zyrdeskd.exe"

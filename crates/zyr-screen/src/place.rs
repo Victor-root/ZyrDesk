@@ -47,7 +47,7 @@ const NOTHING: HDEVINFO = -1;
 /// when it went in, which is a number nobody chose and which cannot be
 /// worked out from anything: `oem41.inf` on one machine, `oem7.inf` on
 /// the next. Written down at the one moment it is known.
-const FILED_AS: &str = "pilote-ecran.txt";
+const FILED_AS: &str = "driver-filed-as.txt";
 
 /// Puts the package in Windows' store and declares the device.
 ///
@@ -498,7 +498,7 @@ fn multi_string(bytes: &[u8]) -> Vec<String> {
 }
 
 /// The last refusal Windows gave, with what was being attempted.
-fn refused(doing: &str) -> Trouble {
+pub(crate) fn refused(doing: &str) -> Trouble {
     Trouble::System {
         doing: doing.to_string(),
         // SAFETY: reading why the call before this one refused.

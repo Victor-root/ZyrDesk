@@ -224,6 +224,12 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
     let log = Log::open(&log_path()).ok();
     lay_the_firewall(&program, log.as_ref());
     let_the_person_start_and_stop_it(log.as_ref());
+    // Here and nowhere else: laying a driver down needs administrator
+    // rights, which are already in hand at this one moment, and needs
+    // nobody to be watching a session, which is true of this one moment
+    // too. It never fails the installation, since a computer without a
+    // virtual screen is a computer that works, only less sharply.
+    crate::screen::put_in_place(log.as_ref());
     Ok(installed)
 }
 
@@ -475,6 +481,11 @@ pub fn uninstall() -> ServiceResult<()> {
     for (rule, _) in OPENINGS {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
     }
+
+    // After the service is gone and not before: the driver cannot leave
+    // Windows' store while anything is still using its device, and the
+    // engine is what uses it.
+    crate::screen::take_away(Log::open(&log_path()).ok().as_ref());
     Ok(())
 }
 

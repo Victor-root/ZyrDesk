@@ -9,6 +9,7 @@ mod gateway;
 mod known;
 mod preferences;
 mod restart;
+mod screen;
 mod supervisor;
 mod ways;
 

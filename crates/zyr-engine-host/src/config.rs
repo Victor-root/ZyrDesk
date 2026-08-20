@@ -51,6 +51,7 @@ pub struct SunshineConfig {
     encryption: InnerEncryption,
     minimum_fps: f64,
     output_name: Option<String>,
+    alone_on_the_screen: bool,
     adapter_name: Option<String>,
 }
 
@@ -82,6 +83,7 @@ impl SunshineConfig {
             encryption: InnerEncryption::default(),
             minimum_fps: DESKTOP_MINIMUM_FPS,
             output_name: None,
+            alone_on_the_screen: false,
             adapter_name: None,
         }
     }
@@ -103,9 +105,28 @@ impl SunshineConfig {
         self
     }
 
-    /// Screen to capture, by its Windows display device name.
+    /// Screen to capture, by the name the engine knows it under.
     pub fn with_screen(mut self, output_name: impl Into<String>) -> Self {
         self.output_name = Some(output_name.into());
+        self
+    }
+
+    /// The screen this computer grew for a session, which is to be the
+    /// only one there is while that session lasts.
+    ///
+    /// The only one, and not merely the one being captured. A screen
+    /// nobody is sitting in front of is an empty desktop: the taskbar,
+    /// the windows and the icons are all on the screen the person here
+    /// has, and a session shown the empty one would show nothing at all.
+    /// Putting the others out for the length of the session moves the
+    /// whole desktop onto it, which is what makes the far end see this
+    /// computer rather than a blank copy of it.
+    ///
+    /// The screen here goes dark meanwhile, which is the same thing the
+    /// engine already does to its size and puts back afterwards.
+    pub fn with_screen_of_its_own(mut self, output_name: impl Into<String>) -> Self {
+        self.output_name = Some(output_name.into());
+        self.alone_on_the_screen = true;
         self
     }
 
@@ -200,7 +221,14 @@ impl SunshineConfig {
             // and the one we show is the far desktop itself, which never
             // stops. Leaving a session without closing it would hand back
             // a laptop still at the size we gave it.
-            "dd_configuration_option = ensure_active".to_string(),
+            format!(
+                "dd_configuration_option = {}",
+                if self.alone_on_the_screen {
+                    "ensure_only_display"
+                } else {
+                    "ensure_active"
+                }
+            ),
             "dd_resolution_option = auto".to_string(),
             "dd_refresh_rate_option = auto".to_string(),
             "dd_config_revert_on_disconnect = enabled".to_string(),
@@ -358,6 +386,24 @@ mod tests {
             .render_conf();
         assert!(with_both.contains(r"output_name = \\.\DISPLAY1"));
         assert!(with_both.contains("adapter_name = NVIDIA GeForce RTX 4070"));
+    }
+
+    #[test]
+    fn a_screen_grown_for_the_session_becomes_the_only_one() {
+        // Sinon la session montre un bureau vide : la barre des tâches,
+        // les fenêtres et les icônes sont sur l'écran de la personne
+        // assise devant, pas sur celui qu'on vient de faire pousser.
+        let ordinary = test_config().render_conf();
+        assert!(ordinary.contains("dd_configuration_option = ensure_active"));
+
+        let grown = test_config()
+            .with_screen_of_its_own("{64243705-4020-5895-b923-adc862c3457e}")
+            .render_conf();
+        assert!(grown.contains("dd_configuration_option = ensure_only_display"));
+        assert!(grown.contains("output_name = {64243705-4020-5895-b923-adc862c3457e}"));
+        // Et tout est remis en place à la fin, sans quoi l'écran de la
+        // personne assise devant resterait éteint.
+        assert!(grown.contains("dd_config_revert_on_disconnect = enabled"));
     }
 
     #[test]

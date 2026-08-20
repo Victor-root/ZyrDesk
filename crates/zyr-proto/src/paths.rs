@@ -100,6 +100,24 @@ pub fn device_state_dir(device_id: &str) -> PathBuf {
     data_dir().join("devices").join(device_id)
 }
 
+/// Where the virtual screen keeps its settings and its own log.
+///
+/// Under our roof and not at the root of the disk, where the driver
+/// would have put them if nobody had told it otherwise: what the product
+/// leaves behind is what the product knows how to clean up.
+pub fn virtual_screen_dir() -> PathBuf {
+    data_dir().join("screen")
+}
+
+/// The virtual screen driver's own files, as the installer laid them
+/// down.
+///
+/// Signed as a set. Nothing here may be edited, renamed or repacked, or
+/// Windows stops recognising the signature and refuses the whole thing.
+pub fn virtual_screen_driver_dir() -> PathBuf {
+    virtual_screen_dir().join("driver")
+}
+
 /// Logs of every component.
 pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")

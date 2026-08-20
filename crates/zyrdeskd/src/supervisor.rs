@@ -113,6 +113,10 @@ enum Life {
     /// The screen moved to another session: the engine was stopped on
     /// purpose, and belongs over there now.
     SessionChanged,
+    /// The name the engine knows this computer's virtual screen by was
+    /// learned from the engine itself, which only says it as it starts.
+    /// It was stopped on purpose so the next one is told to capture it.
+    VirtualScreenLearned,
     /// Remote access was turned off while it ran.
     NoLongerWanted,
 }
@@ -313,6 +317,12 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
                     "the screen left session {session}, the engine starts over in the new one"
                 ));
             }
+            // Straight away rather than after the settling delay: the
+            // engine was stopped on purpose the moment it had said what
+            // was wanted of it, and nothing on the machine moved.
+            if life == Life::VirtualScreenLearned {
+                continue;
+            }
             if !wait(SESSION_SETTLING, order) {
                 return End::Asked;
             }
@@ -454,6 +464,16 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // the sole way to it, and nothing on the network can knock on its
     // seven ports.
     let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
+    // Which screen to capture is read once, as the engine starts, so it
+    // is decided here or not at all. Absent the first time this computer
+    // ever runs, since the name is the engine's own and the engine has
+    // not said it yet; learned below and used from the next start on.
+    let aiming_at = crate::screen::remembered();
+    let config = match &aiming_at {
+        Some(screen) => config.with_screen_of_its_own(screen),
+        None => config,
+    };
+    let engine_log = config.log_path();
     let credentials = Credentials::random();
     let mut engine = HostEngine::new(
         exe,
@@ -476,6 +496,14 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     if let Err(e) = api.wait_until_ready(START_DELAY, || !order.stop_asked()) {
         let _ = engine.stop();
         return Err(format!("the engine never finished starting: {e}"));
+    }
+
+    // Asked now and not later: the engine writes its list of screens as
+    // it starts and never again, and what is being looked for in it is
+    // the one name that lets the next start aim at the virtual screen.
+    if crate::screen::learn_from(&engine_log, aiming_at.as_deref(), log).is_some() {
+        let _ = engine.stop();
+        return Ok(Life::VirtualScreenLearned);
     }
 
     let state = EngineRuntime {

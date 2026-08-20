@@ -64,6 +64,13 @@ pub trait Driver: Sync {
     /// The description file inside the package folder.
     fn inf_file(&self) -> &'static str;
 
+    /// The file inside the package folder carrying the signature.
+    ///
+    /// What is read to learn who signed the driver, so that publisher
+    /// can be named as one this computer expects and Windows stops
+    /// asking a question nobody is there to answer.
+    fn catalog_file(&self) -> &'static str;
+
     /// Every file the package folder must hold. Checked before anything
     /// is installed: a package short of one file fails halfway through
     /// installing instead, and half an installed driver is worse than
