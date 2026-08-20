@@ -112,6 +112,7 @@ fn remember_the_shape(engine: isize, shape: (i32, i32), process: u32) {
     // back and only the latch to put down.
     DRAGGED.store(false, Ordering::Relaxed);
     CARRIED.store(0, Ordering::Relaxed);
+    KEY_WENT_ASTRAY.store(false, Ordering::Relaxed);
     SHAPE.store(
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
@@ -1210,6 +1211,10 @@ fn give_the_window_back(app: &AppHandle) {
         // silently switches off everything that asks whether the window
         // is in the middle of a gesture.
         let_the_picture_go(home);
+        // And out of our window for good, which nothing else does now:
+        // it is taken in at the first gesture of a session and kept
+        // there, so this is the one place it comes back out.
+        put_the_picture_back(home);
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
@@ -1680,6 +1685,13 @@ unsafe fn plain_surface(
 /// a child costs nothing.
 static CARRIED: AtomicIsize = AtomicIsize::new(0);
 
+/// Whether a key has been seen arriving at our own window while the
+/// picture was inside it, which means the session was not getting it.
+///
+/// Latched, since the answer is wanted once and the picture is handed
+/// back out on the spot, so there is nothing left to say afterwards.
+static KEY_WENT_ASTRAY: AtomicBool = AtomicBool::new(false);
+
 /// How many times the picture has been given a new size since our window
 /// took it in.
 ///
@@ -2086,15 +2098,27 @@ fn keep_the_picture_inside(window: windows_sys::Win32::Foundation::HWND, what: &
     unsafe { SetTimer(window, LET_GO, KEPT_INSIDE.as_millis() as u32, None) };
 }
 
-/// The system has had its time; the picture goes back to being a window
-/// of its own, and the gesture is written down.
+/// The system has had its time; the gesture is over and is written down.
+///
+/// The picture stays inside our window. It used to be handed back out
+/// here, and that was the whole of the flash that outlived every other
+/// fix: taking it in and handing it back are each a moment where the
+/// numbers it wears are read against the wrong origin, about a
+/// millisecond and a half against a screen that redraws every
+/// seventeen. One in eleven is drawn, and there were two per gesture, so
+/// a session of twenty gestures showed about four. The arithmetic
+/// matched what was reported to the flash.
+///
+/// Nothing shortens that to nothing, so it is the count that had to go.
+/// Taken in at the first gesture of a session and kept until the last,
+/// there is one crossing where there were forty, and one crossing is
+/// one chance in eleven of ever being seen at all.
 #[cfg(windows)]
 fn let_the_picture_go(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{IsZoomed, KillTimer};
 
     // SAFETY: our own window, from the thread that owns it.
     unsafe { KillTimer(window, LET_GO) };
-    put_the_picture_back(window);
     let Some(held) = HOLDING.with_borrow_mut(|holding| holding.take()) else {
         return;
     };
@@ -2195,8 +2219,8 @@ unsafe extern "system" fn lit(
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         NCCALCSIZE_PARAMS, PostMessageW, SC_MAXIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, WINDOWPOS,
         WM_ACTIVATEAPP, WM_DWMSENDICONICLIVEPREVIEWBITMAP, WM_DWMSENDICONICTHUMBNAIL,
-        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_SYSCOMMAND, WM_TIMER,
-        WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
+        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_KEYDOWN, WM_NCACTIVATE, WM_NCCALCSIZE, WM_SYSCOMMAND,
+        WM_SYSKEYDOWN, WM_TIMER, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
     };
 
     match message {
@@ -2286,6 +2310,28 @@ unsafe extern "system" fn lit(
             // SAFETY: the arguments the system handed in, with one
             // boolean possibly turned around.
             unsafe { DefSubclassProc(window, message, lit, lparam) }
+        }
+        // A key has arrived at our window rather than at the session,
+        // which is the one thing keeping the picture inside our window
+        // for a whole session can cost: a child window is never the
+        // window at the front, and the keyboard goes to the front.
+        //
+        // Answered rather than assumed. It cannot prove the keyboard is
+        // fine, since a key taken by the web view under the picture
+        // never reaches here either; it can only prove it is not, and
+        // that is the answer worth having. The picture goes back out at
+        // the same time, so a session is never left unable to type: from
+        // then on it is handed back and forth as it was, flash and all.
+        WM_KEYDOWN | WM_SYSKEYDOWN
+            if CARRIED.load(Ordering::Relaxed) != 0
+                && !KEY_WENT_ASTRAY.swap(true, Ordering::Relaxed) =>
+        {
+            crate::journal::note(
+                "une touche est arrivée à la fenêtre de ZyrDesk et non à la session :                  l'image ressort de la fenêtre, le clavier repasse par elle",
+            );
+            put_the_picture_back(window);
+            // SAFETY: the arguments the system handed in, untouched.
+            unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
         // The front has settled; draw the bar the way it really stands.
         BAR => {
