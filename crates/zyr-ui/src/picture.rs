@@ -112,7 +112,6 @@ fn remember_the_shape(engine: isize, shape: (i32, i32), process: u32) {
     // back and only the latch to put down.
     DRAGGED.store(false, Ordering::Relaxed);
     CARRIED.store(0, Ordering::Relaxed);
-    KEY_WENT_ASTRAY.store(false, Ordering::Relaxed);
     SHAPE.store(
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
@@ -1685,13 +1684,6 @@ unsafe fn plain_surface(
 /// a child costs nothing.
 static CARRIED: AtomicIsize = AtomicIsize::new(0);
 
-/// Whether a key has been seen arriving at our own window while the
-/// picture was inside it, which means the session was not getting it.
-///
-/// Latched, since the answer is wanted once and the picture is handed
-/// back out on the spot, so there is nothing left to say afterwards.
-static KEY_WENT_ASTRAY: AtomicBool = AtomicBool::new(false);
-
 /// How many times the picture has been given a new size since our window
 /// took it in.
 ///
@@ -1722,6 +1714,69 @@ static LAID_WHILE_CARRIED: std::sync::atomic::AtomicU32 = std::sync::atomic::Ato
 /// done to it is decided in places that handler does not run.
 fn on_the_move() -> bool {
     DRAGGED.load(Ordering::Relaxed) || CARRIED.load(Ordering::Relaxed) != 0
+}
+
+/// Thread the picture belongs to while our window is holding it, and
+/// zero the rest of the time; see `hand_the_keyboard_over`.
+static ITS_THREAD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Puts the keyboard where the picture is, or takes it back.
+///
+/// A window held inside another is never the window at the front, and
+/// the keyboard goes to the front. Held for a whole session, as it now
+/// is, the session lost the keyboard for that whole session: tried,
+/// reported, and the reason this exists.
+///
+/// It cannot be answered by passing the keys along by hand. The keys do
+/// not reach us to begin with, the web view under the picture taking
+/// them first, and even forwarded they would arrive without the state
+/// that says which of shift, control and alt are down, since that state
+/// belongs to the thread that really received them. Every modifier and
+/// every shortcut would be wrong.
+///
+/// So the two threads are given one input state between them, which is
+/// what this call is for, and the focus is then handed across it. The
+/// price is that a thread which stops answering holds the other one's
+/// input with it. Both of these already wait on each other several
+/// times a second, so neither can stop answering without the session
+/// stopping anyway.
+#[cfg(windows)]
+fn hand_the_keyboard_over(engine: windows_sys::Win32::Foundation::HWND, over: bool) {
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    // SAFETY: no argument, and a window this program took in hand with
+    // no slot asked for.
+    let ours = unsafe { GetCurrentThreadId() };
+    let theirs = if over {
+        unsafe { GetWindowThreadProcessId(engine, std::ptr::null_mut()) }
+    } else {
+        ITS_THREAD.load(Ordering::Relaxed)
+    };
+    if theirs == 0 || theirs == ours {
+        return;
+    }
+    // SAFETY: two threads of this machine, and the same pair is handed
+    // back later. Detaching a pair that was never attached answers
+    // false and does nothing.
+    let joined = unsafe { AttachThreadInput(ours, theirs, i32::from(over)) } != 0;
+    ITS_THREAD.store(if over && joined { theirs } else { 0 }, Ordering::Relaxed);
+    if !over {
+        crate::journal::note("clavier repris à la session");
+        return;
+    }
+    // SAFETY: a window this program took in hand, which the call above
+    // has just put on the same input as ours, which is what lets the
+    // focus be given to a window of another program at all.
+    let took = !joined || unsafe { SetFocus(engine) }.is_null();
+    crate::journal::note(if joined && !took {
+        "clavier confié à la session : les deux programmes partagent une entrée, l'image a le focus"
+    } else if joined {
+        "clavier confié à la session mais l'image a refusé le focus"
+    } else {
+        "clavier non confié : les deux programmes n'ont pas pu partager une entrée"
+    });
 }
 
 /// Takes the picture in as a child of our window, so a move carries
@@ -1799,6 +1854,8 @@ fn carry_the_picture(
             SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOSENDCHANGING,
         );
         CARRIED.store(style, Ordering::Relaxed);
+        // And the keyboard with it, which being a child costs.
+        hand_the_keyboard_over(engine, true);
         // The same crossing as the one at the other end of a gesture,
         // and the same thing worth knowing about it: from the moment the
         // style becomes a child's, the numbers the picture is wearing
@@ -1839,6 +1896,11 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
     let Some(engine) = the_engines_window() else {
         return;
     };
+    // The keyboard first, and before anything that can give up: it was
+    // handed over on the strength of the picture being a child, and two
+    // programs left sharing one input after a session has ended is one
+    // of them waiting on a thread that no longer answers.
+    hand_the_keyboard_over(engine, false);
     let Some((corner, width, height)) = the_inside_of(home) else {
         return;
     };
@@ -2219,8 +2281,8 @@ unsafe extern "system" fn lit(
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         NCCALCSIZE_PARAMS, PostMessageW, SC_MAXIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, WINDOWPOS,
         WM_ACTIVATEAPP, WM_DWMSENDICONICLIVEPREVIEWBITMAP, WM_DWMSENDICONICTHUMBNAIL,
-        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_KEYDOWN, WM_NCACTIVATE, WM_NCCALCSIZE, WM_SYSCOMMAND,
-        WM_SYSKEYDOWN, WM_TIMER, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
+        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_SYSCOMMAND, WM_TIMER,
+        WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
     };
 
     match message {
@@ -2310,28 +2372,6 @@ unsafe extern "system" fn lit(
             // SAFETY: the arguments the system handed in, with one
             // boolean possibly turned around.
             unsafe { DefSubclassProc(window, message, lit, lparam) }
-        }
-        // A key has arrived at our window rather than at the session,
-        // which is the one thing keeping the picture inside our window
-        // for a whole session can cost: a child window is never the
-        // window at the front, and the keyboard goes to the front.
-        //
-        // Answered rather than assumed. It cannot prove the keyboard is
-        // fine, since a key taken by the web view under the picture
-        // never reaches here either; it can only prove it is not, and
-        // that is the answer worth having. The picture goes back out at
-        // the same time, so a session is never left unable to type: from
-        // then on it is handed back and forth as it was, flash and all.
-        WM_KEYDOWN | WM_SYSKEYDOWN
-            if CARRIED.load(Ordering::Relaxed) != 0
-                && !KEY_WENT_ASTRAY.swap(true, Ordering::Relaxed) =>
-        {
-            crate::journal::note(
-                "une touche est arrivée à la fenêtre de ZyrDesk et non à la session :                  l'image ressort de la fenêtre, le clavier repasse par elle",
-            );
-            put_the_picture_back(window);
-            // SAFETY: the arguments the system handed in, untouched.
-            unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
         // The front has settled; draw the bar the way it really stands.
         BAR => {
