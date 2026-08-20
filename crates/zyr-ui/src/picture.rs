@@ -1669,6 +1669,33 @@ fn where_it_stands(window: windows_sys::Win32::Foundation::HWND) -> Option<(i32,
         .then_some((now.left, now.top, now.right, now.bottom))
 }
 
+/// Lets the system play its own animations for this window, or stops it
+/// for a moment.
+///
+/// Only ever off for the handful of pixels the order at the end of a
+/// move has left to travel. Off for longer, the window would stop
+/// growing and shrinking like every other window on the machine, which
+/// is not what is wanted; on for those pixels, they are played as a
+/// little move of their own at the end of the real one.
+#[cfg(windows)]
+fn transitions(window: windows_sys::Win32::Foundation::HWND, may: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_TRANSITIONS_FORCEDISABLED, DwmSetWindowAttribute,
+    };
+
+    let stopped: i32 = i32::from(!may);
+    // SAFETY: our own window, an attribute made to be set, and the value
+    // is ours, of the size the call is told.
+    unsafe {
+        DwmSetWindowAttribute(
+            window,
+            DWMWA_TRANSITIONS_FORCEDISABLED as u32,
+            (&raw const stopped).cast(),
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
+}
+
 /// Where the window ends up once that order has been carried out.
 ///
 /// Worked out rather than found out. Finding out means letting the
@@ -1684,12 +1711,11 @@ fn where_the_order_leads(
     window: windows_sys::Win32::Foundation::HWND,
     order: usize,
 ) -> Option<(i32, i32, i32, i32)> {
-    use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowPlacement, GetWindowRect, SC_MAXIMIZE, WINDOWPLACEMENT,
+        GetWindowPlacement, SC_MAXIMIZE, WINDOWPLACEMENT,
     };
 
     // SAFETY: our own window; the nearest monitor is always an answer.
@@ -1708,16 +1734,6 @@ fn where_the_order_leads(
         // which is why it looks flush with the edges. Those bands are
         // whatever separates this window's rectangle from the frame it
         // actually draws, measured on it as it stands.
-        let mut whole = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        };
-        // SAFETY: our own window and the rectangle is ours.
-        if unsafe { GetWindowRect(window, &mut whole) } == 0 {
-            return None;
-        }
         return Some(spread_over(
             (
                 screen.rcWork.left,
@@ -1725,8 +1741,7 @@ fn where_the_order_leads(
                 screen.rcWork.right,
                 screen.rcWork.bottom,
             ),
-            (whole.left, whole.top, whole.right, whole.bottom),
-            the_drawn_frame_of(window)?,
+            spread_bands(window),
         ));
     }
 
@@ -1812,7 +1827,7 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         // Arrived when what is left cannot be seen, and finished anyway
         // once it has gone on far too long.
         let done = within(step, growing.to, NEAR_ENOUGH) || growing.began.elapsed() > AT_THE_LATEST;
-        Some((if done { growing.to } else { step }, done))
+        Some((step, done))
     }) else {
         return;
     };
@@ -1857,13 +1872,23 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         ));
     }
     if let Some(played) = played {
-        // The order first, from where the window already is: what it has
-        // left to move is nothing, so what the system would animate is
-        // nothing. Handed straight to its own handling, since ours would
-        // only take it back and play it again.
+        // The order now, from a few pixels short of where it leads. Not
+        // from exactly there: the compositor draws a window's frame from
+        // what it works out about it, and it works it out again when the
+        // window moves. Landed exactly on the mark, nothing moved on
+        // this last step and the frame stayed the one the window had
+        // while it was spread over the screen, flat-topped and without
+        // its border, until the next time a hand moved the window. A few
+        // pixels left for the system to travel is a frame worked out
+        // again.
         //
+        // With its own animation off for the length of it, and only for
+        // that: those few pixels are a move like any other to the
+        // system, and it would play them as one.
+        transitions(window, false);
         // SAFETY: the order the person gave, at the window it was given
-        // to.
+        // to. Handed straight to the system's own handling, since ours
+        // would only take it back and play it again.
         unsafe { DefSubclassProc(window, WM_SYSCOMMAND, played.then, 0) };
 
         // And the window's own place after it, put back as it was read
@@ -1907,6 +1932,7 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
             )
         };
+        transitions(window, true);
         // The whole of what the window ended up as. « It came back with
         // square edges » is about the frame the compositor draws, and
         // the frame is worked out from these: whether the system counts
@@ -1914,12 +1940,13 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         // it draws. Those three side by side say which of them is wrong.
         // SAFETY: our own window, read only.
         crate::journal::note(&format!(
-            "fenêtre {} après le mouvement, en {:?}, cadre dessiné en {:?}",
+            "fenêtre {} après le mouvement : visé {:?}, obtenu {:?}, cadre dessiné {:?}",
             if unsafe { IsZoomed(window) } != 0 {
                 "agrandie"
             } else {
                 "en fenêtre"
             },
+            played.to,
             where_it_stands(window),
             the_drawn_frame_of(window),
         ));
@@ -1938,17 +1965,36 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
 /// off the edges of the screen so that what it draws lands flush with
 /// them. `whole` is the rectangle the system counts the window as, and
 /// `drawn` the frame it really draws; what separates them is the bands.
-fn spread_over(
-    work: (i32, i32, i32, i32),
-    whole: (i32, i32, i32, i32),
-    drawn: (i32, i32, i32, i32),
-) -> (i32, i32, i32, i32) {
+fn spread_over(work: (i32, i32, i32, i32), band: (i32, i32)) -> (i32, i32, i32, i32) {
     (
-        work.0 - (drawn.0 - whole.0),
-        work.1 - (drawn.1 - whole.1),
-        work.2 + (whole.2 - drawn.2),
-        work.3 + (whole.3 - drawn.3),
+        work.0 - band.0,
+        work.1 - band.1,
+        work.2 + band.0,
+        work.3 + band.1,
     )
+}
+
+/// How far a window spread over a screen hangs off each edge of it.
+///
+/// The bands a resize can be grabbed in, which are invisible and which a
+/// spread window hangs off the screen so that what it draws lands flush
+/// with the edges. Asked of the system at this window's own scale.
+#[cfg(windows)]
+fn spread_bands(window: windows_sys::Win32::Foundation::HWND) -> (i32, i32) {
+    use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SM_CXPADDEDBORDER, SM_CXSIZEFRAME, SM_CYSIZEFRAME,
+    };
+
+    // SAFETY: our own window, and plain metrics at that scale.
+    unsafe {
+        let dpi = GetDpiForWindow(window).max(96);
+        let padded = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+        (
+            GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + padded,
+            GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + padded,
+        )
+    }
 }
 
 /// Where the window stands when it is that far along.
@@ -2634,22 +2680,18 @@ mod tests {
 
     #[test]
     fn a_window_spread_over_the_desktop_hangs_its_grab_bands_off_the_edges() {
-        // Une fenêtre de 1000x600 posée en (100, 100), dont le cadre
-        // dessiné est rentré de 7 pixels sur les côtés et le bas : les
-        // bandes de préhension. Étalée, elles doivent dépasser de l'écran
+        // Les bandes de préhension font 7 pixels de côté et 9 en
+        // hauteur : étalée, la fenêtre doit dépasser de l'écran
         // d'exactement autant, pour que ce qui se dessine tombe pile sur
         // les bords.
         let work = (0, 0, 1920, 1040);
-        let whole = (100, 100, 1100, 700);
-        let drawn = (107, 100, 1093, 693);
-        assert_eq!(spread_over(work, whole, drawn), (-7, 0, 1927, 1047));
+        assert_eq!(spread_over(work, (7, 9)), (-7, -9, 1927, 1049));
     }
 
     #[test]
     fn a_window_without_grab_bands_is_spread_to_the_desktop_itself() {
         let work = (0, 0, 1920, 1040);
-        let same = (100, 100, 1100, 700);
-        assert_eq!(spread_over(work, same, same), work);
+        assert_eq!(spread_over(work, (0, 0)), work);
     }
 
     /// Le mouvement joué, un pas toutes les `chaque`, jusqu'à l'arrivée.
