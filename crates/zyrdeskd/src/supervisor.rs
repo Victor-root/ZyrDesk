@@ -501,7 +501,9 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // Asked now and not later: the engine writes its list of screens as
     // it starts and never again, and what is being looked for in it is
     // the one name that lets the next start aim at the virtual screen.
-    if crate::screen::learn_from(&engine_log, aiming_at.as_deref(), log).is_some() {
+    if crate::screen::learn_from(&engine_log, aiming_at.as_deref(), log)
+        == crate::screen::Learned::StartAgain
+    {
         let _ = engine.stop();
         return Ok(Life::VirtualScreenLearned);
     }

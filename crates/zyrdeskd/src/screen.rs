@@ -85,17 +85,27 @@ pub fn remembered() -> Option<String> {
     (!said.is_empty()).then(|| said.to_string())
 }
 
+/// What reading the engine's list of screens changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Learned {
+    /// The engine is aimed where it should be.
+    NothingToChange,
+    /// It is not, and the note has been corrected. The engine reads that
+    /// note once, when it starts, so it has to start again.
+    StartAgain,
+}
+
 /// Reads the engine's own list of screens and picks the virtual one out.
 ///
-/// Returns its identifier only when it is not the one the engine was
-/// started with, which is the caller's cue to start the engine again:
-/// the engine reads which screen to capture once, when it starts, and
-/// this is learned after that.
-pub fn learn_from(
-    engine_log: &std::path::Path,
-    started_with: Option<&str>,
-    log: &Log,
-) -> Option<String> {
+/// Two things can be wrong and both are put right here. The virtual
+/// screen may be there under a name the engine was not started with,
+/// which is what happens the first time this computer ever runs one; and
+/// the engine may have been started aimed at a screen that is no longer
+/// there, which is what happens when the driver goes. That second one
+/// matters more than it looks: the engine is not merely told which
+/// screen to capture but told to put every other screen out for the
+/// length of a session, and it is worth being sure that screen exists.
+pub fn learn_from(engine_log: &std::path::Path, started_with: Option<&str>, log: &Log) -> Learned {
     /// The engine lists its screens as it starts and answers on its own
     /// port a moment later, but the two are not the same moment and the
     /// log is written through a buffer. Read a few times rather than
@@ -127,7 +137,7 @@ pub fn learn_from(
             engine_log.display(),
             TRIES
         ));
-        return None;
+        return Learned::NothingToChange;
     }
     log.write(&format!(
         "screens the engine sees: {}",
@@ -148,26 +158,46 @@ pub fn learn_from(
 
     let Some(ours) = zyr_screen::engine::the_virtual_screen(&text, driver) else {
         log.write(&format!(
-            "no virtual screen among them: the engine will capture the main screen, and a \
-             session asking for more than it can draw gets it blown up. Looked for a screen \
-             calling itself the way {} does",
+            "no virtual screen among them: looked for one calling itself the way {} does",
             driver.name()
         ));
-        return None;
+        let Some(gone) = started_with else {
+            log.write(
+                "the engine captures the main screen, so a session asking for more than that \
+                 screen can draw gets it blown up",
+            );
+            return Learned::NothingToChange;
+        };
+        // The engine was started aimed at a screen that is not there,
+        // which also means told to put every other screen out for a
+        // screen that cannot come back. Forgotten and started over.
+        if let Err(e) = std::fs::remove_file(learned_path()) {
+            log.write(&format!(
+                "the engine is aimed at a screen that is gone ({gone}) and the note saying so \
+                 could not be removed: {e}"
+            ));
+            return Learned::NothingToChange;
+        }
+        log.write(&format!(
+            "the engine was aimed at a virtual screen that is no longer there ({gone}), forgotten \
+             and started over so it captures the main screen"
+        ));
+        return Learned::StartAgain;
     };
 
     if started_with == Some(ours.device_id.as_str()) {
         log.write(&format!(
-            "the engine is capturing the virtual screen ({})",
+            "the engine is capturing the virtual screen ({}), and puts every other screen out for \
+             the length of a session",
             ours.device_id
         ));
-        return None;
+        return Learned::NothingToChange;
     }
     if let Err(e) = write_learned(&ours.device_id) {
         log.write(&format!(
             "the virtual screen's name could not be written down: {e}"
         ));
-        return None;
+        return Learned::NothingToChange;
     }
     log.write(&format!(
         "virtual screen found under a name the engine was not started with ({} instead of {}), \
@@ -175,7 +205,7 @@ pub fn learn_from(
         ours.device_id,
         started_with.unwrap_or("none")
     ));
-    Some(ours.device_id)
+    Learned::StartAgain
 }
 
 fn write_learned(device_id: &str) -> std::io::Result<()> {

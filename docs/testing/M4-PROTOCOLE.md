@@ -755,9 +755,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Aucune session en cours. Ouvrir les réglages (engrenage), passer la qualité à **Qualité**.
 >
-> Attendu : la ligne sous le réglage annonce 2560 x 1440 et un débit plus élevé. Ouvrir une session : l'image doit être plus détaillée.
+> Attendu : la ligne sous le réglage annonce **la taille de l'écran de ce PC** et un débit plus élevé. Une qualité n'est plus une taille fixe mais un plafond : sur un écran 4K elle annonce 3840 x 2160, sur un écran 1080p elle annonce 1920 x 1080, et jamais une taille que cet écran n'a pas. Ouvrir une session : l'image doit être plus détaillée.
 >
-> Remettre **Équilibré** pour la suite.
+> Remettre **Équilibré** pour la suite. Sur un écran plus grand que 1920 x 1080, la ligne doit alors annoncer 1920 x 1080 : c'est le plafond de cette marche.
 
 > **R18 (un réglage survit à tout)**
 >
@@ -835,6 +835,53 @@ Quand quelque chose ne marche pas, la première question est toujours la même :
 
 ---
 
+## Partie 9 : l'écran virtuel
+
+### Ce qui change, et pourquoi
+
+Un ordinateur ne peut envoyer que ce qu'il dessine. Un portable en 1920 x 1080 à qui on demande du 4K agrandit ce qu'il a avant d'encoder : l'image remplit l'écran du client et elle est floue, pour quatre fois le débit. ZyrDesk fait donc pousser sur l'hôte un écran que Windows croit réel et dessine à la taille demandée. Le fond de l'affaire est dans [ECRAN-VIRTUEL.md](../ECRAN-VIRTUEL.md).
+
+Le cas qui compte pour cette partie : **un PC client dont l'écran est plus grand que celui du PC hôte**. Un client 4K vers un portable 1080p est l'exemple parfait.
+
+> **R27 (l'écran virtuel est là)**
+>
+> Sur le **PC hôte**, après installation : ouvrir le Gestionnaire de périphériques, dérouler **Cartes graphiques**.
+>
+> Attendu : une entrée **Virtual Display Driver** à côté de la vraie carte, sans point d'exclamation. Aucune fenêtre n'a demandé quoi que ce soit pendant l'installation.
+>
+> Si elle est absente, le journal du service dit à quelle étape ça a lâché : chercher `virtual screen`. Il n'y a rien d'autre à chercher, chaque étape y écrit une ligne.
+
+> **R28 (le moteur le vise)**
+>
+> Sur le **PC hôte**, ouvrir le journal du service et chercher `screens the engine sees`.
+>
+> Attendu : la liste des écrans, dont un nommé **VDD by MTT**, puis la ligne `the engine is capturing the virtual screen (…)`. Au tout premier démarrage après l'installation, une ligne dit à la place que le moteur redémarre pour le viser : c'est normal et ça n'arrive qu'une fois.
+
+> **R29 (le 4K est vraiment net)**
+>
+> Depuis le **PC client 4K**, qualité **Qualité**, ouvrir une session vers le portable 1080p, et mettre la fenêtre en plein écran.
+>
+> Attendu, dans l'ordre :
+> - Le journal de la fenêtre annonce `écran de cet ordinateur : 3840x2160 pixels réels` puis `image demandée au loin en 3840x2160`, avec `l'écran est demandé entier, un pixel envoyé pour un pixel affiché`.
+> - L'écran du portable **s'éteint** au début de la session, et se rallume à la fin. C'est voulu : le bureau entier déménage sur l'écran virtuel, sans quoi la session montrerait un bureau vide.
+> - Le texte est **net**. C'est le seul juge. Ouvrir le bloc-notes sur le bureau distant : les lettres doivent être franches, pas baveuses.
+>
+> Le point de comparaison honnête est le même essai avant cette version : l'image remplissait déjà l'écran, mais floue.
+
+> **R30 (tout est remis en place)**
+>
+> Fermer la session, aller voir le **PC hôte**.
+>
+> Attendu : son écran est rallumé, à sa taille d'origine, avec ses icônes là où elles étaient.
+
+> **R31 (le retrait ne laisse rien)**
+>
+> Désinstaller ZyrDesk sur le **PC hôte**, puis rouvrir le Gestionnaire de périphériques.
+>
+> Attendu : plus de **Virtual Display Driver**, et aucun périphérique en erreur. Le journal du service porte `virtual screen device removed` et `taken out of the store`.
+
+---
+
 ## Si quelque chose ne va pas
 
 La marche à suivre est toujours la même : ouvrir le journal, cliquer **Copier tout**, coller le résultat. Il porte la version, l'état des deux machines et la fin de chaque trace : c'est tout ce qu'il faut, et il n'y a rien d'autre à chercher sur le disque.
@@ -851,6 +898,7 @@ Deux cas courants, et leur cause habituelle :
 
   Le rattrapage R6bis permet de continuer sans attendre.
 - **La session est refusée avec un message d'ordinateur refusé.** La confiance au réseau local est coupée sur l'hôte (R19), ou son accès distant est désactivé (R20).
+- **L'image remplit l'écran mais reste floue.** Deux lignes tranchent, et rien d'autre. Sur le **client**, `image demandée au loin en …` dit la taille demandée : si elle est plus petite que l'écran, c'est le plafond de la qualité qui l'a rabotée, il faut monter d'une marche. Sur l'**hôte**, `no virtual screen among them` dit que l'écran virtuel n'est pas là : la taille est bien demandée, mais l'hôte ne sait pas la dessiner et agrandit la sienne. Remonter alors à `virtual screen` dans son journal, qui dit à quelle étape la pose a lâché.
 - **La session s'ouvre puis se referme aussitôt, sans image.** Le journal de la fenêtre le raconte pas à pas, de `session asked for towards …` à `session ended: …`. Si la ligne `the far computer no longer knows this one` y figure, le produit s'est rattrapé tout seul et il n'y a rien à faire. Sinon, la fin du journal du moteur client (`session.log`) porte le dernier mot du moteur, qui est toujours la vraie raison.
 
 Deux entrées du menu flottant méritent leur propre explication :
