@@ -109,13 +109,20 @@ pub fn virtual_screen_dir() -> PathBuf {
     data_dir().join("screen")
 }
 
-/// The virtual screen driver's own files, as the installer laid them
-/// down.
+/// The virtual screen driver's own files, carried by the product.
 ///
-/// Signed as a set. Nothing here may be edited, renamed or repacked, or
-/// Windows stops recognising the signature and refuses the whole thing.
+/// Beside the program and not under the data folder, because that is
+/// what they are: files nobody on this machine owns or may change,
+/// signed as a set, where editing, renaming or repacking any one of them
+/// makes Windows stop recognising the signature and refuse them all.
+///
+/// One name answering in both worlds. Run from the repository it lands
+/// on `vendor/ecran-virtuel`, where the files are kept; installed, on
+/// the same folder next to the program, where the installer lays them.
+/// Nothing has to be copied anywhere for a build made on this machine to
+/// find them.
 pub fn virtual_screen_driver_dir() -> PathBuf {
-    virtual_screen_dir().join("driver")
+    project_root().join("vendor").join("ecran-virtuel")
 }
 
 /// Logs of every component.

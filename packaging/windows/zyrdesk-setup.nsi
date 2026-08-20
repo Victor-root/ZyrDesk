@@ -55,12 +55,13 @@ VIAddVersionKey "LegalCopyright" "GPLv3"
 !define DOSSIER_DONNEES "$INSTDIR\data"
 
 ; L'écran virtuel : ses fichiers signés, et l'endroit où ils sont posés.
-; Doit rester égal à paths::virtual_screen_driver_dir() dans
-; crates/zyr-proto/src/paths.rs : NSIS ne sait pas lire le code Rust.
+; Le chemin d'arrivée doit rester égal à ce que renvoie
+; paths::virtual_screen_driver_dir() dans crates/zyr-proto/src/paths.rs,
+; qui cherche à côté du programme : NSIS ne sait pas lire le code Rust.
 !ifndef ECRAN_DIR
   !define ECRAN_DIR "..\..\vendor\ecran-virtuel"
 !endif
-!define DOSSIER_PILOTE_ECRAN "${DOSSIER_DONNEES}\screen\driver"
+!define DOSSIER_PILOTE_ECRAN "$INSTDIR\vendor\ecran-virtuel"
 
 ; Le seul port ouvert sur la machine. Doit rester égal à TUNNEL_PORT
 ; dans crates/zyr-proto/src/net.rs : NSIS ne sait pas lire le code Rust.
@@ -171,6 +172,7 @@ Section "Uninstall"
   ; ses fichiers ne servent plus à rien. Ce ne sont pas des données de
   ; l'utilisateur, donc ils partent dans tous les cas.
   RMDir /r "${DOSSIER_PILOTE_ECRAN}"
+  RMDir "$INSTDIR\vendor"
 
   Delete "$INSTDIR\zyr-cli.exe"
   Delete "$INSTDIR\zyrdeskd.exe"

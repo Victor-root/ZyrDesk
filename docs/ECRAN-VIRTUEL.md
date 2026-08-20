@@ -63,10 +63,12 @@ piloter ceux qui existent, et c'est ce qui est utilisé
 
 ## Ce qui se passe, dans l'ordre
 
-**À l'installation.** L'installateur pose les fichiers du pilote dans
-`data/screen/driver/`. Le service, au moment où il s'enregistre, les met
-en place. Ce moment-là et pas un autre : les droits administrateur y sont
-déjà en main, et personne n'est en session.
+**À l'installation.** Le produit cherche les fichiers du pilote à côté de
+son programme : depuis le dépôt cela tombe sur `vendor/ecran-virtuel/`,
+installé, sur le même dossier posé à côté de l'exécutable. Rien à
+recopier dans un cas comme dans l'autre. Le service, au moment où il
+s'enregistre, les met en place. Ce moment-là et pas un autre : les droits
+administrateur y sont déjà en main, et personne n'est en session.
 
 Le service, dans l'ordre : écrit les tailles que l'écran devra offrir,
 dit au pilote de garder ses papiers dans `data/screen/` plutôt que dans

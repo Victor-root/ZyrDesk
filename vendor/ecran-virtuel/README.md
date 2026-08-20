@@ -35,9 +35,13 @@ le livrer avec ZyrDesk plutôt que de demander un téléchargement de plus.
 
 Rien de ce dossier n'est modifié, renommé ni recompressé : les trois
 fichiers sont signés **comme un tout**, et toucher à l'un d'eux fait
-perdre la signature de l'ensemble. L'installateur les pose dans
-`data/screen/driver/`, et c'est le service qui les met en place dans
-Windows puis les retire (voir `crates/zyr-screen/`).
+perdre la signature de l'ensemble. C'est le service qui les met en place
+dans Windows puis les retire (voir `crates/zyr-screen/`).
+
+Le produit les cherche à côté de son programme. Depuis le dépôt, cela
+tombe sur ce dossier-ci ; installé, sur le même dossier posé à côté de
+l'exécutable par l'installateur. Il n'y a donc rien à recopier pour
+qu'une compilation faite sur sa machine les trouve.
 
 Le seul écart : le fichier de la signature s'appelait `mttvdd.cat` dans
 l'archive d'origine et il est renommé `MttVDD.cat` ici, qui est le nom
