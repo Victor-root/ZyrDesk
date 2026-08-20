@@ -505,6 +505,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Le journal chiffre le geste.** Une ligne `agrandissement joué en N ms, M pas, plus grand pas L px` est écrite à chaque fois, et `retour en fenêtre joué en ...` dans l'autre sens, suivie de `fenêtre agrandie` ou `fenêtre en fenêtre après le mouvement`, qui dit dans quel état la fenêtre a réellement fini. Deux cents millisecondes environ est ce qui est visé. Le nombre qui dit tout est le plus grand pas : quelques dizaines de pixels est un mouvement porté, plusieurs centaines est un saut. Et un nombre de pas bien inférieur au nombre d'images dessinées veut dire que chaque pas a attendu ; ce qu'un pas attend, c'est le lecteur qui prend sa nouvelle taille.
 
+> **S9quinquies (Alt+Tab montre la session, pas l'écran d'accueil)**
+>
+> Pendant une session, faire **Alt+Tab** et regarder la vignette de ZyrDesk. Puis, sans session, refaire Alt+Tab.
+>
+> Attendu : pendant une session, la vignette montre **l'écran de l'ordinateur distant**. Sans session, elle montre l'écran d'accueil, comme n'importe quelle fenêtre. Passer aussi la souris sur le bouton ZyrDesk de la barre des tâches : le grand aperçu montre la même chose.
+>
+> Ce que ces vignettes montrent est une photographie que Windows prend d'une fenêtre. Il en photographie **une**, et la session est dans une autre posée par-dessus : il rendait donc l'écran d'accueil, c'est-à-dire la page que la session est en train de cacher. Windows sait demander sa photo à un programme plutôt que de la prendre lui-même, et c'est ce qui lui est répondu ici.
+>
+> **Si la vignette est noire**, dis-le : copier une fenêtre qui dessine directement sur la carte graphique n'est pas toujours possible, et cela dépend de la machine. La réponse n'est alors pas donnée du tout et Windows reprend sa propre photo, donc une vignette **noire** serait un vrai défaut, à la différence d'une vignette qui montre l'accueil.
+
 > **S8sexies (l'image descend jusqu'au bas de la fenêtre)**
 >
 > Pendant une session, regarder le **bas** de la fenêtre, juste au-dessus du liseré de couleur. À faire sur chaque écran, et surtout sur un écran très défini où Windows agrandit l'affichage.
@@ -513,7 +523,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > L'image est une fenêtre à part et il lui est demandé de couvrir tout l'intérieur de la nôtre ; ce qu'elle laisse à découvert est une bande de la page derrière elle. Une fenêtre appartient au programme qui l'a ouverte, et ce programme peut répondre à une demande de taille par une taille à lui : une taille minimale, un pas auquel il arrondit, ou celle que le système lui donne quand lui et nous ne mesurons pas un écran de la même façon. Aucune de ces trois-là ne se lit sur une capture d'écran.
 >
-> **Le journal donne la mesure.** Si une ligne `image demandée en LxH, obtenue en LxH : il manque N px de large et M px de haut` apparaît, la bande claire vaut exactement ces nombres, et ils disent laquelle des trois causes c'est. Sans cette ligne, l'image prend bien la taille demandée et la bande vient d'ailleurs.
+> **Le journal donne la mesure.** Deux lignes à chercher. `coins de l'image : image LxH, bordure de N px, rayon de M px` dit à quelle taille l'image est posée et comment ses coins sont découpés. Et `image demandée en [...], posée en [...] : écart de [...] sur les quatre bords` n'apparaît que si l'image n'a pas obtenu le rectangle qu'on lui a donné : la bande claire vaut alors exactement cet écart. Sans cette seconde ligne, l'image couvre l'intérieur de la fenêtre au pixel près et la bande vient d'ailleurs, ce qui est déjà une réponse.
 
 > **S9quinquies (revenir en fenêtre revient à la bonne taille)**
 >

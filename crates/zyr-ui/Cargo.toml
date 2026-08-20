@@ -39,6 +39,10 @@ windows-sys = { version = "0.61.2", features = [
     # session.
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    # PrintWindow, la seule copie d'une fenêtre qui atteigne ce qu'un
+    # programme dessine sur la carte graphique. Rangée par windows-sys
+    # avec l'impression, d'où cette porte-là.
+    "Win32_Storage_Xps",
     "Win32_System_Com",
     # SHELLEXECUTEINFOW porte un champ de registre, et windows-sys range
     # donc toute la famille ShellExecuteEx derrière cette porte-là.

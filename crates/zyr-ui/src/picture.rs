@@ -517,7 +517,10 @@ fn lay_it_out(
             laid.as_secs_f64() * 1000.0
         ));
     }
-    tell_the_gap(engine, (width, height));
+    tell_the_gap(
+        engine,
+        (corner.x, corner.y, corner.x + width, corner.y + height),
+    );
 
     // Not while the window is moving. Giving a window a shape costs a
     // shape built, a shape handed over and a window told to think again,
@@ -779,7 +782,7 @@ fn round_the_bottom(
         .map(|(left, _, right, bottom)| (-left).max(right - width).max(bottom - height).max(0))
         .unwrap_or(0);
     let round = (round - border).clamp(0, height.min(width));
-    tell_the_corner(border, round);
+    tell_the_corner(width, height, border, round);
 
     // SAFETY: both are ours until the system takes the combined one.
     unsafe {
@@ -827,23 +830,29 @@ static GAP: AtomicI64 = AtomicI64::new(0);
 /// way. Which of those it is cannot be read off a screenshot, and the
 /// difference is the whole of what a pale line is.
 #[cfg(windows)]
-fn tell_the_gap(engine: windows_sys::Win32::Foundation::HWND, asked: (i32, i32)) {
-    let Some((left, top, right, bottom)) = where_it_stands(engine) else {
+fn tell_the_gap(engine: windows_sys::Win32::Foundation::HWND, asked: (i32, i32, i32, i32)) {
+    let Some(got) = where_it_stands(engine) else {
         return;
     };
-    let gap = (asked.0 - (right - left), asked.1 - (bottom - top));
-    let both = (i64::from(gap.0) << 32) | i64::from(gap.1) & 0xFFFF_FFFF;
-    if GAP.swap(both, Ordering::Relaxed) == both || gap == (0, 0) {
+    if got == asked {
+        return;
+    }
+    // The whole rectangle and not merely its size. A picture that is the
+    // right size in the wrong place leaves a strip along one edge just
+    // as surely as one that is too small, and only the two rectangles
+    // side by side say which of the two it is.
+    let off = (
+        got.0 - asked.0,
+        got.1 - asked.1,
+        got.2 - asked.2,
+        got.3 - asked.3,
+    );
+    let both = (i64::from(off.0 - off.2) << 32) | i64::from(off.1 - off.3) & 0xFFFF_FFFF;
+    if GAP.swap(both, Ordering::Relaxed) == both {
         return;
     }
     crate::journal::note(&format!(
-        "image demandée en {}x{}, obtenue en {}x{} : il manque {} px de large et {} px de haut",
-        asked.0,
-        asked.1,
-        right - left,
-        bottom - top,
-        gap.0,
-        gap.1
+        "image demandée en {asked:?}, posée en {got:?} : écart de {off:?} sur les quatre bords"
     ));
 }
 
@@ -860,11 +869,12 @@ static CUT: AtomicI64 = AtomicI64::new(-1);
 /// in different places, and which of the two a screen has is not
 /// something to guess at.
 #[cfg(windows)]
-fn tell_the_corner(border: i32, round: i32) {
+fn tell_the_corner(width: i32, height: i32, border: i32, round: i32) {
     let both = (i64::from(border) << 32) | i64::from(round) & 0xFFFF_FFFF;
     if CUT.swap(both, Ordering::Relaxed) != both {
         crate::journal::note(&format!(
-            "coins de l'image : bordure de {border} px, rayon de {round} px"
+            "coins de l'image : image {width}x{height}, bordure de {border} px, \
+             rayon de {round} px"
         ));
     }
 }
@@ -993,6 +1003,7 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
+        offer_a_picture_of_the_session(home, true);
         light_the_bar(home);
     });
 }
@@ -1010,6 +1021,7 @@ fn give_the_window_back(app: &AppHandle) {
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
+        offer_a_picture_of_the_session(home, false);
     });
 }
 
@@ -1127,6 +1139,179 @@ pub fn who_holds_the_front() -> Front {
         Front::ThePlayer
     } else {
         Front::Elsewhere
+    }
+}
+
+/* ---- Ce que les autres fenêtres montrent de la nôtre ----------------- */
+
+/// Offers the system a picture of the session whenever it wants to show
+/// this window somewhere small, or stops offering.
+///
+/// What Alt+Tab and the taskbar show is a photograph the system takes of
+/// a window. It photographs one window, and the session is in another
+/// laid over it, so what it got was the home screen underneath: a
+/// session shown as the page it is hiding. Told that this window has a
+/// picture of its own, the system asks for it instead, which is the two
+/// messages the handler answers below.
+///
+/// Given back at the end of the session, when the home screen really is
+/// what this window shows.
+#[cfg(windows)]
+fn offer_a_picture_of_the_session(home: windows_sys::Win32::Foundation::HWND, may: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_FORCE_ICONIC_REPRESENTATION, DWMWA_HAS_ICONIC_BITMAP, DwmSetWindowAttribute,
+    };
+
+    let yes: i32 = i32::from(may);
+    for what in [DWMWA_HAS_ICONIC_BITMAP, DWMWA_FORCE_ICONIC_REPRESENTATION] {
+        // SAFETY: our own window, an attribute made to be set, and the
+        // value is ours, of the size the call is told.
+        unsafe {
+            DwmSetWindowAttribute(
+                home,
+                what as u32,
+                (&raw const yes).cast(),
+                std::mem::size_of::<i32>() as u32,
+            )
+        };
+    }
+}
+
+/// Hands the system a picture of the session, at no more than that size.
+///
+/// Answers false when there is nothing to hand over, and the system then
+/// falls back on the photograph it would have taken by itself: the home
+/// screen, which is what was shown before any of this and is a poor
+/// answer rather than a wrong one. Better that than a black square.
+///
+/// The picture belongs to another program and is drawn straight on the
+/// graphics card, which an ordinary copy of a window does not reach.
+/// `PW_RENDERFULLCONTENT` is the one that does, and it is the whole
+/// reason this is possible at all.
+#[cfg(windows)]
+fn hand_over_a_picture(
+    home: windows_sys::Win32::Foundation::HWND,
+    at_most: (i32, i32),
+    live: bool,
+) -> bool {
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetIconicLivePreviewBitmap, DwmSetIconicThumbnail};
+    use windows_sys::Win32::Graphics::Gdi::{
+        CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, HALFTONE, ReleaseDC, SRCCOPY,
+        SelectObject, SetStretchBltMode, StretchBlt,
+    };
+    use windows_sys::Win32::Storage::Xps::PrintWindow;
+    use windows_sys::Win32::UI::WindowsAndMessaging::PW_RENDERFULLCONTENT;
+
+    let Some(engine) = the_engines_window() else {
+        return false;
+    };
+    let Some((left, top, right, bottom)) = where_it_stands(engine) else {
+        return false;
+    };
+    let (wide, high) = (right - left, bottom - top);
+    if wide <= 0 || high <= 0 {
+        return false;
+    }
+    // As large as fits inside what was asked for, at the picture's own
+    // shape: a thumbnail of another shape would be the black bands this
+    // product exists to be rid of, in miniature.
+    let shrunk = at_most.0.min(across(at_most.1, high, wide)).max(1);
+    let size = (shrunk, across(shrunk, wide, high).max(1));
+
+    // SAFETY: every object made here is ours, and every one of them is
+    // freed on every road out.
+    unsafe {
+        let screen = GetDC(std::ptr::null_mut());
+        let taking = CreateCompatibleDC(screen);
+        let holding = CreateCompatibleDC(screen);
+        ReleaseDC(std::ptr::null_mut(), screen);
+        if taking.is_null() || holding.is_null() {
+            DeleteDC(taking);
+            DeleteDC(holding);
+            return false;
+        }
+        // Two surfaces: the picture at its own size, and the small one
+        // the system asked for. Both are told to be the right way up and
+        // with a channel the system reads as « all of it shows », which
+        // is what a thumbnail is handed as.
+        let whole = plain_surface(taking, (wide, high));
+        let small = plain_surface(holding, size);
+        let mut done = false;
+        if !whole.is_null() && !small.is_null() {
+            let was_taking = SelectObject(taking, whole.cast());
+            let was_holding = SelectObject(holding, small.cast());
+            if PrintWindow(engine, taking, PW_RENDERFULLCONTENT) != 0 {
+                SetStretchBltMode(holding, HALFTONE);
+                if StretchBlt(
+                    holding, 0, 0, size.0, size.1, taking, 0, 0, wide, high, SRCCOPY,
+                ) != 0
+                {
+                    // Handed over before it is freed, and the system
+                    // copies what it needs during the call.
+                    let given = if live {
+                        DwmSetIconicLivePreviewBitmap(home, small.cast(), std::ptr::null(), 0)
+                    } else {
+                        DwmSetIconicThumbnail(home, small.cast(), 0)
+                    };
+                    done = given >= 0;
+                }
+            }
+            SelectObject(taking, was_taking);
+            SelectObject(holding, was_holding);
+        }
+        if !whole.is_null() {
+            DeleteObject(whole.cast());
+        }
+        if !small.is_null() {
+            DeleteObject(small.cast());
+        }
+        DeleteDC(taking);
+        DeleteDC(holding);
+        done
+    }
+}
+
+/// A surface of that size the system is willing to take as a thumbnail:
+/// four channels, the right way up.
+///
+/// SAFETY: the caller owns the drawing context and frees what comes back.
+#[cfg(windows)]
+unsafe fn plain_surface(
+    onto: windows_sys::Win32::Graphics::Gdi::HDC,
+    size: (i32, i32),
+) -> windows_sys::Win32::Graphics::Gdi::HBITMAP {
+    use windows_sys::Win32::Graphics::Gdi::{
+        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateDIBSection, DIB_RGB_COLORS,
+    };
+
+    let mut about: BITMAPINFO = unsafe { std::mem::zeroed() };
+    about.bmiHeader = BITMAPINFOHEADER {
+        biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+        biWidth: size.0,
+        // Counted downwards, which is the way round the system reads a
+        // thumbnail: given the other way it arrives upside down.
+        biHeight: -size.1,
+        biPlanes: 1,
+        biBitCount: 32,
+        biCompression: BI_RGB,
+        biSizeImage: 0,
+        biXPelsPerMeter: 0,
+        biYPelsPerMeter: 0,
+        biClrUsed: 0,
+        biClrImportant: 0,
+    };
+    let mut pixels = std::ptr::null_mut();
+    // SAFETY: the description above is filled in whole, and the two
+    // slots the call may write to are ours.
+    unsafe {
+        CreateDIBSection(
+            onto,
+            &about,
+            DIB_RGB_COLORS,
+            &mut pixels,
+            std::ptr::null_mut(),
+            0,
+        )
     }
 }
 
@@ -1651,7 +1836,8 @@ unsafe extern "system" fn lit(
 ) -> isize {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, SC_MAXIMIZE, SC_RESTORE, WINDOWPOS, WM_ACTIVATEAPP, WM_ENTERSIZEMOVE,
+        PostMessageW, SC_MAXIMIZE, SC_RESTORE, WINDOWPOS, WM_ACTIVATEAPP,
+        WM_DWMSENDICONICLIVEPREVIEWBITMAP, WM_DWMSENDICONICTHUMBNAIL, WM_ENTERSIZEMOVE,
         WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED,
         WM_WINDOWPOSCHANGING,
     };
@@ -1668,6 +1854,30 @@ unsafe extern "system" fn lit(
             if matches!((wparam & 0xFFF0) as u32, SC_MAXIMIZE | SC_RESTORE)
                 && the_engines_window().is_some()
                 && play_the_order(window, wparam & 0xFFF0) =>
+        {
+            0
+        }
+        // The system wants something to show this window as, small: in
+        // Alt+Tab, or hovering its button in the taskbar. It would take
+        // a photograph of this window, and the session is in another one
+        // laid over it, so it would show the page the session is hiding.
+        // Handed the session instead.
+        //
+        // The size it will take is in the message for a thumbnail, and
+        // its own for a preview, which is shown at the window's size.
+        WM_DWMSENDICONICTHUMBNAIL
+            if hand_over_a_picture(
+                window,
+                ((lparam >> 16) as u16 as i32, lparam as u16 as i32),
+                false,
+            ) =>
+        {
+            0
+        }
+        WM_DWMSENDICONICLIVEPREVIEWBITMAP
+            if where_it_stands(window).is_some_and(|(left, top, right, bottom)| {
+                hand_over_a_picture(window, (right - left, bottom - top), true)
+            }) =>
         {
             0
         }
