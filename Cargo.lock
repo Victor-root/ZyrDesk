@@ -5894,6 +5894,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "zyr-screen"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "zyr-session"
 version = "0.1.0"
 dependencies = [
