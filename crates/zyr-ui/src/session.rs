@@ -181,6 +181,9 @@ fn drive(app: &AppHandle, wanted: Wanted) {
         running.process_id()
     ));
     say(app, Told::Live);
+    // The player has stopped clearing its start-up queue by now, so it
+    // will hear what size its window really is.
+    crate::picture::say_the_size_again(app);
 
     // Waiting costs nothing here and buys the one thing the person wants
     // afterwards: whether the session ended by itself or fell over.

@@ -783,6 +783,7 @@ fn round_the_bottom(
         .unwrap_or(0);
     let round = (round - border).clamp(0, height.min(width));
     tell_the_corner(width, height, border, round);
+    round_the_window(home);
 
     // SAFETY: both are ours until the system takes the combined one.
     unsafe {
@@ -1141,6 +1142,98 @@ pub fn who_holds_the_front() -> Front {
         Front::Elsewhere
     }
 }
+
+/// Says out loud whether our window's corners are to be rounded.
+///
+/// Left to the system, they are worked out from what it takes the window
+/// to be, and carrying the window about by hand confuses that: coming
+/// back down from a full screen, ours kept the square corners and the
+/// missing border of a window that fills one, because at no point did
+/// anything change that the system reads to decide. Said outright, there
+/// is nothing left to work out.
+///
+/// Rounded when the window stands on its own, square when it fills the
+/// screen, which is the system's own rule and the one every other window
+/// follows.
+#[cfg(windows)]
+fn round_the_window(home: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DwmSetWindowAttribute,
+    };
+
+    let how: i32 = if the_frame_is_square(home) {
+        DWMWCP_DONOTROUND
+    } else {
+        DWMWCP_ROUND
+    };
+    // SAFETY: our own window, an attribute made to be set, and the value
+    // is ours, of the size the call is told.
+    unsafe {
+        DwmSetWindowAttribute(
+            home,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            (&raw const how).cast(),
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
+}
+
+/// Tells the player the size of its own window, once more, out loud.
+///
+/// The player throws away the size changes that reach it while it is
+/// still clearing its queue at start-up, and never asks again: its
+/// window says one size and what it draws is another, so a strip along
+/// the bottom of the picture stays the colour of an empty window for the
+/// whole session. Its own log names them, « dropping window event during
+/// flush », and the one it drops is ours.
+///
+/// So it is told again, once, when the session is really up and the
+/// clearing is long over. Told by moving the window rather than by
+/// saying it, because a size that has not changed is not a size change
+/// and reaches nobody: a pixel narrower and then right again, in one
+/// go, with nothing drawn in between.
+///
+/// A patch to the engine is what would end this properly. Until then,
+/// this costs two calls, once per session.
+#[cfg(windows)]
+pub fn say_the_size_again(app: &AppHandle) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SetWindowPos,
+    };
+
+    let Some(held) = taken(app).filter(alive) else {
+        return;
+    };
+    let engine = held.window as windows_sys::Win32::Foundation::HWND;
+    let Some((left, top, right, bottom)) = where_it_stands(engine) else {
+        return;
+    };
+    let (wide, high) = (right - left, bottom - top);
+    if wide <= 1 || high <= 1 {
+        return;
+    }
+    for size in [(wide - 1, high - 1), (wide, high)] {
+        // SAFETY: a window this program took in hand, resized where it
+        // stands without being activated.
+        unsafe {
+            SetWindowPos(
+                engine,
+                std::ptr::null_mut(),
+                0,
+                0,
+                size.0,
+                size.1,
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        };
+    }
+    crate::journal::note(&format!(
+        "taille de l'image redite au lecteur : {wide}x{high}"
+    ));
+}
+
+#[cfg(not(windows))]
+pub fn say_the_size_again(_app: &AppHandle) {}
 
 /* ---- Ce que les autres fenêtres montrent de la nôtre ----------------- */
 
