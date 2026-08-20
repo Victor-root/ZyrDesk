@@ -481,6 +481,18 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Le déplacement compte autant que le reste : tenir la forme de l'image se fait sur le message par lequel passe aussi un simple déplacement, et une correction appliquée à tort y remettait la fenêtre à son point de départ à chaque pas, donc la rendait immobile.
 
+> **S9quater (agrandir et restaurer d'un seul mouvement)**
+>
+> En fenêtré, pendant une session : cliquer sur le bouton du **milieu** de la barre de titre, celui entre Réduire et Fermer, pour agrandir la fenêtre. Puis recliquer pour la remettre en fenêtre. Recommencer plusieurs fois, en regardant le bord de l'image.
+>
+> Attendu : **l'image et le cadre changent de taille ensemble**, d'un seul coup. Jamais l'image qui prend sa nouvelle taille pendant que le cadre la rattrape derrière elle.
+>
+> Windows anime ce changement : il garde une image de la fenêtre telle qu'elle était et l'étire vers son nouveau rectangle pendant un cinquième de seconde. Il anime **une** fenêtre, pas deux, et l'image de la session en est une autre : elle prenait donc sa taille définitive tout de suite, et on voyait l'écran distant bondir puis le cadre le rejoindre. C'est précisément ce que tout ce montage existe pour cacher. Rien ne peut tenir les deux ensemble pendant une animation faite pour une seule, alors l'animation est **arrêtée le temps de la session** : sans elle, les deux changent dans la même image dessinée, ce qui est à quoi ressemble une seule fenêtre. Elle est rendue à Windows dès la session terminée, et hors session la fenêtre s'anime comme n'importe quelle autre.
+>
+> Le journal l'écrit à l'ouverture et à la fermeture : `animation de la fenêtre arrêtée le temps de la session`, puis `rendue au système`. Si le système refuse, il le dit aussi, avec son code.
+>
+> **S'il reste un décalage**, il ne vient plus de l'animation, et le journal le dira autrement : une ligne `image posée en N ms, soit plus d'une image` apparaît chaque fois que le lecteur met plus d'une image à prendre sa nouvelle taille. Sans cette ligne, le retard est ailleurs.
+
 > **S9ter (la barre de titre reste allumée tant que la fenêtre sert)**
 >
 > En fenêtré, pendant une session, faire dans l'ordre en regardant **la barre de titre de ZyrDesk** :

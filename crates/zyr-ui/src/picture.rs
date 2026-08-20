@@ -89,6 +89,9 @@ static SQUARED: AtomicBool = AtomicBool::new(false);
 /// window is on.
 const CORNER: i32 = 8;
 
+/// One drawn frame, near enough, on the screens this product is for.
+const A_FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+
 /// Width and height of the picture, as the handler reads them.
 fn shape() -> (i32, i32) {
     let both = SHAPE.load(Ordering::Relaxed);
@@ -495,6 +498,18 @@ fn lay_it_out(
         )
     };
     let laid = started.elapsed();
+    // Laying the picture is meant to happen inside the very frame our
+    // own window changes in, which is what makes the two look like one.
+    // Longer than a frame and they are seen apart, and the wait is not
+    // ours: it is the player answering. Said only when it happens, and
+    // never during a drag, where every step is counted and told at the
+    // end instead.
+    if !dragged && laid > A_FRAME {
+        crate::journal::note(&format!(
+            "image posée en {:.0} ms, soit plus d'une image : le lecteur a tardé à répondre",
+            laid.as_secs_f64() * 1000.0
+        ));
+    }
 
     // Not while a hand is dragging. Giving a window a shape costs a
     // shape built, a shape handed over and a window told to think again,
@@ -944,7 +959,52 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
+        animate_the_window(home, false);
         light_the_bar(home);
+    });
+}
+
+/// Lets the system animate our window growing and shrinking, or stops it
+/// doing so.
+///
+/// Stopped for the length of a session, which is the one thing a session
+/// costs the window. The system animates a window: it holds a picture of
+/// the old one, stretches it towards the new rectangle over a fifth of a
+/// second, and only then draws what is really there. The picture in our
+/// window is a window of its own and is not part of that: it takes its
+/// new size at once, so maximising showed the far computer's screen jump
+/// to full size and the frame around it catch up afterwards, which is
+/// exactly the two windows this whole file exists to hide.
+///
+/// Nothing else can hold them together, since the system animates one
+/// window and not a pair of them. Without the animation both change in
+/// the same drawn frame, which is what one window looks like.
+///
+/// Given back at the end of the session: outside one there is a single
+/// window, and it animates like every other.
+#[cfg(windows)]
+fn animate_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_TRANSITIONS_FORCEDISABLED, DwmSetWindowAttribute,
+    };
+
+    let stopped: i32 = i32::from(!may);
+    // SAFETY: our own window, an attribute made to be set, and the value
+    // is ours, of the size the call is told.
+    let answer = unsafe {
+        DwmSetWindowAttribute(
+            home,
+            DWMWA_TRANSITIONS_FORCEDISABLED as u32,
+            (&raw const stopped).cast(),
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
+    crate::journal::note(&if answer != 0 {
+        format!("animation de la fenêtre : le système a refusé ({answer:#x})")
+    } else if may {
+        "animation de la fenêtre rendue au système".to_string()
+    } else {
+        "animation de la fenêtre arrêtée le temps de la session".to_string()
     });
 }
 
@@ -961,6 +1021,7 @@ fn give_the_window_back(app: &AppHandle) {
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
+        animate_the_window(home, true);
     });
 }
 
