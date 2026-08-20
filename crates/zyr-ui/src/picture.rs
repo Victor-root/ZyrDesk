@@ -1712,10 +1712,20 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
 /// it is there.
 #[cfg(windows)]
 struct Growing {
+    /// Where the window stood when the order was given, read once.
+    ///
+    /// Every step is worked out from here and from the clock, and never
+    /// from where the window has got to: the path is then a curve of its
+    /// own, sampled as often as the machine can manage, and a step the
+    /// system trims or refuses cannot bend the rest of it.
+    from: (i32, i32, i32, i32),
     to: (i32, i32, i32, i32),
+    /// Where our own steps stop, which is a handful of pixels short of
+    /// where the order leads; see `HANDS_OVER`.
+    stops_at: (i32, i32, i32, i32),
     began: std::time::Instant,
     /// When the window was last carried a little further, which is what
-    /// the next step is measured from.
+    /// tells whether a step arrived late.
     moved: std::time::Instant,
     /// The order the person gave, held back until the move is played.
     then: usize,
@@ -1729,14 +1739,14 @@ struct Growing {
     /// back down came back to almost nothing. It is written back at the
     /// end, exactly as it was read.
     placed: windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT,
-    /// How many times the window has been carried a little further, so
-    /// the journal can say whether the move was played smoothly or in
-    /// three jerks.
-    steps: u32,
-    /// The widest single step of the move, in pixels. What « it plays
-    /// and then snaps » looks like as a number, and the one way to tell
-    /// a move that was carried from a move that jumped.
-    widest: i32,
+    /// How wide each step of the move turned out to be, in pixels.
+    ///
+    /// The whole shape of the gesture in one row of numbers, and the one
+    /// reading that settles what an eye can only call « it does not run
+    /// smoothly ». A row that starts at two hundred and ends at two is a
+    /// move that is over before it has begun and then creeps; an even
+    /// row is a move that is played.
+    strides: Vec<i32>,
     /// The longest a single step took, from the window being asked to
     /// move to the system coming back, and which step that was.
     ///
@@ -1750,7 +1760,7 @@ struct Growing {
     /// always stops in the same place » is either true, and the same
     /// step is slow every time, or it is not, and the slow one wanders.
     slowest: std::time::Duration,
-    slowest_at: u32,
+    slowest_at: usize,
     /// Of that, what waiting on the player cost. A step is mostly a
     /// window belonging to another program being told to take a new
     /// size, and that program answers when it can.
@@ -1796,32 +1806,46 @@ fn on_the_move() -> bool {
     DRAGGED.load(Ordering::Relaxed) || grows
 }
 
-/// How fast the window closes the distance left in front of it.
+/// How long a move takes, from the order to the window standing still.
 ///
-/// The move is not played against a clock running out. It is played as a
-/// distance being closed: every step takes the same share of whatever is
-/// still ahead, so the steps get smaller and the window slows into its
-/// place on its own.
-///
-/// Played against a clock, a step that arrived late found the clock
-/// already out and jumped whatever was left in one go. That is a move
-/// that starts, plays, and then snaps, which is what was seen. Played
-/// against the distance, a late step is a bigger step and the one after
-/// it is smaller again: the move takes longer and stays whole, which is
-/// the right way round.
-///
-/// This is how long it takes to close about two thirds of the distance.
-const CLOSES_IN: std::time::Duration = std::time::Duration::from_millis(40);
+/// A fifth of a second, which is about what every other window on the
+/// machine takes.
+const LASTS: std::time::Duration = std::time::Duration::from_millis(200);
 
-/// How near counts as arrived. Four pixels of a move nobody can see.
-const NEAR_ENOUGH: i32 = 4;
-
-/// The longest a move may take before it is simply finished.
+/// How many pixels of the move are left for the system's own order to
+/// travel, on each edge that moves.
 ///
-/// Nothing should ever reach this: it is there so that a window cannot
-/// be left halfway by a machine too busy to carry it.
-#[cfg(windows)]
-const AT_THE_LATEST: std::time::Duration = std::time::Duration::from_millis(500);
+/// Not a rounding and not an accident. The compositor works a window's
+/// frame out again when the window moves, and only then. Landed exactly
+/// on the mark by our own steps, the order handed over afterwards moves
+/// nothing at all, and a window that has just come back down from
+/// filling a screen keeps that screen's frame: square corners, no
+/// border, until the next time a hand moves it. That was a real defect
+/// and it took several turns to find; the handful of pixels that fixed
+/// it used to fall out of « near enough counts as arrived », so a curve
+/// that lands exactly would have quietly brought it back. It is asked
+/// for outright instead.
+///
+/// Eight pixels is one small step, under the eye, and unmistakably a
+/// move.
+const HANDS_OVER: i32 = 8;
+
+/// The rectangle our own steps stop at, on the way from one to the
+/// other: the far one, pulled back towards the near one by the handful
+/// of pixels the system's order is left to travel; see `HANDS_OVER`.
+///
+/// An edge that hardly moves, or does not move at all, is left where it
+/// belongs rather than pulled back past its own starting point.
+fn stopping_short(from: (i32, i32, i32, i32), to: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
+    let back =
+        |near: i32, far: i32| far - (far - near).signum() * HANDS_OVER.min((far - near).abs());
+    (
+        back(from.0, to.0),
+        back(from.1, to.1),
+        back(from.2, to.2),
+        back(from.3, to.3),
+    )
+}
 
 /// Name the timer that plays it answers to.
 #[cfg(windows)]
@@ -1887,13 +1911,14 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
     let now = std::time::Instant::now();
     GROWING.with_borrow_mut(|growing| {
         *growing = Some(Growing {
+            from,
             to,
+            stops_at: stopping_short(from, to),
             began: now,
             moved: now,
             then: order,
             placed,
-            steps: 0,
-            widest: 0,
+            strides: Vec::new(),
             slowest: std::time::Duration::ZERO,
             slowest_at: 0,
             picture: std::time::Duration::ZERO,
@@ -2072,26 +2097,26 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         WM_SYSCOMMAND,
     };
 
-    // Where the window really is, and not where the last step meant to
-    // put it: the system has the last word on what it granted, and a
-    // move worked out from what it granted cannot drift away from it.
+    // Where the window really is, which is not where the last step meant
+    // to put it: the system has the last word on what it granted, and
+    // the width of a step is what the eye saw and not what was asked.
     let Some(now) = where_it_stands(window) else {
         return;
     };
     let Some((step, done)) = GROWING.with_borrow_mut(|growing| {
         let growing = growing.as_mut()?;
-        growing.steps += 1;
         let waited = growing.moved.elapsed();
         growing.moved = std::time::Instant::now();
         growing.latest = growing.latest.max(waited);
-        let step = along(now, growing.to, closed_in(waited, CLOSES_IN));
-        growing.widest = growing
-            .widest
-            .max(((step.2 - step.0) - (now.2 - now.0)).abs());
-        // Arrived when what is left cannot be seen, and finished anyway
-        // once it has gone on far too long.
-        let done = within(step, growing.to, NEAR_ENOUGH) || growing.began.elapsed() > AT_THE_LATEST;
-        Some((step, done))
+        let gone = growing.began.elapsed();
+        let part = eased(gone, LASTS);
+        let step = along(growing.from, growing.stops_at, part);
+        growing
+            .strides
+            .push(((step.2 - step.0) - (now.2 - now.0)).abs());
+        // Arrived when the time it was given is up, which is the same
+        // instant as the curve reaching its end.
+        Some((step, gone >= LASTS))
     }) else {
         return;
     };
@@ -2117,7 +2142,7 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
             && carried > growing.slowest
         {
             growing.slowest = carried;
-            growing.slowest_at = growing.steps;
+            growing.slowest_at = growing.strides.len();
         }
     });
     if !done {
@@ -2130,15 +2155,21 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
     unsafe { KillTimer(window, GROWING_ON) };
     if let Some(played) = played.as_ref() {
         // One line per gesture, and enough of one to name the fault
-        // rather than describe it. A move played in far fewer steps than
-        // there are drawn frames in it was played jerkily; the longest
-        // step says whether one of them ate the difference, its rank
-        // says whether it is always the same one, its picture share says
-        // whether the wait was the player's, and the longest gap says
-        // whether the fault is not in the steps at all.
+        // rather than describe it. The row of strides is the gesture's
+        // own shape, which is what an eye reports and cannot measure;
+        // the longest step says whether one of them ate a frame, its
+        // rank says whether it is always the same one, its two shares
+        // say who was waited on, and the longest gap says whether the
+        // fault is not in the steps at all.
+        let strides = played
+            .strides
+            .iter()
+            .map(i32::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
         crate::journal::note(&format!(
-            "{} joué en {:.0} ms, {} pas, plus grand pas {} px ; \
-             pas le plus long {:.1} ms au pas {} sur {} \
+            "{} joué en {:.0} ms, {} pas ; crans {strides} px ; \
+             pas le plus long {:.1} ms au pas {} \
              (dont image {:.1} ms et système avec vue web {:.1} ms), \
              plus longue attente entre deux pas {:.1} ms",
             if played.then == SC_MAXIMIZE as usize {
@@ -2147,30 +2178,22 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
                 "retour en fenêtre"
             },
             played.began.elapsed().as_secs_f64() * 1000.0,
-            played.steps,
-            played.widest,
+            played.strides.len(),
             played.slowest.as_secs_f64() * 1000.0,
             played.slowest_at,
-            played.steps,
             played.picture.as_secs_f64() * 1000.0,
             played.system.as_secs_f64() * 1000.0,
             played.latest.as_secs_f64() * 1000.0,
         ));
     }
     if let Some(played) = played {
-        // The order now, from a few pixels short of where it leads. Not
-        // from exactly there: the compositor draws a window's frame from
-        // what it works out about it, and it works it out again when the
-        // window moves. Landed exactly on the mark, nothing moved on
-        // this last step and the frame stayed the one the window had
-        // while it was spread over the screen, flat-topped and without
-        // its border, until the next time a hand moved the window. A few
-        // pixels left for the system to travel is a frame worked out
-        // again.
+        // The order now, from the handful of pixels short of where it
+        // leads that our own steps deliberately stopped at; see
+        // `HANDS_OVER`.
         //
-        // With its own animation off for the length of it, and only for
-        // that: those few pixels are a move like any other to the
-        // system, and it would play them as one.
+        // With the system's own animation off for the length of it, and
+        // only for that: those few pixels are a move like any other to
+        // the system, and it would play them as one.
         transitions(window, false);
         // SAFETY: the order the person gave, at the window it was given
         // to. Handed straight to the system's own handling, since ours
@@ -2294,29 +2317,31 @@ fn along(from: (i32, i32, i32, i32), to: (i32, i32, i32, i32), part: f64) -> (i3
     )
 }
 
-/// What share of the distance still ahead a step of that length closes.
+/// How much of the whole journey is behind the window after that long.
 ///
-/// The same share of whatever is left, every time, which is what makes
-/// the steps get smaller and the window slow into its place instead of
-/// arriving at speed and stopping dead. Every window on this system
-/// slows into its place, so this one does too.
+/// A move has to leave and it has to arrive, and it must do neither
+/// abruptly: this eases out of the starting rectangle, runs fastest
+/// halfway, and eases into the finishing one. It is the plainest curve
+/// that does all three, and it is symmetrical, so the two halves of a
+/// gesture, growing and shrinking, are the same move played each way.
 ///
-/// Worked out from how long the step actually took rather than from how
-/// long it was meant to take: a step that waited twice as long closes
-/// twice as much of what is left, so the window travels the same path
-/// whether the machine is giving us sixty steps or six. That is what a
-/// move cannot have: a shape that depends on the machine's mood.
-fn closed_in(waited: std::time::Duration, closes_in: std::time::Duration) -> f64 {
-    1.0 - (-waited.as_secs_f64() / closes_in.as_secs_f64()).exp()
-}
-
-/// Whether those two rectangles are within that many pixels of each
-/// other on every edge.
-fn within(here: (i32, i32, i32, i32), there: (i32, i32, i32, i32), near: i32) -> bool {
-    (here.0 - there.0).abs() <= near
-        && (here.1 - there.1).abs() <= near
-        && (here.2 - there.2).abs() <= near
-        && (here.3 - there.3).abs() <= near
+/// It replaces a curve that closed a fixed share of whatever distance
+/// was still ahead, every step. That one had no start: it left at full
+/// speed and slowed from the first frame onwards, which on real figures
+/// meant seventy per cent of the journey inside the first fifty
+/// milliseconds and the remaining hundred and fifty spent creeping two
+/// to twenty pixels a frame, under the eye's floor. The whole
+/// complaint, a move that plays, stops halfway and then finishes, was
+/// that tail, and the last few pixels handed to the system at the end
+/// were the finish.
+///
+/// Read off the clock and not off the distance left, so where the
+/// window stands is a question of when and never of how many steps got
+/// in. A machine that manages four steps plays the same path as one
+/// that manages twelve, in four samples instead of twelve.
+fn eased(gone: std::time::Duration, lasts: std::time::Duration) -> f64 {
+    let part = (gone.as_secs_f64() / lasts.as_secs_f64()).clamp(0.0, 1.0);
+    part * part * (3.0 - 2.0 * part)
 }
 
 /// Name our handler answers to, so it can be taken off again.
@@ -3090,75 +3115,142 @@ mod tests {
         assert_eq!(spread_over(work, (0, 0)), work);
     }
 
-    /// Le mouvement joué, un pas toutes les `chaque`, jusqu'à l'arrivée.
-    /// Rend la liste des rectangles traversés.
+    /// Le mouvement joué, un pas toutes les `chaque`, jusqu'à l'arrivée,
+    /// exactement comme `grow_a_step` le joue. Rend la liste des
+    /// rectangles traversés.
     fn joue(
         from: (i32, i32, i32, i32),
         to: (i32, i32, i32, i32),
         chaque: std::time::Duration,
     ) -> Vec<(i32, i32, i32, i32)> {
+        let arret = stopping_short(from, to);
         let mut passe = vec![from];
-        let mut ici = from;
-        for _ in 0..200 {
-            if within(ici, to, NEAR_ENOUGH) {
-                break;
+        let mut depuis = std::time::Duration::ZERO;
+        loop {
+            depuis += chaque;
+            passe.push(along(from, arret, eased(depuis, LASTS)));
+            if depuis >= LASTS {
+                return passe;
             }
-            ici = along(ici, to, closed_in(chaque, CLOSES_IN));
-            passe.push(ici);
         }
+    }
+
+    /// La largeur gagnée à chaque pas, ce que l'œil appelle l'allure.
+    fn crans(passe: &[(i32, i32, i32, i32)]) -> Vec<i32> {
         passe
+            .windows(2)
+            .map(|deux| (deux[1].2 - deux[1].0) - (deux[0].2 - deux[0].0))
+            .collect()
     }
 
     #[test]
-    fn a_step_closes_more_of_the_way_the_longer_it_waited() {
-        // Deux pas courts doivent mener au même endroit qu'un pas long :
-        // c'est ce qui fait que le mouvement a la même allure que la
-        // machine nous donne soixante pas ou six.
-        let quart = std::time::Duration::from_millis(10);
-        let demi = std::time::Duration::from_millis(20);
-        let un = closed_in(quart, CLOSES_IN);
-        let deux = 1.0 - (1.0 - un) * (1.0 - un);
-        assert!((deux - closed_in(demi, CLOSES_IN)).abs() < 1e-9);
-        // Et un pas de durée nulle ne bouge rien.
-        assert_eq!(closed_in(std::time::Duration::ZERO, CLOSES_IN), 0.0);
+    fn the_move_leaves_and_arrives_gently_and_runs_fastest_halfway() {
+        let rien = std::time::Duration::ZERO;
+        let moitie = LASTS / 2;
+        assert_eq!(eased(rien, LASTS), 0.0);
+        assert_eq!(eased(LASTS, LASTS), 1.0);
+        // Au milieu du temps, au milieu du chemin : la courbe est
+        // symétrique, donc agrandir et redescendre sont le même
+        // mouvement joué dans les deux sens.
+        assert!((eased(moitie, LASTS) - 0.5).abs() < 1e-12);
+        // Et rien ne dépasse l'arrivée, même longtemps après.
+        assert_eq!(eased(LASTS * 3, LASTS), 1.0);
     }
 
     #[test]
-    fn the_move_never_goes_backwards_and_slows_into_its_place() {
+    fn the_move_is_still_moving_when_it_is_half_over() {
+        // Le défaut à ne jamais revoir, et celui-là a été vu : une
+        // courbe qui partait à pleine vitesse et ralentissait dès la
+        // première image faisait soixante-douze pour cent du trajet en
+        // cinquante millisecondes, puis rampait deux pixels par image
+        // pendant cent cinquante. Ça se voit comme un mouvement qui
+        // s'arrête en plein milieu et repart à la fin.
         let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
         let passe = joue(from, to, std::time::Duration::from_millis(16));
-        let mut avant = from;
-        let mut dernier = i32::MAX;
-        for (pas, ici) in passe.iter().enumerate().skip(1) {
-            assert!(ici.2 >= avant.2, "la fenêtre a reculé au pas {pas}");
-            let fait = ici.2 - avant.2;
-            assert!(fait <= dernier, "elle a accéléré au pas {pas}");
-            dernier = fait;
-            avant = *ici;
+        let large = f64::from((to.2 - to.0) - (from.2 - from.0));
+
+        let milieu = passe[passe.len() / 2];
+        let fait = f64::from((milieu.2 - milieu.0) - (from.2 - from.0)) / large;
+        assert!(
+            (0.4..=0.6).contains(&fait),
+            "à mi-temps le trajet est fait à {:.0} %",
+            fait * 100.0
+        );
+
+        // Aucun cran ne vaut le quart du trajet, sans quoi c'est un saut
+        // et pas un mouvement, et aucun ne descend sous le pixel au
+        // milieu du geste, sans quoi c'est un arrêt.
+        let crans = crans(&passe);
+        let plus_grand = crans.iter().copied().max().unwrap_or(0);
+        assert!(
+            f64::from(plus_grand) < large / 4.0,
+            "un cran de {plus_grand} px sur {large} : {crans:?}"
+        );
+        let creux = crans[2..crans.len() - 2].iter().copied().min().unwrap_or(0);
+        assert!(creux >= 1, "le mouvement s'arrête en route : {crans:?}");
+    }
+
+    #[test]
+    fn the_move_never_goes_backwards_and_lands_where_it_meant_to() {
+        let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
+        let passe = joue(from, to, std::time::Duration::from_millis(16));
+        for (pas, deux) in passe.windows(2).enumerate() {
+            assert!(deux[1].2 >= deux[0].2, "la fenêtre a reculé au pas {pas}");
         }
-        assert!(within(avant, to, 4), "arrivée à {avant:?} pour {to:?}");
+        assert_eq!(*passe.last().unwrap(), stopping_short(from, to));
+    }
+
+    #[test]
+    fn the_played_move_always_leaves_the_system_something_to_travel() {
+        // Le correctif des coins arrondis tient à ce reste : atterrir
+        // pile sur la cible, et l'ordre donné ensuite ne déplace rien,
+        // donc le compositeur ne recalcule pas le cadre.
+        let from = (100, 100, 1100, 700);
+        for to in [
+            (-7, 0, 1927, 1047),
+            (100, 100, 1100, 700),
+            (104, 102, 1096, 698),
+            (99, 99, 1101, 701),
+        ] {
+            let stop = stopping_short(from, to);
+            for (near, far, arret) in [
+                (from.0, to.0, stop.0),
+                (from.1, to.1, stop.1),
+                (from.2, to.2, stop.2),
+                (from.3, to.3, stop.3),
+            ] {
+                let reste = (far - arret).abs();
+                assert!(
+                    reste <= HANDS_OVER && reste <= (far - near).abs(),
+                    "bord {near} vers {far} arrêté à {arret}"
+                );
+                // Et jamais au-delà du point de départ, sans quoi un
+                // bord qui bouge à peine partirait à l'envers.
+                assert!(
+                    (arret - near).abs() <= (far - near).abs(),
+                    "bord {near} vers {far} arrêté à {arret}, en arrière du départ"
+                );
+            }
+        }
+        // Un vrai trajet garde bien le reste entier.
+        assert_eq!(stopping_short(from, (-7, 0, 1927, 1047)).2, 1919);
     }
 
     #[test]
     fn a_move_played_in_few_steps_follows_the_same_path_as_one_played_in_many() {
-        // Le défaut à ne jamais revoir : le mouvement qui commence, joue,
-        // puis saute d'un coup à l'arrivée parce que l'horloge était
-        // finie. Compté en distance et non en temps, une machine qui ne
-        // donne que trois pas les fait plus grands, et la fenêtre est au
-        // même endroit au même instant qu'avec vingt pas. Une machine
-        // lente coûte des images, jamais la forme du geste.
+        // Une machine lente coûte des images, jamais la forme du geste :
+        // la fenêtre est au même endroit au même instant, que la machine
+        // donne quatre pas ou treize. Lu sur l'horloge et non sur la
+        // distance restante, c'est vrai au pixel près et pas à peu près.
         let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
         let serre = joue(from, to, std::time::Duration::from_millis(15));
         let large = joue(from, to, std::time::Duration::from_millis(60));
         // Au bout de 120 ms : huit pas d'un côté, deux de l'autre.
-        assert!(
-            (serre[8].2 - large[2].2).abs() <= 2,
-            "{serre:?} / {large:?}"
-        );
+        assert_eq!(serre[8], large[2]);
         // Et les deux arrivent, l'un en plus d'images que l'autre.
         assert!(serre.len() > large.len() * 2);
         for passe in [&serre, &large] {
-            assert!(within(*passe.last().unwrap(), to, NEAR_ENOUGH));
+            assert_eq!(*passe.last().unwrap(), stopping_short(from, to));
         }
     }
 
