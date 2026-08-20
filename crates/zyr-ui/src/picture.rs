@@ -1158,6 +1158,51 @@ fn let_the_corners_go(engine: windows_sys::Win32::Foundation::HWND) {
     LAID.store(0, Ordering::Relaxed);
 }
 
+/// Says what screen the picture is about to land on and what size is
+/// being asked of the far computer, side by side.
+///
+/// The one comparison that decides how sharp a session can possibly
+/// look, and it was nowhere: the size asked for is a fixed rung nobody
+/// measured against anything, so a screen with four times the pixels of
+/// that rung gets the rung stretched over it. Written in real pixels and
+/// not in the ones a page is laid out with, since a screen at a hundred
+/// and fifty per cent reports two thirds of what it draws and that
+/// difference is exactly the kind that hides a stretch.
+#[cfg(windows)]
+pub fn tell_the_screen_and_the_asking(app: &AppHandle, wide: u32, high: u32) {
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+
+    let Some(home) = home_window(app) else {
+        return;
+    };
+    let mut about: MONITORINFO = unsafe { std::mem::zeroed() };
+    about.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+    // SAFETY: our own window, and the slot is ours with its size written
+    // in it as the call requires.
+    let screen = unsafe {
+        let monitor = MonitorFromWindow(home, MONITOR_DEFAULTTONEAREST);
+        (GetMonitorInfoW(monitor, &mut about) != 0).then_some(about.rcMonitor)
+    };
+    let Some(screen) = screen else {
+        return;
+    };
+    let (across, down) = (screen.right - screen.left, screen.bottom - screen.top);
+    // SAFETY: our own window, read only.
+    let dpi = unsafe { GetDpiForWindow(home) }.max(96);
+    crate::journal::note(&format!(
+        "écran de cet ordinateur : {across}x{down} pixels réels, agrandissement {} % ;          image demandée au loin en {wide}x{high}, soit {:.2} fois moins large          et {:.2} fois moins haute",
+        dpi * 100 / 96,
+        f64::from(across) / f64::from(wide),
+        f64::from(down) / f64::from(high),
+    ));
+}
+
+#[cfg(not(windows))]
+pub fn tell_the_screen_and_the_asking(_app: &AppHandle, _wide: u32, _high: u32) {}
+
 /// Whether the system is drawing our window with square corners.
 ///
 /// It rounds an ordinary window and squares one that covers the screen or

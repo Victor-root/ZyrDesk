@@ -153,6 +153,11 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
 
 fn drive(app: &AppHandle, wanted: Wanted) {
     crate::journal::note(&format!("session demandée vers {}", wanted.host));
+    crate::picture::tell_the_screen_and_the_asking(
+        app,
+        wanted.settings.width,
+        wanted.settings.height,
+    );
     let towards = wanted.host.clone();
     let running = match zyr_session::open(&wanted, &mut |step| {
         crate::journal::note(&written(&step));
