@@ -524,6 +524,10 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Ce qu'il faut regarder pendant**, et c'est le seul vrai risque de cette façon de faire : si l'écran distant **bondit à sa taille finale pendant que le cadre grandit derrière**, c'est que le compositeur a étiré notre fenêtre sans étirer ce qui était rangé dedans. C'est l'ancien défaut qui revient, et il faut le dire tel quel.
 >
+> **Et une demi-seconde après**, quand l'image ressort de la fenêtre. Une fenêtre qu'on sort de sa mère garde les nombres qu'elle avait, et l'écran les lit à partir d'une autre origine : ce qui était « le coin de notre intérieur » devient « le coin de l'écran ». Remise droite juste après, comme c'était le cas, il reste entre les deux un instant où l'image se tient au coin du bureau à sa taille pleine, **complètement en dehors de notre fenêtre**, et cet instant est un appel au système qui doit atteindre un autre programme et l'attendre, donc assez long pour être attrapé. Il l'a été. L'image reçoit maintenant ses nombres d'arrivée **pendant qu'elle est encore dans la fenêtre** : les mêmes nombres se lisent juste à la seconde où elle en sort. En échange ils sont faux tant qu'elle est encore dedans, donc un coin de la page peut apparaître le temps d'une image, mais une fenêtre-fille est découpée par sa mère : ça ne peut pas sortir de la fenêtre, et c'est toute la différence entre les deux erreurs.
+>
+> **Enchaîner les gestes** fait partie de l'essai : agrandir puis attraper tout de suite la barre de titre, agrandir deux fois de suite très vite, ancrer puis agrandir. L'attente d'une demi-seconde ne doit jamais se terminer pendant qu'une main tient la fenêtre, sinon la fin du geste se joue à deux fenêtres et le scintillement revient.
+>
 > **Le journal chiffre le geste.** Une ligne est écrite à chaque fois, quand l'image ressort de la fenêtre :
 >
 > ```

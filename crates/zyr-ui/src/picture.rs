@@ -1718,7 +1718,7 @@ fn carry_the_picture(
     let Some((_, width, height)) = the_inside_of(home) else {
         return;
     };
-    LAID_WHILE_CARRIED.store(0, Ordering::Relaxed);
+
     // SAFETY: a window this program took in hand. The style is read,
     // amended for the child it is about to be, and put back whole if
     // the system refuses the adoption.
@@ -1762,8 +1762,8 @@ fn carry_the_picture(
 #[cfg(windows)]
 fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_STYLE, GWLP_HWNDPARENT, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SetParent,
-        SetWindowLongPtrW, SetWindowPos,
+        GWL_STYLE, GWLP_HWNDPARENT, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_NOZORDER, SetParent, SetWindowLongPtrW, SetWindowPos,
     };
 
     let style = CARRIED.swap(0, Ordering::Relaxed);
@@ -1776,25 +1776,56 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
     let Some((corner, width, height)) = the_inside_of(home) else {
         return;
     };
-    // SAFETY: a window this program took in hand, given back the style
-    // it wore, its owner, and its place on the screen, in one breath.
+    // SAFETY: a window this program took in hand, given the numbers it
+    // must wear on its own, then let out of the window and given back
+    // the style and the owner that go with them.
     unsafe {
+        // The numbers first, and while it is still a child, which is the
+        // whole of this. A window let out of its parent keeps the
+        // numbers it had and the screen reads them against a different
+        // origin: what was « the top left of our inside » becomes « the
+        // top left of the screen ». Put right afterwards, as it was,
+        // there is a moment between the two where the picture stands at
+        // the corner of the desktop at its full size, outside our window
+        // altogether, and the compositor draws whatever is standing when
+        // it wakes. That moment is one call to the system that has to
+        // reach another program and wait for it, so it is long enough to
+        // be caught, and it was: the far computer's screen flashing well
+        // beyond the window.
+        //
+        // Given its arrival numbers first, the same moment reads right
+        // the instant it becomes its own window, and nothing has to be
+        // put right afterwards. In exchange, those numbers are wrong
+        // while it is still a child: it sits that far down and to the
+        // right of our inside, and a corner of the page shows through
+        // where it no longer reaches. A child is clipped by its parent,
+        // so that stays inside our window whatever the numbers say,
+        // which is the difference between the two mistakes and the
+        // reason for this order rather than the other.
+        SetWindowPos(
+            engine,
+            std::ptr::null_mut(),
+            corner.0,
+            corner.1,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        );
         SetParent(engine, std::ptr::null_mut());
         SetWindowLongPtrW(engine, GWL_STYLE, style);
         // Owned again: owned is what has it come and go with our window
         // without being part of it.
         SetWindowLongPtrW(engine, GWLP_HWNDPARENT, home as isize);
-        // A window let out of its parent keeps its numbers and the
-        // screen reads them differently: put where it belongs before
-        // anything is drawn.
+        // The frame worked out again for the style it has just been
+        // given back, and nothing moved: it is already where it belongs.
         SetWindowPos(
             engine,
             HWND_TOP,
-            corner.0,
-            corner.1,
-            width,
-            height,
-            SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
     }
 }
@@ -1898,6 +1929,7 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
     // growing under one is clipped to where it used to end.
     let_the_corners_go(engine);
 
+    LAID_WHILE_CARRIED.store(0, Ordering::Relaxed);
     // SAFETY: the order the person gave, at the window it was given to,
     // handed straight to the system's own handling since ours would only
     // take it back again.
@@ -2101,8 +2133,17 @@ unsafe extern "system" fn lit(
         }
         // The system has had its time to play the move; the picture
         // goes back to being a window of its own.
+        //
+        // Unless a hand has taken the window since. Letting go under a
+        // hand plays the rest of that gesture with two windows again,
+        // which is the flicker all this exists to prevent, and the
+        // gesture's own end already lets go of the picture or holds it
+        // longer if it finishes in a snap. The wait comes back round
+        // until then.
         WM_TIMER if wparam == LET_GO => {
-            let_the_picture_go(window);
+            if !DRAGGED.load(Ordering::Relaxed) {
+                let_the_picture_go(window);
+            }
             0
         }
         // The system asking whether this window is still active, which
@@ -2180,6 +2221,7 @@ unsafe extern "system" fn lit(
         WM_ENTERSIZEMOVE => {
             DRAGGED.store(true, Ordering::Relaxed);
             count_the_drag();
+            LAID_WHILE_CARRIED.store(0, Ordering::Relaxed);
             if let Some(engine) = the_engines_window() {
                 carry_the_picture(window, engine);
             }
@@ -2200,7 +2242,7 @@ unsafe extern "system" fn lit(
             if CARRIED.load(Ordering::Relaxed) != 0 && RESIZED.load(Ordering::Relaxed) {
                 hold_through_the_systems_move(window, "ancrage");
             } else {
-                put_the_picture_back(window);
+                let_the_picture_go(window);
             }
             // SAFETY: the arguments the system handed in, untouched.
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
