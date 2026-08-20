@@ -1724,23 +1724,43 @@ fn carry_the_picture(
     // the system refuses the adoption.
     unsafe {
         let style = GetWindowLongPtrW(engine, GWL_STYLE);
-        SetWindowLongPtrW(
-            engine,
-            GWL_STYLE,
-            (style & !(WS_POPUP as isize)) | WS_CHILD as isize,
-        );
+        // The parent first and the style after it, which is the ordering
+        // that shortens the wrong reading rather than the work; the
+        // other end of a gesture is put back the same way about, and for
+        // the same reason.
+        //
+        // The picture is already this window's to begin with, owned by
+        // it rather than part of it, so naming the same window as its
+        // parent while it still wears the style of one of its own moves
+        // nothing and is read no differently. What flips the reading is
+        // the style, and that call is ours alone and costs nothing,
+        // while this one has to reach the player's program and wait for
+        // it. Done the other way about, as it was, the wrong reading
+        // covered that wait as well.
+        //
         // The system can refuse: two windows that do not measure the
         // screen the same way cannot be family. Told apart from the
-        // legitimate « no parent before » answer by the error slot.
+        // legitimate « no parent before » answer by the error slot, and
+        // asked before anything of ours has been changed, so there is
+        // nothing to put back.
         SetLastError(0);
         if SetParent(engine, home).is_null() && GetLastError() != 0 {
             let why = GetLastError();
-            SetWindowLongPtrW(engine, GWL_STYLE, style);
             crate::journal::note(&format!(
                 "l'image n'a pas pu être portée par la fenêtre ({why:#x}), déplacement pas à pas"
             ));
             return;
         }
+        // From here the numbers it is wearing are read against our
+        // inside and no longer against the screen, and they are still
+        // its old ones: the crossing starts on this line.
+        let crossing = std::time::Instant::now();
+        SetWindowLongPtrW(
+            engine,
+            GWL_STYLE,
+            (style & !(WS_POPUP as isize)) | WS_CHILD as isize,
+        );
+        let adopted = crossing.elapsed();
         // A child's place is counted inside its parent, and the system
         // does not recount it on adoption: put straight back over the
         // whole inside, above the web view, before anything is drawn.
@@ -1754,6 +1774,27 @@ fn carry_the_picture(
             SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
         CARRIED.store(style, Ordering::Relaxed);
+        // The same crossing as the one at the other end of a gesture,
+        // and the same thing worth knowing about it: from the moment the
+        // style becomes a child's, the numbers the picture is wearing
+        // are read against our inside instead of against the screen, and
+        // they are its old ones until the call above puts them right.
+        // One call that must reach the player's program and wait for it
+        // stands in between.
+        //
+        // This one falls at the very start of a gesture, on the click
+        // itself, which is where « the picture hops once, just as it
+        // grows » would fall. Counted rather than reasoned about: the
+        // reasoning has been wrong twice.
+        crate::journal::note(&format!(
+            "image portée par la fenêtre : mauvaise lecture pendant {:.1} ms \
+             (adoptée {:.1}, remise {:.1}) ; visée (0, 0, {width}, {height}), \
+             obtenue {:?}",
+            crossing.elapsed().as_secs_f64() * 1000.0,
+            adopted.as_secs_f64() * 1000.0,
+            (crossing.elapsed() - adopted).as_secs_f64() * 1000.0,
+            where_it_stands(engine),
+        ));
     }
 }
 
@@ -1776,32 +1817,34 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
     let Some((corner, width, height)) = the_inside_of(home) else {
         return;
     };
+    // How long the picture spends wearing numbers that are read against
+    // the wrong origin, which is the whole of this and the one thing no
+    // reading of the result can show: what it ends up as is right every
+    // time, and it is the crossing that flashes.
+    //
+    // A window keeps its numbers when it stops being a child, and the
+    // screen starts reading them against a different origin: what meant
+    // « the top left of our inside » comes to mean « the top left of the
+    // screen ». One of the two readings is wrong for as long as the
+    // crossing takes, and every call here that has to reach the player's
+    // program and wait for it lengthens that. There were three of them,
+    // and the wrong reading spanned the first two.
+    //
     // SAFETY: a window this program took in hand, given the numbers it
-    // must wear on its own, then let out of the window and given back
-    // the style and the owner that go with them.
+    // must wear on its own, the style that makes them be read that way,
+    // and then let out of the window.
+    let crossing = std::time::Instant::now();
     unsafe {
-        // The numbers first, and while it is still a child, which is the
-        // whole of this. A window let out of its parent keeps the
-        // numbers it had and the screen reads them against a different
-        // origin: what was « the top left of our inside » becomes « the
-        // top left of the screen ». Put right afterwards, as it was,
-        // there is a moment between the two where the picture stands at
-        // the corner of the desktop at its full size, outside our window
-        // altogether, and the compositor draws whatever is standing when
-        // it wakes. That moment is one call to the system that has to
-        // reach another program and wait for it, so it is long enough to
-        // be caught, and it was: the far computer's screen flashing well
-        // beyond the window.
-        //
-        // Given its arrival numbers first, the same moment reads right
-        // the instant it becomes its own window, and nothing has to be
-        // put right afterwards. In exchange, those numbers are wrong
-        // while it is still a child: it sits that far down and to the
-        // right of our inside, and a corner of the page shows through
-        // where it no longer reaches. A child is clipped by its parent,
-        // so that stays inside our window whatever the numbers say,
-        // which is the difference between the two mistakes and the
-        // reason for this order rather than the other.
+        // The numbers first, while it is still a child, so that nothing
+        // has to be put right afterwards. Put right afterwards, as it
+        // was at first, the wrong reading is a picture standing at the
+        // corner of the desktop at its full size, outside our window
+        // altogether. Put right beforehand, the wrong reading is the
+        // picture sitting that far down and to the right of our inside,
+        // with a corner of the page showing where it no longer reaches;
+        // a child is clipped by its parent, so that stays inside our
+        // window whatever the numbers say. That is the difference
+        // between the two mistakes and the reason for this order.
         SetWindowPos(
             engine,
             std::ptr::null_mut(),
@@ -1811,13 +1854,27 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
             height,
             SWP_NOACTIVATE | SWP_NOZORDER,
         );
-        SetParent(engine, std::ptr::null_mut());
+        let moved = crossing.elapsed();
+        // The style next and the parent after it, which is the ordering
+        // that shortens the wrong reading rather than the work. A window
+        // that has lost the style of a child is read against the screen
+        // from that moment, and this call is ours alone and costs
+        // nothing, while letting it out of its parent has to reach the
+        // other program. Done the other way about, as it was, the wrong
+        // reading covered that wait as well.
+        //
+        // And it is only a question of when it ends, never of whether:
+        // should the system hold off until the parent really goes, the
+        // numbers are the arrival numbers by then either way.
         SetWindowLongPtrW(engine, GWL_STYLE, style);
+        let styled = crossing.elapsed();
+        SetParent(engine, std::ptr::null_mut());
         // Owned again: owned is what has it come and go with our window
         // without being part of it.
         SetWindowLongPtrW(engine, GWLP_HWNDPARENT, home as isize);
-        // The frame worked out again for the style it has just been
-        // given back, and nothing moved: it is already where it belongs.
+        let out = crossing.elapsed();
+        // Above our window again, and nothing moved: it is already where
+        // it belongs, so this cannot be caught wearing anything wrong.
         SetWindowPos(
             engine,
             HWND_TOP,
@@ -1827,6 +1884,21 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
+        crate::journal::note(&format!(
+            "image rendue à elle-même : mauvaise lecture pendant {:.1} ms \
+             (déplacée {:.1}, style {:.1}, sortie {:.1}, dessus {:.1}) ; \
+             visée ({}, {}, {}, {}), obtenue {:?}",
+            styled.as_secs_f64() * 1000.0,
+            moved.as_secs_f64() * 1000.0,
+            (styled - moved).as_secs_f64() * 1000.0,
+            (out - styled).as_secs_f64() * 1000.0,
+            (crossing.elapsed() - out).as_secs_f64() * 1000.0,
+            corner.0,
+            corner.1,
+            corner.0 + width,
+            corner.1 + height,
+            where_it_stands(engine),
+        ));
     }
 }
 
