@@ -2968,7 +2968,7 @@ fn the_least_picture(room: Option<(i32, i32)>, shape: (i32, i32)) -> (i32, i32) 
 /// stranger's window. Acting on it then would move that window, resize
 /// it to our inside and force it shown.
 #[cfg(windows)]
-fn the_engines_window() -> Option<windows_sys::Win32::Foundation::HWND> {
+pub(crate) fn the_engines_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
 
     let engine = ENGINE.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;

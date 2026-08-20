@@ -956,7 +956,7 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
 /// believing the answer immediately is why every entry in this menu
 /// reported that the picture was not in front and did nothing.
 async fn put_the_picture_in_front(process: u32) -> Result<(), String> {
-    if in_front(process) {
+    if the_session_holds_the_front() {
         return Ok(());
     }
     bring_forward(process);
@@ -964,7 +964,7 @@ async fn put_the_picture_in_front(process: u32) -> Result<(), String> {
     let until = std::time::Instant::now() + FRONT_TAKES;
     while std::time::Instant::now() < until {
         tokio::time::sleep(FRONT_STEP).await;
-        if in_front(process) {
+        if the_session_holds_the_front() {
             return Ok(());
         }
     }
@@ -1213,11 +1213,19 @@ fn cut_to_what_is_drawn(_shape: &[Piece]) {}
 
 /// Whether the window at the front belongs to this session.
 ///
-/// Ours or the player's, since the picture is another program's window
-/// and holds the front for most of a session.
+/// Ours or the player's: the picture is another program's window, and it
+/// rides inside ours for the length of a session, so the front is ours
+/// while the session is being used. Asked of the player's process alone,
+/// as it once was before sending it a shortcut, the answer was no for
+/// the whole session and every shortcut was refused.
 #[cfg(windows)]
 fn the_session_holds_the_front() -> bool {
     crate::picture::who_holds_the_front() != crate::picture::Front::Elsewhere
+}
+
+#[cfg(not(windows))]
+fn the_session_holds_the_front() -> bool {
+    false
 }
 
 /// Where the button is on screen, as left, top, right and bottom in real
@@ -1484,6 +1492,30 @@ fn window_and_place_of(
     };
     use windows_sys::core::BOOL;
 
+    // The one already laid inside our window is not looked for: it is
+    // held, by the very part of the program that laid it, which weighs
+    // the number it holds before answering. And it could not be found by
+    // looking any more: a window taken into ours is no longer one of the
+    // system's top-level windows, and a top-level window is all an
+    // enumeration walks. Looked for all the same, it was not found, and
+    // what depends on finding it stopped: the floating button was never
+    // put up at all, and the engine's own shortcuts were refused on the
+    // grounds that the session was not in front.
+    if matches!(looked, Looked::Taken) {
+        let window = crate::picture::the_engines_window()?;
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        // SAFETY: a window this program holds, and the rectangle is
+        // ours. It answers in screen coordinates whether the window is
+        // one of the system's own or one of ours, which is what every
+        // caller wants.
+        return (unsafe { GetWindowRect(window, &mut rect) } != 0).then_some((window, rect));
+    }
+
     struct Looking {
         process: u32,
         looked: Looked,
@@ -1587,9 +1619,9 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
     // it slipped away since, the keys would land in someone else's lap,
     // and a quit combo in the wrong window is not a mistake worth
     // risking.
-    if !in_front(process) {
+    if !the_session_holds_the_front() {
         note(&format!(
-            "{act} refusé : la fenêtre au premier plan n'est pas celle du lecteur {process}"
+            "{act} refusé : le premier plan n'est ni à la session ni à ZyrDesk (lecteur {process})"
         ));
         return Err("la fenêtre de la session n'est pas au premier plan.\n  \
              Cliquez d'abord dans l'image."
@@ -1672,24 +1704,6 @@ fn bring_forward(process: u32) {
     unsafe { SetForegroundWindow(window) };
 }
 
-/// Whether the window in front belongs to that process.
-#[cfg(windows)]
-fn in_front(process: u32) -> bool {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId,
-    };
-
-    // SAFETY: no argument, and a null answer is one of the answers.
-    let window = unsafe { GetForegroundWindow() };
-    if window.is_null() {
-        return false;
-    }
-    let mut owner = 0u32;
-    // SAFETY: the window comes from the call above and the slot is ours.
-    unsafe { GetWindowThreadProcessId(window, &mut owner) };
-    owner == process
-}
-
 #[cfg(not(windows))]
 fn shortcut(_act: Act, _process: u32) -> Result<(), String> {
     Err("les sessions ne tournent que sous Windows".to_string())
@@ -1697,11 +1711,6 @@ fn shortcut(_act: Act, _process: u32) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn bring_forward(_process: u32) {}
-
-#[cfg(not(windows))]
-fn in_front(_process: u32) -> bool {
-    false
-}
 
 #[cfg(test)]
 mod tests {
