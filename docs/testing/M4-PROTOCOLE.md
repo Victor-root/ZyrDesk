@@ -538,6 +538,10 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Et la traversée du début tombe **sur le clic**, celle de la fin une demi-seconde après. « L'image sautille une fois quand on vient d'agrandir » désigne la première ; « l'image apparaît loin en dehors de la fenêtre » désignait la seconde.
 >
+> **L'image reste dans la fenêtre une demi-seconde après chaque geste**, et pas seulement après un agrandissement. La raison est une affaire de fréquence et pas de durée : chaque traversée dure une à trois millisecondes contre un écran qui se redessine toutes les 16,7, donc environ une chance sur dix d'être vue, mais il y en avait **deux par geste**, y compris pour la plus petite poussée de la fenêtre. Trente poussées d'affilée font soixante occasions, et plusieurs finissent par se voir. Gardée d'un geste à l'autre, une série entière coûte une traversée au lieu de soixante.
+>
+> Le prix est à connaître et à vérifier : une image rangée dans notre fenêtre ne peut pas être la fenêtre de premier plan, donc **pendant cette demi-seconde le clavier ne part pas vers l'ordinateur distant**. La souris, si, parce qu'un clic va à ce qui est dessous. Et le premier plan est rendu à l'image dès qu'elle ressort, **sauf si quelqu'un est parti ailleurs entre-temps** : à essayer, cliquer sur une autre application juste après avoir bougé la fenêtre, ZyrDesk ne doit pas reprendre l'écran une demi-seconde plus tard.
+>
 > **Enchaîner les gestes** fait partie de l'essai : agrandir puis attraper tout de suite la barre de titre, agrandir deux fois de suite très vite, ancrer puis agrandir. L'attente d'une demi-seconde ne doit jamais se terminer pendant qu'une main tient la fenêtre, sinon la fin du geste se joue à deux fenêtres et le scintillement revient.
 >
 > **Le journal chiffre le geste.** Une ligne est écrite à chaque fois, quand l'image ressort de la fenêtre :

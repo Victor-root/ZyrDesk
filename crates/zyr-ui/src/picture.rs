@@ -1121,18 +1121,31 @@ fn the_frame_is_square(home: windows_sys::Win32::Foundation::HWND) -> bool {
     unsafe { IsZoomed(home) != 0 || GetWindowLongPtrW(home, GWL_STYLE) & WS_CAPTION as isize == 0 }
 }
 
+/// Puts the picture at the front, which is where the keyboard goes.
+///
+/// A picture held inside our window cannot be the window at the front,
+/// a child window never is, so every gesture that takes it in costs the
+/// far computer its keyboard until it is handed back. Asked for again
+/// at that moment, rather than left to whatever the system does with a
+/// window that has just changed hands: what it does is leave the front
+/// where it was, which is our own window, and the keyboard with it.
+#[cfg(windows)]
+fn the_front_to_the_picture(engine: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+
+    // SAFETY: a window this program took in hand. Windows may refuse to
+    // change the front window, which costs nothing here.
+    unsafe { SetForegroundWindow(engine) };
+}
+
 /// Puts the picture back in front, so the engine gets the keyboard and
 /// the mouse back.
 #[cfg(windows)]
 fn hand_the_keyboard_back(app: &AppHandle) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-
     let Some(held) = taken(app).filter(alive) else {
         return;
     };
-    // SAFETY: a window this program took in hand. Windows may refuse to
-    // change the front window, which costs nothing here.
-    unsafe { SetForegroundWindow(held.window as windows_sys::Win32::Foundation::HWND) };
+    the_front_to_the_picture(held.window as windows_sys::Win32::Foundation::HWND);
 
     // Handing the front to the picture is what dims our title bar, and
     // the system only asks about it while it is doing so. Said again
@@ -1884,6 +1897,18 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
         );
+        // The front with it, since it has just stopped being a child and
+        // a child cannot hold the front. Left out, every gesture would
+        // quietly cost the session its keyboard.
+        //
+        // Only when the front is still ours to give. The picture is held
+        // for a moment after a gesture, and a person can spend that
+        // moment clicking on something else entirely; taking the front
+        // back from them then would be this program snatching the screen
+        // out of their hands half a second after they left it.
+        if who_holds_the_front() == Front::Ours {
+            the_front_to_the_picture(engine);
+        }
         crate::journal::note(&format!(
             "image rendue à elle-même : mauvaise lecture pendant {:.1} ms \
              (déplacée {:.1}, style {:.1}, sortie {:.1}, dessus {:.1}) ; \
@@ -1905,7 +1930,8 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
 /* ---- Agrandir et réduire, en laissant le système jouer -------------- */
 
 /// How long the picture stays inside our window after an order to
-/// maximise or come back down.
+/// maximise or come back down, and how long it stays inside afterwards
+/// with nothing happening before it is handed back.
 ///
 /// The system plays that move itself and does not say when it has
 /// finished, and how long it takes is written nowhere. So this is a
@@ -1916,8 +1942,26 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
 /// far computer's screen jump to full size with the frame catching up
 /// behind it. That jump is the whole reason any of this exists, so the
 /// two mistakes are not worth the same and this errs on the safe side.
+///
+/// The same margin then does a second job, which is why it outlasts the
+/// move. Taking the picture in and handing it back are each a moment
+/// where the numbers it wears are read against the wrong origin, and
+/// each lasts one call out to the player's program, one to three
+/// milliseconds against a screen that redraws every seventeen. Short,
+/// but it was happening twice for every gesture, including every little
+/// nudge of the window: thirty nudges in a row is sixty of them, and at
+/// roughly one chance in ten of being drawn, several are seen. Held
+/// across the gap between two gestures, a run of them costs one crossing
+/// instead of sixty.
+///
+/// What it costs in exchange: a picture inside our window is not the
+/// window at the front, so for this long after a gesture the keyboard
+/// does not reach the far computer. The mouse still does, since a click
+/// goes to whatever is under it. Asked about and thought a fair trade,
+/// on the grounds that nobody drives the far computer with the hand that
+/// is moving the window.
 #[cfg(windows)]
-const THE_SYSTEMS_MOVE: std::time::Duration = std::time::Duration::from_millis(500);
+const KEPT_INSIDE: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Name the timer that ends the hold answers to.
 #[cfg(windows)]
@@ -2008,7 +2052,7 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
     unsafe { DefSubclassProc(window, WM_SYSCOMMAND, order, 0) };
     // After the order and not before, so the wait covers the move and
     // not the handing over of it.
-    hold_through_the_systems_move(
+    keep_the_picture_inside(
         window,
         if order as u32 == SC_MAXIMIZE {
             "agrandissement"
@@ -2027,7 +2071,7 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
 /// screen by a hand that was only carrying it. Both animate, neither
 /// says when it has finished.
 #[cfg(windows)]
-fn hold_through_the_systems_move(window: windows_sys::Win32::Foundation::HWND, what: &'static str) {
+fn keep_the_picture_inside(window: windows_sys::Win32::Foundation::HWND, what: &'static str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::SetTimer;
 
     HOLDING.with_borrow_mut(|holding| {
@@ -2039,7 +2083,7 @@ fn hold_through_the_systems_move(window: windows_sys::Win32::Foundation::HWND, w
     // SAFETY: our own window, from the thread that owns it. Setting a
     // timer that is already set only puts it back to the start, so two
     // gestures running into each other cannot leave two of them.
-    unsafe { SetTimer(window, LET_GO, THE_SYSTEMS_MOVE.as_millis() as u32, None) };
+    unsafe { SetTimer(window, LET_GO, KEPT_INSIDE.as_millis() as u32, None) };
 }
 
 /// The system has had its time; the picture goes back to being a window
@@ -2353,16 +2397,28 @@ unsafe extern "system" fn lit(
         WM_EXITSIZEMOVE => {
             DRAGGED.store(false, Ordering::Relaxed);
             tell_the_drag();
-            // The hand has let go with the picture still inside our
-            // window and the size changed all the same, which is the
-            // system snapping the window against an edge of the screen.
-            // It animates that, as it animates the order, so the picture
-            // stays inside for as long; handed back here, it would take
-            // its own place at once and jump while the frame is still on
-            // its way. Ordinarily there is nothing left to hold: a hand
-            // on an edge hands the picture back at its first step.
-            if CARRIED.load(Ordering::Relaxed) != 0 && RESIZED.load(Ordering::Relaxed) {
-                hold_through_the_systems_move(window, "ancrage");
+            // The picture stays inside for a moment rather than being
+            // handed straight back, whatever the gesture was; see
+            // `KEPT_INSIDE`. A hand let go on an edge of the screen is
+            // the system about to snap the window there and animate it,
+            // and handing the picture back now would have it take its
+            // own place at once and jump while the frame is still on its
+            // way. A hand let go anywhere else has nothing left to
+            // finish, and the wait is there for the next gesture: a run
+            // of little nudges then costs one crossing instead of two
+            // per nudge.
+            //
+            // Nothing to hold at all when a hand on an edge has already
+            // handed the picture back at its first step.
+            if CARRIED.load(Ordering::Relaxed) != 0 {
+                keep_the_picture_inside(
+                    window,
+                    if RESIZED.load(Ordering::Relaxed) {
+                        "ancrage"
+                    } else {
+                        "déplacement"
+                    },
+                );
             } else {
                 let_the_picture_go(window);
             }
