@@ -485,13 +485,17 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > En fenêtré, pendant une session : cliquer sur le bouton du **milieu** de la barre de titre, celui entre Réduire et Fermer, pour agrandir la fenêtre. Puis recliquer pour la remettre en fenêtre. Recommencer plusieurs fois, en regardant le bord de l'image.
 >
-> Attendu : **l'image et le cadre changent de taille ensemble**, d'un seul coup. Jamais l'image qui prend sa nouvelle taille pendant que le cadre la rattrape derrière elle.
+> Attendu : **l'animation est toujours là**, la fenêtre grandit et rétrécit en glissant, en ralentissant pour se poser. Et pendant tout ce mouvement, **l'image et le cadre ne se quittent pas** : à aucun moment l'écran distant n'est à une taille et le cadre à une autre.
 >
-> Windows anime ce changement : il garde une image de la fenêtre telle qu'elle était et l'étire vers son nouveau rectangle pendant un cinquième de seconde. Il anime **une** fenêtre, pas deux, et l'image de la session en est une autre : elle prenait donc sa taille définitive tout de suite, et on voyait l'écran distant bondir puis le cadre le rejoindre. C'est précisément ce que tout ce montage existe pour cacher. Rien ne peut tenir les deux ensemble pendant une animation faite pour une seule, alors l'animation est **arrêtée le temps de la session** : sans elle, les deux changent dans la même image dessinée, ce qui est à quoi ressemble une seule fenêtre. Elle est rendue à Windows dès la session terminée, et hors session la fenêtre s'anime comme n'importe quelle autre.
+> Faire le même essai en **double-cliquant sur la barre de titre**, qui est le même ordre par un autre chemin.
 >
-> Le journal l'écrit à l'ouverture et à la fermeture : `animation de la fenêtre arrêtée le temps de la session`, puis `rendue au système`. Si le système refuse, il le dit aussi, avec son code.
+> Windows anime ce changement, et il l'anime bien ; ce qu'il ne sait pas faire, c'est animer deux fenêtres comme une seule. Il tient le dessin de la fenêtre, l'étire vers son nouveau rectangle en un cinquième de seconde, et ne montre ce qui est vraiment là qu'à la fin. L'image de la session est une fenêtre à part, laissée hors de tout ça : elle prenait sa taille définitive tout de suite, et on voyait l'écran distant bondir puis le cadre le rejoindre.
 >
-> **S'il reste un décalage**, il ne vient plus de l'animation, et le journal le dira autrement : une ligne `image posée en N ms, soit plus d'une image` apparaît chaque fois que le lecteur met plus d'une image à prendre sa nouvelle taille. Sans cette ligne, le retard est ailleurs.
+> Le mouvement est donc **joué par ZyrDesk** au lieu d'être laissé au système : un pas par image dessinée, et chaque pas emprunte exactement le chemin qu'emprunte une main qui tire un bord, celui qui pose l'image dans la foulée du déplacement de la fenêtre, à l'intérieur du même message. Ce qui a rendu le redimensionnement fluide rend ce mouvement fluide, et fait arriver les deux ensemble puisqu'il n'y en a jamais qu'un seul qu'on déplace. L'ordre lui-même n'est donné à Windows qu'une fois le mouvement fini, depuis l'endroit où la fenêtre est déjà : ce qu'il lui resterait à animer, c'est rien.
+>
+> Hors session, rien de tout ça : la fenêtre est seule et Windows l'anime comme n'importe quelle autre.
+>
+> **Le journal chiffre le geste.** Une ligne `agrandissement joué en N ms, M pas` ou `retour en fenêtre joué en ...` est écrite à chaque fois. Environ 180 ms est ce qui est visé. Un nombre de pas bien inférieur au nombre d'images dessinées dans ce temps veut dire que chaque pas a attendu, et ce qu'un pas attend, c'est le lecteur qui prend sa nouvelle taille : c'est là qu'il faudrait chercher, et nulle part ailleurs.
 
 > **S9ter (la barre de titre reste allumée tant que la fenêtre sert)**
 >

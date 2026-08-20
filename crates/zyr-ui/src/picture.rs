@@ -103,11 +103,14 @@ fn remember_the_shape(engine: isize, shape: (i32, i32), process: u32) {
     // shape, whatever size this one was left at.
     LAID.store(0, Ordering::Relaxed);
     SQUARED.store(false, Ordering::Relaxed);
-    // A session can end with a hand still on an edge, and nothing else
-    // would ever put this down: left standing, it silently switches off
+    // A session can end with a hand still on an edge, or in the middle
+    // of a window being carried to its new size, and nothing else would
+    // ever put these down: left standing, they silently switch off
     // holding the window to the picture's shape for the rest of the
     // program's life.
     DRAGGED.store(false, Ordering::Relaxed);
+    #[cfg(windows)]
+    GROWS.store(false, Ordering::Relaxed);
     SHAPE.store(
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
@@ -270,7 +273,7 @@ const ROUNDING: u32 = 1;
 /// dragged, and a window that resists in two directions at once cannot
 /// be resized at all.
 pub fn hold_the_shape(app: &AppHandle) {
-    if DRAGGED.load(Ordering::Relaxed) {
+    if on_the_move() {
         return;
     }
     let Some(held) = taken(app) else {
@@ -468,7 +471,11 @@ fn lay_it_out(
     unsafe { ClientToScreen(home, &mut corner) };
 
     let (width, height) = (inside.right - inside.left, inside.bottom - inside.top);
+    // What is counted, and what is put off until the window settles, are
+    // two different questions: a drag is counted and told at the end,
+    // while both a drag and an order being played put off the shape.
     let dragged = DRAGGED.load(Ordering::Relaxed);
+    let moving = on_the_move();
 
     let started = std::time::Instant::now();
     // SAFETY: the engine's window is one we have already taken in hand.
@@ -502,21 +509,21 @@ fn lay_it_out(
     // own window changes in, which is what makes the two look like one.
     // Longer than a frame and they are seen apart, and the wait is not
     // ours: it is the player answering. Said only when it happens, and
-    // never during a drag, where every step is counted and told at the
-    // end instead.
-    if !dragged && laid > A_FRAME {
+    // never while the window is moving, where every step is counted and
+    // told in one line at the end instead.
+    if !moving && laid > A_FRAME {
         crate::journal::note(&format!(
             "image posée en {:.0} ms, soit plus d'une image : le lecteur a tardé à répondre",
             laid.as_secs_f64() * 1000.0
         ));
     }
 
-    // Not while a hand is dragging. Giving a window a shape costs a
+    // Not while the window is moving. Giving a window a shape costs a
     // shape built, a shape handed over and a window told to think again,
     // and the two corners it buys are two corners nobody is looking at
-    // during a drag. Done once, when the hand lets go.
+    // while it moves. Done once, when it settles.
     let shaped = std::time::Instant::now();
-    if !dragged {
+    if !moving {
         round_the_bottom(home, engine, width, height);
     }
     let shaped = shaped.elapsed();
@@ -834,39 +841,25 @@ fn the_drawn_frame(
     engine: windows_sys::Win32::Foundation::HWND,
 ) -> Option<(i32, i32, i32, i32)> {
     use windows_sys::Win32::Foundation::RECT;
-    use windows_sys::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute};
     use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
-    let mut drawn = RECT {
+    let drawn = the_drawn_frame_of(home)?;
+    let mut picture = RECT {
         left: 0,
         top: 0,
         right: 0,
         bottom: 0,
     };
-    let mut picture = drawn;
-    // SAFETY: our own window, an attribute made to be asked for, and the
-    // slot is ours, of the size the call is told.
-    if unsafe {
-        DwmGetWindowAttribute(
-            home,
-            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
-            (&raw mut drawn).cast(),
-            std::mem::size_of::<RECT>() as u32,
-        )
-    } != 0
-    {
-        return None;
-    }
     // SAFETY: a window this program took in hand, and the rectangle is
     // ours.
     if unsafe { GetWindowRect(engine, &mut picture) } == 0 {
         return None;
     }
     Some((
-        drawn.left - picture.left,
-        drawn.top - picture.top,
-        drawn.right - picture.left,
-        drawn.bottom - picture.top,
+        drawn.0 - picture.left,
+        drawn.1 - picture.top,
+        drawn.2 - picture.left,
+        drawn.3 - picture.top,
     ))
 }
 
@@ -959,52 +952,7 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
-        animate_the_window(home, false);
         light_the_bar(home);
-    });
-}
-
-/// Lets the system animate our window growing and shrinking, or stops it
-/// doing so.
-///
-/// Stopped for the length of a session, which is the one thing a session
-/// costs the window. The system animates a window: it holds a picture of
-/// the old one, stretches it towards the new rectangle over a fifth of a
-/// second, and only then draws what is really there. The picture in our
-/// window is a window of its own and is not part of that: it takes its
-/// new size at once, so maximising showed the far computer's screen jump
-/// to full size and the frame around it catch up afterwards, which is
-/// exactly the two windows this whole file exists to hide.
-///
-/// Nothing else can hold them together, since the system animates one
-/// window and not a pair of them. Without the animation both change in
-/// the same drawn frame, which is what one window looks like.
-///
-/// Given back at the end of the session: outside one there is a single
-/// window, and it animates like every other.
-#[cfg(windows)]
-fn animate_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
-    use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_TRANSITIONS_FORCEDISABLED, DwmSetWindowAttribute,
-    };
-
-    let stopped: i32 = i32::from(!may);
-    // SAFETY: our own window, an attribute made to be set, and the value
-    // is ours, of the size the call is told.
-    let answer = unsafe {
-        DwmSetWindowAttribute(
-            home,
-            DWMWA_TRANSITIONS_FORCEDISABLED as u32,
-            (&raw const stopped).cast(),
-            std::mem::size_of::<i32>() as u32,
-        )
-    };
-    crate::journal::note(&if answer != 0 {
-        format!("animation de la fenêtre : le système a refusé ({answer:#x})")
-    } else if may {
-        "animation de la fenêtre rendue au système".to_string()
-    } else {
-        "animation de la fenêtre arrêtée le temps de la session".to_string()
     });
 }
 
@@ -1021,7 +969,6 @@ fn give_the_window_back(app: &AppHandle) {
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
-        animate_the_window(home, true);
     });
 }
 
@@ -1142,6 +1089,371 @@ pub fn who_holds_the_front() -> Front {
     }
 }
 
+/* ---- Agrandir et réduire, en portant l'image avec ------------------- */
+
+/// A window on its way from one rectangle to another, and what to tell
+/// the system once it is there.
+#[cfg(windows)]
+struct Growing {
+    from: (i32, i32, i32, i32),
+    to: (i32, i32, i32, i32),
+    began: std::time::Instant,
+    /// The order the person gave, held back until the move is played.
+    then: usize,
+    /// How many times the window has been carried a little further, so
+    /// the journal can say whether the move was played smoothly or in
+    /// three jerks.
+    steps: u32,
+}
+
+// Only ever touched from the thread that owns the window, inside its own
+// message handler: no lock, and nothing another thread could be holding.
+#[cfg(windows)]
+thread_local! {
+    static GROWING: std::cell::RefCell<Option<Growing>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Whether the window is being carried from one rectangle to another
+/// right now.
+///
+/// Read from other threads, which is why it is not in the cell above:
+/// what a moving window must not have done to it is decided in places
+/// this handler does not run.
+#[cfg(windows)]
+static GROWS: AtomicBool = AtomicBool::new(false);
+
+/// Whether the window is on the move, by a hand or by an order.
+///
+/// Both mean the same thing to everything that tidies up after a resize:
+/// wait. Rounding the picture's corners costs a shape built and a window
+/// redrawn, and putting the window back on the picture's shape fights
+/// whatever is moving it.
+fn on_the_move() -> bool {
+    #[cfg(windows)]
+    let grows = GROWS.load(Ordering::Relaxed);
+    #[cfg(not(windows))]
+    let grows = false;
+    DRAGGED.load(Ordering::Relaxed) || grows
+}
+
+/// How long growing or shrinking takes. About what the system itself
+/// takes, which is what it has to look like.
+#[cfg(windows)]
+const GROWS_IN: std::time::Duration = std::time::Duration::from_millis(180);
+
+/// Name the timer that plays it answers to.
+#[cfg(windows)]
+const GROWING_ON: usize = 2;
+
+/// Starts carrying the window towards what that order asks for, instead
+/// of letting the system jump it there.
+///
+/// The system does animate this, and animates it well; what it cannot do
+/// is animate two windows as one. It holds the window's own drawing,
+/// stretches it towards the new rectangle over about a fifth of a second
+/// and only then shows what is really there. The picture is a window of
+/// its own and is left out of that: it took its new size at once, so
+/// maximising showed the far computer's screen jump to full size and the
+/// frame catch up behind it, which is the two windows this whole file
+/// exists to hide.
+///
+/// So the move is played here instead, one step per drawn frame, and
+/// each step goes through the very path a hand dragging an edge goes
+/// through: our window is moved, and the picture is laid on it inside
+/// the same message. What made dragging smooth makes this smooth, and
+/// makes the two arrive together because there is only ever one of them
+/// being moved.
+///
+/// The order itself is handed to the system at the end, from where the
+/// window already is: what it would animate is then a move of nothing.
+///
+/// Answers false when there is nothing to play, and the order goes
+/// straight to the system.
+#[cfg(windows)]
+fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) -> bool {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic, SetTimer};
+
+    // A window down in the taskbar has no rectangle to leave from, and
+    // coming back up from there is the system's own animation, which is
+    // about an icon and not about a rectangle.
+    // SAFETY: our own window, read only.
+    if unsafe { IsIconic(window) } != 0 {
+        return false;
+    }
+    let mut now = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: our own window and the rectangle is ours.
+    if unsafe { GetWindowRect(window, &mut now) } == 0 {
+        return false;
+    }
+    let from = (now.left, now.top, now.right, now.bottom);
+    let Some(to) = where_the_order_leads(window, order) else {
+        return false;
+    };
+    if to == from || to.2 - to.0 <= 0 || to.3 - to.1 <= 0 {
+        return false;
+    }
+
+    GROWING.with_borrow_mut(|growing| {
+        *growing = Some(Growing {
+            from,
+            to,
+            began: std::time::Instant::now(),
+            then: order,
+            steps: 0,
+        });
+    });
+    GROWS.store(true, Ordering::Relaxed);
+    // The corners go for the length of the move, as they do for a drag:
+    // a shape is the size the window had when it was given, and a window
+    // growing under one is clipped to where it used to end.
+    if let Some(engine) = the_engines_window() {
+        let_the_corners_go(engine);
+    }
+    // Every drawn frame, near enough: the system rounds this up to its
+    // own tick, which is a frame.
+    // SAFETY: our own window, from the thread that owns it.
+    unsafe { SetTimer(window, GROWING_ON, 8, None) };
+    grow_a_step(window);
+    true
+}
+
+/// Where the window ends up once that order has been carried out.
+///
+/// Worked out rather than found out. Finding out means letting the
+/// system do it and reading the answer, and between the doing and the
+/// reading the window is already there: one drawn frame of it at its
+/// full size is the very jump being taken out.
+///
+/// It does not have to be exact. The order is handed to the system at
+/// the end of the move, and the system puts the window exactly where it
+/// belongs; a few pixels out here is a last step of a few pixels.
+#[cfg(windows)]
+fn where_the_order_leads(
+    window: windows_sys::Win32::Foundation::HWND,
+    order: usize,
+) -> Option<(i32, i32, i32, i32)> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowPlacement, GetWindowRect, SC_MAXIMIZE, WINDOWPLACEMENT,
+    };
+
+    // SAFETY: our own window; the nearest monitor is always an answer.
+    let monitor = unsafe { MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) };
+    let mut screen: MONITORINFO = unsafe { std::mem::zeroed() };
+    screen.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+    // SAFETY: the monitor comes from the call above and the slot is ours,
+    // with its size written in it as the call requires.
+    if unsafe { GetMonitorInfoW(monitor, &mut screen) } == 0 {
+        return None;
+    }
+
+    if order == SC_MAXIMIZE as usize {
+        // A maximised window is not the size of the desktop: it is the
+        // desktop plus the invisible bands a resize can be grabbed in,
+        // which is why it looks flush with the edges. Those bands are
+        // whatever separates this window's rectangle from the frame it
+        // actually draws, measured on it as it stands.
+        let mut whole = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        // SAFETY: our own window and the rectangle is ours.
+        if unsafe { GetWindowRect(window, &mut whole) } == 0 {
+            return None;
+        }
+        return Some(spread_over(
+            (
+                screen.rcWork.left,
+                screen.rcWork.top,
+                screen.rcWork.right,
+                screen.rcWork.bottom,
+            ),
+            (whole.left, whole.top, whole.right, whole.bottom),
+            the_drawn_frame_of(window)?,
+        ));
+    }
+
+    let mut placed: WINDOWPLACEMENT = unsafe { std::mem::zeroed() };
+    placed.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+    // SAFETY: our own window and the slot is ours, with its size written
+    // in it as the call requires.
+    if unsafe { GetWindowPlacement(window, &mut placed) } == 0 {
+        return None;
+    }
+    // The system keeps that rectangle counted from the corner of the
+    // desktop rather than the corner of the screen, and the two differ
+    // by wherever the taskbar sits when it sits at the top or the left.
+    let (dx, dy) = (
+        screen.rcWork.left - screen.rcMonitor.left,
+        screen.rcWork.top - screen.rcMonitor.top,
+    );
+    let normal = placed.rcNormalPosition;
+    Some((
+        normal.left + dx,
+        normal.top + dy,
+        normal.right + dx,
+        normal.bottom + dy,
+    ))
+}
+
+/// The frame this window actually draws, in screen coordinates.
+#[cfg(windows)]
+fn the_drawn_frame_of(
+    window: windows_sys::Win32::Foundation::HWND,
+) -> Option<(i32, i32, i32, i32)> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute};
+
+    let mut drawn = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: our own window, an attribute made to be asked for, and the
+    // slot is ours, of the size the call is told.
+    if unsafe {
+        DwmGetWindowAttribute(
+            window,
+            DWMWA_EXTENDED_FRAME_BOUNDS as u32,
+            (&raw mut drawn).cast(),
+            std::mem::size_of::<RECT>() as u32,
+        )
+    } != 0
+    {
+        return None;
+    }
+    Some((drawn.left, drawn.top, drawn.right, drawn.bottom))
+}
+
+/// Carries the window one step further, and finishes the job on the last
+/// one.
+#[cfg(windows)]
+fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        KillTimer, SC_MAXIMIZE, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos, WM_SYSCOMMAND,
+    };
+
+    // Read from the clock and never counted in steps: a step that took
+    // longer than it should makes the move jerkier, never longer, which
+    // is what a move played by hand has to promise.
+    let Some((step, done)) = GROWING.with_borrow_mut(|growing| {
+        let growing = growing.as_mut()?;
+        growing.steps += 1;
+        let part = (growing.began.elapsed().as_secs_f64() / GROWS_IN.as_secs_f64()).clamp(0.0, 1.0);
+        Some((along(growing.from, growing.to, eased(part)), part >= 1.0))
+    }) else {
+        return;
+    };
+
+    // SAFETY: our own window, moved without being resized in z-order or
+    // activated. The picture is laid on it inside this very call, in the
+    // handler for the message this one sends.
+    unsafe {
+        SetWindowPos(
+            window,
+            std::ptr::null_mut(),
+            step.0,
+            step.1,
+            step.2 - step.0,
+            step.3 - step.1,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+    };
+    if !done {
+        return;
+    }
+
+    let played = GROWING.with_borrow_mut(|growing| growing.take());
+    GROWS.store(false, Ordering::Relaxed);
+    // SAFETY: our own window, from the thread that owns it.
+    unsafe { KillTimer(window, GROWING_ON) };
+    if let Some(played) = &played {
+        // One line per gesture. A move played in far fewer steps than
+        // there are drawn frames in it was played jerkily, and what a
+        // step waits on is the player taking its new size: that is where
+        // to look, and there is nowhere else to read it from.
+        crate::journal::note(&format!(
+            "{} joué en {:.0} ms, {} pas",
+            if played.then == SC_MAXIMIZE as usize {
+                "agrandissement"
+            } else {
+                "retour en fenêtre"
+            },
+            played.began.elapsed().as_secs_f64() * 1000.0,
+            played.steps,
+        ));
+    }
+    if let Some(then) = played.map(|played| played.then) {
+        // Handed to the system now, from where the window already is:
+        // what it has left to move is nothing, so what it would animate
+        // is nothing. Handed straight to its own handling, since ours
+        // would only take it back and play it again.
+        // SAFETY: the order the person gave, at the window it was given
+        // to.
+        unsafe { DefSubclassProc(window, WM_SYSCOMMAND, then, 0) };
+    }
+    // The shape was left alone while the window was moving; it has
+    // stopped.
+    if let Some(engine) = the_engines_window() {
+        lay_it_out(window, engine);
+    }
+}
+
+/// The rectangle a window covers once it is spread over the desktop.
+///
+/// Not the desktop itself: a window carries invisible bands all round it
+/// that a resize can be grabbed in, and spread out it hangs those bands
+/// off the edges of the screen so that what it draws lands flush with
+/// them. `whole` is the rectangle the system counts the window as, and
+/// `drawn` the frame it really draws; what separates them is the bands.
+fn spread_over(
+    work: (i32, i32, i32, i32),
+    whole: (i32, i32, i32, i32),
+    drawn: (i32, i32, i32, i32),
+) -> (i32, i32, i32, i32) {
+    (
+        work.0 - (drawn.0 - whole.0),
+        work.1 - (drawn.1 - whole.1),
+        work.2 + (whole.2 - drawn.2),
+        work.3 + (whole.3 - drawn.3),
+    )
+}
+
+/// Where the window stands when it is that far along.
+fn along(from: (i32, i32, i32, i32), to: (i32, i32, i32, i32), part: f64) -> (i32, i32, i32, i32) {
+    let between = |a: i32, b: i32| a + ((f64::from(b - a)) * part).round() as i32;
+    (
+        between(from.0, to.0),
+        between(from.1, to.1),
+        between(from.2, to.2),
+        between(from.3, to.3),
+    )
+}
+
+/// The shape of the move: quick to start, slow to arrive.
+///
+/// A window that moves at one speed and stops dead reads as a thing being
+/// dragged by a machine. Every window on this system slows into its
+/// place, so this one does too.
+fn eased(part: f64) -> f64 {
+    let left = 1.0 - part;
+    1.0 - left * left * left
+}
+
 /// Name our handler answers to, so it can be taken off again.
 #[cfg(windows)]
 const LIT: usize = 1;
@@ -1157,11 +1469,31 @@ unsafe extern "system" fn lit(
 ) -> isize {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, WINDOWPOS, WM_ACTIVATEAPP, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE,
-        WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
+        PostMessageW, SC_MAXIMIZE, SC_RESTORE, WINDOWPOS, WM_ACTIVATEAPP, WM_ENTERSIZEMOVE,
+        WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED,
+        WM_WINDOWPOSCHANGING,
     };
 
     match message {
+        // « Agrandir » and « Niveau inférieur », from the title bar
+        // button or a double click on the bar itself. Played by hand
+        // rather than left to the system, which animates one window and
+        // would leave the picture behind; see `play_the_order`.
+        //
+        // The low four bits are the system's own, and carry which corner
+        // of a menu the order came from.
+        WM_SYSCOMMAND
+            if matches!((wparam & 0xFFF0) as u32, SC_MAXIMIZE | SC_RESTORE)
+                && the_engines_window().is_some()
+                && play_the_order(window, wparam & 0xFFF0) =>
+        {
+            0
+        }
+        // One step of that move.
+        WM_TIMER if wparam == GROWING_ON => {
+            grow_a_step(window);
+            0
+        }
         // The system asking whether this window is still active, which
         // is the one question that decides how the title bar is drawn.
         //
@@ -1740,6 +2072,53 @@ mod tests {
     fn a_size_that_did_not_change_is_left_alone() {
         let same = (100, 100, 976, 582);
         assert_eq!(drag(same, (1, 1)), same);
+    }
+
+    #[test]
+    fn a_window_spread_over_the_desktop_hangs_its_grab_bands_off_the_edges() {
+        // Une fenêtre de 1000x600 posée en (100, 100), dont le cadre
+        // dessiné est rentré de 7 pixels sur les côtés et le bas : les
+        // bandes de préhension. Étalée, elles doivent dépasser de l'écran
+        // d'exactement autant, pour que ce qui se dessine tombe pile sur
+        // les bords.
+        let work = (0, 0, 1920, 1040);
+        let whole = (100, 100, 1100, 700);
+        let drawn = (107, 100, 1093, 693);
+        assert_eq!(spread_over(work, whole, drawn), (-7, 0, 1927, 1047));
+    }
+
+    #[test]
+    fn a_window_without_grab_bands_is_spread_to_the_desktop_itself() {
+        let work = (0, 0, 1920, 1040);
+        let same = (100, 100, 1100, 700);
+        assert_eq!(spread_over(work, same, same), work);
+    }
+
+    #[test]
+    fn the_move_starts_where_it_was_and_ends_where_it_goes() {
+        let from = (100, 100, 1100, 700);
+        let to = (-7, 0, 1927, 1047);
+        assert_eq!(along(from, to, eased(0.0)), from);
+        assert_eq!(along(from, to, eased(1.0)), to);
+    }
+
+    #[test]
+    fn the_move_only_ever_goes_forwards_and_slows_into_its_place() {
+        // Une fenêtre qui avance puis recule serait vue trembler, et une
+        // qui arrive à pleine vitesse serait vue taper.
+        let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
+        let ou = |part: f64| along(from, to, eased(part));
+        let mut avant = from;
+        for pas in 0..=60 {
+            let ici = ou(f64::from(pas) / 60.0);
+            assert!(ici.2 >= avant.2, "la fenêtre a reculé au pas {pas}");
+            avant = ici;
+        }
+        assert_eq!(avant, to);
+        // Et elle ralentit : le plus gros du chemin est fait dans la
+        // première moitié du temps, le reste sert à se poser.
+        let (debut, fin) = (ou(0.5).2 - from.2, to.2 - ou(0.5).2);
+        assert!(debut > fin * 3, "début {debut}, fin {fin}");
     }
 
     #[test]
