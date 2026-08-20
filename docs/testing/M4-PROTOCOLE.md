@@ -515,7 +515,22 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > 2. **La fenêtre revient là où elle était.** La mettre à une taille bien reconnaissable dans un coin de l'écran, agrandir, redescendre : elle retombe exactement au même endroit, trois ou quatre fois de suite. Chaque pas du mouvement ressemble, pour Windows, à une main qui déplace la fenêtre, et il écrivait chacun d'eux comme étant sa vraie place ; celle d'avant le premier pas est remise à la fin.
 > 3. **Les coins et le liseré reviennent.** Redescendue, la fenêtre retrouve ses **coins arrondis** et le liseré de couleur tout autour, celui de Windows 11. Portée pendant que le système la comptait comme étalée sur l'écran, elle en gardait le cadre : coins droits et pas de liseré, ce qui est juste pour une fenêtre qui remplit un écran et faux pour celle qui vient d'en redescendre. Laissé au système, cet arrondi se déduit de ce qu'il croit de la fenêtre, et porter une fenêtre à la main brouille cette déduction : il lui est donc dit franchement, arrondi en fenêtre et droit quand elle remplit l'écran, ce qui est sa propre règle.
 >
-> **Le journal chiffre le geste.** Une ligne `agrandissement joué en N ms, M pas, plus grand pas L px` est écrite à chaque fois, et `retour en fenêtre joué en ...` dans l'autre sens, suivie de `fenêtre agrandie` ou `fenêtre en fenêtre après le mouvement`, qui dit dans quel état la fenêtre a réellement fini. Deux cents millisecondes environ est ce qui est visé. Le nombre qui dit tout est le plus grand pas : quelques dizaines de pixels est un mouvement porté, plusieurs centaines est un saut. Et un nombre de pas bien inférieur au nombre d'images dessinées veut dire que chaque pas a attendu ; ce qu'un pas attend, c'est le lecteur qui prend sa nouvelle taille.
+> **Si le mouvement s'arrête en route puis repart**, sur une machine modeste notamment, c'est ce que la ligne du journal sert à expliquer et il ne faut pas la deviner : la lire, telle quelle, et la recopier.
+>
+> **Le journal chiffre le geste.** Une ligne est écrite à chaque fois :
+>
+> ```
+> agrandissement joué en 227 ms, 9 pas, plus grand pas 185 px ; pas le plus long 62.0 ms au pas 5 sur 9 (dont image 58.1 ms), plus longue attente entre deux pas 18.0 ms
+> ```
+>
+> et `retour en fenêtre joué en ...` dans l'autre sens, suivie de `fenêtre agrandie` ou `fenêtre en fenêtre après le mouvement`, qui dit dans quel état la fenêtre a réellement fini. Deux cents millisecondes environ est ce qui est visé, en une quinzaine de pas.
+>
+> Chaque nombre répond à une question, et une seule :
+>
+> 1. **Le plus grand pas**, en pixels : quelques dizaines est un mouvement porté, plusieurs centaines est un saut.
+> 2. **Le pas le plus long**, en millisecondes, et **à quel pas** il est tombé. Une image dessinée dure seize millisecondes ; un pas qui en coûte trois ou quatre fois plus est une pause que l'œil voit. Le rang dit le reste : le même rang à chaque essai, c'est un coût qui revient toujours au même endroit du mouvement, un rang qui se promène, c'est la machine qui était occupée ailleurs.
+> 3. **Dont image** : la part de ce pas passée à attendre le lecteur, qui appartient à un autre programme et répond quand il peut. Presque tout le pas, c'est lui ; presque rien, c'est notre propre fenêtre, sa page web dessous, ou le système.
+> 4. **La plus longue attente entre deux pas** : celle-là ne mesure pas un pas mais le temps perdu avant lui. Grande alors que les pas sont courts, le mouvement n'a rien coûté du tout et c'est le tour de parole qui a tardé, donc quelque chose d'autre occupait le fil.
 
 > **S9quinquies (Alt+Tab montre la session, pas l'écran d'accueil)**
 >

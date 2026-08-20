@@ -593,6 +593,17 @@ fn lay_on(
         };
     }
     let laid = started.elapsed();
+    // A move played by an order runs through here too, one step at a
+    // time, and what a step waits on is this very call. Kept with the
+    // move rather than counted with a drag: the two never overlap, but
+    // they are told in two different lines and each says its own cost.
+    if GROWS.load(Ordering::Relaxed) {
+        GROWING.with_borrow_mut(|growing| {
+            if let Some(growing) = growing.as_mut() {
+                growing.picture = growing.picture.max(laid);
+            }
+        });
+    }
     // Laying the picture is meant to happen inside the very frame our
     // own window changes in, which is what makes the two look like one.
     // Longer than a frame and they are seen apart, and the wait is not
@@ -1726,6 +1737,28 @@ struct Growing {
     /// and then snaps » looks like as a number, and the one way to tell
     /// a move that was carried from a move that jumped.
     widest: i32,
+    /// The longest a single step took, from the window being asked to
+    /// move to the system coming back, and which step that was.
+    ///
+    /// Counted because a move that stops halfway and starts again has
+    /// exactly two possible causes and they are told apart here. What a
+    /// step costs was only ever counted under a hand, and a move played
+    /// by an order goes through none of that: the one gesture that was
+    /// reported as jerky was the one nothing measured.
+    ///
+    /// Which step it was answers the rest of the report on its own. « It
+    /// always stops in the same place » is either true, and the same
+    /// step is slow every time, or it is not, and the slow one wanders.
+    slowest: std::time::Duration,
+    slowest_at: u32,
+    /// Of that, what waiting on the player cost. A step is mostly a
+    /// window belonging to another program being told to take a new
+    /// size, and that program answers when it can.
+    picture: std::time::Duration,
+    /// The longest gap between two steps, which is a different fault: a
+    /// step that costs nothing but arrives late means the thread was
+    /// busy elsewhere and the timer had to wait its turn.
+    latest: std::time::Duration,
 }
 
 // Only ever touched from the thread that owns the window, inside its own
@@ -1857,6 +1890,10 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
             placed,
             steps: 0,
             widest: 0,
+            slowest: std::time::Duration::ZERO,
+            slowest_at: 0,
+            picture: std::time::Duration::ZERO,
+            latest: std::time::Duration::ZERO,
         });
     });
     GROWS.store(true, Ordering::Relaxed);
@@ -2041,6 +2078,7 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         growing.steps += 1;
         let waited = growing.moved.elapsed();
         growing.moved = std::time::Instant::now();
+        growing.latest = growing.latest.max(waited);
         let step = along(now, growing.to, closed_in(waited, CLOSES_IN));
         growing.widest = growing
             .widest
@@ -2056,6 +2094,7 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
     // SAFETY: our own window, moved without being resized in z-order or
     // activated. The picture is laid on it inside this very call, in the
     // handler for the message this one sends.
+    let carried = std::time::Instant::now();
     unsafe {
         SetWindowPos(
             window,
@@ -2067,6 +2106,15 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
             SWP_NOZORDER | SWP_NOACTIVATE,
         )
     };
+    let carried = carried.elapsed();
+    GROWING.with_borrow_mut(|growing| {
+        if let Some(growing) = growing.as_mut()
+            && carried > growing.slowest
+        {
+            growing.slowest = carried;
+            growing.slowest_at = growing.steps;
+        }
+    });
     if !done {
         return;
     }
@@ -2076,12 +2124,17 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
     // SAFETY: our own window, from the thread that owns it.
     unsafe { KillTimer(window, GROWING_ON) };
     if let Some(played) = played.as_ref() {
-        // One line per gesture. A move played in far fewer steps than
-        // there are drawn frames in it was played jerkily, and what a
-        // step waits on is the player taking its new size: that is where
-        // to look, and there is nowhere else to read it from.
+        // One line per gesture, and enough of one to name the fault
+        // rather than describe it. A move played in far fewer steps than
+        // there are drawn frames in it was played jerkily; the longest
+        // step says whether one of them ate the difference, its rank
+        // says whether it is always the same one, its picture share says
+        // whether the wait was the player's, and the longest gap says
+        // whether the fault is not in the steps at all.
         crate::journal::note(&format!(
-            "{} joué en {:.0} ms, {} pas, plus grand pas {} px",
+            "{} joué en {:.0} ms, {} pas, plus grand pas {} px ; \
+             pas le plus long {:.1} ms au pas {} sur {} (dont image {:.1} ms), \
+             plus longue attente entre deux pas {:.1} ms",
             if played.then == SC_MAXIMIZE as usize {
                 "agrandissement"
             } else {
@@ -2090,6 +2143,11 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
             played.began.elapsed().as_secs_f64() * 1000.0,
             played.steps,
             played.widest,
+            played.slowest.as_secs_f64() * 1000.0,
+            played.slowest_at,
+            played.steps,
+            played.picture.as_secs_f64() * 1000.0,
+            played.latest.as_secs_f64() * 1000.0,
         ));
     }
     if let Some(played) = played {
