@@ -1158,26 +1158,22 @@ fn let_the_corners_go(engine: windows_sys::Win32::Foundation::HWND) {
     LAID.store(0, Ordering::Relaxed);
 }
 
-/// Says what screen the picture is about to land on and what size is
-/// being asked of the far computer, side by side.
+/// Size of the screen this window sits on, in real pixels.
 ///
-/// The one comparison that decides how sharp a session can possibly
-/// look, and it was nowhere: the size asked for is a fixed rung nobody
-/// measured against anything, so a screen with four times the pixels of
-/// that rung gets the rung stretched over it. Written in real pixels and
-/// not in the ones a page is laid out with, since a screen at a hundred
-/// and fifty per cent reports two thirds of what it draws and that
-/// difference is exactly the kind that hides a stretch.
+/// Real pixels and not the ones a page is laid out with: a screen at a
+/// hundred and fifty per cent reports two thirds of what it draws, and
+/// asking the far computer for two thirds of a screen is exactly the
+/// mistake this measurement exists to prevent.
+///
+/// The screen the window is on rather than the main one, because that is
+/// the screen the picture will be shown on.
 #[cfg(windows)]
-pub fn tell_the_screen_and_the_asking(app: &AppHandle, wide: u32, high: u32) {
+pub fn the_screen_of_this_computer(app: &AppHandle) -> Option<(u32, u32)> {
     use windows_sys::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
     };
-    use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 
-    let Some(home) = home_window(app) else {
-        return;
-    };
+    let home = home_window(app)?;
     let mut about: MONITORINFO = unsafe { std::mem::zeroed() };
     about.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
     // SAFETY: our own window, and the slot is ours with its size written
@@ -1185,23 +1181,77 @@ pub fn tell_the_screen_and_the_asking(app: &AppHandle, wide: u32, high: u32) {
     let screen = unsafe {
         let monitor = MonitorFromWindow(home, MONITOR_DEFAULTTONEAREST);
         (GetMonitorInfoW(monitor, &mut about) != 0).then_some(about.rcMonitor)
-    };
-    let Some(screen) = screen else {
-        return;
-    };
-    let (across, down) = (screen.right - screen.left, screen.bottom - screen.top);
-    // SAFETY: our own window, read only.
-    let dpi = unsafe { GetDpiForWindow(home) }.max(96);
-    crate::journal::note(&format!(
-        "écran de cet ordinateur : {across}x{down} pixels réels, agrandissement {} % ;          image demandée au loin en {wide}x{high}, soit {:.2} fois moins large          et {:.2} fois moins haute",
-        dpi * 100 / 96,
-        f64::from(across) / f64::from(wide),
-        f64::from(down) / f64::from(high),
-    ));
+    }?;
+    let across = u32::try_from(screen.right - screen.left).ok()?;
+    let down = u32::try_from(screen.bottom - screen.top).ok()?;
+    (across > 0 && down > 0).then_some((across, down))
 }
 
 #[cfg(not(windows))]
-pub fn tell_the_screen_and_the_asking(_app: &AppHandle, _wide: u32, _high: u32) {}
+pub fn the_screen_of_this_computer(_app: &AppHandle) -> Option<(u32, u32)> {
+    None
+}
+
+/// How much the system is drawing this window's page bigger than life.
+///
+/// Not used to decide anything, only to explain a measurement that
+/// surprises: a screen reported at two thirds of its size is a window
+/// that was asked the question in the wrong units, and that shows here.
+#[cfg(windows)]
+fn the_magnification(app: &AppHandle) -> u32 {
+    use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+
+    let Some(home) = home_window(app) else {
+        return 100;
+    };
+    // SAFETY: our own window, read only.
+    unsafe { GetDpiForWindow(home) }.max(96) * 100 / 96
+}
+
+#[cfg(not(windows))]
+fn the_magnification(_app: &AppHandle) -> u32 {
+    100
+}
+
+/// Says what screen the picture is about to land on, what was asked of
+/// the far computer, and which of the two decided.
+///
+/// The one comparison that decides how sharp a session can possibly
+/// look. A picture asked for smaller than the screen it lands on is
+/// stretched here, and nothing stretched puts back a pixel that was
+/// never sent, so the moment that number is settled is the moment to
+/// write it down.
+pub fn tell_what_is_asked_for(
+    app: &AppHandle,
+    screen: Option<(u32, u32)>,
+    quality: zyr_proto::session::Quality,
+    settings: &zyr_proto::session::SessionSettings,
+) {
+    let (wide, high) = (settings.width, settings.height);
+    let (most_wide, most_high) = quality.ceiling();
+    let seen = match screen {
+        Some((across, down)) => format!(
+            "écran de cet ordinateur : {across}x{down} pixels réels, agrandissement {} %",
+            the_magnification(app)
+        ),
+        None => "écran de cet ordinateur : pas mesurable, taille courante supposée".to_string(),
+    };
+    let why = match screen {
+        Some(measured) if measured == (wide, high) => {
+            "l'écran est demandé entier, un pixel envoyé pour un pixel affiché".to_string()
+        }
+        Some((across, down)) => format!(
+            "réduit sous le plafond de la qualité {quality} ({most_wide}x{most_high}) : {:.2} fois moins large et {:.2} fois moins haut que l'écran, donc autant de détail en moins",
+            f64::from(across) / f64::from(wide),
+            f64::from(down) / f64::from(high),
+        ),
+        None => format!("plafond de la qualité {quality} : {most_wide}x{most_high}"),
+    };
+    crate::journal::note(&format!(
+        "{seen} ; image demandée au loin en {wide}x{high} à {} Mb/s, {why}",
+        settings.bitrate_kbps / 1000,
+    ));
+}
 
 /// Whether the system is drawing our window with square corners.
 ///

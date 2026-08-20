@@ -33,9 +33,15 @@ pub struct Settings {
     pub bitrate_kbps: u32,
 }
 
-impl From<Preferred> for Settings {
-    fn from(preferred: Preferred) -> Self {
-        let settings = preferred.settings();
+impl Settings {
+    /// What the screen shows on a computer whose own screen is `screen`,
+    /// `None` standing for one that could not be measured.
+    ///
+    /// The size a quality comes down to is no longer the same on every
+    /// computer, so the settings screen cannot be told it once and for
+    /// all: it is told what this computer will actually ask for.
+    fn shown(preferred: Preferred, screen: Option<(u32, u32)>) -> Self {
+        let settings = preferred.settings(screen);
         Self {
             quality: preferred.quality.to_string(),
             codec: preferred.codec.to_string(),
@@ -74,8 +80,11 @@ impl Chosen {
 }
 
 #[tauri::command]
-pub async fn settings() -> Settings {
-    preferred().await.into()
+pub async fn settings(app: tauri::AppHandle) -> Settings {
+    Settings::shown(
+        preferred().await,
+        crate::picture::the_screen_of_this_computer(&app),
+    )
 }
 
 /// Changes what every session from now on looks like.
@@ -140,7 +149,7 @@ mod tests {
     fn what_the_screen_shows_and_sends_back_is_the_same_thing() {
         // Les deux formes se croisent à chaque changement : ce qui
         // s'affiche doit pouvoir être renvoyé tel quel.
-        let shown = Settings::from(chosen().understood().unwrap());
+        let shown = Settings::shown(chosen().understood().unwrap(), None);
         let returned = Chosen {
             quality: shown.quality,
             codec: shown.codec,
@@ -155,13 +164,25 @@ mod tests {
     }
 
     #[test]
-    fn the_screen_says_what_the_quality_comes_down_to() {
+    fn the_screen_says_what_the_quality_comes_down_to_here() {
         // Sans ça, la fenêtre porterait sa propre table de qualités, qui
-        // s'écarterait de celle du produit au premier changement.
-        let shown = Settings::from(Preferred::default());
+        // s'écarterait de celle du produit au premier changement. Et la
+        // table ne suffit plus : une même qualité ne demande pas la même
+        // chose sur deux écrans différents, donc c'est bien ce que cet
+        // ordinateur va demander qui doit s'afficher.
+        let shown = Settings::shown(Preferred::default(), None);
         assert_eq!((shown.width, shown.height), (1920, 1080));
         assert_eq!(shown.fps, 60);
-        assert_eq!(shown.bitrate_kbps, 20_000);
+
+        let big = Settings::shown(
+            Preferred {
+                quality: Quality::Detailed,
+                ..Preferred::default()
+            },
+            Some((3840, 2160)),
+        );
+        assert_eq!((big.width, big.height), (3840, 2160));
+        assert!(big.bitrate_kbps > shown.bitrate_kbps);
     }
 
     #[test]

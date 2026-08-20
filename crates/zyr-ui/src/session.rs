@@ -135,14 +135,19 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         preferred.display_mode == zyr_proto::session::DisplayMode::Fullscreen,
     );
 
+    // Measured after the window has taken its place and not before: the
+    // screen that counts is the one the picture will be shown on, and
+    // that is only settled once the window has moved.
+    let screen = crate::picture::the_screen_of_this_computer(&app);
     let wanted = Wanted {
         host: host.trim().to_string(),
         peer: Some(peer),
         // Read at the last moment rather than held: the settings screen
         // may have changed them since this window opened.
-        settings: preferred.settings(),
+        settings: preferred.settings(screen),
         pair_again: false,
     };
+    crate::picture::tell_what_is_asked_for(&app, screen, preferred.quality, &wanted.settings);
 
     // On a thread of its own, and not one of the interface's: the
     // opening blocks for as long as a pairing takes, which is as long as
@@ -153,11 +158,6 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
 
 fn drive(app: &AppHandle, wanted: Wanted) {
     crate::journal::note(&format!("session demandée vers {}", wanted.host));
-    crate::picture::tell_the_screen_and_the_asking(
-        app,
-        wanted.settings.width,
-        wanted.settings.height,
-    );
     let towards = wanted.host.clone();
     let running = match zyr_session::open(&wanted, &mut |step| {
         crate::journal::note(&written(&step));
