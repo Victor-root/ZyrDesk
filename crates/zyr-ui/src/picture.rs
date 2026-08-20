@@ -1755,6 +1755,10 @@ struct Growing {
     /// window belonging to another program being told to take a new
     /// size, and that program answers when it can.
     picture: std::time::Duration,
+    /// And what the rest of the machinery cost: our own window carried
+    /// by the toolkit, and the web view under the picture being told to
+    /// take the new size although the picture hides it whole.
+    system: std::time::Duration,
     /// The longest gap between two steps, which is a different fault: a
     /// step that costs nothing but arrives late means the thread was
     /// busy elsewhere and the timer had to wait its turn.
@@ -1893,6 +1897,7 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
             slowest: std::time::Duration::ZERO,
             slowest_at: 0,
             picture: std::time::Duration::ZERO,
+            system: std::time::Duration::ZERO,
             latest: std::time::Duration::ZERO,
         });
     });
@@ -2133,7 +2138,8 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         // whether the fault is not in the steps at all.
         crate::journal::note(&format!(
             "{} joué en {:.0} ms, {} pas, plus grand pas {} px ; \
-             pas le plus long {:.1} ms au pas {} sur {} (dont image {:.1} ms), \
+             pas le plus long {:.1} ms au pas {} sur {} \
+             (dont image {:.1} ms et système avec vue web {:.1} ms), \
              plus longue attente entre deux pas {:.1} ms",
             if played.then == SC_MAXIMIZE as usize {
                 "agrandissement"
@@ -2147,6 +2153,7 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
             played.slowest_at,
             played.steps,
             played.picture.as_secs_f64() * 1000.0,
+            played.system.as_secs_f64() * 1000.0,
             played.latest.as_secs_f64() * 1000.0,
         ));
     }
@@ -2407,37 +2414,37 @@ unsafe extern "system" fn lit(
             draw_the_bar(window);
             0
         }
-        // A window about to take a new size, while a hand is on an edge:
-        // the system says what it is about to apply and takes back
-        // whatever is written there, before anything moves. Holding the
-        // shape here is what costs nothing: corrected afterwards, every
-        // step of a drag resized the window twice.
+        // A window about to take a new size: the system says what it is
+        // about to apply and takes back whatever is written there, before
+        // anything moves.
         //
         // This message and not the sizing one of the drag loop, which was
         // answered here before and never arrived: the journal counted the
         // steps of a drag through this message's own echo while the shape
         // ran free. Every change of size becomes real by passing through
-        // here, whoever asked for it, so here is where the shape holds.
-        WM_WINDOWPOSCHANGING if DRAGGED.load(Ordering::Relaxed) => {
+        // here, whoever asked for it, so here is where both a hand and an
+        // order are caught.
+        WM_WINDOWPOSCHANGING if on_the_move() => {
             // SAFETY: for this message the system passes a WINDOWPOS of
             // ours to read and amend, and it lives for the length of the
             // call.
             let wanted = unsafe { &mut *(lparam as *mut WINDOWPOS) };
-            the_drag_keeps_the_shape(window, wanted);
-            // The picture goes first, onto the inside our window is about
-            // to have, and our window follows inside this same message.
-            //
-            // The order matters and it is the whole of this fix. Moving
-            // our window costs nothing: it is ours, on this thread.
-            // Moving the picture costs a wait on another program, a
-            // millisecond or so. Done in that order, that millisecond is
-            // a millisecond in which the frame has moved and the picture
-            // has not, and the compositor draws what it finds: a strip of
-            // the page along the edge the window is heading for. Done the
-            // other way about, the wait falls before anything has moved
-            // and what is left afterwards is too short to be caught.
+            // Only a hand has a shape to hold. A window being carried
+            // towards what a maximise asks for is going to the size of a
+            // screen, and the picture's own proportions have nothing to
+            // say about it. Holding the shape here is what costs nothing:
+            // corrected afterwards, every step of a drag resized the
+            // window twice.
+            if DRAGGED.load(Ordering::Relaxed) {
+                the_drag_keeps_the_shape(window, wanted);
+            }
+            // The picture takes its new size here, before our window
+            // takes its own, but only when that leaves it the bigger of
+            // the two; see `the_picture_leads`. Shrinking, it stays
+            // where it is and follows once the window has moved.
             if let Some(engine) = the_engines_window()
                 && let Some((corner, width, height)) = the_inside_after(window, wanted)
+                && the_picture_leads(window, (width, height))
             {
                 lay_on(window, engine, corner, width, height);
             }
@@ -2510,6 +2517,13 @@ unsafe extern "system" fn lit(
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
             if DRAGGED.load(Ordering::Relaxed) {
                 Cost::add(&SYSTEM, waited.elapsed());
+            } else if GROWS.load(Ordering::Relaxed) {
+                let waited = waited.elapsed();
+                GROWING.with_borrow_mut(|growing| {
+                    if let Some(growing) = growing.as_mut() {
+                        growing.system = growing.system.max(waited);
+                    }
+                });
             }
             if let Some(engine) = the_engines_window() {
                 lay_it_out(window, engine);
@@ -2519,6 +2533,37 @@ unsafe extern "system" fn lit(
         // SAFETY: same.
         _ => unsafe { DefSubclassProc(window, message, wparam, lparam) },
     }
+}
+
+/// Whether the picture should take a new size before our window takes
+/// its own, or after it.
+///
+/// The two are two windows and two transactions, however tightly the
+/// calls are written together, and the compositor draws whatever is
+/// standing when it wakes. For a few milliseconds, which is what waiting
+/// on the player costs, the two disagree, and there are only ever two
+/// ways they can: either the picture is the bigger of the two and hangs
+/// a little over the frame, or the frame is, and a strip of the page
+/// behind the picture shows inside the window.
+///
+/// The first is barely visible. The second is a bright band where the
+/// far computer's screen ought to be, and it is what maximising was
+/// showing on the laptop, one band per step along the two edges that
+/// lead. Restoring was reported as smooth in the very same breath,
+/// which is the same gap falling on its harmless side.
+///
+/// So the rule is not an order but a size: the picture is never the
+/// smaller of the two. Growing, it goes first and overhangs; shrinking,
+/// it waits and overhangs. Reversing the order outright would only walk
+/// the band from one half of the gesture to the other, which is what
+/// three reorderings proved during the work on dragging.
+///
+/// A hand shows none of this because a hand moves an edge a pixel or two
+/// at a time, so the band is a pixel or two wide. A move played by an
+/// order covers a couple of hundred pixels per step, and so is the band.
+#[cfg(windows)]
+fn the_picture_leads(home: windows_sys::Win32::Foundation::HWND, after: (i32, i32)) -> bool {
+    the_inside_of(home).is_none_or(|(_, width, height)| after.0 > width || after.1 > height)
 }
 
 /// Where our window's inside will be once that proposal is applied.

@@ -515,12 +515,18 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > 2. **La fenêtre revient là où elle était.** La mettre à une taille bien reconnaissable dans un coin de l'écran, agrandir, redescendre : elle retombe exactement au même endroit, trois ou quatre fois de suite. Chaque pas du mouvement ressemble, pour Windows, à une main qui déplace la fenêtre, et il écrivait chacun d'eux comme étant sa vraie place ; celle d'avant le premier pas est remise à la fin.
 > 3. **Les coins et le liseré reviennent.** Redescendue, la fenêtre retrouve ses **coins arrondis** et le liseré de couleur tout autour, celui de Windows 11. Portée pendant que le système la comptait comme étalée sur l'écran, elle en gardait le cadre : coins droits et pas de liseré, ce qui est juste pour une fenêtre qui remplit un écran et faux pour celle qui vient d'en redescendre. Laissé au système, cet arrondi se déduit de ce qu'il croit de la fenêtre, et porter une fenêtre à la main brouille cette déduction : il lui est donc dit franchement, arrondi en fenêtre et droit quand elle remplit l'écran, ce qui est sa propre règle.
 >
-> **Si le mouvement s'arrête en route puis repart**, sur une machine modeste notamment, c'est ce que la ligne du journal sert à expliquer et il ne faut pas la deviner : la lire, telle quelle, et la recopier.
+> **Les deux moitiés du geste doivent se ressembler.** Agrandir et redescendre, c'est le même mouvement joué dans les deux sens : si l'un des deux est visiblement plus sale que l'autre, ce n'est pas la machine qui est lente, c'est un défaut qui ne se voit que d'un côté. Le dire dans ces termes, « agrandir accroche, niveau inférieur non », vaut mieux que « ça rame ».
+>
+> Ce qui les départage est un intervalle de quelques millisecondes, à chaque cran, pendant lequel le cadre et l'image ne sont pas encore d'accord sur la taille. Ce sont deux fenêtres, donc deux demandes, et le compositeur dessine ce qui est debout quand il se réveille. Il n'y a que deux façons dont elles peuvent être en désaccord : **l'image dépasse un peu du cadre**, ce qui ne se voit presque pas, ou **le cadre dépasse de l'image**, et là une bande de la page derrière apparaît là où devrait être l'écran distant. Inverser l'ordre des deux demandes ne fait que promener la bande d'une moitié du geste à l'autre ; la règle tenue est donc une règle de taille et pas d'ordre : **l'image n'est jamais la plus petite des deux**. Elle grandit avant le cadre, et elle rétrécit après lui.
+>
+> Une main ne montre rien de tout ça parce qu'elle déplace un bord d'un ou deux pixels à la fois, donc la bande fait un ou deux pixels. Un mouvement joué couvre deux cents pixels par cran, et la bande aussi.
+>
+> **Si le mouvement s'arrête en route puis repart**, c'est ce que la ligne du journal sert à expliquer et il ne faut pas la deviner : la lire, telle quelle, et la recopier.
 >
 > **Le journal chiffre le geste.** Une ligne est écrite à chaque fois :
 >
 > ```
-> agrandissement joué en 227 ms, 9 pas, plus grand pas 185 px ; pas le plus long 62.0 ms au pas 5 sur 9 (dont image 58.1 ms), plus longue attente entre deux pas 18.0 ms
+> agrandissement joué en 209 ms, 11 pas, plus grand pas 171 px ; pas le plus long 27.1 ms au pas 11 sur 11 (dont image 12.0 ms et système avec vue web 8.3 ms), plus longue attente entre deux pas 29.4 ms
 > ```
 >
 > et `retour en fenêtre joué en ...` dans l'autre sens, suivie de `fenêtre agrandie` ou `fenêtre en fenêtre après le mouvement`, qui dit dans quel état la fenêtre a réellement fini. Deux cents millisecondes environ est ce qui est visé, en une quinzaine de pas.
@@ -528,9 +534,10 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Chaque nombre répond à une question, et une seule :
 >
 > 1. **Le plus grand pas**, en pixels : quelques dizaines est un mouvement porté, plusieurs centaines est un saut.
-> 2. **Le pas le plus long**, en millisecondes, et **à quel pas** il est tombé. Une image dessinée dure seize millisecondes ; un pas qui en coûte trois ou quatre fois plus est une pause que l'œil voit. Le rang dit le reste : le même rang à chaque essai, c'est un coût qui revient toujours au même endroit du mouvement, un rang qui se promène, c'est la machine qui était occupée ailleurs.
-> 3. **Dont image** : la part de ce pas passée à attendre le lecteur, qui appartient à un autre programme et répond quand il peut. Presque tout le pas, c'est lui ; presque rien, c'est notre propre fenêtre, sa page web dessous, ou le système.
-> 4. **La plus longue attente entre deux pas** : celle-là ne mesure pas un pas mais le temps perdu avant lui. Grande alors que les pas sont courts, le mouvement n'a rien coûté du tout et c'est le tour de parole qui a tardé, donc quelque chose d'autre occupait le fil.
+> 2. **Le pas le plus long**, en millisecondes, et **à quel pas** il est tombé. Une image dessinée dure seize millisecondes ; un pas qui coûte davantage fait manquer le battement suivant, et le mouvement se joue alors à cinquante images par seconde au lieu de soixante, irrégulièrement. Le rang dit le reste : le même rang à chaque essai, c'est un coût qui revient toujours au même endroit du mouvement ; un rang qui se promène, c'est que tous les pas coûtent à peu près pareil et qu'aucun n'est fautif en particulier.
+> 3. **Dont image** : la part de ce pas passée à attendre le lecteur, qui appartient à un autre programme et répond quand il peut. Grandir lui coûte à peu près le double de rétrécir, parce qu'agrandir veut dire lui faire allouer de plus grandes surfaces sur une carte graphique qui n'en a pas beaucoup.
+> 4. **Et système avec vue web** : tout le reste du cran, c'est-à-dire notre propre fenêtre portée par la boîte à outils et la page web sous l'image à qui l'on redit sa taille, alors que l'image la cache entièrement pendant toute la session. Si ce nombre est le gros du cran, c'est de ce côté qu'il faut creuser et pas du côté du lecteur.
+> 5. **La plus longue attente entre deux pas** : celle-là ne mesure pas un pas mais le temps écoulé avant lui. Comparée au pas le plus long, elle tranche : à peu près égale, c'est le cran lui-même qui a coûté et le battement suivant a été manqué à cause de lui ; bien plus grande, le mouvement n'a rien coûté du tout et c'est le tour de parole qui a tardé, donc quelque chose d'autre occupait le fil.
 
 > **S9quinquies (Alt+Tab montre la session, pas l'écran d'accueil)**
 >
