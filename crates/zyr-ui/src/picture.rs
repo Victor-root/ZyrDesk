@@ -435,12 +435,7 @@ fn lay_it_out(
     home: windows_sys::Win32::Foundation::HWND,
     engine: windows_sys::Win32::Foundation::HWND,
 ) {
-    use windows_sys::Win32::Foundation::{POINT, RECT};
-    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_NOACTIVATE, SWP_NOCOPYBITS,
-        SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
 
     // Nothing to lay the picture on. Minimised, our window has no inside
     // left: laying it there would squeeze the picture to nothing and ask
@@ -455,6 +450,19 @@ fn lay_it_out(
     if unsafe { IsIconic(home) } != 0 || unsafe { IsWindowVisible(home) } == 0 {
         return;
     }
+    let Some((corner, width, height)) = the_inside_of(home) else {
+        return;
+    };
+    lay_on(home, engine, corner, width, height);
+}
+
+/// Where our window's inside is on the screen, and how big it is.
+#[cfg(windows)]
+fn the_inside_of(home: windows_sys::Win32::Foundation::HWND) -> Option<((i32, i32), i32, i32)> {
+    use windows_sys::Win32::Foundation::{POINT, RECT};
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect;
+
     let mut inside = RECT {
         left: 0,
         top: 0,
@@ -464,13 +472,33 @@ fn lay_it_out(
     let mut corner = POINT { x: 0, y: 0 };
     // SAFETY: the window exists and both slots are ours.
     if unsafe { GetClientRect(home, &mut inside) } == 0 {
-        return;
+        return None;
     }
     // SAFETY: same window, and the point is ours; it goes in as a
     // position inside the window and comes back as one on the screen.
     unsafe { ClientToScreen(home, &mut corner) };
+    Some((
+        (corner.x, corner.y),
+        inside.right - inside.left,
+        inside.bottom - inside.top,
+    ))
+}
 
-    let (width, height) = (inside.right - inside.left, inside.bottom - inside.top);
+/// Lays the picture on that inside, wherever our window is about to put
+/// it.
+#[cfg(windows)]
+fn lay_on(
+    home: windows_sys::Win32::Foundation::HWND,
+    engine: windows_sys::Win32::Foundation::HWND,
+    corner: (i32, i32),
+    width: i32,
+    height: i32,
+) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HWND_TOP, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+        SetWindowPos,
+    };
+
     // What is counted, and what is put off until the window settles, are
     // two different questions: a drag is counted and told at the end,
     // while both a drag and an order being played put off the shape.
@@ -483,6 +511,7 @@ fn lay_it_out(
     let stands = where_it_stands(engine);
     let same_size = stands
         .is_some_and(|(left, top, right, bottom)| (right - left, bottom - top) == (width, height));
+    let same_place = stands.is_some_and(|(left, top, ..)| (left, top) == corner);
 
     let started = std::time::Instant::now();
     // SAFETY: the engine's window is one we have already taken in hand.
@@ -513,17 +542,26 @@ fn lay_it_out(
     } else {
         SWP_NOCOPYBITS
     };
-    unsafe {
-        SetWindowPos(
-            engine,
-            HWND_TOP,
-            corner.x,
-            corner.y,
-            width,
-            height,
-            SWP_NOACTIVATE | SWP_SHOWWINDOW | moved_only,
-        )
-    };
+    let stays = if same_place { SWP_NOMOVE } else { 0 };
+    // Already exactly there: asking again costs a wait on another
+    // program for nothing. The window it belongs to is only ever put
+    // right once per move now, before ours moves, so the laying that
+    // follows the move has nothing left to do.
+    if !(same_size && same_place) {
+        // SAFETY: the engine's window is one we have already taken in
+        // hand.
+        unsafe {
+            SetWindowPos(
+                engine,
+                HWND_TOP,
+                corner.0,
+                corner.1,
+                width,
+                height,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW | moved_only | stays,
+            )
+        };
+    }
     let laid = started.elapsed();
     // Laying the picture is meant to happen inside the very frame our
     // own window changes in, which is what makes the two look like one.
@@ -543,8 +581,8 @@ fn lay_it_out(
         say_the_size_again(engine, (width, height));
     }
     tell_the_gap(
-        stands,
-        (corner.x, corner.y, corner.x + width, corner.y + height),
+        where_it_stands(engine),
+        (corner.0, corner.1, corner.0 + width, corner.1 + height),
     );
 
     // Not while the window is moving. Giving a window a shape costs a
@@ -558,7 +596,7 @@ fn lay_it_out(
     let shaped = shaped.elapsed();
 
     let buttoned = std::time::Instant::now();
-    crate::floating::lay_the_button((corner.x, corner.y, corner.x + width, corner.y + height));
+    crate::floating::lay_the_button((corner.0, corner.1, corner.0 + width, corner.1 + height));
     let buttoned = buttoned.elapsed();
 
     if dragged {
@@ -2165,6 +2203,23 @@ unsafe extern "system" fn lit(
             // call.
             let wanted = unsafe { &mut *(lparam as *mut WINDOWPOS) };
             the_drag_keeps_the_shape(window, wanted);
+            // The picture goes first, onto the inside our window is about
+            // to have, and our window follows inside this same message.
+            //
+            // The order matters and it is the whole of this fix. Moving
+            // our window costs nothing: it is ours, on this thread.
+            // Moving the picture costs a wait on another program, a
+            // millisecond or so. Done in that order, that millisecond is
+            // a millisecond in which the frame has moved and the picture
+            // has not, and the compositor draws what it finds: a strip of
+            // the page along the edge the window is heading for. Done the
+            // other way about, the wait falls before anything has moved
+            // and what is left afterwards is too short to be caught.
+            if let Some(engine) = the_engines_window()
+                && let Some((corner, width, height)) = the_inside_after(window, wanted)
+            {
+                lay_on(window, engine, corner, width, height);
+            }
             // Handed on: what was written only becomes the window's size
             // in the system's own handling of this message.
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
@@ -2234,6 +2289,38 @@ unsafe extern "system" fn lit(
         // SAFETY: same.
         _ => unsafe { DefSubclassProc(window, message, wparam, lparam) },
     }
+}
+
+/// Where our window's inside will be once that proposal is applied.
+///
+/// Worked out from the proposal and from what separates our window's
+/// edges from its inside, which a move does not change and a resize does
+/// not change either: the bands and the title bar are the same whatever
+/// size the window is.
+#[cfg(windows)]
+fn the_inside_after(
+    home: windows_sys::Win32::Foundation::HWND,
+    wanted: &windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPOS,
+) -> Option<((i32, i32), i32, i32)> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOMOVE, SWP_NOSIZE};
+
+    let (left, top, right, bottom) = where_it_stands(home)?;
+    let (corner, width, height) = the_inside_of(home)?;
+    let (x, y) = if wanted.flags & SWP_NOMOVE != 0 {
+        (left, top)
+    } else {
+        (wanted.x, wanted.y)
+    };
+    let (cx, cy) = if wanted.flags & SWP_NOSIZE != 0 {
+        (right - left, bottom - top)
+    } else {
+        (wanted.cx, wanted.cy)
+    };
+    Some((
+        (x + (corner.0 - left), y + (corner.1 - top)),
+        cx - ((right - left) - width),
+        cy - ((bottom - top) - height),
+    ))
 }
 
 /// Holds the size a drag is about to apply to the shape of the picture.
