@@ -103,14 +103,15 @@ fn remember_the_shape(engine: isize, shape: (i32, i32), process: u32) {
     // shape, whatever size this one was left at.
     LAID.store(0, Ordering::Relaxed);
     SQUARED.store(false, Ordering::Relaxed);
-    // A session can end with a hand still on an edge, or in the middle
-    // of a window being carried to its new size, and nothing else would
-    // ever put these down: left standing, they silently switch off
-    // holding the window to the picture's shape for the rest of the
-    // program's life.
+    // A session can end with a hand still on an edge, or with the
+    // picture still held inside our window, and a player that dies
+    // outright goes through none of the tidying up: left standing, these
+    // silently switch off holding the window to the picture's shape for
+    // the rest of the program's life. The style kept beside the second
+    // one belonged to a window that is gone, so there is nothing to give
+    // back and only the latch to put down.
     DRAGGED.store(false, Ordering::Relaxed);
-    #[cfg(windows)]
-    GROWS.store(false, Ordering::Relaxed);
+    CARRIED.store(0, Ordering::Relaxed);
     SHAPE.store(
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
@@ -499,26 +500,44 @@ fn lay_on(
         SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
     };
 
-    // Carried as our window's own child for the length of a move, the
-    // picture has no place of its own to be put at: it travels with the
-    // window, which is the point. The button still follows, and is still
-    // counted, so the line at the end of the gesture is still written.
+    // Carried as our window's own child, the picture has no place of its
+    // own to be put at: it is drawn wherever its parent is, which is the
+    // point of carrying it. Only its size still has to follow, and only
+    // when our inside really changes size, which a carry across the desk
+    // never does and an order to maximise does exactly once.
     if CARRIED.load(Ordering::Relaxed) != 0 {
+        let started = std::time::Instant::now();
+        let same_size = where_it_stands(engine).is_some_and(|(left, top, right, bottom)| {
+            (right - left, bottom - top) == (width, height)
+        });
+        if !same_size {
+            // SAFETY: a window this program took in hand, put over the
+            // whole of its parent's inside, above the web view.
+            unsafe { SetWindowPos(engine, HWND_TOP, 0, 0, width, height, SWP_NOACTIVATE) };
+            HOLDING.with_borrow_mut(|holding| {
+                if let Some(holding) = holding.as_mut() {
+                    holding.laid += 1;
+                }
+            });
+        }
+        let laid = started.elapsed();
         let buttoned = std::time::Instant::now();
         crate::floating::lay_the_button((corner.0, corner.1, corner.0 + width, corner.1 + height));
         if DRAGGED.load(Ordering::Relaxed) {
-            let took = buttoned.elapsed();
-            Cost::add(&LAYING, took);
-            Cost::add(&BUTTON, took);
+            let buttoned = buttoned.elapsed();
+            Cost::add(&LAYING, laid + buttoned);
+            Cost::add(&PICTURE, laid);
+            Cost::add(&BUTTON, buttoned);
         }
         return;
     }
 
     // What is counted, and what is put off until the window settles, are
-    // two different questions: a drag is counted and told at the end,
-    // while both a drag and an order being played put off the shape.
+    // two different questions, and outside a carry only a hand answers
+    // either: a drag is counted and told in one line at the end, and a
+    // drag is what puts off the shape.
     let dragged = DRAGGED.load(Ordering::Relaxed);
-    let moving = on_the_move();
+    let moving = dragged;
 
     // What the picture already is. A window carried across the desk
     // keeps its size the whole way, and asking for a size it already has
@@ -593,17 +612,6 @@ fn lay_on(
         };
     }
     let laid = started.elapsed();
-    // A move played by an order runs through here too, one step at a
-    // time, and what a step waits on is this very call. Kept with the
-    // move rather than counted with a drag: the two never overlap, but
-    // they are told in two different lines and each says its own cost.
-    if GROWS.load(Ordering::Relaxed) {
-        GROWING.with_borrow_mut(|growing| {
-            if let Some(growing) = growing.as_mut() {
-                growing.this_picture = growing.this_picture.max(laid);
-            }
-        });
-    }
     // Laying the picture is meant to happen inside the very frame our
     // own window changes in, which is what makes the two look like one.
     // Longer than a frame and they are seen apart, and the wait is not
@@ -1137,6 +1145,14 @@ fn give_the_window_back(app: &AppHandle) {
         let Some(home) = home_window(&asked) else {
             return;
         };
+        // Before the handler comes off, and not after: a session can end
+        // in the middle of a gesture, with the picture still held inside
+        // our window and a timer due to let go of it. Taken off first,
+        // that timer would ring into a window that no longer listens,
+        // and the picture would stay a child of ours for good, which
+        // silently switches off everything that asks whether the window
+        // is in the middle of a gesture.
+        let_the_picture_go(home);
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
@@ -1158,23 +1174,6 @@ fn give_the_window_back(app: &AppHandle) {
 /// answer is the true one, and it costs a redraw of a title bar.
 #[cfg(windows)]
 const BAR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
-
-/// Message our window sends itself to carry a played move one step
-/// further; see `grow_a_step`.
-///
-/// A message and not a timer. A timer is answered on the system's own
-/// tick, which is about fifteen and a half milliseconds and has nothing
-/// to do with the screen: a screen draws every sixteen and two thirds.
-/// Two clocks that close, running side by side, beat against each other
-/// with a period of about a quarter of a second, which is the length of
-/// the whole move. So for one half of the gesture the steps landed just
-/// before a drawn frame and for the other half just after, and where
-/// the two crossed, one frame was drawn twice and the move stumbled.
-/// Once, in the middle, every time, which is exactly what was reported
-/// and what none of the numbers could show: every step was on time,
-/// against the wrong clock.
-#[cfg(windows)]
-const STEP: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
 
 /// Has the title bar drawn the way the front stands right now.
 ///
@@ -1624,6 +1623,22 @@ unsafe fn plain_surface(
 /// a child costs nothing.
 static CARRIED: AtomicIsize = AtomicIsize::new(0);
 
+/// Whether the window is in the middle of a gesture, by a hand or by an
+/// order.
+///
+/// Both mean the same thing to everything that tidies up after a resize:
+/// wait. Holding the window to the picture's shape fights whatever is
+/// moving it, and the two answers to « is it moving » are a hand on it
+/// and the picture being held inside it, which is what both gestures do
+/// and nothing else does.
+///
+/// Read from other threads, which is why it is these two and not
+/// something kept beside the handler: what a moving window must not have
+/// done to it is decided in places that handler does not run.
+fn on_the_move() -> bool {
+    DRAGGED.load(Ordering::Relaxed) || CARRIED.load(Ordering::Relaxed) != 0
+}
+
 /// Takes the picture in as a child of our window, so a move carries
 /// both as one; see `CARRIED`.
 #[cfg(windows)]
@@ -1723,266 +1738,184 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
     }
 }
 
-/* ---- Agrandir et réduire, en portant l'image avec ------------------- */
+/* ---- Agrandir et réduire, en laissant le système jouer -------------- */
 
-/// A window on its way to a rectangle, and what to tell the system once
-/// it is there.
+/// How long the picture stays inside our window after an order to
+/// maximise or come back down.
+///
+/// The system plays that move itself and does not say when it has
+/// finished, and how long it takes is written nowhere. So this is a
+/// margin over it rather than a measurement of it, and the margin is
+/// free: a picture held a little too long is drawn exactly where it
+/// belongs, since it is drawn wherever its parent is, while one let go
+/// too early takes its own place on the screen at once and shows the
+/// far computer's screen jump to full size with the frame catching up
+/// behind it. That jump is the whole reason any of this exists, so the
+/// two mistakes are not worth the same and this errs on the safe side.
 #[cfg(windows)]
-struct Growing {
-    /// Where the window stood when the order was given, read once.
-    ///
-    /// Every step is worked out from here and from the clock, and never
-    /// from where the window has got to: the path is then a curve of its
-    /// own, sampled as often as the machine can manage, and a step the
-    /// system trims or refuses cannot bend the rest of it.
-    from: (i32, i32, i32, i32),
-    to: (i32, i32, i32, i32),
-    /// Where our own steps stop, which is a handful of pixels short of
-    /// where the order leads; see `HANDS_OVER`.
-    stops_at: (i32, i32, i32, i32),
-    began: std::time::Instant,
-    /// When the window was last carried a little further, which is what
-    /// tells whether a step arrived late.
-    moved: std::time::Instant,
-    /// The order the person gave, held back until the move is played.
+const THE_SYSTEMS_MOVE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Name the timer that ends the hold answers to.
+#[cfg(windows)]
+const LET_GO: usize = 2;
+
+/// An order handed to the system, and what the journal will say about it
+/// once the picture has been let go of.
+#[cfg(windows)]
+struct Holding {
+    /// The order, so the line can name it.
     then: usize,
-    /// Where the window sits when it is not spread over the screen, read
-    /// before anything moved it.
+    /// When it was handed over.
+    began: std::time::Instant,
+    /// Where the window stood before it.
+    from: (i32, i32, i32, i32),
+    /// How many times the picture was given a new size while held.
     ///
-    /// Kept because carrying the window is the same thing, to the
-    /// system, as a person dragging it somewhere: each step of the move
-    /// wrote itself down as the window's own place. Maximising therefore
-    /// ended with « its own place » being the whole screen, and coming
-    /// back down came back to almost nothing. It is written back at the
-    /// end, exactly as it was read.
-    placed: windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT,
-    /// How wide each step of the move turned out to be, in pixels.
-    ///
-    /// The whole shape of the gesture in one row of numbers, and the one
-    /// reading that settles what an eye can only call « it does not run
-    /// smoothly ». A row that starts at two hundred and ends at two is a
-    /// move that is over before it has begun and then creeps; an even
-    /// row is a move that is played.
-    strides: Vec<i32>,
-    /// The longest a single step took, from the window being asked to
-    /// move to the system coming back, and which step that was.
-    ///
-    /// Counted because a move that stops halfway and starts again has
-    /// exactly two possible causes and they are told apart here. What a
-    /// step costs was only ever counted under a hand, and a move played
-    /// by an order goes through none of that: the one gesture that was
-    /// reported as jerky was the one nothing measured.
-    ///
-    /// Which step it was answers the rest of the report on its own. « It
-    /// always stops in the same place » is either true, and the same
-    /// step is slow every time, or it is not, and the slow one wanders.
-    slowest: std::time::Duration,
-    slowest_at: usize,
-    /// What waiting on the player cost **on that same step**, the
-    /// player's window belonging to another program which answers when
-    /// it can.
-    ///
-    /// On that same step and not the worst anywhere in the move, which
-    /// is what these two were at first and which made them useless for
-    /// the one thing they are for. Three separate worsts cannot be
-    /// taken from one another: the slowest step said twenty-five
-    /// milliseconds while the two shares said four and four, and what
-    /// the missing seventeen were spent on could not be answered,
-    /// because the four and the four had happened on other steps
-    /// entirely. Read off the slowest step itself, the three numbers
-    /// add up and the remainder is a real quantity.
-    picture: std::time::Duration,
-    /// And what the rest of the machinery cost on that same step: our
-    /// own window carried by the toolkit, and the web view under the
-    /// picture being told to take the new size although the picture
-    /// hides it whole.
-    system: std::time::Duration,
-    /// The two above for the step being played right now, which become
-    /// the two above if this step turns out to be the slowest.
-    this_picture: std::time::Duration,
-    this_system: std::time::Duration,
-    /// How long each step waited for its turn, in milliseconds.
-    ///
-    /// The pacing, written out beside the shape. A screen draws every
-    /// sixteen and two thirds milliseconds, so a row of sixteens and
-    /// seventeens is a move landing on every drawn frame; a thirty-three
-    /// in the middle of it is a frame the move missed, which is the one
-    /// thing an eye calls a stumble and no average can show.
-    beats: Vec<u32>,
+    /// One is the whole point. The window changes size once, the
+    /// picture inside it changes size once, and the compositor stretches
+    /// the pair of them from the old rectangle to the new one on its own
+    /// clock. Anything above one means something is still resizing
+    /// things frame by frame, which is exactly what this replaced.
+    laid: u32,
 }
 
 // Only ever touched from the thread that owns the window, inside its own
-// message handler: no lock, and nothing another thread could be holding.
+// message handler.
 #[cfg(windows)]
 thread_local! {
-    static GROWING: std::cell::RefCell<Option<Growing>> =
+    static HOLDING: std::cell::RefCell<Option<Holding>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// Whether the window is being carried from one rectangle to another
-/// right now.
+/// Hands « agrandir » or « niveau inférieur » to the system, with the
+/// picture tucked inside our window so that the two are one thing while
+/// the system plays it.
 ///
-/// Read from other threads, which is why it is not in the cell above:
-/// what a moving window must not have done to it is decided in places
-/// this handler does not run.
-#[cfg(windows)]
-static GROWS: AtomicBool = AtomicBool::new(false);
-
-/// Whether the window is on the move, by a hand or by an order.
+/// The system animates this, and animates it far better than anything
+/// done by hand here: it holds what the window looks like, stretches
+/// that towards the new rectangle on the compositor, at the screen's own
+/// rate, and shows what is really there at the end. The window itself
+/// changes size once.
 ///
-/// Both mean the same thing to everything that tidies up after a resize:
-/// wait. Rounding the picture's corners costs a shape built and a window
-/// redrawn, and putting the window back on the picture's shape fights
-/// whatever is moving it.
-fn on_the_move() -> bool {
-    #[cfg(windows)]
-    let grows = GROWS.load(Ordering::Relaxed);
-    #[cfg(not(windows))]
-    let grows = false;
-    DRAGGED.load(Ordering::Relaxed) || grows
-}
-
-/// How long a move takes, from the order to the window standing still.
+/// Played by hand instead, the same move meant changing the window's
+/// size at every drawn frame, and each of those made the system throw
+/// away the surface it draws that window into and allocate a bigger one,
+/// nine megabytes of it once the window covers a screen, and redraw the
+/// whole frame around it. The journal put three quarters of the cost of
+/// a step there, on a chip with a hundred and twenty-eight megabytes to
+/// itself, and the move could not hold sixty frames a second because of
+/// it. Every step of that, and the curve, and the clock it was read off,
+/// and the last pixels handed back to the system, existed only to work
+/// around a move nobody had to play.
 ///
-/// A fifth of a second, which is about what every other window on the
-/// machine takes.
-const LASTS: std::time::Duration = std::time::Duration::from_millis(200);
-
-/// How many pixels of the move are left for the system's own order to
-/// travel, on each edge that moves.
+/// What stopped us handing it over in the first place is that the system
+/// animates one window, and the picture is a window of its own: it took
+/// its new size at once and the frame caught up behind it, which is the
+/// two windows this whole file exists to hide. That is no longer true.
+/// The picture goes in as a child of our window first, and a child has
+/// no place of its own on the screen: it is drawn inside its parent's
+/// own composition, so what the compositor stretches is the pair.
 ///
-/// Not a rounding and not an accident. The compositor works a window's
-/// frame out again when the window moves, and only then. Landed exactly
-/// on the mark by our own steps, the order handed over afterwards moves
-/// nothing at all, and a window that has just come back down from
-/// filling a screen keeps that screen's frame: square corners, no
-/// border, until the next time a hand moves it. That was a real defect
-/// and it took several turns to find; the handful of pixels that fixed
-/// it used to fall out of « near enough counts as arrived », so a curve
-/// that lands exactly would have quietly brought it back. It is asked
-/// for outright instead.
-///
-/// Eight pixels is one small step, under the eye, and unmistakably a
-/// move.
-const HANDS_OVER: i32 = 8;
-
-/// The rectangle our own steps stop at, on the way from one to the
-/// other: the far one, pulled back towards the near one by the handful
-/// of pixels the system's order is left to travel; see `HANDS_OVER`.
-///
-/// An edge that hardly moves, or does not move at all, is left where it
-/// belongs rather than pulled back past its own starting point.
-fn stopping_short(from: (i32, i32, i32, i32), to: (i32, i32, i32, i32)) -> (i32, i32, i32, i32) {
-    let back =
-        |near: i32, far: i32| far - (far - near).signum() * HANDS_OVER.min((far - near).abs());
-    (
-        back(from.0, to.0),
-        back(from.1, to.1),
-        back(from.2, to.2),
-        back(from.3, to.3),
-    )
-}
-
-/// Starts carrying the window towards what that order asks for, instead
-/// of letting the system jump it there.
-///
-/// The system does animate this, and animates it well; what it cannot do
-/// is animate two windows as one. It holds the window's own drawing,
-/// stretches it towards the new rectangle over about a fifth of a second
-/// and only then shows what is really there. The picture is a window of
-/// its own and is left out of that: it took its new size at once, so
-/// maximising showed the far computer's screen jump to full size and the
-/// frame catch up behind it, which is the two windows this whole file
-/// exists to hide.
-///
-/// So the move is played here instead, one step per drawn frame, and
-/// each step goes through the very path a hand dragging an edge goes
-/// through: our window is moved, and the picture is laid on it inside
-/// the same message. What made dragging smooth makes this smooth, and
-/// makes the two arrive together because there is only ever one of them
-/// being moved.
-///
-/// The order itself is handed to the system at the end, from where the
-/// window already is: what it would animate is then a move of nothing.
-///
-/// Answers false when there is nothing to play, and the order goes
-/// straight to the system.
+/// Answers false when there is nothing to hand over this way, and the
+/// order goes to the system on its own.
 #[cfg(windows)]
 fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) -> bool {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowPlacement, IsIconic, PostMessageW, WINDOWPLACEMENT,
-    };
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, SetTimer, WM_SYSCOMMAND};
 
     // A window down in the taskbar has no rectangle to leave from, and
-    // coming back up from there is the system's own animation, which is
-    // about an icon and not about a rectangle.
+    // coming back up from there is the system's own animation about an
+    // icon, which has nothing to do with the picture.
     // SAFETY: our own window, read only.
     if unsafe { IsIconic(window) } != 0 {
         return false;
     }
+    let Some(engine) = the_engines_window() else {
+        return false;
+    };
     let Some(from) = where_it_stands(window) else {
         return false;
     };
-    let Some(to) = where_the_order_leads(window, order) else {
-        return false;
-    };
-    if to == from || to.2 - to.0 <= 0 || to.3 - to.1 <= 0 {
-        return false;
-    }
-    // Read before the first step moves anything, since every step is a
-    // move like any other as far as the system is concerned, and it
-    // would write each of them down here.
-    let mut placed: WINDOWPLACEMENT = unsafe { std::mem::zeroed() };
-    placed.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
-    // SAFETY: our own window and the slot is ours, with its size written
-    // in it as the call requires.
-    if unsafe { GetWindowPlacement(window, &mut placed) } == 0 {
+    carry_the_picture(window, engine);
+    // Refused, and said so in the journal where it was refused. The
+    // order still has to be carried out, and the system carries it out
+    // better than we would; what it will not do is take the picture with
+    // it, so it goes back to being two windows for that one gesture.
+    if CARRIED.load(Ordering::Relaxed) == 0 {
         return false;
     }
-
-    let now = std::time::Instant::now();
-    // Whether a move was already being played, which decides whether a
-    // step has to be asked for at all: one is already on its way, and it
-    // will pick up the rectangle written here. Asked for twice, the two
-    // would each ask for another and the move would double at every
-    // step. A timer could not do that, since setting one twice sets the
-    // same timer; a message posted twice is two messages.
-    let playing = GROWING.with_borrow_mut(|growing| {
-        growing
-            .replace(Growing {
-                from,
-                to,
-                stops_at: stopping_short(from, to),
-                began: now,
-                moved: now,
-                then: order,
-                placed,
-                strides: Vec::new(),
-                slowest: std::time::Duration::ZERO,
-                slowest_at: 0,
-                picture: std::time::Duration::ZERO,
-                system: std::time::Duration::ZERO,
-                this_picture: std::time::Duration::ZERO,
-                this_system: std::time::Duration::ZERO,
-                beats: Vec::new(),
-            })
-            .is_some()
-    });
-    GROWS.store(true, Ordering::Relaxed);
-    // The corners go for the length of the move, as they do for a drag:
-    // a shape is the size the window had when it was given, and a window
+    // The corners go for the length of it, as they do for a drag: a
+    // shape is the size the window had when it was given, and a window
     // growing under one is clipped to where it used to end.
-    if let Some(engine) = the_engines_window() {
-        let_the_corners_go(engine);
-    }
-    if !playing {
-        // The first step. Each one asks for the next, and the compositor
-        // decides when they come; see `STEP`.
-        // SAFETY: our own window, from the thread that owns it, and the
-        // message is one of ours.
-        unsafe { PostMessageW(window, STEP, 0, 0) };
-    }
+    let_the_corners_go(engine);
+
+    HOLDING.with_borrow_mut(|holding| {
+        *holding = Some(Holding {
+            then: order,
+            began: std::time::Instant::now(),
+            from,
+            laid: 0,
+        });
+    });
+    // SAFETY: the order the person gave, at the window it was given to,
+    // handed straight to the system's own handling since ours would only
+    // take it back again.
+    unsafe { DefSubclassProc(window, WM_SYSCOMMAND, order, 0) };
+    // SAFETY: our own window, from the thread that owns it. Set after
+    // the order and not before, so the wait covers the move and not the
+    // handing over of it.
+    unsafe { SetTimer(window, LET_GO, THE_SYSTEMS_MOVE.as_millis() as u32, None) };
     true
+}
+
+/// The system has had its time; the picture goes back to being a window
+/// of its own, and the gesture is written down.
+#[cfg(windows)]
+fn let_the_picture_go(window: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsZoomed, KillTimer, SC_MAXIMIZE};
+
+    // SAFETY: our own window, from the thread that owns it.
+    unsafe { KillTimer(window, LET_GO) };
+    put_the_picture_back(window);
+    let Some(held) = HOLDING.with_borrow_mut(|holding| holding.take()) else {
+        return;
+    };
+    // One line per gesture, and it has one job: to say which of the two
+    // halves failed if the old fault comes back. « The picture jumped
+    // and the frame followed » looks the same from the outside whether
+    // the picture was put somewhere wrong, which these numbers show, or
+    // whether the compositor stretched our window without stretching
+    // what was inside it, which they cannot show but which is then the
+    // only thing left. And the count of layings tells at a glance
+    // whether the move really was handed over or is being played step by
+    // step again behind our backs.
+    // SAFETY: our own window, read only.
+    crate::journal::note(&format!(
+        "{} rendu au système : {} en {:.0} ms, image redimensionnée {} fois ; \
+         partie de {:?}, arrivée à {:?}, cadre dessiné {:?}, image {:?}, dedans {:?}",
+        if held.then == SC_MAXIMIZE as usize {
+            "agrandissement"
+        } else {
+            "retour en fenêtre"
+        },
+        if unsafe { IsZoomed(window) } != 0 {
+            "agrandie"
+        } else {
+            "en fenêtre"
+        },
+        held.began.elapsed().as_secs_f64() * 1000.0,
+        held.laid,
+        held.from,
+        where_it_stands(window),
+        the_drawn_frame_of(window),
+        the_engines_window().and_then(where_it_stands),
+        the_inside_of(window),
+    ));
+    // The shape was left alone while the window was moving; it has
+    // stopped.
+    if let Some(engine) = the_engines_window() {
+        lay_it_out(window, engine);
+    }
 }
 
 /// The rectangle the window covers right now.
@@ -2000,105 +1933,6 @@ fn where_it_stands(window: windows_sys::Win32::Foundation::HWND) -> Option<(i32,
     // SAFETY: our own window and the rectangle is ours.
     (unsafe { GetWindowRect(window, &mut now) } != 0)
         .then_some((now.left, now.top, now.right, now.bottom))
-}
-
-/// Lets the system play its own animations for this window, or stops it
-/// for a moment.
-///
-/// Only ever off for the handful of pixels the order at the end of a
-/// move has left to travel. Off for longer, the window would stop
-/// growing and shrinking like every other window on the machine, which
-/// is not what is wanted; on for those pixels, they are played as a
-/// little move of their own at the end of the real one.
-#[cfg(windows)]
-fn transitions(window: windows_sys::Win32::Foundation::HWND, may: bool) {
-    use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_TRANSITIONS_FORCEDISABLED, DwmSetWindowAttribute,
-    };
-
-    let stopped: i32 = i32::from(!may);
-    // SAFETY: our own window, an attribute made to be set, and the value
-    // is ours, of the size the call is told.
-    unsafe {
-        DwmSetWindowAttribute(
-            window,
-            DWMWA_TRANSITIONS_FORCEDISABLED as u32,
-            (&raw const stopped).cast(),
-            std::mem::size_of::<i32>() as u32,
-        )
-    };
-}
-
-/// Where the window ends up once that order has been carried out.
-///
-/// Worked out rather than found out. Finding out means letting the
-/// system do it and reading the answer, and between the doing and the
-/// reading the window is already there: one drawn frame of it at its
-/// full size is the very jump being taken out.
-///
-/// It does not have to be exact. The order is handed to the system at
-/// the end of the move, and the system puts the window exactly where it
-/// belongs; a few pixels out here is a last step of a few pixels.
-#[cfg(windows)]
-fn where_the_order_leads(
-    window: windows_sys::Win32::Foundation::HWND,
-    order: usize,
-) -> Option<(i32, i32, i32, i32)> {
-    use windows_sys::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
-    };
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowPlacement, SC_MAXIMIZE, WINDOWPLACEMENT,
-    };
-
-    // SAFETY: our own window; the nearest monitor is always an answer.
-    let monitor = unsafe { MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) };
-    let mut screen: MONITORINFO = unsafe { std::mem::zeroed() };
-    screen.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-    // SAFETY: the monitor comes from the call above and the slot is ours,
-    // with its size written in it as the call requires.
-    if unsafe { GetMonitorInfoW(monitor, &mut screen) } == 0 {
-        return None;
-    }
-
-    if order == SC_MAXIMIZE as usize {
-        // A maximised window is not the size of the desktop: it is the
-        // desktop plus the invisible bands a resize can be grabbed in,
-        // which is why it looks flush with the edges. Those bands are
-        // whatever separates this window's rectangle from the frame it
-        // actually draws, measured on it as it stands.
-        return Some(spread_over(
-            (
-                screen.rcWork.left,
-                screen.rcWork.top,
-                screen.rcWork.right,
-                screen.rcWork.bottom,
-            ),
-            spread_bands(window),
-        ));
-    }
-
-    let mut placed: WINDOWPLACEMENT = unsafe { std::mem::zeroed() };
-    placed.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
-    // SAFETY: our own window and the slot is ours, with its size written
-    // in it as the call requires.
-    if unsafe { GetWindowPlacement(window, &mut placed) } == 0 {
-        return None;
-    }
-    // The system keeps that rectangle counted from the corner of the
-    // desktop rather than the corner of the screen, and the two differ
-    // by wherever the taskbar sits when it sits at the top or the left.
-    let (dx, dy) = (
-        screen.rcWork.left - screen.rcMonitor.left,
-        screen.rcWork.top - screen.rcMonitor.top,
-    );
-    let normal = placed.rcNormalPosition;
-    Some((
-        normal.left + dx,
-        normal.top + dy,
-        normal.right + dx,
-        normal.bottom + dy,
-    ))
 }
 
 /// The frame this window actually draws, in screen coordinates.
@@ -2131,416 +1965,6 @@ fn the_drawn_frame_of(
     Some((drawn.left, drawn.top, drawn.right, drawn.bottom))
 }
 
-#[cfg(windows)]
-thread_local! {
-    /// The one timer this thread waits on to catch the screen, made the
-    /// first time it is wanted and kept for good.
-    ///
-    /// A waitable timer and not a sleep: a sleep is granted on the
-    /// system tick, fifteen milliseconds at a time, which is the very
-    /// thing being escaped here. Asked for at a fine resolution, this
-    /// one is granted to the fraction of a millisecond.
-    static THE_SCREENS_TIMER: windows_sys::Win32::Foundation::HANDLE = {
-        use windows_sys::Win32::System::Threading::{
-            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, CreateWaitableTimerExW, TIMER_ALL_ACCESS,
-        };
-
-        // SAFETY: an unnamed timer of our own, with no particular
-        // rights asked for beyond using it.
-        unsafe {
-            CreateWaitableTimerExW(
-                std::ptr::null(),
-                std::ptr::null(),
-                CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
-                TIMER_ALL_ACCESS,
-            )
-        }
-    };
-}
-
-/// Stands still until the screen is about to be drawn again, and answers
-/// whether it managed to.
-///
-/// Asked of the compositor rather than counted from a clock of ours: it
-/// says when the screen last turned over and how long a turn takes, and
-/// the next boundary follows from the two. Waiting until then puts every
-/// step of a move on a boundary, so a step that costs less than a frame
-/// lands on the next one and a step that costs more lands on the one
-/// after, and never anywhere in between.
-///
-/// That « never in between » is the whole of it. Steps landing every
-/// sixteen milliseconds are a move at sixty frames; steps landing every
-/// thirty-three are a move at thirty, which is slower but even. Steps
-/// landing at nine, then twenty-six, then fourteen, then forty are
-/// neither, and that is what an eye calls rough.
-///
-/// This replaces asking the compositor to be waited on, which is meant
-/// for a program drawing its own frames and told us apart from that
-/// almost nothing: it came back at once when nothing had been drawn,
-/// and waited on the whole cost of applying a resize when something
-/// had. The row of paces it produced ran from one millisecond to
-/// fifty-three.
-#[cfg(windows)]
-fn wait_for_the_screen() -> bool {
-    use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
-    use windows_sys::Win32::Graphics::Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo};
-    use windows_sys::Win32::System::Performance::{
-        QueryPerformanceCounter, QueryPerformanceFrequency,
-    };
-    use windows_sys::Win32::System::Threading::{SetWaitableTimer, WaitForSingleObject};
-
-    let timer = THE_SCREENS_TIMER.with(|timer| *timer);
-    if timer.is_null() {
-        return false;
-    }
-    let mut screen = DWM_TIMING_INFO {
-        cbSize: std::mem::size_of::<DWM_TIMING_INFO>() as u32,
-        ..Default::default()
-    };
-    let (mut now, mut a_second) = (0i64, 0i64);
-    // SAFETY: the compositor's own account of the screen, into a slot of
-    // ours with its size written in it as the call requires, and two
-    // readings of the machine's fine clock into slots of ours.
-    if unsafe { DwmGetCompositionTimingInfo(std::ptr::null_mut(), &mut screen) } != 0
-        || unsafe { QueryPerformanceCounter(&mut now) } == 0
-        || unsafe { QueryPerformanceFrequency(&mut a_second) } == 0
-    {
-        return false;
-    }
-    let turn = screen.qpcRefreshPeriod as i64;
-    let last = screen.qpcVBlank as i64;
-    if turn <= 0 || a_second <= 0 {
-        return false;
-    }
-    // The turn the screen is in the middle of may be several back from
-    // the one the compositor last wrote down, so the boundary is counted
-    // from what is left of a whole number of turns rather than from that
-    // one.
-    let ahead = turn - (now - last).rem_euclid(turn);
-    // A waitable timer counts in hundreds of nanoseconds, and a due time
-    // written negative is a delay rather than a date.
-    let due = -(ahead.saturating_mul(10_000_000) / a_second);
-    // SAFETY: our own timer, a delay of ours, and no repeat and no
-    // callback. Waited on with a ceiling, so that a timer which never
-    // comes cannot hold the window still.
-    unsafe {
-        SetWaitableTimer(timer, &due, 0, None, std::ptr::null(), 0) != 0
-            && WaitForSingleObject(timer, 100) == WAIT_OBJECT_0
-    }
-}
-
-/// A row of numbers, as the journal writes one.
-#[cfg(windows)]
-fn a_row<T: std::fmt::Display>(of: &[T]) -> String {
-    of.iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// Carries the window one step further, and finishes the job on the last
-/// one.
-#[cfg(windows)]
-fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::Graphics::Dwm::DwmFlush;
-    use windows_sys::Win32::UI::Shell::DefSubclassProc;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        IsZoomed, PostMessageW, SC_MAXIMIZE, SW_SHOWMAXIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED,
-        SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPlacement,
-        SetWindowPos, WM_SYSCOMMAND,
-    };
-
-    // Wait for the screen before doing anything, so that what this step
-    // puts on it is put there on the boundary of a drawn frame and not
-    // somewhere in the middle of one; see `wait_for_the_screen` and
-    // `STEP`. It is the screen that sets the pace of this move, and this
-    // is where it does it.
-    //
-    // It costs whatever is left of the current frame, and it is spent
-    // waiting rather than working. Should the screen not be readable,
-    // the compositor is asked to be waited on instead, which paces this
-    // poorly but paces it: without any wait at all the move would run as
-    // fast as the machine allows and spend most of its steps on frames
-    // nobody is shown.
-    if !wait_for_the_screen() {
-        // SAFETY: takes nothing and answers whether it waited.
-        unsafe { DwmFlush() };
-    }
-
-    // Where the window really is, which is not where the last step meant
-    // to put it: the system has the last word on what it granted, and
-    // the width of a step is what the eye saw and not what was asked.
-    //
-    // Unreadable for the moment, this asks again on the next drawn frame
-    // rather than dropping the move where it stands: a step is the only
-    // thing that asks for the one after it, so a step that gives up
-    // silently leaves the window halfway for good.
-    let Some(now) = where_it_stands(window) else {
-        // SAFETY: our own window, from the thread that owns it, and the
-        // message is one of ours. A window that is gone takes it.
-        unsafe { PostMessageW(window, STEP, 0, 0) };
-        return;
-    };
-    let Some((step, done)) = GROWING.with_borrow_mut(|growing| {
-        let growing = growing.as_mut()?;
-        let waited = growing.moved.elapsed();
-        growing.moved = std::time::Instant::now();
-        growing.beats.push(waited.as_millis() as u32);
-        // The shares of the step about to be played, gathered from
-        // inside the call that plays it.
-        growing.this_picture = std::time::Duration::ZERO;
-        growing.this_system = std::time::Duration::ZERO;
-        let gone = growing.began.elapsed();
-        let part = eased(gone, LASTS);
-        let step = along(growing.from, growing.stops_at, part);
-        growing
-            .strides
-            .push(((step.2 - step.0) - (now.2 - now.0)).abs());
-        // Arrived when the time it was given is up, which is the same
-        // instant as the curve reaching its end.
-        Some((step, gone >= LASTS))
-    }) else {
-        return;
-    };
-
-    // SAFETY: our own window, moved without being resized in z-order or
-    // activated. The picture is laid on it inside this very call, in the
-    // handler for the message this one sends.
-    //
-    // Nothing of what was drawn is carried over into the new frame. A
-    // window growing is otherwise given its old inside copied into its
-    // new one before anything is repainted, which for a window covering
-    // a screen is a copy of two million pixels, on every step, on a chip
-    // with a hundred and twenty-eight megabytes to itself. And it is a
-    // copy of a page nobody can see: the picture covers our inside whole
-    // for the length of a session, and it is laid on the new inside in
-    // the message this very call sends, before the window takes it.
-    let carried = std::time::Instant::now();
-    unsafe {
-        SetWindowPos(
-            window,
-            std::ptr::null_mut(),
-            step.0,
-            step.1,
-            step.2 - step.0,
-            step.3 - step.1,
-            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS,
-        )
-    };
-    let carried = carried.elapsed();
-    GROWING.with_borrow_mut(|growing| {
-        if let Some(growing) = growing.as_mut()
-            && carried > growing.slowest
-        {
-            growing.slowest = carried;
-            growing.slowest_at = growing.strides.len();
-            growing.picture = growing.this_picture;
-            growing.system = growing.this_system;
-        }
-    });
-    if !done {
-        // The next one, once the screen has been drawn again.
-        // SAFETY: our own window, from the thread that owns it, and the
-        // message is one of ours.
-        unsafe { PostMessageW(window, STEP, 0, 0) };
-        return;
-    }
-
-    let played = GROWING.with_borrow_mut(|growing| growing.take());
-    GROWS.store(false, Ordering::Relaxed);
-    if let Some(played) = played.as_ref() {
-        // One line per gesture, and enough of one to name the fault
-        // rather than describe it. Two rows side by side: what the move
-        // covered at each step, which is its shape, and how long each
-        // step waited for its turn, which is its pacing. An eye can
-        // report neither, and each has been the fault once.
-        //
-        // Then the slowest step split three ways, and the three add up:
-        // whatever is left once the player and the toolkit are taken
-        // out is ours, and is named as such rather than left to be
-        // worked out by subtracting numbers that came from elsewhere.
-        let rest = played
-            .slowest
-            .saturating_sub(played.picture)
-            .saturating_sub(played.system);
-        crate::journal::note(&format!(
-            "{} joué en {:.0} ms, {} pas ; crans {} px ; cadence {} ms ; \
-             pas le plus long {:.1} ms au pas {} \
-             (image {:.1} ms, système avec vue web {:.1} ms, reste {:.1} ms)",
-            if played.then == SC_MAXIMIZE as usize {
-                "agrandissement"
-            } else {
-                "retour en fenêtre"
-            },
-            played.began.elapsed().as_secs_f64() * 1000.0,
-            played.strides.len(),
-            a_row(&played.strides),
-            a_row(&played.beats),
-            played.slowest.as_secs_f64() * 1000.0,
-            played.slowest_at,
-            played.picture.as_secs_f64() * 1000.0,
-            played.system.as_secs_f64() * 1000.0,
-            rest.as_secs_f64() * 1000.0,
-        ));
-    }
-    if let Some(played) = played {
-        // The order now, from the handful of pixels short of where it
-        // leads that our own steps deliberately stopped at; see
-        // `HANDS_OVER`.
-        //
-        // With the system's own animation off for the length of it, and
-        // only for that: those few pixels are a move like any other to
-        // the system, and it would play them as one.
-        transitions(window, false);
-        // SAFETY: the order the person gave, at the window it was given
-        // to. Handed straight to the system's own handling, since ours
-        // would only take it back and play it again.
-        unsafe { DefSubclassProc(window, WM_SYSCOMMAND, played.then, 0) };
-
-        // And the window's own place after it, put back as it was read
-        // before the first step. Every step of the move looked to the
-        // system exactly like a person dragging the window somewhere,
-        // and it wrote each of them down: maximising ended with « where
-        // this window belongs » being the whole screen, so coming back
-        // down came back to almost the same thing.
-        //
-        // After and never before. Asked to place and to maximise in one
-        // move, the system does them in that order: it put the window
-        // back at its small size and then grew it again, which is the
-        // little move that played itself out at the end of every
-        // maximise. Done afterwards, the state is already the one that
-        // was asked for and this only writes down a rectangle.
-        let mut placed = played.placed;
-        placed.showCmd = if played.then == SC_MAXIMIZE as usize {
-            SW_SHOWMAXIMIZED as u32
-        } else {
-            SW_SHOWNORMAL as u32
-        };
-        // SAFETY: our own window, and the placement is the one the
-        // system itself gave us with one field changed.
-        unsafe { SetWindowPlacement(window, &placed) };
-
-        // And the frame drawn again from scratch. A window carried about
-        // while the system counted it as spread over the screen keeps
-        // what it was given then: square corners and no border, which is
-        // right for a window filling a screen and wrong for the one that
-        // has just come back down from it.
-        // SAFETY: our own window; nothing is moved, resized or
-        // activated, and the frame is the only thing asked for.
-        unsafe {
-            SetWindowPos(
-                window,
-                std::ptr::null_mut(),
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-            )
-        };
-        transitions(window, true);
-        // The whole of what the window ended up as. « It came back with
-        // square edges » is about the frame the compositor draws, and
-        // the frame is worked out from these: whether the system counts
-        // the window as spread over a screen, where it stands, and where
-        // it draws. Those three side by side say which of them is wrong.
-        // SAFETY: our own window, read only.
-        crate::journal::note(&format!(
-            "fenêtre {} après le mouvement : visé {:?}, obtenu {:?}, cadre dessiné {:?}",
-            if unsafe { IsZoomed(window) } != 0 {
-                "agrandie"
-            } else {
-                "en fenêtre"
-            },
-            played.to,
-            where_it_stands(window),
-            the_drawn_frame_of(window),
-        ));
-    }
-    // The shape was left alone while the window was moving; it has
-    // stopped.
-    if let Some(engine) = the_engines_window() {
-        lay_it_out(window, engine);
-    }
-}
-
-/// The rectangle a window covers once it is spread over the desktop.
-///
-/// Not the desktop itself: a window carries invisible bands all round it
-/// that a resize can be grabbed in, and spread out it hangs those bands
-/// off the edges of the screen so that what it draws lands flush with
-/// them. `whole` is the rectangle the system counts the window as, and
-/// `drawn` the frame it really draws; what separates them is the bands.
-fn spread_over(work: (i32, i32, i32, i32), band: (i32, i32)) -> (i32, i32, i32, i32) {
-    (
-        work.0 - band.0,
-        work.1 - band.1,
-        work.2 + band.0,
-        work.3 + band.1,
-    )
-}
-
-/// How far a window spread over a screen hangs off each edge of it.
-///
-/// The bands a resize can be grabbed in, which are invisible and which a
-/// spread window hangs off the screen so that what it draws lands flush
-/// with the edges. Asked of the system at this window's own scale.
-#[cfg(windows)]
-fn spread_bands(window: windows_sys::Win32::Foundation::HWND) -> (i32, i32) {
-    use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SM_CXPADDEDBORDER, SM_CXSIZEFRAME, SM_CYSIZEFRAME,
-    };
-
-    // SAFETY: our own window, and plain metrics at that scale.
-    unsafe {
-        let dpi = GetDpiForWindow(window).max(96);
-        let padded = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-        (
-            GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + padded,
-            GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + padded,
-        )
-    }
-}
-
-/// Where the window stands when it is that far along.
-fn along(from: (i32, i32, i32, i32), to: (i32, i32, i32, i32), part: f64) -> (i32, i32, i32, i32) {
-    let between = |a: i32, b: i32| a + ((f64::from(b - a)) * part).round() as i32;
-    (
-        between(from.0, to.0),
-        between(from.1, to.1),
-        between(from.2, to.2),
-        between(from.3, to.3),
-    )
-}
-
-/// How much of the whole journey is behind the window after that long.
-///
-/// A move has to leave and it has to arrive, and it must do neither
-/// abruptly: this eases out of the starting rectangle, runs fastest
-/// halfway, and eases into the finishing one. It is the plainest curve
-/// that does all three, and it is symmetrical, so the two halves of a
-/// gesture, growing and shrinking, are the same move played each way.
-///
-/// It replaces a curve that closed a fixed share of whatever distance
-/// was still ahead, every step. That one had no start: it left at full
-/// speed and slowed from the first frame onwards, which on real figures
-/// meant seventy per cent of the journey inside the first fifty
-/// milliseconds and the remaining hundred and fifty spent creeping two
-/// to twenty pixels a frame, under the eye's floor. The whole
-/// complaint, a move that plays, stops halfway and then finishes, was
-/// that tail, and the last few pixels handed to the system at the end
-/// were the finish.
-///
-/// Read off the clock and not off the distance left, so where the
-/// window stands is a question of when and never of how many steps got
-/// in. A machine that manages four steps plays the same path as one
-/// that manages twelve, in four samples instead of twelve.
-fn eased(gone: std::time::Duration, lasts: std::time::Duration) -> f64 {
-    let part = (gone.as_secs_f64() / lasts.as_secs_f64()).clamp(0.0, 1.0);
-    part * part * (3.0 - 2.0 * part)
-}
-
 /// Name our handler answers to, so it can be taken off again.
 #[cfg(windows)]
 const LIT: usize = 1;
@@ -2558,7 +1982,8 @@ unsafe extern "system" fn lit(
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         PostMessageW, SC_MAXIMIZE, SC_RESTORE, WINDOWPOS, WM_ACTIVATEAPP,
         WM_DWMSENDICONICLIVEPREVIEWBITMAP, WM_DWMSENDICONICTHUMBNAIL, WM_ENTERSIZEMOVE,
-        WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
+        WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED,
+        WM_WINDOWPOSCHANGING,
     };
 
     match message {
@@ -2600,9 +2025,10 @@ unsafe extern "system" fn lit(
         {
             0
         }
-        // One step of that move, and it asks for the next itself.
-        STEP => {
-            grow_a_step(window);
+        // The system has had its time to play the move; the picture
+        // goes back to being a window of its own.
+        WM_TIMER if wparam == LET_GO => {
+            let_the_picture_go(window);
             0
         }
         // The system asking whether this window is still active, which
@@ -2635,30 +2061,22 @@ unsafe extern "system" fn lit(
             draw_the_bar(window);
             0
         }
-        // A window about to take a new size: the system says what it is
-        // about to apply and takes back whatever is written there, before
-        // anything moves.
+        // A window about to take a new size under a hand: the system says
+        // what it is about to apply and takes back whatever is written
+        // there, before anything moves. Holding the shape here is what
+        // costs nothing: corrected afterwards, every step of a drag
+        // resized the window twice.
         //
         // This message and not the sizing one of the drag loop, which was
         // answered here before and never arrived: the journal counted the
         // steps of a drag through this message's own echo while the shape
-        // ran free. Every change of size becomes real by passing through
-        // here, whoever asked for it, so here is where both a hand and an
-        // order are caught.
-        WM_WINDOWPOSCHANGING if on_the_move() => {
+        // ran free.
+        WM_WINDOWPOSCHANGING if DRAGGED.load(Ordering::Relaxed) => {
             // SAFETY: for this message the system passes a WINDOWPOS of
             // ours to read and amend, and it lives for the length of the
             // call.
             let wanted = unsafe { &mut *(lparam as *mut WINDOWPOS) };
-            // Only a hand has a shape to hold. A window being carried
-            // towards what a maximise asks for is going to the size of a
-            // screen, and the picture's own proportions have nothing to
-            // say about it. Holding the shape here is what costs nothing:
-            // corrected afterwards, every step of a drag resized the
-            // window twice.
-            if DRAGGED.load(Ordering::Relaxed) {
-                the_drag_keeps_the_shape(window, wanted);
-            }
+            the_drag_keeps_the_shape(window, wanted);
             // The picture takes its new size here, before our window
             // takes its own, but only when that leaves it the bigger of
             // the two; see `the_picture_leads`. Shrinking, it stays
@@ -2738,13 +2156,6 @@ unsafe extern "system" fn lit(
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
             if DRAGGED.load(Ordering::Relaxed) {
                 Cost::add(&SYSTEM, waited.elapsed());
-            } else if GROWS.load(Ordering::Relaxed) {
-                let waited = waited.elapsed();
-                GROWING.with_borrow_mut(|growing| {
-                    if let Some(growing) = growing.as_mut() {
-                        growing.this_system = growing.this_system.max(waited);
-                    }
-                });
             }
             if let Some(engine) = the_engines_window() {
                 lay_it_out(window, engine);
@@ -2768,20 +2179,13 @@ unsafe extern "system" fn lit(
 /// behind the picture shows inside the window.
 ///
 /// The first is barely visible. The second is a bright band where the
-/// far computer's screen ought to be, and it is what maximising was
-/// showing on the laptop, one band per step along the two edges that
-/// lead. Restoring was reported as smooth in the very same breath,
-/// which is the same gap falling on its harmless side.
+/// far computer's screen ought to be.
 ///
 /// So the rule is not an order but a size: the picture is never the
 /// smaller of the two. Growing, it goes first and overhangs; shrinking,
 /// it waits and overhangs. Reversing the order outright would only walk
 /// the band from one half of the gesture to the other, which is what
 /// three reorderings proved during the work on dragging.
-///
-/// A hand shows none of this because a hand moves an edge a pixel or two
-/// at a time, so the band is a pixel or two wide. A move played by an
-/// order covers a couple of hundred pixels per step, and so is the band.
 #[cfg(windows)]
 fn the_picture_leads(home: windows_sys::Win32::Foundation::HWND, after: (i32, i32)) -> bool {
     the_inside_of(home).is_none_or(|(_, width, height)| after.0 > width || after.1 > height)
@@ -3293,161 +2697,6 @@ mod tests {
     fn a_size_that_did_not_change_is_left_alone() {
         let same = (100, 100, 976, 582);
         assert_eq!(drag(same, (1, 1)), same);
-    }
-
-    #[test]
-    fn a_window_spread_over_the_desktop_hangs_its_grab_bands_off_the_edges() {
-        // Les bandes de préhension font 7 pixels de côté et 9 en
-        // hauteur : étalée, la fenêtre doit dépasser de l'écran
-        // d'exactement autant, pour que ce qui se dessine tombe pile sur
-        // les bords.
-        let work = (0, 0, 1920, 1040);
-        assert_eq!(spread_over(work, (7, 9)), (-7, -9, 1927, 1049));
-    }
-
-    #[test]
-    fn a_window_without_grab_bands_is_spread_to_the_desktop_itself() {
-        let work = (0, 0, 1920, 1040);
-        assert_eq!(spread_over(work, (0, 0)), work);
-    }
-
-    /// Le mouvement joué, un pas toutes les `chaque`, jusqu'à l'arrivée,
-    /// exactement comme `grow_a_step` le joue. Rend la liste des
-    /// rectangles traversés.
-    fn joue(
-        from: (i32, i32, i32, i32),
-        to: (i32, i32, i32, i32),
-        chaque: std::time::Duration,
-    ) -> Vec<(i32, i32, i32, i32)> {
-        let arret = stopping_short(from, to);
-        let mut passe = vec![from];
-        let mut depuis = std::time::Duration::ZERO;
-        loop {
-            depuis += chaque;
-            passe.push(along(from, arret, eased(depuis, LASTS)));
-            if depuis >= LASTS {
-                return passe;
-            }
-        }
-    }
-
-    /// La largeur gagnée à chaque pas, ce que l'œil appelle l'allure.
-    fn crans(passe: &[(i32, i32, i32, i32)]) -> Vec<i32> {
-        passe
-            .windows(2)
-            .map(|deux| (deux[1].2 - deux[1].0) - (deux[0].2 - deux[0].0))
-            .collect()
-    }
-
-    #[test]
-    fn the_move_leaves_and_arrives_gently_and_runs_fastest_halfway() {
-        let rien = std::time::Duration::ZERO;
-        let moitie = LASTS / 2;
-        assert_eq!(eased(rien, LASTS), 0.0);
-        assert_eq!(eased(LASTS, LASTS), 1.0);
-        // Au milieu du temps, au milieu du chemin : la courbe est
-        // symétrique, donc agrandir et redescendre sont le même
-        // mouvement joué dans les deux sens.
-        assert!((eased(moitie, LASTS) - 0.5).abs() < 1e-12);
-        // Et rien ne dépasse l'arrivée, même longtemps après.
-        assert_eq!(eased(LASTS * 3, LASTS), 1.0);
-    }
-
-    #[test]
-    fn the_move_is_still_moving_when_it_is_half_over() {
-        // Le défaut à ne jamais revoir, et celui-là a été vu : une
-        // courbe qui partait à pleine vitesse et ralentissait dès la
-        // première image faisait soixante-douze pour cent du trajet en
-        // cinquante millisecondes, puis rampait deux pixels par image
-        // pendant cent cinquante. Ça se voit comme un mouvement qui
-        // s'arrête en plein milieu et repart à la fin.
-        let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
-        let passe = joue(from, to, std::time::Duration::from_millis(16));
-        let large = f64::from((to.2 - to.0) - (from.2 - from.0));
-
-        let milieu = passe[passe.len() / 2];
-        let fait = f64::from((milieu.2 - milieu.0) - (from.2 - from.0)) / large;
-        assert!(
-            (0.4..=0.6).contains(&fait),
-            "à mi-temps le trajet est fait à {:.0} %",
-            fait * 100.0
-        );
-
-        // Aucun cran ne vaut le quart du trajet, sans quoi c'est un saut
-        // et pas un mouvement, et aucun ne descend sous le pixel au
-        // milieu du geste, sans quoi c'est un arrêt.
-        let crans = crans(&passe);
-        let plus_grand = crans.iter().copied().max().unwrap_or(0);
-        assert!(
-            f64::from(plus_grand) < large / 4.0,
-            "un cran de {plus_grand} px sur {large} : {crans:?}"
-        );
-        let creux = crans[2..crans.len() - 2].iter().copied().min().unwrap_or(0);
-        assert!(creux >= 1, "le mouvement s'arrête en route : {crans:?}");
-    }
-
-    #[test]
-    fn the_move_never_goes_backwards_and_lands_where_it_meant_to() {
-        let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
-        let passe = joue(from, to, std::time::Duration::from_millis(16));
-        for (pas, deux) in passe.windows(2).enumerate() {
-            assert!(deux[1].2 >= deux[0].2, "la fenêtre a reculé au pas {pas}");
-        }
-        assert_eq!(*passe.last().unwrap(), stopping_short(from, to));
-    }
-
-    #[test]
-    fn the_played_move_always_leaves_the_system_something_to_travel() {
-        // Le correctif des coins arrondis tient à ce reste : atterrir
-        // pile sur la cible, et l'ordre donné ensuite ne déplace rien,
-        // donc le compositeur ne recalcule pas le cadre.
-        let from = (100, 100, 1100, 700);
-        for to in [
-            (-7, 0, 1927, 1047),
-            (100, 100, 1100, 700),
-            (104, 102, 1096, 698),
-            (99, 99, 1101, 701),
-        ] {
-            let stop = stopping_short(from, to);
-            for (near, far, arret) in [
-                (from.0, to.0, stop.0),
-                (from.1, to.1, stop.1),
-                (from.2, to.2, stop.2),
-                (from.3, to.3, stop.3),
-            ] {
-                let reste = (far - arret).abs();
-                assert!(
-                    reste <= HANDS_OVER && reste <= (far - near).abs(),
-                    "bord {near} vers {far} arrêté à {arret}"
-                );
-                // Et jamais au-delà du point de départ, sans quoi un
-                // bord qui bouge à peine partirait à l'envers.
-                assert!(
-                    (arret - near).abs() <= (far - near).abs(),
-                    "bord {near} vers {far} arrêté à {arret}, en arrière du départ"
-                );
-            }
-        }
-        // Un vrai trajet garde bien le reste entier.
-        assert_eq!(stopping_short(from, (-7, 0, 1927, 1047)).2, 1919);
-    }
-
-    #[test]
-    fn a_move_played_in_few_steps_follows_the_same_path_as_one_played_in_many() {
-        // Une machine lente coûte des images, jamais la forme du geste :
-        // la fenêtre est au même endroit au même instant, que la machine
-        // donne quatre pas ou treize. Lu sur l'horloge et non sur la
-        // distance restante, c'est vrai au pixel près et pas à peu près.
-        let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
-        let serre = joue(from, to, std::time::Duration::from_millis(15));
-        let large = joue(from, to, std::time::Duration::from_millis(60));
-        // Au bout de 120 ms : huit pas d'un côté, deux de l'autre.
-        assert_eq!(serre[8], large[2]);
-        // Et les deux arrivent, l'un en plus d'images que l'autre.
-        assert!(serre.len() > large.len() * 2);
-        for passe in [&serre, &large] {
-            assert_eq!(*passe.last().unwrap(), stopping_short(from, to));
-        }
     }
 
     #[test]
