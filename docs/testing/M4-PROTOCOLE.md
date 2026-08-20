@@ -480,6 +480,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : la fenêtre **se déplace normalement**, et l'image reste exactement dedans à chaque instant, sans décoller ni rester derrière.
 >
 > Le déplacement compte autant que le reste : tenir la forme de l'image se fait sur le message par lequel passe aussi un simple déplacement, et une correction appliquée à tort y remettait la fenêtre à son point de départ à chaque pas, donc la rendait immobile.
+>
+> Regarder aussi les **coins du bas pendant le déplacement** : ils restent arrondis tout du long. La découpe qui les arrondit coûte trop cher pour être refaite à chaque cran d'un redimensionnement, et elle est donc retirée le temps du geste ; mais un déplacement ne change pas la taille, donc la découpe y reste juste et n'a aucune raison de partir. Retirée à tout geste, elle rendait l'image carrée le temps qu'on porte la fenêtre, par-dessus un cadre qui, lui, gardait ses coins. Elle ne part maintenant qu'au premier cran qui change vraiment la taille.
 
 > **S9quater (agrandir et restaurer d'un seul mouvement)**
 >

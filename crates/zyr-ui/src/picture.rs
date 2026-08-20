@@ -2149,12 +2149,16 @@ unsafe extern "system" fn lit(
             // in the system's own handling of this message.
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
+        // A hand on the window. Which of the two gestures it is, moving
+        // it or resizing it, is not said and is not asked here: the
+        // corners are only in the way of one of them, and they come off
+        // at the first step that changes the size rather than at the
+        // first step at all. Taken off here, carrying the window across
+        // the desk squared the picture's corners for the length of the
+        // carry, over a frame that had kept its own.
         WM_ENTERSIZEMOVE => {
             DRAGGED.store(true, Ordering::Relaxed);
             count_the_drag();
-            if let Some(engine) = the_engines_window() {
-                let_the_corners_go(engine);
-            }
             // SAFETY: the arguments the system handed in, untouched.
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
@@ -2261,7 +2265,16 @@ fn the_drag_keeps_the_shape(
     if !the_size_moves(now, asked) {
         return;
     }
-    RESIZED.store(true, Ordering::Relaxed);
+    // The first step that really changes the size, and only that one:
+    // the shape a window was given is the shape of the size it had when
+    // it was given, so a window growing under one is clipped to where it
+    // used to end. Off for the rest of the gesture, and put back when the
+    // hand stops.
+    if !RESIZED.swap(true, Ordering::Relaxed)
+        && let Some(engine) = the_engines_window()
+    {
+        let_the_corners_go(engine);
+    }
 
     // Gathered and never re-decided: the hand cannot let go of one edge
     // and take another without ending the drag, so an edge seen to move
