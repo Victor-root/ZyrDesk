@@ -512,13 +512,36 @@ fn lay_on(
         });
         if !same_size {
             // SAFETY: a window this program took in hand, put over the
-            // whole of its parent's inside, above the web view.
-            unsafe { SetWindowPos(engine, HWND_TOP, 0, 0, width, height, SWP_NOACTIVATE) };
-            HOLDING.with_borrow_mut(|holding| {
-                if let Some(holding) = holding.as_mut() {
-                    holding.laid += 1;
-                }
-            });
+            // whole of its parent's inside.
+            //
+            // Nothing of what was drawn is carried over into the new
+            // size, for the same reason it is not on the other road
+            // through here and which was forgotten on this one: the
+            // system would otherwise copy the old picture into the
+            // corner of the new frame and leave it sitting there until
+            // the player draws again. The player draws thirty-seven
+            // times a second, so that is up to twenty-seven
+            // milliseconds of the far computer's screen at the wrong
+            // size in the corner of the right one, which is one hop,
+            // seen sometimes and not always. It is asked for exactly
+            // once per gesture, so it costs nothing to ask.
+            //
+            // And not asked for the top either: it was put there when
+            // it was taken in, nothing has come between the two since,
+            // and asking again has the compositor take the whole stack
+            // of windows apart for a window that has not moved in it.
+            unsafe {
+                SetWindowPos(
+                    engine,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    width,
+                    height,
+                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS,
+                )
+            };
+            LAID_WHILE_CARRIED.fetch_add(1, Ordering::Relaxed);
         }
         let laid = started.elapsed();
         let buttoned = std::time::Instant::now();
@@ -1644,6 +1667,22 @@ unsafe fn plain_surface(
 /// a child costs nothing.
 static CARRIED: AtomicIsize = AtomicIsize::new(0);
 
+/// How many times the picture has been given a new size since our window
+/// took it in.
+///
+/// One per gesture is the whole point of handing the move back to the
+/// system: the window changes size once, the picture inside it changes
+/// size once, and the compositor stretches the pair from the old
+/// rectangle to the new one on its own clock. Anything above one means
+/// something is resizing things frame by frame again.
+///
+/// Counted from the moment the picture is taken in and not from the
+/// moment the wait is armed, which is what it was and which made it
+/// useless: the wait is armed after the order has been handed over, and
+/// the one resize of the whole gesture happens inside that handing over.
+/// It read zero every time.
+static LAID_WHILE_CARRIED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 /// Whether the window is in the middle of a gesture, by a hand or by an
 /// order.
 ///
@@ -1679,6 +1718,7 @@ fn carry_the_picture(
     let Some((_, width, height)) = the_inside_of(home) else {
         return;
     };
+    LAID_WHILE_CARRIED.store(0, Ordering::Relaxed);
     // SAFETY: a window this program took in hand. The style is read,
     // amended for the child it is about to be, and put back whole if
     // the system refuses the adoption.
@@ -1789,14 +1829,6 @@ struct Holding {
     what: &'static str,
     /// When it was handed over.
     began: std::time::Instant,
-    /// How many times the picture was given a new size while held.
-    ///
-    /// One is the whole point. The window changes size once, the
-    /// picture inside it changes size once, and the compositor stretches
-    /// the pair of them from the old rectangle to the new one on its own
-    /// clock. Anything above one means something is still resizing
-    /// things frame by frame, which is exactly what this replaced.
-    laid: u32,
 }
 
 // Only ever touched from the thread that owns the window, inside its own
@@ -1898,7 +1930,6 @@ fn hold_through_the_systems_move(window: windows_sys::Win32::Foundation::HWND, w
         *holding = Some(Holding {
             what,
             began: std::time::Instant::now(),
-            laid: 0,
         });
     });
     // SAFETY: our own window, from the thread that owns it. Setting a
@@ -1939,7 +1970,7 @@ fn let_the_picture_go(window: windows_sys::Win32::Foundation::HWND) {
             "en fenêtre"
         },
         held.began.elapsed().as_secs_f64() * 1000.0,
-        held.laid,
+        LAID_WHILE_CARRIED.load(Ordering::Relaxed),
         where_it_stands(window),
         the_drawn_frame_of(window),
         the_engines_window().and_then(where_it_stands),
