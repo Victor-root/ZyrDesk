@@ -275,7 +275,7 @@ const ROUNDING: u32 = 1;
 /// dragged, and a window that resists in two directions at once cannot
 /// be resized at all.
 pub fn hold_the_shape(app: &AppHandle) {
-    if on_the_move() {
+    if a_gesture_is_running() {
         return;
     }
     let Some(held) = taken(app) else {
@@ -583,7 +583,7 @@ fn lay_on(
         // own window and this is what put it right.
         if laid > A_FRAME {
             WAS_BUSY.store(true, Ordering::Relaxed);
-        } else if !on_the_move() {
+        } else if !a_gesture_is_running() {
             say_the_size_again(engine, (width, height));
         }
         // And the two bottom corners cut to the curve of the frame, as
@@ -595,7 +595,7 @@ fn lay_on(
         // so the session was left square-cornered inside a rounded
         // frame for the rest of its life.
         let shaped = std::time::Instant::now();
-        if !on_the_move() {
+        if !a_gesture_is_running() {
             round_the_bottom(home, engine, width, height);
         }
         let shaped = shaped.elapsed();
@@ -610,10 +610,11 @@ fn lay_on(
         return;
     }
 
-    // What is counted, and what is put off until the window settles, are
-    // two different questions, and outside a carry only a hand answers
-    // either: a drag is counted and told in one line at the end, and a
-    // drag is what puts off the shape.
+    // This road is only ever taken before the picture has been taken
+    // into our window, which is the first laying of a session, and by a
+    // hand on an edge in the rare case where the system refused to take
+    // it in at all. So what is counted and what is put off until the
+    // window settles are the same question here, and a hand answers it.
     let dragged = DRAGGED.load(Ordering::Relaxed);
     let moving = dragged;
 
@@ -1756,16 +1757,36 @@ static LAID_WHILE_CARRIED: std::sync::atomic::AtomicU32 = std::sync::atomic::Ato
 /// Whether the window is in the middle of a gesture, by a hand or by an
 /// order.
 ///
-/// Both mean the same thing to everything that tidies up after a resize:
-/// wait. Holding the window to the picture's shape fights whatever is
-/// moving it, and the two answers to « is it moving » are a hand on it
-/// and the picture being held inside it, which is what both gestures do
-/// and nothing else does.
+/// The tidying that follows a resize waits for this to be false: cutting
+/// the picture's corners costs a shape built and a window redrawn, and
+/// the two corners it buys are two nobody is looking at while the window
+/// is on the move.
 ///
-/// Read from other threads, which is why it is these two and not
-/// something kept beside the handler: what a moving window must not have
-/// done to it is decided in places that handler does not run.
-fn on_the_move() -> bool {
+/// It used to answer « a hand is on it, or the picture is held inside
+/// it », which was the same thing back when the picture was only ever
+/// held for the length of a gesture. It is held for a whole session now,
+/// so that reading answered yes from the first laying to the last and
+/// the tidying never ran again: the far computer's screen kept square
+/// corners inside a rounded frame, and the size the player is told again
+/// at start-up was never told. Both were written to run here and neither
+/// did.
+///
+/// A hand on the window, or a move the system is playing out, and
+/// nothing else.
+fn a_gesture_is_running() -> bool {
+    #[cfg(windows)]
+    let played = HOLDING.with_borrow(Option::is_some);
+    #[cfg(not(windows))]
+    let played = false;
+    DRAGGED.load(Ordering::Relaxed) || played
+}
+
+/// Whether there is a picture riding inside our window at all.
+///
+/// What the two messages that carry a coming size ask before doing
+/// anything: outside a session there is nothing to lay, and before the
+/// picture has been taken in there is a hand to answer to instead.
+fn the_picture_rides() -> bool {
     DRAGGED.load(Ordering::Relaxed) || CARRIED.load(Ordering::Relaxed) != 0
 }
 
@@ -1888,6 +1909,7 @@ fn carry_the_picture(
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GWL_STYLE, GetWindowLongPtrW, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE,
         SWP_NOSENDCHANGING, SetParent, SetWindowLongPtrW, SetWindowPos, WS_CHILD, WS_POPUP,
+        WS_VISIBLE,
     };
 
     if CARRIED.load(Ordering::Relaxed) != 0 {
@@ -1901,7 +1923,15 @@ fn carry_the_picture(
     // amended for the child it is about to be, and put back whole if
     // the system refuses the adoption.
     unsafe {
-        let style = GetWindowLongPtrW(engine, GWL_STYLE);
+        // Everything the picture wears except whether it is shown. That
+        // one is not ours to put back: the picture is taken in before it
+        // has ever been shown, so what is read here is a hidden window's
+        // style, and giving it back whole later hid a session that had
+        // been on the screen for minutes. What showed instead was our
+        // own page, and the picture came straight back in through the
+        // road that takes in a picture nobody can see, so the two took
+        // turns for as long as the hand kept resizing.
+        let style = GetWindowLongPtrW(engine, GWL_STYLE) & !(WS_VISIBLE as isize);
         // The parent first and the style after it, which is the ordering
         // that shortens the wrong reading rather than the work; the
         // other end of a gesture is put back the same way about, and for
@@ -1983,8 +2013,9 @@ fn carry_the_picture(
 #[cfg(windows)]
 fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_STYLE, GWLP_HWNDPARENT, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SetParent, SetWindowLongPtrW, SetWindowPos,
+        GWL_STYLE, GWLP_HWNDPARENT, GetWindowLongPtrW, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SetParent, SetWindowLongPtrW,
+        SetWindowPos, WS_VISIBLE,
     };
 
     let style = CARRIED.swap(0, Ordering::Relaxed);
@@ -2051,7 +2082,14 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
         // And it is only a question of when it ends, never of whether:
         // should the system hold off until the parent really goes, the
         // numbers are the arrival numbers by then either way.
-        SetWindowLongPtrW(engine, GWL_STYLE, style);
+        // With whether it is shown taken from the window itself rather
+        // than from what it wore when it was taken in; see
+        // `carry_the_picture`.
+        SetWindowLongPtrW(
+            engine,
+            GWL_STYLE,
+            style | (GetWindowLongPtrW(engine, GWL_STYLE) & WS_VISIBLE as isize),
+        );
         let styled = crossing.elapsed();
         SetParent(engine, std::ptr::null_mut());
         // Owned again: owned is what has it come and go with our window
@@ -2505,7 +2543,7 @@ unsafe extern "system" fn lit(
         // during the work on dragging, and reads « the picture is never
         // the smaller of the two »; it was simply never asked when the
         // one doing the growing was the system.
-        WM_WINDOWPOSCHANGING if on_the_move() => {
+        WM_WINDOWPOSCHANGING if the_picture_rides() => {
             // SAFETY: for this message the system passes a WINDOWPOS of
             // ours to read and amend, and it lives for the length of the
             // call.
@@ -2541,7 +2579,7 @@ unsafe extern "system" fn lit(
         // to fill it. That is the far computer's screen appearing zoomed
         // for an instant, like a change of resolution that is over far
         // too quickly to be one.
-        WM_NCCALCSIZE if wparam != 0 && on_the_move() => {
+        WM_NCCALCSIZE if wparam != 0 && the_picture_rides() => {
             // SAFETY: the arguments the system handed in, untouched.
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
             // SAFETY: for this message the system passes a block of ours
@@ -2769,10 +2807,6 @@ fn the_drag_keeps_the_shape(
     if !BY_AN_EDGE.load(Ordering::Relaxed) {
         return;
     }
-    // A hand on an edge is the one gesture the picture cannot ride
-    // through: our window keeps its size for a carry across the desk and
-    // the picture keeps its own, while an edge changes it at every step.
-    put_the_picture_back(window);
 
     // Gathered and never re-decided: the hand cannot let go of one edge
     // and take another without ending the drag, so an edge seen to move
