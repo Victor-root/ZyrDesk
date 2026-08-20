@@ -501,6 +501,12 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Faire le même essai en **double-cliquant sur la barre de titre**, qui est le même ordre par un autre chemin.
 >
+> Puis le troisième chemin, qui n'en est pas un : **attraper la barre de titre et pousser la fenêtre contre le haut de l'écran**, jusqu'à ce que Windows propose de l'agrandir, et lâcher. Attendu exactement pareil, la fenêtre couvre l'écran et la session est dedans.
+>
+> Celui-là mérite son propre essai parce qu'il ne passe pas du tout par le même endroit. Le bouton et le double-clic sont un ordre, que le système nous adresse et qu'on lui rend. L'ancrage n'est pas un ordre : la main tient encore la fenêtre, et c'est le système qui change sa taille au milieu du geste, sans rien annoncer. Il a été cassé un moment, et de deux façons à la fois : le verrou de proportions, qui n'a de sens que pour une main posée sur un bord, s'appliquait au rectangle que le système avait choisi et la fenêtre atterrissait à une taille à elle, ni celle d'avant ni celle de l'écran, avec le bureau visible à côté ; et l'image était ressortie de la fenêtre à la taille qu'elle avait avant l'ancrage, si bien que ce qui s'affichait dedans était la page d'accueil de ZyrDesk et pas la session.
+>
+> Ce qui les départage est demandé au système avant que le geste commence : il dit si la main a pris la fenêtre par sa barre de titre ou par un bord. Après, plus rien ne le dit, les messages sont les mêmes pour les deux.
+>
 > Windows anime ce changement, et il l'anime bien : il tient le dessin de la fenêtre, l'étire vers son nouveau rectangle sur la carte graphique, au rythme de l'écran, et ne montre ce qui est vraiment là qu'à la fin. La fenêtre, elle, ne change de taille qu'**une seule fois**.
 >
 > Ce qu'il ne sait pas faire, c'est animer deux fenêtres comme une seule, et l'image de la session est une fenêtre à part : elle prenait sa taille définitive tout de suite, et on voyait l'écran distant bondir puis le cadre le rejoindre. C'est pour ça que le mouvement a d'abord été **joué à la main**, cran par cran.
@@ -521,13 +527,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Le journal chiffre le geste.** Une ligne est écrite à chaque fois, quand l'image ressort de la fenêtre :
 >
 > ```
-> agrandissement rendu au système : agrandie en 502 ms, image redimensionnée 1 fois ; partie de (288, 101, 1631, 893), arrivée à (-9, -9, 1929, 1149), cadre dessiné Some((0, 0, 1920, 1140)), image Some((0, 0, 1920, 1111)), dedans Some(((0, 29), 1920, 1111))
+> agrandissement rendu au système : agrandie en 502 ms, image redimensionnée 1 fois ; fenêtre Some((-9, -9, 1929, 1149)), cadre dessiné Some((0, 0, 1920, 1140)), image Some((0, 0, 1920, 1111)), dedans Some(((0, 29), 1920, 1111))
 > ```
 >
-> Elle a un seul travail : dire laquelle des deux moitiés a échoué si l'ancien défaut revient. Vu de l'extérieur, « l'image a bondi et le cadre a suivi » a exactement la même tête que l'image posée au mauvais endroit, ce que ces nombres montrent, ou que le compositeur qui n'étire pas ce qui est rangé dedans, ce qu'ils ne peuvent pas montrer mais qui est alors la seule explication restante.
+> Le nom au début est celui du geste : `agrandissement`, `retour en fenêtre`, ou `ancrage` quand c'est la fenêtre poussée contre un bord de l'écran. Elle a un seul travail : dire laquelle des deux moitiés a échoué si l'ancien défaut revient. Vu de l'extérieur, « l'image a bondi et le cadre a suivi » a exactement la même tête que l'image posée au mauvais endroit, ce que ces nombres montrent, ou que le compositeur qui n'étire pas ce qui est rangé dedans, ce qu'ils ne peuvent pas montrer mais qui est alors la seule explication restante.
 >
 > 1. **Image redimensionnée N fois.** **Un**, c'est tout l'objet : la fenêtre change de taille une fois, l'image dedans une fois, et le compositeur s'occupe du reste. Treize voudrait dire que quelque chose rejoue le mouvement cran par cran dans notre dos.
-> 2. **Arrivée à, cadre dessiné, image, dedans.** Les quatre rectangles côte à côte à la fin du geste. `image` et `dedans` doivent se correspondre : si l'image est là où l'intérieur de la fenêtre est, notre moitié est juste.
+> 2. **Fenêtre, cadre dessiné, image, dedans.** Les quatre rectangles côte à côte à la fin du geste. `image` et `dedans` doivent se correspondre : si l'image est là où l'intérieur de la fenêtre est, notre moitié est juste.
 > 3. **En N ms.** L'attente avant de ressortir l'image, une demi-seconde environ. Windows ne prévient pas quand son animation est finie et sa durée n'est écrite nulle part : c'est une marge prise large, parce que ressortir l'image trop tôt fait bondir l'écran distant alors que la ressortir trop tard ne se voit pas du tout.
 
 > **S9quinquies (Alt+Tab montre la session, pas l'écran d'accueil)**

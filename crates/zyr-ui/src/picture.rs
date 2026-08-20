@@ -717,6 +717,19 @@ static SYSTEM: Cost = Cost::new();
 /// hand is down: a plain move carries none.
 static RESIZED: AtomicBool = AtomicBool::new(false);
 
+/// Whether the hand that took the window took it by an edge rather than
+/// by the title bar.
+///
+/// The system says which of the two it is before either has begun, and
+/// nothing after that does: the drag messages are the same for a window
+/// being carried and a window being stretched, and so are the changes of
+/// size they carry. It matters because one of those two changes of size
+/// is not the hand's doing at all. A window carried against an edge of
+/// the screen is snapped there by the system, which is « agrandir » by
+/// another road, and everything this file does about a hand on an edge
+/// is wrong for it.
+static BY_AN_EDGE: AtomicBool = AtomicBool::new(false);
+
 /// Which edges of the window the hand is holding, over the whole drag.
 ///
 /// A hand grabs one edge or one corner when the drag begins and holds it
@@ -796,14 +809,22 @@ fn tell_the_drag() {
     // to the system, and cost the same work here. Only one of them is a
     // resize, and this line is read to answer a question about resizing:
     // it says which it was rather than calling both by the louder name.
-    if !RESIZED.load(Ordering::Relaxed) {
-        let carried = if CARRIED.load(Ordering::Relaxed) != 0 {
-            " (image portée par la fenêtre)"
-        } else {
+    //
+    // Which it was is asked of the system, and not worked out from
+    // whether the size ever changed: it changes at the end of a carry
+    // too, when the window is dropped against an edge of the screen and
+    // snapped there, and that gesture was being written down as a
+    // resize by a corner nobody had touched.
+    if !BY_AN_EDGE.load(Ordering::Relaxed) {
+        let ending = if CARRIED.load(Ordering::Relaxed) == 0 {
             ""
+        } else if RESIZED.load(Ordering::Relaxed) {
+            " (image portée par la fenêtre, fini en ancrage)"
+        } else {
+            " (image portée par la fenêtre)"
         };
         crate::journal::note(&format!(
-            "déplacement{carried} : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
+            "déplacement{ending} : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
              dont image {picture:.0} ms (pire {picture_worst:.1}) et bouton {button:.0} ms ; \
              système et vue web {system:.0} ms (pire {system_worst:.1})"
         ));
@@ -1763,12 +1784,11 @@ const LET_GO: usize = 2;
 /// once the picture has been let go of.
 #[cfg(windows)]
 struct Holding {
-    /// The order, so the line can name it.
-    then: usize,
+    /// What the gesture was, so the line can name it. A snap against an
+    /// edge of the screen is not an order and has no number of its own.
+    what: &'static str,
     /// When it was handed over.
     began: std::time::Instant,
-    /// Where the window stood before it.
-    from: (i32, i32, i32, i32),
     /// How many times the picture was given a new size while held.
     ///
     /// One is the whole point. The window changes size once, the
@@ -1821,7 +1841,7 @@ thread_local! {
 #[cfg(windows)]
 fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) -> bool {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, SetTimer, WM_SYSCOMMAND};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, SC_MAXIMIZE, WM_SYSCOMMAND};
 
     // A window down in the taskbar has no rectangle to leave from, and
     // coming back up from there is the system's own animation about an
@@ -1831,9 +1851,6 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
         return false;
     }
     let Some(engine) = the_engines_window() else {
-        return false;
-    };
-    let Some(from) = where_it_stands(window) else {
         return false;
     };
     carry_the_picture(window, engine);
@@ -1849,30 +1866,52 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
     // growing under one is clipped to where it used to end.
     let_the_corners_go(engine);
 
-    HOLDING.with_borrow_mut(|holding| {
-        *holding = Some(Holding {
-            then: order,
-            began: std::time::Instant::now(),
-            from,
-            laid: 0,
-        });
-    });
     // SAFETY: the order the person gave, at the window it was given to,
     // handed straight to the system's own handling since ours would only
     // take it back again.
     unsafe { DefSubclassProc(window, WM_SYSCOMMAND, order, 0) };
-    // SAFETY: our own window, from the thread that owns it. Set after
-    // the order and not before, so the wait covers the move and not the
-    // handing over of it.
-    unsafe { SetTimer(window, LET_GO, THE_SYSTEMS_MOVE.as_millis() as u32, None) };
+    // After the order and not before, so the wait covers the move and
+    // not the handing over of it.
+    hold_through_the_systems_move(
+        window,
+        if order as u32 == SC_MAXIMIZE {
+            "agrandissement"
+        } else {
+            "retour en fenêtre"
+        },
+    );
     true
+}
+
+/// Leaves the picture inside our window for as long as the system can
+/// still be playing a move, and has it let go of afterwards.
+///
+/// The two gestures the system plays for us end up here: the order from
+/// the title bar, and the window being snapped against an edge of the
+/// screen by a hand that was only carrying it. Both animate, neither
+/// says when it has finished.
+#[cfg(windows)]
+fn hold_through_the_systems_move(window: windows_sys::Win32::Foundation::HWND, what: &'static str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetTimer;
+
+    HOLDING.with_borrow_mut(|holding| {
+        *holding = Some(Holding {
+            what,
+            began: std::time::Instant::now(),
+            laid: 0,
+        });
+    });
+    // SAFETY: our own window, from the thread that owns it. Setting a
+    // timer that is already set only puts it back to the start, so two
+    // gestures running into each other cannot leave two of them.
+    unsafe { SetTimer(window, LET_GO, THE_SYSTEMS_MOVE.as_millis() as u32, None) };
 }
 
 /// The system has had its time; the picture goes back to being a window
 /// of its own, and the gesture is written down.
 #[cfg(windows)]
 fn let_the_picture_go(window: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{IsZoomed, KillTimer, SC_MAXIMIZE};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{IsZoomed, KillTimer};
 
     // SAFETY: our own window, from the thread that owns it.
     unsafe { KillTimer(window, LET_GO) };
@@ -1892,12 +1931,8 @@ fn let_the_picture_go(window: windows_sys::Win32::Foundation::HWND) {
     // SAFETY: our own window, read only.
     crate::journal::note(&format!(
         "{} rendu au système : {} en {:.0} ms, image redimensionnée {} fois ; \
-         partie de {:?}, arrivée à {:?}, cadre dessiné {:?}, image {:?}, dedans {:?}",
-        if held.then == SC_MAXIMIZE as usize {
-            "agrandissement"
-        } else {
-            "retour en fenêtre"
-        },
+         fenêtre {:?}, cadre dessiné {:?}, image {:?}, dedans {:?}",
+        held.what,
         if unsafe { IsZoomed(window) } != 0 {
             "agrandie"
         } else {
@@ -1905,7 +1940,6 @@ fn let_the_picture_go(window: windows_sys::Win32::Foundation::HWND) {
         },
         held.began.elapsed().as_secs_f64() * 1000.0,
         held.laid,
-        held.from,
         where_it_stands(window),
         the_drawn_frame_of(window),
         the_engines_window().and_then(where_it_stands),
@@ -1980,7 +2014,7 @@ unsafe extern "system" fn lit(
 ) -> isize {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, SC_MAXIMIZE, SC_RESTORE, WINDOWPOS, WM_ACTIVATEAPP,
+        PostMessageW, SC_MAXIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, WINDOWPOS, WM_ACTIVATEAPP,
         WM_DWMSENDICONICLIVEPREVIEWBITMAP, WM_DWMSENDICONICTHUMBNAIL, WM_ENTERSIZEMOVE,
         WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED,
         WM_WINDOWPOSCHANGING,
@@ -2000,6 +2034,15 @@ unsafe extern "system" fn lit(
                 && play_the_order(window, wparam & 0xFFF0) =>
         {
             0
+        }
+        // A hand about to take the window, and the system saying which of
+        // the two gestures it is before either has begun. Written down
+        // here because nothing later says it: the drag messages that
+        // follow are the same for both.
+        WM_SYSCOMMAND if matches!((wparam & 0xFFF0) as u32, SC_MOVE | SC_SIZE) => {
+            BY_AN_EDGE.store((wparam & 0xFFF0) as u32 == SC_SIZE, Ordering::Relaxed);
+            // SAFETY: the arguments the system handed in, untouched.
+            unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
         // The system wants something to show this window as, small: in
         // Alt+Tab, or hovering its button in the taskbar. It would take
@@ -2115,12 +2158,29 @@ unsafe extern "system" fn lit(
         WM_EXITSIZEMOVE => {
             DRAGGED.store(false, Ordering::Relaxed);
             tell_the_drag();
-            put_the_picture_back(window);
+            // The hand has let go with the picture still inside our
+            // window and the size changed all the same, which is the
+            // system snapping the window against an edge of the screen.
+            // It animates that, as it animates the order, so the picture
+            // stays inside for as long; handed back here, it would take
+            // its own place at once and jump while the frame is still on
+            // its way. Ordinarily there is nothing left to hold: a hand
+            // on an edge hands the picture back at its first step.
+            if CARRIED.load(Ordering::Relaxed) != 0 && RESIZED.load(Ordering::Relaxed) {
+                hold_through_the_systems_move(window, "ancrage");
+            } else {
+                put_the_picture_back(window);
+            }
             // SAFETY: the arguments the system handed in, untouched.
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
             // The shape was left alone while the hand was moving; the
-            // hand has stopped.
-            if let Some(engine) = the_engines_window() {
+            // hand has stopped. Not while the picture is still held: the
+            // timer above ends with the very same tidying up, and doing
+            // it here as well would cut a shape for a size the window is
+            // still on its way to.
+            if CARRIED.load(Ordering::Relaxed) == 0
+                && let Some(engine) = the_engines_window()
+            {
                 lay_it_out(window, engine);
             }
             answer
@@ -2275,14 +2335,35 @@ fn the_drag_keeps_the_shape(
     // The first step that really changes the size, and only that one:
     // the shape a window was given is the shape of the size it had when
     // it was given, so a window growing under one is clipped to where it
-    // used to end. Off for the rest of the gesture, and put back when the
-    // hand stops.
-    if !RESIZED.swap(true, Ordering::Relaxed) {
-        put_the_picture_back(window);
-        if let Some(engine) = the_engines_window() {
-            let_the_corners_go(engine);
-        }
+    // used to end. Off for the rest of the gesture, and cut again when
+    // the hand stops.
+    if !RESIZED.swap(true, Ordering::Relaxed)
+        && let Some(engine) = the_engines_window()
+    {
+        let_the_corners_go(engine);
     }
+
+    // Its size is moving and the hand is on the title bar, so the hand
+    // is not what is moving it: the window has been carried against an
+    // edge of the screen and the system is snapping it there, which is
+    // « agrandir » wearing a different hat. Everything below is about a
+    // hand on an edge and none of it applies.
+    //
+    // Held to the picture's proportions, the rectangle the system had
+    // chosen stopped being the screen's, and the window landed at a size
+    // of its own making, neither the one it had nor the one of the
+    // screen, with the desktop showing beside it. And the picture was
+    // handed back out of our window at the size it had before the snap,
+    // which is why what showed inside was our own page and not the
+    // session. Left alone, the system's rectangle is applied whole and
+    // the picture rides inside our window as it does for the order.
+    if !BY_AN_EDGE.load(Ordering::Relaxed) {
+        return;
+    }
+    // A hand on an edge is the one gesture the picture cannot ride
+    // through: our window keeps its size for a carry across the desk and
+    // the picture keeps its own, while an edge changes it at every step.
+    put_the_picture_back(window);
 
     // Gathered and never re-decided: the hand cannot let go of one edge
     // and take another without ending the drag, so an edge seen to move
