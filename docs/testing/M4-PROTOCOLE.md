@@ -8,6 +8,43 @@ Ce protocole remplace celui des versions précédentes, qui passait par `zyr-cli
 
 ---
 
+## Où on en est
+
+Ce tableau de bord est la seule chose à lire pour savoir quoi essayer. Le reste du document est la référence, à ouvrir quand un essai échoue ou qu'on veut le détail d'un attendu.
+
+**Règle de tenue :** un essai ne passe en « confirmé » que quand il a été essayé et dit tel quel. Rien n'y monte parce que le code a l'air juste, parce que les tests automatiques passent, ou parce que ça marchait la semaine d'avant. Un essai qu'un changement touche redescend dans « à vérifier ».
+
+### À vérifier maintenant
+
+Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
+
+| Essai | Ce qui a changé |
+|---|---|
+| **R17** | Une qualité n'est plus une taille fixe mais un plafond : la ligne des réglages annonce désormais la taille de l'écran de ce PC-là |
+| **S2**, **S7** | Le bureau distant ne change plus de définition : il déménage sur un écran que ZyrDesk fait pousser, et l'écran physique de l'hôte s'éteint le temps de la session |
+| **R27** à **R31** | Tout l'écran virtuel : sa pose, le moteur qui le vise, la netteté d'un 4K servi par un portable 1080p, la remise en place, le retrait |
+| **S6**, **S8** | Rien n'a changé pour eux, mais ils passent par le même chemin : à refaire une fois pour être sûr que l'écran virtuel ne réintroduit pas de bande noire |
+
+### Confirmé
+
+Ce qui a été essayé sur les deux vraies machines et dit tel quel. La colonne de droite reprend ce qui a été dit, pour qu'on puisse juger de la force de la confirmation.
+
+| Essai | Ce qui a été dit |
+|---|---|
+| S3, S4, S5 (l'ouverture, aucune deuxième fenêtre, aucun éclair) | « ça a l'air d'avoir corrigé le bug du flash », puis « ok tout à l'air de marcher » |
+| S8bis, S8ter, S8quinquies (redimensionner, les coins, la diagonale) | « ok le redimensionnement c'est bon », puis « ok tout à l'air de marcher » |
+| S9, S9quater (déplacer, agrandir et restaurer) | « ok c'est nickel ! », puis « ok tout à l'air de marcher » |
+| Le clavier pendant une session (dans la famille S9) | « le clavier remarche » |
+| S9bis, S11, S12 (le bouton flottant et son menu) | « le fab n'est toujours pas revenu », corrigé, puis « ok tout à l'air de marcher » |
+
+### Jamais confirmé
+
+Ni réussi ni échoué : personne ne les a essayés depuis qu'ils existent. Ils ne sont pas urgents, mais ils ne comptent pas comme acquis.
+
+R1 à R16, R18 à R26, S1, S2bis, S8quater, S8sexies, S9ter, S9quinquies, S10, S13, S14, S15, S16, S17, S18, S18bis.
+
+---
+
 ## Avant de commencer
 
 ### Le programme qui récupère les moteurs, une fois pour toutes
@@ -349,11 +386,11 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Tout ce qui traîne ici fausse la suite : un moteur resté d'une session précédente tient encore le bureau distant et sa définition.
 
-> **S2 (noter la définition du PC hôte)**
+> **S2 (noter la définition du PC hôte, et celle du PC client)**
 >
-> Sur le **PC hôte** : clic droit sur le bureau, **Paramètres d'affichage**, noter la définition affichée. Sur un portable seize-dixièmes ce sera `1920 x 1200`.
+> Sur **chacun des deux PC** : clic droit sur le bureau, **Paramètres d'affichage**, noter la définition affichée. Sur un portable seize-dixièmes ce sera `1920 x 1200`.
 >
-> C'est le point de comparaison de S7 et de S16. Sans lui, ces deux essais ne veulent rien dire.
+> Les deux, et non plus seulement celle de l'hôte : ce que la session demande, c'est la taille de l'écran **du client**, et ce que l'hôte fournit dépend de ce qu'il sait dessiner. S7 et S16 comparent l'un à l'autre, et sans les deux nombres ils ne veulent rien dire.
 
 > **S2bis (ce qu'une machine neuve propose)**
 >
@@ -411,13 +448,15 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > C'est l'essai qui compte le plus sur un grand écran regardant un portable : les deux n'ont pas la même forme, et jusqu'ici la différence était remplie de noir.
 
-> **S7 (le bureau distant a bien changé de définition)**
+> **S7 (le bureau distant est à la taille demandée)**
 >
 > Toujours pendant la session, **dans l'image** : clic droit sur le bureau distant, **Paramètres d'affichage**.
 >
-> Attendu : la définition n'est plus celle notée en S2. Elle est celle de la qualité choisie dans les réglages : `1280 x 720` en Fluidité, `1920 x 1080` en Équilibre, `2560 x 1440` en Qualité.
+> Attendu : la définition est **celle demandée par la session**, que la ligne du journal du client annonce mot pour mot (`image demandée au loin en …`). En qualité **Qualité**, c'est la définition de l'écran du PC client notée en S2 ; sur les deux autres marches, c'est le plafond de la marche, `1280 x 720` ou `1920 x 1080`.
 >
-> Si elle n'a pas changé, c'est la cause des bandes noires et rien d'autre ne la corrigera : le moteur hôte filme le bureau tel quel et remplit de noir ce qui manque. Le journal du moteur hôte le dit, sur le PC hôte, dans `logs\engine.log`.
+> Ce n'est plus l'écran de l'hôte qui a changé de taille : c'est un écran que ZyrDesk fait pousser sur l'hôte, sur lequel son bureau déménage le temps de la session. C'est ce qui permet à un portable de servir un écran plus grand que le sien sans rien agrandir. L'écran physique de l'hôte s'éteint pendant ce temps, et se rallume à la fin (R29, R30).
+>
+> Si la définition n'a pas changé, c'est la cause des bandes noires **et** du flou, et rien d'autre ne les corrigera : le moteur hôte filme le bureau tel quel, remplit de noir ce qui manque et agrandit le reste. Le journal du service hôte dit pourquoi, avec `virtual screen` et `screens the engine sees`.
 
 > **S8 (aucune bande noire en fenêtre)**
 >
