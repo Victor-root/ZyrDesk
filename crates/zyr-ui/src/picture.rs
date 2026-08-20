@@ -2149,10 +2149,10 @@ unsafe extern "system" fn lit(
 ) -> isize {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, SC_MAXIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, WINDOWPOS, WM_ACTIVATEAPP,
-        WM_DWMSENDICONICLIVEPREVIEWBITMAP, WM_DWMSENDICONICTHUMBNAIL, WM_ENTERSIZEMOVE,
-        WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED,
-        WM_WINDOWPOSCHANGING,
+        NCCALCSIZE_PARAMS, PostMessageW, SC_MAXIMIZE, SC_MOVE, SC_RESTORE, SC_SIZE, WINDOWPOS,
+        WM_ACTIVATEAPP, WM_DWMSENDICONICLIVEPREVIEWBITMAP, WM_DWMSENDICONICTHUMBNAIL,
+        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_SYSCOMMAND, WM_TIMER,
+        WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
     };
 
     match message {
@@ -2285,19 +2285,48 @@ unsafe extern "system" fn lit(
             if DRAGGED.load(Ordering::Relaxed) {
                 the_drag_keeps_the_shape(window, wanted);
             }
-            // The picture takes its new size here, before our window
-            // takes its own, but only when that leaves it the bigger of
-            // the two; see `the_picture_leads`. Shrinking, it stays
-            // where it is and follows once the window has moved.
-            if let Some(engine) = the_engines_window()
-                && let Some((corner, width, height)) = the_inside_after(window, wanted)
-                && the_picture_leads(window, (width, height))
-            {
-                lay_on(window, engine, corner, width, height);
-            }
             // Handed on: what was written only becomes the window's size
             // in the system's own handling of this message.
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
+        }
+        // The system working out what inside the window will have once
+        // the size just settled is applied, which is the one place that
+        // answer exists before anything has moved. Handed on first, so
+        // that what comes back is the system's own answer and not a
+        // guess of ours, and the picture laid on it while the window
+        // still wears its old size.
+        //
+        // Guessed at, as it was for one commit, by taking the proposal
+        // and subtracting what the frame costs today. That holds under a
+        // hand, where the frame is the same before and after, and is
+        // wrong for « agrandir », where the frame itself changes: the
+        // picture was given a size that was nobody's, then given the
+        // right one through the message that follows. Two sizes for one
+        // gesture, the first of them wrong, and a picture wearing a size
+        // its player has not drawn at yet is stretched by the compositor
+        // to fill it. That is the far computer's screen appearing zoomed
+        // for an instant, like a change of resolution that is over far
+        // too quickly to be one.
+        WM_NCCALCSIZE if wparam != 0 && on_the_move() => {
+            // SAFETY: the arguments the system handed in, untouched.
+            let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
+            // SAFETY: for this message the system passes a block of ours
+            // whose first rectangle it has just written the coming
+            // inside into, in screen coordinates, and it lives for the
+            // length of the call.
+            let inside = unsafe { (*(lparam as *const NCCALCSIZE_PARAMS)).rgrc[0] };
+            let (width, height) = (inside.right - inside.left, inside.bottom - inside.top);
+            // Only when that leaves the picture the bigger of the two;
+            // see `the_picture_leads`. Shrinking, it stays as it is and
+            // follows once the window has moved.
+            if width > 0
+                && height > 0
+                && let Some(engine) = the_engines_window()
+                && the_picture_leads(window, (width, height))
+            {
+                lay_on(window, engine, (inside.left, inside.top), width, height);
+            }
+            answer
         }
         // A hand on the window. Which of the two gestures it is, moving
         // it or resizing it, is not said and is not asked here: the
@@ -2415,38 +2444,6 @@ unsafe extern "system" fn lit(
 #[cfg(windows)]
 fn the_picture_leads(home: windows_sys::Win32::Foundation::HWND, after: (i32, i32)) -> bool {
     the_inside_of(home).is_none_or(|(_, width, height)| after.0 > width || after.1 > height)
-}
-
-/// Where our window's inside will be once that proposal is applied.
-///
-/// Worked out from the proposal and from what separates our window's
-/// edges from its inside, which a move does not change and a resize does
-/// not change either: the bands and the title bar are the same whatever
-/// size the window is.
-#[cfg(windows)]
-fn the_inside_after(
-    home: windows_sys::Win32::Foundation::HWND,
-    wanted: &windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPOS,
-) -> Option<((i32, i32), i32, i32)> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOMOVE, SWP_NOSIZE};
-
-    let (left, top, right, bottom) = where_it_stands(home)?;
-    let (corner, width, height) = the_inside_of(home)?;
-    let (x, y) = if wanted.flags & SWP_NOMOVE != 0 {
-        (left, top)
-    } else {
-        (wanted.x, wanted.y)
-    };
-    let (cx, cy) = if wanted.flags & SWP_NOSIZE != 0 {
-        (right - left, bottom - top)
-    } else {
-        (wanted.cx, wanted.cy)
-    };
-    Some((
-        (x + (corner.0 - left), y + (corner.1 - top)),
-        cx - ((right - left) - width),
-        cy - ((bottom - top) - height),
-    ))
 }
 
 /// Holds the size a drag is about to apply to the shape of the picture.
