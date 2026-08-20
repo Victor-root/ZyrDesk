@@ -516,6 +516,10 @@ fn lay_it_out(
             "image posée en {:.0} ms, soit plus d'une image : le lecteur a tardé à répondre",
             laid.as_secs_f64() * 1000.0
         ));
+    } else if !moving {
+        // Answered inside a frame, so the player is past its start-up
+        // and will hear what size its window is.
+        say_the_size_again(engine, (width, height));
     }
     tell_the_gap(
         engine,
@@ -1161,14 +1165,15 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND) {
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DwmSetWindowAttribute,
     };
 
-    let how: i32 = if the_frame_is_square(home) {
+    let square = the_frame_is_square(home);
+    let how: i32 = if square {
         DWMWCP_DONOTROUND
     } else {
         DWMWCP_ROUND
     };
     // SAFETY: our own window, an attribute made to be set, and the value
     // is ours, of the size the call is told.
-    unsafe {
+    let answer = unsafe {
         DwmSetWindowAttribute(
             home,
             DWMWA_WINDOW_CORNER_PREFERENCE as u32,
@@ -1176,7 +1181,24 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND) {
             std::mem::size_of::<i32>() as u32,
         )
     };
+    // Written down each time it changes, and with what the compositor
+    // said back. « The corners did not come back » can mean the wrong
+    // thing was asked for or the right thing was refused, and those two
+    // are chased in opposite directions.
+    let told = (i64::from(how) << 32) | i64::from(answer) & 0xFFFF_FFFF;
+    if CORNERS.swap(told, Ordering::Relaxed) == told {
+        return;
+    }
+    crate::journal::note(&format!(
+        "coins de la fenêtre : {} demandés, le compositeur a répondu {answer:#x}",
+        if square { "droits" } else { "arrondis" }
+    ));
 }
+
+/// What was last asked of the compositor about the corners, and what it
+/// answered, so a change of either can be written down and nothing else.
+#[cfg(windows)]
+static CORNERS: AtomicI64 = AtomicI64::new(-1);
 
 /// Tells the player the size of its own window, once more, out loud.
 ///
@@ -1187,32 +1209,33 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND) {
 /// whole session. Its own log names them, « dropping window event during
 /// flush », and the one it drops is ours.
 ///
-/// So it is told again, once, when the session is really up and the
-/// clearing is long over. Told by moving the window rather than by
-/// saying it, because a size that has not changed is not a size change
-/// and reaches nobody: a pixel narrower and then right again, in one
-/// go, with nothing drawn in between.
+/// When to say it again is the whole difficulty, and it is not a delay
+/// to guess at: the player is busy for exactly as long as it is busy.
+/// But how busy it is can be read, because moving its window waits on
+/// it. Still starting up, that wait runs to a quarter of a second; up
+/// and running, it answers inside a drawn frame. So this is called on
+/// the first laying the player answers quickly and on no earlier one,
+/// and it happens once.
+///
+/// Said by moving the window rather than by saying it, because a size
+/// that has not changed is not a size change and reaches nobody: a pixel
+/// narrower and then right again, in one go, with nothing drawn between.
 ///
 /// A patch to the engine is what would end this properly. Until then,
 /// this costs two calls, once per session.
 #[cfg(windows)]
-pub fn say_the_size_again(app: &AppHandle) {
+static SIZE_SAID: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
+fn say_the_size_again(engine: windows_sys::Win32::Foundation::HWND, size: (i32, i32)) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SetWindowPos,
     };
 
-    let Some(held) = taken(app).filter(alive) else {
-        return;
-    };
-    let engine = held.window as windows_sys::Win32::Foundation::HWND;
-    let Some((left, top, right, bottom)) = where_it_stands(engine) else {
-        return;
-    };
-    let (wide, high) = (right - left, bottom - top);
-    if wide <= 1 || high <= 1 {
+    if size.0 <= 1 || size.1 <= 1 || SIZE_SAID.swap(true, Ordering::Relaxed) {
         return;
     }
-    for size in [(wide - 1, high - 1), (wide, high)] {
+    for said in [(size.0 - 1, size.1 - 1), size] {
         // SAFETY: a window this program took in hand, resized where it
         // stands without being activated.
         unsafe {
@@ -1221,19 +1244,17 @@ pub fn say_the_size_again(app: &AppHandle) {
                 std::ptr::null_mut(),
                 0,
                 0,
-                size.0,
-                size.1,
+                said.0,
+                said.1,
                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
             )
         };
     }
     crate::journal::note(&format!(
-        "taille de l'image redite au lecteur : {wide}x{high}"
+        "taille de l'image redite au lecteur : {}x{}",
+        size.0, size.1
     ));
 }
-
-#[cfg(not(windows))]
-pub fn say_the_size_again(_app: &AppHandle) {}
 
 /* ---- Ce que les autres fenêtres montrent de la nôtre ----------------- */
 
@@ -1841,14 +1862,21 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
             )
         };
+        // The whole of what the window ended up as. « It came back with
+        // square edges » is about the frame the compositor draws, and
+        // the frame is worked out from these: whether the system counts
+        // the window as spread over a screen, where it stands, and where
+        // it draws. Those three side by side say which of them is wrong.
         // SAFETY: our own window, read only.
         crate::journal::note(&format!(
-            "fenêtre {} après le mouvement",
+            "fenêtre {} après le mouvement, en {:?}, cadre dessiné en {:?}",
             if unsafe { IsZoomed(window) } != 0 {
                 "agrandie"
             } else {
                 "en fenêtre"
-            }
+            },
+            where_it_stands(window),
+            the_drawn_frame_of(window),
         ));
     }
     // The shape was left alone while the window was moving; it has
