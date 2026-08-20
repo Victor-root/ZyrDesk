@@ -521,14 +521,38 @@ pub fn lower(app: &AppHandle) {
     }
 }
 
+/// One rounded rectangle of what the page draws, in real pixels from the
+/// top left of the window.
+#[derive(serde::Deserialize)]
+pub struct Piece {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    radius: i32,
+}
+
 /// Resizes the button to what the page turned out to need, keeping the
-/// corner it hangs from.
+/// corner it hangs from, and cuts the window to the shape it draws.
 ///
 /// The page measures itself rather than being told a size: the menu's
 /// height depends on what is in it, and a number written twice would
 /// stop matching the first time an entry is added.
+///
+/// The shape it sends is the same measurement carried one step further.
+/// A window is a rectangle and this one is transparent, but transparent
+/// is a thing the layers below the page each have to agree to, and one
+/// of them does not: an opaque rectangle showed through the logo's
+/// rounded corners and around the menu. Cutting the window to the shape
+/// settles it wherever it comes from, since nothing at all is drawn
+/// outside a shape.
 #[tauri::command]
-pub fn floating_size(app: AppHandle, width: u32, height: u32) -> Result<(), String> {
+pub fn floating_size(
+    app: AppHandle,
+    width: u32,
+    height: u32,
+    shape: Vec<Piece>,
+) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("le bouton flottant n'est plus là")?;
@@ -539,6 +563,7 @@ pub fn floating_size(app: AppHandle, width: u32, height: u32) -> Result<(), Stri
     window
         .set_size(PhysicalSize::new(width, height))
         .map_err(|e| e.to_string())?;
+    cut_to_what_is_drawn(&shape);
     let Some((right, top)) = corner else {
         return Ok(());
     };
@@ -922,7 +947,7 @@ fn remember_the_button(window: &tauri::WebviewWindow) {
 pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
     };
 
     let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
@@ -934,15 +959,20 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
 
     // The system puts an owned window back up with the one that owns it,
     // which is right for a button that is only down because the window
-    // is. It is not right for one the person hid on purpose, so that
-    // choice is put back here, where everything else about its place is
-    // decided. Its place is settled all the same: a hidden button left
-    // behind would show itself in the wrong corner when called back.
-    let hidden = if HIDDEN.load(Ordering::Relaxed) {
-        SWP_HIDEWINDOW
-    } else {
-        0
-    };
+    // is. Two things it does not decide are decided here, where
+    // everything else about the button's place is. Its place is settled
+    // either way: a button put away in the wrong corner would show
+    // itself there when called back.
+    //
+    // The person hiding it on purpose, first. And then the front: this
+    // button is drawn above every window on the machine, so a session
+    // left for another program put it over that program's work, where
+    // it belongs to nothing and covers something. It follows the front
+    // rather than the session, and the front is the picture's as much as
+    // ours: during a session the window holding it belongs to the
+    // player, which is another program entirely.
+    let away = HIDDEN.load(Ordering::Relaxed) || !the_session_holds_the_front();
+    let shown = if away { SWP_HIDEWINDOW } else { SWP_SHOWWINDOW };
     // SAFETY: a window of ours, moved without being resized or
     // activated.
     unsafe {
@@ -953,9 +983,88 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
             anchor.1,
             0,
             0,
-            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | hidden,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | shown,
         )
     };
+}
+
+/// Cuts the button's window to the pieces the page drew.
+///
+/// Nothing is drawn outside a window's shape, by anybody: that is what
+/// makes this the answer to an opaque rectangle appearing under a page
+/// that asked for none.
+#[cfg(windows)]
+fn cut_to_what_is_drawn(shape: &[Piece]) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::Graphics::Gdi::{
+        CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, SetWindowRgn,
+    };
+
+    let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
+    if button.is_null() || shape.is_empty() {
+        return;
+    }
+    // SAFETY: every shape made here is ours until the system takes the
+    // one they are gathered into.
+    unsafe {
+        // Empty to begin with, and every piece added to it.
+        let whole = CreateRectRgn(0, 0, 0, 0);
+        if whole.is_null() {
+            return;
+        }
+        for piece in shape {
+            // One more pixel each way: a shape is cut exclusive of its
+            // right and bottom edge, and a logo short of its last row is
+            // a logo with a line missing.
+            let one = CreateRoundRectRgn(
+                piece.x,
+                piece.y,
+                piece.x + piece.width + 1,
+                piece.y + piece.height + 1,
+                piece.radius * 2,
+                piece.radius * 2,
+            );
+            if one.is_null() {
+                continue;
+            }
+            CombineRgn(whole, whole, one, RGN_OR);
+            DeleteObject(one);
+        }
+        // The system owns it from here, but only once it has taken it:
+        // refused, it is still ours to free. Redrawn on the spot, since
+        // this happens exactly when the menu opens or closes.
+        if SetWindowRgn(button, whole, 1) == 0 {
+            DeleteObject(whole);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn cut_to_what_is_drawn(_shape: &[Piece]) {}
+
+/// Whether the window at the front belongs to this session.
+///
+/// Ours or the player's, since the picture is another program's window
+/// and holds the front for most of a session. Read from the system on
+/// the spot and never from a lock: this is called from inside the
+/// system's own call into our window.
+#[cfg(windows)]
+fn the_session_holds_the_front() -> bool {
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId,
+    };
+
+    // SAFETY: no argument, and a null answer is one of the answers.
+    let front = unsafe { GetForegroundWindow() };
+    if front.is_null() {
+        return false;
+    }
+    let mut owner = 0u32;
+    // SAFETY: the window comes from the call above and the slot is ours.
+    unsafe { GetWindowThreadProcessId(front, &mut owner) };
+    // SAFETY: no argument.
+    owner == unsafe { GetCurrentProcessId() } || owner == crate::picture::player()
 }
 
 /// Where the button is on screen, in real pixels, or nothing when there

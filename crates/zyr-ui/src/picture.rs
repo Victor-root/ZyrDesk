@@ -751,6 +751,26 @@ fn the_drawn_frame(
     ))
 }
 
+/// Takes the picture's shape off for the length of a drag.
+///
+/// The shape costs too much to redo on every step, so it is only put
+/// back when the hand stops. Left on during the drag, it is the shape of
+/// the size the window had when the drag began: a window growing under
+/// it is clipped to where it used to end, and the strip of new window
+/// beyond that shows the page behind the picture. Sixty times a second,
+/// that is the picture flickering along its own edges.
+#[cfg(windows)]
+fn let_the_corners_go(engine: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::Graphics::Gdi::SetWindowRgn;
+
+    // SAFETY: a window this program took in hand; no shape means the
+    // whole rectangle, which is what a window is without one.
+    unsafe { SetWindowRgn(engine, std::ptr::null_mut(), 0) };
+    // Forgotten, so the shape is put back when the hand stops even if
+    // the window ends the drag at exactly the size it started at.
+    LAID.store(0, Ordering::Relaxed);
+}
+
 /// Whether the system is drawing our window with square corners.
 ///
 /// It rounds an ordinary window and squares one that covers the screen or
@@ -874,8 +894,8 @@ unsafe extern "system" fn lit(
 ) -> isize {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WINDOWPOS, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_WINDOWPOSCHANGED,
-        WM_WINDOWPOSCHANGING,
+        WINDOWPOS, WM_ACTIVATEAPP, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE,
+        WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
     };
 
     match message {
@@ -915,6 +935,9 @@ unsafe extern "system" fn lit(
         WM_ENTERSIZEMOVE => {
             DRAGGED.store(true, Ordering::Relaxed);
             count_the_drag();
+            if let Some(engine) = the_engines_window() {
+                let_the_corners_go(engine);
+            }
             // SAFETY: the arguments the system handed in, untouched.
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
@@ -925,6 +948,18 @@ unsafe extern "system" fn lit(
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
             // The shape was left alone while the hand was moving; the
             // hand has stopped.
+            if let Some(engine) = the_engines_window() {
+                lay_it_out(window, engine);
+            }
+            answer
+        }
+        // Another program has taken the front, or given it back. The
+        // floating button hangs on the picture and is drawn above every
+        // window on the machine: left up, it hangs over whatever was
+        // switched to. Laid again, which is where that is decided.
+        WM_ACTIVATEAPP => {
+            // SAFETY: the arguments the system handed in, untouched.
+            let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
             if let Some(engine) = the_engines_window() {
                 lay_it_out(window, engine);
             }
@@ -978,7 +1013,6 @@ fn the_drag_keeps_the_shape(
     if wide <= 0 || high <= 0 {
         return;
     }
-    RESIZED.store(true, Ordering::Relaxed);
 
     // What the frame costs, so the shape is held on the inside of the
     // window and not on its outside: the title bar is not part of the
@@ -1001,9 +1035,20 @@ fn the_drag_keeps_the_shape(
         (outside.bottom - outside.top) - (inside.bottom - inside.top),
     );
 
+    let now = (outside.left, outside.top, outside.right, outside.bottom);
+    let asked = (wanted.x, wanted.y, wanted.cx, wanted.cy);
+    // A window merely being carried has nothing to hold: its size is
+    // not moving. Corrected all the same, the origin was put back where
+    // the drag began at every step, and the window could not be moved
+    // at all.
+    if !the_size_moves(now, asked) {
+        return;
+    }
+    RESIZED.store(true, Ordering::Relaxed);
+
     let (x, y, cx, cy) = what_the_drag_becomes(
-        (outside.left, outside.top, outside.right, outside.bottom),
-        (wanted.x, wanted.y, wanted.cx, wanted.cy),
+        now,
+        asked,
         frame,
         (wide, high),
         the_least_picture(crate::floating::room_for_the_button(), (wide, high)),
@@ -1012,6 +1057,15 @@ fn the_drag_keeps_the_shape(
     wanted.y = y;
     wanted.cx = cx;
     wanted.cy = cy;
+}
+
+/// Whether that proposal changes the window's size at all.
+///
+/// A hand on the title bar and a hand on an edge send the very same
+/// message, and only the second one has a shape to hold.
+fn the_size_moves(now: (i32, i32, i32, i32), wanted: (i32, i32, i32, i32)) -> bool {
+    let (left, top, right, bottom) = now;
+    wanted.2 != right - left || wanted.3 != bottom - top
 }
 
 /// The place and size a dragged window takes instead of what the hand
@@ -1025,8 +1079,15 @@ fn the_drag_keeps_the_shape(
 ///
 /// And the edge opposite the hand stands still. The system moves the
 /// window's origin when the left or top edge is dragged; whenever it has,
-/// the corrected size is folded back into that origin, so the far edge
-/// does not walk under a hand that is not on it.
+/// whatever the shape added to the size is taken off the origin again, so
+/// the far edge does not walk out from under a hand that is not on it.
+/// Taken off what the system proposed and never off where the window
+/// stands: the two are the same only until the shape corrects something,
+/// and reading the second put a window that was merely being carried
+/// straight back where it started.
+///
+/// Only ever asked about a proposal that really changes the size; see
+/// `the_size_moves`.
 fn what_the_drag_becomes(
     now: (i32, i32, i32, i32),
     wanted: (i32, i32, i32, i32),
@@ -1035,9 +1096,9 @@ fn what_the_drag_becomes(
     least: (i32, i32),
 ) -> (i32, i32, i32, i32) {
     let (left, top, right, bottom) = now;
-    let (mut x, mut y, cx, cy) = wanted;
+    let (x, y, cx, cy) = wanted;
 
-    let (cx, cy) = if (cy - (bottom - top)).abs() > (cx - (right - left)).abs() {
+    let (held_cx, held_cy) = if (cy - (bottom - top)).abs() > (cx - (right - left)).abs() {
         let inner = (cy - frame.1).max(least.1);
         (across(inner, shape.1, shape.0) + frame.0, inner + frame.1)
     } else {
@@ -1045,13 +1106,12 @@ fn what_the_drag_becomes(
         (inner + frame.0, across(inner, shape.0, shape.1) + frame.1)
     };
 
-    if x != left {
-        x = right - cx;
-    }
-    if y != top {
-        y = bottom - cy;
-    }
-    (x, y, cx, cy)
+    (
+        if x != left { x - (held_cx - cx) } else { x },
+        if y != top { y - (held_cy - cy) } else { y },
+        held_cx,
+        held_cy,
+    )
 }
 
 /// One side of the picture worked out from the other, keeping its shape.
@@ -1123,6 +1183,12 @@ fn the_engines_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     // SAFETY: same window, and the slot is ours.
     unsafe { GetWindowThreadProcessId(engine, &mut owner) };
     (owner == PLAYER.load(Ordering::Relaxed)).then_some(engine)
+}
+
+/// The player the picture belongs to, for whoever cannot wait on a lock
+/// to ask. Zero when there is no session.
+pub fn player() -> u32 {
+    PLAYER.load(Ordering::Relaxed)
 }
 
 /// Whether the window at the front is the picture.
@@ -1252,6 +1318,24 @@ mod tests {
         let (_, _, cx, cy) = what_the_drag_becomes(NOW, (100, 100, 976, 100), FRAME, SHAPE, least);
         assert!(cx - 16 >= 107, "largeur au sol : {}", cx - 16);
         assert!(cy - 42 >= 107, "hauteur au sol : {}", cy - 42);
+    }
+
+    #[test]
+    fn a_window_being_carried_is_not_a_window_being_resized() {
+        // La fenêtre part vers le haut à gauche, taille inchangée : c'est
+        // un déplacement. Tenir une forme là-dessus corrigeait l'origine
+        // et remettait la fenêtre à son point de départ à chaque pas, ce
+        // qui la rendait immobile.
+        for ailleurs in [(60, 40), (400, 300), (100, 40), (60, 100)] {
+            let porte = (ailleurs.0, ailleurs.1, 976, 582);
+            assert!(
+                !the_size_moves(NOW, porte),
+                "déplacement pris pour un redimensionnement : {porte:?}"
+            );
+        }
+        // Et un vrai redimensionnement reste reconnu, même d'un pixel.
+        assert!(the_size_moves(NOW, (100, 100, 977, 582)));
+        assert!(the_size_moves(NOW, (100, 100, 976, 583)));
     }
 
     #[test]

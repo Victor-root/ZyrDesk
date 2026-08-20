@@ -30,6 +30,44 @@ function montre(element, visible) {
   element.classList.toggle("cache", !visible);
 }
 
+/* La plaque du logo dans son dessin (zyrdesk.svg) : une boîte de 64, une
+   plaque de 60 posée à 2 du bord, aux coins arrondis de 15. Le dessin
+   fait foi, la fenêtre est découpée dessus. */
+const PLAQUE = { boite: 64, marge: 2, cote: 60, rayon: 15 };
+
+/* La forme que la page occupe vraiment, en vrais pixels depuis le coin
+   de la fenêtre : la plaque du logo, et la carte du menu quand il est
+   ouvert. Le reste de la fenêtre n'est dessiné par personne, et c'est
+   exactement ce qu'il faut découper. */
+function formeOccupee(paquet, echelle) {
+  const morceaux = [];
+  const pose = (gauche, haut, large, haute, rayon) =>
+    morceaux.push({
+      x: Math.round((gauche - paquet.left) * echelle),
+      y: Math.round((haut - paquet.top) * echelle),
+      width: Math.round(large * echelle),
+      height: Math.round(haute * echelle),
+      radius: Math.round(rayon * echelle),
+    });
+
+  const logo = vue.logo.getBoundingClientRect();
+  const part = logo.width / PLAQUE.boite;
+  pose(
+    logo.left + PLAQUE.marge * part,
+    logo.top + PLAQUE.marge * part,
+    PLAQUE.cote * part,
+    PLAQUE.cote * part,
+    PLAQUE.rayon * part,
+  );
+
+  if (ouvert) {
+    const menu = vue.menu.getBoundingClientRect();
+    const rayon = parseFloat(getComputedStyle(vue.menu).borderTopLeftRadius);
+    pose(menu.left, menu.top, menu.width, menu.height, rayon || 0);
+  }
+  return morceaux;
+}
+
 /* La fenêtre suit ce que la page occupe, mesuré et non deviné : le menu
    n'a pas la même hauteur selon ce qu'il contient.
 
@@ -42,6 +80,7 @@ function ajusteLaFenetre() {
   invoke("floating_size", {
     width: Math.ceil(boite.width * echelle),
     height: Math.ceil(boite.height * echelle),
+    shape: formeOccupee(boite, echelle),
   }).catch(() => {});
 }
 

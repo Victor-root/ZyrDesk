@@ -247,6 +247,14 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Attendu : le logo ZyrDesk apparaît en haut à droite **une fois l'image affichée**, et pas pendant l'ouverture du tunnel.
 
+> **R10bis (rien que le logo)**
+>
+> Regarder le bouton de près, sur une zone claire de l'image puis sur une zone sombre. Ouvrir le menu, le refermer.
+>
+> Attendu : **seul le logo se voit**, avec ses coins arrondis, posé directement sur l'image. Aucun carré, aucune plaque, aucun fond derrière lui ni dans ses coins. Menu ouvert : la carte du menu est là, ses coins arrondis, et rien autour d'elle non plus.
+>
+> Une fenêtre est un rectangle, et la transparence est une chose que chacune des couches sous la page doit accorder : l'une d'elles ne l'accordait pas, et son rectangle se voyait dans les coins arrondis du logo. La fenêtre est maintenant découpée sur ce que la page dessine, mesuré par la page elle-même, et rien n'est jamais dessiné hors d'une découpe. À vérifier aussi sur écran agrandi : la découpe suit l'échelle.
+
 > **R11 (il se déplace)**
 >
 > Prendre le logo et le faire glisser ailleurs sur l'écran.
@@ -329,6 +337,14 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > C'est le point de comparaison de S7 et de S16. Sans lui, ces deux essais ne veulent rien dire.
 
+> **S2bis (ce qu'une machine neuve propose)**
+>
+> Sur un ZyrDesk qui n'a jamais rien choisi, ouvrir les réglages, **Avancé**, **Fenêtre de la session**.
+>
+> Attendu : **Fenêtre** est le choix marqué, pas **Plein écran**.
+>
+> Une première session qui prend l'écran entier laisse quelqu'un devant le bureau d'un autre ordinateur, sans rien de ce produit en vue et sans qu'on lui ait montré la sortie. Le choix est retenu ensuite : qui veut l'écran le demande une fois.
+
 ### L'ouverture
 
 > **S3 (le clic et l'attente)**
@@ -399,7 +415,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : la fenêtre suit la souris **sans à-coups**, et l'image dedans suit la fenêtre. Ni saccade, ni fenêtre qui s'arrête pour rattraper ensuite.
 >
-> Regarder aussi que **les deux ne se décalent jamais** : le bord de l'image et le bord de la fenêtre bougent ensemble, sans que l'un traîne derrière l'autre.
+> Regarder aussi que **les deux ne se décalent jamais** : le bord de l'image et le bord de la fenêtre bougent ensemble, sans que l'un traîne derrière l'autre. Et que **rien ne clignote** le long des bords de l'image : la découpe des coins est retirée le temps du geste et remise à la fin, sans quoi une fenêtre qui grandit reste découpée à la taille qu'elle avait au début du geste et laisse voir la page derrière elle sur toute la bande neuve.
 >
 > Quatre choses le rendaient impossible, et la dernière était de loin la plus lourde : le moteur détruisait et reconstruisait tout son décodeur à chaque changement de taille, soit 350 ms par cran, mesurés. Il encaisse maintenant un changement de taille ([D25](../DECISIONS.md)). Les trois autres : la forme corrigée après coup, qui redimensionnait la fenêtre deux fois par cran ; l'image posée à travers la file d'événements de la boîte à outils, qui arrive une file plus tard que la fenêtre elle-même ; et le bouton flottant déplacé en demandant deux fois à cette même boîte, cent fois par seconde.
 >
@@ -427,9 +443,19 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 > **S9 (l'image suit la fenêtre partout)**
 >
-> En fenêtre : déplacer la fenêtre, la passer sur l'autre écran s'il y en a deux, la réduire dans la barre des tâches, la restaurer.
+> En fenêtre : **prendre la barre de titre et promener la fenêtre**, la passer sur l'autre écran s'il y en a deux, la réduire dans la barre des tâches, la restaurer.
 >
-> Attendu : l'image reste exactement dans la fenêtre à chaque instant, ne décolle jamais, ne reste jamais derrière.
+> Attendu : la fenêtre **se déplace normalement**, et l'image reste exactement dedans à chaque instant, sans décoller ni rester derrière.
+>
+> Le déplacement compte autant que le reste : tenir la forme de l'image se fait sur le message par lequel passe aussi un simple déplacement, et une correction appliquée à tort y remettait la fenêtre à son point de départ à chaque pas, donc la rendait immobile.
+
+> **S9bis (le bouton flottant reste chez lui)**
+>
+> Pendant une session en fenêtré, faire Alt+Tab vers une autre application, la regarder quelques secondes, puis revenir sur ZyrDesk.
+>
+> Attendu : le bouton flottant **disparaît** dès que l'autre application passe devant, et **revient** quand ZyrDesk ou l'image reprend le premier plan. Il ne flotte jamais au-dessus du travail de quelqu'un d'autre.
+>
+> Il est dessiné au-dessus de toutes les fenêtres de la machine, ce qu'il faut pour tenir sur l'image ; il suit donc le premier plan, qui est celui de l'image autant que le nôtre puisque l'image appartient au lecteur.
 
 > **S10 (le plein écran va et vient)**
 >

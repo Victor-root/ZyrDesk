@@ -63,9 +63,16 @@ impl std::str::FromStr for Codec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DisplayMode {
     /// The window takes the whole screen.
-    #[default]
     Fullscreen,
     /// An ordinary window, which can be moved and resized.
+    ///
+    /// What a first session opens as. Covering the screen on the very
+    /// first try leaves somebody looking at another computer's desktop
+    /// with nothing of this product in sight and no way back they have
+    /// been shown; a window keeps the way out where every window keeps
+    /// it. The choice is remembered from there on, so anybody who wants
+    /// the screen asks once.
+    #[default]
     Windowed,
 }
 
