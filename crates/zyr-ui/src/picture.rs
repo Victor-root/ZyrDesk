@@ -2114,6 +2114,104 @@ fn the_drawn_frame_of(
     Some((drawn.left, drawn.top, drawn.right, drawn.bottom))
 }
 
+#[cfg(windows)]
+thread_local! {
+    /// The one timer this thread waits on to catch the screen, made the
+    /// first time it is wanted and kept for good.
+    ///
+    /// A waitable timer and not a sleep: a sleep is granted on the
+    /// system tick, fifteen milliseconds at a time, which is the very
+    /// thing being escaped here. Asked for at a fine resolution, this
+    /// one is granted to the fraction of a millisecond.
+    static THE_SCREENS_TIMER: windows_sys::Win32::Foundation::HANDLE = {
+        use windows_sys::Win32::System::Threading::{
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, CreateWaitableTimerExW, TIMER_ALL_ACCESS,
+        };
+
+        // SAFETY: an unnamed timer of our own, with no particular
+        // rights asked for beyond using it.
+        unsafe {
+            CreateWaitableTimerExW(
+                std::ptr::null(),
+                std::ptr::null(),
+                CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                TIMER_ALL_ACCESS,
+            )
+        }
+    };
+}
+
+/// Stands still until the screen is about to be drawn again, and answers
+/// whether it managed to.
+///
+/// Asked of the compositor rather than counted from a clock of ours: it
+/// says when the screen last turned over and how long a turn takes, and
+/// the next boundary follows from the two. Waiting until then puts every
+/// step of a move on a boundary, so a step that costs less than a frame
+/// lands on the next one and a step that costs more lands on the one
+/// after, and never anywhere in between.
+///
+/// That « never in between » is the whole of it. Steps landing every
+/// sixteen milliseconds are a move at sixty frames; steps landing every
+/// thirty-three are a move at thirty, which is slower but even. Steps
+/// landing at nine, then twenty-six, then fourteen, then forty are
+/// neither, and that is what an eye calls rough.
+///
+/// This replaces asking the compositor to be waited on, which is meant
+/// for a program drawing its own frames and told us apart from that
+/// almost nothing: it came back at once when nothing had been drawn,
+/// and waited on the whole cost of applying a resize when something
+/// had. The row of paces it produced ran from one millisecond to
+/// fifty-three.
+#[cfg(windows)]
+fn wait_for_the_screen() -> bool {
+    use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+    use windows_sys::Win32::Graphics::Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo};
+    use windows_sys::Win32::System::Performance::{
+        QueryPerformanceCounter, QueryPerformanceFrequency,
+    };
+    use windows_sys::Win32::System::Threading::{SetWaitableTimer, WaitForSingleObject};
+
+    let timer = THE_SCREENS_TIMER.with(|timer| *timer);
+    if timer.is_null() {
+        return false;
+    }
+    let mut screen = DWM_TIMING_INFO {
+        cbSize: std::mem::size_of::<DWM_TIMING_INFO>() as u32,
+        ..Default::default()
+    };
+    let (mut now, mut a_second) = (0i64, 0i64);
+    // SAFETY: the compositor's own account of the screen, into a slot of
+    // ours with its size written in it as the call requires, and two
+    // readings of the machine's fine clock into slots of ours.
+    if unsafe { DwmGetCompositionTimingInfo(std::ptr::null_mut(), &mut screen) } != 0
+        || unsafe { QueryPerformanceCounter(&mut now) } == 0
+        || unsafe { QueryPerformanceFrequency(&mut a_second) } == 0
+    {
+        return false;
+    }
+    let turn = screen.qpcRefreshPeriod as i64;
+    let last = screen.qpcVBlank as i64;
+    if turn <= 0 || a_second <= 0 {
+        return false;
+    }
+    // The turn the screen is in the middle of may be several back from
+    // the one the compositor last wrote down, so the boundary is counted
+    // from what is left of a whole number of turns rather than from that
+    // one.
+    let ahead = turn - (now - last).rem_euclid(turn);
+    // A waitable timer counts in hundreds of nanoseconds, and a due time
+    // written negative is a delay rather than a date.
+    let due = -(ahead.saturating_mul(10_000_000) / a_second);
+    // SAFETY: our own timer, a delay of ours, and no repeat and no
+    // callback. Waited on with a ceiling, so that a timer which never
+    // comes cannot hold the window still.
+    unsafe {
+        SetWaitableTimer(timer, &due, 0, None, std::ptr::null(), 0) != 0
+            && WaitForSingleObject(timer, 100) == WAIT_OBJECT_0
+    }
+}
+
 /// A row of numbers, as the journal writes one.
 #[cfg(windows)]
 fn a_row<T: std::fmt::Display>(of: &[T]) -> String {
@@ -2131,22 +2229,26 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         IsZoomed, PostMessageW, SC_MAXIMIZE, SW_SHOWMAXIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED,
-        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPlacement, SetWindowPos,
-        WM_SYSCOMMAND,
+        SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPlacement,
+        SetWindowPos, WM_SYSCOMMAND,
     };
 
     // Wait for the screen before doing anything, so that what this step
-    // puts on it is put there at the start of a drawn frame and not
-    // somewhere in the middle of one; see `STEP`. It is the compositor
-    // that sets the pace of this move, and this is where it does it.
+    // puts on it is put there on the boundary of a drawn frame and not
+    // somewhere in the middle of one; see `wait_for_the_screen` and
+    // `STEP`. It is the screen that sets the pace of this move, and this
+    // is where it does it.
     //
     // It costs whatever is left of the current frame, and it is spent
-    // waiting rather than working. Should the compositor refuse to be
-    // waited on, this returns at once and the move plays as fast as the
-    // machine allows, which is still right: where the window stands is
-    // read off the clock, so it only means more steps for the same path.
-    // SAFETY: takes nothing and answers whether it waited.
-    unsafe { DwmFlush() };
+    // waiting rather than working. Should the screen not be readable,
+    // the compositor is asked to be waited on instead, which paces this
+    // poorly but paces it: without any wait at all the move would run as
+    // fast as the machine allows and spend most of its steps on frames
+    // nobody is shown.
+    if !wait_for_the_screen() {
+        // SAFETY: takes nothing and answers whether it waited.
+        unsafe { DwmFlush() };
+    }
 
     // Where the window really is, which is not where the last step meant
     // to put it: the system has the last word on what it granted, and
@@ -2183,6 +2285,15 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
     // SAFETY: our own window, moved without being resized in z-order or
     // activated. The picture is laid on it inside this very call, in the
     // handler for the message this one sends.
+    //
+    // Nothing of what was drawn is carried over into the new frame. A
+    // window growing is otherwise given its old inside copied into its
+    // new one before anything is repainted, which for a window covering
+    // a screen is a copy of two million pixels, on every step, on a chip
+    // with a hundred and twenty-eight megabytes to itself. And it is a
+    // copy of a page nobody can see: the picture covers our inside whole
+    // for the length of a session, and it is laid on the new inside in
+    // the message this very call sends, before the window takes it.
     let carried = std::time::Instant::now();
     unsafe {
         SetWindowPos(
@@ -2192,7 +2303,7 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
             step.1,
             step.2 - step.0,
             step.3 - step.1,
-            SWP_NOZORDER | SWP_NOACTIVATE,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS,
         )
     };
     let carried = carried.elapsed();
