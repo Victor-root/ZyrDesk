@@ -112,6 +112,7 @@ fn remember_the_shape(engine: isize, shape: (i32, i32), process: u32) {
     // back and only the latch to put down.
     DRAGGED.store(false, Ordering::Relaxed);
     CARRIED.store(0, Ordering::Relaxed);
+    FOCUS_TOLD.store(0, Ordering::Relaxed);
     SHAPE.store(
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
@@ -1779,6 +1780,51 @@ fn hand_the_keyboard_over(engine: windows_sys::Win32::Foundation::HWND, over: bo
     });
 }
 
+/// Gives the keyboard back to the picture, the two programs already
+/// sharing one input; see `hand_the_keyboard_over`.
+///
+/// Asked again and not only once, because the focus does not stay put.
+/// Ending a gesture activates the window that was dragged, which is
+/// ours, and our own web view takes the focus inside it; so does
+/// clicking anywhere on our window. The picture then holds nothing, and
+/// the session is deaf while looking exactly as it should. Sharing the
+/// input is what makes this call able to reach a window of another
+/// program at all, and it is cheap, so it is made at every moment that
+/// can have taken the focus away.
+///
+/// Says where the focus really went the first time it moves, since
+/// « asked for » and « granted » have already been two different things
+/// once here.
+#[cfg(windows)]
+fn the_keyboard_to_the_picture() {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
+
+    if CARRIED.load(Ordering::Relaxed) == 0 {
+        return;
+    }
+    let Some(engine) = the_engines_window() else {
+        return;
+    };
+    // SAFETY: a window this program took in hand, on the same input as
+    // ours, and a reading of where the focus of that shared input is.
+    let landed = unsafe {
+        SetFocus(engine);
+        GetFocus()
+    };
+    let told = if landed == engine { 1 } else { 2 };
+    if FOCUS_TOLD.swap(told, Ordering::Relaxed) != told {
+        crate::journal::note(if told == 1 {
+            "le clavier est bien à la session"
+        } else {
+            "le clavier n'est pas à la session : le focus a été refusé à l'image"
+        });
+    }
+}
+
+/// What the journal last said about where the keyboard went, so it is
+/// said when it changes and not once a second.
+static FOCUS_TOLD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
 /// Takes the picture in as a child of our window, so a move carries
 /// both as one; see `CARRIED`.
 #[cfg(windows)]
@@ -2181,6 +2227,9 @@ fn let_the_picture_go(window: windows_sys::Win32::Foundation::HWND) {
 
     // SAFETY: our own window, from the thread that owns it.
     unsafe { KillTimer(window, LET_GO) };
+    // The gesture activated our window, which took the keyboard off the
+    // picture; it goes back.
+    the_keyboard_to_the_picture();
     let Some(held) = HOLDING.with_borrow_mut(|holding| holding.take()) else {
         return;
     };
@@ -2373,9 +2422,12 @@ unsafe extern "system" fn lit(
             // boolean possibly turned around.
             unsafe { DefSubclassProc(window, message, lit, lparam) }
         }
-        // The front has settled; draw the bar the way it really stands.
+        // The front has settled; draw the bar the way it really stands,
+        // and the keyboard goes back to the picture, this being the one
+        // moment that can have taken it away.
         BAR => {
             draw_the_bar(window);
+            the_keyboard_to_the_picture();
             0
         }
         // A window about to take a new size: the system says what it is
