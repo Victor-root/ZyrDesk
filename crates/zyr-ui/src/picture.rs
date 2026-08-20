@@ -1721,8 +1721,8 @@ fn carry_the_picture(
 ) {
     use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_STYLE, GetWindowLongPtrW, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SetParent,
-        SetWindowLongPtrW, SetWindowPos, WS_CHILD, WS_POPUP,
+        GWL_STYLE, GetWindowLongPtrW, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+        SWP_NOSENDCHANGING, SetParent, SetWindowLongPtrW, SetWindowPos, WS_CHILD, WS_POPUP,
     };
 
     if CARRIED.load(Ordering::Relaxed) != 0 {
@@ -1784,7 +1784,7 @@ fn carry_the_picture(
             0,
             width,
             height,
-            SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOSENDCHANGING,
         );
         CARRIED.store(style, Ordering::Relaxed);
         // The same crossing as the one at the other end of a gesture,
@@ -1817,7 +1817,7 @@ fn carry_the_picture(
 fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GWL_STYLE, GWLP_HWNDPARENT, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
-        SWP_NOSIZE, SWP_NOZORDER, SetParent, SetWindowLongPtrW, SetWindowPos,
+        SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SetParent, SetWindowLongPtrW, SetWindowPos,
     };
 
     let style = CARRIED.swap(0, Ordering::Relaxed);
@@ -1865,7 +1865,7 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
             corner.1,
             width,
             height,
-            SWP_NOACTIVATE | SWP_NOZORDER,
+            SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSENDCHANGING,
         );
         let moved = crossing.elapsed();
         // The style next and the parent after it, which is the ordering
