@@ -517,6 +517,7 @@ fn lay_it_out(
             laid.as_secs_f64() * 1000.0
         ));
     }
+    tell_the_gap(engine, (width, height));
 
     // Not while the window is moving. Giving a window a shape costs a
     // shape built, a shape handed over and a window told to think again,
@@ -804,6 +805,46 @@ fn round_the_bottom(
             DeleteObject(shape);
         }
     }
+}
+
+/// The last difference between what the picture was asked to be and what
+/// it turned out to be, so a change of it can be written down and
+/// nothing else.
+#[cfg(windows)]
+static GAP: AtomicI64 = AtomicI64::new(0);
+
+/// Says when the picture did not take the size it was given.
+///
+/// It is told to cover the whole inside of our window, so anything it
+/// leaves uncovered is a strip of the page behind it showing along an
+/// edge: a pale line under the picture, where there should be nothing
+/// between the picture and the frame.
+///
+/// Asked of the system rather than assumed. That window belongs to
+/// another program, and a program may answer a resize with a size of its
+/// own choosing: a smallest size, a step it rounds to, or the size the
+/// system hands it when the two of us do not measure a screen the same
+/// way. Which of those it is cannot be read off a screenshot, and the
+/// difference is the whole of what a pale line is.
+#[cfg(windows)]
+fn tell_the_gap(engine: windows_sys::Win32::Foundation::HWND, asked: (i32, i32)) {
+    let Some((left, top, right, bottom)) = where_it_stands(engine) else {
+        return;
+    };
+    let gap = (asked.0 - (right - left), asked.1 - (bottom - top));
+    let both = (i64::from(gap.0) << 32) | i64::from(gap.1) & 0xFFFF_FFFF;
+    if GAP.swap(both, Ordering::Relaxed) == both || gap == (0, 0) {
+        return;
+    }
+    crate::journal::note(&format!(
+        "image demandée en {}x{}, obtenue en {}x{} : il manque {} px de large et {} px de haut",
+        asked.0,
+        asked.1,
+        right - left,
+        bottom - top,
+        gap.0,
+        gap.1
+    ));
 }
 
 /// The border and radius the last cut used, so a change of them can be
@@ -1404,8 +1445,9 @@ fn the_drawn_frame_of(
 fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        KillTimer, SC_MAXIMIZE, SW_SHOWMAXIMIZED, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOZORDER,
-        SetWindowPlacement, SetWindowPos, WM_SYSCOMMAND,
+        IsZoomed, KillTimer, SC_MAXIMIZE, SW_SHOWMAXIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPlacement, SetWindowPos,
+        WM_SYSCOMMAND,
     };
 
     // Where the window really is, and not where the last step meant to
@@ -1471,19 +1513,28 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         ));
     }
     if let Some(played) = played {
-        // Told to the system now, from where the window already is: what
-        // it has left to move is nothing, so what it would animate is
-        // nothing.
+        // The order first, from where the window already is: what it has
+        // left to move is nothing, so what the system would animate is
+        // nothing. Handed straight to its own handling, since ours would
+        // only take it back and play it again.
         //
-        // Told as a placement and not as the order itself, because the
-        // order alone would take the window's own place to be wherever
-        // the last step left it. Every step of the move looked to the
+        // SAFETY: the order the person gave, at the window it was given
+        // to.
+        unsafe { DefSubclassProc(window, WM_SYSCOMMAND, played.then, 0) };
+
+        // And the window's own place after it, put back as it was read
+        // before the first step. Every step of the move looked to the
         // system exactly like a person dragging the window somewhere,
         // and it wrote each of them down: maximising ended with « where
         // this window belongs » being the whole screen, so coming back
-        // down came back to almost the same thing. What is written here
-        // is the place read before the first step, untouched, with only
-        // the state the person asked for put on it.
+        // down came back to almost the same thing.
+        //
+        // After and never before. Asked to place and to maximise in one
+        // move, the system does them in that order: it put the window
+        // back at its small size and then grew it again, which is the
+        // little move that played itself out at the end of every
+        // maximise. Done afterwards, the state is already the one that
+        // was asked for and this only writes down a rectangle.
         let mut placed = played.placed;
         placed.showCmd = if played.then == SC_MAXIMIZE as usize {
             SW_SHOWMAXIMIZED as u32
@@ -1492,14 +1543,35 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         };
         // SAFETY: our own window, and the placement is the one the
         // system itself gave us with one field changed.
-        if unsafe { SetWindowPlacement(window, &placed) } == 0 {
-            // Nothing else can put the window in the state that was
-            // asked for. Handed straight to the system's own handling,
-            // since ours would only take it back and play it again.
-            // SAFETY: the order the person gave, at the window it was
-            // given to.
-            unsafe { DefSubclassProc(window, WM_SYSCOMMAND, played.then, 0) };
-        }
+        unsafe { SetWindowPlacement(window, &placed) };
+
+        // And the frame drawn again from scratch. A window carried about
+        // while the system counted it as spread over the screen keeps
+        // what it was given then: square corners and no border, which is
+        // right for a window filling a screen and wrong for the one that
+        // has just come back down from it.
+        // SAFETY: our own window; nothing is moved, resized or
+        // activated, and the frame is the only thing asked for.
+        unsafe {
+            SetWindowPos(
+                window,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            )
+        };
+        // SAFETY: our own window, read only.
+        crate::journal::note(&format!(
+            "fenêtre {} après le mouvement",
+            if unsafe { IsZoomed(window) } != 0 {
+                "agrandie"
+            } else {
+                "en fenêtre"
+            }
+        ));
     }
     // The shape was left alone while the window was moving; it has
     // stopped.

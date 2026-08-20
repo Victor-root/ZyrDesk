@@ -497,7 +497,23 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Hors session, rien de tout ça : la fenêtre est seule et Windows l'anime comme n'importe quelle autre.
 >
-> **Le journal chiffre le geste.** Une ligne `agrandissement joué en N ms, M pas, plus grand pas L px` est écrite à chaque fois, et `retour en fenêtre joué en ...` dans l'autre sens. Deux cents millisecondes environ est ce qui est visé. Le nombre qui dit tout est le dernier : un plus grand pas de quelques dizaines de pixels est un mouvement porté, un plus grand pas de plusieurs centaines est un saut. Et un nombre de pas bien inférieur au nombre d'images dessinées veut dire que chaque pas a attendu ; ce qu'un pas attend, c'est le lecteur qui prend sa nouvelle taille.
+> **Trois choses à regarder à l'arrivée**, une fois le mouvement fini :
+>
+> 1. **Rien ne rejoue.** Une fois agrandie, la fenêtre reste agrandie : pas de petit aller-retour à la fin. L'ordre est donné à Windows d'abord et la place normale de la fenêtre écrite ensuite ; faits dans l'autre sens, Windows appliquait d'abord la petite taille puis agrandissait à nouveau, ce qui était ce dernier soubresaut.
+> 2. **La fenêtre revient là où elle était.** La mettre à une taille bien reconnaissable dans un coin de l'écran, agrandir, redescendre : elle retombe exactement au même endroit, trois ou quatre fois de suite. Chaque pas du mouvement ressemble, pour Windows, à une main qui déplace la fenêtre, et il écrivait chacun d'eux comme étant sa vraie place ; celle d'avant le premier pas est remise à la fin.
+> 3. **Les coins et le liseré reviennent.** Redescendue, la fenêtre retrouve ses **coins arrondis** et le liseré de couleur tout autour, celui de Windows 11. Portée pendant que le système la comptait comme étalée sur l'écran, elle en gardait le cadre : coins droits et pas de liseré, ce qui est juste pour une fenêtre qui remplit un écran et faux pour celle qui vient d'en redescendre. Le cadre est redemandé à la fin.
+>
+> **Le journal chiffre le geste.** Une ligne `agrandissement joué en N ms, M pas, plus grand pas L px` est écrite à chaque fois, et `retour en fenêtre joué en ...` dans l'autre sens, suivie de `fenêtre agrandie` ou `fenêtre en fenêtre après le mouvement`, qui dit dans quel état la fenêtre a réellement fini. Deux cents millisecondes environ est ce qui est visé. Le nombre qui dit tout est le plus grand pas : quelques dizaines de pixels est un mouvement porté, plusieurs centaines est un saut. Et un nombre de pas bien inférieur au nombre d'images dessinées veut dire que chaque pas a attendu ; ce qu'un pas attend, c'est le lecteur qui prend sa nouvelle taille.
+
+> **S8sexies (l'image descend jusqu'au bas de la fenêtre)**
+>
+> Pendant une session, regarder le **bas** de la fenêtre, juste au-dessus du liseré de couleur. À faire sur chaque écran, et surtout sur un écran très défini où Windows agrandit l'affichage.
+>
+> Attendu : **rien entre l'image et le liseré**. Pas de ligne claire, pas même de deux pixels.
+>
+> L'image est une fenêtre à part et il lui est demandé de couvrir tout l'intérieur de la nôtre ; ce qu'elle laisse à découvert est une bande de la page derrière elle. Une fenêtre appartient au programme qui l'a ouverte, et ce programme peut répondre à une demande de taille par une taille à lui : une taille minimale, un pas auquel il arrondit, ou celle que le système lui donne quand lui et nous ne mesurons pas un écran de la même façon. Aucune de ces trois-là ne se lit sur une capture d'écran.
+>
+> **Le journal donne la mesure.** Si une ligne `image demandée en LxH, obtenue en LxH : il manque N px de large et M px de haut` apparaît, la bande claire vaut exactement ces nombres, et ils disent laquelle des trois causes c'est. Sans cette ligne, l'image prend bien la taille demandée et la bande vient d'ailleurs.
 
 > **S9quinquies (revenir en fenêtre revient à la bonne taille)**
 >
