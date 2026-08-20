@@ -1091,19 +1091,35 @@ pub fn who_holds_the_front() -> Front {
 
 /* ---- Agrandir et réduire, en portant l'image avec ------------------- */
 
-/// A window on its way from one rectangle to another, and what to tell
-/// the system once it is there.
+/// A window on its way to a rectangle, and what to tell the system once
+/// it is there.
 #[cfg(windows)]
 struct Growing {
-    from: (i32, i32, i32, i32),
     to: (i32, i32, i32, i32),
     began: std::time::Instant,
+    /// When the window was last carried a little further, which is what
+    /// the next step is measured from.
+    moved: std::time::Instant,
     /// The order the person gave, held back until the move is played.
     then: usize,
+    /// Where the window sits when it is not spread over the screen, read
+    /// before anything moved it.
+    ///
+    /// Kept because carrying the window is the same thing, to the
+    /// system, as a person dragging it somewhere: each step of the move
+    /// wrote itself down as the window's own place. Maximising therefore
+    /// ended with « its own place » being the whole screen, and coming
+    /// back down came back to almost nothing. It is written back at the
+    /// end, exactly as it was read.
+    placed: windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT,
     /// How many times the window has been carried a little further, so
     /// the journal can say whether the move was played smoothly or in
     /// three jerks.
     steps: u32,
+    /// The widest single step of the move, in pixels. What « it plays
+    /// and then snaps » looks like as a number, and the one way to tell
+    /// a move that was carried from a move that jumped.
+    widest: i32,
 }
 
 // Only ever touched from the thread that owns the window, inside its own
@@ -1137,10 +1153,32 @@ fn on_the_move() -> bool {
     DRAGGED.load(Ordering::Relaxed) || grows
 }
 
-/// How long growing or shrinking takes. About what the system itself
-/// takes, which is what it has to look like.
+/// How fast the window closes the distance left in front of it.
+///
+/// The move is not played against a clock running out. It is played as a
+/// distance being closed: every step takes the same share of whatever is
+/// still ahead, so the steps get smaller and the window slows into its
+/// place on its own.
+///
+/// Played against a clock, a step that arrived late found the clock
+/// already out and jumped whatever was left in one go. That is a move
+/// that starts, plays, and then snaps, which is what was seen. Played
+/// against the distance, a late step is a bigger step and the one after
+/// it is smaller again: the move takes longer and stays whole, which is
+/// the right way round.
+///
+/// This is how long it takes to close about two thirds of the distance.
+const CLOSES_IN: std::time::Duration = std::time::Duration::from_millis(40);
+
+/// How near counts as arrived. Four pixels of a move nobody can see.
+const NEAR_ENOUGH: i32 = 4;
+
+/// The longest a move may take before it is simply finished.
+///
+/// Nothing should ever reach this: it is there so that a window cannot
+/// be left halfway by a machine too busy to carry it.
 #[cfg(windows)]
-const GROWS_IN: std::time::Duration = std::time::Duration::from_millis(180);
+const AT_THE_LATEST: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Name the timer that plays it answers to.
 #[cfg(windows)]
@@ -1172,8 +1210,9 @@ const GROWING_ON: usize = 2;
 /// straight to the system.
 #[cfg(windows)]
 fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) -> bool {
-    use windows_sys::Win32::Foundation::RECT;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic, SetTimer};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowPlacement, IsIconic, SetTimer, WINDOWPLACEMENT,
+    };
 
     // A window down in the taskbar has no rectangle to leave from, and
     // coming back up from there is the system's own animation, which is
@@ -1182,31 +1221,36 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
     if unsafe { IsIconic(window) } != 0 {
         return false;
     }
-    let mut now = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    // SAFETY: our own window and the rectangle is ours.
-    if unsafe { GetWindowRect(window, &mut now) } == 0 {
+    let Some(from) = where_it_stands(window) else {
         return false;
-    }
-    let from = (now.left, now.top, now.right, now.bottom);
+    };
     let Some(to) = where_the_order_leads(window, order) else {
         return false;
     };
     if to == from || to.2 - to.0 <= 0 || to.3 - to.1 <= 0 {
         return false;
     }
+    // Read before the first step moves anything, since every step is a
+    // move like any other as far as the system is concerned, and it
+    // would write each of them down here.
+    let mut placed: WINDOWPLACEMENT = unsafe { std::mem::zeroed() };
+    placed.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+    // SAFETY: our own window and the slot is ours, with its size written
+    // in it as the call requires.
+    if unsafe { GetWindowPlacement(window, &mut placed) } == 0 {
+        return false;
+    }
 
+    let now = std::time::Instant::now();
     GROWING.with_borrow_mut(|growing| {
         *growing = Some(Growing {
-            from,
             to,
-            began: std::time::Instant::now(),
+            began: now,
+            moved: now,
             then: order,
+            placed,
             steps: 0,
+            widest: 0,
         });
     });
     GROWS.store(true, Ordering::Relaxed);
@@ -1220,8 +1264,24 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
     // own tick, which is a frame.
     // SAFETY: our own window, from the thread that owns it.
     unsafe { SetTimer(window, GROWING_ON, 8, None) };
-    grow_a_step(window);
     true
+}
+
+/// The rectangle the window covers right now.
+#[cfg(windows)]
+fn where_it_stands(window: windows_sys::Win32::Foundation::HWND) -> Option<(i32, i32, i32, i32)> {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let mut now = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: our own window and the rectangle is ours.
+    (unsafe { GetWindowRect(window, &mut now) } != 0)
+        .then_some((now.left, now.top, now.right, now.bottom))
 }
 
 /// Where the window ends up once that order has been carried out.
@@ -1344,17 +1404,29 @@ fn the_drawn_frame_of(
 fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        KillTimer, SC_MAXIMIZE, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos, WM_SYSCOMMAND,
+        KillTimer, SC_MAXIMIZE, SW_SHOWMAXIMIZED, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOZORDER,
+        SetWindowPlacement, SetWindowPos, WM_SYSCOMMAND,
     };
 
-    // Read from the clock and never counted in steps: a step that took
-    // longer than it should makes the move jerkier, never longer, which
-    // is what a move played by hand has to promise.
+    // Where the window really is, and not where the last step meant to
+    // put it: the system has the last word on what it granted, and a
+    // move worked out from what it granted cannot drift away from it.
+    let Some(now) = where_it_stands(window) else {
+        return;
+    };
     let Some((step, done)) = GROWING.with_borrow_mut(|growing| {
         let growing = growing.as_mut()?;
         growing.steps += 1;
-        let part = (growing.began.elapsed().as_secs_f64() / GROWS_IN.as_secs_f64()).clamp(0.0, 1.0);
-        Some((along(growing.from, growing.to, eased(part)), part >= 1.0))
+        let waited = growing.moved.elapsed();
+        growing.moved = std::time::Instant::now();
+        let step = along(now, growing.to, closed_in(waited, CLOSES_IN));
+        growing.widest = growing
+            .widest
+            .max(((step.2 - step.0) - (now.2 - now.0)).abs());
+        // Arrived when what is left cannot be seen, and finished anyway
+        // once it has gone on far too long.
+        let done = within(step, growing.to, NEAR_ENOUGH) || growing.began.elapsed() > AT_THE_LATEST;
+        Some((if done { growing.to } else { step }, done))
     }) else {
         return;
     };
@@ -1381,13 +1453,13 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
     GROWS.store(false, Ordering::Relaxed);
     // SAFETY: our own window, from the thread that owns it.
     unsafe { KillTimer(window, GROWING_ON) };
-    if let Some(played) = &played {
+    if let Some(played) = played.as_ref() {
         // One line per gesture. A move played in far fewer steps than
         // there are drawn frames in it was played jerkily, and what a
         // step waits on is the player taking its new size: that is where
         // to look, and there is nowhere else to read it from.
         crate::journal::note(&format!(
-            "{} joué en {:.0} ms, {} pas",
+            "{} joué en {:.0} ms, {} pas, plus grand pas {} px",
             if played.then == SC_MAXIMIZE as usize {
                 "agrandissement"
             } else {
@@ -1395,16 +1467,39 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
             },
             played.began.elapsed().as_secs_f64() * 1000.0,
             played.steps,
+            played.widest,
         ));
     }
-    if let Some(then) = played.map(|played| played.then) {
-        // Handed to the system now, from where the window already is:
-        // what it has left to move is nothing, so what it would animate
-        // is nothing. Handed straight to its own handling, since ours
-        // would only take it back and play it again.
-        // SAFETY: the order the person gave, at the window it was given
-        // to.
-        unsafe { DefSubclassProc(window, WM_SYSCOMMAND, then, 0) };
+    if let Some(played) = played {
+        // Told to the system now, from where the window already is: what
+        // it has left to move is nothing, so what it would animate is
+        // nothing.
+        //
+        // Told as a placement and not as the order itself, because the
+        // order alone would take the window's own place to be wherever
+        // the last step left it. Every step of the move looked to the
+        // system exactly like a person dragging the window somewhere,
+        // and it wrote each of them down: maximising ended with « where
+        // this window belongs » being the whole screen, so coming back
+        // down came back to almost the same thing. What is written here
+        // is the place read before the first step, untouched, with only
+        // the state the person asked for put on it.
+        let mut placed = played.placed;
+        placed.showCmd = if played.then == SC_MAXIMIZE as usize {
+            SW_SHOWMAXIMIZED as u32
+        } else {
+            SW_SHOWNORMAL as u32
+        };
+        // SAFETY: our own window, and the placement is the one the
+        // system itself gave us with one field changed.
+        if unsafe { SetWindowPlacement(window, &placed) } == 0 {
+            // Nothing else can put the window in the state that was
+            // asked for. Handed straight to the system's own handling,
+            // since ours would only take it back and play it again.
+            // SAFETY: the order the person gave, at the window it was
+            // given to.
+            unsafe { DefSubclassProc(window, WM_SYSCOMMAND, played.then, 0) };
+        }
     }
     // The shape was left alone while the window was moving; it has
     // stopped.
@@ -1444,14 +1539,29 @@ fn along(from: (i32, i32, i32, i32), to: (i32, i32, i32, i32), part: f64) -> (i3
     )
 }
 
-/// The shape of the move: quick to start, slow to arrive.
+/// What share of the distance still ahead a step of that length closes.
 ///
-/// A window that moves at one speed and stops dead reads as a thing being
-/// dragged by a machine. Every window on this system slows into its
-/// place, so this one does too.
-fn eased(part: f64) -> f64 {
-    let left = 1.0 - part;
-    1.0 - left * left * left
+/// The same share of whatever is left, every time, which is what makes
+/// the steps get smaller and the window slow into its place instead of
+/// arriving at speed and stopping dead. Every window on this system
+/// slows into its place, so this one does too.
+///
+/// Worked out from how long the step actually took rather than from how
+/// long it was meant to take: a step that waited twice as long closes
+/// twice as much of what is left, so the window travels the same path
+/// whether the machine is giving us sixty steps or six. That is what a
+/// move cannot have: a shape that depends on the machine's mood.
+fn closed_in(waited: std::time::Duration, closes_in: std::time::Duration) -> f64 {
+    1.0 - (-waited.as_secs_f64() / closes_in.as_secs_f64()).exp()
+}
+
+/// Whether those two rectangles are within that many pixels of each
+/// other on every edge.
+fn within(here: (i32, i32, i32, i32), there: (i32, i32, i32, i32), near: i32) -> bool {
+    (here.0 - there.0).abs() <= near
+        && (here.1 - there.1).abs() <= near
+        && (here.2 - there.2).abs() <= near
+        && (here.3 - there.3).abs() <= near
 }
 
 /// Name our handler answers to, so it can be taken off again.
@@ -2094,31 +2204,76 @@ mod tests {
         assert_eq!(spread_over(work, same, same), work);
     }
 
-    #[test]
-    fn the_move_starts_where_it_was_and_ends_where_it_goes() {
-        let from = (100, 100, 1100, 700);
-        let to = (-7, 0, 1927, 1047);
-        assert_eq!(along(from, to, eased(0.0)), from);
-        assert_eq!(along(from, to, eased(1.0)), to);
+    /// Le mouvement joué, un pas toutes les `chaque`, jusqu'à l'arrivée.
+    /// Rend la liste des rectangles traversés.
+    fn joue(
+        from: (i32, i32, i32, i32),
+        to: (i32, i32, i32, i32),
+        chaque: std::time::Duration,
+    ) -> Vec<(i32, i32, i32, i32)> {
+        let mut passe = vec![from];
+        let mut ici = from;
+        for _ in 0..200 {
+            if within(ici, to, NEAR_ENOUGH) {
+                break;
+            }
+            ici = along(ici, to, closed_in(chaque, CLOSES_IN));
+            passe.push(ici);
+        }
+        passe
     }
 
     #[test]
-    fn the_move_only_ever_goes_forwards_and_slows_into_its_place() {
-        // Une fenêtre qui avance puis recule serait vue trembler, et une
-        // qui arrive à pleine vitesse serait vue taper.
+    fn a_step_closes_more_of_the_way_the_longer_it_waited() {
+        // Deux pas courts doivent mener au même endroit qu'un pas long :
+        // c'est ce qui fait que le mouvement a la même allure que la
+        // machine nous donne soixante pas ou six.
+        let quart = std::time::Duration::from_millis(10);
+        let demi = std::time::Duration::from_millis(20);
+        let un = closed_in(quart, CLOSES_IN);
+        let deux = 1.0 - (1.0 - un) * (1.0 - un);
+        assert!((deux - closed_in(demi, CLOSES_IN)).abs() < 1e-9);
+        // Et un pas de durée nulle ne bouge rien.
+        assert_eq!(closed_in(std::time::Duration::ZERO, CLOSES_IN), 0.0);
+    }
+
+    #[test]
+    fn the_move_never_goes_backwards_and_slows_into_its_place() {
         let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
-        let ou = |part: f64| along(from, to, eased(part));
+        let passe = joue(from, to, std::time::Duration::from_millis(16));
         let mut avant = from;
-        for pas in 0..=60 {
-            let ici = ou(f64::from(pas) / 60.0);
+        let mut dernier = i32::MAX;
+        for (pas, ici) in passe.iter().enumerate().skip(1) {
             assert!(ici.2 >= avant.2, "la fenêtre a reculé au pas {pas}");
-            avant = ici;
+            let fait = ici.2 - avant.2;
+            assert!(fait <= dernier, "elle a accéléré au pas {pas}");
+            dernier = fait;
+            avant = *ici;
         }
-        assert_eq!(avant, to);
-        // Et elle ralentit : le plus gros du chemin est fait dans la
-        // première moitié du temps, le reste sert à se poser.
-        let (debut, fin) = (ou(0.5).2 - from.2, to.2 - ou(0.5).2);
-        assert!(debut > fin * 3, "début {debut}, fin {fin}");
+        assert!(within(avant, to, 4), "arrivée à {avant:?} pour {to:?}");
+    }
+
+    #[test]
+    fn a_move_played_in_few_steps_follows_the_same_path_as_one_played_in_many() {
+        // Le défaut à ne jamais revoir : le mouvement qui commence, joue,
+        // puis saute d'un coup à l'arrivée parce que l'horloge était
+        // finie. Compté en distance et non en temps, une machine qui ne
+        // donne que trois pas les fait plus grands, et la fenêtre est au
+        // même endroit au même instant qu'avec vingt pas. Une machine
+        // lente coûte des images, jamais la forme du geste.
+        let (from, to) = ((100, 100, 1100, 700), (-7, 0, 1927, 1047));
+        let serre = joue(from, to, std::time::Duration::from_millis(15));
+        let large = joue(from, to, std::time::Duration::from_millis(60));
+        // Au bout de 120 ms : huit pas d'un côté, deux de l'autre.
+        assert!(
+            (serre[8].2 - large[2].2).abs() <= 2,
+            "{serre:?} / {large:?}"
+        );
+        // Et les deux arrivent, l'un en plus d'images que l'autre.
+        assert!(serre.len() > large.len() * 2);
+        for passe in [&serre, &large] {
+            assert!(within(*passe.last().unwrap(), to, NEAR_ENOUGH));
+        }
     }
 
     #[test]

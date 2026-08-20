@@ -493,9 +493,19 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Le mouvement est donc **joué par ZyrDesk** au lieu d'être laissé au système : un pas par image dessinée, et chaque pas emprunte exactement le chemin qu'emprunte une main qui tire un bord, celui qui pose l'image dans la foulée du déplacement de la fenêtre, à l'intérieur du même message. Ce qui a rendu le redimensionnement fluide rend ce mouvement fluide, et fait arriver les deux ensemble puisqu'il n'y en a jamais qu'un seul qu'on déplace. L'ordre lui-même n'est donné à Windows qu'une fois le mouvement fini, depuis l'endroit où la fenêtre est déjà : ce qu'il lui resterait à animer, c'est rien.
 >
+> Le mouvement se compte en **distance restante** et non en temps qui passe : chaque pas ferme la même part de ce qui est encore devant, donc les pas rétrécissent et la fenêtre se pose d'elle-même. Compté contre une horloge, un pas qui arrivait en retard trouvait l'horloge déjà finie et franchissait d'un bond tout ce qui restait : le geste démarrait, jouait, puis claquait. Une machine lente coûte maintenant des images, jamais la forme du geste.
+>
 > Hors session, rien de tout ça : la fenêtre est seule et Windows l'anime comme n'importe quelle autre.
 >
-> **Le journal chiffre le geste.** Une ligne `agrandissement joué en N ms, M pas` ou `retour en fenêtre joué en ...` est écrite à chaque fois. Environ 180 ms est ce qui est visé. Un nombre de pas bien inférieur au nombre d'images dessinées dans ce temps veut dire que chaque pas a attendu, et ce qu'un pas attend, c'est le lecteur qui prend sa nouvelle taille : c'est là qu'il faudrait chercher, et nulle part ailleurs.
+> **Le journal chiffre le geste.** Une ligne `agrandissement joué en N ms, M pas, plus grand pas L px` est écrite à chaque fois, et `retour en fenêtre joué en ...` dans l'autre sens. Deux cents millisecondes environ est ce qui est visé. Le nombre qui dit tout est le dernier : un plus grand pas de quelques dizaines de pixels est un mouvement porté, un plus grand pas de plusieurs centaines est un saut. Et un nombre de pas bien inférieur au nombre d'images dessinées veut dire que chaque pas a attendu ; ce qu'un pas attend, c'est le lecteur qui prend sa nouvelle taille.
+
+> **S9quinquies (revenir en fenêtre revient à la bonne taille)**
+>
+> En session, mettre la fenêtre à une taille bien reconnaissable, par exemple un petit rectangle dans un coin de l'écran. Agrandir. Puis **Niveau inférieur**.
+>
+> Attendu : la fenêtre revient **exactement** au petit rectangle, à sa taille et à sa place. Recommencer trois ou quatre fois d'affilée : elle doit retomber au même endroit à chaque tour, sans grandir petit à petit.
+>
+> Porter la fenêtre pas à pas ressemble, pour Windows, à une main qui la déplacerait : il notait chaque pas comme étant « la place de cette fenêtre ». Agrandir finissait donc par lui apprendre que sa place, c'était l'écran entier, et le retour revenait à peu près à l'écran entier. La place est maintenant lue avant que le premier pas ne bouge quoi que ce soit, et réécrite telle quelle à la fin, avec seulement l'état demandé posé dessus.
 
 > **S9ter (la barre de titre reste allumée tant que la fenêtre sert)**
 >
