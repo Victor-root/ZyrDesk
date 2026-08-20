@@ -312,7 +312,36 @@ fn say(app: &AppHandle, what: Told) {
     let _ = app.emit(STEP, what);
 }
 
+/// What state the home window is in, in words.
+///
+/// Written on both sides of the ending. A session that finishes must
+/// leave that window exactly as it found it, and « sometimes it ends up
+/// minimised » is the kind of report that cannot be chased without
+/// knowing which of the two sides it was already on.
+fn how_the_window_stands(app: &AppHandle, when: &str) {
+    use tauri::Manager as _;
+
+    let Some(window) = app.get_webview_window(crate::HOME) else {
+        crate::journal::note(&format!("{when} : plus de fenêtre d'accueil"));
+        return;
+    };
+    fn say(what: tauri::Result<bool>) -> &'static str {
+        match what {
+            Ok(true) => "oui",
+            Ok(false) => "non",
+            Err(_) => "?",
+        }
+    }
+    crate::journal::note(&format!(
+        "{when} : accueil réduit={} visible={} plein écran={}",
+        say(window.is_minimized()),
+        say(window.is_visible()),
+        say(window.is_fullscreen()),
+    ));
+}
+
 fn finish(app: &AppHandle, ok: bool, message: String) {
+    how_the_window_stands(app, "fin de session, avant");
     OPENING.store(false, Ordering::SeqCst);
     crate::floating::expect_nothing(app);
     // Taken down here rather than left to the watch. The watch comes
@@ -323,5 +352,13 @@ fn finish(app: &AppHandle, ok: bool, message: String) {
     crate::floating::lower(app);
     // The screen goes back to the person: what took it was the session.
     let _ = crate::picture::take_the_screen(app, false);
+    // And so does the window. A session ends with something to say, an
+    // error most of the time, and it is said on the home screen; behind
+    // a taskbar button it is said to nobody. The window can be down
+    // there for reasons of its own by then, put away by a hand during
+    // the session or by the system, which takes a window covering the
+    // whole screen down when the front leaves it.
+    crate::show_home(app);
     let _ = app.emit(ENDED, Finished { ok, message });
+    how_the_window_stands(app, "fin de session, après");
 }

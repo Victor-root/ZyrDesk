@@ -19,6 +19,18 @@
 }
 
 .paquet {
+  /* Accroché au coin haut droit de la fenêtre, et pas au coin haut
+     gauche. Le bouton est posé à droite de l'image et la fenêtre grandit
+     vers la gauche quand le menu s'ouvre : accroché à gauche, le bloc
+     s'élargissait vers la droite, le logo partait avec lui hors de la
+     fenêtre, et il disparaissait le temps que Rust retaille celle-ci.
+     C'était le clignotement vu à chaque ouverture du menu. Accroché à
+     droite, le logo ne bouge pas d'un pixel : le menu déborde vers la
+     gauche, hors de la fenêtre, jusqu'à ce qu'elle s'élargisse pour le
+     contenir. */
+  position: fixed;
+  top: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -44,7 +56,9 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  transition: transform var(--duree-courte) var(--courbe);
+  transition:
+    transform var(--duree-courte) var(--courbe),
+    filter var(--duree-courte) var(--courbe);
 }
 
 .logo > img {
@@ -53,8 +67,12 @@
   height: 52px;
 }
 
+/* Le survol assombrit la plaque, il ne l'agrandit pas. La fenêtre est
+   découpée sur cette plaque au pixel près : tout ce qui grandissait
+   au-delà était coupé net plutôt que dessiné, et le survol rognait les
+   quatre coins arrondis du logo au lieu de le mettre en avant. */
 .logo:hover {
-  transform: scale(1.06);
+  filter: brightness(0.93);
 }
 
 /* Pris en main : le curseur dit qu'il se déplace, pas qu'il se clique.

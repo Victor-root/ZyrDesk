@@ -132,6 +132,14 @@ pub fn keyboard_shortcuts() -> PathBuf {
     data_dir().join("keyboard-shortcuts.conf")
 }
 
+/// Where the floating button of a session was last put down.
+///
+/// Apart for the same reason as the shortcuts: it says where a hand left
+/// something on this screen, which is nobody else's business.
+pub fn floating_button() -> PathBuf {
+    data_dir().join("floating-button.conf")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

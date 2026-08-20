@@ -255,6 +255,16 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Une fenêtre est un rectangle, et la transparence est une chose que chacune des couches sous la page doit accorder : l'une d'elles ne l'accordait pas, et son rectangle se voyait dans les coins arrondis du logo. La fenêtre est maintenant découpée sur ce que la page dessine, mesuré par la page elle-même, et rien n'est jamais dessiné hors d'une découpe. À vérifier aussi sur écran agrandi : la découpe suit l'échelle.
 
+> **R10ter (le menu s'ouvre sans clignoter)**
+>
+> Cliquer sur le logo pour ouvrir le menu, le refermer, recommencer une dizaine de fois en regardant **le logo lui-même** et non le menu.
+>
+> Attendu : le logo **ne bouge pas et ne disparaît jamais**, pas même le temps d'une image. Le menu apparaît en dessous et la fenêtre s'élargit vers la gauche, le logo restant exactement au même point de l'écran.
+>
+> La fenêtre du bouton fait la taille du logo tant que le menu est fermé, et la page y était accrochée par le coin haut **gauche** : ouvrir le menu élargissait le bloc vers la droite, le logo partait avec lui hors de la fenêtre, et il disparaissait le temps que le cœur retaille celle-ci. Il est maintenant accroché par le coin haut **droit**, du côté où la fenêtre grandit.
+>
+> Passer aussi la souris sur le logo sans cliquer : il **s'assombrit légèrement** et ne grandit pas. Une fenêtre découpée au pixel près sur le dessin coupe net tout ce qui déborde, et l'agrandissement d'avant rognait les quatre coins arrondis au lieu de mettre le bouton en avant.
+
 > **R11 (il se déplace)**
 >
 > Prendre le logo et le faire glisser ailleurs sur l'écran.
@@ -262,6 +272,14 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > Attendu : il suit la souris sans décrocher, y compris quand le geste est rapide et large, se pose où on le lâche, et **n'ouvre pas** le menu à la fin du déplacement. Un clic net, sans bouger, ouvre le menu.
 >
 > Le geste est suivi par le système et non par la page : c'est ce qui permet à un bouton de cinquante pixels de rester sous une souris qui en sort au premier centimètre.
+
+> **R11bis (il revient là où on l'a laissé)**
+>
+> Déplacer le bouton en bas à gauche de l'image, terminer la session, **fermer ZyrDesk entièrement** (icône près de l'horloge, Quitter), rouvrir ZyrDesk et ouvrir une nouvelle session.
+>
+> Attendu : le bouton apparaît **du premier coup en bas à gauche**, à la place où il avait été laissé. Il ne naît pas ailleurs pour s'y rendre ensuite, et il n'a jamais l'air de sauter d'un coin à l'autre à l'ouverture.
+>
+> Sa place est écrite dans `data\floating-button.conf`, en décalage depuis le coin haut droit de l'image et non en pixels d'écran : un autre écran, ou une image d'une autre taille, le retrouve quand même. Elle est écrite une fois, quand la main lâche, et relue une fois, à l'ouverture du programme. Le saut d'avant venait d'ailleurs : la fenêtre était créée par la boîte à outils, dont la taille demandée n'est appliquée qu'un tour de file plus tard, si bien que le bouton naissait à la mauvaise taille dans le mauvais coin et ne trouvait sa place qu'une fois la page chargée.
 
 > **R12 (chaque entrée du menu fait ce qu'elle dit)**
 >
@@ -419,7 +437,17 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Quatre choses le rendaient impossible, et la dernière était de loin la plus lourde : le moteur détruisait et reconstruisait tout son décodeur à chaque changement de taille, soit 350 ms par cran, mesurés. Il encaisse maintenant un changement de taille ([D25](../DECISIONS.md)). Les trois autres : la forme corrigée après coup, qui redimensionnait la fenêtre deux fois par cran ; l'image posée à travers la file d'événements de la boîte à outils, qui arrive une file plus tard que la fenêtre elle-même ; et le bouton flottant déplacé en demandant deux fois à cette même boîte, cent fois par seconde.
 >
-> **Le journal chiffre le geste.** Après avoir lâché, ouvrir le journal : une ligne `redimensionnement :` dit combien de crans le geste a pris et ce que chaque partie a coûté. C'est par là qu'on saura, sans deviner, si quelque chose se remet à traîner un jour.
+> **Le journal chiffre le geste.** Après avoir lâché, ouvrir le journal : une ligne `redimensionnement par ...` dit quel bord était tenu, combien de crans le geste a pris et ce que chaque partie a coûté. C'est par là qu'on saura, sans deviner, si quelque chose se remet à traîner un jour.
+
+> **S8quinquies (l'image ne tremble pas sous une main en diagonale)**
+>
+> En fenêtre : prendre **le coin** en bas à droite et le promener lentement en diagonale, en le faisant onduler un peu, dix ou quinze secondes sans lâcher. C'est le geste le plus exigeant : la main descend et s'écarte en même temps.
+>
+> Attendu : la fenêtre grandit et rétrécit **de façon continue**, sans jamais faire un pas en arrière. Aucun frémissement, aucun tremblement de l'image sous une main qui avance régulièrement.
+>
+> Une fenêtre tenue à une forme n'a qu'une seule taille libre : l'autre s'en déduit. Laquelle des deux mène était relu à chaque cran, et une main en diagonale bouge les deux côtés de presque autant : la réponse changeait d'un cran à l'autre, et les deux réponses sont écartées de plusieurs pixels. C'était le tremblement. Le bord tenu est maintenant lu une fois pour tout le geste, dans ce que le système laisse immobile, et un coin qui tient les deux bords à la fois reçoit le point milieu entre les deux réponses au lieu de sauter de l'une à l'autre.
+>
+> **Le journal le chiffre aussi.** Après avoir lâché : la ligne `redimensionnement par un coin` porte un nombre de `changements de sens`. Une main qui n'a fait que tirer vers l'extérieur doit en montrer **zéro**.
 
 > **S8ter (les coins de la fenêtre)**
 >
@@ -526,6 +554,20 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : exactement le résultat de S17. La session se termine, et la fenêtre **reste, sur l'accueil**. Elle ne disparaît pas, et il ne faut rien rouvrir.
 >
 > Sur l'accueil, en revanche, la croix range la fenêtre sans rien arrêter : l'icône à côté de l'horloge reste, et un clic dessus ramène la fenêtre. Le vérifier dans la foulée, c'est l'autre moitié de l'essai.
+
+> **S18bis (la fenêtre revient de là où elle était)**
+>
+> Trois fins de session à faire l'une après l'autre, en terminant chaque fois **depuis l'ordinateur distant** (fermer la session dans l'image, ou éteindre l'écran distant) plutôt que par le menu :
+>
+> 1. ZyrDesk **réduit dans la barre des tâches** pendant la session ;
+> 2. ZyrDesk **derrière une autre application** (Alt+Tab, puis attendre) ;
+> 3. la session **en plein écran**, puis Alt+Tab vers autre chose.
+>
+> Attendu, dans les trois cas : à la fin de la session, la fenêtre ZyrDesk **revient devant, sur l'accueil**, à sa taille de fenêtre, avec le message de fin lisible. Elle ne reste pas en bas dans la barre des tâches.
+>
+> Une session finit toujours par dire quelque chose, une erreur le plus souvent, et ce quelque chose se dit sur l'accueil : derrière un bouton de la barre des tâches, il ne se dit à personne. Windows range de lui-même une fenêtre qui couvre tout l'écran quand le premier plan la quitte, ce qui suffit à faire disparaître ZyrDesk pendant une session.
+>
+> **Le journal encadre la fin.** Deux lignes `fin de session, avant` et `fin de session, après` disent l'état de la fenêtre des deux côtés : `réduit`, `visible`, `plein écran`. C'est par là qu'on saura laquelle des trois situations s'était produite si l'une d'elles revenait.
 
 > **S19 (le bureau distant retrouve sa définition)**
 >

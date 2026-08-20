@@ -579,11 +579,69 @@ static SYSTEM: Cost = Cost::new();
 /// hand is down: a plain move carries none.
 static RESIZED: AtomicBool = AtomicBool::new(false);
 
+/// Which edges of the window the hand is holding, over the whole drag.
+///
+/// A hand grabs one edge or one corner when the drag begins and holds it
+/// until the drag ends, so this is a fact about the drag and not about
+/// the step. It is gathered rather than decided: an edge the system has
+/// once been seen to move is an edge under the hand, and one step is
+/// enough to know it for good. A hand on a corner that begins by moving
+/// straight sideways only shows the second edge a few steps in, which is
+/// exactly when it starts to matter.
+///
+/// Read from the step instead, it was read wrongly: the two sides of a
+/// window being dragged by the corner move by nearly the same amount, and
+/// whichever of them counted as « the one being pulled » changed from
+/// step to step. The other side is worked out from that one, and the two
+/// answers are far apart, so the picture jumped back and forth under a
+/// hand that was moving perfectly steadily.
+static HELD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The left or the right edge.
+const A_SIDE: u8 = 1;
+/// The top or the bottom edge.
+const TOP_OR_BOTTOM: u8 = 2;
+
+/// How many times the window turned around during the drag: it was
+/// growing and began to shrink, or the other way about.
+///
+/// A hand pulling steadily outwards turns around no times. Anything else
+/// is the picture moving against the hand, which is what « it shivers »
+/// looks like from in here, and the one number worth reading back off a
+/// journal to know whether it still does.
+static TURNS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The width the last step of the drag settled on, and which way it was
+/// going: below, at rest, above. Both empty outside a drag.
+static WIDTH_WAS: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+static WIDTH_WENT: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
 /// Starts counting, a drag having begun.
 fn count_the_drag() {
     RESIZED.store(false, Ordering::Relaxed);
+    HELD.store(0, Ordering::Relaxed);
+    TURNS.store(0, Ordering::Relaxed);
+    WIDTH_WAS.store(0, Ordering::Relaxed);
+    WIDTH_WENT.store(0, Ordering::Relaxed);
     for what in [&LAYING, &PICTURE, &BUTTON, &SYSTEM] {
         Cost::forget(what);
+    }
+}
+
+/// Notes which way this step took the window, and whether that is a
+/// change of mind.
+fn count_the_step(width: i32) {
+    let was = WIDTH_WAS.swap(width, Ordering::Relaxed);
+    if was == 0 {
+        return;
+    }
+    let way = (width - was).signum();
+    if way == 0 {
+        return;
+    }
+    let went = WIDTH_WENT.swap(way, Ordering::Relaxed);
+    if went != 0 && went != way {
+        TURNS.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -600,13 +658,23 @@ fn tell_the_drag() {
     // to the system, and cost the same work here. Only one of them is a
     // resize, and this line is read to answer a question about resizing:
     // it says which it was rather than calling both by the louder name.
-    let gesture = if RESIZED.load(Ordering::Relaxed) {
-        "redimensionnement"
-    } else {
-        "déplacement"
+    if !RESIZED.load(Ordering::Relaxed) {
+        crate::journal::note(&format!(
+            "déplacement : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
+             dont image {picture:.0} ms (pire {picture_worst:.1}) et bouton {button:.0} ms ; \
+             système et vue web {system:.0} ms (pire {system_worst:.1})"
+        ));
+        return;
+    }
+    let held = match HELD.load(Ordering::Relaxed) {
+        A_SIDE => "un côté",
+        TOP_OR_BOTTOM => "un bord horizontal",
+        _ => "un coin",
     };
+    let turns = TURNS.load(Ordering::Relaxed);
     crate::journal::note(&format!(
-        "{gesture} : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
+        "redimensionnement par {held} : {steps} pas, {turns} changements de sens ; \
+         poser {laying:.0} ms (pire {worst:.1}), \
          dont image {picture:.0} ms (pire {picture_worst:.1}) et bouton {button:.0} ms ; \
          système et vue web {system:.0} ms (pire {system_worst:.1})"
     ));
@@ -1046,13 +1114,21 @@ fn the_drag_keeps_the_shape(
     }
     RESIZED.store(true, Ordering::Relaxed);
 
+    // Gathered and never re-decided: the hand cannot let go of one edge
+    // and take another without ending the drag, so an edge seen to move
+    // once is held for the rest of it.
+    let seen = the_edges_under_the_hand(now, asked);
+    let held = HELD.fetch_or(seen, Ordering::Relaxed) | seen;
+
     let (x, y, cx, cy) = what_the_drag_becomes(
         now,
         asked,
         frame,
         (wide, high),
         the_least_picture(crate::floating::room_for_the_button(), (wide, high)),
+        held,
     );
+    count_the_step(cx);
     wanted.x = x;
     wanted.y = y;
     wanted.cx = cx;
@@ -1068,14 +1144,37 @@ fn the_size_moves(now: (i32, i32, i32, i32), wanted: (i32, i32, i32, i32)) -> bo
     wanted.2 != right - left || wanted.3 != bottom - top
 }
 
+/// Which edges of the window that proposal moves.
+///
+/// The whole of what the system says about where the hand is. An edge it
+/// leaves exactly where it stands is an edge nobody is holding: a window
+/// dragged by its right side keeps its top and its bottom to the pixel,
+/// for as long as the drag lasts.
+fn the_edges_under_the_hand(now: (i32, i32, i32, i32), wanted: (i32, i32, i32, i32)) -> u8 {
+    let (left, top, right, bottom) = now;
+    let (x, y, cx, cy) = wanted;
+    let mut held = 0;
+    if x != left || x + cx != right {
+        held |= A_SIDE;
+    }
+    if y != top || y + cy != bottom {
+        held |= TOP_OR_BOTTOM;
+    }
+    held
+}
+
 /// The place and size a dragged window takes instead of what the hand
 /// asked, so the picture keeps its shape.
 ///
-/// Which side the hand is on is not told, so it is read from the change
-/// itself: the side that no longer matches the window as it stands is the
-/// one being pulled, and it leads; the other is worked out from it. Both
-/// are inner sizes once the frame is paid for, floored at the smallest
-/// picture the button still fits in.
+/// The edge under the hand follows the hand exactly and the other side is
+/// worked out from it. A corner holds both at once and cannot have both,
+/// since only one size out of the two is free: it gets the halfway point
+/// between the width it asked for and the width its height asks for,
+/// which follows a hand going in any direction and, unlike choosing one
+/// of the two, never jumps when the hand changes direction slightly.
+///
+/// Sizes are inner sizes once the frame is paid for, floored at the
+/// smallest picture the button still fits in.
 ///
 /// And the edge opposite the hand stands still. The system moves the
 /// window's origin when the left or top edge is dragged; whenever it has,
@@ -1094,15 +1193,22 @@ fn what_the_drag_becomes(
     frame: (i32, i32),
     shape: (i32, i32),
     least: (i32, i32),
+    held: u8,
 ) -> (i32, i32, i32, i32) {
-    let (left, top, right, bottom) = now;
+    let (left, top, ..) = now;
     let (x, y, cx, cy) = wanted;
 
-    let (held_cx, held_cy) = if (cy - (bottom - top)).abs() > (cx - (right - left)).abs() {
+    let (held_cx, held_cy) = if held == TOP_OR_BOTTOM {
         let inner = (cy - frame.1).max(least.1);
         (across(inner, shape.1, shape.0) + frame.0, inner + frame.1)
     } else {
-        let inner = (cx - frame.0).max(least.0);
+        let asked = cx - frame.0;
+        let inner = if held == A_SIDE {
+            asked
+        } else {
+            (asked + across(cy - frame.1, shape.1, shape.0)) / 2
+        };
+        let inner = inner.max(least.0);
         (inner + frame.0, across(inner, shape.0, shape.1) + frame.1)
     };
 
@@ -1279,19 +1385,51 @@ mod tests {
     const FRAME: (i32, i32) = (16, 42);
     const SHAPE: (i32, i32) = (1920, 1080);
 
+    /// Ce que le système propose, tenu à la forme, la main étant là où
+    /// cette proposition dit qu'elle est.
+    fn drag(wanted: (i32, i32, i32, i32), least: (i32, i32)) -> (i32, i32, i32, i32) {
+        what_the_drag_becomes(
+            NOW,
+            wanted,
+            FRAME,
+            SHAPE,
+            least,
+            the_edges_under_the_hand(NOW, wanted),
+        )
+    }
+
+    #[test]
+    fn the_edges_the_hand_holds_are_the_ones_that_move() {
+        // Un bord vertical, un bord horizontal, puis un coin : la
+        // proposition du système laisse les autres bords au pixel près.
+        assert_eq!(the_edges_under_the_hand(NOW, (100, 100, 1276, 582)), A_SIDE);
+        assert_eq!(the_edges_under_the_hand(NOW, (60, 100, 1016, 582)), A_SIDE);
+        assert_eq!(
+            the_edges_under_the_hand(NOW, (100, 100, 976, 782)),
+            TOP_OR_BOTTOM
+        );
+        assert_eq!(
+            the_edges_under_the_hand(NOW, (100, 60, 976, 622)),
+            TOP_OR_BOTTOM
+        );
+        assert_eq!(
+            the_edges_under_the_hand(NOW, (100, 100, 1076, 682)),
+            A_SIDE | TOP_OR_BOTTOM
+        );
+    }
+
     #[test]
     fn pulling_the_bottom_edge_makes_the_width_follow() {
         // La main descend le bord du bas de 200 : la hauteur mène, la
         // largeur suit, et les deux autres bords ne bougent pas.
-        let (x, y, cx, cy) = what_the_drag_becomes(NOW, (100, 100, 976, 782), FRAME, SHAPE, (1, 1));
+        let (x, y, cx, cy) = drag((100, 100, 976, 782), (1, 1));
         assert_eq!((x, y, cy), (100, 100, 782));
         assert_eq!(cx, across(782 - 42, 1080, 1920) + 16);
     }
 
     #[test]
     fn pulling_a_side_makes_the_height_follow() {
-        let (x, y, cx, cy) =
-            what_the_drag_becomes(NOW, (100, 100, 1276, 582), FRAME, SHAPE, (1, 1));
+        let (x, y, cx, cy) = drag((100, 100, 1276, 582), (1, 1));
         assert_eq!((x, y, cx), (100, 100, 1276));
         assert_eq!(cy, across(1276 - 16, 1920, 1080) + 42);
     }
@@ -1300,24 +1438,87 @@ mod tests {
     fn pulling_the_top_edge_keeps_the_bottom_where_it_is() {
         // La main remonte le bord du haut : l'origine bouge avec elle, et
         // le bas de la fenêtre reste exactement où il était.
-        let (_, y, _, cy) = what_the_drag_becomes(NOW, (100, 60, 976, 622), FRAME, SHAPE, (1, 1));
+        let (_, y, _, cy) = drag((100, 60, 976, 622), (1, 1));
         assert_eq!(y + cy, 682);
     }
 
     #[test]
     fn pulling_the_left_edge_keeps_the_right_where_it_is() {
-        let (x, _, cx, _) = what_the_drag_becomes(NOW, (60, 100, 1016, 582), FRAME, SHAPE, (1, 1));
+        let (x, _, cx, _) = drag((60, 100, 1016, 582), (1, 1));
         assert_eq!(x + cx, 1076);
     }
 
     #[test]
+    fn a_corner_answers_a_hand_going_in_either_direction() {
+        // Le coin bas droit tenu, la main part droit à droite, puis droit
+        // en bas. La fenêtre grandit dans les deux cas : s'en tenir à un
+        // seul côté pour tout le glissement rendait l'un des deux gestes
+        // sans effet.
+        let corner = A_SIDE | TOP_OR_BOTTOM;
+        let sideways =
+            what_the_drag_becomes(NOW, (100, 100, 1016, 582), FRAME, SHAPE, (1, 1), corner);
+        let downwards =
+            what_the_drag_becomes(NOW, (100, 100, 976, 622), FRAME, SHAPE, (1, 1), corner);
+        assert!(sideways.2 > 976 && sideways.3 > 582, "{sideways:?}");
+        assert!(downwards.2 > 976 && downwards.3 > 582, "{downwards:?}");
+    }
+
+    #[test]
+    fn a_corner_moving_steadily_does_not_send_the_window_back_and_forth() {
+        // Le geste qui faisait trembler l'image : la main descend en
+        // diagonale, un peu plus large à un pas, un peu plus haut au pas
+        // suivant. La fenêtre doit grandir à chaque pas, jamais reculer.
+        let (mut left, mut top, mut right, mut bottom) = NOW;
+        let mut widths = Vec::new();
+        for step in 0..40 {
+            let (dx, dy) = if step % 2 == 0 { (3, 2) } else { (2, 3) };
+            let wanted = (left, top, right - left + dx, bottom - top + dy);
+            let (x, y, cx, cy) = what_the_drag_becomes(
+                (left, top, right, bottom),
+                wanted,
+                FRAME,
+                SHAPE,
+                (1, 1),
+                A_SIDE | TOP_OR_BOTTOM,
+            );
+            (left, top, right, bottom) = (x, y, x + cx, y + cy);
+            widths.push(cx);
+        }
+        for pair in widths.windows(2) {
+            assert!(
+                pair[1] >= pair[0],
+                "la fenêtre a reculé : {:?} dans {widths:?}",
+                pair
+            );
+        }
+        // Et elle suit vraiment la main : quarante pas de deux ou trois
+        // pixels ne peuvent pas laisser la fenêtre sur place.
+        assert!(widths[39] - widths[0] > 60, "{widths:?}");
+    }
+
+    #[test]
     fn the_drag_cannot_take_the_window_under_the_floor() {
-        // Le bord du bas remonté à fond : la fenêtre s'arrête à la taille
-        // où le bouton tient encore, en hauteur comme en largeur.
+        // Le bord du bas remonté à fond, puis le côté rentré à fond : la
+        // fenêtre s'arrête à la taille où le bouton tient encore, en
+        // hauteur comme en largeur.
         let least = the_least_picture(Some((107, 107)), SHAPE);
-        let (_, _, cx, cy) = what_the_drag_becomes(NOW, (100, 100, 976, 100), FRAME, SHAPE, least);
-        assert!(cx - 16 >= 107, "largeur au sol : {}", cx - 16);
-        assert!(cy - 42 >= 107, "hauteur au sol : {}", cy - 42);
+        for wanted in [
+            (100, 100, 976, 100),
+            (100, 100, 100, 582),
+            (100, 100, 100, 100),
+        ] {
+            let (_, _, cx, cy) = drag(wanted, least);
+            assert!(
+                cx - 16 >= 107,
+                "largeur au sol : {} sur {wanted:?}",
+                cx - 16
+            );
+            assert!(
+                cy - 42 >= 107,
+                "hauteur au sol : {} sur {wanted:?}",
+                cy - 42
+            );
+        }
     }
 
     #[test]
@@ -1341,7 +1542,7 @@ mod tests {
     #[test]
     fn a_size_that_did_not_change_is_left_alone() {
         let same = (100, 100, 976, 582);
-        assert_eq!(what_the_drag_becomes(NOW, same, FRAME, SHAPE, (1, 1)), same);
+        assert_eq!(drag(same, (1, 1)), same);
     }
 
     #[test]

@@ -94,6 +94,9 @@ fn main() {
             // opening it is what puts the service back on its feet.
             service::wake_the_service();
             tray::watch(app.handle().clone());
+            // Where a hand last left the floating button, read before
+            // any session can ask for it.
+            floating::where_it_was_left();
             floating::watch(app.handle().clone());
             // A session gives the keyboard to the far computer, so what
             // is left to us has to be asked of the system rather than
