@@ -756,11 +756,6 @@ fn round_the_bottom(
     if (same_size && same_frame) || width <= 0 || height <= 0 {
         return;
     }
-    // Said whichever way it goes: a window spread over a screen has
-    // square corners and one standing on its own has round ones, and
-    // both halves of that have to be told.
-    round_the_window(home);
-
     if square {
         // SAFETY: a window this program took in hand; no shape means the
         // whole rectangle, which is what a window is without one.
@@ -798,14 +793,21 @@ fn round_the_bottom(
     unsafe {
         // The picture's own rectangle, which is the inside of our window
         // to the pixel: the two are laid on one another by `lay_it_out`.
-        let shape = CreateRoundRectRgn(0, 0, width, height, round * 2, round * 2);
+        //
+        // One more pixel each way, because a shape is cut short of the
+        // edges it is given. Cut on the picture's own numbers the shape
+        // came back one row shy of the bottom, measured, and that row
+        // is the page behind the picture showing through as a pale line
+        // along the whole width. Anything past the picture is clipped by
+        // the picture, so asking for one more costs nothing.
+        let shape = CreateRoundRectRgn(0, 0, width + 1, height + 1, round * 2, round * 2);
         if shape.is_null() {
             return;
         }
         // Everything above the arcs stays a plain rectangle: the top of
         // the picture sits under the title bar, where the frame is
         // straight.
-        let straight = CreateRectRgn(0, 0, width, height - round);
+        let straight = CreateRectRgn(0, 0, width + 1, height - round);
         if !straight.is_null() {
             CombineRgn(shape, shape, straight, RGN_OR);
             DeleteObject(straight);
@@ -1016,6 +1018,7 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
         offer_a_picture_of_the_session(home, true);
+        round_the_window(home, true);
         light_the_bar(home);
     });
 }
@@ -1034,6 +1037,7 @@ fn give_the_window_back(app: &AppHandle) {
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
         offer_a_picture_of_the_session(home, false);
+        round_the_window(home, false);
     });
 }
 
@@ -1154,30 +1158,24 @@ pub fn who_holds_the_front() -> Front {
     }
 }
 
-/// Says out loud whether our window's corners are to be rounded.
+/// Asks the compositor to round our window's corners, and takes the ask
+/// back at the end of the session.
 ///
-/// Left to the system, they are worked out from what it takes the window
-/// to be, and carrying the window about by hand confuses that: coming
-/// back down from a full screen, ours kept the square corners and the
-/// missing border of a window that fills one, because at no point did
-/// anything change that the system reads to decide. Said outright, there
-/// is nothing left to work out.
-///
-/// Rounded when the window stands on its own, square when it fills the
-/// screen, which is the system's own rule and the one every other window
-/// follows.
+/// Asked once and never taken up again while the session lasts. « Round
+/// them if that suits the window » is what this asks, and what suits it
+/// is the compositor's own business: a window spread over a screen is
+/// not rounded whatever is asked, and comes back rounded when it comes
+/// back down. Told to square them and then to round them again, across
+/// a maximise, it took the first and not the second, and the window came
+/// back down with the flat top of Windows 10. Told once, there is
+/// nothing to take back and nothing to miss.
 #[cfg(windows)]
-fn round_the_window(home: windows_sys::Win32::Foundation::HWND) {
+fn round_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND, DwmSetWindowAttribute,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DEFAULT, DWMWCP_ROUND, DwmSetWindowAttribute,
     };
 
-    let square = the_frame_is_square(home);
-    let how: i32 = if square {
-        DWMWCP_DONOTROUND
-    } else {
-        DWMWCP_ROUND
-    };
+    let how: i32 = if may { DWMWCP_ROUND } else { DWMWCP_DEFAULT };
     // SAFETY: our own window, an attribute made to be set, and the value
     // is ours, of the size the call is told.
     let answer = unsafe {
@@ -1188,24 +1186,15 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND) {
             std::mem::size_of::<i32>() as u32,
         )
     };
-    // Written down each time it changes, and with what the compositor
-    // said back. « The corners did not come back » can mean the wrong
-    // thing was asked for or the right thing was refused, and those two
-    // are chased in opposite directions.
-    let told = (i64::from(how) << 32) | i64::from(answer) & 0xFFFF_FFFF;
-    if CORNERS.swap(told, Ordering::Relaxed) == told {
-        return;
-    }
     crate::journal::note(&format!(
         "coins de la fenêtre : {} demandés, le compositeur a répondu {answer:#x}",
-        if square { "droits" } else { "arrondis" }
+        if may {
+            "arrondis"
+        } else {
+            "au choix du système"
+        }
     ));
 }
-
-/// What was last asked of the compositor about the corners, and what it
-/// answered, so a change of either can be written down and nothing else.
-#[cfg(windows)]
-static CORNERS: AtomicI64 = AtomicI64::new(-1);
 
 /// Says what the picture is really cut to, asked of the system after the
 /// cut rather than assumed from what was handed to it.
