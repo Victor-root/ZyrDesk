@@ -2248,22 +2248,43 @@ unsafe extern "system" fn lit(
             draw_the_bar(window);
             0
         }
-        // A window about to take a new size under a hand: the system says
-        // what it is about to apply and takes back whatever is written
-        // there, before anything moves. Holding the shape here is what
-        // costs nothing: corrected afterwards, every step of a drag
-        // resized the window twice.
+        // A window about to take a new size: the system says what it is
+        // about to apply and takes back whatever is written there, before
+        // anything moves.
         //
         // This message and not the sizing one of the drag loop, which was
         // answered here before and never arrived: the journal counted the
         // steps of a drag through this message's own echo while the shape
         // ran free.
-        WM_WINDOWPOSCHANGING if DRAGGED.load(Ordering::Relaxed) => {
+        //
+        // Answered for an order and not only for a hand, which is the
+        // whole of one report. « Agrandir » was watched closely enough
+        // to be described, and what showed was our own page, flashing
+        // inside the window while it grew. It could hardly have been
+        // anything else: the picture was given the size of the inside as
+        // it stood when the gesture began, the system then made that
+        // inside a screen wide, and the picture was only sent after it
+        // through the message that says the window has already moved.
+        // Between the two, the picture was the smaller of the two by the
+        // whole of what the window had just gained, and a child does not
+        // grow with its parent. The rule that answers this was written
+        // during the work on dragging, and reads « the picture is never
+        // the smaller of the two »; it was simply never asked when the
+        // one doing the growing was the system.
+        WM_WINDOWPOSCHANGING if on_the_move() => {
             // SAFETY: for this message the system passes a WINDOWPOS of
             // ours to read and amend, and it lives for the length of the
             // call.
             let wanted = unsafe { &mut *(lparam as *mut WINDOWPOS) };
-            the_drag_keeps_the_shape(window, wanted);
+            // Only a hand has a shape to hold. A window on its way to
+            // what « agrandir » asks for is going to the size of a
+            // screen, and the picture's own proportions have nothing to
+            // say about it. Held here rather than corrected afterwards,
+            // since corrected afterwards every step of a drag resized
+            // the window twice.
+            if DRAGGED.load(Ordering::Relaxed) {
+                the_drag_keeps_the_shape(window, wanted);
+            }
             // The picture takes its new size here, before our window
             // takes its own, but only when that leaves it the bigger of
             // the two; see `the_picture_leads`. Shrinking, it stays
