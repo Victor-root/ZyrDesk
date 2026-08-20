@@ -82,6 +82,16 @@ static LAID: AtomicI64 = AtomicI64::new(0);
 /// necessarily changing anything else.
 static SQUARED: AtomicBool = AtomicBool::new(false);
 
+/// Set while the window is spread over the whole screen.
+///
+/// Held rather than read from the window, because the two places that
+/// need it are asked at moments when the window cannot answer: the
+/// system asks what the frame is going to be while the window is still
+/// the size it was, and the compositor is told how to draw the corners
+/// before the window has moved. The one door in and out of full screen
+/// writes it, so it is right before either question is asked.
+static WHOLE_SCREEN: AtomicBool = AtomicBool::new(false);
+
 /// Radius the system rounds a window's corners by, in page pixels.
 ///
 /// Windows has never offered it as a number to ask for; this is the one
@@ -210,7 +220,15 @@ pub fn take_the_screen(app: &AppHandle, whole: bool) -> Result<(), String> {
     let window = app
         .get_webview_window(crate::HOME)
         .ok_or("la fenêtre de ZyrDesk n'est plus là")?;
+    // Written down before the window moves, not after. Taking the screen
+    // is what makes the system ask what the frame should be, and the
+    // answer depends on this: asked with the old value, the window comes
+    // back with a frame it should not have.
+    let was = WHOLE_SCREEN.swap(whole, Ordering::Relaxed);
     window.set_fullscreen(whole).map_err(|e| e.to_string())?;
+    if was != whole {
+        no_frame_on_the_whole_screen(app);
+    }
     fit(app);
     // Taking the screen activates our window, which the toolkit does on
     // purpose and cannot be asked not to. The engine loses the front,
@@ -1338,6 +1356,14 @@ fn take_the_window_in_hand(app: &AppHandle) {
         offer_a_picture_of_the_session(home, true);
         round_the_window(home, true);
         light_the_bar(home);
+        // A session can open straight onto the whole screen, in which
+        // case the window took it before this handler was on it and the
+        // system asked about the frame with nobody there to answer.
+        // Asked again now, with the handler in place.
+        if WHOLE_SCREEN.load(Ordering::Relaxed) {
+            no_frame_on_the_whole_screen(&asked);
+        }
+        tell_the_frame(home);
     });
 }
 
@@ -1491,38 +1517,168 @@ pub fn who_holds_the_front() -> Front {
 /// Asks the compositor to round our window's corners, and takes the ask
 /// back at the end of the session.
 ///
-/// Asked once and never taken up again while the session lasts. « Round
-/// them if that suits the window » is what this asks, and what suits it
-/// is the compositor's own business: a window spread over a screen is
-/// not rounded whatever is asked, and comes back rounded when it comes
-/// back down. Told to square them and then to round them again, across
-/// a maximise, it took the first and not the second, and the window came
-/// back down with the flat top of Windows 10. Told once, there is
-/// nothing to take back and nothing to miss.
+/// Three answers and not two, because « round them if that suits the
+/// window » turned out not to cover the one case where it matters. The
+/// compositor squares a window it maximised itself, and that is the case
+/// the first version of this was written against; a window spread over
+/// the screen by being moved and resized to it is an ordinary window as
+/// far as the compositor is concerned, and it rounds it. Two bites out
+/// of the far computer's screen, in a mode whose whole point is that
+/// there is nothing but the screen.
+///
+/// So a window covering the screen is told to square them outright, and
+/// its border is turned off with them: the compositor draws one around
+/// every window it rounds, and on the screen's own edge that border is a
+/// pale line with the session pushed off it.
 #[cfg(windows)]
 fn round_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DEFAULT, DWMWCP_ROUND, DwmSetWindowAttribute,
+        DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DEFAULT, DWMWCP_DONOTROUND, DWMWCP_ROUND, DwmSetWindowAttribute,
     };
 
-    let how: i32 = if may { DWMWCP_ROUND } else { DWMWCP_DEFAULT };
-    // SAFETY: our own window, an attribute made to be set, and the value
-    // is ours, of the size the call is told.
+    // Kept, so that taking the screen or giving it back can ask again
+    // without having to know whether a session is running.
+    ROUNDS_WANTED.store(may, Ordering::Relaxed);
+    let whole = WHOLE_SCREEN.load(Ordering::Relaxed);
+    let how: i32 = match (may, whole) {
+        (_, true) => DWMWCP_DONOTROUND,
+        (true, false) => DWMWCP_ROUND,
+        (false, false) => DWMWCP_DEFAULT,
+    };
+    let edge: u32 = if whole {
+        DWMWA_COLOR_NONE
+    } else {
+        DWMWA_COLOR_DEFAULT
+    };
+    // SAFETY: our own window, two attributes made to be set, and both
+    // values are ours, of the size each call is told.
     let answer = unsafe {
-        DwmSetWindowAttribute(
+        let corners = DwmSetWindowAttribute(
             home,
             DWMWA_WINDOW_CORNER_PREFERENCE as u32,
             (&raw const how).cast(),
             std::mem::size_of::<i32>() as u32,
-        )
+        );
+        DwmSetWindowAttribute(
+            home,
+            DWMWA_BORDER_COLOR as u32,
+            (&raw const edge).cast(),
+            std::mem::size_of::<u32>() as u32,
+        );
+        corners
     };
     crate::journal::note(&format!(
         "coins de la fenêtre : {} demandés, le compositeur a répondu {answer:#x}",
-        if may {
-            "arrondis"
-        } else {
-            "au choix du système"
+        match (may, whole) {
+            (_, true) => "droits, sans bordure, la fenêtre couvrant l'écran",
+            (true, false) => "arrondis",
+            (false, false) => "au choix du système",
         }
+    ));
+}
+
+/// Takes the frame off the window while it covers the screen, and hands
+/// it back when it comes down.
+///
+/// A window covering the screen keeps the frame of an ordinary one: the
+/// system reserves a strip along the top and the sides for a border, and
+/// what is inside the window starts below it. That strip is the pale
+/// line along the top of a full screen session, and the reason the far
+/// computer's picture sits a few pixels lower than it should.
+///
+/// The strip is not removed by asking; it is removed by answering the
+/// question that creates it, which the handler below does. All that is
+/// wanted here is for the system to ask it again, which it only does
+/// when told the frame may have changed.
+#[cfg(windows)]
+fn no_frame_on_the_whole_screen(app: &AppHandle) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+        SetWindowPos,
+    };
+
+    let asked = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(home) = home_window(&asked) else {
+            return;
+        };
+        // SAFETY: our own window, from the thread that owns it, and
+        // nothing is moved, resized or reordered.
+        unsafe {
+            SetWindowPos(
+                home,
+                HWND_TOP,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            )
+        };
+        round_the_window(home, ROUNDS_WANTED.load(Ordering::Relaxed));
+        tell_the_frame(home);
+    });
+}
+
+/// What was last asked of the corners, so the ask survives a change of
+/// screen without this file having to ask whether a session is running.
+#[cfg(windows)]
+static ROUNDS_WANTED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(not(windows))]
+fn no_frame_on_the_whole_screen(_app: &AppHandle) {}
+
+/// Measures what the window and its inside really came to, against the
+/// screen they are on.
+///
+/// The one measurement that settles a pale line along an edge: a window
+/// whose inside is smaller than itself has a frame, and the difference
+/// is where the line is. Nothing else can be read from a photograph.
+#[cfg(windows)]
+fn tell_the_frame(home: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
+
+    let mut frame = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let mut inside = frame;
+    let mut about: MONITORINFO = unsafe { std::mem::zeroed() };
+    about.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+    // SAFETY: our own window, and all three slots are ours, the last one
+    // with its size written in it as the call requires.
+    let read = unsafe {
+        let monitor = MonitorFromWindow(home, MONITOR_DEFAULTTONEAREST);
+        GetWindowRect(home, &mut frame) != 0
+            && GetClientRect(home, &mut inside) != 0
+            && GetMonitorInfoW(monitor, &mut about) != 0
+    };
+    if !read {
+        return;
+    }
+    let screen = about.rcMonitor;
+    crate::journal::note(&format!(
+        "cadre de la fenêtre : écran {}x{} en ({}, {}), fenêtre {}x{} en ({}, {}), intérieur {}x{} ; \
+         il reste {} px de cadre en largeur et {} px en hauteur",
+        screen.right - screen.left,
+        screen.bottom - screen.top,
+        screen.left,
+        screen.top,
+        frame.right - frame.left,
+        frame.bottom - frame.top,
+        frame.left,
+        frame.top,
+        inside.right - inside.left,
+        inside.bottom - inside.top,
+        (frame.right - frame.left) - (inside.right - inside.left),
+        (frame.bottom - frame.top) - (inside.bottom - inside.top),
     ));
 }
 
@@ -2674,9 +2830,29 @@ unsafe extern "system" fn lit(
         // to fill it. That is the far computer's screen appearing zoomed
         // for an instant, like a change of resolution that is over far
         // too quickly to be one.
-        WM_NCCALCSIZE if wparam != 0 && the_picture_rides() => {
+        //
+        // And on the whole screen, the answer is given rather than asked
+        // for. The system reserves a strip along the top and the sides
+        // of every ordinary window for a border, and inside starts below
+        // it; a window covering the screen is still an ordinary window
+        // to the system, so the strip lands on the screen's own edge.
+        // That is the pale line along the top of a full screen session,
+        // and the reason the far computer's picture sat a few pixels
+        // below where it should. Answering that inside is the whole
+        // window leaves no strip to draw and nothing to push down.
+        WM_NCCALCSIZE
+            if wparam != 0 && (the_picture_rides() || WHOLE_SCREEN.load(Ordering::Relaxed)) =>
+        {
+            let whole = WHOLE_SCREEN.load(Ordering::Relaxed);
             // SAFETY: the arguments the system handed in, untouched.
-            let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
+            // Left alone when the window covers the screen: what the
+            // block already holds is the window itself, which is the
+            // answer wanted, and zero is « that rectangle stands ».
+            let answer = if whole {
+                0
+            } else {
+                unsafe { DefSubclassProc(window, message, wparam, lparam) }
+            };
             // SAFETY: for this message the system passes a block of ours
             // whose first rectangle it has just written the coming
             // inside into, in screen coordinates, and it lives for the
