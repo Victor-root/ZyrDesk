@@ -439,7 +439,7 @@ fn lay_it_out(
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetClientRect, HWND_TOP, IsIconic, IsWindowVisible, SWP_NOACTIVATE, SWP_NOCOPYBITS,
-        SWP_SHOWWINDOW, SetWindowPos,
+        SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos,
     };
 
     // Nothing to lay the picture on. Minimised, our window has no inside
@@ -477,22 +477,42 @@ fn lay_it_out(
     let dragged = DRAGGED.load(Ordering::Relaxed);
     let moving = on_the_move();
 
+    // What the picture already is. A window carried across the desk
+    // keeps its size the whole way, and asking for a size it already has
+    // is asking for work nobody needs.
+    let stands = where_it_stands(engine);
+    let same_size = stands
+        .is_some_and(|(left, top, right, bottom)| (right - left, bottom - top) == (width, height));
+
     let started = std::time::Instant::now();
     // SAFETY: the engine's window is one we have already taken in hand.
     //
     // Shown without being activated: asked to show itself the ordinary
     // way, it would take the front, and this runs every second.
     //
-    // Nothing of what was drawn is carried over to the new size. The
-    // system would otherwise copy a corner of the old picture into the
-    // new frame and leave it there until the engine draws again, which
-    // is a torn image on every step of a resize.
-    //
     // Waited for, and not handed over. That window belongs to another
     // program, so this stands still until that program has answered; it
     // is what keeps the picture and the frame that carries it in the
     // same step, and the answer is quick now that a resize no longer
     // makes the engine rebuild everything it draws with.
+    //
+    // Nothing of what was drawn is carried over to a NEW SIZE: the
+    // system would otherwise copy a corner of the old picture into the
+    // new frame and leave it there until the engine draws again, which
+    // is a torn image on every step of a resize.
+    //
+    // But only to a new size. Asked of a window that is merely being
+    // carried, that same thing throws away a picture that was perfectly
+    // good and has the engine paint it again, one step at a time, all
+    // the way across the desk: the edge the window was heading for
+    // flickered white for the length of the carry, which is the page
+    // behind showing through in the moment between the throwing away and
+    // the painting.
+    let moved_only = if same_size {
+        SWP_NOSIZE
+    } else {
+        SWP_NOCOPYBITS
+    };
     unsafe {
         SetWindowPos(
             engine,
@@ -501,7 +521,7 @@ fn lay_it_out(
             corner.y,
             width,
             height,
-            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOCOPYBITS,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW | moved_only,
         )
     };
     let laid = started.elapsed();
@@ -523,7 +543,7 @@ fn lay_it_out(
         say_the_size_again(engine, (width, height));
     }
     tell_the_gap(
-        engine,
+        stands,
         (corner.x, corner.y, corner.x + width, corner.y + height),
     );
 
@@ -844,8 +864,8 @@ static GAP: AtomicI64 = AtomicI64::new(0);
 /// way. Which of those it is cannot be read off a screenshot, and the
 /// difference is the whole of what a pale line is.
 #[cfg(windows)]
-fn tell_the_gap(engine: windows_sys::Win32::Foundation::HWND, asked: (i32, i32, i32, i32)) {
-    let Some(got) = where_it_stands(engine) else {
+fn tell_the_gap(stood: Option<(i32, i32, i32, i32)>, asked: (i32, i32, i32, i32)) {
+    let Some(got) = stood else {
         return;
     };
     if got == asked {

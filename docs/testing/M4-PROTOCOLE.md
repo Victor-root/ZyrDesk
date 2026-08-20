@@ -481,6 +481,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Le déplacement compte autant que le reste : tenir la forme de l'image se fait sur le message par lequel passe aussi un simple déplacement, et une correction appliquée à tort y remettait la fenêtre à son point de départ à chaque pas, donc la rendait immobile.
 >
+> Regarder aussi le **bord vers lequel la fenêtre avance** pendant qu'on la promène : rien ne doit y clignoter. Une fenêtre qui change de taille ne peut pas garder ce qui était dessiné dedans, sinon un morceau de l'ancienne image reste collé dans le nouveau cadre jusqu'au dessin suivant ; c'est pourquoi il est demandé au système de tout jeter. Demandé aussi à une fenêtre qui ne fait que se déplacer, cela jetait une image parfaitement bonne et la faisait repeindre à chaque cran du trajet : le bord d'attaque clignotait blanc tout du long, ce blanc étant la page derrière l'image, vue dans l'instant entre le jeter et le repeindre. Ce n'est demandé maintenant que si la taille change vraiment.
+>
 > Regarder aussi les **coins du bas pendant le déplacement** : ils restent arrondis tout du long. La découpe qui les arrondit coûte trop cher pour être refaite à chaque cran d'un redimensionnement, et elle est donc retirée le temps du geste ; mais un déplacement ne change pas la taille, donc la découpe y reste juste et n'a aucune raison de partir. Retirée à tout geste, elle rendait l'image carrée le temps qu'on porte la fenêtre, par-dessus un cadre qui, lui, gardait ses coins. Elle ne part maintenant qu'au premier cran qui change vraiment la taille.
 
 > **S9quater (agrandir et restaurer d'un seul mouvement)**
