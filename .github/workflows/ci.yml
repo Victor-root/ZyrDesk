@@ -76,10 +76,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # NSIS n'est plus fourni par l'image Windows du runner, et son
       # installateur n'ajoute rien au PATH.
+      #
+      # Où il se pose n'est pas écrit d'avance : le paquet livre tantôt
+      # la version 32 bits, tantôt la 64, et les deux ne s'installent pas
+      # au même endroit. Le chemin était écrit en dur ici, et le jour où
+      # le paquet a changé de bord, la compilation s'est arrêtée sur un
+      # « makensis introuvable » alors que NSIS venait d'être installé.
+      # Cherché plutôt qu'écrit, et dit franchement s'il manque.
       - name: Installer NSIS
         run: |
           choco install nsis --no-progress -y
-          "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
+          $ou = Get-ChildItem -Path "C:\Program Files\NSIS", "C:\Program Files (x86)\NSIS" `
+            -Filter makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $ou) { throw "makensis introuvable après l'installation de NSIS" }
+          $ou.DirectoryName >> $env:GITHUB_PATH
       - run: cargo build --release --workspace
       # Les guillemets ne sont pas décoratifs : sans eux, PowerShell coupe
       # -DVERSION=0.1.0 en deux arguments et makensis cherche un script
