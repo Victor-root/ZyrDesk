@@ -1,11 +1,15 @@
 /*
   Le bouton flottant d'une session.
 
-  La fenêtre fait exactement la taille de ce qui se voit : ce qui reste
-  autour est transparent, et transparent ne veut pas dire traversant.
-  Tout espace vide de cette page attrape donc les clics destinés à
-  l'image, ce qui n'est acceptable que le temps du menu ouvert, où il
-  sert justement à le refermer.
+  La fenêtre est aussi grande que le menu du début à la fin d'une
+  session, et ce qui se voit d'elle est découpé dedans par le cœur, sur
+  ce que cette page dessine et rien d'autre. Ce qui n'est pas dessiné
+  n'existe donc pas : ni à l'oeil, ni sous la souris, dont les clics
+  passent au travers jusqu'à l'image.
+
+  Sa taille ne bouge pas parce qu'une fenêtre qui change de taille fait
+  remettre la page en page, et le temps que ça prend le logo n'est
+  dessiné nulle part.
 */
 
 .flottant {
@@ -56,9 +60,12 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  transition:
-    transform var(--duree-courte) var(--courbe),
-    filter var(--duree-courte) var(--courbe);
+  /* Le logo grandit depuis son coin haut droit, qui est celui par lequel
+     la fenêtre est accrochée. Il grandit donc vers l'intérieur, là où il
+     y a la place ; centré, il débordait de la découpe et le survol
+     rognait ses quatre coins arrondis au lieu de le mettre en avant. */
+  transform-origin: top right;
+  transition: transform var(--duree-courte) var(--courbe);
 }
 
 .logo > img {
@@ -67,12 +74,8 @@
   height: 52px;
 }
 
-/* Le survol assombrit la plaque, il ne l'agrandit pas. La fenêtre est
-   découpée sur cette plaque au pixel près : tout ce qui grandissait
-   au-delà était coupé net plutôt que dessiné, et le survol rognait les
-   quatre coins arrondis du logo au lieu de le mettre en avant. */
 .logo:hover {
-  filter: brightness(0.93);
+  transform: scale(1.06);
 }
 
 /* Pris en main : le curseur dit qu'il se déplace, pas qu'il se clique.
@@ -93,6 +96,17 @@
 }
 
 /* ---- Le menu --------------------------------------------------------- */
+
+/* Replié, le menu garde sa place au lieu de la rendre : la fenêtre fait
+   donc la même taille du début à la fin de la session, et cliquer sur le
+   bouton ne la redimensionne pas. Une fenêtre qui change de taille fait
+   remettre la page en page, et le temps que ça prend le logo n'est
+   dessiné nulle part : c'était le clignotement. Ce qui n'est pas dessiné
+   est découpé hors de la fenêtre, donc un menu replié ne se voit pas et
+   n'attrape aucun clic. */
+.menu.repliee {
+  visibility: hidden;
+}
 
 .menu {
   display: flex;

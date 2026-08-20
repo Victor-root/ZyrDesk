@@ -259,11 +259,11 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Cliquer sur le logo pour ouvrir le menu, le refermer, recommencer une dizaine de fois en regardant **le logo lui-même** et non le menu.
 >
-> Attendu : le logo **ne bouge pas et ne disparaît jamais**, pas même le temps d'une image. Le menu apparaît en dessous et la fenêtre s'élargit vers la gauche, le logo restant exactement au même point de l'écran.
+> Attendu : le logo **ne bouge pas et ne disparaît jamais**, pas même le temps d'une image. Le menu apparaît en dessous, le logo reste exactement au même point de l'écran.
 >
-> La fenêtre du bouton fait la taille du logo tant que le menu est fermé, et la page y était accrochée par le coin haut **gauche** : ouvrir le menu élargissait le bloc vers la droite, le logo partait avec lui hors de la fenêtre, et il disparaissait le temps que le cœur retaille celle-ci. Il est maintenant accroché par le coin haut **droit**, du côté où la fenêtre grandit.
+> Deux choses le faisaient clignoter, et il a fallu les deux. La page était accrochée par le coin haut **gauche** de sa fenêtre alors que celle-ci grandit vers la gauche : ouvrir le menu emportait le logo hors de la fenêtre. Elle est maintenant accrochée par le coin haut **droit**. Et la fenêtre changeait de taille à chaque ouverture, ce qui fait remettre la page en page : le temps que ça prend, le logo n'est dessiné nulle part. Elle garde maintenant **la même taille du début à la fin de la session**, celle du menu déplié, et c'est la découpe seule qui change. Ce qui n'est pas dessiné n'existe pas : la partie de la fenêtre qui ne sert pas ne se voit pas et laisse passer les clics jusqu'à l'image.
 >
-> Passer aussi la souris sur le logo sans cliquer : il **s'assombrit légèrement** et ne grandit pas. Une fenêtre découpée au pixel près sur le dessin coupe net tout ce qui déborde, et l'agrandissement d'avant rognait les quatre coins arrondis au lieu de mettre le bouton en avant.
+> Passer aussi la souris sur le logo sans cliquer : il **grandit doucement**, entièrement, sans qu'aucun de ses quatre coins arrondis soit rogné, et redescend quand la souris s'en va. Il grandit vers l'intérieur de la fenêtre, et la découpe suit l'animation image par image.
 
 > **R11 (il se déplace)**
 >
@@ -457,7 +457,11 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Windows arrondit les coins de toutes les fenêtres, et l'image est une fenêtre à part qui reste un rectangle : c'est elle qui est découpée pour suivre. Seulement en bas, le haut de l'image étant sous la barre de titre, là où le cadre est droit. À vérifier aussi sur un écran agrandi : la courbe grandit avec le reste.
 >
-> Regarder l'angle de près : **l'image remplit le coin jusqu'au cadre**, sans liseré clair entre le bord de l'image et la courbe. La découpe suit le cadre que Windows dessine vraiment, demandé à Windows lui-même ; une courbe à nous, ancrée sur l'image, tombait un ou deux pixels trop court et laissait voir la page blanche derrière.
+> Regarder l'angle de près, la fenêtre étant **active**, donc avec le liseré de couleur que Windows 11 dessine autour d'elle : ce liseré doit garder **sa couleur jusque dans l'angle**, exactement comme sur une fenêtre ordinaire. Ni assombri, ni interrompu, ni recouvert.
+>
+> C'est ce que la découpe décide, et elle a été prise deux fois de travers. Une fenêtre a deux courbes : celle du cadre, sur laquelle tourne le liseré, et celle du contenu, un poil plus rentrée, qui est là où le contenu d'une fenêtre s'arrête. L'image est du contenu, donc c'est la seconde. Découpée sur la première, l'image gardait les pixels qui séparent les deux, c'est-à-dire ceux du liseré lui-même, et le peignait avec l'écran distant : le liseré devenait sombre dans les deux coins du bas pour toute la durée de la session. Découpée trop court, à l'inverse, elle laissait voir la page derrière elle.
+>
+> **Le journal donne les deux nombres.** Une ligne `coins de l'image : bordure de N px, rayon de M px` est écrite à chaque fois qu'ils changent. C'est ce qu'il faut envoyer si l'angle n'est toujours pas juste : sur un écran agrandi ils ne valent pas la même chose, et ça ne se devine pas depuis une capture.
 >
 > **Puis l'inverse**, qui compte tout autant : passer en plein écran, et maximiser la fenêtre (double-clic sur la barre de titre). Dans ces deux cas, Windows dessine la fenêtre à **angles droits**, et l'image doit l'être aussi : aucun coin rogné, aucune morsure dans le bas de l'écran distant. Revenir en fenêtre : les coins se réarrondissent.
 
@@ -476,6 +480,23 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : la fenêtre **se déplace normalement**, et l'image reste exactement dedans à chaque instant, sans décoller ni rester derrière.
 >
 > Le déplacement compte autant que le reste : tenir la forme de l'image se fait sur le message par lequel passe aussi un simple déplacement, et une correction appliquée à tort y remettait la fenêtre à son point de départ à chaque pas, donc la rendait immobile.
+
+> **S9ter (la barre de titre reste allumée tant que la fenêtre sert)**
+>
+> En fenêtré, pendant une session, faire dans l'ordre en regardant **la barre de titre de ZyrDesk** :
+>
+> 1. cliquer dans l'image, taper quelques lettres ;
+> 2. ouvrir le menu flottant, le refermer ;
+> 3. prendre le bouton flottant et le déplacer ;
+> 4. réduire ZyrDesk dans la barre des tâches, le restaurer, puis cliquer dans l'image.
+>
+> Attendu : la barre de titre reste **allumée** du début à la fin, comme celle de n'importe quelle fenêtre au premier plan. Elle ne doit jamais griser, pas même une seconde.
+>
+> **Puis l'inverse**, qui compte autant : Alt+Tab vers une autre application. La barre doit **griser** immédiatement, comme il se doit. Revenir sur ZyrDesk : elle se rallume.
+>
+> Le premier plan appartient au lecteur pendant presque toute une session, et au bouton flottant quand une main le touche : ni l'un ni l'autre n'est « quelqu'un d'autre », et la fenêtre est bel et bien celle qu'on utilise. Windows pose la question au moment même où il change de premier plan, quand ce qu'il est en train de donner n'est pas encore posé : la réponse est donc donnée deux fois, une tout de suite et une par un message que le programme s'envoie à lui-même et que Windows ne rend qu'une fois l'affaire finie.
+>
+> **Le journal note chaque bascule** : `barre de titre active` ou `inactive`, avec à qui est le premier plan, à ZyrDesk, à l'image, ou ailleurs. Une bascule vers `inactive` pendant l'une des quatre étapes ci-dessus est le défaut, et la ligne dit lequel des trois cas c'était.
 
 > **S9bis (le bouton flottant reste chez lui)**
 >

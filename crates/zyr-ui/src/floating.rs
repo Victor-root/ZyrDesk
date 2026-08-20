@@ -256,12 +256,68 @@ struct Expected {
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 static NUDGE: AtomicI64 = AtomicI64::new(0);
 
+/// The logo alone, in real pixels, which is not the size of the window
+/// holding it.
+///
+/// The window is as large as the menu from the moment it opens and stays
+/// that size for the whole session, so that clicking the button never
+/// resizes it: a window that changes size makes the page inside it lay
+/// itself out again, and for the frame that takes, the logo is not drawn
+/// anywhere. That was the flash. Everything the window shows is cut out
+/// of it, so the part of it nobody is using shows nothing and catches no
+/// click.
+///
+/// But the button is the logo, not the window it is carried in: where it
+/// hangs, how far it may be dragged, and how small the picture may be
+/// taken down to are all about the logo. Hence this, beside the window.
+/// The logo sits in the window's top right corner, so the two share that
+/// corner and nothing else.
+static ITS_LOGO: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// Set once the page has measured itself and said what it draws.
+///
+/// Nothing is shown before then: a window that has said nothing yet is
+/// the size of a logo with no logo drawn in it.
+static READY: AtomicBool = AtomicBool::new(false);
+
 /// Set while the person has hidden the button from its own menu.
 ///
 /// A choice they made stands until they ask for the button back. ZyrDesk
 /// being minimised and restored is not that ask, and the system would
 /// otherwise put the button back up with the window.
 static HIDDEN: AtomicBool = AtomicBool::new(false);
+
+/// The logo's own size, as a square.
+fn logo() -> (i32, i32) {
+    let side = ITS_LOGO.load(Ordering::Relaxed).max(1);
+    (side, side)
+}
+
+/// Whether the button is to be shown or hidden right now, as the system
+/// spells it.
+///
+/// The button is drawn above every window on the machine, which is what
+/// it takes to sit on a picture belonging to another program. Left up, it
+/// would hang over whatever was switched to; so it follows the front, and
+/// the front of a session is the picture as much as it is ours.
+#[cfg(windows)]
+fn how_it_shows() -> u32 {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_HIDEWINDOW, SWP_SHOWWINDOW};
+
+    if READY.load(Ordering::Relaxed)
+        && !HIDDEN.load(Ordering::Relaxed)
+        && the_session_holds_the_front()
+    {
+        SWP_SHOWWINDOW
+    } else {
+        SWP_HIDEWINDOW
+    }
+}
+
+#[cfg(not(windows))]
+fn how_it_shows() -> u32 {
+    0
+}
 
 fn nudge() -> (i32, i32) {
     let both = NUDGE.load(Ordering::Relaxed);
@@ -536,7 +592,12 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
     // Asked before anything is held. This runs on a thread of its own and
     // the answer comes from the one that draws: waiting for it while
     // holding what that thread may want next is how both stop for good.
+    //
+    // This is the logo's size, which the window only has until the page
+    // has measured its menu; everything about where the button hangs
+    // goes on using it afterwards.
     let size = button_size(app) as i32;
+    ITS_LOGO.store(size, Ordering::Relaxed);
 
     let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
         .title("ZyrDesk")
@@ -568,12 +629,15 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
             // wrong corner and only found its place once the page had
             // loaded and measured itself, which is the jump seen at the
             // start of every session.
+            //
+            // Not shown here either. What it is to look like is the
+            // page's to say, and until it has said so this is an empty
+            // sheet in the corner of the picture.
             put_the_button(
                 hung_from(picture, nudge(), (size, size), margin()),
                 (size, size),
                 0,
             );
-            let _ = window.show();
         }
         // A button that could not be drawn is not a reason to disturb a
         // session that is otherwise fine.
@@ -615,6 +679,7 @@ pub fn lower(app: &AppHandle) {
         return;
     }
     ITS_WINDOW.store(0, Ordering::Relaxed);
+    READY.store(false, Ordering::Relaxed);
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
@@ -648,17 +713,29 @@ pub struct Piece {
 #[tauri::command]
 pub fn floating_size(width: u32, height: u32, shape: Vec<Piece>) -> Result<(), String> {
     // Read before anything moves: what is kept is the corner the button
-    // hangs from, and a menu that unfolds downwards moves the opposite
-    // corner.
-    let Some(corner) = where_it_hangs() else {
+    // hangs from, which is the window's top right and the logo's.
+    let (Some(corner), Some((left, top, right, bottom))) = (where_it_hangs(), its_place()) else {
         return Err("le bouton flottant n'est plus là".to_string());
     };
-    // The shape before the size, and the size and the place together. A
+    // Never made smaller, only ever larger. The window is a sheet the
+    // page is cut out of and nothing more, so one that is bigger than
+    // what it holds shows nothing extra and catches nothing extra; and
+    // every change of its size makes the page lay itself out again,
+    // which costs a frame with no logo drawn in it. The page's largest
+    // state is its ordinary one from the moment the menu has been
+    // measured, so after the first message this never resizes again.
+    let size = (
+        (width as i32).max(right - left),
+        (height as i32).max(bottom - top),
+    );
+    // The shape first, for the one message that does grow the window: a
     // shape wider than the window it is put on is simply clipped by it,
-    // so setting it first costs nothing; set afterwards, the window is
-    // briefly the new size under the old shape, which flashes.
+    // so setting it early costs nothing, while a window briefly at its
+    // new size under its old shape shows.
     cut_to_what_is_drawn(&shape);
-    put_the_button(corner, (width as i32, height as i32), 0);
+    // The page has drawn something, so there is something to show.
+    READY.store(true, Ordering::Relaxed);
+    put_the_button(corner, size, how_it_shows());
     Ok(())
 }
 
@@ -731,8 +808,8 @@ fn slide(picture: (i32, i32, i32, i32), from: (i32, i32), dx: i32, dy: i32) {
     let Some((left, top, right, bottom)) = its_place() else {
         return;
     };
-    let size = (right - left, bottom - top);
-    let anchor = held_inside((from.0 + dx, from.1 + dy), picture, size.0, size.1);
+    let logo = logo();
+    let anchor = held_inside((from.0 + dx, from.1 + dy), picture, logo.0, logo.1);
 
     let margin = margin();
     nudged_to(
@@ -744,7 +821,7 @@ fn slide(picture: (i32, i32, i32, i32), from: (i32, i32), dx: i32, dy: i32) {
     // the button moves: this runs a hundred times a second under a hand,
     // and a trip through an event queue at that rhythm is what a button
     // lagging its own cursor is made of.
-    put_the_button(anchor, size, 0);
+    put_the_button(anchor, (right - left, bottom - top), 0);
 }
 
 /// Where the button hangs: the top right of the picture, moved by
@@ -1025,34 +1102,21 @@ fn remember_the_button(window: &tauri::WebviewWindow) {
 /// that a hundred times a second is what made resizing a session judder.
 #[cfg(windows)]
 pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_HIDEWINDOW, SWP_SHOWWINDOW};
-
     let Some((left, top, right, bottom)) = its_place() else {
         return;
     };
-    let size = (right - left, bottom - top);
-    let anchor = hung_from(picture, nudge(), size, margin());
+    // Where it hangs is worked out from the logo, and the window is put
+    // where that leaves it: the two share their top right corner and the
+    // rest of the window is cut away.
+    let anchor = hung_from(picture, nudge(), logo(), margin());
 
     // The system puts an owned window back up with the one that owns it,
     // which is right for a button that is only down because the window
-    // is. Two things it does not decide are decided here, where
-    // everything else about the button's place is. Its place is settled
-    // either way: a button put away in the wrong corner would show
-    // itself there when called back.
-    //
-    // The person hiding it on purpose, first. And then the front: this
-    // button is drawn above every window on the machine, so a session
-    // left for another program put it over that program's work, where
-    // it belongs to nothing and covers something. It follows the front
-    // rather than the session, and the front is the picture's as much as
-    // ours: during a session the window holding it belongs to the
-    // player, which is another program entirely.
-    let away = HIDDEN.load(Ordering::Relaxed) || !the_session_holds_the_front();
-    put_the_button(
-        anchor,
-        size,
-        if away { SWP_HIDEWINDOW } else { SWP_SHOWWINDOW },
-    );
+    // is. What it does not decide is decided by `how_it_shows`, here,
+    // where everything else about the button's place is. Its place is
+    // settled either way: a button put away in the wrong corner would
+    // show itself there when called back.
+    put_the_button(anchor, (right - left, bottom - top), how_it_shows());
 }
 
 /// Puts the button's window where and how big it should be, in one move.
@@ -1133,15 +1197,12 @@ fn cut_to_what_is_drawn(shape: &[Piece]) {
             DeleteObject(one);
         }
         // The system owns it from here, but only once it has taken it:
-        // refused, it is still ours to free.
-        //
-        // Not redrawn on the spot. The window is still the size it had
-        // before this shape was measured, and a shape drawn for a wider
-        // window falls partly outside a narrower one: redrawn here, the
-        // logo was cut away for the one frame between this and the
-        // resize just below, which is what put it out and back. The
-        // resize redraws, and redraws once, with both already in place.
-        if SetWindowRgn(button, whole, 0) == 0 {
+        // refused, it is still ours to free. Redrawn on the spot, since
+        // most of the time this is the only thing that changes: the
+        // window keeps one size for the whole session, and opening the
+        // menu or running a hand over the logo is a change of shape and
+        // nothing else.
+        if SetWindowRgn(button, whole, 1) == 0 {
             DeleteObject(whole);
         }
     }
@@ -1153,26 +1214,10 @@ fn cut_to_what_is_drawn(_shape: &[Piece]) {}
 /// Whether the window at the front belongs to this session.
 ///
 /// Ours or the player's, since the picture is another program's window
-/// and holds the front for most of a session. Read from the system on
-/// the spot and never from a lock: this is called from inside the
-/// system's own call into our window.
+/// and holds the front for most of a session.
 #[cfg(windows)]
 fn the_session_holds_the_front() -> bool {
-    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId,
-    };
-
-    // SAFETY: no argument, and a null answer is one of the answers.
-    let front = unsafe { GetForegroundWindow() };
-    if front.is_null() {
-        return false;
-    }
-    let mut owner = 0u32;
-    // SAFETY: the window comes from the call above and the slot is ours.
-    unsafe { GetWindowThreadProcessId(front, &mut owner) };
-    // SAFETY: no argument.
-    owner == unsafe { GetCurrentProcessId() } || owner == crate::picture::player()
+    crate::picture::who_holds_the_front() != crate::picture::Front::Elsewhere
 }
 
 /// Where the button is on screen, as left, top, right and bottom in real
@@ -1224,8 +1269,13 @@ fn where_it_hangs() -> Option<(i32, i32)> {
 /// session to hold to a shape either.
 #[cfg(windows)]
 pub fn room_for_the_button() -> Option<(i32, i32)> {
+    // The logo and not the window carrying it: the window is as wide as
+    // the menu all session long, and a picture is not too small for a
+    // button because a menu that is not open would not fit in it.
+    its_place()?;
+    let (wide, high) = logo();
     let margin = margin();
-    its_place().map(|(left, top, right, bottom)| (right - left + margin, bottom - top + margin))
+    Some((wide + margin, high + margin))
 }
 
 /// Hands the pointer back when the far computer is holding it.

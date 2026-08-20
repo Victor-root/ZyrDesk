@@ -50,6 +50,8 @@ function formeOccupee(paquet, echelle) {
       radius: Math.round(rayon * echelle),
     });
 
+  // Le rectangle rendu, agrandissement du survol compris : la découpe
+  // épouse ce qui est dessiné à cet instant, et rien d'autre.
   const logo = vue.logo.getBoundingClientRect();
   const part = logo.width / PLAQUE.boite;
   pose(
@@ -84,9 +86,30 @@ function ajusteLaFenetre() {
   }).catch(() => {});
 }
 
+/* Le logo change de taille par une animation : au survol, et quand une
+   main le prend. La découpe la suit image par image, sinon la fenêtre
+   laisse voir son fond autour du logo pendant tout le mouvement, ou le
+   rogne. On s'arrête dès que plus rien ne bouge. */
+let animation = null;
+
+function suisLeLogo() {
+  cancelAnimationFrame(animation);
+  let avant = "";
+  let immobile = 0;
+  const pas = () => {
+    const boite = vue.logo.getBoundingClientRect();
+    const ici = `${boite.width}x${boite.height}`;
+    ajusteLaFenetre();
+    immobile = ici === avant ? immobile + 1 : 0;
+    avant = ici;
+    animation = immobile < 2 ? requestAnimationFrame(pas) : null;
+  };
+  pas();
+}
+
 function ouvre(veut) {
   ouvert = veut;
-  montre(vue.menu, veut);
+  vue.menu.classList.toggle("repliee", !veut);
   vue.logo.setAttribute("aria-expanded", veut ? "true" : "false");
   if (!veut) {
     montre(vue.souci, false);
@@ -127,6 +150,10 @@ async function demande(acte) {
    simple clic. */
 let pris = false;
 
+for (const quand of ["pointerenter", "pointerleave", "pointerdown"]) {
+  vue.logo.addEventListener(quand, suisLeLogo);
+}
+
 vue.logo.addEventListener("pointerdown", async (evenement) => {
   if (evenement.button !== 0) {
     return;
@@ -148,6 +175,7 @@ vue.logo.addEventListener("pointerdown", async (evenement) => {
   } finally {
     pris = false;
     vue.logo.classList.remove("pris");
+    suisLeLogo();
   }
 });
 
@@ -210,6 +238,11 @@ async function ditLesRaccourcis() {
   dit("menu", vue.retour, "jusqu'à la fin");
   dit("fullscreen", vue.touchePleinEcran, "");
   dit("end", vue.toucheFin, "rend le bureau distant");
+  // Ces combinaisons allongent les entrées du menu, donc élargissent la
+  // fenêtre. Mesurée ici, une fois, plutôt qu'au premier clic : la
+  // fenêtre garde ensuite sa taille pour toute la session, ce qui est
+  // ce qui fait que cliquer sur le bouton ne clignote pas.
+  requestAnimationFrame(ajusteLaFenetre);
 }
 
 ditLesRaccourcis();

@@ -735,27 +735,41 @@ fn round_the_bottom(
 
     // SAFETY: our own window.
     let dpi = unsafe { GetDpiForWindow(home) };
-    let round = (CORNER * dpi.max(1) as i32 / 96).min(height);
+    let round = CORNER * dpi.max(96) as i32 / 96;
 
-    // Without an answer the picture's own rectangle stands in: a cut a
-    // pixel short is still the curve, and the alternative is a square
-    // corner sticking out of a round one.
-    let (left, top, right, bottom) = the_drawn_frame(home, engine).unwrap_or((0, 0, width, height));
+    // How thick the border the system draws around the window is, which
+    // is the whole of the difference between the two curves: the outer
+    // one, which the frame turns on, and the inner one, which is where
+    // the content of a window stops. The picture is content, so it is
+    // the inner one it is cut against.
+    //
+    // Cut against the outer one, the picture kept the pixels that lie
+    // between the two, and those pixels are where the system draws the
+    // border itself. A window's own accent-coloured border went dark in
+    // both bottom corners for the length of a session, since what was
+    // painted over it was the far computer's picture.
+    //
+    // Without an answer, no border and the picture's own rectangle: a
+    // cut a pixel out is still the curve, and the alternative is a
+    // square corner sticking out of a round one.
+    let border = the_drawn_frame(home, engine)
+        .map(|(left, _, right, bottom)| (-left).max(right - width).max(bottom - height).max(0))
+        .unwrap_or(0);
+    let round = (round - border).clamp(0, height.min(width));
+    tell_the_corner(border, round);
 
     // SAFETY: both are ours until the system takes the combined one.
     unsafe {
-        // One more pixel right and bottom: a shape is cut exclusive of
-        // those two edges, and a picture short of its last row is a
-        // picture with a line missing.
-        let shape = CreateRoundRectRgn(left, top, right + 1, bottom + 1, round * 2, round * 2);
+        // The picture's own rectangle, which is the inside of our window
+        // to the pixel: the two are laid on one another by `lay_it_out`.
+        let shape = CreateRoundRectRgn(0, 0, width, height, round * 2, round * 2);
         if shape.is_null() {
             return;
         }
-        // Everything above the arcs stays a plain rectangle. Anchored on
-        // the frame the top arcs fall on the title bar, above the picture,
-        // and this adds nothing; anchored on the picture they would fall
-        // inside it, and the top of the picture is straight.
-        let straight = CreateRectRgn(0, 0, width, bottom - round);
+        // Everything above the arcs stays a plain rectangle: the top of
+        // the picture sits under the title bar, where the frame is
+        // straight.
+        let straight = CreateRectRgn(0, 0, width, height - round);
         if !straight.is_null() {
             CombineRgn(shape, shape, straight, RGN_OR);
             DeleteObject(straight);
@@ -767,6 +781,28 @@ fn round_the_bottom(
         if SetWindowRgn(engine, shape, 0) == 0 {
             DeleteObject(shape);
         }
+    }
+}
+
+/// The border and radius the last cut used, so a change of them can be
+/// written down and nothing else.
+#[cfg(windows)]
+static CUT: AtomicI64 = AtomicI64::new(-1);
+
+/// Says what the corners of the picture are being cut with.
+///
+/// Two numbers, written once each time they change. « The corner is not
+/// quite right » is the one report that cannot be chased from a
+/// screenshot: a border of one pixel and a border of two put the curve
+/// in different places, and which of the two a screen has is not
+/// something to guess at.
+#[cfg(windows)]
+fn tell_the_corner(border: i32, round: i32) {
+    let both = (i64::from(border) << 32) | i64::from(round) & 0xFFFF_FFFF;
+    if CUT.swap(both, Ordering::Relaxed) != both {
+        crate::journal::note(&format!(
+            "coins de l'image : bordure de {border} px, rayon de {round} px"
+        ));
     }
 }
 
@@ -928,8 +964,21 @@ fn give_the_window_back(app: &AppHandle) {
     });
 }
 
-/// Says out loud that our window is active, and has its title bar
-/// redrawn.
+/// Message our window sends itself to have its title bar drawn the way
+/// the front really stands.
+///
+/// The system asks whether the window is still active at the moment it
+/// is taking the front away, and what it is giving it to is not settled
+/// yet: read there, the front was sometimes still ours and sometimes
+/// already a stranger's, whatever was really happening. So the question
+/// is asked twice, once on the spot for the drawing that follows
+/// immediately, and once more through a message posted to ourselves,
+/// which the system delivers only after it has finished. The second
+/// answer is the true one, and it costs a redraw of a title bar.
+#[cfg(windows)]
+const BAR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+
+/// Has the title bar drawn the way the front stands right now.
 ///
 /// Needed because the handler below only answers a question, and the
 /// question is asked once, when the front is taken away. The picture
@@ -940,11 +989,96 @@ fn give_the_window_back(app: &AppHandle) {
 /// something else.
 #[cfg(windows)]
 fn light_the_bar(home: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_NCACTIVATE};
+    use windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW;
 
     // SAFETY: our own window, from the thread that owns it, and the
-    // message is the one the system itself sends to say « active ».
-    unsafe { SendMessageW(home, WM_NCACTIVATE, 1, 0) };
+    // message is one of ours.
+    unsafe { SendMessageW(home, BAR, 0, 0) };
+}
+
+/// What the title bar was last drawn as, so a change of it can be
+/// written down and nothing else.
+#[cfg(windows)]
+static BAR_LIT: AtomicBool = AtomicBool::new(false);
+
+/// Draws the title bar lit or dim according to who holds the front, and
+/// says so in the journal when that changes.
+///
+/// The whole of « the window looks unused while it is being used » is
+/// decided here, so it is the one place worth having in writing: which
+/// of the three it was, ours, the player's, or somebody else's.
+#[cfg(windows)]
+fn draw_the_bar(window: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::Shell::DefSubclassProc;
+    use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE;
+
+    let front = who_holds_the_front();
+    let lit = front != Front::Elsewhere;
+    if BAR_LIT.swap(lit, Ordering::Relaxed) != lit {
+        crate::journal::note(&format!(
+            "barre de titre {} : le premier plan est {}",
+            if lit { "active" } else { "inactive" },
+            match front {
+                Front::Ours => "à ZyrDesk",
+                Front::ThePlayer => "à l'image",
+                Front::Elsewhere => "ailleurs",
+            }
+        ));
+    }
+    // SAFETY: our own window, from the thread that owns it, and the
+    // message is the one the system itself sends to say active or not.
+    // Handed straight to the system's own handling: what it is to be
+    // drawn as has just been decided, and passing it through ours again
+    // would only ask the same question a second time.
+    unsafe { DefSubclassProc(window, WM_NCACTIVATE, usize::from(lit), 0) };
+}
+
+/// Who the window at the front belongs to.
+#[cfg(windows)]
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum Front {
+    /// One of ours: the home window, or the floating button.
+    Ours,
+    /// The player's, which during a session means the picture.
+    ThePlayer,
+    /// Another program's, or nobody's.
+    Elsewhere,
+}
+
+/// Whether the window at the front belongs to this session.
+///
+/// Ours or the player's, since the picture is another program's window
+/// and holds the front for most of a session. Read from the system on
+/// the spot and never from a lock: this is called from inside the
+/// system's own call into our window.
+///
+/// Ours and not merely the picture's. The floating button is a window of
+/// ours too, and so is the home window itself; asked only about the
+/// picture, this answered « somebody else » the moment a hand touched
+/// the button, and the title bar went dim under a session being used.
+#[cfg(windows)]
+pub fn who_holds_the_front() -> Front {
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowThreadProcessId,
+    };
+
+    // SAFETY: no argument, and a null answer is one of the answers.
+    let front = unsafe { GetForegroundWindow() };
+    if front.is_null() {
+        return Front::Elsewhere;
+    }
+    let mut owner = 0u32;
+    // SAFETY: the window comes from the call above and the slot is ours.
+    unsafe { GetWindowThreadProcessId(front, &mut owner) };
+    // SAFETY: no argument.
+    if owner == unsafe { GetCurrentProcessId() } {
+        Front::Ours
+    } else if owner == PLAYER.load(Ordering::Relaxed) {
+        Front::ThePlayer
+    } else {
+        Front::Elsewhere
+    }
 }
 
 /// Name our handler answers to, so it can be taken off again.
@@ -962,22 +1096,40 @@ unsafe extern "system" fn lit(
 ) -> isize {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WINDOWPOS, WM_ACTIVATEAPP, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE,
+        PostMessageW, WINDOWPOS, WM_ACTIVATEAPP, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE,
         WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
     };
 
     match message {
-        // Told to dim, while the front belongs to the picture: what took
-        // it is our own picture inside our own window, so this window is
-        // still the one being used. Answered « active ».
+        // The system asking whether this window is still active, which
+        // is the one question that decides how the title bar is drawn.
         //
-        // Only the picture counts, and not merely anything of ours. Read
-        // any wider, this would keep the bar lit after switching to
-        // another program.
-        WM_NCACTIVATE if wparam == 0 && the_picture_is_at_the_front() => {
+        // Answered « yes » whenever the front belongs to this session:
+        // the picture is our own window's inside, and the floating
+        // button is ours outright, so neither of them taking the front
+        // means the window has stopped being used.
+        //
+        // And asked again straight after. The front is not settled while
+        // this message is being sent, so the answer given here can be
+        // the wrong one either way; a message to ourselves comes back
+        // once the system has finished, and settles it.
+        WM_NCACTIVATE => {
+            // SAFETY: our own window, from the thread that owns it, and
+            // the message is one of ours.
+            unsafe { PostMessageW(window, BAR, 0, 0) };
+            let lit = if wparam == 0 && who_holds_the_front() != Front::Elsewhere {
+                1
+            } else {
+                wparam
+            };
             // SAFETY: the arguments the system handed in, with one
-            // boolean turned around.
-            unsafe { DefSubclassProc(window, message, 1, lparam) }
+            // boolean possibly turned around.
+            unsafe { DefSubclassProc(window, message, lit, lparam) }
+        }
+        // The front has settled; draw the bar the way it really stands.
+        BAR => {
+            draw_the_bar(window);
+            0
         }
         // A window about to take a new size, while a hand is on an edge:
         // the system says what it is about to apply and takes back
@@ -1289,22 +1441,6 @@ fn the_engines_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     // SAFETY: same window, and the slot is ours.
     unsafe { GetWindowThreadProcessId(engine, &mut owner) };
     (owner == PLAYER.load(Ordering::Relaxed)).then_some(engine)
-}
-
-/// The player the picture belongs to, for whoever cannot wait on a lock
-/// to ask. Zero when there is no session.
-pub fn player() -> u32 {
-    PLAYER.load(Ordering::Relaxed)
-}
-
-/// Whether the window at the front is the picture.
-#[cfg(windows)]
-fn the_picture_is_at_the_front() -> bool {
-    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-
-    let engine = ENGINE.load(Ordering::Relaxed);
-    // SAFETY: no argument, and a null answer is one of the answers.
-    engine != 0 && unsafe { GetForegroundWindow() } as isize == engine
 }
 
 /// Our own window, as the system knows it.
