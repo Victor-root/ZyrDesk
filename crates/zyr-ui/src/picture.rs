@@ -499,6 +499,21 @@ fn lay_on(
         SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
     };
 
+    // Carried as our window's own child for the length of a move, the
+    // picture has no place of its own to be put at: it travels with the
+    // window, which is the point. The button still follows, and is still
+    // counted, so the line at the end of the gesture is still written.
+    if CARRIED.load(Ordering::Relaxed) != 0 {
+        let buttoned = std::time::Instant::now();
+        crate::floating::lay_the_button((corner.0, corner.1, corner.0 + width, corner.1 + height));
+        if DRAGGED.load(Ordering::Relaxed) {
+            let took = buttoned.elapsed();
+            Cost::add(&LAYING, took);
+            Cost::add(&BUTTON, took);
+        }
+        return;
+    }
+
     // What is counted, and what is put off until the window settles, are
     // two different questions: a drag is counted and told at the end,
     // while both a drag and an order being played put off the shape.
@@ -763,8 +778,13 @@ fn tell_the_drag() {
     // resize, and this line is read to answer a question about resizing:
     // it says which it was rather than calling both by the louder name.
     if !RESIZED.load(Ordering::Relaxed) {
+        let carried = if CARRIED.load(Ordering::Relaxed) != 0 {
+            " (image portée par la fenêtre)"
+        } else {
+            ""
+        };
         crate::journal::note(&format!(
-            "déplacement : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
+            "déplacement{carried} : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
              dont image {picture:.0} ms (pire {picture_worst:.1}) et bouton {button:.0} ms ; \
              système et vue web {system:.0} ms (pire {system_worst:.1})"
         ));
@@ -1547,6 +1567,134 @@ unsafe fn plain_surface(
     }
 }
 
+/* ---- Porter l'image le temps d'un déplacement ----------------------- */
+
+/// Style the engine's window wore before our window took it in as a
+/// child for the length of a move, and zero the rest of the time.
+///
+/// A move is played by the system: it moves our window, and the picture
+/// has to be sent after it, one call per step. However close together
+/// the two calls land, they are two transactions, and the compositor
+/// draws whatever is standing when it wakes: every so often that is one
+/// window moved and the other not, and what shows in the difference is
+/// a strip of the page behind the picture, along the very edge the
+/// window is heading for. No ordering of the calls closes that gap; it
+/// only decides which side of it the strip falls on, which is what
+/// three reorderings proved in a row.
+///
+/// One transaction is the only fix, and the one transaction the system
+/// offers is the window tree itself: a child has no place of its own on
+/// the screen, it is drawn where its parent is, inside the parent's own
+/// composition, so the system cannot show the one without the other.
+/// Carried that way, a step of the move costs nothing at all.
+///
+/// Only for the length of the gesture. A child is never the window at
+/// the front, and the engine asks the system for the keyboard, which
+/// goes to the front: held as a child for good, the session would lose
+/// it. During a drag the front is already ours, taken by the click on
+/// the title bar, so the gesture is exactly the stretch in which being
+/// a child costs nothing.
+static CARRIED: AtomicIsize = AtomicIsize::new(0);
+
+/// Takes the picture in as a child of our window, so a move carries
+/// both as one; see `CARRIED`.
+#[cfg(windows)]
+fn carry_the_picture(
+    home: windows_sys::Win32::Foundation::HWND,
+    engine: windows_sys::Win32::Foundation::HWND,
+) {
+    use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_STYLE, GetWindowLongPtrW, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SetParent,
+        SetWindowLongPtrW, SetWindowPos, WS_CHILD, WS_POPUP,
+    };
+
+    if CARRIED.load(Ordering::Relaxed) != 0 {
+        return;
+    }
+    let Some((_, width, height)) = the_inside_of(home) else {
+        return;
+    };
+    // SAFETY: a window this program took in hand. The style is read,
+    // amended for the child it is about to be, and put back whole if
+    // the system refuses the adoption.
+    unsafe {
+        let style = GetWindowLongPtrW(engine, GWL_STYLE);
+        SetWindowLongPtrW(
+            engine,
+            GWL_STYLE,
+            (style & !(WS_POPUP as isize)) | WS_CHILD as isize,
+        );
+        // The system can refuse: two windows that do not measure the
+        // screen the same way cannot be family. Told apart from the
+        // legitimate « no parent before » answer by the error slot.
+        SetLastError(0);
+        if SetParent(engine, home).is_null() && GetLastError() != 0 {
+            let why = GetLastError();
+            SetWindowLongPtrW(engine, GWL_STYLE, style);
+            crate::journal::note(&format!(
+                "l'image n'a pas pu être portée par la fenêtre ({why:#x}), déplacement pas à pas"
+            ));
+            return;
+        }
+        // A child's place is counted inside its parent, and the system
+        // does not recount it on adoption: put straight back over the
+        // whole inside, above the web view, before anything is drawn.
+        SetWindowPos(
+            engine,
+            HWND_TOP,
+            0,
+            0,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+        CARRIED.store(style, Ordering::Relaxed);
+    }
+}
+
+/// Puts the picture back to the window of its own it ordinarily is,
+/// owned rather than held, the gesture being over.
+#[cfg(windows)]
+fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_STYLE, GWLP_HWNDPARENT, HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SetParent,
+        SetWindowLongPtrW, SetWindowPos,
+    };
+
+    let style = CARRIED.swap(0, Ordering::Relaxed);
+    if style == 0 {
+        return;
+    }
+    let Some(engine) = the_engines_window() else {
+        return;
+    };
+    let Some((corner, width, height)) = the_inside_of(home) else {
+        return;
+    };
+    // SAFETY: a window this program took in hand, given back the style
+    // it wore, its owner, and its place on the screen, in one breath.
+    unsafe {
+        SetParent(engine, std::ptr::null_mut());
+        SetWindowLongPtrW(engine, GWL_STYLE, style);
+        // Owned again: owned is what has it come and go with our window
+        // without being part of it.
+        SetWindowLongPtrW(engine, GWLP_HWNDPARENT, home as isize);
+        // A window let out of its parent keeps its numbers and the
+        // screen reads them differently: put where it belongs before
+        // anything is drawn.
+        SetWindowPos(
+            engine,
+            HWND_TOP,
+            corner.0,
+            corner.1,
+            width,
+            height,
+            SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+    }
+}
+
 /* ---- Agrandir et réduire, en portant l'image avec ------------------- */
 
 /// A window on its way to a rectangle, and what to tell the system once
@@ -2246,15 +2394,24 @@ unsafe extern "system" fn lit(
         // first step at all. Taken off here, carrying the window across
         // the desk squared the picture's corners for the length of the
         // carry, over a frame that had kept its own.
+        // A hand has taken the window, to carry it or to resize it;
+        // which of the two is not said. The picture is taken in as a
+        // child either way: a carry then costs nothing at all, and the
+        // first step that turns out to change the size hands it back
+        // (a child does not resize with its parent).
         WM_ENTERSIZEMOVE => {
             DRAGGED.store(true, Ordering::Relaxed);
             count_the_drag();
+            if let Some(engine) = the_engines_window() {
+                carry_the_picture(window, engine);
+            }
             // SAFETY: the arguments the system handed in, untouched.
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
         WM_EXITSIZEMOVE => {
             DRAGGED.store(false, Ordering::Relaxed);
             tell_the_drag();
+            put_the_picture_back(window);
             // SAFETY: the arguments the system handed in, untouched.
             let answer = unsafe { DefSubclassProc(window, message, wparam, lparam) };
             // The shape was left alone while the hand was moving; the
@@ -2392,10 +2549,11 @@ fn the_drag_keeps_the_shape(
     // it was given, so a window growing under one is clipped to where it
     // used to end. Off for the rest of the gesture, and put back when the
     // hand stops.
-    if !RESIZED.swap(true, Ordering::Relaxed)
-        && let Some(engine) = the_engines_window()
-    {
-        let_the_corners_go(engine);
+    if !RESIZED.swap(true, Ordering::Relaxed) {
+        put_the_picture_back(window);
+        if let Some(engine) = the_engines_window() {
+            let_the_corners_go(engine);
+        }
     }
 
     // Gathered and never re-decided: the hand cannot let go of one edge
