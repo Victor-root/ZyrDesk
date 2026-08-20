@@ -387,9 +387,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 > **S8 (aucune bande noire en fenêtre)**
 >
-> Passer en fenêtre par le menu flottant, puis tirer le coin en bas à droite, largement, dans les deux sens.
+> Passer en fenêtre par le menu flottant, puis tirer le coin en bas à droite, largement, dans les deux sens. Tirer ensuite **chaque bord seul** : le bas, le haut, un côté.
 >
-> Attendu : la fenêtre **change de hauteur toute seule** en même temps que de largeur, pour garder la forme de l'image. L'image remplit toujours la fenêtre entière, sans bande noire et sans déformation.
+> Attendu : la fenêtre garde la forme de l'image **pendant le geste**, quel que soit le bord tenu. Tirer un côté change la hauteur en même temps, tirer le haut ou le bas change la largeur en même temps ; il est impossible de donner à la fenêtre une autre forme que celle de l'image. Le bord opposé à la main ne bouge pas : tirer le haut laisse le bas en place, tirer la gauche laisse la droite en place. L'image remplit toujours la fenêtre entière, sans bande noire et sans déformation.
 >
 > C'est le comportement d'un lecteur vidéo, et c'est voulu : une fenêtre libre de sa forme redemanderait une bande noire à chaque geste.
 

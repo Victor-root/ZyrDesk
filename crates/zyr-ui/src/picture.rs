@@ -556,8 +556,8 @@ static BUTTON: Cost = Cost::new();
 static SYSTEM: Cost = Cost::new();
 
 /// Whether the drag under way is resizing the window rather than only
-/// moving it. Told apart by the system asking about a rectangle, which it
-/// only does for a resize.
+/// moving it. Told apart by a change of size flowing through while the
+/// hand is down: a plain move carries none.
 static RESIZED: AtomicBool = AtomicBool::new(false);
 
 /// Starts counting, a drag having begun.
@@ -771,9 +771,10 @@ fn hand_the_keyboard_back(app: &AppHandle) {
 ///
 /// Two windows laid on one another are not one window until the system is
 /// told so, and this is where it is told: the title bar is lit, and from
-/// here on the window answers the three questions the system asks before
-/// acting rather than after. Those three are the whole of it, because
-/// before is the only moment any of them can be answered.
+/// here on the window answers what the system asks before acting rather
+/// than after, which is the only moment an answer changes anything:
+/// whether it is still the active window, and what size a drag is about
+/// to give it.
 ///
 /// Stepping in front of a window's messages is done from the thread that
 /// draws it, and none of the callers here is that thread: one drives the
@@ -844,10 +845,10 @@ unsafe extern "system" fn lit(
     _name: usize,
     _data: usize,
 ) -> isize {
-    use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SIZING, WM_WINDOWPOSCHANGED,
+        WINDOWPOS, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_WINDOWPOSCHANGED,
+        WM_WINDOWPOSCHANGING,
     };
 
     match message {
@@ -863,22 +864,26 @@ unsafe extern "system" fn lit(
             // boolean turned around.
             unsafe { DefSubclassProc(window, message, 1, lparam) }
         }
-        // A window being dragged by a corner, before it is resized: the
-        // system offers the rectangle it is about to take, and takes
-        // back whatever is written there.
+        // A window about to take a new size, while a hand is on an edge:
+        // the system says what it is about to apply and takes back
+        // whatever is written there, before anything moves. Holding the
+        // shape here is what costs nothing: corrected afterwards, every
+        // step of a drag resized the window twice.
         //
-        // This is the only place the shape can be held without it
-        // costing anything. Corrected afterwards instead, every step of
-        // the drag resized the window twice, and every resize is a
-        // message to the engine's own process and a swap chain rebuilt
-        // there. That was the whole of the stutter.
-        WM_SIZING => {
-            RESIZED.store(true, Ordering::Relaxed);
-            // SAFETY: for this message the system passes a rectangle of
-            // ours to fill in, and it lives for the length of the call.
-            let wanted = unsafe { &mut *(lparam as *mut RECT) };
-            the_drag_keeps_the_shape(window, wparam as u32, wanted);
-            1
+        // This message and not the sizing one of the drag loop, which was
+        // answered here before and never arrived: the journal counted the
+        // steps of a drag through this message's own echo while the shape
+        // ran free. Every change of size becomes real by passing through
+        // here, whoever asked for it, so here is where the shape holds.
+        WM_WINDOWPOSCHANGING if DRAGGED.load(Ordering::Relaxed) => {
+            // SAFETY: for this message the system passes a WINDOWPOS of
+            // ours to read and amend, and it lives for the length of the
+            // call.
+            let wanted = unsafe { &mut *(lparam as *mut WINDOWPOS) };
+            the_drag_keeps_the_shape(window, wanted);
+            // Handed on: what was written only becomes the window's size
+            // in the system's own handling of this message.
+            unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
         WM_ENTERSIZEMOVE => {
             DRAGGED.store(true, Ordering::Relaxed);
@@ -930,30 +935,25 @@ unsafe extern "system" fn lit(
     }
 }
 
-/// Holds the rectangle a drag is about to take to the shape of the
-/// picture.
-///
-/// Which side moves depends on which edge is being dragged: a corner or a
-/// vertical edge sets the height from the width, a horizontal edge does
-/// the opposite. Anything else would fight the hand.
+/// Holds the size a drag is about to apply to the shape of the picture.
 #[cfg(windows)]
 fn the_drag_keeps_the_shape(
     window: windows_sys::Win32::Foundation::HWND,
-    edge: u32,
-    wanted: &mut windows_sys::Win32::Foundation::RECT,
+    wanted: &mut windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPOS,
 ) {
     use windows_sys::Win32::Foundation::RECT;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, GetWindowRect, WMSZ_BOTTOM, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect, SWP_NOSIZE};
 
+    // Only a change of size: the same message carries plain moves and
+    // z-order changes, which have no shape to hold.
+    if wanted.flags & SWP_NOSIZE != 0 {
+        return;
+    }
     let (wide, high) = shape();
     if wide <= 0 || high <= 0 {
         return;
     }
-
-    let (least_wide, least_high) =
-        the_least_picture(crate::floating::room_for_the_button(), (wide, high));
+    RESIZED.store(true, Ordering::Relaxed);
 
     // What the frame costs, so the shape is held on the inside of the
     // window and not on its outside: the title bar is not part of the
@@ -976,21 +976,57 @@ fn the_drag_keeps_the_shape(
         (outside.bottom - outside.top) - (inside.bottom - inside.top),
     );
 
-    if edge == WMSZ_TOP || edge == WMSZ_BOTTOM {
-        let height = (wanted.bottom - wanted.top - frame.1).max(least_high);
-        wanted.right = wanted.left + across(height, high, wide) + frame.0;
-        return;
-    }
+    let (x, y, cx, cy) = what_the_drag_becomes(
+        (outside.left, outside.top, outside.right, outside.bottom),
+        (wanted.x, wanted.y, wanted.cx, wanted.cy),
+        frame,
+        (wide, high),
+        the_least_picture(crate::floating::room_for_the_button(), (wide, high)),
+    );
+    wanted.x = x;
+    wanted.y = y;
+    wanted.cx = cx;
+    wanted.cy = cy;
+}
 
-    let width = (wanted.right - wanted.left - frame.0).max(least_wide);
-    let height = across(width, wide, high) + frame.1;
-    // Dragged from the top: the bottom stays where it is and the top
-    // moves, or the window would walk down the screen under the hand.
-    if edge == WMSZ_TOPLEFT || edge == WMSZ_TOPRIGHT {
-        wanted.top = wanted.bottom - height;
+/// The place and size a dragged window takes instead of what the hand
+/// asked, so the picture keeps its shape.
+///
+/// Which side the hand is on is not told, so it is read from the change
+/// itself: the side that no longer matches the window as it stands is the
+/// one being pulled, and it leads; the other is worked out from it. Both
+/// are inner sizes once the frame is paid for, floored at the smallest
+/// picture the button still fits in.
+///
+/// And the edge opposite the hand stands still. The system moves the
+/// window's origin when the left or top edge is dragged; whenever it has,
+/// the corrected size is folded back into that origin, so the far edge
+/// does not walk under a hand that is not on it.
+fn what_the_drag_becomes(
+    now: (i32, i32, i32, i32),
+    wanted: (i32, i32, i32, i32),
+    frame: (i32, i32),
+    shape: (i32, i32),
+    least: (i32, i32),
+) -> (i32, i32, i32, i32) {
+    let (left, top, right, bottom) = now;
+    let (mut x, mut y, cx, cy) = wanted;
+
+    let (cx, cy) = if (cy - (bottom - top)).abs() > (cx - (right - left)).abs() {
+        let inner = (cy - frame.1).max(least.1);
+        (across(inner, shape.1, shape.0) + frame.0, inner + frame.1)
     } else {
-        wanted.bottom = wanted.top + height;
+        let inner = (cx - frame.0).max(least.0);
+        (inner + frame.0, across(inner, shape.0, shape.1) + frame.1)
+    };
+
+    if x != left {
+        x = right - cx;
     }
+    if y != top {
+        y = bottom - cy;
+    }
+    (x, y, cx, cy)
 }
 
 /// One side of the picture worked out from the other, keeping its shape.
@@ -1118,6 +1154,59 @@ mod tests {
                 "largeur suivie sur {shape:?}"
             );
         }
+    }
+
+    // La fenêtre des essais du glissement : posée en (100, 100), 960x540
+    // dedans, un cadre de 16 de large et 42 de haut, une image 16:9.
+    const NOW: (i32, i32, i32, i32) = (100, 100, 1076, 682);
+    const FRAME: (i32, i32) = (16, 42);
+    const SHAPE: (i32, i32) = (1920, 1080);
+
+    #[test]
+    fn pulling_the_bottom_edge_makes_the_width_follow() {
+        // La main descend le bord du bas de 200 : la hauteur mène, la
+        // largeur suit, et les deux autres bords ne bougent pas.
+        let (x, y, cx, cy) = what_the_drag_becomes(NOW, (100, 100, 976, 782), FRAME, SHAPE, (1, 1));
+        assert_eq!((x, y, cy), (100, 100, 782));
+        assert_eq!(cx, across(782 - 42, 1080, 1920) + 16);
+    }
+
+    #[test]
+    fn pulling_a_side_makes_the_height_follow() {
+        let (x, y, cx, cy) =
+            what_the_drag_becomes(NOW, (100, 100, 1276, 582), FRAME, SHAPE, (1, 1));
+        assert_eq!((x, y, cx), (100, 100, 1276));
+        assert_eq!(cy, across(1276 - 16, 1920, 1080) + 42);
+    }
+
+    #[test]
+    fn pulling_the_top_edge_keeps_the_bottom_where_it_is() {
+        // La main remonte le bord du haut : l'origine bouge avec elle, et
+        // le bas de la fenêtre reste exactement où il était.
+        let (_, y, _, cy) = what_the_drag_becomes(NOW, (100, 60, 976, 622), FRAME, SHAPE, (1, 1));
+        assert_eq!(y + cy, 682);
+    }
+
+    #[test]
+    fn pulling_the_left_edge_keeps_the_right_where_it_is() {
+        let (x, _, cx, _) = what_the_drag_becomes(NOW, (60, 100, 1016, 582), FRAME, SHAPE, (1, 1));
+        assert_eq!(x + cx, 1076);
+    }
+
+    #[test]
+    fn the_drag_cannot_take_the_window_under_the_floor() {
+        // Le bord du bas remonté à fond : la fenêtre s'arrête à la taille
+        // où le bouton tient encore, en hauteur comme en largeur.
+        let least = the_least_picture(Some((107, 107)), SHAPE);
+        let (_, _, cx, cy) = what_the_drag_becomes(NOW, (100, 100, 976, 100), FRAME, SHAPE, least);
+        assert!(cx - 16 >= 107, "largeur au sol : {}", cx - 16);
+        assert!(cy - 42 >= 107, "hauteur au sol : {}", cy - 42);
+    }
+
+    #[test]
+    fn a_size_that_did_not_change_is_left_alone() {
+        let same = (100, 100, 976, 582);
+        assert_eq!(what_the_drag_becomes(NOW, same, FRAME, SHAPE, (1, 1)), same);
     }
 
     #[test]
