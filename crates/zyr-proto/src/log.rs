@@ -47,23 +47,32 @@ pub struct Log {
 
 impl Log {
     /// Opens the log, creating its folder if needed.
+    ///
+    /// Read and write, not the system's own append. Appending is what
+    /// every write does, but done by seeking to the end under the lock
+    /// rather than by the file's mode: an append-only file on Windows
+    /// may not be cut shorter, and trimming is exactly that. One handle
+    /// behind one lock keeps the lines in order all the same.
     pub fn open(path: &Path) -> io::Result<Self> {
         if let Some(folder) = path.parent() {
             std::fs::create_dir_all(folder)?;
         }
-        // Readable as well as appendable: trimming reads the end back
-        // before the file is cut.
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
-            .append(true)
+            .write(true)
             .open(path)?;
         Ok(Self {
             file: Arc::new(Mutex::new(file)),
         })
     }
 
-    /// Writes one timestamped line.
+    /// Writes one timestamped line at the end of the file.
+    ///
+    /// The end is sought every time: the journal screen can empty this
+    /// file from another program while the service runs, and a line must
+    /// then land at the new top rather than at a remembered place.
     ///
     /// Never fails: a log that refuses to write must not stop the
     /// service it is watching.
@@ -72,6 +81,7 @@ impl Log {
             return;
         };
         let _ = trimmed(&mut file);
+        let _ = file.seek(SeekFrom::End(0));
         let _ = writeln!(file, "{} {message}", now());
         let _ = file.flush();
     }
@@ -97,8 +107,8 @@ fn trimmed(file: &mut File) -> io::Result<()> {
         .position(|byte| *byte == b'\n')
         .map_or(0, |at| at + 1);
     file.set_len(0)?;
-    // The file is in append mode, so writes land at the end wherever the
-    // cursor stands; said out loud so the cut is never taken for a loss.
+    file.seek(SeekFrom::Start(0))?;
+    // Said out loud, so the cut is never taken for a loss.
     file.write_all("(le début de ce journal a été retiré)\n".as_bytes())?;
     file.write_all(&end[from..])
 }
