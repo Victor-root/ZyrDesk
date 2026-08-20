@@ -501,6 +501,26 @@ fn lay_on(
         SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
     };
 
+    // SAFETY: a window this program took in hand, read only.
+    let up = unsafe { IsWindowVisible(engine) } != 0;
+
+    // The one moment in a session where the picture can be taken into
+    // our window without a soul seeing it: it has not been shown yet.
+    //
+    // The crossing between the two ways of reading its numbers is about
+    // a millisecond and a half, and nothing shortens it further; taken
+    // in at the first gesture, as it was, that millisecond and a half
+    // fell on a window standing in plain sight and was drawn about one
+    // time in eleven. It was drawn: the journal caught the picture at
+    // (594, 278) where (297, 139) had been asked for, twice the corner
+    // of our inside to the pixel, once, at the first gesture, which is
+    // exactly what was reported. Done here it falls inside the moment
+    // the session appears, on a window with nothing on the screen to
+    // read wrongly.
+    if CARRIED.load(Ordering::Relaxed) == 0 && !up {
+        carry_the_picture(home, engine);
+    }
+
     // Carried as our window's own child, the picture has no place of its
     // own to be put at: it is drawn wherever its parent is, which is the
     // point of carrying it. Only its size still has to follow, and only
@@ -511,7 +531,7 @@ fn lay_on(
         let same_size = where_it_stands(engine).is_some_and(|(left, top, right, bottom)| {
             (right - left, bottom - top) == (width, height)
         });
-        if !same_size {
+        if !same_size || !up {
             // SAFETY: a window this program took in hand, put over the
             // whole of its parent's inside.
             //
@@ -531,6 +551,11 @@ fn lay_on(
             // it was taken in, nothing has come between the two since,
             // and asking again has the compositor take the whole stack
             // of windows apart for a window that has not moved in it.
+            //
+            // And shown, on the one laying where it is not up yet, which
+            // is the first of a session. It is taken into our window
+            // just above while it is still hidden, so this is the call
+            // that puts the session on the screen at all.
             unsafe {
                 SetWindowPos(
                     engine,
@@ -539,17 +564,46 @@ fn lay_on(
                     0,
                     width,
                     height,
-                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOCOPYBITS,
+                    SWP_NOACTIVATE
+                        | SWP_NOZORDER
+                        | SWP_NOCOPYBITS
+                        | if up { 0 } else { SWP_SHOWWINDOW },
                 )
             };
             LAID_WHILE_CARRIED.fetch_add(1, Ordering::Relaxed);
         }
         let laid = started.elapsed();
+        // The player throws away the size it is given while it is still
+        // clearing its queue at start-up, and it is told again on the
+        // first laying it answers quickly to; see `say_the_size_again`.
+        // That has to happen on this road too now, and it did not
+        // before, the picture only ever being carried after the session
+        // had settled. It is not a nicety: the journal has caught the
+        // player drawing a hundred and fifty-five pixels short of its
+        // own window and this is what put it right.
+        if laid > A_FRAME {
+            WAS_BUSY.store(true, Ordering::Relaxed);
+        } else if !on_the_move() {
+            say_the_size_again(engine, (width, height));
+        }
+        // And the two bottom corners cut to the curve of the frame, as
+        // they are on the other road through here and were not on this
+        // one. The cut is dropped when a gesture starts, since a shape
+        // is the size the window had when it was given and a window
+        // growing under one is clipped to where it used to end; nothing
+        // put it back once the picture stopped taking the other road,
+        // so the session was left square-cornered inside a rounded
+        // frame for the rest of its life.
+        let shaped = std::time::Instant::now();
+        if !on_the_move() {
+            round_the_bottom(home, engine, width, height);
+        }
+        let shaped = shaped.elapsed();
         let buttoned = std::time::Instant::now();
         crate::floating::lay_the_button((corner.0, corner.1, corner.0 + width, corner.1 + height));
         if DRAGGED.load(Ordering::Relaxed) {
             let buttoned = buttoned.elapsed();
-            Cost::add(&LAYING, laid + buttoned);
+            Cost::add(&LAYING, laid + shaped + buttoned);
             Cost::add(&PICTURE, laid);
             Cost::add(&BUTTON, buttoned);
         }
@@ -612,8 +666,6 @@ fn lay_on(
     //
     // Nothing else keeps it up there anyway. It belongs to our window,
     // so the system never lets another window come between the two.
-    // SAFETY: a window this program took in hand, read only.
-    let up = unsafe { IsWindowVisible(engine) } != 0;
     let shown = if up { SWP_NOZORDER } else { SWP_SHOWWINDOW };
 
     // Already exactly there: asking again costs a wait on another
