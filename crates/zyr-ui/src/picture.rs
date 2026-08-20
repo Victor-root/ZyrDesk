@@ -495,8 +495,8 @@ fn lay_on(
     height: i32,
 ) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        HWND_TOP, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
-        SetWindowPos,
+        HWND_TOP, IsWindowVisible, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_NOZORDER, SWP_SHOWWINDOW, SetWindowPos,
     };
 
     // What is counted, and what is put off until the window settles, are
@@ -543,11 +543,26 @@ fn lay_on(
         SWP_NOCOPYBITS
     };
     let stays = if same_place { SWP_NOMOVE } else { 0 };
+
+    // Shown and brought to the top only when it is not on screen, which
+    // is once, when the session starts. Asked at every step of a carry,
+    // as it was, both of them make the compositor take the whole stack
+    // of windows apart and put it back together again for a window that
+    // had not moved in the stack at all: the picture was pulled out and
+    // pushed back sixty times a second, and the edge the window was
+    // heading for flickered on every one of them.
+    //
+    // Nothing else keeps it up there anyway. It belongs to our window,
+    // so the system never lets another window come between the two.
+    // SAFETY: a window this program took in hand, read only.
+    let up = unsafe { IsWindowVisible(engine) } != 0;
+    let shown = if up { SWP_NOZORDER } else { SWP_SHOWWINDOW };
+
     // Already exactly there: asking again costs a wait on another
     // program for nothing. The window it belongs to is only ever put
     // right once per move now, before ours moves, so the laying that
     // follows the move has nothing left to do.
-    if !(same_size && same_place) {
+    if !(same_size && same_place && up) {
         // SAFETY: the engine's window is one we have already taken in
         // hand.
         unsafe {
@@ -558,7 +573,7 @@ fn lay_on(
                 corner.1,
                 width,
                 height,
-                SWP_NOACTIVATE | SWP_SHOWWINDOW | moved_only | stays,
+                SWP_NOACTIVATE | shown | moved_only | stays,
             )
         };
     }
