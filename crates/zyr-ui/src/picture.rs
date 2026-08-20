@@ -1159,6 +1159,23 @@ fn give_the_window_back(app: &AppHandle) {
 #[cfg(windows)]
 const BAR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
+/// Message our window sends itself to carry a played move one step
+/// further; see `grow_a_step`.
+///
+/// A message and not a timer. A timer is answered on the system's own
+/// tick, which is about fifteen and a half milliseconds and has nothing
+/// to do with the screen: a screen draws every sixteen and two thirds.
+/// Two clocks that close, running side by side, beat against each other
+/// with a period of about a quarter of a second, which is the length of
+/// the whole move. So for one half of the gesture the steps landed just
+/// before a drawn frame and for the other half just after, and where
+/// the two crossed, one frame was drawn twice and the move stumbled.
+/// Once, in the middle, every time, which is exactly what was reported
+/// and what none of the numbers could show: every step was on time,
+/// against the wrong clock.
+#[cfg(windows)]
+const STEP: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
+
 /// Has the title bar drawn the way the front stands right now.
 ///
 /// Needed because the handler below only answers a question, and the
@@ -1769,10 +1786,14 @@ struct Growing {
     /// by the toolkit, and the web view under the picture being told to
     /// take the new size although the picture hides it whole.
     system: std::time::Duration,
-    /// The longest gap between two steps, which is a different fault: a
-    /// step that costs nothing but arrives late means the thread was
-    /// busy elsewhere and the timer had to wait its turn.
-    latest: std::time::Duration,
+    /// How long each step waited for its turn, in milliseconds.
+    ///
+    /// The pacing, written out beside the shape. A screen draws every
+    /// sixteen and two thirds milliseconds, so a row of sixteens and
+    /// seventeens is a move landing on every drawn frame; a thirty-three
+    /// in the middle of it is a frame the move missed, which is the one
+    /// thing an eye calls a stumble and no average can show.
+    beats: Vec<u32>,
 }
 
 // Only ever touched from the thread that owns the window, inside its own
@@ -1847,10 +1868,6 @@ fn stopping_short(from: (i32, i32, i32, i32), to: (i32, i32, i32, i32)) -> (i32,
     )
 }
 
-/// Name the timer that plays it answers to.
-#[cfg(windows)]
-const GROWING_ON: usize = 2;
-
 /// Starts carrying the window towards what that order asks for, instead
 /// of letting the system jump it there.
 ///
@@ -1878,7 +1895,7 @@ const GROWING_ON: usize = 2;
 #[cfg(windows)]
 fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetWindowPlacement, IsIconic, SetTimer, WINDOWPLACEMENT,
+        GetWindowPlacement, IsIconic, PostMessageW, WINDOWPLACEMENT,
     };
 
     // A window down in the taskbar has no rectangle to leave from, and
@@ -1909,22 +1926,30 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
     }
 
     let now = std::time::Instant::now();
-    GROWING.with_borrow_mut(|growing| {
-        *growing = Some(Growing {
-            from,
-            to,
-            stops_at: stopping_short(from, to),
-            began: now,
-            moved: now,
-            then: order,
-            placed,
-            strides: Vec::new(),
-            slowest: std::time::Duration::ZERO,
-            slowest_at: 0,
-            picture: std::time::Duration::ZERO,
-            system: std::time::Duration::ZERO,
-            latest: std::time::Duration::ZERO,
-        });
+    // Whether a move was already being played, which decides whether a
+    // step has to be asked for at all: one is already on its way, and it
+    // will pick up the rectangle written here. Asked for twice, the two
+    // would each ask for another and the move would double at every
+    // step. A timer could not do that, since setting one twice sets the
+    // same timer; a message posted twice is two messages.
+    let playing = GROWING.with_borrow_mut(|growing| {
+        growing
+            .replace(Growing {
+                from,
+                to,
+                stops_at: stopping_short(from, to),
+                began: now,
+                moved: now,
+                then: order,
+                placed,
+                strides: Vec::new(),
+                slowest: std::time::Duration::ZERO,
+                slowest_at: 0,
+                picture: std::time::Duration::ZERO,
+                system: std::time::Duration::ZERO,
+                beats: Vec::new(),
+            })
+            .is_some()
     });
     GROWS.store(true, Ordering::Relaxed);
     // The corners go for the length of the move, as they do for a drag:
@@ -1933,10 +1958,13 @@ fn play_the_order(window: windows_sys::Win32::Foundation::HWND, order: usize) ->
     if let Some(engine) = the_engines_window() {
         let_the_corners_go(engine);
     }
-    // Every drawn frame, near enough: the system rounds this up to its
-    // own tick, which is a frame.
-    // SAFETY: our own window, from the thread that owns it.
-    unsafe { SetTimer(window, GROWING_ON, 8, None) };
+    if !playing {
+        // The first step. Each one asks for the next, and the compositor
+        // decides when they come; see `STEP`.
+        // SAFETY: our own window, from the thread that owns it, and the
+        // message is one of ours.
+        unsafe { PostMessageW(window, STEP, 0, 0) };
+    }
     true
 }
 
@@ -2086,28 +2114,59 @@ fn the_drawn_frame_of(
     Some((drawn.left, drawn.top, drawn.right, drawn.bottom))
 }
 
+/// A row of numbers, as the journal writes one.
+#[cfg(windows)]
+fn a_row<T: std::fmt::Display>(of: &[T]) -> String {
+    of.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Carries the window one step further, and finishes the job on the last
 /// one.
 #[cfg(windows)]
 fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::Graphics::Dwm::DwmFlush;
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        IsZoomed, KillTimer, SC_MAXIMIZE, SW_SHOWMAXIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED,
+        IsZoomed, PostMessageW, SC_MAXIMIZE, SW_SHOWMAXIMIZED, SW_SHOWNORMAL, SWP_FRAMECHANGED,
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPlacement, SetWindowPos,
         WM_SYSCOMMAND,
     };
 
+    // Wait for the screen before doing anything, so that what this step
+    // puts on it is put there at the start of a drawn frame and not
+    // somewhere in the middle of one; see `STEP`. It is the compositor
+    // that sets the pace of this move, and this is where it does it.
+    //
+    // It costs whatever is left of the current frame, and it is spent
+    // waiting rather than working. Should the compositor refuse to be
+    // waited on, this returns at once and the move plays as fast as the
+    // machine allows, which is still right: where the window stands is
+    // read off the clock, so it only means more steps for the same path.
+    // SAFETY: takes nothing and answers whether it waited.
+    unsafe { DwmFlush() };
+
     // Where the window really is, which is not where the last step meant
     // to put it: the system has the last word on what it granted, and
     // the width of a step is what the eye saw and not what was asked.
+    //
+    // Unreadable for the moment, this asks again on the next drawn frame
+    // rather than dropping the move where it stands: a step is the only
+    // thing that asks for the one after it, so a step that gives up
+    // silently leaves the window halfway for good.
     let Some(now) = where_it_stands(window) else {
+        // SAFETY: our own window, from the thread that owns it, and the
+        // message is one of ours. A window that is gone takes it.
+        unsafe { PostMessageW(window, STEP, 0, 0) };
         return;
     };
     let Some((step, done)) = GROWING.with_borrow_mut(|growing| {
         let growing = growing.as_mut()?;
         let waited = growing.moved.elapsed();
         growing.moved = std::time::Instant::now();
-        growing.latest = growing.latest.max(waited);
+        growing.beats.push(waited.as_millis() as u32);
         let gone = growing.began.elapsed();
         let part = eased(gone, LASTS);
         let step = along(growing.from, growing.stops_at, part);
@@ -2146,32 +2205,25 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
         }
     });
     if !done {
+        // The next one, once the screen has been drawn again.
+        // SAFETY: our own window, from the thread that owns it, and the
+        // message is one of ours.
+        unsafe { PostMessageW(window, STEP, 0, 0) };
         return;
     }
 
     let played = GROWING.with_borrow_mut(|growing| growing.take());
     GROWS.store(false, Ordering::Relaxed);
-    // SAFETY: our own window, from the thread that owns it.
-    unsafe { KillTimer(window, GROWING_ON) };
     if let Some(played) = played.as_ref() {
         // One line per gesture, and enough of one to name the fault
-        // rather than describe it. The row of strides is the gesture's
-        // own shape, which is what an eye reports and cannot measure;
-        // the longest step says whether one of them ate a frame, its
-        // rank says whether it is always the same one, its two shares
-        // say who was waited on, and the longest gap says whether the
-        // fault is not in the steps at all.
-        let strides = played
-            .strides
-            .iter()
-            .map(i32::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
+        // rather than describe it. Two rows side by side: what the move
+        // covered at each step, which is its shape, and how long each
+        // step waited for its turn, which is its pacing. An eye can
+        // report neither, and each has been the fault once.
         crate::journal::note(&format!(
-            "{} joué en {:.0} ms, {} pas ; crans {strides} px ; \
+            "{} joué en {:.0} ms, {} pas ; crans {} px ; cadence {} ms ; \
              pas le plus long {:.1} ms au pas {} \
-             (dont image {:.1} ms et système avec vue web {:.1} ms), \
-             plus longue attente entre deux pas {:.1} ms",
+             (dont image {:.1} ms et système avec vue web {:.1} ms)",
             if played.then == SC_MAXIMIZE as usize {
                 "agrandissement"
             } else {
@@ -2179,11 +2231,12 @@ fn grow_a_step(window: windows_sys::Win32::Foundation::HWND) {
             },
             played.began.elapsed().as_secs_f64() * 1000.0,
             played.strides.len(),
+            a_row(&played.strides),
+            a_row(&played.beats),
             played.slowest.as_secs_f64() * 1000.0,
             played.slowest_at,
             played.picture.as_secs_f64() * 1000.0,
             played.system.as_secs_f64() * 1000.0,
-            played.latest.as_secs_f64() * 1000.0,
         ));
     }
     if let Some(played) = played {
@@ -2361,8 +2414,7 @@ unsafe extern "system" fn lit(
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         PostMessageW, SC_MAXIMIZE, SC_RESTORE, WINDOWPOS, WM_ACTIVATEAPP,
         WM_DWMSENDICONICLIVEPREVIEWBITMAP, WM_DWMSENDICONICTHUMBNAIL, WM_ENTERSIZEMOVE,
-        WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SYSCOMMAND, WM_TIMER, WM_WINDOWPOSCHANGED,
-        WM_WINDOWPOSCHANGING,
+        WM_EXITSIZEMOVE, WM_NCACTIVATE, WM_SYSCOMMAND, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
     };
 
     match message {
@@ -2404,8 +2456,8 @@ unsafe extern "system" fn lit(
         {
             0
         }
-        // One step of that move.
-        WM_TIMER if wparam == GROWING_ON => {
+        // One step of that move, and it asks for the next itself.
+        STEP => {
             grow_a_step(window);
             0
         }

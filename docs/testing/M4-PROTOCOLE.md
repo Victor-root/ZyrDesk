@@ -507,6 +507,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Le mouvement se lit sur **l'horloge** : à chaque cran, on regarde depuis combien de temps le geste a commencé et on en déduit où la fenêtre doit être. Où elle est déjà n'entre pas en compte, donc une machine lente coûte des images et jamais la forme du geste : quatre crans jouent le même chemin que treize, en quatre échantillons au lieu de treize.
 >
+> Et les crans sont **rythmés par l'écran**, pas par une minuterie. Ça a été une vraie faute et elle vaut d'être connue, parce qu'aucun chiffre ne la montrait : une minuterie Windows répond au battement du système, environ 15,6 ms, alors qu'un écran se redessine toutes les 16,7 ms. Deux horloges aussi proches, côte à côte, battent l'une contre l'autre avec une période d'environ un quart de seconde, c'est-à-dire la durée du mouvement entier. Sur la première moitié du geste les crans tombaient juste avant une image dessinée, sur la seconde juste après, et à l'endroit où les deux se croisaient, une image était dessinée deux fois et le mouvement butait. **Une fois, au milieu, à chaque fois** : le défaut décrit dès le premier jour. Chaque cran arrivait à l'heure, mais à la mauvaise horloge.
+>
 > La courbe, elle, **part doucement, court le plus vite à mi-chemin et se pose doucement**. C'est ce qu'il faut vérifier de l'œil, et une version l'a fait de travers assez longtemps pour que ça vaille d'être écrit : une courbe qui fermait à chaque cran la même part de ce qui restait devant partait à pleine vitesse et ralentissait dès la première image. Sur de vrais chiffres, ça faisait **soixante-douze pour cent du trajet dans les cinquante premières millisecondes**, puis cent cinquante millisecondes à ramper deux à vingt pixels par image, sous le seuil de ce qu'un œil voit. Ce que ça donne à regarder, c'est exactement « ça joue, ça s'arrête en plein milieu, puis ça repart d'un coup à la fin ».
 >
 > Hors session, rien de tout ça : la fenêtre est seule et Windows l'anime comme n'importe quelle autre.
@@ -525,21 +527,23 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Si le mouvement s'arrête en route puis repart**, c'est ce que la ligne du journal sert à expliquer et il ne faut pas la deviner : la lire, telle quelle, et la recopier.
 >
+> **Le test qui départage le mouvement du contenu** : refaire l'essai en laissant l'ordinateur distant **complètement immobile**, sans rien toucher dessus, et regarder uniquement le liseré du bord de la fenêtre. Si ça accroche encore alors que rien ne bouge dans l'image, c'est le mouvement ; si c'est propre à l'arrêt et sale dès qu'il y a du mouvement à l'écran distant, c'est le lecteur qui étouffe sous les redimensionnements. Aucune ligne du journal ne le dit, seul l'œil le sait.
+>
 > **Le journal chiffre le geste.** Une ligne est écrite à chaque fois :
 >
 > ```
-> agrandissement joué en 204 ms, 12 pas ; crans 12, 34, 51, 63, 71, 75, 75, 70, 61, 47, 29, 7 px ; pas le plus long 27.1 ms au pas 11 (dont image 12.0 ms et système avec vue web 8.3 ms), plus longue attente entre deux pas 29.4 ms
+> agrandissement joué en 204 ms, 12 pas ; crans 12, 34, 51, 63, 71, 75, 75, 70, 61, 47, 29, 7 px ; cadence 17, 16, 17, 17, 16, 17, 17, 16, 17, 17, 16, 17 ms ; pas le plus long 12.1 ms au pas 11 (dont image 6.0 ms et système avec vue web 3.3 ms)
 > ```
 >
 > et `retour en fenêtre joué en ...` dans l'autre sens, suivie de `fenêtre agrandie` ou `fenêtre en fenêtre après le mouvement`, qui dit dans quel état la fenêtre a réellement fini. Deux cents millisecondes environ est ce qui est visé, en une douzaine de pas.
 >
-> Chaque nombre répond à une question, et une seule :
+> Deux rangées côte à côte, la forme du geste et son rythme. Chacune des deux a été la fautive une fois, et aucun œil ne peut les rapporter :
 >
-> 1. **Les crans**, en pixels, dans l'ordre : c'est l'allure du geste, écrite. Ils doivent **monter puis redescendre**, sans jamais tomber à zéro au milieu. Une rangée qui commence à deux cents et finit à deux est le défaut décrit plus haut, un mouvement fini avant d'avoir commencé qui rampe ensuite. Une rangée à peu près plate au milieu est un mouvement joué.
-> 2. **Le pas le plus long**, en millisecondes, et **à quel pas** il est tombé. Une image dessinée dure seize millisecondes ; un pas qui coûte davantage fait manquer le battement suivant, et le mouvement se joue alors à cinquante images par seconde au lieu de soixante, irrégulièrement. Le rang dit le reste : le même rang à chaque essai, c'est un coût qui revient toujours au même endroit du mouvement ; un rang qui se promène, c'est que tous les pas coûtent à peu près pareil et qu'aucun n'est fautif en particulier.
-> 3. **Dont image** : la part de ce pas passée à attendre le lecteur, qui appartient à un autre programme et répond quand il peut. Grandir lui coûte à peu près le double de rétrécir, parce qu'agrandir veut dire lui faire allouer de plus grandes surfaces sur une carte graphique qui n'en a pas beaucoup.
-> 4. **Et système avec vue web** : tout le reste du cran, c'est-à-dire notre propre fenêtre portée par la boîte à outils et la page web sous l'image à qui l'on redit sa taille, alors que l'image la cache entièrement pendant toute la session. Si ce nombre est le gros du cran, c'est de ce côté qu'il faut creuser et pas du côté du lecteur.
-> 5. **La plus longue attente entre deux pas** : celle-là ne mesure pas un pas mais le temps écoulé avant lui. Comparée au pas le plus long, elle tranche : à peu près égale, c'est le cran lui-même qui a coûté et le battement suivant a été manqué à cause de lui ; bien plus grande, le mouvement n'a rien coûté du tout et c'est le tour de parole qui a tardé, donc quelque chose d'autre occupait le fil.
+> 1. **Les crans**, en pixels, dans l'ordre : c'est l'allure du geste, écrite. Ils doivent **monter puis redescendre**, sans jamais tomber à zéro au milieu. Une rangée qui commence à deux cents et finit à deux est le défaut décrit plus haut, un mouvement fini avant d'avoir commencé qui rampe ensuite. Une rangée en cloche est un mouvement joué.
+> 2. **La cadence**, en millisecondes, dans l'ordre : le temps que chaque cran a attendu son tour. Un écran se redessine toutes les 16,7 ms, donc une rangée de **16 et de 17 est un mouvement qui tombe sur chaque image dessinée**. Un **33 au milieu** est une image manquée, et c'est la seule chose qu'un œil appelle un accroc. Une rangée qui alterne 16 et 31 est le battement de deux horloges, le défaut décrit plus haut.
+> 3. **Le pas le plus long**, en millisecondes, et **à quel pas** il est tombé. C'est le travail du cran lui-même, sans l'attente. Au-delà de 16 ms, ce cran-là ne tient pas dans une image dessinée et en fait manquer une : c'est ce qui met un 33 dans la cadence.
+> 4. **Dont image** : la part de ce travail passée à attendre le lecteur, qui appartient à un autre programme et répond quand il peut. Grandir lui coûte à peu près le double de rétrécir, parce qu'agrandir veut dire lui faire allouer de plus grandes surfaces sur une carte graphique qui n'en a pas beaucoup.
+> 5. **Et système avec vue web** : le reste, c'est-à-dire notre propre fenêtre portée par la boîte à outils et la page web sous l'image à qui l'on redit sa taille, alors que l'image la cache entièrement pendant toute la session. Si ce nombre est le gros du cran, c'est de ce côté qu'il faut creuser et pas du côté du lecteur.
 
 > **S9quinquies (Alt+Tab montre la session, pas l'écran d'accueil)**
 >
