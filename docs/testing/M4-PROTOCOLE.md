@@ -22,6 +22,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 |---|---|
 | **R17**, **R17bis** | La qualité disparaît. La taille, le débit et le codec se règlent dans le menu de la session, un cran par clic, et survivent à la fermeture |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
+| **R33** | Deux réglages nouveaux côté hôte : renvoyer ou non un écran immobile, et la façon de filmer l'écran. Ce sont les deux seuls leviers qui restent sur la cadence |
 | **S2**, **S7** | Le bureau distant ne change plus de définition : il déménage sur un écran que ZyrDesk fait pousser, et l'écran physique de l'hôte s'éteint le temps de la session |
 | **R30**, **R31** | Ce qu'il reste de l'écran virtuel à vérifier : que tout soit bien remis en place à la fin d'une session, et que le retrait du produit ne laisse rien |
 | **S6**, **S8** | Rien n'a changé pour eux, mais ils passent par le même chemin : à refaire une fois pour être sûr que l'écran virtuel ne réintroduit pas de bande noire |
@@ -946,6 +947,16 @@ Le cas qui compte pour cette partie : **un PC client dont l'écran est plus gran
 > Attendu : **angles droits** aux quatre coins, aucun liseré clair en haut ni sur les côtés, et l'image touche le bord de l'écran partout. Repasser en fenêtre : les angles se réarrondissent, et c'est là qu'ils ont leur place.
 >
 > Le journal donne la mesure exacte si quelque chose reste : la ligne `cadre de la fenêtre :` dit l'écran, la fenêtre et son intérieur côte à côte. Les deux derniers nombres doivent être **0 px et 0 px** en plein écran ; tout ce qui n'est pas zéro est la largeur du liseré.
+
+> **R33 (ce que cet ordinateur fait quand c'est lui qu'on regarde)**
+>
+> Sur le **PC hôte**, dans ses propres réglages : deux entrées nouvelles, **Renvoyer un écran immobile** et **Façon de filmer l'écran**.
+>
+> Ce sont des réglages de l'ordinateur qui **sert**, pas de celui qui regarde : ils ne changent rien à une session ouverte depuis lui, et tout à une session ouverte vers lui. C'est pour ça qu'ils sont ici et pas dans le menu de la session. Son moteur les lit à son démarrage, donc en changer un le redémarre, et coupe une session que quelqu'un aurait en cours vers cette machine.
+>
+> Attendu : le journal du service dit `this computer will serve with a steady rate ... and ... capture`, puis `how this computer serves was changed, the engine starts over with it`. Le moteur redémarre dans la foulée. Rouvrir une session depuis le PC client : elle doit s'ouvrir normalement.
+>
+> **Ce que ça sert à mesurer.** Ces deux réglages sont les deux seuls leviers qui restent sur la cadence quand ni la taille, ni le débit, ni le codec n'ont rien changé. Couper le renvoi d'un écran immobile enlève une image complète encodée soixante fois par seconde pour rien ; passer en **Rapide** change la façon dont Windows livre les images au moteur, ce qui n'a pas le même coût sur toutes les machines. Regarder `Host processing latency` après chacun.
 
 ---
 

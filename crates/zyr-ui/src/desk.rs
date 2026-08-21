@@ -45,6 +45,11 @@ pub struct Standing {
     /// Whether the ZyrDesk of this network are let in without anyone
     /// recognising them one by one.
     pub trusting: bool,
+    /// Whether this computer keeps sending a still screen at the full
+    /// rate when somebody is watching it.
+    pub steady_rate: bool,
+    /// How it takes the pictures it serves.
+    pub capture: String,
     /// Whether this computer answers from the moment it powers on,
     /// before anybody has signed in.
     pub at_boot: bool,
@@ -68,6 +73,8 @@ impl Standing {
             holdup: named(Holdup::Starting),
             wanted: false,
             trusting: false,
+            steady_rate: zyr_proto::session::Serving::default().steady_rate,
+            capture: zyr_proto::session::Serving::default().capture.to_string(),
             at_boot: false,
             ways: 0,
             service_build: String::new(),
@@ -140,6 +147,25 @@ pub async fn set_hosting(on: bool) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_trust(on: bool) -> Result<(), String> {
     match service::ask(&Request::SetTrust { on }).await? {
+        Answer::Done => Ok(()),
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// Changes how this computer makes the pictures it serves.
+///
+/// A host setting and not a session one: it changes nothing about a
+/// session opened from here, and everything about one opened towards
+/// here. The engine reads both when it starts, so the service stops it
+/// and starts it again, which ends a session in progress towards this
+/// computer.
+#[tauri::command]
+pub async fn set_serving(steady_rate: bool, capture: String) -> Result<(), String> {
+    let serving = zyr_proto::session::Serving {
+        steady_rate,
+        capture: capture.parse()?,
+    };
+    match service::ask(&Request::ServeLike { serving }).await? {
         Answer::Done => Ok(()),
         other => Err(service::unexpected(other)),
     }
@@ -313,6 +339,8 @@ async fn asked() -> Result<Standing, String> {
             holdup: named(standing.holdup),
             wanted: standing.wanted,
             trusting: standing.trusting,
+            steady_rate: standing.serving.steady_rate,
+            capture: standing.serving.capture.to_string(),
             at_boot: standing.at_boot,
             ways: standing.ways,
             service_build: standing.build,

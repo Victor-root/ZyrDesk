@@ -16,7 +16,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use zyr_proto::net::EnginePorts;
-use zyr_proto::session::Preferred;
+use zyr_proto::session::{Preferred, Serving};
 use zyr_transport::{Fingerprint, MediaProfile};
 
 /// Version of this dialect.
@@ -24,7 +24,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 12;
+pub const PROTOCOL: u32 = 13;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -125,6 +125,12 @@ pub enum Request {
     /// Decides whether the ZyrDesk of the local network are let in
     /// without anyone having to recognise them one by one.
     SetTrust { on: bool },
+    /// Changes how this computer makes the pictures it serves.
+    ///
+    /// A host setting and not a session one: it changes nothing about a
+    /// session opened from here, and everything about one opened towards
+    /// here. The engine reads both at its own start, so this restarts it.
+    ServeLike { serving: Serving },
     /// Writes a computer down.
     ///
     /// What is left when the network announces nothing: on a network
@@ -196,6 +202,14 @@ impl Request {
             "trusting" => Ok(Request::SetTrust {
                 on: fields.text("on")? == "yes",
             }),
+            "serving" => Ok(Request::ServeLike {
+                serving: Serving {
+                    steady_rate: fields.text("steady")? == "yes",
+                    capture: fields
+                        .parsed("capture")
+                        .unwrap_or(Serving::default().capture),
+                },
+            }),
             "authorize" => Ok(Request::Authorize {
                 peer: fields.parsed("peer")?,
                 host: fields.text("host").ok().map(unpacked),
@@ -235,6 +249,12 @@ impl fmt::Display for Request {
             Request::Sessions => f.write_str("sessions"),
             Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
+            Request::ServeLike { serving } => write!(
+                f,
+                "serving steady={} capture={}",
+                said(serving.steady_rate),
+                serving.capture
+            ),
             Request::Authorize { peer, host, name } => {
                 write!(f, "authorize peer={peer}")?;
                 if let Some(host) = host {
@@ -304,6 +324,8 @@ pub struct Standing {
     /// Whether Windows starts the service on its own, so that this
     /// computer answers before anybody has signed in.
     pub at_boot: bool,
+    /// How this computer makes the pictures it serves.
+    pub serving: Serving,
     /// Ways out currently open.
     pub ways: usize,
 }
@@ -404,6 +426,12 @@ impl Answer {
                 wanted: fields.text("wanted")? == "yes",
                 trusting: fields.flag("trusting", false),
                 at_boot: fields.flag("at-boot", true),
+                serving: Serving {
+                    steady_rate: fields.flag("steady", Serving::default().steady_rate),
+                    capture: fields
+                        .parsed("capture")
+                        .unwrap_or(Serving::default().capture),
+                },
                 ways: fields.parsed("ways")?,
             })),
             "reached" => Ok(Answer::Reached(Reached {
@@ -442,7 +470,7 @@ impl fmt::Display for Answer {
         match self {
             Answer::Standing(standing) => write!(
                 f,
-                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} at-boot={} ways={}",
+                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} at-boot={} steady={} capture={} ways={}",
                 standing.protocol,
                 packed(&standing.build),
                 standing.fingerprint,
@@ -451,6 +479,8 @@ impl fmt::Display for Answer {
                 said(standing.wanted),
                 said(standing.trusting),
                 said(standing.at_boot),
+                said(standing.serving.steady_rate),
+                standing.serving.capture,
                 standing.ways
             ),
             Answer::Reached(reached) => write!(
@@ -625,6 +655,7 @@ impl<'a> Fields<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zyr_proto::session::Capture;
 
     fn fingerprint() -> Fingerprint {
         "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237"
@@ -719,6 +750,7 @@ mod tests {
                 wanted: true,
                 trusting: true,
                 at_boot: true,
+                serving: Serving::default(),
                 ways: 2,
             }),
             Answer::Standing(Standing {
@@ -730,6 +762,10 @@ mod tests {
                 wanted: true,
                 trusting: false,
                 at_boot: false,
+                serving: Serving {
+                    steady_rate: false,
+                    capture: Capture::Windows,
+                },
                 ways: 0,
             }),
             Answer::Reached(Reached {

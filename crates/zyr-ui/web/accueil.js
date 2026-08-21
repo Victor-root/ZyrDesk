@@ -56,6 +56,7 @@ const vue = {
   qualiteDetail: document.getElementById("qualite-detail"),
   confiance: document.getElementById("confiance"),
   auDemarrage: document.getElementById("au-demarrage"),
+  cadenceContinue: document.getElementById("cadence-continue"),
   stats: document.getElementById("stats"),
   dossierJournaux: document.getElementById("dossier-journaux"),
   ouvrirDossier: document.getElementById("ouvrir-dossier"),
@@ -116,6 +117,7 @@ async function rafraichirEtat() {
   // les fige au lieu de les laisser mentir.
   dessineConfiance();
   dessineAuDemarrage();
+  dessineFaconDeServir();
 
   vue.nom.textContent = etat.name;
   vue.empreinte.textContent = etat.fingerprint || "indisponible";
@@ -945,6 +947,43 @@ const dessineAuDemarrage = interrupteurMachine(
   (machine) => machine.atBoot,
 );
 
+/* Ce que cet ordinateur fait quand c'est LUI qu'on regarde. Les deux
+   voyagent ensemble parce que le service les écrit ensemble : envoyer
+   l'un sans l'autre remettrait le second à ce qu'il était.
+
+   Changer l'un redémarre son moteur, donc coupe une session que
+   quelqu'un aurait en cours vers cette machine. C'est dit dans la
+   légende de chaque réglage plutôt qu'ici. */
+async function envoieLaFaconDeServir(cadence, capture) {
+  montre(vue.reglagesProbleme, false);
+  try {
+    await invoke("set_serving", { steadyRate: cadence, capture });
+  } catch (raison) {
+    soucis(String(raison));
+  } finally {
+    await rafraichirEtat();
+    dessineFaconDeServir();
+  }
+}
+
+function dessineFaconDeServir() {
+  if (etat === null) {
+    return;
+  }
+  vue.cadenceContinue.disabled = etat.unreachable !== null;
+  vue.cadenceContinue.setAttribute(
+    "aria-checked",
+    etat.steadyRate ? "true" : "false",
+  );
+  marque("capture", etat.capture);
+}
+
+vue.cadenceContinue.addEventListener("click", () => {
+  const veut = vue.cadenceContinue.getAttribute("aria-checked") !== "true";
+  vue.cadenceContinue.setAttribute("aria-checked", veut ? "true" : "false");
+  envoieLaFaconDeServir(veut, etat === null ? "ddx" : etat.capture);
+});
+
 function soucis(texte) {
   vue.reglagesProblemeTexte.textContent = texte;
   montre(vue.reglagesProbleme, true);
@@ -1083,6 +1122,12 @@ for (const bouton of vue.reglages.querySelectorAll(
   bouton.addEventListener("click", () => {
     const nom = bouton.closest("[data-reglage]").dataset.reglage;
     const valeur = bouton.dataset.valeur;
+    // Celui-ci ne décrit pas ce qu'on demande aux autres mais ce que cet
+    // ordinateur fait : il ne passe pas par les mêmes réglages.
+    if (nom === "capture") {
+      envoieLaFaconDeServir(etat !== null && etat.steadyRate, valeur);
+      return;
+    }
     change((veut) => {
       if (nom === "mouse") {
         veut.absoluteMouse = valeur === "desktop";

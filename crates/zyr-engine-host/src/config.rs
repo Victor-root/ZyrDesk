@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use zyr_proto::net::EnginePorts;
+use zyr_proto::session::Serving;
 
 /// Internal encryption mode of the GameStream protocol over loopback.
 ///
@@ -49,13 +50,14 @@ pub struct SunshineConfig {
     logs_dir: PathBuf,
     listening: Listening,
     encryption: InnerEncryption,
-    minimum_fps: f64,
+    serving: Serving,
     output_name: Option<String>,
     alone_on_the_screen: bool,
     adapter_name: Option<String>,
 }
 
-/// Frame rate the engine guarantees even on a frozen screen.
+/// Frame rate the engine guarantees even on a frozen screen, when it is
+/// asked to guarantee one at all.
 ///
 /// The engine only encodes a frame when the screen changes, and only
 /// resends on its own after a delay. Its default is half the requested
@@ -81,16 +83,16 @@ impl SunshineConfig {
             logs_dir: logs_dir.into(),
             listening: Listening::default(),
             encryption: InnerEncryption::default(),
-            minimum_fps: DESKTOP_MINIMUM_FPS,
+            serving: Serving::default(),
             output_name: None,
             alone_on_the_screen: false,
             adapter_name: None,
         }
     }
 
-    /// Adjusts the guaranteed minimum frame rate.
-    pub fn with_minimum_fps(mut self, fps: f64) -> Self {
-        self.minimum_fps = fps;
+    /// How this computer makes the pictures it serves.
+    pub fn with_serving(mut self, serving: Serving) -> Self {
+        self.serving = serving;
         self
     }
 
@@ -194,7 +196,7 @@ impl SunshineConfig {
             "address_family = ipv4".to_string(),
             "origin_web_ui_allowed = pc".to_string(),
             "system_tray = disabled".to_string(),
-            "capture = ddx".to_string(),
+            format!("capture = {}", self.serving.capture),
             format!("lan_encryption_mode = {}", self.encryption.value()),
             format!("wan_encryption_mode = {}", self.encryption.value()),
             "upnp = disabled".to_string(),
@@ -234,8 +236,14 @@ impl SunshineConfig {
             "dd_config_revert_on_disconnect = enabled".to_string(),
             format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
-            format!("minimum_fps_target = {}", self.minimum_fps),
         ]);
+        // Left out entirely rather than turned down, when it is off: the
+        // engine's own answer is half the rate that was asked for, and
+        // half is what « off » means here. Writing a number would be
+        // choosing a third thing nobody asked for.
+        if self.serving.steady_rate {
+            lines.push(format!("minimum_fps_target = {DESKTOP_MINIMUM_FPS}"));
+        }
         if let Some(output) = &self.output_name {
             lines.push(format!("output_name = {output}"));
         }
@@ -269,6 +277,7 @@ impl SunshineConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zyr_proto::session::Capture;
 
     fn test_config() -> SunshineConfig {
         SunshineConfig::new(
@@ -412,9 +421,36 @@ mod tests {
         // Without this setting, the engine falls back to half the
         // requested rate as soon as the screen stops changing.
         assert!(rendered.contains("minimum_fps_target = 60"), "{rendered}");
+    }
 
-        let rendered = test_config().with_minimum_fps(30.0).render_conf();
-        assert!(rendered.contains("minimum_fps_target = 30"), "{rendered}");
+    #[test]
+    fn a_computer_that_cannot_keep_up_stops_resending_a_still_screen() {
+        // Absente et non baissée : la réponse propre du moteur est la
+        // moitié de la cadence demandée, et c'est ce que « éteint » veut
+        // dire. Écrire un nombre serait en choisir un troisième que
+        // personne n'a demandé.
+        let rendered = test_config()
+            .with_serving(Serving {
+                steady_rate: false,
+                ..Serving::default()
+            })
+            .render_conf();
+        assert!(!rendered.contains("minimum_fps_target"), "{rendered}");
+    }
+
+    #[test]
+    fn the_way_the_screen_is_taken_is_the_one_that_was_asked_for() {
+        // Le défaut voit les invites administrateur et l'écran de
+        // connexion ; l'autre est plus rapide sur certaines machines et
+        // ne les voit pas. Les deux doivent pouvoir sortir d'ici.
+        assert!(test_config().render_conf().contains("capture = ddx"));
+        let rendered = test_config()
+            .with_serving(Serving {
+                capture: Capture::Windows,
+                ..Serving::default()
+            })
+            .render_conf();
+        assert!(rendered.contains("capture = wgc"), "{rendered}");
     }
 
     #[test]

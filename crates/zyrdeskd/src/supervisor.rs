@@ -117,6 +117,10 @@ enum Life {
     /// learned from the engine itself, which only says it as it starts.
     /// It was stopped on purpose so the next one is told to capture it.
     VirtualScreenLearned,
+    /// How this computer serves was changed while it was running. The
+    /// engine reads that once, at its own start, so it was stopped on
+    /// purpose and the next one is told the new answer.
+    ServingChanged,
     /// Remote access was turned off while it ran.
     NoLongerWanted,
 }
@@ -320,7 +324,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             // Straight away rather than after the settling delay: the
             // engine was stopped on purpose the moment it had said what
             // was wanted of it, and nothing on the machine moved.
-            if life == Life::VirtualScreenLearned {
+            if matches!(life, Life::VirtualScreenLearned | Life::ServingChanged) {
                 continue;
             }
             if !wait(SESSION_SETTLING, order) {
@@ -463,7 +467,12 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // The engine binds to the local machine only: the tunnel below is
     // the sole way to it, and nothing on the network can knock on its
     // seven ports.
-    let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
+    // Read once, here, and compared against later: the engine is told
+    // this at its start and never again, so a change while it runs is
+    // only honoured by starting another one.
+    let serving = remembered.serving();
+    let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir())
+        .with_serving(serving);
     // Which screen to capture is read once, as the engine starts, so it
     // is decided here or not at all. Absent the first time this computer
     // ever runs, since the name is the engine's own and the engine has
@@ -538,7 +547,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     hosting.open();
     log.write("remote access active");
 
-    let life = wait_for_the_engine_to_stop(&mut engine, session, remembered, order, log);
+    let life = wait_for_the_engine_to_stop(&mut engine, session, serving, remembered, order, log);
     hosting.held_by(Holdup::Starting);
     drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
@@ -550,6 +559,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
 fn wait_for_the_engine_to_stop(
     engine: &mut HostEngine,
     session: u32,
+    serving: zyr_proto::session::Serving,
     remembered: &Remembered,
     order: &StopOrder,
     log: &Log,
@@ -565,6 +575,12 @@ fn wait_for_the_engine_to_stop(
             log.write("remote access turned off, the engine is being stopped");
             let _ = engine.stop();
             return Life::NoLongerWanted;
+        }
+
+        if remembered.serving() != serving {
+            log.write("how this computer serves was changed, the engine starts over with it");
+            let _ = engine.stop();
+            return Life::ServingChanged;
         }
 
         // The exit code is asked for first: it is the only thing that

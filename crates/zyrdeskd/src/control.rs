@@ -278,6 +278,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 wanted: answering.remembered.remote_access(),
                 trusting: answering.remembered.trust_local_network(),
                 at_boot: at_boot(),
+                serving: answering.remembered.serving(),
                 ways: answering.ways.count(),
             })
         }
@@ -311,6 +312,21 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 } else {
                     "remote access turned off"
                 });
+                Answer::Done
+            }
+            Err(refusal) => refusal,
+        },
+        // The engine reads both of these once, when it starts, so
+        // writing them down is only half the job: the supervisor sees
+        // them change and starts it again. Said in the answer, since a
+        // session in progress goes with it.
+        Request::ServeLike { serving } => match kept(answering.remembered.set_serving(serving)) {
+            Ok(()) => {
+                answering.log.write(&format!(
+                    "this computer will serve with a steady rate {} and {} capture",
+                    if serving.steady_rate { "on" } else { "off" },
+                    serving.capture
+                ));
                 Answer::Done
             }
             Err(refusal) => refusal,

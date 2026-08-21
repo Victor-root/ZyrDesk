@@ -61,6 +61,7 @@ fn main() {
             desk::peers,
             desk::set_hosting,
             desk::set_trust,
+            desk::set_serving,
             desk::authorize,
             desk::forget,
             desk::set_at_boot,

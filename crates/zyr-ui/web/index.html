@@ -369,6 +369,58 @@
             ></button>
           </div>
 
+          <!-- Ces deux-là ne décrivent pas ce qu'on demande aux autres,
+               mais ce que cet ordinateur fait quand c'est lui qu'on
+               regarde. Son moteur les lit à son démarrage, donc en
+               changer un le redémarre, et coupe une session que
+               quelqu'un aurait en cours vers cette machine. -->
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Renvoyer un écran immobile</span>
+              <span class="legende">
+                Quand quelqu'un regarde cet ordinateur : réenvoyer l'écran à
+                pleine cadence même quand rien ne bouge dessus. Le pointeur est
+                plus fluide, mais c'est une image complète encodée soixante fois
+                par seconde pour rien. À couper si cet ordinateur n'arrive pas à
+                suivre.
+              </span>
+            </div>
+            <button
+              class="interrupteur"
+              id="cadence-continue"
+              role="switch"
+              aria-checked="false"
+              aria-label="Renvoyer un écran immobile"
+              disabled
+            ></button>
+          </div>
+
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Façon de filmer l'écran</span>
+              <span class="legende">
+                La façon dont cet ordinateur prend ses images quand quelqu'un le
+                regarde. « Compatible » voit aussi les demandes de mot de passe
+                administrateur et l'écran de connexion. « Rapide » va plus vite
+                sur certaines machines, et ne les voit pas : elles apparaissent
+                alors comme un écran noir.
+              </span>
+            </div>
+            <div
+              class="segments"
+              data-reglage="capture"
+              role="group"
+              aria-label="Façon de filmer l'écran"
+            >
+              <button type="button" data-valeur="ddx" aria-pressed="false">
+                Compatible
+              </button>
+              <button type="button" data-valeur="wgc" aria-pressed="false">
+                Rapide
+              </button>
+            </div>
+          </div>
+
           <div class="reglage">
             <div class="reglage-mot">
               <span>Démarrer avec Windows</span>

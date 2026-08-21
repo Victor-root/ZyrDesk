@@ -255,6 +255,85 @@ impl std::str::FromStr for Asked {
     }
 }
 
+/// How the far computer takes the pictures it sends.
+///
+/// Two ways, and the choice between them is not obvious enough to be
+/// made once for everybody: which is faster depends on the machine, and
+/// on some it is not close.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Capture {
+    /// The way that also sees what Windows puts on its own protected
+    /// desktop: the administrator prompt, and the sign-in screen. The
+    /// safe answer, and the one this product started with.
+    #[default]
+    Duplication,
+    /// Windows' own newer way of handing a window or a screen to a
+    /// program. Faster on some machines, and blind to the protected
+    /// desktop: an administrator prompt then shows as nothing at all.
+    Windows,
+}
+
+impl Capture {
+    /// What the host engine's configuration calls it.
+    pub fn engine_value(self) -> &'static str {
+        match self {
+            Capture::Duplication => "ddx",
+            Capture::Windows => "wgc",
+        }
+    }
+}
+
+impl fmt::Display for Capture {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.engine_value())
+    }
+}
+
+impl std::str::FromStr for Capture {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "ddx" | "duplication" => Ok(Capture::Duplication),
+            "wgc" | "windows" => Ok(Capture::Windows),
+            _ => Err(format!("façon de capturer inconnue : {text}")),
+        }
+    }
+}
+
+/// How this computer serves the sessions it is asked for.
+///
+/// Apart from `Preferred` on purpose, and it is the same distinction as
+/// between a host and a client. `Preferred` is what this computer asks
+/// of others; this is what others get from it. One machine is usually
+/// both, and the two are still not the same settings: changing these
+/// changes nothing about a session opened from here, and everything
+/// about one opened towards here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Serving {
+    /// Whether a still screen is sent again at the full rate.
+    ///
+    /// The engine only encodes a picture when the screen changes, and
+    /// its own answer is half the rate that was asked for. On a desktop
+    /// that costs the smoothness of a moving pointer, which is most of
+    /// what a desktop is; so this is normally on.
+    ///
+    /// It is worth turning off on a computer that cannot keep up: it
+    /// then spends nothing on a screen where nothing moved, and what it
+    /// has goes to the pictures that changed.
+    pub steady_rate: bool,
+    pub capture: Capture,
+}
+
+impl Default for Serving {
+    fn default() -> Self {
+        Self {
+            steady_rate: true,
+            capture: Capture::default(),
+        }
+    }
+}
+
 /// What the person chose once, and every session then honours.
 ///
 /// Apart from `SessionSettings` on purpose: the packet size is not a

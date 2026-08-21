@@ -22,7 +22,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use zyr_proto::session::Preferred;
+use zyr_proto::session::{Preferred, Serving};
 
 /// Keys, in the order they are written.
 const REMOTE_ACCESS: &str = "remote_access";
@@ -33,6 +33,8 @@ const CODEC: &str = "codec";
 const DISPLAY: &str = "display";
 const ABSOLUTE_MOUSE: &str = "absolute_mouse";
 const STATS_OVERLAY: &str = "stats_overlay";
+const STEADY_RATE: &str = "steady_rate";
+const CAPTURE: &str = "capture";
 
 /// What the file says, when it says anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +46,8 @@ pub struct Preferences {
     pub trust_local_network: bool,
     /// What a session opened from this computer looks like.
     pub preferred: Preferred,
+    /// How this computer makes the pictures it serves to others.
+    pub serving: Serving,
 }
 
 impl Default for Preferences {
@@ -62,6 +66,7 @@ impl Default for Preferences {
             remote_access: true,
             trust_local_network: true,
             preferred: Preferred::default(),
+            serving: Serving::default(),
         }
     }
 }
@@ -117,6 +122,15 @@ impl Remembered {
 
     pub fn set_preferred(&self, preferred: Preferred) -> io::Result<()> {
         self.change(|preferences| preferences.preferred = preferred)
+    }
+
+    /// How this computer makes the pictures it serves.
+    pub fn serving(&self) -> Serving {
+        self.read().serving
+    }
+
+    pub fn set_serving(&self, serving: Serving) -> io::Result<()> {
+        self.change(|preferences| preferences.serving = serving)
     }
 
     /// Writes the decision down before honouring it: a computer that
@@ -177,7 +191,16 @@ fn rendered(preferences: Preferences) -> String {
          # Souris du bureau plutôt que souris de jeu.\n\
          {ABSOLUTE_MOUSE} = {}\n\
          # Statistiques affichées par-dessus l'image.\n\
-         {STATS_OVERLAY} = {}\n",
+         {STATS_OVERLAY} = {}\n\
+         \n\
+         # Ce que cet ordinateur fait quand c'est LUI qu'on regarde.\n\
+         # Renvoyer un écran immobile à pleine cadence : plus fluide, mais\n\
+         # une image complète encodée soixante fois par seconde pour rien.\n\
+         {STEADY_RATE} = {}\n\
+         # Façon de capturer l'écran : ddx voit les invites administrateur\n\
+         # et l'écran de connexion, wgc est plus rapide sur certaines\n\
+         # machines et ne les voit pas.\n\
+         {CAPTURE} = {}\n",
         yes_no(preferences.remote_access),
         yes_no(preferences.trust_local_network),
         preferred.asked,
@@ -186,6 +209,8 @@ fn rendered(preferences: Preferences) -> String {
         preferred.display_mode,
         yes_no(preferred.absolute_mouse),
         yes_no(preferred.stats_overlay),
+        yes_no(preferences.serving.steady_rate),
+        preferences.serving.capture,
     )
 }
 
@@ -244,6 +269,14 @@ fn parsed(text: &str) -> Preferences {
             DISPLAY => preferred.display_mode = value.parse().unwrap_or_default(),
             ABSOLUTE_MOUSE => preferred.absolute_mouse = told(value, preferred.absolute_mouse),
             STATS_OVERLAY => preferred.stats_overlay = told(value, preferred.stats_overlay),
+            STEADY_RATE => {
+                preferences.serving.steady_rate = told(value, preferences.serving.steady_rate);
+            }
+            CAPTURE => {
+                if let Ok(how) = value.parse() {
+                    preferences.serving.capture = how;
+                }
+            }
             _ => {}
         }
     }
@@ -254,7 +287,7 @@ fn parsed(text: &str) -> Preferences {
 mod tests {
     use super::*;
 
-    use zyr_proto::session::{Asked, Codec, DisplayMode};
+    use zyr_proto::session::{Asked, Capture, Codec, DisplayMode};
 
     fn temporary_file(what: &str) -> std::path::PathBuf {
         let folder = std::env::temp_dir().join(format!(
@@ -276,6 +309,10 @@ mod tests {
                 display_mode: DisplayMode::Windowed,
                 absolute_mouse: false,
                 stats_overlay: true,
+            },
+            serving: Serving {
+                steady_rate: false,
+                capture: Capture::Windows,
             },
         }
     }
@@ -307,6 +344,7 @@ mod tests {
         let remembered = Remembered::at(path.clone());
 
         remembered.set_preferred(chosen().preferred).unwrap();
+        remembered.set_serving(chosen().serving).unwrap();
         remembered.set_remote_access(false).unwrap();
         remembered.set_trust_local_network(false).unwrap();
 
@@ -325,6 +363,7 @@ mod tests {
         let path = temporary_file("relance");
         let remembered = Remembered::at(path.clone());
         remembered.set_preferred(chosen().preferred).unwrap();
+        remembered.set_serving(chosen().serving).unwrap();
         remembered
             .set_remote_access(chosen().remote_access)
             .unwrap();
@@ -391,6 +430,8 @@ mod tests {
         assert!(rendered.contains("asked = 2560x1440"), "{rendered}");
         assert!(rendered.contains("bitrate = 15000"), "{rendered}");
         assert!(rendered.contains("codec = HEVC"), "{rendered}");
+        assert!(rendered.contains("steady_rate = no"), "{rendered}");
+        assert!(rendered.contains("capture = wgc"), "{rendered}");
         assert_eq!(parsed(&rendered), chosen());
     }
 
