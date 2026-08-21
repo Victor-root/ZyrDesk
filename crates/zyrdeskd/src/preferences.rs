@@ -3,8 +3,8 @@
 //! Remote access is a decision, not a state: turning it off has to
 //! survive a reboot, or the machine would let itself be reached again
 //! the next morning without anyone saying so. The same goes for what a
-//! session looks like: a quality chosen once is not to be chosen again
-//! at every launch. It is written to a plain file, in the same spirit as
+//! session looks like: a size, a rate and a codec chosen once are not
+//! to be chosen again at every launch. It is written to a plain file, in the same spirit as
 //! the list of authorised devices: readable and correctable in a text
 //! editor, holding no secret.
 //!
@@ -27,7 +27,8 @@ use zyr_proto::session::Preferred;
 /// Keys, in the order they are written.
 const REMOTE_ACCESS: &str = "remote_access";
 const TRUST_LOCAL_NETWORK: &str = "trust_local_network";
-const QUALITY: &str = "quality";
+const ASKED: &str = "asked";
+const BITRATE: &str = "bitrate";
 const CODEC: &str = "codec";
 const DISPLAY: &str = "display";
 const ABSOLUTE_MOUSE: &str = "absolute_mouse";
@@ -68,8 +69,8 @@ impl Default for Preferences {
 /// The preferences, and the only place they are written from.
 ///
 /// Two settings sharing one file means neither may be saved alone: a
-/// write that only knew about remote access would wipe the quality, and
-/// the other way round. Everything therefore goes through here, which
+/// write that only knew about remote access would wipe what a session
+/// asks for, and the other way round. Everything therefore goes through here, which
 /// reads the file once and writes it whole.
 #[derive(Clone)]
 pub struct Remembered {
@@ -165,8 +166,10 @@ fn rendered(preferences: Preferences) -> String {
          {TRUST_LOCAL_NETWORK} = {}\n\
          \n\
          # Ce à quoi ressemble une session ouverte depuis cet ordinateur.\n\
-         # Qualité : smooth, balanced ou detailed.\n\
-         {QUALITY} = {}\n\
+         # Taille demandée : screen, ou LARGEURxHAUTEUR.\n\
+         {ASKED} = {}\n\
+         # Débit en kilobits par seconde.\n\
+         {BITRATE} = {}\n\
          # Codec : auto, H.264, HEVC ou AV1.\n\
          {CODEC} = {}\n\
          # Affichage : fullscreen ou windowed.\n\
@@ -177,7 +180,8 @@ fn rendered(preferences: Preferences) -> String {
          {STATS_OVERLAY} = {}\n",
         yes_no(preferences.remote_access),
         yes_no(preferences.trust_local_network),
-        preferred.quality,
+        preferred.asked,
+        preferred.bitrate_kbps,
         preferred.codec,
         preferred.display_mode,
         yes_no(preferred.absolute_mouse),
@@ -226,7 +230,16 @@ fn parsed(text: &str) -> Preferences {
             }
             // The rest is a comfort setting: a value nobody understands
             // leaves the default in place, and the session still opens.
-            QUALITY => preferred.quality = value.parse().unwrap_or_default(),
+            ASKED => preferred.asked = value.parse().unwrap_or_default(),
+            // Zero would be a session nothing could be seen through, and
+            // a line mangled by hand must not be able to say it.
+            BITRATE => {
+                if let Ok(rate) = value.parse::<u32>()
+                    && rate > 0
+                {
+                    preferred.bitrate_kbps = rate;
+                }
+            }
             CODEC => preferred.codec = value.parse().unwrap_or_default(),
             DISPLAY => preferred.display_mode = value.parse().unwrap_or_default(),
             ABSOLUTE_MOUSE => preferred.absolute_mouse = told(value, preferred.absolute_mouse),
@@ -241,7 +254,7 @@ fn parsed(text: &str) -> Preferences {
 mod tests {
     use super::*;
 
-    use zyr_proto::session::{Codec, DisplayMode, Quality};
+    use zyr_proto::session::{Asked, Codec, DisplayMode};
 
     fn temporary_file(what: &str) -> std::path::PathBuf {
         let folder = std::env::temp_dir().join(format!(
@@ -257,7 +270,8 @@ mod tests {
             remote_access: false,
             trust_local_network: false,
             preferred: Preferred {
-                quality: Quality::Detailed,
+                asked: Asked::Fixed(2560, 1440),
+                bitrate_kbps: 15_000,
                 codec: Codec::Hevc,
                 display_mode: DisplayMode::Windowed,
                 absolute_mouse: false,
@@ -361,7 +375,8 @@ mod tests {
         // travers, ne doit pas remettre tout le reste à zéro.
         let text = "quality = ultra\ncodec = HEVC\nun-verbe-inconnu = 3\nstats_overlay = yes\n";
         let read = parsed(text).preferred;
-        assert_eq!(read.quality, Quality::default());
+        assert_eq!(read.asked, Asked::default());
+        assert_eq!(read.bitrate_kbps, Preferred::default().bitrate_kbps);
         assert_eq!(read.codec, Codec::Hevc);
         assert!(read.stats_overlay);
     }
@@ -373,8 +388,28 @@ mod tests {
         let rendered = rendered(chosen());
         assert!(rendered.contains("remote_access = no"), "{rendered}");
         assert!(rendered.contains("trust_local_network = no"), "{rendered}");
-        assert!(rendered.contains("quality = detailed"), "{rendered}");
+        assert!(rendered.contains("asked = 2560x1440"), "{rendered}");
+        assert!(rendered.contains("bitrate = 15000"), "{rendered}");
         assert!(rendered.contains("codec = HEVC"), "{rendered}");
         assert_eq!(parsed(&rendered), chosen());
+    }
+
+    #[test]
+    fn a_rate_nobody_could_watch_leaves_the_one_that_was_there() {
+        // Le fichier se corrige à la main : un zéro tapé de travers
+        // donnerait une session qu'on ne verrait pas, et il n'y aurait
+        // rien à l'écran pour dire pourquoi.
+        for wrong in [
+            "asked = screen\nbitrate = 0",
+            "asked = screen\nbitrate = beaucoup",
+        ] {
+            let read = parsed(wrong).preferred;
+            assert_eq!(
+                read.bitrate_kbps,
+                Preferred::default().bitrate_kbps,
+                "{wrong}"
+            );
+            assert_eq!(read.asked, Asked::Screen, "{wrong}");
+        }
     }
 }

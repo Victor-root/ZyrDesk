@@ -147,7 +147,7 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         settings: preferred.settings(screen),
         pair_again: false,
     };
-    crate::picture::tell_what_is_asked_for(&app, screen, preferred.quality, &wanted.settings);
+    crate::picture::tell_what_is_asked_for(&app, screen, preferred.asked, &wanted.settings);
 
     // On a thread of its own, and not one of the interface's: the
     // opening blocks for as long as a pairing takes, which is as long as

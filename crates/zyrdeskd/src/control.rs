@@ -582,7 +582,7 @@ mod tests {
         let bench = Bench::set_up(runtime.handle(), "settings");
 
         runtime.block_on(async {
-            use zyr_proto::session::{Preferred, Quality};
+            use zyr_proto::session::{Asked, Preferred};
 
             let mut caller = bench.caller().await;
 
@@ -592,7 +592,7 @@ mod tests {
             assert_eq!(before, Preferred::default());
 
             let wanted = Preferred {
-                quality: Quality::Detailed,
+                asked: Asked::Fixed(2560, 1440),
                 stats_overlay: true,
                 ..before
             };

@@ -24,7 +24,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
 /// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 11;
+pub const PROTOCOL: u32 = 12;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -263,8 +263,9 @@ fn said(yes: bool) -> &'static str {
 /// and the answer so the two can never drift apart.
 fn spelled(preferred: &Preferred) -> String {
     format!(
-        "quality={} codec={} display={} mouse={} stats={}",
-        preferred.quality,
+        "asked={} bitrate={} codec={} display={} mouse={} stats={}",
+        preferred.asked,
+        preferred.bitrate_kbps,
         preferred.codec,
         preferred.display_mode,
         if preferred.absolute_mouse {
@@ -605,7 +606,8 @@ impl<'a> Fields<'a> {
     fn preferred(&self) -> Preferred {
         let fallback = Preferred::default();
         Preferred {
-            quality: self.parsed("quality").unwrap_or(fallback.quality),
+            asked: self.parsed("asked").unwrap_or(fallback.asked),
+            bitrate_kbps: self.parsed("bitrate").unwrap_or(fallback.bitrate_kbps),
             codec: self.parsed("codec").unwrap_or(fallback.codec),
             display_mode: self.parsed("display").unwrap_or(fallback.display_mode),
             // Only a plain word turns a setting away from what the
@@ -693,9 +695,10 @@ mod tests {
     }
 
     fn preferred() -> Preferred {
-        use zyr_proto::session::{Codec, DisplayMode, Quality};
+        use zyr_proto::session::{Asked, Codec, DisplayMode};
         Preferred {
-            quality: Quality::Detailed,
+            asked: Asked::Fixed(2560, 1440),
+            bitrate_kbps: 15_000,
             codec: Codec::Hevc,
             display_mode: DisplayMode::Windowed,
             absolute_mouse: false,
@@ -864,19 +867,22 @@ mod tests {
     fn a_setting_the_other_half_never_heard_of_falls_back() {
         // Une moitié du produit plus ancienne que l'autre perd le
         // réglage qu'elle ne connaît pas, pas la conversation.
-        let Ok(Answer::Settings(read)) = Answer::parse("settings quality=detailed") else {
-            panic!("« settings quality=detailed » n'est pas relu comme des réglages");
+        let Ok(Answer::Settings(read)) = Answer::parse("settings asked=2560x1440") else {
+            panic!("« settings asked=2560x1440 » n'est pas relu comme des réglages");
         };
-        assert_eq!(read.quality, zyr_proto::session::Quality::Detailed);
+        assert_eq!(read.asked, zyr_proto::session::Asked::Fixed(2560, 1440));
+        assert_eq!(read.bitrate_kbps, Preferred::default().bitrate_kbps);
         assert_eq!(read.codec, Preferred::default().codec);
         assert_eq!(read.absolute_mouse, Preferred::default().absolute_mouse);
 
         // Et une valeur que personne ne comprend ne vaut pas mieux
         // qu'une absente : le défaut, et la session s'ouvre quand même.
-        let Ok(Answer::Settings(read)) = Answer::parse("settings quality=ultra") else {
-            panic!("« settings quality=ultra » n'est pas relu comme des réglages");
+        let Ok(Answer::Settings(read)) = Answer::parse("settings asked=ultra bitrate=beaucoup")
+        else {
+            panic!("« settings asked=ultra » n'est pas relu comme des réglages");
         };
-        assert_eq!(read.quality, Preferred::default().quality);
+        assert_eq!(read.asked, Preferred::default().asked);
+        assert_eq!(read.bitrate_kbps, Preferred::default().bitrate_kbps);
     }
 
     #[test]

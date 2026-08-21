@@ -1,18 +1,24 @@
-//! The settings screen.
+//! The settings screen, and the three lines of the session menu.
 //!
-//! Nothing is kept here either. What the person chooses goes straight to
-//! the service, which writes it down and hands it back at the next
-//! question. That is what makes a choice survive the window being
-//! closed, and what lets the command line read the same file when it
-//! has to be looked at by hand.
+//! Nothing is kept here. What the person chooses goes straight to the
+//! service, which writes it down and hands it back at the next question.
+//! That is what makes a choice survive the window being closed, and what
+//! lets the command line read the same file when it has to be looked at
+//! by hand. It is also what makes a choice made from inside a session
+//! still be there at the next one.
 //!
-//! The window is told what a quality actually asks for rather than
-//! working it out: the table lives in one place, in `zyr-proto`, and a
-//! second copy in JavaScript would drift from it.
+//! What a session asks for lives in the session's own menu and not on
+//! this screen. Size, rate and codec are the three numbers somebody
+//! changes while looking at the picture they change, and walking back to
+//! a settings screen to try one is walking away from the only thing that
+//! says whether it worked. The lists themselves stay in `zyr-proto`: a
+//! second copy written in JavaScript would drift from them.
 
 use serde::{Deserialize, Serialize};
 use zyr_control::{Answer, Request};
-use zyr_proto::session::{Codec, DisplayMode, Preferred, Quality};
+use zyr_proto::session::{
+    CODECS_OFFERED, Codec, DisplayMode, Preferred, RATES_OFFERED, SIZES_OFFERED, next_in,
+};
 
 use crate::service;
 
@@ -20,13 +26,12 @@ use crate::service;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
-    pub quality: String,
     pub codec: String,
     pub display: String,
     pub absolute_mouse: bool,
     pub stats_overlay: bool,
-    /// What the chosen quality comes down to, so the screen can say it
-    /// out loud instead of hiding behind a word.
+    /// What a session opened right now would ask for, so the screen can
+    /// say it out loud rather than leave it to be guessed.
     pub width: u32,
     pub height: u32,
     pub fps: u32,
@@ -36,14 +41,9 @@ pub struct Settings {
 impl Settings {
     /// What the screen shows on a computer whose own screen is `screen`,
     /// `None` standing for one that could not be measured.
-    ///
-    /// The size a quality comes down to is no longer the same on every
-    /// computer, so the settings screen cannot be told it once and for
-    /// all: it is told what this computer will actually ask for.
     fn shown(preferred: Preferred, screen: Option<(u32, u32)>) -> Self {
         let settings = preferred.settings(screen);
         Self {
-            quality: preferred.quality.to_string(),
             codec: preferred.codec.to_string(),
             display: preferred.display_mode.to_string(),
             absolute_mouse: preferred.absolute_mouse,
@@ -60,7 +60,6 @@ impl Settings {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Chosen {
-    quality: String,
     codec: String,
     display: String,
     absolute_mouse: bool,
@@ -68,13 +67,18 @@ pub struct Chosen {
 }
 
 impl Chosen {
-    fn understood(&self) -> Result<Preferred, String> {
+    /// Lays these choices over the ones already written down.
+    ///
+    /// Over and not instead of: this screen no longer carries every
+    /// setting, and the ones it does not carry belong to whoever set
+    /// them, which is the session's own menu.
+    fn laid_over(&self, preferred: Preferred) -> Result<Preferred, String> {
         Ok(Preferred {
-            quality: self.quality.parse::<Quality>()?,
             codec: self.codec.parse::<Codec>()?,
             display_mode: self.display.parse::<DisplayMode>()?,
             absolute_mouse: self.absolute_mouse,
             stats_overlay: self.stats_overlay,
+            ..preferred
         })
     }
 }
@@ -90,7 +94,78 @@ pub async fn settings(app: tauri::AppHandle) -> Settings {
 /// Changes what every session from now on looks like.
 #[tauri::command]
 pub async fn choose(chosen: Chosen) -> Result<(), String> {
-    let preferred = chosen.understood()?;
+    let preferred = chosen.laid_over(preferred().await)?;
+    write_down(preferred).await
+}
+
+/// The three lines of the session menu, as they stand.
+///
+/// Machine values and not words: what a size or a rate is called in
+/// French is the window's business, and the window is where the rest of
+/// what a person reads is written.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionChoice {
+    pub asked: String,
+    pub bitrate_kbps: u32,
+    pub codec: String,
+    /// What the size comes down to on this computer, which is the whole
+    /// point of the word « screen » and cannot be worked out from it.
+    pub width: u32,
+    pub height: u32,
+}
+
+impl SessionChoice {
+    fn of(preferred: Preferred, screen: Option<(u32, u32)>) -> Self {
+        let (width, height) = preferred.asked.size(screen);
+        Self {
+            asked: preferred.asked.to_string(),
+            bitrate_kbps: preferred.bitrate_kbps,
+            codec: preferred.codec.to_string(),
+            width,
+            height,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn session_choice(app: tauri::AppHandle) -> SessionChoice {
+    SessionChoice::of(
+        preferred().await,
+        crate::picture::the_screen_of_this_computer(&app),
+    )
+}
+
+/// Walks one line of the session menu one step down its list, writes the
+/// result down, and hands back what the line now says.
+///
+/// It takes effect at the next session and not at this one: what a
+/// session asks for is settled when its engine is started, and it is
+/// told once. Changing it under a running session would mean stopping
+/// and starting that session, which is a heavier thing than a menu line
+/// and is not what a menu line should do without being asked.
+#[tauri::command]
+pub async fn step_session_choice(
+    app: tauri::AppHandle,
+    which: String,
+) -> Result<SessionChoice, String> {
+    let mut preferred = preferred().await;
+    match which.as_str() {
+        "asked" => preferred.asked = next_in(SIZES_OFFERED, preferred.asked),
+        "bitrate" => preferred.bitrate_kbps = next_in(RATES_OFFERED, preferred.bitrate_kbps),
+        "codec" => preferred.codec = next_in(CODECS_OFFERED, preferred.codec),
+        other => return Err(format!("réglage inconnu : {other}")),
+    }
+    write_down(preferred).await?;
+    Ok(SessionChoice::of(
+        preferred,
+        crate::picture::the_screen_of_this_computer(&app),
+    ))
+}
+
+/// Hands a whole set of preferences to the service, which is the one
+/// thing that writes them down.
+async fn write_down(preferred: Preferred) -> Result<(), String> {
     match service::ask(&Request::Choose { preferred }).await? {
         Answer::Done => Ok(()),
         other => Err(service::unexpected(other)),
@@ -134,10 +209,10 @@ pub async fn preferred() -> Preferred {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zyr_proto::session::Asked;
 
     fn chosen() -> Chosen {
         Chosen {
-            quality: "detailed".to_string(),
             codec: "HEVC".to_string(),
             display: "windowed".to_string(),
             absolute_mouse: false,
@@ -149,49 +224,72 @@ mod tests {
     fn what_the_screen_shows_and_sends_back_is_the_same_thing() {
         // Les deux formes se croisent à chaque changement : ce qui
         // s'affiche doit pouvoir être renvoyé tel quel.
-        let shown = Settings::shown(chosen().understood().unwrap(), None);
+        let shown = Settings::shown(chosen().laid_over(Preferred::default()).unwrap(), None);
         let returned = Chosen {
-            quality: shown.quality,
             codec: shown.codec,
             display: shown.display,
             absolute_mouse: shown.absolute_mouse,
             stats_overlay: shown.stats_overlay,
         };
         assert_eq!(
-            returned.understood().unwrap(),
-            chosen().understood().unwrap()
+            returned.laid_over(Preferred::default()).unwrap(),
+            chosen().laid_over(Preferred::default()).unwrap()
         );
     }
 
     #[test]
-    fn the_screen_says_what_the_quality_comes_down_to_here() {
-        // Sans ça, la fenêtre porterait sa propre table de qualités, qui
-        // s'écarterait de celle du produit au premier changement. Et la
-        // table ne suffit plus : une même qualité ne demande pas la même
-        // chose sur deux écrans différents, donc c'est bien ce que cet
-        // ordinateur va demander qui doit s'afficher.
+    fn the_settings_screen_leaves_the_session_menu_alone() {
+        // L'écran des réglages ne porte plus ni la taille, ni le débit :
+        // les renvoyer tels quels ne doit rien effacer de ce que le menu
+        // de la session a réglé.
+        let set_from_the_menu = Preferred {
+            asked: Asked::Fixed(2560, 1440),
+            bitrate_kbps: 15_000,
+            ..Preferred::default()
+        };
+        let after = chosen().laid_over(set_from_the_menu).unwrap();
+        assert_eq!(after.asked, Asked::Fixed(2560, 1440));
+        assert_eq!(after.bitrate_kbps, 15_000);
+        assert_eq!(after.codec, Codec::Hevc);
+    }
+
+    #[test]
+    fn the_screen_says_what_a_session_would_ask_for_here() {
+        // Sans ça, la fenêtre porterait sa propre table, qui s'écarterait
+        // de celle du produit au premier changement. Et la table ne
+        // suffit pas : « l'écran » ne vaut pas la même chose partout.
         let shown = Settings::shown(Preferred::default(), None);
         assert_eq!((shown.width, shown.height), (1920, 1080));
         assert_eq!(shown.fps, 60);
 
-        let big = Settings::shown(
-            Preferred {
-                quality: Quality::Detailed,
-                ..Preferred::default()
-            },
-            Some((3840, 2160)),
-        );
+        let big = Settings::shown(Preferred::default(), Some((3840, 2160)));
         assert_eq!((big.width, big.height), (3840, 2160));
-        assert!(big.bitrate_kbps > shown.bitrate_kbps);
+    }
+
+    #[test]
+    fn a_session_line_walks_its_list_and_says_where_it_landed() {
+        let mut preferred = Preferred::default();
+        assert_eq!(SessionChoice::of(preferred, None).asked, "screen");
+
+        preferred.asked = next_in(SIZES_OFFERED, preferred.asked);
+        let line = SessionChoice::of(preferred, Some((3840, 2160)));
+        assert_eq!(line.asked, "3840x2160");
+        assert_eq!((line.width, line.height), (3840, 2160));
+
+        // « L'écran » ne se lit pas dans le mot : la ligne doit dire à
+        // quoi il revient sur cet ordinateur-ci.
+        let screen = SessionChoice::of(Preferred::default(), Some((2560, 1440)));
+        assert_eq!(screen.asked, "screen");
+        assert_eq!((screen.width, screen.height), (2560, 1440));
     }
 
     #[test]
     fn a_value_the_product_does_not_know_is_refused_and_named() {
         let nonsense = Chosen {
-            quality: "ultra".to_string(),
+            codec: "ultra".to_string(),
             ..chosen()
         };
-        let refusal = nonsense.understood().unwrap_err();
+        let refusal = nonsense.laid_over(Preferred::default()).unwrap_err();
         assert!(refusal.contains("ultra"), "{refusal}");
     }
 }

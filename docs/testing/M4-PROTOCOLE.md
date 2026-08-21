@@ -20,9 +20,10 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 
 | Essai | Ce qui a changé |
 |---|---|
-| **R17** | Une qualité n'est plus une taille fixe mais un plafond : la ligne des réglages annonce désormais la taille de l'écran de ce PC-là |
+| **R17**, **R17bis** | La qualité disparaît. La taille, le débit et le codec se règlent dans le menu de la session, un cran par clic, et survivent à la fermeture |
+| **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
 | **S2**, **S7** | Le bureau distant ne change plus de définition : il déménage sur un écran que ZyrDesk fait pousser, et l'écran physique de l'hôte s'éteint le temps de la session |
-| **R27** à **R31** | Tout l'écran virtuel : sa pose, le moteur qui le vise, la netteté d'un 4K servi par un portable 1080p, la remise en place, le retrait |
+| **R30**, **R31** | Ce qu'il reste de l'écran virtuel à vérifier : que tout soit bien remis en place à la fin d'une session, et que le retrait du produit ne laisse rien |
 | **S6**, **S8** | Rien n'a changé pour eux, mais ils passent par le même chemin : à refaire une fois pour être sûr que l'écran virtuel ne réintroduit pas de bande noire |
 
 ### Confirmé
@@ -36,6 +37,15 @@ Ce qui a été essayé sur les deux vraies machines et dit tel quel. La colonne 
 | S9, S9quater (déplacer, agrandir et restaurer) | « ok c'est nickel ! », puis « ok tout à l'air de marcher » |
 | Le clavier pendant une session (dans la famille S9) | « le clavier remarche » |
 | S9bis, S11, S12 (le bouton flottant et son menu) | « le fab n'est toujours pas revenu », corrigé, puis « ok tout à l'air de marcher » |
+| R27, R28, R29 (l'écran virtuel, et le 4K net servi par un portable 1080p) | « c'est bon ça fonctionne nickel ça fait comme parsec ». La netteté est acquise ; la cadence ne l'est pas, voir ci-dessous |
+
+### Confirmé, mais pas fini
+
+Ce qui marche et qui ne suffit pas. La différence avec la liste du dessus est qu'il reste quelque chose à faire, pas quelque chose à vérifier.
+
+| Essai | Ce qu'il reste |
+|---|---|
+| R29 (le 4K est net) | Net, mais à **20 images par seconde** au lieu de 60. Le client n'y est pour rien : les statistiques du moteur client donnent 0 % de perte réseau, 1 ms de latence, 0,32 ms de décodage. Ce qui prend le temps est l'hôte, qui met **43 ms en moyenne** à capturer et encoder une image, alors qu'il en faut moins de 16,7 pour en tenir soixante. La taille, le débit et le codec se règlent maintenant depuis le menu de la session (R17), ce qui permet de chercher où est le mur |
 
 ### Jamais confirmé
 
@@ -790,13 +800,21 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 ## Partie 6 : les réglages
 
-> **R17 (la qualité change vraiment)**
+> **R17 (la taille, le débit et le codec se règlent depuis la session)**
 >
-> Aucune session en cours. Ouvrir les réglages (engrenage), passer la qualité à **Qualité**.
+> Pendant une session, ouvrir le menu du bouton flottant. Trois lignes nouvelles : **Taille**, **Débit**, **Codec**.
 >
-> Attendu : la ligne sous le réglage annonce **la taille de l'écran de ce PC** et un débit plus élevé. Une qualité n'est plus une taille fixe mais un plafond : sur un écran 4K elle annonce 3840 x 2160, sur un écran 1080p elle annonce 1920 x 1080, et jamais une taille que cet écran n'a pas. Ouvrir une session : l'image doit être plus détaillée.
+> Attendu : chaque clic avance d'un cran et la valeur change sous les yeux, le menu restant ouvert. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. Une note dit que ça s'applique à la prochaine session, et c'est vrai : rien ne bouge dans l'image en cours.
 >
-> Remettre **Équilibré** pour la suite. Sur un écran plus grand que 1920 x 1080, la ligne doit alors annoncer 1920 x 1080 : c'est le plafond de cette marche.
+> Régler quelque chose, **fermer la session, en rouvrir une** : les trois valeurs doivent être celles qu'on a laissées. C'est le point qui compte, sans quoi il faudrait tout refaire à chaque connexion.
+>
+> Puis **fermer et relancer ZyrDesk** : elles doivent encore être là. Elles vivent dans le service, pas dans la fenêtre.
+
+> **R17bis (les réglages de l'app n'ont plus de section qualité)**
+>
+> Ouvrir les réglages (engrenage).
+>
+> Attendu : plus de boutons Fluide / Équilibré / Qualité. À la place, une ligne **Ce qu'une session demande** qui rappelle la taille, la cadence et le débit du moment. Elle doit suivre ce qui vient d'être réglé dans le menu de la session.
 
 > **R18 (un réglage survit à tout)**
 >
@@ -918,6 +936,14 @@ Le cas qui compte pour cette partie : **un PC client dont l'écran est plus gran
 > Désinstaller ZyrDesk sur le **PC hôte**, puis rouvrir le Gestionnaire de périphériques.
 >
 > Attendu : plus de **Virtual Display Driver**, et aucun périphérique en erreur. Le journal du service porte `virtual screen device removed` et `taken out of the store`.
+
+> **R32 (le plein écran est vraiment plein)**
+>
+> Session ouverte en plein écran, sur chacun des deux écrans si le PC en a deux. Regarder les quatre coins et les quatre bords.
+>
+> Attendu : **angles droits** aux quatre coins, aucun liseré clair en haut ni sur les côtés, et l'image touche le bord de l'écran partout. Repasser en fenêtre : les angles se réarrondissent, et c'est là qu'ils ont leur place.
+>
+> Le journal donne la mesure exacte si quelque chose reste : la ligne `cadre de la fenêtre :` dit l'écran, la fenêtre et son intérieur côte à côte. Les deux derniers nombres doivent être **0 px et 0 px** en plein écran ; tout ce qui n'est pas zéro est la largeur du liseré.
 
 ---
 

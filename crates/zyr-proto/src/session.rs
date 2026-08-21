@@ -143,108 +143,71 @@ impl Default for SessionSettings {
     }
 }
 
-/// How much picture to ask for.
+/// Size of picture to ask the far computer for.
 ///
-/// Three rungs rather than three dials. What actually moves is the size
-/// of the picture and the rate it is sent at, and the two go together:
-/// asking for a bigger picture without the rate to carry it gives a
-/// blurry one, which nobody would have chosen on purpose.
+/// The screen by default, and that word rather than a number on purpose:
+/// a picture the size of the screen it lands on is shown pixel for
+/// pixel, and any other size is thrown away twice. The far computer
+/// scales its desktop to what was asked, this end scales that to the
+/// screen, and neither scaling puts back a single pixel of the detail
+/// the first one dropped.
 ///
-/// A rung is a ceiling and not a size. The size that is asked for is the
-/// screen the picture will be shown on, because any other number is
-/// thrown away twice: the far computer scales its desktop to what was
-/// asked, and this end scales that to the screen. Two scalings, and
-/// neither of them puts back a single pixel of the detail the first one
-/// dropped. A screen bigger than the rung allows is the one case where a
-/// number of ours is used, and then it is the rung.
+/// A number is still offered, because the screen is not always the right
+/// answer. A large screen served over a busy link costs more rate than
+/// the link has; asking for less picture is the honest way to spend
+/// less, and it is a choice, made once, that this remembers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Quality {
-    /// Kinder to the network: made for Wi-Fi and busy links.
-    Smooth,
+pub enum Asked {
+    /// Whatever the screen showing the session turns out to be.
     #[default]
-    Balanced,
-    /// For a wired network with room to spare.
-    Detailed,
+    Screen,
+    /// This size, whatever the screen.
+    Fixed(u32, u32),
 }
 
 /// Screen assumed when this computer's own cannot be measured.
 ///
-/// Not the largest rung: a size nobody checked is a size to be careful
-/// with, and the common screen costs nothing to be wrong about.
+/// The common screen, which costs nothing to be wrong about.
 pub const UNKNOWN_SCREEN: (u32, u32) = (1920, 1080);
 
-impl Quality {
-    /// Largest picture this rung will ask for, whatever the screen.
-    pub fn ceiling(self) -> (u32, u32) {
-        match self {
-            Quality::Smooth => (1280, 720),
-            Quality::Balanced => (1920, 1080),
-            Quality::Detailed => (3840, 2160),
-        }
-    }
+/// The sizes offered, in the order they are offered in.
+///
+/// Here and not in the window: a second copy of this list written in
+/// JavaScript would drift from this one the day a size is added.
+pub const SIZES_OFFERED: &[Asked] = &[
+    Asked::Screen,
+    Asked::Fixed(3840, 2160),
+    Asked::Fixed(2560, 1440),
+    Asked::Fixed(1920, 1080),
+    Asked::Fixed(1280, 720),
+];
 
-    /// Rate this rung spends on a million pixels.
-    ///
-    /// The rungs used to carry one rate each, tied to the one size they
-    /// asked for. Now that the size follows the screen, the rate has to
-    /// follow the size, and what is left to a rung is how generous it is
-    /// per pixel. These three numbers were chosen to land on the rates
-    /// the rungs already had at the sizes they already asked for, so no
-    /// session that worked yesterday is sent at a different rate today.
-    fn kbps_per_megapixel(self) -> u64 {
-        match self {
-            Quality::Smooth => 9_000,
-            Quality::Balanced => 10_000,
-            Quality::Detailed => 11_000,
-        }
-    }
+/// The rates offered, in kilobits a second.
+///
+/// Wide on purpose, and open at the low end. What a link carries is not
+/// something this product can work out, and neither is what a far
+/// computer can encode in time: the one that matters here is the second,
+/// since a computer that cannot encode a frame in sixteen milliseconds
+/// sends fewer of them however empty the link is.
+pub const RATES_OFFERED: &[u32] = &[
+    5_000, 10_000, 15_000, 20_000, 30_000, 40_000, 60_000, 80_000,
+];
 
-    /// Size to ask for when the picture is shown on `screen`.
-    ///
-    /// The screen itself as long as the rung allows it, and otherwise
-    /// the largest picture of the screen's own shape that fits under the
-    /// rung. Keeping the shape matters: a picture of another shape than
-    /// the screen comes back with black bars, and the far computer burns
-    /// them into every frame before sending them.
-    pub fn fitted(self, screen: (u32, u32)) -> (u32, u32) {
-        let (wide, high) = screen;
-        let (most_wide, most_high) = self.ceiling();
+/// The codecs offered.
+pub const CODECS_OFFERED: &[Codec] = &[Codec::Auto, Codec::H264, Codec::Hevc, Codec::Av1];
+
+impl Asked {
+    /// The size this comes down to on a computer whose screen has been
+    /// measured, `None` standing for one that could not be.
+    pub fn size(self, screen: Option<(u32, u32)>) -> (u32, u32) {
+        let (wide, high) = match self {
+            Asked::Screen => screen.unwrap_or(UNKNOWN_SCREEN),
+            Asked::Fixed(wide, high) => (wide, high),
+        };
         if wide == 0 || high == 0 {
-            return self.fitted(UNKNOWN_SCREEN);
+            return UNKNOWN_SCREEN;
         }
-        if wide <= most_wide && high <= most_high {
-            return (even(wide), even(high));
-        }
-        // Which side sticks out the most, told without dividing:
-        // most_wide / wide against most_high / high, cross-multiplied.
-        let (wide, high) = (u64::from(wide), u64::from(high));
-        let (most_wide, most_high) = (u64::from(most_wide), u64::from(most_high));
-        if most_wide * high <= most_high * wide {
-            (
-                even(most_wide as u32),
-                even((high * most_wide / wide) as u32),
-            )
-        } else {
-            (
-                even((wide * most_high / high) as u32),
-                even(most_high as u32),
-            )
-        }
-    }
-
-    /// Rate that carries a picture of that size at this rung.
-    ///
-    /// Bounded at both ends. Below the floor nothing is watchable
-    /// whatever the size, and above the ceiling the picture stops
-    /// getting better while the encoder and the network keep paying:
-    /// four times the pixels of a common screen is already served by the
-    /// ceiling, which is the rate a wired network is expected to hold.
-    pub fn bitrate_kbps(self, width: u32, height: u32) -> u32 {
-        const FLOOR: u64 = 5_000;
-        const CEILING: u64 = 80_000;
-        let pixels = u64::from(width) * u64::from(height);
-        let asked = pixels * self.kbps_per_megapixel() / 1_000_000;
-        asked.clamp(FLOOR, CEILING) as u32
+        (even(wide), even(high))
     }
 }
 
@@ -254,26 +217,41 @@ fn even(value: u32) -> u32 {
     (value & !1).max(2)
 }
 
-impl fmt::Display for Quality {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Quality::Smooth => "smooth",
-            Quality::Balanced => "balanced",
-            Quality::Detailed => "detailed",
-        })
+/// The value after this one in a list, back to the first at the end.
+///
+/// What a setting offered as one line of a menu does when it is clicked.
+/// A value that is not in the list at all lands on the first, which is
+/// what a list that has changed since a choice was written down leaves
+/// behind.
+pub fn next_in<T: PartialEq + Copy>(list: &[T], current: T) -> T {
+    let Some(first) = list.first().copied() else {
+        return current;
+    };
+    match list.iter().position(|value| *value == current) {
+        Some(at) => list.get(at + 1).copied().unwrap_or(first),
+        None => first,
     }
 }
 
-impl std::str::FromStr for Quality {
+impl fmt::Display for Asked {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Asked::Screen => f.write_str("screen"),
+            Asked::Fixed(wide, high) => write!(f, "{wide}x{high}"),
+        }
+    }
+}
+
+impl std::str::FromStr for Asked {
     type Err = String;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        match text.to_ascii_lowercase().as_str() {
-            "smooth" => Ok(Quality::Smooth),
-            "balanced" => Ok(Quality::Balanced),
-            "detailed" => Ok(Quality::Detailed),
-            _ => Err(format!("qualité inconnue : {text}")),
+        let text = text.trim();
+        if text.eq_ignore_ascii_case("screen") {
+            return Ok(Asked::Screen);
         }
+        let (wide, high) = parse_resolution(text).map_err(|e| e.to_string())?;
+        Ok(Asked::Fixed(wide, high))
     }
 }
 
@@ -285,7 +263,17 @@ impl std::str::FromStr for Quality {
 /// dial that the tunnel overrules a second later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Preferred {
-    pub quality: Quality,
+    /// How much picture to ask for.
+    pub asked: Asked,
+    /// How much rate to carry it with, in kilobits a second.
+    ///
+    /// A number chosen by hand rather than worked out from the size,
+    /// because the two are not tied by anything this end can measure.
+    /// What a picture costs depends on what is moving in it, what a link
+    /// carries depends on the link, and what a far computer can encode
+    /// in time depends on that computer. Only the person watching sees
+    /// all three at once.
+    pub bitrate_kbps: u32,
     pub codec: Codec,
     pub display_mode: DisplayMode,
     /// Absolute mouse: right for a desktop, wrong for games that aim
@@ -297,7 +285,8 @@ pub struct Preferred {
 impl Default for Preferred {
     fn default() -> Self {
         Self {
-            quality: Quality::default(),
+            asked: Asked::default(),
+            bitrate_kbps: SessionSettings::default().bitrate_kbps,
             codec: Codec::default(),
             display_mode: DisplayMode::default(),
             absolute_mouse: true,
@@ -310,11 +299,11 @@ impl Preferred {
     /// The settings a session opens with on a computer whose screen has
     /// been measured, `None` standing for one that could not be.
     pub fn settings(self, screen: Option<(u32, u32)>) -> SessionSettings {
-        let (width, height) = self.quality.fitted(screen.unwrap_or(UNKNOWN_SCREEN));
+        let (width, height) = self.asked.size(screen);
         SessionSettings {
             width,
             height,
-            bitrate_kbps: self.quality.bitrate_kbps(width, height),
+            bitrate_kbps: self.bitrate_kbps,
             codec: self.codec,
             display_mode: self.display_mode,
             absolute_mouse: self.absolute_mouse,
@@ -392,9 +381,6 @@ mod tests {
     fn every_choice_survives_being_written_and_read_back() {
         // Ces valeurs voyagent en texte sur le canal de contrôle et
         // dans le fichier de réglages : elles doivent se relire.
-        for quality in [Quality::Smooth, Quality::Balanced, Quality::Detailed] {
-            assert_eq!(quality.to_string().parse::<Quality>().unwrap(), quality);
-        }
         for codec in [Codec::Auto, Codec::H264, Codec::Hevc, Codec::Av1] {
             assert_eq!(codec.to_string().parse::<Codec>().unwrap(), codec);
         }
@@ -404,109 +390,91 @@ mod tests {
     }
 
     #[test]
-    fn a_bigger_picture_comes_with_the_rate_to_carry_it() {
-        // Une qualité qui monte en taille sans monter en débit donnerait
-        // une image plus grande et plus floue : personne ne choisirait
-        // ça exprès.
-        let rungs = [Quality::Smooth, Quality::Balanced, Quality::Detailed];
-        for pair in rungs.windows(2) {
-            let (small, large) = (pair[0], pair[1]);
-            assert!(small.ceiling().0 < large.ceiling().0, "{small} vs {large}");
-            let same = (1280, 720);
-            assert!(
-                small.bitrate_kbps(same.0, same.1) < large.bitrate_kbps(same.0, same.1),
-                "{small} vs {large}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_screen_is_asked_for_whole_when_the_rung_allows_it() {
-        // Le cas qui compte : un écran plus grand que ce que le produit
-        // demandait jusqu'ici. Demander moins que l'écran, c'est agrandir
-        // l'image à l'arrivée, et aucun agrandissement ne rend un détail
-        // qui n'a pas été envoyé.
-        assert_eq!(Quality::Detailed.fitted((3840, 2160)), (3840, 2160));
-        assert_eq!(Quality::Detailed.fitted((2560, 1440)), (2560, 1440));
-        assert_eq!(Quality::Detailed.fitted((3440, 1440)), (3440, 1440));
-        assert_eq!(Quality::Balanced.fitted((1920, 1080)), (1920, 1080));
-        assert_eq!(Quality::Smooth.fitted((1280, 720)), (1280, 720));
-    }
-
-    #[test]
-    fn a_screen_over_the_rung_is_shrunk_without_changing_shape() {
-        // Une image d'une autre forme que l'écran revient avec des
-        // bandes noires, et l'ordinateur d'en face les grave dans chaque
-        // image avant de l'envoyer.
-        assert_eq!(Quality::Balanced.fitted((3840, 2160)), (1920, 1080));
-        assert_eq!(Quality::Smooth.fitted((1920, 1080)), (1280, 720));
-        // Seize dixièmes : c'est la hauteur qui déborde, pas la largeur.
-        assert_eq!(Quality::Balanced.fitted((2560, 1600)), (1728, 1080));
-
-        for screen in [(3440, 1440), (2560, 1600), (3840, 2160), (1366, 768)] {
-            for rung in [Quality::Smooth, Quality::Balanced, Quality::Detailed] {
-                let (wide, high) = rung.fitted(screen);
-                let (most_wide, most_high) = rung.ceiling();
-                assert!(wide <= most_wide && high <= most_high, "{rung} {screen:?}");
-                assert!(wide % 2 == 0 && high % 2 == 0, "{rung} {screen:?}");
-                let shape = f64::from(screen.0) / f64::from(screen.1);
-                let asked = f64::from(wide) / f64::from(high);
-                assert!((shape - asked).abs() < 0.01, "{rung} {screen:?} {asked}");
-            }
-        }
+    fn the_screen_is_asked_for_by_name_and_not_by_number() {
+        // Le cas qui compte : une image de la taille de l'écran est
+        // affichée pixel pour pixel. Demander autre chose, c'est jeter du
+        // détail à un bout et l'agrandir à l'autre.
+        assert_eq!(Asked::Screen.size(Some((3840, 2160))), (3840, 2160));
+        assert_eq!(Asked::Screen.size(Some((3440, 1440))), (3440, 1440));
+        // Et un nombre reste un nombre, quel que soit l'écran.
+        assert_eq!(
+            Asked::Fixed(1920, 1080).size(Some((3840, 2160))),
+            (1920, 1080)
+        );
     }
 
     #[test]
     fn an_unmeasurable_screen_falls_back_to_the_common_one() {
-        // Pas la plus grande marche : une taille que personne n'a
-        // vérifiée est une taille dont il vaut mieux se méfier.
-        for rung in [Quality::Smooth, Quality::Balanced, Quality::Detailed] {
-            assert_eq!(rung.fitted((0, 0)), rung.fitted(UNKNOWN_SCREEN), "{rung}");
-        }
-        assert_eq!(Quality::Detailed.fitted(UNKNOWN_SCREEN), (1920, 1080));
+        assert_eq!(Asked::Screen.size(None), UNKNOWN_SCREEN);
+        assert_eq!(Asked::Screen.size(Some((0, 0))), UNKNOWN_SCREEN);
+        assert_eq!(Asked::Fixed(0, 1080).size(None), UNKNOWN_SCREEN);
     }
 
     #[test]
-    fn the_rate_the_rungs_used_to_carry_is_the_rate_they_still_carry() {
-        // Ces trois couples sont ce que le produit envoyait quand chaque
-        // marche portait un débit écrit à la main. Le débit se calcule
-        // maintenant, et il doit tomber au même endroit : sinon on aurait
-        // changé sans le dire ce que vaut une session ordinaire.
-        for (rung, (wide, high), was) in [
-            (Quality::Smooth, (1280, 720), 10_000),
-            (Quality::Balanced, (1920, 1080), 20_000),
-            (Quality::Detailed, (2560, 1440), 40_000),
-        ] {
-            let now = rung.bitrate_kbps(wide, high);
-            assert!(now.abs_diff(was) * 5 < was, "{rung} : {now} contre {was}");
+    fn every_size_asked_for_can_be_cut_into_colour_by_halves() {
+        // Un encodeur découpe la couleur par moitiés : une taille impaire
+        // se fait arrondir quelque part où on ne le voit pas.
+        for screen in [(1919, 1079), (3441, 1441), (1366, 768)] {
+            let (wide, high) = Asked::Screen.size(Some(screen));
+            assert!(wide % 2 == 0 && high % 2 == 0, "{screen:?}");
         }
     }
 
     #[test]
-    fn the_rate_stays_between_a_floor_and_a_ceiling() {
-        // En dessous du plancher rien n'est regardable quelle que soit la
-        // taille ; au dessus du plafond l'image cesse de s'améliorer
-        // pendant que l'encodeur et le réseau continuent de payer.
-        assert_eq!(Quality::Smooth.bitrate_kbps(320, 240), 5_000);
-        assert_eq!(Quality::Detailed.bitrate_kbps(7680, 4320), 80_000);
-        assert!(Quality::Detailed.bitrate_kbps(3840, 2160) <= 80_000);
+    fn what_is_offered_can_be_written_and_read_back() {
+        // Ces valeurs voyagent en texte sur le canal de contrôle et dans
+        // le fichier de réglages : elles doivent se relire.
+        for asked in SIZES_OFFERED {
+            assert_eq!(asked.to_string().parse::<Asked>().unwrap(), *asked);
+        }
+        assert_eq!("screen".parse::<Asked>().unwrap(), Asked::Screen);
+        assert_eq!("SCREEN".parse::<Asked>().unwrap(), Asked::Screen);
+        assert!("n'importe quoi".parse::<Asked>().is_err());
+    }
+
+    #[test]
+    fn a_menu_line_walks_its_list_and_comes_back_to_the_start() {
+        assert_eq!(next_in(SIZES_OFFERED, Asked::Screen), SIZES_OFFERED[1]);
+        assert_eq!(
+            next_in(SIZES_OFFERED, *SIZES_OFFERED.last().unwrap()),
+            SIZES_OFFERED[0]
+        );
+        // Une valeur écrite par une version qui offrait autre chose ne
+        // doit pas coincer la ligne : elle retombe sur la première.
+        assert_eq!(
+            next_in(SIZES_OFFERED, Asked::Fixed(640, 480)),
+            SIZES_OFFERED[0]
+        );
+        assert_eq!(next_in(RATES_OFFERED, 20_000), 30_000);
+        assert_eq!(next_in(CODECS_OFFERED, Codec::Av1), Codec::Auto);
+    }
+
+    #[test]
+    fn the_rate_a_person_chose_is_the_rate_that_is_sent() {
+        // Rien ne le recalcule à partir de la taille : ce que la personne
+        // a choisi en regardant son image est ce qui part.
+        let chosen = Preferred {
+            asked: Asked::Screen,
+            bitrate_kbps: 15_000,
+            ..Preferred::default()
+        };
+        assert_eq!(chosen.settings(Some((3840, 2160))).bitrate_kbps, 15_000);
+        assert_eq!(chosen.settings(None).bitrate_kbps, 15_000);
     }
 
     #[test]
     fn what_was_chosen_lands_in_the_session() {
         let preferred = Preferred {
-            quality: Quality::Detailed,
+            asked: Asked::Fixed(2560, 1440),
+            bitrate_kbps: 40_000,
             codec: Codec::Av1,
             display_mode: DisplayMode::Windowed,
             absolute_mouse: false,
             stats_overlay: true,
         };
         let settings = preferred.settings(Some((3840, 2160)));
-        assert_eq!((settings.width, settings.height), (3840, 2160));
-        assert_eq!(
-            settings.bitrate_kbps,
-            Quality::Detailed.bitrate_kbps(3840, 2160)
-        );
+        assert_eq!((settings.width, settings.height), (2560, 1440));
+        assert_eq!(settings.bitrate_kbps, 40_000);
         assert_eq!(settings.codec, Codec::Av1);
         assert_eq!(settings.display_mode, DisplayMode::Windowed);
         assert!(!settings.absolute_mouse);
@@ -518,16 +486,11 @@ mod tests {
     #[test]
     fn the_defaults_still_open_the_session_they_used_to() {
         // Personne n'a rien choisi et l'écran n'a pas pu être mesuré : ce
-        // qui sort doit rester ce que le produit faisait jusqu'ici, au
-        // débit près, qui se calcule maintenant au lieu d'être écrit.
-        let settings = Preferred::default().settings(None);
-        let before = SessionSettings::default();
+        // qui sort doit rester exactement ce que le produit faisait.
         assert_eq!(
-            (settings.width, settings.height, settings.fps),
-            (before.width, before.height, before.fps)
+            Preferred::default().settings(None),
+            SessionSettings::default()
         );
-        let gap = settings.bitrate_kbps.abs_diff(before.bitrate_kbps);
-        assert!(gap * 10 < before.bitrate_kbps, "{settings:?}");
     }
 
     #[test]

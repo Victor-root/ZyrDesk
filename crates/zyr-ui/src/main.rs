@@ -75,6 +75,8 @@ fn main() {
             session::sessions,
             settings::settings,
             settings::choose,
+            settings::session_choice,
+            settings::step_session_choice,
             shortcuts::shortcuts,
             shortcuts::bind,
             floating::floating_size,

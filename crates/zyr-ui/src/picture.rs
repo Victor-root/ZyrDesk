@@ -1242,11 +1242,10 @@ fn the_magnification(_app: &AppHandle) -> u32 {
 pub fn tell_what_is_asked_for(
     app: &AppHandle,
     screen: Option<(u32, u32)>,
-    quality: zyr_proto::session::Quality,
+    asked: zyr_proto::session::Asked,
     settings: &zyr_proto::session::SessionSettings,
 ) {
     let (wide, high) = (settings.width, settings.height);
-    let (most_wide, most_high) = quality.ceiling();
     let seen = match screen {
         Some((across, down)) => format!(
             "écran de cet ordinateur : {across}x{down} pixels réels, agrandissement {} %",
@@ -1259,15 +1258,16 @@ pub fn tell_what_is_asked_for(
             "l'écran est demandé entier, un pixel envoyé pour un pixel affiché".to_string()
         }
         Some((across, down)) => format!(
-            "réduit sous le plafond de la qualité {quality} ({most_wide}x{most_high}) : {:.2} fois moins large et {:.2} fois moins haut que l'écran, donc autant de détail en moins",
+            "taille choisie à la main ({asked}) : {:.2} fois moins large et {:.2} fois moins haut que l'écran, donc autant de détail en moins et l'image est étirée à l'arrivée",
             f64::from(across) / f64::from(wide),
             f64::from(down) / f64::from(high),
         ),
-        None => format!("plafond de la qualité {quality} : {most_wide}x{most_high}"),
+        None => format!("taille demandée : {asked}"),
     };
     crate::journal::note(&format!(
-        "{seen} ; image demandée au loin en {wide}x{high} à {} Mb/s, {why}",
+        "{seen} ; image demandée au loin en {wide}x{high} à {} Mb/s en {}, {why}",
         settings.bitrate_kbps / 1000,
+        settings.codec,
     ));
 }
 

@@ -177,6 +177,25 @@
   background: var(--trait);
 }
 
+/* La valeur d'un réglage se lit là où se lisent les raccourcis, mais
+   elle n'en est pas un : c'est ce que la ligne vaut, donc elle se lit
+   comme le reste de la ligne et non en retrait. */
+.item[data-reglage] .item-touche {
+  color: var(--texte);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ce que ces trois lignes ne peuvent pas faire, dit une fois plutôt
+   qu'à chaque ligne : une session est réglée au moment où elle
+   s'ouvre, et son moteur n'est renseigné qu'une fois. */
+.note {
+  padding: 0 var(--pas-3) var(--pas-2);
+  margin: 0;
+  font-size: var(--legende);
+  color: var(--texte-faible);
+  white-space: nowrap;
+}
+
 /* Quitter est la seule action sans retour : elle porte la couleur qui
    le dit, et se trouve en dernier. */
 .item.quitter {

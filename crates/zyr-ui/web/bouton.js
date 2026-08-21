@@ -18,6 +18,11 @@ const vue = {
   retour: document.getElementById("retour"),
   touchePleinEcran: document.getElementById("touche-plein-ecran"),
   toucheFin: document.getElementById("touche-fin"),
+  valeurs: {
+    asked: document.getElementById("valeur-asked"),
+    bitrate: document.getElementById("valeur-bitrate"),
+    codec: document.getElementById("valeur-codec"),
+  },
 };
 
 /* Le temps qu'un refus reste lisible avant de laisser la place. */
@@ -139,6 +144,67 @@ async function demande(acte) {
   }
 }
 
+/* ---- Ce que la prochaine session demandera ------------------------------ */
+
+/* Les valeurs viennent du produit, les mots sont écrits ici : la liste
+   des tailles et des débits vit dans zyr-proto, et la façon de les dire
+   en français vit là où se lit tout ce qu'une personne lit.
+
+   « Écran » se dit avec ce à quoi il revient sur cet ordinateur-ci : le
+   mot seul ne dit pas si on demande du 4K ou du 1080p, et c'est
+   exactement ce qu'on veut savoir avant d'ouvrir la session. */
+function ditLaTaille(choix) {
+  const taille = `${choix.width} x ${choix.height}`;
+  return choix.asked === "screen" ? `Écran, ${taille}` : taille;
+}
+
+function ditLeDebit(choix) {
+  return `${Math.round(choix.bitrateKbps / 1000)} Mb/s`;
+}
+
+function ditLeCodec(choix) {
+  return choix.codec === "auto" ? "Automatique" : choix.codec;
+}
+
+function poseLesValeurs(choix) {
+  vue.valeurs.asked.textContent = ditLaTaille(choix);
+  vue.valeurs.bitrate.textContent = ditLeDebit(choix);
+  vue.valeurs.codec.textContent = ditLeCodec(choix);
+  // Les valeurs n'ont pas toutes la même longueur : la fenêtre suit ce
+  // que la page occupe, sinon elle rogne la plus longue.
+  requestAnimationFrame(ajusteLaFenetre);
+}
+
+/* Un cran à la fois, dans l'ordre des clics. Deux demandes parties
+   ensemble voyagent chacune de leur côté, et la première écrite en
+   dernier annulerait le clic le plus récent sans un mot. */
+let cranEnCours = Promise.resolve();
+
+function avance(lequel) {
+  cranEnCours = cranEnCours.then(async () => {
+    try {
+      poseLesValeurs(await invoke("step_session_choice", { which: lequel }));
+    } catch (raison) {
+      souci(String(raison));
+    }
+  });
+}
+
+async function litLesValeurs() {
+  try {
+    poseLesValeurs(await invoke("session_choice"));
+  } catch {
+    /* Le service ne répond pas : la session qui s'ouvre le dira bien
+       mieux que trois lignes de menu. */
+  }
+}
+
+for (const item of document.querySelectorAll("[data-reglage]")) {
+  // Le menu reste ouvert, à la différence des actions : on essaie
+  // plusieurs crans de suite en regardant l'image.
+  item.addEventListener("click", () => avance(item.dataset.reglage));
+}
+
 /* ---- Prendre et déplacer le bouton ------------------------------------- */
 
 /* Le bouton se prend et se pose où on veut sur l'image. Tout le geste
@@ -246,5 +312,11 @@ async function ditLesRaccourcis() {
 }
 
 ditLesRaccourcis();
+litLesValeurs();
+
+/* Une nouvelle session peut avoir été ouverte après un changement fait
+   depuis une autre fenêtre : les trois lignes se relisent à chaque fois
+   plutôt que gardées de la session d'avant. */
+listen("floating-reset", litLesValeurs);
 
 ajusteLaFenetre();

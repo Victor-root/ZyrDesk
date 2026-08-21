@@ -824,12 +824,12 @@ function dessineReglages() {
     return;
   }
 
-  // Ce que la qualité veut dire, dit par le produit et non recalculé
-  // ici : une seconde table de qualités s'écarterait de la vraie.
+  // Ce qu'une session demanderait maintenant, dit par le produit et non
+  // recalculé ici. Ces trois nombres se règlent dans le menu de la
+  // session ; cette ligne ne fait que les rappeler.
   const debit = Math.round(reglages.bitrateKbps / 1000);
   vue.qualiteDetail.textContent = `${reglages.width} x ${reglages.height}, ${reglages.fps} images par seconde, ${debit} Mb/s`;
 
-  marque("quality", reglages.quality);
   marque("codec", reglages.codec);
   marque("display", reglages.display);
   marque("mouse", reglages.absoluteMouse ? "desktop" : "game");
@@ -867,7 +867,6 @@ async function envoieLeChoix(comment) {
     return;
   }
   const veut = {
-    quality: reglages.quality,
     codec: reglages.codec,
     display: reglages.display,
     absoluteMouse: reglages.absoluteMouse,
