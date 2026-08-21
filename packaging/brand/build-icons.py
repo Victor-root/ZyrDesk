@@ -21,13 +21,21 @@ and it was followed here; put side by side at the sizes that matter, it
 loses. The renderer works out how much of each pixel a stroke covers and
 lays down exactly that, which is as good as an edge gets; reducing a
 larger image asks a filter to guess the same thing from pixels that have
-already thrown the answer away, and the guess is softer every time. The
-taskbar icon looked blurred next to every other icon on the bar, and this
-is most of why.
+already thrown the answer away, and the guess is softer every time.
+
+And the .ico is written here rather than left to the imaging library,
+for the one reason that made all of the above pointless. That library
+stores every size as a PNG, and Windows only reads a PNG out of an .ico
+at 256 pixels: below that it wants the bitmap the format has carried
+since 1985. Twenty carefully drawn sizes were therefore being skipped
+over, Windows fell back to the only entry it could read, and shrank the
+256 down to 42 for the taskbar itself. The icon was blurred next to every
+other icon on the bar, and nothing about the drawing was going to fix it.
 """
 
 import io
 import pathlib
+import struct
 import sys
 
 import cairosvg
@@ -52,7 +60,7 @@ SIZES = sorted(
         for logical in (16, 24, 32, 48)
         for scale in (100, 125, 150, 175, 200, 250)
     }
-    | {128, 192, 256}
+    | {128, 256}
 )
 
 # The sizes the notification area asks for, which cannot read an .ico:
@@ -73,6 +81,80 @@ def drawn(source: pathlib.Path, size: int) -> Image.Image:
     return Image.open(io.BytesIO(painted)).convert("RGBA")
 
 
+def bitmap(image: Image.Image) -> bytes:
+    """One size of an .ico, the way Windows reads it below 256 pixels.
+
+    A header, the pixels bottom-up in blue-green-red-alpha order, and the
+    transparency mask. The mask is a bit per pixel and predates images
+    having an alpha channel at all; Windows goes by the alpha nowadays,
+    but a file without a mask is not an icon file.
+    """
+    wide, high = image.size
+    header = struct.pack(
+        "<IiiHHIIiiII",
+        40,  # the size of this header
+        wide,
+        high * 2,  # the colours and the mask, stacked
+        1,  # planes
+        32,  # bits per pixel
+        0,  # not compressed
+        0,  # let the reader work the size out
+        0,
+        0,  # pixels per metre, which an icon has no opinion on
+        0,
+        0,  # every colour is used and every colour matters
+    )
+
+    across = wide * 4
+    upside_down = image.tobytes("raw", "BGRA")
+    colours = b"".join(
+        upside_down[y * across : (y + 1) * across] for y in range(high - 1, -1, -1)
+    )
+
+    # A row of the mask is padded to four bytes, as every row of every
+    # bitmap in this format is.
+    padded = ((wide + 31) // 32) * 4
+    packed = (wide + 7) // 8
+    holes = (
+        image.getchannel("A")
+        .point(lambda value: 255 if value == 0 else 0)
+        .convert("1", dither=Image.Dither.NONE)
+        .tobytes()
+    )
+    mask = b"".join(
+        holes[y * packed : (y + 1) * packed].ljust(padded, b"\0")
+        for y in range(high - 1, -1, -1)
+    )
+    return header + colours + mask
+
+
+def write_icon(path: pathlib.Path, by_size: dict[int, Image.Image]) -> None:
+    """Writes the .ico, each size in the form Windows can read at it."""
+    sizes = sorted(by_size)
+    # 256 goes in as a PNG, which is the one size Windows reads that way
+    # and what keeps the file from being a megabyte of raw pixels.
+    bodies = []
+    for size in sizes:
+        if size >= 256:
+            large = io.BytesIO()
+            by_size[size].save(large, format="PNG")
+            bodies.append(large.getvalue())
+        else:
+            bodies.append(bitmap(by_size[size]))
+
+    at = 6 + 16 * len(sizes)
+    listing = b""
+    for size, body in zip(sizes, bodies):
+        # Nought means 256 here: the field is one byte wide and the
+        # format is older than screens that large.
+        listing += struct.pack(
+            "<BBBBHHII", size & 0xFF, size & 0xFF, 0, 0, 1, 32, len(body), at
+        )
+        at += len(body)
+
+    path.write_bytes(struct.pack("<HHH", 0, 1, len(sizes)) + listing + b"".join(bodies))
+
+
 def main() -> int:
     logo = HERE / "zyrdesk.svg"
     if not logo.is_file():
@@ -81,16 +163,12 @@ def main() -> int:
 
     by_size = {size: drawn(logo, size) for size in sorted(set(SIZES) | set(TRAY))}
 
-    # The largest carries the file; the others ride along and are used
-    # as they are, each at its own size.
     icon = HERE / "zyrdesk.ico"
-    by_size[256].save(
-        icon,
-        format="ICO",
-        sizes=[(s, s) for s in SIZES],
-        append_images=[by_size[s] for s in SIZES if s != 256],
+    write_icon(icon, {size: by_size[size] for size in SIZES})
+    print(
+        f"icône écrite : {icon} ({icon.stat().st_size // 1024} Ko, "
+        f"{', '.join(str(s) for s in SIZES)})"
     )
-    print(f"icône écrite : {icon} ({', '.join(str(s) for s in SIZES)})")
 
     # A large flat image, for anything that cannot read an .ico: the
     # installer, the interface, the documentation.

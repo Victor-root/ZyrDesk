@@ -191,9 +191,13 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Et à essayer en thème clair comme en thème sombre : la plaque est noire, donc elle ressort franchement sur un fond clair, et se distingue par son fin liseré sur un fond sombre.
 >
-> **Ce qui rendait le logo flou.** Une seule image de 256 pixels était fournie, et Windows la réduisait lui-même à 42 pour la barre des tâches, à 28 pour l'horloge. Un dessin réduit par un filtre est toujours plus mou qu'un dessin fait à la bonne taille : le moteur de rendu sait exactement quelle fraction de chaque pixel un trait recouvre, un filtre ne peut que le deviner à partir de pixels qui ont déjà jeté la réponse. Chaque taille est donc dessinée à sa taille, et il y en a vingt et une dans le fichier d'icône, plus six pour la zone de notification, choisies selon l'agrandissement de l'écran.
+> **Ce qui rendait le logo flou, et c'était le format du fichier.** Les vingt tailles du fichier d'icône y étaient rangées en PNG, parce que c'est ce que fait la bibliothèque d'images qui l'écrivait. Or Windows ne lit un PNG dans un fichier d'icône **qu'à 256 pixels** : en dessous il veut le bitmap que ce format porte depuis 1985. Il sautait donc les vingt tailles, ne trouvait que celle qu'il savait lire, et réduisait lui-même le 256 en 42 pour la barre des tâches. Aucun travail sur le dessin n'y pouvait rien.
+>
+> Le fichier d'icône est maintenant écrit à la main, chaque taille sous la forme que Windows lit à cette taille-là. Et la zone de notification, qui ne sait pas lire un fichier d'icône du tout, reçoit directement l'image à la taille qu'elle demande au lieu d'un 256 à écraser.
 >
 > Le dessin se refait avec `python3 packaging/brand/build-icons.py`, qui écrit l'icône, l'image du programme, celles de la zone de notification, et recopie le dessin là où l'interface le lit. Une seule source, jamais deux à tenir d'accord.
+>
+> Si le nouveau logo n'arrive pas dans la barre des tâches après une compilation, c'est le cache d'icônes de Windows : `ie4uinit.exe -show` le vide, ou une déconnexion suffit.
 
 ---
 
