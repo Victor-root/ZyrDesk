@@ -96,9 +96,13 @@
   <rect x="1.4" y="1.4" width="605.2" height="605.2" rx="81.8" fill="none" stroke="url(#outerRim)" stroke-width="1.65"/>
   <rect x="4.4" y="4.4" width="599.2" height="599.2" rx="79" fill="none" stroke="#ffffff" stroke-opacity="0.055" stroke-width="1"/>
 
-  <!-- Le dessin remonte de douze unités : la plaque a été ramenée au
-       carré, et ceci lui rend le même équilibre haut-bas qu'elle avait. -->
-  <g transform="translate(0,-12)">
+  <!-- Le dessin est agrandi d'un cinquième et recentré dans sa plaque :
+       à sa taille d'origine il laissait près d'un tiers de noir tout
+       autour, et c'est autant de logo perdu là où il est petit. Il
+       s'arrête à quelques pour cent des coins arrondis, et pas plus près
+       : au-delà, les deux écrans sortent de la plaque par le coin haut
+       gauche et le coin bas droit, qui sont justement là où ils vont. -->
+  <g transform="translate(304,304) scale(1.22) translate(-299,-326)">
     <!-- Écran supérieur gauche. Il reste derrière le Z. -->
     <g filter="url(#screenShadow)">
       <rect x="81" y="96" width="264" height="188" rx="31" fill="url(#goldFrame)"/>
