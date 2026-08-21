@@ -21,11 +21,43 @@ use tauri::{AppHandle, Manager};
 const OPEN: &str = "open";
 const QUIT: &str = "quit";
 
-/// The product's own icon, compiled in.
+/// The product's own icon, compiled in, at the sizes this bar draws at.
 ///
-/// Read from the same file the window and the installer use: one drawing
+/// Drawn from the same file the window and the installer use: one drawing
 /// for the whole product, and no second one to keep in step.
-const DRAWING: &[u8] = include_bytes!("../../../packaging/brand/zyrdesk-256.png");
+///
+/// One image per size, and never one reduced from another. The tray is
+/// handed a single picture and Windows scales it to whatever the bar is
+/// drawing at, so handing it the largest meant handing it a two hundred
+/// and fifty-six pixel drawing to be squeezed into twenty-eight. That is
+/// the difference between an icon that looks drawn and one that looks
+/// blurred, and it is the same mistake the .ico file was making.
+const DRAWINGS: &[(u32, &[u8])] = &[
+    (
+        16,
+        include_bytes!("../../../packaging/brand/zyrdesk-16.png"),
+    ),
+    (
+        20,
+        include_bytes!("../../../packaging/brand/zyrdesk-20.png"),
+    ),
+    (
+        24,
+        include_bytes!("../../../packaging/brand/zyrdesk-24.png"),
+    ),
+    (
+        28,
+        include_bytes!("../../../packaging/brand/zyrdesk-28.png"),
+    ),
+    (
+        32,
+        include_bytes!("../../../packaging/brand/zyrdesk-32.png"),
+    ),
+    (
+        40,
+        include_bytes!("../../../packaging/brand/zyrdesk-40.png"),
+    ),
+];
 
 /// How much of the icon is left when this computer cannot be reached.
 ///
@@ -112,9 +144,36 @@ fn says(app: &AppHandle, reachable: bool, playing: bool) {
     *last = Some((reachable, playing));
 }
 
+/// The side, in real pixels, this bar draws an icon at.
+///
+/// Sixteen logical pixels, multiplied by the scaling of the screen it is
+/// on: sixteen at a hundred per cent, twenty-eight at a hundred and
+/// seventy-five, and so on. Asked of the system rather than worked out,
+/// since it is the system that decides.
+#[cfg(windows)]
+fn asked_for() -> u32 {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
+
+    // SAFETY: no argument beyond the metric asked for.
+    u32::try_from(unsafe { GetSystemMetrics(SM_CXSMICON) }).unwrap_or(16)
+}
+
+#[cfg(not(windows))]
+fn asked_for() -> u32 {
+    16
+}
+
 /// The icon, bright or dimmed.
 fn drawn(dim: bool) -> tauri::Result<Image<'static>> {
-    let drawing = Image::from_bytes(DRAWING)?;
+    // The smallest that is not too small. A drawing enlarged by the
+    // system is soft, one reduced by it is soft as well, but the second
+    // keeps everything it was drawn with while the first invents.
+    let wanted = asked_for();
+    let (_, bytes) = DRAWINGS
+        .iter()
+        .find(|(side, _)| *side >= wanted)
+        .unwrap_or_else(|| DRAWINGS.last().expect("un dessin au moins"));
+    let drawing = Image::from_bytes(bytes)?;
     if !dim {
         return Ok(drawing.to_owned());
     }

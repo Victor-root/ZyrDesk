@@ -83,6 +83,7 @@ fn main() {
             shortcuts::shortcuts,
             shortcuts::bind,
             floating::floating_size,
+            floating::floating_menu,
             floating::floating_hide,
             floating::floating_grab,
             floating::floating_act,

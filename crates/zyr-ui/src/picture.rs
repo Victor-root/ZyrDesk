@@ -1326,6 +1326,30 @@ fn hand_the_keyboard_back(app: &AppHandle) {
     });
 }
 
+/// Gives the keyboard back to the picture, asked from anywhere in the
+/// program.
+///
+/// For the floating button, which is the one thing that takes the
+/// keyboard away without the system noticing. It is a window of ours laid
+/// over the picture and it never activates itself, on purpose: the front
+/// stays where it is, so the message that settles the front is never
+/// sent, and that message is what usually puts the keyboard back. Its own
+/// web view takes the focus at the first click all the same, and from
+/// then on the session was deaf while looking exactly as it should, with
+/// nothing short of reopening it to put it right.
+///
+/// Handed to the thread that draws. The focus of a shared input belongs
+/// to the threads sharing it, and ours joined the player's when the
+/// picture was taken in as a child of our window; a worker thread is not
+/// one of them, and its ask would go nowhere.
+#[cfg(windows)]
+pub fn the_keyboard_back(app: &AppHandle) {
+    let _ = app.run_on_main_thread(the_keyboard_to_the_picture);
+}
+
+#[cfg(not(windows))]
+pub fn the_keyboard_back(_app: &AppHandle) {}
+
 /// Makes our window behave as the one window a session is, and steps in
 /// front of its messages for as long as the picture is in it.
 ///

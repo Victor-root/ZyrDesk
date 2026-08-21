@@ -292,6 +292,16 @@ static READY: AtomicBool = AtomicBool::new(false);
 /// otherwise put the button back up with the window.
 static HIDDEN: AtomicBool = AtomicBool::new(false);
 
+/// Set while the button's menu is open.
+///
+/// Kept for one reason: the keyboard. Clicking anywhere in this window
+/// hands the focus to its own web view, which is right while a menu is
+/// being read and wrong the moment it closes, and the system never
+/// notices either way since this window is never the active one. So the
+/// picture is given the keyboard back as soon as this goes down, and
+/// left alone while it is up.
+static MENU_UP: AtomicBool = AtomicBool::new(false);
+
 /// The logo's own size, as a square.
 fn logo() -> (i32, i32) {
     let side = ITS_LOGO.load(Ordering::Relaxed).max(1);
@@ -551,6 +561,17 @@ pub fn watch(app: AppHandle) {
                             .store(game, Ordering::Relaxed);
                     }
                     put_the_button_up(&app, process);
+                    // And the keyboard belongs to the picture whenever
+                    // the menu is not being read. The button's own page
+                    // says so as it opens and closes, which covers every
+                    // ordinary road; this is the net under the others,
+                    // for a page reloaded or a window taken down with a
+                    // menu still up. It costs a focus asked for again,
+                    // and the system refuses it outright while another
+                    // program is in front.
+                    if !MENU_UP.load(Ordering::Relaxed) {
+                        crate::picture::the_keyboard_back(&app);
+                    }
                 }
                 None => {
                     crate::picture::let_go(&app);
@@ -580,9 +601,10 @@ fn adopt(app: &AppHandle, process: u32) -> bool {
     if already {
         return false;
     }
-    // A new session starts with the button on screen, whatever was done
-    // with the one before.
+    // A new session starts with the button on screen and its menu shut,
+    // whatever was done with the one before.
     HIDDEN.store(false, Ordering::Relaxed);
+    MENU_UP.store(false, Ordering::Relaxed);
     *state.watched.lock().expect("session suivie") = Some(process);
     true
 }
@@ -732,6 +754,10 @@ pub fn lower(app: &AppHandle) {
     }
     ITS_WINDOW.store(0, Ordering::Relaxed);
     READY.store(false, Ordering::Relaxed);
+    // A menu that goes down with its window never says it closed, and a
+    // yes left standing here would stop the keyboard ever being given
+    // back.
+    MENU_UP.store(false, Ordering::Relaxed);
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
@@ -847,6 +873,20 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece])
         drawn.0,
         drawn.1,
     ));
+}
+
+/// Says whether the button's menu is open, and gives the picture its
+/// keyboard back the moment it is not.
+///
+/// The page is the only one who knows: this window is never activated, so
+/// nothing about it reaches the system, and a menu opened and closed left
+/// the session deaf with no way back short of reopening it.
+#[tauri::command]
+pub fn floating_menu(app: AppHandle, open: bool) {
+    MENU_UP.store(open, Ordering::Relaxed);
+    if !open {
+        crate::picture::the_keyboard_back(&app);
+    }
 }
 
 /// Hides the button until the next session.

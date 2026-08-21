@@ -15,10 +15,15 @@ one beside the clock and inside the window, and two logos for one
 product is what the eye catches first. A logo is recognised before it is
 read.
 
-Every size is rendered at four times its final dimensions and then
-reduced, which keeps the diagonals of the Z clean instead of stepped.
-Each of those renders is handed to the .ico as it is: letting the file
-be built from the largest one alone would throw the whole point away.
+Every size is drawn at its own size, and none is reduced from a larger
+one. Rendering at four times and reducing afterwards is the usual advice
+and it was followed here; put side by side at the sizes that matter, it
+loses. The renderer works out how much of each pixel a stroke covers and
+lays down exactly that, which is as good as an edge gets; reducing a
+larger image asks a filter to guess the same thing from pixels that have
+already thrown the answer away, and the guess is softer every time. The
+taskbar icon looked blurred next to every other icon on the bar, and this
+is most of why.
 """
 
 import io
@@ -50,20 +55,22 @@ SIZES = sorted(
     | {128, 192, 256}
 )
 
-# Rendering above the target size and reducing afterwards is what keeps
-# the small sizes readable; rendering straight at 16 pixels loses the
-# thin edges entirely.
-OVERSAMPLING = 4
+# The sizes the notification area asks for, which cannot read an .ico:
+# the tray is handed one image and Windows scales it to whatever the bar
+# is drawing at. So it is handed the right one instead, and these are
+# written out on their own for the program to carry.
+#
+# Sixteen logical pixels at each of the usual scalings, which is what
+# `GetSystemMetrics(SM_CXSMICON)` answers.
+TRAY = [16 * scale // 100 for scale in (100, 125, 150, 175, 200, 250)]
 
 HERE = pathlib.Path(__file__).resolve().parent
 
 
 def drawn(source: pathlib.Path, size: int) -> Image.Image:
-    """The logo at that size, rendered large then reduced."""
-    wide = size * OVERSAMPLING
-    painted = cairosvg.svg2png(url=str(source), output_width=wide, output_height=wide)
-    image = Image.open(io.BytesIO(painted)).convert("RGBA")
-    return image.resize((size, size), Image.LANCZOS)
+    """The logo drawn at that size, and never reduced from a larger one."""
+    painted = cairosvg.svg2png(url=str(source), output_width=size, output_height=size)
+    return Image.open(io.BytesIO(painted)).convert("RGBA")
 
 
 def main() -> int:
@@ -72,7 +79,7 @@ def main() -> int:
         print(f"logo introuvable : {logo}", file=sys.stderr)
         return 1
 
-    by_size = {size: drawn(logo, size) for size in SIZES}
+    by_size = {size: drawn(logo, size) for size in sorted(set(SIZES) | set(TRAY))}
 
     # The largest carries the file; the others ride along and are used
     # as they are, each at its own size.
@@ -90,6 +97,18 @@ def main() -> int:
     portrait = HERE / "zyrdesk-256.png"
     by_size[256].save(portrait, format="PNG")
     print(f"image écrite : {portrait}")
+
+    for size in TRAY:
+        beside_the_clock = HERE / f"zyrdesk-{size}.png"
+        by_size[size].save(beside_the_clock, format="PNG")
+    print(f"zone de notification : {', '.join(str(s) for s in TRAY)}")
+
+    # And the drawing itself where the interface reads it. Copied rather
+    # than kept in two places: two logos for one product is what the eye
+    # catches first, and two files nobody compares is how that happens.
+    page = HERE.parents[1] / "crates" / "zyr-ui" / "web" / "zyrdesk.svg"
+    page.write_text(logo.read_text(encoding="utf-8"), encoding="utf-8")
+    print(f"dessin recopié : {page}")
     return 0
 
 

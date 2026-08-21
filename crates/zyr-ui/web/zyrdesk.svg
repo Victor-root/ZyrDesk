@@ -1,45 +1,49 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="ZyrDesk">
   <title>ZyrDesk</title>
   <!--
-    Deux écrans qui se recouvrent : celui du fond, éteint, et celui de
-    devant qui affiche le Z. La plaque de sable les porte, et sa matière
-    revient dans l'écart entre les deux : ce n'est pas une ombre posée,
-    c'est le fond qu'on voit passer.
+    Deux écrans qui se chevauchent en diagonale, et un Z qui les relie :
+    c'est ce que le produit fait, dit en un dessin. Celui du fond est
+    doré, celui de devant argenté, et le Z part de l'un pour entrer dans
+    l'autre.
 
-    Les trois plans se lisent par la lumière : la plaque est claire,
-    l'écran du fond est sombre, celui de devant est doré. C'est cet
-    escalier qui tient le dessin, y compris quand l'icône est réduite à
-    seize pixels et que seules les masses subsistent.
+    Tout est en trait sur une plaque noire, et rien n'est rempli : c'est
+    le contraste du trait clair sur le fond sombre qui porte le dessin, y
+    compris réduit à seize pixels où il ne reste que trois masses.
+
+    L'ordre de dessin fait tout le reste. Le Z est posé sur l'écran de
+    devant avec un liseré de la couleur de la plaque, qui l'en détache
+    nettement ; l'écran du fond est posé sur le Z, et comme ils sont de la
+    même couleur, la barre du haut du Z devient le bord bas de cet
+    écran-là. Un seul trait au lieu de deux qui se frôlent, ce qui est la
+    seule façon que ça reste lisible en petit.
   -->
   <defs>
-    <clipPath id="zd-plaque"><rect x="2" y="2" width="60" height="60" rx="15"/></clipPath>
-    <clipPath id="zd-verre-fond"><rect x="8.6" y="10.6" width="26.8" height="19.8" rx="3"/></clipPath>
-    <clipPath id="zd-verre-avant"><rect x="28.6" y="33.6" width="26.8" height="19.8" rx="3"/></clipPath>
-
-    <linearGradient id="zd-sable" x1="2" y1="2" x2="62" y2="62" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#E2DDD6"/><stop offset="1" stop-color="#A69C90"/>
+    <linearGradient id="zd-or" x1="12" y1="12" x2="44" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F7DB92"/><stop offset="1" stop-color="#D6A03C"/>
     </linearGradient>
-    <linearGradient id="zd-eteint" x1="8.6" y1="10.6" x2="35.4" y2="30.4" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4A3B22"/><stop offset="1" stop-color="#1F190F"/>
+    <linearGradient id="zd-argent" x1="29" y1="37" x2="52" y2="51" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F6F8FC"/><stop offset="1" stop-color="#C3C8D5"/>
     </linearGradient>
-    <linearGradient id="zd-or" x1="28.6" y1="33.6" x2="55.4" y2="53.4" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FDE68A"/><stop offset="1" stop-color="#F59E0B"/>
+    <linearGradient id="zd-plaque" x1="2" y1="2" x2="62" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#15161D"/><stop offset="1" stop-color="#07070B"/>
     </linearGradient>
   </defs>
 
-  <g clip-path="url(#zd-plaque)">
-    <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#zd-sable)"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#zd-plaque)"/>
+  <!-- Sans ce liseré la plaque se fond dans une barre des tâches sombre
+       et l'icône n'a plus de bord du tout ; plus clair ou plus épais, il
+       devient à seize pixels un halo gris qui mange le dessin. -->
+  <rect x="2.6" y="2.6" width="58.8" height="58.8" rx="13.4" fill="none"
+        stroke="#2C2E38" stroke-width="1.2"/>
 
-    <rect x="6" y="8" width="32" height="25" rx="5.5" fill="#1C1917"/>
-    <rect x="8.6" y="10.6" width="26.8" height="19.8" rx="3" fill="url(#zd-eteint)"/>
-    <path d="M4 34 L20 8 H27 L11 34 Z" fill="#FFFFFF" opacity=".13" clip-path="url(#zd-verre-fond)"/>
+  <rect x="28.5" y="37.5" width="24" height="13.5" rx="2.8" fill="none"
+        stroke="url(#zd-argent)" stroke-width="3"/>
 
-    <rect x="22" y="27" width="40" height="33" rx="9" fill="url(#zd-sable)"/>
+  <path d="M20 26.5 H41.5 L22.5 45 H39.5" fill="none" stroke="#0A0A0F" stroke-width="8.4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 26.5 H41.5 L22.5 45 H39.5" fill="none" stroke="url(#zd-or)" stroke-width="5"
+        stroke-linecap="round" stroke-linejoin="round"/>
 
-    <rect x="26" y="31" width="32" height="25" rx="5.5" fill="#7C3D0C"/>
-    <rect x="28.6" y="33.6" width="26.8" height="19.8" rx="3" fill="url(#zd-or)"/>
-    <path d="M34.5 38 H49.5 L34.5 49 H49.5" fill="none" stroke="#7C3D0C" stroke-width="4.4"
-          stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M24 57 L40 31 H47 L31 57 Z" fill="#FFFFFF" opacity=".18" clip-path="url(#zd-verre-avant)"/>
-  </g>
+  <rect x="11.5" y="13" width="24" height="13.5" rx="2.8" fill="none"
+        stroke="url(#zd-or)" stroke-width="3"/>
 </svg>

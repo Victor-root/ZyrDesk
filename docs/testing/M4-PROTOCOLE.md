@@ -23,6 +23,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R17**, **R17bis** | La qualité disparaît. La taille, le débit et le codec se règlent dans le menu de la session, un cran par clic, et survivent à la fermeture |
 | **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
+| **R12quinquies** | Le clavier retourne à la session dès qu'on referme le menu du bouton flottant. Il y restait accroché, et il fallait rouvrir la session pour le récupérer |
+| **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
 | **R33** | Deux réglages nouveaux côté hôte : renvoyer ou non un écran immobile, et la façon de filmer l'écran. Ce sont les deux seuls leviers qui restent sur la cadence |
 | **S2**, **S7** | Le bureau distant ne change plus de définition : il déménage sur un écran que ZyrDesk fait pousser, et l'écran physique de l'hôte s'éteint le temps de la session |
@@ -54,7 +56,7 @@ Ce qui marche et qui ne suffit pas. La différence avec la liste du dessus est q
 
 Ni réussi ni échoué : personne ne les a essayés depuis qu'ils existent. Ils ne sont pas urgents, mais ils ne comptent pas comme acquis.
 
-R1 à R16, R18 à R26, S1, S2bis, S8quater, S8sexies, S9ter, S9quinquies, S10, S13, S14, S15, S16, S17, S18bis.
+R1 à R4, R6 à R16, R18 à R26, S1, S2bis, S8quater, S8sexies, S9ter, S9quinquies, S10, S13, S14, S15, S16, S17, S18bis.
 
 ---
 
@@ -173,6 +175,25 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 > Vérifier ensuite que **la fenêtre continue de marcher** : les autres ordinateurs restent listés, et une session sortante reste possible depuis ce PC. Un ordinateur sans moteur hôte reste un client à part entière ([D18](../DECISIONS.md)).
 >
 > Remettre le nom du fichier. En dix secondes, l'état doit repasser à « Prêt à être contrôlé » sans rien relancer.
+
+> **R5 (le logo est net partout, et c'est le même partout)**
+>
+> Le dessin a changé : deux écrans qui se chevauchent en diagonale, reliés par un Z doré, sur une plaque noire. Le regarder aux six endroits où il se voit, et **de près**, un écran 4K rendant le moindre flou évident :
+>
+> 1. la **barre des tâches**, à côté des autres icônes épinglées ;
+> 2. l'**icône à côté de l'horloge** ;
+> 3. la **barre de titre** de la fenêtre ZyrDesk, en haut à gauche ;
+> 4. l'**en-tête de l'accueil**, à côté du nom du produit ;
+> 5. l'**écran d'ouverture** d'une session ;
+> 6. le **bouton flottant** pendant une session.
+>
+> Attendu : le même dessin partout, et **aussi net que les icônes voisines**. Le Z se lit, les deux écrans se distinguent, les coins de la plaque sont propres et non baveux. Comparer directement avec les icônes des autres applications de la barre des tâches : ZyrDesk ne doit plus être celle qui pique les yeux.
+>
+> Et à essayer en thème clair comme en thème sombre : la plaque est noire, donc elle ressort franchement sur un fond clair, et se distingue par son fin liseré sur un fond sombre.
+>
+> **Ce qui rendait le logo flou.** Une seule image de 256 pixels était fournie, et Windows la réduisait lui-même à 42 pour la barre des tâches, à 28 pour l'horloge. Un dessin réduit par un filtre est toujours plus mou qu'un dessin fait à la bonne taille : le moteur de rendu sait exactement quelle fraction de chaque pixel un trait recouvre, un filtre ne peut que le deviner à partir de pixels qui ont déjà jeté la réponse. Chaque taille est donc dessinée à sa taille, et il y en a vingt et une dans le fichier d'icône, plus six pour la zone de notification, choisies selon l'agrandissement de l'écran.
+>
+> Le dessin se refait avec `python3 packaging/brand/build-icons.py`, qui écrit l'icône, l'image du programme, celles de la zone de notification, et recopie le dessin là où l'interface le lit. Une seule source, jamais deux à tenir d'accord.
 
 ---
 
@@ -311,7 +332,7 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Attendu : le logo **ne bouge pas et ne disparaît jamais**, pas même le temps d'une image. Le menu apparaît en dessous, le logo reste exactement au même point de l'écran.
 >
-> Deux choses le faisaient clignoter, et il a fallu les deux. La page était accrochée par le coin haut **gauche** de sa fenêtre alors que celle-ci grandit vers la gauche : ouvrir le menu emportait le logo hors de la fenêtre. Elle est maintenant accrochée par le coin haut **droit**. Et la fenêtre changeait de taille à chaque ouverture, ce qui fait remettre la page en page : le temps que ça prend, le logo n'est dessiné nulle part. Elle garde maintenant **la même taille du début à la fin de la session**, celle du menu déplié, et c'est la découpe seule qui change. Ce qui n'est pas dessiné n'existe pas : la partie de la fenêtre qui ne sert pas ne se voit pas et laisse passer les clics jusqu'à l'image.
+> Deux choses le faisaient clignoter, et il a fallu les deux. La page était accrochée par le coin haut **gauche** de sa fenêtre alors que celle-ci grandit vers la gauche : ouvrir le menu emportait le logo hors de la fenêtre. Elle est maintenant accrochée par le coin haut **droit**. Et la fenêtre changeait de taille à chaque ouverture, ce qui fait remettre la page en page : le temps que ça prend, le logo n'est dessiné nulle part. Elle garde maintenant **la même taille du début à la fin de la session**, mesurée sur le menu déplié et sur ses trois sous-menus à la fois, et c'est la découpe seule qui change. Ce qui n'est pas dessiné n'existe pas : la partie de la fenêtre qui ne sert pas ne se voit pas et laisse passer les clics jusqu'à l'image.
 >
 > Passer aussi la souris sur le logo sans cliquer : il **grandit doucement**, entièrement, sans qu'aucun de ses quatre coins arrondis soit rogné, et redescend quand la souris s'en va. Il grandit vers l'intérieur de la fenêtre, et la découpe suit l'animation image par image.
 
@@ -370,6 +391,16 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > Attendu : la combinaison s'affiche telle qu'elle est gravée sur ce clavier, elle survit à la fermeture de la fenêtre, et elle bascule l'image. Échap pendant l'attente annule, Retour arrière retire la combinaison.
 >
 > Ce qui est retenu est la place de la touche et non le signe dessus : une combinaison choisie sur un clavier français reste sous les mêmes doigts sur un clavier anglais.
+
+> **R12quinquies (le clavier revient à la session après le menu)**
+>
+> Pendant une session, ouvrir le menu du bouton, cliquer dans un sous-menu, choisir une valeur, puis refermer le menu. **Taper ensuite dans l'image**, du texte dans le bloc-notes de l'ordinateur distant par exemple.
+>
+> Attendu : les touches arrivent au loin, tout de suite. Refaire en masquant le bouton au lieu de refermer le menu : même résultat.
+>
+> C'est le bug le plus vicieux du bouton, parce qu'il ne se voit pas. Cette fenêtre-là n'est jamais celle que Windows considère comme active, c'est voulu : sans quoi cliquer dessus enlèverait le premier plan à l'image et le moteur perdrait le clavier et la souris. Mais sa page prend quand même le focus au premier clic, et comme rien ne change de main aux yeux du système, rien ne le rendait : la session restait sourde en ayant l'air parfaitement normale, et il fallait la rouvrir. Le clavier retourne maintenant à l'image dès que le menu est refermé, et une fois par seconde tant qu'il ne l'est pas.
+>
+> Le journal le dit : `le clavier est bien à la session`, ou `le clavier n'est pas à la session : le focus a été refusé à l'image`.
 
 > **R13 (le bouton s'en va avec l'image)**
 >

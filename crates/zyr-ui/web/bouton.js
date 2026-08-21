@@ -32,9 +32,11 @@ function montre(element, visible) {
 }
 
 /* La plaque du logo dans son dessin (zyrdesk.svg) : une boîte de 64, une
-   plaque de 60 posée à 2 du bord, aux coins arrondis de 15. Le dessin
-   fait foi, la fenêtre est découpée dessus. */
-const PLAQUE = { boite: 64, marge: 2, cote: 60, rayon: 15 };
+   plaque de 60 posée à 2 du bord, aux coins arrondis de 14. Le dessin
+   fait foi, la fenêtre est découpée dessus : ces quatre nombres se
+   relisent dans le SVG à chaque fois qu'il change, sinon la découpe passe
+   à côté de ses propres coins. */
+const PLAQUE = { boite: 64, marge: 2, cote: 60, rayon: 14 };
 
 /* Le sous-menu ouvert, s'il y en a un : c'est le seul des trois qui se
    dessine, donc le seul qui entre dans la découpe. */
@@ -161,6 +163,12 @@ function ouvre(veut) {
   ouvert = veut;
   vue.menu.classList.toggle("repliee", !veut);
   vue.logo.setAttribute("aria-expanded", veut ? "true" : "false");
+  // Cliquer dans cette fenêtre donne le clavier à sa page, et cette
+  // fenêtre n'est jamais celle que le système considère comme active :
+  // rien ne le rend à l'image quand le menu se referme, et la session
+  // restait sourde jusqu'à ce qu'on la rouvre. Le coeur s'en charge dès
+  // qu'il sait que le menu est fermé.
+  invoke("floating_menu", { open: veut }).catch(() => {});
   if (!veut) {
     montre(vue.souci, false);
     // Un sous-menu laissé ouvert rouvrirait le menu avec lui, donc une
