@@ -237,8 +237,13 @@
   box-shadow: var(--ombre-2);
 }
 
+/* Repliée, une liste garde sa place comme le menu, et pour la même
+   raison : la fenêtre est mesurée sur les trois à la fois, donc elle ne
+   change plus de taille de la session quoi qu'on ouvre. Rien n'en est
+   dessiné, elle est invisible et n'attrape aucun clic, et de toute façon
+   elle est hors de la découpe. */
 .liste.repliee {
-  display: none;
+  visibility: hidden;
 }
 
 .valeur {

@@ -737,8 +737,15 @@ pub fn lower(app: &AppHandle) {
     }
 }
 
-/// One rounded rectangle of what the page draws, in real pixels from the
-/// top left of the window.
+/// One rounded rectangle of what the page draws, in real pixels.
+///
+/// `x` is counted from the window's **right** edge, and is therefore
+/// never positive; `y` from its top. Those are the two edges the page is
+/// glued to, and the two the window is hung by, so they are the only two
+/// that stay put when it is resized. The page measures itself in the
+/// window as it stands and the cut is made in the window as it becomes:
+/// counted from the left, the whole drawing landed short by the
+/// difference between the two, and the menu lost its right edge.
 #[derive(serde::Deserialize)]
 pub struct Piece {
     x: i32,
@@ -748,8 +755,8 @@ pub struct Piece {
     radius: i32,
 }
 
-/// Resizes the button to exactly what the page turned out to draw,
-/// keeping the corner it hangs from, and cuts the window to that drawing.
+/// Grows the button to what the page turned out to need, keeping the
+/// corner it hangs from, and cuts the window to the shape it draws.
 ///
 /// The page measures itself rather than being told a size: the menu's
 /// height depends on what is in it, and a number written twice would
@@ -763,22 +770,19 @@ pub struct Piece {
 /// settles it wherever it comes from, since nothing at all is drawn
 /// outside a shape.
 ///
-/// Exactly, and that is not a nicety. The page is glued to the window's
-/// right edge, since that is the corner the button hangs from; the shape
-/// it sends is measured from the left of what it draws. The two only name
-/// the same pixel when the window is exactly as wide as that drawing.
-/// This once kept the window at the widest it had ever been, on the
-/// grounds that a sheet larger than what is cut out of it shows nothing
-/// extra: it does, because the cut then lands that many pixels to the left
-/// of the drawing. Every submenu closed left the window as wide as the
-/// widest list ever opened, so the menu was cut off on its right by that
-/// width and a band of nothing showed beside the list. The rule is the
-/// simple one: the window is what the page occupies, no more and no less.
+/// Never made smaller, only ever larger, and the two halves of that rule
+/// are not the same statement. A window larger than what is cut out of it
+/// shows nothing extra and catches nothing extra, so keeping it is free;
+/// and every change of its size makes the page lay itself out again,
+/// during which nothing at all is drawn. That is the flicker, and it is
+/// why the size a window has once been given is kept. The page measures
+/// every submenu at once, open or not, so the size it asks for settles
+/// while the menu is still shut and does not change again.
 ///
-/// Resizing costs a laying-out of the page, which is what the old rule was
-/// avoiding. It costs nothing visible here: everything on this page hangs
-/// from the top right corner, which is the one corner that does not move
-/// when the window is resized this way.
+/// What makes keeping it safe is that the shape is counted from the
+/// window's right edge rather than its left; see `Piece`. Counted from
+/// the left, a window kept wider than the drawing put the cut that many
+/// pixels beside it, which is what took the right-hand side off the menu.
 #[tauri::command]
 pub fn floating_size(width: u32, height: u32, shape: Vec<Piece>) -> Result<(), String> {
     // Read before anything moves: what is kept is the corner the button
@@ -786,11 +790,15 @@ pub fn floating_size(width: u32, height: u32, shape: Vec<Piece>) -> Result<(), S
     let (Some(corner), Some(was)) = (where_it_hangs(), its_place()) else {
         return Err("le bouton flottant n'est plus là".to_string());
     };
-    let size = (width as i32, height as i32);
-    // The shape first: a shape wider than the window it is put on is
-    // simply clipped by it, so setting it early costs nothing, while a
-    // window briefly at its new size under its old shape shows.
-    cut_to_what_is_drawn(&shape);
+    let size = (
+        (width as i32).max(was.2 - was.0),
+        (height as i32).max(was.3 - was.1),
+    );
+    // The shape first, and against the size the window is about to have
+    // rather than the one it has: a shape wider than the window it is put
+    // on is simply clipped by it, so setting it early costs nothing, while
+    // a window briefly at its new size under its old shape shows.
+    cut_to_what_is_drawn(&shape, size.0);
     // The page has drawn something, so there is something to show.
     READY.store(true, Ordering::Relaxed);
     put_the_button(corner, size, how_it_shows());
@@ -817,11 +825,11 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece])
     if SIZED.swap(both, Ordering::Relaxed) == both {
         return;
     }
+    // How far the drawing reaches from the two edges it is counted from,
+    // which is the width and the height a window has to have to hold all
+    // of it.
     let drawn = shape.iter().fold((0, 0), |(wide, high), piece| {
-        (
-            wide.max(piece.x + piece.width),
-            high.max(piece.y + piece.height),
-        )
+        (wide.max(-piece.x), high.max(piece.y + piece.height))
     });
     let now = its_place().map(|(left, top, right, bottom)| (right - left, bottom - top));
     note(&format!(
@@ -1270,13 +1278,18 @@ fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
 #[cfg(not(windows))]
 fn put_the_button(_anchor: (i32, i32), _size: (i32, i32), _visibility: u32) {}
 
-/// Cuts the button's window to the pieces the page drew.
+/// Cuts the button's window to the pieces the page drew, on a window that
+/// is about to be `width` wide.
 ///
 /// Nothing is drawn outside a window's shape, by anybody: that is what
 /// makes this the answer to an opaque rectangle appearing under a page
 /// that asked for none.
+///
+/// The width is taken rather than asked of the window because the window
+/// does not have it yet: a piece is placed from the right edge, and that
+/// edge is where this size is about to put it.
 #[cfg(windows)]
-fn cut_to_what_is_drawn(shape: &[Piece]) {
+fn cut_to_what_is_drawn(shape: &[Piece], width: i32) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::Graphics::Gdi::{
         CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, RGN_OR, SetWindowRgn,
@@ -1295,13 +1308,16 @@ fn cut_to_what_is_drawn(shape: &[Piece]) {
             return;
         }
         for piece in shape {
+            // Where it starts, which the page counted from the right edge
+            // and the system counts from the left.
+            let left = width + piece.x;
             // One more pixel each way: a shape is cut exclusive of its
             // right and bottom edge, and a logo short of its last row is
             // a logo with a line missing.
             let one = CreateRoundRectRgn(
-                piece.x,
+                left,
                 piece.y,
-                piece.x + piece.width + 1,
+                left + piece.width + 1,
                 piece.y + piece.height + 1,
                 piece.radius * 2,
                 piece.radius * 2,
@@ -1325,7 +1341,7 @@ fn cut_to_what_is_drawn(shape: &[Piece]) {
 }
 
 #[cfg(not(windows))]
-fn cut_to_what_is_drawn(_shape: &[Piece]) {}
+fn cut_to_what_is_drawn(_shape: &[Piece], _width: i32) {}
 
 /// Whether the window at the front belongs to this session.
 ///

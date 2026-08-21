@@ -36,41 +36,57 @@ function montre(element, visible) {
    fait foi, la fenêtre est découpée dessus. */
 const PLAQUE = { boite: 64, marge: 2, cote: 60, rayon: 15 };
 
-/* Le sous-menu ouvert, s'il y en a un. Sorti du flux, il n'entre pas
-   dans la mesure de « paquet » : c'est ici qu'on le rattrape. */
+/* Le sous-menu ouvert, s'il y en a un : c'est le seul des trois qui se
+   dessine, donc le seul qui entre dans la découpe. */
 function laListeOuverte() {
   return document.querySelector(".liste:not(.repliee)");
 }
 
-/* Tout ce que la page occupe : le bloc, et le sous-menu ouvert qui en
-   déborde par la gauche. La fenêtre est accrochée par son coin haut
-   droit, donc déborder par la gauche et par le bas est la seule chose
-   qu'elle sache absorber sans que le logo bouge. */
+/* Tout ce que la page peut occuper : le bloc, et les trois sous-menus,
+   ouverts ou non.
+
+   Tous les trois, et pas seulement celui qui est ouvert. La fenêtre prend
+   cette taille-là une fois pour toutes et n'en change plus de la session :
+   ouvrir ou fermer une liste ne la redimensionne donc pas. Mesurée sur la
+   seule liste ouverte, elle changeait de taille à chaque clic dans le
+   menu, et une fenêtre qui change de taille fait remettre la page en page,
+   pendant quoi rien n'est dessiné. C'était le clignotement.
+
+   Sortis du flux, les sous-menus n'entrent pas dans la mesure de
+   « paquet » : c'est ici qu'on les rattrape. */
 function laBoite() {
-  const paquet = vue.paquet.getBoundingClientRect();
-  const liste = laListeOuverte();
-  if (liste === null) {
-    return paquet;
-  }
-  const carte = liste.getBoundingClientRect();
-  const left = Math.min(paquet.left, carte.left);
-  const top = Math.min(paquet.top, carte.top);
-  const right = Math.max(paquet.right, carte.right);
-  const bottom = Math.max(paquet.bottom, carte.bottom);
-  return { left, top, right, bottom, width: right - left, height: bottom - top };
+  const boites = [vue.paquet, ...document.querySelectorAll(".liste")].map(
+    (element) => element.getBoundingClientRect(),
+  );
+  // Depuis le coin haut droit, puisque c'est par là que la fenêtre est
+  // accrochée : ce qui manque est ce qui déborde vers la gauche et vers
+  // le bas.
+  const right = Math.max(...boites.map((une) => une.right));
+  return {
+    width: right - Math.min(...boites.map((une) => une.left)),
+    height: Math.max(...boites.map((une) => une.bottom)),
+  };
 }
 
-/* La forme que la page occupe vraiment, en vrais pixels depuis le coin
-   de la fenêtre : la plaque du logo, la carte du menu quand il est
-   ouvert, et celle du sous-menu quand il l'est. Le reste de la fenêtre
-   n'est dessiné par personne, et c'est exactement ce qu'il faut
-   découper. */
-function formeOccupee(boite, echelle) {
+/* La forme que la page dessine vraiment, en vrais pixels : la plaque du
+   logo, la carte du menu quand il est ouvert, et celle du sous-menu quand
+   il l'est. Le reste de la fenêtre n'est dessiné par personne, et c'est
+   exactement ce qu'il faut découper.
+
+   Mesurée depuis le bord droit de la fenêtre, jamais depuis son bord
+   gauche. La page est collée à droite et en haut : ce sont les deux seuls
+   bords qui ne bougent pas quand la fenêtre change de largeur, puisque
+   c'est par son coin haut droit qu'elle est accrochée. Le dessin est
+   mesuré dans la fenêtre telle qu'elle est et découpé dans celle qu'elle
+   devient ; compté depuis la gauche, il s'y retrouvait décalé de toute la
+   différence, et le menu perdait son bord droit. */
+function formeOccupee(echelle) {
   const morceaux = [];
+  const droite = document.documentElement.clientWidth;
   const pose = (gauche, haut, large, haute, rayon) =>
     morceaux.push({
-      x: Math.round((gauche - boite.left) * echelle),
-      y: Math.round((haut - boite.top) * echelle),
+      x: Math.round((gauche - droite) * echelle),
+      y: Math.round(haut * echelle),
       width: Math.round(large * echelle),
       height: Math.round(haute * echelle),
       radius: Math.round(rayon * echelle),
@@ -103,9 +119,9 @@ function formeOccupee(boite, echelle) {
   return morceaux;
 }
 
-/* La fenêtre suit ce que la page occupe, mesuré et non deviné : le menu
-   n'a pas la même hauteur selon ce qu'il contient, et un sous-menu
-   ouvert l'élargit.
+/* La fenêtre suit ce que la page peut occuper, mesuré et non deviné : le
+   menu n'a pas la même hauteur selon ce qu'il contient, et les listes
+   n'ont pas toutes la même largeur.
 
    En vrais pixels et non en pixels de page : sur un écran agrandi les
    deux ne valent pas la même chose, et une fenêtre taillée dans la
@@ -116,7 +132,7 @@ function ajusteLaFenetre() {
   invoke("floating_size", {
     width: Math.ceil(boite.width * echelle),
     height: Math.ceil(boite.height * echelle),
-    shape: formeOccupee(boite, echelle),
+    shape: formeOccupee(echelle),
   }).catch(() => {});
 }
 

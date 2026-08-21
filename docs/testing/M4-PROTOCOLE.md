@@ -819,9 +819,14 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : chacune porte un **chevron à gauche**, du côté où sa liste s'ouvre, et les icônes des trois lignes restent dans la même colonne que celles du reste du menu. Un clic sur une ligne **ouvre sa liste** de valeurs à sa gauche, avec une coche sur celle en place ; un clic dans la liste la choisit et referme. Une seule liste ouverte à la fois. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. **Rien ne bouge dans l'image en cours** : le choix est retenu, et c'est R34 qui le pose à l'écran.
 >
-> **Le point qui a lâché une fois, à refaire dans cet ordre exact.** Ouvrir **Taille** (la liste la plus large), la refermer, puis ouvrir **Débit** (la plus étroite), et regarder le menu entier. Rien ne doit être coupé : ni le bord droit du menu, ni le bas de la liste, et aucune bande blanche ou vide à côté de quoi que ce soit. La fenêtre du bouton fait exactement la taille de ce qui est dessiné ; quand elle restait à sa plus grande taille, la découpe tombait à côté du dessin et le menu perdait sa droite.
+> **Le point qui a lâché deux fois, à refaire dans cet ordre exact.** Ouvrir **Taille** (la liste la plus large), la refermer, ouvrir **Débit** (la plus étroite), la refermer, ouvrir **Codec**. Deux choses à regarder :
 >
-> Le journal en donne la preuve chiffrée, une ligne par changement de taille : `bouton flottant : 1064x780 demandés, 700x520 avant, 1064x780 après ; 5 morceaux dessinés jusqu'à 1064x780`. Les trois tailles doivent finir par tomber d'accord ; si « après » ne vaut pas « demandés », c'est Windows qui a refusé, et si « dessinés jusqu'à » dépasse « après », c'est que la page dessine plus grand que sa fenêtre.
+> 1. **Rien n'est coupé** : ni le bord droit du menu, ni le bas d'une liste, et aucune bande blanche ou vide à côté de quoi que ce soit.
+> 2. **Rien ne clignote** : le menu ne doit pas disparaître ni se redessiner entre deux clics. La fenêtre du bouton prend sa taille au moment où la session s'ouvre, mesurée sur les trois listes à la fois, et n'en change plus ensuite. Une fenêtre qui change de taille fait remettre la page en page, et pendant ce temps-là rien n'est dessiné.
+>
+> Le journal tranche entre les deux, une ligne par changement de taille : `bouton flottant : 1630x1614 demandés, 91x91 avant, 1630x1614 après ; 2 morceaux dessinés jusqu'à 1098x1272`. Il doit y en avoir **deux ou trois au démarrage de la session, et plus aucune ensuite** : une ligne qui apparaît en cliquant dans le menu est un redimensionnement, donc un clignotement. « après » doit valoir « demandés », sinon c'est Windows qui a refusé la taille ; et « dessinés jusqu'à » doit rester en dessous, sinon la page dessine plus grand que sa fenêtre.
+>
+> Une ligne de plus est normale la première fois qu'on change un réglage : c'est **Appliquer les changements** qui apparaît et allonge le menu. Une seule fois par session.
 >
 > Le menu doit aussi porter le **même thème que le reste de ZyrDesk** : sombre sur une application sombre, clair sur une claire.
 >
