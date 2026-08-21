@@ -817,7 +817,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Pendant une session, ouvrir le menu du bouton flottant. Trois lignes nouvelles : **Taille**, **Débit**, **Codec**.
 >
-> Attendu : un clic sur une ligne **ouvre sa liste** de valeurs à côté d'elle, avec une coche sur celle en place ; un clic dans la liste la choisit et referme. Une seule liste ouverte à la fois. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. **Rien ne bouge dans l'image en cours** : le choix est retenu, et c'est R34 qui le pose à l'écran.
+> Attendu : chacune porte un **chevron à gauche**, du côté où sa liste s'ouvre, et les icônes des trois lignes restent dans la même colonne que celles du reste du menu. Un clic sur une ligne **ouvre sa liste** de valeurs à sa gauche, avec une coche sur celle en place ; un clic dans la liste la choisit et referme. Une seule liste ouverte à la fois. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. **Rien ne bouge dans l'image en cours** : le choix est retenu, et c'est R34 qui le pose à l'écran.
+>
+> **Le point qui a lâché une fois, à refaire dans cet ordre exact.** Ouvrir **Taille** (la liste la plus large), la refermer, puis ouvrir **Débit** (la plus étroite), et regarder le menu entier. Rien ne doit être coupé : ni le bord droit du menu, ni le bas de la liste, et aucune bande blanche ou vide à côté de quoi que ce soit. La fenêtre du bouton fait exactement la taille de ce qui est dessiné ; quand elle restait à sa plus grande taille, la découpe tombait à côté du dessin et le menu perdait sa droite.
+>
+> Le journal en donne la preuve chiffrée, une ligne par changement de taille : `bouton flottant : 1064x780 demandés, 700x520 avant, 1064x780 après ; 5 morceaux dessinés jusqu'à 1064x780`. Les trois tailles doivent finir par tomber d'accord ; si « après » ne vaut pas « demandés », c'est Windows qui a refusé, et si « dessinés jusqu'à » dépasse « après », c'est que la page dessine plus grand que sa fenêtre.
+>
+> Le menu doit aussi porter le **même thème que le reste de ZyrDesk** : sombre sur une application sombre, clair sur une claire.
 >
 > Refermer le menu avec une liste ouverte, puis le rouvrir : les listes doivent être repliées. Une liste laissée ouverte garderait la fenêtre du bouton à sa hauteur de liste, ce qui pose une nappe invisible sur l'image et avale les clics.
 >

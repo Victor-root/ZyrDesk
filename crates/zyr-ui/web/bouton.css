@@ -185,15 +185,24 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Le chevron dit qu'il y a un sous-menu, et il pointe vers l'endroit où
-   il s'ouvre : sans lui rien ne distingue une ligne qui ouvre quelque
-   chose d'une ligne qui agit. Vers la gauche, comme le sous-menu. */
+/* Le chevron dit qu'il y a un sous-menu : sans lui rien ne distingue une
+   ligne qui ouvre quelque chose d'une ligne qui agit.
+
+   Il pointe vers la gauche et il se tient à gauche, parce que c'est de ce
+   côté-là que la liste apparaît. Posé au bout de la ligne, il désignait le
+   bord opposé à celui où le sous-menu s'ouvre. */
 .chevron {
   flex: none;
   width: 14px;
   height: 14px;
-  margin-left: var(--pas-2);
   transform: rotate(180deg);
+}
+
+/* Les lignes qui n'ouvrent rien gardent la place du chevron : sans ça
+   leurs icônes ne seraient plus dans la même colonne que les autres, et
+   le menu se lirait en deux morceaux décalés. */
+.menu > .item {
+  padding-left: calc(var(--pas-2) + 14px + var(--pas-3));
 }
 
 /* La liste des valeurs, à côté de sa ligne et non dessous : c'est un

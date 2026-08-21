@@ -646,6 +646,13 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
 
     let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
         .title("ZyrDesk")
+        // The same light or dark as the window it hangs over. Both pages
+        // decide their own colours, and both offer to follow the system;
+        // but « the system » is a question asked of the window, and a
+        // window built here is not asked the same way as the one the
+        // toolkit opens at start-up. Left alone, this one answered light
+        // over a dark product.
+        .theme(home.theme().ok())
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -741,8 +748,8 @@ pub struct Piece {
     radius: i32,
 }
 
-/// Resizes the button to what the page turned out to need, keeping the
-/// corner it hangs from, and cuts the window to the shape it draws.
+/// Resizes the button to exactly what the page turned out to draw,
+/// keeping the corner it hangs from, and cuts the window to that drawing.
 ///
 /// The page measures itself rather than being told a size: the menu's
 /// height depends on what is in it, and a number written twice would
@@ -755,33 +762,83 @@ pub struct Piece {
 /// rounded corners and around the menu. Cutting the window to the shape
 /// settles it wherever it comes from, since nothing at all is drawn
 /// outside a shape.
+///
+/// Exactly, and that is not a nicety. The page is glued to the window's
+/// right edge, since that is the corner the button hangs from; the shape
+/// it sends is measured from the left of what it draws. The two only name
+/// the same pixel when the window is exactly as wide as that drawing.
+/// This once kept the window at the widest it had ever been, on the
+/// grounds that a sheet larger than what is cut out of it shows nothing
+/// extra: it does, because the cut then lands that many pixels to the left
+/// of the drawing. Every submenu closed left the window as wide as the
+/// widest list ever opened, so the menu was cut off on its right by that
+/// width and a band of nothing showed beside the list. The rule is the
+/// simple one: the window is what the page occupies, no more and no less.
+///
+/// Resizing costs a laying-out of the page, which is what the old rule was
+/// avoiding. It costs nothing visible here: everything on this page hangs
+/// from the top right corner, which is the one corner that does not move
+/// when the window is resized this way.
 #[tauri::command]
 pub fn floating_size(width: u32, height: u32, shape: Vec<Piece>) -> Result<(), String> {
     // Read before anything moves: what is kept is the corner the button
     // hangs from, which is the window's top right and the logo's.
-    let (Some(corner), Some((left, top, right, bottom))) = (where_it_hangs(), its_place()) else {
+    let (Some(corner), Some(was)) = (where_it_hangs(), its_place()) else {
         return Err("le bouton flottant n'est plus là".to_string());
     };
-    // Never made smaller, only ever larger. The window is a sheet the
-    // page is cut out of and nothing more, so one that is bigger than
-    // what it holds shows nothing extra and catches nothing extra; and
-    // every change of its size makes the page lay itself out again,
-    // which costs a frame with no logo drawn in it. The page's largest
-    // state is its ordinary one from the moment the menu has been
-    // measured, so after the first message this never resizes again.
-    let size = (
-        (width as i32).max(right - left),
-        (height as i32).max(bottom - top),
-    );
-    // The shape first, for the one message that does grow the window: a
-    // shape wider than the window it is put on is simply clipped by it,
-    // so setting it early costs nothing, while a window briefly at its
-    // new size under its old shape shows.
+    let size = (width as i32, height as i32);
+    // The shape first: a shape wider than the window it is put on is
+    // simply clipped by it, so setting it early costs nothing, while a
+    // window briefly at its new size under its old shape shows.
     cut_to_what_is_drawn(&shape);
     // The page has drawn something, so there is something to show.
     READY.store(true, Ordering::Relaxed);
     put_the_button(corner, size, how_it_shows());
+    tell_the_button(was, size, &shape);
     Ok(())
+}
+
+/// The last size this window was given, so a change of it can be written
+/// down and nothing else.
+static SIZED: AtomicI64 = AtomicI64::new(0);
+
+/// Says what the button's window was asked to become, and what it became.
+///
+/// The two are the same number every time it works, and that is the point:
+/// a window that refuses a size, or that a toolkit clamps behind our back,
+/// cannot be told from one that was never asked. What the page draws is
+/// said beside it, because a window the right size under a shape of the
+/// wrong size looks exactly like a window of the wrong size.
+///
+/// Once per change. The logo is measured every frame while a hand runs
+/// over it, and the size does not change on any of them.
+fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece]) {
+    let both = (i64::from(size.0) << 32) | i64::from(size.1) & 0xFFFF_FFFF;
+    if SIZED.swap(both, Ordering::Relaxed) == both {
+        return;
+    }
+    let drawn = shape.iter().fold((0, 0), |(wide, high), piece| {
+        (
+            wide.max(piece.x + piece.width),
+            high.max(piece.y + piece.height),
+        )
+    });
+    let now = its_place().map(|(left, top, right, bottom)| (right - left, bottom - top));
+    note(&format!(
+        "bouton flottant : {}x{} demandés, {}x{} avant, {} après ; \
+         {} morceaux dessinés jusqu'à {}x{}",
+        size.0,
+        size.1,
+        was.2 - was.0,
+        was.3 - was.1,
+        match now {
+            Some((wide, high)) => format!("{wide}x{high}"),
+            None => "plus là".to_string(),
+        },
+        shape.len(),
+        drawn.0,
+        drawn.1,
+    ));
 }
 
 /// Hides the button until the next session.
