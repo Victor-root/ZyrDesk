@@ -129,8 +129,18 @@ def bitmap(image: Image.Image) -> bytes:
 
 
 def write_icon(path: pathlib.Path, by_size: dict[int, Image.Image]) -> None:
-    """Writes the .ico, each size in the form Windows can read at it."""
-    sizes = sorted(by_size)
+    """Writes the .ico, each size in the form Windows can read at it.
+
+    Largest first. Windows itself does not care what order the sizes come
+    in, but a reader that takes only one takes the first, and there is at
+    least one that does: the window toolkit under this program builds a
+    window's icon out of entry zero and nothing else. Smallest first, it
+    was handing the taskbar a sixteen pixel drawing to blow up to
+    forty-two. The program sets its own window icon now and does not rely
+    on this, but a file whose first entry is the largest is a file that
+    degrades well.
+    """
+    sizes = sorted(by_size, reverse=True)
     # 256 goes in as a PNG, which is the one size Windows reads that way
     # and what keeps the file from being a megabyte of raw pixels.
     bodies = []

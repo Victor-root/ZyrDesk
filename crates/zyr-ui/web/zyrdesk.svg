@@ -1,49 +1,129 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="ZyrDesk">
-  <title>ZyrDesk</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 608 608" width="608" height="608" role="img" aria-labelledby="title desc">
+  <title id="title">ZyrDesk</title>
+  <desc id="desc">Icône ZyrDesk : un Z doré reliant deux écrans métalliques sur fond noir.</desc>
   <!--
-    Deux écrans qui se chevauchent en diagonale, et un Z qui les relie :
-    c'est ce que le produit fait, dit en un dessin. Celui du fond est
-    doré, celui de devant argenté, et le Z part de l'un pour entrer dans
-    l'autre.
-
-    Tout est en trait sur une plaque noire, et rien n'est rempli : c'est
-    le contraste du trait clair sur le fond sombre qui porte le dessin, y
-    compris réduit à seize pixels où il ne reste que trois masses.
-
-    L'ordre de dessin fait tout le reste. Le Z est posé sur l'écran de
-    devant avec un liseré de la couleur de la plaque, qui l'en détache
-    nettement ; l'écran du fond est posé sur le Z, et comme ils sont de la
-    même couleur, la barre du haut du Z devient le bord bas de cet
-    écran-là. Un seul trait au lieu de deux qui se frôlent, ce qui est la
-    seule façon que ça reste lisible en petit.
+    Le dessin vient de Victor, repris tel quel : deux écrans qui se
+    chevauchent en diagonale, reliés par un Z doré, sur une plaque noire.
+    Une seule chose y a été changée, et il fallait la changer : la plaque
+    était plus haute que large, et une icône qui n'est pas carrée est
+    étirée ou encadrée par Windows selon l'endroit où il la dessine.
   -->
+
   <defs>
-    <linearGradient id="zd-or" x1="12" y1="12" x2="44" y2="48" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#F7DB92"/><stop offset="1" stop-color="#D6A03C"/>
+    <!-- Fond noir bleuté, très légèrement éclairci au centre. -->
+    <radialGradient id="background" cx="45%" cy="42%" r="82%">
+      <stop offset="0" stop-color="#0b1218"/>
+      <stop offset="0.52" stop-color="#060c12"/>
+      <stop offset="1" stop-color="#02070b"/>
+    </radialGradient>
+
+    <!-- Liseré extérieur chaud, discret et plus sombre sur les côtés. -->
+    <linearGradient id="outerRim" x1="84" y1="4" x2="516" y2="604" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d8b471"/>
+      <stop offset="0.18" stop-color="#806441"/>
+      <stop offset="0.52" stop-color="#4d3e2c"/>
+      <stop offset="0.78" stop-color="#b18a50"/>
+      <stop offset="1" stop-color="#57432d"/>
     </linearGradient>
-    <linearGradient id="zd-argent" x1="29" y1="37" x2="52" y2="51" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#F6F8FC"/><stop offset="1" stop-color="#C3C8D5"/>
+
+    <!-- Or chaud, brossé, pour l'écran supérieur. -->
+    <linearGradient id="goldFrame" x1="87" y1="99" x2="335" y2="282" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff1af"/>
+      <stop offset="0.07" stop-color="#f5d77d"/>
+      <stop offset="0.33" stop-color="#e6b54e"/>
+      <stop offset="0.62" stop-color="#c98b2d"/>
+      <stop offset="0.85" stop-color="#754614"/>
+      <stop offset="1" stop-color="#b97d28"/>
     </linearGradient>
-    <linearGradient id="zd-plaque" x1="2" y1="2" x2="62" y2="62" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#15161D"/><stop offset="1" stop-color="#07070B"/>
+    <linearGradient id="goldFrameEdge" x1="107" y1="98" x2="310" y2="284" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff8cb"/>
+      <stop offset="0.45" stop-color="#f8d77b"/>
+      <stop offset="1" stop-color="#8b591e"/>
     </linearGradient>
+
+    <!-- Chrome doux de l'écran inférieur. -->
+    <linearGradient id="silverFrame" x1="295" y1="366" x2="517" y2="555" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6e7479"/>
+      <stop offset="0.13" stop-color="#c8c8c7"/>
+      <stop offset="0.29" stop-color="#fafaf8"/>
+      <stop offset="0.56" stop-color="#f2f2ef"/>
+      <stop offset="0.82" stop-color="#c3c4c5"/>
+      <stop offset="1" stop-color="#f0f0ec"/>
+    </linearGradient>
+    <linearGradient id="silverEdge" x1="318" y1="366" x2="494" y2="555" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#e2e2df"/>
+      <stop offset="1" stop-color="#9ea2a4"/>
+    </linearGradient>
+
+    <!-- Face du Z : lumière dorée en haut, or profond sur les arêtes basses. -->
+    <linearGradient id="goldZ" x1="274" y1="236" x2="291" y2="487" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff4bd"/>
+      <stop offset="0.055" stop-color="#f6d878"/>
+      <stop offset="0.25" stop-color="#e6b64e"/>
+      <stop offset="0.52" stop-color="#d29a35"/>
+      <stop offset="0.74" stop-color="#f0c45d"/>
+      <stop offset="1" stop-color="#bd7b24"/>
+    </linearGradient>
+    <linearGradient id="goldZEdge" x1="198" y1="236" x2="366" y2="486" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff9d1"/>
+      <stop offset="0.34" stop-color="#f8d878"/>
+      <stop offset="0.7" stop-color="#f2ca68"/>
+      <stop offset="1" stop-color="#9d621d"/>
+    </linearGradient>
+    <radialGradient id="goldSheen" cx="22%" cy="8%" r="88%">
+      <stop offset="0" stop-color="#fff7c7" stop-opacity="0.56"/>
+      <stop offset="0.3" stop-color="#ffe69a" stop-opacity="0.13"/>
+      <stop offset="0.8" stop-color="#8a5117" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="softOuterGlow" x="-8%" y="-8%" width="116%" height="116%">
+      <feGaussianBlur stdDeviation="2.1"/>
+    </filter>
+    <filter id="screenShadow" x="-18%" y="-18%" width="150%" height="155%">
+      <feDropShadow dx="1" dy="8" stdDeviation="7" flood-color="#000000" flood-opacity="0.78"/>
+      <feDropShadow dx="0" dy="1.2" stdDeviation="0.8" flood-color="#fff3ba" flood-opacity="0.24"/>
+    </filter>
+    <filter id="zShadow" x="-12%" y="-10%" width="140%" height="140%">
+      <feDropShadow dx="4" dy="7" stdDeviation="4.5" flood-color="#000000" flood-opacity="0.82"/>
+      <feDropShadow dx="1" dy="2" stdDeviation="0.8" flood-color="#6f4012" flood-opacity="0.8"/>
+    </filter>
   </defs>
 
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#zd-plaque)"/>
-  <!-- Sans ce liseré la plaque se fond dans une barre des tâches sombre
-       et l'icône n'a plus de bord du tout ; plus clair ou plus épais, il
-       devient à seize pixels un halo gris qui mange le dessin. -->
-  <rect x="2.6" y="2.6" width="58.8" height="58.8" rx="13.4" fill="none"
-        stroke="#2C2E38" stroke-width="1.2"/>
+  <!-- Base et cerclage. -->
+  <rect width="608" height="608" rx="83" fill="url(#background)"/>
+  <rect x="1.6" y="1.6" width="604.8" height="604.8" rx="81.6" fill="none" stroke="#d6b172" stroke-opacity="0.24" stroke-width="4" filter="url(#softOuterGlow)"/>
+  <rect x="1.4" y="1.4" width="605.2" height="605.2" rx="81.8" fill="none" stroke="url(#outerRim)" stroke-width="1.65"/>
+  <rect x="4.4" y="4.4" width="599.2" height="599.2" rx="79" fill="none" stroke="#ffffff" stroke-opacity="0.055" stroke-width="1"/>
 
-  <rect x="28.5" y="37.5" width="24" height="13.5" rx="2.8" fill="none"
-        stroke="url(#zd-argent)" stroke-width="3"/>
+  <!-- Le dessin remonte de douze unités : la plaque a été ramenée au
+       carré, et ceci lui rend le même équilibre haut-bas qu'elle avait. -->
+  <g transform="translate(0,-12)">
+    <!-- Écran supérieur gauche. Il reste derrière le Z. -->
+    <g filter="url(#screenShadow)">
+      <rect x="81" y="96" width="264" height="188" rx="31" fill="url(#goldFrame)"/>
+      <rect x="83" y="98" width="260" height="184" rx="29" fill="none" stroke="url(#goldFrameEdge)" stroke-opacity="0.83" stroke-width="2"/>
+      <rect x="108" y="123" width="210" height="136" rx="5" fill="url(#background)"/>
+      <path d="M108 259V128Q108 123 113 123H313Q318 123 318 128V259Z" fill="none" stroke="#0a0d0d" stroke-opacity="0.78" stroke-width="2"/>
+      <path d="M111 126H315" fill="none" stroke="#fff1b3" stroke-opacity="0.2" stroke-width="1.4"/>
+    </g>
 
-  <path d="M20 26.5 H41.5 L22.5 45 H39.5" fill="none" stroke="#0A0A0F" stroke-width="8.4"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M20 26.5 H41.5 L22.5 45 H39.5" fill="none" stroke="url(#zd-or)" stroke-width="5"
-        stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Écran inférieur droit, volontairement posé sous la diagonale du Z. -->
+    <g filter="url(#screenShadow)">
+      <rect x="292" y="364" width="225" height="192" rx="32" fill="url(#silverFrame)"/>
+      <rect x="294" y="366" width="221" height="188" rx="30" fill="none" stroke="url(#silverEdge)" stroke-opacity="0.88" stroke-width="2"/>
+      <rect x="317" y="389" width="175" height="142" rx="6" fill="url(#background)"/>
+      <path d="M317 526V394Q317 389 322 389H487Q492 389 492 394V526Q492 531 487 531H322Q317 531 317 526Z" fill="none" stroke="#080c0f" stroke-opacity="0.8" stroke-width="2"/>
+      <path d="M496 393V524" fill="none" stroke="#fff" stroke-opacity="0.2" stroke-width="1.2"/>
+    </g>
 
-  <rect x="11.5" y="13" width="24" height="13.5" rx="2.8" fill="none"
-        stroke="url(#zd-or)" stroke-width="3"/>
+    <!-- Z central, dessiné comme une seule pièce afin d'avoir des raccords nets. -->
+    <g filter="url(#zShadow)">
+      <path id="z-face" d="M198 236H412.2C418.7 236 423.6 240.1 424 246.1C424.3 250.1 422.7 254.1 419.6 257.2L240.1 454.8H365.6C372.3 454.8 377.5 459.7 377.5 465.8V475.4C377.5 481.8 372.3 486.8 365.6 486.8H177.5C172.8 486.8 168.5 484.1 166.8 479.9C165.1 475.7 166.3 470.9 169.7 467.2L356.2 270.2H198C191.4 270.2 186.1 265.2 186.1 258.8V247.4C186.1 241 191.4 236 198 236Z" fill="url(#goldZ)"/>
+      <use href="#z-face" fill="url(#goldSheen)"/>
+      <use href="#z-face" fill="none" stroke="url(#goldZEdge)" stroke-width="2.1" stroke-linejoin="round"/>
+      <!-- Éclat subtil le long de la face haute du Z. -->
+      <path d="M198.4 238.3H411.7C417.2 238.3 420.3 244.5 416.3 250.3L237.8 456.9H365.3" fill="none" stroke="#fff5bf" stroke-opacity="0.47" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
 </svg>

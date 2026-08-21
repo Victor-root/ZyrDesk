@@ -22,6 +22,7 @@
 mod desk;
 mod floating;
 mod folders;
+mod icon;
 mod journal;
 mod picture;
 mod service;
@@ -91,8 +92,13 @@ fn main() {
         ])
         .setup(|app| {
             journal::opened();
-            // The icon first: from here on, something on screen says this
-            // program is running, whatever becomes of the window.
+            // The window's own icon, which the toolkit has already put a
+            // stretched one of: taken from the compiled resource at the
+            // two sizes Windows is about to draw it at.
+            icon::on_the_window(app.handle());
+            // The icon beside the clock: from here on, something on
+            // screen says this program is running, whatever becomes of
+            // the window.
             if let Err(e) = tray::raise(app.handle()) {
                 journal::note(&format!("pas d'icône dans la zone de notification : {e}"));
             }
@@ -154,6 +160,12 @@ fn main() {
                 // drags, before the resize happens.
                 WindowEvent::Resized(_) => {
                     picture::hold_the_shape(window.app_handle());
+                }
+                // The window has changed screen, or the screen has
+                // changed magnification: the icon is counted in real
+                // pixels, so it is asked for again at the new ones.
+                WindowEvent::ScaleFactorChanged { .. } => {
+                    icon::on_the_window(window.app_handle());
                 }
                 _ => {}
             }

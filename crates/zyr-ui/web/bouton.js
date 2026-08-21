@@ -31,12 +31,12 @@ function montre(element, visible) {
   element.classList.toggle("cache", !visible);
 }
 
-/* La plaque du logo dans son dessin (zyrdesk.svg) : une boîte de 64, une
-   plaque de 60 posée à 2 du bord, aux coins arrondis de 14. Le dessin
+/* La plaque du logo dans son dessin (zyrdesk.svg) : une boîte de 608, une
+   plaque qui la remplit entièrement, aux coins arrondis de 83. Le dessin
    fait foi, la fenêtre est découpée dessus : ces quatre nombres se
    relisent dans le SVG à chaque fois qu'il change, sinon la découpe passe
    à côté de ses propres coins. */
-const PLAQUE = { boite: 64, marge: 2, cote: 60, rayon: 14 };
+const PLAQUE = { boite: 608, marge: 0, cote: 608, rayon: 83 };
 
 /* Le sous-menu ouvert, s'il y en a un : c'est le seul des trois qui se
    dessine, donc le seul qui entre dans la découpe. */

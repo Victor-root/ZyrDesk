@@ -191,13 +191,13 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 >
 > Et à essayer en thème clair comme en thème sombre : la plaque est noire, donc elle ressort franchement sur un fond clair, et se distingue par son fin liseré sur un fond sombre.
 >
-> **Ce qui rendait le logo flou, et c'était le format du fichier.** Les vingt tailles du fichier d'icône y étaient rangées en PNG, parce que c'est ce que fait la bibliothèque d'images qui l'écrivait. Or Windows ne lit un PNG dans un fichier d'icône **qu'à 256 pixels** : en dessous il veut le bitmap que ce format porte depuis 1985. Il sautait donc les vingt tailles, ne trouvait que celle qu'il savait lire, et réduisait lui-même le 256 en 42 pour la barre des tâches. Aucun travail sur le dessin n'y pouvait rien.
+> **Ce qui rendait le logo flou, et il a fallu trois essais pour le trouver.** Ce n'était ni le dessin, ni les tailles, ni le cache : **la fenêtre ne se dessine pas avec l'icône du programme**. Une fenêtre à qui on a donné une icône est dessinée avec celle-là, et la boîte à outils en donne une à toutes ses fenêtres en prenant la **première entrée** du fichier d'icône, une seule, pour la barre des tâches comme pour le bandeau. Les tailles d'un tel fichier étant rangées de la plus petite à la plus grande, c'était le dessin de **seize pixels, agrandi en quarante-deux**. Agrandir est bien pire que réduire, ce qui explique que cette icône ait été la seule molle d'une barre d'icônes nettes ; et les vingt autres tailles du fichier n'étaient jamais lues, ce qui explique que deux corrections successives du fichier n'aient rien changé.
 >
-> Le fichier d'icône est maintenant écrit à la main, chaque taille sous la forme que Windows lit à cette taille-là. Et la zone de notification, qui ne sait pas lire un fichier d'icône du tout, reçoit directement l'image à la taille qu'elle demande au lieu d'un 256 à écraser.
+> Le programme pose donc maintenant lui-même l'icône de sa fenêtre, prise dans la ressource compilée aux deux tailles exactes que Windows s'apprête à dessiner, la grande et la petite. Le journal le dit à l'ouverture : `icône de la fenêtre posée en 56 et 28 px (écran à 175 %)`.
+>
+> Deux autres défauts ont été trouvés en chemin et corrigés, chacun aurait suffi à gâcher le résultat. Les tailles du fichier y étaient rangées en PNG, or Windows ne lit un PNG dans un fichier d'icône **qu'à 256 pixels** : le fichier est maintenant écrit à la main, chaque taille sous la forme lue à cette taille-là. Et la zone de notification, qui ne sait pas lire un fichier d'icône du tout, recevait un dessin de 256 à écraser en 28 : elle reçoit maintenant l'image à la taille qu'elle demande.
 >
 > Le dessin se refait avec `python3 packaging/brand/build-icons.py`, qui écrit l'icône, l'image du programme, celles de la zone de notification, et recopie le dessin là où l'interface le lit. Une seule source, jamais deux à tenir d'accord.
->
-> Si le nouveau logo n'arrive pas dans la barre des tâches après une compilation, c'est le cache d'icônes de Windows : `ie4uinit.exe -show` le vide, ou une déconnexion suffit.
 
 ---
 
