@@ -31,12 +31,23 @@ function montre(element, visible) {
   element.classList.toggle("cache", !visible);
 }
 
-/* La plaque du logo dans son dessin (zyrdesk.svg) : une boîte de 608, une
-   plaque qui la remplit entièrement, aux coins arrondis de 83. Le dessin
-   fait foi, la fenêtre est découpée dessus : ces quatre nombres se
+/* Ce que le logo dessine, dans son propre dessin (zyrdesk.svg) : deux
+   écrans aux coins arrondis, décalés en diagonale, et rien entre eux. Le
+   dessin fait foi, la fenêtre est découpée dessus : ces nombres se
    relisent dans le SVG à chaque fois qu'il change, sinon la découpe passe
-   à côté de ses propres coins. */
-const PLAQUE = { boite: 608, marge: 0, cote: 608, rayon: 83 };
+   à côté de ce qu'elle est censée épouser.
+
+   Ce sont les rectangles contour compris, donc le rectangle du SVG élargi
+   de la moitié de son trait de chaque côté, et rapportés au coin de la
+   vue plutôt qu'à l'origine du dessin. Pour l'écran du fond : x 118 - 14
+   - 36, y 70 - 14 - 36, largeur 328 + 28, coins 68 + 14. */
+const LOGO = {
+  boite: 440,
+  ecrans: [
+    { x: 68, y: 20, large: 356, haute: 274, rayon: 82 },
+    { x: 16, y: 146, large: 356, haute: 274, rayon: 82 },
+  ],
+};
 
 /* Le sous-menu ouvert, s'il y en a un : c'est le seul des trois qui se
    dessine, donc le seul qui entre dans la découpe. */
@@ -99,17 +110,21 @@ function formeOccupee(echelle) {
     pose(ou.left, ou.top, ou.width, ou.height, rayon || 0);
   };
 
-  // Le rectangle rendu, agrandissement du survol compris : la découpe
-  // épouse ce qui est dessiné à cet instant, et rien d'autre.
+  // Les deux écrans tels qu'ils sont rendus, agrandissement du survol
+  // compris : la découpe épouse ce qui est dessiné à cet instant, et rien
+  // d'autre. Le vide entre les deux n'est pas dessiné, donc il n'est pas
+  // découpé, donc les clics y passent jusqu'à l'image.
   const logo = vue.logo.getBoundingClientRect();
-  const part = logo.width / PLAQUE.boite;
-  pose(
-    logo.left + PLAQUE.marge * part,
-    logo.top + PLAQUE.marge * part,
-    PLAQUE.cote * part,
-    PLAQUE.cote * part,
-    PLAQUE.rayon * part,
-  );
+  const part = logo.width / LOGO.boite;
+  for (const ecran of LOGO.ecrans) {
+    pose(
+      logo.left + ecran.x * part,
+      logo.top + ecran.y * part,
+      ecran.large * part,
+      ecran.haute * part,
+      ecran.rayon * part,
+    );
+  }
 
   if (ouvert) {
     carte(vue.menu);

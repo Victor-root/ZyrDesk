@@ -178,7 +178,7 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 
 > **R5 (le logo est net partout, et c'est le même partout)**
 >
-> Le dessin a changé : deux écrans qui se chevauchent en diagonale, reliés par un Z doré, sur une plaque noire. Le regarder aux six endroits où il se voit, et **de près**, un écran 4K rendant le moindre flou évident :
+> Le dessin a changé : deux écrans identiques, l'un blanc et l'autre or, décalés sur une diagonale, sans plaque ni fond derrière eux. Le regarder aux six endroits où il se voit, et **de près**, un écran 4K rendant le moindre flou évident :
 >
 > 1. la **barre des tâches**, à côté des autres icônes épinglées ;
 > 2. l'**icône à côté de l'horloge** ;
@@ -187,9 +187,11 @@ Jusqu'ici, rendre un ordinateur joignable demandait quatre commandes : installer
 > 5. l'**écran d'ouverture** d'une session ;
 > 6. le **bouton flottant** pendant une session.
 >
-> Attendu : le même dessin partout, et **aussi net que les icônes voisines**. Le Z se lit, les deux écrans se distinguent, les coins de la plaque sont propres et non baveux. Comparer directement avec les icônes des autres applications de la barre des tâches : ZyrDesk ne doit plus être celle qui pique les yeux.
+> Attendu : le même dessin partout, et **aussi net que les icônes voisines**. Les deux écrans se distinguent l'un de l'autre, leurs coins arrondis sont propres et non baveux. Comparer directement avec les icônes des autres applications de la barre des tâches : ZyrDesk ne doit plus être celle qui pique les yeux.
 >
-> Et à essayer en thème clair comme en thème sombre : la plaque est noire, donc elle ressort franchement sur un fond clair, et se distingue par son fin liseré sur un fond sombre.
+> Et à essayer sur une barre des tâches claire comme sombre, et dans les deux thèmes de l'application. Le dessin n'a pas de fond : c'est le trait sombre autour des écrans qui les délimite sur un fond clair, et le blanc et l'or qui les portent sur un fond sombre, où ce même trait disparaît et sépare alors les deux écrans au lieu de les cerner. Les deux lectures sont bonnes, mais il faut vérifier les deux.
+>
+> Sur le **bouton flottant**, la découpe suit les deux écrans et rien d'autre : le vide entre eux n'est pas dessiné, donc rien n'y est visible et les clics y traversent jusqu'à l'image.
 >
 > **Ce qui rendait le logo flou, et il a fallu trois essais pour le trouver.** Ce n'était ni le dessin, ni les tailles, ni le cache : **la fenêtre ne se dessine pas avec l'icône du programme**. Une fenêtre à qui on a donné une icône est dessinée avec celle-là, et la boîte à outils en donne une à toutes ses fenêtres en prenant la **première entrée** du fichier d'icône, une seule, pour la barre des tâches comme pour le bandeau. Les tailles d'un tel fichier étant rangées de la plus petite à la plus grande, c'était le dessin de **seize pixels, agrandi en quarante-deux**. Agrandir est bien pire que réduire, ce qui explique que cette icône ait été la seule molle d'une barre d'icônes nettes ; et les vingt autres tailles du fichier n'étaient jamais lues, ce qui explique que deux corrections successives du fichier n'aient rien changé.
 >
