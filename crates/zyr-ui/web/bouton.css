@@ -185,29 +185,47 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Le chevron dit qu'il y a une liste dessous, et il tourne quand elle
-   est ouverte : sans ça rien ne distingue une ligne qui ouvre quelque
-   chose d'une ligne qui agit. */
+/* Le chevron dit qu'il y a un sous-menu, et il pointe vers l'endroit où
+   il s'ouvre : sans lui rien ne distingue une ligne qui ouvre quelque
+   chose d'une ligne qui agit. Vers la gauche, comme le sous-menu. */
 .chevron {
   flex: none;
   width: 14px;
   height: 14px;
   margin-left: var(--pas-2);
-  transition: transform 120ms ease;
+  transform: rotate(180deg);
 }
 
-.item[aria-expanded="true"] .chevron {
-  transform: rotate(90deg);
-}
+/* La liste des valeurs, à côté de sa ligne et non dessous : c'est un
+   sous-menu, il s'ouvre comme un sous-menu.
 
-/* La liste des valeurs, sous sa ligne. Sous et non à côté : la fenêtre
-   du bouton est découpée sur ce que la page occupe, et elle grandit
-   déjà vers le bas ; ouvrir sur le côté la ferait sortir de l'écran dès
-   que le bouton est posé près d'un bord. */
-.liste {
+   Vers la gauche, parce que la fenêtre du bouton est accrochée par son
+   coin haut droit et grandit vers la gauche : c'est la seule direction
+   où elle a de la place sans que le logo bouge d'un pixel.
+
+   Sortie du flux, donc invisible à la mesure de « paquet » : c'est la
+   page qui mesure l'union des deux et la donne au coeur, sans quoi la
+   fenêtre serait taillée sur le menu seul et couperait le sous-menu. */
+.reglage {
+  position: relative;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+}
+
+.liste {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  margin-right: var(--pas-2);
+  padding: var(--pas-2);
+  border: 1px solid var(--trait-fort);
+  border-radius: var(--rayon);
+  background: var(--surface-1);
+  box-shadow: var(--ombre-2);
 }
 
 .liste.repliee {
@@ -217,8 +235,9 @@
 .valeur {
   display: flex;
   align-items: center;
-  gap: var(--pas-2);
-  padding: var(--pas-2) var(--pas-3) var(--pas-2) var(--pas-6);
+  gap: var(--pas-3);
+  min-height: 34px;
+  padding: 0 var(--pas-2);
   border: none;
   border-radius: var(--rayon-petit);
   background: transparent;
@@ -228,11 +247,16 @@
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
+  transition: background var(--duree-courte) var(--courbe);
 }
 
-.valeur:hover,
-.valeur:focus-visible {
+.valeur:hover {
   background: var(--surface-3);
+}
+
+.valeur:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: -2px;
 }
 
 /* Celle qui est en place porte sa coche, comme dans n'importe quel menu :

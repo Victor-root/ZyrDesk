@@ -35,20 +35,50 @@ function montre(element, visible) {
    fait foi, la fenêtre est découpée dessus. */
 const PLAQUE = { boite: 64, marge: 2, cote: 60, rayon: 15 };
 
+/* Le sous-menu ouvert, s'il y en a un. Sorti du flux, il n'entre pas
+   dans la mesure de « paquet » : c'est ici qu'on le rattrape. */
+function laListeOuverte() {
+  return document.querySelector(".liste:not(.repliee)");
+}
+
+/* Tout ce que la page occupe : le bloc, et le sous-menu ouvert qui en
+   déborde par la gauche. La fenêtre est accrochée par son coin haut
+   droit, donc déborder par la gauche et par le bas est la seule chose
+   qu'elle sache absorber sans que le logo bouge. */
+function laBoite() {
+  const paquet = vue.paquet.getBoundingClientRect();
+  const liste = laListeOuverte();
+  if (liste === null) {
+    return paquet;
+  }
+  const carte = liste.getBoundingClientRect();
+  const left = Math.min(paquet.left, carte.left);
+  const top = Math.min(paquet.top, carte.top);
+  const right = Math.max(paquet.right, carte.right);
+  const bottom = Math.max(paquet.bottom, carte.bottom);
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
 /* La forme que la page occupe vraiment, en vrais pixels depuis le coin
-   de la fenêtre : la plaque du logo, et la carte du menu quand il est
-   ouvert. Le reste de la fenêtre n'est dessiné par personne, et c'est
-   exactement ce qu'il faut découper. */
-function formeOccupee(paquet, echelle) {
+   de la fenêtre : la plaque du logo, la carte du menu quand il est
+   ouvert, et celle du sous-menu quand il l'est. Le reste de la fenêtre
+   n'est dessiné par personne, et c'est exactement ce qu'il faut
+   découper. */
+function formeOccupee(boite, echelle) {
   const morceaux = [];
   const pose = (gauche, haut, large, haute, rayon) =>
     morceaux.push({
-      x: Math.round((gauche - paquet.left) * echelle),
-      y: Math.round((haut - paquet.top) * echelle),
+      x: Math.round((gauche - boite.left) * echelle),
+      y: Math.round((haut - boite.top) * echelle),
       width: Math.round(large * echelle),
       height: Math.round(haute * echelle),
       radius: Math.round(rayon * echelle),
     });
+  const carte = (element) => {
+    const ou = element.getBoundingClientRect();
+    const rayon = parseFloat(getComputedStyle(element).borderTopLeftRadius);
+    pose(ou.left, ou.top, ou.width, ou.height, rayon || 0);
+  };
 
   // Le rectangle rendu, agrandissement du survol compris : la découpe
   // épouse ce qui est dessiné à cet instant, et rien d'autre.
@@ -63,21 +93,24 @@ function formeOccupee(paquet, echelle) {
   );
 
   if (ouvert) {
-    const menu = vue.menu.getBoundingClientRect();
-    const rayon = parseFloat(getComputedStyle(vue.menu).borderTopLeftRadius);
-    pose(menu.left, menu.top, menu.width, menu.height, rayon || 0);
+    carte(vue.menu);
+    const liste = laListeOuverte();
+    if (liste !== null) {
+      carte(liste);
+    }
   }
   return morceaux;
 }
 
 /* La fenêtre suit ce que la page occupe, mesuré et non deviné : le menu
-   n'a pas la même hauteur selon ce qu'il contient.
+   n'a pas la même hauteur selon ce qu'il contient, et un sous-menu
+   ouvert l'élargit.
 
    En vrais pixels et non en pixels de page : sur un écran agrandi les
    deux ne valent pas la même chose, et une fenêtre taillée dans la
    mauvaise unité laisse voir son propre fond tout autour du bouton. */
 function ajusteLaFenetre() {
-  const boite = vue.paquet.getBoundingClientRect();
+  const boite = laBoite();
   const echelle = window.devicePixelRatio || 1;
   invoke("floating_size", {
     width: Math.ceil(boite.width * echelle),
@@ -113,8 +146,8 @@ function ouvre(veut) {
   vue.logo.setAttribute("aria-expanded", veut ? "true" : "false");
   if (!veut) {
     montre(vue.souci, false);
-    // Une liste laissée ouverte rouvrirait le menu à sa hauteur de
-    // liste, donc une nappe invisible posée sur l'image.
+    // Un sous-menu laissé ouvert rouvrirait le menu avec lui, donc une
+    // nappe invisible posée sur l'image, qui avale les clics.
     ouvreLaListe(null, false);
   }
   // Après le dessin : une fenêtre taillée sur l'état d'avant serait
@@ -144,7 +177,8 @@ async function demande(acte) {
 
 /* ---- Ce que la prochaine session demandera ------------------------------ */
 
-/* Trois lignes, chacune avec sa liste de valeurs dessous. Les valeurs
+/* Trois lignes, chacune ouvrant sur le côté la liste de ses valeurs.
+   Les valeurs
    viennent du produit, les mots sont écrits ici : la liste des tailles
    et des débits vit dans zyr-proto, et la façon de les dire en français
    vit là où se lit tout ce qu'une personne lit.
@@ -215,8 +249,8 @@ function poseLesValeurs(choix) {
   requestAnimationFrame(ajusteLaFenetre);
 }
 
-/* Une seule liste ouverte à la fois : trois listes dépliées feraient un
-   menu plus haut que l'écran. */
+/* Une seule à la fois, comme n'importe quel sous-menu : deux ouvertes
+   se recouvriraient, puisqu'elles s'ouvrent toutes du même côté. */
 function ouvreLaListe(nom, veut) {
   for (const [autre, _] of Object.entries(LIGNES)) {
     const ici = bloc(autre);
