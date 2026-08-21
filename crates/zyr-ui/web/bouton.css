@@ -180,9 +180,81 @@
 /* La valeur d'un réglage se lit là où se lisent les raccourcis, mais
    elle n'en est pas un : c'est ce que la ligne vaut, donc elle se lit
    comme le reste de la ligne et non en retrait. */
-.item[data-reglage] .item-touche {
+.reglage .item-touche {
   color: var(--texte);
   font-variant-numeric: tabular-nums;
+}
+
+/* Le chevron dit qu'il y a une liste dessous, et il tourne quand elle
+   est ouverte : sans ça rien ne distingue une ligne qui ouvre quelque
+   chose d'une ligne qui agit. */
+.chevron {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: var(--pas-2);
+  transition: transform 120ms ease;
+}
+
+.item[aria-expanded="true"] .chevron {
+  transform: rotate(90deg);
+}
+
+/* La liste des valeurs, sous sa ligne. Sous et non à côté : la fenêtre
+   du bouton est découpée sur ce que la page occupe, et elle grandit
+   déjà vers le bas ; ouvrir sur le côté la ferait sortir de l'écran dès
+   que le bouton est posé près d'un bord. */
+.liste {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.liste.repliee {
+  display: none;
+}
+
+.valeur {
+  display: flex;
+  align-items: center;
+  gap: var(--pas-2);
+  padding: var(--pas-2) var(--pas-3) var(--pas-2) var(--pas-6);
+  border: none;
+  border-radius: var(--rayon-petit);
+  background: transparent;
+  color: var(--texte);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.valeur:hover,
+.valeur:focus-visible {
+  background: var(--surface-3);
+}
+
+/* Celle qui est en place porte sa coche, comme dans n'importe quel menu :
+   une liste sans marque oblige à se souvenir de ce qu'on avait mis. */
+.valeur-coche {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+
+.valeur[aria-checked="true"] .valeur-coche {
+  opacity: 1;
+}
+
+.valeur-mot {
+  flex: 1;
 }
 
 /* Ce que ces trois lignes ne peuvent pas faire, dit une fois plutôt

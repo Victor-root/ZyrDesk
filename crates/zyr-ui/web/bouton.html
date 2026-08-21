@@ -58,56 +58,57 @@
         <div class="separateur" role="separator"></div>
 
         <!-- Les trois nombres qu'on règle en regardant l'image qu'ils
-             changent. Chaque ligne avance d'un cran dans sa liste à
-             chaque clic, et le menu reste ouvert : on en essaie
-             plusieurs de suite.
+             changent. Un clic ouvre la liste des valeurs, un clic dans
+             la liste en choisit une.
 
-             La liste vit dans zyr-proto, pas ici : une seconde copie
-             écrite en JavaScript s'écarterait de la vraie. -->
-        <button
-          class="item"
-          type="button"
-          data-reglage="asked"
-          role="menuitem"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="2.5" y="4" width="19" height="13" rx="2" />
-            <path d="M9 21h6M12 17v4" />
-          </svg>
-          <span class="item-mot">Taille</span>
-          <span class="item-touche" id="valeur-asked"></span>
-        </button>
+             Les listes sont bâties au chargement à partir de ce que le
+             produit propose : une seconde copie écrite en dur ici
+             s'écarterait de la vraie au premier changement. -->
+        <div class="reglage" data-reglage="asked">
+          <button class="item" type="button" data-ouvre role="menuitem" aria-haspopup="true" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2.5" y="4" width="19" height="13" rx="2" />
+              <path d="M9 21h6M12 17v4" />
+            </svg>
+            <span class="item-mot">Taille</span>
+            <span class="item-touche" data-valeur></span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </button>
+          <div class="liste repliee" data-liste role="menu"></div>
+        </div>
 
-        <button
-          class="item"
-          type="button"
-          data-reglage="bitrate"
-          role="menuitem"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 12h3l3-7 4 14 3-7h5" />
-          </svg>
-          <span class="item-mot">Débit</span>
-          <span class="item-touche" id="valeur-bitrate"></span>
-        </button>
+        <div class="reglage" data-reglage="bitrate">
+          <button class="item" type="button" data-ouvre role="menuitem" aria-haspopup="true" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12h3l3-7 4 14 3-7h5" />
+            </svg>
+            <span class="item-mot">Débit</span>
+            <span class="item-touche" data-valeur></span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </button>
+          <div class="liste repliee" data-liste role="menu"></div>
+        </div>
 
-        <button
-          class="item"
-          type="button"
-          data-reglage="codec"
-          role="menuitem"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="5" y="5" width="14" height="14" rx="2" />
-            <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" />
-          </svg>
-          <span class="item-mot">Codec</span>
-          <span class="item-touche" id="valeur-codec"></span>
-        </button>
+        <div class="reglage" data-reglage="codec">
+          <button class="item" type="button" data-ouvre role="menuitem" aria-haspopup="true" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="5" width="14" height="14" rx="2" />
+              <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" />
+            </svg>
+            <span class="item-mot">Codec</span>
+            <span class="item-touche" data-valeur></span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </button>
+          <div class="liste repliee" data-liste role="menu"></div>
+        </div>
 
-        <p class="note" id="note-session">
-          S'applique à la prochaine session.
-        </p>
+        <p class="note">S'applique à la prochaine session.</p>
 
         <div class="separateur" role="separator"></div>
 

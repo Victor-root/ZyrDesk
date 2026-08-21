@@ -18,11 +18,6 @@ const vue = {
   retour: document.getElementById("retour"),
   touchePleinEcran: document.getElementById("touche-plein-ecran"),
   toucheFin: document.getElementById("touche-fin"),
-  valeurs: {
-    asked: document.getElementById("valeur-asked"),
-    bitrate: document.getElementById("valeur-bitrate"),
-    codec: document.getElementById("valeur-codec"),
-  },
 };
 
 /* Le temps qu'un refus reste lisible avant de laisser la place. */
@@ -118,6 +113,9 @@ function ouvre(veut) {
   vue.logo.setAttribute("aria-expanded", veut ? "true" : "false");
   if (!veut) {
     montre(vue.souci, false);
+    // Une liste laissée ouverte rouvrirait le menu à sa hauteur de
+    // liste, donc une nappe invisible posée sur l'image.
+    ouvreLaListe(null, false);
   }
   // Après le dessin : une fenêtre taillée sur l'état d'avant serait
   // trop petite d'un menu.
@@ -146,63 +144,155 @@ async function demande(acte) {
 
 /* ---- Ce que la prochaine session demandera ------------------------------ */
 
-/* Les valeurs viennent du produit, les mots sont écrits ici : la liste
-   des tailles et des débits vit dans zyr-proto, et la façon de les dire
-   en français vit là où se lit tout ce qu'une personne lit.
+/* Trois lignes, chacune avec sa liste de valeurs dessous. Les valeurs
+   viennent du produit, les mots sont écrits ici : la liste des tailles
+   et des débits vit dans zyr-proto, et la façon de les dire en français
+   vit là où se lit tout ce qu'une personne lit.
 
    « Écran » se dit avec ce à quoi il revient sur cet ordinateur-ci : le
    mot seul ne dit pas si on demande du 4K ou du 1080p, et c'est
    exactement ce qu'on veut savoir avant d'ouvrir la session. */
-function ditLaTaille(choix) {
-  const taille = `${choix.width} x ${choix.height}`;
-  return choix.asked === "screen" ? `Écran, ${taille}` : taille;
+const COCHE =
+  '<svg class="valeur-coche" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>';
+
+const LIGNES = {
+  asked: {
+    valeurs: (menu) => menu.sizes.map((taille) => taille.value),
+    dit: (menu, valeur) => {
+      const taille = menu.sizes.find((une) => une.value === valeur);
+      if (!taille) {
+        return valeur;
+      }
+      const nombres = `${taille.width} x ${taille.height}`;
+      return valeur === "screen" ? `Écran, ${nombres}` : nombres;
+    },
+    ou: (choix) => choix.asked,
+  },
+  bitrate: {
+    valeurs: (menu) => menu.rates.map(String),
+    dit: (_menu, valeur) => `${Math.round(Number(valeur) / 1000)} Mb/s`,
+    ou: (choix) => String(choix.bitrateKbps),
+  },
+  codec: {
+    valeurs: (menu) => menu.codecs,
+    dit: (_menu, valeur) => (valeur === "auto" ? "Automatique" : valeur),
+    ou: (choix) => choix.codec,
+  },
+};
+
+/* Ce que le produit propose, demandé une fois : les listes ne changent
+   pas d'un clic à l'autre, et les rebâtir à chaque fois ferait clignoter
+   la fenêtre à chaque ouverture. */
+let leMenu = null;
+
+function bloc(nom) {
+  return document.querySelector(`.reglage[data-reglage="${nom}"]`);
 }
 
-function ditLeDebit(choix) {
-  return `${Math.round(choix.bitrateKbps / 1000)} Mb/s`;
-}
-
-function ditLeCodec(choix) {
-  return choix.codec === "auto" ? "Automatique" : choix.codec;
-}
-
+/* La ligne dit où elle en est, et sa liste marque la valeur en place.
+   Une liste sans marque obligerait à se souvenir de ce qu'on avait mis. */
 function poseLesValeurs(choix) {
-  vue.valeurs.asked.textContent = ditLaTaille(choix);
-  vue.valeurs.bitrate.textContent = ditLeDebit(choix);
-  vue.valeurs.codec.textContent = ditLeCodec(choix);
+  if (leMenu === null) {
+    return;
+  }
+  leMenu.now = choix;
+  for (const [nom, ligne] of Object.entries(LIGNES)) {
+    const ici = bloc(nom);
+    if (!ici) {
+      continue;
+    }
+    const ou = ligne.ou(choix);
+    ici.querySelector("[data-valeur]").textContent = ligne.dit(leMenu, ou);
+    for (const bouton of ici.querySelectorAll(".valeur")) {
+      bouton.setAttribute(
+        "aria-checked",
+        bouton.dataset.valeurBrute === ou ? "true" : "false",
+      );
+    }
+  }
   // Les valeurs n'ont pas toutes la même longueur : la fenêtre suit ce
   // que la page occupe, sinon elle rogne la plus longue.
   requestAnimationFrame(ajusteLaFenetre);
 }
 
-/* Un cran à la fois, dans l'ordre des clics. Deux demandes parties
+/* Une seule liste ouverte à la fois : trois listes dépliées feraient un
+   menu plus haut que l'écran. */
+function ouvreLaListe(nom, veut) {
+  for (const [autre, _] of Object.entries(LIGNES)) {
+    const ici = bloc(autre);
+    if (!ici) {
+      continue;
+    }
+    const ouverte = autre === nom && veut;
+    ici.querySelector(".liste").classList.toggle("repliee", !ouverte);
+    ici
+      .querySelector("[data-ouvre]")
+      .setAttribute("aria-expanded", ouverte ? "true" : "false");
+  }
+  requestAnimationFrame(ajusteLaFenetre);
+}
+
+/* Un choix à la fois, dans l'ordre des clics. Deux demandes parties
    ensemble voyagent chacune de leur côté, et la première écrite en
    dernier annulerait le clic le plus récent sans un mot. */
-let cranEnCours = Promise.resolve();
+let choixEnCours = Promise.resolve();
 
-function avance(lequel) {
-  cranEnCours = cranEnCours.then(async () => {
+function choisis(nom, valeur) {
+  ouvreLaListe(nom, false);
+  choixEnCours = choixEnCours.then(async () => {
     try {
-      poseLesValeurs(await invoke("step_session_choice", { which: lequel }));
+      poseLesValeurs(
+        await invoke("choose_session", { which: nom, value: valeur }),
+      );
     } catch (raison) {
       souci(String(raison));
     }
   });
 }
 
-async function litLesValeurs() {
-  try {
-    poseLesValeurs(await invoke("session_choice"));
-  } catch {
-    /* Le service ne répond pas : la session qui s'ouvre le dira bien
-       mieux que trois lignes de menu. */
+function batisLesListes() {
+  for (const [nom, ligne] of Object.entries(LIGNES)) {
+    const ici = bloc(nom);
+    if (!ici) {
+      continue;
+    }
+    const liste = ici.querySelector(".liste");
+    liste.replaceChildren();
+    for (const valeur of ligne.valeurs(leMenu)) {
+      const bouton = document.createElement("button");
+      bouton.type = "button";
+      bouton.className = "valeur";
+      bouton.setAttribute("role", "menuitemradio");
+      bouton.dataset.valeurBrute = valeur;
+      bouton.innerHTML = `${COCHE}<span class="valeur-mot"></span>`;
+      bouton.querySelector(".valeur-mot").textContent = ligne.dit(
+        leMenu,
+        valeur,
+      );
+      bouton.addEventListener("click", () => choisis(nom, valeur));
+      liste.append(bouton);
+    }
+    ici
+      .querySelector("[data-ouvre]")
+      .addEventListener("click", () =>
+        ouvreLaListe(
+          nom,
+          ici.querySelector(".liste").classList.contains("repliee"),
+        ),
+      );
   }
 }
 
-for (const item of document.querySelectorAll("[data-reglage]")) {
-  // Le menu reste ouvert, à la différence des actions : on essaie
-  // plusieurs crans de suite en regardant l'image.
-  item.addEventListener("click", () => avance(item.dataset.reglage));
+async function litLeMenu() {
+  try {
+    leMenu = await invoke("session_menu");
+  } catch {
+    /* Le service ne répond pas : la session qui s'ouvre le dira bien
+       mieux que trois lignes de menu. */
+    return;
+  }
+  batisLesListes();
+  poseLesValeurs(leMenu.now);
 }
 
 /* ---- Prendre et déplacer le bouton ------------------------------------- */
@@ -312,11 +402,12 @@ async function ditLesRaccourcis() {
 }
 
 ditLesRaccourcis();
-litLesValeurs();
+litLeMenu();
 
 /* Une nouvelle session peut avoir été ouverte après un changement fait
-   depuis une autre fenêtre : les trois lignes se relisent à chaque fois
-   plutôt que gardées de la session d'avant. */
-listen("floating-reset", litLesValeurs);
+   depuis une autre fenêtre, et l'écran sur lequel elle s'ouvre peut ne
+   pas être le même : les trois lignes se relisent à chaque fois plutôt
+   que gardées de la session d'avant. */
+listen("floating-reset", litLeMenu);
 
 ajusteLaFenetre();

@@ -804,7 +804,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Pendant une session, ouvrir le menu du bouton flottant. Trois lignes nouvelles : **Taille**, **Débit**, **Codec**.
 >
-> Attendu : chaque clic avance d'un cran et la valeur change sous les yeux, le menu restant ouvert. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. Une note dit que ça s'applique à la prochaine session, et c'est vrai : rien ne bouge dans l'image en cours.
+> Attendu : un clic sur une ligne **ouvre sa liste** de valeurs sous elle, avec une coche sur celle en place ; un clic dans la liste la choisit et referme. Une seule liste ouverte à la fois. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. Une note dit que ça s'applique à la prochaine session, et c'est vrai : rien ne bouge dans l'image en cours.
+>
+> Refermer le menu avec une liste ouverte, puis le rouvrir : les listes doivent être repliées. Une liste laissée ouverte garderait la fenêtre du bouton à sa hauteur de liste, ce qui pose une nappe invisible sur l'image et avale les clics.
 >
 > Régler quelque chose, **fermer la session, en rouvrir une** : les trois valeurs doivent être celles qu'on a laissées. C'est le point qui compte, sans quoi il faudrait tout refaire à chaque connexion.
 >

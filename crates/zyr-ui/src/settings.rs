@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 use zyr_control::{Answer, Request};
 use zyr_proto::session::{
-    CODECS_OFFERED, Codec, DisplayMode, Preferred, RATES_OFFERED, SIZES_OFFERED, next_in,
+    Asked, CODECS_OFFERED, Codec, DisplayMode, Preferred, RATES_OFFERED, SIZES_OFFERED,
 };
 
 use crate::service;
@@ -136,24 +136,100 @@ pub async fn session_choice(app: tauri::AppHandle) -> SessionChoice {
     )
 }
 
-/// Walks one line of the session menu one step down its list, writes the
-/// result down, and hands back what the line now says.
+/// One value a line of the session menu offers.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Offered {
+    /// What travels and is written down.
+    pub value: String,
+    /// What that size comes down to on this computer. Zero for a line
+    /// that is not a size: « screen » is the only value whose meaning is
+    /// not in the value itself.
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Everything the three lines of the session menu offer, and where they
+/// stand right now.
+///
+/// Handed over whole rather than a list at a time: the window builds the
+/// three lists once, when it opens, and a person clicking through them
+/// then waits for nothing.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMenu {
+    pub sizes: Vec<Offered>,
+    pub rates: Vec<u32>,
+    pub codecs: Vec<String>,
+    pub now: SessionChoice,
+}
+
+#[tauri::command]
+pub async fn session_menu(app: tauri::AppHandle) -> SessionMenu {
+    let screen = crate::picture::the_screen_of_this_computer(&app);
+    let preferred = preferred().await;
+    SessionMenu {
+        sizes: SIZES_OFFERED
+            .iter()
+            .map(|asked| {
+                let (width, height) = asked.size(screen);
+                Offered {
+                    value: asked.to_string(),
+                    width,
+                    height,
+                }
+            })
+            .collect(),
+        rates: RATES_OFFERED.to_vec(),
+        codecs: CODECS_OFFERED.iter().map(Codec::to_string).collect(),
+        now: SessionChoice::of(preferred, screen),
+    }
+}
+
+/// Sets one line of the session menu to one of the values it offers,
+/// writes the result down, and hands back where the three lines stand.
 ///
 /// It takes effect at the next session and not at this one: what a
 /// session asks for is settled when its engine is started, and it is
 /// told once. Changing it under a running session would mean stopping
 /// and starting that session, which is a heavier thing than a menu line
 /// and is not what a menu line should do without being asked.
+///
+/// A value the product does not offer is refused rather than written
+/// down. These come from a list the product handed over itself, so a
+/// value from anywhere else is a window and a service that no longer
+/// agree, and quietly keeping it would hide that.
 #[tauri::command]
-pub async fn step_session_choice(
+pub async fn choose_session(
     app: tauri::AppHandle,
     which: String,
+    value: String,
 ) -> Result<SessionChoice, String> {
     let mut preferred = preferred().await;
     match which.as_str() {
-        "asked" => preferred.asked = next_in(SIZES_OFFERED, preferred.asked),
-        "bitrate" => preferred.bitrate_kbps = next_in(RATES_OFFERED, preferred.bitrate_kbps),
-        "codec" => preferred.codec = next_in(CODECS_OFFERED, preferred.codec),
+        "asked" => {
+            let asked = value.parse::<Asked>()?;
+            if !SIZES_OFFERED.contains(&asked) {
+                return Err(format!("taille non proposée : {value}"));
+            }
+            preferred.asked = asked;
+        }
+        "bitrate" => {
+            let rate = value
+                .parse::<u32>()
+                .map_err(|_| format!("débit illisible : {value}"))?;
+            if !RATES_OFFERED.contains(&rate) {
+                return Err(format!("débit non proposé : {value}"));
+            }
+            preferred.bitrate_kbps = rate;
+        }
+        "codec" => {
+            let codec = value.parse::<Codec>()?;
+            if !CODECS_OFFERED.contains(&codec) {
+                return Err(format!("codec non proposé : {value}"));
+            }
+            preferred.codec = codec;
+        }
         other => return Err(format!("réglage inconnu : {other}")),
     }
     write_down(preferred).await?;
@@ -209,7 +285,6 @@ pub async fn preferred() -> Preferred {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zyr_proto::session::Asked;
 
     fn chosen() -> Chosen {
         Chosen {
@@ -267,20 +342,22 @@ mod tests {
     }
 
     #[test]
-    fn a_session_line_walks_its_list_and_says_where_it_landed() {
-        let mut preferred = Preferred::default();
-        assert_eq!(SessionChoice::of(preferred, None).asked, "screen");
-
-        preferred.asked = next_in(SIZES_OFFERED, preferred.asked);
-        let line = SessionChoice::of(preferred, Some((3840, 2160)));
-        assert_eq!(line.asked, "3840x2160");
-        assert_eq!((line.width, line.height), (3840, 2160));
-
+    fn a_session_line_says_what_its_value_comes_down_to_here() {
         // « L'écran » ne se lit pas dans le mot : la ligne doit dire à
-        // quoi il revient sur cet ordinateur-ci.
+        // quoi il revient sur cet ordinateur-ci, sinon on ne sait pas si
+        // on demande du 4K ou du 1080p.
         let screen = SessionChoice::of(Preferred::default(), Some((2560, 1440)));
         assert_eq!(screen.asked, "screen");
         assert_eq!((screen.width, screen.height), (2560, 1440));
+
+        let fixed = SessionChoice::of(
+            Preferred {
+                asked: Asked::Fixed(1920, 1080),
+                ..Preferred::default()
+            },
+            Some((3840, 2160)),
+        );
+        assert_eq!((fixed.width, fixed.height), (1920, 1080));
     }
 
     #[test]
