@@ -281,15 +281,15 @@
   flex: 1;
 }
 
-/* Ce que ces trois lignes ne peuvent pas faire, dit une fois plutôt
-   qu'à chaque ligne : une session est réglée au moment où elle
-   s'ouvre, et son moteur n'est renseigné qu'une fois. */
-.note {
-  padding: 0 var(--pas-3) var(--pas-2);
-  margin: 0;
-  font-size: var(--legende);
-  color: var(--texte-faible);
-  white-space: nowrap;
+/* Relancer l'image est la seule chose à faire quand ce qui est choisi
+   n'est plus ce qui est à l'écran : la ligne porte donc la couleur de
+   l'accent, et n'apparaît qu'à ce moment-là. */
+.item.appliquer {
+  color: var(--accent-vif);
+}
+
+.item.appliquer:hover {
+  background: color-mix(in srgb, var(--accent-vif) 12%, transparent);
 }
 
 /* Quitter est la seule action sans retour : elle porte la couleur qui

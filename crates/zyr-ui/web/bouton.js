@@ -18,6 +18,7 @@ const vue = {
   retour: document.getElementById("retour"),
   touchePleinEcran: document.getElementById("touche-plein-ecran"),
   toucheFin: document.getElementById("touche-fin"),
+  appliquer: document.querySelector("[data-appliquer]"),
 };
 
 /* Le temps qu'un refus reste lisible avant de laisser la place. */
@@ -175,13 +176,16 @@ async function demande(acte) {
   }
 }
 
-/* ---- Ce que la prochaine session demandera ------------------------------ */
+/* ---- Ce que la session demande ------------------------------------------ */
 
-/* Trois lignes, chacune ouvrant sur le côté la liste de ses valeurs.
-   Les valeurs
-   viennent du produit, les mots sont écrits ici : la liste des tailles
-   et des débits vit dans zyr-proto, et la façon de les dire en français
-   vit là où se lit tout ce qu'une personne lit.
+/* Trois lignes, chacune ouvrant sur le côté la liste de ses valeurs, et
+   une quatrième qui n'apparaît que quand ce qui est choisi n'est plus ce
+   qui est à l'écran : le moteur apprend ces trois nombres au démarrage et
+   jamais après, donc les poser veut dire relancer l'image.
+
+   Les valeurs viennent du produit, les mots sont écrits ici : la liste
+   des tailles et des débits vit dans zyr-proto, et la façon de les dire
+   en français vit là où se lit tout ce qu'une personne lit.
 
    « Écran » se dit avec ce à quoi il revient sur cet ordinateur-ci : le
    mot seul ne dit pas si on demande du 4K ou du 1080p, et c'est
@@ -244,6 +248,11 @@ function poseLesValeurs(choix) {
       );
     }
   }
+  // Ce qui a été choisi n'est pas forcément ce qui est à l'écran : le
+  // moteur apprend ces trois nombres au démarrage et jamais après. La
+  // ligne qui relance l'image n'apparaît donc que quand les deux
+  // diffèrent, et on peut changer plusieurs valeurs avant de la cliquer.
+  montre(vue.appliquer, choix.toApply);
   // Les valeurs n'ont pas toutes la même longueur : la fenêtre suit ce
   // que la page occupe, sinon elle rogne la plus longue.
   requestAnimationFrame(ajusteLaFenetre);
@@ -282,6 +291,18 @@ function choisis(nom, valeur) {
       souci(String(raison));
     }
   });
+}
+
+/* Relancer l'image avec ce qui est choisi. Le menu se referme dès que
+   c'est parti : ce qui suit est l'image qui s'en va et revient, et un
+   menu resté ouvert par-dessus serait une nappe posée sur elle. */
+async function applique() {
+  try {
+    await invoke("apply_session");
+    ouvre(false);
+  } catch (raison) {
+    souci(String(raison));
+  }
 }
 
 function batisLesListes() {
@@ -387,6 +408,8 @@ for (const item of document.querySelectorAll("[data-cacher]")) {
     invoke("floating_hide").catch(() => {});
   });
 }
+
+vue.appliquer.addEventListener("click", applique);
 
 /* Tout ce qui n'est ni le bouton ni le menu est du vide transparent
    posé sur l'image. Un clic dedans ne peut vouloir dire qu'une chose :

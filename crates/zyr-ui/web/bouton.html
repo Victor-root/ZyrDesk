@@ -108,7 +108,25 @@
           <div class="liste repliee" data-liste role="menu"></div>
         </div>
 
-        <p class="note">S'applique à la prochaine session.</p>
+        <!-- Ce qui a été choisi n'est pas encore ce qui est à l'écran :
+             l'image a été ouverte avec d'autres nombres, et le moteur ne
+             les apprend qu'au démarrage. La ligne n'apparaît qu'à ce
+             moment-là, ce qui permet d'en changer plusieurs et de ne
+             relancer l'image qu'une fois. -->
+        <button
+          class="item appliquer cache"
+          type="button"
+          data-appliquer
+          role="menuitem"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11A8 8 0 0 0 6.3 6.3L3 9.5" />
+            <path d="M4 13a8 8 0 0 0 13.7 4.7L21 14.5" />
+            <path d="M3 4.5v5h5M21 19.5v-5h-5" />
+          </svg>
+          <span class="item-mot">Appliquer les changements</span>
+          <span class="item-touche">relance l'image</span>
+        </button>
 
         <div class="separateur" role="separator"></div>
 

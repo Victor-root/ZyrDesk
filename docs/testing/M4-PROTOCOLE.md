@@ -21,6 +21,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | Essai | Ce qui a changé |
 |---|---|
 | **R17**, **R17bis** | La qualité disparaît. La taille, le débit et le codec se règlent dans le menu de la session, un cran par clic, et survivent à la fermeture |
+| **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
+| **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
 | **R33** | Deux réglages nouveaux côté hôte : renvoyer ou non un écran immobile, et la façon de filmer l'écran. Ce sont les deux seuls leviers qui restent sur la cadence |
 | **S2**, **S7** | Le bureau distant ne change plus de définition : il déménage sur un écran que ZyrDesk fait pousser, et l'écran physique de l'hôte s'éteint le temps de la session |
@@ -52,7 +54,7 @@ Ce qui marche et qui ne suffit pas. La différence avec la liste du dessus est q
 
 Ni réussi ni échoué : personne ne les a essayés depuis qu'ils existent. Ils ne sont pas urgents, mais ils ne comptent pas comme acquis.
 
-R1 à R16, R18 à R26, S1, S2bis, S8quater, S8sexies, S9ter, S9quinquies, S10, S13, S14, S15, S16, S17, S18, S18bis.
+R1 à R16, R18 à R26, S1, S2bis, S8quater, S8sexies, S9ter, S9quinquies, S10, S13, S14, S15, S16, S17, S18bis.
 
 ---
 
@@ -753,6 +755,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Sur l'accueil, en revanche, la croix range la fenêtre sans rien arrêter : l'icône à côté de l'horloge reste, et un clic dessus ramène la fenêtre. Le vérifier dans la foulée, c'est l'autre moitié de l'essai.
 
+> **S18ter (la croix marche aussi quand la session a lâché)**
+>
+> Ouvrir une session, puis couper l'ordinateur d'en face en pleine session : débrancher son câble réseau, couper son Wi-Fi, ou l'éteindre. L'image se fige. Cliquer sur la **croix**.
+>
+> Attendu : au bout de **trois secondes au plus**, l'image disparaît et l'accueil revient. Pas quinze secondes, pas « rien du tout jusqu'à ce que ça revienne tout seul ».
+>
+> **Pourquoi trois secondes.** Fermer proprement veut dire rendre son bureau à l'ordinateur d'en face, et ça se demande **à travers le tunnel**, donc à un ordinateur qui peut très bien ne plus répondre. La question est posée sur un fil à part et personne ne l'attend : l'image a trois secondes pour s'en aller toute seule, ce qu'elle fait quand la réponse arrive, et sinon elle est arrêtée ici. La croix ramène à l'accueil dans tous les cas.
+>
+> Le journal dit lequel des deux chemins a été pris : `bureau distant rendu` quand la question a abouti, `bureau distant non rendu : …` sinon, et dans ce cas `l'ordinateur distant n'a pas rendu la main à temps : lecteur N arrêté ici`. **Aucune ligne rouge** ne doit traverser l'écran : c'est ce que la personne a demandé, pas une panne.
+
 > **S18bis (la fenêtre revient de là où elle était)**
 >
 > Trois fins de session à faire l'une après l'autre, en terminant chaque fois **depuis l'ordinateur distant** (fermer la session dans l'image, ou éteindre l'écran distant) plutôt que par le menu :
@@ -805,7 +817,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Pendant une session, ouvrir le menu du bouton flottant. Trois lignes nouvelles : **Taille**, **Débit**, **Codec**.
 >
-> Attendu : un clic sur une ligne **ouvre sa liste** de valeurs sous elle, avec une coche sur celle en place ; un clic dans la liste la choisit et referme. Une seule liste ouverte à la fois. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. Une note dit que ça s'applique à la prochaine session, et c'est vrai : rien ne bouge dans l'image en cours.
+> Attendu : un clic sur une ligne **ouvre sa liste** de valeurs à côté d'elle, avec une coche sur celle en place ; un clic dans la liste la choisit et referme. Une seule liste ouverte à la fois. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. **Rien ne bouge dans l'image en cours** : le choix est retenu, et c'est R34 qui le pose à l'écran.
 >
 > Refermer le menu avec une liste ouverte, puis le rouvrir : les listes doivent être repliées. Une liste laissée ouverte garderait la fenêtre du bouton à sa hauteur de liste, ce qui pose une nappe invisible sur l'image et avale les clics.
 >
@@ -818,6 +830,22 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Ouvrir les réglages (engrenage).
 >
 > Attendu : plus de boutons Fluide / Équilibré / Qualité. À la place, une ligne **Ce qu'une session demande** qui rappelle la taille, la cadence et le débit du moment. Elle doit suivre ce qui vient d'être réglé dans le menu de la session.
+
+> **R34 (appliquer les changements sans fermer la session)**
+>
+> Pendant une session, ouvrir le menu du bouton flottant. Tant qu'on n'a rien changé, **aucune ligne « Appliquer »** ne doit s'y trouver.
+>
+> Changer la **taille**. Une ligne **Appliquer les changements** apparaît, en bleu, sous les trois réglages. Ne pas la cliquer : changer aussi le **débit** et le **codec**. La ligne reste, une seule fois. C'est tout l'intérêt : on règle ce qu'on veut, et l'image ne se relance qu'une fois.
+>
+> Cliquer **Appliquer les changements**.
+>
+> Attendu : le menu se referme, l'image disparaît quelques secondes, l'écran d'ouverture revient avec **Nouveaux réglages, l'image se relance…**, puis l'image revient **avec les nouvelles valeurs**. La fenêtre garde sa taille et son plein écran ; la session n'est pas fermée et on ne revient pas à l'accueil.
+>
+> Rouvrir le menu : la ligne **Appliquer** a disparu, puisque ce qui est choisi est de nouveau ce qui est à l'écran. Les trois lignes montrent bien les valeurs demandées.
+>
+> **Pourquoi ça relance l'image.** Le moteur apprend la taille, le débit et le codec **à son démarrage et jamais après** : il n'existe aucune façon de les lui changer en marche. Le reste du menu, lui, se demande au moteur en marche et prend effet tout de suite. C'est pour ça que ces trois-là seulement ont un bouton, et que les autres n'en ont pas.
+>
+> Le journal du client raconte la relance : `réglages appliqués : le lecteur N est relancé`, `lecteur N arrêté`, `image relancée avec ce qui est choisi maintenant`, puis les lignes d'une ouverture ordinaire.
 
 > **R18 (un réglage survit à tout)**
 >

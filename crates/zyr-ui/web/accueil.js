@@ -707,6 +707,15 @@ function echoue(texte) {
 }
 
 listen("session-step", ({ payload }) => {
+  // L'image se relance avec de nouveaux réglages : personne n'a cliqué
+  // pour ouvrir celle-là, donc c'est ici que l'écran d'ouverture revient.
+  // Il porte déjà le nom de l'ordinateur, posé à la première ouverture.
+  if (payload.kind === "again") {
+    ouverture = true;
+    dessine();
+    etape("Nouveaux réglages, l'image se relance…", null);
+    return;
+  }
   // Une étape n'a de sens que pendant une ouverture. Un événement en
   // retard, arrivé après l'échec ou après la fin, remettait l'écran
   // d'ouverture par-dessus l'accueil, et plus rien ne l'enlevait.

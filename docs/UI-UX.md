@@ -56,19 +56,31 @@ Session (l'écran le plus important) : l'image est native et s'affiche dans la f
                                         ┌────┐
                                         │ ZD │
                                         └────┘
-        ┌───────────────────────────────────────┐
-        │ ⛶  Fenêtré ou plein écran   Ctrl+Alt+F │
-        │ ▥  Statistiques        Ctrl+Alt+Maj+S │
-        │ ⌖  Souris bureau ou jeu Ctrl+Alt+Maj+M│
-        │ ─────────────────────────────────────  │
-        │ ⦸  Masquer ce bouton             Alt+² │
-        │ ⏻  Terminer la session      Ctrl+Alt+W │
-        └───────────────────────────────────────┘
+                     ┌────────────────────┐
+                     │  ✓ Écran, 3840x2160│  ┌───────────────────────────────────────┐
+                     │    2560 x 1440     │  │ ⛶  Fenêtré ou plein écran   Ctrl+Alt+F │
+                     │    1920 x 1080     │  │ ▥  Statistiques        Ctrl+Alt+Maj+S │
+                     │    1280 x 720      │  │ ⌖  Souris bureau ou jeu Ctrl+Alt+Maj+M│
+                     └────────────────────┘  │ ────────────────────────────────────── │
+                                             │ ▭  Taille       Écran, 3840x2160    ‹  │
+                                             │ ∿  Débit                  20 Mb/s   ‹  │
+                                             │ ⬚  Codec              Automatique   ‹  │
+                                             │ ⟳  Appliquer les changements           │
+                                             │ ────────────────────────────────────── │
+                                             │ ⦸  Masquer ce bouton             Alt+² │
+                                             │ ⏻  Terminer la session      Ctrl+Alt+W │
+                                             └───────────────────────────────────────┘
 ```
 
-Cinq entrées, et une seule façon de finir : la distinction des moteurs entre partir et fermer ne remonte pas jusqu'ici ([D24](DECISIONS.md)). Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Les trois qui parlent au moteur portent ses combinaisons à lui ; les nôtres se choisissent dans les réglages, et ce sont celles qui s'affichent. Posé en M4 ([D16](DECISIONS.md)). À venir : latence et chemin réseau en un coup d'œil, statistiques détaillées (fps capturés/reçus/affichés, débit, pertes, jitter, temps de décodage), changement d'écran, préréglage de qualité.
+Deux groupes, et une seule façon de finir : la distinction des moteurs entre partir et fermer ne remonte pas jusqu'ici ([D24](DECISIONS.md)).
 
-Réglages : deux niveaux. Simple par défaut (qualité en préréglages : Fluide / Équilibré / Qualité, thème, confiance aux ordinateurs du réseau local). « Avancé » replié : codec, fenêtre de la session, souris, statistiques, dossier des journaux, et plus tard débit manuel, taille de paquet, décodeur, choix du relais, mode paranoïaque. Le jargon reste rangé là.
+En haut, ce qui se fait tout de suite. Chaque entrée affiche le raccourci clavier qui fait la même chose : en mode souris de jeu, le pointeur appartient à l'ordinateur distant et le bouton n'est pas cliquable. Celles qui parlent au moteur portent ses combinaisons à lui ; les nôtres se choisissent dans les réglages, et ce sont celles qui s'affichent.
+
+En bas, les trois nombres qu'une session demande. Ils sont là et pas dans l'écran des réglages parce qu'on les change en regardant l'image qu'ils changent, et que revenir sur un écran de réglages pour en essayer un, c'est s'éloigner de la seule chose qui dit si ça a marché. Chacun ouvre sa liste sur le côté, avec une coche sur la valeur en place ; la taille dit à quoi « Écran » revient sur cet ordinateur-ci, le mot seul ne disant pas si on demande du 4K ou du 1080p. La ligne « Appliquer les changements » n'apparaît que quand ce qui est choisi n'est plus ce qui est à l'écran, et relance l'image sans fermer la session ([D27](DECISIONS.md)).
+
+Posé en M4 ([D16](DECISIONS.md)). À venir : latence et chemin réseau en un coup d'œil, statistiques détaillées (fps capturés/reçus/affichés, débit, pertes, jitter, temps de décodage), changement d'écran.
+
+Réglages : ce qui ne se règle pas en regardant l'image. Le thème, la confiance aux ordinateurs du réseau local, la fenêtre de la session, la souris, les statistiques, le démarrage avec Windows, le dossier des journaux, et ce que cet ordinateur fait quand c'est lui qu'on regarde : renvoyer ou non un écran immobile, et la façon de filmer l'écran. Une ligne y rappelle ce qu'une session demanderait maintenant, sans qu'on puisse la changer là : c'est le menu de la session qui la porte. À venir : taille de paquet, décodeur, choix du relais, mode paranoïaque. Le jargon reste rangé dans « Avancé ».
 
 Un seul de ces réglages s'écrit aussi tout seul : « fenêtre de la session ». Basculer entre plein écran et fenêtre pendant une session est un choix comme un autre, et il se retrouve écrit ici, donc la session suivante s'ouvre comme la précédente a été laissée. Personne ne doit avoir à dire deux fois la même chose, une fois dans l'image et une fois dans un écran de réglages.
 

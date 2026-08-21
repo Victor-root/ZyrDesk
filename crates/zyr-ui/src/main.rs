@@ -74,6 +74,7 @@ fn main() {
             journal::clear_journal,
             session::connect,
             session::sessions,
+            session::apply_session,
             settings::settings,
             settings::choose,
             settings::session_choice,

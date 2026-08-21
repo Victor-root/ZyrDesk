@@ -108,8 +108,13 @@ const FRONT_TAKES: Duration = Duration::from_millis(400);
 /// Pause between two looks at which window is in front.
 const FRONT_STEP: Duration = Duration::from_millis(10);
 
-/// How long the picture is given to go once the far computer has been
-/// asked to hand its desktop back.
+/// How long the player is given to stop by itself once the far computer
+/// has been asked to hand its desktop back.
+///
+/// Past it the player is stopped here. Long enough that a far computer
+/// which answers takes the picture away itself, which is how a session
+/// ends when everything works; short enough that one which has stopped
+/// answering does not hold the person in front of a picture that is over.
 const CLOSING_SHOWS: Duration = Duration::from_secs(3);
 
 /// How long a drag may last before it is called over.
@@ -433,7 +438,7 @@ pub fn expect_nothing(app: &AppHandle) {
 /// just started, for as long as it has a picture up. That second answer
 /// is what puts the button on screen with the picture rather than
 /// several seconds behind it.
-async fn player(app: &AppHandle) -> Option<u32> {
+pub async fn player(app: &AppHandle) -> Option<u32> {
     if let Some(session) = crate::session::sessions().await.into_iter().next() {
         return Some(session.process);
     }
@@ -480,6 +485,46 @@ fn still_running(process: u32) -> bool {
 
 #[cfg(not(windows))]
 fn still_running(_process: u32) -> bool {
+    false
+}
+
+/// Stops that player, and says whether it was there to be stopped.
+///
+/// What ends a session on this side when nothing else is going to: a far
+/// computer that has stopped answering, or a person changing what the
+/// session asks for, which the engine is only ever told once and at its
+/// start. Nothing is lost by stopping it. The player holds no state worth
+/// saving, the service gives the way back when the process is gone, and
+/// whoever was waiting on that process wakes the moment it does.
+///
+/// Nought as the parting code, which is the one the engine gives when a
+/// session ends normally: it did, this being what was asked for.
+#[cfg(windows)]
+pub fn stop_the_player(process: u32) -> bool {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
+
+    // SAFETY: a refused or finished process gives a null handle, which is
+    // one of the answers; a real one is closed right below.
+    let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, process) };
+    if handle.is_null() {
+        note(&format!("lecteur {process} déjà arrêté"));
+        return false;
+    }
+    // SAFETY: the handle is live and was opened for exactly this.
+    let stopped = unsafe { TerminateProcess(handle, 0) } != 0;
+    // SAFETY: the handle came from the call above and is closed once.
+    unsafe { CloseHandle(handle) };
+    note(&if stopped {
+        format!("lecteur {process} arrêté")
+    } else {
+        format!("Windows a refusé d'arrêter le lecteur {process}")
+    });
+    stopped
+}
+
+#[cfg(not(windows))]
+pub fn stop_the_player(_process: u32) -> bool {
     false
 }
 
@@ -916,7 +961,7 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
             }
             return crate::picture::toggle_the_screen(app);
         }
-        Act::End => return end_it_on_the_far_computer(app).await,
+        Act::End => return end_the_session(app).await,
         _ => {}
     }
 
@@ -977,14 +1022,16 @@ async fn put_the_picture_in_front(process: u32) -> Result<(), String> {
         .to_string())
 }
 
-/// Whether that player has stopped showing anything.
+/// Waits a moment for that player to stop, and says whether it did.
 ///
-/// Given a moment: the picture does not go the instant the far computer
-/// is asked to let go of its desktop.
-async fn the_picture_is_gone(process: u32) -> bool {
+/// The player and not its window. A player that has lost its far
+/// computer keeps a window, and puts its own notice in it: read from the
+/// window, a session that had nothing left to show counted as over, and
+/// nothing took it off the screen.
+async fn the_player_has_stopped(process: u32) -> bool {
     let until = std::time::Instant::now() + CLOSING_SHOWS;
     while std::time::Instant::now() < until {
-        if picture_of(process).is_none() {
+        if !still_running(process) {
             return true;
         }
         tokio::time::sleep(FRONT_STEP).await;
@@ -992,7 +1039,17 @@ async fn the_picture_is_gone(process: u32) -> bool {
     false
 }
 
-/// Hands the far computer's desktop back, instead of merely leaving it.
+/// Ends the session: the far computer is handed its desktop back, and
+/// the picture goes here whatever that computer has to say about it.
+///
+/// The two halves are deliberately not tied together. Handing the desktop
+/// back is a question asked over the network, and a computer that has
+/// stopped answering takes fifteen seconds to be found out; the person
+/// who just closed the session must not be held in front of a dead
+/// picture for as long as that takes. So the question is asked on a
+/// thread of its own, the player is given a moment to stop of its own
+/// accord, which is what happens when the far computer answers, and it is
+/// stopped here when it does not.
 ///
 /// Where to ask comes from the service first: it knows every session on
 /// this computer, including those another window opened. And it is the
@@ -1005,7 +1062,7 @@ async fn the_picture_is_gone(process: u32) -> bool {
 /// this window wrote down when it started the player, and without that
 /// fallback the cross and the menu answered « aucune session en cours »
 /// over a running picture.
-async fn end_it_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
+async fn end_the_session(app: &AppHandle) -> Result<(), String> {
     let watched = *app
         .state::<Floating>()
         .watched
@@ -1044,42 +1101,44 @@ async fn end_it_on_the_far_computer(app: &AppHandle) -> Result<(), String> {
         }
     };
     note(&format!("fermeture demandée sur {towards} à travers {at}"));
-    // Said before the asking. The engine can lose its stream and stop
-    // before the far computer has finished answering, and a session
-    // reported as broken to whoever just closed it would be a lie.
+    // Said before the asking, and never taken back. The engine can lose
+    // its stream and stop before the far computer has finished answering,
+    // and a session reported as broken to whoever just closed it would be
+    // a lie; and the player is stopped here in any case, which is that
+    // person's doing too.
     Floating::closing(app, true);
 
-    // On a thread of its own: this asks the far computer a question over
-    // the network, and the window must not stop drawing while it waits.
-    let answered = tauri::async_runtime::spawn_blocking(move || {
-        zyr_session::close_on_the_far_computer(&towards, &at)
-    })
-    .await;
+    // Asked on a thread of its own, and nothing here waits for it. What
+    // comes back only reaches the journal: by the time it does, the
+    // session is over on this side one way or the other, and a refusal
+    // shown then would be a red line across a home screen about a session
+    // the person has already left.
+    tauri::async_runtime::spawn(async move {
+        let answered = tauri::async_runtime::spawn_blocking(move || {
+            zyr_session::close_on_the_far_computer(&towards, &at)
+        })
+        .await;
+        note(&match answered {
+            Ok(Ok(())) => "bureau distant rendu".to_string(),
+            Ok(Err(e)) => format!(
+                "bureau distant non rendu : {}",
+                e.to_string().replace('\n', " ")
+            ),
+            Err(e) => format!("bureau distant non rendu : {e}"),
+        });
+    });
 
-    match answered {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => {
-            // Asking this well is what takes the answer away. The far
-            // computer lets its desktop go, the stream stops, the tunnel
-            // that carried the question goes with it, and nothing comes
-            // back. A silence that leaves no picture behind is the thing
-            // having worked, and saying otherwise would put a red line
-            // across the screen every time it did.
-            if the_picture_is_gone(process).await {
-                note(&format!("fermeture faite, sans réponse ({e})"));
-                return Ok(());
-            }
-            note(&format!("fermeture refusée : {e}"));
-            // Refused, so the session is still standing: whatever befalls
-            // it later is nobody's doing but its own.
-            Floating::closing(app, false);
-            Err(e.to_string())
-        }
-        Err(e) => {
-            Floating::closing(app, false);
-            Err(e.to_string())
-        }
+    // The far computer letting its desktop go is what stops the player,
+    // and that is how a session ends when everything works. Given a
+    // moment, and no more.
+    if the_player_has_stopped(process).await {
+        return Ok(());
     }
+    note(&format!(
+        "l'ordinateur distant n'a pas rendu la main à temps : lecteur {process} arrêté ici"
+    ));
+    stop_the_player(process);
+    Ok(())
 }
 
 /* ---- Ce qui appartient à Windows ------------------------------------- */

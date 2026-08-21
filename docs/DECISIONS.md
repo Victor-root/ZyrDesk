@@ -212,7 +212,7 @@ L'ordre entre les deux tient à un seul fait : le bouton est marqué toujours au
 
 **Pourquoi c'est celle-là qui reste.** Entre les deux, une seule répond à la question que la personne se pose en cliquant. « J'ai fini » veut dire que la machine d'en face est libre, pas qu'elle attend. Garder l'autre aurait voulu dire l'expliquer, et une explication est le prix d'un mauvais modèle.
 
-**Ce que ça coûte.** Terminer une session demande maintenant un aller-retour à l'ordinateur d'en face, là où partir se faisait sur place. Quelques dixièmes de seconde, et une réponse qui peut ne pas revenir : demander à un ordinateur de lâcher son bureau emporte le chemin par lequel la question a été posée, donc un silence qui ne laisse pas d'image derrière lui est un succès et non une panne.
+**Ce que ça coûte.** Terminer une session demande maintenant un aller-retour à l'ordinateur d'en face, là où partir se faisait sur place. Quelques dixièmes de seconde, et une réponse qui peut ne pas revenir : demander à un ordinateur de lâcher son bureau emporte le chemin par lequel la question a été posée. Ce coût a été payé par la personne pendant un temps, et il ne l'est plus : voir [D26](#d26-finir-une-session-ne-dépend-plus-de-lordinateur-den-face-2026-08-21-pendant-m4).
 
 **Ce qui reste ouvert.** Le moteur client garde son propre raccourci de départ, celui qui laisse le bureau distant ouvert : il l'intercepte lui-même et rien de ce côté ne peut le lui retirer sans un patch. Il ne figure plus nulle part dans le produit.
 
@@ -229,6 +229,30 @@ L'ordre entre les deux tient à un seul fait : le bouton est marqué toujours au
 **Ce qui limite le risque.** Le patch tient dans un fichier, ne touche qu'un moteur de rendu sur six, et n'ajoute aucune notion de ZyrDesk : c'est un défaut de performance de Moonlight, mesurable sans ZyrDesk, et un candidat direct à une contribution en amont. Le chemin d'échec est celui qui existait : tout ce qui n'est pas un simple changement de taille, et toute erreur en route, repart par la reconstruction complète.
 
 **Ce qu'il faut surveiller.** Sept patchs sur sept. Le prochain besoin d'un patch client n'a plus de marge : il faudra soit remonter le correctif en amont et attendre une version qui le porte, soit rouvrir D5 pour de bon.
+
+## D26. Finir une session ne dépend plus de l'ordinateur d'en face (2026-08-21, pendant M4)
+
+**Décision.** Terminer une session, par la croix comme par le menu, fait deux choses qui ne s'attendent pas l'une l'autre. L'ordinateur d'en face est prié de reprendre son bureau, sur un fil à part, et ce qu'il répond ne va que dans le journal. De ce côté-ci, l'image a trois secondes pour s'en aller toute seule, ce qu'elle fait quand la réponse arrive ; passé ce délai le lecteur est arrêté ici. La croix ramène à l'accueil dans tous les cas.
+
+**Ce qui l'a rendue nécessaire.** L'aller-retour de [D24](#d24-une-session-est-en-cours-ou-terminée-jamais-entre-les-deux-2026-08-19-pendant-m4) était attendu par la fenêtre. Quand la session avait lâché, c'est-à-dire précisément quand on veut la fermer, la question partait vers une machine qui ne répondait plus et mettait quinze secondes à être déclarée injoignable, pendant lesquelles la croix ne faisait rien du tout. Dit par Victor : « quand une session se coupe je ne peux pas fermer la fenêtre avec la croix ça fait rien du tout ».
+
+**Pourquoi ne pas simplement raccourcir l'attente.** Parce que les deux moitiés du geste n'ont pas le même destinataire. Rendre le bureau distant est une politesse envers l'autre machine et peut échouer sans conséquence ici ; rendre l'accueil est ce que la personne a demandé et ne peut pas échouer. Les lier, c'était faire dépendre le certain de l'incertain.
+
+**Ce qui est arrêté, et comment.** Le lecteur, par son numéro, avec le code de sortie d'une fin normale : c'en est une, puisque c'est ce qui a été demandé. Rien n'est perdu, le lecteur ne garde rien ; le service rend le chemin dès que le processus s'en va, et le fil qui attendait ce processus se réveille au même instant.
+
+**Ce que ça coûte.** Un bureau distant qui n'a pas eu le temps d'être rendu reste tenu par son moteur jusqu'à ce qu'il constate le départ du client. C'est le cas où la machine ne répondait déjà plus, donc le cas où il n'y avait rien à faire de mieux.
+
+## D27. La taille, le débit et le codec s'appliquent en relançant l'image (2026-08-21, pendant M4)
+
+**Décision.** Ces trois réglages-là se changent dans le menu de la session, et une ligne « Appliquer les changements » apparaît dès que ce qui est choisi n'est plus ce qui est à l'écran. La cliquer arrête le lecteur et le rouvre avec les nouvelles valeurs, sans fermer la session ni revenir à l'accueil : la fenêtre garde sa taille, son plein écran, et le tunnel n'est refait que le temps de l'ouverture.
+
+**Pourquoi une ligne et pas un effet immédiat.** Le moteur client reçoit la taille, le débit et le codec en arguments de démarrage et n'a aucune façon de les apprendre en marche. Les appliquer à chaque clic relancerait l'image à chaque clic, ce qu'aucune ligne de menu ne devrait faire sans qu'on le lui demande. Le bouton existe pour qu'on puisse en changer trois et ne payer qu'une relance, ce que Victor a demandé mot pour mot.
+
+**Ce que ça remplace.** La note « s'applique à la prochaine session », qui était vraie et inutilisable : chercher où est le mur de cadence demande d'essayer une valeur, de la regarder, et d'en essayer une autre, et fermer la session entre chaque essai fait perdre la comparaison.
+
+**Ce qui distingue ces trois-là du reste.** Tout le reste du menu se demande au moteur en marche, par les raccourcis auxquels il répond, ou ne le regarde pas du tout : le plein écran est notre fenêtre, les statistiques et le mode de la souris sont des frappes envoyées au moteur. Seuls ces trois nombres se règlent au démarrage, et seuls eux ont un bouton.
+
+**Ce que ça coûte.** Les quelques secondes d'une ouverture, celles que le journal montre déjà, et le fait que l'ordinateur d'en face voit un client partir et revenir. La fenêtre montre l'écran d'ouverture pendant ce temps, avec ses étapes ordinaires, pour que ce ne soit pas confondu avec une session qui a lâché.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

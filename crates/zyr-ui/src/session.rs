@@ -11,12 +11,14 @@
 //! what it holds is what lets a window opened afterwards, or reopened
 //! after a crash, show the session instead of an empty home screen.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use zyr_control::{Answer, Request};
+use zyr_proto::session::{Asked, Codec, Preferred, SessionSettings};
 use zyr_session::{Outcome, Step, Wanted};
 
 use crate::service;
@@ -52,6 +54,13 @@ enum Told {
     },
     /// The picture is up and the session belongs to the service now.
     Live,
+    /// The picture is being opened again, the person having changed what
+    /// the session asks for.
+    ///
+    /// The steps that follow are the ones an opening always goes through,
+    /// and the window shows them the same way. It only has to be told
+    /// that one is starting, since nobody clicked anything to start it.
+    Again,
 }
 
 /// How a session finished, or failed to start.
@@ -112,6 +121,50 @@ pub fn opening() -> bool {
     OPENING.load(Ordering::Relaxed)
 }
 
+/// The player that was stopped so the picture could be opened again,
+/// rather than because the session was over.
+///
+/// Read by whoever was waiting on that player, the instant it stops:
+/// stopping it is the only way to change what it was told, and the two
+/// reasons to stop it look exactly alike from the outside.
+///
+/// The player and not a plain yes: a second ask, landing on a player that
+/// had already gone, would otherwise leave a yes behind that reopened the
+/// session after the person closed it. Named this way it can only ever
+/// reopen the picture it was written for.
+static OPEN_AGAIN: AtomicU32 = AtomicU32::new(0);
+
+/// The three numbers the picture on screen was opened with.
+///
+/// Kept because they cannot be read back from anywhere. What a session
+/// asks for is settled when its engine starts and told to it once, so a
+/// size, a rate or a codec chosen afterwards is written down and nothing
+/// more until the picture is opened again. This is what lets the session's
+/// own menu say which of the two it is showing.
+static SHOWN_AS: Mutex<Option<(Asked, u32, Codec)>> = Mutex::new(None);
+
+/// What the engine is told once, at its start, and never again.
+///
+/// The rest of what a person chooses is either asked of the engine while
+/// it runs, by the keystrokes it answers to, or belongs to this side of
+/// the picture entirely. Only these three are worth opening the picture
+/// again for, and only these three are compared to know whether they are
+/// still what is on screen.
+fn told_once(preferred: &Preferred) -> (Asked, u32, Codec) {
+    (preferred.asked, preferred.bitrate_kbps, preferred.codec)
+}
+
+/// Whether what is chosen now is not what the picture on screen shows.
+///
+/// False when nothing is on screen: there is then nothing to apply it to,
+/// and the next session opens with it anyway.
+pub fn waiting_to_be_applied(preferred: &Preferred) -> bool {
+    match *SHOWN_AS.lock().expect("réglages de l'image") {
+        Some(shown) => shown != told_once(preferred),
+        None => false,
+    }
+}
+
 #[tauri::command]
 pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Result<(), String> {
     let peer = fingerprint
@@ -135,94 +188,166 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         preferred.display_mode == zyr_proto::session::DisplayMode::Fullscreen,
     );
 
-    // Measured after the window has taken its place and not before: the
-    // screen that counts is the one the picture will be shown on, and
-    // that is only settled once the window has moved.
-    let screen = crate::picture::the_screen_of_this_computer(&app);
     let wanted = Wanted {
         host: host.trim().to_string(),
         peer: Some(peer),
-        // Read at the last moment rather than held: the settings screen
-        // may have changed them since this window opened.
-        settings: preferred.settings(screen),
+        settings: what_to_ask_for(&app, preferred),
         pair_again: false,
     };
-    crate::picture::tell_what_is_asked_for(&app, screen, preferred.asked, &wanted.settings);
 
     // On a thread of its own, and not one of the interface's: the
     // opening blocks for as long as a pairing takes, which is as long as
     // it takes someone to walk to another computer.
-    std::thread::spawn(move || drive(&app, wanted));
+    std::thread::spawn(move || drive(&app, wanted, preferred));
     Ok(())
 }
 
-fn drive(app: &AppHandle, wanted: Wanted) {
+/// What a session opened right now asks for, said in the journal on the
+/// way past.
+///
+/// The screen is measured after the window has taken its place and never
+/// before: the screen that counts is the one the picture will be shown
+/// on, and that is only settled once the window has moved.
+///
+/// And the choices are read at the last moment rather than held: they can
+/// have been changed from the settings screen since this window opened, or
+/// from the session's own menu since the picture was last opened.
+fn what_to_ask_for(app: &AppHandle, preferred: Preferred) -> SessionSettings {
+    let screen = crate::picture::the_screen_of_this_computer(app);
+    let settings = preferred.settings(screen);
+    crate::picture::tell_what_is_asked_for(app, screen, preferred.asked, &settings);
+    settings
+}
+
+/// Opens the session and holds it, from the first tunnel to the last
+/// picture.
+///
+/// It opens more than once when the person changes what the session asks
+/// for and applies it. The engine is told a size, a rate and a codec when
+/// it starts and never again, so the only way to change one is to open the
+/// picture again; everything around it stands, this thread and the
+/// pairing included, and what it costs is the few seconds an opening
+/// takes.
+fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
     crate::journal::note(&format!("session demandée vers {}", wanted.host));
-    let towards = wanted.host.clone();
-    let running = match zyr_session::open(&wanted, &mut |step| {
-        crate::journal::note(&written(&step));
-        // The floating button hangs on that process, and this window is
-        // the only one that knows its number until the service does; the
-        // way travels with it, so the session can be ended during the
-        // seconds the service does not believe in it yet.
-        if let Step::Showing { process, at } = &step {
-            crate::floating::expect(app, *process, &towards, at);
-            lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
-        }
-        say(app, told(step));
-    }) {
-        Ok(running) => running,
-        Err(e) => {
+    loop {
+        *SHOWN_AS.lock().expect("réglages de l'image") = Some(told_once(&preferred));
+
+        let towards = wanted.host.clone();
+        let running = match zyr_session::open(&wanted, &mut |step| {
+            crate::journal::note(&written(&step));
+            // The floating button hangs on that process, and this window
+            // is the only one that knows its number until the service
+            // does; the way travels with it, so the session can be ended
+            // during the seconds the service does not believe in it yet.
+            if let Step::Showing { process, at } = &step {
+                crate::floating::expect(app, *process, &towards, at);
+                lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
+            }
+            say(app, told(step));
+        }) {
+            Ok(running) => running,
+            Err(e) => {
+                crate::journal::note(&format!(
+                    "session non ouverte : {}",
+                    e.to_string().replace('\n', " ")
+                ));
+                return finish(app, false, e.to_string());
+            }
+        };
+
+        let process = running.process_id();
+        crate::journal::note(&format!("session en cours, lecteur {process}"));
+        say(app, Told::Live);
+
+        // Waiting costs nothing here and buys the one thing the person
+        // wants afterwards: whether the session ended by itself or fell
+        // over.
+        let ended = running.wait();
+
+        // Asked for again rather than over. Read before anything else is:
+        // a player stopped to be told something new looks exactly like one
+        // that stopped for good, and only this tells the two apart.
+        if OPEN_AGAIN.swap(0, Ordering::SeqCst) == process {
             crate::journal::note(&format!(
-                "session non ouverte : {}",
-                e.to_string().replace('\n', " ")
+                "image relancée avec ce qui est choisi maintenant (le lecteur a dit {ended:?})"
             ));
-            return finish(app, false, e.to_string());
+            say(app, Told::Again);
+            preferred = tauri::async_runtime::block_on(crate::settings::preferred());
+            wanted.settings = what_to_ask_for(app, preferred);
+            continue;
         }
-    };
 
+        let on_purpose = crate::floating::Floating::was_closed_on_purpose(app);
+        crate::journal::note(&match &ended {
+            Ok(outcome) if on_purpose => {
+                format!("session fermée volontairement, le lecteur a dit {outcome:?}")
+            }
+            Ok(outcome) => format!("session terminée : {outcome:?}"),
+            Err(e) => format!("session terminée sur une erreur système : {e}"),
+        });
+
+        // Closing the far computer's desktop takes the stream away from
+        // the engine, which stops the only way it knows how: on a
+        // failure. It is still exactly what was asked for.
+        if on_purpose {
+            return finish(app, true, String::new());
+        }
+
+        return match ended {
+            Ok(Outcome::Ended) => finish(app, true, String::new()),
+            Ok(Outcome::Failed) => finish(
+                app,
+                false,
+                "La session s'est arrêtée sur une erreur.".into(),
+            ),
+            Ok(Outcome::Unreachable) => {
+                finish(app, false, "L'ordinateur distant n'a pas répondu.".into())
+            }
+            Ok(Outcome::Unknown { .. }) => finish(
+                app,
+                false,
+                "Le lecteur s'est arrêté sans dire pourquoi.".into(),
+            ),
+            Err(e) => finish(app, false, e.to_string()),
+        };
+    }
+}
+
+/// Opens the picture again with what is chosen now, the session standing.
+///
+/// The one thing the session's own menu cannot do by asking the engine:
+/// a size, a rate and a codec are handed to it when it starts and never
+/// again. So the player is stopped and started, which the person sees as
+/// the picture going away and coming back, and everything else stands.
+///
+/// Only a session this window is driving: the numbers to open it again
+/// with live on that window's own thread, and a session opened elsewhere
+/// has nobody here to hear this.
+#[tauri::command]
+pub async fn apply_session(app: AppHandle) -> Result<(), String> {
+    if !opening() {
+        return Err(
+            "cette session n'a pas été ouverte depuis cette fenêtre.\n  \
+                    Les réglages s'appliqueront à la prochaine."
+                .to_string(),
+        );
+    }
+    let process = crate::floating::player(&app)
+        .await
+        .ok_or("aucune session en cours")?;
+
+    // Written down before the player is stopped, and never after: whoever
+    // is waiting on that player wakes the instant it goes, and reads this
+    // to know whether the session is over or beginning again.
+    OPEN_AGAIN.store(process, Ordering::SeqCst);
     crate::journal::note(&format!(
-        "session en cours, lecteur {}",
-        running.process_id()
+        "réglages appliqués : le lecteur {process} est relancé"
     ));
-    say(app, Told::Live);
-
-    // Waiting costs nothing here and buys the one thing the person wants
-    // afterwards: whether the session ended by itself or fell over.
-    let ended = running.wait();
-    let on_purpose = crate::floating::Floating::was_closed_on_purpose(app);
-    crate::journal::note(&match &ended {
-        Ok(outcome) if on_purpose => {
-            format!("session fermée volontairement, le lecteur a dit {outcome:?}")
-        }
-        Ok(outcome) => format!("session terminée : {outcome:?}"),
-        Err(e) => format!("session terminée sur une erreur système : {e}"),
-    });
-
-    // Closing the far computer's desktop takes the stream away from the
-    // engine, which stops the only way it knows how: on a failure. It is
-    // still exactly what was asked for.
-    if on_purpose {
-        return finish(app, true, String::new());
+    if !crate::floating::stop_the_player(process) {
+        return Err("l'image n'a pas pu être relancée".to_string());
     }
-
-    match ended {
-        Ok(Outcome::Ended) => finish(app, true, String::new()),
-        Ok(Outcome::Failed) => finish(
-            app,
-            false,
-            "La session s'est arrêtée sur une erreur.".into(),
-        ),
-        Ok(Outcome::Unreachable) => {
-            finish(app, false, "L'ordinateur distant n'a pas répondu.".into())
-        }
-        Ok(Outcome::Unknown { .. }) => finish(
-            app,
-            false,
-            "Le lecteur s'est arrêté sans dire pourquoi.".into(),
-        ),
-        Err(e) => finish(app, false, e.to_string()),
-    }
+    Ok(())
 }
 
 /// Ends the session in progress, the person having closed the window on
@@ -348,6 +473,13 @@ fn how_the_window_stands(app: &AppHandle, when: &str) {
 fn finish(app: &AppHandle, ok: bool, message: String) {
     how_the_window_stands(app, "fin de session, avant");
     OPENING.store(false, Ordering::SeqCst);
+    // A session that is over asks for nothing, and shows nothing. Both
+    // are put down here rather than left standing: an « open it again »
+    // that outlived its session has nothing left to name, and a picture
+    // nobody is showing would have the session menu offering to apply
+    // changes to it.
+    OPEN_AGAIN.store(0, Ordering::SeqCst);
+    *SHOWN_AS.lock().expect("réglages de l'image") = None;
     crate::floating::expect_nothing(app);
     // Taken down here rather than left to the watch. The watch comes
     // round once a second and asks the service what it holds, and until
@@ -366,4 +498,66 @@ fn finish(app: &AppHandle, ok: bool, message: String) {
     crate::show_home(app);
     let _ = app.emit(ENDED, Finished { ok, message });
     how_the_window_stands(app, "fin de session, après");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zyr_proto::session::DisplayMode;
+
+    #[test]
+    fn only_what_the_engine_is_told_once_asks_for_the_picture_to_be_reopened() {
+        // Relancer l'image coûte les quelques secondes d'une ouverture :
+        // ça ne se fait que pour ce que le moteur apprend au démarrage et
+        // jamais après. Le reste se demande au moteur en marche, ou ne le
+        // regarde pas du tout, et le proposer serait faire payer ça pour
+        // rien.
+        let shown = Preferred::default();
+        for other in [
+            Preferred {
+                display_mode: DisplayMode::Fullscreen,
+                ..shown
+            },
+            Preferred {
+                absolute_mouse: !shown.absolute_mouse,
+                ..shown
+            },
+            Preferred {
+                stats_overlay: !shown.stats_overlay,
+                ..shown
+            },
+        ] {
+            assert_eq!(told_once(&other), told_once(&shown));
+        }
+
+        // Les trois autres, elles, ne peuvent pas se changer autrement.
+        for other in [
+            Preferred {
+                asked: Asked::Fixed(1280, 720),
+                ..shown
+            },
+            Preferred {
+                bitrate_kbps: shown.bitrate_kbps + 5_000,
+                ..shown
+            },
+            Preferred {
+                codec: Codec::H264,
+                ..shown
+            },
+        ] {
+            assert_ne!(told_once(&other), told_once(&shown));
+        }
+    }
+
+    #[test]
+    fn nothing_is_waiting_to_be_applied_when_nothing_is_on_screen() {
+        // Hors session il n'y a pas d'image à relancer : la prochaine
+        // s'ouvrira avec ce qui est choisi, sans que personne ait à le
+        // demander.
+        assert!(!waiting_to_be_applied(&Preferred::default()));
+        assert!(!waiting_to_be_applied(&Preferred {
+            asked: Asked::Fixed(1280, 720),
+            ..Preferred::default()
+        }));
+    }
 }

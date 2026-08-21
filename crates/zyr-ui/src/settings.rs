@@ -113,6 +113,12 @@ pub struct SessionChoice {
     /// point of the word « screen » and cannot be worked out from it.
     pub width: u32,
     pub height: u32,
+    /// Whether these three are not what the picture on screen is showing.
+    ///
+    /// The one thing the window cannot work out for itself: a choice is
+    /// written down the moment it is made, so what is chosen and what is
+    /// being shown are the same numbers read from two different places.
+    pub to_apply: bool,
 }
 
 impl SessionChoice {
@@ -124,6 +130,7 @@ impl SessionChoice {
             codec: preferred.codec.to_string(),
             width,
             height,
+            to_apply: crate::session::waiting_to_be_applied(&preferred),
         }
     }
 }
@@ -189,11 +196,13 @@ pub async fn session_menu(app: tauri::AppHandle) -> SessionMenu {
 /// Sets one line of the session menu to one of the values it offers,
 /// writes the result down, and hands back where the three lines stand.
 ///
-/// It takes effect at the next session and not at this one: what a
-/// session asks for is settled when its engine is started, and it is
-/// told once. Changing it under a running session would mean stopping
-/// and starting that session, which is a heavier thing than a menu line
-/// and is not what a menu line should do without being asked.
+/// Written down and nothing more: what a session asks for is settled when
+/// its engine is started, and it is told once. So the picture on screen
+/// goes on showing what it was opened with, and the menu offers to open
+/// it again as soon as the two differ, which is what `apply_session`
+/// does. Opening it again at every click would stop and start the session
+/// on each one, which is not what a menu line should do unasked, and is
+/// the whole reason several changes can be made before applying them.
 ///
 /// A value the product does not offer is refused rather than written
 /// down. These come from a list the product handed over itself, so a
