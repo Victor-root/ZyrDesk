@@ -602,7 +602,7 @@ pub fn tell() {
         "touches système : {} frappe(s) vues, {seen} candidate(s), {taken} portée(s) ; \
          {} ; vues : Tab {} enfoncée(s) et {} relâchée(s), Alt {} et {} ; \
          au plus {} ms d'attente avant nous et {} µs chez nous, {} appel(s) hors sujet, \
-         crochet posé {} fois ; \
+         crochet posé {} fois, {} portée(s) sauvée(s) par le délai de grâce ; \
          la dernière était {} {}, Alt {}, Ctrl {}, premier plan {}",
         ANY.load(Ordering::SeqCst),
         counted.join(", "),
@@ -614,6 +614,7 @@ pub fn tell() {
         LONGEST.load(Ordering::SeqCst),
         ODD.load(Ordering::SeqCst),
         HOOK.laid(),
+        crate::picture::grace_saves(),
         named(LAST_KEY.load(Ordering::SeqCst)),
         if LAST_UP.load(Ordering::SeqCst) {
             "relâchée"

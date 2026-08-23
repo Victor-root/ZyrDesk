@@ -395,6 +395,18 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 
 **Ce que le journal en dit.** `crochet posé N fois` compte les poses réelles, faites sur le fil, la première comprise. À lire à côté de `Tab X enfoncée(s) et Y relâchée(s)` : égaux, les frappes arrivent ; dépareillés, quelque chose les prend avant nous.
 
+## D36. Un premier plan perdu moins d'une demi-seconde n'est pas perdu (2026-08-23, pendant M4)
+
+**Ce que les mesures de [D34](#d34-la-touche-perdue-ne-lest-pas-par-zyrdesk--le-crochet-est-mesuré-2026-08-23-pendant-m4) et la reprise de [D35](#d35-le-crochet-des-touches-est-reposé-en-refermant-le-menu-flottant-2026-08-23-pendant-m4) ont réglé, et ce qu'il restait.** Après la reprise du crochet, les frappes arrivent : le journal montre `Tab 7 enfoncée(s) et 7 relâchée(s)`, équilibré, ce qui n'était jamais le cas avant. Le problème « la frappe n'arrive pas » est clos. Restait un dernier défaut, d'une nature encore différente.
+
+**Ce que le journal montre.** En refermant le menu du bouton flottant, le premier plan fait un aller-retour de quelques dixièmes de seconde : `le premier plan passe à ZyrDesk`, puis `passe ailleurs : explorer.exe`, puis revient. Le bouton est une fenêtre à nous, et l'utiliser fait rebondir le premier plan sur le shell de Windows un instant avant qu'il ne revienne. Un Alt+Tab qui tombe pile dans cet instant était jugé « premier plan ailleurs », donc laissé passer au système, où il ouvrait le sélecteur de tâches de cet ordinateur ; la fenêtre du sélecteur tenait alors le premier plan pour de vrai, et tenait dehors tous les Alt+Tab suivants. Un seul dixième de seconde mal tombé lançait toute la cascade. Le journal la nomme à la lettre : `Changement de tâche`, le titre de ce sélecteur.
+
+**Le correctif.** Un premier plan parti depuis moins d'une demi-seconde n'est pas un premier plan perdu. Tant que ce court délai n'est pas écoulé, la session est tenue « au premier plan », l'Alt+Tab est porté, le sélecteur ne s'ouvre pas, et la cascade ne démarre jamais. Un vrai départ, en cliquant une fenêtre de cet ordinateur, reste dehors au-delà du délai et rouvre la porte comme il se doit. Le délai part de l'instant du premier départ, pas du dernier saut entre deux fenêtres tierces.
+
+**Ce que ça coûte.** Après avoir cliqué une fenêtre locale, l'Alt+Tab part encore vers l'ordinateur distant pendant une demi-seconde. C'est court, et c'est le prix pour que le bouton flottant cesse de tout casser.
+
+**Ce que le journal en dit.** `N portée(s) sauvée(s) par le délai de grâce` compte les frappes portées à la session alors que le premier plan brut était ailleurs. Non nul après un passage par le bouton, avec les Alt+Tab qui continuent d'être portés, la cause est bien celle-ci et le correctif tient.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

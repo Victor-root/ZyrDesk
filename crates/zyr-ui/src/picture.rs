@@ -1557,10 +1557,67 @@ static BAR_LIT: AtomicBool = AtomicBool::new(false);
 #[cfg(windows)]
 static IN_FRONT: AtomicBool = AtomicBool::new(false);
 
-/// The same, read from wherever it is needed.
+/// When the front last left this session for another program, counted in
+/// milliseconds since this computer started, nought while it is here.
+///
+/// For the grace below. Set the moment the front first leaves and cleared
+/// the moment it comes back, so the difference from now is how long it has
+/// really been gone.
+#[cfg(windows)]
+static LEFT_AT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// A gone shorter than this is not a leaving.
+#[cfg(windows)]
+const A_FLAP: u32 = 500;
+
+/// How many keys were carried on the strength of that grace, for the
+/// journal to show the grace is doing something and what.
+#[cfg(windows)]
+static SAVED_BY_GRACE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The same, read by the journal.
+#[cfg(windows)]
+pub(crate) fn grace_saves() -> u32 {
+    SAVED_BY_GRACE.load(Ordering::Relaxed)
+}
+
+/// Puts that count back to nought, a session being over.
+#[cfg(windows)]
+pub(crate) fn forget_the_grace() {
+    SAVED_BY_GRACE.store(0, Ordering::Relaxed);
+    LEFT_AT.store(0, Ordering::Relaxed);
+}
+
+/// Whether a session is on screen and in front, read from wherever it is
+/// needed and above all from the road every keystroke travels.
+///
+/// A front gone for less than half a second is not a front lost. Pressing
+/// the floating button, which is a window of ours, bounces the front off
+/// this program to the shell and back inside a fraction of a second, and
+/// an Alt+Tab that lands in that fraction was, until this, let through to
+/// the system, where it opened the switcher of this computer, whose own
+/// window then held the front for real and kept every Alt+Tab after it out
+/// of the session too. Held « in front » through that flap, the key is
+/// carried, the switcher never opens, and the whole run of it never
+/// starts. A real leaving, by clicking a window of this computer, stays
+/// gone past the grace and opens the gate as it should.
 #[cfg(windows)]
 pub(crate) fn the_session_is_in_front() -> bool {
-    IN_FRONT.load(Ordering::Relaxed) && CARRIED.load(Ordering::Relaxed) != 0
+    use windows_sys::Win32::System::SystemInformation::GetTickCount;
+
+    if CARRIED.load(Ordering::Relaxed) == 0 {
+        return false;
+    }
+    if IN_FRONT.load(Ordering::Relaxed) {
+        return true;
+    }
+    let left = LEFT_AT.load(Ordering::Relaxed);
+    // SAFETY: no argument, and the answer is a plain number.
+    if left != 0 && unsafe { GetTickCount() }.wrapping_sub(left) < A_FLAP {
+        SAVED_BY_GRACE.fetch_add(1, Ordering::Relaxed);
+        return true;
+    }
+    false
 }
 
 /// The picture's window as a plain number, without asking the system
@@ -1641,6 +1698,7 @@ fn take_it_off(hook: isize) {
 #[cfg(windows)]
 fn stop_watching_the_front() {
     FRONT_WATCH.let_go();
+    forget_the_grace();
 }
 
 /// Said by the system every time the front moves, to any window of any
@@ -1686,6 +1744,17 @@ fn look_at_the_front(moved_to: Option<windows_sys::Win32::Foundation::HWND>) {
     let whose = whose_window(window);
     let here = whose != Front::Elsewhere;
     let was = IN_FRONT.swap(here, Ordering::Relaxed);
+    // The grace clock: started the moment the front first leaves, and only
+    // then, so it measures from the true leaving and not from the latest
+    // hop between two other windows; cleared the moment it comes back.
+    if here {
+        LEFT_AT.store(0, Ordering::Relaxed);
+    } else if was {
+        use windows_sys::Win32::System::SystemInformation::GetTickCount;
+        // SAFETY: no argument, and the answer is a plain number; nought is
+        // reserved for « here », so a tick that lands on it is nudged.
+        LEFT_AT.store(unsafe { GetTickCount() }.max(1), Ordering::Relaxed);
+    }
     if moved_to.is_none() || CARRIED.load(Ordering::Relaxed) == 0 {
         return;
     }
