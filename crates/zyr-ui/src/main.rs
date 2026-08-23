@@ -36,6 +36,11 @@ mod tray;
 #[cfg(windows)]
 mod elevated;
 
+// Taking the keys the system keeps for itself is a thing only that
+// system does, and only it needs taking from.
+#[cfg(windows)]
+mod keys;
+
 use tauri::{Manager, WindowEvent};
 
 /// The home window, as the configuration names it.

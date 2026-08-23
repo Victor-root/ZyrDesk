@@ -441,6 +441,11 @@ pub fn fit(app: &AppHandle) {
         return;
     };
     lay_it_out(home, held.window as windows_sys::Win32::Foundation::HWND);
+    // Every turn of the session watch passes here, which is where what
+    // the keyboard hook has been doing gets written down: it may not
+    // write anything down itself, being on the road every keystroke of
+    // this computer travels.
+    crate::keys::tell();
 }
 
 /// The one place a session is laid out, and the only one.
@@ -1369,6 +1374,10 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
+        // From this thread and no other: the keys the system keeps for
+        // itself are taken by a hook called back on the thread that asked
+        // for it, and it has to be one that reads its messages.
+        crate::keys::hold();
         offer_a_picture_of_the_session(home, true);
         round_the_window(home, true);
         light_the_bar(home);
@@ -1408,6 +1417,7 @@ fn give_the_window_back(app: &AppHandle) {
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
+        crate::keys::let_go();
         offer_a_picture_of_the_session(home, false);
         round_the_window(home, false);
     });
