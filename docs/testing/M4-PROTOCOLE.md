@@ -25,7 +25,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **R12quinquies** | Corrigé une troisième fois, et cette fois sur la bonne cause : le clavier revient à l'image par le seul chemin qui l'atteint, et plus par le premier plan, que l'image ne peut pas avoir |
 | **R12septies** | **Statistiques** marche. Le clavier est rendu à l'image et vu y arriver avant chaque frappe ; sinon le menu le dit au lieu de faire semblant |
-| **S9sexies** | Alt+Tab, la touche Windows, Alt+Échap et Ctrl+Échap agissent sur l'ordinateur distant plutôt que sur ce PC-là, y compris après un passage par le menu du bouton flottant |
+| **S9sexies** | Alt+Tab, Alt+Échap et Ctrl+Échap agissent sur l'ordinateur distant plutôt que sur ce PC-là, y compris après un passage par le menu du bouton flottant |
+| **S20** | Nouveau, et le plus important : **les raccourcis clavier de ZyrDesk doivent marcher pendant toute la session**, plein écran compris |
 | **S9bis** | Touché par le changement ci-dessus : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **S19** | Nouveau : ces touches doivent redevenir celles de ce PC-là dès qu'il n'y a plus de session, et pendant qu'on est dans le menu du bouton flottant |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
@@ -713,17 +714,27 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : dans l'**image**, le bureau distant change de fenêtre au premier plan, exactement comme si Alt+Tab avait été tapé assis devant le PC hôte. Sur le **PC client**, rien ne bouge : pas de sélecteur de fenêtres local, ZyrDesk garde le premier plan et sa barre de titre reste allumée.
 >
-> Essayer aussi la **touche Windows** seule : elle doit ouvrir le menu Démarrer **de l'ordinateur distant**, visible dans l'image, et ne rien faire de ce côté-ci. Puis **Alt+Échap** et **Ctrl+Échap**, qui suivent le même chemin.
+> Essayer aussi **Alt+Échap** et **Ctrl+Échap**, qui suivent le même chemin.
 >
 > **À refaire après être passé par le bouton flottant** : ouvrir son menu, cliquer n'importe où dedans, le refermer, puis rejouer Alt+Tab. C'est le chemin qui a lâché deux fois (voir R12quinquies), et c'est celui qui compte le plus.
 >
-> **Comment revenir sur ce PC-là.** Ces touches partent au loin dès que l'image tient le clavier : pour joindre une autre fenêtre d'ici pendant ce temps, c'est la souris, un clic sur sa vignette dans la barre des tâches par exemple, comme le fait S9bis plus bas. Le raccourci qui ouvre le menu du bouton flottant, lui, marche toujours : il n'est pas dans le lot repris.
+> **La touche Windows, elle, reste celle de ce PC-là** et ouvre le menu Démarrer d'ici. C'est la seule que ce chemin ne peut pas servir : le moteur refuse de la transmettre à l'ordinateur distant tant que sa propre capture des touches système ne tourne pas, ce qui dans ce produit n'arrive jamais. La reprendre n'ouvrirait donc de menu nulle part, ce qui serait pire.
 >
-> **Ce qui a changé sous le capot, et pourquoi il a fallu s'y reprendre.** L'option du moteur client qui fait exactement ça lui est bien demandée, et elle est juste ; le moteur ne peut pas s'en servir ici. Il décide qu'il tient le clavier en comparant sa propre fenêtre à celle que le système appelle « la fenêtre du premier plan ». Or sa fenêtre est portée dans la nôtre pendant toute la session, donc c'est une fenêtre fille, et une fenêtre fille n'est jamais celle-là. Au premier message de focus qui lui parvient il en conclut qu'il a perdu le clavier et relâche ces touches pour le reste de la session, définitivement. C'est ce qui se passait dès qu'on touchait au bouton flottant.
+> **Comment revenir sur ce PC-là.** Ces touches partent au loin dès que l'image tient le clavier : pour joindre une autre fenêtre d'ici pendant ce temps, c'est la souris, un clic sur sa vignette dans la barre des tâches par exemple, comme le fait S9bis plus bas. Les raccourcis de ZyrDesk, eux, marchent toujours : voir S20 juste en dessous.
 >
-> La fenêtre que le système appelle celle du premier plan, c'est la nôtre. C'est donc ZyrDesk qui reprend ces touches, avant que Windows n'agisse dessus, et qui les porte à l'image telles quelles. Le moteur reçoit une frappe ordinaire à sa propre fenêtre et la transmet comme n'importe quelle autre : rien n'est ajouté dedans, il ne lui est rien demandé de nouveau.
+> **Ce qui a changé sous le capot, et pourquoi il a fallu s'y reprendre.** Le moteur client a une option qui fait exactement ça, elle lui a été demandée, et elle vient d'être retirée. Deux raisons. D'abord il ne peut pas s'en servir : il décide qu'il tient le clavier en comparant sa propre fenêtre à celle que le système appelle « la fenêtre du premier plan », or sa fenêtre est portée dans la nôtre, donc c'est une fenêtre fille, et une fenêtre fille n'est jamais celle-là ; quelques secondes après le début il en conclut qu'il a perdu le clavier et lâche tout. Ensuite, et surtout, la façon dont il reprend ces touches est d'**avaler Alt et Ctrl en entier** avant que quiconque les voie, ce qui coupait tous les raccourcis de ZyrDesk (S20).
 >
-> Le journal le dit une fois par seconde au plus, jamais depuis le chemin des touches lui-même : `touches système reprises pour la session`, puis `touches système portées à la session plutôt qu'à cet ordinateur : N en tout, la dernière [...]`, puis `touches système rendues à cet ordinateur` à la fin.
+> La fenêtre que le système appelle celle du premier plan, c'est la nôtre. C'est donc ZyrDesk qui reprend ces touches, sans toucher ni à Alt ni à Ctrl, et qui les porte à l'image telles quelles. Le moteur reçoit une frappe ordinaire à sa propre fenêtre et la transmet comme n'importe quelle autre : rien n'est ajouté dedans, il ne lui est rien demandé de nouveau.
+>
+> Le journal le dit une fois par seconde au plus, jamais depuis le chemin des touches lui-même : `touches système reprises pour la session`, puis `touches système portées à la session plutôt qu'à cet ordinateur : N en tout, la dernière [...]`, puis `touches système rendues à cet ordinateur` à la fin. **Si cette ligne du milieu n'apparaît jamais alors qu'on a tapé Alt+Tab, rien n'a été repris** et c'est à dire.
+
+> **S20 (les raccourcis de ZyrDesk marchent pendant toute la session)**
+>
+> Pendant une session, essayer les trois raccourcis de la fenêtre **Réglages**, section **Raccourcis clavier** : celui du plein écran, celui du menu du bouton flottant, celui qui met fin à la session. À faire **dès les premières secondes** de la session, puis de nouveau après une minute, puis après un passage par le menu du bouton flottant.
+>
+> Attendu : les trois marchent à chaque fois, sans exception.
+>
+> C'est l'essai qui a manqué. Ces raccourcis sont tous des combinaisons **Alt**, et le moteur, tant qu'il reprenait les touches du système, avalait Alt en entier avant que ZyrDesk ne le voie. Dit par Victor : « je perdais mes raccourcis clavier de zyrdesk comme par exemple alt + & pour switcher plein ecran/fenetré ». Le symptôme était fuyant parce qu'il ne durait que le début d'une session : dès qu'on touchait au bouton flottant, le moteur lâchait ces touches et les raccourcis revenaient.
 
 > **S19 (ces touches redeviennent celles de ce PC-là dès qu'il n'y a plus de session)**
 >
@@ -732,7 +743,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Trois moments à essayer, dans l'ordre :
 >
 > 1. **Pendant une session, menu du bouton flottant ouvert.** Ouvrir le menu, puis taper Alt+Tab : le sélecteur **de ce PC-là** doit s'ouvrir normalement. La personne est dans notre menu, pas dans la session.
-> 2. **Session terminée.** Fermer la session par la croix, revenir à l'accueil, taper Alt+Tab et la touche Windows : tout doit être redevenu **strictement normal** sur ce PC.
+> 2. **Session terminée.** Fermer la session par la croix, revenir à l'accueil, taper Alt+Tab et Ctrl+Échap : tout doit être redevenu **strictement normal** sur ce PC.
 > 3. **ZyrDesk fermé.** Quitter le programme entièrement, puis refaire les deux : normal aussi.
 >
 > Essayer également, pendant une session, **Tab seul** et **Échap seul** dans une fenêtre de l'ordinateur distant : ce sont des touches ordinaires, elles ne sont pas reprises et doivent faire ce qu'elles font toujours.

@@ -1310,16 +1310,29 @@ fn the_frame_is_square(home: windows_sys::Win32::Foundation::HWND) -> bool {
 /// joins its input to the engine's, and hands the focus over inside the
 /// pair. That is the road, and this is where it is asked for again after
 /// every gesture that took the focus away.
+///
+/// The title bar first and the keyboard after it, which is an order and
+/// not a preference. Drawing the bar goes through our own window's
+/// handler, and that handler is where a window is told it has been
+/// activated; done the other way about, the picture was handed the
+/// keyboard and had it taken straight back off by our own page, and the
+/// session went silent the moment the floating menu was touched.
+///
+/// And asked for through a message rather than by calling the drawing
+/// straight. That drawing hands the message on to whatever was handling
+/// this window before us, which is only a thing that can be done from
+/// inside a handler; called from outside one, it reaches into a window
+/// mid-nothing and the toolkit's own handler acts on an activation that
+/// never happened.
 #[cfg(windows)]
 fn give_the_keyboard_to_the_picture(app: &AppHandle) -> bool {
-    let landed = the_keyboard_to_the_picture();
-    // The title bar goes with it. Our window is drawn as the one being
-    // used for as long as a session is in it, and the front moving
-    // between our own windows is what the system asks about.
     if let Some(home) = home_window(app) {
-        draw_the_bar(home);
+        light_the_bar(home);
     }
-    landed
+    // Said again after it, and read: the message above puts the keyboard
+    // back as part of its work, but says nothing about where it landed,
+    // and nothing may be typed at a picture that does not have it.
+    the_keyboard_to_the_picture()
 }
 
 /// Gives the keyboard back to the picture, asked from anywhere in the

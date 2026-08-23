@@ -1,27 +1,28 @@
 //! The keys Windows keeps for itself, handed to the far computer.
 //!
-//! Alt+Tab, Alt+Échap, Ctrl+Échap and the Windows key never reach the
-//! window they are typed at: the system acts on them itself, before any
-//! program sees them. A remote desktop wants the opposite, and the client
-//! engine has an option for exactly that, asked for by every session
-//! (`--capture-system-keys always`, D28). It cannot act on it here.
+//! Alt+Tab, Alt+Échap and Ctrl+Échap never reach the window they are
+//! typed at: the system acts on them itself, before any program sees
+//! them. A remote desktop wants the opposite.
 //!
-//! Why it cannot is worth having in writing, because it looks like a
-//! defect of the engine and is not one. The engine decides it holds the
-//! keyboard by comparing its own window with the window the system calls
-//! the front one. Its window is carried inside ours for the whole of a
-//! session, and a carried window is a child window; the system gives the
-//! front to the head of a family and never to a member of it. So the
-//! engine's answer is no from the first moment it is asked, it lets go of
-//! those keys for the rest of the session, and nothing it offers brings
-//! them back.
+//! The client engine has an option for exactly this, and it was asked for
+//! and has been taken back out (D32). Two things stood in the way, and
+//! neither is a defect of the engine. It decides it holds the keyboard by
+//! comparing its own window with the window the system calls the front
+//! one, and that window is carried inside ours for the length of a
+//! session, which makes it a child window; the system gives the front to
+//! the head of a family and never to a member of it, so the answer is no
+//! seconds in and stays no. And the way it takes those keys is by putting
+//! itself in front of every keystroke of the whole computer and
+//! swallowing Alt and Control whole. Every shortcut this product has is an
+//! Alt combination, so for as long as the engine held those keys, none of
+//! them worked.
 //!
 //! The window the system does call the front one is ours. So the program
-//! that can take those keys is this one, and it takes them and passes
-//! them on unchanged. Nothing of this is in the engine, and nothing of
-//! this asks the engine for anything it does not already do: what it
-//! receives is an ordinary keystroke at its own window, which it forwards
-//! like any other.
+//! that can take these keys is this one, and it takes them and passes
+//! them on unchanged, Alt and Control untouched. Nothing of this is in the
+//! engine, and nothing of this asks the engine for anything it does not
+//! already do: what it receives is an ordinary keystroke at its own
+//! window, which it forwards like any other.
 //!
 //! Taken only while a session really has the keyboard, which is the whole
 //! of the safety here: at every other moment, on every other key, and for
@@ -88,7 +89,7 @@ pub fn hold() {
     crate::journal::note(if hook.is_null() {
         "touches système non reprises : Windows a refusé le crochet clavier"
     } else {
-        "touches système reprises pour la session : Alt+Tab, Alt+Échap, Ctrl+Échap et Windows"
+        "touches système reprises pour la session : Alt+Tab, Alt+Échap et Ctrl+Échap"
     });
 }
 
@@ -110,16 +111,21 @@ pub fn let_go() {
     crate::journal::note("touches système rendues à cet ordinateur");
 }
 
-/// The four keys this program may take, and the bit each is remembered
-/// by while it is held down.
+/// The keys this program may take, and the bit each is remembered by
+/// while it is held down.
+///
+/// The Windows key is not among them, and that is the one thing this
+/// cannot do. The engine refuses to pass it to the far computer unless
+/// its own capture of the system's keys is running, which in this product
+/// it never is. Taken here it would open no menu anywhere, neither the
+/// far computer's nor this one's, which is worse than leaving it alone:
+/// left alone it does what it has always done on this computer.
 fn a_key_of_ours(code: u32) -> Option<u32> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_LWIN, VK_RWIN, VK_TAB};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_TAB};
 
     match code as u16 {
         VK_TAB => Some(1),
         VK_ESCAPE => Some(2),
-        VK_LWIN => Some(4),
-        VK_RWIN => Some(8),
         _ => None,
     }
 }
@@ -130,11 +136,10 @@ fn a_key_of_ours(code: u32) -> Option<u32> {
 /// Tab and Escape on their own are ordinary keys and are left alone: a
 /// session where Tab moved nothing and Escape closed nothing would be a
 /// session nobody can work in. It is the company they keep that makes
-/// them the system's, and that is what is read here. The Windows key is
-/// the system's whatever it is pressed with, itself included.
+/// them the system's, and that is what is read here.
 fn the_system_would_eat_it(code: u32) -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_CONTROL, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN, VK_TAB,
+        GetAsyncKeyState, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_TAB,
     };
 
     // SAFETY: a key is named and its state is read; nothing is written.
@@ -142,7 +147,6 @@ fn the_system_would_eat_it(code: u32) -> bool {
     match code as u16 {
         VK_TAB => down(VK_MENU as i32),
         VK_ESCAPE => down(VK_MENU as i32) || down(VK_CONTROL as i32),
-        VK_LWIN | VK_RWIN => true,
         _ => false,
     }
 }
@@ -150,23 +154,25 @@ fn the_system_would_eat_it(code: u32) -> bool {
 /// Whether a session is on screen with the keyboard really in it.
 ///
 /// Three answers and all three have to be yes. There has to be a picture
-/// at all, our own program has to be the one the system calls the front,
-/// and the picture has to be the window this program's keyboard goes to.
-/// Anything else means the person is doing something outside the session,
-/// on a window of ours or somebody else's, and their own Alt+Tab is theirs.
+/// at all, the front has to belong to this session, and the picture has
+/// to be the window this program's keyboard goes to. Anything else means
+/// the person is doing something outside the session, on a window of ours
+/// or somebody else's, and their own Alt+Tab is theirs.
 ///
-/// The second of the three also hands the very start of a session back to
-/// the engine, which is where it belongs. A picture is a window of its
-/// own until it is taken into ours, a moment or so in; for as long as it
-/// is, it can hold the front itself, its own capture works exactly as it
-/// was asked to, and this answers no and stays out of it.
+/// « This session » and not « this program », which was the whole of one
+/// round where nothing was ever taken at all. The front does read as the
+/// player's during a session and not only as ours: the engine's program
+/// keeps a window of its own beside the picture, and the two answers mean
+/// the same thing here. Asked of ours alone, this said no for the length
+/// of every session and Alt+Tab went on switching windows on this
+/// computer, exactly as before there was any of this.
 fn the_session_has_the_keyboard() -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetFocus;
 
     let Some(engine) = crate::picture::the_engines_window() else {
         return false;
     };
-    if crate::picture::who_holds_the_front() != crate::picture::Front::Ours {
+    if crate::picture::who_holds_the_front() == crate::picture::Front::Elsewhere {
         return false;
     }
     // SAFETY: no argument, read from the thread whose input this program
@@ -296,13 +302,11 @@ pub fn tell() {
 
 /// What that key is called, for the journal.
 fn named(code: u32) -> &'static str {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_LWIN, VK_RWIN, VK_TAB};
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_TAB};
 
     match code as u16 {
         VK_TAB => "Tab",
         VK_ESCAPE => "Échap",
-        VK_LWIN => "Windows gauche",
-        VK_RWIN => "Windows droite",
         _ => "?",
     }
 }

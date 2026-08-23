@@ -57,20 +57,28 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         "--video-decoder".to_string(),
         "hardware".to_string(),
         "--frame-pacing".to_string(),
-        // Without this, Alt+Tab, the Windows key and their kin act on
-        // this computer instead of reaching the far one: the engine
-        // leaves them alone unless told otherwise, on the grounds that
-        // its own window might only be one of several on the desktop.
-        // That reasoning does not hold here. The product's whole window
-        // is the session the moment it has the front, there being
-        // nothing else in it to switch to, so the far computer is where
-        // every one of those keys belongs. `always` rather than the
-        // engine's other choice, `fullscreen`: what covers the whole
-        // screen is our own window, and the engine is asked to stay
-        // windowed inside it regardless (`--display-mode windowed`
-        // above), so `fullscreen` would never once turn this on.
-        "--capture-system-keys".to_string(),
-        "always".to_string(),
+        // Alt+Tab and its kin are taken by the product itself and carried
+        // to the far computer, and the engine is asked for none of it.
+        //
+        // It was asked, and the option is real, and it cannot work here.
+        // The engine takes those keys by putting itself in front of every
+        // keystroke of the whole computer, and it only acts on them while
+        // it believes its own window is the one the system calls the
+        // front. That window is carried inside the product's own for the
+        // length of a session, which makes it a child window, and the
+        // system gives the front to the head of a family and never to a
+        // member of it: it stops believing it at the first message that
+        // asks, seconds in.
+        //
+        // What it does do in those few seconds is swallow Alt and Control
+        // outright, both of them, before anything else on this computer
+        // sees them. Every shortcut of the product's own is an Alt
+        // combination, so for as long as the engine holds those keys, none
+        // of them work, and the person cannot leave full screen from the
+        // keyboard.
+        //
+        // Asked for, then, it costs the product's own shortcuts and gives
+        // a few seconds of what the product now does for a whole session.
         // What tells the far computer it may put its desktop at the size
         // being asked for. Its name comes from playing games, where it
         // meant letting the far machine choose its own settings; with the
@@ -150,12 +158,13 @@ mod tests {
     }
 
     #[test]
-    fn alt_tab_and_its_kin_always_reach_the_far_computer() {
-        // Sans ça les deux ordinateurs se disputent ces touches : elles
-        // agissent ici plutôt que là-bas, ce qui est exactement ce qu'on
-        // ne veut jamais d'un bureau à distance.
+    fn the_engine_is_never_asked_to_take_the_system_s_keys() {
+        // Alt+Tab et compagnie sont repris par le produit lui-même. Le
+        // moteur, lui, avale Alt et Ctrl en entier tant qu'il les tient,
+        // ce qui coupe tous les raccourcis du produit, qui sont tous des
+        // combinaisons Alt.
         let args = session_arguments("host", &SessionSettings::default());
-        assert_eq!(value_of(&args, "--capture-system-keys"), Some("always"));
+        assert!(!args.iter().any(|a| a == "--capture-system-keys"));
     }
 
     #[test]
