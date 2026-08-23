@@ -101,12 +101,8 @@ const GRIP: i32 = 4;
 /// How often the button catches up with the mouse while being dragged.
 const FOLLOW: Duration = Duration::from_millis(8);
 
-/// How long the picture is given to come back in front before an entry
-/// of the menu gives up on it.
-const FRONT_TAKES: Duration = Duration::from_millis(400);
-
-/// Pause between two looks at which window is in front.
-const FRONT_STEP: Duration = Duration::from_millis(10);
+/// Pause between two looks at whether the player has stopped.
+const STOP_STEP: Duration = Duration::from_millis(10);
 
 /// How long the player is given to stop by itself once the far computer
 /// has been asked to hand its desktop back.
@@ -883,6 +879,14 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece])
 /// the session deaf with no way back short of reopening it.
 #[tauri::command]
 pub fn floating_menu(app: AppHandle, open: bool) {
+    // Written down at both ends. This is the one moment the keyboard
+    // leaves the picture without the system saying so, and the journal
+    // had no trace of it at all: a session gone deaf and a session never
+    // touched read exactly alike.
+    note(&format!(
+        "menu du bouton flottant {}",
+        if open { "ouvert" } else { "fermé" }
+    ));
     MENU_UP.store(open, Ordering::Relaxed);
     if !open {
         crate::picture::the_keyboard_back(&app);
@@ -1079,8 +1083,7 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
         .copied()
         .ok_or("aucune session en cours")?;
 
-    put_the_picture_in_front(process).await?;
-    shortcut(act, process)?;
+    type_at_the_picture(app, act, process).await?;
     // The keystroke left, so the engine will act on it: the mode this
     // window believes the mouse is in follows the keystrokes it sends.
     if matches!(act, Act::MouseMode) {
@@ -1092,39 +1095,53 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
     Ok(())
 }
 
-/// Puts the picture back in front, and waits for it to actually be
-/// there.
+/// Gives the picture the keyboard back and types the engine's shortcut
+/// into it, from anywhere in the program.
 ///
-/// Keystrokes go to whatever window is in front. Clicking the button is
-/// not supposed to move the picture out of the way, but a web view can
-/// take the focus on its own; bringing the picture back is both the fix
-/// and what the person expects after using the menu.
+/// The two are one thing and are done in one place. A keystroke goes to
+/// whatever window has the keyboard, and clicking this button gives it to
+/// this button's own page: sent from there, a shortcut is read by our own
+/// web view and thrown away, while `SendInput` reports the same success it
+/// reports for one that arrived. That is the whole of « the Statistics
+/// entry does nothing »: the journal said the keystroke had left, and it
+/// had, into our own window.
 ///
-/// The waiting is the whole point. Windows does not always change the
-/// front window on the spot: the ask is posted, the call returns, and a
-/// window read straight afterwards is still the old one. Asking once and
-/// believing the answer immediately is why every entry in this menu
-/// reported that the picture was not in front and did nothing.
-async fn put_the_picture_in_front(process: u32) -> Result<(), String> {
-    if the_session_holds_the_front() {
-        return Ok(());
-    }
-    bring_forward(process);
+/// Handed to the thread that draws. Giving another program's window the
+/// keyboard is only possible from the thread whose input this program
+/// joined to that program's, and reading back where it went is only
+/// truthful from that same thread.
+async fn type_at_the_picture(app: &AppHandle, act: Act, process: u32) -> Result<(), String> {
+    let (say, mut heard) = tauri::async_runtime::channel(1);
+    app.run_on_main_thread(move || {
+        // Nothing else sends on it and it holds one: this cannot wait.
+        let _ = say.try_send(hand_over_and_type(act, process));
+    })
+    .map_err(|e| e.to_string())?;
+    heard
+        .recv()
+        .await
+        .unwrap_or_else(|| Err("la fenêtre de ZyrDesk n'a pas répondu".to_string()))
+}
 
-    let until = std::time::Instant::now() + FRONT_TAKES;
-    while std::time::Instant::now() < until {
-        tokio::time::sleep(FRONT_STEP).await;
-        if the_session_holds_the_front() {
-            return Ok(());
-        }
+/// The same on the spot, for callers already on the thread that draws.
+#[cfg(windows)]
+fn hand_over_and_type(act: Act, process: u32) -> Result<(), String> {
+    if !crate::picture::the_keyboard_to_the_picture() {
+        note(&format!(
+            "{act} refusé : l'image du lecteur {process} n'a pas repris le clavier ; \
+             le premier plan est {}",
+            crate::picture::the_front_in_words()
+        ));
+        return Err("la session n'a pas repris le clavier.\n  \
+             Cliquez d'abord dans l'image."
+            .to_string());
     }
+    shortcut(act, process)
+}
 
-    note(&format!(
-        "la fenêtre du lecteur {process} n'est pas passée au premier plan"
-    ));
-    Err("la fenêtre de la session n'est pas au premier plan.\n  \
-         Cliquez d'abord dans l'image."
-        .to_string())
+#[cfg(not(windows))]
+fn hand_over_and_type(_act: Act, _process: u32) -> Result<(), String> {
+    Err("les sessions ne tournent que sous Windows".to_string())
 }
 
 /// Waits a moment for that player to stop, and says whether it did.
@@ -1139,7 +1156,7 @@ async fn the_player_has_stopped(process: u32) -> bool {
         if !still_running(process) {
             return true;
         }
-        tokio::time::sleep(FRONT_STEP).await;
+        tokio::time::sleep(STOP_STEP).await;
     }
     false
 }
@@ -1390,6 +1407,14 @@ fn cut_to_what_is_drawn(_shape: &[Piece], _width: i32) {}
 /// while the session is being used. Asked of the player's process alone,
 /// as it once was before sending it a shortcut, the answer was no for
 /// the whole session and every shortcut was refused.
+///
+/// The question the button is shown or hidden on, and nothing else, and
+/// « the picture itself » is not a stricter version of it that some other
+/// caller could ask for: the picture is carried as a child of our own
+/// window for the length of a session, and the system gives the front to
+/// the head of a family and never to a child of it, so the answer would
+/// be no for the whole of every session. What the picture can hold is the
+/// keyboard, which is asked for elsewhere; see `picture::the_keyboard_back`.
 #[cfg(windows)]
 fn the_session_holds_the_front() -> bool {
     crate::picture::who_holds_the_front() != crate::picture::Front::Elsewhere
@@ -1481,7 +1506,9 @@ fn give_the_pointer_back(app: &AppHandle) {
         return;
     }
     note("le pointeur est tenu par la session : rendu avant d'ouvrir le menu");
-    match shortcut(Act::MouseMode, process) {
+    // Already on the thread that draws, this being a menu opening, so
+    // the whole thing is done on the spot rather than sent round.
+    match hand_over_and_type(Act::MouseMode, process) {
         Ok(()) => {
             state
                 .game_mouse
@@ -1781,24 +1808,15 @@ fn picture_of(_process: u32) -> Option<(i32, i32, i32, i32)> {
 }
 
 /// Types the engine's shortcut, at the session and nowhere else.
+///
+/// Which is `hand_over_and_type`'s doing, and the only reason this may
+/// type at all: the keyboard was given to the picture and seen to land
+/// there one call earlier, on this same thread.
 #[cfg(windows)]
 fn shortcut(act: Act, process: u32) -> Result<(), String> {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
     };
-
-    // The picture was brought in front and waited for by the caller. If
-    // it slipped away since, the keys would land in someone else's lap,
-    // and a quit combo in the wrong window is not a mistake worth
-    // risking.
-    if !the_session_holds_the_front() {
-        note(&format!(
-            "{act} refusé : le premier plan n'est ni à la session ni à ZyrDesk (lecteur {process})"
-        ));
-        return Err("la fenêtre de la session n'est pas au premier plan.\n  \
-             Cliquez d'abord dans l'image."
-            .to_string());
-    }
 
     let (Some(letter), Some(key)) = (act.letter(), act.where_it_sits()) else {
         return Ok(());
@@ -1924,27 +1942,10 @@ fn already_claimed(letter: u8) -> bool {
     refused
 }
 
-/// Brings that player's picture back in front.
-#[cfg(windows)]
-fn bring_forward(process: u32) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-
-    let Some(window) = window_of(process, Looked::Taken) else {
-        return;
-    };
-    // SAFETY: the window comes from the enumeration just above. Windows
-    // may refuse to change the foreground, which the caller checks for
-    // rather than trusts.
-    unsafe { SetForegroundWindow(window) };
-}
-
 #[cfg(not(windows))]
 fn shortcut(_act: Act, _process: u32) -> Result<(), String> {
     Err("les sessions ne tournent que sous Windows".to_string())
 }
-
-#[cfg(not(windows))]
-fn bring_forward(_process: u32) {}
 
 #[cfg(test)]
 mod tests {

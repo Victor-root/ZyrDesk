@@ -231,10 +231,10 @@ pub fn take_the_screen(app: &AppHandle, whole: bool) -> Result<(), String> {
     }
     fit(app);
     // Taking the screen activates our window, which the toolkit does on
-    // purpose and cannot be asked not to. The engine loses the front,
-    // and with it the keyboard and the mouse it had asked the system
-    // for. Handed straight back.
-    hand_the_keyboard_back(app);
+    // purpose and cannot be asked not to, and our own page takes the
+    // focus inside it. The picture loses the keyboard that way. Handed
+    // straight back.
+    the_keyboard_back(app);
     Ok(())
 }
 
@@ -1288,80 +1288,54 @@ fn the_frame_is_square(home: windows_sys::Win32::Foundation::HWND) -> bool {
     unsafe { IsZoomed(home) != 0 || GetWindowLongPtrW(home, GWL_STYLE) & WS_CAPTION as isize == 0 }
 }
 
-/// Puts the picture at the front, which is where the keyboard goes.
+/// Gives the keyboard back to the picture and draws our title bar to
+/// match, on the thread that owns both windows.
 ///
-/// A picture held inside our window cannot be the window at the front,
-/// a child window never is, so every gesture that takes it in costs the
-/// far computer its keyboard until it is handed back. Asked for again
-/// at that moment, rather than left to whatever the system does with a
-/// window that has just changed hands: what it does is leave the front
-/// where it was, which is our own window, and the keyboard with it.
+/// The front is not the road, and this is the one thing about a session
+/// worth having straight. The picture is carried as a child of our
+/// window for the whole of a session, and a child window is never the
+/// window at the front: the system hands the front to the top of the
+/// family, which is ours. Asking for the front to go to the picture
+/// therefore does nothing but activate our own window again, which is
+/// where it already was, and the journal shows exactly that, session
+/// after session: the front reads « à ZyrDesk » from the moment the
+/// picture is taken in and never once reads « à l'image » again.
+///
+/// What carries the keyboard is the other road entirely: this program
+/// joins its input to the engine's, and hands the focus over inside the
+/// pair. That is the road, and this is where it is asked for again after
+/// every gesture that took the focus away.
 #[cfg(windows)]
-fn the_front_to_the_picture(engine: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-
-    // SAFETY: a window this program took in hand. Windows may refuse to
-    // change the front window, which costs nothing here.
-    unsafe { SetForegroundWindow(engine) };
-}
-
-/// Puts the picture back in front, so the engine gets the keyboard and
-/// the mouse back.
-#[cfg(windows)]
-fn hand_the_keyboard_back(app: &AppHandle) {
-    let Some(held) = taken(app).filter(alive) else {
-        return;
-    };
-    the_front_to_the_picture(held.window as windows_sys::Win32::Foundation::HWND);
-
-    // Handing the front to the picture is what dims our title bar, and
-    // the system only asks about it while it is doing so. Said again
-    // straight after, so the answer is given with the front already
-    // where it was being put.
-    let asked = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        if let Some(home) = home_window(&asked) {
-            light_the_bar(home);
-        }
-    });
+fn give_the_keyboard_to_the_picture(app: &AppHandle) -> bool {
+    let landed = the_keyboard_to_the_picture();
+    // The title bar goes with it. Our window is drawn as the one being
+    // used for as long as a session is in it, and the front moving
+    // between our own windows is what the system asks about.
+    if let Some(home) = home_window(app) {
+        draw_the_bar(home);
+    }
+    landed
 }
 
 /// Gives the keyboard back to the picture, asked from anywhere in the
 /// program.
 ///
-/// For the floating button, which is the one thing that takes the
-/// keyboard away without the system noticing it left. That window is
-/// marked so a click on it never makes it the front itself, which is
-/// right: the front belongs to the picture for almost a whole session,
-/// and this button is not supposed to interrupt that by being touched.
-/// But a window marked that way still answers a click by handing the
-/// front to whatever owns it, which is the home window, so the front
-/// moves anyway, one step removed, and nothing was left to move it back.
-/// The session was deaf from that point on while looking exactly as it
-/// should, with nothing short of reopening it to put it right.
-///
-/// Put right two ways at once, in the order that matters. Asking the
-/// system to hand the front itself back to the picture is the one thing
-/// proven to make the far engine notice the front changed at all, so it
-/// is asked whenever the front has not actually left this program, which
-/// is the only case this can be about correcting a wrong window of ours
-/// rather than reaching over somebody else's shoulder. Elsewhere, only
-/// the gentler ask is made: sharing the input still delivers what is
-/// typed, and taking the front from another program outright is not this
-/// window's to do.
+/// For the floating button above all, which is the one thing that takes
+/// the keyboard away without the system noticing it left. That window is
+/// marked so a click on it never makes it the active one, and it never
+/// does; but its page takes the focus inside this program all the same,
+/// and the focus is what the keyboard follows. The session then goes
+/// deaf while looking exactly as it should.
 ///
 /// Handed to the thread that draws, since callers include a watch that
-/// runs on a worker thread of its own, and every window call here needs
-/// the one that owns these windows.
+/// runs on a worker thread of its own, and handing another program's
+/// window the focus is only possible from the thread whose input was
+/// joined to that program's.
 #[cfg(windows)]
 pub fn the_keyboard_back(app: &AppHandle) {
     let asked = app.clone();
     let _ = app.run_on_main_thread(move || {
-        if who_holds_the_front() == Front::Ours {
-            hand_the_keyboard_back(&asked);
-        } else {
-            the_keyboard_to_the_picture();
-        }
+        give_the_keyboard_to_the_picture(&asked);
     });
 }
 
@@ -1487,21 +1461,12 @@ fn draw_the_bar(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE;
 
-    let front = who_holds_the_front();
-    let lit = front != Front::Elsewhere;
+    let lit = who_holds_the_front() != Front::Elsewhere;
     if BAR_LIT.swap(lit, Ordering::Relaxed) != lit {
         crate::journal::note(&format!(
             "barre de titre {} : le premier plan est {}",
             if lit { "active" } else { "inactive" },
-            match front {
-                Front::Ours => "à ZyrDesk".to_string(),
-                Front::ThePlayer => "à l'image".to_string(),
-                // Named rather than merely spotted: nothing here expects
-                // a third window to ever hold the front during a
-                // session, so a report of it happening is worth more
-                // with a name on it than without one.
-                Front::Elsewhere => format!("ailleurs : {}", describe_the_front()),
-            }
+            the_front_in_words()
         ));
     }
     // SAFETY: our own window, from the thread that owns it, and the
@@ -1557,6 +1522,24 @@ pub fn who_holds_the_front() -> Front {
         Front::ThePlayer
     } else {
         Front::Elsewhere
+    }
+}
+
+/// Who holds the front, in the words the journal uses everywhere.
+///
+/// One phrasing for the whole program: which of the three it is turns up
+/// in the title bar's own line, in every ask for the front to come back,
+/// and in every shortcut refused for want of it, and reading those lines
+/// against one another is the only way this is ever untangled.
+#[cfg(windows)]
+pub(crate) fn the_front_in_words() -> String {
+    match who_holds_the_front() {
+        Front::Ours => "à ZyrDesk".to_string(),
+        Front::ThePlayer => "à l'image".to_string(),
+        // Named rather than merely spotted: nothing here expects a third
+        // window to ever hold the front during a session, so a report of
+        // it happening is worth more with a name on it than without one.
+        Front::Elsewhere => format!("ailleurs : {}", describe_the_front()),
     }
 }
 
@@ -2232,16 +2215,23 @@ fn hand_the_keyboard_over(engine: windows_sys::Win32::Foundation::HWND, over: bo
 ///
 /// Says where the focus really went the first time it moves, since
 /// « asked for » and « granted » have already been two different things
-/// once here.
+/// once here. And answers it to the caller as well as to the journal:
+/// nothing may be typed at the picture that does not have it.
+///
+/// Asked from the thread that owns these windows, always. Handing
+/// another program's window the focus is only possible from the thread
+/// whose input this program joined to that program's, and reading the
+/// focus back from any other thread reads that other thread's, which is
+/// nobody's.
 #[cfg(windows)]
-fn the_keyboard_to_the_picture() {
+pub(crate) fn the_keyboard_to_the_picture() -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
 
     if CARRIED.load(Ordering::Relaxed) == 0 {
-        return;
+        return false;
     }
     let Some(engine) = the_engines_window() else {
-        return;
+        return false;
     };
     // SAFETY: a window this program took in hand, on the same input as
     // ours, and a reading of where the focus of that shared input is.
@@ -2251,23 +2241,23 @@ fn the_keyboard_to_the_picture() {
     };
     let told = if landed == engine { 1 } else { 2 };
     if FOCUS_TOLD.swap(told, Ordering::Relaxed) != told {
-        crate::journal::note(&if told == 1 {
-            "le clavier est bien à la session".to_string()
-        } else {
-            // The front, not merely the shared input's own idea of focus:
-            // the two can come apart, and it is the front that decides
-            // whether the engine ever hears of this at all.
-            format!(
-                "le clavier n'est pas à la session : le focus a été refusé à l'image ; \
-                 le premier plan est {}",
-                match who_holds_the_front() {
-                    Front::Ours => "à ZyrDesk".to_string(),
-                    Front::ThePlayer => "à l'image".to_string(),
-                    Front::Elsewhere => format!("ailleurs : {}", describe_the_front()),
-                }
-            )
-        });
+        // The front alongside the focus, always, and not only when the
+        // focus was refused. The two come apart on purpose here, and a
+        // session where the keyboard reads as « bien à la session » while
+        // the front is on our own window is exactly the state where the
+        // far computer stops answering Alt+Tab: the line has to be able
+        // to show that, or it reads as everything being well.
+        crate::journal::note(&format!(
+            "{} ; le premier plan est {}",
+            if told == 1 {
+                "le clavier est bien à la session"
+            } else {
+                "le clavier n'est pas à la session : le focus a été refusé à l'image"
+            },
+            the_front_in_words()
+        ));
     }
+    told == 1
 }
 
 /// What the journal last said about where the keyboard went, so it is
@@ -2382,6 +2372,29 @@ fn carry_the_picture(
             where_it_stands(engine),
         ));
     }
+}
+
+/// Puts the picture at the front, and says whether Windows agreed.
+///
+/// For a picture that has just stopped being a child of our window and
+/// nothing else. A child is never the window at the front, the system
+/// giving the front to the head of a family and never to a member of it,
+/// so this asked of a carried picture does not fail: it succeeds at
+/// activating our own window, which is where the front already was, and
+/// reads afterwards exactly like a picture that has it. That was believed
+/// to be the road back to the keyboard for a whole round of fixes; the
+/// road is the focus, which `the_keyboard_to_the_picture` hands over.
+#[cfg(windows)]
+fn the_front_to_the_picture(engine: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+
+    // SAFETY: a window this program took in hand, and just handed back.
+    let taken = unsafe { SetForegroundWindow(engine) } != 0;
+    crate::journal::note(&format!(
+        "premier plan redemandé pour l'image rendue à elle-même : Windows a {} ; il est {}",
+        if taken { "accepté" } else { "refusé" },
+        the_front_in_words()
+    ));
 }
 
 /// Puts the picture back to the window of its own it ordinarily is,
@@ -3400,7 +3413,14 @@ fn alive(_held: &Held) -> bool {
 }
 
 #[cfg(not(windows))]
-fn hand_the_keyboard_back(_app: &AppHandle) {}
+pub(crate) fn the_front_in_words() -> String {
+    "hors de Windows, où il n'y a pas de session".to_string()
+}
+
+#[cfg(not(windows))]
+pub(crate) fn the_keyboard_to_the_picture() -> bool {
+    false
+}
 
 #[cfg(not(windows))]
 fn take_the_window_in_hand(_app: &AppHandle) {}

@@ -286,6 +286,20 @@ L'ordre entre les deux tient à un seul fait : le bouton est marqué toujours au
 
 **Le diagnostic qui va avec.** Quand le premier plan n'appartient ni à ZyrDesk ni à l'image, le journal nomme maintenant la fenêtre qui le tient (processus, programme, titre) au lieu de dire seulement « ailleurs ». Une fenêtre tierce s'y est vue une fois, brièvement, à l'instant même du clic sur le bouton ; d'où elle vient n'est pas établi, et cette ligne est ce qui permettra de le savoir si ça revient.
 
+**~~Décision~~ corrigée le 2026-08-23 par [D31](#d31-le-clavier-de-la-session-se-rend-par-le-focus-et-jamais-par-le-premier-plan-2026-08-23-pendant-m4).** Le raisonnement ci-dessus est faux sur son point central : l'image est portée comme une fenêtre fille de la nôtre pendant toute une session, et une fenêtre fille ne peut jamais être celle du premier plan. La demande décrite ici ne pouvait donc rien faire d'autre que réactiver notre propre fenêtre. Seul le diagnostic ajouté (nommer la fenêtre tierce) est conservé.
+
+## D31. Le clavier de la session se rend par le focus, et jamais par le premier plan (2026-08-23, pendant M4)
+
+**Décision.** Tout ce qui rend le clavier à l'image passe par une seule voie : l'entrée que ZyrDesk a jointe à celle du moteur, dans laquelle le focus est confié à l'image. Le premier plan n'est plus jamais demandé pour ça. Et rien n'est tapé vers la session sans avoir d'abord rendu ce focus et vérifié qu'il a bien atterri sur l'image.
+
+**Ce qui l'a rendu nécessaire.** Dit par Victor : « Non ça a rien changé et le bouton statistiques dans le fab ne fait rien fréro j'ai l'impression que tu fais du bricolage là ». C'était juste. [D30](#d30-redonner-le-clavier-au-bouton-flottant-redonne-aussi-le-premier-plan-2026-08-23-pendant-m4) demandait le premier plan pour une fenêtre qui ne peut pas l'avoir : l'image est portée comme fille de la fenêtre d'accueil ([D21](#d21-limage-du-bureau-distant-saffiche-dans-la-fenêtre-de-zyrdesk-2026-08-19-pendant-m4)), et le système donne le premier plan au chef de famille, jamais à un membre. La demande réussissait donc à réactiver notre propre fenêtre, où le premier plan était déjà, et le journal le disait sans que ce soit lu : « le premier plan est à ZyrDesk », jamais « à l'image », de la première image d'une session à la dernière.
+
+**Ce que ça répare vraiment.** Le bouton Statistiques. Cliquer sur le bouton flottant donne le clavier à la page de ce bouton ; la frappe envoyée ensuite était lue par notre propre vue web et jetée, pendant que Windows répondait que l'envoi avait réussi, comme il le fait toujours. Le journal disait « statistiques envoyé au lecteur », et c'était vrai : envoyé chez nous. Le clavier est maintenant rendu à l'image et vu y atterrir avant chaque frappe, sinon la fenêtre le dit et n'envoie rien.
+
+**Ce que ça ne répare pas.** Alt+Tab après un passage par le bouton flottant. La cause en est établie et elle est ailleurs : le moteur client décide qu'il tient le clavier en comparant sa propre fenêtre à celle du premier plan du système. Portée dans la nôtre, la sienne ne peut plus jamais être celle-là, donc au premier message de focus qui lui parvient il conclut qu'il l'a perdu et relâche sa capture des touches du système, définitivement pour la session. Traité à part.
+
+**Ce que ça coûte.** Le journal dit une ligne de plus par ouverture et par fermeture du menu flottant, et nomme désormais le premier plan à chaque fois qu'il parle du clavier.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
