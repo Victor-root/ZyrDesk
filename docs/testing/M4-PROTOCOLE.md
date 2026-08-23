@@ -25,7 +25,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **S21** | Plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
-| **S9sexies** | **Deux causes, et le journal donne les deux.** Le premier plan était recalculé au plus une fois par seconde, alors que le sélecteur de Windows le prend et le rend bien plus vite : il est maintenant **suivi**, Windows le dit à l'instant où il le déplace. Et refermer le menu du bouton flottant faisait réellement partir le premier plan chez l'explorateur de Windows : il est repris |
+| **S9sexies** | **Le journal a prouvé que la touche n'arrive pas jusqu'à ZyrDesk.** Un Alt+Tab fait quatre frappes ; trois arrivent, et celle qui manque est l'appui de Tab. Tout le reste du journal en découle et est correct. Le crochet se mesure donc lui-même, sur la route des frappes, pour dire laquelle des trois causes possibles c'est ; et son fil passe au-dessus des fils ordinaires, ce qui est la seule des trois qui soit dans nos mains |
 | **S19** | Ces touches doivent redevenir celles de ce PC-là dès que le premier plan quitte ZyrDesk, et à la fin de la session. Le journal nomme désormais chaque fenêtre qui prend le premier plan pendant une session |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
@@ -749,6 +749,14 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > - **N qui monte, M à zéro** : il est branché, mais Alt+Tab ne lui parvient pas.
 > - **M qui monte, K à zéro** : elles lui parviennent et il les laisse passer, et le compte de chaque réponse dit pourquoi, en toutes lettres.
 > - **K qui monte d'une unité par Alt+Tab** : c'est ce qu'on veut.
+>
+> **La suite de la ligne dit si la touche arrive seulement jusqu'ici.** Un Alt+Tab fait quatre frappes, et `vues : Tab X enfoncée(s) et Y relâchée(s), Alt A et B` les compte à part. **X et Y doivent être égaux**, comme A et B : une session ne peut pas tenir deux relâchements de Tab pour un appui. Un appui qui manque veut dire que Windows n'a pas appelé ZyrDesk pour cette touche-là, ce qui est un défaut d'une autre nature que tous les précédents, et les trois nombres suivants disent lequel :
+>
+> - `au plus X ms d'attente avant nous` : ce que le système, et tout autre programme accroché devant nous, a consommé avant de nous passer la touche. Grand, l'attente n'est pas la nôtre.
+> - `Y µs chez nous` : ce que ZyrDesk a mis à répondre. C'est le seul dont ce programme réponde, et il doit rester très petit ; le système rend la touche telle quelle passé un tiers de seconde, soit 300 000 µs.
+> - `Z appel(s) hors sujet` : des appels qui ne parlaient pas d'une frappe. Zéro attendu.
+>
+> Et `relâchements dont l'appui n'est jamais arrivé jusqu'ici` compte exactement le défaut ci-dessus, séparé de `relâchements de touches laissées passer`, qui lui est normal : c'est le retour d'un Alt+Tab que ZyrDesk a laissé au système exprès, parce que la session n'était plus devant.
 >
 > Le compte est par **réponse** et pas seulement sur la dernière touche, et c'est ce qui a fini par trancher : Alt+Tab arrive par paires de sens opposé, celle qui sort de la session et doit partir au loin, et celle qui y revient et ne doit pas. Lue sur la dernière touche seulement, une session où toutes les sorties échouent et toutes les rentrées sont correctement refusées se lit comme une session où tout va bien.
 

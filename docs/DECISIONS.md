@@ -352,6 +352,29 @@ Le journal l'a fini par le montrer à la seconde près : `retour en fenêtre ren
 
 **Ce qui a été retiré avec.** Le calcul du premier plan à chaque redessin de barre de titre et à chaque tour de la surveillance de session. Une seule source, et la lecture unique faite au démarrage d'une session pour savoir d'où l'on part.
 
+## D34. La touche perdue ne l'est pas par ZyrDesk : le crochet est mesuré (2026-08-23, pendant M4)
+
+**Ce que le journal a prouvé, et ça change la nature du défaut.** Après [D33](#d33-le-premier-plan-est-suivi-et-non-plus-sondé-2026-08-23-pendant-m4), une session a été relue frappe par frappe. Entre deux lectures : `11 frappe(s) vues` contre `8` avant, donc **trois** touches, et **une seule** candidate, un relâchement de Tab. Un Alt+Tab en fait quatre : Alt enfoncée, Tab enfoncée, Tab relâchée, Alt relâchée. Les trois vues sont Alt enfoncée, Alt relâchée et Tab relâchée : **l'appui de Tab n'est jamais arrivé jusqu'à ZyrDesk**. Le compteur du programme monte au premier geste du crochet, donc un crochet appelé et lent compterait quand même ; celui-ci n'a pas été appelé du tout.
+
+Toutes les causes des tours précédents étaient des conditions que ZyrDesk évaluait mal. Celle-ci n'en est pas une : ZyrDesk a répondu juste à tout ce qu'on lui a donné, et une touche ne lui a pas été donnée. Tout ce qui suit dans ce journal en découle et est correct : le sélecteur de Windows ouvert, le premier plan parti, donc les touches suivantes rendues au système, ce qui est exactement ce qu'on veut quand la session n'est plus devant.
+
+**Trois raisons possibles, et rien dans le code ne permet de trancher entre elles.** Le système a pu passer outre le crochet parce qu'il a jugé ce programme trop lent à répondre (il tient chaque frappe de tout l'ordinateur et la rend telle quelle passé un tiers de seconde) ; ou un autre crochet posé après le nôtre, donc appelé avant, a mangé la touche ; ou l'appel a eu lieu sous une forme que rien ne comptait. Deviner laquelle serait recommencer les six tours précédents.
+
+**Donc le crochet se mesure lui-même, sur la route même des frappes, et sans rien y ajouter qui attende.** Quatre nombres, tous des lectures de mémoire ou d'horloge, aucun appel au gestionnaire de fenêtres :
+
+- **Le flux contre lui-même** : combien de Tab enfoncées et combien de relâchées, combien d'Alt de chaque côté. Une session ne peut pas tenir deux relâchements de Tab pour un appui, et c'est la seule façon de voir une frappe qui n'est jamais venue.
+- **L'âge d'une frappe en arrivant.** Windows horodate chaque frappe ; comparé à l'heure d'arrivée, l'écart est ce que le système et tout crochet posé devant nous ont consommé avant nous.
+- **Le temps passé chez nous**, en microsecondes, mesuré sur toutes les sorties de la fonction. C'est le nombre qui doit rester petit, et le seul dont ce programme réponde.
+- **Les appels qui ne parlaient pas d'une touche**, que rien ne comptait jusqu'ici et qui seraient donc restés invisibles.
+
+Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous : elle l'est. Les deux petits avec un appui manquant : personne n'a attendu et la touche a été prise ailleurs.
+
+**Une réponse de plus, distincte, et elles se ressemblaient.** Un relâchement dont l'appui n'a pas été repris était compté d'une seule façon. Il y en a deux, de sens opposé : la session n'était pas devant et l'appui a été laissé passer exprès, ce qui est normal ; ou elle l'était, donc l'appui aurait été porté au loin s'il était venu, donc il n'est pas venu. La seconde est le défaut ci-dessus, et elle a maintenant son propre compte.
+
+**Et le premier plan est noté pour chaque candidate**, relâchements compris. Il n'était noté qu'aux appuis, donc le journal collait à un relâchement la réponse d'un appui parfois vieux de plusieurs minutes.
+
+**Une seule chose a changé de comportement : le fil du crochet passe au-dessus des fils ordinaires.** C'est le seul fil du produit qui ait une échéance réelle, il ne tourne jamais et ne fait que se réveiller pour répondre, donc rien sur la machine ne perd quoi que ce soit à ce qu'il passe en premier. Ce n'est pas un correctif à l'aveugle : c'est retirer un risque connu d'un fil qui n'a pas le droit de répondre en retard, sur une machine, un portable qui décode de la vidéo sur tous ses coeurs, où un fil ordinaire peut attendre bien plus longtemps qu'une frappe n'a le droit d'attendre.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

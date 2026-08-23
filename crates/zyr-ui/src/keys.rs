@@ -83,10 +83,18 @@ static SEEN: AtomicU32 = AtomicU32::new(0);
 ///
 /// The answers, in order: 1 no picture, 2 the front is elsewhere, 4 the
 /// system would not have eaten it anyway, 5 somebody else sent it, 6 a
-/// release of a key that was never taken, 7 taken. Three is gone: the
-/// keyboard not being at the picture was asked once and was the fault
-/// itself, so its place is left empty rather than shuffling the rest and
-/// making two journals unreadable against each other.
+/// release of a key that was never taken, 7 taken, 8 a release whose
+/// press never reached this program at all. Three is gone: the keyboard
+/// not being at the picture was asked once and was the fault itself, so
+/// its place is left empty rather than shuffling the rest and making two
+/// journals unreadable against each other.
+///
+/// Eight is the one that says the fault is not here. A release arriving
+/// for a press that was never taken is ordinary when the session was not
+/// in front: the press was let through on purpose. Arriving while the
+/// session **is** in front, it is not: that press would have been carried
+/// had it come, so it never came, and the system did not call this
+/// program for it. Six and eight look alike and mean opposite things.
 ///
 /// The last answer alone is not enough and reading it as though it were
 /// cost a whole round. Several candidates arrive within the one second
@@ -95,7 +103,36 @@ static SEEN: AtomicU32 = AtomicU32::new(0);
 /// one that comes back to it, which ought not. Read from the last of
 /// them, a session where every leaving one failed and every returning
 /// one was rightly refused reads as a session where nothing was wrong.
-static WHYS: [AtomicU32; 8] = [const { AtomicU32::new(0) }; 8];
+static WHYS: [AtomicU32; 9] = [const { AtomicU32::new(0) }; 9];
+
+/// Every Tab and every Alt this program was called for, pressed and
+/// released counted apart.
+///
+/// The stream against itself, which is the only way to see a keystroke
+/// that never arrived: a session cannot hold two Tab releases for one
+/// press. Nothing else in this file can show that, because everything
+/// else is counted from what did arrive.
+static TABS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
+static ALTS: [AtomicU32; 2] = [const { AtomicU32::new(0) }; 2];
+
+/// The oldest a keystroke has been on reaching here, in milliseconds, and
+/// the longest this program has spent holding one, in microseconds.
+///
+/// The two halves of « is this program answering in time ». The system
+/// holds every keystroke of the whole computer until the answer comes and
+/// hands it on unanswered past a third of a second, so the second number
+/// is the one that must stay small. The first is what the system, or
+/// anybody hooked in front of us, spent before us; large with the second
+/// small, the wait is not ours.
+static LATEST: AtomicU32 = AtomicU32::new(0);
+static LONGEST: AtomicU32 = AtomicU32::new(0);
+
+/// Calls that were not about a keystroke at all.
+///
+/// The system may call a hook to say « pass this on without looking »,
+/// and such a call is not counted anywhere else and would be invisible.
+/// Nought is the expected answer, and anything else is a lead.
+static ODD: AtomicU32 = AtomicU32::new(0);
 
 /// Everything else about the last candidate: which key it was, whether
 /// it was a release, who held the front, and what Alt and Control were
@@ -129,10 +166,24 @@ pub fn hold() {
 
 /// Steps in front of every keystroke of the whole computer, on the thread
 /// that is to answer for them.
+///
+/// That thread is put above the ordinary ones first, and it is the one
+/// thread of this product with a real deadline: the system holds every
+/// keystroke of the whole computer waiting for it, and hands the
+/// keystroke on unanswered past a third of a second. It never runs, it
+/// only wakes to answer and goes back to sleep, so nothing else on the
+/// machine loses anything by it going first; a laptop decoding video on
+/// every core, which is what this is, can leave an ordinary thread
+/// waiting far longer than a keystroke may wait.
 fn put_it_on() -> isize {
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_HIGHEST,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, WH_KEYBOARD_LL};
 
+    // SAFETY: this very thread, and only what it is worth is written.
+    unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST) };
     // SAFETY: no argument names this program's own module, and the
     // callback is a plain function of it.
     unsafe {
@@ -172,11 +223,14 @@ pub fn let_go() {
         &LAST_KEY,
         &LAST_FRONT,
         &LAST_MODS,
+        &LATEST,
+        &LONGEST,
+        &ODD,
     ] {
         counter.store(0, Ordering::SeqCst);
     }
-    for answer in &WHYS {
-        answer.store(0, Ordering::SeqCst);
+    for counter in WHYS.iter().chain(&TABS).chain(&ALTS) {
+        counter.store(0, Ordering::SeqCst);
     }
     HELD_SINCE.store(false, Ordering::Relaxed);
     LAST_UP.store(false, Ordering::SeqCst);
@@ -281,6 +335,22 @@ fn the_system_would_eat_it(code: u32) -> bool {
     }
 }
 
+/// Times one turn through the hook, whichever way it leaves.
+///
+/// Kept as a thing that ends by itself rather than a line at the end,
+/// there being five ways out of that road and no wish for a sixth that
+/// forgets this one.
+struct HowLong(std::time::Instant);
+
+impl Drop for HowLong {
+    fn drop(&mut self) {
+        LONGEST.fetch_max(
+            u32::try_from(self.0.elapsed().as_micros()).unwrap_or(u32::MAX),
+            Ordering::SeqCst,
+        );
+    }
+}
+
 /// Whether a session is on screen and in front.
 ///
 /// Read from a number this program keeps, and asked of nothing. That is
@@ -324,6 +394,8 @@ unsafe extern "system" fn seen(
     what: windows_sys::Win32::Foundation::WPARAM,
     told: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::System::SystemInformation::GetTickCount;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_LMENU, VK_MENU, VK_RMENU, VK_TAB};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED, WM_KEYUP, WM_SYSKEYUP,
     };
@@ -332,22 +404,44 @@ unsafe extern "system" fn seen(
     // is a key, and it lives for the length of this call.
     let pass = || unsafe { CallNextHookEx(std::ptr::null_mut(), code, what, told) };
     if code != HC_ACTION as i32 {
+        ODD.fetch_add(1, Ordering::SeqCst);
         return pass();
     }
+    let _timed = HowLong(std::time::Instant::now());
     ANY.fetch_add(1, Ordering::SeqCst);
     // SAFETY: as above.
     let key = unsafe { &*(told as *const KBDLLHOOKSTRUCT) };
     let up = what as u32 == WM_KEYUP || what as u32 == WM_SYSKEYUP;
+    // How old this keystroke is on arriving. Both numbers count
+    // milliseconds since this computer started, so the difference is the
+    // wait; one ahead of the other is a reading taken across the tick
+    // that moved them, and says nothing.
+    //
+    // SAFETY: no argument, and the answer is a plain number.
+    let age = unsafe { GetTickCount() }.wrapping_sub(key.time);
+    if age < 10_000 {
+        LATEST.fetch_max(age, Ordering::SeqCst);
+    }
     // Before anything else, and for every key including the ones that go
     // straight through: what Alt and Control are doing is read off this
     // stream and nowhere else.
     follow_the_modifiers(key.vkCode, up);
+    match key.vkCode as u16 {
+        VK_TAB => TABS[usize::from(up)].fetch_add(1, Ordering::SeqCst),
+        VK_MENU | VK_LMENU | VK_RMENU => ALTS[usize::from(up)].fetch_add(1, Ordering::SeqCst),
+        _ => 0,
+    };
     let Some(bit) = a_key_of_ours(key.vkCode) else {
         return pass();
     };
 
     // What was decided about this one, and everything that decided it.
+    // Where the front is is asked for every candidate and not only for
+    // the ones on the way down: read from the last press instead, the
+    // journal repeated an answer minutes old beside a release it had
+    // nothing to do with.
     let held = HELD.load(Ordering::SeqCst);
+    let front = the_session_has_the_keyboard();
     let why = if key.flags & LLKHF_INJECTED != 0 {
         // Ours coming back, or another program's. Either way it is not a
         // person typing, and taking it again would be this hook
@@ -355,9 +449,15 @@ unsafe extern "system" fn seen(
         5
     } else if up {
         // Released: taken if it was taken on the way down, and only then.
-        if held & bit != 0 { 7 } else { 6 }
+        // Never taken while the session was in front means the press was
+        // never brought here at all.
+        match (held & bit != 0, front) {
+            (true, _) => 7,
+            (false, 0) => 8,
+            (false, _) => 6,
+        }
     } else {
-        match the_session_has_the_keyboard() {
+        match front {
             0 if the_system_would_eat_it(key.vkCode) => 7,
             0 => 4,
             no => no,
@@ -470,9 +570,18 @@ pub fn tell() {
         .collect();
     crate::journal::note(&format!(
         "touches système : {} frappe(s) vues, {seen} candidate(s), {taken} portée(s) ; \
-         {} ; la dernière était {} {}, Alt {}, Ctrl {}, premier plan {}",
+         {} ; vues : Tab {} enfoncée(s) et {} relâchée(s), Alt {} et {} ; \
+         au plus {} ms d'attente avant nous et {} µs chez nous, {} appel(s) hors sujet ; \
+         la dernière était {} {}, Alt {}, Ctrl {}, premier plan {}",
         ANY.load(Ordering::SeqCst),
         counted.join(", "),
+        TABS[0].load(Ordering::SeqCst),
+        TABS[1].load(Ordering::SeqCst),
+        ALTS[0].load(Ordering::SeqCst),
+        ALTS[1].load(Ordering::SeqCst),
+        LATEST.load(Ordering::SeqCst),
+        LONGEST.load(Ordering::SeqCst),
+        ODD.load(Ordering::SeqCst),
         named(LAST_KEY.load(Ordering::SeqCst)),
         if LAST_UP.load(Ordering::SeqCst) {
             "relâchée"
@@ -497,7 +606,8 @@ fn in_words(answer: u32) -> &'static str {
         3 => "clavier pas à l'image (plus demandé)",
         4 => "que le système n'aurait pas mangées",
         5 => "venues d'un programme",
-        6 => "relâchements de touches jamais reprises",
+        6 => "relâchements de touches laissées passer",
+        8 => "relâchements dont l'appui n'est jamais arrivé jusqu'ici",
         _ => "portées à la session",
     }
 }

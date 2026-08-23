@@ -48,6 +48,10 @@ windows-sys = { version = "0.61.2", features = [
     # donc toute la famille ShellExecuteEx derrière cette porte-là.
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
+    # GetTickCount : la seule horloge qui parle la même langue que
+    # l'horodatage que Windows colle sur chaque frappe, donc la seule qui
+    # dise l'âge d'une touche en arrivant.
+    "Win32_System_SystemInformation",
     "Win32_System_Threading",
     # SetWinEventHook : se faire dire par Windows où passe le premier
     # plan, au lieu de le lui redemander sans arrêt. Rangé avec
