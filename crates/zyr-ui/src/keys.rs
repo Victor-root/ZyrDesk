@@ -29,7 +29,7 @@
 //! every keystroke this program itself sends, the system is left to do
 //! exactly what it always does.
 
-use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
 /// The hook, while it is installed, as a plain number: a hook handle is a
 /// raw pointer, which does not travel between threads on its own.
@@ -109,6 +109,7 @@ pub fn hold() {
         )
     };
     HOOKED.store(hook as isize, Ordering::Relaxed);
+    read_the_modifiers();
     crate::journal::note(if hook.is_null() {
         "touches système non reprises : Windows a refusé le crochet clavier"
     } else {
@@ -126,10 +127,11 @@ pub fn let_go() {
     }
     tell();
     for counter in [
-        &HELD, &SAID, &TAKEN, &ANY, &SEEN, &WHY, &TOLD, &TOLD_SEEN, &TOLD_WHY,
+        &HELD, &SAID, &TAKEN, &ANY, &SEEN, &WHY, &TOLD, &TOLD_SEEN, &TOLD_WHY, &DOWN,
     ] {
         counter.store(0, Ordering::Relaxed);
     }
+    HELD_SINCE.store(false, Ordering::Relaxed);
     // SAFETY: the hook this program installed, given back once.
     unsafe { UnhookWindowsHookEx(hook as HHOOK) };
     crate::journal::note("touches système rendues à cet ordinateur");
@@ -154,6 +156,67 @@ fn a_key_of_ours(code: u32) -> Option<u32> {
     }
 }
 
+/// Which of Alt and Control are held down, counted from the very stream
+/// of keys this is filtering.
+///
+/// Bit one for Alt, bit two for Control, either side of the keyboard.
+static DOWN: AtomicU32 = AtomicU32::new(0);
+
+/// Follows Alt and Control through the stream, and says nothing about
+/// whether the key should be taken: they never are.
+///
+/// Counted here rather than asked of the system at the moment a Tab
+/// arrives. The system is asked about a key it has not finished
+/// processing, from inside its own handling of another one, and what it
+/// answers there is not a thing to rest a whole feature on: one Alt+Tab
+/// in four was read as a bare Tab and let through, and Windows switched
+/// windows on this computer. The stream itself is the only authority on
+/// what the stream is carrying.
+fn follow_the_modifiers(code: u32, up: bool) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_MENU, VK_RCONTROL, VK_RMENU,
+    };
+
+    let bit = match code as u16 {
+        VK_MENU | VK_LMENU | VK_RMENU => 1,
+        VK_CONTROL | VK_LCONTROL | VK_RCONTROL => 2,
+        _ => return,
+    };
+    let was = DOWN.load(Ordering::Relaxed);
+    DOWN.store(if up { was & !bit } else { was | bit }, Ordering::Relaxed);
+    if !up {
+        HELD_SINCE.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Whether a modifier has gone down since the last time the far computer
+/// was checked for one left holding.
+///
+/// A session in which nobody has touched Alt or Control cannot have
+/// stranded either of them, and there is then nothing to put right and
+/// nothing to send.
+static HELD_SINCE: AtomicBool = AtomicBool::new(false);
+
+/// Reads the same two off the keyboard itself, for the one moment the
+/// stream cannot be asked: before there has been any of it.
+///
+/// A session opened with a finger already on Alt would otherwise start
+/// with this program believing nothing is held.
+fn read_the_modifiers() {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_MENU};
+
+    // SAFETY: a key is named and its state is read; nothing is written.
+    let down = |key: u16| unsafe { GetAsyncKeyState(i32::from(key)) } as u16 & 0x8000 != 0;
+    let mut held = 0;
+    if down(VK_MENU) {
+        held |= 1;
+    }
+    if down(VK_CONTROL) {
+        held |= 2;
+    }
+    DOWN.store(held, Ordering::Relaxed);
+}
+
 /// Whether that key is one the system would act on itself rather than
 /// hand over.
 ///
@@ -162,15 +225,12 @@ fn a_key_of_ours(code: u32) -> Option<u32> {
 /// session nobody can work in. It is the company they keep that makes
 /// them the system's, and that is what is read here.
 fn the_system_would_eat_it(code: u32) -> bool {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_CONTROL, VK_ESCAPE, VK_MENU, VK_TAB,
-    };
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_TAB};
 
-    // SAFETY: a key is named and its state is read; nothing is written.
-    let down = |key: i32| unsafe { GetAsyncKeyState(key) } as u16 & 0x8000 != 0;
+    let held = DOWN.load(Ordering::Relaxed);
     match code as u16 {
-        VK_TAB => down(VK_MENU as i32),
-        VK_ESCAPE => down(VK_MENU as i32) || down(VK_CONTROL as i32),
+        VK_TAB => held & 1 != 0,
+        VK_ESCAPE => held != 0,
         _ => false,
     }
 }
@@ -237,6 +297,11 @@ unsafe extern "system" fn seen(
     ANY.fetch_add(1, Ordering::Relaxed);
     // SAFETY: as above.
     let key = unsafe { &*(told as *const KBDLLHOOKSTRUCT) };
+    let up = what as u32 == WM_KEYUP || what as u32 == WM_SYSKEYUP;
+    // Before anything else, and for every key including the ones that go
+    // straight through: what Alt and Control are doing is read off this
+    // stream and nowhere else.
+    follow_the_modifiers(key.vkCode, up);
     let Some(bit) = a_key_of_ours(key.vkCode) else {
         return pass();
     };
@@ -249,7 +314,6 @@ unsafe extern "system" fn seen(
         return pass();
     }
 
-    let up = what as u32 == WM_KEYUP || what as u32 == WM_SYSKEYUP;
     let held = HELD.load(Ordering::Relaxed);
     let take = if up {
         // Released: taken if it was taken on the way down, and only then.
@@ -385,6 +449,13 @@ pub fn no_key_left_down() {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_KEYUP};
 
+    // Nothing held since the last time through means nothing can have
+    // been stranded, and this is asked once a second for the length of a
+    // session: without this it would be eight messages a second, every
+    // second, saying nothing.
+    if !HELD_SINCE.swap(false, Ordering::Relaxed) {
+        return;
+    }
     let Some(engine) = crate::picture::the_engines_window() else {
         return;
     };

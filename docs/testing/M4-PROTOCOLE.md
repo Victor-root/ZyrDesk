@@ -24,7 +24,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
-| **S19** | Nouveau, et **le seul du lot clavier qui reste à vérifier** : ces touches doivent redevenir celles de ce PC-là dès qu'il n'y a plus de session, et pendant qu'on est dans le menu du bouton flottant |
+| **S21** | **À refaire en premier** : plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
+| **S19** | Ces touches doivent redevenir celles de ce PC-là dès qu'il n'y a plus de session, et pendant qu'on est dans le menu du bouton flottant |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
@@ -48,7 +49,7 @@ Ce qui a été essayé sur les deux vraies machines et dit tel quel. La colonne 
 | R12septies (le bouton **Statistiques**) | « pour les statistiques c'est bon ». Le moteur le confirme dans son propre journal : `Detected stats toggle combo` |
 | S9sexies (Alt+Tab part vers l'ordinateur distant) | « ça a l'air bon ». Le journal le compte : `8 candidate(s), 4 portée(s) à la session`, et pas une seule bascule vers `explorer.exe` de toute la session, alors qu'il y en avait trois par minute avant |
 | S20 (les raccourcis de ZyrDesk pendant toute la session) | Confirmé par le même journal : sept `sessions will open fullscreen/windowed from now on` répartis sur toute la session, qui sont le raccourci du plein écran répondant à chaque fois |
-| S21 (aucune touche coincée) | Confirmé par ce qui a **disparu** du journal du moteur client : le `Raising N keys` de fin de session, présent à chaque session d'avant, n'y est plus |
+| ~~S21 (aucune touche coincée)~~ | **Revenu, et c'est l'essai à refaire en premier.** La session suivante l'a ramené : « j'ai perdu l'accès au clavier en ouvrant et fermant le fab », et le `Raising 1 keys` avec lui. Le relâchement était conditionné à un retour du clavier qui n'avait jamais lieu ; il est maintenant demandé à chaque tour |
 | R12quinquies (le clavier après le menu du bouton flottant) | Confirmé par la même session : quatre ouvertures et fermetures du menu, et plus une seule ligne `le clavier n'est pas à la session` |
 
 ### Confirmé, mais pas fini
@@ -754,7 +755,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Ce que ça cherche : une touche modificatrice restée enfoncée **du côté distant**. Si le clavier part vers l'image alors qu'Alt est enfoncé, et que le clavier lui est repris avant qu'Alt ne remonte, l'ordinateur distant ne voit jamais Alt remonter et croit qu'il est tenu pour toujours. Tout ce qu'on tape ensuite y arrive en Alt + lettre : rien ne s'écrit, et **ça ressemble trait pour trait à un clavier mort**. Dit par Victor : « j'ai même carrément perdu le clavier dans la session ». Le moteur le signalait sans qu'on le lise, dans son propre journal, en trois mots à la fin de chaque session : `Raising 1 keys`, une touche encore enfoncée.
 >
-> ZyrDesk relâche maintenant, du côté distant, chaque modificatrice qu'aucun doigt ne tient, à chaque fois que le clavier revient à l'image après en être parti. Si ça devait revenir quand même, la ligne `Raising N keys` de la fin du journal du moteur client est le signe à chercher.
+> ZyrDesk relâche, du côté distant, chaque modificatrice qu'aucun doigt ne tient. **À chaque tour de la surveillance de session**, soit environ une fois par seconde, et non plus seulement quand le clavier revient à l'image : cette condition-là n'était jamais remplie, parce que ce qui abandonne une touche c'est le premier plan qui s'en va, et le clavier ne le suit pas forcément. La correction n'a donc jamais eu lieu une seule fois, et le défaut est revenu tel quel.
+>
+> Le signe à chercher, si ça devait revenir encore, est cette ligne à la fin du journal du **moteur client** : `Raising N keys`. Elle ne doit plus y être.
 
 > **S19 (ces touches redeviennent celles de ce PC-là dès qu'il n'y a plus de session)**
 >

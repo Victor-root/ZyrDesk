@@ -1326,7 +1326,6 @@ fn the_frame_is_square(home: windows_sys::Win32::Foundation::HWND) -> bool {
 /// never happened.
 #[cfg(windows)]
 fn give_the_keyboard_to_the_picture(app: &AppHandle) -> bool {
-    let had_it = the_keyboard_is_at_the_picture();
     if let Some(home) = home_window(app) {
         light_the_bar(home);
     }
@@ -1334,11 +1333,14 @@ fn give_the_keyboard_to_the_picture(app: &AppHandle) -> bool {
     // back as part of its work, but says nothing about where it landed,
     // and nothing may be typed at a picture that does not have it.
     let landed = the_keyboard_to_the_picture();
-    // Coming back from having been away, and only then. Whatever took the
-    // keyboard may have taken it between a modifier going down and coming
-    // back up, and the far computer is then left holding a key nobody is
-    // pressing.
-    if landed && !had_it {
+    // And every time, not only when the keyboard is coming back from
+    // somewhere. It was made to wait for that, and never once ran: what
+    // strands a modifier is the front leaving, which the keyboard does
+    // not have to follow, so this program went on holding the keyboard
+    // and answering « yes, still here » while Alt lay stuck at the far
+    // end and the session read as dead. Nothing is sent for a key a
+    // finger is really holding, so asking every second costs nothing.
+    if landed {
         crate::keys::no_key_left_down();
     }
     landed
