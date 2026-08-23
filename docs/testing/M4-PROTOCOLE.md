@@ -24,7 +24,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
-| **S21** | **À refaire en premier** : plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
+| **S21** | Plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
+| **S9sexies** | **Pas acquis, et c'est l'essai du lot.** Alt+Tab a marché une session puis plus la suivante, sans que rien n'explique la différence. Le journal compte maintenant chaque touche candidate et **la réponse qui lui a été faite**, une par une : c'est cette ligne qu'il faut renvoyer |
 | **S19** | Ces touches doivent redevenir celles de ce PC-là dès qu'il n'y a plus de session, et pendant qu'on est dans le menu du bouton flottant |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
@@ -47,7 +48,7 @@ Ce qui a été essayé sur les deux vraies machines et dit tel quel. La colonne 
 | S11, S12 (le menu du bouton flottant) | « le fab n'est toujours pas revenu », corrigé, puis « ok tout à l'air de marcher » |
 | R27, R28, R29 (l'écran virtuel, et le 4K net servi par un portable 1080p) | « c'est bon ça fonctionne nickel ça fait comme [le produit de référence] ». La netteté est acquise ; la cadence ne l'est pas, voir ci-dessous |
 | R12septies (le bouton **Statistiques**) | « pour les statistiques c'est bon ». Le moteur le confirme dans son propre journal : `Detected stats toggle combo` |
-| S9sexies (Alt+Tab part vers l'ordinateur distant) | « ça a l'air bon ». Le journal le compte : `8 candidate(s), 4 portée(s) à la session`, et pas une seule bascule vers `explorer.exe` de toute la session, alors qu'il y en avait trois par minute avant |
+| ~~S9sexies (Alt+Tab part vers l'ordinateur distant)~~ | **Confirmé puis démenti, et retiré d'ici.** Une session l'a donné pour bon (`8 candidate(s), 4 portée(s)`), la suivante l'a repris : dix candidates, aucune portée. La différence entre les deux n'est pas expliquée, et c'est ce que le lot en cours cherche |
 | S20 (les raccourcis de ZyrDesk pendant toute la session) | Confirmé par le même journal : sept `sessions will open fullscreen/windowed from now on` répartis sur toute la session, qui sont le raccourci du plein écran répondant à chaque fois |
 | ~~S21 (aucune touche coincée)~~ | **Revenu, et c'est l'essai à refaire en premier.** La session suivante l'a ramené : « j'ai perdu l'accès au clavier en ouvrant et fermant le fab », et le `Raising 1 keys` avec lui. Le relâchement était conditionné à un retour du clavier qui n'avait jamais lieu ; il est maintenant demandé à chaque tour |
 | R12quinquies (le clavier après le menu du bouton flottant) | Confirmé par la même session : quatre ouvertures et fermetures du menu, et plus une seule ligne `le clavier n'est pas à la session` |
@@ -732,12 +733,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > `touches système : N frappe(s) vues en tout, M candidate(s), K portée(s) à la session ; la dernière portée [...], la dernière laissée parce que [...]`
 >
-> Elle répond à elle seule à tout ce qui peut clocher, et c'est pour ça qu'elle compte trois nombres et pas un :
+> Elle répond à elle seule à tout ce qui peut clocher :
 >
 > - **N à zéro** : ZyrDesk ne voit passer aucune touche du tout, donc le mécanisme n'est pas branché.
 > - **N qui monte, M à zéro** : il est branché, mais Alt+Tab et Échap ne lui parviennent pas ; quelque chose les prend avant lui.
-> - **M qui monte, K à zéro** : elles lui parviennent et il les laisse passer ; la fin de la ligne dit alors laquelle des conditions a refusé, en toutes lettres.
-> - **K qui monte** : elles partent bien vers l'ordinateur distant.
+> - **M qui monte, K à zéro** : elles lui parviennent et il les laisse passer.
+>
+> Suit alors le **compte de chaque réponse**, et c'est ce qui compte le plus. Alt+Tab arrive toujours par paires de sens opposé : celle qui sort de la session, qui doit partir au loin, et celle qui y revient, qui ne doit pas. Lue sur la dernière touche seulement, une session où toutes les sorties échouent et toutes les rentrées sont correctement refusées se lit comme une session où tout va bien. C'était le cas, et ça a coûté un tour. Chaque réponse a maintenant son propre compte, et la ligne finit par le détail de la dernière touche : laquelle, enfoncée ou relâchée, Alt et Ctrl enfoncés ou non, et à qui était le premier plan.
 
 > **S20 (les raccourcis de ZyrDesk marchent pendant toute la session)**
 >

@@ -67,23 +67,39 @@ static TAKEN: AtomicU32 = AtomicU32::new(0);
 /// first at nought means the hook is not being called; the first counting
 /// with the second at nought means it is called and these keys never
 /// reach it; both counting with nothing taken means a condition below is
-/// refusing, and `WHY` says which.
+/// refusing, and the tally of answers says which.
 static ANY: AtomicU32 = AtomicU32::new(0);
 
 /// Candidate keys, in the same spirit.
 static SEEN: AtomicU32 = AtomicU32::new(0);
 
-/// Why the last candidate was left to the system, as one small number.
+/// How many candidates each possible answer has accounted for.
 ///
-/// 1 no picture, 2 the front is elsewhere, 3 the keyboard is not the
-/// picture's, 4 the system would not have eaten it anyway, 5 somebody
-/// else sent it.
-static WHY: AtomicU32 = AtomicU32::new(0);
+/// The answers, in order: 1 no picture, 2 the front is elsewhere, 3 the
+/// keyboard is not the picture's, 4 the system would not have eaten it
+/// anyway, 5 somebody else sent it, 6 a release of a key that was never
+/// taken, 7 taken.
+///
+/// The last answer alone is not enough and reading it as though it were
+/// cost a whole round. Several candidates arrive within the one second
+/// between two readings, and Alt+Tab comes in pairs of opposite meaning:
+/// the one that leaves the session, which ought to be carried, and the
+/// one that comes back to it, which ought not. Read from the last of
+/// them, a session where every leaving one failed and every returning
+/// one was rightly refused reads as a session where nothing was wrong.
+static WHYS: [AtomicU32; 8] = [const { AtomicU32::new(0) }; 8];
+
+/// Everything else about the last candidate: which key it was, whether
+/// it was a release, who held the front, and what Alt and Control were
+/// doing. Each of the four changes the meaning of the same answer.
+static LAST_KEY: AtomicU32 = AtomicU32::new(0);
+static LAST_UP: AtomicBool = AtomicBool::new(false);
+static LAST_FRONT: AtomicU32 = AtomicU32::new(0);
+static LAST_MODS: AtomicU32 = AtomicU32::new(0);
 
 /// What the journal last said about the numbers above.
 static TOLD: AtomicU32 = AtomicU32::new(0);
 static TOLD_SEEN: AtomicU32 = AtomicU32::new(0);
-static TOLD_WHY: AtomicU32 = AtomicU32::new(0);
 
 /// Takes the system's keys for as long as a session lasts.
 ///
@@ -127,11 +143,25 @@ pub fn let_go() {
     }
     tell();
     for counter in [
-        &HELD, &SAID, &TAKEN, &ANY, &SEEN, &WHY, &TOLD, &TOLD_SEEN, &TOLD_WHY, &DOWN,
+        &HELD,
+        &SAID,
+        &TAKEN,
+        &ANY,
+        &SEEN,
+        &TOLD,
+        &TOLD_SEEN,
+        &DOWN,
+        &LAST_KEY,
+        &LAST_FRONT,
+        &LAST_MODS,
     ] {
-        counter.store(0, Ordering::Relaxed);
+        counter.store(0, Ordering::SeqCst);
+    }
+    for answer in &WHYS {
+        answer.store(0, Ordering::SeqCst);
     }
     HELD_SINCE.store(false, Ordering::Relaxed);
+    LAST_UP.store(false, Ordering::SeqCst);
     // SAFETY: the hook this program installed, given back once.
     unsafe { UnhookWindowsHookEx(hook as HHOOK) };
     crate::journal::note("touches système rendues à cet ordinateur");
@@ -257,20 +287,25 @@ fn the_system_would_eat_it(code: u32) -> bool {
 /// the system's own handling of a keystroke, which is not an ordinary
 /// place to ask it from, and the answer is one this program already
 /// keeps and refreshes every second and at every settling of the front.
-fn the_session_has_the_keyboard() -> bool {
+fn the_session_has_the_keyboard() -> u32 {
+    use crate::picture::Front;
+
     if crate::picture::the_engines_window().is_none() {
-        WHY.store(1, Ordering::Relaxed);
-        return false;
+        return 1;
     }
-    if crate::picture::who_holds_the_front() == crate::picture::Front::Elsewhere {
-        WHY.store(2, Ordering::Relaxed);
-        return false;
+    let front = match crate::picture::who_holds_the_front() {
+        Front::Ours => 0,
+        Front::ThePlayer => 1,
+        Front::Elsewhere => 2,
+    };
+    LAST_FRONT.store(front, Ordering::SeqCst);
+    if front == 2 {
+        return 2;
     }
     if !crate::picture::the_keyboard_is_at_the_picture() {
-        WHY.store(3, Ordering::Relaxed);
-        return false;
+        return 3;
     }
-    true
+    0
 }
 
 /// Every key of this computer passes through here while a session lasts.
@@ -294,7 +329,7 @@ unsafe extern "system" fn seen(
     if code != HC_ACTION as i32 {
         return pass();
     }
-    ANY.fetch_add(1, Ordering::Relaxed);
+    ANY.fetch_add(1, Ordering::SeqCst);
     // SAFETY: as above.
     let key = unsafe { &*(told as *const KBDLLHOOKSTRUCT) };
     let up = what as u32 == WM_KEYUP || what as u32 == WM_SYSKEYUP;
@@ -305,31 +340,40 @@ unsafe extern "system" fn seen(
     let Some(bit) = a_key_of_ours(key.vkCode) else {
         return pass();
     };
-    SEEN.fetch_add(1, Ordering::Relaxed);
-    // Ours coming back, or another program's. Either way it is not a
-    // person typing, and taking it again would be this hook answering
-    // itself for as long as the session lasted.
-    if key.flags & LLKHF_INJECTED != 0 {
-        WHY.store(5, Ordering::Relaxed);
-        return pass();
-    }
 
-    let held = HELD.load(Ordering::Relaxed);
-    let take = if up {
+    // What was decided about this one, and everything that decided it.
+    let held = HELD.load(Ordering::SeqCst);
+    let why = if key.flags & LLKHF_INJECTED != 0 {
+        // Ours coming back, or another program's. Either way it is not a
+        // person typing, and taking it again would be this hook
+        // answering itself for as long as the session lasted.
+        5
+    } else if up {
         // Released: taken if it was taken on the way down, and only then.
-        held & bit != 0
-    } else if !the_session_has_the_keyboard() {
-        false
-    } else if !the_system_would_eat_it(key.vkCode) {
-        WHY.store(4, Ordering::Relaxed);
-        false
+        if held & bit != 0 { 7 } else { 6 }
     } else {
-        true
+        match the_session_has_the_keyboard() {
+            0 if the_system_would_eat_it(key.vkCode) => 7,
+            0 => 4,
+            no => no,
+        }
     };
-    if !take {
+
+    // Written down before the counts, and every count read back after
+    // them by the one that says all this out loud: read the other way
+    // about, a count could arrive at that reader ahead of the answer that
+    // goes with it, and a candidate refused would read as one nothing was
+    // yet known about. That happened, and a whole round was spent
+    // chasing what it seemed to say.
+    LAST_KEY.store(key.vkCode, Ordering::SeqCst);
+    LAST_UP.store(up, Ordering::SeqCst);
+    LAST_MODS.store(DOWN.load(Ordering::SeqCst), Ordering::SeqCst);
+    WHYS[why as usize].fetch_add(1, Ordering::SeqCst);
+    SEEN.fetch_add(1, Ordering::SeqCst);
+    if why != 7 {
         return pass();
     }
-    HELD.store(if up { held & !bit } else { held | bit }, Ordering::Relaxed);
+    HELD.store(if up { held & !bit } else { held | bit }, Ordering::SeqCst);
 
     hand_it_over(key, what);
     // Eaten here, so the system never sees it and never acts on it.
@@ -381,8 +425,8 @@ fn hand_it_over(
     unsafe { PostMessageW(engine, what as u32, key.vkCode as usize, about) };
 
     if !up {
-        SAID.store(key.vkCode, Ordering::Relaxed);
-        TAKEN.fetch_add(1, Ordering::Relaxed);
+        SAID.store(key.vkCode, Ordering::SeqCst);
+        TAKEN.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -393,34 +437,56 @@ fn hand_it_over(
 /// Says nothing while nothing has changed, so a session in which no
 /// system key is ever pressed leaves no line at all.
 pub fn tell() {
-    let taken = TAKEN.load(Ordering::Relaxed);
-    let seen = SEEN.load(Ordering::Relaxed);
-    let why = WHY.load(Ordering::Relaxed);
-    // The three read and put back before any of them is judged. Joined
-    // with « or », the first change would be the last two's excuse for
-    // never being written down, and the line would then come out a second
-    // time on the strength of a change already reported.
-    let carried = TOLD.swap(taken, Ordering::Relaxed) != taken;
-    let candidates = TOLD_SEEN.swap(seen, Ordering::Relaxed) != seen;
-    let refusal = TOLD_WHY.swap(why, Ordering::Relaxed) != why;
-    if !(carried || candidates || refusal) {
+    let seen = SEEN.load(Ordering::SeqCst);
+    let taken = TAKEN.load(Ordering::SeqCst);
+    // Both read and put back before either is judged. Joined with « or »,
+    // the first change would be the other's excuse for never being
+    // written down, and the line would then come out a second time on the
+    // strength of a change already reported.
+    let carried = TOLD.swap(taken, Ordering::SeqCst) != taken;
+    let candidates = TOLD_SEEN.swap(seen, Ordering::SeqCst) != seen;
+    if !(carried || candidates) {
         return;
     }
+    let mods = LAST_MODS.load(Ordering::SeqCst);
+    let counted: Vec<String> = (1..WHYS.len())
+        .filter_map(|answer| {
+            let how_many = WHYS[answer].load(Ordering::SeqCst);
+            (how_many > 0).then(|| format!("{how_many} {}", in_words(answer as u32)))
+        })
+        .collect();
     crate::journal::note(&format!(
-        "touches système : {} frappe(s) vues en tout, {seen} candidate(s), {taken} portée(s) à la \
-         session ; la dernière portée {}, la dernière laissée parce que {}",
-        ANY.load(Ordering::Relaxed),
-        named(SAID.load(Ordering::Relaxed)),
-        match why {
-            0 => "rien n'a encore été laissé",
-            1 => "il n'y a pas d'image",
-            2 => "le premier plan est ailleurs",
-            3 => "le clavier n'est pas à l'image",
-            4 => "le système ne l'aurait pas mangée",
-            5 => "elle vient d'un programme et non d'un doigt",
-            _ => "?",
-        }
+        "touches système : {} frappe(s) vues, {seen} candidate(s), {taken} portée(s) ; \
+         {} ; la dernière était {} {}, Alt {}, Ctrl {}, premier plan {}",
+        ANY.load(Ordering::SeqCst),
+        counted.join(", "),
+        named(LAST_KEY.load(Ordering::SeqCst)),
+        if LAST_UP.load(Ordering::SeqCst) {
+            "relâchée"
+        } else {
+            "enfoncée"
+        },
+        if mods & 1 != 0 { "oui" } else { "non" },
+        if mods & 2 != 0 { "oui" } else { "non" },
+        match LAST_FRONT.load(Ordering::SeqCst) {
+            0 => "à ZyrDesk",
+            1 => "à l'image",
+            _ => "ailleurs",
+        },
     ));
+}
+
+/// What one of those answers is called.
+fn in_words(answer: u32) -> &'static str {
+    match answer {
+        1 => "sans image",
+        2 => "premier plan ailleurs",
+        3 => "clavier pas à l'image",
+        4 => "que le système n'aurait pas mangées",
+        5 => "venues d'un programme",
+        6 => "relâchements de touches jamais reprises",
+        _ => "portées à la session",
+    }
 }
 
 /// Releases, at the picture, every modifier no finger is holding.
