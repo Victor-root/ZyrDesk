@@ -441,10 +441,12 @@ pub fn fit(app: &AppHandle) {
         return;
     };
     lay_it_out(home, held.window as windows_sys::Win32::Foundation::HWND);
-    // Every turn of the session watch passes here, which is where what
-    // the keyboard hook has been doing gets written down: it may not
-    // write anything down itself, being on the road every keystroke of
-    // this computer travels.
+    // Every turn of the session watch passes here, which is where the
+    // system's keys are taken or given back according to whether the
+    // session still has the keyboard, and where what has been carried is
+    // written down: the thread that holds them may not write anything
+    // itself, being the one the system waits on for those keys.
+    crate::keys::follow();
     crate::keys::tell();
 }
 
@@ -1496,6 +1498,12 @@ fn draw_the_bar(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE;
 
     let lit = who_holds_the_front() != Front::Elsewhere;
+    // The one moment that matters for the system's keys: they are held
+    // against the whole computer while a session has the keyboard, so the
+    // front leaving this program has to hand them all back before the
+    // person can type one. Waiting for the watch's next turn would be a
+    // second in which their own Alt+Tab went to the far computer.
+    crate::keys::follow();
     if BAR_LIT.swap(lit, Ordering::Relaxed) != lit {
         crate::journal::note(&format!(
             "barre de titre {} : le premier plan est {}",
