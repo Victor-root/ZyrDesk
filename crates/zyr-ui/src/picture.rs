@@ -1391,13 +1391,14 @@ pub fn the_keyboard_back(_app: &AppHandle) {}
 /// while the menu was open is left where they went.
 #[cfg(windows)]
 pub fn the_session_back(app: &AppHandle) {
+    // The keys the system keeps for itself, before anything else: what
+    // this menu leaves behind is not only a focus somewhere else, it can
+    // be something newer than us on the road every keystroke travels.
+    // Asked from here rather than from the thread that draws, and asked
+    // rather than done, so nothing of this waits on anything.
+    crate::keys::lay_it_again();
     let asked = app.clone();
     let _ = app.run_on_main_thread(move || {
-        // The keys the system keeps for itself, before anything else:
-        // what the menu leaves behind is not only a focus somewhere
-        // else, it is something newer than us on the road every keystroke
-        // travels; see `crate::keys::lay_it_again`.
-        crate::keys::lay_it_again();
         the_front_back_to_the_session(&asked);
         give_the_keyboard_to_the_picture(&asked);
     });
@@ -1683,16 +1684,22 @@ fn look_at_the_front(moved_to: Option<windows_sys::Win32::Foundation::HWND>) {
         None => unsafe { GetForegroundWindow() },
     };
     let whose = whose_window(window);
-    IN_FRONT.store(whose != Front::Elsewhere, Ordering::Relaxed);
-    // Only while there is a session to lose it, and only for a move the
-    // system announced: the one read at the start of a session is what
-    // the line about taking the window in hand already says.
-    if moved_to.is_some() && CARRIED.load(Ordering::Relaxed) != 0 {
-        crate::journal::note(&format!(
-            "le premier plan passe {}",
-            in_these_words(whose, window)
-        ));
+    let here = whose != Front::Elsewhere;
+    let was = IN_FRONT.swap(here, Ordering::Relaxed);
+    if moved_to.is_none() || CARRIED.load(Ordering::Relaxed) == 0 {
+        return;
     }
+    // The session getting the front back from another program is one of
+    // the two moments something can have been laid in front of us on the
+    // road every keystroke travels, the other being the floating menu
+    // closing. Asked for here, and only asked: nothing waits on it.
+    if here && !was {
+        crate::keys::lay_it_again();
+    }
+    crate::journal::note(&format!(
+        "le premier plan passe {}",
+        in_these_words(whose, window)
+    ));
 }
 
 /// Draws the title bar lit or dim according to who holds the front, and

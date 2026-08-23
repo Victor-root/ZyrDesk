@@ -755,7 +755,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > - `au plus X ms d'attente avant nous` : ce que le système, et tout autre programme accroché devant nous, a consommé avant de nous passer la touche. Grand, l'attente n'est pas la nôtre.
 > - `Y µs chez nous` : ce que ZyrDesk a mis à répondre. C'est le seul dont ce programme réponde, et il doit rester très petit ; le système rend la touche telle quelle passé un tiers de seconde, soit 300 000 µs.
 > - `Z appel(s) hors sujet` : des appels qui ne parlaient pas d'une frappe. Zéro attendu.
-> - `N reprise(s) du crochet` : combien de fois ZyrDesk s'est reposé devant les frappes, une par fermeture du menu du bouton flottant. Windows appelle ces crochets du plus récent au plus ancien, et une vue web de ZyrDesk qui devient active pour la première fois pose quelque chose là ; se reposer est le seul moyen de repasser devant, Windows n'offrant aucune façon d'y rester.
+> - `crochet posé N fois` : combien de fois ZyrDesk s'est mis devant les frappes, la première comprise. Windows appelle ces crochets **du plus récent au plus ancien**, et n'offre aucun moyen de rester le premier : quand un autre programme se pose après nous, il prend la frappe avant nous et peut la garder. Se reposer est la seule réponse, et c'est redemandé en refermant le menu du bouton flottant et quand le premier plan revient à la session. Le journal a montré que ça marche : treize Alt+Tab portées dans les cinq secondes suivant une pose, sur une session qui n'en portait plus aucune.
+>
+> **Attention à ce que ça ne doit surtout pas faire.** La première version démontait le fil du crochet depuis le fil qui dessine, et bloquait le clavier de tout l'ordinateur le temps de le faire : « ça m'a carrément bloqué le alt tab sur mon propre pc ». Si un essai ramène ça, même une fraction de seconde, c'est à dire immédiatement.
 >
 > Et `relâchements dont l'appui n'est jamais arrivé jusqu'ici` compte exactement le défaut ci-dessus, séparé de `relâchements de touches laissées passer`, qui lui est normal : c'est le retour d'un Alt+Tab que ZyrDesk a laissé au système exprès, parce que la session n'était plus devant.
 >

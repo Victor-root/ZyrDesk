@@ -383,11 +383,17 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 
 **Donc quelque chose s'est posé devant nous sur cette route.** Windows appelle ces crochets du plus récent au plus ancien : un crochet posé après le nôtre voit chaque frappe avant nous et peut la garder, auquel cas nous ne sommes pas appelés du tout. Ce qui se pose là entre les deux moments, c'est une vue web à nous qui devient la fenêtre active pour la première fois de la session, ce qui est la seule chose qui s'y produise et exactement ce qu'est la première utilisation de ce menu. Le journal montre le premier plan rebondir quatre fois entre nos propres fenêtres à cette seconde-là.
 
-**Windows n'offre aucun moyen de rester le premier.** Reposer le crochet est la façon dont ça se fait, et c'est ce que font les outils de clavier depuis toujours. Fait une fois par fermeture de ce menu, et nulle part ailleurs : ni à chaque tour de la surveillance, ni à chaque frappe, ni sur minuterie.
+**Windows n'offre aucun moyen de rester le premier.** Reposer le crochet est la façon dont ça se fait, et c'est ce que font les outils de clavier depuis toujours.
 
-**Ce que ça ne touche pas.** Ce qui est tenu enfoncé pour le compte de l'ordinateur distant reste tenu, c'est le même crochet pour la même session. Seuls Alt et Control sont relus sur le clavier physique, le flux ayant un trou exactement de la largeur de l'opération.
+**Et ça marche : le journal le montre.** Sur la première version, juste après `1 reprise(s) du crochet`, treize Alt+Tab portées en cinq secondes sur une session qui n'en portait plus aucune. Puis ça se défait de nouveau quelques secondes plus tard, **sans que rien de chez nous ne soit touché entre-temps**. C'est ce qui fait que c'est une chose à refaire et pas une chose à faire une fois : ce qui se pose devant nous n'est pas lié au menu du bouton flottant, qui n'est qu'une des occasions.
 
-**Et la preuve est dans le journal du tour suivant.** `N reprise(s) du crochet` dit que ça a eu lieu, et `Tab X enfoncée(s) et Y relâchée(s)` dit si les frappes reviennent. Égaux après un passage par le menu, la cause est celle-ci ; toujours dépareillés, elle est ailleurs et les deux autres pistes sont déjà éliminées par les mesures.
+**Donc c'est redemandé à chaque moment où quelque chose a pu se poser devant nous** : en refermant le menu du bouton flottant, et quand le premier plan revient à la session après être parti chez un autre programme. Pas à chaque tour de surveillance, pas sur minuterie, pas à chaque frappe.
+
+**La première version a été reprise le jour même, et c'est important.** Elle démontait le fil du crochet et en construisait un autre, depuis le fil qui dessine, lequel attendait alors que l'ancien ait fini ; et pendant ce temps chaque frappe de tout l'ordinateur attendait ce fil-là. Dit par Victor : « ça m'a carrément bloqué le alt tab sur mon propre pc a un moment c'est encore pire ». C'était vrai et c'était pire. Un crochet appartient à son fil et ne peut être retiré que là : le fil est donc **prévenu** par un message posé, qui n'attend rien, et il repose son propre crochet entre deux de ses messages. Rien ne démonte rien, et rien n'attend nulle part.
+
+**Ce que ça ne touche pas.** Ce qui est tenu enfoncé pour le compte de l'ordinateur distant reste tenu : c'est le même crochet, sur le même fil, pour la même session.
+
+**Ce que le journal en dit.** `crochet posé N fois` compte les poses réelles, faites sur le fil, la première comprise. À lire à côté de `Tab X enfoncée(s) et Y relâchée(s)` : égaux, les frappes arrivent ; dépareillés, quelque chose les prend avant nous.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
