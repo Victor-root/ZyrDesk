@@ -332,10 +332,14 @@ pub fn tell() {
     let taken = TAKEN.load(Ordering::Relaxed);
     let seen = SEEN.load(Ordering::Relaxed);
     let why = WHY.load(Ordering::Relaxed);
-    let moved = TOLD.swap(taken, Ordering::Relaxed) != taken
-        || TOLD_SEEN.swap(seen, Ordering::Relaxed) != seen
-        || TOLD_WHY.swap(why, Ordering::Relaxed) != why;
-    if !moved {
+    // The three read and put back before any of them is judged. Joined
+    // with « or », the first change would be the last two's excuse for
+    // never being written down, and the line would then come out a second
+    // time on the strength of a change already reported.
+    let carried = TOLD.swap(taken, Ordering::Relaxed) != taken;
+    let candidates = TOLD_SEEN.swap(seen, Ordering::Relaxed) != seen;
+    let refusal = TOLD_WHY.swap(why, Ordering::Relaxed) != why;
+    if !(carried || candidates || refusal) {
         return;
     }
     crate::journal::note(&format!(

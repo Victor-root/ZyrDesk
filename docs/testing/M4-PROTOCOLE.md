@@ -23,13 +23,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R17**, **R17bis** | La qualité disparaît. La taille, le débit et le codec se règlent dans le menu de la session, un cran par clic, et survivent à la fermeture |
 | **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
-| **R12quinquies** | Corrigé une troisième fois, et cette fois sur la bonne cause : le clavier revient à l'image par le seul chemin qui l'atteint, et plus par le premier plan, que l'image ne peut pas avoir |
-| **R12septies** | **Statistiques** marche. Le clavier est rendu à l'image et vu y arriver avant chaque frappe ; sinon le menu le dit au lieu de faire semblant |
-| **S9sexies** | Alt+Tab, Alt+Échap et Ctrl+Échap agissent sur l'ordinateur distant plutôt que sur ce PC-là, y compris après un passage par le menu du bouton flottant |
-| **S20** | Nouveau, et le plus important : **les raccourcis clavier de ZyrDesk doivent marcher pendant toute la session**, plein écran compris |
-| **S21** | Nouveau : plus aucune touche ne doit rester coincée. Un Alt resté enfoncé côté distant fait que tout ce qu'on tape ensuite y arrive en Alt + touche, ce qui ressemble exactement à un clavier mort |
-| **S9bis** | Touché par le changement ci-dessus : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
-| **S19** | Nouveau : ces touches doivent redevenir celles de ce PC-là dès qu'il n'y a plus de session, et pendant qu'on est dans le menu du bouton flottant |
+| **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
+| **S19** | Nouveau, et **le seul du lot clavier qui reste à vérifier** : ces touches doivent redevenir celles de ce PC-là dès qu'il n'y a plus de session, et pendant qu'on est dans le menu du bouton flottant |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
@@ -50,6 +45,11 @@ Ce qui a été essayé sur les deux vraies machines et dit tel quel. La colonne 
 | Le clavier pendant une session (dans la famille S9) | « le clavier remarche » |
 | S11, S12 (le menu du bouton flottant) | « le fab n'est toujours pas revenu », corrigé, puis « ok tout à l'air de marcher » |
 | R27, R28, R29 (l'écran virtuel, et le 4K net servi par un portable 1080p) | « c'est bon ça fonctionne nickel ça fait comme [le produit de référence] ». La netteté est acquise ; la cadence ne l'est pas, voir ci-dessous |
+| R12septies (le bouton **Statistiques**) | « pour les statistiques c'est bon ». Le moteur le confirme dans son propre journal : `Detected stats toggle combo` |
+| S9sexies (Alt+Tab part vers l'ordinateur distant) | « ça a l'air bon ». Le journal le compte : `8 candidate(s), 4 portée(s) à la session`, et pas une seule bascule vers `explorer.exe` de toute la session, alors qu'il y en avait trois par minute avant |
+| S20 (les raccourcis de ZyrDesk pendant toute la session) | Confirmé par le même journal : sept `sessions will open fullscreen/windowed from now on` répartis sur toute la session, qui sont le raccourci du plein écran répondant à chaque fois |
+| S21 (aucune touche coincée) | Confirmé par ce qui a **disparu** du journal du moteur client : le `Raising N keys` de fin de session, présent à chaque session d'avant, n'y est plus |
+| R12quinquies (le clavier après le menu du bouton flottant) | Confirmé par la même session : quatre ouvertures et fermetures du menu, et plus une seule ligne `le clavier n'est pas à la session` |
 
 ### Confirmé, mais pas fini
 
