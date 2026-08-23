@@ -395,6 +395,8 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 
 **Ce que le journal en dit.** `crochet posé N fois` compte les poses réelles, faites sur le fil, la première comprise. À lire à côté de `Tab X enfoncée(s) et Y relâchée(s)` : égaux, les frappes arrivent ; dépareillés, quelque chose les prend avant nous.
 
+**~~Décision~~ reprise le 2026-08-23 par [D37](#d37-alt-se-lit-dans-le-nom-que-windows-donne-à-la-frappe-2026-08-23-pendant-m4) : la reposée est retirée en entier.** Elle reposait sur une hypothèse jamais prouvée, et elle perd elle-même des frappes : entre le retrait et la pose il n'y a aucun crochet, et plus largement le fil n'est plus dans l'attente de ses messages, donc la frappe qui tombe là est perdue sans trace, tous les compteurs vivant à l'intérieur de la fonction qui n'est pas appelée. Fermer le menu la déclenchait **deux fois** (une fois directement, une fois parce que reprendre le premier plan déclenche la seconde demande), d'où `crochet posé 3 fois` et exactement les deux appuis manquants de cette session-là. Ce que la reposée prétendait corriger l'est autrement et à la source.
+
 ## D36. Un premier plan perdu moins d'une demi-seconde n'est pas perdu (2026-08-23, pendant M4)
 
 **Ce que les mesures de [D34](#d34-la-touche-perdue-ne-lest-pas-par-zyrdesk--le-crochet-est-mesuré-2026-08-23-pendant-m4) et la reprise de [D35](#d35-le-crochet-des-touches-est-reposé-en-refermant-le-menu-flottant-2026-08-23-pendant-m4) ont réglé, et ce qu'il restait.** Après la reprise du crochet, les frappes arrivent : le journal montre `Tab 7 enfoncée(s) et 7 relâchée(s)`, équilibré, ce qui n'était jamais le cas avant. Le problème « la frappe n'arrive pas » est clos. Restait un dernier défaut, d'une nature encore différente.
@@ -406,6 +408,22 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 **Ce que ça coûte.** Après avoir cliqué une fenêtre locale, l'Alt+Tab part encore vers l'ordinateur distant pendant une demi-seconde. C'est court, et c'est le prix pour que le bouton flottant cesse de tout casser.
 
 **Ce que le journal en dit.** `N portée(s) sauvée(s) par le délai de grâce` compte les frappes portées à la session alors que le premier plan brut était ailleurs. Non nul après un passage par le bouton, avec les Alt+Tab qui continuent d'être portés, la cause est bien celle-ci et le correctif tient.
+
+## D37. Alt se lit dans le nom que Windows donne à la frappe (2026-08-23, pendant M4)
+
+**Le défaut, prouvé par le journal et par une relecture complète du code.** `1 que le système n'aurait pas mangées`, à côté de `Alt 2 enfoncée(s) et 3 relâchée(s)`. Un appui d'Alt n'est jamais arrivé jusqu'à ZyrDesk. Or ZyrDesk ne connaissait l'état d'Alt qu'en le comptant sur les frappes qu'il reçoit lui-même : un appui manquant, et il croit qu'aucun doigt n'est sur Alt. Le Tab suivant est alors jugé un Tab ordinaire et laissé au système, qui ouvre le sélecteur de cet ordinateur, lequel prend le premier plan, et plus rien ne repart. **Un état mémorisé qui ne peut jamais se corriger : tant que le doigt reste sur Alt, les seules frappes qui pourraient le remettre d'aplomb sont justement celles qui sont mal jugées.**
+
+**Le correctif : ne plus mémoriser ce que le système dit déjà.** Une touche frappée avec Alt tenue n'est pas une frappe ordinaire pour Windows, c'en est une « système », et il le dit dans le nom du message qu'il nous tend, pour cette frappe et aucune autre. C'est gratuit, ça ne peut pas vieillir, et surtout **ça ne peut pas se perdre** : ça vient avec la frappe au lieu d'être retenu d'une frappe précédente. Le flux reste à côté, pour Control, dont aucun nom de message ne parle.
+
+**Ce qui a été écarté, et pourquoi.** Lire Alt sur le clavier physique au moment où le Tab arrive, ce qui semblait l'évidence : ça remet un appel au gestionnaire de fenêtres sur la route à échéance, exactement l'invariant payé par cinq rondes (voir [D32](#d32-les-touches-que-windows-garde-pour-lui-sont-reprises-par-zyrdesk-pas-par-le-moteur-2026-08-23-pendant-m4)), et un appel qui dépasse le délai fait **retirer le crochet en silence et définitivement** sur Windows 7 et suivants. Le remède aurait pu causer le mal, en permanent. Microsoft documente d'ailleurs que l'état asynchrone d'une touche n'est pas à jour pendant qu'on traite cette touche.
+
+**Trois autres défauts trouvés au passage, tous de la même famille : un état mémorisé qui dérive.**
+
+- **Les frappes envoyées par un programme ne mènent plus l'état d'Alt.** Chaque raccourci que le menu flottant envoie est Ctrl, Alt, Maj, la lettre, puis les trois relâchés ; ces relâchements revenaient par notre propre crochet et posaient Alt à zéro **pendant qu'un doigt la tenait**. Seules les frappes d'un doigt comptent maintenant, et le décompte du journal ne compte plus qu'elles non plus, ce qui rend l'équilibre `Tab X et Y` réellement lisible.
+- **L'état est semé sur le fil du crochet et non des millisecondes avant qu'il existe.** Il était lu sur le fil appelant, avant même que le fil du crochet soit démarré : un Alt enfoncé dans cet intervalle était invisible tant que le doigt restait dessus.
+- **« L'appui n'est jamais arrivé » veut enfin dire ça.** Cette réponse confondait deux choses opposées : l'appui est venu et a été laissé passer exprès, ce qui est normal, et l'appui n'est jamais venu, ce qui est le vrai défaut. C'est ce qui a rendu un journal ambigu. Les deux sont désormais comptées à part.
+
+**Ce que le moteur n'est pas.** Vérifié en remontant jusqu'au commit exact du SDL livré : ni le moteur client ni SDL ne posent de crochet clavier quand la capture des touches système est désactivée, ce qui est notre cas. La piste « le moteur passe devant nous » est close.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

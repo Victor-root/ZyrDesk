@@ -12,20 +12,24 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-/// The message that asks the thread to lay its hook down and take it
-/// straight back up, so that it becomes the newest of the chain.
-const AGAIN: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
-
 /// One hook, and the thread it lives on for as long as it is held.
+///
+/// Laid once and left alone. Taking it off and putting it back on, to be
+/// the newest of the chain again, was tried and taken out: between the
+/// two there is an instant with no hook at all, and one wider still in
+/// which the thread is not reading its messages, and a keystroke that
+/// falls in either is lost outright, invisibly, since every count this
+/// program keeps lives inside the callback that is not being called. The
+/// journal caught it doing exactly that, twice per closing of the
+/// floating menu, which is where the two lost presses of that session
+/// went.
 pub struct Held {
     /// That thread by the number the system knows it as, which is what a
-    /// message is posted to, to ask it to stop or to start over.
+    /// message is posted to, to ask it to stop.
     thread: AtomicU32,
     /// And the thread itself, kept so the end of a session can wait for
     /// it to have really let go before the next one takes hold.
     worker: Mutex<Option<std::thread::JoinHandle<()>>>,
-    /// How many times the hook has been laid down, the first included.
-    laid: AtomicU32,
 }
 
 impl Held {
@@ -33,7 +37,6 @@ impl Held {
         Self {
             thread: AtomicU32::new(0),
             worker: Mutex::new(None),
-            laid: AtomicU32::new(0),
         }
     }
 
@@ -45,7 +48,7 @@ impl Held {
     /// on that same thread once the wait is over. A hook belongs to the
     /// thread that installed it and may only be given back there, which
     /// is why neither of them is done here.
-    pub fn hold(&'static self, put: fn() -> isize, take_back: fn(isize)) -> Option<bool> {
+    pub fn hold(&self, put: fn() -> isize, take_back: fn(isize)) -> Option<bool> {
         use windows_sys::Win32::System::Threading::GetCurrentThreadId;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             DispatchMessageW, GetMessageW, PM_NOREMOVE, PeekMessageW,
@@ -54,13 +57,9 @@ impl Held {
         if self.thread.load(Ordering::SeqCst) != 0 {
             return None;
         }
-        self.laid.store(0, Ordering::SeqCst);
         let (say, hear) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
-            let mut hook = put();
-            if hook != 0 {
-                self.laid.fetch_add(1, Ordering::SeqCst);
-            }
+            let hook = put();
             let mut message = nothing_yet();
             // A thread has nowhere to receive a message until it has
             // looked for one once, and the end of a session posts it the
@@ -83,14 +82,6 @@ impl Held {
             // message that asks it to stop, and -1 for a fault; both end
             // the wait.
             while unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0 {
-                if message.message == AGAIN {
-                    take_back(hook);
-                    hook = put();
-                    if hook == 0 {
-                        return;
-                    }
-                    self.laid.fetch_add(1, Ordering::SeqCst);
-                }
                 // SAFETY: the message comes from the call above.
                 unsafe { DispatchMessageW(&message) };
             }
@@ -101,40 +92,6 @@ impl Held {
         self.thread.store(thread, Ordering::SeqCst);
         *self.worker.lock().expect("fil d'un crochet du système") = Some(worker);
         Some(taken)
-    }
-
-    /// Asks the thread to lay its hook down and take it straight back up,
-    /// putting it at the head of the chain again.
-    ///
-    /// Asked and not done, which is the whole of it. The system calls
-    /// these hooks newest first, so a hook laid after ours takes the
-    /// keystroke before us and may keep it; there is no way to stay
-    /// first, and laying it down again is how that is answered. But the
-    /// hook belongs to its thread and may only be taken off there, and a
-    /// caller that tore the thread down and built another blocked the
-    /// thread that draws while every keystroke of the whole computer
-    /// waited on the one being taken down. Victor, on the build that did
-    /// that: « ça m'a carrément bloqué le alt tab sur mon propre pc ».
-    /// So the thread is told, in one posted message that waits for
-    /// nothing, and does it between two of its own messages.
-    ///
-    /// How many times it has really been done is counted on the far side
-    /// and read with `laid`.
-    pub fn lay_it_again(&self) {
-        use windows_sys::Win32::UI::WindowsAndMessaging::PostThreadMessageW;
-
-        let thread = self.thread.load(Ordering::SeqCst);
-        if thread == 0 {
-            return;
-        }
-        // SAFETY: a thread this program started, told the only way a
-        // thread waiting on its messages can be told.
-        unsafe { PostThreadMessageW(thread, AGAIN, 0, 0) };
-    }
-
-    /// How many times the hook has been laid down, the first included.
-    pub fn laid(&self) -> u32 {
-        self.laid.load(Ordering::SeqCst)
     }
 
     /// Takes it off, waits for the thread to have really gone, and says

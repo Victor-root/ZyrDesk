@@ -1391,12 +1391,6 @@ pub fn the_keyboard_back(_app: &AppHandle) {}
 /// while the menu was open is left where they went.
 #[cfg(windows)]
 pub fn the_session_back(app: &AppHandle) {
-    // The keys the system keeps for itself, before anything else: what
-    // this menu leaves behind is not only a focus somewhere else, it can
-    // be something newer than us on the road every keystroke travels.
-    // Asked from here rather than from the thread that draws, and asked
-    // rather than done, so nothing of this waits on anything.
-    crate::keys::lay_it_again();
     let asked = app.clone();
     let _ = app.run_on_main_thread(move || {
         the_front_back_to_the_session(&asked);
@@ -1757,13 +1751,6 @@ fn look_at_the_front(moved_to: Option<windows_sys::Win32::Foundation::HWND>) {
     }
     if moved_to.is_none() || CARRIED.load(Ordering::Relaxed) == 0 {
         return;
-    }
-    // The session getting the front back from another program is one of
-    // the two moments something can have been laid in front of us on the
-    // road every keystroke travels, the other being the floating menu
-    // closing. Asked for here, and only asked: nothing waits on it.
-    if here && !was {
-        crate::keys::lay_it_again();
     }
     crate::journal::note(&format!(
         "le premier plan passe {}",

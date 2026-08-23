@@ -50,6 +50,17 @@ static HOOK: crate::hook::Held = crate::hook::Held::new();
 /// never saw pressed, which is precisely what opens the Start menu.
 static HELD: AtomicU32 = AtomicU32::new(0);
 
+/// Which of them a finger has been seen pressing and not yet releasing,
+/// whatever was decided about the press.
+///
+/// Only so that a release can say which of two opposite things happened:
+/// the press came here and was let through on purpose, which is ordinary,
+/// or the press never came here at all, which is the system not calling
+/// this program and is the fault worth chasing. Told apart by `HELD`
+/// alone, as they were, the two read the same and one journal was read
+/// wrongly because of it.
+static SAW: AtomicU32 = AtomicU32::new(0);
+
 /// The last key handed to the session, and how many have been handed
 /// over in all, left for `tell` to read a moment later.
 ///
@@ -153,7 +164,6 @@ static TOLD_SEEN: AtomicU32 = AtomicU32::new(0);
 /// window is are numbers this program keeps, written down elsewhere and
 /// only read here; see `crate::picture::the_session_is_in_front`.
 pub fn hold() {
-    read_the_modifiers();
     let Some(taken) = HOOK.hold(put_it_on, take_it_off) else {
         return;
     };
@@ -162,36 +172,6 @@ pub fn hold() {
     } else {
         "touches système non reprises : Windows a refusé le crochet clavier"
     });
-}
-
-/// Asks for the hook to be laid down again, so that it is the newest of
-/// the chain.
-///
-/// The system calls these hooks newest first, and one laid after ours
-/// takes every keystroke before us and may keep it, in which case we are
-/// not called at all. That is what the journal shows, with none of the
-/// old doubts left standing: nothing waited before us (nought
-/// milliseconds), nothing waited here (a hundred and forty microseconds
-/// against a limit of three hundred thousand), and no call came in a
-/// shape that was not counted. Ten Alt+Tab carried in a row, then of the
-/// four keystrokes of the next one exactly one arrives.
-///
-/// It works, and the journal shows that too: the first build to lay the
-/// hook down again carried thirteen Alt+Tab in the five seconds that
-/// followed, on a session that had been carrying none. And it comes
-/// undone once more a few seconds later with nothing of ours touched in
-/// between, which is what makes this a thing to redo rather than a thing
-/// to do once. So it is asked for at every moment something can have been
-/// laid in front of us: the floating menu closing, and the front coming
-/// back to the session from another program.
-///
-/// Nothing is torn down here, and that part matters as much as the rest:
-/// the thread is told and does it between two of its own messages; see
-/// `crate::hook::Held::lay_it_again`. What is held down on the far
-/// computer's behalf is untouched, this being the same hook on the same
-/// thread for the same session.
-pub fn lay_it_again() {
-    HOOK.lay_it_again();
 }
 
 /// Steps in front of every keystroke of the whole computer, on the thread
@@ -216,14 +196,23 @@ fn put_it_on() -> isize {
     unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST) };
     // SAFETY: no argument names this program's own module, and the
     // callback is a plain function of it.
-    unsafe {
+    let hook = unsafe {
         SetWindowsHookExW(
             WH_KEYBOARD_LL,
             Some(seen),
             GetModuleHandleW(std::ptr::null()),
             0,
         ) as isize
+    };
+    // Here and not before, which is the difference between a gap of
+    // nothing and a gap of milliseconds. Asked from the thread that asked
+    // for the hook, it was asked before that thread existed: a whole
+    // thread had to be started and told about, and an Alt pressed in that
+    // gap was invisible for as long as the finger stayed on it.
+    if hook != 0 {
+        read_the_modifiers();
     }
+    hook
 }
 
 /// And steps back out of the way.
@@ -243,6 +232,7 @@ pub fn let_go() {
     }
     for counter in [
         &HELD,
+        &SAW,
         &SAID,
         &TAKEN,
         &ANY,
@@ -354,15 +344,47 @@ fn read_the_modifiers() {
 /// session where Tab moved nothing and Escape closed nothing would be a
 /// session nobody can work in. It is the company they keep that makes
 /// them the system's, and that is what is read here.
-fn the_system_would_eat_it(code: u32) -> bool {
+///
+/// Alt is read first from the system's own word for this very keystroke.
+/// A key struck with Alt held is not an ordinary key press to Windows but
+/// a « system » one, and it says so in the name of the message it hands
+/// us, here and now, for this key and no other. That is free, it cannot
+/// go stale, and above all it cannot be lost: it comes with the keystroke
+/// instead of being remembered from an earlier one.
+///
+/// Which is the whole of why it is asked this way. Counted only from the
+/// stream, as it was, a single Alt press that never reached this program
+/// left it believing no finger was on Alt, and every Tab afterwards was
+/// judged an ordinary Tab and let through, until the finger came off. The
+/// journal caught that to the letter: « 1 que le système n'aurait pas
+/// mangées », beside « Alt 2 enfoncée(s) et 3 relâchée(s) ». One press
+/// short, and one Alt+Tab out of the session was enough to open the
+/// switcher of this computer and lose every one after it.
+///
+/// The stream is kept beside it, for Control, which no message name tells
+/// us about: Control and Escape make a combination of the system's, and
+/// Control never makes a keystroke a « system » one.
+fn the_system_would_eat_it(code: u32, what: windows_sys::Win32::Foundation::WPARAM) -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_TAB};
 
     let held = DOWN.load(Ordering::Relaxed);
+    let alt = the_system_calls_it_its_own(what) || held & 1 != 0;
     match code as u16 {
-        VK_TAB => held & 1 != 0,
-        VK_ESCAPE => held != 0,
+        VK_TAB => alt,
+        VK_ESCAPE => alt || held & 2 != 0,
         _ => false,
     }
+}
+
+/// Whether the system itself calls this keystroke one of its own, which
+/// for every key but F10 means Alt was held with it.
+///
+/// F10 is the exception and it is not one of ours: only Tab and Escape
+/// are ever asked about, and neither is F10.
+fn the_system_calls_it_its_own(what: windows_sys::Win32::Foundation::WPARAM) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WM_SYSKEYDOWN, WM_SYSKEYUP};
+
+    what as u32 == WM_SYSKEYDOWN || what as u32 == WM_SYSKEYUP
 }
 
 /// Times one turn through the hook, whichever way it leaves.
@@ -452,15 +474,27 @@ unsafe extern "system" fn seen(
     if age < 10_000 {
         LATEST.fetch_max(age, Ordering::SeqCst);
     }
-    // Before anything else, and for every key including the ones that go
-    // straight through: what Alt and Control are doing is read off this
-    // stream and nowhere else.
-    follow_the_modifiers(key.vkCode, up);
-    match key.vkCode as u16 {
-        VK_TAB => TABS[usize::from(up)].fetch_add(1, Ordering::SeqCst),
-        VK_MENU | VK_LMENU | VK_RMENU => ALTS[usize::from(up)].fetch_add(1, Ordering::SeqCst),
-        _ => 0,
-    };
+    // Fingers only, here and in the counting below. A keystroke another
+    // program sent, this one included, is not a finger on a key, and
+    // letting it drive what Alt is doing had this program contradict the
+    // hand in front of it: every shortcut the floating menu sends is
+    // Ctrl, Alt, Shift, the letter, then the three released again, and
+    // that released Alt came straight back through here and put Alt down
+    // in this program's own reckoning while a finger was still holding
+    // it. Every Tab afterwards was then judged an ordinary Tab.
+    let a_finger = key.flags & LLKHF_INJECTED == 0;
+    if a_finger {
+        // Before anything else, and for every key including the ones that
+        // go straight through: what Alt and Control are doing is read off
+        // this stream, and made good by the system's own word for each
+        // keystroke where it has one; see `the_system_would_eat_it`.
+        follow_the_modifiers(key.vkCode, up);
+        match key.vkCode as u16 {
+            VK_TAB => TABS[usize::from(up)].fetch_add(1, Ordering::SeqCst),
+            VK_MENU | VK_LMENU | VK_RMENU => ALTS[usize::from(up)].fetch_add(1, Ordering::SeqCst),
+            _ => 0,
+        };
+    }
     let Some(bit) = a_key_of_ours(key.vkCode) else {
         return pass();
     };
@@ -471,28 +505,33 @@ unsafe extern "system" fn seen(
     // journal repeated an answer minutes old beside a release it had
     // nothing to do with.
     let held = HELD.load(Ordering::SeqCst);
+    let saw = SAW.load(Ordering::SeqCst);
     let front = the_session_has_the_keyboard();
-    let why = if key.flags & LLKHF_INJECTED != 0 {
+    let why = if !a_finger {
         // Ours coming back, or another program's. Either way it is not a
         // person typing, and taking it again would be this hook
         // answering itself for as long as the session lasted.
         5
     } else if up {
-        // Released: taken if it was taken on the way down, and only then.
-        // Never taken while the session was in front means the press was
-        // never brought here at all.
-        match (held & bit != 0, front) {
+        // Released: carried if it was carried on the way down. Otherwise
+        // the two cases that look alike and are opposites: the press came
+        // and was let through on purpose, or the press never came at all.
+        match (held & bit != 0, saw & bit != 0) {
             (true, _) => 7,
-            (false, 0) => 8,
-            (false, _) => 6,
+            (_, true) => 6,
+            _ => 8,
         }
     } else {
         match front {
-            0 if the_system_would_eat_it(key.vkCode) => 7,
+            0 if the_system_would_eat_it(key.vkCode, what) => 7,
             0 => 4,
             no => no,
         }
     };
+    // Whether the press of this key was brought here at all, which is the
+    // one thing no answer above can tell on its own. Set for every press
+    // a finger made, whatever became of it, and put down at the release.
+    SAW.store(if up { saw & !bit } else { saw | bit }, Ordering::SeqCst);
 
     // Written down before the counts, and every count read back after
     // them by the one that says all this out loud: read the other way
@@ -554,8 +593,11 @@ fn hand_it_over(
     if key.flags & LLKHF_EXTENDED != 0 {
         about |= 1 << 24;
     }
-    // Alt read from this very stream, for the same reason.
-    if DOWN.load(Ordering::SeqCst) & 1 != 0 {
+    // Alt from the system's own name for this keystroke first, and from
+    // the stream after it; see `the_system_would_eat_it`. This bit is
+    // what the window is told about Alt, and telling it wrongly is
+    // telling the far computer wrongly.
+    if the_system_calls_it_its_own(what) || DOWN.load(Ordering::SeqCst) & 1 != 0 {
         about |= 1 << 29;
     }
     if up {
@@ -602,7 +644,7 @@ pub fn tell() {
         "touches système : {} frappe(s) vues, {seen} candidate(s), {taken} portée(s) ; \
          {} ; vues : Tab {} enfoncée(s) et {} relâchée(s), Alt {} et {} ; \
          au plus {} ms d'attente avant nous et {} µs chez nous, {} appel(s) hors sujet, \
-         crochet posé {} fois, {} portée(s) sauvée(s) par le délai de grâce ; \
+         {} portée(s) sauvée(s) par le délai de grâce ; \
          la dernière était {} {}, Alt {}, Ctrl {}, premier plan {}",
         ANY.load(Ordering::SeqCst),
         counted.join(", "),
@@ -613,7 +655,6 @@ pub fn tell() {
         LATEST.load(Ordering::SeqCst),
         LONGEST.load(Ordering::SeqCst),
         ODD.load(Ordering::SeqCst),
-        HOOK.laid(),
         crate::picture::grace_saves(),
         named(LAST_KEY.load(Ordering::SeqCst)),
         if LAST_UP.load(Ordering::SeqCst) {
