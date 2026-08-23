@@ -441,10 +441,12 @@ pub fn fit(app: &AppHandle) {
         return;
     };
     lay_it_out(home, held.window as windows_sys::Win32::Foundation::HWND);
-    // Every turn of the session watch passes here, which is where what
-    // the keys taken from the system have been doing gets written down:
-    // the thread that takes them may not write anything itself, being the
-    // one the system waits on for every keystroke of this computer.
+    // Every turn of the session watch passes here. Where the front is, is
+    // worked out and written down for the keys taken from the system to
+    // read without asking; and what those keys have been doing is written
+    // to the journal, which the thread that takes them may not do itself,
+    // being the one the system waits on for every keystroke.
+    look_at_the_front();
     crate::keys::tell();
 }
 
@@ -1484,6 +1486,39 @@ fn light_the_bar(home: windows_sys::Win32::Foundation::HWND) {
 #[cfg(windows)]
 static BAR_LIT: AtomicBool = AtomicBool::new(false);
 
+/// Whether a session was on screen and in front the last time anything
+/// looked, kept as a number rather than asked for again.
+///
+/// For the one reader that may not ask: the keys taken from the system
+/// are answered from inside the system's own handling of a keystroke, and
+/// every call to the window manager from there can be made to wait by
+/// another thread of this program that is moving windows about. A wait of
+/// that kind past a third of a second has the keystroke handed on as
+/// though there had been no answer at all, and moving this window between
+/// full screen and not takes half a second. So nothing is asked there;
+/// this is written here, where asking is free, and read there.
+#[cfg(windows)]
+static IN_FRONT: AtomicBool = AtomicBool::new(false);
+
+/// The same, read from wherever it is needed.
+#[cfg(windows)]
+pub(crate) fn the_session_is_in_front() -> bool {
+    IN_FRONT.load(Ordering::Relaxed) && CARRIED.load(Ordering::Relaxed) != 0
+}
+
+/// The picture's window as a plain number, without asking the system
+/// whether it is still one, for the same reader and the same reason.
+#[cfg(windows)]
+pub(crate) fn the_engines_window_number() -> isize {
+    ENGINE.load(Ordering::Relaxed)
+}
+
+/// Works out that answer and writes it down, from a thread that may ask.
+#[cfg(windows)]
+fn look_at_the_front() {
+    IN_FRONT.store(who_holds_the_front() != Front::Elsewhere, Ordering::Relaxed);
+}
+
 /// Draws the title bar lit or dim according to who holds the front, and
 /// says so in the journal when that changes.
 ///
@@ -1495,6 +1530,7 @@ fn draw_the_bar(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE;
 
+    look_at_the_front();
     let lit = who_holds_the_front() != Front::Elsewhere;
     if BAR_LIT.swap(lit, Ordering::Relaxed) != lit {
         crate::journal::note(&format!(

@@ -347,44 +347,34 @@ fn the_system_would_eat_it(code: u32) -> bool {
 
 /// Whether a session is on screen and in front.
 ///
-/// Two answers and both have to be yes. There has to be a picture at all,
-/// and the front has to belong to this session. Anything else means the
-/// person is working in somebody else's window, and their own Alt+Tab is
-/// theirs.
+/// Read from a number this program keeps, and asked of nothing. That is
+/// the whole of it and it is what took five rounds to see: every question
+/// put to the window manager from here can be made to wait by another
+/// thread of this same program that is moving windows about, and a wait
+/// of more than a third of a second has the system hand the keystroke on
+/// as though there had been no answer at all. Moving this window between
+/// full screen and not takes about half a second, and the journal caught
+/// the two together to the second, every time: « en fenêtre en 489 ms »,
+/// and at that same second a Tab release arriving with no press to match
+/// it and the switcher of this computer opening.
 ///
-/// « This session » and not « this program », which was the whole of one
-/// round where nothing was ever taken at all. The front does read as the
-/// player's during a session and not only as ours: the engine's program
-/// keeps a window of its own beside the picture, and the two answers mean
-/// the same thing here. Asked of ours alone, this said no for the length
-/// of every session and Alt+Tab went on switching windows on this
-/// computer, exactly as before there was any of this.
+/// So nothing is asked here. Where the front is gets worked out at every
+/// settling of it and at every turn of the session's watch, on threads
+/// that may wait, and is left as a number for this one to read.
 ///
-/// And two and not three. Whether the keyboard is at the picture used to
-/// be asked as well, and it is the wrong question twice over. It is the
-/// question that failed: touching the floating button gives the keyboard
-/// to that button's page, and it takes a moment to come back, so Alt+Tab
-/// pressed in that moment was refused and switched windows here, which is
-/// exactly and only what « Alt+Tab stops working once I have opened the
-/// menu » ever was. And it is beside the point: what is carried is put at
-/// the picture's own window by name, which no focus decides. A session in
-/// front is a session Alt+Tab belongs to, menu open or not.
+/// « This session » covers ours and the player's alike: the engine's
+/// program keeps a window of its own beside the picture, and the two mean
+/// the same thing here. Whether the keyboard is at the picture is not
+/// asked at all: what is carried is put at the picture's own window by
+/// name, which no focus decides.
 fn the_session_has_the_keyboard() -> u32 {
-    use crate::picture::Front;
-
-    if crate::picture::the_engines_window().is_none() {
-        return 1;
+    if crate::picture::the_session_is_in_front() {
+        LAST_FRONT.store(1, Ordering::SeqCst);
+        0
+    } else {
+        LAST_FRONT.store(2, Ordering::SeqCst);
+        2
     }
-    let front = match crate::picture::who_holds_the_front() {
-        Front::Ours => 0,
-        Front::ThePlayer => 1,
-        Front::Elsewhere => 2,
-    };
-    LAST_FRONT.store(front, Ordering::SeqCst);
-    if front == 2 {
-        return 2;
-    }
-    0
 }
 
 /// Every key of this computer passes through here while a session lasts.
@@ -471,14 +461,22 @@ fn hand_it_over(
     key: &windows_sys::Win32::UI::WindowsAndMessaging::KBDLLHOOKSTRUCT,
     what: windows_sys::Win32::Foundation::WPARAM,
 ) {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_MENU};
+    use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         LLKHF_EXTENDED, PostMessageW, WM_KEYUP, WM_SYSKEYUP,
     };
 
-    let Some(engine) = crate::picture::the_engines_window() else {
+    // The window as a plain number, and not asked whether it is still a
+    // window: that question goes to the window manager, which another
+    // thread of this program can be holding for half a second while it
+    // moves a window about, and a wait of that length here is the
+    // keystroke handed to the system after all. A number gone stale
+    // costs a message posted to nothing, which the system refuses and
+    // which costs nothing in turn.
+    let engine = crate::picture::the_engines_window_number() as HWND;
+    if engine.is_null() {
         return;
-    };
+    }
     let up = what as u32 == WM_KEYUP || what as u32 == WM_SYSKEYUP;
 
     // What a window is told about a key, in the shape it expects: one
@@ -490,8 +488,8 @@ fn hand_it_over(
     if key.flags & LLKHF_EXTENDED != 0 {
         about |= 1 << 24;
     }
-    // SAFETY: a key is named and its state is read.
-    if unsafe { GetAsyncKeyState(VK_MENU as i32) } as u16 & 0x8000 != 0 {
+    // Alt read from this very stream, for the same reason.
+    if DOWN.load(Ordering::SeqCst) & 1 != 0 {
         about |= 1 << 29;
     }
     if up {

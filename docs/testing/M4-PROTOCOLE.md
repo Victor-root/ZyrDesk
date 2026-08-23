@@ -25,7 +25,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **S21** | Plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
-| **S9sexies** | **La cause est trouvée** : une condition de trop demandait que le clavier soit à l'image, or toucher au bouton flottant le lui prend un instant. Elle est retirée ; il suffit qu'une session soit à l'écran et au premier plan |
+| **S9sexies** | **La cause est trouvée, et le journal la donne à la seconde** : la reprise des touches posait des questions au gestionnaire de fenêtres, qu'un déplacement de fenêtre bloque une demi-seconde ; passé un tiers de seconde, Windows remet la touche comme s'il n'y avait pas de reprise. Elle ne demande plus rien |
 | **S19** | Ces touches doivent redevenir celles de ce PC-là dès que le premier plan quitte ZyrDesk, et à la fin de la session |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
@@ -721,9 +721,11 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **À refaire après être passé par le bouton flottant** : ouvrir son menu, le refermer, puis rejouer Alt+Tab **tout de suite**. C'est le chemin qui a lâché quatre fois, et c'est celui qui compte le plus.
 >
-> **La cause, après cinq tours.** ZyrDesk exigeait, en plus, que le clavier soit **à l'image** au moment de la touche. Or toucher au bouton flottant donne le clavier à la page de ce bouton, et il met un instant à revenir : une Alt+Tab tapée dans cet instant était refusée et changeait de fenêtre ici. Une fois le sélecteur de Windows ouvert, le premier plan n'était plus à ZyrDesk et tout ce qui suivait était refusé aussi, à juste titre. D'où « ça marche, je touche au fab, ça ne marche plus », cinq fois.
+> **La cause, après six tours, et le journal la donne à la seconde près.** Windows appelle la reprise des touches et **chaque frappe de tout l'ordinateur attend cette réponse** ; passé un tiers de seconde, il remet la touche comme s'il n'y avait pas de reprise du tout. Or ZyrDesk posait, à chaque touche, deux questions au gestionnaire de fenêtres : où est le premier plan, et l'image existe-t-elle encore. Ces questions attendent quand **un autre fil du même programme déplace des fenêtres**, ce qui prend une demi-seconde.
 >
-> Cette condition était fausse deux fois : c'est elle qui échouait, et elle est hors sujet. Ce qui est repris est déposé à la fenêtre de l'image **par son nom**, ce qu'aucun focus ne décide. Il reste deux conditions, une image à l'écran et le premier plan à cette session, et elles suffisent.
+> Le journal montre les deux collés : `retour en fenêtre rendu au système : en fenêtre en 489 ms`, et à cette même seconde le premier plan qui part au sélecteur de Windows et un relâchement de Tab arrivant sans son appui. Basculer plein écran, redimensionner, poser le bouton flottant : autant de demi-secondes de gestionnaire de fenêtres, et le bouton flottant en déclenche. Voilà pourquoi le bouton semblait coupable sans l'être.
+>
+> **Plus rien n'est demandé depuis là.** Le premier plan est calculé ailleurs et laissé sous forme de nombre ; la fenêtre de l'image est lue comme un nombre aussi. Un nombre périmé coûte un message envoyé dans le vide, que le système refuse et qui ne coûte rien.
 >
 > **Une chose a été essayée et refusée par Windows** : réclamer ces combinaisons au système, comme ZyrDesk réclame ses propres raccourcis, ce qui aurait été plus propre. Le journal a répondu `1 combinaison tenue, 3 refusées`. Alt+Tab, Alt+Maj+Tab et Alt+Échap sont à Windows et il ne les cède pas. Se mettre devant les frappes n'est donc pas un choix : c'est le seul moyen.
 >
