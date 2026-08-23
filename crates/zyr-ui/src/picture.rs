@@ -441,12 +441,10 @@ pub fn fit(app: &AppHandle) {
         return;
     };
     lay_it_out(home, held.window as windows_sys::Win32::Foundation::HWND);
-    // Every turn of the session watch passes here, which is where the
-    // system's keys are taken or given back according to whether the
-    // session still has the keyboard, and where what has been carried is
-    // written down: the thread that holds them may not write anything
-    // itself, being the one the system waits on for those keys.
-    crate::keys::follow();
+    // Every turn of the session watch passes here, which is where what
+    // the keys taken from the system have been doing gets written down:
+    // the thread that takes them may not write anything itself, being the
+    // one the system waits on for every keystroke of this computer.
     crate::keys::tell();
 }
 
@@ -1498,12 +1496,6 @@ fn draw_the_bar(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE;
 
     let lit = who_holds_the_front() != Front::Elsewhere;
-    // The one moment that matters for the system's keys: they are held
-    // against the whole computer while a session has the keyboard, so the
-    // front leaving this program has to hand them all back before the
-    // person can type one. Waiting for the watch's next turn would be a
-    // second in which their own Alt+Tab went to the far computer.
-    crate::keys::follow();
     if BAR_LIT.swap(lit, Ordering::Relaxed) != lit {
         crate::journal::note(&format!(
             "barre de titre {} : le premier plan est {}",
@@ -2305,20 +2297,6 @@ pub(crate) fn the_keyboard_to_the_picture() -> bool {
 /// What the journal last said about where the keyboard went, so it is
 /// said when it changes and not once a second.
 static FOCUS_TOLD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-
-/// Whether the keyboard was at the picture the last time this program
-/// handed it over, which it does at every turn of the session watch and
-/// at every settling of the front.
-///
-/// Kept as an answer already worked out rather than asked again, for the
-/// one caller that reads it from inside the system's own handling of a
-/// keystroke, where every call costs the whole computer its keys until it
-/// returns and where asking the system where its focus is does not mean
-/// from that thread what it means from an ordinary one.
-#[cfg(windows)]
-pub(crate) fn the_keyboard_is_at_the_picture() -> bool {
-    FOCUS_TOLD.load(Ordering::Relaxed) == 1
-}
 
 /// Takes the picture in as a child of our window, so a move carries
 /// both as one; see `CARRIED`.

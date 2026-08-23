@@ -25,8 +25,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **S21** | Plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
-| **S9sexies** | **Le mécanisme change complètement.** Guetter les touches au passage était une course contre Windows, perdue une fois sur quatre ; ZyrDesk les **réclame** maintenant au système, comme il réclame déjà ses propres raccourcis. Une réclamation est honorée à chaque fois |
-| **S19** | **Compte double avec le nouveau mécanisme** : ces combinaisons sont réclamées au système, donc prises à l'ordinateur entier tant qu'elles sont tenues. Elles doivent redevenir celles de ce PC-là dès que le premier plan quitte ZyrDesk, et à la fin de la session |
+| **S9sexies** | **La cause est trouvée** : une condition de trop demandait que le clavier soit à l'image, or toucher au bouton flottant le lui prend un instant. Elle est retirée ; il suffit qu'une session soit à l'écran et au premier plan |
+| **S19** | Ces touches doivent redevenir celles de ce PC-là dès que le premier plan quitte ZyrDesk, et à la fin de la session |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
@@ -721,11 +721,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **À refaire après être passé par le bouton flottant** : ouvrir son menu, le refermer, puis rejouer Alt+Tab **tout de suite**. C'est le chemin qui a lâché quatre fois, et c'est celui qui compte le plus.
 >
-> Ce qu'il cachait vaut d'être su, parce que ça n'avait rien à voir avec le bouton. ZyrDesk se mettait devant chaque frappe de tout l'ordinateur pour attraper celles-ci au passage. C'est une **course** contre le traitement que Windows fait lui-même de ces mêmes touches, et elle était perdue environ une fois sur quatre : ce qui variait n'était pas le bouton mais ce qui se passait ailleurs à cet instant. Le journal l'a montré en toutes lettres, le relâchement du Tab arrivant seul, sans l'appui qui allait avec, parce que l'appui n'avait jamais été présenté.
+> **La cause, après cinq tours.** ZyrDesk exigeait, en plus, que le clavier soit **à l'image** au moment de la touche. Or toucher au bouton flottant donne le clavier à la page de ce bouton, et il met un instant à revenir : une Alt+Tab tapée dans cet instant était refusée et changeait de fenêtre ici. Une fois le sélecteur de Windows ouvert, le premier plan n'était plus à ZyrDesk et tout ce qui suivait était refusé aussi, à juste titre. D'où « ça marche, je touche au fab, ça ne marche plus », cinq fois.
 >
-> ZyrDesk **réclame** maintenant ces combinaisons au système, exactement comme il réclame ses propres raccourcis clavier. Une combinaison réclamée est remise au programme qui l'a demandée au lieu d'être exécutée : le sélecteur de fenêtres de ce PC ne s'ouvre pas du tout. Ce n'est plus une course.
+> Cette condition était fausse deux fois : c'est elle qui échouait, et elle est hors sujet. Ce qui est repris est déposé à la fenêtre de l'image **par son nom**, ce qu'aucun focus ne décide. Il reste deux conditions, une image à l'écran et le premier plan à cette session, et elles suffisent.
 >
-> **Le prix, et pourquoi S19 compte double maintenant** : une combinaison réclamée l'est contre l'ordinateur entier. Elles sont donc rendues à l'instant précis où le premier plan quitte ZyrDesk, et reprises quand il revient. Si ce va-et-vient se faisait mal, Alt+Tab cesserait de marcher **hors** session, ce qui serait bien pire que le défaut d'origine.
+> **Une chose a été essayée et refusée par Windows** : réclamer ces combinaisons au système, comme ZyrDesk réclame ses propres raccourcis, ce qui aurait été plus propre. Le journal a répondu `1 combinaison tenue, 3 refusées`. Alt+Tab, Alt+Maj+Tab et Alt+Échap sont à Windows et il ne les cède pas. Se mettre devant les frappes n'est donc pas un choix : c'est le seul moyen.
+>
+> **Ce qui reste imparfait** : menu du bouton flottant **ouvert**, le clavier est à ce menu, donc l'ordinateur distant reçoit un Tab seul plutôt qu'un Alt+Tab. Une seconde ou deux par ouverture de menu. À signaler si ça gêne, pas à confondre avec le défaut ci-dessus.
 >
 > **La touche Windows, elle, reste celle de ce PC-là** et ouvre le menu Démarrer d'ici. C'est la seule que ce chemin ne peut pas servir : le moteur refuse de la transmettre à l'ordinateur distant tant que sa propre capture des touches système ne tourne pas, ce qui dans ce produit n'arrive jamais. La reprendre n'ouvrirait donc de menu nulle part, ce qui serait pire.
 >
@@ -735,17 +737,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > La fenêtre que le système appelle celle du premier plan, c'est la nôtre. C'est donc ZyrDesk qui reprend ces touches, sans toucher ni à Alt ni à Ctrl, et qui les porte à l'image telles quelles. Le moteur reçoit une frappe ordinaire à sa propre fenêtre et la transmet comme n'importe quelle autre : rien n'est ajouté dedans, il ne lui est rien demandé de nouveau.
 >
-> Deux lignes du journal disent tout. La première, à chaque fois que la session prend ou reprend le clavier :
+> Le journal le dit une fois par seconde au plus, jamais depuis le chemin des touches lui-même. La ligne à lire :
 >
-> `touches système reprises pour la session : N combinaison(s) tenue(s), M refusée(s) par Windows`
+> `touches système : N frappe(s) vues, M candidate(s), K portée(s) ; [compte de chaque réponse] ; la dernière était [...]`
 >
-> **N doit valoir 4.** Si une combinaison est refusée, c'est qu'un autre programme de cet ordinateur l'a réclamée avant nous, et celle-là restera celle de ce PC : c'est à dire, avec le nombre.
+> - **N à zéro** : ZyrDesk ne voit passer aucune touche, le mécanisme n'est pas branché.
+> - **N qui monte, M à zéro** : il est branché, mais Alt+Tab ne lui parvient pas.
+> - **M qui monte, K à zéro** : elles lui parviennent et il les laisse passer, et le compte de chaque réponse dit pourquoi, en toutes lettres.
+> - **K qui monte d'une unité par Alt+Tab** : c'est ce qu'on veut.
 >
-> La seconde, quand quelque chose est parti au loin :
->
-> `touches système portées à la session plutôt qu'à cet ordinateur : K en tout`
->
-> **K doit monter d'une unité à chaque Alt+Tab.** S'il ne bouge pas alors que le sélecteur de fenêtres de ce PC s'ouvre, c'est que la réclamation n'était pas tenue à cet instant : soit elle avait été rendue (premier plan parti de ZyrDesk), soit Windows l'avait refusée au départ, et la première ligne le dit.
+> Le compte est par **réponse** et pas seulement sur la dernière touche, et c'est ce qui a fini par trancher : Alt+Tab arrive par paires de sens opposé, celle qui sort de la session et doit partir au loin, et celle qui y revient et ne doit pas. Lue sur la dernière touche seulement, une session où toutes les sorties échouent et toutes les rentrées sont correctement refusées se lit comme une session où tout va bien.
 
 > **S20 (les raccourcis de ZyrDesk marchent pendant toute la session)**
 >
@@ -773,7 +774,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Trois moments à essayer, dans l'ordre :
 >
-> 1. **Pendant une session, en ayant cliqué sur une autre fenêtre de ce PC.** Cliquer sur le Bloc-notes local par exemple, puis taper Alt+Tab : le sélecteur **de ce PC-là** doit s'ouvrir normalement, tout de suite, pas après une seconde. C'est le cas qui compte le plus : les combinaisons sont rendues sur le message même par lequel Windows annonce que ZyrDesk perd le premier plan.
+> 1. **Pendant une session, en ayant cliqué sur une autre fenêtre de ce PC.** Cliquer sur le Bloc-notes local par exemple, puis taper Alt+Tab : le sélecteur **de ce PC-là** doit s'ouvrir normalement. C'est le cas qui compte le plus, et il est lu à chaque touche : le premier plan n'est plus à la session, donc la touche part au système.
 > 2. **Session terminée.** Fermer la session par la croix, revenir à l'accueil, taper Alt+Tab et Ctrl+Échap : tout doit être redevenu **strictement normal** sur ce PC.
 > 3. **ZyrDesk fermé.** Quitter le programme entièrement, puis refaire les deux : normal aussi.
 >
