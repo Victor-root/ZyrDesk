@@ -25,7 +25,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **S21** | Plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
-| **S9sexies** | **Pas acquis, et c'est l'essai du lot.** Alt+Tab a marché une session puis plus la suivante, sans que rien n'explique la différence. Le journal compte maintenant chaque touche candidate et **la réponse qui lui a été faite**, une par une : c'est cette ligne qu'il faut renvoyer |
+| **S9sexies** | **La cause est trouvée** : la reprise des touches vivait sur le fil qui dessine, et une frappe arrivée pendant que ce fil travaillait partait au système sans être vue. Fermer le menu du bouton flottant est exactement un de ces instants. Elle a son propre fil maintenant |
 | **S19** | Ces touches doivent redevenir celles de ce PC-là dès qu'il n'y a plus de session, et pendant qu'on est dans le menu du bouton flottant |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
@@ -719,7 +719,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Essayer aussi **Alt+Échap** et **Ctrl+Échap**, qui suivent le même chemin.
 >
-> **À refaire après être passé par le bouton flottant** : ouvrir son menu, cliquer n'importe où dedans, le refermer, puis rejouer Alt+Tab. C'est le chemin qui a lâché deux fois (voir R12quinquies), et c'est celui qui compte le plus.
+> **À refaire après être passé par le bouton flottant** : ouvrir son menu, le refermer, puis rejouer Alt+Tab **tout de suite**. C'est le chemin qui a lâché quatre fois, et c'est celui qui compte le plus.
+>
+> Ce qu'il cachait vaut d'être su, parce que ça n'avait rien à voir avec le bouton. Le système appelle la reprise des touches sur le fil qui l'a demandée, et **chaque frappe de tout l'ordinateur attend cet appel** ; un fil qui met trop longtemps à répondre se voit remettre la touche comme s'il n'y avait aucune reprise. Cette reprise vivait sur le fil qui dessine la fenêtre. Fermer le menu lui coûte un message à une fenêtre, un changement de focus et une ligne écrite sur le disque : assez pour que trois frappes d'affilée passent à travers, dont le premier Alt+Tab qui suit. Le journal l'a montré en toutes lettres, le relâchement du Tab arrivant seul, sans l'appui qui allait avec. La reprise a son propre fil maintenant, qui ne fait que lire ses messages.
 >
 > **La touche Windows, elle, reste celle de ce PC-là** et ouvre le menu Démarrer d'ici. C'est la seule que ce chemin ne peut pas servir : le moteur refuse de la transmettre à l'ordinateur distant tant que sa propre capture des touches système ne tourne pas, ce qui dans ce produit n'arrive jamais. La reprendre n'ouvrirait donc de menu nulle part, ce qui serait pire.
 >

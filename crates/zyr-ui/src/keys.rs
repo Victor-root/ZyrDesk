@@ -29,11 +29,17 @@
 //! every keystroke this program itself sends, the system is left to do
 //! exactly what it always does.
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-/// The hook, while it is installed, as a plain number: a hook handle is a
-/// raw pointer, which does not travel between threads on its own.
-static HOOKED: AtomicIsize = AtomicIsize::new(0);
+/// The thread that holds the hook, while there is one, by the number the
+/// system knows it as: that is what a message is posted to, to ask it to
+/// stop.
+static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
+
+/// And that thread itself, kept so the end of a session can wait for it
+/// to have really given the keys back before the next one takes them.
+static WORKER: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 
 /// Which of the keys below this program is currently holding down on the
 /// far computer's behalf, one bit each.
@@ -103,45 +109,112 @@ static TOLD_SEEN: AtomicU32 = AtomicU32::new(0);
 
 /// Takes the system's keys for as long as a session lasts.
 ///
-/// Asked from the thread that draws, and only from there: a hook of this
-/// kind is called back on the thread that installed it, and that thread
-/// has to be one that reads its messages, which is that one.
+/// On a thread of its own, which does nothing else for the whole of a
+/// session, and that is not a nicety. A hook of this kind is called back
+/// on the thread that installed it, every keystroke of the whole computer
+/// waits on that call, and a thread too busy to answer in time has the
+/// keystroke handed to the system as though there had been no hook at
+/// all. Hung on the thread that draws, as it was, it missed a burst of
+/// keys every time that thread had a moment's work: closing the floating
+/// menu costs a message to a window, a change of focus and a line written
+/// to a file on disk, and the journal caught what it costs, three keys in
+/// a row gone from the count, the first Alt+Tab after the menu among
+/// them. A thread that only reads its messages has no such moments.
+///
+/// The callback reads nothing that belongs to a thread. Where the front
+/// is, whether a picture is held, whether the keyboard is at it: all of
+/// them are asked of the system at large or of numbers this program keeps.
 pub fn hold() {
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, WH_KEYBOARD_LL};
+    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, GetMessageW, PM_NOREMOVE, PeekMessageW, SetWindowsHookExW,
+        UnhookWindowsHookEx, WH_KEYBOARD_LL,
+    };
 
-    if HOOKED.load(Ordering::Relaxed) != 0 {
+    if HOOK_THREAD.load(Ordering::SeqCst) != 0 {
         return;
     }
-    // SAFETY: no argument names this program's own module, the callback
-    // is a plain function of it, and the hook is asked for on this
-    // thread alone.
-    let hook = unsafe {
-        SetWindowsHookExW(
-            WH_KEYBOARD_LL,
-            Some(seen),
-            GetModuleHandleW(std::ptr::null()),
-            0,
-        )
-    };
-    HOOKED.store(hook as isize, Ordering::Relaxed);
     read_the_modifiers();
-    crate::journal::note(if hook.is_null() {
-        "touches système non reprises : Windows a refusé le crochet clavier"
-    } else {
-        "touches système reprises pour la session : Alt+Tab, Alt+Échap et Ctrl+Échap"
+    let (say, hear) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        // SAFETY: no argument names this program's own module, and the
+        // callback is a plain function of it.
+        let hook = unsafe {
+            SetWindowsHookExW(
+                WH_KEYBOARD_LL,
+                Some(seen),
+                GetModuleHandleW(std::ptr::null()),
+                0,
+            )
+        };
+        let mut message = nothing_yet();
+        // A thread has nowhere to receive a message until it has looked
+        // for one once, and the end of a session posts it the message
+        // that asks it to stop and then waits for it to have stopped.
+        // Looked for here, before anyone is told this thread exists, so
+        // that message cannot be posted into nothing and waited on for
+        // ever.
+        //
+        // SAFETY: the slot is ours, and nothing is taken from the queue.
+        unsafe { PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_NOREMOVE) };
+        // SAFETY: no argument.
+        let me = unsafe { GetCurrentThreadId() };
+        let _ = say.send((me, !hook.is_null()));
+        if hook.is_null() {
+            return;
+        }
+        // SAFETY: the slot is ours, and no window is named, so this reads
+        // what is posted to this thread. It answers 0 for the message
+        // that asks it to stop, and -1 for a fault; both end the wait.
+        while unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0 {
+            // SAFETY: the message comes from the call above.
+            unsafe { DispatchMessageW(&message) };
+        }
+        // SAFETY: the hook this thread installed, given back once, from
+        // the thread that owns it.
+        unsafe { UnhookWindowsHookEx(hook) };
     });
+
+    let (thread, taken) = hear.recv().unwrap_or((0, false));
+    HOOK_THREAD.store(thread, Ordering::SeqCst);
+    *WORKER.lock().expect("fil des touches système") = Some(worker);
+    crate::journal::note(if taken {
+        "touches système reprises pour la session : Alt+Tab, Alt+Échap et Ctrl+Échap"
+    } else {
+        "touches système non reprises : Windows a refusé le crochet clavier"
+    });
+}
+
+/// An empty message, for the slot the system fills in.
+fn nothing_yet() -> windows_sys::Win32::UI::WindowsAndMessaging::MSG {
+    use windows_sys::Win32::Foundation::POINT;
+
+    windows_sys::Win32::UI::WindowsAndMessaging::MSG {
+        hwnd: std::ptr::null_mut(),
+        message: 0,
+        wParam: 0,
+        lParam: 0,
+        time: 0,
+        pt: POINT { x: 0, y: 0 },
+    }
 }
 
 /// Gives them back, the session being over.
 pub fn let_go() {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{HHOOK, UnhookWindowsHookEx};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
 
-    let hook = HOOKED.swap(0, Ordering::Relaxed);
-    if hook == 0 {
+    let thread = HOOK_THREAD.swap(0, Ordering::SeqCst);
+    if thread == 0 {
         return;
     }
     tell();
+    // SAFETY: the thread this program started, told to stop the only way
+    // a thread waiting on its messages can be.
+    unsafe { PostThreadMessageW(thread, WM_QUIT, 0, 0) };
+    if let Some(worker) = WORKER.lock().expect("fil des touches système").take() {
+        let _ = worker.join();
+    }
     for counter in [
         &HELD,
         &SAID,
@@ -162,8 +235,6 @@ pub fn let_go() {
     }
     HELD_SINCE.store(false, Ordering::Relaxed);
     LAST_UP.store(false, Ordering::SeqCst);
-    // SAFETY: the hook this program installed, given back once.
-    unsafe { UnhookWindowsHookEx(hook as HHOOK) };
     crate::journal::note("touches système rendues à cet ordinateur");
 }
 
