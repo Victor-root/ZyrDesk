@@ -871,8 +871,8 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece])
     ));
 }
 
-/// Says whether the button's menu is open, and gives the picture its
-/// keyboard back the moment it is not.
+/// Says whether the button's menu is open, and gives the picture back the
+/// front and the keyboard the moment it is not.
 ///
 /// The page is the only one who knows: this window is never activated, so
 /// nothing about it reaches the system, and a menu opened and closed left
@@ -889,7 +889,7 @@ pub fn floating_menu(app: AppHandle, open: bool) {
     ));
     MENU_UP.store(open, Ordering::Relaxed);
     if !open {
-        crate::picture::the_keyboard_back(&app);
+        crate::picture::the_session_back(&app);
     }
 }
 

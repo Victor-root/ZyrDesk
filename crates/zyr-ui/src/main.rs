@@ -37,7 +37,10 @@ mod tray;
 mod elevated;
 
 // Taking the keys the system keeps for itself is a thing only that
-// system does, and only it needs taking from.
+// system does, and only it needs taking from. A session holds two hooks
+// of that system, and both live on a thread of their own.
+#[cfg(windows)]
+mod hook;
 #[cfg(windows)]
 mod keys;
 

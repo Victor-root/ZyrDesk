@@ -25,8 +25,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **S21** | Plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
-| **S9sexies** | **La cause est trouvée, et le journal la donne à la seconde** : la reprise des touches posait des questions au gestionnaire de fenêtres, qu'un déplacement de fenêtre bloque une demi-seconde ; passé un tiers de seconde, Windows remet la touche comme s'il n'y avait pas de reprise. Elle ne demande plus rien |
-| **S19** | Ces touches doivent redevenir celles de ce PC-là dès que le premier plan quitte ZyrDesk, et à la fin de la session |
+| **S9sexies** | **Deux causes, et le journal donne les deux.** Le premier plan était recalculé au plus une fois par seconde, alors que le sélecteur de Windows le prend et le rend bien plus vite : il est maintenant **suivi**, Windows le dit à l'instant où il le déplace. Et refermer le menu du bouton flottant faisait réellement partir le premier plan chez l'explorateur de Windows : il est repris |
+| **S19** | Ces touches doivent redevenir celles de ce PC-là dès que le premier plan quitte ZyrDesk, et à la fin de la session. Le journal nomme désormais chaque fenêtre qui prend le premier plan pendant une session |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
@@ -721,11 +721,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **À refaire après être passé par le bouton flottant** : ouvrir son menu, le refermer, puis rejouer Alt+Tab **tout de suite**. C'est le chemin qui a lâché quatre fois, et c'est celui qui compte le plus.
 >
-> **La cause, après six tours, et le journal la donne à la seconde près.** Windows appelle la reprise des touches et **chaque frappe de tout l'ordinateur attend cette réponse** ; passé un tiers de seconde, il remet la touche comme s'il n'y avait pas de reprise du tout. Or ZyrDesk posait, à chaque touche, deux questions au gestionnaire de fenêtres : où est le premier plan, et l'image existe-t-elle encore. Ces questions attendent quand **un autre fil du même programme déplace des fenêtres**, ce qui prend une demi-seconde.
->
-> Le journal montre les deux collés : `retour en fenêtre rendu au système : en fenêtre en 489 ms`, et à cette même seconde le premier plan qui part au sélecteur de Windows et un relâchement de Tab arrivant sans son appui. Basculer plein écran, redimensionner, poser le bouton flottant : autant de demi-secondes de gestionnaire de fenêtres, et le bouton flottant en déclenche. Voilà pourquoi le bouton semblait coupable sans l'être.
+> **Première cause, et le journal la donne à la seconde près.** Windows appelle la reprise des touches et **chaque frappe de tout l'ordinateur attend cette réponse** ; passé un tiers de seconde, il remet la touche comme s'il n'y avait pas de reprise du tout. Or ZyrDesk posait, à chaque touche, deux questions au gestionnaire de fenêtres : où est le premier plan, et l'image existe-t-elle encore. Ces questions attendent quand **un autre fil du même programme déplace des fenêtres**, ce qui prend une demi-seconde. Le journal montre les deux collés : `retour en fenêtre rendu au système : en fenêtre en 489 ms`, et à cette même seconde le premier plan qui part au sélecteur de Windows et un relâchement de Tab arrivant sans son appui.
 >
 > **Plus rien n'est demandé depuis là.** Le premier plan est calculé ailleurs et laissé sous forme de nombre ; la fenêtre de l'image est lue comme un nombre aussi. Un nombre périmé coûte un message envoyé dans le vide, que le système refuse et qui ne coûte rien.
+>
+> **Deuxième cause : ce nombre était vieux d'une seconde.** Il n'était recalculé qu'au redessin de la barre de titre et à chaque tour de la surveillance de session. Le sélecteur de Windows, lui, prend le premier plan et le rend en bien moins que ça, et le journal montre la conséquence : `barre de titre active : le premier plan est à ZyrDesk` à 18:23:40, puis la touche suivante refusée pour `premier plan ailleurs` à 18:23:41. Un seul refus entretient le suivant, puisque la touche laissée passer rouvre ce sélecteur. Le premier plan est maintenant **suivi** : Windows le dit à l'instant où il le déplace, et le journal le nomme à chaque fois (`le premier plan passe ailleurs : processus N (xxx.exe), titre « ... »`).
+>
+> **Troisième cause, et c'est bien le bouton flottant.** Cliquer dessus donne le focus à sa page ; donner le focus à une fenêtre active celle-ci ou celle dont elle dépend, et cette fenêtre-là est marquée pour ne jamais être activée. Résultat : notre propre fenêtre perd le premier plan sans que rien ne l'ait pris, et il tombe sur ce qu'il y a derrière, le bureau de Windows quand la session est en fenêtre. Le journal le montre une seconde après la fermeture du menu, `le premier plan est ailleurs : processus 34640 (explorer.exe)`, avant le moindre Alt+Tab. Refermer le menu redemande donc le premier plan pour la fenêtre de ZyrDesk, et le journal dit ce que Windows en a fait. Cette demande n'est faite que là, que pendant une session, et que si le premier plan a réellement quitté ZyrDesk : partir vers un autre programme pendant que le menu est ouvert doit continuer de marcher, et c'est ce que S19 vérifie.
 >
 > **Une chose a été essayée et refusée par Windows** : réclamer ces combinaisons au système, comme ZyrDesk réclame ses propres raccourcis, ce qui aurait été plus propre. Le journal a répondu `1 combinaison tenue, 3 refusées`. Alt+Tab, Alt+Maj+Tab et Alt+Échap sont à Windows et il ne les cède pas. Se mettre devant les frappes n'est donc pas un choix : c'est le seul moyen.
 >
@@ -777,12 +779,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Trois moments à essayer, dans l'ordre :
 >
 > 1. **Pendant une session, en ayant cliqué sur une autre fenêtre de ce PC.** Cliquer sur le Bloc-notes local par exemple, puis taper Alt+Tab : le sélecteur **de ce PC-là** doit s'ouvrir normalement. C'est le cas qui compte le plus, et il est lu à chaque touche : le premier plan n'est plus à la session, donc la touche part au système.
-> 2. **Session terminée.** Fermer la session par la croix, revenir à l'accueil, taper Alt+Tab et Ctrl+Échap : tout doit être redevenu **strictement normal** sur ce PC.
-> 3. **ZyrDesk fermé.** Quitter le programme entièrement, puis refaire les deux : normal aussi.
+> 2. **En quittant ZyrDesk pendant que le menu du bouton flottant est ouvert.** Ouvrir ce menu, puis, sans le refermer, cliquer sur une autre fenêtre de ce PC : elle doit **rester** au premier plan. ZyrDesk redemande le premier plan en refermant ce menu, et il ne doit le faire que quand c'est lui qui l'a perdu tout seul, jamais quand on est parti volontairement.
+> 3. **Session terminée.** Fermer la session par la croix, revenir à l'accueil, taper Alt+Tab et Ctrl+Échap : tout doit être redevenu **strictement normal** sur ce PC.
+> 4. **ZyrDesk fermé.** Quitter le programme entièrement, puis refaire les deux : normal aussi.
 >
 > Essayer également, pendant une session, **Tab seul** et **Échap seul** dans une fenêtre de l'ordinateur distant : ce sont des touches ordinaires, elles ne sont pas reprises et doivent faire ce qu'elles font toujours.
 >
-> Si l'un de ces trois moments échoue, fermer ZyrDesk suffit à tout remettre en place, et il faut le dire.
+> Si l'un de ces quatre moments échoue, fermer ZyrDesk suffit à tout remettre en place, et il faut le dire.
 
 > **S8sexies (l'image descend jusqu'au bas de la fenêtre)**
 >

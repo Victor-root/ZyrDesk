@@ -49,6 +49,10 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Registry",
     "Win32_System_Threading",
+    # SetWinEventHook : se faire dire par Windows où passe le premier
+    # plan, au lieu de le lui redemander sans arrêt. Rangé avec
+    # l'accessibilité, qui est l'usage d'origine de ces crochets.
+    "Win32_UI_Accessibility",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",

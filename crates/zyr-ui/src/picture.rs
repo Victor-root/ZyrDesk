@@ -441,12 +441,10 @@ pub fn fit(app: &AppHandle) {
         return;
     };
     lay_it_out(home, held.window as windows_sys::Win32::Foundation::HWND);
-    // Every turn of the session watch passes here. Where the front is, is
-    // worked out and written down for the keys taken from the system to
-    // read without asking; and what those keys have been doing is written
-    // to the journal, which the thread that takes them may not do itself,
-    // being the one the system waits on for every keystroke.
-    look_at_the_front();
+    // Every turn of the session watch passes here, which is where what
+    // the keys taken from the system have been doing is written to the
+    // journal: the thread that takes them may not write it itself, being
+    // the one the system waits on for every keystroke.
     crate::keys::tell();
 }
 
@@ -1373,6 +1371,56 @@ pub fn the_keyboard_back(app: &AppHandle) {
 #[cfg(not(windows))]
 pub fn the_keyboard_back(_app: &AppHandle) {}
 
+/// Gives the session back everything the floating menu took from it: the
+/// front first, then the keyboard.
+///
+/// The front as well as the keyboard, and only from here. Clicking that
+/// button hands the focus to its own page, and handing a window the focus
+/// activates it or the window it hangs from; that button is marked never
+/// to be activated, so what comes of the ask is our own window losing the
+/// front without anything having taken it, and the front falls to
+/// whatever lies behind, which on a session in a window is the desktop.
+/// The journal caught the end of that: the front at Windows' own
+/// explorer one second after the menu closed, and from then on every
+/// Alt+Tab refused for want of a session in front and acting on this
+/// computer instead.
+///
+/// Only when the front has really gone, and only during a session: this
+/// is the undoing of something this program did to itself, not a window
+/// insisting on being in front. Somebody who left for another program
+/// while the menu was open is left where they went.
+#[cfg(windows)]
+pub fn the_session_back(app: &AppHandle) {
+    let asked = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        the_front_back_to_the_session(&asked);
+        give_the_keyboard_to_the_picture(&asked);
+    });
+}
+
+#[cfg(not(windows))]
+pub fn the_session_back(_app: &AppHandle) {}
+
+/// Asks for the front back for our own window, and says what came of it.
+#[cfg(windows)]
+fn the_front_back_to_the_session(app: &AppHandle) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+
+    if CARRIED.load(Ordering::Relaxed) == 0 || who_holds_the_front() != Front::Elsewhere {
+        return;
+    }
+    let Some(home) = home_window(app) else {
+        return;
+    };
+    // SAFETY: our own window, and a refusal is one of the answers.
+    let taken = unsafe { SetForegroundWindow(home) } != 0;
+    crate::journal::note(&format!(
+        "premier plan repris en refermant le menu du bouton flottant : Windows a {} ; il est {}",
+        if taken { "accepté" } else { "refusé" },
+        the_front_in_words()
+    ));
+}
+
 /// Makes our window behave as the one window a session is, and steps in
 /// front of its messages for as long as the picture is in it.
 ///
@@ -1400,10 +1448,11 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
-        // From this thread and no other: the keys the system keeps for
-        // itself are taken by a hook called back on the thread that asked
-        // for it, and it has to be one that reads its messages.
+        // The two hooks a session holds of the system: the keys it keeps
+        // for itself, and where it is putting the front. Each takes a
+        // thread of its own here and gives it back below.
         crate::keys::hold();
+        watch_the_front();
         offer_a_picture_of_the_session(home, true);
         round_the_window(home, true);
         light_the_bar(home);
@@ -1444,6 +1493,7 @@ fn give_the_window_back(app: &AppHandle) {
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
         crate::keys::let_go();
+        stop_watching_the_front();
         offer_a_picture_of_the_session(home, false);
         round_the_window(home, false);
     });
@@ -1486,8 +1536,8 @@ fn light_the_bar(home: windows_sys::Win32::Foundation::HWND) {
 #[cfg(windows)]
 static BAR_LIT: AtomicBool = AtomicBool::new(false);
 
-/// Whether a session was on screen and in front the last time anything
-/// looked, kept as a number rather than asked for again.
+/// Whether a session is on screen and in front, kept as a number rather
+/// than asked for.
 ///
 /// For the one reader that may not ask: the keys taken from the system
 /// are answered from inside the system's own handling of a keystroke, and
@@ -1496,7 +1546,8 @@ static BAR_LIT: AtomicBool = AtomicBool::new(false);
 /// that kind past a third of a second has the keystroke handed on as
 /// though there had been no answer at all, and moving this window between
 /// full screen and not takes half a second. So nothing is asked there;
-/// this is written here, where asking is free, and read there.
+/// this is written by `the_front_moved`, which the system calls the
+/// instant the front moves, and read there.
 #[cfg(windows)]
 static IN_FRONT: AtomicBool = AtomicBool::new(false);
 
@@ -1513,10 +1564,130 @@ pub(crate) fn the_engines_window_number() -> isize {
     ENGINE.load(Ordering::Relaxed)
 }
 
-/// Works out that answer and writes it down, from a thread that may ask.
+/// The watch that follows the front, held for the length of a session;
+/// see `crate::hook`.
 #[cfg(windows)]
-fn look_at_the_front() {
-    IN_FRONT.store(who_holds_the_front() != Front::Elsewhere, Ordering::Relaxed);
+static FRONT_WATCH: crate::hook::Held = crate::hook::Held::new();
+
+/// Has the system say where the front is every time it moves it.
+///
+/// Looked at now and then, as it was, this was wrong for up to a second
+/// at a time, and the journal caught what that costs: the front leaves
+/// for the system's own window switcher and comes back, and every
+/// Alt+Tab typed in that second is refused for want of a front the
+/// session had already got back. One refusal is enough to keep it going,
+/// since the key let through opens that switcher again.
+///
+/// A watch of this kind is not a hook on the road a keystroke travels:
+/// it is handed to this thread through its messages, after the fact, so
+/// a slow answer here delays nothing of the computer's. What it costs is
+/// one thread and one line in the journal per move of the front, and
+/// what it buys is an answer that is never stale and never guessed.
+#[cfg(windows)]
+fn watch_the_front() {
+    // Where it stands right now, since nothing will be said about it
+    // until it next moves.
+    look_at_the_front(None);
+    let Some(taken) = FRONT_WATCH.hold(put_it_on, take_it_off) else {
+        return;
+    };
+    if !taken {
+        crate::journal::note("premier plan non suivi : Windows a refusé le crochet des fenêtres");
+    }
+}
+
+/// Asks the system to say so, on the thread that is to be told.
+#[cfg(windows)]
+fn put_it_on() -> isize {
+    use windows_sys::Win32::UI::Accessibility::SetWinEventHook;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT,
+    };
+
+    // SAFETY: one event is asked for, of every program, and the callback
+    // is a plain function of this one; no module is named, which is what
+    // is wanted for a watch that is told after the fact rather than run
+    // inside another program.
+    unsafe {
+        SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            std::ptr::null_mut(),
+            Some(the_front_moved),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT,
+        ) as isize
+    }
+}
+
+/// And stops asking.
+#[cfg(windows)]
+fn take_it_off(hook: isize) {
+    use windows_sys::Win32::UI::Accessibility::UnhookWinEvent;
+
+    // SAFETY: the watch that thread put on, given back once, from the
+    // thread that owns it.
+    unsafe { UnhookWinEvent(hook as _) };
+}
+
+/// The session being over, the front is nobody's business here again.
+#[cfg(windows)]
+fn stop_watching_the_front() {
+    FRONT_WATCH.let_go();
+}
+
+/// Said by the system every time the front moves, to any window of any
+/// program.
+#[cfg(windows)]
+unsafe extern "system" fn the_front_moved(
+    _watch: windows_sys::Win32::UI::Accessibility::HWINEVENTHOOK,
+    event: u32,
+    window: windows_sys::Win32::Foundation::HWND,
+    object: i32,
+    child: i32,
+    _thread: u32,
+    _when: u32,
+) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CHILDID_SELF, EVENT_SYSTEM_FOREGROUND, OBJID_WINDOW,
+    };
+
+    // The window itself and not a part of one: the same event is said of
+    // the pieces a window is made of, and none of those is the front.
+    if event != EVENT_SYSTEM_FOREGROUND || object != OBJID_WINDOW || child != CHILDID_SELF as i32 {
+        return;
+    }
+    look_at_the_front(Some(window));
+}
+
+/// Writes down where the front is, and says in the journal where it went.
+///
+/// The window is taken from the system's own word for it where there is
+/// one, and asked for where there is not. Asked for, it can come back as
+/// no window at all for the moment one is handing it to the next, and a
+/// session read exactly then was read as having lost the front it never
+/// left.
+#[cfg(windows)]
+fn look_at_the_front(moved_to: Option<windows_sys::Win32::Foundation::HWND>) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    let window = match moved_to {
+        Some(window) => window,
+        // SAFETY: no argument, and a null answer is one of the answers.
+        None => unsafe { GetForegroundWindow() },
+    };
+    let whose = whose_window(window);
+    IN_FRONT.store(whose != Front::Elsewhere, Ordering::Relaxed);
+    // Only while there is a session to lose it, and only for a move the
+    // system announced: the one read at the start of a session is what
+    // the line about taking the window in hand already says.
+    if moved_to.is_some() && CARRIED.load(Ordering::Relaxed) != 0 {
+        crate::journal::note(&format!(
+            "le premier plan passe {}",
+            in_these_words(whose, window)
+        ));
+    }
 }
 
 /// Draws the title bar lit or dim according to who holds the front, and
@@ -1530,7 +1701,6 @@ fn draw_the_bar(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE;
 
-    look_at_the_front();
     let lit = who_holds_the_front() != Front::Elsewhere;
     if BAR_LIT.swap(lit, Ordering::Relaxed) != lit {
         crate::journal::note(&format!(
@@ -1572,19 +1742,25 @@ pub enum Front {
 /// the button, and the title bar went dim under a session being used.
 #[cfg(windows)]
 pub fn who_holds_the_front() -> Front {
-    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
     // SAFETY: no argument, and a null answer is one of the answers.
-    let front = unsafe { GetForegroundWindow() };
-    if front.is_null() {
+    whose_window(unsafe { GetForegroundWindow() })
+}
+
+/// Whose window that one is, of the same three.
+#[cfg(windows)]
+fn whose_window(window: windows_sys::Win32::Foundation::HWND) -> Front {
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    if window.is_null() {
         return Front::Elsewhere;
     }
     let mut owner = 0u32;
-    // SAFETY: the window comes from the call above and the slot is ours.
-    unsafe { GetWindowThreadProcessId(front, &mut owner) };
+    // SAFETY: the window is the caller's and the slot is ours; a window
+    // that has gone answers nought, which is nobody.
+    unsafe { GetWindowThreadProcessId(window, &mut owner) };
     // SAFETY: no argument.
     if owner == unsafe { GetCurrentProcessId() } {
         Front::Ours
@@ -1603,49 +1779,53 @@ pub fn who_holds_the_front() -> Front {
 /// against one another is the only way this is ever untangled.
 #[cfg(windows)]
 pub(crate) fn the_front_in_words() -> String {
-    match who_holds_the_front() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    // SAFETY: no argument, and a null answer is one of the answers.
+    let front = unsafe { GetForegroundWindow() };
+    in_these_words(whose_window(front), front)
+}
+
+/// The same words, about a window already found.
+///
+/// Taken rather than asked for again, since the two asks race and the
+/// words then name a window other than the one they are about.
+#[cfg(windows)]
+fn in_these_words(whose: Front, window: windows_sys::Win32::Foundation::HWND) -> String {
+    match whose {
         Front::Ours => "à ZyrDesk".to_string(),
         Front::ThePlayer => "à l'image".to_string(),
         // Named rather than merely spotted: nothing here expects a third
         // window to ever hold the front during a session, so a report of
         // it happening is worth more with a name on it than without one.
-        Front::Elsewhere => format!("ailleurs : {}", describe_the_front()),
+        Front::Elsewhere => format!("ailleurs : {}", describe(window)),
     }
 }
 
-/// Names the window at the front, for the one answer `who_holds_the_front`
-/// cannot explain on its own: `Front::Elsewhere` says the front belongs to
-/// neither this program nor the player, and stops there. Nothing here
-/// expects a third window to ever hold it during a session, so when one
-/// does, a name is worth more than the bare fact.
-///
-/// Asked of the system again rather than handed the window found a moment
-/// ago: the two calls race, but only over which window the words end up
-/// naming, and a name a few milliseconds stale is still worth more than
-/// none for something meant to be read by a person afterwards.
+/// Names that window, for the one answer `whose_window` cannot explain on
+/// its own: `Front::Elsewhere` says it belongs to neither this program nor
+/// the player, and stops there. Nothing here expects a third window to
+/// ever hold the front during a session, so when one does, a name is
+/// worth more than the bare fact.
 #[cfg(windows)]
-fn describe_the_front() -> String {
+fn describe(window: windows_sys::Win32::Foundation::HWND) -> String {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
     };
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowTextW, GetWindowThreadProcessId};
 
-    // SAFETY: no argument, and a null answer is one of the answers.
-    let front = unsafe { GetForegroundWindow() };
-    if front.is_null() {
+    if window.is_null() {
         return "aucune fenêtre au premier plan".to_string();
     }
     let mut pid = 0u32;
-    // SAFETY: the window comes from the call above, and the slot is ours.
-    unsafe { GetWindowThreadProcessId(front, &mut pid) };
+    // SAFETY: the window is the caller's, and the slot is ours.
+    unsafe { GetWindowThreadProcessId(window, &mut pid) };
 
     let mut buffer = [0u16; 128];
-    // SAFETY: the window comes from the call above, and the buffer is
-    // ours with its length given.
-    let read = unsafe { GetWindowTextW(front, buffer.as_mut_ptr(), buffer.len() as i32) };
+    // SAFETY: the window is the caller's, and the buffer is ours with its
+    // length given.
+    let read = unsafe { GetWindowTextW(window, buffer.as_mut_ptr(), buffer.len() as i32) };
     let title = String::from_utf16_lossy(&buffer[..read.max(0) as usize]);
 
     let exe = 'named: {
