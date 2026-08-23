@@ -1330,21 +1330,39 @@ fn hand_the_keyboard_back(app: &AppHandle) {
 /// program.
 ///
 /// For the floating button, which is the one thing that takes the
-/// keyboard away without the system noticing. It is a window of ours laid
-/// over the picture and it never activates itself, on purpose: the front
-/// stays where it is, so the message that settles the front is never
-/// sent, and that message is what usually puts the keyboard back. Its own
-/// web view takes the focus at the first click all the same, and from
-/// then on the session was deaf while looking exactly as it should, with
-/// nothing short of reopening it to put it right.
+/// keyboard away without the system noticing it left. That window is
+/// marked so a click on it never makes it the front itself, which is
+/// right: the front belongs to the picture for almost a whole session,
+/// and this button is not supposed to interrupt that by being touched.
+/// But a window marked that way still answers a click by handing the
+/// front to whatever owns it, which is the home window, so the front
+/// moves anyway, one step removed, and nothing was left to move it back.
+/// The session was deaf from that point on while looking exactly as it
+/// should, with nothing short of reopening it to put it right.
 ///
-/// Handed to the thread that draws. The focus of a shared input belongs
-/// to the threads sharing it, and ours joined the player's when the
-/// picture was taken in as a child of our window; a worker thread is not
-/// one of them, and its ask would go nowhere.
+/// Put right two ways at once, in the order that matters. Asking the
+/// system to hand the front itself back to the picture is the one thing
+/// proven to make the far engine notice the front changed at all, so it
+/// is asked whenever the front has not actually left this program, which
+/// is the only case this can be about correcting a wrong window of ours
+/// rather than reaching over somebody else's shoulder. Elsewhere, only
+/// the gentler ask is made: sharing the input still delivers what is
+/// typed, and taking the front from another program outright is not this
+/// window's to do.
+///
+/// Handed to the thread that draws, since callers include a watch that
+/// runs on a worker thread of its own, and every window call here needs
+/// the one that owns these windows.
 #[cfg(windows)]
 pub fn the_keyboard_back(app: &AppHandle) {
-    let _ = app.run_on_main_thread(the_keyboard_to_the_picture);
+    let asked = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if who_holds_the_front() == Front::Ours {
+            hand_the_keyboard_back(&asked);
+        } else {
+            the_keyboard_to_the_picture();
+        }
+    });
 }
 
 #[cfg(not(windows))]
@@ -1476,9 +1494,13 @@ fn draw_the_bar(window: windows_sys::Win32::Foundation::HWND) {
             "barre de titre {} : le premier plan est {}",
             if lit { "active" } else { "inactive" },
             match front {
-                Front::Ours => "à ZyrDesk",
-                Front::ThePlayer => "à l'image",
-                Front::Elsewhere => "ailleurs",
+                Front::Ours => "à ZyrDesk".to_string(),
+                Front::ThePlayer => "à l'image".to_string(),
+                // Named rather than merely spotted: nothing here expects
+                // a third window to ever hold the front during a
+                // session, so a report of it happening is worth more
+                // with a name on it than without one.
+                Front::Elsewhere => format!("ailleurs : {}", describe_the_front()),
             }
         ));
     }
@@ -1535,6 +1557,74 @@ pub fn who_holds_the_front() -> Front {
         Front::ThePlayer
     } else {
         Front::Elsewhere
+    }
+}
+
+/// Names the window at the front, for the one answer `who_holds_the_front`
+/// cannot explain on its own: `Front::Elsewhere` says the front belongs to
+/// neither this program nor the player, and stops there. Nothing here
+/// expects a third window to ever hold it during a session, so when one
+/// does, a name is worth more than the bare fact.
+///
+/// Asked of the system again rather than handed the window found a moment
+/// ago: the two calls race, but only over which window the words end up
+/// naming, and a name a few milliseconds stale is still worth more than
+/// none for something meant to be read by a person afterwards.
+#[cfg(windows)]
+fn describe_the_front() -> String {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+    };
+
+    // SAFETY: no argument, and a null answer is one of the answers.
+    let front = unsafe { GetForegroundWindow() };
+    if front.is_null() {
+        return "aucune fenêtre au premier plan".to_string();
+    }
+    let mut pid = 0u32;
+    // SAFETY: the window comes from the call above, and the slot is ours.
+    unsafe { GetWindowThreadProcessId(front, &mut pid) };
+
+    let mut buffer = [0u16; 128];
+    // SAFETY: the window comes from the call above, and the buffer is
+    // ours with its length given.
+    let read = unsafe { GetWindowTextW(front, buffer.as_mut_ptr(), buffer.len() as i32) };
+    let title = String::from_utf16_lossy(&buffer[..read.max(0) as usize]);
+
+    let exe = 'named: {
+        // SAFETY: the pid comes from a live window, and a refusal is one
+        // of the answers.
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+        if handle.is_null() {
+            break 'named String::new();
+        }
+        let mut path = [0u16; 260];
+        let mut length = path.len() as u32;
+        // SAFETY: the handle is live, and the buffer and its length are
+        // ours.
+        let named =
+            unsafe { QueryFullProcessImageNameW(handle, 0, path.as_mut_ptr(), &mut length) };
+        // SAFETY: the handle came from the call above and is closed once.
+        unsafe { CloseHandle(handle) };
+        if named == 0 {
+            break 'named String::new();
+        }
+        String::from_utf16_lossy(&path[..length as usize])
+            .rsplit(['\\', '/'])
+            .next()
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    match (exe.is_empty(), title.is_empty()) {
+        (false, false) => format!("processus {pid} ({exe}), titre « {title} »"),
+        (false, true) => format!("processus {pid} ({exe})"),
+        (true, false) => format!("processus {pid}, titre « {title} »"),
+        (true, true) => format!("processus {pid}"),
     }
 }
 
@@ -2161,10 +2251,21 @@ fn the_keyboard_to_the_picture() {
     };
     let told = if landed == engine { 1 } else { 2 };
     if FOCUS_TOLD.swap(told, Ordering::Relaxed) != told {
-        crate::journal::note(if told == 1 {
-            "le clavier est bien à la session"
+        crate::journal::note(&if told == 1 {
+            "le clavier est bien à la session".to_string()
         } else {
-            "le clavier n'est pas à la session : le focus a été refusé à l'image"
+            // The front, not merely the shared input's own idea of focus:
+            // the two can come apart, and it is the front that decides
+            // whether the engine ever hears of this at all.
+            format!(
+                "le clavier n'est pas à la session : le focus a été refusé à l'image ; \
+                 le premier plan est {}",
+                match who_holds_the_front() {
+                    Front::Ours => "à ZyrDesk".to_string(),
+                    Front::ThePlayer => "à l'image".to_string(),
+                    Front::Elsewhere => format!("ailleurs : {}", describe_the_front()),
+                }
+            )
         });
     }
 }

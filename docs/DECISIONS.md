@@ -276,6 +276,16 @@ L'ordre entre les deux tient à un seul fait : le bouton est marqué toujours au
 
 **Ce que ça coûte.** Rien d'observable : la réclamation et l'abandon prennent un instant avant chaque envoi, et ZyrDesk ne garde jamais la combinaison pour lui, ce qui la laisserait indisponible pour qui la tenait avant.
 
+## D30. Redonner le clavier au bouton flottant redonne aussi le premier plan (2026-08-23, pendant M4)
+
+**Décision.** Après avoir refermé le menu du bouton flottant, le premier plan est rendu à l'image par la même voie que le raccourci de plein écran (une demande explicite au système), et non plus seulement par l'entrée partagée entre les deux programmes. La seconde ne suffit qu'à ce que ce qui est tapé arrive ; la première est ce dont le moteur a besoin pour croire que son propre premier plan a changé, ce qui commande à son tour s'il capture Alt+Tab ([D28](#d28-alt-tab-et-la-touche-windows-agissent-sur-lordinateur-distant-2026-08-23-pendant-m4)).
+
+**Ce qui l'a rendu nécessaire.** [D16](#d16-le-bouton-flottant-est-une-fenêtre-à-nous-et-les-sessions-souvrent-sans-bordure-2026-08-08-pendant-m4) avait déjà résolu la moitié visible de ce défaut : ce qui est tapé arrive de nouveau après le menu. Dit par Victor après coup : « si j'ouvre le fab et le referme bah le alt tab retourne sur le client ». La fenêtre du bouton est marquée pour qu'un clic dessus ne la rende jamais active elle-même, ce qui était pensé comme suffisant pour que le premier plan ne bouge pas du tout ; en réalité une telle fenêtre répond à un clic en donnant le premier plan à celle qui la possède, la fenêtre d'accueil, donc il bougeait quand même, d'un cran, sans que rien ne s'en aperçoive.
+
+**Pourquoi la demande n'est pas faite à chaque fois.** Prendre le premier plan à un autre programme est le geste qui n'appartient pas à ce bouton, et la demande n'est donc faite que lorsque le premier plan n'a pas quitté ZyrDesk. Ailleurs, seule l'entrée reste partagée, ce qui reste la bonne réponse : le clavier continue d'être reçu sans rien arracher à qui a réellement le premier plan.
+
+**Le diagnostic qui va avec.** Quand le premier plan n'appartient ni à ZyrDesk ni à l'image, le journal nomme maintenant la fenêtre qui le tient (processus, programme, titre) au lieu de dire seulement « ailleurs ». Une fenêtre tierce s'y est vue une fois, brièvement, à l'instant même du clic sur le bouton ; d'où elle vient n'est pas établi, et cette ligne est ce qui permettra de le savoir si ça revient.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -23,8 +23,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R17**, **R17bis** | La qualité disparaît. La taille, le débit et le codec se règlent dans le menu de la session, un cran par clic, et survivent à la fermeture |
 | **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
-| **R12quinquies** | Le clavier retourne à la session dès qu'on referme le menu du bouton flottant. Il y restait accroché, et il fallait rouvrir la session pour le récupérer |
-| **S9sexies** | Alt+Tab, pendant une session, agit maintenant sur l'ordinateur distant plutôt que sur ce PC-là |
+| **R12quinquies** | Corrigé une deuxième fois : redonner le clavier après le menu du bouton flottant ne redonnait pas le **premier plan**, dont Alt+Tab a besoin pour repartir vers l'ordinateur distant. Les deux sont rendus maintenant |
+| **S9sexies** | Alt+Tab, pendant une session, agit maintenant sur l'ordinateur distant plutôt que sur ce PC-là, y compris après avoir ouvert puis refermé le menu du bouton flottant |
 | **S9bis** | Touché par le changement ci-dessus : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **R12sexies** | Un diagnostic nouveau si **Statistiques** ne montre toujours rien : le journal dit maintenant si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
@@ -401,15 +401,17 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Ce qui est retenu est la place de la touche et non le signe dessus : une combinaison choisie sur un clavier français reste sous les mêmes doigts sur un clavier anglais.
 
-> **R12quinquies (le clavier revient à la session après le menu)**
+> **R12quinquies (le clavier, et le premier plan avec lui, reviennent à la session après le menu)**
 >
-> Pendant une session, ouvrir le menu du bouton, cliquer dans un sous-menu, choisir une valeur, puis refermer le menu. **Taper ensuite dans l'image**, du texte dans le bloc-notes de l'ordinateur distant par exemple.
+> Pendant une session, ouvrir le menu du bouton, cliquer dans un sous-menu, choisir une valeur, puis refermer le menu. **Taper ensuite dans l'image**, du texte dans le bloc-notes de l'ordinateur distant par exemple, **puis essayer Alt+Tab** (voir S9sexies, partie 5) : il doit encore agir sur l'ordinateur distant, pas sur ce PC-là.
 >
-> Attendu : les touches arrivent au loin, tout de suite. Refaire en masquant le bouton au lieu de refermer le menu : même résultat.
+> Attendu : les touches arrivent au loin, tout de suite, et Alt+Tab est toujours capturé. Refaire en masquant le bouton au lieu de refermer le menu : même résultat.
 >
-> C'est le bug le plus vicieux du bouton, parce qu'il ne se voit pas. Cette fenêtre-là n'est jamais celle que Windows considère comme active, c'est voulu : sans quoi cliquer dessus enlèverait le premier plan à l'image et le moteur perdrait le clavier et la souris. Mais sa page prend quand même le focus au premier clic, et comme rien ne change de main aux yeux du système, rien ne le rendait : la session restait sourde en ayant l'air parfaitement normale, et il fallait la rouvrir. Le clavier retourne maintenant à l'image dès que le menu est refermé, et une fois par seconde tant qu'il ne l'est pas.
+> C'est le bug le plus vicieux du bouton, parce qu'il ne se voit pas. Cette fenêtre-là est marquée pour qu'un clic dessus ne la rende jamais active elle-même : sans quoi cliquer dessus enlèverait le premier plan à l'image et le moteur perdrait le clavier et la souris. Mais une fenêtre marquée ainsi répond quand même à un clic en donnant le premier plan à **celle qui la possède**, qui est la fenêtre d'accueil : le premier plan bouge donc quand même, d'un cran, sans que rien ici s'en aperçoive. La session restait sourde en ayant l'air parfaitement normale, et il fallait la rouvrir.
 >
-> Le journal le dit : `le clavier est bien à la session`, ou `le clavier n'est pas à la session : le focus a été refusé à l'image`.
+> **Deux façons de le rendre, et pas une seule.** Partager l'entrée entre les deux programmes suffit à ce que ce qui est tapé arrive, mais pas à ce que le moteur croie que son propre premier plan a changé, qui est ce dont Alt+Tab dépend : redonner le clavier ne redonnait donc que la moitié du problème. Demander au système de rendre le premier plan à l'image, comme le fait déjà le raccourci du plein écran, est ce qui manquait, et ne se fait que quand le premier plan n'a pas quitté ZyrDesk : lui prendre à un autre programme ne serait pas notre affaire.
+>
+> Le journal le dit : `le clavier est bien à la session`, ou `le clavier n'est pas à la session : le focus a été refusé à l'image ; le premier plan est [...]`. Cette dernière partie, nouvelle, nomme la fenêtre qui le tient quand ce n'est ni ZyrDesk ni l'image : processus, programme et titre, quand Windows veut bien les dire. Utile si le défaut revenait sous une autre forme.
 
 > **R12sexies (si Statistiques ne montre toujours rien)**
 >
@@ -704,6 +706,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > C'était l'inverse avant ce correctif : les deux touches agissaient sur ce PC-là, celui qui les tape, ce qui n'a aucun sens pour un bureau à distance. Le moteur client sait le faire depuis toujours ; il fallait seulement le lui demander, ce qui se fait par une simple option de sa ligne de commande. Rien à côté de ça n'a de patch : c'est un réglage officiel du moteur, pas une fonctionnalité ajoutée dedans.
 >
 > **Comment revenir sur ce PC-là sans le clavier.** Alt+Tab et la touche Windows partent maintenant vers l'ordinateur distant dès que l'image tient le clavier ; pour joindre une autre fenêtre de ce PC-là pendant ce temps, c'est la souris qu'il faut, un clic sur sa vignette dans la barre des tâches par exemple, exactement comme le fait S9bis plus bas.
+>
+> **À refaire une deuxième fois, après être passé par le bouton flottant** : ouvrir son menu, cliquer n'importe où dedans, le refermer, puis rejouer Alt+Tab. C'est le chemin qui a lâché une première fois (voir R12quinquies) : ouvrir ce menu déplace le premier plan d'un cran sans que rien ici s'en aperçoive, et Alt+Tab avait cessé d'être capturé une fois le menu refermé, silencieusement.
 
 > **S8sexies (l'image descend jusqu'au bas de la fenêtre)**
 >
