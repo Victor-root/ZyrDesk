@@ -164,6 +164,45 @@ pub fn hold() {
     });
 }
 
+/// Lays the hook down again, so that it is the newest of the chain.
+///
+/// The system calls these hooks newest first, and one laid after ours
+/// sees every keystroke before us and may keep it, in which case we are
+/// never called at all. That is what the journal now shows, and it shows
+/// it without any of the old doubts left standing: nothing waited before
+/// us (nought milliseconds), nothing waited here (fifty microseconds
+/// against a limit of three hundred thousand), and no call came in a
+/// shape that was not counted. Ten Alt+Tab carried in a row, then the
+/// floating menu is opened and closed once, and of the four keystrokes of
+/// the next Alt+Tab exactly one arrives: the release of Tab. The press of
+/// Alt, the press of Tab and the release of Alt were never brought here.
+///
+/// What is laid on that road between those two moments is a web view of
+/// ours becoming the active window for the first time in the session,
+/// which is the one thing that ever happens there and the one thing that
+/// is always the first use of that menu. Windows offers no way to stay
+/// first; laying the hook down and taking it up again is how it is done,
+/// and it is done once per closing of that menu and nowhere else.
+///
+/// What was held on the far computer's behalf is left as it stands, this
+/// being the same hook for the same session; only Alt and Control are
+/// read off the keyboard again, the stream having a gap in it exactly the
+/// width of this.
+pub fn lay_it_again() {
+    if !HOOK.let_go() {
+        return;
+    }
+    read_the_modifiers();
+    if HOOK.hold(put_it_on, take_it_off).is_some_and(|taken| taken) {
+        RELAID.fetch_add(1, Ordering::SeqCst);
+    } else {
+        crate::journal::note("touches système reposées mais Windows a refusé le crochet clavier");
+    }
+}
+
+/// How many times it has been laid down again, for the journal.
+static RELAID: AtomicU32 = AtomicU32::new(0);
+
 /// Steps in front of every keystroke of the whole computer, on the thread
 /// that is to answer for them.
 ///
@@ -226,6 +265,7 @@ pub fn let_go() {
         &LATEST,
         &LONGEST,
         &ODD,
+        &RELAID,
     ] {
         counter.store(0, Ordering::SeqCst);
     }
@@ -571,7 +611,8 @@ pub fn tell() {
     crate::journal::note(&format!(
         "touches système : {} frappe(s) vues, {seen} candidate(s), {taken} portée(s) ; \
          {} ; vues : Tab {} enfoncée(s) et {} relâchée(s), Alt {} et {} ; \
-         au plus {} ms d'attente avant nous et {} µs chez nous, {} appel(s) hors sujet ; \
+         au plus {} ms d'attente avant nous et {} µs chez nous, {} appel(s) hors sujet, \
+         {} reprise(s) du crochet ; \
          la dernière était {} {}, Alt {}, Ctrl {}, premier plan {}",
         ANY.load(Ordering::SeqCst),
         counted.join(", "),
@@ -582,6 +623,7 @@ pub fn tell() {
         LATEST.load(Ordering::SeqCst),
         LONGEST.load(Ordering::SeqCst),
         ODD.load(Ordering::SeqCst),
+        RELAID.load(Ordering::SeqCst),
         named(LAST_KEY.load(Ordering::SeqCst)),
         if LAST_UP.load(Ordering::SeqCst) {
             "relâchée"

@@ -25,7 +25,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **S21** | Plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
-| **S9sexies** | **Le journal a prouvé que la touche n'arrive pas jusqu'à ZyrDesk.** Un Alt+Tab fait quatre frappes ; trois arrivent, et celle qui manque est l'appui de Tab. Tout le reste du journal en découle et est correct. Le crochet se mesure donc lui-même, sur la route des frappes, pour dire laquelle des trois causes possibles c'est ; et son fil passe au-dessus des fils ordinaires, ce qui est la seule des trois qui soit dans nos mains |
+| **S9sexies** | **Les mesures ont tranché : quelque chose se pose devant ZyrDesk sur la route des frappes dès la première utilisation du menu flottant.** Personne n'attend avant nous (0 ms), ZyrDesk répond en 53 µs contre une limite de 300 000, aucun appel anormal. Et le flux : dix Alt+Tab parfaitement équilibrées, un passage par le menu, puis **une** frappe reçue sur les quatre de l'Alt+Tab suivant. Windows appelle ces crochets du plus récent au plus ancien : le nôtre est donc reposé en refermant ce menu, ce qui le remet devant |
 | **S19** | Ces touches doivent redevenir celles de ce PC-là dès que le premier plan quitte ZyrDesk, et à la fin de la session. Le journal nomme désormais chaque fenêtre qui prend le premier plan pendant une session |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
@@ -755,6 +755,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > - `au plus X ms d'attente avant nous` : ce que le système, et tout autre programme accroché devant nous, a consommé avant de nous passer la touche. Grand, l'attente n'est pas la nôtre.
 > - `Y µs chez nous` : ce que ZyrDesk a mis à répondre. C'est le seul dont ce programme réponde, et il doit rester très petit ; le système rend la touche telle quelle passé un tiers de seconde, soit 300 000 µs.
 > - `Z appel(s) hors sujet` : des appels qui ne parlaient pas d'une frappe. Zéro attendu.
+> - `N reprise(s) du crochet` : combien de fois ZyrDesk s'est reposé devant les frappes, une par fermeture du menu du bouton flottant. Windows appelle ces crochets du plus récent au plus ancien, et une vue web de ZyrDesk qui devient active pour la première fois pose quelque chose là ; se reposer est le seul moyen de repasser devant, Windows n'offrant aucune façon d'y rester.
 >
 > Et `relâchements dont l'appui n'est jamais arrivé jusqu'ici` compte exactement le défaut ci-dessus, séparé de `relâchements de touches laissées passer`, qui lui est normal : c'est le retour d'un Alt+Tab que ZyrDesk a laissé au système exprès, parce que la session n'était plus devant.
 >

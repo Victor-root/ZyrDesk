@@ -375,6 +375,20 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 
 **Une seule chose a changé de comportement : le fil du crochet passe au-dessus des fils ordinaires.** C'est le seul fil du produit qui ait une échéance réelle, il ne tourne jamais et ne fait que se réveiller pour répondre, donc rien sur la machine ne perd quoi que ce soit à ce qu'il passe en premier. Ce n'est pas un correctif à l'aveugle : c'est retirer un risque connu d'un fil qui n'a pas le droit de répondre en retard, sur une machine, un portable qui décode de la vidéo sur tous ses coeurs, où un fil ordinaire peut attendre bien plus longtemps qu'une frappe n'a le droit d'attendre.
 
+## D35. Le crochet des touches est reposé en refermant le menu flottant (2026-08-23, pendant M4)
+
+**Ce que les mesures de [D34](#d34-la-touche-perdue-ne-lest-pas-par-zyrdesk--le-crochet-est-mesuré-2026-08-23-pendant-m4) ont répondu, et elles ne laissent qu'une possibilité.** La session mesurée dit, à la ligne près : `au plus 0 ms d'attente avant nous et 53 µs chez nous, 0 appel(s) hors sujet`. Personne n'a attendu avant nous, ZyrDesk répond en cinquante microsecondes contre une limite de trois cent mille, et aucun appel n'est venu sous une forme non comptée. Les trois causes envisagées, il en reste une.
+
+**Le flux contre lui-même dit le reste.** Dix Alt+Tab portées d'affilée, tout équilibré : `Tab 10 enfoncée(s) et 10 relâchée(s), Alt 4 et 4`. Le menu du bouton flottant est ouvert et refermé, une fois. Alt+Tab suivant : **une** frappe arrive sur les quatre, `Tab 10 enfoncée(s) et 11 relâchée(s), Alt 4 et 4`. L'appui d'Alt, l'appui de Tab et le relâchement d'Alt n'ont jamais été apportés. Tout le reste de la session s'ensuit et est correct.
+
+**Donc quelque chose s'est posé devant nous sur cette route.** Windows appelle ces crochets du plus récent au plus ancien : un crochet posé après le nôtre voit chaque frappe avant nous et peut la garder, auquel cas nous ne sommes pas appelés du tout. Ce qui se pose là entre les deux moments, c'est une vue web à nous qui devient la fenêtre active pour la première fois de la session, ce qui est la seule chose qui s'y produise et exactement ce qu'est la première utilisation de ce menu. Le journal montre le premier plan rebondir quatre fois entre nos propres fenêtres à cette seconde-là.
+
+**Windows n'offre aucun moyen de rester le premier.** Reposer le crochet est la façon dont ça se fait, et c'est ce que font les outils de clavier depuis toujours. Fait une fois par fermeture de ce menu, et nulle part ailleurs : ni à chaque tour de la surveillance, ni à chaque frappe, ni sur minuterie.
+
+**Ce que ça ne touche pas.** Ce qui est tenu enfoncé pour le compte de l'ordinateur distant reste tenu, c'est le même crochet pour la même session. Seuls Alt et Control sont relus sur le clavier physique, le flux ayant un trou exactement de la largeur de l'opération.
+
+**Et la preuve est dans le journal du tour suivant.** `N reprise(s) du crochet` dit que ça a eu lieu, et `Tab X enfoncée(s) et Y relâchée(s)` dit si les frappes reviennent. Égaux après un passage par le menu, la cause est celle-ci ; toujours dépareillés, elle est ailleurs et les deux autres pistes sont déjà éliminées par les mesures.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

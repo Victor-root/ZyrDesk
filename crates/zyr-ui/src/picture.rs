@@ -1393,6 +1393,11 @@ pub fn the_keyboard_back(_app: &AppHandle) {}
 pub fn the_session_back(app: &AppHandle) {
     let asked = app.clone();
     let _ = app.run_on_main_thread(move || {
+        // The keys the system keeps for itself, before anything else:
+        // what the menu leaves behind is not only a focus somewhere
+        // else, it is something newer than us on the road every keystroke
+        // travels; see `crate::keys::lay_it_again`.
+        crate::keys::lay_it_again();
         the_front_back_to_the_session(&asked);
         give_the_keyboard_to_the_picture(&asked);
     });
