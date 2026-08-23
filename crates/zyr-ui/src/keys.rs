@@ -59,8 +59,31 @@ static SAID: AtomicU32 = AtomicU32::new(0);
 /// How many of them there have been, for the same reason.
 static TAKEN: AtomicU32 = AtomicU32::new(0);
 
-/// What the journal last said about the two above.
+/// Every key of this computer that reached this program at all, and every
+/// one of them that was one of ours to consider.
+///
+/// The two numbers that say where a round of « nothing was ever taken »
+/// went wrong, and they cannot be worked out from anything else. The
+/// first at nought means the hook is not being called; the first counting
+/// with the second at nought means it is called and these keys never
+/// reach it; both counting with nothing taken means a condition below is
+/// refusing, and `WHY` says which.
+static ANY: AtomicU32 = AtomicU32::new(0);
+
+/// Candidate keys, in the same spirit.
+static SEEN: AtomicU32 = AtomicU32::new(0);
+
+/// Why the last candidate was left to the system, as one small number.
+///
+/// 1 no picture, 2 the front is elsewhere, 3 the keyboard is not the
+/// picture's, 4 the system would not have eaten it anyway, 5 somebody
+/// else sent it.
+static WHY: AtomicU32 = AtomicU32::new(0);
+
+/// What the journal last said about the numbers above.
 static TOLD: AtomicU32 = AtomicU32::new(0);
+static TOLD_SEEN: AtomicU32 = AtomicU32::new(0);
+static TOLD_WHY: AtomicU32 = AtomicU32::new(0);
 
 /// Takes the system's keys for as long as a session lasts.
 ///
@@ -102,10 +125,11 @@ pub fn let_go() {
         return;
     }
     tell();
-    HELD.store(0, Ordering::Relaxed);
-    SAID.store(0, Ordering::Relaxed);
-    TAKEN.store(0, Ordering::Relaxed);
-    TOLD.store(0, Ordering::Relaxed);
+    for counter in [
+        &HELD, &SAID, &TAKEN, &ANY, &SEEN, &WHY, &TOLD, &TOLD_SEEN, &TOLD_WHY,
+    ] {
+        counter.store(0, Ordering::Relaxed);
+    }
     // SAFETY: the hook this program installed, given back once.
     unsafe { UnhookWindowsHookEx(hook as HHOOK) };
     crate::journal::note("touches système rendues à cet ordinateur");
@@ -166,19 +190,27 @@ fn the_system_would_eat_it(code: u32) -> bool {
 /// the same thing here. Asked of ours alone, this said no for the length
 /// of every session and Alt+Tab went on switching windows on this
 /// computer, exactly as before there was any of this.
+///
+/// The third is read from what this program worked out a moment ago
+/// rather than asked of the system here. Where the keyboard is, asked
+/// from a thread, is answered about that thread's own; this runs inside
+/// the system's own handling of a keystroke, which is not an ordinary
+/// place to ask it from, and the answer is one this program already
+/// keeps and refreshes every second and at every settling of the front.
 fn the_session_has_the_keyboard() -> bool {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetFocus;
-
-    let Some(engine) = crate::picture::the_engines_window() else {
-        return false;
-    };
-    if crate::picture::who_holds_the_front() == crate::picture::Front::Elsewhere {
+    if crate::picture::the_engines_window().is_none() {
+        WHY.store(1, Ordering::Relaxed);
         return false;
     }
-    // SAFETY: no argument, read from the thread whose input this program
-    // joined to the engine's, which is this one.
-    let holds = unsafe { GetFocus() };
-    holds == engine
+    if crate::picture::who_holds_the_front() == crate::picture::Front::Elsewhere {
+        WHY.store(2, Ordering::Relaxed);
+        return false;
+    }
+    if !crate::picture::the_keyboard_is_at_the_picture() {
+        WHY.store(3, Ordering::Relaxed);
+        return false;
+    }
+    true
 }
 
 /// Every key of this computer passes through here while a session lasts.
@@ -202,15 +234,18 @@ unsafe extern "system" fn seen(
     if code != HC_ACTION as i32 {
         return pass();
     }
+    ANY.fetch_add(1, Ordering::Relaxed);
     // SAFETY: as above.
     let key = unsafe { &*(told as *const KBDLLHOOKSTRUCT) };
     let Some(bit) = a_key_of_ours(key.vkCode) else {
         return pass();
     };
+    SEEN.fetch_add(1, Ordering::Relaxed);
     // Ours coming back, or another program's. Either way it is not a
     // person typing, and taking it again would be this hook answering
     // itself for as long as the session lasted.
     if key.flags & LLKHF_INJECTED != 0 {
+        WHY.store(5, Ordering::Relaxed);
         return pass();
     }
 
@@ -219,8 +254,13 @@ unsafe extern "system" fn seen(
     let take = if up {
         // Released: taken if it was taken on the way down, and only then.
         held & bit != 0
+    } else if !the_session_has_the_keyboard() {
+        false
+    } else if !the_system_would_eat_it(key.vkCode) {
+        WHY.store(4, Ordering::Relaxed);
+        false
     } else {
-        the_session_has_the_keyboard() && the_system_would_eat_it(key.vkCode)
+        true
     };
     if !take {
         return pass();
@@ -290,14 +330,88 @@ fn hand_it_over(
 /// system key is ever pressed leaves no line at all.
 pub fn tell() {
     let taken = TAKEN.load(Ordering::Relaxed);
-    if TOLD.swap(taken, Ordering::Relaxed) == taken {
+    let seen = SEEN.load(Ordering::Relaxed);
+    let why = WHY.load(Ordering::Relaxed);
+    let moved = TOLD.swap(taken, Ordering::Relaxed) != taken
+        || TOLD_SEEN.swap(seen, Ordering::Relaxed) != seen
+        || TOLD_WHY.swap(why, Ordering::Relaxed) != why;
+    if !moved {
         return;
     }
     crate::journal::note(&format!(
-        "touches système portées à la session plutôt qu'à cet ordinateur : {taken} en tout, \
-         la dernière {}",
-        named(SAID.load(Ordering::Relaxed))
+        "touches système : {} frappe(s) vues en tout, {seen} candidate(s), {taken} portée(s) à la \
+         session ; la dernière portée {}, la dernière laissée parce que {}",
+        ANY.load(Ordering::Relaxed),
+        named(SAID.load(Ordering::Relaxed)),
+        match why {
+            0 => "rien n'a encore été laissé",
+            1 => "il n'y a pas d'image",
+            2 => "le premier plan est ailleurs",
+            3 => "le clavier n'est pas à l'image",
+            4 => "le système ne l'aurait pas mangée",
+            5 => "elle vient d'un programme et non d'un doigt",
+            _ => "?",
+        }
     ));
+}
+
+/// Releases, at the picture, every modifier no finger is holding.
+///
+/// What « I lost the keyboard in the session » turned out to be. A
+/// modifier goes down here, something takes the keyboard off the picture
+/// before it comes back up, and the release never reaches the far
+/// computer: it goes on believing Alt is held, and every letter typed
+/// afterwards arrives there as Alt and a letter, which does nothing and
+/// looks exactly like a dead keyboard. The engine says so at the end of
+/// every such session, in its own log, in three words: « Raising 1 keys ».
+///
+/// Windows' own window switcher is the surest way to cause it, since it
+/// takes the keyboard for itself between the press and the release of the
+/// very key that opened it.
+///
+/// Read from the fingers rather than from anything remembered: what is
+/// physically down is the one truth here, and a release sent for a key
+/// that is genuinely held would be a worse fault than the one being
+/// fixed. A release the far computer did not need costs nothing, its own
+/// engine dropping any that says what it already believes.
+pub fn no_key_left_down() {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_RCONTROL, VK_RMENU,
+        VK_RSHIFT, VK_RWIN,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_KEYUP};
+
+    let Some(engine) = crate::picture::the_engines_window() else {
+        return;
+    };
+    // Each with where it sits and whether it is one of the pair that live
+    // off the far end of the keyboard, which is how the two sides of a
+    // modifier are told apart.
+    const MODIFIERS: [(u16, u32, bool); 8] = [
+        (VK_LSHIFT, 0x2A, false),
+        (VK_RSHIFT, 0x36, false),
+        (VK_LCONTROL, 0x1D, false),
+        (VK_RCONTROL, 0x1D, true),
+        (VK_LMENU, 0x38, false),
+        (VK_RMENU, 0x38, true),
+        (VK_LWIN, 0x5B, true),
+        (VK_RWIN, 0x5C, true),
+    ];
+    for (key, place, far) in MODIFIERS {
+        // SAFETY: a key is named and its state is read; nothing is
+        // written.
+        let down = unsafe { GetAsyncKeyState(i32::from(key)) } as u16 & 0x8000 != 0;
+        if down {
+            continue;
+        }
+        let mut about: isize = 1 | ((place as isize) << 16) | (1 << 30) | (1 << 31);
+        if far {
+            about |= 1 << 24;
+        }
+        // SAFETY: a window this program took in hand, told about a key in
+        // the system's own words.
+        unsafe { PostMessageW(engine, WM_KEYUP, usize::from(key), about) };
+    }
 }
 
 /// What that key is called, for the journal.

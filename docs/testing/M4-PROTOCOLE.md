@@ -27,6 +27,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R12septies** | **Statistiques** marche. Le clavier est rendu à l'image et vu y arriver avant chaque frappe ; sinon le menu le dit au lieu de faire semblant |
 | **S9sexies** | Alt+Tab, Alt+Échap et Ctrl+Échap agissent sur l'ordinateur distant plutôt que sur ce PC-là, y compris après un passage par le menu du bouton flottant |
 | **S20** | Nouveau, et le plus important : **les raccourcis clavier de ZyrDesk doivent marcher pendant toute la session**, plein écran compris |
+| **S21** | Nouveau : plus aucune touche ne doit rester coincée. Un Alt resté enfoncé côté distant fait que tout ce qu'on tape ensuite y arrive en Alt + touche, ce qui ressemble exactement à un clavier mort |
 | **S9bis** | Touché par le changement ci-dessus : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
 | **S19** | Nouveau : ces touches doivent redevenir celles de ce PC-là dès qu'il n'y a plus de session, et pendant qu'on est dans le menu du bouton flottant |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
@@ -726,7 +727,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > La fenêtre que le système appelle celle du premier plan, c'est la nôtre. C'est donc ZyrDesk qui reprend ces touches, sans toucher ni à Alt ni à Ctrl, et qui les porte à l'image telles quelles. Le moteur reçoit une frappe ordinaire à sa propre fenêtre et la transmet comme n'importe quelle autre : rien n'est ajouté dedans, il ne lui est rien demandé de nouveau.
 >
-> Le journal le dit une fois par seconde au plus, jamais depuis le chemin des touches lui-même : `touches système reprises pour la session`, puis `touches système portées à la session plutôt qu'à cet ordinateur : N en tout, la dernière [...]`, puis `touches système rendues à cet ordinateur` à la fin. **Si cette ligne du milieu n'apparaît jamais alors qu'on a tapé Alt+Tab, rien n'a été repris** et c'est à dire.
+> Le journal le dit une fois par seconde au plus, jamais depuis le chemin des touches lui-même. La ligne à lire est celle-ci :
+>
+> `touches système : N frappe(s) vues en tout, M candidate(s), K portée(s) à la session ; la dernière portée [...], la dernière laissée parce que [...]`
+>
+> Elle répond à elle seule à tout ce qui peut clocher, et c'est pour ça qu'elle compte trois nombres et pas un :
+>
+> - **N à zéro** : ZyrDesk ne voit passer aucune touche du tout, donc le mécanisme n'est pas branché.
+> - **N qui monte, M à zéro** : il est branché, mais Alt+Tab et Échap ne lui parviennent pas ; quelque chose les prend avant lui.
+> - **M qui monte, K à zéro** : elles lui parviennent et il les laisse passer ; la fin de la ligne dit alors laquelle des conditions a refusé, en toutes lettres.
+> - **K qui monte** : elles partent bien vers l'ordinateur distant.
 
 > **S20 (les raccourcis de ZyrDesk marchent pendant toute la session)**
 >
@@ -735,6 +745,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : les trois marchent à chaque fois, sans exception.
 >
 > C'est l'essai qui a manqué. Ces raccourcis sont tous des combinaisons **Alt**, et le moteur, tant qu'il reprenait les touches du système, avalait Alt en entier avant que ZyrDesk ne le voie. Dit par Victor : « je perdais mes raccourcis clavier de zyrdesk comme par exemple alt + & pour switcher plein ecran/fenetré ». Le symptôme était fuyant parce qu'il ne durait que le début d'une session : dès qu'on touchait au bouton flottant, le moteur lâchait ces touches et les raccourcis revenaient.
+
+> **S21 (aucune touche ne reste coincée)**
+>
+> Pendant une session, ouvrir le bloc-notes de l'ordinateur distant et **taper une phrase entière**. Puis provoquer exprès une perte de clavier : ouvrir le menu du bouton flottant et le refermer, cliquer sur une autre fenêtre de ce PC-là puis revenir dans l'image, taper Alt+Tab. Après chacune, **retaper une phrase entière**.
+>
+> Attendu : le texte s'écrit à chaque fois, en entier, lettres normales.
+>
+> Ce que ça cherche : une touche modificatrice restée enfoncée **du côté distant**. Si le clavier part vers l'image alors qu'Alt est enfoncé, et que le clavier lui est repris avant qu'Alt ne remonte, l'ordinateur distant ne voit jamais Alt remonter et croit qu'il est tenu pour toujours. Tout ce qu'on tape ensuite y arrive en Alt + lettre : rien ne s'écrit, et **ça ressemble trait pour trait à un clavier mort**. Dit par Victor : « j'ai même carrément perdu le clavier dans la session ». Le moteur le signalait sans qu'on le lise, dans son propre journal, en trois mots à la fin de chaque session : `Raising 1 keys`, une touche encore enfoncée.
+>
+> ZyrDesk relâche maintenant, du côté distant, chaque modificatrice qu'aucun doigt ne tient, à chaque fois que le clavier revient à l'image après en être parti. Si ça devait revenir quand même, la ligne `Raising N keys` de la fin du journal du moteur client est le signe à chercher.
 
 > **S19 (ces touches redeviennent celles de ce PC-là dès qu'il n'y a plus de session)**
 >

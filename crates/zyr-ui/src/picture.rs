@@ -1326,13 +1326,22 @@ fn the_frame_is_square(home: windows_sys::Win32::Foundation::HWND) -> bool {
 /// never happened.
 #[cfg(windows)]
 fn give_the_keyboard_to_the_picture(app: &AppHandle) -> bool {
+    let had_it = the_keyboard_is_at_the_picture();
     if let Some(home) = home_window(app) {
         light_the_bar(home);
     }
     // Said again after it, and read: the message above puts the keyboard
     // back as part of its work, but says nothing about where it landed,
     // and nothing may be typed at a picture that does not have it.
-    the_keyboard_to_the_picture()
+    let landed = the_keyboard_to_the_picture();
+    // Coming back from having been away, and only then. Whatever took the
+    // keyboard may have taken it between a modifier going down and coming
+    // back up, and the far computer is then left holding a key nobody is
+    // pressing.
+    if landed && !had_it {
+        crate::keys::no_key_left_down();
+    }
+    landed
 }
 
 /// Gives the keyboard back to the picture, asked from anywhere in the
@@ -2286,6 +2295,20 @@ pub(crate) fn the_keyboard_to_the_picture() -> bool {
 /// What the journal last said about where the keyboard went, so it is
 /// said when it changes and not once a second.
 static FOCUS_TOLD: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Whether the keyboard was at the picture the last time this program
+/// handed it over, which it does at every turn of the session watch and
+/// at every settling of the front.
+///
+/// Kept as an answer already worked out rather than asked again, for the
+/// one caller that reads it from inside the system's own handling of a
+/// keystroke, where every call costs the whole computer its keys until it
+/// returns and where asking the system where its focus is does not mean
+/// from that thread what it means from an ordinary one.
+#[cfg(windows)]
+pub(crate) fn the_keyboard_is_at_the_picture() -> bool {
+    FOCUS_TOLD.load(Ordering::Relaxed) == 1
+}
 
 /// Takes the picture in as a child of our window, so a move carries
 /// both as one; see `CARRIED`.
