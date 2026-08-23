@@ -1803,6 +1803,24 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
     let (Some(letter), Some(key)) = (act.letter(), act.where_it_sits()) else {
         return Ok(());
     };
+
+    // Whether anything will actually receive this. `SendInput` reports
+    // success whatever happens downstream: a combination another program
+    // has claimed as its own global shortcut swallows the injected keys
+    // before they ever reach the session, and nothing about that shows up
+    // as a failure here. Checked by claiming it ourselves and handing it
+    // straight back, the one way this can be known at all.
+    if already_claimed(letter) {
+        let combo = format!("Ctrl+Alt+Maj+{}", char::from(letter));
+        note(&format!(
+            "{act} refusé : {combo} est déjà pris par un autre programme"
+        ));
+        return Err(format!(
+            "{combo} est déjà utilisé par un autre programme sur cet ordinateur.\n  \
+             Fermez-le, ou changez son raccourci, puis réessayez."
+        ));
+    }
+
     // Where the modifiers sit, in the same numbering: the left-hand ones,
     // which is what a person would press.
     const CTRL: u16 = 0x1D;
@@ -1860,6 +1878,50 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         ));
         Err("Windows a refusé la combinaison de touches".to_string())
     }
+}
+
+/// Whether Ctrl+Alt+Shift+`letter` is already claimed by something else
+/// on this computer, found out by claiming it here and handing it
+/// straight back.
+///
+/// The one way this can be known at all. Windows does not say who holds a
+/// combination, only whether a new claim on it succeeds, so this is
+/// answered the same way the question would be asked of Windows itself: a
+/// hotkey of our own, on a thread of our own, id chosen so nothing else in
+/// this program is asking for it at the same time. A refusal can then only
+/// mean something outside this program got there first: Sunshine and
+/// Moonlight answer to nobody's global shortcuts, and this program's own
+/// are registered on a thread of their own from a fixed, different set of
+/// keys (`shortcuts.rs`).
+///
+/// Given back at once when it is won: keeping it would be claiming, for
+/// the rest of the program's life, a combination that is none of its
+/// business the moment this question is answered, and would itself then
+/// swallow it from whoever asked for it first.
+#[cfg(windows)]
+fn already_claimed(letter: u8) -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey, UnregisterHotKey,
+    };
+
+    const PROBE: i32 = 0x2A11;
+    // The virtual-key code of an ordinary letter is its own ASCII value.
+    let vk = u32::from(letter);
+    // SAFETY: a thread-owned hotkey, id and all, claimed and given back
+    // within this one call; no window is named.
+    let refused = unsafe {
+        RegisterHotKey(
+            std::ptr::null_mut(),
+            PROBE,
+            MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT,
+            vk,
+        )
+    } == 0;
+    if !refused {
+        // SAFETY: the same id and the same thread that just claimed it.
+        unsafe { UnregisterHotKey(std::ptr::null_mut(), PROBE) };
+    }
+    refused
 }
 
 /// Brings that player's picture back in front.

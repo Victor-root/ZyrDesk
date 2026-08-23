@@ -254,6 +254,28 @@ L'ordre entre les deux tient à un seul fait : le bouton est marqué toujours au
 
 **Ce que ça coûte.** Les quelques secondes d'une ouverture, celles que le journal montre déjà, et le fait que l'ordinateur d'en face voit un client partir et revenir. La fenêtre montre l'écran d'ouverture pendant ce temps, avec ses étapes ordinaires, pour que ce ne soit pas confondu avec une session qui a lâché.
 
+## D28. Alt+Tab et la touche Windows agissent sur l'ordinateur distant (2026-08-23, pendant M4)
+
+**Décision.** Une session demande maintenant au moteur client de capturer ces combinaisons, par sa propre option officielle (`--capture-system-keys always`) et non par un correctif : dès que l'image tient le clavier, Alt+Tab et la touche Windows partent vers l'ordinateur distant plutôt que d'agir sur celui qui les tape.
+
+**Ce qui l'a rendu nécessaire.** Dit par Victor : « quand je alt tab dans la session ça alt tab sur le client au lieu de l'host ». C'est le défaut inverse du réglage par défaut du moteur, pensé pour une fenêtre parmi d'autres sur un bureau : dans ZyrDesk, l'image tient toute la fenêtre pendant qu'elle a le clavier, et il n'y a rien d'autre vers quoi basculer ici.
+
+**Pourquoi `always` et non `fullscreen`.** Le moteur offre les deux, et le second ne s'applique que quand sa propre fenêtre couvre l'écran au sens où lui l'entend. La sienne ne le fait jamais : elle est toujours lancée fenêtrée, posée dans la nôtre, qui est seule à décider de couvrir l'écran ou non ([D21](#d21-limage-du-bureau-distant-saffiche-dans-la-fenêtre-de-zyrdesk-2026-08-19-pendant-m4)). `fullscreen` ne se serait donc jamais déclenché.
+
+**Ce que ça coûte.** Le clavier seul ne ramène plus le premier plan à ce PC-là pendant qu'il appartient à l'image ; il faut la souris, un clic sur une autre fenêtre. Deux essais qui s'appuyaient sur Alt+Tab pour ça, S9bis et la seconde moitié de S9ter, sont réécrits pour cliquer à la place : ce qu'ils vérifient (le bouton flottant et la barre de titre suivent le premier plan) ne dépend pas de la façon dont ce premier plan a été perdu.
+
+**Ce qui reste ouvert.** Nos propres raccourcis, à nous, restent joignables au clavier pendant tout ce temps : ils sont pris par un raccourci global du système (`RegisterHotKey`, `shortcuts.rs`) sur des combinaisons différentes, un niveau que la capture du moteur ne touche pas.
+
+## D29. Une combinaison déjà prise par un autre programme se dit, plutôt que de se taire (2026-08-23, pendant M4)
+
+**Décision.** Avant d'envoyer Ctrl+Alt+Shift+S ou +M au lecteur, ZyrDesk essaie de la réclamer lui-même pour un instant, par un raccourci système ordinaire, puis la rend aussitôt. Un refus dit qu'un autre programme la tient déjà, et la fenêtre le dit à son tour au lieu de prétendre que la frappe est bien partie.
+
+**Ce qui l'a rendu nécessaire.** Dit par Victor : « le bouton statistiques du FAB ne fonctionne pas ». Ces deux combinaisons sont celles que le moteur écoute et ZyrDesk ne peut pas en choisir d'autres à sa place ; il les tape en simulant une frappe (`SendInput`), et Windows répond toujours que l'envoi a réussi, qu'un programme l'ait vraiment reçue ou non. Un programme tiers qui aurait pris la même combinaison pour lui-même l'intercepte avant qu'elle n'atteigne la session, sans que rien dans ZyrDesk ne puisse jusqu'ici le savoir.
+
+**Pourquoi ça ne prouve pas que c'était la cause.** Ce n'est pas la seule explication possible à une entrée du menu qui ne montre rien, seulement la seule que ZyrDesk peut vérifier lui-même. Si la combinaison n'est prise par personne, le journal le dit aussi (« envoyé au lecteur »), et la cause est alors ailleurs, du côté du moteur.
+
+**Ce que ça coûte.** Rien d'observable : la réclamation et l'abandon prennent un instant avant chaque envoi, et ZyrDesk ne garde jamais la combinaison pour lui, ce qui la laisserait indisponible pour qui la tenait avant.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

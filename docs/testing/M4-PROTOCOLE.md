@@ -24,6 +24,9 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **R12quinquies** | Le clavier retourne à la session dès qu'on referme le menu du bouton flottant. Il y restait accroché, et il fallait rouvrir la session pour le récupérer |
+| **S9sexies** | Alt+Tab, pendant une session, agit maintenant sur l'ordinateur distant plutôt que sur ce PC-là |
+| **S9bis** | Touché par le changement ci-dessus : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
+| **R12sexies** | Un diagnostic nouveau si **Statistiques** ne montre toujours rien : le journal dit maintenant si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
 | **R33** | Deux réglages nouveaux côté hôte : renvoyer ou non un écran immobile, et la façon de filmer l'écran. Ce sont les deux seuls leviers qui restent sur la cadence |
@@ -41,7 +44,7 @@ Ce qui a été essayé sur les deux vraies machines et dit tel quel. La colonne 
 | S8bis, S8ter, S8quinquies (redimensionner, les coins, la diagonale) | « ok le redimensionnement c'est bon », puis « ok tout à l'air de marcher » |
 | S9, S9quater (déplacer, agrandir et restaurer) | « ok c'est nickel ! », puis « ok tout à l'air de marcher » |
 | Le clavier pendant une session (dans la famille S9) | « le clavier remarche » |
-| S9bis, S11, S12 (le bouton flottant et son menu) | « le fab n'est toujours pas revenu », corrigé, puis « ok tout à l'air de marcher » |
+| S11, S12 (le menu du bouton flottant) | « le fab n'est toujours pas revenu », corrigé, puis « ok tout à l'air de marcher » |
 | R27, R28, R29 (l'écran virtuel, et le 4K net servi par un portable 1080p) | « c'est bon ça fonctionne nickel ça fait comme parsec ». La netteté est acquise ; la cadence ne l'est pas, voir ci-dessous |
 
 ### Confirmé, mais pas fini
@@ -408,6 +411,19 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 >
 > Le journal le dit : `le clavier est bien à la session`, ou `le clavier n'est pas à la session : le focus a été refusé à l'image`.
 
+> **R12sexies (si Statistiques ne montre toujours rien)**
+>
+> À essayer seulement si l'entrée **Statistiques** du menu reste sans effet malgré tout : ouvrir une session, cliquer dans l'image, puis **Statistiques**.
+>
+> Attendu d'ordinaire : des chiffres apparaissent en bas à gauche de l'image, cadence et débit surtout, et un second clic les retire.
+>
+> **Si rien n'apparaît**, regarder le journal. La combinaison que cette entrée tape, Ctrl+Alt+Maj+S, n'est pas à nous : c'est celle que le moteur écoute, et rien ici ne peut la changer. Un autre programme sur cet ordinateur peut l'avoir prise pour lui-même, auquel cas la frappe part bien mais n'arrive jamais à la session : elle est allée ailleurs. C'est maintenant vérifié avant l'envoi plutôt que deviné après coup, et le journal le dit sans ambiguïté :
+>
+> - `statistiques envoyé au lecteur N : Ctrl+Alt+Maj+S, à la place 0x1f` : la combinaison est bien partie vers la session. Si les chiffres ne montrent toujours rien après ça, la cause est ailleurs, du côté du moteur, et pas de ce que ZyrDesk a fait.
+> - `statistiques refusé : Ctrl+Alt+Maj+S est déjà pris par un autre programme` : trouvé et nommé. La fenêtre affiche le même message : fermer ce programme, ou changer son raccourci, puis réessayer.
+>
+> Ce que ça vérifie tient en une phrase : Windows dit toujours qu'une frappe a été envoyée, que quelque chose l'ait vraiment reçue ou non. La seule façon de savoir si quelqu'un d'autre la tenait déjà est de demander à la tenir soi-même, un instant, juste avant d'envoyer, et de la rendre aussitôt.
+
 > **R13 (le bouton s'en va avec l'image)**
 >
 > Terminer la session par le menu, et regarder le coin où était le bouton.
@@ -674,6 +690,20 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Ce que ces vignettes montrent est une photographie que Windows prend d'une fenêtre. Il en photographie **une**, et la session est dans une autre posée par-dessus : il rendait donc l'écran d'accueil, c'est-à-dire la page que la session est en train de cacher. Windows sait demander sa photo à un programme plutôt que de la prendre lui-même, et c'est ce qui lui est répondu ici.
 >
 > **Si la vignette est noire**, dis-le : copier une fenêtre qui dessine directement sur la carte graphique n'est pas toujours possible, et cela dépend de la machine. La réponse n'est alors pas donnée du tout et Windows reprend sa propre photo, donc une vignette **noire** serait un vrai défaut, à la différence d'une vignette qui montre l'accueil.
+>
+> **Depuis S9sexies, ci-dessous, taper Alt+Tab pendant une session n'ouvre plus le sélecteur de ce PC-là** : la combinaison part vers l'ordinateur distant. Pour comparer les deux vignettes il faut donc l'ouvrir autrement : cliquer d'abord sur le **bouton flottant** avant de taper Alt+Tab, ou passer directement la souris sur l'icône de ZyrDesk dans la barre des tâches, ce que la phrase du dessus couvre déjà.
+
+> **S9sexies (Alt+Tab et la touche Windows agissent sur l'ordinateur distant)**
+>
+> Sur le **PC hôte**, avant de se connecter, ouvrir deux ou trois fenêtres bien reconnaissables (le Bloc-notes, l'Explorateur de fichiers). Depuis le **PC client**, ouvrir une session, cliquer dans l'image pour lui donner le clavier, puis taper **Alt+Tab**.
+>
+> Attendu : dans l'**image**, le bureau distant change de fenêtre au premier plan, exactement comme si Alt+Tab avait été tapé assis devant le PC hôte. Sur le **PC client**, rien ne bouge : pas de sélecteur de fenêtres local, ZyrDesk garde le premier plan et sa barre de titre reste allumée.
+>
+> Essayer aussi la **touche Windows** seule : elle doit ouvrir le menu Démarrer **de l'ordinateur distant**, visible dans l'image, et ne rien faire de ce côté-ci.
+>
+> C'était l'inverse avant ce correctif : les deux touches agissaient sur ce PC-là, celui qui les tape, ce qui n'a aucun sens pour un bureau à distance. Le moteur client sait le faire depuis toujours ; il fallait seulement le lui demander, ce qui se fait par une simple option de sa ligne de commande. Rien à côté de ça n'a de patch : c'est un réglage officiel du moteur, pas une fonctionnalité ajoutée dedans.
+>
+> **Comment revenir sur ce PC-là sans le clavier.** Alt+Tab et la touche Windows partent maintenant vers l'ordinateur distant dès que l'image tient le clavier ; pour joindre une autre fenêtre de ce PC-là pendant ce temps, c'est la souris qu'il faut, un clic sur sa vignette dans la barre des tâches par exemple, exactement comme le fait S9bis plus bas.
 
 > **S8sexies (l'image descend jusqu'au bas de la fenêtre)**
 >
@@ -708,7 +738,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : la barre de titre reste **allumée** du début à la fin, comme celle de n'importe quelle fenêtre au premier plan. Elle ne doit jamais griser, pas même une seconde.
 >
-> **Puis l'inverse**, qui compte autant : Alt+Tab vers une autre application. La barre doit **griser** immédiatement, comme il se doit. Revenir sur ZyrDesk : elle se rallume.
+> **Puis l'inverse**, qui compte autant : cliquer sur une autre fenêtre, par exemple depuis la barre des tâches. La barre doit **griser** immédiatement, comme il se doit. Revenir sur ZyrDesk : elle se rallume.
+>
+> Cliquer et non Alt+Tab, depuis S9sexies (plus haut) : cette touche part maintenant vers l'ordinateur distant dès que l'image tient le clavier, et ne fait plus perdre le premier plan à ZyrDesk du tout. Un clic à la souris sur une autre fenêtre, lui, n'a jamais dépendu de ça.
 >
 > Le premier plan appartient au lecteur pendant presque toute une session, et au bouton flottant quand une main le touche : ni l'un ni l'autre n'est « quelqu'un d'autre », et la fenêtre est bel et bien celle qu'on utilise. Windows pose la question au moment même où il change de premier plan, quand ce qu'il est en train de donner n'est pas encore posé : la réponse est donc donnée deux fois, une tout de suite et une par un message que le programme s'envoie à lui-même et que Windows ne rend qu'une fois l'affaire finie.
 >
@@ -716,11 +748,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 > **S9bis (le bouton flottant reste chez lui)**
 >
-> Pendant une session en fenêtré, faire Alt+Tab vers une autre application, la regarder quelques secondes, puis revenir sur ZyrDesk.
+> Pendant une session en fenêtré, **cliquer sur une autre fenêtre** (par exemple depuis la barre des tâches), la regarder quelques secondes, puis revenir sur ZyrDesk.
 >
 > Attendu : le bouton flottant **disparaît** dès que l'autre application passe devant, et **revient** quand ZyrDesk ou l'image reprend le premier plan. Il ne flotte jamais au-dessus du travail de quelqu'un d'autre.
 >
 > Il est dessiné au-dessus de toutes les fenêtres de la machine, ce qu'il faut pour tenir sur l'image ; il suit donc le premier plan, qui est celui de l'image autant que le nôtre puisque l'image appartient au lecteur.
+>
+> **Un clic, et non plus Alt+Tab.** Cet essai passait par Alt+Tab pour faire perdre le premier plan à ZyrDesk ; depuis S9sexies (plus haut), cette touche part vers l'ordinateur distant dès que l'image tient le clavier, et ne fait plus perdre le premier plan à ZyrDesk du tout. Un clic à la souris atteint le même but sans dépendre de ça, ce qui est tout ce que cet essai a jamais vérifié : que le bouton suit le premier plan, peu importe ce qui le lui a fait perdre.
 
 > **S10 (le plein écran va et vient)**
 >

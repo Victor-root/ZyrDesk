@@ -57,6 +57,20 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         "--video-decoder".to_string(),
         "hardware".to_string(),
         "--frame-pacing".to_string(),
+        // Without this, Alt+Tab, the Windows key and their kin act on
+        // this computer instead of reaching the far one: the engine
+        // leaves them alone unless told otherwise, on the grounds that
+        // its own window might only be one of several on the desktop.
+        // That reasoning does not hold here. The product's whole window
+        // is the session the moment it has the front, there being
+        // nothing else in it to switch to, so the far computer is where
+        // every one of those keys belongs. `always` rather than the
+        // engine's other choice, `fullscreen`: what covers the whole
+        // screen is our own window, and the engine is asked to stay
+        // windowed inside it regardless (`--display-mode windowed`
+        // above), so `fullscreen` would never once turn this on.
+        "--capture-system-keys".to_string(),
+        "always".to_string(),
         // What tells the far computer it may put its desktop at the size
         // being asked for. Its name comes from playing games, where it
         // meant letting the far machine choose its own settings; with the
@@ -133,6 +147,15 @@ mod tests {
         let args = session_arguments("host", &SessionSettings::default());
         assert_eq!(value_of(&args, "--video-decoder"), Some("hardware"));
         assert!(args.iter().any(|a| a == "--frame-pacing"));
+    }
+
+    #[test]
+    fn alt_tab_and_its_kin_always_reach_the_far_computer() {
+        // Sans ça les deux ordinateurs se disputent ces touches : elles
+        // agissent ici plutôt que là-bas, ce qui est exactement ce qu'on
+        // ne veut jamais d'un bureau à distance.
+        let args = session_arguments("host", &SessionSettings::default());
+        assert_eq!(value_of(&args, "--capture-system-keys"), Some("always"));
     }
 
     #[test]
