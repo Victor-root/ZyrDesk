@@ -67,12 +67,6 @@ static SHAPE: AtomicI64 = AtomicI64::new(0);
 /// before the number is acted on.
 static PLAYER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-/// Our own window, in the same shape and for the same kind of reader: the
-/// watch that follows the front runs on a thread of its own, with nothing
-/// of the toolkit in reach, and it is the one place that learns the front
-/// has fallen at the moment it falls.
-static HOME: AtomicIsize = AtomicIsize::new(0);
-
 /// Set while the person is dragging an edge of our window.
 ///
 /// The shape is held during the drag, before each resize; tidying it up
@@ -1377,103 +1371,29 @@ pub fn the_keyboard_back(app: &AppHandle) {
 #[cfg(not(windows))]
 pub fn the_keyboard_back(_app: &AppHandle) {}
 
-/// Gives the session back everything the floating menu took from it: the
-/// front first, then the keyboard.
+/// Gives the session back the keyboard the floating menu took from it.
 ///
-/// The front as well as the keyboard, and only from here. Clicking that
-/// button hands the focus to its own page, and handing a window the focus
-/// activates it or the window it hangs from; that button is marked never
-/// to be activated, so what comes of the ask is our own window losing the
-/// front without anything having taken it, and the front falls to
-/// whatever lies behind, which on a session in a window is the desktop.
-/// The journal caught the end of that: the front at Windows' own
-/// explorer one second after the menu closed, and from then on every
-/// Alt+Tab refused for want of a session in front and acting on this
-/// computer instead.
+/// The front is not asked for back, and was, twice. Closing that menu
+/// drops the front on the desktop with nothing having taken it, and taking
+/// it back from there is a road Windows keeps shut: it hands the front
+/// only to the program that already holds it or that received the last
+/// keystroke, and by then the shell has had both. The journal wrote the
+/// answer in one word, « refusé », on every session it was tried on.
 ///
-/// Only when the front has really gone, and only during a session: this
-/// is the undoing of something this program did to itself, not a window
-/// insisting on being in front. Somebody who left for another program
-/// while the menu was open is left where they went.
+/// It is also no longer needed. What a fallen front used to cost was the
+/// session's Alt+Tab, and it cost that because the shell holding the front
+/// read as somebody else; it no longer does, and the keys stay the far
+/// computer's through the whole flap. See `Front::TheShell`.
 #[cfg(windows)]
 pub fn the_session_back(app: &AppHandle) {
-    we_are_about_to_let_it_go();
     let asked = app.clone();
     let _ = app.run_on_main_thread(move || {
-        the_front_back_to_the_session();
         give_the_keyboard_to_the_picture(&asked);
     });
 }
 
 #[cfg(not(windows))]
 pub fn the_session_back(_app: &AppHandle) {}
-
-/// When this program last did something of its own that drops the front
-/// with nothing there to take it, counted in milliseconds since this
-/// computer started, nought when it has not.
-///
-/// The front does not fall while the menu is closing; it falls a moment
-/// after, and the two are separate turns of the same thread. Asked only
-/// on the spot, as it was, the repair below read a front that was still
-/// ours and went home, and the journal shows exactly that: its line is
-/// missing from every session where the fault appeared, and the fall
-/// comes one line later. Written down here and spent by the watch that is
-/// told the instant the front moves, the repair meets the fall instead of
-/// racing it.
-#[cfg(windows)]
-static WE_LET_IT_GO: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-/// Says so, a moment before it happens.
-#[cfg(windows)]
-fn we_are_about_to_let_it_go() {
-    use windows_sys::Win32::System::SystemInformation::GetTickCount;
-
-    // SAFETY: no argument, and the answer is a plain number; nought is
-    // reserved for « we did nothing », so a tick that lands on it is
-    // nudged.
-    WE_LET_IT_GO.store(unsafe { GetTickCount() }.max(1), Ordering::Relaxed);
-}
-
-/// And whether a front leaving right now is that fall, spending the word
-/// as it reads it.
-///
-/// Spent rather than merely read, so a front this program really has no
-/// business holding is asked for once and not for as long as the flap
-/// lasts.
-#[cfg(windows)]
-fn we_let_it_go() -> bool {
-    use windows_sys::Win32::System::SystemInformation::GetTickCount;
-
-    let said = WE_LET_IT_GO.swap(0, Ordering::Relaxed);
-    // SAFETY: no argument, and the answer is a plain number.
-    said != 0 && unsafe { GetTickCount() }.wrapping_sub(said) < A_FLAP
-}
-
-/// Asks for the front back for our own window, and says what came of it.
-///
-/// The window is read from a number rather than from the toolkit: this is
-/// called from the watch that follows the front as well as from the
-/// thread that draws, and that watch has no handle on anything of Tauri.
-#[cfg(windows)]
-fn the_front_back_to_the_session() {
-    use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-
-    let home = HOME.load(Ordering::Relaxed) as HWND;
-    if CARRIED.load(Ordering::Relaxed) == 0
-        || home.is_null()
-        || who_holds_the_front() != Front::Elsewhere
-    {
-        return;
-    }
-    // SAFETY: our own window, and a refusal is one of the answers.
-    let taken = unsafe { SetForegroundWindow(home) } != 0;
-    crate::journal::note(&format!(
-        "premier plan repris en refermant le menu du bouton flottant : Windows a {} ; il est {}",
-        if taken { "accepté" } else { "refusé" },
-        the_front_in_words()
-    ));
-}
 
 /// Makes our window behave as the one window a session is, and steps in
 /// front of its messages for as long as the picture is in it.
@@ -1502,8 +1422,6 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
-        // Before the two hooks below, both of which read it.
-        HOME.store(home as isize, Ordering::Relaxed);
         // The two hooks a session holds of the system: the keys it keeps
         // for itself, and where it is putting the front. Each takes a
         // thread of its own here and gives it back below.
@@ -1550,7 +1468,6 @@ fn give_the_window_back(app: &AppHandle) {
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
         crate::keys::let_go();
         stop_watching_the_front();
-        HOME.store(0, Ordering::Relaxed);
         offer_a_picture_of_the_session(home, false);
         round_the_window(home, false);
     });
@@ -1805,13 +1722,6 @@ fn look_at_the_front(moved_to: Option<windows_sys::Win32::Foundation::HWND>) {
         // SAFETY: no argument, and the answer is a plain number; nought is
         // reserved for « here », so a tick that lands on it is nudged.
         LEFT_AT.store(unsafe { GetTickCount() }.max(1), Ordering::Relaxed);
-        // And the front this program has just dropped on itself is taken
-        // straight back, here, which is the one moment it is known to have
-        // fallen. A front somebody really went to is not this: nothing was
-        // said before it, so nothing is spent and nothing is asked for.
-        if we_let_it_go() {
-            the_front_back_to_the_session();
-        }
     }
     if moved_to.is_none() || CARRIED.load(Ordering::Relaxed) == 0 {
         return;
@@ -1857,6 +1767,23 @@ pub enum Front {
     Ours,
     /// The player's, which during a session means the picture.
     ThePlayer,
+    /// The shell of this computer: its desktop, its task bar, and its own
+    /// window switcher.
+    ///
+    /// Not somebody else, and this is the whole of what took eight rounds
+    /// to see. Nobody switches to the shell: it is where the front goes
+    /// when nothing holds it, and it is where the switcher that Alt+Tab
+    /// opens lives. Counted as a stranger, as it was, it made a loop that
+    /// no session ever came out of: one Alt+Tab let through opens that
+    /// switcher, the switcher takes the front, the front being a
+    /// stranger's lets the next Alt+Tab through, and that one opens it
+    /// again. The journal counted ten in a row on one session, against
+    /// six keys carried in all.
+    ///
+    /// Somebody who really leaves is a program with a name, and those are
+    /// told apart from this: a session left for a browser or a terminal
+    /// reads as `Elsewhere` and lets go as it should.
+    TheShell,
     /// Another program's, or nobody's.
     Elsewhere,
 }
@@ -1898,9 +1825,33 @@ fn whose_window(window: windows_sys::Win32::Foundation::HWND) -> Front {
         Front::Ours
     } else if owner == PLAYER.load(Ordering::Relaxed) {
         Front::ThePlayer
+    } else if owner != 0 && owner == the_shells_process() {
+        Front::TheShell
     } else {
         Front::Elsewhere
     }
+}
+
+/// The process this computer's shell runs in, by way of the window it
+/// keeps the desktop in.
+///
+/// Asked each time rather than remembered: a shell that has died and come
+/// back is a different process, and a session outlives that more often
+/// than one would like. Asked only where the front is worked out, which is
+/// a thread that may wait, and never on the road a keystroke travels.
+#[cfg(windows)]
+fn the_shells_process() -> u32 {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
+
+    // SAFETY: no argument, and a null answer is one of the answers.
+    let desk = unsafe { GetShellWindow() };
+    if desk.is_null() {
+        return 0;
+    }
+    let mut owner = 0u32;
+    // SAFETY: the window the call above answered, and the slot is ours.
+    unsafe { GetWindowThreadProcessId(desk, &mut owner) };
+    owner
 }
 
 /// Who holds the front, in the words the journal uses everywhere.
@@ -1927,6 +1878,11 @@ fn in_these_words(whose: Front, window: windows_sys::Win32::Foundation::HWND) ->
     match whose {
         Front::Ours => "à ZyrDesk".to_string(),
         Front::ThePlayer => "à l'image".to_string(),
+        // Named as well, and not folded into the two above: « the session
+        // keeps its keys » and « the session holds the front » are two
+        // different things from here on, and a journal that cannot show
+        // the difference cannot show this working.
+        Front::TheShell => format!("au bureau de Windows : {}", describe(window)),
         // Named rather than merely spotted: nothing here expects a third
         // window to ever hold the front during a session, so a report of
         // it happening is worth more with a name on it than without one.

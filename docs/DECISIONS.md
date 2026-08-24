@@ -443,7 +443,7 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 
 **Le défaut qui est corrigé.** À chacun des deux moments, le premier plan tombe sur le bureau, personne ne l'ayant pris. Le code connaissait déjà cette chute et avait une réparation pour elle, mais celle-ci s'exécutait à la fermeture du menu, c'est-à-dire avant la chute : elle lisait un premier plan encore à nous et rentrait chez elle. Sa ligne est absente du journal de chaque session fautive, et la chute y arrive une ligne plus loin. La réparation est désormais armée à la fermeture du menu et dépensée par la veille qui apprend le déplacement du premier plan à l'instant où il a lieu ; elle rencontre la chute au lieu de lui courir après. Ce que ce programme s'est fait à lui-même est défait ; un premier plan que quelqu'un est réellement allé chercher ailleurs n'est pas repris, rien n'ayant été annoncé avant lui.
 
-**Ce que l'essai suivant a montré.** La réparation se déclenche désormais, et sa ligne apparaît enfin : « Windows a refusé ». Reprendre le premier plan n'est donc pas une route ouverte à ce moment-là. Windows n'accorde le premier plan qu'au programme qui le tient déjà ou qui a reçu la dernière frappe, et quand la chute est suivie d'un Alt+Tab, c'est l'explorateur qui l'a reçue. La ligne reste, parce qu'elle dit lequel des deux cas on est, et parce que la reprise aboutit quand rien d'autre ne s'est glissé entre la chute et elle. Ce qu'il faut viser est que le premier plan ne tombe pas, non qu'il soit rattrapé.
+**Ce que l'essai suivant a montré, et la reprise a été retirée.** La réparation s'est déclenchée, et sa ligne a dit « Windows a refusé », sur chaque essai. Windows n'accorde le premier plan qu'au programme qui le tient déjà ou qui a reçu la dernière frappe, et quand la chute est suivie d'un Alt+Tab, c'est le shell qui a eu les deux. Cette route est fermée, et tout ce qui avait été ajouté pour elle a été retiré. Ce que la chute coûtait est traité à sa racine en D42 : le shell au premier plan n'est plus quelqu'un d'autre, donc une chute ne coûte plus rien aux touches.
 
 **Ce qui reste ouvert.** Pourquoi certains appuis ne sont pas présentés au crochet n'est pas établi. Deux pistes tiennent devant les faits, sans qu'aucune soit prouvée : une fenêtre élevée au premier plan, à qui Windows interdit à un programme ordinaire de voir les touches destinées, et le sélecteur de fenêtres de Windows lui-même, qui prend le clavier entre l'appui et le relâchement de la touche qui l'ouvre. Le journal de l'essai fautif montre un « Administrator: PowerShell » au premier plan aux deux secondes exactes où des appuis manquent, ce qui suffit à contaminer l'essai sans suffire à conclure. Le prochain essai se fait sans aucune fenêtre administrateur ouverte.
 
@@ -471,6 +471,22 @@ Un Tab arrive, le premier plan est bon, et il est pourtant laissé passer parce 
 **Ce que cette lecture a mis au jour.** Il restait un maillon sans preuve, et c'est le nôtre. La touche est prise à cet ordinateur, donc le système n'agira jamais dessus ; elle est ensuite postée à la fenêtre du moteur, et **la réponse du système à cette remise était jetée**. Une remise refusée, ou une fenêtre disparue, fait une frappe évanouie des deux ordinateurs à la fois sans que rien nulle part ne le dise. Le journal comptait la touche comme « portée » et s'arrêtait là, ce qui se lit à tort comme un travail fait.
 
 **Corrigé.** La réponse est lue, et deux nombres sont écrits dans le journal : les remises refusées par le moteur, et celles qui n'avaient aucune fenêtre où aller. Zéro est la réponse attendue pour les deux ; toute autre valeur raconte à elle seule ce qui manquait.
+
+## D42. Le shell de Windows n'est pas quelqu'un d'autre (2026-08-24, pendant M4)
+
+**La boucle, et pourquoi aucune des corrections précédentes ne pouvait en sortir.** Un relevé d'essai la montre entière :
+
+```
+10 premier plan ailleurs, 10 relâchements de touches laissées passer, 6 portées à la session
+```
+
+Dix Alt+Tab laissés passer à Windows parce que la session n'était pas au premier plan, contre six touches portées en tout sur toute la session. Chacun de ces dix ouvre le sélecteur de fenêtres de cet ordinateur ; ce sélecteur prend le premier plan ; le premier plan tenu par un tiers fait laisser passer le suivant, qui le rouvre. La boucle s'entretient et rien n'en sort, sauf un clic dans l'image.
+
+**Ce que le garde-fou disait, et où il se trompait.** La règle était : les touches du système appartiennent à l'ordinateur d'en face tant que la session est au premier plan. Elle est juste. Ce qui était faux est la liste des façons de ne pas y être. Le premier plan quitte la session pour trois sortes de fenêtres, et deux d'entre elles appartiennent au shell de Windows : son bureau, où le premier plan tombe quand plus rien ne le tient, et son sélecteur de fenêtres, qui n'existe que parce qu'on a laissé passer la touche dont il est question. Personne ne bascule vers le shell. Le compter comme un tiers, c'est traiter la conséquence du défaut comme sa justification.
+
+**Corrigé en nommant le shell.** Le premier plan tenu par le processus du shell, reconnu par la fenêtre où il garde le bureau, n'est plus « ailleurs » : la session garde ses touches à travers tout le battement. Quelqu'un qui part vraiment part vers un programme qui a un nom, un navigateur ou un terminal, et ceux-là restent « ailleurs » et rendent les touches comme ils doivent. Le journal les nomme séparément, sans quoi cette décision ne se vérifierait pas.
+
+**Ce que la lecture de la référence a confirmé.** La bibliothèque d'affichage du moteur client fait la même capture pour son propre compte, et son crochet avale Alt, Control, la touche Windows, Tab et Échap d'un bloc, sans jamais demander où est le premier plan. C'est la même idée dite autrement : tant que la session tient le clavier, ces touches ne sont pas à cet ordinateur, et un premier plan qui bat n'y change rien. Ce produit ne peut pas avaler Alt, ses propres raccourcis passant par l'enregistrement de combinaisons du système, qui ne voit jamais une touche avalée ([D32](DECISIONS.md)) ; nommer le shell obtient le même résultat sans y toucher.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
