@@ -443,7 +443,26 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 
 **Le défaut qui est corrigé.** À chacun des deux moments, le premier plan tombe sur le bureau, personne ne l'ayant pris. Le code connaissait déjà cette chute et avait une réparation pour elle, mais celle-ci s'exécutait à la fermeture du menu, c'est-à-dire avant la chute : elle lisait un premier plan encore à nous et rentrait chez elle. Sa ligne est absente du journal de chaque session fautive, et la chute y arrive une ligne plus loin. La réparation est désormais armée à la fermeture du menu et dépensée par la veille qui apprend le déplacement du premier plan à l'instant où il a lieu ; elle rencontre la chute au lieu de lui courir après. Ce que ce programme s'est fait à lui-même est défait ; un premier plan que quelqu'un est réellement allé chercher ailleurs n'est pas repris, rien n'ayant été annoncé avant lui.
 
+**Ce que l'essai suivant a montré.** La réparation se déclenche désormais, et sa ligne apparaît enfin : « Windows a refusé ». Reprendre le premier plan n'est donc pas une route ouverte à ce moment-là. Windows n'accorde le premier plan qu'au programme qui le tient déjà ou qui a reçu la dernière frappe, et quand la chute est suivie d'un Alt+Tab, c'est l'explorateur qui l'a reçue. La ligne reste, parce qu'elle dit lequel des deux cas on est, et parce que la reprise aboutit quand rien d'autre ne s'est glissé entre la chute et elle. Ce qu'il faut viser est que le premier plan ne tombe pas, non qu'il soit rattrapé.
+
 **Ce qui reste ouvert.** Pourquoi certains appuis ne sont pas présentés au crochet n'est pas établi. Deux pistes tiennent devant les faits, sans qu'aucune soit prouvée : une fenêtre élevée au premier plan, à qui Windows interdit à un programme ordinaire de voir les touches destinées, et le sélecteur de fenêtres de Windows lui-même, qui prend le clavier entre l'appui et le relâchement de la touche qui l'ouvre. Le journal de l'essai fautif montre un « Administrator: PowerShell » au premier plan aux deux secondes exactes où des appuis manquent, ce qui suffit à contaminer l'essai sans suffire à conclure. Le prochain essai se fait sans aucune fenêtre administrateur ouverte.
+
+## D40. Alt se lit de trois côtés, et un appui jamais reçu ne coûte plus la session (2026-08-24, pendant M4)
+
+**Le défaut, pris sur le fait.** Une ligne du journal le montre entière :
+
+```
+Tab 1 enfoncée(s) et 0 relâchée(s), Alt 0 et 0 ; 1 que le système n'aurait pas mangées ;
+la dernière était Tab enfoncée, Alt non, premier plan à l'image
+```
+
+Un Tab arrive, le premier plan est bon, et il est pourtant laissé passer parce que ce programme croit qu'aucun doigt n'est sur Alt. Le sélecteur de fenêtres de cet ordinateur s'ouvre dessus, ce qui prouve que le système, lui, avait bien vu l'Alt. À partir de là tout s'enchaîne : le sélecteur prend le premier plan, et chaque Alt+Tab suivant est refusé faute de session devant.
+
+**Pourquoi les deux sources d'alors ne pouvaient pas le voir.** Alt était lu du nom que le système donne à la frappe, et du flux de touches que ce programme suit. Le nom ne vaut que pour Alt et n'est donné qu'aux frappes que le système appelle siennes ; le flux, lui, ne peut compter que ce qui lui est présenté, et le même relevé montre des relâchements d'Alt sans les appuis correspondants, donc des appuis qui ne sont jamais arrivés jusqu'ici. Un appui manquant laisse le flux persuadé que rien n'est tenu, et le Tab d'après est jugé ordinaire.
+
+**Corrigé en demandant au clavier.** Une troisième source est jointe aux deux autres : l'état réel des doigts, lu de la table que le système tient en mémoire. Ce n'est pas une question posée au gestionnaire de fenêtres, donc elle peut être posée depuis la route que chaque frappe emprunte, et c'est la lecture sur laquelle le rattrapage des modificateurs restés en l'air repose déjà. Les trois ne peuvent que manquer un modificateur, jamais en inventer un, donc les joindre ne peut que réparer. Le compte des touches portées grâce aux doigts seuls est écrit dans le journal, à côté de celui du délai de grâce, pour que cette décision se juge sur un nombre.
+
+**Conséquence tenue.** Ce qui est annoncé au moteur suit la même règle : un Tab porté pour un Alt+Tab et remis comme un Tab nu ne bougerait rien au loin, ce qui de la main se voit comme une session qui avale la touche.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
