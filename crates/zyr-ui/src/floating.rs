@@ -46,7 +46,7 @@ use crate::journal::note;
 pub const WINDOW: &str = "flottant";
 
 /// Name the page listens on to be told to show its menu.
-const OPEN: &str = "floating-open";
+const TOGGLE: &str = "floating-toggle";
 
 /// Name the page listens on to be told a new session begins: the menu
 /// closes, the last session's refusal goes, the window shrinks back to
@@ -1017,15 +1017,29 @@ fn held_inside(
     )
 }
 
-/// Brings the button back and opens its menu.
+/// Brings the button back and opens its menu, and closes it again when it
+/// is already open.
 ///
 /// What a shortcut needs to be able to do above all else: hiding the
 /// button is otherwise a decision with no way back before the session
 /// ends.
+///
+/// Both ways round, because one combination that only opens leaves the
+/// hand reaching for the mouse to undo what the keyboard just did.
 pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("aucune session en cours")?;
+    // Asked for again with the menu already open is asking to be rid of
+    // it. Everything below is about getting to a menu, and none of it is
+    // wanted here: the session is already where it should be, and putting
+    // the pointer back or showing a window that is shown would be undoing
+    // what the person did between the two presses. The page is told, and
+    // closing it there is the same closing as any other, which is what
+    // hands the keyboard back to the picture.
+    if MENU_UP.load(Ordering::Relaxed) {
+        return window.emit(TOGGLE, ()).map_err(|e| e.to_string());
+    }
     // The session first, when it was put away: the button hangs on the
     // picture, and a menu opened over an empty desktop, picture down in
     // the taskbar, is a button floating over somebody else's work. The
@@ -1046,7 +1060,7 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
     // in that very menu.
     give_the_pointer_back(app);
     window.show().map_err(|e| e.to_string())?;
-    window.emit(OPEN, ()).map_err(|e| e.to_string())
+    window.emit(TOGGLE, ()).map_err(|e| e.to_string())
 }
 
 /// Asks the session for something, in its own language.

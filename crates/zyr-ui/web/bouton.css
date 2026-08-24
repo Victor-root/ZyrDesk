@@ -46,32 +46,55 @@
 
 /* ---- Le bouton ------------------------------------------------------- */
 
-/* La marque elle-même, posée sur l'image : pas de carte sous elle, elle
-   en porte déjà une.
+/* La marque, sur une plaque blanche aux coins arrondis.
+
+   La plaque n'est pas une décoration : le logo est posé sur l'image d'un
+   autre ordinateur, dont on ne sait rien. Sur un fond clair et chargé il
+   se perdait, et une marque qu'il faut chercher n'est pas un bouton.
+
+   Elle est blanche dans les deux thèmes. Le thème dit à quoi ressemble
+   ZyrDesk ; ceci est posé sur le bureau de quelqu'un d'autre, où la seule
+   chose qui compte est de se détacher de n'importe quoi.
 
    Sans ombre portée : la fenêtre fait exactement la taille du dessin et
-   est découpée sur sa plaque, donc une ombre tomberait entièrement hors
-   de ce qui est dessiné. */
+   est découpée dessus, donc une ombre tomberait entièrement hors de ce
+   qui est dessiné.
+
+   Au repos elle s'efface, et un survol la rend entière. Le bouton est
+   posé par-dessus le travail de quelqu'un pendant toute une session :
+   franc en permanence il tient la place d'un objet dont on ne se sert
+   qu'une fois de temps en temps. */
 .logo {
   display: block;
-  width: 52px;
-  height: 52px;
-  padding: 0;
+  padding: var(--pas-1);
   border: none;
-  background: transparent;
+  border-radius: var(--rayon);
+  background: #fff;
   cursor: pointer;
+  opacity: 0.55;
   /* Le logo grandit depuis son coin haut droit, qui est celui par lequel
      la fenêtre est accrochée. Il grandit donc vers l'intérieur, là où il
      y a la place ; centré, il débordait de la découpe et le survol
      rognait ses quatre coins arrondis au lieu de le mettre en avant. */
   transform-origin: top right;
-  transition: transform var(--duree-courte) var(--courbe);
+  transition:
+    transform var(--duree-courte) var(--courbe),
+    opacity var(--duree-courte) var(--courbe);
 }
 
 .logo > img {
   display: block;
   width: 52px;
   height: 52px;
+}
+
+.logo:hover,
+.logo:focus-visible,
+/* Menu ouvert : le bouton est en train de servir, donc il est franc,
+   survol ou pas. Sans cela il redevenait pâle dès que la souris
+   descendait dans le menu qu'il venait d'ouvrir. */
+.logo[aria-expanded="true"] {
+  opacity: 1;
 }
 
 .logo:hover {
