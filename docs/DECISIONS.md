@@ -464,6 +464,14 @@ Un Tab arrive, le premier plan est bon, et il est pourtant laissé passer parce 
 
 **Conséquence tenue.** Ce qui est annoncé au moteur suit la même règle : un Tab porté pour un Alt+Tab et remis comme un Tab nu ne bougerait rien au loin, ce qui de la main se voit comme une session qui avale la touche.
 
+## D41. Le moteur client ne refuse pas Alt+Tab, et la remise elle-même n'était vérifiée nulle part (2026-08-24, pendant M4)
+
+**Ce que la lecture des moteurs a écarté.** Le soupçon portait sur le moteur client, qui a sa propre capture des touches du système et la croit inactive tant que sa fenêtre n'est pas celle du premier plan, ce qu'elle ne peut pas être puisqu'elle est portée dans la nôtre. Le soupçon est levé : dans `app/streaming/input/keyboard.cpp`, cette condition ne garde que la touche Windows et le modificateur Meta. Tab n'est gardé par rien, et une fois la frappe reçue elle est envoyée à l'ordinateur d'en face sans autre condition. La bibliothèque d'affichage, lue à la version que le moteur embarque, transforme un message posté en frappe exactement comme une frappe réelle, sans regarder qui a le focus. Le moteur n'avale donc pas Alt+Tab.
+
+**Ce que cette lecture a mis au jour.** Il restait un maillon sans preuve, et c'est le nôtre. La touche est prise à cet ordinateur, donc le système n'agira jamais dessus ; elle est ensuite postée à la fenêtre du moteur, et **la réponse du système à cette remise était jetée**. Une remise refusée, ou une fenêtre disparue, fait une frappe évanouie des deux ordinateurs à la fois sans que rien nulle part ne le dise. Le journal comptait la touche comme « portée » et s'arrêtait là, ce qui se lit à tort comme un travail fait.
+
+**Corrigé.** La réponse est lue, et deux nombres sont écrits dans le journal : les remises refusées par le moteur, et celles qui n'avaient aucune fenêtre où aller. Zéro est la réponse attendue pour les deux ; toute autre valeur raconte à elle seule ce qui manquait.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

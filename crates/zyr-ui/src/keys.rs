@@ -247,6 +247,8 @@ pub fn let_go() {
         &LONGEST,
         &ODD,
         &SAVED_BY_FINGERS,
+        &REFUSED,
+        &LOST,
     ] {
         counter.store(0, Ordering::SeqCst);
     }
@@ -413,6 +415,17 @@ fn the_system_would_eat_it(code: u32, what: windows_sys::Win32::Foundation::WPAR
 /// How many keys were carried on the strength of the fingers alone, the
 /// stream and the system's own name for the keystroke having both said no.
 static SAVED_BY_FINGERS: AtomicU32 = AtomicU32::new(0);
+
+/// Keys taken from this computer and then not delivered to the engine:
+/// the message refused by the system, and the picture's window gone.
+///
+/// Both are a keystroke that has vanished from both computers at once,
+/// and neither left any trace before this. « Portée » says a key was
+/// taken and posted, and stopped there; these two say whether the posting
+/// arrived. Nought is the expected answer for both, and anything else
+/// tells the whole story on its own.
+static REFUSED: AtomicU32 = AtomicU32::new(0);
+static LOST: AtomicU32 = AtomicU32::new(0);
 
 /// Whether the system itself calls this keystroke one of its own, which
 /// for every key but F10 means Alt was held with it.
@@ -624,6 +637,7 @@ fn hand_it_over(
     // which costs nothing in turn.
     let engine = crate::picture::the_engines_window_number() as HWND;
     if engine.is_null() {
+        LOST.fetch_add(1, Ordering::SeqCst);
         return;
     }
     let up = what as u32 == WM_KEYUP || what as u32 == WM_SYSKEYUP;
@@ -655,7 +669,18 @@ fn hand_it_over(
     // SAFETY: a window this program took in hand, told about a key in
     // the system's own words. Posted rather than sent: this is the
     // system's own hook, where nothing may wait for another program.
-    unsafe { PostMessageW(engine, what as u32, key.vkCode as usize, about) };
+    //
+    // The answer is read, which it was not. This is the one step of the
+    // whole road with nothing behind it: the key is taken from this
+    // computer, so the system will never act on it, and if the message
+    // does not reach the engine the keystroke is gone from both computers
+    // at once and nothing anywhere says so. A session counted as
+    // « portée » from end to end and doing nothing at either end reads,
+    // wrongly, as a session where this program did its part.
+    let posted = unsafe { PostMessageW(engine, what as u32, key.vkCode as usize, about) } != 0;
+    if !posted {
+        REFUSED.fetch_add(1, Ordering::SeqCst);
+    }
 
     if !up {
         SAID.store(key.vkCode, Ordering::SeqCst);
@@ -693,6 +718,7 @@ pub fn tell() {
          {} ; vues : Tab {} enfoncée(s) et {} relâchée(s), Alt {} et {} ; \
          au plus {} ms d'attente avant nous et {} µs chez nous, {} appel(s) hors sujet, \
          {} portée(s) sauvée(s) par le délai de grâce, {} par les doigts ; \
+         {} refusée(s) par le moteur et {} sans fenêtre où aller ; \
          la dernière était {} {}, Alt {}, Ctrl {}, premier plan {}",
         ANY.load(Ordering::SeqCst),
         counted.join(", "),
@@ -705,6 +731,8 @@ pub fn tell() {
         ODD.load(Ordering::SeqCst),
         crate::picture::grace_saves(),
         SAVED_BY_FINGERS.load(Ordering::SeqCst),
+        REFUSED.load(Ordering::SeqCst),
+        LOST.load(Ordering::SeqCst),
         named(LAST_KEY.load(Ordering::SeqCst)),
         if LAST_UP.load(Ordering::SeqCst) {
             "relâchée"
