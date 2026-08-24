@@ -67,6 +67,12 @@ static SHAPE: AtomicI64 = AtomicI64::new(0);
 /// before the number is acted on.
 static PLAYER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
+/// Our own window, in the same shape and for the same kind of reader: the
+/// watch that follows the front runs on a thread of its own, with nothing
+/// of the toolkit in reach, and it is the one place that learns the front
+/// has fallen at the moment it falls.
+static HOME: AtomicIsize = AtomicIsize::new(0);
+
 /// Set while the person is dragging an edge of our window.
 ///
 /// The shape is held during the drag, before each resize; tidying it up
@@ -1391,9 +1397,10 @@ pub fn the_keyboard_back(_app: &AppHandle) {}
 /// while the menu was open is left where they went.
 #[cfg(windows)]
 pub fn the_session_back(app: &AppHandle) {
+    we_are_about_to_let_it_go();
     let asked = app.clone();
     let _ = app.run_on_main_thread(move || {
-        the_front_back_to_the_session(&asked);
+        the_front_back_to_the_session();
         give_the_keyboard_to_the_picture(&asked);
     });
 }
@@ -1401,17 +1408,64 @@ pub fn the_session_back(app: &AppHandle) {
 #[cfg(not(windows))]
 pub fn the_session_back(_app: &AppHandle) {}
 
-/// Asks for the front back for our own window, and says what came of it.
+/// When this program last did something of its own that drops the front
+/// with nothing there to take it, counted in milliseconds since this
+/// computer started, nought when it has not.
+///
+/// The front does not fall while the menu is closing; it falls a moment
+/// after, and the two are separate turns of the same thread. Asked only
+/// on the spot, as it was, the repair below read a front that was still
+/// ours and went home, and the journal shows exactly that: its line is
+/// missing from every session where the fault appeared, and the fall
+/// comes one line later. Written down here and spent by the watch that is
+/// told the instant the front moves, the repair meets the fall instead of
+/// racing it.
 #[cfg(windows)]
-fn the_front_back_to_the_session(app: &AppHandle) {
+static WE_LET_IT_GO: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Says so, a moment before it happens.
+#[cfg(windows)]
+fn we_are_about_to_let_it_go() {
+    use windows_sys::Win32::System::SystemInformation::GetTickCount;
+
+    // SAFETY: no argument, and the answer is a plain number; nought is
+    // reserved for « we did nothing », so a tick that lands on it is
+    // nudged.
+    WE_LET_IT_GO.store(unsafe { GetTickCount() }.max(1), Ordering::Relaxed);
+}
+
+/// And whether a front leaving right now is that fall, spending the word
+/// as it reads it.
+///
+/// Spent rather than merely read, so a front this program really has no
+/// business holding is asked for once and not for as long as the flap
+/// lasts.
+#[cfg(windows)]
+fn we_let_it_go() -> bool {
+    use windows_sys::Win32::System::SystemInformation::GetTickCount;
+
+    let said = WE_LET_IT_GO.swap(0, Ordering::Relaxed);
+    // SAFETY: no argument, and the answer is a plain number.
+    said != 0 && unsafe { GetTickCount() }.wrapping_sub(said) < A_FLAP
+}
+
+/// Asks for the front back for our own window, and says what came of it.
+///
+/// The window is read from a number rather than from the toolkit: this is
+/// called from the watch that follows the front as well as from the
+/// thread that draws, and that watch has no handle on anything of Tauri.
+#[cfg(windows)]
+fn the_front_back_to_the_session() {
+    use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
 
-    if CARRIED.load(Ordering::Relaxed) == 0 || who_holds_the_front() != Front::Elsewhere {
+    let home = HOME.load(Ordering::Relaxed) as HWND;
+    if CARRIED.load(Ordering::Relaxed) == 0
+        || home.is_null()
+        || who_holds_the_front() != Front::Elsewhere
+    {
         return;
     }
-    let Some(home) = home_window(app) else {
-        return;
-    };
     // SAFETY: our own window, and a refusal is one of the answers.
     let taken = unsafe { SetForegroundWindow(home) } != 0;
     crate::journal::note(&format!(
@@ -1448,6 +1502,8 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
+        // Before the two hooks below, both of which read it.
+        HOME.store(home as isize, Ordering::Relaxed);
         // The two hooks a session holds of the system: the keys it keeps
         // for itself, and where it is putting the front. Each takes a
         // thread of its own here and gives it back below.
@@ -1494,6 +1550,7 @@ fn give_the_window_back(app: &AppHandle) {
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
         crate::keys::let_go();
         stop_watching_the_front();
+        HOME.store(0, Ordering::Relaxed);
         offer_a_picture_of_the_session(home, false);
         round_the_window(home, false);
     });
@@ -1748,6 +1805,13 @@ fn look_at_the_front(moved_to: Option<windows_sys::Win32::Foundation::HWND>) {
         // SAFETY: no argument, and the answer is a plain number; nought is
         // reserved for « here », so a tick that lands on it is nudged.
         LEFT_AT.store(unsafe { GetTickCount() }.max(1), Ordering::Relaxed);
+        // And the front this program has just dropped on itself is taken
+        // straight back, here, which is the one moment it is known to have
+        // fallen. A front somebody really went to is not this: nothing was
+        // said before it, so nothing is spent and nothing is asked for.
+        if we_let_it_go() {
+            the_front_back_to_the_session();
+        }
     }
     if moved_to.is_none() || CARRIED.load(Ordering::Relaxed) == 0 {
         return;

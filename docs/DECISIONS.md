@@ -435,6 +435,16 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 
 **Ce que ça coûte de laisser la CI suivre la dernière version.** Chaque sortie de Rust peut allumer le rouge sur un commit qui n'y est pour rien. C'est le prix d'apprendre les nouvelles règles tôt, et il est payable tant que quelqu'un regarde la lampe. Ce qui a manqué ici n'est pas la politique de version : c'est que personne ne regardait. Figer la version dans `rust-toolchain.toml` supprimerait la surprise et supprimerait aussi les règles nouvelles jusqu'à une montée décidée ; à trancher si le rouge fortuit revient.
 
+## D39. Le premier plan tombé est repris quand il tombe, et non un instant avant (2026-08-24, pendant M4)
+
+**Constat.** Alt+Tab part vers l'ordinateur d'en face tant que la fenêtre est petite, et cesse d'y aller dès qu'on l'agrandit ou qu'on ouvre le menu du bouton flottant. À partir de là, c'est le sélecteur de fenêtres de cet ordinateur-ci qui s'ouvre, et la session reste sourde.
+
+**Ce que le journal établit.** Le crochet clavier compte chaque frappe que Windows lui présente. Entre deux relevés encadrant un Alt+Tab, il en a vu une seule, un Tab relâché, sans l'appui du Tab ni celui du Alt. Les appuis ne sont donc pas refusés par ce programme : ils ne lui sont pas présentés. Le crochet répond en microsecondes quand il est appelé, n'attend derrière personne, et aucune frappe injectée n'est en cause ; il est appelé de nouveau la seconde suivante, donc il n'a pas été retiré.
+
+**Le défaut qui est corrigé.** À chacun des deux moments, le premier plan tombe sur le bureau, personne ne l'ayant pris. Le code connaissait déjà cette chute et avait une réparation pour elle, mais celle-ci s'exécutait à la fermeture du menu, c'est-à-dire avant la chute : elle lisait un premier plan encore à nous et rentrait chez elle. Sa ligne est absente du journal de chaque session fautive, et la chute y arrive une ligne plus loin. La réparation est désormais armée à la fermeture du menu et dépensée par la veille qui apprend le déplacement du premier plan à l'instant où il a lieu ; elle rencontre la chute au lieu de lui courir après. Ce que ce programme s'est fait à lui-même est défait ; un premier plan que quelqu'un est réellement allé chercher ailleurs n'est pas repris, rien n'ayant été annoncé avant lui.
+
+**Ce qui reste ouvert.** Pourquoi certains appuis ne sont pas présentés au crochet n'est pas établi. Deux pistes tiennent devant les faits, sans qu'aucune soit prouvée : une fenêtre élevée au premier plan, à qui Windows interdit à un programme ordinaire de voir les touches destinées, et le sélecteur de fenêtres de Windows lui-même, qui prend le clavier entre l'appui et le relâchement de la touche qui l'ouvre. Le journal de l'essai fautif montre un « Administrator: PowerShell » au premier plan aux deux secondes exactes où des appuis manquent, ce qui suffit à contaminer l'essai sans suffire à conclure. Le prochain essai se fait sans aucune fenêtre administrateur ouverte.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
