@@ -283,7 +283,7 @@ fn said(yes: bool) -> &'static str {
 /// and the answer so the two can never drift apart.
 fn spelled(preferred: &Preferred) -> String {
     format!(
-        "asked={} bitrate={} codec={} display={} mouse={} stats={}",
+        "asked={} bitrate={} codec={} display={} mouse={} stats={} syskeys-engine={}",
         preferred.asked,
         preferred.bitrate_kbps,
         preferred.codec,
@@ -293,7 +293,8 @@ fn spelled(preferred: &Preferred) -> String {
         } else {
             "game"
         },
-        said(preferred.stats_overlay)
+        said(preferred.stats_overlay),
+        said(preferred.system_keys_in_the_engine)
     )
 }
 
@@ -648,6 +649,8 @@ impl<'a> Fields<'a> {
                 Err(_) => fallback.absolute_mouse,
             },
             stats_overlay: self.flag("stats", fallback.stats_overlay),
+            system_keys_in_the_engine: self
+                .flag("syskeys-engine", fallback.system_keys_in_the_engine),
         }
     }
 }
@@ -734,6 +737,7 @@ mod tests {
             display_mode: DisplayMode::Windowed,
             absolute_mouse: false,
             stats_overlay: true,
+            system_keys_in_the_engine: true,
         }
     }
 

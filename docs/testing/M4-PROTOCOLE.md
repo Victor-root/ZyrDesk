@@ -1188,3 +1188,33 @@ Deux entrées du menu flottant méritent leur propre explication :
 
 - **« La fenêtre de la session n'est pas au premier plan ».** C'est une sécurité : les raccourcis partent vers la fenêtre active, et ZyrDesk refuse de les envoyer ailleurs qu'à la session. Cliquer une fois dans l'image, puis rouvrir le menu.
 - **Un clic sur le bouton part vers l'ordinateur distant.** Le mode souris est sur Jeu : le pointeur appartient alors entièrement à l'autre machine. Ctrl+Alt+Maj+M pour revenir à la souris de bureau.
+
+---
+
+## Essai A/B des touches système (Alt+Tab)
+
+Deux façons de reprendre les touches que Windows garde pour lui coexistent le temps de les départager ([D43](../DECISIONS.md)). Le réglage est une ligne du fichier de réglages du service :
+
+```
+system_keys_in_the_engine = no    # ZyrDesk les prend et les remet au moteur
+system_keys_in_the_engine = yes   # le moteur les prend lui-même
+```
+
+Le service doit être arrêté puis redémarré pour que la ligne soit relue. La ligne de commande fait la même chose sans toucher au fichier : `zyr-cli connect … --system-keys-in-the-engine`.
+
+**Tout l'essai se fait pendant une seule session, sans jamais se reconnecter.** C'est le point important : la panne se déclenche une fois et ne se répare qu'à la reconnexion, donc un essai coupé en deux ne prouve rien.
+
+1. Se connecter, puis **Alt+Tab tout de suite**. La fenêtre doit changer sur le PC hôte, jamais ici.
+2. **Agrandir puis restaurer la fenêtre, cinq fois**, en retestant Alt+Tab après chacune.
+3. **Basculer plein écran puis fenêtre, cinq fois**, en retestant après chacune.
+4. **Ouvrir et refermer le bouton flottant plusieurs fois**, en retestant après chacune.
+5. Utiliser **Statistiques** et le **changement de mode souris** depuis ce menu, puis retester.
+6. **Aller volontairement dans une vraie application locale** (navigateur, terminal) : Alt+Tab doit alors rester ici.
+7. **Revenir dans la session** en cliquant l'image : Alt+Tab doit repartir vers l'hôte.
+8. Vérifier qu'aucune touche Alt ou Control n'est restée coincée, sur les deux machines, en tapant du texte.
+9. Vérifier que **tous les raccourcis de ZyrDesk répondent encore** : plein écran, statistiques, mode souris, menu, fin de session.
+
+Ce qu'il faut lire ensuite, selon la voie essayée :
+
+- **Voie ZyrDesk** (`no`) : dans `interface.log`, la ligne `touches système : …`. `portées à la session` doit monter à chaque Alt+Tab, `premier plan ailleurs` doit rester à zéro tant que l'étape 6 n'a pas eu lieu, et `relâchements dont l'appui n'est jamais arrivé jusqu'ici` est le compteur de la panne : au-dessus de zéro, des appuis n'arrivent pas jusqu'au produit.
+- **Voie moteur** (`yes`) : dans `interface.log`, la ligne `touches système laissées au moteur` doit apparaître à l'ouverture, et aucune ligne `touches système : …` ensuite, les deux voies ne pouvant pas tourner ensemble. Le reste est dans `session.log`, sous `zyr:` : `the session has the keyboard` à chaque reprise du clavier, et `system keys: Tab … carried to the host …` qui donne les appuis et relâchements vus, ce qui est parti vers l'hôte, ce qui a été laissé passer et pourquoi, et le nombre de fois où le crochet a été reposé.

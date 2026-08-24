@@ -488,6 +488,24 @@ Dix Alt+Tab laissés passer à Windows parce que la session n'était pas au prem
 
 **Ce que la lecture de la référence a confirmé.** La bibliothèque d'affichage du moteur client fait la même capture pour son propre compte, et son crochet avale Alt, Control, la touche Windows, Tab et Échap d'un bloc, sans jamais demander où est le premier plan. C'est la même idée dite autrement : tant que la session tient le clavier, ces touches ne sont pas à cet ordinateur, et un premier plan qui bat n'y change rien. Ce produit ne peut pas avaler Alt, ses propres raccourcis passant par l'enregistrement de combinaisons du système, qui ne voit jamais une touche avalée ([D32](DECISIONS.md)) ; nommer le shell obtient le même résultat sans y toucher.
 
+## D43. Les touches du système ont un seul propriétaire, et ce peut être le moteur (2026-08-24, pendant M4)
+
+**Le fait qui commande tout.** Le journal établit que certains appuis n'arrivent jamais au crochet clavier de ZyrDesk. Ce n'est pas un refus : la fonction qui décide n'est pas appelée. Le compteur de toutes les frappes vues ne bouge pas, aucune remise n'est refusée par le moteur, aucune fenêtre ne manque, et le crochet répond en dizaines de microsecondes quand il est appelé. Windows ouvre donc son sélecteur avant que ce programme puisse dire quoi que ce soit. Aucune correction portant sur le premier plan, le focus ou un délai ne peut agir sur un événement qui n'arrive pas, et les précédentes traitaient la conséquence. La classification spéciale de l'explorateur ajoutée en D42 est retirée pour cette raison, et pour une seconde : le processus de l'explorateur porte aussi les vraies fenêtres de l'Explorateur et la barre des tâches, donc l'exception rendait à distance des Alt+Tab tapés dans un travail local.
+
+**Ce qu'il fallait changer.** Un crochet bas niveau du clavier est une chaîne partagée, servie du plus récent au plus ancien. Celui de ZyrDesk est posé une fois à l'ouverture d'une session et jamais reposé, par choix ancien et pour de bonnes raisons ; tout ce qui s'installe après lui passe devant. Les moments où la panne apparaît sont exactement ceux où un autre programme en pose un : une fenêtre agrandie, un plein écran, un menu ouvert. La bibliothèque d'affichage du moteur, elle, repose le sien à chaque prise du clavier, et c'est la différence qui compte.
+
+**La voie choisie.** Un seul propriétaire, et dans le programme qui reçoit réellement le clavier. Le moteur client reçoit un mode nouveau, `--capture-system-keys zyrdesk`, qui n'est aucun des trois existants :
+
+- il décide du **focus** de sa propre fenêtre, jamais du premier plan, que cette fenêtre ne peut pas tenir puisqu'elle est portée dans la nôtre ;
+- il **repose son crochet à chaque fois que le clavier lui revient**, donc il redevient le plus récent de la chaîne aux moments précis où la panne se produisait ;
+- il n'avale **que Tab et Échap**. Alt, Control, Majuscule et la touche Windows passent intacts, ce qui est la condition pour que les raccourcis de ZyrDesk, tenus par l'enregistrement de combinaisons du système, continuent de fonctionner ; c'est ce qu'avale le mode `always` du moteur qui les avait cassés ([D32](DECISIONS.md)).
+
+La capture propre à la bibliothèque d'affichage reste éteinte dans ce mode, pour la même raison. Ce que le moteur récupère est poussé dans sa file d'événements comme n'importe quelle frappe, donc le chemin qui l'envoie à l'ordinateur d'en face est celui de toutes les autres touches, sans exception à maintenir.
+
+**Les deux voies ne peuvent pas tourner ensemble**, étant le même crochet du système : le choix est un réglage, `system_keys_in_the_engine`, écrit dans le fichier de réglages et porté jusqu'à la ligne de commande du moteur. Il est à « non » par défaut, l'ancienne voie restant en place le temps de la comparer à la neuve sur une session réelle. Une fois la neuve validée, `crates/zyr-ui/src/keys.rs`, le délai de grâce et le suivi du premier plan qui ne sert qu'à eux s'en vont ensemble.
+
+**Deux fautes trouvées en chemin et corrigées.** La lecture de l'état des touches depuis l'intérieur du crochet, ajoutée la veille, est retirée : le système n'a pas fini avec la frappe dont il parle à ce moment-là, et le journal l'a confirmé sur une session entière, ce compteur restant à zéro pendant que des appuis manquaient. Et la réponse de la demande de focus était lue comme un échec quand elle valait « personne ne l'avait avant », ce qui est une réponse ordinaire ; ce qui tranche est la lecture prise juste après, comme ailleurs dans le même fichier.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

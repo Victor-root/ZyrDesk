@@ -216,6 +216,12 @@ fn what_to_ask_for(app: &AppHandle, preferred: Preferred) -> SessionSettings {
     let screen = crate::picture::the_screen_of_this_computer(app);
     let settings = preferred.settings(screen);
     crate::picture::tell_what_is_asked_for(app, screen, preferred.asked, &settings);
+    // Which of the two programs takes the keys this computer keeps for
+    // itself, said here because here is where the answer is settled and
+    // seconds before the picture that would lay the hook. Those keys are
+    // a thing of Windows, and so is the hook that takes them.
+    #[cfg(windows)]
+    crate::keys::the_engine_owns_them(settings.system_keys_in_the_engine);
     settings
 }
 

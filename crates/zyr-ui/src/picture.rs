@@ -1380,10 +1380,10 @@ pub fn the_keyboard_back(_app: &AppHandle) {}
 /// keystroke, and by then the shell has had both. The journal wrote the
 /// answer in one word, « refusé », on every session it was tried on.
 ///
-/// It is also no longer needed. What a fallen front used to cost was the
-/// session's Alt+Tab, and it cost that because the shell holding the front
-/// read as somebody else; it no longer does, and the keys stay the far
-/// computer's through the whole flap. See `Front::TheShell`.
+/// What a fallen front costs is the session's Alt+Tab, for as long as this
+/// program is the one taking those keys; the answer to that is not here
+/// but in who takes them, and it is the engine in the mode that asks it to
+/// ([D43](../../docs/DECISIONS.md)).
 #[cfg(windows)]
 pub fn the_session_back(app: &AppHandle) {
     let asked = app.clone();
@@ -1767,23 +1767,6 @@ pub enum Front {
     Ours,
     /// The player's, which during a session means the picture.
     ThePlayer,
-    /// The shell of this computer: its desktop, its task bar, and its own
-    /// window switcher.
-    ///
-    /// Not somebody else, and this is the whole of what took eight rounds
-    /// to see. Nobody switches to the shell: it is where the front goes
-    /// when nothing holds it, and it is where the switcher that Alt+Tab
-    /// opens lives. Counted as a stranger, as it was, it made a loop that
-    /// no session ever came out of: one Alt+Tab let through opens that
-    /// switcher, the switcher takes the front, the front being a
-    /// stranger's lets the next Alt+Tab through, and that one opens it
-    /// again. The journal counted ten in a row on one session, against
-    /// six keys carried in all.
-    ///
-    /// Somebody who really leaves is a program with a name, and those are
-    /// told apart from this: a session left for a browser or a terminal
-    /// reads as `Elsewhere` and lets go as it should.
-    TheShell,
     /// Another program's, or nobody's.
     Elsewhere,
 }
@@ -1825,33 +1808,9 @@ fn whose_window(window: windows_sys::Win32::Foundation::HWND) -> Front {
         Front::Ours
     } else if owner == PLAYER.load(Ordering::Relaxed) {
         Front::ThePlayer
-    } else if owner != 0 && owner == the_shells_process() {
-        Front::TheShell
     } else {
         Front::Elsewhere
     }
-}
-
-/// The process this computer's shell runs in, by way of the window it
-/// keeps the desktop in.
-///
-/// Asked each time rather than remembered: a shell that has died and come
-/// back is a different process, and a session outlives that more often
-/// than one would like. Asked only where the front is worked out, which is
-/// a thread that may wait, and never on the road a keystroke travels.
-#[cfg(windows)]
-fn the_shells_process() -> u32 {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
-
-    // SAFETY: no argument, and a null answer is one of the answers.
-    let desk = unsafe { GetShellWindow() };
-    if desk.is_null() {
-        return 0;
-    }
-    let mut owner = 0u32;
-    // SAFETY: the window the call above answered, and the slot is ours.
-    unsafe { GetWindowThreadProcessId(desk, &mut owner) };
-    owner
 }
 
 /// Who holds the front, in the words the journal uses everywhere.
@@ -1878,11 +1837,6 @@ fn in_these_words(whose: Front, window: windows_sys::Win32::Foundation::HWND) ->
     match whose {
         Front::Ours => "à ZyrDesk".to_string(),
         Front::ThePlayer => "à l'image".to_string(),
-        // Named as well, and not folded into the two above: « the session
-        // keeps its keys » and « the session holds the front » are two
-        // different things from here on, and a journal that cannot show
-        // the difference cannot show this working.
-        Front::TheShell => format!("au bureau de Windows : {}", describe(window)),
         // Named rather than merely spotted: nothing here expects a third
         // window to ever hold the front during a session, so a report of
         // it happening is worth more with a name on it than without one.
@@ -2503,7 +2457,7 @@ static ITS_THREAD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::
 #[cfg(windows)]
 fn hand_the_keyboard_over(engine: windows_sys::Win32::Foundation::HWND, over: bool) {
     use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
     use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 
     // SAFETY: no argument, and a window this program took in hand with
@@ -2529,11 +2483,21 @@ fn hand_the_keyboard_over(engine: windows_sys::Win32::Foundation::HWND, over: bo
     // SAFETY: a window this program took in hand, which the call above
     // has just put on the same input as ours, which is what lets the
     // focus be given to a window of another program at all.
-    let took = !joined || unsafe { SetFocus(engine) }.is_null();
-    crate::journal::note(if joined && !took {
+    //
+    // What the ask answers is the window that held the focus before it,
+    // and nought is one of its ordinary answers: nobody held it. Read as a
+    // refusal, as it was, a focus perfectly well given read as one denied.
+    // Where the focus really went is asked after, of the shared input this
+    // very call joined, exactly as `the_keyboard_to_the_picture` does.
+    let took = joined
+        && unsafe {
+            SetFocus(engine);
+            GetFocus()
+        } == engine;
+    crate::journal::note(if took {
         "clavier confié à la session : les deux programmes partagent une entrée, l'image a le focus"
     } else if joined {
-        "clavier confié à la session mais l'image a refusé le focus"
+        "clavier confié à la session mais le focus n'a pas atterri sur l'image"
     } else {
         "clavier non confié : les deux programmes n'ont pas pu partager une entrée"
     });

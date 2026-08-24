@@ -96,6 +96,15 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         args.push("--packet-size".to_string());
         args.push(size.to_string());
     }
+    // The keys this computer keeps for itself, asked of the engine in the
+    // one mode where it may take them: from the focus, and leaving Alt,
+    // Control and the Windows key alone so this program keeps its own
+    // shortcuts. Not the engine's « always », which decides from the front
+    // its window can never hold and swallows Alt and Control whole.
+    if settings.system_keys_in_the_engine {
+        args.push("--capture-system-keys".to_string());
+        args.push("zyrdesk".to_string());
+    }
     if settings.absolute_mouse {
         args.push("--absolute-mouse".to_string());
     }
@@ -158,13 +167,21 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_is_never_asked_to_take_the_system_s_keys() {
-        // Alt+Tab et compagnie sont repris par le produit lui-même. Le
-        // moteur, lui, avale Alt et Ctrl en entier tant qu'il les tient,
-        // ce qui coupe tous les raccourcis du produit, qui sont tous des
-        // combinaisons Alt.
+    fn the_engine_is_not_asked_for_the_system_s_keys_unless_that_way_is_chosen() {
+        // Par défaut le produit les prend lui-même. Le mode « always » du
+        // moteur, lui, avale Alt et Ctrl en entier, ce qui coupe tous les
+        // raccourcis du produit, qui sont tous des combinaisons Alt : ce
+        // n'est jamais celui-là qui est demandé.
         let args = session_arguments("host", &SessionSettings::default());
         assert!(!args.iter().any(|a| a == "--capture-system-keys"));
+
+        let in_the_engine = SessionSettings {
+            system_keys_in_the_engine: true,
+            ..SessionSettings::default()
+        };
+        let args = session_arguments("host", &in_the_engine);
+        assert_eq!(value_of(&args, "--capture-system-keys"), Some("zyrdesk"));
+        assert!(!args.iter().any(|a| a == "always"));
     }
 
     #[test]

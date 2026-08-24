@@ -157,6 +157,21 @@ static LAST_MODS: AtomicU32 = AtomicU32::new(0);
 static TOLD: AtomicU32 = AtomicU32::new(0);
 static TOLD_SEEN: AtomicU32 = AtomicU32::new(0);
 
+/// Whether the engine takes this computer's own keys rather than this
+/// program.
+///
+/// Told once as a session opens, and read where the hook would be laid.
+/// The two ways are the same hook of the system and only one of them may
+/// run; which one is a choice for as long as the new one is being weighed
+/// against the old, and the choice travels to the engine on its command
+/// line ([D43](../../docs/DECISIONS.md)).
+static ENGINE_OWNS: AtomicBool = AtomicBool::new(false);
+
+/// Says which of the two is to run, before a session lays anything.
+pub fn the_engine_owns_them(yes: bool) {
+    ENGINE_OWNS.store(yes, Ordering::SeqCst);
+}
+
 /// Takes the system's keys for as long as a session lasts.
 ///
 /// The callback reads nothing that belongs to a thread and asks the
@@ -164,6 +179,16 @@ static TOLD_SEEN: AtomicU32 = AtomicU32::new(0);
 /// window is are numbers this program keeps, written down elsewhere and
 /// only read here; see `crate::picture::the_session_is_in_front`.
 pub fn hold() {
+    // The engine takes them itself in the mode that asks it to, and the
+    // two cannot both run: this is the system's one hook of every
+    // keystroke, and two of them would each be answering the other. See
+    // `the_engine_owns_them`.
+    if ENGINE_OWNS.load(Ordering::SeqCst) {
+        crate::journal::note(
+            "touches système laissées au moteur : il les prend au focus de son image",
+        );
+        return;
+    }
     let Some(taken) = HOOK.hold(put_it_on, take_it_off) else {
         return;
     };
@@ -246,7 +271,6 @@ pub fn let_go() {
         &LATEST,
         &LONGEST,
         &ODD,
-        &SAVED_BY_FINGERS,
         &REFUSED,
         &LOST,
     ] {
@@ -322,15 +346,11 @@ static HELD_SINCE: AtomicBool = AtomicBool::new(false);
 
 /// Reads the same two off the keyboard itself, in the same two bits.
 ///
-/// The third word on Alt and Control, beside the name the system gives a
-/// keystroke and the stream this program follows, and the only one of the
-/// three that cannot be missed. A press this program is never called for
-/// leaves the stream believing nothing is held, and a name is only ever
-/// given to Alt; the keyboard knows what a finger is on whatever was
-/// delivered here. It is the same reading `no_key_left_down` already
-/// rests everything on, and it is a table in memory rather than a
-/// question put to the window manager, so it may be asked from the road
-/// every keystroke travels.
+/// Asked where the system has nothing in hand, which is the only place its
+/// answer can be trusted: the moment the hook is laid, before there has
+/// been any stream to follow. Asked from inside the callback it is not
+/// settled, and it was, and it never once answered; see
+/// `the_system_would_eat_it`.
 fn the_fingers_hold() -> u32 {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_CONTROL, VK_MENU};
 
@@ -383,38 +403,24 @@ fn read_the_modifiers() {
 /// us about: Control and Escape make a combination of the system's, and
 /// Control never makes a keystroke a « system » one.
 ///
-/// And the fingers beside both, which is the answer to the fault neither
-/// of them can see. A press this program is never called for is invisible
-/// to the stream by definition, and the journal caught the whole of it in
-/// one line: « Tab 1 enfoncée et 0 relâchée, Alt 0 et 0 », a Tab judged an
-/// ordinary Tab and let through, and the switcher of this computer
-/// opening on it because the system, which had seen the Alt, knew better.
-/// Three sources that cannot all be wrong at once, and a key is the
-/// system's if any of them says so: each of the three can only ever miss a
-/// modifier, never invent one, so joining them can only ever put right the
-/// one mistake that costs a session its Alt+Tab.
+/// The fingers were asked here too, for a while, and they are not asked
+/// any more. Inside this callback the system has not finished with the
+/// keystroke it is asking about, and what it says the keyboard is doing is
+/// not settled; the journal bore that out over a whole session of use,
+/// « 0 portée(s) sauvée(s) par les doigts » on every line, while presses
+/// went on missing. A reading that never once answered and cannot be
+/// trusted where it is taken is worth less than the two that remain.
 fn the_system_would_eat_it(code: u32, what: windows_sys::Win32::Foundation::WPARAM) -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_TAB};
 
-    let told = DOWN.load(Ordering::Relaxed);
-    let named = the_system_calls_it_its_own(what);
-    let asked = |held: u32| match code as u16 {
-        VK_TAB => named || held & 1 != 0,
-        VK_ESCAPE => named || held & 1 != 0 || held & 2 != 0,
+    let held = DOWN.load(Ordering::Relaxed);
+    let alt = the_system_calls_it_its_own(what) || held & 1 != 0;
+    match code as u16 {
+        VK_TAB => alt,
+        VK_ESCAPE => alt || held & 2 != 0,
         _ => false,
-    };
-    let eaten = asked(told | the_fingers_hold());
-    // Whether it took the fingers to get there, which is the whole worth
-    // of asking them and the one number that says this is doing something.
-    if eaten && !asked(told) {
-        SAVED_BY_FINGERS.fetch_add(1, Ordering::SeqCst);
     }
-    eaten
 }
-
-/// How many keys were carried on the strength of the fingers alone, the
-/// stream and the system's own name for the keystroke having both said no.
-static SAVED_BY_FINGERS: AtomicU32 = AtomicU32::new(0);
 
 /// Keys taken from this computer and then not delivered to the engine:
 /// the message refused by the system, and the picture's window gone.
@@ -592,13 +598,7 @@ unsafe extern "system" fn seen(
     // chasing what it seemed to say.
     LAST_KEY.store(key.vkCode, Ordering::SeqCst);
     LAST_UP.store(up, Ordering::SeqCst);
-    // The three joined, and not the stream alone: the line says what the
-    // answer beside it was decided on, and a « Alt non » under a key
-    // carried for Alt reads as a contradiction of itself.
-    LAST_MODS.store(
-        DOWN.load(Ordering::SeqCst) | the_fingers_hold(),
-        Ordering::SeqCst,
-    );
+    LAST_MODS.store(DOWN.load(Ordering::SeqCst), Ordering::SeqCst);
     WHYS[why as usize].fetch_add(1, Ordering::SeqCst);
     SEEN.fetch_add(1, Ordering::SeqCst);
     if why != 7 {
@@ -651,15 +651,12 @@ fn hand_it_over(
     if key.flags & LLKHF_EXTENDED != 0 {
         about |= 1 << 24;
     }
-    // Alt from the same three as the answer that got this key here; see
-    // `the_system_would_eat_it`. This bit is what the window is told about
-    // Alt, and telling it wrongly is telling the far computer wrongly: a
-    // Tab carried for an Alt+Tab and handed over as a bare Tab moves
-    // nothing on the far computer, which from a hand is a session that
-    // swallowed the key.
-    if the_system_calls_it_its_own(what)
-        || (DOWN.load(Ordering::SeqCst) | the_fingers_hold()) & 1 != 0
-    {
+    // Alt from the system's own name for this keystroke first, and from
+    // the stream after it; see `the_system_would_eat_it`. This bit is what
+    // the window is told about Alt, and telling it wrongly is telling the
+    // far computer wrongly: a Tab carried for an Alt+Tab and handed over
+    // as a bare Tab moves nothing on the far computer.
+    if the_system_calls_it_its_own(what) || DOWN.load(Ordering::SeqCst) & 1 != 0 {
         about |= 1 << 29;
     }
     if up {
@@ -717,7 +714,7 @@ pub fn tell() {
         "touches système : {} frappe(s) vues, {seen} candidate(s), {taken} portée(s) ; \
          {} ; vues : Tab {} enfoncée(s) et {} relâchée(s), Alt {} et {} ; \
          au plus {} ms d'attente avant nous et {} µs chez nous, {} appel(s) hors sujet, \
-         {} portée(s) sauvée(s) par le délai de grâce, {} par les doigts ; \
+         {} portée(s) sauvée(s) par le délai de grâce ; \
          {} refusée(s) par le moteur et {} sans fenêtre où aller ; \
          la dernière était {} {}, Alt {}, Ctrl {}, premier plan {}",
         ANY.load(Ordering::SeqCst),
@@ -730,7 +727,6 @@ pub fn tell() {
         LONGEST.load(Ordering::SeqCst),
         ODD.load(Ordering::SeqCst),
         crate::picture::grace_saves(),
-        SAVED_BY_FINGERS.load(Ordering::SeqCst),
         REFUSED.load(Ordering::SeqCst),
         LOST.load(Ordering::SeqCst),
         named(LAST_KEY.load(Ordering::SeqCst)),
