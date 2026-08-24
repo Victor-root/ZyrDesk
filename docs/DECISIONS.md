@@ -496,7 +496,7 @@ Dix Alt+Tab laissés passer à Windows parce que la session n'était pas au prem
 
 **La voie choisie.** Un seul propriétaire, et dans le programme qui reçoit réellement le clavier. Le moteur client reçoit un mode nouveau, `--capture-system-keys zyrdesk`, qui n'est aucun des trois existants :
 
-- il décide du **focus** de sa propre fenêtre, jamais du premier plan, que cette fenêtre ne peut pas tenir puisqu'elle est portée dans la nôtre ;
+- il décide du **focus** de sa propre fenêtre, jamais du premier plan, que cette fenêtre ne peut pas tenir puisqu'elle est portée dans la nôtre. Et il le lit des deux messages que le système envoie à cette fenêtre quand le clavier lui vient et la quitte, pas de ce que la bibliothèque d'affichage en dit : celle-ci répond à la question en comparant sa fenêtre avec celle du premier plan, donc pour une fenêtre portée dans une autre elle signale la première perte et ne peut plus jamais signaler un retour. Le premier essai l'a montré en une ligne, cinq touches portées puis « the session has lost the keyboard » à l'ouverture du menu flottant, et plus rien pendant les vingt secondes suivantes ;
 - il **repose son crochet à chaque fois que le clavier lui revient**, donc il redevient le plus récent de la chaîne aux moments précis où la panne se produisait ;
 - il n'avale **que Tab et Échap**. Alt, Control, Majuscule et la touche Windows passent intacts, ce qui est la condition pour que les raccourcis de ZyrDesk, tenus par l'enregistrement de combinaisons du système, continuent de fonctionner ; c'est ce qu'avale le mode `always` du moteur qui les avait cassés ([D32](DECISIONS.md)).
 
