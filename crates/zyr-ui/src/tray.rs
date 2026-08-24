@@ -182,7 +182,11 @@ fn drawn(dim: bool) -> tauri::Result<Image<'static>> {
     // Only what makes a pixel visible is touched: dimming the colours
     // instead would turn the drawing grey on a dark background and black
     // on a light one.
-    for pixel in faded.chunks_exact_mut(4) {
+    // Four bytes to a pixel, said as a size and not as a number: taken as
+    // a number the slices come back one at a time and nothing promises
+    // they are four long, and every reading of one has to answer for a
+    // length that cannot happen.
+    for pixel in faded.as_chunks_mut::<4>().0 {
         pixel[3] = (u16::from(pixel[3]) * DIMMED / 255) as u8;
     }
     Ok(Image::new_owned(faded, width, height))

@@ -425,6 +425,16 @@ Grand devant, petit chez nous : l'attente n'est pas la nôtre. Grand chez nous :
 
 **Ce que le moteur n'est pas.** Vérifié en remontant jusqu'au commit exact du SDL livré : ni le moteur client ni SDL ne posent de crochet clavier quand la capture des touches système est désactivée, ce qui est notre cas. La piste « le moteur passe devant nous » est close.
 
+## D38. L'analyse statique suit la dernière version de Rust, et c'est elle qui allume le rouge (2026-08-23, pendant M4)
+
+**Constat.** L'intégration continue était rouge sur chaque commit alors que le produit se compilait partout sans une erreur. Sur les quatre travaux de la CI, trois passaient : tests Windows, tests Linux, et construction de l'installateur Windows. Seul « Format et analyse statique » échouait, et seulement à l'étape clippy, sur **une** règle : `chunks_exact_mut` appelé avec une taille constante, à `crates/zyr-ui/src/tray.rs`.
+
+**La cause n'est pas dans le code, elle est dans l'écart de versions.** La CI installe la dernière version stable de Rust à chaque exécution. Cette règle-là est apparue dans une version postérieure à celle des machines de développement : localement elle n'existe pas, donc rien ne pouvait la voir avant de pousser. Écart mesuré ce jour-là : 1.94.1 en local contre 1.98.0 sur la CI.
+
+**Corrigé à la source**, en disant quatre comme une taille et non comme un nombre : pris comme un nombre, les tranches reviennent une par une et rien ne promet qu'elles font quatre octets, donc chaque lecture doit répondre d'une longueur qui ne peut pas se produire. Vérifié en installant la version exacte de la CI : plus une seule remarque sur tout l'espace de travail.
+
+**Ce que ça coûte de laisser la CI suivre la dernière version.** Chaque sortie de Rust peut allumer le rouge sur un commit qui n'y est pour rien. C'est le prix d'apprendre les nouvelles règles tôt, et il est payable tant que quelqu'un regarde la lampe. Ce qui a manqué ici n'est pas la politique de version : c'est que personne ne regardait. Figer la version dans `rust-toolchain.toml` supprimerait la surprise et supprimerait aussi les règles nouvelles jusqu'à une montée décidée ; à trancher si le rouge fortuit revient.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
