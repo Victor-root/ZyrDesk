@@ -1193,14 +1193,16 @@ Deux entrées du menu flottant méritent leur propre explication :
 
 ## Essai A/B des touches système (Alt+Tab)
 
-Deux façons de reprendre les touches que Windows garde pour lui coexistent le temps de les départager ([D43](../DECISIONS.md)). Le réglage est une ligne du fichier de réglages du service :
+Deux façons de reprendre les touches que Windows garde pour lui coexistent le temps de les départager ([D43](../DECISIONS.md)). **La nouvelle est celle par défaut** : il n'y a rien à activer, une session l'utilise. Le réglage sert à revenir à l'ancienne, par une ligne du fichier de réglages du service :
 
 ```
+system_keys_in_the_engine = yes   # le moteur les prend lui-même (défaut)
 system_keys_in_the_engine = no    # ZyrDesk les prend et les remet au moteur
-system_keys_in_the_engine = yes   # le moteur les prend lui-même
 ```
 
-Le service doit être arrêté puis redémarré pour que la ligne soit relue. La ligne de commande fait la même chose sans toucher au fichier : `zyr-cli connect … --system-keys-in-the-engine`.
+Le service doit être arrêté puis redémarré pour que la ligne soit relue. La ligne de commande revient à l'ancienne sans toucher au fichier : `zyr-cli connect … --system-keys-in-zyrdesk`.
+
+Les moteurs doivent avoir été recompilés : un moteur d'avant ne connaît pas le mode demandé et refuse de démarrer. La routine de mise à jour habituelle s'en charge, à condition d'attendre que la compilation des moteurs ait abouti avant de les récupérer.
 
 **Tout l'essai se fait pendant une seule session, sans jamais se reconnecter.** C'est le point important : la panne se déclenche une fois et ne se répare qu'à la reconnexion, donc un essai coupé en deux ne prouve rien.
 

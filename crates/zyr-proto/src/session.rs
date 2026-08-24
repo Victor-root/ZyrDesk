@@ -133,8 +133,9 @@ pub struct SessionSettings {
     /// where this program takes them and hands them to the engine's window;
     /// on is the new one, where the engine takes them in the process that
     /// really receives the keyboard, from the focus rather than from the
-    /// front. Kept as a choice until a session's worth of use has said
-    /// which of the two to keep ([D43](../../docs/DECISIONS.md)).
+    /// front. On by default: the old way is the one the journal caught
+    /// failing, so the new one is what a session gets unless somebody asks
+    /// for the old back ([D43](../../docs/DECISIONS.md)).
     pub system_keys_in_the_engine: bool,
 }
 
@@ -150,7 +151,7 @@ impl Default for SessionSettings {
             packet_size: None,
             absolute_mouse: true,
             stats_overlay: false,
-            system_keys_in_the_engine: false,
+            system_keys_in_the_engine: true,
         }
     }
 }
@@ -385,7 +386,7 @@ impl Default for Preferred {
             display_mode: DisplayMode::default(),
             absolute_mouse: true,
             stats_overlay: false,
-            system_keys_in_the_engine: false,
+            system_keys_in_the_engine: true,
         }
     }
 }

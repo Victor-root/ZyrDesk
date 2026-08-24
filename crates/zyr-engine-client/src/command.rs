@@ -57,28 +57,6 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         "--video-decoder".to_string(),
         "hardware".to_string(),
         "--frame-pacing".to_string(),
-        // Alt+Tab and its kin are taken by the product itself and carried
-        // to the far computer, and the engine is asked for none of it.
-        //
-        // It was asked, and the option is real, and it cannot work here.
-        // The engine takes those keys by putting itself in front of every
-        // keystroke of the whole computer, and it only acts on them while
-        // it believes its own window is the one the system calls the
-        // front. That window is carried inside the product's own for the
-        // length of a session, which makes it a child window, and the
-        // system gives the front to the head of a family and never to a
-        // member of it: it stops believing it at the first message that
-        // asks, seconds in.
-        //
-        // What it does do in those few seconds is swallow Alt and Control
-        // outright, both of them, before anything else on this computer
-        // sees them. Every shortcut of the product's own is an Alt
-        // combination, so for as long as the engine holds those keys, none
-        // of them work, and the person cannot leave full screen from the
-        // keyboard.
-        //
-        // Asked for, then, it costs the product's own shortcuts and gives
-        // a few seconds of what the product now does for a whole session.
         // What tells the far computer it may put its desktop at the size
         // being asked for. Its name comes from playing games, where it
         // meant letting the far machine choose its own settings; with the
@@ -167,21 +145,20 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_is_not_asked_for_the_system_s_keys_unless_that_way_is_chosen() {
-        // Par défaut le produit les prend lui-même. Le mode « always » du
-        // moteur, lui, avale Alt et Ctrl en entier, ce qui coupe tous les
-        // raccourcis du produit, qui sont tous des combinaisons Alt : ce
-        // n'est jamais celui-là qui est demandé.
+    fn the_engine_takes_the_system_s_keys_unless_the_old_way_is_asked_for() {
+        // Le mode demandé n'est jamais « always » : celui-là avale Alt et
+        // Ctrl en entier, ce qui coupe tous les raccourcis du produit, qui
+        // sont tous des combinaisons Alt.
         let args = session_arguments("host", &SessionSettings::default());
-        assert!(!args.iter().any(|a| a == "--capture-system-keys"));
-
-        let in_the_engine = SessionSettings {
-            system_keys_in_the_engine: true,
-            ..SessionSettings::default()
-        };
-        let args = session_arguments("host", &in_the_engine);
         assert_eq!(value_of(&args, "--capture-system-keys"), Some("zyrdesk"));
         assert!(!args.iter().any(|a| a == "always"));
+
+        let the_old_way = SessionSettings {
+            system_keys_in_the_engine: false,
+            ..SessionSettings::default()
+        };
+        let args = session_arguments("host", &the_old_way);
+        assert!(!args.iter().any(|a| a == "--capture-system-keys"));
     }
 
     #[test]

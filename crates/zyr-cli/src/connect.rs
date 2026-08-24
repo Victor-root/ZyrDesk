@@ -64,11 +64,12 @@ pub struct Args {
     #[arg(long)]
     relative_mouse: bool,
 
-    /// Leaves the keys this computer keeps for itself, Alt+Tab first, to
-    /// the engine, which takes them from the focus of its own picture
-    /// instead of ZyrDesk taking them and handing them over
+    /// Takes the keys this computer keeps for itself, Alt+Tab first, in
+    /// ZyrDesk and hands them to the engine, instead of leaving the engine
+    /// to take them from the focus of its own picture, which is what a
+    /// session does unless this is asked for
     #[arg(long)]
-    system_keys_in_the_engine: bool,
+    system_keys_in_zyrdesk: bool,
 
     /// Pairs again even if this computer is already known
     #[arg(long)]
@@ -195,6 +196,6 @@ fn build_settings(args: &Args) -> Result<SessionSettings, String> {
         packet_size: None,
         absolute_mouse: !args.relative_mouse,
         stats_overlay: args.stats,
-        system_keys_in_the_engine: args.system_keys_in_the_engine,
+        system_keys_in_the_engine: !args.system_keys_in_zyrdesk,
     })
 }

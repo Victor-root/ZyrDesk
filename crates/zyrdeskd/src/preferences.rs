@@ -196,9 +196,10 @@ fn rendered(preferences: Preferences) -> String {
          # Statistiques affichées par-dessus l'image.\n\
          {STATS_OVERLAY} = {}\n\
          # Qui prend les touches que Windows garde pour lui, Alt+Tab en\n\
-         # tête : non, ZyrDesk les prend et les remet au moteur ; oui, le\n\
-         # moteur les prend lui-même, dans le programme qui reçoit\n\
-         # vraiment le clavier. Les deux ne peuvent pas tourner ensemble.\n\
+         # tête : oui, le moteur les prend lui-même, dans le programme qui\n\
+         # reçoit vraiment le clavier, ce qui est la façon de faire ; non,\n\
+         # ZyrDesk les prend et les remet au moteur, ce qui est l'ancienne\n\
+         # et ne marchait pas. Les deux ne peuvent pas tourner ensemble.\n\
          {SYSTEM_KEYS_IN_THE_ENGINE} = {}\n\
          \n\
          # Ce que cet ordinateur fait quand c'est LUI qu'on regarde.\n\
