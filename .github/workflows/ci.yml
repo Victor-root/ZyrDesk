@@ -77,6 +77,12 @@ jobs:
       # NSIS n'est plus fourni par l'image Windows du runner, et son
       # installateur n'ajoute rien au PATH.
       #
+      # Demandé plusieurs fois : le dépôt d'où il vient répond parfois
+      # « service indisponible », et une minute de panne chez lui passait
+      # pour un défaut chez nous. Toute la compilation tombait au rouge
+      # sur un commit qui ne touchait pas à l'installateur, ce qui est la
+      # meilleure façon de ne plus regarder le voyant du tout.
+      #
       # Où il se pose n'est pas écrit d'avance : le paquet livre tantôt
       # la version 32 bits, tantôt la 64, et les deux ne s'installent pas
       # au même endroit. Le chemin était écrit en dur ici, et le jour où
@@ -85,7 +91,16 @@ jobs:
       # Cherché plutôt qu'écrit, et dit franchement s'il manque.
       - name: Installer NSIS
         run: |
-          choco install nsis --no-progress -y
+          $essais = 3
+          for ($essai = 1; $essai -le $essais; $essai++) {
+            choco install nsis --no-progress -y
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($essai -eq $essais) {
+              throw "NSIS n'a pas pu être installé en $essais essais"
+            }
+            Write-Host "NSIS non installé (essai $essai sur $essais), nouvel essai dans 20 s"
+            Start-Sleep -Seconds 20
+          }
           $ou = Get-ChildItem -Path "C:\Program Files\NSIS", "C:\Program Files (x86)\NSIS" `
             -Filter makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $ou) { throw "makensis introuvable après l'installation de NSIS" }
