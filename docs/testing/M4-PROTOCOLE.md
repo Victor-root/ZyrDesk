@@ -35,6 +35,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S23** | Nouveau. Éteindre l'hôte depuis la session lui laissait son écran à la taille du client. Le moteur hôte est maintenant prié de partir avant d'être pris, et le journal du service dit lequel des deux s'est produit |
 | **S24** | Nouveau. Le bouton flottant avait entièrement disparu à une reconnexion, sans une ligne nulle part. Une fenêtre qui n'a rien dessiné au bout de trois secondes est refermée et remontée, et tout ce qui l'empêche va au journal |
 | **R12septies** | Nouveau. Une trace blanche restait derrière le bouton après avoir cliqué une entrée du menu, le curseur étant loin du logo. La découpe de la fenêtre se pose maintenant après le dessin et non avant |
+| **S2**, **S7**, **S19** | **Changement de fond.** Un ordinateur sans écran virtuel ne voit plus du tout son écran modifié par une session : plus de changement de définition, donc plus rien à remettre en place. En échange, l'image arrive dans la forme de son écran à lui, donc des bandes noires si la session demande une autre forme ; choisir une taille de la bonne forme dans le menu de la session les enlève |
 
 ### Confirmé
 

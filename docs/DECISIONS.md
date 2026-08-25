@@ -569,6 +569,16 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Et l'affaire est racontée en un seul endroit.** [CLAVIER.md](CLAVIER.md) dit le symptôme, la règle de Windows qui commande tout, ce que fait le produit, les trois pièges qui font perdre une semaine, les quatre pistes déjà essayées qui ne peuvent pas marcher, où le code vit, et quoi lire dans les journaux si ça revient. Quinze allers-retours entre deux machines, c'est le prix d'une chose qui n'était écrite nulle part ; elle l'est maintenant.
 
+## D48. Un écran qui appartient à quelqu'un n'est pas à nous (2026-08-25, pendant M4)
+
+**La demande, et la comparaison qui la fonde.** « Quand je quitte la session, l'écran de l'hôte doit se remettre nickel comme avant d'en prendre le contrôle. Parsec y arrive. » Il y arrive parce qu'il ne touche jamais à l'écran de l'ordinateur qu'il montre : il le filme tel quel et met l'image à l'échelle de son côté. Rien à remettre, donc rien qui puisse rater.
+
+**Ce que faisait ZyrDesk, et pourquoi ça finit mal.** Sur une machine sans écran virtuel, nous demandions au moteur hôte de mettre l'écran physique à la taille de la session, et de le remettre après. Remettre est une chose qui peut rater, et elle rate précisément quand quelque chose d'autre a bougé les écrans entre temps : un deuxième bureau à distance, un moniteur qui se réveille, un câble. Ce qui suit est pire que ce qu'on évitait. Le code du moteur, lu ligne à ligne : il échoue à revenir à ce qu'il avait trouvé, **il rallume alors tous les écrans qu'il voit**, ce qui est en soi un changement d'écrans, ce qui est exactement la condition qui le fait réessayer. La boucle s'entretient toute seule et ne s'arrête jamais. Un relevé l'a montrée sur vingt secondes, entre la fin d'une session et l'arrêt du service, la personne entendant sa tour cliquer à travers ses moniteurs.
+
+**Corrigé en ne touchant plus rien.** Une seule question décide, et ce n'est pas celle de la session : cet ordinateur a-t-il un écran à lui à donner ? Un écran que ZyrDesk a fait pousser existe pour prendre la forme qu'une session demande, et les vrais sont éteints le temps de la session puis rendus. Un ordinateur qui n'en a pas n'a que des écrans réels, et un écran réel appartient à qui est assis devant. Sur celui-là, `dd_configuration_option = disabled` et rien d'autre : pas « touché avec précaution », pas « touché puis remis », **pas touché**. Un écran auquel on n'a jamais touché revient en n'étant jamais parti.
+
+**Ce que ça coûte, et ce qui reste à faire.** L'image arrive dans la forme de l'ordinateur d'en face et non dans la nôtre, donc une session qui demande une autre forme reçoit des bandes noires gravées à la source. Le remède n'est pas de déplacer les meubles d'en face : c'est de demander l'image dans **sa** forme à lui. Le moteur hôte ne publie sa résolution nulle part, donc elle doit voyager par le canal entre les deux services, et le lecteur de zyr-screen sait déjà la lire dans la liste d'écrans du moteur. En attendant, choisir une taille de la bonne forme dans le menu de la session suffit à supprimer les bandes.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

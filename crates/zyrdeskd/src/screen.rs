@@ -163,8 +163,10 @@ pub fn learn_from(engine_log: &std::path::Path, started_with: Option<&str>, log:
         ));
         let Some(gone) = started_with else {
             log.write(
-                "the engine captures the main screen, so a session asking for more than that \
-                 screen can draw gets it blown up",
+                "the engine captures the main screen and does not touch it: a session asking \
+                 for another size gets that screen blown up, and asking for another shape gets \
+                 black bars burned into the picture. A screen belonging to whoever sits in \
+                 front of it is not this product's to move",
             );
             return Learned::NothingToChange;
         };
