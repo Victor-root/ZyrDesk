@@ -524,6 +524,18 @@ La capture propre à la bibliothèque d'affichage reste éteinte dans ce mode, p
 
 **Vérifiable.** Le journal du service dit désormais lequel des deux s'est produit : parti de lui-même après avoir remis l'écran, ou pris. C'est la première question à poser d'un ordinateur revenu de travers, et rien ne pouvait y répondre avant.
 
+## D45. Un bouton flottant qui n'a jamais rien dessiné n'est pas un bouton (2026-08-25, pendant M4)
+
+**Le défaut.** À une reconnexion, le bouton flottant a entièrement disparu, et le raccourci censé le rappeler n'a rien fait non plus. Le journal de la session, complet du début à la fin, ne dit pas un mot à ce sujet.
+
+**Ce que le relevé établit.** Le premier plan est à l'image pendant toute la session, donc rien n'a caché le bouton pour cette raison. Aucune ligne « menu du bouton flottant ouvert » et aucune ligne « raccourci du menu sans effet » : le raccourci a donc trouvé la fenêtre, l'a montrée et lui a parlé sans que la page réponde. La seule lecture qui tient les deux ensemble est **une fenêtre debout dont la page ne tournait pas** : jamais chargée, ou emportée par les dix-huit heures de veille de l'ordinateur entre les deux sessions.
+
+**Pourquoi rien n'était visible.** La fenêtre n'est montrée que lorsque la page a mesuré ce qu'elle dessine, ce qui est juste : avant, c'est un logo sans logo dedans. Mais rien ne bornait cette attente. Une page muette laissait donc une fenêtre invisible pour toute la session et sourde au raccourci fait pour la ramener, sans trace nulle part. Deux fautes s'ajoutaient à cela : la taille de la dernière fenêtre survivait à sa fenêtre, si bien que la seule ligne qui prouve qu'un bouton a été dessiné manquait sur toutes les sessions sauf la première ; et un refus de construire la fenêtre était dit sur le flux d'erreur, que ce programme, compilé sans console, n'a pas.
+
+**Corrigé en surveillant ce qui n'a pas de recours.** Le bouton est la seule chose à nous posée sur l'image : sans lui, une session n'a plus de sortie que le clavier. La veille, qui passe déjà une fois par seconde, lui laisse trois tours pour dire ce qu'il dessine ; passé cela elle referme sa fenêtre et le tour suivant en remonte une neuve, dont la page repart de zéro. Trois tentatives par session, puis on le laisse tranquille : un bouton qu'on ne sait pas dessiner mérite une ligne de journal, pas une par seconde. La taille est oubliée avec sa fenêtre, et le refus de construire va au journal comme tout le reste.
+
+**Une faute trouvée en chemin.** La taille du logo dont le placement est calculé était restée à cinquante-deux points alors que la page en dessine quarante-quatre depuis qu'il a été réduit : le bouton pendait à dix vrais pixels de son coin pendant toute chaque session.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

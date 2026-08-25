@@ -87,9 +87,25 @@ fn margin() -> i32 {
     MARGIN
 }
 
-/// Size of the button alone, as the page draws it, before the page has
-/// had a chance to measure itself and say better.
-const BUTTON: f64 = 52.0;
+/// Size of the button alone, in page pixels, as the page draws it.
+///
+/// The same number as the logo's in `bouton.css`, and it has to stay the
+/// same number: everything about where the button hangs is worked out
+/// from it, and nothing ever corrects it afterwards. Left behind once
+/// when the logo was made smaller, it hung the button ten real pixels off
+/// its corner for the whole of every session.
+const BUTTON: f64 = 44.0;
+
+/// How many turns of the watch the button's page is given to say what it
+/// draws before the button is called stillborn.
+const SPEAKS_WITHIN: u32 = 3;
+
+/// How many times one session will put it up again before leaving it be.
+///
+/// Bounded on purpose. A button that cannot be drawn at all is a fault
+/// worth one line in the journal and not one a second, and a session
+/// without its button is still a session.
+const TRIES: u32 = 3;
 
 /// How far the mouse has to travel, while holding the button, before it
 /// is a drag and no longer a click.
@@ -280,6 +296,19 @@ static ITS_LOGO: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::ne
 /// Nothing is shown before then: a window that has said nothing yet is
 /// the size of a logo with no logo drawn in it.
 static READY: AtomicBool = AtomicBool::new(false);
+
+/// Turns of the watch the button has stood there without that ever
+/// happening, and how many times this session may still put it up again.
+///
+/// Both exist for the same reason. Waiting for the page to speak is
+/// right; waiting for ever is not. A page that never speaks at all,
+/// because it never loaded or because the view carrying it did not
+/// survive the computer being asleep, leaves a window that is invisible
+/// for the whole session and deaf to the shortcut meant to bring it back,
+/// with nothing anywhere saying so. That is a whole session with no way
+/// out of the picture but the keyboard.
+static SILENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static TRIES_LEFT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(TRIES);
 
 /// Set while the person has hidden the button from its own menu.
 ///
@@ -598,9 +627,12 @@ fn adopt(app: &AppHandle, process: u32) -> bool {
         return false;
     }
     // A new session starts with the button on screen and its menu shut,
-    // whatever was done with the one before.
+    // whatever was done with the one before, and with its whole allowance
+    // of tries at being drawn at all.
     HIDDEN.store(false, Ordering::Relaxed);
     MENU_UP.store(false, Ordering::Relaxed);
+    SILENT.store(0, Ordering::Relaxed);
+    TRIES_LEFT.store(TRIES, Ordering::Relaxed);
     *state.watched.lock().expect("session suivie") = Some(process);
     true
 }
@@ -648,7 +680,16 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
             let _ = window.emit(RESET, ());
             let _ = window.show();
         }
-        lay_the_button(picture);
+        if READY.load(Ordering::Relaxed) {
+            SILENT.store(0, Ordering::Relaxed);
+            lay_the_button(picture);
+        } else if stillborn() {
+            // Closed and not merely hidden: what is asked for here is a
+            // page that runs, and only a new window brings one. The next
+            // turn of the watch finds nothing standing and builds it.
+            let _ = window.close();
+            ITS_WINDOW.store(0, Ordering::Relaxed);
+        }
         return;
     }
 
@@ -710,9 +751,38 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
             );
         }
         // A button that could not be drawn is not a reason to disturb a
-        // session that is otherwise fine.
-        Err(e) => eprintln!("le bouton flottant n'a pas pu s'ouvrir : {e}"),
+        // session that is otherwise fine. It is a reason to write it
+        // down: this program is built without a console, so a refusal
+        // said on the error stream is said to nobody at all, and a
+        // session with no button and no line about it cannot be told
+        // from one where nothing was ever tried.
+        Err(e) => note(&format!("le bouton flottant n'a pas pu s'ouvrir : {e}")),
     }
+}
+
+/// Whether the button standing there has gone too long without ever
+/// saying what it draws, and counts one more try against this session
+/// when it has.
+///
+/// Answered here rather than watched from outside because this is the
+/// only place that comes round once a second with the button in hand.
+fn stillborn() -> bool {
+    if SILENT.fetch_add(1, Ordering::Relaxed) + 1 < SPEAKS_WITHIN {
+        return false;
+    }
+    SILENT.store(0, Ordering::Relaxed);
+    let left = TRIES_LEFT.load(Ordering::Relaxed);
+    if left == 0 {
+        return false;
+    }
+    TRIES_LEFT.store(left - 1, Ordering::Relaxed);
+    note(&format!(
+        "bouton flottant : rien de dessiné après {} s, la fenêtre est refermée et remontée ; \
+         {} tentative(s) après celle-ci",
+        (LOOK * SPEAKS_WITHIN).as_secs(),
+        left - 1
+    ));
+    true
 }
 
 /// What the button comes to in real pixels, on the screen it hangs over.
@@ -720,9 +790,9 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
 /// Everything in this file is counted in real pixels: the picture is
 /// measured with the system's own ruler, and so is the mouse. What the
 /// page draws is counted in the other kind, and on a screen magnified to
-/// a hundred and seventy-five per cent the same button is fifty-two of
-/// one and ninety-one of the other. A window taken to be the smaller of
-/// the two shows its own background all around the button.
+/// a hundred and seventy-five per cent the same button is forty-four of
+/// one and seventy-seven of the other. A window taken to be the smaller
+/// of the two shows its own background all around the button.
 fn button_size(app: &AppHandle) -> u32 {
     let scale = app
         .get_webview_window(crate::HOME)
@@ -750,6 +820,12 @@ pub fn lower(app: &AppHandle) {
     }
     ITS_WINDOW.store(0, Ordering::Relaxed);
     READY.store(false, Ordering::Relaxed);
+    // The size goes with the window that had it. Kept, it belonged to a
+    // window that no longer exists, and the next session's button, being
+    // the same size, changed nothing and therefore said nothing: the one
+    // line that tells a button that was drawn from one that never was
+    // went missing on every session but the first.
+    SIZED.store(0, Ordering::Relaxed);
     // A menu that goes down with its window never says it closed, and a
     // yes left standing here would stop the keyboard ever being given
     // back.

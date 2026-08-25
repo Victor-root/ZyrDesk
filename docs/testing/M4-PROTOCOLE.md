@@ -35,6 +35,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R30**, **R31** | Ce qu'il reste de l'écran virtuel à vérifier : que tout soit bien remis en place à la fin d'une session, et que le retrait du produit ne laisse rien |
 | **S6**, **S8** | Rien n'a changé pour eux, mais ils passent par le même chemin : à refaire une fois pour être sûr que l'écran virtuel ne réintroduit pas de bande noire |
 | **S23** | Nouveau. Éteindre l'hôte depuis la session lui laissait son écran à la taille du client. Le moteur hôte est maintenant prié de partir avant d'être pris, et le journal du service dit lequel des deux s'est produit |
+| **S24** | Nouveau. Le bouton flottant avait entièrement disparu à une reconnexion, sans une ligne nulle part. Une fenêtre qui n'a rien dessiné au bout de trois secondes est refermée et remontée, et tout ce qui l'empêche va au journal |
 
 ### Confirmé
 
@@ -987,6 +988,14 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Le journal du service dit lequel des deux s'est produit**, dans `service.log` du PC hôte, juste après `stop asked for` : `the engine went by itself, having put the screen back`, ou `the engine would not go and was taken, so the screen stays as the session left it`. La deuxième ligne avec un écran revenu de travers, c'est la même panne ; la première avec un écran de travers, c'est autre chose et il faut le dire.
 >
 > À refaire une seconde fois en arrêtant simplement le service (`zyrdeskd stop` sur l'hôte, ou **Arrêter le service** depuis la fenêtre) pendant une session : même attendu, même paire de lignes.
+
+> **S24 (le bouton flottant est là à chaque session, même longtemps après)**
+>
+> Ouvrir une session, la terminer, **laisser ZyrDesk ouvert** et l'ordinateur tranquille un long moment, veille comprise si elle arrive. Rouvrir une session vers le même hôte.
+>
+> Attendu : le bouton flottant est là, dans son coin, comme à la première session, et le raccourci du menu l'ouvre.
+>
+> **Si jamais il manque**, le journal de la fenêtre le dit maintenant, ce qui n'était pas le cas : soit `bouton flottant : rien de dessiné après 3 s, la fenêtre est refermée et remontée`, et le bouton doit revenir dans la foulée, soit `le bouton flottant n'a pas pu s'ouvrir : …`, qui nomme le refus. Un silence complet du journal sur ce point n'est plus une réponse possible.
 
 ---
 
