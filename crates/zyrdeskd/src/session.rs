@@ -32,8 +32,8 @@ use windows_sys::Win32::Security::{
     TOKEN_QUERY, TokenPrimary, TokenSessionId,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CREATE_ALWAYS, CreateFileW, FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL, FILE_CREATION_DISPOSITION,
-    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    CreateFileW, FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL, FILE_CREATION_DISPOSITION,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_ALWAYS, OPEN_EXISTING,
 };
 use windows_sys::Win32::System::Console::{
     AttachConsole, CTRL_C_EVENT, FreeConsole, GenerateConsoleCtrlEvent, SetConsoleCtrlHandler,
@@ -231,12 +231,20 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
     let job = job_object()?;
 
     let nothing = inheritable_file(OsStr::new(NOTHING), GENERIC_READ, OPEN_EXISTING)?;
+    keep_what_the_engine_said(&launch.log);
     // Append access and not plain write: every line the engine writes
     // then lands at the end of the file as it stands, wherever its own
     // cursor was. With plain write, emptying the journal from the window
     // while the engine ran made its next line land at its old position,
     // behind a gap of nothing, and the file never read clean again.
-    let log = inheritable_file(launch.log.as_os_str(), FILE_APPEND_DATA, CREATE_ALWAYS)?;
+    //
+    // Opened and not created: created, it was emptied at every start of
+    // the engine, and the engine starts again whenever the service does,
+    // whenever the screen moves to another session, whenever what this
+    // computer serves is changed, and whenever it falls over. What it
+    // said about a fault was therefore gone minutes later, which is
+    // exactly when somebody comes looking for it.
+    let log = inheritable_file(launch.log.as_os_str(), FILE_APPEND_DATA, OPEN_ALWAYS)?;
 
     let mut line = command_line(&launch.exe, &launch.arguments);
     let mut desktop: Vec<u16> = wide(DESKTOP);
@@ -504,6 +512,24 @@ fn job_object() -> io::Result<Handle> {
         return Err(io::Error::last_os_error());
     }
     Ok(job)
+}
+
+/// Keeps what the engine said before, and marks where its next run
+/// begins.
+///
+/// Written with the product's own journal writer and then let go of, a
+/// moment before the engine is handed the file: that writer never empties
+/// what it opens and cuts the file back from its top once it has grown
+/// past reason, which is the rule every other log of this product follows
+/// and the one this file was missing. The line it leaves is what tells
+/// one run of the engine from the one before it.
+///
+/// A file that cannot be written to is not a reason to refuse to start an
+/// engine: the engine will make its own.
+fn keep_what_the_engine_said(log: &Path) {
+    if let Ok(kept) = zyr_proto::log::Log::open(log) {
+        kept.write("--- engine starting ---");
+    }
 }
 
 /// File the started process inherits, for its output or its input.
