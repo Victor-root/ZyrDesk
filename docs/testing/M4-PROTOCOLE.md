@@ -36,6 +36,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S24** | Nouveau. Le bouton flottant avait entièrement disparu à une reconnexion, sans une ligne nulle part. Une fenêtre qui n'a rien dessiné au bout de trois secondes est refermée et remontée, et tout ce qui l'empêche va au journal |
 | **R12septies** | Nouveau. Une trace blanche restait derrière le bouton après avoir cliqué une entrée du menu, le curseur étant loin du logo. La découpe de la fenêtre se pose maintenant après le dessin et non avant |
 | **R30** | **Une machine qui n'avait pas d'écran virtuel doit en avoir un au prochain démarrage du service.** Il n'était posé qu'à l'inscription du service, donc jamais sur un ordinateur inscrit avant que ce code existe. À vérifier dans `service.log` de l'hôte : `virtual screen already in place`, ou la suite des étapes de la pose |
+| **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
 | **S25** | Nouveau, et c'est le sujet du lot. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
 
 ### Confirmé
@@ -1045,6 +1046,18 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Pourquoi ça relance l'image.** Le moteur apprend la taille, le débit et le codec **à son démarrage et jamais après** : il n'existe aucune façon de les lui changer en marche. Le reste du menu, lui, se demande au moteur en marche et prend effet tout de suite. C'est pour ça que ces trois-là seulement ont un bouton, et que les autres n'en ont pas.
 >
 > Le journal du client raconte la relance : `réglages appliqués : le lecteur N est relancé`, `lecteur N arrêté`, `image relancée avec ce qui est choisi maintenant`, puis les lignes d'une ouverture ordinaire.
+
+> **R35 (les quatre chiffres du menu sont tous remplis)**
+>
+> Pendant une session, ouvrir le menu du bouton flottant et regarder la barre du haut : **Décodage**, **Encodage**, **Réseau**, **Débit**, et en dessous le codec, la taille et la cadence.
+>
+> Attendu : **les quatre portent un nombre**, aucun ne porte un tiret, et la ligne du dessous se lit par exemple `HEVC · 1920x1200 · 60 images/s`. Les valeurs bougent d'une seconde à l'autre : la barre se remplit tant que le menu est ouvert, une fois par seconde.
+>
+> Le réseau doit valoir quelques millisecondes sur un réseau local, jamais zéro. C'est le vrai aller-retour entre les deux ordinateurs et non un aller-retour local : le tunnel transporte cette mesure de bout en bout, il ne la termine pas de ce côté.
+>
+> **Ce qui n'allait pas.** Le réseau et la cadence sortaient vides à chaque fois, et eux seuls, depuis le premier jour. Le moteur ne les accumule pas comme les autres sur sa fenêtre de mesure : il ne les pose qu'en fondant deux fenêtres l'une dans l'autre, ce que fait sa propre surcouche dessinée et ce que nous ne faisons pas. Ils sont maintenant demandés et calculés au moment d'écrire la ligne.
+>
+> **Un tiret veut toujours dire « pas de mesure », jamais zéro.** Une seconde sans image décodée n'a pas un temps de décodage nul, et écrire zéro serait mentir. Un tiret qui persiste sur les quatre à la fois, en revanche, veut dire que la ligne n'est pas écrite du tout : le fichier de mesures vit à côté du journal du lecteur, dans `logs`.
 
 > **R18 (un réglage survit à tout)**
 >
