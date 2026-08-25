@@ -21,6 +21,18 @@
       </button>
 
       <div class="menu repliee" id="menu" role="menu">
+        <!-- Ce que la session coûte à l'instant. Rempli au fil de
+             l'ouverture par ce que le moteur écrit une fois par seconde :
+             les chiffres et leurs mots vivent dans le script, une seule
+             fois, plutôt qu'une deuxième copie ici qui s'écarterait de la
+             vraie au premier changement. -->
+        <div class="mesures" id="mesures" role="status">
+          <div class="chiffres" id="chiffres"></div>
+          <p class="flux" id="flux"></p>
+        </div>
+
+        <div class="separateur" role="separator"></div>
+
         <button
           class="item"
           type="button"

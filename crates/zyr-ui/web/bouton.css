@@ -138,6 +138,57 @@
   box-shadow: var(--ombre-2);
 }
 
+/* ---- La barre des mesures -------------------------------------------- */
+
+/* Ce que la session coûte, en haut du panneau qui s'ouvre.
+
+   En haut parce que c'est ce qu'on vient voir : le menu sert une fois de
+   temps en temps, ces quatre nombres se regardent chaque fois qu'une image
+   hésite. Attachée au bouton et non à l'écran, puisque le bouton se
+   déplace et qu'une bande clouée en haut de l'écran serait une deuxième
+   fenêtre toujours au-dessus, avec sa propre vie à tenir. */
+.mesures {
+  padding: var(--pas-2) var(--pas-2) var(--pas-1);
+}
+
+.chiffres {
+  display: flex;
+  gap: var(--pas-4);
+}
+
+.chiffres > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* Une largeur qui ne dépend pas du nombre écrit dedans : sans cela la
+     barre respire au rythme des mesures, et le menu entier avec elle. */
+  min-width: 78px;
+}
+
+.chiffres b {
+  font-size: var(--legende);
+  font-weight: 500;
+  color: var(--texte-faible);
+}
+
+.chiffres em {
+  font-style: normal;
+  /* Des chiffres de largeur égale : sans eux le nombre saute d'un pixel à
+     chaque dixième qui change, et quatre nombres qui sautent une fois par
+     seconde attirent l'oeil plus que ce qu'ils disent. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* De quoi l'image est faite, sous les chiffres parce que cela ne change
+   pas d'une seconde à l'autre et ne se lit qu'une fois. */
+.flux {
+  margin: var(--pas-1) 0 0;
+  font-size: var(--legende);
+  color: var(--texte-faible);
+}
+
+/* ---- Les entrées ----------------------------------------------------- */
+
 .item {
   display: flex;
   align-items: center;

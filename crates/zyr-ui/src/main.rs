@@ -24,6 +24,7 @@ mod floating;
 mod folders;
 mod icon;
 mod journal;
+mod mesures;
 mod picture;
 mod service;
 mod session;
@@ -81,6 +82,7 @@ fn main() {
             folders::open_folder,
             journal::journal,
             journal::clear_journal,
+            mesures::session_measures,
             session::connect,
             session::sessions,
             session::apply_session,

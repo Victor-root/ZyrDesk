@@ -4,6 +4,7 @@
 //! file: rewriting that file while a session may be running would expose
 //! us to concurrent writes.
 
+use zyr_proto::paths;
 use zyr_proto::session::SessionSettings;
 
 /// Name of the application the host engine exposes.
@@ -74,6 +75,15 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         args.push("--packet-size".to_string());
         args.push(size.to_string());
     }
+    // What the session is costing, written where the window can read it
+    // and show it. Asked for always: it is one line replaced once a
+    // second, it costs nothing while nobody reads it, and a number that
+    // only starts existing once somebody thinks to ask for it is a number
+    // nobody has at the moment they need it.
+    if let Some(path) = paths::session_stats().to_str() {
+        args.push("--report-stats".to_string());
+        args.push(path.to_string());
+    }
     // The keys this computer keeps for itself, asked of the engine in the
     // one mode where it may take them: from the focus, and leaving Alt,
     // Control and the Windows key alone so this program keeps its own
@@ -135,6 +145,13 @@ mod tests {
         assert_eq!(value_of(&args, "--bitrate"), Some("80000"));
         assert_eq!(value_of(&args, "--video-codec"), Some("HEVC"));
         assert_eq!(value_of(&args, "--display-mode"), Some("windowed"));
+    }
+
+    #[test]
+    fn the_engine_always_says_what_the_session_costs() {
+        let args = session_arguments("host", &SessionSettings::default());
+        let path = value_of(&args, "--report-stats").expect("un chemin pour les mesures");
+        assert!(path.ends_with("session-stats.txt"));
     }
 
     #[test]

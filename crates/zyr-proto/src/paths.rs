@@ -148,6 +148,16 @@ pub fn preferences() -> PathBuf {
     data_dir().join("preferences.conf")
 }
 
+/// Where the client engine writes what the session is costing, once a
+/// second, replaced whole each time.
+///
+/// Beside the logs rather than with the settings: it is not a choice
+/// anybody made, it is a reading, and it is worth nothing once the session
+/// it describes is over.
+pub fn session_stats() -> PathBuf {
+    data_dir().join("session-stats.txt")
+}
+
 /// Key combinations the window answers to during a session.
 ///
 /// Apart from the preferences because nobody else needs them: they say

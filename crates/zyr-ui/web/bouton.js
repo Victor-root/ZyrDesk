@@ -19,13 +19,98 @@ const vue = {
   touchePleinEcran: document.getElementById("touche-plein-ecran"),
   toucheFin: document.getElementById("touche-fin"),
   appliquer: document.querySelector("[data-appliquer]"),
+  chiffres: document.getElementById("chiffres"),
+  flux: document.getElementById("flux"),
 };
+
+/* Les quatre chiffres de la barre, dans l'ordre où ils se lisent : ce que
+   coûte une image ici, ce qu'elle a coûté là-bas, ce qu'il y a entre les
+   deux, et ce que le fil porte vraiment.
+
+   Le mot et l'unité vivent ici et nulle part ailleurs. Le moteur envoie
+   des nombres, la page décide comment on les lit. */
+const MESURES = [
+  { cle: "decodeMs", mot: "Décodage", unite: "ms", apres: 2 },
+  { cle: "hostMs", mot: "Encodage", unite: "ms", apres: 2 },
+  { cle: "networkMs", mot: "Réseau", unite: "ms", apres: 0 },
+  { cle: "bitrateMbps", mot: "Débit", unite: "Mb/s", apres: 2 },
+];
+
+/* Une mesure absente s'écrit ainsi. Le moteur ne dit rien plutôt que zéro
+   quand il n'a rien mesuré, et zéro serait un mensonge : une seconde sans
+   image décodée n'a pas un temps de décodage nul. */
+const RIEN = "-";
+
+/* Le rythme du moteur, qui écrit une fois par seconde. Demander plus
+   souvent relirait le même fichier pour le même nombre. */
+const RYTHME = 1000;
+
+let mesure = null;
 
 /* Le temps qu'un refus reste lisible avant de laisser la place. */
 const TEMPS_SOUCI = 4000;
 
 let ouvert = false;
 let effacement = null;
+
+/* La barre se remplit tant que le menu est ouvert, et pas une seconde de
+   plus : des chiffres que personne ne regarde ne valent ni le fichier ni
+   le réveil. */
+function suisLesMesures(veut) {
+  clearInterval(mesure);
+  mesure = null;
+  if (!veut) {
+    return;
+  }
+  litLesMesures();
+  mesure = setInterval(litLesMesures, RYTHME);
+}
+
+async function litLesMesures() {
+  let dit = {};
+  try {
+    dit = await invoke("session_measures");
+  } catch {
+    dit = {};
+  }
+  vue.chiffres.replaceChildren(
+    ...MESURES.map((quoi) => {
+      const bloc = document.createElement("span");
+      const mot = document.createElement("b");
+      mot.textContent = quoi.mot;
+      const valeur = document.createElement("em");
+      const nombre = dit[quoi.cle];
+      valeur.textContent =
+        typeof nombre === "number"
+          ? `${nombre.toFixed(quoi.apres)} ${quoi.unite}`
+          : RIEN;
+      bloc.append(mot, valeur);
+      return bloc;
+    }),
+  );
+  vue.flux.textContent = leFlux(dit);
+  // Les chiffres ont une largeur fixe et la ligne du dessous est la plus
+  // courte du menu, donc rien ne bouge d'ordinaire ; ceci est le filet
+  // pour le jour où quelque chose bougera, la fenêtre étant taillée sur
+  // ce que la page dessine et pas sur ce qu'elle dessinait avant.
+  requestAnimationFrame(ajusteLaFenetre);
+}
+
+/* La ligne grise sous les chiffres : de quoi est faite l'image. Ce qui
+   manque ne laisse pas de trou, il ne s'écrit pas. */
+function leFlux(dit) {
+  const bouts = [];
+  if (dit.codec) {
+    bouts.push(dit.codec);
+  }
+  if (dit.width && dit.height) {
+    bouts.push(`${dit.width}x${dit.height}`);
+  }
+  if (typeof dit.fps === "number") {
+    bouts.push(`${dit.fps.toFixed(0)} images/s`);
+  }
+  return bouts.join(" · ");
+}
 
 function montre(element, visible) {
   element.classList.toggle("cache", !visible);
@@ -184,6 +269,7 @@ function ouvre(veut) {
   // restait sourde jusqu'à ce qu'on la rouvre. Le coeur s'en charge dès
   // qu'il sait que le menu est fermé.
   invoke("floating_menu", { open: veut }).catch(() => {});
+  suisLesMesures(veut);
   if (!veut) {
     montre(vue.souci, false);
     // Un sous-menu laissé ouvert rouvrirait le menu avec lui, donc une
