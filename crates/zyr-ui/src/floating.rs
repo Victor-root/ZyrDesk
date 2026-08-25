@@ -896,12 +896,44 @@ pub fn floating_size(width: u32, height: u32, shape: Vec<Piece>) -> Result<(), S
     // rather than the one it has: a shape wider than the window it is put
     // on is simply clipped by it, so setting it early costs nothing, while
     // a window briefly at its new size under its old shape shows.
-    cut_to_what_is_drawn(&shape, size.0);
+    //
+    // And only when it is a different shape. Cutting is neither free nor
+    // silent: the system redraws the window on every cut, and what it
+    // redraws is the window's own ground until the page paints over it.
+    // The page asks for this several times a frame while a hand runs over
+    // the logo, and once a second all session long for the measures,
+    // nearly always with the very shape the window already wears.
+    let drawn = the_shape_of(&shape, size.0);
+    if SHAPED.swap(drawn, Ordering::Relaxed) != drawn {
+        cut_to_what_is_drawn(&shape, size.0);
+    }
     // The page has drawn something, so there is something to show.
     READY.store(true, Ordering::Relaxed);
     put_the_button(corner, size, how_it_shows());
     tell_the_button(was, size, &shape);
     Ok(())
+}
+
+/// The shape this window was last cut to, so an identical cut can be
+/// left alone; see `floating_size`. Nought is « never cut », which is
+/// every window that has just been taken hold of.
+static SHAPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// That shape in one number.
+///
+/// The width goes in with it: the pieces are counted from the window's
+/// right edge, so the same pieces on a window of another width are
+/// another cut.
+fn the_shape_of(shape: &[Piece], width: i32) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let mut how = std::collections::hash_map::DefaultHasher::new();
+    width.hash(&mut how);
+    for piece in shape {
+        (piece.x, piece.y, piece.width, piece.height, piece.radius).hash(&mut how);
+    }
+    // Nought is reserved for a window nobody has cut yet.
+    how.finish().max(1)
 }
 
 /// The last size this window was given, so a change of it can be written
@@ -1357,10 +1389,15 @@ async fn end_the_session(app: &AppHandle) -> Result<(), String> {
 
 /// Remembers the button's window, so it can be moved without asking the
 /// toolkit.
+///
+/// A window taken hold of wears no shape yet, whatever the last one wore:
+/// the first cut asked of it has to be made and not recognised as one it
+/// already has.
 #[cfg(windows)]
 fn remember_the_button(window: &tauri::WebviewWindow) {
     if let Ok(handle) = window.hwnd() {
         ITS_WINDOW.store(handle.0 as isize, Ordering::Relaxed);
+        SHAPED.store(0, Ordering::Relaxed);
     }
 }
 

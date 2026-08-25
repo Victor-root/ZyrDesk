@@ -93,7 +93,7 @@ async function litLesMesures() {
   // courte du menu, donc rien ne bouge d'ordinaire ; ceci est le filet
   // pour le jour où quelque chose bougera, la fenêtre étant taillée sur
   // ce que la page dessine et pas sur ce qu'elle dessinait avant.
-  requestAnimationFrame(ajusteLaFenetre);
+  suisLeDessin();
 }
 
 /* La ligne grise sous les chiffres : de quoi est faite l'image. Ce qui
@@ -231,27 +231,41 @@ function formeOccupee(echelle) {
 function ajusteLaFenetre() {
   const boite = laBoite();
   const echelle = window.devicePixelRatio || 1;
+  const forme = formeOccupee(echelle);
   invoke("floating_size", {
     width: Math.ceil(boite.width * echelle),
     height: Math.ceil(boite.height * echelle),
-    shape: formeOccupee(echelle),
+    shape: forme,
   }).catch(() => {});
+  // Ce qui vient d'être envoyé, en un mot : c'est à ça que l'appelant
+  // voit si le dessin bouge encore.
+  return JSON.stringify([boite.width, boite.height, forme]);
 }
 
-/* Le logo change de taille par une animation : au survol, et quand une
-   main le prend. La découpe la suit image par image, sinon la fenêtre
-   laisse voir son fond autour du logo pendant tout le mouvement, ou le
-   rogne. On s'arrête dès que plus rien ne bouge. */
+/* Ce que la page dessine, suivi image par image jusqu'à ce que plus rien
+   ne bouge.
+
+   Jamais sur une seule image, et c'est la règle : la fenêtre est
+   découpée sur ce que la page dessine, donc la découpe doit être posée
+   après que la page l'a dessiné, pas avant. Une image d'avance et
+   Windows redessine la fenêtre alors que la page en est encore à celle
+   d'avant, ce qui laisse un morceau de son fond dans la découpe jusqu'au
+   prochain coup de pinceau. C'était la trace blanche vue derrière le
+   bouton après avoir cliqué une entrée du menu : le curseur était loin
+   du logo, donc plus rien ne redessinait, et elle restait là jusqu'au
+   survol suivant.
+
+   Le logo change aussi de taille par une animation, au survol et quand
+   une main le prend, et la suivre est exactement la même chose. On
+   s'arrête dès que deux images de suite dessinent la même forme. */
 let animation = null;
 
-function suisLeLogo() {
+function suisLeDessin() {
   cancelAnimationFrame(animation);
   let avant = "";
   let immobile = 0;
   const pas = () => {
-    const boite = vue.logo.getBoundingClientRect();
-    const ici = `${boite.width}x${boite.height}`;
-    ajusteLaFenetre();
+    const ici = ajusteLaFenetre();
     immobile = ici === avant ? immobile + 1 : 0;
     avant = ici;
     animation = immobile < 2 ? requestAnimationFrame(pas) : null;
@@ -276,19 +290,21 @@ function ouvre(veut) {
     // nappe invisible posée sur l'image, qui avale les clics.
     ouvreLaListe(null, false);
   }
-  // Après le dessin : une fenêtre taillée sur l'état d'avant serait
-  // trop petite d'un menu.
-  requestAnimationFrame(ajusteLaFenetre);
+  // Et la fenêtre suit ce que la page dessine maintenant, jusqu'à ce
+  // qu'elle ait fini de le dessiner : taillée sur l'état d'avant, elle
+  // serait trop petite d'un menu, et taillée avant que la page ait posé
+  // le nouvel état elle garde une trace de l'ancien.
+  suisLeDessin();
 }
 
 function souci(texte) {
   vue.souci.textContent = texte;
   montre(vue.souci, true);
-  requestAnimationFrame(ajusteLaFenetre);
+  suisLeDessin();
   clearTimeout(effacement);
   effacement = setTimeout(() => {
     montre(vue.souci, false);
-    requestAnimationFrame(ajusteLaFenetre);
+    suisLeDessin();
   }, TEMPS_SOUCI);
 }
 
@@ -380,7 +396,7 @@ function poseLesValeurs(choix) {
   montre(vue.appliquer, choix.toApply);
   // Les valeurs n'ont pas toutes la même longueur : la fenêtre suit ce
   // que la page occupe, sinon elle rogne la plus longue.
-  requestAnimationFrame(ajusteLaFenetre);
+  suisLeDessin();
 }
 
 /* Une seule à la fois, comme n'importe quel sous-menu : deux ouvertes
@@ -397,7 +413,7 @@ function ouvreLaListe(nom, veut) {
       .querySelector("[data-ouvre]")
       .setAttribute("aria-expanded", ouverte ? "true" : "false");
   }
-  requestAnimationFrame(ajusteLaFenetre);
+  suisLeDessin();
 }
 
 /* Un choix à la fois, dans l'ordre des clics. Deux demandes parties
@@ -487,7 +503,7 @@ async function litLeMenu() {
 let pris = false;
 
 for (const quand of ["pointerenter", "pointerleave", "pointerdown"]) {
-  vue.logo.addEventListener(quand, suisLeLogo);
+  vue.logo.addEventListener(quand, suisLeDessin);
 }
 
 vue.logo.addEventListener("pointerdown", async (evenement) => {
@@ -511,7 +527,7 @@ vue.logo.addEventListener("pointerdown", async (evenement) => {
   } finally {
     pris = false;
     vue.logo.classList.remove("pris");
-    suisLeLogo();
+    suisLeDessin();
   }
 });
 
@@ -584,7 +600,7 @@ async function ditLesRaccourcis() {
   // fenêtre. Mesurée ici, une fois, plutôt qu'au premier clic : la
   // fenêtre garde ensuite sa taille pour toute la session, ce qui est
   // ce qui fait que cliquer sur le bouton ne clignote pas.
-  requestAnimationFrame(ajusteLaFenetre);
+  suisLeDessin();
 }
 
 ditLesRaccourcis();
@@ -596,4 +612,4 @@ litLeMenu();
    que gardées de la session d'avant. */
 listen("floating-reset", litLeMenu);
 
-ajusteLaFenetre();
+suisLeDessin();

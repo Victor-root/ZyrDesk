@@ -36,6 +36,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S6**, **S8** | Rien n'a changé pour eux, mais ils passent par le même chemin : à refaire une fois pour être sûr que l'écran virtuel ne réintroduit pas de bande noire |
 | **S23** | Nouveau. Éteindre l'hôte depuis la session lui laissait son écran à la taille du client. Le moteur hôte est maintenant prié de partir avant d'être pris, et le journal du service dit lequel des deux s'est produit |
 | **S24** | Nouveau. Le bouton flottant avait entièrement disparu à une reconnexion, sans une ligne nulle part. Une fenêtre qui n'a rien dessiné au bout de trois secondes est refermée et remontée, et tout ce qui l'empêche va au journal |
+| **R12septies** | Nouveau. Une trace blanche restait derrière le bouton après avoir cliqué une entrée du menu, le curseur étant loin du logo. La découpe de la fenêtre se pose maintenant après le dessin et non avant |
 
 ### Confirmé
 
@@ -443,6 +444,14 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > - `statistiques refusé : Ctrl+Alt+Maj+S est déjà pris par un autre programme` : trouvé et nommé. La fenêtre affiche le même message : fermer ce programme, ou changer son raccourci, puis réessayer.
 >
 > Ce que ça vérifie tient en une phrase : Windows dit toujours qu'une frappe a été envoyée, que quelque chose l'ait vraiment reçue ou non. La seule façon de savoir si quelqu'un d'autre la tenait déjà est de demander à la tenir soi-même, un instant, juste avant d'envoyer, et de la rendre aussitôt.
+
+> **R12septies (rien ne traîne derrière le bouton quand le menu se referme)**
+>
+> Pendant une session, ouvrir le menu du bouton, cliquer **Statistiques**, puis **laisser le curseur là où il est**, loin du logo. Refaire avec **Mode de la souris**, et avec **Fenêtré ou plein écran**.
+>
+> Attendu : le logo reste le logo. Aucune trace blanche, aucun morceau de fond, ni derrière lui ni autour, à aucun moment.
+>
+> Laisser le curseur loin du logo est le cœur de l'essai et pas un détail : le survol redessine le bouton, donc une trace laissée là disparaissait à la seconde où l'on allait la regarder. Ce qu'on cherche ne se voit que si la main ne bouge plus.
 
 > **R13 (le bouton s'en va avec l'image)**
 >

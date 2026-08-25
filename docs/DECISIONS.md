@@ -536,6 +536,18 @@ La capture propre à la bibliothèque d'affichage reste éteinte dans ce mode, p
 
 **Une faute trouvée en chemin.** La taille du logo dont le placement est calculé était restée à cinquante-deux points alors que la page en dessine quarante-quatre depuis qu'il a été réduit : le bouton pendait à dix vrais pixels de son coin pendant toute chaque session.
 
+## D46. La découpe du bouton se pose après le dessin, jamais avant (2026-08-25, pendant M4)
+
+**Le défaut.** Une trace blanche derrière le bouton flottant après avoir cliqué une entrée de son menu, qui disparaissait dès qu'on repassait le curseur sur le logo et revenait au clic suivant.
+
+**Ce que les essais ont établi.** Elle suit le bouton quand on le déplace, donc elle est dans sa fenêtre et non sur l'image. Elle sort avec **Statistiques** et avec **Mode de la souris**, c'est-à-dire les deux entrées qui referment le menu pendant que le curseur est loin du logo. Refermer le menu en recliquant le logo la produit aussi, mais le survol du logo la redessine dans la même image et personne ne la voit jamais.
+
+**La cause.** La fenêtre du bouton est découpée sur ce que la page dessine, et cette découpe était demandée depuis `requestAnimationFrame`, c'est-à-dire **avant** que la page ait dessiné le nouvel état. Windows redessine la fenêtre à chaque découpe, et il la redessine avec son propre fond tant que la page n'a pas repeint par-dessus. Une image d'avance suffit donc à laisser un morceau de ce fond dans la découpe, et il y reste jusqu'au prochain coup de pinceau, qui ne vient jamais si rien ne bouge.
+
+**Corrigé en appliquant la règle qui existait déjà.** Le survol du logo était le seul endroit qui suivait le dessin image par image jusqu'à ce qu'il ne bouge plus, et c'est pour cette raison qu'il n'a jamais montré le défaut. Ce suivi devient la seule façon de retailler la fenêtre : chaque changement d'état le lance, et il s'arrête de lui-même dès que deux images de suite dessinent la même forme. Une découpe est donc toujours posée sur une image que la page a réellement dessinée.
+
+**Et une découpe identique n'est plus posée du tout.** Elle n'était pas gratuite : le système redessine la fenêtre à chaque fois, et la page en demandait une par seconde toute la session pour la barre des mesures, presque toujours de la forme que la fenêtre portait déjà.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
