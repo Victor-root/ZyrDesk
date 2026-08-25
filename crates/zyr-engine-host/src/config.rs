@@ -203,10 +203,40 @@ impl SunshineConfig {
             format!("file_apps = {}", shown(&self.apps_path())),
             format!("file_state = {}", shown(&self.state_path())),
             format!("credentials_file = {}", shown(&self.credentials_path())),
+            // The far desktop is put at the size and the rate the session
+            // asks for, and put back afterwards.
+            //
+            // Without this the engine leaves the desktop as it is and
+            // squeezes it into the stream, keeping its shape by burning
+            // black bars into every frame it sends. A sixteen by ten
+            // laptop watched on a sixteen by nine screen loses ninety-six
+            // pixels of picture down each side, for good, before anything
+            // is even encoded, and no amount of care at this end can put
+            // them back.
+            //
+            // Four lines and not one, because each does a different half
+            // of it. The first turns the whole thing on: left alone the
+            // engine touches nothing, whatever the three others say. The
+            // next two say what may be changed. The last says when to put
+            // it back, and it is not the obvious answer: the engine
+            // otherwise waits for the application it is showing to stop,
+            // and the one we show is the far desktop itself, which never
+            // stops. Leaving a session without closing it would hand back
+            // a laptop still at the size we gave it.
+            format!(
+                "dd_configuration_option = {}",
+                if self.alone_on_the_screen {
+                    "ensure_only_display"
+                } else {
+                    "ensure_active"
+                }
+            ),
+            "dd_resolution_option = auto".to_string(),
+            "dd_refresh_rate_option = auto".to_string(),
+            "dd_config_revert_on_disconnect = enabled".to_string(),
             format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
         ]);
-        lines.extend(what_becomes_of_the_screen(self.output_name.is_some()));
         // Left out entirely rather than turned down, when it is off: the
         // engine's own answer is half the rate that was asked for, and
         // half is what « off » means here. Writing a number would be
@@ -242,55 +272,6 @@ impl SunshineConfig {
         )
         .to_string()
     }
-}
-
-/// What a session is allowed to do to the screens of the computer being
-/// watched.
-///
-/// One question decides it, and it is not the session's: has this
-/// computer a screen of its own to give? A screen ZyrDesk grew for the
-/// purpose is there to take whatever shape a session asks for, and the
-/// real ones are put out for the length of it and given back after. A
-/// computer without one has only real screens, and a real screen belongs
-/// to whoever is sitting in front of it.
-///
-/// So on such a computer nothing is touched at all. Not « touched
-/// carefully », not « touched and put back »: not touched. Putting a
-/// screen back is a thing that can fail, and it fails exactly when
-/// something else has moved the screens in the meantime, which is a
-/// second remote desktop, a monitor waking, a cable. What follows is
-/// worse than the shape it was avoiding: the engine cannot get back to
-/// what it found, so it lights every screen it can see, which is itself a
-/// change of screens, which is precisely what makes it try again. The
-/// person hears their computer click through its monitors until somebody
-/// stops the engine. A screen never changed comes back by having never
-/// left.
-///
-/// What that costs is a picture in the far computer's own shape rather
-/// than in ours, so a session asking for another shape gets black bars
-/// burned into it at the far end. The cure for those is to ask for a
-/// picture in that computer's shape, not to move its furniture.
-fn what_becomes_of_the_screen(has_one_of_its_own: bool) -> Vec<String> {
-    if !has_one_of_its_own {
-        // And nothing else: the three lines below say what may be
-        // changed and when to put it back, and neither means anything
-        // once nothing is being changed.
-        return vec!["dd_configuration_option = disabled".to_string()];
-    }
-    vec![
-        // The first turns the whole thing on: left alone the engine
-        // touches nothing, whatever the three others say. The next two
-        // say what may be changed. The last says when to put it back, and
-        // it is not the obvious answer: the engine otherwise waits for
-        // the application it is showing to stop, and the one we show is
-        // the far desktop itself, which never stops. Leaving a session
-        // without closing it would hand back a screen still at the size
-        // we gave it.
-        "dd_configuration_option = ensure_only_display".to_string(),
-        "dd_resolution_option = auto".to_string(),
-        "dd_refresh_rate_option = auto".to_string(),
-        "dd_config_revert_on_disconnect = enabled".to_string(),
-    ]
 }
 
 #[cfg(test)]
@@ -335,44 +316,20 @@ mod tests {
     }
 
     #[test]
-    fn a_screen_of_its_own_is_resized_for_the_session_and_remis_apres() {
-        // Sans ces quatre lignes, le moteur garde l'écran tel quel et
+    fn the_far_desktop_is_resized_for_the_session_and_put_back_after() {
+        // Sans ces quatre lignes, le moteur garde le bureau tel quel et
         // grave des bandes noires dans chaque image pour lui garder sa
         // forme. Et sans la dernière, il ne remet jamais rien : le
         // bureau que nous montrons ne s'arrête pas, et c'est à son arrêt
         // qu'il rendrait la main.
-        let rendered = test_config()
-            .with_screen_of_its_own("{64243705-4020-5895-b923-adc862c3457e}")
-            .render_conf();
+        let rendered = test_config().render_conf();
         for line in [
-            "dd_configuration_option = ensure_only_display",
+            "dd_configuration_option = ensure_active",
             "dd_resolution_option = auto",
             "dd_refresh_rate_option = auto",
             "dd_config_revert_on_disconnect = enabled",
         ] {
             assert!(rendered.contains(line), "{line} manque dans la conf");
-        }
-    }
-
-    #[test]
-    fn a_computer_with_no_screen_of_its_own_keeps_the_ones_it_has() {
-        // Un écran réel appartient à la personne assise devant. Le
-        // remettre en place est une chose qui peut rater, et qui rate
-        // précisément quand un autre programme a bougé les écrans entre
-        // temps ; le moteur allume alors tout ce qu'il voit, ce qui est
-        // encore un changement d'écrans, donc ce qui le fait réessayer.
-        // Un écran auquel on n'a pas touché revient tout seul.
-        let rendered = test_config().render_conf();
-        assert!(rendered.contains("dd_configuration_option = disabled"));
-        // Et rien d'autre : les trois autres lignes disent ce qui peut
-        // être changé et quand le remettre, et aucune ne veut dire quoi
-        // que ce soit quand rien n'est changé.
-        for line in [
-            "dd_resolution_option",
-            "dd_refresh_rate_option",
-            "dd_config_revert_on_disconnect",
-        ] {
-            assert!(!rendered.contains(line), "{line} n'a rien à faire là");
         }
     }
 
@@ -446,7 +403,7 @@ mod tests {
         // les fenêtres et les icônes sont sur l'écran de la personne
         // assise devant, pas sur celui qu'on vient de faire pousser.
         let ordinary = test_config().render_conf();
-        assert!(ordinary.contains("dd_configuration_option = disabled"));
+        assert!(ordinary.contains("dd_configuration_option = ensure_active"));
 
         let grown = test_config()
             .with_screen_of_its_own("{64243705-4020-5895-b923-adc862c3457e}")

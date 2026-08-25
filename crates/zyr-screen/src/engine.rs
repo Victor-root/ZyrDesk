@@ -19,6 +19,13 @@ use crate::driver::Driver;
 /// What the engine says it announces the list with.
 const THE_LINE: &str = "Currently available display devices:";
 
+/// What the engine says when it gives up putting the screens back.
+///
+/// Its own words, matched on the part that carries the meaning rather
+/// than on the whole sentence: the tail names the devices it saw and
+/// changes with the machine.
+const GAVE_UP: &str = "Failed to revert display device configuration";
+
 /// One screen, as the engine sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Screen {
@@ -34,14 +41,6 @@ pub struct Screen {
     /// size and no place, which is exactly the state a virtual screen
     /// sits in between sessions.
     pub active: bool,
-    /// How many pixels it is showing, when it is showing any.
-    ///
-    /// Read rather than asked of Windows, for the same reason as the rest
-    /// of this: the engine is the one authority on what its screens are.
-    /// And worth having at all because it is what the far computer needs
-    /// to be told: a picture asked for in a shape other than this one is
-    /// a picture with black bars burned into it before it is ever sent.
-    pub size: Option<(u32, u32)>,
 }
 
 /// Every screen the engine listed the last time it started.
@@ -67,23 +66,36 @@ pub fn screens_in_the_log(log: &str) -> Vec<Screen> {
                     .to_string()
             };
             let info = item.get("info").filter(|info| !info.is_null());
-            let side = |which: &str| {
-                info?
-                    .get("resolution")?
-                    .get(which)
-                    .and_then(serde_json::Value::as_u64)
-                    .map(|side| side as u32)
-            };
             let device_id = text("device_id");
             (!device_id.is_empty()).then(|| Screen {
                 device_id,
                 friendly_name: text("friendly_name"),
                 display_name: text("display_name"),
                 active: info.is_some(),
-                size: side("width").zip(side("height")),
             })
         })
         .collect()
+}
+
+/// Whether the engine said, anywhere in there, that it could not put the
+/// screens back the way it found them.
+///
+/// The engine changes the host's screens for the length of a session and
+/// puts them back when it ends. Putting back is the half that can fail,
+/// and it fails when something else has moved the screens in the
+/// meantime: another remote desktop taking over, a monitor waking up, a
+/// cable. The engine then keeps trying, but only ever again when a screen
+/// is added or removed, which is precisely what that something else keeps
+/// doing: the two take turns undoing each other for as long as both are
+/// there, and the person at the host computer hears their machine click
+/// through its monitors.
+///
+/// Nothing else in the product can tell that has happened. The engine is
+/// the only thing that knows what the screens were before the session,
+/// and this sentence is the only place it says it could not get back to
+/// it.
+pub fn could_not_put_the_screens_back(said: &str) -> bool {
+    said.contains(GAVE_UP)
 }
 
 /// The virtual screen among them, if the engine saw it at all.
@@ -170,14 +182,17 @@ mod tests {
     }
 
     #[test]
-    fn a_screen_that_is_on_says_how_many_pixels_it_shows() {
-        // C'est ce nombre-là qui voyage jusqu'à l'ordinateur qui regarde :
-        // une image demandée dans une autre forme que celle-ci arrive avec
-        // des bandes noires gravées dedans.
-        let screens = screens_in_the_log(LOG);
-        assert_eq!(screens[1].size, Some((1920, 1080)));
-        // Un écran éteint n'a pas de taille, et n'en invente pas une.
-        assert_eq!(screens[0].size, None);
+    fn the_engine_giving_up_on_the_screens_is_recognised() {
+        // La phrase exacte du moteur, telle qu'elle sort de son journal.
+        // C'est le seul endroit du produit qui sache que l'écran de
+        // l'hôte n'est pas revenu à ce qu'il était.
+        let gave_up = "[2026-08-25 21:16:26]: Warning: Failed to revert display device \
+                       configuration (will retry once devices are added or removed). Enabling all \
+                       of the available devices:\n[\n]";
+        assert!(could_not_put_the_screens_back(gave_up));
+        // Une session ordinaire n'en parle jamais.
+        assert!(!could_not_put_the_screens_back(LOG));
+        assert!(!could_not_put_the_screens_back(""));
     }
 
     #[test]

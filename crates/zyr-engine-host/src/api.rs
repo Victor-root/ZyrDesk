@@ -49,6 +49,14 @@ pub fn health_url(ports: EnginePorts) -> String {
     format!("http://127.0.0.1:{}/serverinfo", ports.http())
 }
 
+/// Address of the order to stop trying to put the screens back.
+pub fn stop_trying_url(ports: EnginePorts) -> String {
+    format!(
+        "https://127.0.0.1:{}/api/reset-display-device-persistence",
+        ports.web_ui()
+    )
+}
+
 /// Pairing request, built without side effects so it can be checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinRequest {
@@ -152,6 +160,30 @@ impl EngineApi {
         }
     }
 
+    /// Tells the engine to stop trying to put the host's screens back.
+    ///
+    /// A last resort, and only ever after it has been given every chance
+    /// to succeed. The engine remembers what the screens were before a
+    /// session and keeps trying to get back to it for as long as it
+    /// lives; when something else on the machine holds those screens, the
+    /// two spend the evening undoing each other and the person sitting
+    /// there hears it. This makes the engine forget, which is worse than
+    /// a screen put back and far better than a screen that never settles.
+    pub fn stop_trying_to_put_the_screens_back(&self) -> Result<(), ApiError> {
+        let answer = self
+            .agent
+            .post(stop_trying_url(self.ports))
+            .header("Authorization", &self.credentials.authorization_header())
+            .send_empty()
+            .map_err(|e| ApiError::Transport(e.to_string()))?;
+        let status = answer.status().as_u16();
+        if (200..300).contains(&status) {
+            Ok(())
+        } else {
+            Err(ApiError::HttpStatus(status))
+        }
+    }
+
     /// Hands a pairing code to the engine.
     pub fn submit_pin(&self, pin: &str, device_name: &str) -> Result<(), ApiError> {
         let request = pin_request(self.ports, &self.credentials, pin, device_name);
@@ -199,6 +231,14 @@ mod tests {
         let request = pin_request(ports(), &credentials(), "1234", "LAPTOP");
         assert_eq!(request.url, "https://127.0.0.1:42101/api/pin");
         assert_eq!(request.authorization, "Basic dTpw");
+    }
+
+    #[test]
+    fn the_order_to_stop_trying_targets_the_same_local_interface() {
+        assert_eq!(
+            stop_trying_url(ports()),
+            "https://127.0.0.1:42101/api/reset-display-device-persistence"
+        );
     }
 
     #[test]

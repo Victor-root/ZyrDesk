@@ -36,7 +36,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S24** | Nouveau. Le bouton flottant avait entièrement disparu à une reconnexion, sans une ligne nulle part. Une fenêtre qui n'a rien dessiné au bout de trois secondes est refermée et remontée, et tout ce qui l'empêche va au journal |
 | **R12septies** | Nouveau. Une trace blanche restait derrière le bouton après avoir cliqué une entrée du menu, le curseur étant loin du logo. La découpe de la fenêtre se pose maintenant après le dessin et non avant |
 | **R30** | **Une machine qui n'avait pas d'écran virtuel doit en avoir un au prochain démarrage du service.** Il n'était posé qu'à l'inscription du service, donc jamais sur un ordinateur inscrit avant que ce code existe. À vérifier dans `service.log` de l'hôte : `virtual screen already in place`, ou la suite des étapes de la pose |
-| **S2**, **S7**, **S19** | **Changement de fond.** Un ordinateur sans écran virtuel ne voit plus du tout son écran modifié par une session : plus de changement de définition, donc plus rien à remettre en place. En échange, l'image arrive dans la forme de son écran à lui, donc des bandes noires si la session demande une autre forme ; choisir une taille de la bonne forme dans le menu de la session les enlève |
+| **S25** | Nouveau, et c'est le sujet du lot. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
 
 ### Confirmé
 
@@ -976,6 +976,26 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : le bouton flottant est là, dans son coin, comme à la première session, et le raccourci du menu l'ouvre.
 >
 > **Si jamais il manque**, le journal de la fenêtre le dit maintenant, ce qui n'était pas le cas : soit `bouton flottant : rien de dessiné après 3 s, la fenêtre est refermée et remontée`, et le bouton doit revenir dans la foulée, soit `le bouton flottant n'a pas pu s'ouvrir : …`, qui nomme le refus. Un silence complet du journal sur ce point n'est plus une réponse possible.
+
+> **S25 (quitter la session rend son écran à l'hôte, même quand ça se passe mal)**
+>
+> **Premier temps, le cas normal.** Ouvrir une session vers l'hôte, la terminer par la croix, et aller regarder l'écran physique de l'hôte.
+>
+> Attendu : il revient à sa définition et à son agrandissement de S2, tout seul, en quelques secondes. C'est le moteur hôte qui le fait et il le fait bien ; ce premier temps est là pour vérifier que rien n'a été cassé.
+>
+> **Deuxième temps, le cas qui a fait tout ce lot.** Refaire une session, la quitter, et **dans la foulée prendre la main sur l'hôte avec un autre bureau à distance** (Parsec fait très bien l'affaire). C'est ce qui empêche le moteur de remettre l'écran : les deux programmes se disputent les moniteurs, et l'hôte se met à claquer ses écrans en boucle.
+>
+> Attendu : ça s'arrête tout seul. Le service lit la plainte du moteur et le redémarre, ce qui remet l'écran en sortant et réessaie en rentrant.
+>
+> **Ce que dit `service.log` de l'hôte**, dans cet ordre : `the engine could not put this computer's screens back the way it found them, so it is started over…`, puis la ligne de départ du moteur (`the engine went by itself, having put the screen back` en principe), puis un nouveau `engine started in session …`.
+>
+> **Si le moteur redémarré n'y arrive toujours pas**, ce qui arrive quand l'autre programme tient toujours les écrans, le service ne s'acharne pas : `the engine still cannot put this computer's screens back… something else on this computer is holding them`, puis `the engine is told to stop trying…`. À ce moment-là l'écran reste comme il est, mais l'ordinateur cesse de claquer ses moniteurs. C'est le résultat attendu, pas une panne.
+>
+> **Troisième temps, celui qui casse tout si on l'a mal fait.** Quitter une session et **se reconnecter tout de suite**, dans la seconde, deux ou trois fois de suite. C'est ce que fait naturellement quelqu'un dont l'écran est revenu de travers.
+>
+> Attendu : rien de spécial. Les sessions s'ouvrent et se ferment normalement, aucune n'est coupée, et le service ne redémarre pas le moteur pendant qu'on est dedans.
+>
+> **Ce qu'il ne doit jamais se passer**, et c'est le vrai piège de cet essai : le moteur ne doit pas redémarrer en boucle. Une seule paire de lignes par session, jamais une suite de `engine started in session …` qui se répète toutes les quelques secondes.
 
 ---
 

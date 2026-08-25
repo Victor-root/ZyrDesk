@@ -60,6 +60,15 @@ const SESSION_SETTLING: Duration = Duration::from_secs(1);
 /// checking; and doing so every second would be noise.
 const ENGINE_WATCH: Duration = Duration::from_secs(5);
 
+/// How often the engine is read on the subject of the host's screens.
+///
+/// Slower than the rest of the watch on purpose. The one thing being
+/// looked for there is said at the end of a session and stays true until
+/// something is done about it, so hearing it two seconds late costs
+/// nothing, and reading a file the engine writes to all session long
+/// twice a second costs the machine something for nothing.
+const SCREEN_WATCH: Duration = Duration::from_secs(2);
+
 /// Identifier of the session attached to the screen, when there is one.
 #[cfg(windows)]
 fn screen_session() -> Option<u32> {
@@ -121,6 +130,10 @@ enum Life {
     /// engine reads that once, at its own start, so it was stopped on
     /// purpose and the next one is told the new answer.
     ServingChanged,
+    /// It said it could not put this computer's screens back the way it
+    /// found them. It was stopped on purpose, which is what makes it try
+    /// again.
+    ScreenNotPutBack,
     /// Remote access was turned off while it ran.
     NoLongerWanted,
 }
@@ -547,46 +560,82 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     hosting.open();
     log.write("remote access active");
 
-    let life = wait_for_the_engine_to_stop(&mut engine, session, serving, remembered, order, log);
+    let life = {
+        let mut watched = Watched {
+            engine: &mut engine,
+            api: &api,
+            gateway: &gateway,
+            // From here and not from the top of the file: what the engine
+            // said about the screens at its own start is about the run
+            // before this one, and that one has already been answered for.
+            screens: crate::screen::Watching::from_here(&engine_log),
+            heard: false,
+            dealt_with: false,
+        };
+        wait_for_the_engine_to_stop(&mut watched, session, serving, remembered, order, log)
+    };
     hosting.held_by(Holdup::Starting);
     drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
     Ok(life)
 }
 
+/// One engine, and everything used to keep an eye on it while it lives.
+///
+/// Gathered so that watching it stays one function with a readable
+/// signature: the engine itself, the two things that can be asked of it,
+/// and what is remembered from one turn of the watch to the next.
+struct Watched<'a> {
+    engine: &'a mut HostEngine,
+    api: &'a EngineApi,
+    gateway: &'a Gateway,
+    screens: crate::screen::Watching,
+    /// Whether the engine has said it could not put the screens back.
+    ///
+    /// Remembered rather than acted on where it is read: the engine says
+    /// it once and never again, and the moment it says it is not always
+    /// the moment to answer.
+    heard: bool,
+    /// Whether it has been answered for during this engine's life.
+    /// Answered once and once only: both answers below are things that
+    /// must not be done twice in a row.
+    dealt_with: bool,
+}
+
 /// Waits for the engine to stop, and stops it when it no longer has a
 /// reason to run where it is.
 fn wait_for_the_engine_to_stop(
-    engine: &mut HostEngine,
+    watched: &mut Watched<'_>,
     session: u32,
     serving: zyr_proto::session::Serving,
     remembered: &Remembered,
     order: &StopOrder,
     log: &Log,
 ) -> Life {
+    let mut last_look = Instant::now();
     loop {
         if order.stop_asked() {
             log.write("stop asked for, the engine is being stopped");
-            stop_and_say_how(engine, log);
+            stop_and_say_how(watched.engine, log);
             return Life::Stopped(None);
         }
 
         if !remembered.remote_access() {
             log.write("remote access turned off, the engine is being stopped");
-            stop_and_say_how(engine, log);
+            stop_and_say_how(watched.engine, log);
             return Life::NoLongerWanted;
         }
 
         if remembered.serving() != serving {
             log.write("how this computer serves was changed, the engine starts over with it");
-            stop_and_say_how(engine, log);
+            stop_and_say_how(watched.engine, log);
             return Life::ServingChanged;
         }
 
         // The exit code is asked for first: it is the only thing that
         // tells a Windows shutdown from an incident, and a shutdown also
         // takes the session on screen away.
-        match engine.exit_seen() {
+        match watched.engine.exit_seen() {
             Ok(Some(code)) => return Life::Stopped(code),
             Ok(None) => {}
             Err(e) => {
@@ -596,11 +645,93 @@ fn wait_for_the_engine_to_stop(
         }
 
         if screen_session() != Some(session) {
-            stop_and_say_how(engine, log);
+            stop_and_say_how(watched.engine, log);
             return Life::SessionChanged;
+        }
+
+        if last_look.elapsed() >= SCREEN_WATCH {
+            last_look = Instant::now();
+            if put_the_screens_back(watched, log) {
+                return Life::ScreenNotPutBack;
+            }
         }
         std::thread::sleep(WATCH_PERIOD);
     }
+}
+
+/// Answers for the host's screens when the engine says it cannot.
+///
+/// The engine changes them for the length of a session and puts them back
+/// when it ends, which is the whole point of the arrangement: the far
+/// computer is shown a desktop really drawn at the size it asked for,
+/// rather than a small one blown up. Putting them back is the half that
+/// can fail, and this is what happens then.
+///
+/// The engine is started over. That is not a trick played on it: going
+/// and coming back are the two moments it puts the screens back of its
+/// own accord, once on its way out with nothing standing in the way, and
+/// then again on its way in for as long as it takes. Three more chances
+/// where there were none, and the endless trying that was taking turns
+/// with whatever else holds those screens stops the moment it goes.
+///
+/// If it says the same thing again with no session having been served in
+/// between, then starting it over has been tried and has not worked:
+/// something else on this computer holds the screens and means to keep
+/// them. The engine is told to stop trying, so that at least the
+/// monitors stop being switched about, and the journal says so plainly
+/// rather than leaving somebody to work out why their machine clicks.
+///
+/// Neither answer is ever given while somebody is being served, and what
+/// was heard before they arrived is forgotten rather than kept for later.
+/// Both answers would cut the session that person is in the middle of:
+/// one takes the engine away, the other makes it forget what it is meant
+/// to be getting back to. And neither would be right anyway, because a
+/// session in progress has moved those screens again and the engine will
+/// try to put them back when it ends. Whoever quits their session and
+/// reconnects straight away, which is the very thing a screen that came
+/// back wrong makes people do, is left alone for it.
+///
+/// What the engine writes is read at every turn all the same, session or
+/// no session. Skipping the reading would only pile the words up to be
+/// read as one when the session ended, which is the same mistake with a
+/// delay on it.
+///
+/// Answers whether the engine is to be started over.
+fn put_the_screens_back(watched: &mut Watched<'_>, log: &Log) -> bool {
+    if watched.dealt_with {
+        return false;
+    }
+    watched.heard |= watched.screens.gave_up_on_the_screens();
+    if watched.gateway.a_session_is_open() {
+        watched.heard = false;
+        return false;
+    }
+    if !watched.heard {
+        return false;
+    }
+    watched.dealt_with = true;
+
+    if watched.gateway.anyone_came_through() {
+        log.write(
+            "the engine could not put this computer's screens back the way it found them, so it \
+             is started over: it puts them back as it goes, and goes on trying as it comes back",
+        );
+        stop_and_say_how(watched.engine, log);
+        return true;
+    }
+
+    log.write(
+        "the engine still cannot put this computer's screens back, and it has just been started \
+         over for that: something else on this computer is holding them",
+    );
+    match watched.api.stop_trying_to_put_the_screens_back() {
+        Ok(()) => log.write(
+            "the engine is told to stop trying, so this computer stops switching its monitors \
+             about; the screens stay as they are until somebody sets them",
+        ),
+        Err(e) => log.write(&format!("the engine would not be told to stop trying: {e}")),
+    }
+    false
 }
 
 /// Stops the engine and writes down how it went.

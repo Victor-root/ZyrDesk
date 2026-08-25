@@ -23,6 +23,7 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Handle;
@@ -130,6 +131,44 @@ impl Answers for Attending {
 #[derive(Debug)]
 pub struct Gateway {
     tasks: Vec<JoinHandle<()>>,
+    sessions: Arc<Sessions>,
+}
+
+/// The sessions this door has taken in, as the rest of the service needs
+/// to know about them.
+///
+/// Two questions, and they are not the same one. What is open right now
+/// says whether the engine may be disturbed at all. Whether anybody came
+/// through at all says whether a screen the engine cannot put back is a
+/// screen this run of it moved, or one it inherited already wrong from
+/// the run before.
+#[derive(Debug, Default)]
+struct Sessions {
+    open: AtomicUsize,
+    ever: AtomicBool,
+}
+
+/// One session, counted for as long as it lasts.
+///
+/// A guard and not two lines around the body: a session that ends by
+/// anything other than a clean return would otherwise be counted as open
+/// for as long as the engine lives, and nothing would ever notice. It is
+/// handed to the session's own body and named there, so that it lasts
+/// exactly as long as the session and not a moment less.
+struct Counted(Arc<Sessions>);
+
+impl Counted {
+    fn one(sessions: &Arc<Sessions>) -> Self {
+        sessions.open.fetch_add(1, Ordering::Relaxed);
+        sessions.ever.store(true, Ordering::Relaxed);
+        Self(sessions.clone())
+    }
+}
+
+impl Drop for Counted {
+    fn drop(&mut self) {
+        self.0.open.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 impl Drop for Gateway {
@@ -189,6 +228,7 @@ impl Gateway {
             log: log.clone(),
         });
 
+        let sessions = Arc::new(Sessions::default());
         Ok(Self {
             tasks: vec![
                 runtime.spawn(keep_the_list_fresh(
@@ -199,21 +239,45 @@ impl Gateway {
                     remembered,
                     log.clone(),
                 )),
-                runtime.spawn(serve(endpoint, attending, log.clone())),
+                runtime.spawn(serve(endpoint, attending, sessions.clone(), log.clone())),
             ],
+            sessions,
         })
+    }
+
+    /// Whether somebody is being served right this moment.
+    pub fn a_session_is_open(&self) -> bool {
+        self.sessions.open.load(Ordering::Relaxed) > 0
+    }
+
+    /// Whether a session has been served since this door was opened.
+    ///
+    /// Which is to say since the engine started, the two being opened and
+    /// closed together. It is what tells a screen the engine could not put
+    /// back after a session from a screen it inherited wrong from the run
+    /// before: only the first is worth acting on, and confusing them is
+    /// how a service ends up restarting its engine in a circle.
+    pub fn anyone_came_through(&self) -> bool {
+        self.sessions.ever.load(Ordering::Relaxed)
     }
 }
 
 /// Takes in the devices that connect, one session each.
-async fn serve(endpoint: TunnelEndpoint, attending: Arc<dyn Answers>, log: Log) {
+async fn serve(
+    endpoint: TunnelEndpoint,
+    attending: Arc<dyn Answers>,
+    counting: Arc<Sessions>,
+    log: Log,
+) {
     let mut sessions = JoinSet::new();
     loop {
         match endpoint.accept().await {
             Ok(connection) => {
                 let log = log.clone();
                 let attending = attending.clone();
-                sessions.spawn(async move { one_session(connection, attending, log).await });
+                let counted = Counted::one(&counting);
+                sessions
+                    .spawn(async move { one_session(connection, attending, counted, log).await });
                 while sessions.try_join_next().is_some() {}
             }
             // A refused device is not the end of the door: it must not
@@ -228,7 +292,12 @@ async fn serve(endpoint: TunnelEndpoint, attending: Arc<dyn Answers>, log: Log) 
     }
 }
 
-async fn one_session(connection: zyr_transport::Connection, attending: Arc<dyn Answers>, log: Log) {
+async fn one_session(
+    connection: zyr_transport::Connection,
+    attending: Arc<dyn Answers>,
+    _counted: Counted,
+    log: Log,
+) {
     let from = connection.remote_address();
     let mut tunnel = match Tunnel::host(connection, ENGINE, attending).await {
         Ok(tunnel) => tunnel,

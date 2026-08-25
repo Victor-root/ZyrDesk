@@ -11,7 +11,7 @@
 //! serve a screen bigger than its own properly. That is worth saying out
 //! loud at every step and worth failing not one single thing over.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use zyr_proto::log::Log;
 use zyr_proto::paths;
@@ -196,10 +196,8 @@ pub fn learn_from(engine_log: &std::path::Path, started_with: Option<&str>, log:
         ));
         let Some(gone) = started_with else {
             log.write(
-                "the engine captures the main screen and does not touch it: a session asking \
-                 for another size gets that screen blown up, and asking for another shape gets \
-                 black bars burned into the picture. A screen belonging to whoever sits in \
-                 front of it is not this product's to move",
+                "the engine captures the main screen, so a session asking for more than that \
+                 screen can draw gets it blown up",
             );
             return Learned::NothingToChange;
         };
@@ -243,6 +241,74 @@ pub fn learn_from(engine_log: &std::path::Path, started_with: Option<&str>, log:
     Learned::StartAgain
 }
 
+/// Follows the engine's log from where it stood, looking for the one
+/// thing it says about the host's screens that nobody else can see.
+///
+/// The engine resizes the screens of the computer being watched for the
+/// length of a session and puts them back when it ends. Putting them back
+/// is what the person sitting at that computer cares about, and it is
+/// also the half that can fail. When it does, the engine says so once and
+/// then goes quiet, retrying on its own terms for as long as it lives.
+/// Reading its log is the only way to hear it.
+///
+/// Only what the engine has written since the last look is read: the log
+/// grows all session long, and reading it whole every few seconds would
+/// cost the machine something for nothing. The offset stops at the last
+/// complete line, so a sentence caught half-written is read whole at the
+/// next look rather than split in two and recognised as neither.
+pub struct Watching {
+    log: PathBuf,
+    read_up_to: u64,
+}
+
+impl Watching {
+    /// Starts watching from the end of what is already written.
+    ///
+    /// From the end and not from the top: the log carries every earlier
+    /// run of the engine, and a complaint from one of those is a screen
+    /// somebody has long since put back by hand. A log that is not there
+    /// yet has no past to skip, and starts at nought.
+    pub fn from_here(log: &Path) -> Self {
+        Self {
+            log: log.to_path_buf(),
+            read_up_to: std::fs::metadata(log).map(|it| it.len()).unwrap_or(0),
+        }
+    }
+
+    /// Whether the engine has given up on the screens since the last look.
+    pub fn gave_up_on_the_screens(&mut self) -> bool {
+        use std::io::{Read, Seek, SeekFrom};
+
+        let Ok(mut file) = std::fs::File::open(&self.log) else {
+            return false;
+        };
+        // The journal writer cuts this file back from its top once it has
+        // grown past reason. What was written before the cut is gone, and
+        // carrying on from an offset into it would read the middle of a
+        // line for ever. It cannot happen while the engine holds the file,
+        // which is the whole of this watch, and the day it does the watch
+        // takes its place again at the new end rather than losing itself.
+        let length = file.metadata().map(|it| it.len()).unwrap_or(0);
+        if length < self.read_up_to {
+            self.read_up_to = length;
+            return false;
+        }
+        if file.seek(SeekFrom::Start(self.read_up_to)).is_err() {
+            return false;
+        }
+        let mut written = Vec::new();
+        if file.read_to_end(&mut written).is_err() {
+            return false;
+        }
+        let Some(complete) = written.iter().rposition(|byte| *byte == b'\n') else {
+            return false;
+        };
+        self.read_up_to += complete as u64 + 1;
+        let said = String::from_utf8_lossy(&written[..=complete]);
+        zyr_screen::engine::could_not_put_the_screens_back(&said)
+    }
+}
+
 fn write_learned(device_id: &str) -> std::io::Result<()> {
     let path = learned_path();
     if let Some(folder) = path.parent() {
@@ -258,5 +324,107 @@ fn write_down(log: Option<&Log>, said: Vec<String>) {
     };
     for line in said {
         log.write(&line);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    const GAVE_UP: &str = "[2026-08-25 21:16:26]: Warning: Failed to revert display device \
+                           configuration (will retry once devices are added or removed).\n";
+
+    fn a_log(what: &str) -> (PathBuf, PathBuf) {
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdeskd-screen-{}-{what}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        (folder.join("engine.log"), folder)
+    }
+
+    fn add(log: &Path, said: &str) {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log)
+            .unwrap();
+        file.write_all(said.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn what_the_engine_said_before_the_watch_began_is_not_answered_for() {
+        // Le journal du moteur porte tous ses démarrages précédents. Une
+        // plainte d'il y a trois semaines, c'est un écran que quelqu'un a
+        // remis à la main depuis longtemps.
+        let (log, folder) = a_log("avant");
+        add(&log, GAVE_UP);
+
+        let mut watching = Watching::from_here(&log);
+        assert!(!watching.gave_up_on_the_screens());
+
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn what_the_engine_says_afterwards_is_heard_once() {
+        let (log, folder) = a_log("apres");
+        add(&log, "[2026-08-25 21:16:23]: Info: Session ended\n");
+
+        let mut watching = Watching::from_here(&log);
+        add(&log, GAVE_UP);
+        assert!(watching.gave_up_on_the_screens());
+        // Et pas une deuxième fois : ce qui a été lu est derrière nous.
+        assert!(!watching.gave_up_on_the_screens());
+
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_line_caught_half_written_is_read_whole_at_the_next_look() {
+        // Le moteur écrit dans ce fichier pendant qu'on le lit. Une
+        // phrase coupée en deux et lue en deux morceaux ne ressemble plus
+        // à rien, et c'est justement celle qu'il ne faut pas manquer.
+        let (log, folder) = a_log("coupe");
+        let mut watching = Watching::from_here(&log);
+
+        let (start, rest) = GAVE_UP.split_at(40);
+        add(&log, start);
+        assert!(!watching.gave_up_on_the_screens());
+        add(&log, rest);
+        assert!(watching.gave_up_on_the_screens());
+
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_log_cut_back_from_its_top_does_not_leave_the_watch_lost() {
+        // Le journal est rogné quand il devient trop gros. Repartir d'une
+        // position qui n'existe plus, c'est lire le milieu d'une ligne
+        // pour toujours.
+        let (log, folder) = a_log("rogne");
+        add(
+            &log,
+            "[2026-08-25 21:16:23]: Info: Session ended\n"
+                .repeat(20)
+                .as_str(),
+        );
+        let mut watching = Watching::from_here(&log);
+
+        std::fs::write(&log, b"[2026-08-25 21:20:00]: Info: fresh\n").unwrap();
+        assert!(!watching.gave_up_on_the_screens());
+        add(&log, GAVE_UP);
+        assert!(watching.gave_up_on_the_screens());
+
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_log_that_is_not_there_says_nothing_rather_than_failing() {
+        let (log, folder) = a_log("absent");
+        let mut watching = Watching::from_here(&log);
+        assert!(!watching.gave_up_on_the_screens());
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }
