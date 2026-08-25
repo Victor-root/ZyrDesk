@@ -135,6 +135,12 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // existed would ask for administrator rights every time ZyrDesk was
     // opened, and nothing would ever put that right on its own.
     let_the_person_start_and_stop_it(Some(log));
+    // And the same reason a third time, which is the one that cost a
+    // machine its virtual screen for good: laid only where the service is
+    // registered, it never arrived on a computer registered before it
+    // existed, and nothing said so. Asked for here as well, where it does
+    // nothing at all when the screen is already there.
+    crate::screen::put_in_place(Some(log));
     say_how_the_networks_are_classed(log);
 
     let end = supervisor::run(&order, log);

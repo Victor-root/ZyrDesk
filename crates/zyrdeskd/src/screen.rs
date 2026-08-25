@@ -26,14 +26,47 @@ fn learned_path() -> PathBuf {
     paths::virtual_screen_dir().join(LEARNED)
 }
 
-/// Puts the virtual screen on this computer.
+/// Puts the virtual screen on this computer, if it is not on it already.
 ///
-/// Called where the service is registered, which is the one moment
-/// administrator rights are already in hand and the one moment nobody is
-/// in a session.
+/// Asked for where the service is registered **and at every start of the
+/// service**. Registration alone was not enough and never could be: a
+/// computer whose service was registered before this existed would go on
+/// without a virtual screen for ever, and nothing would ever try again or
+/// even say so. That is exactly what happened, and the firewall rules
+/// beside it had already learned the same lesson: they are laid at every
+/// start for that very reason.
+///
+/// Both moments qualify. Laying a driver down needs administrator rights,
+/// which the service has, and needs nobody to be watching a session,
+/// which is true of a service that has not started its engine yet.
+///
+/// Whether it is already there is asked first, and the whole of the
+/// laying down hangs on that answer. Laying a driver onto a device that
+/// already carries it makes Windows install it again, which takes the
+/// screen away and hands it back; done at every start, that would be a
+/// computer clicking through its monitors every time it is switched on.
 #[cfg(windows)]
 pub fn put_in_place(log: Option<&Log>) {
     let driver = zyr_screen::shipped();
+    match zyr_screen::present(driver) {
+        Ok(true) => {
+            write_down(log, vec!["virtual screen already in place".to_string()]);
+            return;
+        }
+        Ok(false) => {}
+        // Not laid down on a maybe. The answer to this question is what
+        // keeps the laying down from happening twice, and without it the
+        // safe thing is to leave the screen as it is and say why.
+        Err(e) => {
+            write_down(
+                log,
+                vec![format!(
+                    "cannot tell whether the virtual screen is in place, leaving it alone: {e}"
+                )],
+            );
+            return;
+        }
+    }
     let package = paths::virtual_screen_driver_dir();
     let home = paths::virtual_screen_dir();
     let said = match zyr_screen::install(driver, &package, &home) {

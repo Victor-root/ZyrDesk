@@ -579,6 +579,18 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ce que ça coûte, et ce qui reste à faire.** L'image arrive dans la forme de l'ordinateur d'en face et non dans la nôtre, donc une session qui demande une autre forme reçoit des bandes noires gravées à la source. Le remède n'est pas de déplacer les meubles d'en face : c'est de demander l'image dans **sa** forme à lui. Le moteur hôte ne publie sa résolution nulle part, donc elle doit voyager par le canal entre les deux services, et le lecteur de zyr-screen sait déjà la lire dans la liste d'écrans du moteur. En attendant, choisir une taille de la bonne forme dans le menu de la session suffit à supprimer les bandes.
 
+## D49. L'écran virtuel se pose à chaque démarrage du service, pas seulement à l'inscription (2026-08-25, pendant M4)
+
+**Le constat.** Une machine du banc d'essai n'a pas d'écran virtuel, et son journal le dit à chaque démarrage depuis des semaines : `no virtual screen among them`. Les fichiers du pilote sont pourtant bien là, le chemin se résout, et le service tourne avec les droits qu'il faut.
+
+**La cause, et c'est une leçon déjà apprise ailleurs.** La pose était demandée **à l'inscription du service et nulle part ailleurs**. Un ordinateur dont le service a été inscrit avant que ce code existe, ou dont la pose a échoué une fois, n'a plus jamais d'écran virtuel : rien ne réessaie et rien ne le dit. Les règles de pare-feu, deux lignes plus haut dans le même fichier, portent depuis longtemps le commentaire qui explique exactement ce défaut et le corrige pour elles seules : elles sont posées à chaque démarrage, précisément pour qu'une machine inscrite trop tôt finisse par les recevoir. Le droit de démarrer le service pour la personne connectée aussi. L'écran virtuel, non.
+
+**Corrigé en appliquant la même règle une troisième fois.** La pose est demandée au démarrage du service en plus de l'inscription. Les deux moments conviennent pour les deux mêmes raisons : poser un pilote demande des droits d'administrateur, que le service a, et demande que personne ne regarde de session, ce qui est vrai d'un service qui n'a pas encore démarré son moteur.
+
+**Avec une condition, et elle n'est pas décorative.** La présence est demandée d'abord, et toute la pose en dépend. Poser un pilote sur un appareil qui le porte déjà fait réinstaller ce pilote par Windows, ce qui retire l'écran et le rend : fait à chaque démarrage, ce serait un ordinateur qui claque ses moniteurs chaque fois qu'on l'allume, c'est-à-dire précisément le défaut corrigé en [D48](DECISIONS.md). Quand la question ne peut pas être répondue, rien n'est posé et le journal dit pourquoi : une pose « au cas où » est la seule façon de tomber dans ce piège.
+
+**Ce que ça change pour une machine qui en manquait.** Au prochain démarrage du service, l'écran virtuel arrive, le moteur le voit dans sa liste, la note qui le nomme est écrite, le moteur redémarre en le visant, et les sessions cessent d'agrandir l'écran de la personne assise devant. Le journal raconte chacune de ces étapes.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
