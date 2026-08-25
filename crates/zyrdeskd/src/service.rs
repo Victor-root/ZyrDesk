@@ -47,9 +47,23 @@ const STOP_DELAY: Duration = Duration::from_secs(30);
 /// How often its state is asked for while waiting.
 const STOP_STEP: Duration = Duration::from_millis(250);
 
+/// How long Windows is told a stop may take.
+///
+/// It has to cover the whole of it: the engine is asked to go and given
+/// time to put the far computer's screen back before it is taken. A
+/// service that is still tidying up when this runs out is killed, and
+/// the engine with it, which is exactly the tidying up that matters.
+const STOPPING_TAKES: Duration = Duration::from_secs(45);
+
 /// A service runs in exactly one copy, so what it shares with its
 /// handler is legitimately global.
 static STOP_ORDER: std::sync::OnceLock<StopOrder> = std::sync::OnceLock::new();
+
+/// The handle a state is announced on, kept where the control handler
+/// can reach it: Windows calls that handler before anything else is
+/// handed to it.
+static ANNOUNCING: std::sync::OnceLock<service_control_handler::ServiceStatusHandle> =
+    std::sync::OnceLock::new();
 
 /// Hands control to Windows, which will call the service entry point.
 pub fn hand_over_to_windows() -> ServiceResult<()> {
@@ -77,7 +91,19 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     let on_request = {
         let order = order.clone();
         move |control| match control {
-            ServiceControl::Stop | ServiceControl::Shutdown => {
+            // Three ways of asking for the same thing: a person stopping
+            // the service, and the two Windows uses on its way down. The
+            // first of those two is the one that matters, and it is the
+            // one this service is registered for: it arrives early, with
+            // minutes rather than seconds behind it, which is what makes
+            // it possible to hand the far computer's screen back before
+            // the machine goes.
+            ServiceControl::Stop | ServiceControl::Preshutdown | ServiceControl::Shutdown => {
+                // Said before anything is stopped, so Windows waits for
+                // the tidying up instead of killing it half done.
+                if let Some(handle) = ANNOUNCING.get() {
+                    let _ = handle.set_service_status(stopping());
+                }
                 order.ask_for_a_stop();
                 ServiceControlHandlerResult::NoError
             }
@@ -89,6 +115,7 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     };
 
     let handle = service_control_handler::register(NAME, on_request)?;
+    let _ = ANNOUNCING.set(handle);
     handle.set_service_status(announcement(
         ServiceState::Running,
         ServiceExitCode::Win32(0),
@@ -136,10 +163,29 @@ fn announcement(state: ServiceState, exit: ServiceExitCode) -> ServiceStatus {
     ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state: state,
-        controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
+        controls_accepted: ServiceControlAccept::STOP
+            | ServiceControlAccept::PRESHUTDOWN
+            | ServiceControlAccept::SHUTDOWN,
         exit_code: exit,
         checkpoint: 0,
         wait_hint: Duration::default(),
+        process_id: None,
+    }
+}
+
+/// What is announced the moment a stop is asked for.
+///
+/// Nothing is accepted any more, the stop having begun, and the delay is
+/// said out loud: Windows waits for what it was told to wait for and
+/// kills whatever is still going after it.
+fn stopping() -> ServiceStatus {
+    ServiceStatus {
+        service_type: ServiceType::OWN_PROCESS,
+        current_state: ServiceState::StopPending,
+        controls_accepted: ServiceControlAccept::empty(),
+        exit_code: ServiceExitCode::Win32(0),
+        checkpoint: 0,
+        wait_hint: STOPPING_TAKES,
         process_id: None,
     }
 }

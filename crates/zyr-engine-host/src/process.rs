@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 
 use crate::config::SunshineConfig;
 use crate::credentials::Credentials;
-use crate::launch::{Launch, Launcher, Running, SameSession};
+use crate::launch::{Launch, Launcher, Parting, Running, SameSession};
 
 #[derive(Debug)]
 pub enum EngineError {
@@ -195,11 +195,15 @@ impl HostEngine {
         }
     }
 
-    pub fn stop(&mut self) -> Result<(), EngineError> {
-        if let Some(mut process) = self.process.take() {
-            process.stop()?;
+    /// Stops the engine, and says how it went.
+    ///
+    /// Nothing to stop is not a failure and not a parting either: it is
+    /// the ordinary answer for an engine that has already gone.
+    pub fn stop(&mut self) -> Result<Option<Parting>, EngineError> {
+        match self.process.take() {
+            Some(mut process) => Ok(Some(process.stop()?)),
+            None => Ok(None),
         }
-        Ok(())
     }
 }
 
@@ -232,8 +236,8 @@ mod tests {
         fn exit_seen(&mut self) -> io::Result<Option<Option<i32>>> {
             Ok(None)
         }
-        fn stop(&mut self) -> io::Result<()> {
-            Ok(())
+        fn stop(&mut self) -> io::Result<Parting> {
+            Ok(Parting::Taken)
         }
     }
 

@@ -34,6 +34,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S2**, **S7** | Le bureau distant ne change plus de définition : il déménage sur un écran que ZyrDesk fait pousser, et l'écran physique de l'hôte s'éteint le temps de la session |
 | **R30**, **R31** | Ce qu'il reste de l'écran virtuel à vérifier : que tout soit bien remis en place à la fin d'une session, et que le retrait du produit ne laisse rien |
 | **S6**, **S8** | Rien n'a changé pour eux, mais ils passent par le même chemin : à refaire une fois pour être sûr que l'écran virtuel ne réintroduit pas de bande noire |
+| **S23** | Nouveau. Éteindre l'hôte depuis la session lui laissait son écran à la taille du client. Le moteur hôte est maintenant prié de partir avant d'être pris, et le journal du service dit lequel des deux s'est produit |
 
 ### Confirmé
 
@@ -974,6 +975,18 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : exactement l'état de S1. Aucun `zyrdesk-session.exe`, aucun `zyrdesk-host-engine.exe`, aucun `ZyrDesk.exe`.
 >
 > C'est l'essai qui a le plus servi : des moteurs restaient en vie après un « Quitter », et la mise à jour suivante butait dessus sans dire pourquoi. Ils sont maintenant attachés au programme qui les lance et s'en vont avec lui, quelle que soit la façon dont il s'en va.
+
+> **S23 (éteindre l'hôte depuis la session lui rend son écran)**
+>
+> Ouvrir une session vers le PC hôte, puis **l'éteindre depuis l'image** : menu Démarrer du bureau distant, **Arrêter**. Attendre qu'il soit vraiment éteint, puis le rallumer et regarder son écran physique.
+>
+> Attendu : il rallume à **sa** définition et à **son** agrandissement, ceux notés en S2, et pas à ceux du PC client.
+>
+> **Ce qui se joue.** Le moteur hôte remet l'écran comme il l'a trouvé **en s'en allant**, et seulement là. Le service ne le prend donc plus de force : il lui demande d'abord de partir, lui laisse vingt secondes, et ne le prend que s'il ne part pas. Il prévient aussi Windows que son arrêt demande du temps, sinon Windows ne lui en laisse que quelques secondes en s'éteignant.
+>
+> **Le journal du service dit lequel des deux s'est produit**, dans `service.log` du PC hôte, juste après `stop asked for` : `the engine went by itself, having put the screen back`, ou `the engine would not go and was taken, so the screen stays as the session left it`. La deuxième ligne avec un écran revenu de travers, c'est la même panne ; la première avec un écran de travers, c'est autre chose et il faut le dire.
+>
+> À refaire une seconde fois en arrêtant simplement le service (`zyrdeskd stop` sur l'hôte, ou **Arrêter le service** depuis la fenêtre) pendant une session : même attendu, même paire de lignes.
 
 ---
 

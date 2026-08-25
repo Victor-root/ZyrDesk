@@ -509,6 +509,21 @@ La capture propre à la bibliothèque d'affichage reste éteinte dans ce mode, p
 
 **Deux fautes trouvées en chemin et corrigées.** La lecture de l'état des touches depuis l'intérieur du crochet, ajoutée la veille, est retirée : le système n'a pas fini avec la frappe dont il parle à ce moment-là, et le journal l'a confirmé sur une session entière, ce compteur restant à zéro pendant que des appuis manquaient. Et la réponse de la demande de focus était lue comme un échec quand elle valait « personne ne l'avait avant », ce qui est une réponse ordinaire ; ce qui tranche est la lecture prise juste après, comme ailleurs dans le même fichier.
 
+## D44. Le moteur hôte est prié de partir avant d'être pris (2026-08-25, pendant M4)
+
+**Le défaut.** Un ordinateur éteint depuis la session qui le regardait rallume avec l'écran physique resté à la taille et à l'agrandissement du client. ZyrDesk est pourtant bien fermé dessus.
+
+**Ce qui se passait.** Le moteur hôte met le bureau distant à la taille demandée par la session, et le remet comme il l'a trouvé en s'en allant. C'est un travail qu'il fait **en partant**, et seulement là. Le service, lui, l'arrêtait d'un `TerminateProcess`, à l'arrêt du service comme à l'extinction de Windows : le moteur n'exécute alors rien du tout, et l'écran reste à la taille de la personne qui regardait. Le service demandait par ailleurs à Windows l'avis d'extinction ordinaire, qui laisse quelques secondes, au lieu du préavis, qui en laisse cent quatre-vingts.
+
+**Corrigé de la façon dont le moteur attend qu'on le lui demande.** Le service ne le prend plus qu'en dernier recours :
+
+- il lui envoie d'abord l'interruption que porte une console, ce qui est la manière de demander à un programme de s'arrêter sous Windows, et que le moteur écoute déjà : sa réponse est précisément de remettre l'écran puis de s'arrêter ;
+- une console appartient à la session où elle a été ouverte, et un service vit dans une session à part, donc il ne peut pas l'atteindre lui-même. Il se relance donc **lui-même dans la session du moteur**, avec un argument réservé, pour porter la demande. C'est exactement ce que fait le service du moteur amont, pour la même raison ;
+- il lui laisse vingt secondes, ce que ce même service amont lui laisse, puis le prend s'il n'est pas parti ;
+- et il annonce à Windows le préavis d'extinction, avec le temps que l'arrêt demande, afin que ce temps lui soit laissé.
+
+**Vérifiable.** Le journal du service dit désormais lequel des deux s'est produit : parti de lui-même après avoir remis l'écran, ou pris. C'est la première question à poser d'un ordinateur revenu de travers, et rien ne pouvait y répondre avant.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -16,6 +16,6 @@ pub mod runtime;
 
 pub use config::{InnerEncryption, Listening, SunshineConfig};
 pub use credentials::Credentials;
-pub use launch::{Launch, Launcher, Running, SameSession};
+pub use launch::{Launch, Launcher, Parting, Running, SameSession};
 pub use process::HostEngine;
 pub use runtime::EngineRuntime;

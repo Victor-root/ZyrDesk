@@ -35,6 +35,9 @@ use windows_sys::Win32::Storage::FileSystem::{
     CREATE_ALWAYS, CreateFileW, FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL, FILE_CREATION_DISPOSITION,
     FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
+use windows_sys::Win32::System::Console::{
+    AttachConsole, CTRL_C_EVENT, FreeConsole, GenerateConsoleCtrlEvent, SetConsoleCtrlHandler,
+};
 use windows_sys::Win32::System::Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock};
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
@@ -43,11 +46,11 @@ use windows_sys::Win32::System::JobObjects::{
 };
 use windows_sys::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId;
 use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW, GetCurrentProcess,
-    GetExitCodeProcess, OpenProcessToken, PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOW,
-    TerminateProcess, WaitForSingleObject,
+    CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW, DETACHED_PROCESS,
+    GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, PROCESS_INFORMATION,
+    STARTF_USESTDHANDLES, STARTUPINFOW, TerminateProcess, WaitForSingleObject,
 };
-use zyr_engine_host::{Launch, Launcher, Running};
+use zyr_engine_host::{Launch, Launcher, Parting, Running};
 
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
@@ -58,9 +61,33 @@ const DESKTOP: &str = "winsta0\\default";
 /// Device that swallows what is written to it, and gives nothing back.
 const NOTHING: &str = "NUL";
 
-/// Time left to the engine to disappear once told to stop. Beyond it,
-/// the job object takes over, Windows killing a service that drags out a
-/// stop.
+/// Reserved argument that turns this program into the hand tapping the
+/// engine on the shoulder; see `let_the_engine_go`.
+///
+/// An argument and not a command, like the one Windows starts the
+/// service with: nobody types it, and it names a moment rather than
+/// something a person can ask for.
+pub const LET_GO_ARGUMENT: &str = "--let-the-engine-go";
+
+/// Time left to the ask itself: starting a program in another session,
+/// attaching to a console and sending one interruption down it.
+///
+/// Nothing here waits for the engine; that is the wait below. This one
+/// only covers the messenger, and a messenger that has not come back in
+/// this long is not going to.
+const ASKING: Duration = Duration::from_secs(5);
+
+/// Time left to the engine to put the screen back and go of its own
+/// accord, once it has been asked.
+///
+/// It is what the engine's own service leaves it, and the engine gives
+/// itself ten seconds before calling its shutdown stuck: past this, it is
+/// not coming.
+const GOING: Duration = Duration::from_secs(20);
+
+/// Time left to the engine to disappear once it has been taken. Beyond
+/// it, the job object takes over, Windows killing a service that drags
+/// out a stop.
 const STOP_DELAY: Duration = Duration::from_secs(10);
 
 /// Identifier of the session attached to the physical screen.
@@ -129,6 +156,12 @@ pub struct SessionProcess {
     _job: Handle,
     process: Handle,
     identifier: u32,
+    /// Session it was started in, which is where its console lives.
+    ///
+    /// Remembered rather than asked for again when it is stopped: one of
+    /// the reasons for stopping it is that the screen has moved to
+    /// another session, and the console did not move with it.
+    session: u32,
 }
 
 // Safe: a Windows handle belongs to the process, not to the thread that
@@ -161,7 +194,20 @@ impl Running for SessionProcess {
         Ok(Some(Some(code as i32)))
     }
 
-    fn stop(&mut self) -> io::Result<()> {
+    fn stop(&mut self) -> io::Result<Parting> {
+        // Asked before it is taken. The engine puts the far computer's
+        // screen back the size and the magnification it found it at as
+        // it goes, and only as it goes: taken outright it never runs
+        // that, and the screen stays at the size of whoever was watching
+        // it. That is what a computer shut down from inside a session
+        // came back to.
+        if asked_to_go(self.session, self.identifier).is_ok() {
+            // Safe: the handle stays valid for as long as this structure.
+            let waited = unsafe { WaitForSingleObject(self.process.0, GOING.as_millis() as u32) };
+            if waited == WAIT_OBJECT_0 {
+                return Ok(Parting::OfItsOwnAccord);
+            }
+        }
         // A process already gone refuses to be terminated, which is not
         // a problem: what counts is that it is no longer there when we
         // hand back.
@@ -169,7 +215,7 @@ impl Running for SessionProcess {
         unsafe { TerminateProcess(self.process.0, 1) };
         let waited = unsafe { WaitForSingleObject(self.process.0, STOP_DELAY.as_millis() as u32) };
         if waited == WAIT_OBJECT_0 {
-            return Ok(());
+            return Ok(Parting::Taken);
         }
         Err(io::Error::new(
             io::ErrorKind::TimedOut,
@@ -249,7 +295,119 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
         _job: job,
         process,
         identifier: started.dwProcessId,
+        session,
     })
+}
+
+/// Asks the engine to go, from where it can be asked.
+///
+/// Not from here. The way to ask a program to end itself on Windows is
+/// the interruption a console carries, and a console belongs to the
+/// session it was opened in: a service lives in a session of its own and
+/// cannot reach into another one. So the ask is made by this same
+/// program, started for that one purpose in the session the engine is in,
+/// which is exactly how the engine's own service does it.
+///
+/// Detached from any console of its own, since attaching to somebody
+/// else's is only possible for a program that has none.
+fn asked_to_go(session: u32, engine: u32) -> io::Result<()> {
+    let ourselves = std::env::current_exe()?;
+    let token = service_token_for(session)?;
+    let environment = environment_of(&token)?;
+
+    let mut line = command_line(
+        &ourselves,
+        &[LET_GO_ARGUMENT.to_string(), engine.to_string()],
+    );
+    let mut desktop: Vec<u16> = wide(DESKTOP);
+
+    let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
+    startup.cb = size_of::<STARTUPINFOW>() as u32;
+    startup.lpDesktop = desktop.as_mut_ptr();
+
+    let mut started: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+
+    // Safe: every buffer lives until the call returns, and both handles
+    // it hands back are taken in charge straight away.
+    let obtained = unsafe {
+        CreateProcessAsUserW(
+            token.0,
+            std::ptr::null(),
+            line.as_mut_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            CREATE_UNICODE_ENVIRONMENT | DETACHED_PROCESS,
+            environment.0,
+            std::ptr::null(),
+            &startup,
+            &mut started,
+        )
+    };
+    if obtained == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let asking = Handle(started.hProcess);
+    drop(Handle(started.hThread));
+
+    // Safe: the handle is valid, and the wait is bounded.
+    let waited = unsafe { WaitForSingleObject(asking.0, ASKING.as_millis() as u32) };
+    if waited != WAIT_OBJECT_0 {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "the engine could not be asked to go",
+        ));
+    }
+    let mut code: u32 = 0;
+    // Safe: the handle is valid and the code is written into a local.
+    if unsafe { GetExitCodeProcess(asking.0, &mut code) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if code != 0 {
+        return Err(io::Error::other(
+            "the engine's console would not take the interruption",
+        ));
+    }
+    Ok(())
+}
+
+/// Taps the engine on the shoulder, from inside its own session.
+///
+/// This is the whole of what this program does when it is started with
+/// `LET_GO_ARGUMENT`: it attaches to the engine's console and sends the
+/// interruption down it, which the engine answers by putting the screen
+/// back and stopping. It then hands back straight away; whether the
+/// engine really went is watched by the service, which holds it.
+///
+/// Its own handling of that interruption is switched off first, or the
+/// ask would take this program down before it has been made.
+pub fn let_the_engine_go(engine: u32) -> bool {
+    // Safe: three calls with no buffer of ours, each answering with
+    // nought when it refuses. Letting go of a console we do not have is
+    // one of the refusals, and it is the ordinary case: a program
+    // started detached has none.
+    unsafe {
+        FreeConsole();
+        if AttachConsole(engine) == 0 {
+            return false;
+        }
+        SetConsoleCtrlHandler(None, 1);
+        GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0) != 0
+    }
+}
+
+/// The engine this program was started to tap on the shoulder, if that
+/// is what it was started for.
+pub fn the_engine_to_let_go() -> Option<u32> {
+    the_engine_named_in(std::env::args())
+}
+
+/// The same, over any list of arguments, so it can be tried without
+/// starting a program to hold them.
+fn the_engine_named_in(arguments: impl Iterator<Item = String>) -> Option<u32> {
+    let mut after = arguments.skip_while(|a| a != LET_GO_ARGUMENT);
+    after.next()?;
+    after.next()?.parse().ok()
 }
 
 /// The service's token, duplicated and attached to the wanted session.
@@ -437,6 +595,21 @@ mod tests {
     fn a_launch_without_arguments_stays_valid() {
         let line = command_line(Path::new(r"C:\engine.exe"), &[]);
         assert_eq!(read_back(&line), r#""C:\engine.exe""#);
+    }
+
+    #[test]
+    fn the_engine_to_tap_on_the_shoulder_is_read_from_the_arguments() {
+        let said =
+            |arguments: &[&str]| the_engine_named_in(arguments.iter().map(|a| a.to_string()));
+        assert_eq!(said(&["zyrdeskd.exe", LET_GO_ARGUMENT, "1234"]), Some(1234));
+        // Started for anything else, this program has no engine to tap:
+        // the ordinary commands must go on reaching clap untouched.
+        assert_eq!(said(&["zyrdeskd.exe", "status"]), None);
+        assert_eq!(said(&["zyrdeskd.exe"]), None);
+        // And a number that is not one names nobody, which is safer than
+        // naming whatever happens to hold that place.
+        assert_eq!(said(&["zyrdeskd.exe", LET_GO_ARGUMENT]), None);
+        assert_eq!(said(&["zyrdeskd.exe", LET_GO_ARGUMENT, "plus tard"]), None);
     }
 
     #[test]

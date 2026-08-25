@@ -27,6 +27,32 @@ pub struct Launch {
     pub log: PathBuf,
 }
 
+/// How the engine came to be gone.
+///
+/// Worth telling apart and worth writing down. The engine puts the far
+/// computer's screen back the size it found it at as it goes, and only as
+/// it goes: taken outright, it leaves that screen at the size of whoever
+/// was watching it. Which of the two happened is the first question asked
+/// of a computer that came back wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Parting {
+    /// It was asked, and went by itself.
+    OfItsOwnAccord,
+    /// It was not going, and was taken.
+    Taken,
+}
+
+impl std::fmt::Display for Parting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Parting::OfItsOwnAccord => "the engine went by itself, having put the screen back",
+            Parting::Taken => {
+                "the engine would not go and was taken, so the screen stays as the session left it"
+            }
+        })
+    }
+}
+
 /// A started process, seen by whoever watches over it.
 pub trait Running: Send {
     /// Identifier the task manager shows. Enough to find the engine
@@ -37,8 +63,8 @@ pub trait Running: Send {
     /// value is absent when it was interrupted instead of returning.
     fn exit_seen(&mut self) -> io::Result<Option<Option<i32>>>;
 
-    /// Stops the process, and waits for it to be gone.
-    fn stop(&mut self) -> io::Result<()>;
+    /// Stops the process, waits for it to be gone, and says how it went.
+    fn stop(&mut self) -> io::Result<Parting>;
 }
 
 /// How the engine's process is started.
@@ -78,9 +104,12 @@ impl Running for Child {
         Ok(self.try_wait()?.map(|status| status.code()))
     }
 
-    fn stop(&mut self) -> io::Result<()> {
+    /// A child of this program has no console of its own to be
+    /// interrupted through: this is the console supervisor, used while
+    /// developing, where the engine is a child like any other.
+    fn stop(&mut self) -> io::Result<Parting> {
         self.kill()?;
         self.wait()?;
-        Ok(())
+        Ok(Parting::Taken)
     }
 }

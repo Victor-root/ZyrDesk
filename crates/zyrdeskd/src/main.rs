@@ -64,6 +64,19 @@ fn main() -> ExitCode {
         };
     }
 
+    // And the service starts this program again, in the session the
+    // engine runs in, when the engine has to be asked to go: only a
+    // program in that session can reach the engine's console, and that
+    // console is the one way to ask. Nobody types this either.
+    #[cfg(windows)]
+    if let Some(engine) = session::the_engine_to_let_go() {
+        return if session::let_the_engine_go(engine) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
+
     match Cli::parse().command {
         Some(command) => run(command),
         None => {

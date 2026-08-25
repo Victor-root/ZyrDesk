@@ -567,19 +567,19 @@ fn wait_for_the_engine_to_stop(
     loop {
         if order.stop_asked() {
             log.write("stop asked for, the engine is being stopped");
-            let _ = engine.stop();
+            stop_and_say_how(engine, log);
             return Life::Stopped(None);
         }
 
         if !remembered.remote_access() {
             log.write("remote access turned off, the engine is being stopped");
-            let _ = engine.stop();
+            stop_and_say_how(engine, log);
             return Life::NoLongerWanted;
         }
 
         if remembered.serving() != serving {
             log.write("how this computer serves was changed, the engine starts over with it");
-            let _ = engine.stop();
+            stop_and_say_how(engine, log);
             return Life::ServingChanged;
         }
 
@@ -596,10 +596,25 @@ fn wait_for_the_engine_to_stop(
         }
 
         if screen_session() != Some(session) {
-            let _ = engine.stop();
+            stop_and_say_how(engine, log);
             return Life::SessionChanged;
         }
         std::thread::sleep(WATCH_PERIOD);
+    }
+}
+
+/// Stops the engine and writes down how it went.
+///
+/// Worth a line of its own every time. The engine puts the far
+/// computer's screen back the size and the magnification it found it at
+/// as it goes, and only as it goes: this line is what tells a screen
+/// that came back wrong because the engine was taken from one that came
+/// back wrong for some other reason.
+fn stop_and_say_how(engine: &mut HostEngine, log: &Log) {
+    match engine.stop() {
+        Ok(Some(parting)) => log.write(&parting.to_string()),
+        Ok(None) => {}
+        Err(e) => log.write(&format!("the engine could not be stopped: {e}")),
     }
 }
 
