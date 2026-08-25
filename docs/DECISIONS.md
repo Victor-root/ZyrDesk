@@ -503,7 +503,7 @@ Dix Alt+Tab laissés passer à Windows parce que la session n'était pas au prem
 
 La capture propre à la bibliothèque d'affichage reste éteinte dans ce mode, pour la même raison. Ce que le moteur récupère est poussé dans sa file d'événements comme n'importe quelle frappe, donc le chemin qui l'envoie à l'ordinateur d'en face est celui de toutes les autres touches, sans exception à maintenir.
 
-**Les deux voies ne peuvent pas tourner ensemble**, étant le même crochet du système : le choix est un réglage, `system_keys_in_the_engine`, écrit dans le fichier de réglages et porté jusqu'à la ligne de commande du moteur. **Il est à « oui » par défaut.** L'ancienne voie est celle que le journal a prise en défaut, donc la garder par défaut aurait demandé une manipulation à chaque essai pour obtenir le comportement attendu ; c'est la neuve qu'une session ouvre, et le réglage sert à revenir en arrière, pas à avancer. L'ancienne reste entière le temps de juger. Une fois la neuve validée, `crates/zyr-ui/src/keys.rs`, le délai de grâce et le suivi du premier plan qui ne sert qu'à eux s'en vont ensemble.
+**Les deux voies ne peuvent pas tourner ensemble**, étant le même crochet du système : le choix est un réglage, `system_keys_in_the_engine`, écrit dans le fichier de réglages et porté jusqu'à la ligne de commande du moteur. **Il est à « oui » par défaut.** L'ancienne voie est celle que le journal a prise en défaut, donc la garder par défaut aurait demandé une manipulation à chaque essai pour obtenir le comportement attendu ; c'est la neuve qu'une session ouvre, et le réglage sert à revenir en arrière, pas à avancer. L'ancienne reste entière le temps de juger. Une fois la neuve validée, `crates/zyr-ui/src/keys.rs`, le délai de grâce et le suivi du premier plan qui ne sert qu'à eux s'en vont ensemble. **C'est fait, voir [D47](DECISIONS.md).**
 
 **Conséquence à connaître.** Ce réglage voyage avec le produit, et le moteur qui comprend le mode voyage avec la compilation des moteurs. Un produit reconstruit sans que les moteurs le soient demande donc au moteur un mode qu'il ne connaît pas, et la session ne s'ouvre pas. La routine de mise à jour fait les deux à la suite, et le déplacement du sous-module déclenche la compilation des moteurs, donc les deux avancent ensemble ; il faut seulement attendre qu'elle ait abouti avant de récupérer les moteurs.
 
@@ -551,6 +551,23 @@ La capture propre à la bibliothèque d'affichage reste éteinte dans ce mode, p
 **Ça n'a pas suffi, et la deuxième moitié est ailleurs.** La forme appartient à la fenêtre, le dessin appartient à la vue web portée dedans, et pour le système ce sont deux fenêtres et non une. Redessiner la fenêtre extérieure toute seule laisse donc la dernière image de l'intérieure là où la nouvelle forme la laisse passer, c'est-à-dire un morceau de quelque chose qui n'est plus dessiné nulle part. Il y reste jusqu'à ce que la page bouge d'elle-même, et une page dont le menu vient de se refermer sous une main qui est ailleurs ne bouge plus. Chaque découpe redemande maintenant le dessin de la fenêtre **et de tout ce qu'elle porte**, sans faire effacer le fond au passage, puisque ce fond est précisément le blanc dont il s'agit.
 
 **Et le journal sait le dire.** À chaque changement d'état, une ligne donne le nombre de morceaux découpés, jusqu'où ils vont, ce que le système tient réellement comme forme, et la taille de la fenêtre. C'est le seul défaut qu'une capture d'écran ne peut pas montrer : tout l'aspect du bouton est cette forme, donc une forme qui a dérivé du dessin et une page qui dessine autre chose se ressemblent exactement, vues du dehors.
+
+## D47. L'ancienne voie des touches système est retirée, et l'affaire est écrite quelque part (2026-08-25, pendant M4)
+
+**Ce qui est retiré.** La voie que ZyrDesk portait lui-même, gardée le temps de départager les deux ([D43](DECISIONS.md)), et tout ce qui n'existait que pour elle :
+
+- `crates/zyr-ui/src/keys.rs` en entier, 837 lignes ;
+- dans `picture.rs`, le délai de grâce et le premier plan gardé en mémoire, qui n'avaient qu'un lecteur : le crochet, qui ne pouvait pas poser la question au système depuis l'endroit d'où il répondait ;
+- le rattrapage des modificateurs restés en l'air, qui ne servait que là où ce programme avalait les touches et les repostait ; il n'avale plus rien ;
+- le réglage `system_keys_in_the_engine` et sa plomberie, du fichier de réglages du service jusqu'à la ligne de commande du moteur, en passant par le tube et le drapeau `--system-keys-in-zyrdesk`.
+
+Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. Un interrupteur n'aurait de sens que si les deux réponses étaient défendables ; l'autre a été retirée parce qu'elle ne **pouvait** pas marcher, pas parce qu'on lui préférait celle-ci.
+
+**Ce qui reste, et pourquoi.** Le suivi du premier plan reste, mais il ne décide plus de rien : il n'écrit qu'une ligne de journal nommant le programme qui vient de prendre le premier plan. Une session qui se tait est presque toujours une session devant laquelle quelque chose est passé, et c'est la seule ligne du produit qui dise laquelle.
+
+**Deux trous trouvés en faisant le ménage.** Le correctif moteur qui porte toute cette affaire n'était **inscrit nulle part** : le manifeste des patchs, qui est censé être la source de vérité sur l'écart entre nos moteurs et les leurs, l'ignorait, alors qu'il est épinglé et compilé depuis le 24 août. Il s'appelle désormais P-M10 et il y est décrit en entier. Le compte des patchs de Moonlight était resté à sept alors qu'il en portait neuf, plafond compris, et le dépassement est motivé plutôt que constaté.
+
+**Et l'affaire est racontée en un seul endroit.** [CLAVIER.md](CLAVIER.md) dit le symptôme, la règle de Windows qui commande tout, ce que fait le produit, les trois pièges qui font perdre une semaine, les quatre pistes déjà essayées qui ne peuvent pas marcher, où le code vit, et quoi lire dans les journaux si ça revient. Quinze allers-retours entre deux machines, c'est le prix d'une chose qui n'était écrite nulle part ; elle l'est maintenant.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

@@ -125,18 +125,6 @@ pub struct SessionSettings {
     /// with relative motion.
     pub absolute_mouse: bool,
     pub stats_overlay: bool,
-    /// Whether the keys this computer keeps for itself are the engine's to
-    /// take rather than this program's.
-    ///
-    /// The two ways cannot both run: they are the same hook of the system,
-    /// and two of them would each answer the other. Off is the old way,
-    /// where this program takes them and hands them to the engine's window;
-    /// on is the new one, where the engine takes them in the process that
-    /// really receives the keyboard, from the focus rather than from the
-    /// front. On by default: the old way is the one the journal caught
-    /// failing, so the new one is what a session gets unless somebody asks
-    /// for the old back ([D43](../../docs/DECISIONS.md)).
-    pub system_keys_in_the_engine: bool,
 }
 
 impl Default for SessionSettings {
@@ -151,7 +139,6 @@ impl Default for SessionSettings {
             packet_size: None,
             absolute_mouse: true,
             stats_overlay: false,
-            system_keys_in_the_engine: true,
         }
     }
 }
@@ -372,9 +359,6 @@ pub struct Preferred {
     /// with relative motion.
     pub absolute_mouse: bool,
     pub stats_overlay: bool,
-    /// Which of the two ways of taking this computer's own keys is in
-    /// force; see `SessionSettings::system_keys_in_the_engine`.
-    pub system_keys_in_the_engine: bool,
 }
 
 impl Default for Preferred {
@@ -386,7 +370,6 @@ impl Default for Preferred {
             display_mode: DisplayMode::default(),
             absolute_mouse: true,
             stats_overlay: false,
-            system_keys_in_the_engine: true,
         }
     }
 }
@@ -404,7 +387,6 @@ impl Preferred {
             display_mode: self.display_mode,
             absolute_mouse: self.absolute_mouse,
             stats_overlay: self.stats_overlay,
-            system_keys_in_the_engine: self.system_keys_in_the_engine,
             ..SessionSettings::default()
         }
     }
@@ -568,14 +550,12 @@ mod tests {
             display_mode: DisplayMode::Windowed,
             absolute_mouse: false,
             stats_overlay: true,
-            system_keys_in_the_engine: true,
         };
         let settings = preferred.settings(Some((3840, 2160)));
         assert_eq!((settings.width, settings.height), (2560, 1440));
         assert_eq!(settings.bitrate_kbps, 40_000);
         assert_eq!(settings.codec, Codec::Av1);
         assert_eq!(settings.display_mode, DisplayMode::Windowed);
-        assert!(settings.system_keys_in_the_engine);
         assert!(!settings.absolute_mouse);
         assert!(settings.stats_overlay);
         // La taille de paquet n'est pas un choix : le tunnel la décide.

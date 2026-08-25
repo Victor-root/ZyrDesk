@@ -23,8 +23,10 @@ use zyr_transport::{Fingerprint, MediaProfile};
 ///
 /// It only ever grows, and the service announces it: two halves of the
 /// product installed at different times must be able to say so rather
-/// than misunderstand each other quietly.
-pub const PROTOCOL: u32 = 13;
+/// than misunderstand each other quietly. A field that goes counts as
+/// much as one that arrives, since the two halves would then no longer
+/// be saying the same things to each other.
+pub const PROTOCOL: u32 = 14;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -283,7 +285,7 @@ fn said(yes: bool) -> &'static str {
 /// and the answer so the two can never drift apart.
 fn spelled(preferred: &Preferred) -> String {
     format!(
-        "asked={} bitrate={} codec={} display={} mouse={} stats={} syskeys-engine={}",
+        "asked={} bitrate={} codec={} display={} mouse={} stats={}",
         preferred.asked,
         preferred.bitrate_kbps,
         preferred.codec,
@@ -293,8 +295,7 @@ fn spelled(preferred: &Preferred) -> String {
         } else {
             "game"
         },
-        said(preferred.stats_overlay),
-        said(preferred.system_keys_in_the_engine)
+        said(preferred.stats_overlay)
     )
 }
 
@@ -649,8 +650,6 @@ impl<'a> Fields<'a> {
                 Err(_) => fallback.absolute_mouse,
             },
             stats_overlay: self.flag("stats", fallback.stats_overlay),
-            system_keys_in_the_engine: self
-                .flag("syskeys-engine", fallback.system_keys_in_the_engine),
         }
     }
 }
@@ -737,7 +736,6 @@ mod tests {
             display_mode: DisplayMode::Windowed,
             absolute_mouse: false,
             stats_overlay: true,
-            system_keys_in_the_engine: true,
         }
     }
 

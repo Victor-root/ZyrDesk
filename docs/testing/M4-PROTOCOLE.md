@@ -23,10 +23,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R17**, **R17bis** | La qualité disparaît. La taille, le débit et le codec se règlent dans le menu de la session, un cran par clic, et survivent à la fermeture |
 | **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
-| **S9bis** | Touché par le changement des touches système : la façon d'y faire perdre le premier plan à ZyrDesk change, le comportement attendu du bouton flottant non |
-| **S21** | Plus aucune touche ne doit rester coincée. Le premier correctif ne se déclenchait jamais ; il est maintenant demandé à chaque tour de la surveillance de session |
-| **S9sexies** | **La cause est trouvée et elle était chez nous : ZyrDesk mémorisait l'état d'Alt.** Un appui d'Alt qui n'arrive pas, et tous les Tab suivants sont jugés « Tab tout seul » et laissés au système, définitivement tant que le doigt reste dessus. Alt se lit maintenant dans le nom que Windows donne à chaque frappe, ce qui ne peut ni vieillir ni se perdre. Trois défauts de la même famille corrigés avec : les frappes envoyées par un programme ne mènent plus cet état, il est semé au bon endroit, et la reposée du crochet, qui perdait elle-même des frappes, est retirée en entier |
-| **S19** | Ces touches doivent redevenir celles de ce PC-là dès que le premier plan quitte ZyrDesk, et à la fin de la session. Le journal nomme désormais chaque fenêtre qui prend le premier plan pendant une session |
+| **S9bis**, **S19**, **S21** | Touchés par le retrait de l'ancienne voie des touches système : ZyrDesk n'en prend plus aucune, c'est le moteur qui les prend. Le comportement attendu ne change pas, le chemin oui |
+| **S9sexies** | **La voie qui restait est la seule.** Celle que ZyrDesk portait a été retirée en entier, réglage compris : elle ne pouvait pas marcher, un crochet du système étant servi du plus récent au plus ancien et le nôtre n'étant posé qu'une fois par session. Tout est expliqué dans [../CLAVIER.md](../CLAVIER.md), à lire avant de retoucher à ça |
 | **R12sexies** | Un diagnostic si **Statistiques** ne montre toujours rien : le journal dit si un autre programme tient déjà cette combinaison |
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
@@ -732,49 +730,20 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **À refaire après être passé par le bouton flottant** : ouvrir son menu, le refermer, puis rejouer Alt+Tab **tout de suite**. C'est le chemin qui a lâché quatre fois, et c'est celui qui compte le plus.
 >
-> **Première cause, et le journal la donne à la seconde près.** Windows appelle la reprise des touches et **chaque frappe de tout l'ordinateur attend cette réponse** ; passé un tiers de seconde, il remet la touche comme s'il n'y avait pas de reprise du tout. Or ZyrDesk posait, à chaque touche, deux questions au gestionnaire de fenêtres : où est le premier plan, et l'image existe-t-elle encore. Ces questions attendent quand **un autre fil du même programme déplace des fenêtres**, ce qui prend une demi-seconde. Le journal montre les deux collés : `retour en fenêtre rendu au système : en fenêtre en 489 ms`, et à cette même seconde le premier plan qui part au sélecteur de Windows et un relâchement de Tab arrivant sans son appui.
+> **Qui prend ces touches, et pourquoi ce n'est pas ZyrDesk.** C'est le moteur client, dans le processus qui reçoit vraiment le clavier. ZyrDesk n'en prend aucune. Toute l'affaire, qui a coûté une quinzaine d'allers-retours, est racontée dans [../CLAVIER.md](../CLAVIER.md) : le symptôme, la règle de Windows qui commande tout, les trois pièges, et les quatre pistes déjà essayées qu'il ne faut pas reprendre. À lire avant de toucher à quoi que ce soit ici.
 >
-> **Plus rien n'est demandé depuis là.** Le premier plan est calculé ailleurs et laissé sous forme de nombre ; la fenêtre de l'image est lue comme un nombre aussi. Un nombre périmé coûte un message envoyé dans le vide, que le système refuse et qui ne coûte rien.
->
-> **Deuxième cause : ce nombre était vieux d'une seconde.** Il n'était recalculé qu'au redessin de la barre de titre et à chaque tour de la surveillance de session. Le sélecteur de Windows, lui, prend le premier plan et le rend en bien moins que ça, et le journal montre la conséquence : `barre de titre active : le premier plan est à ZyrDesk` à 18:23:40, puis la touche suivante refusée pour `premier plan ailleurs` à 18:23:41. Un seul refus entretient le suivant, puisque la touche laissée passer rouvre ce sélecteur. Le premier plan est maintenant **suivi** : Windows le dit à l'instant où il le déplace, et le journal le nomme à chaque fois (`le premier plan passe ailleurs : processus N (xxx.exe), titre « ... »`).
->
-> **Troisième cause, et c'est bien le bouton flottant.** Cliquer dessus donne le focus à sa page ; donner le focus à une fenêtre active celle-ci ou celle dont elle dépend, et cette fenêtre-là est marquée pour ne jamais être activée. Résultat : notre propre fenêtre perd le premier plan sans que rien ne l'ait pris, et il tombe sur ce qu'il y a derrière, le bureau de Windows quand la session est en fenêtre. Le journal le montre une seconde après la fermeture du menu, `le premier plan est ailleurs : processus 34640 (explorer.exe)`, avant le moindre Alt+Tab. Refermer le menu redemande donc le premier plan pour la fenêtre de ZyrDesk, et le journal dit ce que Windows en a fait. Cette demande n'est faite que là, que pendant une session, et que si le premier plan a réellement quitté ZyrDesk : partir vers un autre programme pendant que le menu est ouvert doit continuer de marcher, et c'est ce que S19 vérifie.
->
-> **Une chose a été essayée et refusée par Windows** : réclamer ces combinaisons au système, comme ZyrDesk réclame ses propres raccourcis, ce qui aurait été plus propre. Le journal a répondu `1 combinaison tenue, 3 refusées`. Alt+Tab, Alt+Maj+Tab et Alt+Échap sont à Windows et il ne les cède pas. Se mettre devant les frappes n'est donc pas un choix : c'est le seul moyen.
->
-> **Ce qui reste imparfait** : menu du bouton flottant **ouvert**, le clavier est à ce menu, donc l'ordinateur distant reçoit un Tab seul plutôt qu'un Alt+Tab. Une seconde ou deux par ouverture de menu. À signaler si ça gêne, pas à confondre avec le défaut ci-dessus.
->
-> **La touche Windows, elle, reste celle de ce PC-là** et ouvre le menu Démarrer d'ici. C'est la seule que ce chemin ne peut pas servir : le moteur refuse de la transmettre à l'ordinateur distant tant que sa propre capture des touches système ne tourne pas, ce qui dans ce produit n'arrive jamais. La reprendre n'ouvrirait donc de menu nulle part, ce qui serait pire.
+> **La touche Windows, elle, reste celle de ce PC-là** et ouvre le menu Démarrer d'ici. C'est la seule que ce chemin ne peut pas servir : le moteur ne la transmet au loin que quand sa propre capture des touches système tourne, et elle ne tourne jamais dans ce produit, puisque c'est elle qui avalerait Alt et Control en entier et couperait tous nos raccourcis. La reprendre n'ouvrirait donc de menu nulle part, ce qui serait pire.
 >
 > **Comment revenir sur ce PC-là.** Ces touches partent au loin dès que l'image tient le clavier : pour joindre une autre fenêtre d'ici pendant ce temps, c'est la souris, un clic sur sa vignette dans la barre des tâches par exemple, comme le fait S9bis plus bas. Les raccourcis de ZyrDesk, eux, marchent toujours : voir S20 juste en dessous.
 >
-> **Ce qui a changé sous le capot, et pourquoi il a fallu s'y reprendre.** Le moteur client a une option qui fait exactement ça, elle lui a été demandée, et elle vient d'être retirée. Deux raisons. D'abord il ne peut pas s'en servir : il décide qu'il tient le clavier en comparant sa propre fenêtre à celle que le système appelle « la fenêtre du premier plan », or sa fenêtre est portée dans la nôtre, donc c'est une fenêtre fille, et une fenêtre fille n'est jamais celle-là ; quelques secondes après le début il en conclut qu'il a perdu le clavier et lâche tout. Ensuite, et surtout, la façon dont il reprend ces touches est d'**avaler Alt et Ctrl en entier** avant que quiconque les voie, ce qui coupait tous les raccourcis de ZyrDesk (S20).
+> **Ce qu'il faut lire, et où.** Dans `session.log`, la trace du moteur client, sous `zyr:` :
 >
-> La fenêtre que le système appelle celle du premier plan, c'est la nôtre. C'est donc ZyrDesk qui reprend ces touches, sans toucher ni à Alt ni à Ctrl, et qui les porte à l'image telles quelles. Le moteur reçoit une frappe ordinaire à sa propre fenêtre et la transmet comme n'importe quelle autre : rien n'est ajouté dedans, il ne lui est rien demandé de nouveau.
+> - `the session has the keyboard` et `the session has lost the keyboard` : le clavier doit revenir après chaque perte. Une perte sans retour, et la session reste sourde jusqu'au bout.
+> - `system keys: Tab … carried to the host …` : les appuis et relâchements vus, ce qui est parti vers l'hôte, ce qui a été laissé passer et pourquoi, et **le nombre de fois où le crochet a été reposé**. C'est ce dernier nombre qui compte : il doit monter quand la fenêtre est agrandie, mise en plein écran, ou quand le menu du bouton s'ouvre, puisque ce sont les moments où un autre programme se met devant nous dans la file.
 >
-> Le journal le dit une fois par seconde au plus, jamais depuis le chemin des touches lui-même. La ligne à lire :
+> Et dans `interface.log`, `le premier plan passe ailleurs : processus N (nom.exe)` nomme qui a pris le premier plan. Un tiers qui le prend pendant qu'on tape est une explication ordinaire, jamais une panne.
 >
-> `touches système : N frappe(s) vues, M candidate(s), K portée(s) ; [compte de chaque réponse] ; la dernière était [...]`
->
-> - **N à zéro** : ZyrDesk ne voit passer aucune touche, le mécanisme n'est pas branché.
-> - **N qui monte, M à zéro** : il est branché, mais Alt+Tab ne lui parvient pas.
-> - **M qui monte, K à zéro** : elles lui parviennent et il les laisse passer, et le compte de chaque réponse dit pourquoi, en toutes lettres.
-> - **K qui monte d'une unité par Alt+Tab** : c'est ce qu'on veut.
->
-> **La suite de la ligne dit si la touche arrive seulement jusqu'ici.** Un Alt+Tab fait quatre frappes, et `vues : Tab X enfoncée(s) et Y relâchée(s), Alt A et B` les compte à part. **X et Y doivent être égaux**, comme A et B : une session ne peut pas tenir deux relâchements de Tab pour un appui. Un appui qui manque veut dire que Windows n'a pas appelé ZyrDesk pour cette touche-là, ce qui est un défaut d'une autre nature que tous les précédents, et les trois nombres suivants disent lequel :
->
-> - `au plus X ms d'attente avant nous` : ce que le système, et tout autre programme accroché devant nous, a consommé avant de nous passer la touche. Grand, l'attente n'est pas la nôtre.
-> - `Y µs chez nous` : ce que ZyrDesk a mis à répondre. C'est le seul dont ce programme réponde, et il doit rester très petit ; le système rend la touche telle quelle passé un tiers de seconde, soit 300 000 µs.
-> - `Z appel(s) hors sujet` : des appels qui ne parlaient pas d'une frappe. Zéro attendu.
-> - `N portée(s) sauvée(s) par le délai de grâce` : combien de frappes ont été portées à la session alors que le premier plan brut était déjà ailleurs. Fermer le menu du bouton flottant fait rebondir le premier plan une fraction de seconde sur le shell de Windows avant qu'il ne revienne ; une frappe tombée pile là était laissée passer et ouvrait le sélecteur local, qui prenait alors le premier plan pour de vrai et bloquait tout le reste. Un premier plan parti depuis moins d'une demi-seconde n'est plus compté comme perdu. Non nul après un passage par le bouton, avec les Alt+Tab qui continuent de passer à la session, c'est ce délai qui a coupé la cascade.
->
-> **Deux réponses à ne plus confondre.** `relâchements de touches laissées passer` est normal : l'appui est bien arrivé et ZyrDesk l'a laissé au système exprès, la session n'étant plus devant. `relâchements dont l'appui n'est jamais arrivé jusqu'ici` est le vrai défaut : Windows ne nous a pas appelés pour cet appui. Les deux se ressemblaient et étaient comptées ensemble, ce qui a rendu un journal ambigu.
->
-> **Ce qui ne doit surtout plus revenir.** Une version reposait le crochet en démontant son fil depuis le fil qui dessine, ce qui bloquait le clavier de tout l'ordinateur le temps de le faire : « ça m'a carrément bloqué le alt tab sur mon propre pc ». Cette reposée est retirée en entier. Si un essai ramène un clavier figé, même une fraction de seconde, c'est à dire immédiatement.
->
-> Et `relâchements dont l'appui n'est jamais arrivé jusqu'ici` compte exactement le défaut ci-dessus, séparé de `relâchements de touches laissées passer`, qui lui est normal : c'est le retour d'un Alt+Tab que ZyrDesk a laissé au système exprès, parce que la session n'était plus devant.
->
-> Le compte est par **réponse** et pas seulement sur la dernière touche, et c'est ce qui a fini par trancher : Alt+Tab arrive par paires de sens opposé, celle qui sort de la session et doit partir au loin, et celle qui y revient et ne doit pas. Lue sur la dernière touche seulement, une session où toutes les sorties échouent et toutes les rentrées sont correctement refusées se lit comme une session où tout va bien.
+> **Ce qui ne doit surtout plus revenir.** Une version, du temps où ZyrDesk prenait ces touches lui-même, reposait son crochet en démontant son fil depuis le fil qui dessine, ce qui bloquait le clavier de tout l'ordinateur le temps de le faire : « ça m'a carrément bloqué le alt tab sur mon propre pc ». Tout ce chemin est retiré ([D47](../DECISIONS.md)). Si un essai ramène un clavier figé, même une fraction de seconde, c'est à dire immédiatement.
 
 > **S20 (les raccourcis de ZyrDesk marchent pendant toute la session)**
 >
@@ -1222,20 +1191,11 @@ Deux entrées du menu flottant méritent leur propre explication :
 
 ---
 
-## Essai A/B des touches système (Alt+Tab)
+## Essai des touches système (Alt+Tab)
 
-Deux façons de reprendre les touches que Windows garde pour lui coexistent le temps de les départager ([D43](../DECISIONS.md)). **La nouvelle est celle par défaut** : il n'y a rien à activer, une session l'utilise. Le réglage sert à revenir à l'ancienne, par une ligne du fichier de réglages du service :
+Ces touches sont prises par le moteur client et par lui seul, sans réglage pour l'éteindre : la façon de faire est expliquée en entier dans [../CLAVIER.md](../CLAVIER.md), et l'autre voie a été retirée ([D47](../DECISIONS.md)). Les moteurs doivent avoir été recompilés : un moteur d'avant ne connaît pas le mode demandé et refuse de démarrer.
 
-```
-system_keys_in_the_engine = yes   # le moteur les prend lui-même (défaut)
-system_keys_in_the_engine = no    # ZyrDesk les prend et les remet au moteur
-```
-
-Le service doit être arrêté puis redémarré pour que la ligne soit relue. La ligne de commande revient à l'ancienne sans toucher au fichier : `zyr-cli connect … --system-keys-in-zyrdesk`.
-
-Les moteurs doivent avoir été recompilés : un moteur d'avant ne connaît pas le mode demandé et refuse de démarrer. La routine de mise à jour habituelle s'en charge, à condition d'attendre que la compilation des moteurs ait abouti avant de les récupérer.
-
-**Tout l'essai se fait pendant une seule session, sans jamais se reconnecter.** C'est le point important : la panne se déclenche une fois et ne se répare qu'à la reconnexion, donc un essai coupé en deux ne prouve rien.
+**Tout l'essai se fait pendant une seule session, sans jamais se reconnecter.** C'est le point important : la panne d'origine se déclenchait une fois et ne se réparait qu'à la reconnexion, donc un essai coupé en deux ne prouve rien.
 
 1. Se connecter, puis **Alt+Tab tout de suite**. La fenêtre doit changer sur le PC hôte, jamais ici.
 2. **Agrandir puis restaurer la fenêtre, cinq fois**, en retestant Alt+Tab après chacune.
@@ -1247,7 +1207,9 @@ Les moteurs doivent avoir été recompilés : un moteur d'avant ne connaît pas 
 8. Vérifier qu'aucune touche Alt ou Control n'est restée coincée, sur les deux machines, en tapant du texte.
 9. Vérifier que **tous les raccourcis de ZyrDesk répondent encore** : plein écran, statistiques, mode souris, menu, fin de session.
 
-Ce qu'il faut lire ensuite, selon la voie essayée :
+Ce qu'il faut lire ensuite, dans `session.log` (la trace du moteur client), sous `zyr:` :
 
-- **Voie ZyrDesk** (`no`) : dans `interface.log`, la ligne `touches système : …`. `portées à la session` doit monter à chaque Alt+Tab, `premier plan ailleurs` doit rester à zéro tant que l'étape 6 n'a pas eu lieu, et `relâchements dont l'appui n'est jamais arrivé jusqu'ici` est le compteur de la panne : au-dessus de zéro, des appuis n'arrivent pas jusqu'au produit.
-- **Voie moteur** (`yes`) : dans `interface.log`, la ligne `touches système laissées au moteur` doit apparaître à l'ouverture, et aucune ligne `touches système : …` ensuite, les deux voies ne pouvant pas tourner ensemble. Le reste est dans `session.log`, sous `zyr:` : `the session has the keyboard` à chaque reprise du clavier, et `system keys: Tab … carried to the host …` qui donne les appuis et relâchements vus, ce qui est parti vers l'hôte, ce qui a été laissé passer et pourquoi, et le nombre de fois où le crochet a été reposé.
+- `the session has the keyboard` à chaque reprise du clavier, et jamais une perte sans retour ensuite ;
+- `system keys: Tab … carried to the host …`, qui donne les appuis et relâchements vus, ce qui est parti vers l'hôte, ce qui a été laissé passer et pourquoi, et le nombre de fois où le crochet a été reposé. C'est ce dernier nombre qui compte : il doit monter aux moments des étapes 2, 3 et 4.
+
+Et dans `interface.log`, `le premier plan passe ailleurs : processus N (nom.exe)` nomme qui a pris le premier plan, ce qui est l'explication ordinaire de l'étape 6 et jamais une panne.

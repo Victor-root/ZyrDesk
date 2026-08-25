@@ -441,11 +441,6 @@ pub fn fit(app: &AppHandle) {
         return;
     };
     lay_it_out(home, held.window as windows_sys::Win32::Foundation::HWND);
-    // Every turn of the session watch passes here, which is where what
-    // the keys taken from the system have been doing is written to the
-    // journal: the thread that takes them may not write it itself, being
-    // the one the system waits on for every keystroke.
-    crate::keys::tell();
 }
 
 /// The one place a session is laid out, and the only one.
@@ -1332,18 +1327,7 @@ fn give_the_keyboard_to_the_picture(app: &AppHandle) -> bool {
     // Said again after it, and read: the message above puts the keyboard
     // back as part of its work, but says nothing about where it landed,
     // and nothing may be typed at a picture that does not have it.
-    let landed = the_keyboard_to_the_picture();
-    // And every time, not only when the keyboard is coming back from
-    // somewhere. It was made to wait for that, and never once ran: what
-    // strands a modifier is the front leaving, which the keyboard does
-    // not have to follow, so this program went on holding the keyboard
-    // and answering « yes, still here » while Alt lay stuck at the far
-    // end and the session read as dead. Nothing is sent for a key a
-    // finger is really holding, so asking every second costs nothing.
-    if landed {
-        crate::keys::no_key_left_down();
-    }
-    landed
+    the_keyboard_to_the_picture()
 }
 
 /// Gives the keyboard back to the picture, asked from anywhere in the
@@ -1422,10 +1406,8 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // handler outlives the subclass: it is a plain function of this
         // program.
         unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
-        // The two hooks a session holds of the system: the keys it keeps
-        // for itself, and where it is putting the front. Each takes a
-        // thread of its own here and gives it back below.
-        crate::keys::hold();
+        // Where the front is going, said by the system as it moves it.
+        // It takes a thread of its own here and gives it back below.
         watch_the_front();
         offer_a_picture_of_the_session(home, true);
         round_the_window(home, true);
@@ -1466,7 +1448,6 @@ fn give_the_window_back(app: &AppHandle) {
         // SAFETY: same window, same thread and same handler as were put
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
-        crate::keys::let_go();
         stop_watching_the_front();
         offer_a_picture_of_the_session(home, false);
         round_the_window(home, false);
@@ -1510,91 +1491,6 @@ fn light_the_bar(home: windows_sys::Win32::Foundation::HWND) {
 #[cfg(windows)]
 static BAR_LIT: AtomicBool = AtomicBool::new(false);
 
-/// Whether a session is on screen and in front, kept as a number rather
-/// than asked for.
-///
-/// For the one reader that may not ask: the keys taken from the system
-/// are answered from inside the system's own handling of a keystroke, and
-/// every call to the window manager from there can be made to wait by
-/// another thread of this program that is moving windows about. A wait of
-/// that kind past a third of a second has the keystroke handed on as
-/// though there had been no answer at all, and moving this window between
-/// full screen and not takes half a second. So nothing is asked there;
-/// this is written by `the_front_moved`, which the system calls the
-/// instant the front moves, and read there.
-#[cfg(windows)]
-static IN_FRONT: AtomicBool = AtomicBool::new(false);
-
-/// When the front last left this session for another program, counted in
-/// milliseconds since this computer started, nought while it is here.
-///
-/// For the grace below. Set the moment the front first leaves and cleared
-/// the moment it comes back, so the difference from now is how long it has
-/// really been gone.
-#[cfg(windows)]
-static LEFT_AT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-/// A gone shorter than this is not a leaving.
-#[cfg(windows)]
-const A_FLAP: u32 = 500;
-
-/// How many keys were carried on the strength of that grace, for the
-/// journal to show the grace is doing something and what.
-#[cfg(windows)]
-static SAVED_BY_GRACE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-
-/// The same, read by the journal.
-#[cfg(windows)]
-pub(crate) fn grace_saves() -> u32 {
-    SAVED_BY_GRACE.load(Ordering::Relaxed)
-}
-
-/// Puts that count back to nought, a session being over.
-#[cfg(windows)]
-pub(crate) fn forget_the_grace() {
-    SAVED_BY_GRACE.store(0, Ordering::Relaxed);
-    LEFT_AT.store(0, Ordering::Relaxed);
-}
-
-/// Whether a session is on screen and in front, read from wherever it is
-/// needed and above all from the road every keystroke travels.
-///
-/// A front gone for less than half a second is not a front lost. Pressing
-/// the floating button, which is a window of ours, bounces the front off
-/// this program to the shell and back inside a fraction of a second, and
-/// an Alt+Tab that lands in that fraction was, until this, let through to
-/// the system, where it opened the switcher of this computer, whose own
-/// window then held the front for real and kept every Alt+Tab after it out
-/// of the session too. Held « in front » through that flap, the key is
-/// carried, the switcher never opens, and the whole run of it never
-/// starts. A real leaving, by clicking a window of this computer, stays
-/// gone past the grace and opens the gate as it should.
-#[cfg(windows)]
-pub(crate) fn the_session_is_in_front() -> bool {
-    use windows_sys::Win32::System::SystemInformation::GetTickCount;
-
-    if CARRIED.load(Ordering::Relaxed) == 0 {
-        return false;
-    }
-    if IN_FRONT.load(Ordering::Relaxed) {
-        return true;
-    }
-    let left = LEFT_AT.load(Ordering::Relaxed);
-    // SAFETY: no argument, and the answer is a plain number.
-    if left != 0 && unsafe { GetTickCount() }.wrapping_sub(left) < A_FLAP {
-        SAVED_BY_GRACE.fetch_add(1, Ordering::Relaxed);
-        return true;
-    }
-    false
-}
-
-/// The picture's window as a plain number, without asking the system
-/// whether it is still one, for the same reader and the same reason.
-#[cfg(windows)]
-pub(crate) fn the_engines_window_number() -> isize {
-    ENGINE.load(Ordering::Relaxed)
-}
-
 /// The watch that follows the front, held for the length of a session;
 /// see `crate::hook`.
 #[cfg(windows)]
@@ -1602,23 +1498,18 @@ static FRONT_WATCH: crate::hook::Held = crate::hook::Held::new();
 
 /// Has the system say where the front is every time it moves it.
 ///
-/// Looked at now and then, as it was, this was wrong for up to a second
-/// at a time, and the journal caught what that costs: the front leaves
-/// for the system's own window switcher and comes back, and every
-/// Alt+Tab typed in that second is refused for want of a front the
-/// session had already got back. One refusal is enough to keep it going,
-/// since the key let through opens that switcher again.
+/// Nothing decides on this any more: what is left of it is the one line
+/// that names the program which has just stepped in front of a session,
+/// and that line is worth a thread on its own. A session that stops
+/// answering is almost always a session something else is in front of,
+/// and nothing else anywhere says what.
 ///
 /// A watch of this kind is not a hook on the road a keystroke travels:
 /// it is handed to this thread through its messages, after the fact, so
 /// a slow answer here delays nothing of the computer's. What it costs is
-/// one thread and one line in the journal per move of the front, and
-/// what it buys is an answer that is never stale and never guessed.
+/// one thread and one line in the journal per move of the front.
 #[cfg(windows)]
 fn watch_the_front() {
-    // Where it stands right now, since nothing will be said about it
-    // until it next moves.
-    look_at_the_front(None);
     let Some(taken) = FRONT_WATCH.hold(put_it_on, take_it_off) else {
         return;
     };
@@ -1666,7 +1557,6 @@ fn take_it_off(hook: isize) {
 #[cfg(windows)]
 fn stop_watching_the_front() {
     FRONT_WATCH.let_go();
-    forget_the_grace();
 }
 
 /// Said by the system every time the front moves, to any window of any
@@ -1690,45 +1580,29 @@ unsafe extern "system" fn the_front_moved(
     if event != EVENT_SYSTEM_FOREGROUND || object != OBJID_WINDOW || child != CHILDID_SELF as i32 {
         return;
     }
-    look_at_the_front(Some(window));
+    say_where_the_front_went(window);
 }
 
-/// Writes down where the front is, and says in the journal where it went.
+/// Says in the journal where the front went.
 ///
-/// The window is taken from the system's own word for it where there is
-/// one, and asked for where there is not. Asked for, it can come back as
-/// no window at all for the moment one is handing it to the next, and a
-/// session read exactly then was read as having lost the front it never
-/// left.
+/// Nothing acts on this and nothing should: where the front is, when it
+/// is needed, is asked of the system on the spot. This is a line to read
+/// afterwards and nothing else.
+///
+/// The window is the system's own word for it rather than a fresh ask:
+/// asked for, it can come back as no window at all for the moment one is
+/// handing it to the next.
+///
+/// Only during a session, since outside one nobody cares where the front
+/// is and the journal would fill with every window of the day.
 #[cfg(windows)]
-fn look_at_the_front(moved_to: Option<windows_sys::Win32::Foundation::HWND>) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-
-    let window = match moved_to {
-        Some(window) => window,
-        // SAFETY: no argument, and a null answer is one of the answers.
-        None => unsafe { GetForegroundWindow() },
-    };
-    let whose = whose_window(window);
-    let here = whose != Front::Elsewhere;
-    let was = IN_FRONT.swap(here, Ordering::Relaxed);
-    // The grace clock: started the moment the front first leaves, and only
-    // then, so it measures from the true leaving and not from the latest
-    // hop between two other windows; cleared the moment it comes back.
-    if here {
-        LEFT_AT.store(0, Ordering::Relaxed);
-    } else if was {
-        use windows_sys::Win32::System::SystemInformation::GetTickCount;
-        // SAFETY: no argument, and the answer is a plain number; nought is
-        // reserved for « here », so a tick that lands on it is nudged.
-        LEFT_AT.store(unsafe { GetTickCount() }.max(1), Ordering::Relaxed);
-    }
-    if moved_to.is_none() || CARRIED.load(Ordering::Relaxed) == 0 {
+fn say_where_the_front_went(window: windows_sys::Win32::Foundation::HWND) {
+    if CARRIED.load(Ordering::Relaxed) == 0 {
         return;
     }
     crate::journal::note(&format!(
         "le premier plan passe {}",
-        in_these_words(whose, window)
+        in_these_words(whose_window(window), window)
     ));
 }
 

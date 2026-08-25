@@ -33,9 +33,6 @@ const CODEC: &str = "codec";
 const DISPLAY: &str = "display";
 const ABSOLUTE_MOUSE: &str = "absolute_mouse";
 const STATS_OVERLAY: &str = "stats_overlay";
-/// Which of the two ways of taking this computer's own keys is in force;
-/// see `SessionSettings::system_keys_in_the_engine`.
-const SYSTEM_KEYS_IN_THE_ENGINE: &str = "system_keys_in_the_engine";
 const STEADY_RATE: &str = "steady_rate";
 const CAPTURE: &str = "capture";
 
@@ -195,12 +192,6 @@ fn rendered(preferences: Preferences) -> String {
          {ABSOLUTE_MOUSE} = {}\n\
          # Statistiques affichées par-dessus l'image.\n\
          {STATS_OVERLAY} = {}\n\
-         # Qui prend les touches que Windows garde pour lui, Alt+Tab en\n\
-         # tête : oui, le moteur les prend lui-même, dans le programme qui\n\
-         # reçoit vraiment le clavier, ce qui est la façon de faire ; non,\n\
-         # ZyrDesk les prend et les remet au moteur, ce qui est l'ancienne\n\
-         # et ne marchait pas. Les deux ne peuvent pas tourner ensemble.\n\
-         {SYSTEM_KEYS_IN_THE_ENGINE} = {}\n\
          \n\
          # Ce que cet ordinateur fait quand c'est LUI qu'on regarde.\n\
          # Renvoyer un écran immobile à pleine cadence : plus fluide, mais\n\
@@ -218,7 +209,6 @@ fn rendered(preferences: Preferences) -> String {
         preferred.display_mode,
         yes_no(preferred.absolute_mouse),
         yes_no(preferred.stats_overlay),
-        yes_no(preferred.system_keys_in_the_engine),
         yes_no(preferences.serving.steady_rate),
         preferences.serving.capture,
     )
@@ -279,10 +269,6 @@ fn parsed(text: &str) -> Preferences {
             DISPLAY => preferred.display_mode = value.parse().unwrap_or_default(),
             ABSOLUTE_MOUSE => preferred.absolute_mouse = told(value, preferred.absolute_mouse),
             STATS_OVERLAY => preferred.stats_overlay = told(value, preferred.stats_overlay),
-            SYSTEM_KEYS_IN_THE_ENGINE => {
-                preferred.system_keys_in_the_engine =
-                    told(value, preferred.system_keys_in_the_engine)
-            }
             STEADY_RATE => {
                 preferences.serving.steady_rate = told(value, preferences.serving.steady_rate);
             }
@@ -323,7 +309,6 @@ mod tests {
                 display_mode: DisplayMode::Windowed,
                 absolute_mouse: false,
                 stats_overlay: true,
-                system_keys_in_the_engine: true,
             },
             serving: Serving {
                 steady_rate: false,

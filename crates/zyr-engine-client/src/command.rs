@@ -84,15 +84,20 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         args.push("--report-stats".to_string());
         args.push(path.to_string());
     }
-    // The keys this computer keeps for itself, asked of the engine in the
-    // one mode where it may take them: from the focus, and leaving Alt,
+    // The keys this computer keeps for itself, Alt+Tab first, taken by the
+    // engine and by nothing else. The mode is ours (patch P-M8): the
+    // engine takes them from the focus of its own picture, and leaves Alt,
     // Control and the Windows key alone so this program keeps its own
     // shortcuts. Not the engine's « always », which decides from the front
     // its window can never hold and swallows Alt and Control whole.
-    if settings.system_keys_in_the_engine {
-        args.push("--capture-system-keys".to_string());
-        args.push("zyrdesk".to_string());
-    }
+    //
+    // Always, with nothing to turn it off. There was a way of doing this
+    // in ZyrDesk itself, and it could not work: a hook of the system is
+    // served newest first, this program laid its once at the start of a
+    // session and never again, and everything laid after it went ahead of
+    // it ([D43](../../docs/DECISIONS.md), [D47](../../docs/DECISIONS.md)).
+    args.push("--capture-system-keys".to_string());
+    args.push("zyrdesk".to_string());
     if settings.absolute_mouse {
         args.push("--absolute-mouse".to_string());
     }
@@ -162,20 +167,16 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_takes_the_system_s_keys_unless_the_old_way_is_asked_for() {
+    fn the_engine_always_takes_the_keys_the_system_keeps_for_itself() {
         // Le mode demandé n'est jamais « always » : celui-là avale Alt et
         // Ctrl en entier, ce qui coupe tous les raccourcis du produit, qui
-        // sont tous des combinaisons Alt.
+        // sont tous des combinaisons Alt. Et il est demandé à toutes les
+        // sessions, sans réglage pour l'éteindre : l'autre façon de
+        // prendre ces touches a été retirée parce qu'elle ne pouvait pas
+        // marcher, pas parce qu'on lui préférait celle-ci.
         let args = session_arguments("host", &SessionSettings::default());
         assert_eq!(value_of(&args, "--capture-system-keys"), Some("zyrdesk"));
         assert!(!args.iter().any(|a| a == "always"));
-
-        let the_old_way = SessionSettings {
-            system_keys_in_the_engine: false,
-            ..SessionSettings::default()
-        };
-        let args = session_arguments("host", &the_old_way);
-        assert!(!args.iter().any(|a| a == "--capture-system-keys"));
     }
 
     #[test]

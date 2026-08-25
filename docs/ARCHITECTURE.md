@@ -142,7 +142,7 @@ ZyrDesk/
 ├─ broker/zyr-broker/          # binaire unique axum + WSS + SQLite (AGPLv3) ; deploy/ (Docker, auto-hébergement)
 ├─ engines/
 │  ├─ sunshine/                # submodule -> fork, tag upstream épinglé + 0 à 2 commits
-│  └─ moonlight-qt/            # submodule -> fork, tag upstream épinglé + 6 commits maximum
+│  └─ moonlight-qt/            # submodule -> fork, tag upstream épinglé + 9 commits maximum
 ├─ patches/                    # miroirs .patch exportés par la CI + MANIFEST.md
 ├─ packaging/                  # installateur NSIS, install service, règles pare-feu, désinstallation propre
 ├─ perf/                       # GATES.md (seuils chiffrés), scripts, profils de perte, procédure photon-à-photon
