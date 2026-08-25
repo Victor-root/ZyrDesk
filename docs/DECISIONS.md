@@ -548,6 +548,10 @@ La capture propre à la bibliothèque d'affichage reste éteinte dans ce mode, p
 
 **Et une découpe identique n'est plus posée du tout.** Elle n'était pas gratuite : le système redessine la fenêtre à chaque fois, et la page en demandait une par seconde toute la session pour la barre des mesures, presque toujours de la forme que la fenêtre portait déjà.
 
+**Ça n'a pas suffi, et la deuxième moitié est ailleurs.** La forme appartient à la fenêtre, le dessin appartient à la vue web portée dedans, et pour le système ce sont deux fenêtres et non une. Redessiner la fenêtre extérieure toute seule laisse donc la dernière image de l'intérieure là où la nouvelle forme la laisse passer, c'est-à-dire un morceau de quelque chose qui n'est plus dessiné nulle part. Il y reste jusqu'à ce que la page bouge d'elle-même, et une page dont le menu vient de se refermer sous une main qui est ailleurs ne bouge plus. Chaque découpe redemande maintenant le dessin de la fenêtre **et de tout ce qu'elle porte**, sans faire effacer le fond au passage, puisque ce fond est précisément le blanc dont il s'agit.
+
+**Et le journal sait le dire.** À chaque changement d'état, une ligne donne le nombre de morceaux découpés, jusqu'où ils vont, ce que le système tient réellement comme forme, et la taille de la fenêtre. C'est le seul défaut qu'une capture d'écran ne peut pas montrer : tout l'aspect du bouton est cette forme, donc une forme qui a dérivé du dessin et une page qui dessine autre chose se ressemblent exactement, vues du dehors.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

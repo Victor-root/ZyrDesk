@@ -1398,6 +1398,7 @@ fn remember_the_button(window: &tauri::WebviewWindow) {
     if let Ok(handle) = window.hwnd() {
         ITS_WINDOW.store(handle.0 as isize, Ordering::Relaxed);
         SHAPED.store(0, Ordering::Relaxed);
+        CUT_INTO.store(0, Ordering::Relaxed);
     }
 }
 
@@ -1520,8 +1521,98 @@ fn cut_to_what_is_drawn(shape: &[Piece], width: i32) {
         // nothing else.
         if SetWindowRgn(button, whole, 1) == 0 {
             DeleteObject(whole);
+            return;
         }
     }
+    draw_it_all_again(button);
+    say_what_it_was_cut_to(button, shape);
+}
+
+/// Has the window drawn again, and everything carried inside it with it.
+///
+/// The shape belongs to the window and the drawing belongs to the web
+/// view carried in it, and to the system those are two windows and not
+/// one. Redrawing the outer one alone leaves the inner one's last picture
+/// standing wherever the new shape lets it through, which is a piece of
+/// something that is no longer drawn anywhere. It stays until the page
+/// next moves of its own accord, and a page whose menu has just closed
+/// under a hand that is somewhere else does not move again.
+#[cfg(windows)]
+fn draw_it_all_again(button: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::Graphics::Gdi::{RDW_ALLCHILDREN, RDW_INVALIDATE, RedrawWindow};
+
+    // Marked as wanting to be drawn, and not drawn here and now. This runs
+    // on whichever thread the page asked from, and the window belongs to
+    // the one that draws: made to happen on the spot, it would hold this
+    // thread until that one came round, which is a wait inside a wait.
+    //
+    // And without asking for the ground to be wiped first. What would wipe
+    // it is the brush the window was made with, and that brush is the very
+    // white this is here to be rid of: what is wanted is the page drawn
+    // again, not the window emptied and then drawn again.
+    //
+    // SAFETY: a window of ours, and neither a rectangle nor a shape is
+    // named, so the whole of it is meant.
+    unsafe {
+        RedrawWindow(
+            button,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            RDW_INVALIDATE | RDW_ALLCHILDREN,
+        )
+    };
+}
+
+/// How many pieces the window was last cut into, so a change of state can
+/// be written down and a hand running over the logo cannot.
+#[cfg(windows)]
+static CUT_INTO: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Says what the window was cut to, and what the system holds of it.
+///
+/// Once per change of state and not once per frame: the shape is asked
+/// for again on every frame of the logo's own animation, and the piece
+/// count is what tells those apart from a menu opening or closing.
+///
+/// Worth having at all because this is the one fault a screenshot cannot
+/// show. What the button looks like is entirely this shape, so a shape
+/// that has drifted from the drawing and a page that has drawn the wrong
+/// thing look exactly alike from the outside.
+#[cfg(windows)]
+fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &[Piece]) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::GetWindowRgnBox;
+
+    if CUT_INTO.swap(shape.len(), Ordering::Relaxed) == shape.len() {
+        return;
+    }
+    let mut held = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: a window of ours, and the rectangle is ours.
+    let taken = unsafe { GetWindowRgnBox(button, &mut held) };
+    let drawn = shape.iter().fold((0, 0), |(wide, high), piece| {
+        (wide.max(-piece.x), high.max(piece.y + piece.height))
+    });
+    note(&format!(
+        "bouton flottant découpé en {} morceaux jusqu'à {}x{} ; \
+         le système en tient ({}, {}, {}, {}), sorte {taken} ; la fenêtre est {}",
+        shape.len(),
+        drawn.0,
+        drawn.1,
+        held.left,
+        held.top,
+        held.right,
+        held.bottom,
+        match its_place() {
+            Some((left, top, right, bottom)) =>
+                format!("{}x{} en ({left}, {top})", right - left, bottom - top),
+            None => "plus là".to_string(),
+        }
+    ));
 }
 
 #[cfg(not(windows))]
