@@ -5537,6 +5537,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "winresource"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0986a8b1d586b7d3e4fe3d9ea39fb451ae22869dcea4aa109d287a374d866087"
+dependencies = [
+ "toml 1.1.4+spec-1.1.0",
+ "version_check",
+]
+
+[[package]]
 name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5961,6 +5971,7 @@ dependencies = [
  "tokio",
  "windows-service",
  "windows-sys 0.61.2",
+ "winresource",
  "zyr-control",
  "zyr-engine-host",
  "zyr-lan",

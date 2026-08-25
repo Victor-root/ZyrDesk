@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": false,
+    "publisher": "ZyrDesk",
     "icon": [
       "../../packaging/brand/zyrdesk-256.png",
       "../../packaging/brand/zyrdesk.ico"

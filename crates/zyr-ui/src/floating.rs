@@ -907,7 +907,7 @@ pub fn floating_hide(app: AppHandle) -> Result<(), String> {
 /// and says whether the whole thing turned out to be a plain click.
 ///
 /// The gesture is followed here and not in the page. That window is
-/// fifty pixels wide: the mouse leaves it on the first movement, and
+/// forty-four pixels wide: the mouse leaves it on the first movement, and
 /// what a web view reports as the place of a pointer is not always where
 /// that pointer is on the screen. Where the system says the cursor is is
 /// neither of those things, and it is always true.

@@ -46,19 +46,12 @@
 
 /* ---- Le bouton ------------------------------------------------------- */
 
-/* La marque, sur une plaque blanche aux coins arrondis.
-
-   La plaque n'est pas une décoration : le logo est posé sur l'image d'un
-   autre ordinateur, dont on ne sait rien. Sur un fond clair et chargé il
-   se perdait, et une marque qu'il faut chercher n'est pas un bouton.
-
-   Elle est blanche dans les deux thèmes. Le thème dit à quoi ressemble
-   ZyrDesk ; ceci est posé sur le bureau de quelqu'un d'autre, où la seule
-   chose qui compte est de se détacher de n'importe quoi.
+/* La marque elle-même, posée sur l'image : pas de carte sous elle, elle
+   en porte déjà une.
 
    Sans ombre portée : la fenêtre fait exactement la taille du dessin et
-   est découpée dessus, donc une ombre tomberait entièrement hors de ce
-   qui est dessiné.
+   est découpée sur sa plaque, donc une ombre tomberait entièrement hors
+   de ce qui est dessiné.
 
    Au repos elle s'efface, et un survol la rend entière. Le bouton est
    posé par-dessus le travail de quelqu'un pendant toute une session :
@@ -66,10 +59,11 @@
    qu'une fois de temps en temps. */
 .logo {
   display: block;
-  padding: var(--pas-1);
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: none;
-  border-radius: var(--rayon);
-  background: #fff;
+  background: transparent;
   cursor: pointer;
   opacity: 0.55;
   /* Le logo grandit depuis son coin haut droit, qui est celui par lequel
@@ -84,8 +78,8 @@
 
 .logo > img {
   display: block;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
 }
 
 .logo:hover,
@@ -104,8 +98,8 @@
 /* Pris en main : le curseur dit qu'il se déplace, pas qu'il se clique.
 
    Une classe à nous et non « :active », que le navigateur pose et retire
-   lui-même : cette fenêtre fait cinquante pixels, la souris en sort au
-   premier mouvement, et le relâchement se produit alors ailleurs. Le
+   lui-même : cette fenêtre fait quarante-quatre pixels, la souris en sort
+   au premier mouvement, et le relâchement se produit alors ailleurs. Le
    bouton restait « appuyé » jusqu'à la fin de la session, main agrippée
    comprise. Ici c'est la fin du geste, connue de Rust, qui l'enlève. */
 .logo.pris {

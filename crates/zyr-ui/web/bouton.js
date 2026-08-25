@@ -31,6 +31,24 @@ function montre(element, visible) {
   element.classList.toggle("cache", !visible);
 }
 
+/* Ce que le logo dessine, dans son propre dessin (zyrdesk.svg) : deux
+   écrans aux coins arrondis, décalés en diagonale, et rien entre eux. Le
+   dessin fait foi, la fenêtre est découpée dessus : ces nombres se
+   relisent dans le SVG à chaque fois qu'il change, sinon la découpe passe
+   à côté de ce qu'elle est censée épouser.
+
+   Ce sont les rectangles contour compris, donc le rectangle du SVG élargi
+   de la moitié de son trait de chaque côté, et rapportés au coin de la
+   vue plutôt qu'à l'origine du dessin. Pour l'écran du fond : x 118 - 14
+   - 36, y 70 - 14 - 36, largeur 328 + 28, coins 68 + 14. */
+const LOGO = {
+  boite: 440,
+  ecrans: [
+    { x: 68, y: 20, large: 356, haute: 274, rayon: 82 },
+    { x: 16, y: 146, large: 356, haute: 274, rayon: 82 },
+  ],
+};
+
 /* Le sous-menu ouvert, s'il y en a un : c'est le seul des trois qui se
    dessine, donc le seul qui entre dans la découpe. */
 function laListeOuverte() {
@@ -88,21 +106,25 @@ function formeOccupee(echelle) {
     });
   const carte = (element) => {
     const ou = element.getBoundingClientRect();
-    const rayon = parseFloat(getComputedStyle(element).borderTopLeftRadius) || 0;
-    // Le rayon vient de la feuille de style, qui ne sait rien des
-    // agrandissements ; la boîte, elle, est mesurée agrandissement
-    // compris. Le logo grandit au survol, donc ses coins aussi, et un
-    // rayon laissé à sa valeur de repos rognait le blanc de la plaque
-    // pendant tout le mouvement. Rapporté à la largeur que l'élément a
-    // sans être agrandi, il suit.
-    const part = element.offsetWidth ? ou.width / element.offsetWidth : 1;
-    pose(ou.left, ou.top, ou.width, ou.height, rayon * part);
+    const rayon = parseFloat(getComputedStyle(element).borderTopLeftRadius);
+    pose(ou.left, ou.top, ou.width, ou.height, rayon || 0);
   };
 
-  // La plaque du logo telle qu'elle est rendue, agrandissement du survol
+  // Les deux écrans tels qu'ils sont rendus, agrandissement du survol
   // compris : la découpe épouse ce qui est dessiné à cet instant, et rien
-  // d'autre.
-  carte(vue.logo);
+  // d'autre. Le vide entre les deux n'est pas dessiné, donc il n'est pas
+  // découpé, donc les clics y passent jusqu'à l'image.
+  const logo = vue.logo.getBoundingClientRect();
+  const part = logo.width / LOGO.boite;
+  for (const ecran of LOGO.ecrans) {
+    pose(
+      logo.left + ecran.x * part,
+      logo.top + ecran.y * part,
+      ecran.large * part,
+      ecran.haute * part,
+      ecran.rayon * part,
+    );
+  }
 
   if (ouvert) {
     carte(vue.menu);
