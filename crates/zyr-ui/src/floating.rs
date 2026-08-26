@@ -336,18 +336,25 @@ fn logo() -> (i32, i32) {
 /// Whether the button is to be shown or hidden right now, as the system
 /// spells it.
 ///
-/// The button is drawn above every window on the machine, which is what
-/// it takes to sit on a picture belonging to another program. Left up, it
-/// would hang over whatever was switched to; so it follows the front, and
-/// the front of a session is the picture as much as it is ours.
+/// Two questions only, and neither is about the front. The button belongs
+/// to ZyrDesk's window, and the system already knows what to do with a
+/// window that belongs to another: it keeps it above that one, takes it
+/// down when that one goes down, and lets anything switched to cover the
+/// pair. Nothing here has to say any of that.
+///
+/// It used to say it, and wrongly. The button was drawn above every
+/// window on the machine, which was what it took back when the picture
+/// was a window of the engine's own, sitting beside ours rather than
+/// inside it. Above everything, it had to be hidden the moment the front
+/// went elsewhere or it would hang in a corner over somebody's work. The
+/// picture has been carried inside our own window since, and the reason
+/// went with it; the hiding stayed, and cost a session on a second screen
+/// its button every time the person looked at the first one.
 #[cfg(windows)]
 fn how_it_shows() -> u32 {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_HIDEWINDOW, SWP_SHOWWINDOW};
 
-    if READY.load(Ordering::Relaxed)
-        && !HIDDEN.load(Ordering::Relaxed)
-        && the_session_holds_the_front()
-    {
+    if READY.load(Ordering::Relaxed) && !HIDDEN.load(Ordering::Relaxed) {
         SWP_SHOWWINDOW
     } else {
         SWP_HIDEWINDOW
@@ -717,7 +724,13 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
-        .always_on_top(true)
+        // Above ZyrDesk's window and no higher. It is made to belong to
+        // that window a moment later, which is what keeps it over the
+        // picture, brings it back up with it, and lets another program
+        // switched to cover it like anything else. Above everything, as
+        // it was, it had to be hidden whenever the front went elsewhere,
+        // and a session watched on a second screen lost its button every
+        // time the person turned to the first.
         // Never takes the picture's place: the engine keeps the keyboard
         // and the mouse, and this only catches what is clicked on it.
         .focused(false)
@@ -1171,6 +1184,23 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
     window.emit(TOGGLE, ()).map_err(|e| e.to_string())
 }
 
+/// Which mouse the session is using right now.
+///
+/// True for the game one, which pins the pointer inside the picture and
+/// sends how far it moved; false for the desktop one, which sends where
+/// it is. The menu asks for this so it can show which of the two is on
+/// instead of offering a switch that says nothing about where it stands.
+///
+/// What this window believes, and it believes it because every switch
+/// goes through here: the entry in the menu and the shortcut this program
+/// holds both end up in `ask`, which counts them. The engine's own
+/// shortcut, typed straight into the picture, does not pass this way and
+/// would leave the two disagreeing until the next switch from here.
+#[tauri::command]
+pub fn floating_mouse(app: AppHandle) -> bool {
+    app.state::<Floating>().game_mouse.load(Ordering::Relaxed)
+}
+
 /// Asks the session for something, in its own language.
 #[tauri::command]
 pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
@@ -1617,31 +1647,6 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
 
 #[cfg(not(windows))]
 fn cut_to_what_is_drawn(_shape: &[Piece], _width: i32) {}
-
-/// Whether the window at the front belongs to this session.
-///
-/// Ours or the player's: the picture is another program's window, and it
-/// rides inside ours for the length of a session, so the front is ours
-/// while the session is being used. Asked of the player's process alone,
-/// as it once was before sending it a shortcut, the answer was no for
-/// the whole session and every shortcut was refused.
-///
-/// The question the button is shown or hidden on, and nothing else, and
-/// « the picture itself » is not a stricter version of it that some other
-/// caller could ask for: the picture is carried as a child of our own
-/// window for the length of a session, and the system gives the front to
-/// the head of a family and never to a child of it, so the answer would
-/// be no for the whole of every session. What the picture can hold is the
-/// keyboard, which is asked for elsewhere; see `picture::the_keyboard_back`.
-#[cfg(windows)]
-fn the_session_holds_the_front() -> bool {
-    crate::picture::who_holds_the_front() != crate::picture::Front::Elsewhere
-}
-
-#[cfg(not(windows))]
-fn the_session_holds_the_front() -> bool {
-    false
-}
 
 /// Where the button is on screen, as left, top, right and bottom in real
 /// pixels, or nothing when there is no button.

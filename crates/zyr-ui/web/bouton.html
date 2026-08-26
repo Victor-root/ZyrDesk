@@ -58,66 +58,98 @@
           <span class="item-touche">Ctrl+Alt+Maj+S</span>
         </button>
 
-        <button class="item" type="button" data-acte="mouse" role="menuitem">
+        <!-- Un interrupteur et non une bascule aveugle. « Souris bureau
+             ou jeu » disait ce que le clic ferait et jamais où l'on en
+             était, et les deux modes ne se distinguent pas à l'oeil sur
+             un bureau immobile : on cliquait pour voir, ce qui est la
+             définition d'un réglage qu'on ne comprend pas. Les deux mots
+             sont là, celui qui est en place est allumé. -->
+        <div class="item item-avec-choix" role="group" aria-label="Souris">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <rect x="7" y="2.5" width="10" height="19" rx="5" />
             <path d="M12 7v3" />
           </svg>
-          <span class="item-mot">Souris bureau ou jeu</span>
-          <span class="item-touche">Ctrl+Alt+Maj+M</span>
-        </button>
+          <span class="item-mot">Souris</span>
+          <div class="bascule" id="souris">
+            <button
+              class="bascule-cote"
+              type="button"
+              data-souris="bureau"
+              role="menuitemradio"
+              aria-checked="false"
+            >
+              Bureau
+            </button>
+            <button
+              class="bascule-cote"
+              type="button"
+              data-souris="jeu"
+              role="menuitemradio"
+              aria-checked="false"
+            >
+              Jeu
+            </button>
+          </div>
+        </div>
 
         <div class="separateur" role="separator"></div>
 
         <!-- Les trois nombres qu'on règle en regardant l'image qu'ils
-             changent. Un clic ouvre la liste des valeurs, un clic dans
-             la liste en choisit une.
+             changent. Un curseur qu'on pousse le long de la barre, et la
+             valeur écrite au-dessus.
 
-             Les listes sont bâties au chargement à partir de ce que le
-             produit propose : une seconde copie écrite en dur ici
+             Un curseur plutôt qu'une liste qui s'ouvre sur le côté. Ces
+             trois-là sont des échelles : plus grand, plus rapide, et on
+             en cherche le bon cran en regardant l'image bouger. Une liste
+             demandait un clic pour l'ouvrir, un pour choisir, cachait ce
+             qu'il y avait au-dessus et au-dessous de la valeur en place,
+             et faisait de la fenêtre un objet plus large que le menu pour
+             loger ce qui s'en échappait par la gauche.
+
+             Les crans viennent du produit : le curseur va de zéro au
+             nombre de valeurs moins une, et ce que chaque cran veut dire
+             est écrit à côté. Une seconde copie de ces listes ici
              s'écarterait de la vraie au premier changement. -->
         <div class="reglage" data-reglage="asked">
-          <button class="item" type="button" data-ouvre role="menuitem" aria-haspopup="true" aria-expanded="false">
-            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
+          <div class="reglage-tete">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <rect x="2.5" y="4" width="19" height="13" rx="2" />
               <path d="M9 21h6M12 17v4" />
             </svg>
             <span class="item-mot">Taille</span>
             <span class="item-touche" data-valeur></span>
-          </button>
-          <div class="liste repliee" data-liste role="menu"></div>
+          </div>
+          <input
+            class="curseur"
+            type="range"
+            data-curseur
+            aria-label="Taille"
+          />
         </div>
 
         <div class="reglage" data-reglage="bitrate">
-          <button class="item" type="button" data-ouvre role="menuitem" aria-haspopup="true" aria-expanded="false">
-            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
+          <div class="reglage-tete">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 12h3l3-7 4 14 3-7h5" />
             </svg>
             <span class="item-mot">Débit</span>
             <span class="item-touche" data-valeur></span>
-          </button>
-          <div class="liste repliee" data-liste role="menu"></div>
+          </div>
+          <input class="curseur" type="range" data-curseur aria-label="Débit" />
         </div>
 
         <div class="reglage" data-reglage="codec">
-          <button class="item" type="button" data-ouvre role="menuitem" aria-haspopup="true" aria-expanded="false">
-            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
+          <div class="reglage-tete">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <rect x="5" y="5" width="14" height="14" rx="2" />
-              <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" />
+              <path
+                d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"
+              />
             </svg>
             <span class="item-mot">Codec</span>
             <span class="item-touche" data-valeur></span>
-          </button>
-          <div class="liste repliee" data-liste role="menu"></div>
+          </div>
+          <input class="curseur" type="range" data-curseur aria-label="Codec" />
         </div>
 
         <!-- Ce qui a été choisi n'est pas encore ce qui est à l'écran :

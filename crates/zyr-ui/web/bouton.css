@@ -245,6 +245,98 @@
   background: var(--trait);
 }
 
+/* Les lignes gardent toutes la même colonne d'icônes. Elle valait pour
+   le chevron d'un sous-menu qui n'existe plus ; elle vaut toujours,
+   parce qu'un menu dont les icônes ne sont pas alignées se lit en deux
+   morceaux décalés. */
+.menu > .item,
+.menu > .reglage {
+  padding-left: calc(var(--pas-2) + 14px + var(--pas-3));
+}
+
+/* ---- L'interrupteur à deux côtés ------------------------------------- */
+
+/* Une ligne qui porte un choix plutôt qu'une action : rien à cliquer sur
+   la ligne elle-même, donc ni curseur de main ni surbrillance au survol
+   qui promettraient un clic qui ne fait rien. */
+.item-avec-choix {
+  cursor: default;
+}
+
+.item-avec-choix:hover {
+  background: transparent;
+}
+
+.bascule {
+  flex: none;
+  display: flex;
+  border: 1px solid var(--trait);
+  border-radius: var(--rayon-petit);
+  overflow: hidden;
+}
+
+.bascule-cote {
+  padding: 3px var(--pas-3);
+  border: none;
+  background: transparent;
+  color: var(--texte-faible);
+  font: inherit;
+  font-size: var(--legende);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--duree-courte) var(--courbe),
+    color var(--duree-courte) var(--courbe);
+}
+
+.bascule-cote:hover {
+  background: var(--surface-3);
+  color: var(--texte);
+}
+
+.bascule-cote:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: -2px;
+}
+
+/* Celui qui est en place est plein, l'autre est vide. C'est tout ce que
+   cet interrupteur a à dire, et il faut que ça se voie sans lire. */
+.bascule-cote[aria-checked="true"] {
+  background: var(--accent-vif);
+  color: var(--sur-accent);
+}
+
+.bascule-cote[aria-checked="true"]:hover {
+  background: var(--accent-vif);
+  color: var(--sur-accent);
+}
+
+/* ---- Les réglages à curseur ------------------------------------------ */
+
+.reglage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--pas-2) var(--pas-2) var(--pas-3);
+}
+
+.reglage-tete {
+  display: flex;
+  align-items: center;
+  gap: var(--pas-3);
+}
+
+.reglage-tete > svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* La valeur d'un réglage se lit là où se lisent les raccourcis, mais
    elle n'en est pas un : c'est ce que la ligne vaut, donc elle se lit
    comme le reste de la ligne et non en retrait. */
@@ -253,119 +345,49 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Le chevron dit qu'il y a un sous-menu : sans lui rien ne distingue une
-   ligne qui ouvre quelque chose d'une ligne qui agit.
-
-   Il pointe vers la gauche et il se tient à gauche, parce que c'est de ce
-   côté-là que la liste apparaît. Posé au bout de la ligne, il désignait le
-   bord opposé à celui où le sous-menu s'ouvre. */
-.chevron {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  transform: rotate(180deg);
-}
-
-/* Les lignes qui n'ouvrent rien gardent la place du chevron : sans ça
-   leurs icônes ne seraient plus dans la même colonne que les autres, et
-   le menu se lirait en deux morceaux décalés. */
-.menu > .item {
-  padding-left: calc(var(--pas-2) + 14px + var(--pas-3));
-}
-
-/* La liste des valeurs, à côté de sa ligne et non dessous : c'est un
-   sous-menu, il s'ouvre comme un sous-menu.
-
-   Vers la gauche, parce que la fenêtre du bouton est accrochée par son
-   coin haut droit et grandit vers la gauche : c'est la seule direction
-   où elle a de la place sans que le logo bouge d'un pixel.
-
-   Sortie du flux, donc invisible à la mesure de « paquet » : c'est la
-   page qui mesure l'union des deux et la donne au coeur, sans quoi la
-   fenêtre serait taillée sur le menu seul et couperait le sous-menu. */
-.reglage {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-
-.liste {
-  position: absolute;
-  top: 0;
-  right: 100%;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  width: max-content;
-  margin-right: var(--pas-2);
-  padding: var(--pas-2);
-  border: 1px solid var(--trait-fort);
-  border-radius: var(--rayon);
-  background: var(--surface-1);
-  box-shadow: var(--ombre-2);
-}
-
-/* Repliée, une liste garde sa place comme le menu, et pour la même
-   raison : la fenêtre est mesurée sur les trois à la fois, donc elle ne
-   change plus de taille de la session quoi qu'on ouvre. Rien n'en est
-   dessiné, elle est invisible et n'attrape aucun clic, et de toute façon
-   elle est hors de la découpe. */
-.liste.repliee {
-  visibility: hidden;
-}
-
-.valeur {
-  display: flex;
-  align-items: center;
-  gap: var(--pas-3);
-  min-height: 34px;
-  padding: 0 var(--pas-2);
-  border: none;
-  border-radius: var(--rayon-petit);
+/* Le curseur est dessiné entièrement à la main : celui du système
+   apporte ses propres couleurs, sa propre hauteur et son propre gris,
+   dont aucun n'appartient à ce menu. */
+.curseur {
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  padding: 0;
   background: transparent;
-  color: var(--texte);
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  text-align: left;
-  white-space: nowrap;
+  appearance: none;
   cursor: pointer;
-  transition: background var(--duree-courte) var(--courbe);
 }
 
-.valeur:hover {
-  background: var(--surface-3);
-}
-
-.valeur:focus-visible {
+.curseur:focus-visible {
   outline: 2px solid var(--accent-vif);
-  outline-offset: -2px;
+  outline-offset: 2px;
+  border-radius: var(--rayon-petit);
 }
 
-/* Celle qui est en place porte sa coche, comme dans n'importe quel menu :
-   une liste sans marque oblige à se souvenir de ce qu'on avait mis. */
-.valeur-coche {
-  flex: none;
+.curseur::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--trait);
+}
+
+.curseur::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0;
+  /* Le pouce est posé sur une barre de quatre pixels : sans ce décalage
+     il se dessine à partir du haut de la barre au lieu d'être centré
+     dessus. */
+  margin-top: -5px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-vif);
+  appearance: none;
+  transition: transform var(--duree-courte) var(--courbe);
 }
 
-.valeur[aria-checked="true"] .valeur-coche {
-  opacity: 1;
+.curseur:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
 }
 
-.valeur-mot {
-  flex: 1;
-}
-
-/* Relancer l'image est la seule chose à faire quand ce qui est choisi
-   n'est plus ce qui est à l'écran : la ligne porte donc la couleur de
-   l'accent, et n'apparaît qu'à ce moment-là. */
 .item.appliquer {
   color: var(--accent-vif);
 }

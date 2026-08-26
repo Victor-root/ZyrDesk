@@ -38,6 +38,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R30** | **Une machine qui n'avait pas d'écran virtuel doit en avoir un au prochain démarrage du service.** Il n'était posé qu'à l'inscription du service, donc jamais sur un ordinateur inscrit avant que ce code existe. À vérifier dans `service.log` de l'hôte : `virtual screen already in place`, ou la suite des étapes de la pose |
 | **S23** | **Refait, et c'est le sujet du lot.** Éteindre l'hôte depuis la session laissait toujours son écran dans la taille du client, même après un redémarrage complet. Le service lisait « emporté par sa session » comme une chute et redémarrait le moteur sur-le-champ : trois moteurs en cinq secondes pendant que la machine s'en allait, et le seul papier qui disait ce qu'étaient les écrans avant la session y est passé. Il attend maintenant au lieu de fournir |
 | **S5** | Changé. En mode fenêtre, une session s'ouvre maintenant avec la fenêtre **agrandie** au lieu de la taille où elle avait été laissée. Le plein écran ne change pas |
+| **R12**, **R17**, **R34** | Le menu de la session change de forme. « Souris bureau ou jeu » devient un interrupteur Bureau / Jeu qui montre où l'on en est. Taille, débit et codec deviennent trois curseurs au lieu de trois listes qui s'ouvraient sur le côté |
+| **R12octies** | Nouveau. Le bouton flottant disparaissait dès que le premier plan partait ailleurs, ce qui coûtait son bouton à toute session regardée sur un deuxième écran. Il ne suit plus le premier plan du tout |
 | **S27** | Nouveau. Un troisième ordinateur joint par un tunnel privé était découvert mais refusait toutes les sessions. La découverte n'apprenait qu'à celui qui appelle : celui qui était appelé ne retenait rien de son appelant, donc ne le reconnaissait pas. Celui qui appelle se présente maintenant |
 | **S26** | Nouveau. Une ouverture sur deux ou trois sautait l'écran de chargement : l'accueil revenait avec la carte verte d'une session en cours, puis l'image apparaissait quelques secondes plus tard sans rien annoncer. L'écran d'ouverture partait quand le service prenait la session, pas quand il y avait une image. Il attend maintenant l'image |
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
@@ -383,13 +385,23 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > |---|---|
 > | Plein écran | La fenêtre de la session bascule |
 > | Statistiques | Les chiffres apparaissent puis disparaissent sur l'image |
-> | Souris bureau ou jeu | Le pointeur change de comportement |
+> | Souris | Un interrupteur **Bureau / Jeu** : le côté en place est allumé, cliquer l'autre bascule le pointeur |
 > | Masquer ce bouton | Le logo disparaît, et l'entrée dit par quelle combinaison le rappeler |
 > | Terminer la session | L'image se ferme, la fenêtre ZyrDesk revient sur l'accueil, et le PC hôte rend son bureau |
 >
 > **Cinq entrées, pas six.** Il n'y a plus qu'une façon de finir : les moteurs en offraient deux, dont une qui laissait le bureau distant ouvert et en attente. Une session est en cours ou terminée.
 >
 > Si une entrée ne fait rien : ouvrir le journal (partie 7) et regarder les lignes de « La fenêtre ». Elles disent ce que le bouton a demandé, et à quelle fenêtre. Une entrée ne peut agir que si l'image est au premier plan ; la remettre devant est fait avant chaque envoi, et attendu, parce que Windows ne change pas de fenêtre de tête sur-le-champ.
+
+> **R12octies (le bouton reste là quand on regarde ailleurs)**
+>
+> Pendant une session, **mettre la fenêtre de ZyrDesk sur un deuxième écran**, puis cliquer dans une autre application sur le premier écran, sans rien réduire.
+>
+> Attendu : le bouton flottant **reste là**, sur la session, du début à la fin. On doit pouvoir le regarder tout en travaillant sur l'autre écran.
+>
+> Il disparaissait entièrement dès que le premier plan partait ailleurs, et revenait à l'instant où l'on redonnait le premier plan à ZyrDesk. Il était dessiné au-dessus de toutes les fenêtres de la machine, donc il fallait bien le cacher pour qu'il n'aille pas flotter par-dessus le travail des autres ; cette hauteur datait du temps où l'image était une fenêtre à part.
+>
+> **Le contrôle qui va avec, sur un seul écran.** Toujours pendant une session, passer sur une autre application qui **recouvre** la fenêtre de ZyrDesk. Attendu : le bouton disparaît sous cette application, comme le reste de la fenêtre. Il ne doit jamais rester visible par-dessus.
 
 > **R12bis (le bouton masqué revient)**
 >
@@ -1046,20 +1058,23 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 ## Partie 6 : les réglages
 
-> **R17 (la taille, le débit et le codec se règlent depuis la session)**
+> **R17 (la taille, le débit et le codec se règlent au curseur)**
 >
-> Pendant une session, ouvrir le menu du bouton flottant. Trois lignes nouvelles : **Taille**, **Débit**, **Codec**.
+> Pendant une session, ouvrir le menu du bouton flottant. Trois réglages : **Taille**, **Débit**, **Codec**, chacun avec sa valeur écrite à droite de son nom et une barre à curseur en dessous.
 >
-> Attendu : chacune porte un **chevron à gauche**, du côté où sa liste s'ouvre, et les icônes des trois lignes restent dans la même colonne que celles du reste du menu. Un clic sur une ligne **ouvre sa liste** de valeurs à sa gauche, avec une coche sur celle en place ; un clic dans la liste la choisit et referme. Une seule liste ouverte à la fois. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. **Rien ne bouge dans l'image en cours** : le choix est retenu, et c'est R34 qui le pose à l'écran.
+> Attendu : pousser un curseur fait **suivre le mot au-dessus, cran par cran**, pendant qu'on tient le pouce. Le choix ne part qu'une fois lâché. Les icônes des trois réglages restent dans la même colonne que celles du reste du menu. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. **Rien ne bouge dans l'image en cours** : le choix est retenu, et c'est R34 qui le pose à l'écran.
 >
-> **Le point qui a lâché deux fois, à refaire dans cet ordre exact.** Ouvrir **Taille** (la liste la plus large), la refermer, ouvrir **Débit** (la plus étroite), la refermer, ouvrir **Codec**. Deux choses à regarder :
+> **Trois choses à regarder en poussant les trois curseurs de bout en bout :**
 >
-> 1. **Rien n'est coupé** : ni le bord droit du menu, ni le bas d'une liste, et aucune bande blanche ou vide à côté de quoi que ce soit.
-> 2. **Rien ne clignote** : le menu ne doit pas disparaître ni se redessiner entre deux clics. La fenêtre du bouton prend sa taille au moment où la session s'ouvre, mesurée sur les trois listes à la fois, et n'en change plus ensuite. Une fenêtre qui change de taille fait remettre la page en page, et pendant ce temps-là rien n'est dessiné.
+> 1. **Rien n'est coupé** : ni le bord droit du menu, ni le bas, et aucune bande blanche ou vide à côté de quoi que ce soit.
+> 2. **Rien ne clignote** : le menu ne doit ni disparaître ni se redessiner pendant qu'on pousse.
+> 3. **La fenêtre ne change pas de taille en boucle.** Les valeurs n'ont pas toutes la même longueur (`Écran, 3840 x 2160` contre `1280 x 720`), donc le menu peut s'élargir d'un cran à l'autre, et c'est normal. Ce qui ne l'est pas serait une ligne de redimensionnement par cran traversé.
 >
-> Le journal tranche entre les deux, une ligne par changement de taille : `bouton flottant : 1630x1614 demandés, 91x91 avant, 1630x1614 après ; 2 morceaux dessinés jusqu'à 1098x1272`. Il doit y en avoir **deux ou trois au démarrage de la session, et plus aucune ensuite** : une ligne qui apparaît en cliquant dans le menu est un redimensionnement, donc un clignotement. « après » doit valoir « demandés », sinon c'est Windows qui a refusé la taille ; et « dessinés jusqu'à » doit rester en dessous, sinon la page dessine plus grand que sa fenêtre.
+> Le journal en garde la trace, une ligne par changement de taille : `bouton flottant : 1630x1614 demandés, 91x91 avant, 1630x1614 après ; 2 morceaux dessinés jusqu'à 1098x1272`. « après » doit valoir « demandés », sinon c'est Windows qui a refusé la taille ; et « dessinés jusqu'à » doit rester en dessous, sinon la page dessine plus grand que sa fenêtre.
 >
 > Une ligne de plus est normale la première fois qu'on change un réglage : c'est **Appliquer les changements** qui apparaît et allonge le menu. Une seule fois par session.
+>
+> **L'interrupteur de la souris, dans le même menu.** Il porte **Bureau** à gauche et **Jeu** à droite, et le côté en place est allumé. Cliquer l'autre bascule le pointeur et allume l'autre côté ; cliquer celui qui est déjà allumé ne fait rien. Fermer le menu, basculer la souris **au raccourci** (Ctrl+Alt+Maj+M), rouvrir le menu : l'interrupteur doit avoir suivi.
 >
 > Le menu doit aussi porter le **même thème que le reste de ZyrDesk** : sombre sur une application sombre, clair sur une claire.
 >

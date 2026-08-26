@@ -95,6 +95,7 @@ fn main() {
             floating::floating_hide,
             floating::floating_grab,
             floating::floating_act,
+            floating::floating_mouse,
             theme::set_theme
         ])
         .setup(|app| {

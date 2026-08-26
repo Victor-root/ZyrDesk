@@ -21,6 +21,7 @@ const vue = {
   appliquer: document.querySelector("[data-appliquer]"),
   chiffres: document.getElementById("chiffres"),
   flux: document.getElementById("flux"),
+  souris: document.getElementById("souris"),
 };
 
 /* Les quatre chiffres de la barre, dans l'ordre où ils se lisent : ce que
@@ -134,36 +135,15 @@ const LOGO = {
   ],
 };
 
-/* Le sous-menu ouvert, s'il y en a un : c'est le seul des trois qui se
-   dessine, donc le seul qui entre dans la découpe. */
-function laListeOuverte() {
-  return document.querySelector(".liste:not(.repliee)");
-}
-
-/* Tout ce que la page peut occuper : le bloc, et les trois sous-menus,
-   ouverts ou non.
-
-   Tous les trois, et pas seulement celui qui est ouvert. La fenêtre prend
-   cette taille-là une fois pour toutes et n'en change plus de la session :
-   ouvrir ou fermer une liste ne la redimensionne donc pas. Mesurée sur la
-   seule liste ouverte, elle changeait de taille à chaque clic dans le
-   menu, et une fenêtre qui change de taille fait remettre la page en page,
-   pendant quoi rien n'est dessiné. C'était le clignotement.
-
-   Sortis du flux, les sous-menus n'entrent pas dans la mesure de
-   « paquet » : c'est ici qu'on les rattrape. */
+/* Tout ce que la page peut occuper, qui est le bloc et rien d'autre.
+   Il y avait trois sous-menus à rattraper ici, sortis du flux et donc
+   invisibles à la mesure du bloc, et ils s'ouvraient vers la gauche parce
+   que c'était le seul côté où la fenêtre pouvait grandir sans que le logo
+   bouge. Les curseurs qui les remplacent sont dans le menu, à leur place,
+   et il n'y a plus rien qui déborde. */
 function laBoite() {
-  const boites = [vue.paquet, ...document.querySelectorAll(".liste")].map(
-    (element) => element.getBoundingClientRect(),
-  );
-  // Depuis le coin haut droit, puisque c'est par là que la fenêtre est
-  // accrochée : ce qui manque est ce qui déborde vers la gauche et vers
-  // le bas.
-  const right = Math.max(...boites.map((une) => une.right));
-  return {
-    width: right - Math.min(...boites.map((une) => une.left)),
-    height: Math.max(...boites.map((une) => une.bottom)),
-  };
+  const boite = vue.paquet.getBoundingClientRect();
+  return { width: boite.width, height: boite.bottom };
 }
 
 /* La forme que la page dessine vraiment, en vrais pixels : la plaque du
@@ -213,17 +193,13 @@ function formeOccupee(echelle) {
 
   if (ouvert) {
     carte(vue.menu);
-    const liste = laListeOuverte();
-    if (liste !== null) {
-      carte(liste);
-    }
   }
   return morceaux;
 }
 
 /* La fenêtre suit ce que la page peut occuper, mesuré et non deviné : le
-   menu n'a pas la même hauteur selon ce qu'il contient, et les listes
-   n'ont pas toutes la même largeur.
+   menu n'a pas la même hauteur selon ce qu'il contient, et les valeurs
+   écrites au-dessus des curseurs n'ont pas toutes la même longueur.
 
    En vrais pixels et non en pixels de page : sur un écran agrandi les
    deux ne valent pas la même chose, et une fenêtre taillée dans la
@@ -286,9 +262,11 @@ function ouvre(veut) {
   suisLesMesures(veut);
   if (!veut) {
     montre(vue.souci, false);
-    // Un sous-menu laissé ouvert rouvrirait le menu avec lui, donc une
-    // nappe invisible posée sur l'image, qui avale les clics.
-    ouvreLaListe(null, false);
+  } else {
+    // La souris a pu basculer par le raccourci du produit pendant que le
+    // menu était fermé : l'interrupteur doit dire où l'on en est, pas où
+    // l'on en était la dernière fois qu'on a regardé.
+    litLaSouris();
   }
   // Et la fenêtre suit ce que la page dessine maintenant, jusqu'à ce
   // qu'elle ait fini de le dessiner : taillée sur l'état d'avant, elle
@@ -319,10 +297,10 @@ async function demande(acte) {
 
 /* ---- Ce que la session demande ------------------------------------------ */
 
-/* Trois lignes, chacune ouvrant sur le côté la liste de ses valeurs, et
-   une quatrième qui n'apparaît que quand ce qui est choisi n'est plus ce
-   qui est à l'écran : le moteur apprend ces trois nombres au démarrage et
-   jamais après, donc les poser veut dire relancer l'image.
+/* Trois curseurs, et une quatrième ligne qui n'apparaît que quand ce qui
+   est choisi n'est plus ce qui est à l'écran : le moteur apprend ces
+   trois nombres au démarrage et jamais après, donc les poser veut dire
+   relancer l'image.
 
    Les valeurs viennent du produit, les mots sont écrits ici : la liste
    des tailles et des débits vit dans zyr-proto, et la façon de les dire
@@ -331,9 +309,6 @@ async function demande(acte) {
    « Écran » se dit avec ce à quoi il revient sur cet ordinateur-ci : le
    mot seul ne dit pas si on demande du 4K ou du 1080p, et c'est
    exactement ce qu'on veut savoir avant d'ouvrir la session. */
-const COCHE =
-  '<svg class="valeur-coche" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>';
-
 const LIGNES = {
   asked: {
     valeurs: (menu) => menu.sizes.map((taille) => taille.value),
@@ -359,17 +334,19 @@ const LIGNES = {
   },
 };
 
-/* Ce que le produit propose, demandé une fois : les listes ne changent
-   pas d'un clic à l'autre, et les rebâtir à chaque fois ferait clignoter
-   la fenêtre à chaque ouverture. */
+/* Ce que le produit propose, demandé une fois : les crans ne changent pas
+   d'un clic à l'autre, et les refaire à chaque fois ferait clignoter la
+   fenêtre à chaque ouverture. */
 let leMenu = null;
 
 function bloc(nom) {
   return document.querySelector(`.reglage[data-reglage="${nom}"]`);
 }
 
-/* La ligne dit où elle en est, et sa liste marque la valeur en place.
-   Une liste sans marque obligerait à se souvenir de ce qu'on avait mis. */
+/* Chaque curseur va de zéro au nombre de valeurs moins une : ce sont des
+   crans nommés et non des nombres, et les débits ne sont pas espacés
+   régulièrement. La valeur en place est écrite au-dessus, parce qu'un
+   curseur seul ne dit pas ce qu'il vaut. */
 function poseLesValeurs(choix) {
   if (leMenu === null) {
     return;
@@ -381,12 +358,14 @@ function poseLesValeurs(choix) {
       continue;
     }
     const ou = ligne.ou(choix);
+    const cran = ligne.valeurs(leMenu).indexOf(ou);
     ici.querySelector("[data-valeur]").textContent = ligne.dit(leMenu, ou);
-    for (const bouton of ici.querySelectorAll(".valeur")) {
-      bouton.setAttribute(
-        "aria-checked",
-        bouton.dataset.valeurBrute === ou ? "true" : "false",
-      );
+    const curseur = ici.querySelector("[data-curseur]");
+    // Une valeur que le produit n'offre pas ne se pose sur aucun cran :
+    // le curseur reste où il est plutôt que de sauter au premier et de
+    // faire croire que c'est là qu'on en est.
+    if (cran >= 0) {
+      curseur.value = String(cran);
     }
   }
   // Ce qui a été choisi n'est pas forcément ce qui est à l'écran : le
@@ -399,30 +378,12 @@ function poseLesValeurs(choix) {
   suisLeDessin();
 }
 
-/* Une seule à la fois, comme n'importe quel sous-menu : deux ouvertes
-   se recouvriraient, puisqu'elles s'ouvrent toutes du même côté. */
-function ouvreLaListe(nom, veut) {
-  for (const [autre, _] of Object.entries(LIGNES)) {
-    const ici = bloc(autre);
-    if (!ici) {
-      continue;
-    }
-    const ouverte = autre === nom && veut;
-    ici.querySelector(".liste").classList.toggle("repliee", !ouverte);
-    ici
-      .querySelector("[data-ouvre]")
-      .setAttribute("aria-expanded", ouverte ? "true" : "false");
-  }
-  suisLeDessin();
-}
-
-/* Un choix à la fois, dans l'ordre des clics. Deux demandes parties
+/* Un choix à la fois, dans l'ordre des gestes. Deux demandes parties
    ensemble voyagent chacune de leur côté, et la première écrite en
-   dernier annulerait le clic le plus récent sans un mot. */
+   dernier annulerait le geste le plus récent sans un mot. */
 let choixEnCours = Promise.resolve();
 
 function choisis(nom, valeur) {
-  ouvreLaListe(nom, false);
   choixEnCours = choixEnCours.then(async () => {
     try {
       poseLesValeurs(
@@ -446,36 +407,81 @@ async function applique() {
   }
 }
 
-function batisLesListes() {
+function batisLesCurseurs() {
   for (const [nom, ligne] of Object.entries(LIGNES)) {
     const ici = bloc(nom);
     if (!ici) {
       continue;
     }
-    const liste = ici.querySelector(".liste");
-    liste.replaceChildren();
-    for (const valeur of ligne.valeurs(leMenu)) {
-      const bouton = document.createElement("button");
-      bouton.type = "button";
-      bouton.className = "valeur";
-      bouton.setAttribute("role", "menuitemradio");
-      bouton.dataset.valeurBrute = valeur;
-      bouton.innerHTML = `${COCHE}<span class="valeur-mot"></span>`;
-      bouton.querySelector(".valeur-mot").textContent = ligne.dit(
-        leMenu,
-        valeur,
-      );
-      bouton.addEventListener("click", () => choisis(nom, valeur));
-      liste.append(bouton);
-    }
-    ici
-      .querySelector("[data-ouvre]")
-      .addEventListener("click", () =>
-        ouvreLaListe(
-          nom,
-          ici.querySelector(".liste").classList.contains("repliee"),
-        ),
-      );
+    const valeurs = ligne.valeurs(leMenu);
+    const curseur = ici.querySelector("[data-curseur]");
+    curseur.min = "0";
+    curseur.max = String(Math.max(valeurs.length - 1, 0));
+    curseur.step = "1";
+    // Le mot suit le pouce pendant qu'on le pousse, et le choix ne part
+    // qu'une fois lâché. Sans le premier, on pousse à l'aveugle ; sans
+    // le second, traverser toute la barre enverrait une demande par cran
+    // au service, et la dernière écrite ne serait pas la dernière voulue.
+    curseur.addEventListener("input", () => {
+      const valeur = valeurs[Number(curseur.value)];
+      if (valeur !== undefined) {
+        ici.querySelector("[data-valeur]").textContent = ligne.dit(
+          leMenu,
+          valeur,
+        );
+      }
+    });
+    curseur.addEventListener("change", () => {
+      const valeur = valeurs[Number(curseur.value)];
+      if (valeur !== undefined) {
+        choisis(nom, valeur);
+      }
+    });
+  }
+}
+
+/* ---- La souris, bureau ou jeu ------------------------------------------ */
+
+/* Les deux mots sont là et celui qui est en place est allumé. La ligne
+   d'avant disait « souris bureau ou jeu » et basculait à l'aveugle : elle
+   annonçait ce que le clic ferait, jamais où l'on en était, et les deux
+   modes ne se distinguent pas à l'oeil sur un bureau immobile.
+
+   Le mode vit dans le coeur, qui compte chaque bascule qu'il envoie, et
+   il est redemandé à chaque ouverture du menu plutôt que retenu ici : le
+   raccourci du produit bascule la souris sans passer par cette page. */
+let souris = null;
+
+function poseLaSouris(jeu) {
+  souris = jeu;
+  for (const cote of vue.souris.querySelectorAll("[data-souris]")) {
+    cote.setAttribute(
+      "aria-checked",
+      (cote.dataset.souris === "jeu") === jeu ? "true" : "false",
+    );
+  }
+}
+
+async function litLaSouris() {
+  try {
+    poseLaSouris(await invoke("floating_mouse"));
+  } catch {
+    /* Sans session il n'y a pas de souris à montrer, et le menu ne
+       s'ouvre pas sans session. */
+  }
+}
+
+/* Cliquer le côté où l'on est déjà ne fait rien : c'est un interrupteur,
+   et un interrupteur qu'on pousse du côté où il est ne bouge pas. */
+async function veutLaSouris(jeu) {
+  if (souris === jeu) {
+    return;
+  }
+  try {
+    await invoke("floating_act", { what: "mouse" });
+    poseLaSouris(jeu);
+  } catch (raison) {
+    souci(String(raison));
   }
 }
 
@@ -487,7 +493,7 @@ async function litLeMenu() {
        mieux que trois lignes de menu. */
     return;
   }
-  batisLesListes();
+  batisLesCurseurs();
   poseLesValeurs(leMenu.now);
 }
 
@@ -541,6 +547,12 @@ vue.logo.addEventListener("click", (evenement) => {
 
 for (const item of document.querySelectorAll("[data-acte]")) {
   item.addEventListener("click", () => demande(item.dataset.acte));
+}
+
+for (const cote of vue.souris.querySelectorAll("[data-souris]")) {
+  cote.addEventListener("click", () =>
+    veutLaSouris(cote.dataset.souris === "jeu"),
+  );
 }
 
 for (const item of document.querySelectorAll("[data-cacher]")) {

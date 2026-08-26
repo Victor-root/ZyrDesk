@@ -685,6 +685,30 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ce que ça ne change pas.** La règle de confiance est la même mot pour mot : qui dit où il est, sur un réseau que cet ordinateur tient pour sûr, est un voisin. Appeler et répondre sont la même déclaration ; il n'y en avait qu'une des deux d'écoutée. Et une question sans présentation, qui est ce que disaient les versions d'avant, reçoit toujours sa réponse et n'apprend toujours rien : un ordinateur mis à jour d'un seul côté doit continuer de trouver l'autre, sinon la correction couperait ce qu'elle prétend réparer.
 
+## D56. Le menu de la session dit où l'on en est (2026-08-26, pendant M4)
+
+**Trois demandes de Victor, et la même idée derrière les trois.** Un menu doit montrer l'état des choses, pas seulement offrir des gestes.
+
+**La souris devient un interrupteur.** « Souris bureau ou jeu » annonçait ce que le clic ferait et jamais où l'on en était. Les deux modes ne se distinguent pas à l'oeil sur un bureau immobile, donc on cliquait pour voir, ce qui est la définition d'un réglage qu'on ne comprend pas. Les deux mots sont là maintenant, côte à côte, et celui qui est en place est allumé. Le mode vit dans le coeur, qui compte chaque bascule qu'il envoie, et il est redemandé à chaque ouverture du menu : le raccourci du produit bascule la souris sans passer par cette page.
+
+**Ce que ça ne sait pas, et il faut le dire.** Le raccourci du moteur tapé directement dans l'image ne passe par nous nulle part. Le produit croirait alors une chose et le moteur en ferait une autre, jusqu'à la bascule suivante depuis le menu. C'était déjà vrai avant ; ce qui change est qu'un désaccord se verrait, au lieu de se deviner.
+
+**Taille, débit et codec deviennent des curseurs.** Ce sont trois échelles : plus grand, plus rapide, et on en cherche le bon cran en regardant l'image bouger. Une liste qui s'ouvrait sur le côté demandait un clic pour l'ouvrir et un pour choisir, cachait ce qu'il y avait au-dessus et au-dessous de la valeur en place, et obligeait la fenêtre du bouton à être plus large que le menu pour loger ce qui s'en échappait par la gauche. Un curseur montre l'échelle entière et où l'on est dessus, d'un coup d'oeil.
+
+**Les crans sont nommés et non calculés.** Le curseur va de zéro au nombre de valeurs moins une, et le mot correspondant est écrit au-dessus : les débits ne sont pas espacés régulièrement, et « Écran » n'est pas un nombre. Le mot suit le pouce pendant qu'on le pousse, et le choix ne part qu'une fois lâché : autrement, traverser toute la barre enverrait une demande par cran au service, et la dernière écrite ne serait pas la dernière voulue.
+
+**Et la fenêtre du bouton s'en trouve simplifiée.** Elle était mesurée sur l'union du menu et des trois listes, ouvertes ou non, parce que celles-ci sortaient du flux et débordaient par la gauche. Il n'y a plus rien qui déborde : elle est mesurée sur le menu, comme elle aurait toujours dû l'être.
+
+## D57. Le bouton flottant n'a plus à suivre le premier plan (2026-08-26, pendant M4)
+
+**Le relevé.** Session sur le deuxième écran, quelqu'un travaille sur le premier : le bouton flottant disparaît entièrement, et revient à l'instant où l'on redonne le premier plan à ZyrDesk. Rien ne le cachait pourtant, la fenêtre de la session était entièrement visible.
+
+**Ce qui le faisait.** Le bouton était dessiné au-dessus de toutes les fenêtres de la machine. À cette hauteur-là il n'avait pas le choix : laissé en place, il aurait flotté dans un coin par-dessus le travail de quelqu'un d'autre. Il était donc caché dès que le premier plan partait ailleurs.
+
+**Et cette hauteur n'avait plus lieu d'être.** Elle datait du temps où l'image était une fenêtre du moteur, posée à côté de la nôtre : être au-dessus de tout était le seul moyen de se poser dessus. L'image est portée à l'intérieur de notre propre fenêtre depuis [D21](#d21-limage-du-bureau-distant-saffiche-dans-la-fenêtre-de-zyrdesk-2026-08-19-pendant-m4), et la raison est partie avec. La hauteur, elle, est restée, et le fait de se cacher avec.
+
+**Corrigé en laissant le système faire son travail.** Le bouton appartient à la fenêtre de ZyrDesk, et le système sait déjà quoi faire d'une fenêtre qui appartient à une autre : il la tient au-dessus de celle-là, la descend avec elle, et laisse n'importe quoi d'autre les recouvrir toutes les deux. Il n'y a plus une seule ligne de code pour dire quand le bouton se montre : deux questions restent, s'il est prêt et s'il a été masqué à la main, et le reste appartient à Windows.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
