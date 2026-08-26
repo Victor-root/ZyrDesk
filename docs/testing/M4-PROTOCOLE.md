@@ -37,6 +37,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R12septies** | Nouveau. Une trace blanche restait derrière le bouton après avoir cliqué une entrée du menu, le curseur étant loin du logo. La découpe de la fenêtre se pose maintenant après le dessin et non avant |
 | **R30** | **Une machine qui n'avait pas d'écran virtuel doit en avoir un au prochain démarrage du service.** Il n'était posé qu'à l'inscription du service, donc jamais sur un ordinateur inscrit avant que ce code existe. À vérifier dans `service.log` de l'hôte : `virtual screen already in place`, ou la suite des étapes de la pose |
 | **S23** | **Refait, et c'est le sujet du lot.** Éteindre l'hôte depuis la session laissait toujours son écran dans la taille du client, même après un redémarrage complet. Le service lisait « emporté par sa session » comme une chute et redémarrait le moteur sur-le-champ : trois moteurs en cinq secondes pendant que la machine s'en allait, et le seul papier qui disait ce qu'étaient les écrans avant la session y est passé. Il attend maintenant au lieu de fournir |
+| **S5** | Changé. En mode fenêtre, une session s'ouvre maintenant avec la fenêtre **agrandie** au lieu de la taille où elle avait été laissée. Le plein écran ne change pas |
 | **S26** | Nouveau. Une ouverture sur deux ou trois sautait l'écran de chargement : l'accueil revenait avec la carte verte d'une session en cours, puis l'image apparaissait quelques secondes plus tard sans rien annoncer. L'écran d'ouverture partait quand le service prenait la session, pas quand il y avait une image. Il attend maintenant l'image |
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
 | **S25** | Nouveau. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
@@ -522,11 +523,17 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > La fenêtre du moteur naît maintenant cachée et n'est montrée qu'une fois tout réglé ; ZyrDesk la prend en main pendant ce temps-là et la pose avant que quiconque puisse la voir. Cela demande les **moteurs recompilés** : si l'éclair est toujours là, vérifier dans le journal que le moteur client en place est bien celui de la compilation du jour.
 
-> **S5 (l'écran n'est pris qu'une fois)**
+> **S5 (en mode fenêtre, la session s'ouvre agrandie)**
 >
-> Refaire S3 avec le réglage sur **Fenêtre**.
+> Refaire S3 avec le réglage sur **Fenêtre**. Avant d'ouvrir, **réduire la fenêtre de ZyrDesk à un petit rectangle** au milieu de l'écran, pour que la différence se voie.
 >
-> Attendu : la fenêtre **ne prend jamais l'écran entier**, ni à l'ouverture ni à l'arrivée de l'image. Elle reste une fenêtre ordinaire, et l'image se pose dedans.
+> Attendu : dès la demande de session, la fenêtre s'**agrandit** (le bouton « niveau inférieur » remplace « agrandir » dans la barre de titre), l'écran de chargement s'affiche déjà à cette taille, et l'image se pose dedans. La barre des tâches reste visible et la barre de titre aussi : agrandie n'est pas le plein écran.
+>
+> Elle **ne prend jamais l'écran entier** : pas de plein écran, ni à l'ouverture ni à l'arrivée de l'image. C'est ce que S3 vérifie dans l'autre sens.
+>
+> **Et à la fin de la session, la fenêtre reste agrandie.** Elle n'est pas remise à la taille qu'elle avait avant : une fenêtre qu'on rapetisse toute seule après une heure de session est une fenêtre qui fait un geste que personne ne lui a demandé.
+>
+> **Le plein écran ne doit rien voir de tout ça.** Refaire l'essai avec le réglage sur **Plein écran** : le comportement doit être exactement celui d'avant, sans passage visible par une fenêtre agrandie.
 
 > **S5bis (la session s'ouvre comme la dernière a été laissée)**
 >

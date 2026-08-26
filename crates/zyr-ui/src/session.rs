@@ -188,7 +188,7 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
     // The window takes the screen before anything else does, so the
     // opening is read on the same surface the picture will land on
     // rather than in a small window that grows under the eye.
-    let _ = crate::picture::take_the_screen(
+    let _ = crate::picture::take_the_screen_for_a_session(
         &app,
         preferred.display_mode == zyr_proto::session::DisplayMode::Fullscreen,
     );

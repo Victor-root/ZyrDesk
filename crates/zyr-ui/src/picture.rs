@@ -238,6 +238,31 @@ pub fn take_the_screen(app: &AppHandle, whole: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Puts the window where a session is meant to be watched from.
+///
+/// The whole screen when that is what was asked for. Otherwise as large
+/// as a window goes, and not the size it happened to be left at. A
+/// session shows somebody else's desktop, drawn over there at the size
+/// this end asked for; a window smaller than it could be is that picture
+/// shrunk again on arrival, for nothing. Nobody opens a remote desktop
+/// meaning to watch it in a corner, and whoever does still has the
+/// window's own corner to drag.
+///
+/// Only ever on the way in, and the whole-screen road is left exactly as
+/// it was. A session ending hands the screen back but leaves the window
+/// the size it is: taking somebody's window down a size after they have
+/// spent an hour in it is not ours to do.
+pub fn take_the_screen_for_a_session(app: &AppHandle, whole: bool) -> Result<(), String> {
+    take_the_screen(app, whole)?;
+    if whole {
+        return Ok(());
+    }
+    app.get_webview_window(crate::HOME)
+        .ok_or("la fenêtre de ZyrDesk n'est plus là")?
+        .maximize()
+        .map_err(|e| e.to_string())
+}
+
 /// The same, the other way from wherever it is, and remembered.
 ///
 /// This one is a person deciding, which the two calls above are not: one

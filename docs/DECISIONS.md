@@ -663,6 +663,16 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Et si l'image ne vient jamais**, ce que le produit laisse vingt secondes au moteur pour faire, l'écran d'ouverture se retire quand même et le journal le dit. Une fenêtre qui reste couverte pour toujours serait pire que la panne qu'elle cache.
 
+## D54. En mode fenêtre, une session s'ouvre agrandie (2026-08-26, pendant M4)
+
+**Demandé, et la raison tient debout toute seule.** Une session montre le bureau d'un autre ordinateur, dessiné là-bas à la taille demandée d'ici. Une fenêtre plus petite qu'elle ne pourrait l'être, c'est cette image-là rapetissée une deuxième fois à l'arrivée, pour rien. Personne n'ouvre un bureau à distance en comptant le regarder dans un coin.
+
+**Ce qui se passait.** La fenêtre gardait la taille où elle avait été laissée, ce qui est très bien pour l'accueil et n'a aucun sens pour une session. Elle s'agrandit maintenant au moment où la session est demandée, donc avant l'écran de chargement : la même surface est lue pendant l'ouverture et occupée par l'image ensuite, sans fenêtre qui grandit sous les yeux.
+
+**Agrandie et non plein écran.** La barre de titre reste, la barre des tâches reste, et le coin de la fenêtre reste attrapable pour qui veut autre chose. Le plein écran est un choix à part, qui se règle, se retient d'une session à l'autre et ne passe par rien de tout ceci : une session qui s'ouvre en plein écran s'ouvre exactement comme avant.
+
+**Seulement à l'aller.** La fin d'une session rend l'écran mais ne touche pas à la taille de la fenêtre. Rapetisser la fenêtre de quelqu'un après une heure passée dedans serait un geste que personne n'a demandé.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
