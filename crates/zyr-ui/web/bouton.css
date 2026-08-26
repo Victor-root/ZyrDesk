@@ -245,14 +245,12 @@
   background: var(--trait);
 }
 
-/* Les lignes gardent toutes la même colonne d'icônes. Elle valait pour
-   le chevron d'un sous-menu qui n'existe plus ; elle vaut toujours,
-   parce qu'un menu dont les icônes ne sont pas alignées se lit en deux
-   morceaux décalés. */
-.menu > .item,
-.menu > .reglage {
-  padding-left: calc(var(--pas-2) + 14px + var(--pas-3));
-}
+/* Rien ne rentre les lignes vers la droite. Elles l'étaient, d'un chevron
+   plus une gouttière, pour garder une colonne au sous-menu qui s'ouvrait
+   sur le côté. Ce sous-menu n'existe plus, et le retrait est resté : les
+   lignes commençaient plus à droite que les chiffres du haut et que les
+   traits de séparation, et le menu se lisait de travers. Chacune prend
+   maintenant toute la largeur, et tout part du même bord. */
 
 /* ---- L'interrupteur à deux côtés ------------------------------------- */
 

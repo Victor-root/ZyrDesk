@@ -39,6 +39,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S23** | **Refait, et c'est le sujet du lot.** Éteindre l'hôte depuis la session laissait toujours son écran dans la taille du client, même après un redémarrage complet. Le service lisait « emporté par sa session » comme une chute et redémarrait le moteur sur-le-champ : trois moteurs en cinq secondes pendant que la machine s'en allait, et le seul papier qui disait ce qu'étaient les écrans avant la session y est passé. Il attend maintenant au lieu de fournir |
 | **S5** | Changé. En mode fenêtre, une session s'ouvre maintenant avec la fenêtre **agrandie** au lieu de la taille où elle avait été laissée. Le plein écran ne change pas |
 | **R12**, **R17**, **R34** | Le menu de la session change de forme. « Souris bureau ou jeu » devient un interrupteur Bureau / Jeu qui montre où l'on en est. Taille, débit et codec deviennent trois curseurs au lieu de trois listes qui s'ouvraient sur le côté |
+| **R12nonies** | Nouveau. Un liseré blanc apparaissait par moments sur la gauche du bouton, surtout en le déplaçant : la découpe de la fenêtre réclamait une colonne de pixels que la page ne peignait pas. Elle arrondit maintenant vers l'intérieur |
 | **R12octies** | Nouveau. Le bouton flottant disparaissait dès que le premier plan partait ailleurs, ce qui coûtait son bouton à toute session regardée sur un deuxième écran. Il ne suit plus le premier plan du tout |
 | **S27** | Nouveau. Un troisième ordinateur joint par un tunnel privé était découvert mais refusait toutes les sessions. La découverte n'apprenait qu'à celui qui appelle : celui qui était appelé ne retenait rien de son appelant, donc ne le reconnaissait pas. Celui qui appelle se présente maintenant |
 | **S26** | Nouveau. Une ouverture sur deux ou trois sautait l'écran de chargement : l'accueil revenait avec la carte verte d'une session en cours, puis l'image apparaissait quelques secondes plus tard sans rien annoncer. L'écran d'ouverture partait quand le service prenait la session, pas quand il y avait une image. Il attend maintenant l'image |
@@ -402,6 +403,14 @@ Les moteurs réclament entre eux un code à quatre chiffres, affiché sur un éc
 > Il disparaissait entièrement dès que le premier plan partait ailleurs, et revenait à l'instant où l'on redonnait le premier plan à ZyrDesk. Il était dessiné au-dessus de toutes les fenêtres de la machine, donc il fallait bien le cacher pour qu'il n'aille pas flotter par-dessus le travail des autres ; cette hauteur datait du temps où l'image était une fenêtre à part.
 >
 > **Le contrôle qui va avec, sur un seul écran.** Toujours pendant une session, passer sur une autre application qui **recouvre** la fenêtre de ZyrDesk. Attendu : le bouton disparaît sous cette application, comme le reste de la fenêtre. Il ne doit jamais rester visible par-dessus.
+
+> **R12nonies (aucun liseré blanc autour du bouton)**
+>
+> Pendant une session, **prendre le bouton et le déplacer lentement** sur toute la largeur de l'image, puis le reposer. Refaire menu ouvert et menu fermé.
+>
+> Attendu : rien de clair autour du logo ni du menu, à aucun moment du geste. Le défaut était un fin liseré blanc sur la gauche, présent par moments seulement et bien plus visible pendant le déplacement.
+>
+> C'est le genre de chose qu'on rate en regardant : le mieux est de **prendre une capture pendant le geste** et de la regarder ensuite.
 
 > **R12bis (le bouton masqué revient)**
 >
@@ -1073,6 +1082,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Le journal en garde la trace, une ligne par changement de taille : `bouton flottant : 1630x1614 demandés, 91x91 avant, 1630x1614 après ; 2 morceaux dessinés jusqu'à 1098x1272`. « après » doit valoir « demandés », sinon c'est Windows qui a refusé la taille ; et « dessinés jusqu'à » doit rester en dessous, sinon la page dessine plus grand que sa fenêtre.
 >
 > Une ligne de plus est normale la première fois qu'on change un réglage : c'est **Appliquer les changements** qui apparaît et allonge le menu. Une seule fois par session.
+>
+> **Trois choses de plus à regarder dans ce menu.** Les lignes doivent toutes partir du **même bord gauche** que les chiffres du haut et que les traits de séparation : aucune ne doit être rentrée vers la droite. Le curseur de la **taille** doit aller de la plus petite à gauche à la plus grande à droite. Et un clic **dans l'image**, menu ouvert, doit le refermer, sans avoir à recliquer le logo.
 >
 > **L'interrupteur de la souris, dans le même menu.** Il porte **Bureau** à gauche et **Jeu** à droite, et le côté en place est allumé. Cliquer l'autre bascule le pointeur et allume l'autre côté ; cliquer celui qui est déjà allumé ne fait rien. Fermer le menu, basculer la souris **au raccourci** (Ctrl+Alt+Maj+M), rouvrir le menu : l'interrupteur doit avoir suivi.
 >

@@ -709,6 +709,16 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Corrigé en laissant le système faire son travail.** Le bouton appartient à la fenêtre de ZyrDesk, et le système sait déjà quoi faire d'une fenêtre qui appartient à une autre : il la tient au-dessus de celle-là, la descend avec elle, et laisse n'importe quoi d'autre les recouvrir toutes les deux. Il n'y a plus une seule ligne de code pour dire quand le bouton se montre : deux questions restent, s'il est prêt et s'il a été masqué à la main, et le reste appartient à Windows.
 
+## D58. Quatre reprises sur le menu de la session (2026-08-26, pendant M4)
+
+**Les lignes reprennent toute la largeur.** Elles étaient rentrées vers la droite d'un chevron plus une gouttière, pour garder une colonne au sous-menu qui s'ouvrait sur le côté. Ce sous-menu est parti avec [D56](#d56-le-menu-de-la-session-dit-où-lon-en-est-2026-08-26-pendant-m4) et le retrait est resté : les lignes commençaient plus à droite que les chiffres du haut et que les traits de séparation, et le menu se lisait de travers.
+
+**Le curseur de la taille va du plus petit au plus grand.** Il suivait l'ordre dans lequel le produit offre ses tailles, qui n'est pas celui-là. Sur une barre, pousser vers la droite veut dire demander plus ; l'inverse se lit comme une panne.
+
+**Un clic sur la session referme le menu.** C'est ce que fait tout menu ouvert depuis que les menus existent, et il fallait recliquer le logo. Le clavier suffit à le savoir, sans rien guetter et sans crochet posé sur la machine : cette fenêtre n'est jamais activée, mais cliquer dedans donne le clavier à sa page, et cliquer ailleurs le lui reprend. « Ailleurs » couvre l'image, une autre application et le bureau, c'est-à-dire tous les endroits où un menu resté ouvert n'a plus rien à faire.
+
+**Et le liseré blanc sur la gauche du bouton.** La découpe de la fenêtre était arrondie au plus proche, donc parfois vers le dehors : elle réclamait alors une colonne de pixels que la page n'avait pas peinte, et le système la remplissait de son propre blanc avant que la vue web ait repeint. D'où un liseré qui n'apparaissait pas toujours, et beaucoup plus en déplaçant le bouton : à chaque pas la fenêtre bouge, le système recopie ce qu'il peut et efface au pinceau la bande découverte. La découpe arrondit maintenant vers l'intérieur, bords remontés et tailles rabotées. Un pixel peint en moins ne se voit pas ; un pixel blanc de trop, si.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

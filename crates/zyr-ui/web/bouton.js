@@ -161,12 +161,20 @@ function laBoite() {
 function formeOccupee(echelle) {
   const morceaux = [];
   const droite = document.documentElement.clientWidth;
+  // Arrondi vers l'intérieur, jamais vers l'extérieur : les bords sont
+  // remontés et les tailles rabotées. Un morceau arrondi vers le dehors
+  // réclame une colonne de pixels que la page n'a pas peinte, et le
+  // système la remplit de son propre blanc avant que la vue web ait
+  // repeint. C'est le liseré clair qu'on voyait sur la gauche du bouton,
+  // surtout en le déplaçant : à chaque pas, la fenêtre bouge, le système
+  // recopie ce qu'il peut et efface la bande découverte au pinceau blanc.
+  // Un pixel peint en moins ne se voit pas ; un pixel blanc de trop, si.
   const pose = (gauche, haut, large, haute, rayon) =>
     morceaux.push({
-      x: Math.round((gauche - droite) * echelle),
-      y: Math.round(haut * echelle),
-      width: Math.round(large * echelle),
-      height: Math.round(haute * echelle),
+      x: Math.ceil((gauche - droite) * echelle),
+      y: Math.ceil(haut * echelle),
+      width: Math.floor(large * echelle),
+      height: Math.floor(haute * echelle),
       radius: Math.round(rayon * echelle),
     });
   const carte = (element) => {
@@ -311,7 +319,16 @@ async function demande(acte) {
    exactement ce qu'on veut savoir avant d'ouvrir la session. */
 const LIGNES = {
   asked: {
-    valeurs: (menu) => menu.sizes.map((taille) => taille.value),
+    // Du plus petit au plus grand, de gauche à droite. Le produit les
+    // offre dans son ordre à lui, qui n'est pas celui-là : sur une barre,
+    // pousser vers la droite veut dire demander plus, et l'inverse se lit
+    // comme une panne.
+    valeurs: (menu) =>
+      [...menu.sizes]
+        .sort(
+          (une, autre) => une.width * une.height - autre.width * autre.height,
+        )
+        .map((taille) => taille.value),
     dit: (menu, valeur) => {
       const taille = menu.sizes.find((une) => une.value === valeur);
       if (!taille) {
@@ -569,6 +586,21 @@ vue.appliquer.addEventListener("click", applique);
    refermer et rendre l'image. */
 document.addEventListener("click", (evenement) => {
   if (ouvert && !vue.paquet.contains(evenement.target)) {
+    ouvre(false);
+  }
+});
+
+/* Et un clic sur la session referme aussi, ce qui est ce que fait tout
+   menu ouvert depuis que les menus existent. Il fallait jusqu'ici
+   recliquer le logo.
+
+   Le clavier suffit à le savoir, sans rien guetter et sans crochet posé
+   sur la machine : cette fenêtre n'est jamais activée, mais cliquer
+   dedans donne le clavier à sa page, et cliquer ailleurs le lui reprend.
+   « Ailleurs » veut dire l'image, une autre application, le bureau : tous
+   les endroits où un menu resté ouvert n'a plus rien à faire. */
+window.addEventListener("blur", () => {
+  if (ouvert) {
     ouvre(false);
   }
 });
