@@ -52,7 +52,12 @@ enum Told {
     Showing {
         process: u32,
     },
-    /// The picture is up and the session belongs to the service now.
+    /// The picture is in our window, and the session belongs to the
+    /// service now.
+    ///
+    /// Not one of these two things and then the other: the opening screen
+    /// comes down on this, so it has to wait for the later of them, and
+    /// the later one is the picture.
     Live,
     /// The picture is being opened again, the person having changed what
     /// the session asks for.
@@ -258,6 +263,27 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
 
         let process = running.process_id();
         crate::journal::note(&format!("session en cours, lecteur {process}"));
+
+        // Waited for here, and this is the whole of what the opening
+        // screen is for: it covers the seconds between somebody asking
+        // for a session and there being something to look at. Said the
+        // moment the service took the session instead, it was said too
+        // early whenever the two computers had to be introduced again,
+        // because the wait that hid the difference the rest of the time
+        // is skipped on that road. The person then watched their home
+        // screen for four seconds, with a session card on it and no
+        // picture, and the picture arrived with no announcement at all.
+        //
+        // Costs nothing where it was already right: by the time the
+        // service holds an ordinary session, the picture has been in our
+        // window for seconds.
+        if !lay_the_picture_when_it_opens(app, process) {
+            crate::journal::note(&format!(
+                "le lecteur {process} n'a pas ouvert d'image en {} s, l'écran d'ouverture est \
+                 retiré quand même",
+                WINDOW_TAKES.as_secs()
+            ));
+        }
         say(app, Told::Live);
 
         // Waiting costs nothing here and buys the one thing the person
@@ -393,14 +419,24 @@ const WINDOW_STEP: Duration = Duration::from_millis(1);
 /// the window is waiting to be told.
 fn lay_the_picture_as_soon_as_it_opens(app: AppHandle, process: u32) {
     std::thread::spawn(move || {
-        let until = std::time::Instant::now() + WINDOW_TAKES;
-        while std::time::Instant::now() < until {
-            if crate::picture::hold(&app, process) {
-                return;
-            }
-            std::thread::sleep(WINDOW_STEP);
-        }
+        lay_the_picture_when_it_opens(&app, process);
     });
+}
+
+/// The waiting itself, so that whoever needs the answer can have it.
+///
+/// Answers whether the picture ended up in our window. Called from two
+/// places at once and none the worse for it: laying a picture already
+/// laid does nothing, and the lock inside is there for exactly this.
+fn lay_the_picture_when_it_opens(app: &AppHandle, process: u32) -> bool {
+    let until = std::time::Instant::now() + WINDOW_TAKES;
+    while std::time::Instant::now() < until {
+        if crate::picture::hold(app, process) {
+            return true;
+        }
+        std::thread::sleep(WINDOW_STEP);
+    }
+    false
 }
 
 fn told(step: Step) -> Told {

@@ -37,6 +37,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R12septies** | Nouveau. Une trace blanche restait derrière le bouton après avoir cliqué une entrée du menu, le curseur étant loin du logo. La découpe de la fenêtre se pose maintenant après le dessin et non avant |
 | **R30** | **Une machine qui n'avait pas d'écran virtuel doit en avoir un au prochain démarrage du service.** Il n'était posé qu'à l'inscription du service, donc jamais sur un ordinateur inscrit avant que ce code existe. À vérifier dans `service.log` de l'hôte : `virtual screen already in place`, ou la suite des étapes de la pose |
 | **S23** | **Refait, et c'est le sujet du lot.** Éteindre l'hôte depuis la session laissait toujours son écran dans la taille du client, même après un redémarrage complet. Le service lisait « emporté par sa session » comme une chute et redémarrait le moteur sur-le-champ : trois moteurs en cinq secondes pendant que la machine s'en allait, et le seul papier qui disait ce qu'étaient les écrans avant la session y est passé. Il attend maintenant au lieu de fournir |
+| **S26** | Nouveau. Une ouverture sur deux ou trois sautait l'écran de chargement : l'accueil revenait avec la carte verte d'une session en cours, puis l'image apparaissait quelques secondes plus tard sans rien annoncer. L'écran d'ouverture partait quand le service prenait la session, pas quand il y avait une image. Il attend maintenant l'image |
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
 | **S25** | Nouveau. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
 
@@ -990,6 +991,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Attendu : le bouton flottant est là, dans son coin, comme à la première session, et le raccourci du menu l'ouvre.
 >
 > **Si jamais il manque**, le journal de la fenêtre le dit maintenant, ce qui n'était pas le cas : soit `bouton flottant : rien de dessiné après 3 s, la fenêtre est refermée et remontée`, et le bouton doit revenir dans la foulée, soit `le bouton flottant n'a pas pu s'ouvrir : …`, qui nomme le refus. Un silence complet du journal sur ce point n'est plus une réponse possible.
+
+> **S26 (l'écran de chargement couvre toute l'ouverture, à chaque fois)**
+>
+> Ouvrir et fermer une session **cinq ou six fois de suite** vers le même ordinateur, sans rien changer entre deux.
+>
+> Attendu, à chaque ouverture sans exception : l'écran de chargement (le logo, « Établissement de la connexion », le nom de l'ordinateur, la barre bleue) reste à l'écran **jusqu'à ce que l'image apparaisse**. On ne doit jamais revoir l'accueil entre les deux, et surtout pas la carte verte d'une session en cours pendant que l'image n'est pas encore là.
+>
+> **Pourquoi il faut le faire plusieurs fois.** Ça ne se produisait pas à tous les coups. Le chemin ordinaire passe par une attente de six secondes qui couvrait l'écart par hasard ; l'ouverture où les deux ordinateurs se présentent à nouveau saute cette attente, et l'écart se voyait alors tout nu. Le journal de la fenêtre dit laquelle des deux on vient de faire : `l'ordinateur distant ne reconnaît plus celui-ci, nouvelle présentation`, puis `les deux ordinateurs se connaissent`. **C'est cette ouverture-là qu'il faut avoir vue au moins une fois.** Pour la provoquer à coup sûr, ouvrir une session, puis sur l'hôte arrêter et redémarrer le service, puis rouvrir.
+>
+> **Ce que le journal doit montrer**, dans cet ordre : `image du lecteur N posée dans la fenêtre de ZyrDesk`, **puis** `session en cours, lecteur N`. Jamais l'inverse. Et si jamais `le lecteur N n'a pas ouvert d'image en 20 s` apparaît, l'écran de chargement se retire quand même : c'est voulu, une fenêtre couverte pour toujours serait pire.
 
 > **S25 (quitter la session rend son écran à l'hôte, même quand ça se passe mal)**
 >

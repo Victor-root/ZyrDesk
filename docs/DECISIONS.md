@@ -649,6 +649,20 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Les deux moitiés vont ensemble.** D51 empêche de dépenser le papier qui dit ce qu'était l'écran ; celle-ci fait que, la plupart du temps, ce papier n'a plus à servir du tout. Le filet reste, et c'est très bien : une extinction plus brutale que d'habitude retombe dessus au lieu de tomber par terre.
 
+## D53. L'écran d'ouverture attend l'image, pas le service (2026-08-26, pendant M4)
+
+**Le symptôme, et il n'arrivait qu'une fois sur quelques-unes.** « Des fois quand je me connecte, au lieu du bel écran de chargement, il reste sur l'accueil, il met un grand rectangle vert, et ensuite l'image arrive. » Le rectangle vert est la carte d'une session en cours, celle de l'accueil. Elle était juste : la session était bien en cours. Ce qui était faux, c'est que l'écran d'ouverture était déjà parti.
+
+**Ce que couvre cet écran.** Les quelques secondes entre le moment où quelqu'un demande une session et le moment où il y a quelque chose à regarder. Il partait au moment où le service prenait la session, ce qui n'est pas le même moment : le service tient la session dès que le lecteur tourne, et l'image arrive plusieurs secondes plus tard.
+
+**Pourquoi ça ne se voyait presque jamais.** Le chemin ordinaire passe par une attente que personne n'avait mise là pour ça : après avoir démarré le lecteur, l'ouverture guette six secondes pour voir si l'ordinateur d'en face le renvoie tout de suite, ce qui est le signe qu'il ne nous reconnaît plus. Ces six secondes couvraient l'écart, par accident. Quand les deux ordinateurs viennent de se présenter à nouveau, cette guette est sautée, tout à fait exprès : se faire renvoyer juste après une présentation est une autre panne, et regarder deux fois n'y changerait rien. L'écart réapparaissait alors tout nu, quatre secondes d'accueil avec une carte verte et pas d'image.
+
+**Un relevé, deux ouvertures.** Ordinaire : lecteur démarré à 19:47:14, image posée à 19:47:17, écran d'ouverture retiré à 19:47:20. Après ré-appairage : lecteur démarré à 19:51:57, écran d'ouverture retiré à 19:51:57, image posée à 19:52:01.
+
+**Corrigé en attendant la bonne chose.** L'écran d'ouverture se retire quand l'image est posée dans la fenêtre, et pas avant. C'est déjà ce que le produit sait faire et ce qu'il fait déjà sur un fil à part, pour poser l'image à la milliseconde où le moteur ouvre sa fenêtre ; il suffisait de demander la réponse à cette attente-là au lieu d'en inventer une autre. Là où c'était déjà juste, ça ne coûte rien : le temps que le service tienne une session ordinaire, l'image est dans la fenêtre depuis plusieurs secondes.
+
+**Et si l'image ne vient jamais**, ce que le produit laisse vingt secondes au moteur pour faire, l'écran d'ouverture se retire quand même et le journal le dit. Une fenêtre qui reste couverte pour toujours serait pire que la panne qu'elle cache.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
