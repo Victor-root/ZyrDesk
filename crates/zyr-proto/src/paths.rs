@@ -148,6 +148,17 @@ pub fn preferences() -> PathBuf {
     data_dir().join("preferences.conf")
 }
 
+/// The note the service leaves while it holds this computer's speakers
+/// down for a session.
+///
+/// Its whole reason for existing is the machine that is switched off, or
+/// the service that falls over, in the middle of a session: Windows
+/// remembers a muted device across a restart, and without this the
+/// computer would stay silent for ever with nothing anywhere saying why.
+pub fn hushed_speakers() -> PathBuf {
+    data_dir().join("hushed-speakers.txt")
+}
+
 /// Where the client engine writes what the session is costing, once a
 /// second, replaced whole each time.
 ///
@@ -195,6 +206,7 @@ mod tests {
             authorized_devices(),
             known_computers(),
             preferences(),
+            hushed_speakers(),
         ] {
             assert!(
                 path.starts_with(&root),

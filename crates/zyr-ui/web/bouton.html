@@ -92,6 +92,54 @@
           </div>
         </div>
 
+        <!-- Le son de la session, coupé ici et pas là-bas : l'ordinateur
+             d'en face continue de jouer ce qu'il joue, et c'est le
+             silence de cette pièce-ci qu'on demande. Même interrupteur
+             que la souris, parce que c'est la même question : lequel des
+             deux est en place. -->
+        <div class="item item-avec-choix" role="group" aria-label="Son">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M11 5 6.5 9H3v6h3.5L11 19z" />
+            <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+          </svg>
+          <span class="item-mot">Son</span>
+          <div class="bascule" id="son">
+            <button
+              class="bascule-cote"
+              type="button"
+              data-son="actif"
+              role="menuitemradio"
+              aria-checked="false"
+            >
+              Actif
+            </button>
+            <button
+              class="bascule-cote"
+              type="button"
+              data-son="coupe"
+              role="menuitemradio"
+              aria-checked="false"
+            >
+              Coupé
+            </button>
+          </div>
+        </div>
+
+        <!-- Les trois touches que Windows garde pour lui aux deux bouts
+             d'une session : cet ordinateur-ci ne les voit jamais, son
+             propre Windows les prend avant tout programme, et l'image
+             ne peut pas les faire sentir là-bas. Elles voyagent donc par
+             le canal du produit, et c'est le service d'en face qui les
+             presse sur sa machine. -->
+        <button class="item" type="button" data-acte="cad" role="menuitem">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2.5" y="6" width="19" height="12" rx="2" />
+            <path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M6 14h12" />
+          </svg>
+          <span class="item-mot">Ctrl+Alt+Suppr</span>
+          <span class="item-touche">sur l'ordinateur distant</span>
+        </button>
+
         <div class="separateur" role="separator"></div>
 
         <!-- Les trois nombres qu'on règle en regardant l'image qu'ils

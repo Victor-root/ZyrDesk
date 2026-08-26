@@ -13,6 +13,7 @@
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -42,6 +43,9 @@ const REFUSED_PIN: &str = "9999";
 struct FakeEngine {
     ports: EnginePorts,
     handed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    /// Times Ctrl+Alt+Suppr was asked for. Counted rather than done:
+    /// nothing here has a Windows to press it on.
+    attended: Arc<AtomicU32>,
 }
 
 impl Answers for FakeEngine {
@@ -57,6 +61,11 @@ impl Answers for FakeEngine {
             .lock()
             .unwrap()
             .push((pin.to_string(), name.to_string()));
+        Ok(())
+    }
+
+    fn secure_attention(&self) -> Result<(), String> {
+        self.attended.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 }
@@ -76,6 +85,8 @@ struct Bench {
     connection: zyr_transport::Connection,
     /// What the host engine was handed.
     handed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    /// Times the far ZyrDesk was asked to press Ctrl+Alt+Suppr.
+    attended: Arc<AtomicU32>,
 }
 
 impl Bench {
@@ -110,12 +121,14 @@ impl Bench {
         );
 
         let handed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let attended = Arc::new(AtomicU32::new(0));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
             Arc::new(FakeEngine {
                 ports,
                 handed: handed.clone(),
+                attended: attended.clone(),
             }),
         )
         .await
@@ -138,6 +151,7 @@ impl Bench {
             ports: engine,
             connection: client_connection,
             handed,
+            attended,
         }
     }
 
@@ -209,6 +223,21 @@ async fn the_pairing_code_travels_through_the_tunnel() {
         handed,
         vec![("0429".to_string(), "PC de Victor".to_string())]
     );
+}
+
+#[tokio::test]
+async fn ctrl_alt_suppr_travels_on_the_product_s_own_channel() {
+    // Windows garde cette combinaison pour lui aux deux bouts : celui qui
+    // regarde ne la voit jamais, et celui qui est regardé ne peut pas la
+    // recevoir d'un moteur. Elle traverse donc entre les deux moitiés de
+    // ZyrDesk, et aucun moteur n'en sait rien.
+    let bench = Bench::bring_up(42500, 7).await;
+
+    before_the_end(aside::ask_for_the_secure_attention(&bench.connection))
+        .await
+        .unwrap();
+
+    assert_eq!(bench.attended.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]

@@ -10,6 +10,7 @@ mod known;
 mod preferences;
 mod restart;
 mod screen;
+mod speakers;
 mod supervisor;
 mod ways;
 
@@ -75,6 +76,29 @@ fn main() -> ExitCode {
         } else {
             ExitCode::FAILURE
         };
+    }
+
+    // And a third time, for the one keystroke Windows keeps for itself.
+    // The far computer asks for Ctrl+Alt+Suppr, the service takes the
+    // ask, and only a program running in the session that owns the
+    // screen can press it there. Nobody types this one either.
+    #[cfg(windows)]
+    if session::asked_for_the_secure_attention() {
+        return if session::send_the_secure_attention() {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
+
+    // And a fourth time, for the speakers of this computer. Which device
+    // the desktop plays to depends on who is signed in, so the question
+    // is asked from the session that owns the screen and nowhere else.
+    // The answer is more than yes or no: two means the speakers were
+    // already the way they were asked to be, so nothing is owed back.
+    #[cfg(windows)]
+    if let Some(quiet) = session::asked_about_the_speakers() {
+        return ExitCode::from(session::move_the_speakers(quiet) as u8);
     }
 
     match Cli::parse().command {

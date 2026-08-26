@@ -148,6 +148,10 @@ pub enum Act {
     Fullscreen,
     Stats,
     MouseMode,
+    /// Ctrl+Alt+Suppr, pressed on the far computer.
+    SecureAttention,
+    /// The session's own sound, hushed or given back on this computer.
+    Sound,
     End,
 }
 
@@ -157,6 +161,8 @@ impl Act {
             "fullscreen" => Some(Act::Fullscreen),
             "stats" => Some(Act::Stats),
             "mouse" => Some(Act::MouseMode),
+            "cad" => Some(Act::SecureAttention),
+            "sound" => Some(Act::Sound),
             "end" => Some(Act::End),
             _ => None,
         }
@@ -165,15 +171,20 @@ impl Act {
     /// Letter of the engine's Ctrl+Alt+Shift shortcut, for the ones that
     /// have one.
     ///
-    /// Two do not. Ending a session is asked of the far computer over
+    /// Four do not. Ending a session is asked of the far computer over
     /// the tunnel, since what ends it there is that computer letting its
-    /// desktop go; and covering the screen is done to our own window,
-    /// the engine's having gone inside it.
+    /// desktop go; covering the screen is done to our own window, the
+    /// engine's having gone inside it; Ctrl+Alt+Suppr is the one
+    /// combination Windows keeps for itself at both ends, so it travels
+    /// on the product's own channel and is pressed over there by the
+    /// service, which is the one program on that machine allowed to; and
+    /// the sound is hushed on this computer's own mixer, where the
+    /// player has a strip like any other program.
     fn letter(self) -> Option<u8> {
         match self {
             Act::Stats => Some(b'S'),
             Act::MouseMode => Some(b'M'),
-            Act::Fullscreen | Act::End => None,
+            Act::Fullscreen | Act::SecureAttention | Act::Sound | Act::End => None,
         }
     }
 
@@ -190,7 +201,7 @@ impl Act {
         match self {
             Act::Stats => Some(0x1F),
             Act::MouseMode => Some(0x32),
-            Act::Fullscreen | Act::End => None,
+            Act::Fullscreen | Act::SecureAttention | Act::Sound | Act::End => None,
         }
     }
 }
@@ -201,6 +212,8 @@ impl std::fmt::Display for Act {
             Act::Fullscreen => "plein écran",
             Act::Stats => "statistiques",
             Act::MouseMode => "mode de la souris",
+            Act::SecureAttention => "Ctrl+Alt+Suppr",
+            Act::Sound => "son de la session",
             Act::End => "fin de la session",
         })
     }
@@ -1223,17 +1236,12 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
             return crate::picture::toggle_the_screen(app);
         }
         Act::End => return end_the_session(app).await,
+        Act::SecureAttention => return press_ctrl_alt_del_over_there(app).await,
+        Act::Sound => return hush_the_session(app).await,
         _ => {}
     }
 
-    let process = app
-        .state::<Floating>()
-        .watched
-        .lock()
-        .expect("session suivie")
-        .as_ref()
-        .copied()
-        .ok_or("aucune session en cours")?;
+    let process = the_player(app)?;
 
     type_at_the_picture(app, act, process).await?;
     // The keystroke left, so the engine will act on it: the mode this
@@ -1245,6 +1253,68 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
             .fetch_xor(true, std::sync::atomic::Ordering::Relaxed);
     }
     Ok(())
+}
+
+/// The player the button is hanging on right now.
+///
+/// What the watch adopted, and never the first session it can find: with
+/// two sessions open, what this window's menu asks for is this window's.
+fn the_player(app: &AppHandle) -> Result<u32, String> {
+    app.state::<Floating>()
+        .watched
+        .lock()
+        .expect("session suivie")
+        .as_ref()
+        .copied()
+        .ok_or_else(|| "aucune session en cours".to_string())
+}
+
+/// Whether the session's sound is hushed on this computer right now.
+///
+/// Asked of Windows rather than remembered here, unlike the mouse mode
+/// next to it in the menu. The two are not the same kind of thing: the
+/// mouse mode lives in the engine, which never says where it stands, so
+/// this program has to count its own switches; the mute lives in the
+/// volume mixer, which anybody can open and which will gladly say. A
+/// switch showing what it believes rather than what is true is a switch
+/// nobody trusts twice.
+#[tauri::command]
+pub async fn floating_sound(app: AppHandle) -> Result<bool, String> {
+    let process = the_player(&app)?;
+    aside(move || zyr_sound::muted(process)).await
+}
+
+/// Hushes the session's sound on this computer, or gives it back.
+///
+/// Here and not over there. The far computer goes on playing whatever it
+/// plays, and the person who asked is not asking for silence in a room
+/// they are not in: they are asking for silence in theirs. The player
+/// has a strip in this computer's volume mixer like any other program,
+/// and that is the strip this pulls down, so nothing else playing here
+/// is touched.
+async fn hush_the_session(app: &AppHandle) -> Result<(), String> {
+    let process = the_player(app)?;
+    let quiet = !aside(move || zyr_sound::muted(process)).await?;
+    aside(move || zyr_sound::mute(process, quiet)).await?;
+    note(&format!(
+        "son du lecteur {process} {}",
+        if quiet { "coupé" } else { "rendu" }
+    ));
+    Ok(())
+}
+
+/// Asks the mixer, off the threads that must not wait.
+///
+/// Every question in `zyr-sound` is a round trip through COM, which is
+/// quick and is still not something to do on a runtime that has a
+/// picture to keep flowing.
+async fn aside<T: Send + 'static>(
+    ask: impl FnOnce() -> Result<T, zyr_sound::Trouble> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(ask)
+        .await
+        .map_err(|e| format!("le mélangeur n'a pas répondu : {e}"))?
+        .map_err(|e| e.to_string())
 }
 
 /// Gives the picture the keyboard back and types the engine's shortcut
@@ -1311,6 +1381,42 @@ async fn the_player_has_stopped(process: u32) -> bool {
         tokio::time::sleep(STOP_STEP).await;
     }
     false
+}
+
+/// Presses Ctrl+Alt+Suppr on the far computer.
+///
+/// It goes nowhere near the picture, and could not. Windows keeps that
+/// combination for itself at both ends of a session: this computer never
+/// sees it, because its own Windows takes it before any program does, and
+/// the far computer cannot be made to feel it by an engine, because the
+/// way an engine types is exactly the way Windows refuses for this one.
+///
+/// So it travels on the product's own channel, from this service to the
+/// one over there, which presses it on its own machine. That is why this
+/// is handled here rather than among the keystrokes: it has no letter and
+/// no place on a keyboard, and never will.
+///
+/// The session is found the way ending one finds it: the service knows
+/// every session on this computer, and it is the one the button hangs on
+/// that is meant, never merely the first of the list.
+async fn press_ctrl_alt_del_over_there(app: &AppHandle) -> Result<(), String> {
+    let watched = *app
+        .state::<Floating>()
+        .watched
+        .lock()
+        .expect("session suivie");
+
+    let sessions = crate::session::sessions().await;
+    let ours = watched
+        .and_then(|process| sessions.iter().find(|session| session.process == process))
+        .or_else(|| sessions.first())
+        .ok_or("aucune session en cours")?;
+
+    crate::service::ask(&zyr_control::Request::SecureAttention {
+        way: zyr_control::WayId(ours.way),
+    })
+    .await
+    .map(|_| ())
 }
 
 /// Ends the session: the far computer is handed its desktop back, and
@@ -2187,11 +2293,13 @@ mod tests {
             assert_eq!(act.letter(), Some(letter), "sur « {name} »");
             assert_eq!(act.where_it_sits(), Some(place), "sur « {name} »");
         }
-        // Deux ne passent pas par le clavier du lecteur : terminer se
-        // demande à l'ordinateur d'en face à travers le tunnel, et
-        // couvrir l'écran se fait à notre propre fenêtre, celle du moteur
-        // étant posée dedans.
-        for name in ["end", "fullscreen"] {
+        // Quatre ne passent pas par le clavier du lecteur : terminer se
+        // demande à l'ordinateur d'en face à travers le tunnel, couvrir
+        // l'écran se fait à notre propre fenêtre, celle du moteur étant
+        // posée dedans, Ctrl+Alt+Suppr est la combinaison que Windows
+        // garde pour lui aux deux bouts, et le son se coupe dans le
+        // mélangeur de cet ordinateur-ci.
+        for name in ["end", "fullscreen", "cad", "sound"] {
             assert_eq!(
                 Act::read(name).expect(name).letter(),
                 None,

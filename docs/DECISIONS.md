@@ -719,6 +719,52 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Et le liseré blanc sur la gauche du bouton.** La découpe de la fenêtre était arrondie au plus proche, donc parfois vers le dehors : elle réclamait alors une colonne de pixels que la page n'avait pas peinte, et le système la remplissait de son propre blanc avant que la vue web ait repeint. D'où un liseré qui n'apparaissait pas toujours, et beaucoup plus en déplaçant le bouton : à chaque pas la fenêtre bouge, le système recopie ce qu'il peut et efface au pinceau la bande découverte. La découpe arrondit maintenant vers l'intérieur, bords remontés et tailles rabotées. Un pixel peint en moins ne se voit pas ; un pixel blanc de trop, si.
 
+## D59. Ctrl+Alt+Suppr voyage sur le canal du produit, pas par le clavier (2026-08-26, pendant M4)
+
+**Ce que Victor a demandé.** Une entrée dans le menu de la session pour envoyer Ctrl+Alt+Suppr à l'ordinateur d'en face.
+
+**Pourquoi aucun moteur ne peut le faire.** Windows garde cette combinaison pour lui aux deux bouts d'une session. L'ordinateur qui regarde ne la voit jamais : son propre Windows la prend avant tout programme. Et l'ordinateur regardé ne peut pas la sentir arriver par le flux : la façon dont un moteur tape des touches est exactement celle que Windows refuse pour celle-là. Il n'y a qu'une porte, `SendSAS`, et elle ne s'ouvre que pour un programme que le système tient pour sûr.
+
+**Décision : elle passe par notre propre canal, et c'est le service d'en face qui presse.** Le menu demande, la demande traverse le tunnel sur le canal que ZyrDesk se réserve, le service de l'ordinateur hôte la reçoit et presse la combinaison sur sa propre machine. Aucun correctif de moteur, aucune touche envoyée nulle part. Le service est justement le seul programme de cette machine à qui Windows le permet.
+
+**Depuis la session à l'écran et jamais depuis la sienne.** La séquence atterrit dans la session que porte le jeton de celui qui appelle, et un service vit dans une session sans écran. Pressée là, elle le serait là où personne ne regarde. Le service relance donc ce même programme, avec un argument réservé, dans la session qui tient l'écran : c'est le même mécanisme qui sert déjà à taper le moteur sur l'épaule pour lui demander de partir.
+
+**Et la stratégie qui l'autorise est posée à l'installation.** Windows n'ouvre cette porte que si une valeur du registre le dit, et elle n'y est pas par défaut. Elle est écrite quand le service est enregistré et retirée quand il est désinstallé : ce produit ne laisse pas derrière lui une machine réglée autrement qu'il ne l'a trouvée.
+
+**Ce que le produit ne peut pas savoir.** `SendSAS` ne répond rien du tout. Ce qui remonte est « l'appel a été fait », et la personne qui regarde son écran est la seule à savoir si ça a marché.
+
+## D60. Le son d'une session se coupe ici, dans le mélangeur de Windows (2026-08-26, pendant M4)
+
+**Ce que Victor a demandé.** Un « son on off » dans le menu de la session.
+
+**Ici et pas là-bas.** L'ordinateur d'en face continue de jouer ce qu'il joue ; celui qui demande le silence ne demande pas le silence d'une pièce où il n'est pas, il demande celui de la sienne. C'est donc le son de cette machine-ci qui se coupe.
+
+**Décision : le lecteur a une tranche dans le mélangeur de Windows comme n'importe quel programme, et c'est celle-là qu'on baisse.** Rien d'autre de ce qui joue sur cet ordinateur n'est touché : la musique déjà en cours continue. Aucun correctif de moteur, aucun réglage caché, et le résultat est visible dans le mélangeur de Windows comme pour tout autre programme.
+
+**L'état se relit, il ne se retient pas.** Contrairement au mode de la souris, à côté dans le menu, qui vit dans le moteur et ne se laisse pas interroger. Le muet, lui, vit dans le mélangeur, que tout le monde peut ouvrir et qui répond volontiers. Un interrupteur qui montre ce qu'il croit plutôt que ce qui est est un interrupteur dont on ne se sert pas deux fois.
+
+**Une brique à part, comme l'écran virtuel.** `zyr-sound` connaît le son de Windows et rien de ZyrDesk, comme `zyr-screen` connaît les pilotes et rien de ZyrDesk. Elle prend un numéro de programme, ou rien du tout, et répond si c'est coupé. Ce qui mérite d'être coupé, et quand, se décide ailleurs.
+
+**Et elle s'appuie sur le paquet `windows` et non `windows-sys`.** Toute la famille audio de Windows est en COM, et `windows-sys` ne porte aucune interface COM : il ne connaît que des fonctions, des structures et des constantes. Les écrire à la main reviendrait à recopier des tables de fonctions que rien ne vérifie. Le paquet `windows` est du même éditeur, il était déjà dans le verrou du dépôt par Tauri, et le compilateur y contrôle chaque appel. C'est la seule brique du produit qui s'en sert, et c'est justement pour cela qu'elle est à part.
+
+## D61. Les enceintes de l'hôte se taisent sans la carte son de personne (2026-08-26, pendant M4)
+
+**Ce que Victor a demandé, et la contrainte qu'il a posée ensuite.** « De base le son de l'hôte reste actif sur le pc physique, faudrait une option pour choisir si on veut que ça coupe le son physiquement pour que le son passe que par le stream. » Puis : « je ne veux absolument pas dépendre de steam, tu te débrouilles comme tu veux mais je ne veux dépendre de personne. »
+
+**La réponse habituelle est une carte son de quelqu'un d'autre.** Les moteurs, le nôtre compris, font ça en installant une deuxième carte son à laquelle aucun câble ne mène, puis en y basculant la sortie de l'ordinateur le temps de la session. Celle qu'ils installent est celle de Steam. C'est exactement la dépendance refusée, et il n'y en a pas d'autre à installer sans acheter un certificat et faire signer un pilote.
+
+**Ce qui rend une autre réponse possible.** Ce que le moteur hôte enregistre n'est pas ce qui sort des enceintes : c'est le mélange que Windows remet à la carte son, recopié avant que la carte applique son propre volume et son propre muet. Couper le muet de la carte vide donc la pièce et ne touche pas d'un cheveu ce qui part dans la session. C'est documenté par Microsoft et c'est ce que constate tout le monde en coupant ses enceintes pendant un enregistrement.
+
+**Décision : le service coupe le muet de la vraie carte son, et rien n'est installé.** Un réglage dans les paramètres, éteint tant que personne ne l'a demandé : un ordinateur qui se tait tout seul dès qu'on le joint est un ordinateur que celui qui est devant appellerait cassé.
+
+**Depuis la session qui tient l'écran, comme Ctrl+Alt+Suppr.** Quelle carte le bureau utilise dépend de qui a ouvert sa session. Posée depuis la session du service, la question nomme une carte que personne n'écoute, et la pièce continuerait de jouer. C'est donc le même mécanisme d'aller simple dans la session de l'écran, pour la troisième fois.
+
+**Ce qui est dû n'est pas ce qui a été demandé.** Des enceintes que la personne avait déjà coupées avant la session sont laissées telles quelles, et rien ne leur est rendu à la fin : ce serait défaire un geste que ce produit n'a pas fait. Ce qui est dû survit au service dans un petit fichier, parce que Windows se souvient d'une carte coupée à travers un redémarrage : une machine éteinte au milieu d'une session resterait silencieuse pour toujours sans rien nulle part pour dire pourquoi. Le fichier est lu au démarrage du service, et le son est rendu au premier tour de garde, en réessayant tant que personne n'a ouvert de session sur l'écran.
+
+**Et ce réglage-là ne redémarre pas le moteur.** Les deux autres réglages d'hôte oui, parce que le moteur ne les apprend qu'au démarrage, et une session en cours vers cette machine tombe avec. Celui-ci est l'affaire du service et du mélangeur de la machine : l'activer en pleine session ne coupe pas la session pour laquelle on vient de l'activer.
+
+**Au passage, une dépendance à Steam qui était active par omission.** ZyrDesk n'écrivait aucune ligne de son dans la configuration du moteur, donc héritait de ses défauts : chercher les fichiers de la carte son de Steam sur la machine et l'installer si on les trouve, puis y faire passer le son de l'ordinateur à chaque session. Deux lignes ferment ça. La seconde ne pouvait pas rester vide : vide ne veut pas dire « aucune » pour le moteur, ça veut dire « celle de Steam ». Il lui faut un nom qu'aucune carte ne portera jamais, et il écrit alors une fois par session qu'il ne l'a pas trouvée, ce qui est exactement la réponse voulue, écrite dans son propre journal.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

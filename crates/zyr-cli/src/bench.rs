@@ -56,6 +56,10 @@ impl Answers for NoEngine {
     fn hand_over_the_code(&self, _pin: &str, _name: &str) -> Result<(), String> {
         Err("le banc de mesure n'a pas de moteur à appairer".to_string())
     }
+
+    fn secure_attention(&self) -> Result<(), String> {
+        Err("le banc de mesure ne presse aucune touche".to_string())
+    }
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);

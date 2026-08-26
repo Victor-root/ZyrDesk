@@ -323,6 +323,19 @@ pub struct Serving {
     /// has goes to the pictures that changed.
     pub steady_rate: bool,
     pub capture: Capture,
+    /// Whether this computer's speakers fall silent while somebody is
+    /// controlling it.
+    ///
+    /// The sound of a session is captured from the mix Windows hands to
+    /// the sound card, copied before the card applies its own volume and
+    /// mute. Muting the speakers therefore empties the room and leaves
+    /// the session's sound untouched, which is the one thing wanted
+    /// here.
+    ///
+    /// Off until somebody asks for it. A computer that goes quiet on its
+    /// own the moment it is reached is a computer somebody in front of it
+    /// would call broken.
+    pub mute_speakers: bool,
 }
 
 impl Default for Serving {
@@ -330,7 +343,23 @@ impl Default for Serving {
         Self {
             steady_rate: true,
             capture: Capture::default(),
+            mute_speakers: false,
         }
+    }
+}
+
+impl Serving {
+    /// The part of this the host engine is told when it starts.
+    ///
+    /// Which is the part worth restarting it for, and the reason this
+    /// exists: the engine learns these once and never again, so changing
+    /// one means stopping it and starting it over, and a session towards
+    /// this computer goes with it. Muting the speakers is not in there.
+    /// It is done by the service on this machine's own mixer, and a
+    /// person turning it on mid-session must not have their session cut
+    /// from under them for it.
+    pub fn as_the_engine_reads_it(self) -> (bool, Capture) {
+        (self.steady_rate, self.capture)
     }
 }
 

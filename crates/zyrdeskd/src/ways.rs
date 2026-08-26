@@ -389,6 +389,28 @@ impl Ways {
         Ok(())
     }
 
+    /// Asks the far computer to press Ctrl+Alt+Suppr on itself.
+    ///
+    /// The same shape as the pairing above, and for the same reason: the
+    /// connection comes out from under the lock before anything waits on
+    /// the network, because every other way is queueing behind it.
+    pub async fn ask_for_the_secure_attention(&self, way: WayId) -> Result<(), String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        aside::ask_for_the_secure_attention(&connection)
+            .await
+            .map_err(|e| format!("l'ordinateur distant n'a pas pressé Ctrl+Alt+Suppr : {e}"))?;
+        self.log
+            .write(&format!("way {way} asked for Ctrl+Alt+Suppr"));
+        Ok(())
+    }
+
     pub fn hold(&self, way: WayId, process: u32) -> bool {
         let held = self
             .register

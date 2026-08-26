@@ -57,6 +57,7 @@ const vue = {
   confiance: document.getElementById("confiance"),
   auDemarrage: document.getElementById("au-demarrage"),
   cadenceContinue: document.getElementById("cadence-continue"),
+  sonCoupe: document.getElementById("son-coupe"),
   stats: document.getElementById("stats"),
   dossierJournaux: document.getElementById("dossier-journaux"),
   ouvrirDossier: document.getElementById("ouvrir-dossier"),
@@ -956,17 +957,19 @@ const dessineAuDemarrage = interrupteurMachine(
   (machine) => machine.atBoot,
 );
 
-/* Ce que cet ordinateur fait quand c'est LUI qu'on regarde. Les deux
+/* Ce que cet ordinateur fait quand c'est LUI qu'on regarde. Les trois
    voyagent ensemble parce que le service les écrit ensemble : envoyer
-   l'un sans l'autre remettrait le second à ce qu'il était.
+   l'un sans les autres remettrait les autres à ce qu'ils étaient.
 
-   Changer l'un redémarre son moteur, donc coupe une session que
-   quelqu'un aurait en cours vers cette machine. C'est dit dans la
-   légende de chaque réglage plutôt qu'ici. */
-async function envoieLaFaconDeServir(cadence, capture) {
+   Changer l'un des deux premiers redémarre son moteur, donc coupe une
+   session que quelqu'un aurait en cours vers cette machine. Le
+   troisième, couper le son, ne passe pas par le moteur et ne coupe
+   rien. C'est dit dans la légende de chaque réglage plutôt qu'ici. */
+async function envoieLaFaconDeServir(quoi) {
   montre(vue.reglagesProbleme, false);
+  const avant = laFaconDeServir();
   try {
-    await invoke("set_serving", { steadyRate: cadence, capture });
+    await invoke("set_serving", { ...avant, ...quoi });
   } catch (raison) {
     soucis(String(raison));
   } finally {
@@ -975,23 +978,41 @@ async function envoieLaFaconDeServir(cadence, capture) {
   }
 }
 
+/* Ce que le service dit servir en ce moment, dans les mots de la
+   commande. Sans état lisible, les valeurs par défaut du produit :
+   envoyer un réglage sans les autres les écraserait. */
+function laFaconDeServir() {
+  return {
+    steadyRate: etat !== null && etat.steadyRate,
+    capture: etat === null ? "ddx" : etat.capture,
+    muteSpeakers: etat !== null && etat.muteSpeakers,
+  };
+}
+
 function dessineFaconDeServir() {
   if (etat === null) {
     return;
   }
-  vue.cadenceContinue.disabled = etat.unreachable !== null;
-  vue.cadenceContinue.setAttribute(
-    "aria-checked",
-    etat.steadyRate ? "true" : "false",
-  );
+  for (const [bouton, valeur] of [
+    [vue.cadenceContinue, etat.steadyRate],
+    [vue.sonCoupe, etat.muteSpeakers],
+  ]) {
+    bouton.disabled = etat.unreachable !== null;
+    bouton.setAttribute("aria-checked", valeur ? "true" : "false");
+  }
   marque("capture", etat.capture);
 }
 
-vue.cadenceContinue.addEventListener("click", () => {
-  const veut = vue.cadenceContinue.getAttribute("aria-checked") !== "true";
-  vue.cadenceContinue.setAttribute("aria-checked", veut ? "true" : "false");
-  envoieLaFaconDeServir(veut, etat === null ? "ddx" : etat.capture);
-});
+for (const [bouton, cle] of [
+  [vue.cadenceContinue, "steadyRate"],
+  [vue.sonCoupe, "muteSpeakers"],
+]) {
+  bouton.addEventListener("click", () => {
+    const veut = bouton.getAttribute("aria-checked") !== "true";
+    bouton.setAttribute("aria-checked", veut ? "true" : "false");
+    envoieLaFaconDeServir({ [cle]: veut });
+  });
+}
 
 function soucis(texte) {
   vue.reglagesProblemeTexte.textContent = texte;
@@ -1134,7 +1155,7 @@ for (const bouton of vue.reglages.querySelectorAll(
     // Celui-ci ne décrit pas ce qu'on demande aux autres mais ce que cet
     // ordinateur fait : il ne passe pas par les mêmes réglages.
     if (nom === "capture") {
-      envoieLaFaconDeServir(etat !== null && etat.steadyRate, valeur);
+      envoieLaFaconDeServir({ capture: valeur });
       return;
     }
     change((veut) => {

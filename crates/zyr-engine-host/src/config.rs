@@ -200,6 +200,28 @@ impl SunshineConfig {
             format!("lan_encryption_mode = {}", self.encryption.value()),
             format!("wan_encryption_mode = {}", self.encryption.value()),
             "upnp = disabled".to_string(),
+            // ZyrDesk depends on nobody, and this line is where that
+            // stopped being true by omission.
+            //
+            // Left unwritten, the engine looks for Steam's own sound card
+            // on this machine and installs it if it finds it, then makes
+            // it the computer's default output for the length of every
+            // session. That is how the engines empty a room while keeping
+            // the sound in the stream, and it means a product that only
+            // works properly on machines where somebody happened to
+            // install Steam. This product empties the room itself, on the
+            // machine's real sound card, with nothing installed and
+            // nothing borrowed.
+            "install_steam_audio_drivers = disabled".to_string(),
+            // And no card of anybody else's is looked for either. Left
+            // empty, this very field is what sends the engine hunting for
+            // Steam's: empty does not mean « none » to it, it means
+            // « Steam's », and a machine that has Steam would have its
+            // sound quietly moved onto it at every session. A name no
+            // card will ever carry does mean none. The engine says once a
+            // session that it could not find it, which is the answer that
+            // was wanted, spelled out in its own log.
+            "virtual_sink = aucune-carte-son-virtuelle".to_string(),
             format!("file_apps = {}", shown(&self.apps_path())),
             format!("file_state = {}", shown(&self.state_path())),
             format!("credentials_file = {}", shown(&self.credentials_path())),
@@ -364,6 +386,19 @@ mod tests {
         // Le défaut du moteur est de trois secondes, et il ne doit
         // surtout pas revenir par la bande.
         assert!(!rendered.contains("dd_config_revert_delay = 3"));
+    }
+
+    #[test]
+    fn ce_produit_ne_depend_de_personne_pour_le_son() {
+        // Les deux lignes se tiennent. Sans la première, le moteur
+        // installe la carte son de Steam quand il en trouve les fichiers
+        // sur la machine. Sans la seconde, il cherche cette même carte et
+        // fait passer le son de l'ordinateur dessus le temps de chaque
+        // session : vide ne veut pas dire « aucune » pour lui, ça veut
+        // dire « celle de Steam ».
+        let rendered = test_config().render_conf();
+        assert!(rendered.contains("install_steam_audio_drivers = disabled"));
+        assert!(rendered.contains("virtual_sink = aucune-carte-son-virtuelle"));
     }
 
     #[test]

@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 zyr-proto.workspace = true
 zyr-control.workspace = true
 zyr-session.workspace = true
+zyr-sound.workspace = true
 zyr-transport.workspace = true
 # La zone de notification est la seule trace que ZyrDesk laisse quand sa
 # fenêtre est fermée : sans elle, un produit qui rend la machine

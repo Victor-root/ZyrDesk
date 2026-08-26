@@ -69,6 +69,29 @@ const NOTHING: &str = "NUL";
 /// something a person can ask for.
 pub const LET_GO_ARGUMENT: &str = "--let-the-engine-go";
 
+/// The same for the one keystroke Windows keeps for itself; see
+/// `send_the_secure_attention`.
+pub const ATTENTION_ARGUMENT: &str = "--send-the-secure-attention";
+
+/// The same again for the speakers of this computer; see
+/// `move_the_speakers`.
+///
+/// It carries which way they are to be moved, because both ways are the
+/// same errand and one name for it is one name to keep in step.
+pub const SPEAKERS_ARGUMENT: &str = "--set-the-speakers";
+pub const SPEAKERS_QUIET: &str = "quiet";
+pub const SPEAKERS_PLAYING: &str = "playing";
+
+/// What that errand answers with.
+///
+/// Three answers and not two, because whoever asked has to know whether
+/// it now owes the person their sound back. Muting speakers that were
+/// already muted owes nothing, and giving that sound back at the end of
+/// a session would be undoing something this product never did.
+pub const SPEAKERS_MOVED: u32 = 0;
+pub const SPEAKERS_REFUSED: u32 = 1;
+pub const SPEAKERS_ALREADY: u32 = 2;
+
 /// Time left to the ask itself: starting a program in another session,
 /// attaching to a console and sending one interruption down it.
 ///
@@ -319,14 +342,156 @@ fn start_in_session(launch: &Launch, session: u32) -> io::Result<SessionProcess>
 /// Detached from any console of its own, since attaching to somebody
 /// else's is only possible for a program that has none.
 fn asked_to_go(session: u32, engine: u32) -> io::Result<()> {
+    errand(
+        session,
+        &[LET_GO_ARGUMENT.to_string(), engine.to_string()],
+        "the engine's console would not take the interruption",
+    )
+}
+
+/// Where an errand's refusal is read decides what language it is in.
+///
+/// This one is read in the session menu of the far computer, by the
+/// person who clicked, so it is written for them. The two others below
+/// are read in this service's journal, which is written in English like
+/// the rest of it.
+const ATTENTION_REFUSED: &str = "la frappe n'est pas partie : la stratégie qui l'autorise \
+                                 n'est peut-être pas posée sur cet ordinateur";
+
+/// Sends this computer the one keystroke no keyboard of ours can carry.
+///
+/// Ctrl+Alt+Suppr is Windows' own, at both ends of a session. The
+/// computer watching never sees it, because its Windows takes it first;
+/// and the computer being watched cannot be made to feel it by any
+/// engine, because engines type the way Windows refuses for this one.
+/// The single door is `SendSAS`, and it opens only for a program the
+/// system trusts, which on the host is this service.
+///
+/// From the session on screen and never from the service's own. The
+/// sequence lands on the session the token carries, and a service lives
+/// in one with no screen: pressed there, it would be pressed where
+/// nobody is looking.
+pub fn press_the_secure_attention() -> io::Result<()> {
+    let session = session_on_screen()
+        .ok_or_else(|| io::Error::other("aucune session n'est à l'écran de cet ordinateur"))?;
+    errand(
+        session,
+        &[ATTENTION_ARGUMENT.to_string()],
+        ATTENTION_REFUSED,
+    )
+}
+
+/// Moves this computer's speakers, and says whether they really moved.
+///
+/// From the session that owns the screen, like everything else here, and
+/// for a reason of its own: which device the desktop plays to is a
+/// question whose answer depends on who is signed in. Asked from the
+/// service's own session, it would name a device nobody is listening to,
+/// and the room would go on playing.
+///
+/// `true` means they were doing the opposite a moment ago and are now
+/// doing what was asked, which is also « something is owed back ».
+pub fn set_the_speakers(quiet: bool) -> io::Result<bool> {
+    let session =
+        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
+    let way = if quiet {
+        SPEAKERS_QUIET
+    } else {
+        SPEAKERS_PLAYING
+    };
+    let refused = "the speakers could not be reached from the session on screen";
+    match errand_code(
+        session,
+        &[SPEAKERS_ARGUMENT.to_string(), way.to_string()],
+        refused,
+    )? {
+        SPEAKERS_MOVED => Ok(true),
+        SPEAKERS_ALREADY => Ok(false),
+        _ => Err(io::Error::other(refused)),
+    }
+}
+
+/// Whether this program was started to move the speakers, and which way.
+pub fn asked_about_the_speakers() -> Option<bool> {
+    the_way_named_in(std::env::args())
+}
+
+/// The same, over any list of arguments, so it can be checked without
+/// starting a program to hold them.
+fn the_way_named_in(arguments: impl Iterator<Item = String>) -> Option<bool> {
+    let mut after = arguments.skip_while(|a| a != SPEAKERS_ARGUMENT);
+    after.next()?;
+    match after.next()?.as_str() {
+        SPEAKERS_QUIET => Some(true),
+        SPEAKERS_PLAYING => Some(false),
+        _ => None,
+    }
+}
+
+/// Moves them, from inside the session that owns the screen.
+///
+/// This is the whole of what this program does when started with
+/// `SPEAKERS_ARGUMENT`. What went wrong is written into the service's own
+/// journal from here rather than carried back in the exit code: there is
+/// more than one way for a computer to have no reachable sound, and a
+/// number would tell nobody which of them happened.
+#[cfg(windows)]
+pub fn move_the_speakers(quiet: bool) -> u32 {
+    let said = |what: String| {
+        if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
+            log.write(&what);
+        }
+    };
+    let already = match zyr_sound::speakers_muted() {
+        Ok(muted) => muted,
+        Err(e) => {
+            said(format!("speakers not read: {e}"));
+            return SPEAKERS_REFUSED;
+        }
+    };
+    if already == quiet {
+        return SPEAKERS_ALREADY;
+    }
+    match zyr_sound::mute_speakers(quiet) {
+        Ok(()) => SPEAKERS_MOVED,
+        Err(e) => {
+            said(format!("speakers not moved: {e}"));
+            SPEAKERS_REFUSED
+        }
+    }
+}
+
+/// Runs this program in another Windows session, for one short errand.
+///
+/// The service cannot reach into the session that owns the screen, and
+/// three things it has to do live there: asking the engine to go,
+/// pressing what only that session can be pressed on, and moving the
+/// speakers the person in front of that session hears. All three are the
+/// same shape, so they are the same code: this program started again with
+/// a reserved argument, as itself, on the interactive desktop, with the
+/// answer read back from its exit code.
+///
+/// Detached from any console of its own, since one of the errands is
+/// attaching to somebody else's, which is only possible for a program
+/// that has none.
+fn errand(session: u32, arguments: &[String], refused: &str) -> io::Result<()> {
+    match errand_code(session, arguments, refused)? {
+        0 => Ok(()),
+        _ => Err(io::Error::other(refused.to_string())),
+    }
+}
+
+/// The same, for the errand whose answer is more than « it worked ».
+///
+/// The refusal covers an errand that never came back as well as one that
+/// came back saying no: whoever reads it can do nothing different about
+/// the two, and one message means one language to choose rather than two.
+fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<u32> {
     let ourselves = std::env::current_exe()?;
     let token = service_token_for(session)?;
     let environment = environment_of(&token)?;
 
-    let mut line = command_line(
-        &ourselves,
-        &[LET_GO_ARGUMENT.to_string(), engine.to_string()],
-    );
+    let mut line = command_line(&ourselves, arguments);
     let mut desktop: Vec<u16> = wide(DESKTOP);
 
     let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
@@ -361,22 +526,14 @@ fn asked_to_go(session: u32, engine: u32) -> io::Result<()> {
     // Safe: the handle is valid, and the wait is bounded.
     let waited = unsafe { WaitForSingleObject(asking.0, ASKING.as_millis() as u32) };
     if waited != WAIT_OBJECT_0 {
-        return Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "the engine could not be asked to go",
-        ));
+        return Err(io::Error::new(io::ErrorKind::TimedOut, refused.to_string()));
     }
     let mut code: u32 = 0;
     // Safe: the handle is valid and the code is written into a local.
     if unsafe { GetExitCodeProcess(asking.0, &mut code) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    if code != 0 {
-        return Err(io::Error::other(
-            "the engine's console would not take the interruption",
-        ));
-    }
-    Ok(())
+    Ok(code)
 }
 
 /// Taps the engine on the shoulder, from inside its own session.
@@ -416,6 +573,54 @@ fn the_engine_named_in(arguments: impl Iterator<Item = String>) -> Option<u32> {
     let mut after = arguments.skip_while(|a| a != LET_GO_ARGUMENT);
     after.next()?;
     after.next()?.parse().ok()
+}
+
+/// Whether this program was started to press what Windows keeps.
+pub fn asked_for_the_secure_attention() -> bool {
+    std::env::args().any(|argument| argument == ATTENTION_ARGUMENT)
+}
+
+/// Presses it, from inside the session that owns the screen.
+///
+/// This is the whole of what this program does when started with
+/// `ATTENTION_ARGUMENT`. The call lives in a library Windows ships and is
+/// found by hand rather than linked against: a machine whose policy
+/// forbids the sequence still has the library, so linking would buy
+/// nothing and would make every other errand of this program depend on a
+/// file it has no other use for.
+///
+/// Windows answers nothing at all: `SendSAS` returns void, and whether
+/// the sequence was really let through is decided by a policy this
+/// service lays at its own installation. So what is reported back is
+/// « the call was made », and the person watching their screen is the
+/// one who knows whether it worked.
+#[cfg(windows)]
+pub fn send_the_secure_attention() -> bool {
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+
+    let name = wide("sas.dll");
+    // SAFETY: a library of the system's own, named as a wide string that
+    // outlives the call, and let go of by the process ending a moment
+    // later. Nothing here is unloaded by hand: the sequence is on its way
+    // and the process is one line from exiting.
+    let found = unsafe {
+        let library = LoadLibraryW(name.as_ptr());
+        if library.is_null() {
+            return false;
+        }
+        GetProcAddress(library, c"SendSAS".as_ptr().cast())
+    };
+    let Some(send) = found else {
+        return false;
+    };
+    // SAFETY: the one function that library exports, whose shape is
+    // `VOID SendSAS(BOOL)`, taken from the system's own documentation.
+    let send: unsafe extern "system" fn(i32) = unsafe { std::mem::transmute(send) };
+    // Nought is « as the service », which is what this is: started with
+    // the service's own token, moved to the session on screen. One is for
+    // a program running as the person, which this never is.
+    unsafe { send(0) };
+    true
 }
 
 /// The service's token, duplicated and attached to the wanted session.

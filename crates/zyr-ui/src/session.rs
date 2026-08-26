@@ -91,6 +91,13 @@ pub struct Ongoing {
     pub process: u32,
     /// Where the tunnel puts that computer on this machine.
     pub at: String,
+    /// The way the service holds towards that computer.
+    ///
+    /// Carried because one thing a session can ask travels on the
+    /// product's own channel rather than through the engines, and that
+    /// channel is reached by naming the way: pressing Ctrl+Alt+Suppr
+    /// over there.
+    pub way: u64,
 }
 
 /// The sessions this computer is holding.
@@ -107,6 +114,7 @@ pub async fn sessions() -> Vec<Ongoing> {
             since: session.since.as_secs(),
             process: session.process,
             at: session.at,
+            way: session.way.0,
         }),
         _ => None,
     })

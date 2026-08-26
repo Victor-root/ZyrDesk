@@ -32,8 +32,10 @@ use crate::pump;
 
 /// Version of this dialect.
 ///
-/// Version 1 was three bytes carrying nothing but the ports.
-pub const VERSION: u32 = 2;
+/// Version 1 was three bytes carrying nothing but the ports. Version 2
+/// added the pairing code. Version 3 added the one keystroke no keyboard
+/// can carry.
+pub const VERSION: u32 = 3;
 
 /// Longest message this channel takes.
 ///
@@ -57,6 +59,19 @@ pub trait Answers: Send + Sync + 'static {
     /// waiting on this. Blocking is expected, and it is called where
     /// blocking is allowed.
     fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String>;
+
+    /// Presses Ctrl+Alt+Suppr on this computer.
+    ///
+    /// It travels here and not through the engines, and that is not a
+    /// preference. Windows reserves this one combination for itself at
+    /// both ends: the computer watching never sees it, because its own
+    /// Windows takes it first, and the computer being watched could not
+    /// be made to feel it, because the way an engine types is the way
+    /// Windows refuses for this. The one door is a call reserved for
+    /// programs the system trusts, and on the host that is our own
+    /// service. So the ask crosses on the product's own channel, between
+    /// the two halves of ZyrDesk, and no engine is any the wiser.
+    fn secure_attention(&self) -> Result<(), String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -67,6 +82,8 @@ pub enum Question {
     /// Take this code and hand it to your engine. The name is what the
     /// far computer will file this one under.
     Pair { pin: String, name: String },
+    /// Press Ctrl+Alt+Suppr on yourself.
+    SecureAttention,
 }
 
 /// What comes back.
@@ -75,6 +92,8 @@ pub enum Told {
     Ports(EnginePorts),
     /// The far engine took the code.
     Paired,
+    /// The far computer pressed it.
+    Attended,
 }
 
 impl fmt::Display for Question {
@@ -84,6 +103,7 @@ impl fmt::Display for Question {
             // spaces and all: no escaping, and nothing to get wrong.
             Question::Pair { pin, name } => write!(f, "{VERSION} pair {pin} {name}"),
             Question::Ports => write!(f, "{VERSION} ports"),
+            Question::SecureAttention => write!(f, "{VERSION} sas"),
         }
     }
 }
@@ -93,6 +113,7 @@ impl fmt::Display for Told {
         match self {
             Told::Ports(engine) => write!(f, "{VERSION} ports {}", engine.base()),
             Told::Paired => write!(f, "{VERSION} paired"),
+            Told::Attended => write!(f, "{VERSION} attended"),
         }
     }
 }
@@ -103,6 +124,7 @@ impl Question {
         let (verb, rest) = split_first(said);
         match verb {
             "ports" => Ok(Question::Ports),
+            "sas" => Ok(Question::SecureAttention),
             "pair" => {
                 let (pin, name) = split_first(rest);
                 if pin.is_empty() || name.is_empty() {
@@ -132,6 +154,7 @@ impl Told {
                 Ok(Ok(Told::Ports(engine)))
             }
             "paired" => Ok(Ok(Told::Paired)),
+            "attended" => Ok(Ok(Told::Attended)),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -222,6 +245,14 @@ pub async fn ask_to_pair(connection: &Connection, pin: &str, name: &str) -> io::
     }
 }
 
+/// Asks the far ZyrDesk to press Ctrl+Alt+Suppr on itself.
+pub async fn ask_for_the_secure_attention(connection: &Connection) -> io::Result<()> {
+    match ask(connection, &Question::SecureAttention).await? {
+        Told::Attended => Ok(()),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -255,6 +286,16 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .map_err(|e| format!("l'appairage n'a pas pu être mené : {e}"))?
                 .map(|()| Told::Paired)
         }
+        // Off the thread that carries the tunnel, like the pairing above
+        // and for the same reason: pressing this starts a program in
+        // another Windows session and waits for it, which is a long time
+        // to hold a channel every other session is queueing behind.
+        Question::SecureAttention => {
+            tokio::task::spawn_blocking(move || answering.secure_attention())
+                .await
+                .map_err(|e| format!("la frappe n'a pas pu être menée : {e}"))?
+                .map(|()| Told::Attended)
+        }
     }
 }
 
@@ -287,6 +328,7 @@ mod tests {
                 // pour cette raison précise.
                 name: "PC de Victor".to_string(),
             },
+            Question::SecureAttention,
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -295,7 +337,7 @@ mod tests {
 
     #[test]
     fn every_answer_survives_the_round_trip() {
-        for told in [Told::Ports(ports(42000)), Told::Paired] {
+        for told in [Told::Ports(ports(42000)), Told::Paired, Told::Attended] {
             let said = told.to_string();
             assert_eq!(Told::parse(&said).unwrap(), Ok(told), "sur « {said} »");
         }

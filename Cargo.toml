@@ -10,6 +10,7 @@ members = [
     "crates/zyr-session",
     "crates/zyr-lan",
     "crates/zyr-screen",
+    "crates/zyr-sound",
     "crates/zyr-cli",
     "crates/zyr-ui",
     "crates/zyrdeskd",
@@ -31,6 +32,7 @@ zyr-control = { path = "crates/zyr-control" }
 zyr-session = { path = "crates/zyr-session" }
 zyr-lan = { path = "crates/zyr-lan" }
 zyr-screen = { path = "crates/zyr-screen" }
+zyr-sound = { path = "crates/zyr-sound" }
 clap = { version = "4", features = ["derive"] }
 
 [profile.release]

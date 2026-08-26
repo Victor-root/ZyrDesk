@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 14;
+pub const PROTOCOL: u32 = 16;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -106,6 +106,14 @@ pub enum Request {
     /// opened, so the code proves nothing they have not already proven,
     /// and nobody is ever shown one.
     Pair { way: WayId, pin: String },
+    /// Asks the far computer to press Ctrl+Alt+Suppr on itself.
+    ///
+    /// Through the way and never through the engines. Windows keeps that
+    /// combination for itself at both ends: the computer watching never
+    /// sees it, and no engine may type it on the computer being watched.
+    /// The far ZyrDesk presses it on its own machine, which is the one
+    /// program there the system will let.
+    SecureAttention { way: WayId },
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
     Hold { way: WayId, process: u32 },
@@ -189,6 +197,9 @@ impl Request {
                 way: WayId(fields.parsed("way")?),
                 pin: fields.text("pin")?.to_string(),
             }),
+            "sas" => Ok(Request::SecureAttention {
+                way: WayId(fields.parsed("way")?),
+            }),
             "hold" => Ok(Request::Hold {
                 way: WayId(fields.parsed("way")?),
                 process: fields.parsed("process")?,
@@ -210,6 +221,7 @@ impl Request {
                     capture: fields
                         .parsed("capture")
                         .unwrap_or(Serving::default().capture),
+                    mute_speakers: fields.flag("mute", Serving::default().mute_speakers),
                 },
             }),
             "authorize" => Ok(Request::Authorize {
@@ -245,6 +257,7 @@ impl fmt::Display for Request {
                 media.frames_per_second
             ),
             Request::Pair { way, pin } => write!(f, "pair way={way} pin={pin}"),
+            Request::SecureAttention { way } => write!(f, "sas way={way}"),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
@@ -253,9 +266,10 @@ impl fmt::Display for Request {
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
             Request::ServeLike { serving } => write!(
                 f,
-                "serving steady={} capture={}",
+                "serving steady={} capture={} mute={}",
                 said(serving.steady_rate),
-                serving.capture
+                serving.capture,
+                said(serving.mute_speakers)
             ),
             Request::Authorize { peer, host, name } => {
                 write!(f, "authorize peer={peer}")?;
@@ -433,6 +447,7 @@ impl Answer {
                     capture: fields
                         .parsed("capture")
                         .unwrap_or(Serving::default().capture),
+                    mute_speakers: fields.flag("mute", Serving::default().mute_speakers),
                 },
                 ways: fields.parsed("ways")?,
             })),
@@ -472,7 +487,7 @@ impl fmt::Display for Answer {
         match self {
             Answer::Standing(standing) => write!(
                 f,
-                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} at-boot={} steady={} capture={} ways={}",
+                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} at-boot={} steady={} capture={} mute={} ways={}",
                 standing.protocol,
                 packed(&standing.build),
                 standing.fingerprint,
@@ -483,6 +498,7 @@ impl fmt::Display for Answer {
                 said(standing.at_boot),
                 said(standing.serving.steady_rate),
                 standing.serving.capture,
+                said(standing.serving.mute_speakers),
                 standing.ways
             ),
             Answer::Reached(reached) => write!(
@@ -767,6 +783,7 @@ mod tests {
                 serving: Serving {
                     steady_rate: false,
                     capture: Capture::Windows,
+                    mute_speakers: true,
                 },
                 ways: 0,
             }),

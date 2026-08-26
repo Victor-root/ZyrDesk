@@ -292,6 +292,12 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             Ok(()) => Answer::Done,
             Err(reason) => Answer::Refused(reason),
         },
+        Request::SecureAttention { way } => {
+            match answering.ways.ask_for_the_secure_attention(way).await {
+                Ok(()) => Answer::Done,
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
         Request::Hold { way, process } => {
             if answering.ways.hold(way, process) {
                 Answer::Done
@@ -316,16 +322,23 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             }
             Err(refusal) => refusal,
         },
-        // The engine reads both of these once, when it starts, so
+        // The engine reads two of these three once, when it starts, so
         // writing them down is only half the job: the supervisor sees
-        // them change and starts it again. Said in the answer, since a
-        // session in progress goes with it.
+        // them change and starts it again, and a session in progress
+        // goes with it. The third, muting this computer's speakers, is
+        // the service's own doing and costs no restart.
         Request::ServeLike { serving } => match kept(answering.remembered.set_serving(serving)) {
             Ok(()) => {
                 answering.log.write(&format!(
-                    "this computer will serve with a steady rate {} and {} capture",
+                    "this computer will serve with a steady rate {} and {} capture, \
+                     speakers {} while it is watched",
                     if serving.steady_rate { "on" } else { "off" },
-                    serving.capture
+                    serving.capture,
+                    if serving.mute_speakers {
+                        "silent"
+                    } else {
+                        "playing"
+                    }
                 ));
                 Answer::Done
             }

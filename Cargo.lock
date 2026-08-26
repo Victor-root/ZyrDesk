@@ -5923,6 +5923,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zyr-sound"
+version = "0.1.0"
+dependencies = [
+ "windows",
+]
+
+[[package]]
 name = "zyr-transport"
 version = "0.1.0"
 dependencies = [
@@ -5960,6 +5967,7 @@ dependencies = [
  "zyr-control",
  "zyr-proto",
  "zyr-session",
+ "zyr-sound",
  "zyr-transport",
 ]
 
@@ -5977,6 +5985,7 @@ dependencies = [
  "zyr-lan",
  "zyr-proto",
  "zyr-screen",
+ "zyr-sound",
  "zyr-transport",
  "zyr-tunnel",
 ]

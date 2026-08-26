@@ -96,6 +96,7 @@ fn main() {
             floating::floating_grab,
             floating::floating_act,
             floating::floating_mouse,
+            floating::floating_sound,
             theme::set_theme
         ])
         .setup(|app| {

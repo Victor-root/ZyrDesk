@@ -22,6 +22,7 @@ const vue = {
   chiffres: document.getElementById("chiffres"),
   flux: document.getElementById("flux"),
   souris: document.getElementById("souris"),
+  son: document.getElementById("son"),
 };
 
 /* Les quatre chiffres de la barre, dans l'ordre où ils se lisent : ce que
@@ -271,10 +272,12 @@ function ouvre(veut) {
   if (!veut) {
     montre(vue.souci, false);
   } else {
-    // La souris a pu basculer par le raccourci du produit pendant que le
-    // menu était fermé : l'interrupteur doit dire où l'on en est, pas où
-    // l'on en était la dernière fois qu'on a regardé.
+    // Les deux ont pu bouger pendant que le menu était fermé : le
+    // raccourci du produit bascule la souris, et le mélangeur de Windows
+    // est ouvert à tout le monde. Les interrupteurs doivent dire où l'on
+    // en est, pas où l'on en était la dernière fois qu'on a regardé.
     litLaSouris();
+    litLeSon();
   }
   // Et la fenêtre suit ce que la page dessine maintenant, jusqu'à ce
   // qu'elle ait fini de le dessiner : taillée sur l'état d'avant, elle
@@ -457,50 +460,74 @@ function batisLesCurseurs() {
   }
 }
 
-/* ---- La souris, bureau ou jeu ------------------------------------------ */
+/* ---- Les deux interrupteurs du menu ------------------------------------ */
 
-/* Les deux mots sont là et celui qui est en place est allumé. La ligne
-   d'avant disait « souris bureau ou jeu » et basculait à l'aveugle : elle
+/* Deux mots côte à côte, celui qui est en place allumé. La ligne d'avant
+   disait « souris bureau ou jeu » et basculait à l'aveugle : elle
    annonçait ce que le clic ferait, jamais où l'on en était, et les deux
    modes ne se distinguent pas à l'oeil sur un bureau immobile.
 
-   Le mode vit dans le coeur, qui compte chaque bascule qu'il envoie, et
-   il est redemandé à chaque ouverture du menu plutôt que retenu ici : le
-   raccourci du produit bascule la souris sans passer par cette page. */
-let souris = null;
+   Souris et son marchent pareil, donc se construisent pareil. Le côté de
+   droite est celui qui vaut « oui » : jeu pour la souris, coupé pour le
+   son. L'état se relit à chaque ouverture du menu plutôt que retenu ici,
+   parce qu'il peut changer sans passer par cette page. Et cliquer le
+   côté où l'on est déjà ne fait rien, comme tout interrupteur qu'on
+   pousse du côté où il est déjà. */
+function interrupteur(element, cle, lis, bascule) {
+  const cotes = [...element.querySelectorAll(`[data-${cle}]`)];
+  const oui = cotes[cotes.length - 1].dataset[cle];
+  let ou = null;
 
-function poseLaSouris(jeu) {
-  souris = jeu;
-  for (const cote of vue.souris.querySelectorAll("[data-souris]")) {
-    cote.setAttribute(
-      "aria-checked",
-      (cote.dataset.souris === "jeu") === jeu ? "true" : "false",
-    );
+  const pose = (vrai) => {
+    ou = vrai;
+    for (const cote of cotes) {
+      cote.setAttribute(
+        "aria-checked",
+        (cote.dataset[cle] === oui) === vrai ? "true" : "false",
+      );
+    }
+  };
+
+  for (const cote of cotes) {
+    cote.addEventListener("click", async () => {
+      const vrai = cote.dataset[cle] === oui;
+      if (ou === vrai) {
+        return;
+      }
+      try {
+        await bascule();
+        pose(vrai);
+      } catch (raison) {
+        souci(String(raison));
+      }
+    });
   }
+
+  /* Ce qu'il faut appeler pour que l'interrupteur dise où l'on en est.
+     Sans session il n'y a rien à montrer, et le menu ne s'ouvre pas sans
+     session. */
+  return async () => {
+    try {
+      pose(await lis());
+    } catch {
+      /* Rien à montrer, donc rien de montré. */
+    }
+  };
 }
 
-async function litLaSouris() {
-  try {
-    poseLaSouris(await invoke("floating_mouse"));
-  } catch {
-    /* Sans session il n'y a pas de souris à montrer, et le menu ne
-       s'ouvre pas sans session. */
-  }
-}
+const litLaSouris = interrupteur(
+  vue.souris,
+  "souris",
+  () => invoke("floating_mouse"),
+  () => invoke("floating_act", { what: "mouse" }),
+);
 
-/* Cliquer le côté où l'on est déjà ne fait rien : c'est un interrupteur,
-   et un interrupteur qu'on pousse du côté où il est ne bouge pas. */
-async function veutLaSouris(jeu) {
-  if (souris === jeu) {
-    return;
-  }
-  try {
-    await invoke("floating_act", { what: "mouse" });
-    poseLaSouris(jeu);
-  } catch (raison) {
-    souci(String(raison));
-  }
-}
+const litLeSon = interrupteur(
+  vue.son,
+  "son",
+  () => invoke("floating_sound"),
+  () => invoke("floating_act", { what: "sound" }),
+);
 
 async function litLeMenu() {
   try {
@@ -564,12 +591,6 @@ vue.logo.addEventListener("click", (evenement) => {
 
 for (const item of document.querySelectorAll("[data-acte]")) {
   item.addEventListener("click", () => demande(item.dataset.acte));
-}
-
-for (const cote of vue.souris.querySelectorAll("[data-souris]")) {
-  cote.addEventListener("click", () =>
-    veutLaSouris(cote.dataset.souris === "jeu"),
-  );
 }
 
 for (const item of document.querySelectorAll("[data-cacher]")) {

@@ -50,6 +50,9 @@ pub struct Standing {
     pub steady_rate: bool,
     /// How it takes the pictures it serves.
     pub capture: String,
+    /// Whether its speakers fall silent while somebody is controlling
+    /// it, the sound then travelling only down the session.
+    pub mute_speakers: bool,
     /// Whether this computer answers from the moment it powers on,
     /// before anybody has signed in.
     pub at_boot: bool,
@@ -75,6 +78,7 @@ impl Standing {
             trusting: false,
             steady_rate: zyr_proto::session::Serving::default().steady_rate,
             capture: zyr_proto::session::Serving::default().capture.to_string(),
+            mute_speakers: zyr_proto::session::Serving::default().mute_speakers,
             at_boot: false,
             ways: 0,
             service_build: String::new(),
@@ -160,10 +164,15 @@ pub async fn set_trust(on: bool) -> Result<(), String> {
 /// and starts it again, which ends a session in progress towards this
 /// computer.
 #[tauri::command]
-pub async fn set_serving(steady_rate: bool, capture: String) -> Result<(), String> {
+pub async fn set_serving(
+    steady_rate: bool,
+    capture: String,
+    mute_speakers: bool,
+) -> Result<(), String> {
     let serving = zyr_proto::session::Serving {
         steady_rate,
         capture: capture.parse()?,
+        mute_speakers,
     };
     match service::ask(&Request::ServeLike { serving }).await? {
         Answer::Done => Ok(()),
@@ -341,6 +350,7 @@ async fn asked() -> Result<Standing, String> {
             trusting: standing.trusting,
             steady_rate: standing.serving.steady_rate,
             capture: standing.serving.capture.to_string(),
+            mute_speakers: standing.serving.mute_speakers,
             at_boot: standing.at_boot,
             ways: standing.ways,
             service_build: standing.build,

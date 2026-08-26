@@ -421,6 +421,29 @@
             </div>
           </div>
 
+          <!-- Celui-ci ne redémarre pas le moteur : ce n'est pas lui qui
+               le fait, c'est le service, sur le mélangeur de cette
+               machine. Une session en cours n'est donc pas coupée. -->
+          <div class="reglage">
+            <div class="reglage-mot">
+              <span>Couper le son pendant qu'on regarde</span>
+              <span class="legende">
+                Quand quelqu'un prend la main sur cet ordinateur, ses enceintes
+                se taisent et le son ne part plus que dans la session. La pièce
+                où il se trouve reste silencieuse, celui qui regarde entend
+                tout. Le son revient tout seul à la fin.
+              </span>
+            </div>
+            <button
+              class="interrupteur"
+              id="son-coupe"
+              role="switch"
+              aria-checked="false"
+              aria-label="Couper le son pendant qu'on regarde"
+              disabled
+            ></button>
+          </div>
+
           <div class="reglage">
             <div class="reglage-mot">
               <span>Démarrer avec Windows</span>
@@ -447,16 +470,16 @@
           <p class="section raccourcis-titre">Raccourcis clavier</p>
           <p class="legende raccourcis-mot">
             Ils marchent pendant une session, par-dessus l'image. Cliquez sur
-            une combinaison pour la changer, puis tapez-la. Échap annule,
-            Retour arrière la retire.
+            une combinaison pour la changer, puis tapez-la. Échap annule, Retour
+            arrière la retire.
           </p>
 
           <div class="reglage">
             <div class="reglage-mot">
               <span>Terminer la session</span>
               <span class="legende">
-                Rend son bureau à l'ordinateur distant. Une session est en
-                cours ou terminée, jamais entre les deux.
+                Rend son bureau à l'ordinateur distant. Une session est en cours
+                ou terminée, jamais entre les deux.
               </span>
             </div>
             <button class="touche" type="button" data-raccourci="end"></button>
@@ -475,9 +498,7 @@
           <div class="reglage">
             <div class="reglage-mot">
               <span>Fenêtré ou plein écran</span>
-              <span class="legende">
-                Bascule l'image de l'un à l'autre.
-              </span>
+              <span class="legende"> Bascule l'image de l'un à l'autre. </span>
             </div>
             <button
               class="touche"

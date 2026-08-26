@@ -44,6 +44,10 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S27** | Nouveau. Un troisième ordinateur joint par un tunnel privé était découvert mais refusait toutes les sessions. La découverte n'apprenait qu'à celui qui appelle : celui qui était appelé ne retenait rien de son appelant, donc ne le reconnaissait pas. Celui qui appelle se présente maintenant |
 | **S26** | Nouveau. Une ouverture sur deux ou trois sautait l'écran de chargement : l'accueil revenait avec la carte verte d'une session en cours, puis l'image apparaissait quelques secondes plus tard sans rien annoncer. L'écran d'ouverture partait quand le service prenait la session, pas quand il y avait une image. Il attend maintenant l'image |
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
+| **R36** | Nouveau. Une entrée **Ctrl+Alt+Suppr** dans le menu de la session. Aucun moteur ne peut envoyer cette combinaison : elle passe par le canal propre de ZyrDesk et c'est le service d'en face qui la presse. Une machine dont le service a été inscrit avant ce lot doit être réinscrite une fois |
+| **R37** | Nouveau. Un interrupteur **Son** dans le menu de la session, Actif ou Coupé. Il coupe le son **de cette machine-ci**, sur la tranche du lecteur dans le mélangeur de Windows, et rien d'autre de ce qui joue ici |
+| **R38** | Nouveau. Un réglage d'hôte **Couper le son pendant qu'on regarde**. Les enceintes de l'hôte se taisent, le son continue de partir dans la session, et **aucune carte son n'est installée**. À vérifier aussi : une session en cours n'est pas coupée quand on l'allume, et le son revient après un arrêt brutal |
+| **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
 | **S25** | Nouveau. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
 
 ### Confirmé
@@ -1128,6 +1132,54 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Ce qui n'allait pas.** Le réseau et la cadence sortaient vides à chaque fois, et eux seuls, depuis le premier jour. Le moteur ne les accumule pas comme les autres sur sa fenêtre de mesure : il ne les pose qu'en fondant deux fenêtres l'une dans l'autre, ce que fait sa propre surcouche dessinée et ce que nous ne faisons pas. Ils sont maintenant demandés et calculés au moment d'écrire la ligne.
 >
 > **Un tiret veut toujours dire « pas de mesure », jamais zéro.** Une seconde sans image décodée n'a pas un temps de décodage nul, et écrire zéro serait mentir. Un tiret qui persiste sur les quatre à la fois, en revanche, veut dire que la ligne n'est pas écrite du tout : le fichier de mesures vit à côté du journal du lecteur, dans `logs`.
+
+> **R36 (Ctrl+Alt+Suppr part sur l'ordinateur distant)**
+>
+> Pendant une session, ouvrir le menu du bouton flottant : une entrée **Ctrl+Alt+Suppr**, sous l'interrupteur du son. Cliquer dessus.
+>
+> Attendu : le menu se referme, et **l'écran de sécurité de Windows apparaît dans l'image**, celui qui propose de verrouiller, changer d'utilisateur, se déconnecter ou ouvrir le gestionnaire des tâches. Rien de tel ne doit apparaître sur l'ordinateur qui regarde.
+>
+> Appuyer sur Échap dans l'image pour en sortir, puis vérifier que la session est toujours vivante et que le clavier y répond encore.
+>
+> **Pourquoi c'est un essai à part.** Cette combinaison est la seule que Windows garde entièrement pour lui, aux deux bouts. Elle ne passe pas par le clavier du lecteur comme **Statistiques** ou la souris : elle voyage sur le canal que ZyrDesk se réserve dans le tunnel, et c'est le service de l'ordinateur d'en face qui la presse sur sa propre machine.
+>
+> Le journal du **service hôte** dit `Ctrl+Alt+Suppr pressed for the far computer`. En cas de refus, il dit `Ctrl+Alt+Suppr not pressed:` suivi de la raison.
+>
+> **Si rien ne se passe et que le journal dit que ça a été pressé.** C'est le seul cas où le produit ne peut pas savoir : Windows ne répond rien du tout à cet appel. La cause presque certaine est la valeur de registre qui l'autorise, posée quand le service est enregistré. Sur une machine dont le service a été inscrit avant que ce code existe, il faut le réinscrire une fois (**Réparer l'installation**, ou désinstaller puis réinstaller le service).
+
+> **R37 (couper le son de la session, ici et pas là-bas)**
+>
+> Pendant une session où l'ordinateur distant joue quelque chose de sonore, ouvrir le menu du bouton flottant : un interrupteur **Son**, avec **Actif** à gauche et **Coupé** à droite, qui doit montrer **Actif**.
+>
+> Lancer aussi de la musique **sur l'ordinateur qui regarde**, en local.
+>
+> Cliquer **Coupé**.
+>
+> Attendu : le son de la session se tait, **la musique locale continue**, et le menu reste ouvert avec **Coupé** allumé. Ouvrir le mélangeur de volume de Windows : la tranche de la session y est bien marquée muette, comme n'importe quel programme.
+>
+> Recliquer **Actif** : le son revient.
+>
+> Refermer le menu, le rouvrir : l'interrupteur doit toujours dire la vérité. Le couper **depuis le mélangeur de Windows**, puis rouvrir le menu : il doit dire **Coupé**, parce qu'il relit l'état au lieu de se souvenir de ce qu'il a fait.
+>
+> Le journal de la fenêtre dit `son du lecteur N coupé` puis `son du lecteur N rendu`.
+
+> **R38 (les enceintes de l'hôte se taisent pendant qu'on le regarde)**
+>
+> Sur le **PC hôte**, dans ses propres réglages, une entrée **Couper le son pendant qu'on regarde**, éteinte par défaut. L'allumer.
+>
+> Attendu tout de suite : **rien ne bouge**. Pas de redémarrage du moteur, et une session en cours vers cette machine n'est **pas** coupée. C'est ce qui distingue ce réglage des deux autres réglages d'hôte (R33), que le moteur lit à son démarrage.
+>
+> Mettre de la musique sur le PC hôte, à un volume audible dans la pièce. Depuis le PC client, ouvrir une session vers lui.
+>
+> Attendu : **les enceintes du PC hôte se taisent** dès que la session s'ouvre, et **le son arrive dans la session** sur le PC client. Fermer la session : les enceintes du PC hôte se remettent à jouer toutes seules.
+>
+> Le journal du service hôte dit `the speakers of this computer are silent while it is being watched`, puis `the speakers of this computer play again`.
+>
+> **Le cas du service qui ne va pas au bout.** Ouvrir une session, laisser le son se couper, puis **éteindre brutalement le PC hôte** (bouton d'alimentation maintenu). Le rallumer. Attendu : les enceintes rejouent toutes seules, et le journal dit `this computer was left silent by a session that did not end properly` suivi de `the speakers of this computer play again`. Windows se souvient d'une carte coupée à travers un redémarrage : sans ce rattrapage, la machine resterait muette pour toujours.
+>
+> **Le cas des enceintes déjà coupées.** Couper le son du PC hôte à la main **avant** d'ouvrir une session, puis ouvrir une session et la fermer. Attendu : le son reste coupé à la fin. Ce produit ne rend que ce qu'il a pris.
+>
+> **Ce qu'il ne faut surtout pas voir.** Aucune carte son nouvelle dans la liste des périphériques audio du PC hôte, ni pendant ni après. C'est là toute la différence avec la façon dont les moteurs font ça d'habitude, qui est d'installer celle de Steam. Le journal du moteur hôte doit dire une fois par session `Couldn't find the specified virtual audio sink aucune-carte-son-virtuelle` : c'est la réponse voulue, écrite noir sur blanc.
 
 > **R18 (un réglage survit à tout)**
 >

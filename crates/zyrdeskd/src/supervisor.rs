@@ -239,6 +239,12 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             return End::Asked;
         }
 
+        // No engine running means nobody watching this computer, so its
+        // speakers play. This is also what gives the sound back after a
+        // session that ended badly, and what keeps trying until somebody
+        // is signed in to give it back in.
+        crate::speakers::keep_in_step(false, log);
+
         if !remembered.remote_access() {
             // Remote access is off. The service stays up: it is still
             // what opens the ways out, answers the interface and
@@ -624,11 +630,25 @@ fn wait_for_the_engine_to_stop(
             return Life::NoLongerWanted;
         }
 
-        if remembered.serving() != serving {
+        // Only what the engine was told, and not everything under that
+        // heading: muting this computer's speakers is the service's own
+        // doing, and turning it on mid-session must not cut the session
+        // it was turned on for.
+        let asked = remembered.serving();
+        if asked.as_the_engine_reads_it() != serving.as_the_engine_reads_it() {
             log.write("how this computer serves was changed, the engine starts over with it");
             stop_and_say_how(watched.engine, log);
             return Life::ServingChanged;
         }
+
+        // The speakers follow whoever is watching: silent while somebody
+        // is, playing again the moment nobody is. Asked at every turn
+        // and doing nothing at all when they already are, so a refusal
+        // costs one line and is tried again in a moment.
+        crate::speakers::keep_in_step(
+            asked.mute_speakers && watched.gateway.a_session_is_open(),
+            log,
+        );
 
         // The exit code is asked for first: it is the only thing that
         // tells a Windows shutdown from an incident, and a shutdown also
