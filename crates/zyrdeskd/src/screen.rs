@@ -176,14 +176,14 @@ pub fn learn_from(engine_log: &std::path::Path, started_with: Option<&str>, log:
         "screens the engine sees: {}",
         seen.iter()
             .map(|screen| format!(
-                "{} ({}{})",
+                "{} ({}, {})",
                 if screen.friendly_name.is_empty() {
                     "unnamed"
                 } else {
                     &screen.friendly_name
                 },
                 screen.device_id,
-                if screen.active { ", on" } else { ", off" }
+                showing(screen)
             ))
             .collect::<Vec<_>>()
             .join(" ; ")
@@ -306,6 +306,20 @@ impl Watching {
         self.read_up_to += complete as u64 + 1;
         let said = String::from_utf8_lossy(&written[..=complete]);
         zyr_screen::engine::could_not_put_the_screens_back(&said)
+    }
+}
+
+/// What a screen is showing, for the journal.
+///
+/// The size and not merely on or off. Whether the host's screen came home
+/// after a session is what this product is asked about most, the engine
+/// writes its list at every one of its starts, and this turns that list
+/// into the answer instead of half of it.
+fn showing(screen: &zyr_screen::Screen) -> String {
+    match screen.size {
+        Some((width, height)) if screen.active => format!("on at {width}x{height}"),
+        _ if screen.active => "on, size unsaid".to_string(),
+        _ => "off".to_string(),
     }
 }
 

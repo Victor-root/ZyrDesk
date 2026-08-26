@@ -41,6 +41,16 @@ pub struct Screen {
     /// size and no place, which is exactly the state a virtual screen
     /// sits in between sessions.
     pub active: bool,
+    /// How many pixels it is showing, when it is showing any.
+    ///
+    /// Read rather than asked of Windows, for the same reason as the rest
+    /// of this: the engine is the one authority on what its screens are.
+    /// It is written into the service's journal at every start of the
+    /// engine, and that is what it is for. Whether the host's screen came
+    /// home after a session is the question this product is asked most
+    /// often, and without this it can only be answered by somebody
+    /// standing in front of that computer.
+    pub size: Option<(u32, u32)>,
 }
 
 /// Every screen the engine listed the last time it started.
@@ -66,12 +76,20 @@ pub fn screens_in_the_log(log: &str) -> Vec<Screen> {
                     .to_string()
             };
             let info = item.get("info").filter(|info| !info.is_null());
+            let side = |which: &str| {
+                info?
+                    .get("resolution")?
+                    .get(which)
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|side| side as u32)
+            };
             let device_id = text("device_id");
             (!device_id.is_empty()).then(|| Screen {
                 device_id,
                 friendly_name: text("friendly_name"),
                 display_name: text("display_name"),
                 active: info.is_some(),
+                size: side("width").zip(side("height")),
             })
         })
         .collect()
@@ -179,6 +197,17 @@ mod tests {
         assert!(!screens[0].active);
         assert_eq!(screens[1].display_name, r"\\.\DISPLAY1");
         assert!(screens[1].active);
+    }
+
+    #[test]
+    fn a_screen_that_is_on_says_how_many_pixels_it_shows() {
+        // C'est ce nombre-là qui part dans le journal du service à chaque
+        // démarrage du moteur. Sans lui, « est-ce que l'écran de l'hôte
+        // est bien revenu » ne se répond qu'en allant voir la machine.
+        let screens = screens_in_the_log(LOG);
+        assert_eq!(screens[1].size, Some((1920, 1080)));
+        // Un écran éteint n'a pas de taille, et n'en invente pas une.
+        assert_eq!(screens[0].size, None);
     }
 
     #[test]

@@ -617,6 +617,22 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ce que ça ne fait pas.** ZyrDesk ne lit ni ne pose lui-même les modes d'écran de Windows. Le moteur le fait déjà, il le fait bien, et un service qui s'y mettrait aussi serait un troisième programme dans une bagarre qui en compte déjà deux de trop.
 
+## D51. Un moteur emporté par sa session ne se remplace pas dans la seconde (2026-08-26, pendant M4)
+
+**Le relevé, et il est sans ambiguïté.** Éteindre l'hôte depuis la session, puis le rallumer : l'écran reste dans la taille de la session. Le journal du service dit ceci, en cinq secondes : `engine stopped (code 1073807364) after 1089 s, restarting in 0 s`, puis un moteur démarré, puis le même code, puis un autre moteur. Trois moteurs pendant que la machine s'en allait.
+
+**Ce que vaut ce nombre.** `1073807364` est `DBG_TERMINATE_PROCESS` : ce que Windows laisse sur un programme qu'il a emporté lui-même avec la session où il vivait. Trois choses font ça et rien dans le code ne les distingue : une déconnexion, un changement d'utilisateur, une extinction. Ce n'est ni une panne ni une chute, et le service le lisait comme une chute.
+
+**Pourquoi ça coûte un écran.** Ce que les écrans de l'hôte étaient avant la session est écrit par le moteur et **nulle part ailleurs**. Le premier moteur, emporté sans avoir eu le temps de remettre quoi que ce soit, laisse ce papier intact : au prochain démarrage de la machine, un moteur le lit et remet l'écran, c'est le chemin de secours prévu et il marche. Un moteur démarré dans une machine déjà à moitié dehors, lui, dépense ce papier sur un ordinateur qui n'aura bientôt plus d'écrans du tout. Le lendemain il n'y a plus rien à remettre, plus personne pour se plaindre, et un journal muet.
+
+**Corrigé en attendant au lieu de fournir.** Un moteur emporté par sa session n'est plus jamais remplacé sur-le-champ : la machine est laissée tranquille dix secondes. Sur une extinction, elle s'en va pendant cette attente et rien de nous ne redémarre. Sur un changement d'utilisateur, quelqu'un attend dix secondes un ordinateur que personne ne demande encore. Et l'attente double à chaque fois que ça se reproduit d'affilée, parce qu'une machine qui s'éteint emporte aussi tous les moteurs démarrés derrière le premier : dix, vingt, quarante. Un moteur qui tient sa vie remet le compteur à zéro.
+
+**Le compte des pannes ne bouge pas.** Être emporté par sa session n'est pas une faute du moteur, et le lui compter finirait par faire renoncer une machine sur laquelle on change souvent d'utilisateur.
+
+**Ce que 1115 était vraiment.** Le service croyait reconnaître une extinction à `ERROR_SHUTDOWN_IN_PROGRESS`. C'est le code que le moteur renvoie depuis **sa propre icône de barre des tâches**, dont « quitter » veut dire quitter. Nous démarrons le moteur sans icône du tout : aucun ordinateur ZyrDesk n'a jamais renvoyé ce code, et cette branche n'a jamais servi une seule fois. Elle reste, parce que si le moteur le renvoie un jour, le laisser tranquille reste la bonne réponse.
+
+**Et le journal dit enfin ce qu'il voit.** Deux lignes changent. La fin d'un moteur est racontée en mots plutôt qu'en numéro, parce que `1073807364` se lit comme un incident et n'en est pas un. Et la liste des écrans que le moteur voit, écrite à chacun de ses démarrages, porte maintenant leur taille : `U28G2G6B (…, on at 3840x2160)`. « Est-ce que l'écran de l'hôte est bien revenu » est la question qu'on pose le plus souvent à ce produit, et jusqu'ici elle ne se répondait qu'en allant se planter devant la machine. La taille avait été lue puis retirée le matin même avec [D48](#d48-un-écran-qui-appartient-à-quelquun-nest-pas-à-nous-2026-08-25-pendant-m4), faute de lecteur ; le lecteur, c'était le journal.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

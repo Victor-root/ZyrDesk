@@ -37,7 +37,7 @@ use zyr_proto::paths;
 use crate::control::{Answering, Desk, Hosting};
 use crate::gateway::{AtHand, Gateway};
 use crate::preferences::Remembered;
-use crate::restart::{Next, Policy};
+use crate::restart::{self, Next, Policy};
 use crate::ways::Ways;
 
 /// Margin given to the engine to open its ports at start-up.
@@ -362,12 +362,10 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
                 given_up = true;
             }
             Next::Restart(delay) => {
-                let code = stop
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "interrupted".to_string());
                 log.write(&format!(
-                    "engine stopped (code {code}) after {} s, restarting in {} s",
+                    "engine stopped after {} s, {}; another starts in {} s",
                     lifetime.as_secs(),
+                    how_it_went(stop),
                     delay.as_secs()
                 ));
                 if !wait(delay, order) {
@@ -732,6 +730,26 @@ fn put_the_screens_back(watched: &mut Watched<'_>, log: &Log) -> bool {
         Err(e) => log.write(&format!("the engine would not be told to stop trying: {e}")),
     }
     false
+}
+
+/// How the engine's life ended, in words rather than in a number.
+///
+/// A bare number was what the journal carried, and it hid the one thing
+/// worth seeing: `1073807364` reads as an incident to anybody, and it is
+/// not one. It is a computer taking its engine with it as it goes, which
+/// is the moment the host's screen is most likely to be left where a
+/// session put it.
+fn how_it_went(code: Option<i32>) -> String {
+    match code {
+        None => "interrupted".to_string(),
+        Some(restart::TAKEN_WITH_ITS_SESSION) => {
+            "taken away with the session it lived in, which is somebody signing out, somebody \
+             switching user, or this computer going down"
+                .to_string()
+        }
+        Some(restart::ENGINE_ASKED_TO_BE_LEFT) => "having asked to be left where it is".to_string(),
+        Some(code) => format!("code {code}"),
+    }
 }
 
 /// Stops the engine and writes down how it went.
