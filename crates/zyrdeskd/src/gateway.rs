@@ -127,10 +127,10 @@ impl Answers for Attending {
     ///
     /// It goes nowhere near the engine, and could not: the way an engine
     /// types is exactly the way Windows refuses for this combination.
-    /// This is the service pressing it on its own machine, which is the
-    /// one program on it the system will let.
+    /// This is the service pressing it in its own process, which is the
+    /// one thing on this machine Windows will take it from.
     fn secure_attention(&self) -> Result<(), String> {
-        match press_it() {
+        match press_it(&self.log) {
             Ok(()) => {
                 self.log
                     .write("Ctrl+Alt+Suppr pressed for the far computer");
@@ -148,15 +148,15 @@ impl Answers for Attending {
 
 /// Presses it, where there is a Windows to press it on.
 #[cfg(windows)]
-fn press_it() -> io::Result<()> {
-    crate::session::press_the_secure_attention()
+fn press_it(log: &Log) -> io::Result<()> {
+    crate::attention::press(log)
 }
 
 /// Outside Windows there is no such key and no service either. The
 /// gateway stays compiled and tested everywhere, its logic having
 /// nothing platform-specific about it.
 #[cfg(not(windows))]
-fn press_it() -> io::Result<()> {
+fn press_it(_log: &Log) -> io::Result<()> {
     Err(io::Error::other(
         "cet ordinateur n'a pas de Ctrl+Alt+Suppr à presser",
     ))

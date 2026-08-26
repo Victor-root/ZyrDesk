@@ -69,11 +69,7 @@ const NOTHING: &str = "NUL";
 /// something a person can ask for.
 pub const LET_GO_ARGUMENT: &str = "--let-the-engine-go";
 
-/// The same for the one keystroke Windows keeps for itself; see
-/// `send_the_secure_attention`.
-pub const ATTENTION_ARGUMENT: &str = "--send-the-secure-attention";
-
-/// The same again for the speakers of this computer; see
+/// The same for the speakers of this computer; see
 /// `move_the_speakers`.
 ///
 /// It carries which way they are to be moved, because both ways are the
@@ -349,38 +345,6 @@ fn asked_to_go(session: u32, engine: u32) -> io::Result<()> {
     )
 }
 
-/// Where an errand's refusal is read decides what language it is in.
-///
-/// This one is read in the session menu of the far computer, by the
-/// person who clicked, so it is written for them. The two others below
-/// are read in this service's journal, which is written in English like
-/// the rest of it.
-const ATTENTION_REFUSED: &str = "la frappe n'est pas partie : la stratégie qui l'autorise \
-                                 n'est peut-être pas posée sur cet ordinateur";
-
-/// Sends this computer the one keystroke no keyboard of ours can carry.
-///
-/// Ctrl+Alt+Suppr is Windows' own, at both ends of a session. The
-/// computer watching never sees it, because its Windows takes it first;
-/// and the computer being watched cannot be made to feel it by any
-/// engine, because engines type the way Windows refuses for this one.
-/// The single door is `SendSAS`, and it opens only for a program the
-/// system trusts, which on the host is this service.
-///
-/// From the session on screen and never from the service's own. The
-/// sequence lands on the session the token carries, and a service lives
-/// in one with no screen: pressed there, it would be pressed where
-/// nobody is looking.
-pub fn press_the_secure_attention() -> io::Result<()> {
-    let session = session_on_screen()
-        .ok_or_else(|| io::Error::other("aucune session n'est à l'écran de cet ordinateur"))?;
-    errand(
-        session,
-        &[ATTENTION_ARGUMENT.to_string()],
-        ATTENTION_REFUSED,
-    )
-}
-
 /// Moves this computer's speakers, and says whether they really moved.
 ///
 /// From the session that owns the screen, like everything else here, and
@@ -464,12 +428,11 @@ pub fn move_the_speakers(quiet: bool) -> u32 {
 /// Runs this program in another Windows session, for one short errand.
 ///
 /// The service cannot reach into the session that owns the screen, and
-/// three things it has to do live there: asking the engine to go,
-/// pressing what only that session can be pressed on, and moving the
-/// speakers the person in front of that session hears. All three are the
-/// same shape, so they are the same code: this program started again with
-/// a reserved argument, as itself, on the interactive desktop, with the
-/// answer read back from its exit code.
+/// two things it has to do live there: asking the engine to go, and
+/// moving the speakers the person in front of that session hears. Both
+/// are the same shape, so they are the same code: this program started
+/// again with a reserved argument, as itself, on the interactive
+/// desktop, with the answer read back from its exit code.
 ///
 /// Detached from any console of its own, since one of the errands is
 /// attaching to somebody else's, which is only possible for a program
@@ -573,54 +536,6 @@ fn the_engine_named_in(arguments: impl Iterator<Item = String>) -> Option<u32> {
     let mut after = arguments.skip_while(|a| a != LET_GO_ARGUMENT);
     after.next()?;
     after.next()?.parse().ok()
-}
-
-/// Whether this program was started to press what Windows keeps.
-pub fn asked_for_the_secure_attention() -> bool {
-    std::env::args().any(|argument| argument == ATTENTION_ARGUMENT)
-}
-
-/// Presses it, from inside the session that owns the screen.
-///
-/// This is the whole of what this program does when started with
-/// `ATTENTION_ARGUMENT`. The call lives in a library Windows ships and is
-/// found by hand rather than linked against: a machine whose policy
-/// forbids the sequence still has the library, so linking would buy
-/// nothing and would make every other errand of this program depend on a
-/// file it has no other use for.
-///
-/// Windows answers nothing at all: `SendSAS` returns void, and whether
-/// the sequence was really let through is decided by a policy this
-/// service lays at its own installation. So what is reported back is
-/// « the call was made », and the person watching their screen is the
-/// one who knows whether it worked.
-#[cfg(windows)]
-pub fn send_the_secure_attention() -> bool {
-    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-
-    let name = wide("sas.dll");
-    // SAFETY: a library of the system's own, named as a wide string that
-    // outlives the call, and let go of by the process ending a moment
-    // later. Nothing here is unloaded by hand: the sequence is on its way
-    // and the process is one line from exiting.
-    let found = unsafe {
-        let library = LoadLibraryW(name.as_ptr());
-        if library.is_null() {
-            return false;
-        }
-        GetProcAddress(library, c"SendSAS".as_ptr().cast())
-    };
-    let Some(send) = found else {
-        return false;
-    };
-    // SAFETY: the one function that library exports, whose shape is
-    // `VOID SendSAS(BOOL)`, taken from the system's own documentation.
-    let send: unsafe extern "system" fn(i32) = unsafe { std::mem::transmute(send) };
-    // Nought is « as the service », which is what this is: started with
-    // the service's own token, moved to the session on screen. One is for
-    // a program running as the person, which this never is.
-    unsafe { send(0) };
-    true
 }
 
 /// The service's token, duplicated and attached to the wanted session.

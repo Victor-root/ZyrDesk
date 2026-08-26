@@ -44,7 +44,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **S27** | Nouveau. Un troisième ordinateur joint par un tunnel privé était découvert mais refusait toutes les sessions. La découverte n'apprenait qu'à celui qui appelle : celui qui était appelé ne retenait rien de son appelant, donc ne le reconnaissait pas. Celui qui appelle se présente maintenant |
 | **S26** | Nouveau. Une ouverture sur deux ou trois sautait l'écran de chargement : l'accueil revenait avec la carte verte d'une session en cours, puis l'image apparaissait quelques secondes plus tard sans rien annoncer. L'écran d'ouverture partait quand le service prenait la session, pas quand il y avait une image. Il attend maintenant l'image |
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
-| **R36** | Nouveau. Une entrée **Ctrl+Alt+Suppr** dans le menu de la session. Aucun moteur ne peut envoyer cette combinaison : elle passe par le canal propre de ZyrDesk et c'est le service d'en face qui la presse. Une machine dont le service a été inscrit avant ce lot doit être réinscrite une fois |
+| **R36** | **Refait, et c'est le sujet du lot.** La frappe partait bien et l'ordinateur d'en face répondait oui, sans que rien n'apparaisse à l'écran : elle était confiée à un aller simple lancé dans la session de l'écran, qui n'est ni un service ni un programme à manifeste, donc aucun des deux cas que Windows accepte. C'est le service lui-même qui presse maintenant. Le journal du service hôte écrit la stratégie réellement en place, sa propre session et celle de l'écran : c'est la ligne à lire si ça ne marche toujours pas |
 | **R37** | Nouveau. Un interrupteur **Son** dans le menu de la session, Actif ou Coupé. Il coupe le son **de cette machine-ci**, sur la tranche du lecteur dans le mélangeur de Windows, et rien d'autre de ce qui joue ici |
 | **R38** | Nouveau. Un réglage d'hôte **Couper le son pendant qu'on regarde**. Les enceintes de l'hôte se taisent, le son continue de partir dans la session, et **aucune carte son n'est installée**. À vérifier aussi : une session en cours n'est pas coupée quand on l'allume, et le son revient après un arrêt brutal |
 | **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
@@ -1141,11 +1141,22 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Appuyer sur Échap dans l'image pour en sortir, puis vérifier que la session est toujours vivante et que le clavier y répond encore.
 >
-> **Pourquoi c'est un essai à part.** Cette combinaison est la seule que Windows garde entièrement pour lui, aux deux bouts. Elle ne passe pas par le clavier du lecteur comme **Statistiques** ou la souris : elle voyage sur le canal que ZyrDesk se réserve dans le tunnel, et c'est le service de l'ordinateur d'en face qui la presse sur sa propre machine.
+> **Pourquoi c'est un essai à part.** Cette combinaison est la seule que Windows garde entièrement pour lui, aux deux bouts. Elle ne passe pas par le clavier du lecteur comme **Statistiques** ou la souris : elle voyage sur le canal que ZyrDesk se réserve dans le tunnel, et c'est le service de l'ordinateur d'en face qui la presse, dans son propre processus.
 >
-> Le journal du **service hôte** dit `Ctrl+Alt+Suppr pressed for the far computer`. En cas de refus, il dit `Ctrl+Alt+Suppr not pressed:` suivi de la raison.
+> **Ce que le journal du service hôte doit dire**, deux lignes, dans cet ordre :
 >
-> **Si rien ne se passe et que le journal dit que ça a été pressé.** C'est le seul cas où le produit ne peut pas savoir : Windows ne répond rien du tout à cet appel. La cause presque certaine est la valeur de registre qui l'autorise, posée quand le service est enregistré. Sur une machine dont le service a été inscrit avant que ce code existe, il faut le réinscrire une fois (**Réparer l'installation**, ou désinstaller puis réinstaller le service).
+> ```
+> Ctrl+Alt+Suppr: policy 1, this service is in session 0, the screen is on session 1
+> Ctrl+Alt+Suppr pressed for the far computer
+> ```
+>
+> C'est la première qui compte, et elle est là justement parce que Windows ne répond rien à cet appel : une frappe qui ne fait rien et une frappe jamais autorisée se lisent sinon exactement pareil.
+>
+> - `policy 1` : la stratégie est en place. `policy unset` ou `policy 0` veut dire que Windows refusera, et que la stratégie n'a pas pu être écrite ; la ligne `Ctrl+Alt+Suppr cannot be pressed ... (code N)` au démarrage du service dit pourquoi. Sur une machine dont les stratégies sont tenues par un employeur, il n'y a rien à faire.
+> - `session 0` : le service tourne bien comme service. Toute autre valeur veut dire que la frappe part d'un endroit d'où Windows la jette sans un mot.
+> - `the screen is on session N` avec N différent de 0 : quelqu'un est bien connecté sur cette machine. `none` veut dire personne, et il n'y a alors aucun écran à réveiller.
+>
+> **Le service hôte doit avoir été redémarré au moins une fois** avec cette version, sinon la stratégie n'est pas posée. Elle l'est maintenant à chaque démarrage du service, donc il n'y a plus rien à réinstaller.
 
 > **R37 (couper le son de la session, ici et pas là-bas)**
 >

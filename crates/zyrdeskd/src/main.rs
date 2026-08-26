@@ -15,6 +15,8 @@ mod supervisor;
 mod ways;
 
 #[cfg(windows)]
+mod attention;
+#[cfg(windows)]
 mod service;
 #[cfg(windows)]
 mod session;
@@ -78,20 +80,7 @@ fn main() -> ExitCode {
         };
     }
 
-    // And a third time, for the one keystroke Windows keeps for itself.
-    // The far computer asks for Ctrl+Alt+Suppr, the service takes the
-    // ask, and only a program running in the session that owns the
-    // screen can press it there. Nobody types this one either.
-    #[cfg(windows)]
-    if session::asked_for_the_secure_attention() {
-        return if session::send_the_secure_attention() {
-            ExitCode::SUCCESS
-        } else {
-            ExitCode::FAILURE
-        };
-    }
-
-    // And a fourth time, for the speakers of this computer. Which device
+    // And a third time, for the speakers of this computer. Which device
     // the desktop plays to depends on who is signed in, so the question
     // is asked from the session that owns the screen and nowhere else.
     // The answer is more than yes or no: two means the speakers were

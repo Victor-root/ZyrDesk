@@ -141,6 +141,12 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // existed, and nothing said so. Asked for here as well, where it does
     // nothing at all when the screen is already there.
     crate::screen::put_in_place(Some(log));
+    // And a fourth time, for the same reason again, which this one has
+    // already cost: laid only where the service is registered, the
+    // policy that lets Ctrl+Alt+Suppr be pressed never reached a computer
+    // registered before it existed, and Windows says nothing at all when
+    // it refuses a press.
+    crate::attention::let_it_be_pressed(Some(log));
     // A silence left behind by a run of this service that never got to
     // finish: the machine was switched off, or the service fell over,
     // with a session in progress. Only remembered here; the watch gives
@@ -297,120 +303,8 @@ pub fn install() -> Result<Installed, Box<dyn std::error::Error>> {
     // too. It never fails the installation, since a computer without a
     // virtual screen is a computer that works, only less sharply.
     crate::screen::put_in_place(log.as_ref());
-    let_ctrl_alt_del_be_pressed(log.as_ref());
+    crate::attention::let_it_be_pressed(log.as_ref());
     Ok(installed)
-}
-
-/// Where Windows keeps the one setting that decides whether a program
-/// may press Ctrl+Alt+Suppr on this computer's behalf.
-const SAS_POLICY_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Policies\System";
-const SAS_POLICY_VALUE: &str = "SoftwareSASGeneration";
-
-/// Services may press it. Two other values exist, for accessibility tools
-/// and for both at once; ours is a service, and taking more than that
-/// would be taking what nobody asked for.
-const SAS_BY_SERVICES: u32 = 1;
-
-/// Lets this service press Ctrl+Alt+Suppr for a session.
-///
-/// Windows keeps that combination for itself, and rightly: it is what
-/// tells a person that the screen in front of them is really Windows and
-/// not a program pretending to be it. No engine can send it, no keyboard
-/// of ours can carry it, and the one door left is a call the system
-/// opens only to programs it trusts, gated by this setting. Unset, which
-/// is how Windows ships, it opens for nothing but accessibility tools.
-///
-/// Written where the service is registered, which is the one moment
-/// administrator rights are already in hand, and taken away again when
-/// the service is removed: a machine that no longer runs this product
-/// should not be left with a door this product opened.
-///
-/// A failure is written down and never raised. A computer whose policies
-/// are held by an employer is a computer where this will not take, and
-/// that is a computer which must still work in every other way; what it
-/// loses is one menu entry, and the journal says so.
-#[cfg(windows)]
-fn let_ctrl_alt_del_be_pressed(log: Option<&Log>) {
-    let said = match set_the_sas_policy(Some(SAS_BY_SERVICES)) {
-        Ok(()) => "Ctrl+Alt+Suppr may now be pressed for a session".to_string(),
-        Err(code) => format!(
-            "Ctrl+Alt+Suppr cannot be pressed for a session on this computer, its policy would \
-             not take (code {code})"
-        ),
-    };
-    if let Some(log) = log {
-        log.write(&said);
-    }
-}
-
-/// Writes that one policy value, or takes it away.
-///
-/// Written here and not borrowed from the crate that lays the virtual
-/// screen: that crate says of itself that it knows drivers and nothing
-/// about ZyrDesk, and a policy belonging to this service is none of its
-/// business. One call of the system's serving two purposes, in two places
-/// that must not know each other, is not the same code written twice.
-///
-/// The value alone is removed and never the key. That key is Windows' own
-/// and holds settings this product never touched; taking it away would
-/// take theirs along with ours.
-#[cfg(windows)]
-fn set_the_sas_policy(to: Option<u32>) -> Result<(), u32> {
-    use windows_sys::Win32::System::Registry::{
-        HKEY, HKEY_LOCAL_MACHINE, KEY_SET_VALUE, REG_DWORD, REG_OPTION_NON_VOLATILE, RegCloseKey,
-        RegCreateKeyExW, RegDeleteValueW, RegSetValueExW,
-    };
-
-    let key: Vec<u16> = wide(SAS_POLICY_KEY);
-    let value: Vec<u16> = wide(SAS_POLICY_VALUE);
-    let mut open: HKEY = std::ptr::null_mut();
-    // SAFETY: both names outlive the call, and the slot for the key it
-    // hands back is ours.
-    let code = unsafe {
-        RegCreateKeyExW(
-            HKEY_LOCAL_MACHINE,
-            key.as_ptr(),
-            0,
-            std::ptr::null(),
-            REG_OPTION_NON_VOLATILE,
-            KEY_SET_VALUE,
-            std::ptr::null(),
-            &mut open,
-            std::ptr::null_mut(),
-        )
-    };
-    if code != 0 {
-        return Err(code);
-    }
-    let code = match to {
-        // SAFETY: the key is open, the name outlives the call, and the
-        // four bytes handed over are those of the number beside them.
-        Some(number) => unsafe {
-            RegSetValueExW(
-                open,
-                value.as_ptr(),
-                0,
-                REG_DWORD,
-                (&raw const number).cast::<u8>(),
-                size_of::<u32>() as u32,
-            )
-        },
-        // SAFETY: the key is open and the name outlives the call.
-        None => unsafe { RegDeleteValueW(open, value.as_ptr()) },
-    };
-    // SAFETY: a key this function opened, closed exactly once.
-    unsafe { RegCloseKey(open) };
-    if code != 0 { Err(code) } else { Ok(()) }
-}
-
-/// Zero-terminated string, the way Windows expects them.
-#[cfg(windows)]
-fn wide(text: &str) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
-    std::ffi::OsStr::new(text)
-        .encode_wide()
-        .chain(Some(0))
-        .collect()
 }
 
 /// Lets whoever is signed in start and stop this service.
@@ -665,7 +559,7 @@ pub fn uninstall() -> ServiceResult<()> {
     // And the door this product opened on Ctrl+Alt+Suppr is closed with
     // them. A machine that no longer runs ZyrDesk has no reason to go on
     // letting a service press what Windows keeps for itself.
-    let _ = set_the_sas_policy(None);
+    crate::attention::forget_it();
 
     // After the service is gone and not before: the driver cannot leave
     // Windows' store while anything is still using its device, and the
