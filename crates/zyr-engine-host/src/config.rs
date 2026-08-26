@@ -214,15 +214,29 @@ impl SunshineConfig {
             // is even encoded, and no amount of care at this end can put
             // them back.
             //
-            // Four lines and not one, because each does a different half
-            // of it. The first turns the whole thing on: left alone the
-            // engine touches nothing, whatever the three others say. The
-            // next two say what may be changed. The last says when to put
-            // it back, and it is not the obvious answer: the engine
+            // Five lines and not one, because each does a different
+            // fifth. The first turns the whole thing on: left alone the
+            // engine touches nothing, whatever the others say. The next
+            // two say what may be changed. The fourth says when to put it
+            // back, and it is not the obvious answer: the engine
             // otherwise waits for the application it is showing to stop,
             // and the one we show is the far desktop itself, which never
             // stops. Leaving a session without closing it would hand back
             // a laptop still at the size we gave it.
+            //
+            // The fifth says how long to wait first, and the answer is
+            // not at all. The engine's own answer is three seconds, meant
+            // to spare a screen two changes when somebody drops out and
+            // comes straight back. It costs far more than it saves here.
+            // Shutting the far computer down from inside the session is
+            // the ordinary way to end one, and then the session ends
+            // because that computer is already going: a reading of it
+            // showed one second between the session ending and Windows
+            // taking the engine away, with the putting back due at three.
+            // It never ran, and a computer came back up the next morning
+            // still wearing the size of a laptop. Put back at once, the
+            // screen is home before the machine has finished leaving, and
+            // Windows keeps it that way by itself.
             format!(
                 "dd_configuration_option = {}",
                 if self.alone_on_the_screen {
@@ -234,6 +248,7 @@ impl SunshineConfig {
             "dd_resolution_option = auto".to_string(),
             "dd_refresh_rate_option = auto".to_string(),
             "dd_config_revert_on_disconnect = enabled".to_string(),
+            "dd_config_revert_delay = 0".to_string(),
             format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
         ]);
@@ -317,9 +332,9 @@ mod tests {
 
     #[test]
     fn the_far_desktop_is_resized_for_the_session_and_put_back_after() {
-        // Sans ces quatre lignes, le moteur garde le bureau tel quel et
+        // Sans ces cinq lignes, le moteur garde le bureau tel quel et
         // grave des bandes noires dans chaque image pour lui garder sa
-        // forme. Et sans la dernière, il ne remet jamais rien : le
+        // forme. Sans l'avant-dernière, il ne remet jamais rien : le
         // bureau que nous montrons ne s'arrête pas, et c'est à son arrêt
         // qu'il rendrait la main.
         let rendered = test_config().render_conf();
@@ -328,9 +343,27 @@ mod tests {
             "dd_resolution_option = auto",
             "dd_refresh_rate_option = auto",
             "dd_config_revert_on_disconnect = enabled",
+            "dd_config_revert_delay = 0",
         ] {
             assert!(rendered.contains(line), "{line} manque dans la conf");
         }
+    }
+
+    #[test]
+    fn the_screen_is_put_back_at_once_and_not_three_seconds_later() {
+        // Zéro et pas un petit nombre, et c'est le tout de la ligne. La
+        // façon ordinaire de finir une session est d'éteindre
+        // l'ordinateur d'en face depuis cette session, et la session finit
+        // alors parce que cet ordinateur s'en va déjà : un relevé a montré
+        // une seconde entre la fin de la session et Windows emportant le
+        // moteur, la remise en place étant prévue à trois. Elle n'a jamais
+        // eu lieu, et la machine est revenue le lendemain à la taille d'un
+        // portable.
+        let rendered = test_config().render_conf();
+        assert!(rendered.contains("dd_config_revert_delay = 0"));
+        // Le défaut du moteur est de trois secondes, et il ne doit
+        // surtout pas revenir par la bande.
+        assert!(!rendered.contains("dd_config_revert_delay = 3"));
     }
 
     #[test]

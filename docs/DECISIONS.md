@@ -633,6 +633,22 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Et le journal dit enfin ce qu'il voit.** Deux lignes changent. La fin d'un moteur est racontée en mots plutôt qu'en numéro, parce que `1073807364` se lit comme un incident et n'en est pas un. Et la liste des écrans que le moteur voit, écrite à chacun de ses démarrages, porte maintenant leur taille : `U28G2G6B (…, on at 3840x2160)`. « Est-ce que l'écran de l'hôte est bien revenu » est la question qu'on pose le plus souvent à ce produit, et jusqu'ici elle ne se répondait qu'en allant se planter devant la machine. La taille avait été lue puis retirée le matin même avec [D48](#d48-un-écran-qui-appartient-à-quelquun-nest-pas-à-nous-2026-08-25-pendant-m4), faute de lecteur ; le lecteur, c'était le journal.
 
+## D52. L'écran de l'hôte est remis tout de suite, pas trois secondes plus tard (2026-08-26, pendant M4)
+
+**La question de Victor, et elle vaut mieux que la réponse qu'elle avait.** « Quand j'éteins le PC il renvoie le bon écran, ou alors au redémarrage je vais toujours avoir du 1920x1200 et c'est ZyrDesk qui remettra le 4K en démarrant ? Parce que c'est la première que je veux, comme Parsec. » [D51](#d51-un-moteur-emporté-par-sa-session-ne-se-remplace-pas-dans-la-seconde-2026-08-26-pendant-m4) ne donnait que la seconde : l'écran revenait, mais après le démarrage de Windows, après l'écran de connexion, après le service et après le moteur. C'est un filet, pas une réponse.
+
+**Ce qui manquait tient dans un nombre, et il n'était même pas de nous.** Le moteur attend avant de remettre l'écran, et son délai par défaut est de **trois secondes**. Nous ne l'avions jamais écrit dans sa configuration, donc nous prenions le sien. Ce délai existe pour épargner deux changements d'écran à quelqu'un qui se déconnecte et revient aussitôt. Il coûte infiniment plus qu'il ne rapporte ici.
+
+**Le relevé le dit à la seconde près.** `23:46:29 session ended`, puis `23:46:30 engine stopped`. Une seconde entre la fin de la session et Windows emportant le moteur. La remise en place était prévue à trois. Elle n'a jamais eu lieu.
+
+**Et ce n'est pas un cas tordu, c'est le cas ordinaire.** Éteindre l'ordinateur d'en face depuis la session est une façon normale de finir. La session se termine alors **parce que** cet ordinateur s'en va déjà : il ne reste pas trois secondes, il n'en reste pas une.
+
+**Corrigé en ne faisant plus attendre personne.** `dd_config_revert_delay = 0`. La remise en place se fait sur place, dans le fil qui vient de voir la session finir, au lieu d'être mise dans une file pour plus tard. L'écran est rentré avant que la machine ait fini de partir, Windows note cette taille comme la sienne, et l'ordinateur redémarre en 4K dès l'écran de connexion. C'est la première option, celle qui était demandée.
+
+**Ce que ça coûte, et c'est assumé.** Quelqu'un qui quitte sa session et se reconnecte dans la seconde voit l'écran d'en face changer deux fois au lieu de zéro. Le délai de trois secondes achetait exactement ça, et il l'achetait au prix d'un écran qui ne revient pas quand la machine s'éteint. L'autre produit de référence remet aussi tout de suite.
+
+**Les deux moitiés vont ensemble.** D51 empêche de dépenser le papier qui dit ce qu'était l'écran ; celle-ci fait que, la plupart du temps, ce papier n'a plus à servir du tout. Le filet reste, et c'est très bien : une extinction plus brutale que d'habitude retombe dessus au lieu de tomber par terre.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
