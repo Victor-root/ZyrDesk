@@ -38,6 +38,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R30** | **Une machine qui n'avait pas d'écran virtuel doit en avoir un au prochain démarrage du service.** Il n'était posé qu'à l'inscription du service, donc jamais sur un ordinateur inscrit avant que ce code existe. À vérifier dans `service.log` de l'hôte : `virtual screen already in place`, ou la suite des étapes de la pose |
 | **S23** | **Refait, et c'est le sujet du lot.** Éteindre l'hôte depuis la session laissait toujours son écran dans la taille du client, même après un redémarrage complet. Le service lisait « emporté par sa session » comme une chute et redémarrait le moteur sur-le-champ : trois moteurs en cinq secondes pendant que la machine s'en allait, et le seul papier qui disait ce qu'étaient les écrans avant la session y est passé. Il attend maintenant au lieu de fournir |
 | **S5** | Changé. En mode fenêtre, une session s'ouvre maintenant avec la fenêtre **agrandie** au lieu de la taille où elle avait été laissée. Le plein écran ne change pas |
+| **S27** | Nouveau. Un troisième ordinateur joint par un tunnel privé était découvert mais refusait toutes les sessions. La découverte n'apprenait qu'à celui qui appelle : celui qui était appelé ne retenait rien de son appelant, donc ne le reconnaissait pas. Celui qui appelle se présente maintenant |
 | **S26** | Nouveau. Une ouverture sur deux ou trois sautait l'écran de chargement : l'accueil revenait avec la carte verte d'une session en cours, puis l'image apparaissait quelques secondes plus tard sans rien annoncer. L'écran d'ouverture partait quand le service prenait la session, pas quand il y avait une image. Il attend maintenant l'image |
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
 | **S25** | Nouveau. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
@@ -1008,6 +1009,18 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Pourquoi il faut le faire plusieurs fois.** Ça ne se produisait pas à tous les coups. Le chemin ordinaire passe par une attente de six secondes qui couvrait l'écart par hasard ; l'ouverture où les deux ordinateurs se présentent à nouveau saute cette attente, et l'écart se voyait alors tout nu. Le journal de la fenêtre dit laquelle des deux on vient de faire : `l'ordinateur distant ne reconnaît plus celui-ci, nouvelle présentation`, puis `les deux ordinateurs se connaissent`. **C'est cette ouverture-là qu'il faut avoir vue au moins une fois.** Pour la provoquer à coup sûr, ouvrir une session, puis sur l'hôte arrêter et redémarrer le service, puis rouvrir.
 >
 > **Ce que le journal doit montrer**, dans cet ordre : `image du lecteur N posée dans la fenêtre de ZyrDesk`, **puis** `session en cours, lecteur N`. Jamais l'inverse. Et si jamais `le lecteur N n'a pas ouvert d'image en 20 s` apparaît, l'écran de chargement se retire quand même : c'est voulu, une fenêtre couverte pour toujours serait pire.
+
+> **S27 (un troisième ordinateur, joint par un tunnel privé)**
+>
+> À faire avec un PC qui n'est pas sur le réseau de la maison, joint par un VPN entre les deux (WireGuard, Tailscale, peu importe).
+>
+> Attendu : il apparaît dans la liste des deux côtés, et la session s'ouvre. **Regarder les deux écrans d'accueil, pas un seul** : c'est là que se cachait le défaut. L'ordinateur d'ici voyait celui de là-bas, et pas l'inverse.
+>
+> **Ce qui n'allait pas.** La découverte n'apprenait qu'à celui qui appelle : « qui est là ? » ne disait rien de qui demandait. Sur un réseau ordinaire les deux appellent, donc les deux apprennent, et ça ne se voit jamais. Dans un tunnel privé, un seul des deux bouts a un voisinage à balayer ; l'autre n'a personne à appeler, n'apprenait rien, et refusait toutes les sessions.
+>
+> **Le symptôme exact, si ça revient.** Dans `service.log` de l'ordinateur qui essaie : `no way to <adresse>:47000 … Détail : read error: connection lost`. Ce message veut dire que la connexion s'est faite puis a été coupée par l'autre au moment où il juge qui arrive. Ce n'est **jamais** le pare-feu ni la route : ceux-là donnent « ne répond pas sur le port 47000 ».
+>
+> **Le dépannage immédiat**, si jamais un cas y échappe encore : sur l'ordinateur qui refuse, ouvrir « ajouter un ordinateur », coller l'**empreinte** de celui qui essaie, laisser l'adresse vide, valider. Un bandeau vert confirme. En ligne de commande : `zyr-cli host authorize <empreinte>`.
 
 > **S25 (quitter la session rend son écran à l'hôte, même quand ça se passe mal)**
 >

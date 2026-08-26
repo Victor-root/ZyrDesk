@@ -673,6 +673,18 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Seulement à l'aller.** La fin d'une session rend l'écran mais ne touche pas à la taille de la fenêtre. Rapetisser la fenêtre de quelqu'un après une heure passée dedans serait un geste que personne n'a demandé.
 
+## D55. Celui qui appelle se présente (2026-08-26, pendant M4)
+
+**Le relevé, sur un troisième ordinateur.** Un PC au travail, joint depuis la maison par un tunnel WireGuard. La découverte marche : `PC-SAV at 192.168.2.5 answered a call on the local network`, et son empreinte entre dans la liste de ceux qui peuvent venir. La session, elle, est refusée à tous les coups : `no way to 192.168.2.5:47000 … Détail : read error: connection lost`.
+
+**Ce que ce message dit vraiment.** La connexion s'est faite. Le code ne se serait pas plaint de ça sinon, il aurait dit « ne répond pas sur le port 47000 ». Elle a été établie, puis coupée par l'ordinateur d'en face au premier échange réel, qui est exactement le moment où il juge le certificat de celui qui arrive. Autrement dit : ce n'est ni le pare-feu, ni le tunnel, ni la route. C'est un refus, et un refus veut dire une seule chose ici, que cet ordinateur-là ne connaissait pas celui-ci.
+
+**Pourquoi il ne le connaissait pas.** La découverte tenait en deux mots. Une machine crie « qui est là ? » et les autres répondent « moi, voici où je suis ». Le cri ne disait rien de celui qui criait. Donc celle qui appelle apprend, celle qui est appelée n'apprend rien. Sur un réseau ordinaire ça ne se voit jamais : les deux crient, les deux apprennent, en une seconde. Sur un tunnel privé entre deux machines, un seul bout a un voisinage à balayer, l'autre porte une adresse unique et n'a personne à appeler. Ce bout-là restait un inconnu pour toujours, et refusait chaque session comme telle.
+
+**Corrigé en faisant dire son nom à celui qui appelle.** La question porte désormais ce que portait déjà la réponse : le port, l'empreinte et le nom. Celui qui est appelé écrit son appelant sur sa liste avant de lui répondre. La découverte fonctionne alors dans les deux sens, même quand un seul des deux peut tendre la main.
+
+**Ce que ça ne change pas.** La règle de confiance est la même mot pour mot : qui dit où il est, sur un réseau que cet ordinateur tient pour sûr, est un voisin. Appeler et répondre sont la même déclaration ; il n'y en avait qu'une des deux d'écoutée. Et une question sans présentation, qui est ce que disaient les versions d'avant, reçoit toujours sa réponse et n'apprend toujours rien : un ordinateur mis à jour d'un seul côté doit continuer de trouver l'autre, sinon la correction couperait ce qu'elle prétend réparer.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

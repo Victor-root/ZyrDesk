@@ -71,17 +71,67 @@ const LIMIT: usize = 512;
 /// How long the socket waits before letting the loop look at the clock.
 const WAKE: Duration = Duration::from_millis(500);
 
+/// What a computer says about itself, whether it is asking or answering.
+///
+/// The same three things either way, and that is the point: a computer
+/// calling out is announcing itself exactly as plainly as one answering,
+/// and there is no reason for only one of the two to be heard.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Itself {
+    port: u16,
+    fingerprint: Fingerprint,
+    name: String,
+}
+
+impl Itself {
+    fn said(&self) -> String {
+        format!("{} {} {}", self.port, self.fingerprint, self.name)
+    }
+
+    /// Reads it back off what is left of a line.
+    fn read<'a>(pieces: &mut impl Iterator<Item = &'a str>) -> Option<Self> {
+        let port = pieces.next()?.parse().ok()?;
+        // The fingerprint and the name travel together in what is left,
+        // the name last since it is the only one that may hold a space.
+        let (fingerprint, name) = pieces.next()?.split_once(' ')?;
+        let name = name.trim();
+        if name.is_empty() {
+            return None;
+        }
+        Some(Itself {
+            port,
+            fingerprint: fingerprint.parse().ok()?,
+            name: name.to_string(),
+        })
+    }
+}
+
 /// What is said on this port.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Said {
-    /// Who is there?
-    Who,
+    /// Who is there, and this is who is asking.
+    ///
+    /// The asking half is what makes a neighbourhood work both ways. A
+    /// computer only ever learns of another by hearing it say where it
+    /// is, and until this it only said so when answering: the one that
+    /// called learned, the one that was called learned nothing. On any
+    /// network where both sides can call out, the two find each other
+    /// within a round and nobody notices. On a network where only one
+    /// side can, which is what a private tunnel between two machines
+    /// looks like when one end holds a single address and no
+    /// neighbourhood to sweep, the far computer stayed a stranger for
+    /// ever and turned away every session as one.
+    ///
+    /// Said and not merely implied, because being called tells a
+    /// computer an address and nothing else, and an address is not who
+    /// somebody is.
+    ///
+    /// Absent from an older ZyrDesk, which asked without introducing
+    /// itself, so it is read as a maybe and never as a promise. Such a
+    /// question is still answered, exactly as before.
+    Who { asking: Option<Itself> },
     /// This computer is, and this is how to reach it.
-    Here {
-        port: u16,
-        fingerprint: Fingerprint,
-        name: String,
-    },
+    Here(Itself),
     /// This computer is leaving, now.
     ///
     /// Waiting for it to stop answering works and takes ten seconds;
@@ -101,39 +151,29 @@ impl Said {
             return None;
         }
         match pieces.next()? {
-            "who" => Some(Said::Who),
+            "who" => Some(Said::Who {
+                asking: Itself::read(&mut pieces),
+            }),
             "bye" => Some(Said::Bye {
                 fingerprint: pieces.next()?.trim().parse().ok()?,
             }),
-            "here" => {
-                let port = pieces.next()?.parse().ok()?;
-                // The fingerprint and the name travel together in what is
-                // left, the name last since it is the only one that may
-                // hold a space.
-                let rest = pieces.next()?;
-                let (fingerprint, name) = rest.split_once(' ')?;
-                let name = name.trim();
-                if name.is_empty() {
-                    return None;
-                }
-                Some(Said::Here {
-                    port,
-                    fingerprint: fingerprint.parse().ok()?,
-                    name: name.to_string(),
-                })
-            }
+            "here" => Some(Said::Here(Itself::read(&mut pieces)?)),
             _ => None,
         }
     }
 
     fn spoken(&self) -> String {
         match self {
-            Said::Who => format!("{MARK} {VERSION} who"),
-            Said::Here {
-                port,
-                fingerprint,
-                name,
-            } => format!("{MARK} {VERSION} here {port} {fingerprint} {name}"),
+            // An older ZyrDesk reads the words it knows and stops, so the
+            // introduction rides along on a question it still understands
+            // rather than on a word it would throw away.
+            Said::Who { asking: None } => format!("{MARK} {VERSION} who"),
+            Said::Who {
+                asking: Some(itself),
+            } => {
+                format!("{MARK} {VERSION} who {}", itself.said())
+            }
+            Said::Here(itself) => format!("{MARK} {VERSION} here {}", itself.said()),
             Said::Bye { fingerprint } => format!("{MARK} {VERSION} bye {fingerprint}"),
         }
     }
@@ -247,7 +287,10 @@ impl Calls {
 
     /// Asks the networks this computer is on who else is there.
     fn call_out(&mut self, now: Instant) {
-        let question = Said::Who.spoken();
+        let question = Said::Who {
+            asking: Some(self.itself()),
+        }
+        .spoken();
         let around = self.found.peers();
 
         // Those already known are asked to their face, every round. It is
@@ -311,12 +354,18 @@ impl Calls {
             return;
         };
         match said {
-            Said::Who => self.answer(from),
-            Said::Here {
-                port,
-                fingerprint,
-                name,
-            } => self.note(from, port, fingerprint, name),
+            Said::Who { asking } => {
+                // Written down before the answer goes back out, so that
+                // a computer which cannot call out is still known to the
+                // one that can, and by the same rule: whoever says where
+                // they are on a network this computer trusts is a
+                // neighbour, asking or answering.
+                if let Some(asking) = asking {
+                    self.note(from, asking);
+                }
+                self.answer(from);
+            }
+            Said::Here(said) => self.note(from, said),
             Said::Bye { fingerprint } => self.goodbye(fingerprint, from),
         }
     }
@@ -329,27 +378,31 @@ impl Calls {
         }
     }
 
-    /// Answers whoever asked, to their face and not to the whole network.
-    fn answer(&self, asking: SocketAddr) {
-        let here = Said::Here {
+    /// What this computer says about itself, asking or answering.
+    fn itself(&self) -> Itself {
+        Itself {
             port: TUNNEL_PORT,
             fingerprint: self.fingerprint,
             name: self.name.clone(),
-        };
-        self.say(&here.spoken(), asking);
+        }
     }
 
-    /// Writes down a computer that answered.
-    fn note(&self, from: SocketAddr, port: u16, fingerprint: Fingerprint, name: String) {
+    /// Answers whoever asked, to their face and not to the whole network.
+    fn answer(&self, asking: SocketAddr) {
+        self.say(&Said::Here(self.itself()).spoken(), asking);
+    }
+
+    /// Writes down a computer that said where it is.
+    fn note(&self, from: SocketAddr, said: Itself) {
         // This computer hears its own broadcast: it is not a neighbour.
-        if fingerprint == self.fingerprint {
+        if said.fingerprint == self.fingerprint {
             return;
         }
         let peer = Peer {
-            name,
-            fingerprint,
+            name: said.name,
+            fingerprint: said.fingerprint,
             address: from.ip(),
-            port,
+            port: said.port,
         };
         let named = format!("{} at {}", peer.name, peer.address);
         if self.found.note(peer, Instant::now()) {
@@ -431,7 +484,13 @@ mod tests {
         let mut answering = computer("PC de Victor", 2, Found::new());
 
         let door = answering.socket.local_addr().unwrap();
-        asking.say(&Said::Who.spoken(), door);
+        asking.say(
+            &Said::Who {
+                asking: Some(asking.itself()),
+            }
+            .spoken(),
+            door,
+        );
         answering.listen();
 
         let mut asking = asking;
@@ -445,6 +504,55 @@ mod tests {
     }
 
     #[test]
+    fn a_computer_that_is_called_learns_who_called_it() {
+        // Le défaut qui a coûté un ordinateur entier. Une machine ne
+        // connaissait que celles qui lui avaient répondu, donc seule
+        // celle qui appelle apprenait quelque chose. Sur un tunnel privé
+        // entre deux machines, où un seul des deux bouts a un voisinage
+        // à balayer, l'autre restait un inconnu pour toujours et
+        // refusait chaque session comme telle.
+        let heard = Found::new();
+        let asking = computer("PC-PORTABLE", 1, Found::new());
+        let mut answering = computer("PC de Victor", 2, heard.clone());
+
+        let door = answering.socket.local_addr().unwrap();
+        asking.say(
+            &Said::Who {
+                asking: Some(asking.itself()),
+            }
+            .spoken(),
+            door,
+        );
+        answering.listen();
+
+        let found = heard.peers();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].name, "PC-PORTABLE");
+        assert_eq!(found[0].port, TUNNEL_PORT);
+    }
+
+    #[test]
+    fn a_question_from_an_older_zyrdesk_is_still_answered() {
+        // Le mot « who » tout seul est ce que disaient les versions
+        // d'avant. Il ne présente personne, donc il n'apprend rien, mais
+        // il doit toujours recevoir sa réponse : sinon une mise à jour
+        // d'un seul côté couperait la découverte au lieu de l'améliorer.
+        let heard = Found::new();
+        let list = Found::new();
+        let asking = computer("PC-PORTABLE", 1, list.clone());
+        let mut answering = computer("PC de Victor", 2, heard.clone());
+
+        let door = answering.socket.local_addr().unwrap();
+        asking.say(&Said::Who { asking: None }.spoken(), door);
+        answering.listen();
+        assert!(heard.peers().is_empty(), "{:?}", heard.peers());
+
+        let mut asking = asking;
+        asking.listen();
+        assert_eq!(list.peers().len(), 1, "{:?}", list.peers());
+    }
+
+    #[test]
     fn a_computer_never_finds_itself() {
         // Une machine reçoit sa propre diffusion : sans ce garde-fou elle
         // s'inscrirait dans la liste de ses propres voisins, et l'écran
@@ -453,7 +561,13 @@ mod tests {
         let mut me = computer("PC-BUREAU", 1, list.clone());
         let door = me.socket.local_addr().unwrap();
 
-        me.say(&Said::Who.spoken(), door);
+        me.say(
+            &Said::Who {
+                asking: Some(me.itself()),
+            }
+            .spoken(),
+            door,
+        );
         // La question, puis la réponse qu'elle s'est faite à elle-même.
         me.listen();
         me.listen();
@@ -471,7 +585,13 @@ mod tests {
         let mut answering = computer("PC de Victor", 2, Found::new());
 
         let door = answering.socket.local_addr().unwrap();
-        asking.say(&Said::Who.spoken(), door);
+        asking.say(
+            &Said::Who {
+                asking: Some(asking.itself()),
+            }
+            .spoken(),
+            door,
+        );
         answering.listen();
         asking.listen();
         assert_eq!(list.peers().len(), 1);
@@ -505,15 +625,19 @@ mod tests {
 
     #[test]
     fn everything_said_here_survives_the_round_trip() {
+        let card = Itself {
+            port: TUNNEL_PORT,
+            fingerprint: fingerprint(),
+            // Un nom d'ordinateur porte des espaces, et il est écrit
+            // en dernier pour cela.
+            name: "PC de Victor".to_string(),
+        };
         for said in [
-            Said::Who,
-            Said::Here {
-                port: TUNNEL_PORT,
-                fingerprint: fingerprint(),
-                // Un nom d'ordinateur porte des espaces, et il est écrit
-                // en dernier pour cela.
-                name: "PC de Victor".to_string(),
+            Said::Who { asking: None },
+            Said::Who {
+                asking: Some(card.clone()),
             },
+            Said::Here(card),
         ] {
             let line = said.spoken();
             assert_eq!(Said::read(&line), Some(said), "sur « {line} »");
