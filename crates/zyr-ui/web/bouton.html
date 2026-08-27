@@ -185,6 +185,20 @@
           <span class="item-touche">sur l'ordinateur distant</span>
         </button>
 
+        <!-- Windows+L, qui ne peut pas voyager : Windows la traite là où
+             aucun programme ne la voit, et il ne laisse lever un écran de
+             verrouillage qu'aux programmes assis au bureau qu'on
+             verrouille. Elle prend donc le même chemin que la ligne
+             au-dessus, et c'est le service d'en face qui la lève. -->
+        <button class="item" type="button" data-acte="lock" role="menuitem">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="4" y="10.5" width="16" height="10.5" rx="2" />
+            <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5M12 14.5v2.5" />
+          </svg>
+          <span class="item-mot">Verrouiller</span>
+          <span class="item-touche">l'ordinateur distant</span>
+        </button>
+
         <div class="separateur" role="separator"></div>
 
         <!-- Les trois nombres qu'on règle en regardant l'image qu'ils

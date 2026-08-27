@@ -90,6 +90,20 @@ fn main() -> ExitCode {
         return ExitCode::from(session::move_the_speakers(quiet) as u8);
     }
 
+    // And a fourth, to lock the screen. The other way round from
+    // Ctrl+Alt+Suppr, which the service presses in its own process:
+    // Windows takes that one from a service and nothing else, and this
+    // one from the interactive desktop and nothing else. Both refusals
+    // protect what a lock screen is worth.
+    #[cfg(windows)]
+    if session::asked_to_lock_the_screen() {
+        return if session::lock_this_desktop() {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
+
     match Cli::parse().command {
         Some(command) => run(command),
         None => {

@@ -64,6 +64,10 @@ impl Answers for NoEngine {
     fn hush_the_speakers(&self, _quiet: bool) -> Result<(), String> {
         Err("le banc de mesure n'a pas d'enceintes".to_string())
     }
+
+    fn lock_the_screen(&self) -> Result<(), String> {
+        Err("le banc de mesure n'a pas d'écran à verrouiller".to_string())
+    }
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);

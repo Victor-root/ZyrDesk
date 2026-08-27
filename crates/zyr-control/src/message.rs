@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 18;
+pub const PROTOCOL: u32 = 19;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -114,6 +114,15 @@ pub enum Request {
     /// The far ZyrDesk presses it on its own machine, which is the one
     /// program there the system will let.
     SecureAttention { way: WayId },
+    /// Asks the far computer to put its lock screen up.
+    ///
+    /// What stands in for Windows+L, which cannot travel: Windows keeps
+    /// that combination where no program can reach it, at both ends of a
+    /// session, and it keeps the raising of a lock screen for programs
+    /// sitting at the desk being locked. So the ask goes round the same
+    /// way Ctrl+Alt+Suppr does, and the far ZyrDesk does it from the one
+    /// place its own Windows will take it from.
+    LockScreen { way: WayId },
     /// Asks the far computer to silence its own speakers for the length
     /// of the session, or to let them play again.
     ///
@@ -208,6 +217,9 @@ impl Request {
             "sas" => Ok(Request::SecureAttention {
                 way: WayId(fields.parsed("way")?),
             }),
+            "lock" => Ok(Request::LockScreen {
+                way: WayId(fields.parsed("way")?),
+            }),
             "hush" => Ok(Request::Hush {
                 way: WayId(fields.parsed("way")?),
                 quiet: fields.text("quiet")? == "yes",
@@ -269,6 +281,7 @@ impl fmt::Display for Request {
             ),
             Request::Pair { way, pin } => write!(f, "pair way={way} pin={pin}"),
             Request::SecureAttention { way } => write!(f, "sas way={way}"),
+            Request::LockScreen { way } => write!(f, "lock way={way}"),
             Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
@@ -725,6 +738,7 @@ mod tests {
             },
             Request::Release { way: WayId(3) },
             Request::SecureAttention { way: WayId(3) },
+            Request::LockScreen { way: WayId(3) },
             Request::Hush {
                 way: WayId(3),
                 quiet: true,

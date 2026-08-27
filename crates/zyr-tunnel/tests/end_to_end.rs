@@ -49,6 +49,8 @@ struct FakeEngine {
     /// Whether the far computer was asked to go quiet. Written down for
     /// the same reason: nothing here has speakers to silence.
     hushed: Arc<AtomicBool>,
+    /// Whether it was asked to lock itself, for the same reason again.
+    locked: Arc<AtomicBool>,
 }
 
 impl Answers for FakeEngine {
@@ -76,6 +78,11 @@ impl Answers for FakeEngine {
         self.hushed.store(quiet, Ordering::Relaxed);
         Ok(())
     }
+
+    fn lock_the_screen(&self) -> Result<(), String> {
+        self.locked.store(true, Ordering::Relaxed);
+        Ok(())
+    }
 }
 
 /// The tunnel brought up on both sides, kept alive for the test.
@@ -97,6 +104,8 @@ struct Bench {
     attended: Arc<AtomicU32>,
     /// Whether the far ZyrDesk was asked to silence its speakers.
     hushed: Arc<AtomicBool>,
+    /// Whether it was asked to put its lock screen up.
+    locked: Arc<AtomicBool>,
 }
 
 impl Bench {
@@ -133,6 +142,7 @@ impl Bench {
         let handed = Arc::new(std::sync::Mutex::new(Vec::new()));
         let attended = Arc::new(AtomicU32::new(0));
         let hushed = Arc::new(AtomicBool::new(false));
+        let locked = Arc::new(AtomicBool::new(false));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -141,6 +151,7 @@ impl Bench {
                 handed: handed.clone(),
                 attended: attended.clone(),
                 hushed: hushed.clone(),
+                locked: locked.clone(),
             }),
         )
         .await
@@ -165,6 +176,7 @@ impl Bench {
             handed,
             attended,
             hushed,
+            locked,
         }
     }
 
@@ -272,6 +284,21 @@ async fn couper_le_son_de_l_hote_se_demande_depuis_le_client() {
         .await
         .unwrap();
     assert!(!bench.hushed.load(Ordering::Relaxed));
+}
+
+#[tokio::test]
+async fn verrouiller_l_ordinateur_distant_passe_par_le_canal_du_produit() {
+    // Windows+L ne voyage pas : Windows la traite là où aucun programme
+    // ne la voit, aux deux bouts d'une session, et c'est exactement ce
+    // qui fait qu'un écran de verrouillage vaut quelque chose. La demande
+    // prend donc le chemin de Ctrl+Alt+Suppr, et le service d'en face
+    // lève l'écran depuis le seul endroit d'où son Windows l'accepte.
+    let bench = Bench::bring_up(42750, 11).await;
+
+    before_the_end(aside::ask_to_lock(&bench.connection))
+        .await
+        .unwrap();
+    assert!(bench.locked.load(Ordering::Relaxed));
 }
 
 #[tokio::test]

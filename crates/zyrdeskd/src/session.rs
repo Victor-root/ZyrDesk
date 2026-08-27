@@ -88,6 +88,14 @@ pub const SPEAKERS_MOVED: u32 = 0;
 pub const SPEAKERS_REFUSED: u32 = 1;
 pub const SPEAKERS_ALREADY: u32 = 2;
 
+/// And the same for locking this computer's screen; see
+/// `lock_this_desktop`.
+///
+/// Windows will only take that order from a program on the interactive
+/// desktop, which a service is not, and there is no way round it: it is
+/// what makes a lock screen worth trusting.
+pub const LOCK_ARGUMENT: &str = "--lock-the-screen";
+
 /// Time left to the ask itself: starting a program in another session,
 /// attaching to a console and sending one interruption down it.
 ///
@@ -423,6 +431,46 @@ pub fn move_the_speakers(quiet: bool) -> u32 {
             SPEAKERS_REFUSED
         }
     }
+}
+
+/// Locks this computer's screen, from the session that owns it.
+///
+/// The other half of Ctrl+Alt+Suppr, and the other way round. That one
+/// goes through the service's own process, because Windows takes it from
+/// a service and from nothing else; this one goes through a program on
+/// the interactive desktop, because Windows takes it from there and from
+/// nothing else. Both refusals protect the same thing: what a lock screen
+/// is worth depends on nobody being able to put one up, or take one
+/// down, from outside the desk it belongs to.
+pub fn lock_the_screen() -> io::Result<()> {
+    let session =
+        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
+    errand(
+        session,
+        &[LOCK_ARGUMENT.to_string()],
+        "the screen could not be locked from the session that owns it",
+    )
+}
+
+/// Whether this program was started to lock the screen.
+pub fn asked_to_lock_the_screen() -> bool {
+    std::env::args().any(|a| a == LOCK_ARGUMENT)
+}
+
+/// Locks it, from inside the session that owns the screen.
+///
+/// This is the whole of what this program does when started with
+/// `LOCK_ARGUMENT`. Windows takes the order and returns before the screen
+/// has actually gone: what comes back says the order was accepted, and
+/// nothing more is worth waiting for, the person who asked being at the
+/// other end of a picture that will show them the lock screen.
+#[cfg(windows)]
+pub fn lock_this_desktop() -> bool {
+    use windows_sys::Win32::System::Shutdown::LockWorkStation;
+
+    // Safe: no buffer of ours, and it answers with nought when it
+    // refuses.
+    unsafe { LockWorkStation() != 0 }
 }
 
 /// Runs this program in another Windows session, for one short errand.

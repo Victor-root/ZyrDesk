@@ -893,6 +893,20 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Le journal dit maintenant quel éditeur a été nommé.** Dire à une machine d'attendre des pilotes de quelqu'un sans écrire de qui, c'est le genre de ligne qu'on ne peut pas vérifier.
 
+## D71. Verrouiller l'ordinateur distant est une entrée du menu, comme Ctrl+Alt+Suppr (2026-08-27, pendant M4)
+
+**La demande.** « Pour Windows+L tu peux faire une option dans le bouton flottant comme pour Ctrl+Alt+Suppr, du coup ? »
+
+**Oui, et c'est la même réponse au même problème.** [D68](#d68-le-clavier-immersif-prend-tout-ce-quun-logiciel-peut-prendre-et-dit-ce-quil-ne-peut-pas-2026-08-27-pendant-m4) a établi que Windows+L ne peut ni être attrapée ici ni être tapée là-bas, quel que soit le mode du clavier. Une touche qui ne peut pas voyager n'est pas une touche perdue : c'est une entrée de menu qui manque. C'est exactement le raisonnement qui a donné son entrée à Ctrl+Alt+Suppr, et il ne demande pas à être refait.
+
+**Décision : la demande prend le canal du produit, et le service d'en face lève l'écran.** Même chemin, même forme, même endroit dans le menu, juste en dessous.
+
+**Et c'est le miroir exact de Ctrl+Alt+Suppr, jusque dans la mécanique.** Windows n'accepte cette frappe-là **que** d'un service, donc le service la presse dans son propre processus. Il n'accepte de lever un écran de verrouillage **que** d'un programme assis sur le bureau interactif, ce qu'un service n'est justement pas ; le service se relance donc une seconde dans la session qui tient l'écran, ce qu'il sait déjà faire pour deux autres besoins et qui ne demandait aucune mécanique nouvelle.
+
+**Les deux refus de Windows disent la même chose.** Ce que vaut un écran de verrouillage tient entièrement à ce que personne ne puisse le lever ni le baisser depuis l'extérieur du bureau auquel il appartient. Ce n'est pas une gêne qu'on contourne, c'est la garantie qu'on utilise : la demande passe par le seul programme de cette machine-là à qui son propre Windows accorde ce geste, et jamais par le clavier.
+
+**Ce qu'il faut savoir en s'en servant.** L'image ne se coupe pas : le moteur hôte tourne avec les droits du système et sait capturer l'écran de verrouillage. On voit donc l'ordinateur d'en face se verrouiller, et on peut le déverrouiller de loin si on a le mot de passe, en s'aidant de l'entrée Ctrl+Alt+Suppr quand cette machine la réclame.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

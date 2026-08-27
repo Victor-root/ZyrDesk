@@ -436,6 +436,28 @@ impl Ways {
         Ok(())
     }
 
+    /// Asks the far computer to put its lock screen up.
+    ///
+    /// The same shape again. This is what stands in for Windows+L, which
+    /// cannot travel: Windows keeps that one where no program can reach
+    /// it, at both ends of a session.
+    pub async fn ask_to_lock(&self, way: WayId) -> Result<(), String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        aside::ask_to_lock(&connection)
+            .await
+            .map_err(|e| format!("l'ordinateur distant ne s'est pas verrouillé : {e}"))?;
+        self.log
+            .write(&format!("way {way} asked the far computer to lock itself"));
+        Ok(())
+    }
+
     pub fn hold(&self, way: WayId, process: u32) -> bool {
         let held = self
             .register

@@ -52,6 +52,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R41** | Nouveau. Le curseur passait au sens interdit pendant le déplacement du bouton flottant, là où c'est une main qui agrippe qu'il faut voir |
 | **R42** | Nouveau. La touche Windows n'arrivait jamais sur la session : le moteur la retenait derrière une porte qui demandait à sa fenêtre d'être au premier plan, ce qu'une fenêtre portée dans la nôtre ne peut jamais être. Elle part maintenant, avec Impr. écran et Alt+F4, sous un interrupteur **Clavier : Partagé ou Immersif** |
 | **R43** | Nouveau. Le bouton flottant décrochait du curseur pendant un déplacement de haut en bas, et une croix restait par-dessus l'image. Une seule cause : le sens d'ouverture du menu était lu au coeur alors que seule la page sait dans quel sens elle vient de dessiner |
+| **R44** | Nouveau. Une entrée **Verrouiller** dans le menu de la session, qui verrouille l'ordinateur distant. C'est la réponse à Windows+L, qui ne peut pas voyager : la demande prend le canal du produit comme Ctrl+Alt+Suppr, et le service d'en face lève l'écran |
 | **R27** | **Refait, et c'est le sujet du lot.** L'écran virtuel ne s'installait sur aucune machine à qui le pilote n'avait pas été donné à la main : la lecture de sa signature posait au fichier une question trop large, à laquelle Windows répond par la liste d'empreintes du catalogue et non par les certificats. À refaire sur une machine qui n'a jamais eu d'écran virtuel |
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
@@ -1283,6 +1284,20 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Et ça survit à une relance.** Laisser l'interrupteur sur **Partagé**, terminer la session, en rouvrir une : il doit encore être sur **Partagé**.
 >
 > Le journal du moteur client (`session.log`) dit `zyr: the system's keys now go to the session` et `... to this computer` à chaque bascule, et une ligne de comptes une fois par seconde où `passed: N switch off` est ce que l'interrupteur a laissé passer.
+
+> **R44 (verrouiller l'ordinateur distant)**
+>
+> Pendant une session, ouvrir le menu du bouton flottant et cliquer **Verrouiller**.
+>
+> Attendu : l'ordinateur d'en face se verrouille, et **on le voit dans l'image**. Le moteur hôte tourne avec les droits du système et sait capturer l'écran de verrouillage, donc la session ne se coupe pas : elle montre l'écran de connexion.
+>
+> Depuis là, se déverrouiller de loin : taper le mot de passe. Si cette machine réclame Ctrl+Alt+Suppr avant, l'entrée du menu juste au-dessus le fait.
+>
+> **Sur l'ordinateur d'en face**, si tu peux le voir : son écran physique montre la même chose. C'est un vrai verrouillage de Windows, pas une image.
+>
+> Le journal du service **d'en face** dit `the far computer asked this one to lock itself`, et celui de l'ordinateur qui regarde `way N asked the far computer to lock itself`. Un refus est écrit en clair : `this computer not locked: ...`.
+>
+> **Le cas où il n'y a personne.** Si l'ordinateur d'en face est déjà sur son écran de connexion, personne n'est en session dessus et il n'y a rien à verrouiller : le menu répond `no session owns the screen`, ce qui est la vérité et pas une panne.
 
 > **R43 (le bouton suit le curseur, et ne laisse rien derrière lui)**
 > 

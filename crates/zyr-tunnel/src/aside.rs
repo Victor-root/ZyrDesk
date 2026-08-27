@@ -35,7 +35,7 @@ use crate::pump;
 /// Version 1 was three bytes carrying nothing but the ports. Version 2
 /// added the pairing code. Version 3 added the one keystroke no keyboard
 /// can carry. Version 4 added the far computer's speakers.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 5;
 
 /// Longest message this channel takes.
 ///
@@ -83,6 +83,15 @@ pub trait Answers: Send + Sync + 'static {
     /// sound comes back when the session goes, whatever became of the
     /// computer that asked.
     fn hush_the_speakers(&self, quiet: bool) -> Result<(), String>;
+
+    /// Puts this computer's lock screen up.
+    ///
+    /// The other half of Ctrl+Alt+Suppr and the mirror of it. That one
+    /// only a service may press; this one only a program sitting on the
+    /// interactive desktop may ask for. The two refusals are the same
+    /// idea seen from both sides: a lock screen nobody can raise or
+    /// lower from outside the desk is a lock screen worth something.
+    fn lock_the_screen(&self) -> Result<(), String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -97,6 +106,8 @@ pub enum Question {
     SecureAttention,
     /// Go quiet, or play again, for as long as this session lasts.
     Hush { quiet: bool },
+    /// Put your lock screen up.
+    Lock,
 }
 
 /// What comes back.
@@ -109,6 +120,8 @@ pub enum Told {
     Attended,
     /// The far computer's speakers are as they were asked to be.
     Hushed,
+    /// The far computer's screen is being locked.
+    Locked,
 }
 
 impl fmt::Display for Question {
@@ -119,6 +132,7 @@ impl fmt::Display for Question {
             Question::Pair { pin, name } => write!(f, "{VERSION} pair {pin} {name}"),
             Question::Ports => write!(f, "{VERSION} ports"),
             Question::SecureAttention => write!(f, "{VERSION} sas"),
+            Question::Lock => write!(f, "{VERSION} lock"),
             Question::Hush { quiet } => {
                 write!(
                     f,
@@ -137,6 +151,7 @@ impl fmt::Display for Told {
             Told::Paired => write!(f, "{VERSION} paired"),
             Told::Attended => write!(f, "{VERSION} attended"),
             Told::Hushed => write!(f, "{VERSION} hushed"),
+            Told::Locked => write!(f, "{VERSION} locked"),
         }
     }
 }
@@ -148,6 +163,7 @@ impl Question {
         match verb {
             "ports" => Ok(Question::Ports),
             "sas" => Ok(Question::SecureAttention),
+            "lock" => Ok(Question::Lock),
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
                 "play" => Ok(Question::Hush { quiet: false }),
@@ -184,6 +200,7 @@ impl Told {
             "paired" => Ok(Ok(Told::Paired)),
             "attended" => Ok(Ok(Told::Attended)),
             "hushed" => Ok(Ok(Told::Hushed)),
+            "locked" => Ok(Ok(Told::Locked)),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -296,6 +313,20 @@ pub async fn ask_to_hush(connection: &Connection, quiet: bool) -> io::Result<()>
     }
 }
 
+/// Asks the far ZyrDesk to put its lock screen up.
+///
+/// The nearest thing there is to Windows+L on the far computer, and it
+/// exists because that combination itself cannot travel: Windows keeps it
+/// where no program can reach it, at both ends. So the ask goes round by
+/// the product's own channel, and the far service raises the screen from
+/// the one place its Windows will take that order.
+pub async fn ask_to_lock(connection: &Connection) -> io::Result<()> {
+    match ask(connection, &Question::Lock).await? {
+        Told::Locked => Ok(()),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -348,6 +379,12 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .map_err(|e| format!("les enceintes n'ont pas pu être touchées : {e}"))?
                 .map(|()| Told::Hushed)
         }
+        // And off it again: locking means starting a program in the
+        // session that owns the screen and waiting for it.
+        Question::Lock => tokio::task::spawn_blocking(move || answering.lock_the_screen())
+            .await
+            .map_err(|e| format!("le verrouillage n'a pas pu être mené : {e}"))?
+            .map(|()| Told::Locked),
     }
 }
 
@@ -381,6 +418,9 @@ mod tests {
                 name: "PC de Victor".to_string(),
             },
             Question::SecureAttention,
+            Question::Hush { quiet: true },
+            Question::Hush { quiet: false },
+            Question::Lock,
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -389,7 +429,13 @@ mod tests {
 
     #[test]
     fn every_answer_survives_the_round_trip() {
-        for told in [Told::Ports(ports(42000)), Told::Paired, Told::Attended] {
+        for told in [
+            Told::Ports(ports(42000)),
+            Told::Paired,
+            Told::Attended,
+            Told::Hushed,
+            Told::Locked,
+        ] {
             let said = told.to_string();
             assert_eq!(Told::parse(&said).unwrap(), Ok(told), "sur « {said} »");
         }

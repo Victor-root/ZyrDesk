@@ -63,7 +63,14 @@ Ce n'est pas une limite de ZyrDesk ni un morceau qui manque. Windows traite ces 
 
 Symétriquement, ils ne s'envoient pas non plus : le moteur d'en face pose les touches avec le même mécanisme ordinaire, qui ne peut pas plus déclencher Windows+L là-bas qu'ici.
 
-Ctrl+Alt+Suppr a donc sa propre entrée dans le menu, qui ne passe pas par le clavier du tout : elle voyage sur le canal du produit et c'est le service d'en face qui la presse, étant le seul programme de cette machine autorisé à le faire ([D59](DECISIONS.md)). Verrouiller l'ordinateur d'en face se fait par là, ou par le menu Démarrer distant que la touche Windows ouvre maintenant.
+**Elles ont donc chacune leur entrée dans le menu**, qui ne passe pas par le clavier du tout : la demande voyage sur le canal du produit et c'est le service d'en face qui l'exécute, étant le seul programme de cette machine à qui son Windows l'accorde.
+
+| Ce qu'on veut | Ce qu'on fait |
+|---|---|
+| Ctrl+Alt+Suppr sur l'ordinateur distant | l'entrée **Ctrl+Alt+Suppr** du menu ([D59](DECISIONS.md)) |
+| Verrouiller l'ordinateur distant | l'entrée **Verrouiller** du menu ([D71](DECISIONS.md)) |
+
+Les deux sont exactement symétriques et pour la même raison, vue des deux côtés. Ctrl+Alt+Suppr, Windows ne l'accepte **que** d'un service, donc le service la presse dans son propre processus. Lever un écran de verrouillage, Windows ne l'accepte **que** d'un programme assis sur le bureau interactif, ce qu'un service n'est pas, donc le service se relance une seconde dans la session qui tient l'écran, exactement comme il le fait déjà pour couper les enceintes. Les deux refus protègent la même chose : ce que vaut un écran de verrouillage tient à ce que personne ne puisse le lever, ni le baisser, depuis l'extérieur du bureau auquel il appartient.
 
 ## Trois pièges, et pourquoi ils sont des pièges
 

@@ -150,6 +150,8 @@ pub enum Act {
     MouseMode,
     /// Ctrl+Alt+Suppr, pressed on the far computer.
     SecureAttention,
+    /// The far computer's lock screen, put up.
+    LockScreen,
     /// The session's own sound, hushed or given back on this computer.
     Sound,
     /// Which of the two computers Alt+Tab, Échap and the Windows key
@@ -165,6 +167,7 @@ impl Act {
             "stats" => Some(Act::Stats),
             "mouse" => Some(Act::MouseMode),
             "cad" => Some(Act::SecureAttention),
+            "lock" => Some(Act::LockScreen),
             "sound" => Some(Act::Sound),
             "keys" => Some(Act::SystemKeys),
             "end" => Some(Act::End),
@@ -175,21 +178,23 @@ impl Act {
     /// Letter of the engine's Ctrl+Alt+Shift shortcut, for the ones that
     /// have one.
     ///
-    /// Four do not. Ending a session is asked of the far computer over
+    /// Five do not. Ending a session is asked of the far computer over
     /// the tunnel, since what ends it there is that computer letting its
     /// desktop go; covering the screen is done to our own window, the
-    /// engine's having gone inside it; Ctrl+Alt+Suppr is the one
-    /// combination Windows keeps for itself at both ends, so it travels
-    /// on the product's own channel and is pressed over there by the
-    /// service, which is the one program on that machine allowed to; and
-    /// the sound is hushed on this computer's own mixer, where the
-    /// player has a strip like any other program.
+    /// engine's having gone inside it; the sound is hushed on this
+    /// computer's own mixer, where the player has a strip like any other
+    /// program; and the last two are the pair Windows keeps for itself at
+    /// both ends of a session, Ctrl+Alt+Suppr and the lock screen, which
+    /// travel on the product's own channel and are done over there by the
+    /// service, the one program on that machine allowed to.
     fn letter(self) -> Option<u8> {
         match self {
             Act::Stats => Some(b'S'),
             Act::MouseMode => Some(b'M'),
             Act::SystemKeys => Some(b'K'),
-            Act::Fullscreen | Act::SecureAttention | Act::Sound | Act::End => None,
+            Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
+                None
+            }
         }
     }
 
@@ -207,7 +212,9 @@ impl Act {
             Act::Stats => Some(0x1F),
             Act::MouseMode => Some(0x32),
             Act::SystemKeys => Some(0x25),
-            Act::Fullscreen | Act::SecureAttention | Act::Sound | Act::End => None,
+            Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
+                None
+            }
         }
     }
 }
@@ -219,6 +226,7 @@ impl std::fmt::Display for Act {
             Act::Stats => "statistiques",
             Act::MouseMode => "mode de la souris",
             Act::SecureAttention => "Ctrl+Alt+Suppr",
+            Act::LockScreen => "verrouillage de l'ordinateur distant",
             Act::Sound => "son de la session",
             Act::SystemKeys => "touches système",
             Act::End => "fin de la session",
@@ -1395,6 +1403,7 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
         }
         Act::End => return end_the_session(app).await,
         Act::SecureAttention => return press_ctrl_alt_del_over_there(app).await,
+        Act::LockScreen => return lock_over_there(app).await,
         Act::Sound => return hush_the_session(app).await,
         _ => {}
     }
@@ -1567,10 +1576,39 @@ async fn the_player_has_stopped(process: u32) -> bool {
 /// is handled here rather than among the keystrokes: it has no letter and
 /// no place on a keyboard, and never will.
 ///
-/// The session is found the way ending one finds it: the service knows
-/// every session on this computer, and it is the one the button hangs on
-/// that is meant, never merely the first of the list.
 async fn press_ctrl_alt_del_over_there(app: &AppHandle) -> Result<(), String> {
+    let way = the_way_of_this_session(app).await?;
+    crate::service::ask(&zyr_control::Request::SecureAttention { way })
+        .await
+        .map(|_| ())
+}
+
+/// Puts the far computer's lock screen up.
+///
+/// What stands in for Windows+L, and it exists because that combination
+/// itself cannot be made to travel. Windows handles it where no program
+/// can see it, on purpose: it is one of the two gestures that hand a
+/// machine back to whoever is sitting at it. Pressed here it locks this
+/// computer whatever a session is doing, and there is no way to type it
+/// over there either.
+///
+/// So it goes round the same way Ctrl+Alt+Suppr does, and for the same
+/// reason: some things a session needs have no letter, no place on a
+/// keyboard, and never will.
+async fn lock_over_there(app: &AppHandle) -> Result<(), String> {
+    let way = the_way_of_this_session(app).await?;
+    crate::service::ask(&zyr_control::Request::LockScreen { way })
+        .await
+        .map(|_| ())
+}
+
+/// The way this window's own session runs on.
+///
+/// Found the way ending one finds it: the service knows every session on
+/// this computer, and it is the one the button hangs on that is meant,
+/// never merely the first of the list. With two sessions open, what this
+/// menu asks for must reach the picture this menu belongs to.
+async fn the_way_of_this_session(app: &AppHandle) -> Result<zyr_control::WayId, String> {
     let watched = *app
         .state::<Floating>()
         .watched
@@ -1582,12 +1620,7 @@ async fn press_ctrl_alt_del_over_there(app: &AppHandle) -> Result<(), String> {
         .and_then(|process| sessions.iter().find(|session| session.process == process))
         .or_else(|| sessions.first())
         .ok_or("aucune session en cours")?;
-
-    crate::service::ask(&zyr_control::Request::SecureAttention {
-        way: zyr_control::WayId(ours.way),
-    })
-    .await
-    .map(|_| ())
+    Ok(zyr_control::WayId(ours.way))
 }
 
 /// Ends the session: the far computer is handed its desktop back, and

@@ -166,6 +166,42 @@ impl Answers for Attending {
         });
         Ok(())
     }
+
+    /// Puts this computer's lock screen up, for the far one.
+    ///
+    /// The mirror of Ctrl+Alt+Suppr just above, and the mirror in every
+    /// sense: that one only a service may press, and this one only a
+    /// program sitting on the interactive desktop may ask for. So it goes
+    /// out to the session that owns the screen and comes back, where the
+    /// other stays in this process.
+    fn lock_the_screen(&self) -> Result<(), String> {
+        match lock_it() {
+            Ok(()) => {
+                self.log
+                    .write("the far computer asked this one to lock itself");
+                Ok(())
+            }
+            Err(e) => {
+                let refused = e.to_string();
+                self.log
+                    .write(&format!("this computer not locked: {refused}"));
+                Err(refused)
+            }
+        }
+    }
+}
+
+/// Locks it, where there is a Windows to lock.
+#[cfg(windows)]
+fn lock_it() -> io::Result<()> {
+    crate::session::lock_the_screen()
+}
+
+#[cfg(not(windows))]
+fn lock_it() -> io::Result<()> {
+    Err(io::Error::other(
+        "cet ordinateur n'a pas d'écran de verrouillage à lever",
+    ))
 }
 
 /// Presses it, where there is a Windows to press it on.
