@@ -56,6 +56,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R45** | Nouveau. Le pointeur reste dans l'image quand elle occupe tout l'écran. Le moteur savait le faire et ne le faisait jamais : il posait la question à sa propre fenêtre, qui n'est jamais un écran entier chez nous. Sur une machine à deux écrans le pointeur s'en allait |
 | **R43** | Complété. Le bouton flottant additionnait l'écart depuis le début du geste : une main qui sortait de l'image laissait chaque pixel refusé dans la somme, et revenir ne bougeait rien tant qu'ils n'étaient pas tous rendus |
 | **R46** | Nouveau. Une ligne **Écran d'en face : Fluide ou Économe** dans le menu de la session. C'est le réglage de cadence de la machine regardée, demandé depuis celle qui regarde, et il part avec **Appliquer les changements** |
+| **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R27** | **Refait, et c'est le sujet du lot.** L'écran virtuel ne s'installait sur aucune machine à qui le pilote n'avait pas été donné à la main : la lecture de sa signature posait au fichier une question trop large, à laquelle Windows répond par la liste d'empreintes du catalogue et non par les certificats. À refaire sur une machine qui n'a jamais eu d'écran virtuel |
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
@@ -1341,6 +1342,10 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Le journal du service **d'en face** dit `a session asked this computer to start resending a still screen`, puis `how this computer serves was changed, the engine starts over with it`. Celui d'ici dit `way N asked the far computer to start resending a still screen`.
 >
 > **Et ça se retient.** Terminer la session, en rouvrir une : la ligne est restée où on l'a laissée, et la machine d'en face est demandée pareil.
+>
+> **Le chiffre qui tranche, et il faut le lire.** Ouvrir les statistiques (Ctrl+Alt+Maj+S) et **ne plus toucher à rien** : ni souris, ni clavier, pendant dix secondes. La cadence doit tenir **60**, ou tout près. Si elle s'installe nettement en dessous, faire le calcul : `1000 / (16,7 + temps d'encodage de l'hôte)`. Si le résultat tombe sur ce que tu lis, c'est ce défaut-là qui est de retour, et pas la machine d'en face qui plafonne.
+>
+> **Et il faut vraiment ne pas bouger la souris.** Dès qu'elle bouge, les images arrivent d'elles-mêmes et la cadence remonte quoi qu'il arrive : c'est ce qui a masqué le défaut pendant tout le temps où il était là.
 
 > **R18 (un réglage survit à tout)**
 >

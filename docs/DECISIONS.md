@@ -939,6 +939,22 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ce que ça ne change pas.** L'interrupteur de l'accueil reste ce qu'il est : le réglage de cette machine-ci quand c'est elle qu'on regarde, utile pour la poser une fois d'avance. Les deux disent la même chose sur des machines différentes, et le dernier qui parle gagne, ce qui est le comportement attendu d'un réglage qu'on peut changer des deux bouts.
 
+## D74. La cadence plancher d'un écran immobile est une période, pas un délai ajouté au travail (2026-08-27, pendant M4)
+
+**Le relevé.** « Le mode fluide ne fonctionne pas, je suis à 37 fps sauf quand je bouge la souris, là il passe à 60. »
+
+**Le réglage partait bien, et le moteur en face l'appliquait.** Le journal montre la demande à chaque ouverture de session. Ce n'était donc pas le chemin, c'était ce qu'il y a au bout.
+
+**Ce qui le faisait, et le chiffre le disait.** Le moteur hôte n'encode que lorsque son écran change, et se rattrape sur un écran immobile en réencodant l'image précédente au bout d'un temps donné, ce temps étant l'inverse de la cadence plancher. Or il était passé tel quel à l'attente d'une nouvelle image : **ajouté** à tout ce que la boucle fait par ailleurs au lieu de le couvrir. Sur un bureau immobile la période devenait l'attente **plus** l'encodage, et la cadence obtenue valait `1000 / (période + encodage)`.
+
+**Le calcul se vérifie sur les relevés du client, qui mesure lui-même le temps d'encodage de l'hôte.** Sur trois sessions indépendantes : 2,1 ms d'encodage prédisent 53,3 images par seconde, il en a été mesuré 52,98 ; 9,3 ms prédisent 38,5, il en a été rapporté 37 ; 22,2 ms prédisent 25,7 sur une machine qui en donnait 30 en moyenne, mouvements compris. La première correspond à deux décimales.
+
+**Et bouger la souris le masquait entièrement.** Les images arrivent alors d'elles-mêmes, l'attente se termine aussitôt, et la cadence redevient celle de la capture. D'où « ça marche quand je bouge la souris », qui est la description exacte d'un délai qui ne s'applique qu'à l'arrêt.
+
+**Décision : la boucle vise une échéance au lieu d'attendre une durée.** L'attente est ce qu'il reste du temps de cette image-là, donc l'encodage sort de l'attente au lieu de s'y ajouter. Et l'échéance suivante est une période après la précédente, jamais plus d'une période après maintenant : la première moitié tient l'écran immobile à la cadence demandée, la seconde empêche une rafale d'images réelles, qui arrivent plus vite que la boucle ne les attend, de repousser au loin la répétition qui la suit.
+
+**C'est un patch du moteur hôte, et le premier depuis le renommage.** Il n'a rien de ZyrDesk : le défaut touche tout bureau distant servi par ce moteur, et il est candidat à une contribution en amont. Il porte le plafond de Sunshine à deux sur deux, ce qui est le signal que le prochain besoin de ce côté se traite en amont ou par une interface officielle.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
