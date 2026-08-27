@@ -39,21 +39,31 @@ Le moteur reçoit le mode `--capture-system-keys zyrdesk`, qui est à nous (patc
 - **repose son crochet à chaque fois que le clavier revient à sa fenêtre**, donc il redevient le plus récent de la file aux moments précis où la panne se produisait. C'est la moitié qui compte ;
 - décide du **focus de sa propre fenêtre**, jamais du premier plan ;
 - ne prend une touche que si **le clavier vient réellement à cette fenêtre**, ce qui demande le focus *et* le premier plan, question posée d'un coup au système ;
-- n'avale que **Tab, Échap et la touche Windows**. Alt, Control et Majuscule passent intactes.
+- n'avale que **Tab, Échap, la touche Windows et Impr. écran**. Alt, Control et Majuscule passent intactes.
 
 Ce qu'il attrape est poussé dans sa file d'événements comme n'importe quelle frappe, donc le chemin qui l'envoie au loin est celui de toutes les autres touches, sans exception à maintenir.
 
-## L'interrupteur
+## L'interrupteur : clavier partagé ou immersif
 
 Prendre ces touches tout le temps est faux dans l'autre sens : la main qui va chercher Alt+Tab veut parfois une fenêtre de cet ordinateur-ci, et la touche Windows veut parfois ce menu Démarrer-là.
 
-C'est donc un interrupteur, dans le menu du bouton flottant, à côté de ceux de la souris et du son. À gauche « Ici », à droite « Session », et celui qui est en place est allumé, ce qui est tout l'intérêt : un réglage qui décide où va une touche doit dire où il en est sans qu'on essaie.
+C'est donc un interrupteur, dans le menu du bouton flottant, à côté de ceux de la souris et du son. **Clavier : Partagé ou Immersif**, et celui qui est en place est allumé, ce qui est tout l'intérêt : un réglage qui décide où va une touche doit dire où il en est sans qu'on essaie.
+
+En immersif, tout ce que Windows garde d'ordinaire pour lui part dans la session : Alt+Tab, Alt+Maj+Tab, Alt+Échap, Ctrl+Échap, la touche Windows seule et toutes ses combinaisons, la touche Impr. écran, et Alt+F4. Cette dernière n'est pas volée par le système mais par la boîte à outils du moteur, qui ferme sa fenêtre dessus : elle est priée de n'en rien faire tant que l'interrupteur est du côté immersif.
 
 - Il se bascule **sans relancer l'image** : ZyrDesk tape le raccourci du moteur `Ctrl+Alt+Maj+K` dans la fenêtre de l'image, exactement comme il bascule déjà la souris avec `Ctrl+Alt+Maj+M`.
 - Il est **retenu** : le côté où on le laisse est celui où la session suivante s'ouvre, ce que la ligne de commande porte en deux valeurs du même mode, `zyrdesk` et `zyrdesk-off`. Ce ne sont pas deux modes : ils ne diffèrent que par le côté de départ.
-- Il vaut « Session » par défaut. Une session dont la touche Windows ne fait rien sans qu'on sache pourquoi est exactement le défaut que tout ceci répare.
+- Il vaut **Immersif** par défaut. Une session dont la touche Windows ne fait rien sans qu'on sache pourquoi est exactement le défaut que tout ceci répare.
 
-**Deux choses ne se prennent jamais, quel que soit le côté.** Windows+L et Ctrl+Alt+Suppr sont hors de portée d'un crochet, par construction et pour de bonnes raisons : ils verrouillent la machine qui est devant vous. Ctrl+Alt+Suppr a sa propre entrée dans le menu, qui passe par le canal du produit et par le service d'en face.
+## Les deux qu'aucun logiciel n'aura jamais
+
+**Windows+L et Ctrl+Alt+Suppr ne se prennent pas, quel que soit le côté de l'interrupteur, et aucun produit de bureau à distance ne les a.**
+
+Ce n'est pas une limite de ZyrDesk ni un morceau qui manque. Windows traite ces deux-là dans une partie du système que les crochets ne voient pas, exprès : ce sont les deux gestes qui rendent la main à la personne physiquement assise devant la machine, et un programme qui pourrait les intercepter pourrait faire passer un faux écran de connexion pour le vrai. Le crochet a beau avaler la touche Windows, le système garde son propre compte pour ce cas-là et verrouille quand même.
+
+Symétriquement, ils ne s'envoient pas non plus : le moteur d'en face pose les touches avec le même mécanisme ordinaire, qui ne peut pas plus déclencher Windows+L là-bas qu'ici.
+
+Ctrl+Alt+Suppr a donc sa propre entrée dans le menu, qui ne passe pas par le clavier du tout : elle voyage sur le canal du produit et c'est le service d'en face qui la presse, étant le seul programme de cette machine autorisé à le faire ([D59](DECISIONS.md)). Verrouiller l'ordinateur d'en face se fait par là, ou par le menu Démarrer distant que la touche Windows ouvre maintenant.
 
 ## Trois pièges, et pourquoi ils sont des pièges
 
@@ -80,7 +90,7 @@ C'est donc un interrupteur, dans le menu du bouton flottant, à côté de ceux d
 
 | Quoi | Où |
 |---|---|
-| La capture elle-même | `engines/moonlight-qt/app/streaming/input/zyrsystemkeys.{h,cpp}` |
+| La capture elle-même, et la liste des touches prises | `engines/moonlight-qt/app/streaming/input/zyrsystemkeys.{h,cpp}` |
 | Sa mise en marche et son arrêt | `engines/moonlight-qt/app/streaming/input/input.cpp` |
 | La porte qui laisse partir la touche Windows | `isSystemKeyCaptureActive()`, même fichier |
 | Le raccourci qui bascule l'interrupteur | `engines/moonlight-qt/app/streaming/input/keyboard.cpp` |

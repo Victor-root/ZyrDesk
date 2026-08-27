@@ -22,7 +22,7 @@ const vue = {
   chiffres: document.getElementById("chiffres"),
   flux: document.getElementById("flux"),
   souris: document.getElementById("souris"),
-  touches: document.getElementById("touches"),
+  clavier: document.getElementById("clavier"),
   son: document.getElementById("son"),
 };
 
@@ -253,6 +253,13 @@ function ajusteLaFenetre() {
     width: Math.ceil(boite.width * echelle),
     height: Math.ceil(boite.height * echelle),
     shape: forme,
+    // De quel côté ce dessin-là a été mesuré. Sans ce mot, le coeur
+    // découpe et pose la fenêtre selon le sens qu'il voudrait plutôt que
+    // selon celui qui est à l'écran, et les deux diffèrent le temps que
+    // la page entende la réponse : le logo se retrouvait alors à une
+    // hauteur de menu de la main qui le tenait, et la découpe laissait
+    // un trou que le système remplissait de son propre fond.
+    upward: versLeHaut,
   })
     // Le coeur répond de quel côté le menu doit s'ouvrir. Un changement
     // remet la page en page, donc tout ce qui vient d'être mesuré est
@@ -316,7 +323,7 @@ function ouvre(veut) {
     // en est, pas où l'on en était la dernière fois qu'on a regardé.
     litLaSouris();
     litLeSon();
-    litLesTouches();
+    litLeClavier();
   }
   // Et la fenêtre suit ce que la page dessine maintenant, jusqu'à ce
   // qu'elle ait fini de le dessiner : taillée sur l'état d'avant, elle
@@ -542,9 +549,9 @@ function batisLesChoix() {
    annonçait ce que le clic ferait, jamais où l'on en était, et les deux
    modes ne se distinguent pas à l'oeil sur un bureau immobile.
 
-   Souris, son et touches système marchent pareil, donc se construisent
-   pareil. Le côté de droite est celui qui vaut « oui » : jeu pour la
-   souris, coupé pour le son, la session pour les touches. L'état se
+   Souris, son et clavier marchent pareil, donc se construisent pareil.
+   Le côté de droite est celui qui vaut « oui » : jeu pour la souris,
+   coupé pour le son, immersif pour le clavier. L'état se
    relit à chaque ouverture du menu plutôt que retenu ici, parce qu'il
    peut changer sans passer par cette page. Et cliquer le côté où l'on
    est déjà ne fait rien, comme tout interrupteur qu'on pousse du côté où
@@ -605,9 +612,9 @@ const litLeSon = interrupteur(
   () => invoke("floating_act", { what: "sound" }),
 );
 
-const litLesTouches = interrupteur(
-  vue.touches,
-  "touches",
+const litLeClavier = interrupteur(
+  vue.clavier,
+  "clavier",
   () => invoke("floating_keys"),
   () => invoke("floating_act", { what: "keys" }),
 );

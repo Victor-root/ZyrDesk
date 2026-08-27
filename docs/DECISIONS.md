@@ -845,6 +845,8 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Et le crochet avale maintenant la touche Windows.** Sans cela elle partirait au loin **et** ouvrirait le menu Démarrer d'ici, ce qui est pire que les deux comportements pris séparément.
 
+> Complétée par [D68](#d68-le-clavier-immersif-prend-tout-ce-quun-logiciel-peut-prendre-et-dit-ce-quil-ne-peut-pas-2026-08-27-pendant-m4)
+
 **Décision : c'est un interrupteur, pas un état permanent.** Prendre ces touches tout le temps est faux dans l'autre sens : la main qui va chercher Alt+Tab veut parfois une fenêtre de l'ordinateur qui regarde. Il vit dans le menu du bouton flottant, à côté de ceux de la souris et du son, et il se lit comme eux : les deux côtés écrits, celui qui est en place allumé. Un réglage qui décide où va une touche doit dire où il en est sans qu'on ait à essayer.
 
 **Il se bascule sans relancer l'image.** Par le chemin qui existe déjà pour la souris : ZyrDesk tape le raccourci du moteur dans la fenêtre de l'image. Relancer la session pour changer de côté aurait rendu l'interrupteur inutilisable, puisqu'on le jette justement pour deux secondes.
@@ -852,6 +854,44 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 **Il est retenu, et il vaut « session » par défaut.** Retenu parce que c'est la règle du bouton flottant depuis le début : ce qu'on y règle ne se règle pas à chaque connexion. Et « session » par défaut parce qu'une session dont la touche Windows ne fait rien sans qu'on sache pourquoi est exactement le défaut que tout ceci répare ; l'autre côté ne surprend personne, l'interrupteur étant sous les yeux et le disant.
 
 **Deux touches restent hors de portée, des deux côtés.** Windows+L et Ctrl+Alt+Suppr, qu'aucun crochet ne peut prendre, par construction et pour de bonnes raisons. La seconde a sa propre entrée dans le menu, qui passe par le canal du produit et par le service d'en face ([D59](#d59-ctrlaltsuppr-voyage-sur-le-canal-du-produit-pas-par-le-clavier-2026-08-26-pendant-m4)).
+
+## D68. Le clavier immersif prend tout ce qu'un logiciel peut prendre, et dit ce qu'il ne peut pas (2026-08-27, pendant M4)
+
+**Le relevé.** « Les raccourcis avec la touche Windows sont toujours en local, par exemple Windows+L. En fait il faut vraiment un mode immersif au clavier : quand c'est actif, absolument tout passe sur la session. »
+
+**Ce qui manquait vraiment, et ce n'était pas la touche Windows.** Elle partait bien, et ses combinaisons avec elle : le crochet l'avale ici, donc le raccourci d'ici ne se déclenche pas, et l'ordinateur d'en face la reçoit maintenue pendant que la lettre qui suit voyage par le chemin ordinaire. Restaient deux touches, et une seule des deux était au système.
+
+**La touche Impr. écran.** Windows la détourne vers son outil de capture depuis quelques versions. Elle rejoint les autres dans ce que le crochet avale du côté immersif ; le moteur savait déjà l'envoyer.
+
+**Alt+F4, qui n'était volée par personne.** Ni par Windows ni par nous : c'est la bibliothèque d'affichage du moteur qui ferme sa propre fenêtre dessus, et fermer la fenêtre de l'image est terminer la session. Un raccourci qui, dans un mode dit immersif, ferme la session au lieu de fermer la fenêtre d'en face est exactement le contraire de ce qui est promis. La bibliothèque est donc priée de n'en rien faire tant que l'interrupteur est du côté immersif, et de le refaire dès qu'il en sort.
+
+**Décision : deux touches ne seront jamais prises, et c'est écrit noir sur blanc.** Windows+L et Ctrl+Alt+Suppr sont traitées par Windows dans une partie du système qu'aucun crochet ne voit, exprès : ce sont les deux gestes qui rendent la main à la personne assise devant la machine, et un programme capable de les intercepter pourrait faire passer un faux écran de connexion pour le vrai. Aucun produit de bureau à distance ne les a. Elles ne s'envoient pas davantage : le moteur d'en face pose les touches par le mécanisme ordinaire, qui ne déclenche pas plus Windows+L là-bas qu'ici. Verrouiller l'ordinateur d'en face passe donc par l'entrée Ctrl+Alt+Suppr du menu, qui ne va pas par le clavier du tout, ou par son menu Démarrer que la touche Windows ouvre maintenant.
+
+**Et le réglage change de nom.** « Alt+Tab, Windows / Ici / Session » énumérait des touches sans dire ce que ça fait, et la liste était déjà fausse le jour où elle a été écrite. C'est **Clavier : Partagé ou Immersif**, qui est le mot de la personne qui l'a demandé, et qui reste vrai quand une touche s'ajoute à ce que le mode emporte.
+
+## D69. Le sens du menu appartient au dessin à l'écran, pas au souhait du coeur (2026-08-27, pendant M4)
+
+**Le relevé, deux symptômes et une seule cause.** « Quand je déplace le bouton de haut en bas, des fois il ne suit plus mon curseur : il reste tout en haut alors que mon curseur est tout en bas. » Et, sur une capture d'écran : le retour de la croix par-dessus le bouton, celle-là même qui avait été chassée en juillet.
+
+**Ce qui les faisait.** [D66](#d66-quatre-reprises-sur-le-bouton-flottant-2026-08-27-pendant-m4) a donné au menu le droit de s'ouvrir vers le haut, et le sens était gardé à un seul endroit. Or ce mot-là recouvre deux choses différentes : le sens que le coeur voudrait, et le sens dans lequel la page a réellement dessiné ce qui est à l'écran. Les deux diffèrent forcément un moment, le temps que la page entende la réponse et se remette en page ; et pendant un déplacement, où rien n'est demandé à la page, ils peuvent différer aussi longtemps que la main tient le bouton.
+
+**Et tout ce qui lisait ce mot lisait le mauvais.** Une fenêtre accrochée par son bas alors que sa page dessine encore depuis le haut pose le logo une hauteur de menu au-dessus de la main qui le tient : c'est le bouton qui décroche du curseur. Et la découpe, taillée pour un dessin qui n'est pas celui-là, garde un morceau de fenêtre que la page ne peint pas, que le système remplit de son propre fond : c'est la croix. Le journal le disait déjà, `3 morceaux dessinés jusqu'à 687x0`, une hauteur nulle étant la signature d'un dessin lu à l'envers.
+
+**Décision : la page dit dans quel sens elle a dessiné, et c'est ce sens-là qui découpe et qui pose la fenêtre.** Le souhait du coeur reste ce qu'il répond à la page ; il ne pose plus rien. Où se trouve le logo est un fait sur ce qui est dessiné, et il n'y a jamais qu'un seul dessin. Les deux se rejoignent à l'image suivante, quand la page a redessiné, et jusque-là tout est cohérent au lieu d'être à moitié dans chaque sens.
+
+**Ce que ça change au déplacement.** Le coeur continue de calculer le sens qu'il voudrait pendant qu'une main déplace le bouton, mais il ne le pose plus ; le retournement attend le prochain dessin, qui vient à l'ouverture du menu. Le bouton suit donc le curseur du début à la fin, ce qui est la seule chose qu'on lui demande pendant ce geste.
+
+## D70. La signature d'un pilote se lit en demandant au fichier la bonne chose (2026-08-27, pendant M4)
+
+**Le relevé.** « Tu me dis qu'il faut mettre l'écran virtuel, mais normalement il est installé directement avec ZyrDesk : je t'avais demandé explicitement que pour l'utilisateur ce soit invisible. » Il a raison, c'est ce qui a été décidé et écrit, et le journal des deux tours disait la même ligne depuis des jours : `MttVDD.cat carries no signature`, sur un fichier qui en porte trois.
+
+**Ce qui le faisait.** Avant de poser un pilote, le service nomme son éditeur comme attendu par la machine, sans quoi Windows ouvre une fenêtre de confirmation sur un bureau où il n'y a personne. Pour cela il faut lire qui a signé, et la lecture était demandée de la façon la plus large possible : « ce fichier, c'est quoi ? ». Or un catalogue de pilote est un message signé dont le contenu se trouve être une liste d'empreintes de fichiers ; à cette question-là Windows répond la liste, rend un magasin qui la contient, et il n'y a aucun certificat dedans. Zéro certificat, donc « aucune signature », donc pas d'installation, donc pas d'écran virtuel, sur toute machine à qui ce pilote n'avait pas été donné autrement.
+
+**Décision : la question est posée dans l'autre sens.** Ce fichier est un message signé, rendez ce qui l'a signé. C'est la voie documentée et c'est ce que fait tout outil qui lit une signature.
+
+**Et un seul certificat est nommé, celui de l'éditeur.** Une signature en porte plusieurs : celui de l'éditeur, et les autorités qui le cautionnent à leur tour. Le message dit lequel est le sien, et c'est le seul repris. Nommer une autorité comme attendue étendrait le laissez-passer de cette machine à tous les pilotes que cette autorité a jamais signés, ce qui est beaucoup de monde et personne de chez nous. La promesse écrite dans la documentation, « ça n'accorde rien de plus », n'était donc pas tenue non plus.
+
+**Le journal dit maintenant quel éditeur a été nommé.** Dire à une machine d'attendre des pilotes de quelqu'un sans écrire de qui, c'est le genre de ligne qu'on ne peut pas vérifier.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

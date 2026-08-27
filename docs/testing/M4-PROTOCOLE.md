@@ -50,7 +50,9 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R17** | Touché. Le codec n'est plus un curseur mais des boutons, comme la souris. Les autres restent des curseurs |
 | **R40** | Nouveau. Le menu du bouton flottant était coupé quand le bouton était posé en bas de l'image. Il s'ouvre maintenant vers le haut quand il n'y a plus de place en dessous |
 | **R41** | Nouveau. Le curseur passait au sens interdit pendant le déplacement du bouton flottant, là où c'est une main qui agrippe qu'il faut voir |
-| **R42** | Nouveau. La touche Windows n'arrivait jamais sur la session : le moteur la retenait derrière une porte qui demandait à sa fenêtre d'être au premier plan, ce qu'une fenêtre portée dans la nôtre ne peut jamais être. Elle part maintenant, et un interrupteur **Alt+Tab, Windows** dit laquelle des deux machines reçoit ces touches |
+| **R42** | Nouveau. La touche Windows n'arrivait jamais sur la session : le moteur la retenait derrière une porte qui demandait à sa fenêtre d'être au premier plan, ce qu'une fenêtre portée dans la nôtre ne peut jamais être. Elle part maintenant, avec Impr. écran et Alt+F4, sous un interrupteur **Clavier : Partagé ou Immersif** |
+| **R43** | Nouveau. Le bouton flottant décrochait du curseur pendant un déplacement de haut en bas, et une croix restait par-dessus l'image. Une seule cause : le sens d'ouverture du menu était lu au coeur alors que seule la page sait dans quel sens elle vient de dessiner |
+| **R27** | **Refait, et c'est le sujet du lot.** L'écran virtuel ne s'installait sur aucune machine à qui le pilote n'avait pas été donné à la main : la lecture de sa signature posait au fichier une question trop large, à laquelle Windows répond par la liste d'empreintes du catalogue et non par les certificats. À refaire sur une machine qui n'a jamais eu d'écran virtuel |
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
 | **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
@@ -1268,19 +1270,31 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Pendant une session, cliquer dans l'image pour être bien dessus. L'interrupteur **Alt+Tab, Windows** du menu doit être sur **Session**, ce qui est sa valeur d'usine.
 >
-> **Côté Session.** Appuyer sur la touche **Windows** : le menu Démarrer de l'ordinateur **d'en face** s'ouvre, dans l'image. Rien ne bouge sur celui-ci. Faire **Windows+E** : l'explorateur s'ouvre là-bas. Faire **Alt+Tab** : ce sont les fenêtres d'en face qui défilent.
+> **Côté Immersif.** Appuyer sur la touche **Windows** : le menu Démarrer de l'ordinateur **d'en face** s'ouvre, dans l'image. Rien ne bouge sur celui-ci. Puis, toujours d'en face : **Windows+E** ouvre l'explorateur, **Windows+R** ouvre Exécuter, **Alt+Tab** fait défiler les fenêtres, **Impr. écran** capture l'écran distant, et **Alt+F4** ferme la fenêtre distante au premier plan **sans terminer la session**.
 >
-> **Côté Ici.** Basculer l'interrupteur sur **Ici**, sans rien relancer : l'image ne doit ni clignoter ni se rouvrir, c'est tout l'intérêt. Réappuyer sur **Windows** : c'est le menu Démarrer **de cet ordinateur-ci** qui s'ouvre. **Alt+Tab** fait défiler les fenêtres d'ici.
+> **Côté Partagé.** Basculer l'interrupteur sur **Partagé**, sans rien relancer : l'image ne doit ni clignoter ni se rouvrir, c'est tout l'intérêt. Réappuyer sur **Windows** : c'est le menu Démarrer **de cet ordinateur-ci** qui s'ouvre. **Alt+Tab** fait défiler les fenêtres d'ici. **Impr. écran** ouvre l'outil de capture d'ici.
 >
-> **Le retour.** Rebasculer sur **Session** : la touche Windows repart au loin. Refermer et rouvrir le menu entre-temps : l'interrupteur doit dire où l'on en est, pas où l'on en était.
+> **Le retour.** Rebasculer sur **Immersif** : la touche Windows repart au loin. Refermer et rouvrir le menu entre-temps : l'interrupteur doit dire où l'on en est, pas où l'on en était.
 >
 > **Ce qui ne doit pas casser.** Les raccourcis du produit sont tous des combinaisons Alt et doivent marcher des deux côtés : **Alt+&** (plein écran), **Alt+é** (fin de session) et **Alt+²** (menu). S'ils s'éteignent, c'est qu'Alt est avalé, ce qui est la faute que ce mode existe pour éviter.
 >
-> **Ce qui reste hors de portée, et c'est normal.** **Windows+L** verrouille cet ordinateur-ci quel que soit le côté : Windows ne laisse aucun programme s'en emparer. Ctrl+Alt+Suppr non plus, et c'est pour ça qu'il a sa propre entrée dans le menu.
+> **Ce qui reste hors de portée, et c'est normal.** **Windows+L** verrouille cet ordinateur-ci quel que soit le côté, et **Ctrl+Alt+Suppr** ouvre l'écran de sécurité d'ici. Windows traite ces deux-là dans une partie du système qu'aucun programme ne peut atteindre, et aucun produit de bureau à distance ne les a. Pour verrouiller l'ordinateur d'en face : l'entrée **Ctrl+Alt+Suppr** du menu, ou son menu Démarrer.
 >
-> **Et ça survit à une relance.** Laisser l'interrupteur sur **Ici**, terminer la session, en rouvrir une : il doit encore être sur **Ici**.
+> **Et ça survit à une relance.** Laisser l'interrupteur sur **Partagé**, terminer la session, en rouvrir une : il doit encore être sur **Partagé**.
 >
 > Le journal du moteur client (`session.log`) dit `zyr: the system's keys now go to the session` et `... to this computer` à chaque bascule, et une ligne de comptes une fois par seconde où `passed: N switch off` est ce que l'interrupteur a laissé passer.
+
+> **R43 (le bouton suit le curseur, et ne laisse rien derrière lui)**
+> 
+> Pendant une session, prendre le bouton flottant tout en haut de l'image et le **descendre lentement jusqu'en bas**, sans lâcher, puis remonter, plusieurs fois.
+> 
+> Attendu : le logo reste **collé au curseur** du début à la fin. Il ne doit jamais sauter d'un coup vers le haut de l'écran, ni rester en arrière pendant que la main continue.
+> 
+> Lâcher en bas, puis ouvrir le menu : il s'ouvre vers le haut, entier (R40). Le refermer, remonter le bouton, rouvrir : il s'ouvre vers le bas.
+> 
+> **Et rien ne doit rester sur l'image.** Après chaque déplacement et chaque ouverture, regarder autour du bouton : aucun rectangle, aucune croix, aucun morceau clair par-dessus l'image. Le passage du curseur ne doit rien effacer non plus, parce qu'il n'y a rien à effacer.
+> 
+> Dans le journal de la fenêtre, la ligne `N morceaux dessinés jusqu'à LxH` ne doit jamais porter une hauteur de **0** : c'est la signature d'un dessin lu à l'envers, et c'était la cause des deux.
 
 > **R18 (un réglage survit à tout)**
 >

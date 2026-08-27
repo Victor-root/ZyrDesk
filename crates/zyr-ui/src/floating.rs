@@ -315,6 +315,25 @@ static NUDGE: AtomicI64 = AtomicI64::new(0);
 /// about this window's shape.
 static UPWARD: AtomicBool = AtomicBool::new(false);
 
+/// Which way round the drawing now on screen was measured.
+///
+/// Not the same thing as `UPWARD`, and keeping the two apart is the whole
+/// of what makes the turn seamless. `UPWARD` is what this program would
+/// rather have; this is what the page has actually drawn, which it says
+/// each time it says what it draws. Everything about where this window
+/// sits and what is cut out of it follows this one, because those two
+/// things describe a drawing and a drawing has only ever been made one
+/// way round.
+///
+/// They differ for exactly as long as it takes the page to hear the
+/// answer and lay itself out again. Read from the wrong one, a window
+/// hung by its bottom while its page still draws from the top puts the
+/// logo a whole menu's height away from the hand holding it, and cuts a
+/// hole where the page paints nothing, which the system fills with the
+/// window's own ground. Both were seen: a button that stopped following
+/// the cursor mid-drag, and a cross left standing over the picture.
+static DRAWN_UPWARD: AtomicBool = AtomicBool::new(false);
+
 /// The top and bottom of the picture, as the button was last laid on it.
 ///
 /// Kept because the direction has to be decided again the moment the
@@ -993,9 +1012,16 @@ pub struct Piece {
 /// the left, a window kept wider than the drawing put the cut that many
 /// pixels beside it, which is what took the right-hand side off the menu.
 #[tauri::command]
-pub fn floating_size(width: u32, height: u32, shape: Vec<Piece>) -> Result<bool, String> {
-    // Read before anything moves: what is kept is the corner the button
-    // hangs from, which is the window's top right and the logo's.
+pub fn floating_size(
+    width: u32,
+    height: u32,
+    shape: Vec<Piece>,
+    upward: bool,
+) -> Result<bool, String> {
+    // Read before anything moves, and while the drawing still on screen
+    // is the one this window was last placed for: what is kept is the
+    // corner the button hangs from, which is the logo's own, and the logo
+    // is the one part of this window nobody may see move.
     let (Some(corner), Some(was)) = (where_it_hangs(), its_place()) else {
         return Err("le bouton flottant n'est plus là".to_string());
     };
@@ -1003,6 +1029,27 @@ pub fn floating_size(width: u32, height: u32, shape: Vec<Piece>) -> Result<bool,
         (width as i32).max(was.2 - was.0),
         (height as i32).max(was.3 - was.1),
     );
+    // The page has said which way round it drew what follows, so from
+    // here on that is the drawing this window is cut and placed for. The
+    // corner above was read a line too early to be caught by it, and that
+    // is the point: the logo was there under the old drawing, and this is
+    // what puts it back there under the new one.
+    DRAWN_UPWARD.store(upward, Ordering::Relaxed);
+
+    // Which way the menu would be better off opening, worked out again
+    // here and not only at every turn of the watch: a line appearing in
+    // the menu makes the window taller, and a taller window may no longer
+    // fit below the logo. Only ever an answer to the page; nothing here
+    // acts on it, and the page acting on it is what brings it back as a
+    // drawing.
+    let (top, bottom) = picture_now();
+    if bottom > top {
+        UPWARD.store(
+            opens_upward((0, top, 0, bottom), corner, size.1),
+            Ordering::Relaxed,
+        );
+    }
+
     // The shape first, and against the size the window is about to have
     // rather than the one it has: a shape wider than the window it is put
     // on is simply clipped by it, so setting it early costs nothing, while
@@ -1014,31 +1061,15 @@ pub fn floating_size(width: u32, height: u32, shape: Vec<Piece>) -> Result<bool,
     // The page asks for this several times a frame while a hand runs over
     // the logo, and once a second all session long for the measures,
     // nearly always with the very shape the window already wears.
-    // Which way the menu opens, worked out again here and not only at
-    // every turn of the watch: a line appearing in the menu makes the
-    // window taller, and a taller window may no longer fit below the
-    // logo. Before the shape and the placing, since both read it.
-    let (top, bottom) = picture_now();
-    let was_upward = UPWARD.load(Ordering::Relaxed);
-    if bottom > top {
-        UPWARD.store(
-            opens_upward((0, top, 0, bottom), corner, size.1),
-            Ordering::Relaxed,
-        );
-    }
-    let upward = UPWARD.load(Ordering::Relaxed);
-
-    let drawn = the_shape_of(&shape, size);
-    // A direction that has just changed is a whole new drawing, whatever
-    // the pieces say: the page measured them the other way round.
-    if SHAPED.swap(drawn, Ordering::Relaxed) != drawn || was_upward != upward {
+    let drawn = the_shape_of(&shape, size, upward);
+    if SHAPED.swap(drawn, Ordering::Relaxed) != drawn {
         cut_to_what_is_drawn(&shape, size);
     }
     // The page has drawn something, so there is something to show.
     READY.store(true, Ordering::Relaxed);
     put_the_button(corner, size, how_it_shows());
     tell_the_button(was, size, &shape);
-    Ok(upward)
+    Ok(UPWARD.load(Ordering::Relaxed))
 }
 
 /// The shape this window was last cut to, so an identical cut can be
@@ -1048,14 +1079,16 @@ static SHAPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(
 
 /// That shape in one number.
 ///
-/// The size goes in with it: the pieces are counted from the window's
-/// right edge, and from its bottom edge when the menu opens upward, so
-/// the same pieces on a window of another size are another cut.
-fn the_shape_of(shape: &[Piece], size: (i32, i32)) -> u64 {
+/// The size goes in with it, and so does which way round it was drawn:
+/// the pieces are counted from the window's right edge, and from its
+/// bottom edge when the menu opens upward, so the same pieces on a window
+/// of another size, or turned the other way, are another cut.
+fn the_shape_of(shape: &[Piece], size: (i32, i32), upward: bool) -> u64 {
     use std::hash::{Hash, Hasher};
 
     let mut how = std::collections::hash_map::DefaultHasher::new();
     size.hash(&mut how);
+    upward.hash(&mut how);
     for piece in shape {
         (piece.x, piece.y, piece.width, piece.height, piece.radius).hash(&mut how);
     }
@@ -1086,7 +1119,7 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece])
     // which is the width and the height a window has to have to hold all
     // of it. Opening upward it is counted from the bottom, so what
     // reaches furthest is the piece whose top is highest above that edge.
-    let upward = UPWARD.load(Ordering::Relaxed);
+    let upward = DRAWN_UPWARD.load(Ordering::Relaxed);
     let drawn = shape.iter().fold((0, 0), |(wide, high), piece| {
         let reach = if upward {
             -piece.y
@@ -1212,8 +1245,11 @@ fn slide(picture: (i32, i32, i32, i32), from: (i32, i32), dx: i32, dy: i32) {
         anchor.0 - (picture.2 - margin),
         anchor.1 - (picture.1 + margin),
     );
-    // A button dragged towards the bottom of the picture turns the menu
-    // over as it goes, rather than at the next turn of the watch.
+    // A button dragged towards the bottom of the picture works out as it
+    // goes that its menu would be better off above, rather than at the
+    // next turn of the watch. Worked out and not applied: the turn itself
+    // belongs to the page, which is not asked anything while a hand is on
+    // the button, and which will ask at the next thing it draws.
     decide_the_direction(picture, anchor, bottom - top);
 
     // Asked of the system and not of the toolkit, like everywhere else
@@ -1720,8 +1756,11 @@ fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
     }
     // Opening upward, the corner the window hangs by is its bottom right
     // and no longer its top right: the logo stays where the hand left it
-    // and the menu grows above it.
-    let top = if UPWARD.load(Ordering::Relaxed) {
+    // and the menu grows above it. Which of the two is read from the
+    // drawing on screen and never from the wish: a window hung by a
+    // corner its page is not drawing in puts the logo a whole menu away
+    // from the hand holding it.
+    let top = if DRAWN_UPWARD.load(Ordering::Relaxed) {
         anchor.1 + logo().1 - size.1
     } else {
         anchor.1
@@ -1773,7 +1812,7 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
         if whole.is_null() {
             return;
         }
-        let upward = UPWARD.load(Ordering::Relaxed);
+        let upward = DRAWN_UPWARD.load(Ordering::Relaxed);
         for piece in shape {
             // Where it starts, which the page counted from the edges that
             // do not move and the system counts from the top left. The
@@ -1942,10 +1981,14 @@ fn its_place() -> Option<(i32, i32, i32, i32)> {
 /// The window's top right ordinarily, and its bottom right less the logo
 /// when the menu opens upward: the logo is what the person placed, and it
 /// is the only part of this window that does not move.
+///
+/// Which of the two is read from the drawing on screen and not from the
+/// direction this program would rather have. Where the logo is is a fact
+/// about what is drawn, and there is only ever one drawing.
 #[cfg(windows)]
 fn where_it_hangs() -> Option<(i32, i32)> {
     its_place().map(|(_, top, right, bottom)| {
-        if UPWARD.load(Ordering::Relaxed) {
+        if DRAWN_UPWARD.load(Ordering::Relaxed) {
             (right, bottom - logo().1)
         } else {
             (right, top)
