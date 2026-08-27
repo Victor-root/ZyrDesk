@@ -97,10 +97,15 @@ fn main() {
             floating::floating_act,
             floating::floating_mouse,
             floating::floating_sound,
-            theme::set_theme
+            theme::set_theme,
+            theme::system_theme
         ])
         .setup(|app| {
             journal::opened();
+            // Ce que Windows veut, suivi tant que le programme tourne :
+            // la vue web ne peut pas le voir changer, sa réponse à elle
+            // étant figée à la construction de la fenêtre.
+            theme::watch(app.handle().clone());
             // The window's own icon, which the toolkit has already put a
             // stretched one of: taken from the compiled resource at the
             // two sizes Windows is about to draw it at.

@@ -46,6 +46,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
 | **R36** | **Refait, et c'est le sujet du lot.** La frappe partait bien et l'ordinateur d'en face répondait oui, sans que rien n'apparaisse à l'écran : elle était confiée à un aller simple lancé dans la session de l'écran, qui n'est ni un service ni un programme à manifeste, donc aucun des deux cas que Windows accepte. C'est le service lui-même qui presse maintenant. Le journal du service hôte écrit la stratégie réellement en place, sa propre session et celle de l'écran : c'est la ligne à lire si ça ne marche toujours pas |
 | **R37** | Nouveau. Un interrupteur **Son** dans le menu de la session, Actif ou Coupé. Il coupe le son **de cette machine-ci**, sur la tranche du lecteur dans le mélangeur de Windows, et rien d'autre de ce qui joue ici |
+| **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
 | **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
 | **S28** | Nouveau. Fermer une session dans les six secondes qui suivent son ouverture, ou une relance par **Appliquer les changements**, repartait en appairage : « l'ordinateur distant ne reconnaît plus celui-ci », puis un refus. La surveillance qui guette un ordinateur nous ayant oubliés demande maintenant à la fenêtre si la session est toujours voulue |
@@ -1223,6 +1224,22 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Le cas des enceintes déjà coupées.** Couper le son de la machine d'en face à la main **avant** d'ouvrir la session, puis ouvrir et fermer. Attendu : le son y reste coupé à la fin. Ce produit ne rend que ce qu'il a pris.
 >
 > **Ce qu'il ne faut surtout pas voir.** Aucune carte son nouvelle dans la liste des périphériques audio de la machine d'en face, ni pendant ni après. C'est là toute la différence avec la façon dont les moteurs font ça d'habitude, qui est d'installer celle de Steam. Le journal du moteur hôte doit dire une fois par session `Couldn't find the specified virtual audio sink aucune-carte-son-virtuelle` : c'est la réponse voulue, écrite noir sur blanc.
+
+> **R39 (le thème suit Windows, fenêtre ouverte)**
+>
+> Dans les réglages de ZyrDesk, choisir **Système** pour le thème. Laisser la fenêtre ouverte, bien en vue.
+>
+> Aller dans Windows, **Personnalisation > Couleurs**, et basculer **Choisir votre mode par défaut pour les applications** de Clair à Sombre.
+>
+> Attendu : **ZyrDesk bascule tout seul**, sans être touché ni relancé, en même temps que les autres applications. La barre de titre bascule avec la page, pas une seconde plus tard et pas dans l'autre sens. Rebasculer : elle revient.
+>
+> Le journal de la fenêtre dit `Windows demande maintenant une interface sombre`, puis `... claire`. Aucune ligne : le coeur n'écoute pas, et le journal dit pourquoi au démarrage (`le thème de Windows ne sera pas suivi : ...`).
+>
+> **Sur le bouton flottant aussi.** Refaire la bascule pendant une session : le menu du bouton flottant doit changer de thème comme l'accueil.
+>
+> **Et un choix explicite reste un choix.** Mettre **Clair**, basculer Windows en sombre : ZyrDesk reste clair, barre de titre comprise. C'est voulu, et c'est exactement ce que « Système » ne doit pas faire.
+>
+> **Ce qui n'allait pas.** La vue web se voit imposer une réponse fixe au moment où la fenêtre est bâtie, et le seul mécanisme qui la rafraîchissait était éteint par le fait même que nous imposions un thème à la fenêtre pour accorder sa barre de titre. C'est le coeur qui écoute Windows maintenant.
 
 > **R18 (un réglage survit à tout)**
 >

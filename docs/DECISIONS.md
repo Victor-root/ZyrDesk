@@ -803,6 +803,20 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Et le silence appartient à la voie, pas à la machine.** Ce que la session a demandé est oublié quand la dernière voie se ferme, de sorte qu'une session suivante qui ne demande rien n'hérite pas du silence de la précédente. Le son revient donc quand la session part, quelle que soit la façon dont elle est partie et quoi qu'il soit advenu de l'ordinateur qui avait demandé.
 
+## D65. C'est le coeur qui écoute Windows changer de thème, pas la page (2026-08-27, pendant M4)
+
+**Le relevé.** « Le light/dark ne suit pas le système, surtout quand je change sur Windows lui-même : ZyrDesk ne s'adapte pas tout seul alors que toutes mes autres applications le font. »
+
+**Ce qui le faisait, et ce sont deux choses qui se tenaient.** Une page web demande d'ordinaire à son navigateur ce que le système préfère, et le navigateur suit. Ici le navigateur est une vue web posée dans notre fenêtre, et la boîte à outils fige la réponse de cette vue à une valeur fixe au moment où la fenêtre est construite : juste à la première image, gelée ensuite. Windows peut basculer, la page ne voit rien et l'événement qu'elle guette ne se déclenche jamais.
+
+**Et le seul chemin qui rafraîchissait ça, nous l'avions bouché.** La boîte à outils remet la vue à jour quand elle voit Windows basculer, sauf si un thème a été imposé à la fenêtre. Or ce programme imposait un thème à chaque démarrage, précisément pour que la barre de titre s'accorde à la page : la barre de titre appartient au système et la page ne peut pas l'atteindre. Les deux bouts se battaient donc, et accorder le cadre coûtait le suivi.
+
+**Décision : Windows est interrogé directement, et surveillé.** Le coeur lit la même valeur que la boîte à outils, au même endroit, et ne la sonde pas : Windows lève la main quand elle change, et chaque fenêtre est prévenue. La page ne garde plus aucune opinion sur ce que veut le système ; elle ne se sert de sa propre réponse figée que pour la toute première image, où elle est encore juste, en attendant la réponse du coeur quelques millisecondes plus tard.
+
+**Et la fenêtre n'est forcée que si quelqu'un a choisi.** « Suivre le système » est transmis comme une absence de choix et non comme la couleur à laquelle il revient sur l'instant. Les deux se ressemblent une seconde et sont contraires ensuite : une fenêtre à qui l'on ne dit rien suit Windows d'elle-même, cadre compris, tandis qu'une fenêtre à qui l'on dit « clair » y reste pour toujours et, pire, fait taire les avis de bascule.
+
+**Ce que ça coûte.** Un fil qui dort tout du long, réveillé par Windows lui-même. L'autre façon de faire est d'interroger le registre sur une minuterie, soit mille questions pour une réponse qui change deux fois par jour.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

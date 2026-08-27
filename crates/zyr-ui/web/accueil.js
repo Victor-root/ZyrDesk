@@ -1195,7 +1195,7 @@ for (const bouton of document.querySelectorAll("[data-theme-choix]")) {
 }
 
 window.addEventListener("theme-pose", ({ detail }) => {
-  invoke("set_theme", { clair: detail === "clair" }).catch(() => {});
+  invoke("set_theme", { choix: detail }).catch(() => {});
   marqueLeChoix();
 });
 
@@ -1225,9 +1225,7 @@ vue.fermerReglages.addEventListener("click", () => vue.reglages.close());
 vue.ouvrirDossier.addEventListener("click", ouvrirLesJournaux);
 
 marqueLeChoix();
-invoke("set_theme", {
-  clair: document.documentElement.dataset.theme === "clair",
-}).catch(() => {});
+invoke("set_theme", { choix: window.theme.choisi() }).catch(() => {});
 
 // Ce qui ne bouge pas de toute la vie du programme : demandé une fois.
 invoke("logs_folder").then((dossier) => {
