@@ -72,6 +72,10 @@ impl Answers for NoEngine {
     fn serve_steady(&self, _rate: bool) -> Result<(), String> {
         Err("le banc de mesure n'a pas de moteur à régler".to_string())
     }
+
+    fn screen_for_a_session(&self, _size: Option<(u32, u32)>) -> Result<(), String> {
+        Err("le banc de mesure n'a pas d'écran virtuel".to_string())
+    }
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);

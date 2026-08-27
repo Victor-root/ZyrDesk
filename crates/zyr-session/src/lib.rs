@@ -127,6 +127,14 @@ pub enum Step {
     /// moving, which is a session slightly less pleasant and not a
     /// session missing.
     RateLeftAlone { refused: String },
+    /// The far computer would not wake its virtual screen, and the
+    /// session goes on regardless.
+    ///
+    /// What it costs is the sharpness of a picture larger than that
+    /// computer's own screen: without the virtual screen it serves what
+    /// its own screen can draw and this end stretches the rest, which is
+    /// what every session did before that screen existed.
+    ScreenLeftAlone { refused: String },
 }
 
 /// How long the engines are given to meet, the code having travelled on
@@ -328,6 +336,23 @@ pub fn open(
         told(Step::RateLeftAlone { refused });
     }
 
+    // And the virtual screen over there, asked for the size this session
+    // is about to ask its engine for. Before that engine is started,
+    // because it can only capture a screen that is already there, and
+    // asked at all because that screen sleeps between sessions: a machine
+    // nobody is looking at has the screens its owner plugged in and no
+    // others.
+    //
+    // A refusal costs the sharpness of a picture larger than the far
+    // machine's own screen and nothing else, so it is written down and
+    // the session goes on: that is what every session did before this
+    // screen existed.
+    if let Some(driving) = &mut driving
+        && let Err(refused) = driving.far_screen(Some((settings.width, settings.height)))
+    {
+        told(Step::ScreenLeftAlone { refused });
+    }
+
     let state = DeviceState::for_device(&identifier_from_address(&wanted.host));
     if wanted.pair_again {
         state.forget().map_err(Error::State)?;
@@ -523,6 +548,15 @@ impl Driving {
             way: reached.way,
             target: format!("{}:{}", reached.address, reached.engine.http()),
             packet: reached.packet,
+        })
+    }
+
+    /// Asks the far computer to wake its virtual screen for a picture
+    /// that size, or, with no size, to put it back to sleep.
+    fn far_screen(&mut self, size: Option<(u32, u32)>) -> Result<(), String> {
+        self.asked(&Request::FarScreen {
+            way: self.way,
+            size,
         })
     }
 

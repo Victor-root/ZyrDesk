@@ -94,6 +94,28 @@ fn launcher(_session: u32) -> impl Launcher + 'static {
     zyr_engine_host::SameSession
 }
 
+#[cfg(windows)]
+fn wake_to_be_named(log: &Log) -> bool {
+    crate::screen::wake_to_be_named(log)
+}
+
+#[cfg(not(windows))]
+fn wake_to_be_named(_log: &Log) -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn put_the_screen_back(log: &Log) {
+    crate::screen::back_to_sleep(log);
+}
+
+#[cfg(not(windows))]
+fn put_the_screen_back(_log: &Log) {}
+
+fn screen_asleep() -> bool {
+    crate::screen::asleep()
+}
+
 /// Stop order, shared with whatever commands the service.
 #[derive(Debug, Clone, Default)]
 pub struct StopOrder(Arc<AtomicBool>);
@@ -494,6 +516,10 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // is decided here or not at all. Absent the first time this computer
     // ever runs, since the name is the engine's own and the engine has
     // not said it yet; learned below and used from the next start on.
+    // Woken only where it has never been named, and put back below as
+    // soon as it has: the engine names the screens it can see, and one
+    // that sleeps between sessions is seen by nobody.
+    let named_this_start = wake_to_be_named(log);
     let aiming_at = crate::screen::remembered();
     let config = match &aiming_at {
         Some(screen) => config.with_screen_of_its_own(screen),
@@ -527,9 +553,19 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // Asked now and not later: the engine writes its list of screens as
     // it starts and never again, and what is being looked for in it is
     // the one name that lets the next start aim at the virtual screen.
-    if crate::screen::learn_from(&engine_log, aiming_at.as_deref(), log)
-        == crate::screen::Learned::StartAgain
-    {
+    let learned = crate::screen::learn_from(
+        &engine_log,
+        aiming_at.as_deref(),
+        !named_this_start && screen_asleep(),
+        log,
+    );
+    // Back to sleep the moment it has been named, whatever came of the
+    // naming: awake past this point is a second screen on somebody's desk
+    // with nobody watching it.
+    if named_this_start {
+        put_the_screen_back(log);
+    }
+    if learned == crate::screen::Learned::StartAgain {
         let _ = engine.stop();
         return Ok(Life::VirtualScreenLearned);
     }
@@ -649,6 +685,20 @@ fn wait_for_the_engine_to_stop(
             watched.gateway.a_session_is_open(),
             log,
         );
+
+        // And the virtual screen follows the same rule for the same
+        // reason. A session that ends properly says so and this never
+        // fires; this is the net under the ones that do not, which is
+        // every session whose computer was closed, unplugged or crashed,
+        // and without it such a session would leave a screen on this
+        // machine's desk until somebody noticed.
+        if watched.gateway.the_screen_is_awake_for_nobody() {
+            log.write(
+                "nobody is watching this computer any more, its virtual screen goes back to sleep",
+            );
+            put_the_screen_back(log);
+            watched.gateway.the_screen_went_to_sleep();
+        }
 
         // The exit code is asked for first: it is the only thing that
         // tells a Windows shutdown from an incident, and a shutdown also

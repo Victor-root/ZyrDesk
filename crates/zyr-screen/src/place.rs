@@ -18,10 +18,11 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-    DICD_GENERATE_ID, DICS_FLAG_CONFIGSPECIFIC, DICS_PROPCHANGE, DIF_PROPERTYCHANGE,
-    DIF_REGISTERDEVICE, DIF_REMOVE, DIGCF_PRESENT, HDEVINFO, INSTALLFLAG_FORCE,
-    SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_PROPCHANGE_PARAMS, SPDRP_HARDWAREID, SPOST_NONE,
-    SUOI_FORCEDELETE, SetupCopyOEMInfW, SetupDiCallClassInstaller, SetupDiCreateDeviceInfoList,
+    CONFIGFLAG_DISABLED, DICD_GENERATE_ID, DICS_DISABLE, DICS_ENABLE, DICS_FLAG_CONFIGSPECIFIC,
+    DICS_FLAG_GLOBAL, DICS_PROPCHANGE, DIF_PROPERTYCHANGE, DIF_REGISTERDEVICE, DIF_REMOVE,
+    DIGCF_PRESENT, HDEVINFO, INSTALLFLAG_FORCE, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
+    SP_PROPCHANGE_PARAMS, SPDRP_CONFIGFLAGS, SPDRP_HARDWAREID, SPOST_NONE, SUOI_FORCEDELETE,
+    SetupCopyOEMInfW, SetupDiCallClassInstaller, SetupDiCreateDeviceInfoList,
     SetupDiCreateDeviceInfoW, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
     SetupDiGetClassDevsW, SetupDiGetDeviceRegistryPropertyW, SetupDiSetClassInstallParamsW,
     SetupDiSetDeviceRegistryPropertyW, SetupUninstallOEMInfW, UpdateDriverForPlugAndPlayDevicesW,
@@ -156,8 +157,65 @@ pub fn take_away(driver: &dyn Driver, home: &Path, done: &mut Done) -> Result<()
 /// Stops the screen and starts it again, which is the only moment the
 /// driver reads the sizes written down for it.
 pub fn restart(driver: &dyn Driver, done: &mut Done) -> Result<(), Trouble> {
+    change(
+        driver,
+        DICS_PROPCHANGE,
+        DICS_FLAG_CONFIGSPECIFIC,
+        "restart",
+        "virtual screen restarted so it reads its sizes again",
+        done,
+    )
+}
+
+/// Wakes the screen, which is what makes Windows show it at all.
+///
+/// The state a screen sits in between sessions is off at the device, not
+/// merely unplugged from the desktop: Windows shows a screen that is
+/// present, and one more screen on somebody's desk all day long is not
+/// something this product is entitled to.
+///
+/// Globally and not for this hardware profile, because that is what being
+/// switched off at the device means and what the machine's own device
+/// tooling writes when a person clicks the same thing by hand.
+pub fn wake(driver: &dyn Driver, done: &mut Done) -> Result<(), Trouble> {
+    change(
+        driver,
+        DICS_ENABLE,
+        DICS_FLAG_GLOBAL,
+        "wake",
+        "virtual screen woken",
+        done,
+    )
+}
+
+/// Puts it back to sleep, so it stops being one of this machine's screens.
+pub fn sleep(driver: &dyn Driver, done: &mut Done) -> Result<(), Trouble> {
+    change(
+        driver,
+        DICS_DISABLE,
+        DICS_FLAG_GLOBAL,
+        "put to sleep",
+        "virtual screen asleep, this machine has its own screens back",
+        done,
+    )
+}
+
+/// Asks the device to change state, which is three calls whatever the
+/// change is.
+///
+/// One function because the three that use it differ by two numbers and a
+/// sentence, and a second copy of these calls would be a second place to
+/// get the block's shape wrong.
+fn change(
+    driver: &dyn Driver,
+    state: u32,
+    scope: u32,
+    asking: &str,
+    said: &str,
+    done: &mut Done,
+) -> Result<(), Trouble> {
     let Some(found) = find_device(driver)? else {
-        done.step("no virtual screen device to restart");
+        done.step(format!("no virtual screen device to {asking}"));
         return Ok(());
     };
     let asked = SP_PROPCHANGE_PARAMS {
@@ -165,8 +223,8 @@ pub fn restart(driver: &dyn Driver, done: &mut Done) -> Result<(), Trouble> {
             cbSize: size_of::<SP_CLASSINSTALL_HEADER>() as u32,
             InstallFunction: DIF_PROPERTYCHANGE,
         },
-        StateChange: DICS_PROPCHANGE,
-        Scope: DICS_FLAG_CONFIGSPECIFIC,
+        StateChange: state,
+        Scope: scope,
         HwProfile: 0,
     };
     // SAFETY: the set and the device both live in `found`, and the block
@@ -182,15 +240,48 @@ pub fn restart(driver: &dyn Driver, done: &mut Done) -> Result<(), Trouble> {
             && SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, found.set.0, &found.device) != 0
     };
     if !ok {
-        return Err(refused("restarting the virtual screen"));
+        return Err(refused(&format!("asking the virtual screen to {asking}")));
     }
-    done.step("virtual screen restarted so it reads its sizes again");
+    done.step(said);
     Ok(())
 }
 
 /// Whether the virtual screen device is declared on this machine.
 pub fn present(driver: &dyn Driver) -> Result<bool, Trouble> {
     Ok(find_device(driver)?.is_some())
+}
+
+/// Whether it is awake, `None` when there is no such device at all.
+///
+/// Read from the same flags the machine's own device tooling writes, so
+/// a screen somebody switched off by hand reads as asleep here, which is
+/// the truth and what this product should act on.
+pub fn awake(driver: &dyn Driver) -> Result<Option<bool>, Trouble> {
+    let Some(found) = find_device(driver)? else {
+        return Ok(None);
+    };
+    let mut flags = 0u32;
+    let mut kind = 0u32;
+    let mut written = 0u32;
+    // SAFETY: the set and the device live in `found`, and the slot is
+    // ours with its size given alongside it.
+    let ok = unsafe {
+        SetupDiGetDeviceRegistryPropertyW(
+            found.set.0,
+            &found.device,
+            SPDRP_CONFIGFLAGS,
+            &mut kind,
+            std::ptr::from_mut(&mut flags).cast::<u8>(),
+            size_of::<u32>() as u32,
+            &mut written,
+        )
+    };
+    // A device that has never been switched either way carries no flags
+    // at all, and that is a device Windows is showing: awake.
+    if ok == 0 {
+        return Ok(Some(true));
+    }
+    Ok(Some(flags & CONFIGFLAG_DISABLED == 0))
 }
 
 /// Takes a driver package into Windows' own store of drivers.

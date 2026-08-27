@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 20;
+pub const PROTOCOL: u32 = 21;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -139,6 +139,18 @@ pub enum Request {
     /// is the one looking at it. Its engine reads this when it starts, so
     /// it is asked at the opening of a session and never inside one.
     SteadyFar { way: WayId, rate: bool },
+    /// Asks the far computer to wake its virtual screen for a picture
+    /// that size, or, with no size, to put it back to sleep.
+    ///
+    /// That screen is what lets a computer be asked for a picture its own
+    /// screen could not draw, and it sleeps whenever no session wants it:
+    /// a machine nobody is looking at has the screens its owner plugged
+    /// in and no others. Asked at the opening of a session and answered
+    /// before the picture opens, because the far engine has to find it.
+    FarScreen {
+        way: WayId,
+        size: Option<(u32, u32)>,
+    },
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
     Hold { way: WayId, process: u32 },
@@ -236,6 +248,16 @@ impl Request {
                 way: WayId(fields.parsed("way")?),
                 rate: fields.text("rate")? == "yes",
             }),
+            "farscreen" => Ok(Request::FarScreen {
+                way: WayId(fields.parsed("way")?),
+                size: match fields.text("size")? {
+                    "none" => None,
+                    asked => Some(
+                        zyr_proto::session::parse_resolution(asked)
+                            .map_err(|e| Malformed(e.to_string()))?,
+                    ),
+                },
+            }),
             "hold" => Ok(Request::Hold {
                 way: WayId(fields.parsed("way")?),
                 process: fields.parsed("process")?,
@@ -297,6 +319,10 @@ impl fmt::Display for Request {
             Request::SteadyFar { way, rate } => {
                 write!(f, "steady way={way} rate={}", said(*rate))
             }
+            Request::FarScreen { way, size } => match size {
+                Some((wide, high)) => write!(f, "farscreen way={way} size={wide}x{high}"),
+                None => write!(f, "farscreen way={way} size=none"),
+            },
             Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),

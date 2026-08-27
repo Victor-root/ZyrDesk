@@ -50,7 +50,18 @@ pub fn put_in_place(log: Option<&Log>) {
     let driver = zyr_screen::shipped();
     match zyr_screen::present(driver) {
         Ok(true) => {
-            write_down(log, vec!["virtual screen already in place".to_string()]);
+            let mut said = vec!["virtual screen already in place".to_string()];
+            // Asleep at every start of the service, whatever it was left
+            // as. A service that was killed in the middle of a session
+            // left it awake, and nothing else would ever put it back:
+            // whoever sits at this computer would find a second screen on
+            // their desk with no session behind it and no way to guess
+            // where it came from.
+            match sleep_after_a_session() {
+                Ok(steps) => said.extend(steps),
+                Err(e) => said.push(format!("the virtual screen would not go to sleep: {e}")),
+            }
+            write_down(log, said);
             return;
         }
         Ok(false) => {}
@@ -90,6 +101,113 @@ pub fn put_in_place(log: Option<&Log>) {
     };
     write_down(log, said);
 }
+
+/// Wakes the virtual screen for a session that wants a picture that size.
+///
+/// The one moment it is awake. Between sessions it sleeps at the device,
+/// which is the difference between a product that leaves a second screen
+/// on somebody's desk for ever and one that borrows it while somebody is
+/// actually looking.
+///
+/// The size is settled on the way, because waking is when the driver
+/// reads the sizes written down for it and there is no second chance
+/// until the next wake.
+#[cfg(windows)]
+pub fn wake_for_a_session(size: (u32, u32)) -> Result<Vec<String>, String> {
+    let (width, height) = size;
+    let mode = zyr_screen::Mode::new(width, height, SESSION_RATE);
+    zyr_screen::wake_up(zyr_screen::shipped(), &paths::virtual_screen_dir(), mode)
+        .map(|done| done.steps)
+        .map_err(|e| e.to_string())
+}
+
+/// Puts it back to sleep now that no session wants it.
+#[cfg(windows)]
+pub fn sleep_after_a_session() -> Result<Vec<String>, String> {
+    zyr_screen::go_to_sleep(zyr_screen::shipped())
+        .map(|done| done.steps)
+        .map_err(|e| e.to_string())
+}
+
+/// Wakes the screen only long enough for the engine to name it.
+///
+/// The engine's name for a screen is a digest of that screen's own
+/// identity, which nothing else on the machine computes the same way, and
+/// the engine only says it about screens it can see. A screen that sleeps
+/// between sessions is never seen, so on a computer that has never run an
+/// engine with it awake the name would never be learned and the virtual
+/// screen would never be captured.
+///
+/// So it is woken for exactly one start of the engine, once in the life
+/// of a computer, and put back to sleep as soon as the name is written
+/// down. Somebody sitting in front of that computer sees a second screen
+/// appear and go, once.
+///
+/// Answers whether it was woken, which is what says it has to be put back.
+#[cfg(windows)]
+pub fn wake_to_be_named(log: &Log) -> bool {
+    if remembered().is_some() {
+        return false;
+    }
+    match zyr_screen::wake_up(
+        zyr_screen::shipped(),
+        &paths::virtual_screen_dir(),
+        zyr_screen::Mode::new(1920, 1080, SESSION_RATE),
+    ) {
+        Ok(done) => {
+            log.write(
+                "the virtual screen has never been named by an engine, waking it for this one \
+                 start so it can be",
+            );
+            for line in done.steps {
+                log.write(&line);
+            }
+            true
+        }
+        Err(e) => {
+            log.write(&format!(
+                "the virtual screen could not be woken to be named: {e}"
+            ));
+            false
+        }
+    }
+}
+
+/// Puts it back to sleep, saying so, whoever asked.
+#[cfg(windows)]
+pub fn back_to_sleep(log: &Log) {
+    match sleep_after_a_session() {
+        Ok(said) => {
+            for line in said {
+                log.write(&line);
+            }
+        }
+        Err(e) => log.write(&format!("the virtual screen would not go to sleep: {e}")),
+    }
+}
+
+/// Whether it is asleep right now, and `true` where there is none at all:
+/// both mean the engine has no virtual screen to see.
+#[cfg(windows)]
+pub fn asleep() -> bool {
+    !zyr_screen::awake(zyr_screen::shipped()).is_ok_and(|awake| awake == Some(true))
+}
+
+#[cfg(not(windows))]
+pub fn asleep() -> bool {
+    true
+}
+
+/// Rate the virtual screen is offered at.
+///
+/// Sixty and not the rate the session asked for, and that is not a
+/// shortcut. This screen is drawn by software into memory: nothing is
+/// ever shown on it, so its rate is only the ceiling on how often the
+/// engine can find something new to capture. Sixty covers every desktop,
+/// and a session asking for more is served by the engine resending, which
+/// is the setting that already exists for it.
+#[cfg(windows)]
+const SESSION_RATE: u32 = 60;
 
 /// Takes it back off, along with everything that pointed at it.
 #[cfg(windows)]
@@ -138,7 +256,12 @@ pub enum Learned {
 /// matters more than it looks: the engine is not merely told which
 /// screen to capture but told to put every other screen out for the
 /// length of a session, and it is worth being sure that screen exists.
-pub fn learn_from(engine_log: &std::path::Path, started_with: Option<&str>, log: &Log) -> Learned {
+pub fn learn_from(
+    engine_log: &std::path::Path,
+    started_with: Option<&str>,
+    asleep: bool,
+    log: &Log,
+) -> Learned {
     /// The engine lists its screens as it starts and answers on its own
     /// port a moment later, but the two are not the same moment and the
     /// log is written through a buffer. Read a few times rather than
@@ -190,6 +313,18 @@ pub fn learn_from(engine_log: &std::path::Path, started_with: Option<&str>, log:
     ));
 
     let Some(ours) = zyr_screen::engine::the_virtual_screen(&text, driver) else {
+        // Asleep is not gone, and telling them apart is the whole of this
+        // branch. The screen sleeps at the device between sessions, so
+        // the engine cannot see it and is not supposed to: forgetting its
+        // name here would throw away, at every start, the one thing that
+        // costs an engine restart to learn.
+        if asleep {
+            log.write(
+                "the virtual screen is asleep, as it is between sessions, so the engine does not \
+                 see it; its name is kept for the session that wakes it",
+            );
+            return Learned::NothingToChange;
+        }
         log.write(&format!(
             "no virtual screen among them: looked for one calling itself the way {} does",
             driver.name()

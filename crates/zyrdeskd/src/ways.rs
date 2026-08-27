@@ -461,6 +461,38 @@ impl Ways {
         Ok(())
     }
 
+    /// Asks the far computer to wake its virtual screen for a picture
+    /// that size, or, with no size, to put it back to sleep.
+    ///
+    /// Asked at the opening of a session and answered before the picture
+    /// is opened: the far engine has to find that screen, and it only
+    /// finds one that is already there. Asked again with nothing at the
+    /// end, so the screen does not outlive the session that wanted it.
+    pub async fn ask_for_a_screen(
+        &self,
+        way: WayId,
+        size: Option<(u32, u32)>,
+    ) -> Result<(), String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        aside::ask_for_a_screen(&connection, size)
+            .await
+            .map_err(|e| format!("l'ordinateur distant n'a pas préparé son écran : {e}"))?;
+        self.log.write(&match size {
+            Some((wide, high)) => format!(
+                "way {way} asked the far computer to wake its virtual screen for {wide}x{high}"
+            ),
+            None => format!("way {way} gave the far computer's virtual screen back"),
+        });
+        Ok(())
+    }
+
     /// Asks the far computer to put its lock screen up.
     ///
     /// The same shape again. This is what stands in for Windows+L, which

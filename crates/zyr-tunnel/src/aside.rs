@@ -34,8 +34,10 @@ use crate::pump;
 ///
 /// Version 1 was three bytes carrying nothing but the ports. Version 2
 /// added the pairing code. Version 3 added the one keystroke no keyboard
-/// can carry. Version 4 added the far computer's speakers.
-pub const VERSION: u32 = 6;
+/// can carry. Version 4 added the far computer's speakers. Version 7
+/// added the virtual screen, which now sleeps between sessions and has
+/// to be asked for.
+pub const VERSION: u32 = 7;
 
 /// Longest message this channel takes.
 ///
@@ -106,6 +108,23 @@ pub trait Answers: Send + Sync + 'static {
     /// The engine reads it when it starts, so saying yes to a change
     /// starts that engine over.
     fn serve_steady(&self, rate: bool) -> Result<(), String>;
+
+    /// Wakes this computer's virtual screen for a session that wants a
+    /// picture of that size, or puts it back to sleep.
+    ///
+    /// The virtual screen is what lets a computer be asked for a picture
+    /// its own screen could not draw. It sleeps whenever no session wants
+    /// it, and that is the whole point of asking: a machine nobody is
+    /// looking at has the screens its owner plugged in and no others, and
+    /// a second screen sitting on somebody's desk all day is not
+    /// something a remote desktop is entitled to leave behind.
+    ///
+    /// Asked at the opening of a session and answered before the picture
+    /// is opened, because the far engine has to find that screen. A no is
+    /// an answer and never fails a session: a computer with no virtual
+    /// screen serves what its own screen can draw, which is what every
+    /// computer did before this existed.
+    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<(), String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -124,6 +143,9 @@ pub enum Question {
     Lock,
     /// Resend a still screen at full rate, or stop doing it.
     Steady { rate: bool },
+    /// Wake your virtual screen for a picture this size, or, with no
+    /// size, put it back to sleep.
+    Screen { size: Option<(u32, u32)> },
 }
 
 /// What comes back.
@@ -140,6 +162,8 @@ pub enum Told {
     Locked,
     /// The far computer serves the way it was asked to.
     Steady,
+    /// The far computer's virtual screen is where it was asked to be.
+    Screen,
 }
 
 impl fmt::Display for Question {
@@ -154,6 +178,10 @@ impl fmt::Display for Question {
             Question::Steady { rate } => {
                 write!(f, "{VERSION} steady {}", if *rate { "on" } else { "off" })
             }
+            Question::Screen { size } => match size {
+                Some((wide, high)) => write!(f, "{VERSION} screen {wide}x{high}"),
+                None => write!(f, "{VERSION} screen none"),
+            },
             Question::Hush { quiet } => {
                 write!(
                     f,
@@ -174,6 +202,7 @@ impl fmt::Display for Told {
             Told::Hushed => write!(f, "{VERSION} hushed"),
             Told::Locked => write!(f, "{VERSION} locked"),
             Told::Steady => write!(f, "{VERSION} steady"),
+            Told::Screen => write!(f, "{VERSION} screen"),
         }
     }
 }
@@ -190,6 +219,12 @@ impl Question {
                 "on" => Ok(Question::Steady { rate: true }),
                 "off" => Ok(Question::Steady { rate: false }),
                 other => Err(format!("« {other} » ne dit ni oui ni non")),
+            },
+            "screen" => match rest {
+                "none" => Ok(Question::Screen { size: None }),
+                asked => zyr_proto::session::parse_resolution(asked)
+                    .map(|size| Question::Screen { size: Some(size) })
+                    .map_err(|e| e.to_string()),
             },
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
@@ -229,6 +264,7 @@ impl Told {
             "hushed" => Ok(Ok(Told::Hushed)),
             "locked" => Ok(Ok(Told::Locked)),
             "steady" => Ok(Ok(Told::Steady)),
+            "screen" => Ok(Ok(Told::Screen)),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -369,6 +405,19 @@ pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Res
     }
 }
 
+/// Asks the far ZyrDesk to wake its virtual screen for a picture that
+/// size, or, with no size, to put it back to sleep.
+///
+/// Answered before the picture is opened and not alongside it: the far
+/// engine has to find that screen, and it can only find one that is
+/// already there.
+pub async fn ask_for_a_screen(connection: &Connection, size: Option<(u32, u32)>) -> io::Result<()> {
+    match ask(connection, &Question::Screen { size }).await? {
+        Told::Screen => Ok(()),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -434,6 +483,16 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .await
                 .map_err(|e| format!("la cadence n'a pas pu être réglée : {e}"))?
                 .map(|()| Told::Steady)
+        }
+        // Off it too, and this one takes the longest of them all: waking
+        // a screen is Windows starting a device, and the answer is not
+        // sent until it has, because the computer asking opens its
+        // picture on it.
+        Question::Screen { size } => {
+            tokio::task::spawn_blocking(move || answering.screen_for_a_session(size))
+                .await
+                .map_err(|e| format!("l'écran n'a pas pu être préparé : {e}"))?
+                .map(|()| Told::Screen)
         }
     }
 }

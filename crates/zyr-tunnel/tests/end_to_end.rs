@@ -53,6 +53,9 @@ struct FakeEngine {
     locked: Arc<AtomicBool>,
     /// The rate it was last asked to serve a still screen at.
     steady: Arc<AtomicBool>,
+    /// The size its virtual screen was last asked to wake for, `None`
+    /// standing for the ask to put it back to sleep.
+    screen: Arc<std::sync::Mutex<Option<(u32, u32)>>>,
 }
 
 impl Answers for FakeEngine {
@@ -90,6 +93,11 @@ impl Answers for FakeEngine {
         self.steady.store(rate, Ordering::Relaxed);
         Ok(())
     }
+
+    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<(), String> {
+        *self.screen.lock().unwrap() = size;
+        Ok(())
+    }
 }
 
 /// The tunnel brought up on both sides, kept alive for the test.
@@ -115,6 +123,8 @@ struct Bench {
     locked: Arc<AtomicBool>,
     /// The rate it was asked to serve a still screen at.
     steady: Arc<AtomicBool>,
+    /// The size its virtual screen was last asked to wake for.
+    screen: Arc<std::sync::Mutex<Option<(u32, u32)>>>,
 }
 
 impl Bench {
@@ -153,6 +163,8 @@ impl Bench {
         let hushed = Arc::new(AtomicBool::new(false));
         let locked = Arc::new(AtomicBool::new(false));
         let steady = Arc::new(AtomicBool::new(false));
+        let screen: Arc<std::sync::Mutex<Option<(u32, u32)>>> =
+            Arc::new(std::sync::Mutex::new(None));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -163,6 +175,7 @@ impl Bench {
                 hushed: hushed.clone(),
                 locked: locked.clone(),
                 steady: steady.clone(),
+                screen: screen.clone(),
             }),
         )
         .await
@@ -189,6 +202,7 @@ impl Bench {
             hushed,
             locked,
             steady,
+            screen,
         }
     }
 
@@ -496,4 +510,36 @@ async fn the_counters_follow_what_travels() {
     assert_eq!(reading.to_engine, 1);
     assert_eq!(reading.too_large, 0);
     assert_eq!(reading.unreadable, 0);
+}
+
+#[tokio::test]
+async fn l_ecran_virtuel_se_demande_a_l_ouverture_et_se_rend_a_la_fin() {
+    // L'écran virtuel dort entre les sessions, ce qui est tout l'intérêt :
+    // une machine que personne ne regarde a les écrans que son
+    // propriétaire a branchés et pas un de plus. Il faut donc le demander,
+    // et le rendre.
+    let bench = Bench::bring_up(42770, 15).await;
+
+    before_the_end(aside::ask_for_a_screen(
+        &bench.connection,
+        Some((3840, 2160)),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(*bench.screen.lock().unwrap(), Some((3840, 2160)));
+
+    // Et la taille demandée voyage : c'est au réveil que le pilote lit
+    // les tailles qu'on lui a écrites, il n'y a pas de deuxième chance.
+    before_the_end(aside::ask_for_a_screen(
+        &bench.connection,
+        Some((2560, 1440)),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(*bench.screen.lock().unwrap(), Some((2560, 1440)));
+
+    before_the_end(aside::ask_for_a_screen(&bench.connection, None))
+        .await
+        .unwrap();
+    assert_eq!(*bench.screen.lock().unwrap(), None);
 }

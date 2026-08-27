@@ -154,6 +154,12 @@ pub fn install(driver: &dyn Driver, package: &Path, home: &Path) -> Result<Done,
     // is watching.
     vouching::vouch_for(&package.join(driver.catalog_file()), &mut done)?;
     place::put_in_place(driver, package, home, &mut done)?;
+    // Laid down asleep. Windows starts a device the moment it is
+    // declared, so leaving it there is a second screen on somebody's desk
+    // from the minute this product is installed until it is removed, and
+    // nobody asked for that. It is woken when a session wants it and put
+    // back to sleep when that session ends.
+    place::sleep(driver, &mut done)?;
     Ok(done)
 }
 
@@ -179,27 +185,62 @@ pub fn uninstall(driver: &dyn Driver, package: &Path, home: &Path) -> Result<Don
     Ok(done)
 }
 
-/// Makes sure the virtual screen can show that size.
+/// Wakes the virtual screen for a session, able to show that size.
 ///
-/// Nothing happens at all when it already can, which is the ordinary
-/// case: the sizes it is born with cover the usual screens. When it
-/// cannot, the sizes are written down and the screen is restarted, which
-/// is the only moment the driver reads them again.
+/// The screen sleeps whenever no session wants it, which is nearly all
+/// the time: a machine nobody is looking at has the screens its owner
+/// plugged in and no others. This is the one moment it is woken, and the
+/// size the session asked for is settled first, since waking is when the
+/// driver reads the sizes written down for it.
+///
+/// Awake already means a session still has it, or one ended badly. Only a
+/// size it does not already offer is worth stopping and starting it for
+/// then, because that is what a session in progress would feel.
 #[cfg(windows)]
-pub fn offer(driver: &dyn Driver, home: &Path, wanted: Mode) -> Result<Done, Trouble> {
+pub fn wake_up(driver: &dyn Driver, home: &Path, wanted: Mode) -> Result<Done, Trouble> {
     let mut done = Done::default();
     let mut modes: Vec<Mode> = ALWAYS_OFFERED.to_vec();
     if !modes.contains(&wanted) {
         modes.push(wanted);
     }
-    if !driver.write_modes(home, &modes, &mut done)? {
-        done.step(format!(
-            "virtual screen already offers {wanted}, left alone"
-        ));
-        return Ok(done);
+    let sizes_changed = driver.write_modes(home, &modes, &mut done)?;
+    match place::awake(driver)? {
+        None => {
+            done.step("no virtual screen on this computer to wake");
+            return Ok(done);
+        }
+        Some(false) => {
+            place::wake(driver, &mut done)?;
+            done.changed = true;
+        }
+        Some(true) if sizes_changed => {
+            place::restart(driver, &mut done)?;
+            done.changed = true;
+        }
+        Some(true) => done.step(format!(
+            "virtual screen already awake and already offers {wanted}"
+        )),
     }
-    done.changed = true;
-    place::restart(driver, &mut done)?;
+    Ok(done)
+}
+
+/// Puts it back to sleep, which is where it belongs between sessions.
+///
+/// Doing nothing when it is asleep already, and that is the ordinary
+/// case: this is asked at every start of the service and at the end of
+/// every session, so that a computer whose service was killed mid-session
+/// does not keep a screen its owner never asked for.
+#[cfg(windows)]
+pub fn go_to_sleep(driver: &dyn Driver) -> Result<Done, Trouble> {
+    let mut done = Done::default();
+    match place::awake(driver)? {
+        None => done.step("no virtual screen on this computer to put to sleep"),
+        Some(false) => done.step("virtual screen already asleep"),
+        Some(true) => {
+            place::sleep(driver, &mut done)?;
+            done.changed = true;
+        }
+    }
     Ok(done)
 }
 
@@ -214,7 +255,12 @@ pub fn uninstall(_driver: &dyn Driver, _package: &Path, _home: &Path) -> Result<
 }
 
 #[cfg(not(windows))]
-pub fn offer(_driver: &dyn Driver, _home: &Path, _wanted: Mode) -> Result<Done, Trouble> {
+pub fn wake_up(_driver: &dyn Driver, _home: &Path, _wanted: Mode) -> Result<Done, Trouble> {
+    Err(Trouble::NotHere)
+}
+
+#[cfg(not(windows))]
+pub fn go_to_sleep(_driver: &dyn Driver) -> Result<Done, Trouble> {
     Err(Trouble::NotHere)
 }
 
@@ -227,6 +273,17 @@ pub fn present(driver: &dyn Driver) -> Result<bool, Trouble> {
 #[cfg(not(windows))]
 pub fn present(_driver: &dyn Driver) -> Result<bool, Trouble> {
     Ok(false)
+}
+
+/// Whether it is awake, `None` when this machine has none at all.
+#[cfg(windows)]
+pub fn awake(driver: &dyn Driver) -> Result<Option<bool>, Trouble> {
+    place::awake(driver)
+}
+
+#[cfg(not(windows))]
+pub fn awake(_driver: &dyn Driver) -> Result<Option<bool>, Trouble> {
+    Ok(None)
 }
 
 #[cfg(test)]

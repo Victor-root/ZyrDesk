@@ -154,6 +154,9 @@ fn tell(step: Step, host: &str) {
         Step::RateLeftAlone { refused } => {
             println!("  {host} garde sa cadence d'écran immobile : {refused}");
         }
+        Step::ScreenLeftAlone { refused } => {
+            println!("  {host} n'a pas réveillé son écran virtuel : {refused}");
+        }
     }
 }
 

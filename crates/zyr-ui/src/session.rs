@@ -494,7 +494,9 @@ fn told(step: Step) -> Option<Told> {
         Step::Paired => Told::Paired,
         Step::Starting => Told::Starting,
         Step::Showing { process, .. } => Told::Showing { process },
-        Step::SpeakersLeftAlone { .. } | Step::RateLeftAlone { .. } => return None,
+        Step::SpeakersLeftAlone { .. }
+        | Step::RateLeftAlone { .. }
+        | Step::ScreenLeftAlone { .. } => return None,
     })
 }
 
@@ -522,6 +524,9 @@ fn written(step: &Step) -> String {
         }
         Step::RateLeftAlone { refused } => {
             format!("l'ordinateur distant garde sa cadence d'écran immobile : {refused}")
+        }
+        Step::ScreenLeftAlone { refused } => {
+            format!("l'ordinateur distant n'a pas réveillé son écran virtuel : {refused}")
         }
     }
 }

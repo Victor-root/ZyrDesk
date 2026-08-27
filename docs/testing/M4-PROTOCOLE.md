@@ -59,6 +59,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R49** | **Nouveau, et c'est le sujet du lot.** L'écran virtuel était actif en permanence : deux écrans en permanence dans les paramètres d'affichage, sur une machine que personne ne regarde. Il dort maintenant et ne se réveille que pour une session, à la demande de celui qui regarde |
+| **R50** | **Refait, et c'est un défaut du moteur hôte.** Plus moyen de s'appairer : `400 Invalid uniqueid` à chaque tentative, de plus en plus tôt. Un appairage abandonné restait dans la table du moteur et cassait tous les suivants entre les deux mêmes ordinateurs, définitivement, jusqu'au redémarrage de ce moteur. À vérifier après recompilation du **moteur hôte** |
 | **R48** | Nouveau. Le gel de l'image sur Ctrl+Alt+Suppr. Changer de bureau retire la duplication d'écran au moteur, et il attendait deux cents millisecondes en aveugle avant de redemander, puis vingt de plus avant de réencoder. Le journal du moteur hôte dit maintenant le chiffre. À vérifier après recompilation du **moteur hôte** |
 | **R27** | **Refait, et c'est le sujet du lot.** L'écran virtuel ne s'installait sur aucune machine à qui le pilote n'avait pas été donné à la main : la lecture de sa signature posait au fichier une question trop large, à laquelle Windows répond par la liste d'empreintes du catalogue et non par les certificats. À refaire sur une machine qui n'a jamais eu d'écran virtuel |
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
@@ -1319,6 +1321,30 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Avant ce lot, la deuxième moitié valait deux cents millisecondes de plus, et il fallait ajouter jusqu'à vingt millisecondes après la ligne avant que l'image ne reparte. Si tu relis des nombres autour de deux cents, la correction n'est pas en place : vérifie que c'est bien le moteur hôte recompilé qui tourne.
 >
 > **À faire aussi dans l'autre sens.** Se verrouiller avec l'entrée **Verrouiller**, puis Ctrl+Alt+Suppr sur l'écran de connexion : c'est la même bascule de bureau, dans l'autre sens, et elle passe par le même code.
+
+> **R49 (l'écran virtuel ne vit que pendant une session)**
+>
+> **Sur l'ordinateur hôte**, clic droit sur le bureau, **Paramètres d'affichage**, hors de toute session.
+>
+> Attendu : **un seul écran**, le sien. Pas de deuxième, pas de « VDD by MTT », rien.
+>
+> **La seule exception, et elle n'arrive qu'une fois par ordinateur.** Au tout premier démarrage du service après ce lot, l'écran se montre une seconde puis repart : le moteur doit le voir une fois pour lui donner un nom, et c'est ce nom qui sert ensuite. Le journal du service le dit : `the virtual screen has never been named by an engine, waking it for this one start so it can be`. Aux démarrages suivants, plus rien.
+>
+> **Puis ouvrir une session** depuis l'autre ordinateur, en demandant une taille plus grande que l'écran de l'hôte (4K vers un hôte 1080p).
+>
+> Pendant la session, le journal du service **d'en face** dit `virtual screen woken`, et celui d'ici `way N asked the far computer to wake its virtual screen for 3840x2160`. Si tu peux regarder l'écran physique de l'hôte, il montre bien le bureau distant.
+>
+> **Fermer la session, puis retourner dans les paramètres d'affichage de l'hôte** : un seul écran de nouveau, dans la seconde. Le journal dit `virtual screen asleep, this machine has its own screens back`.
+>
+> **Le cas qui compte vraiment : la session qui finit mal.** Ouvrir une session, puis **arracher le Wi-Fi** de l'ordinateur qui regarde, ou fermer son couvercle. Personne ne dit rien à l'hôte. Attendre quelques secondes et regarder ses paramètres d'affichage : l'écran doit être reparti quand même. Le journal de l'hôte dit `nobody is watching this computer any more, its virtual screen goes back to sleep`. C'est le cas pour lequel ce filet existe.
+
+> **R50 (l'appairage se refait autant de fois qu'on veut)**
+>
+> Dans les réglages, **oublier** l'ordinateur d'en face, puis rouvrir une session : les deux se réappairent tout seuls et l'image arrive.
+>
+> **Le cas qui cassait tout.** Recommencer, mais cette fois **fermer la fenêtre pendant l'appairage**, avant que l'image n'arrive. Puis rouvrir une session immédiatement.
+>
+> Attendu : ça repart. Avant ce lot, l'appairage interrompu restait coincé dans le moteur d'en face et **tous** les suivants échouaient sur `400 Invalid uniqueid`, définitivement, jusqu'au redémarrage du service de cette machine. Recommencer trois ou quatre fois d'affilée : chaque tentative doit se comporter comme la première.
 
 > **R43 (le bouton suit le curseur, et ne laisse rien derrière lui)**
 > 

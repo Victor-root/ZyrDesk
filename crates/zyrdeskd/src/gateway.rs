@@ -205,6 +205,43 @@ impl Answers for Attending {
     /// Doing nothing at all when it is already what was asked, which is
     /// the ordinary case: every session asks, and almost none of them
     /// changes anything.
+    /// Wakes this computer's virtual screen for a session, or puts it
+    /// back to sleep.
+    ///
+    /// The screen sleeps whenever no session wants it, which is nearly
+    /// always. That is not thrift, it is the difference between a product
+    /// that leaves a second screen on somebody's desk from the day it is
+    /// installed and one that does not: a machine nobody is looking at
+    /// has the screens its owner plugged in and no others.
+    ///
+    /// A refusal is written down and handed back rather than swallowed,
+    /// and the session goes on anyway at the other end: a computer with
+    /// no virtual screen serves what its own screen can draw, which is
+    /// what every computer did before this existed.
+    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<(), String> {
+        let said = match size {
+            Some(size) => screen_awake(size),
+            None => screen_asleep(),
+        };
+        let said = match said {
+            Ok(said) => {
+                self.sessions
+                    .screen_awake
+                    .store(size.is_some(), Ordering::Relaxed);
+                said
+            }
+            Err(refused) => {
+                self.log
+                    .write(&format!("the virtual screen stayed as it was: {refused}"));
+                return Err(refused);
+            }
+        };
+        for line in said {
+            self.log.write(&line);
+        }
+        Ok(())
+    }
+
     fn serve_steady(&self, rate: bool) -> Result<(), String> {
         let mut serving = self.remembered.serving();
         if serving.steady_rate == rate {
@@ -224,6 +261,28 @@ impl Answers for Attending {
         ));
         Ok(())
     }
+}
+
+/// Wakes the virtual screen, where there is a Windows to wake one on.
+#[cfg(windows)]
+fn screen_awake(size: (u32, u32)) -> Result<Vec<String>, String> {
+    crate::screen::wake_for_a_session(size)
+}
+
+#[cfg(not(windows))]
+fn screen_awake(_size: (u32, u32)) -> Result<Vec<String>, String> {
+    Err("cet ordinateur n'a pas d'écran virtuel".to_string())
+}
+
+/// Puts it back to sleep.
+#[cfg(windows)]
+fn screen_asleep() -> Result<Vec<String>, String> {
+    crate::screen::sleep_after_a_session()
+}
+
+#[cfg(not(windows))]
+fn screen_asleep() -> Result<Vec<String>, String> {
+    Err("cet ordinateur n'a pas d'écran virtuel".to_string())
 }
 
 /// Locks it, where there is a Windows to lock.
@@ -284,6 +343,16 @@ struct Sessions {
     /// anybody at all is asking. It is cleared when the last session
     /// goes, so the next one starts from silence not being wanted.
     hushing: AtomicBool,
+    /// Whether a session has woken this computer's virtual screen.
+    ///
+    /// Here for the same reason as the hush, and put back the same way,
+    /// but the putting back is not done where it is noticed: waking and
+    /// sleeping a screen is Windows starting and stopping a device, which
+    /// takes long enough that it has no business happening while a
+    /// session is being torn down. What is written here is read by the
+    /// watch that holds the engine, on its own thread, which is where it
+    /// is acted on.
+    screen_awake: AtomicBool,
 }
 
 /// One session, counted for as long as it lasts.
@@ -408,6 +477,24 @@ impl Gateway {
     /// how a service ends up restarting its engine in a circle.
     pub fn anyone_came_through(&self) -> bool {
         self.sessions.ever.load(Ordering::Relaxed)
+    }
+
+    /// Whether the virtual screen is awake with nobody left watching it.
+    ///
+    /// Asked by the watch that holds the engine, which is on a thread
+    /// where stopping a device is allowed to take its time. A session
+    /// that ends properly says so itself and this never fires; this is
+    /// for the sessions that do not, which is every one whose computer
+    /// was closed, unplugged or crashed.
+    pub fn the_screen_is_awake_for_nobody(&self) -> bool {
+        self.sessions.screen_awake.load(Ordering::Relaxed)
+            && self.sessions.open.load(Ordering::Relaxed) == 0
+    }
+
+    /// Says the screen has been put back to sleep, so it is not asked for
+    /// again on the next turn of that watch.
+    pub fn the_screen_went_to_sleep(&self) {
+        self.sessions.screen_awake.store(false, Ordering::Relaxed);
     }
 }
 

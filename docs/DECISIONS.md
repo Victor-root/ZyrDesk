@@ -997,6 +997,38 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ça franchit le plafond de Sunshine, de deux à trois, et c'est assumé.** Rien de ce qui précède n'est atteignable de l'extérieur : ce sont deux constantes internes et une primitive de synchronisation interne. Ce n'est pas un interrupteur de confort, ce sont deux défauts, et les deux sont candidats à une contribution en amont.
 
+## D77. L'écran virtuel dort entre les sessions (2026-08-27, pendant M4)
+
+**La demande.** « L'écran virtuel est toujours actif, donc sur mon PC il y a deux écrans qui apparaissent en permanence : celui de mon portable et le virtuel. Ça ne devrait jamais être actif hors d'une session. »
+
+**Il a raison, et le défaut est de conception, pas d'implémentation.** Le pilote était posé au démarrage du service, et Windows démarre un périphérique à l'instant où il est déclaré. L'écran existait donc de la minute où le produit est installé jusqu'à celle où il est retiré. Personne n'a demandé ça : une machine que personne ne regarde a les écrans que son propriétaire a branchés, et pas un de plus.
+
+**Décision : le pilote reste installé, l'écran dort.** Deux choses différentes qu'on avait confondues. Installer le pilote est long, demande les droits administrateur et fait cliqueter Windows ; c'est fait une fois. **Endormir** le périphérique, c'est ce qu'un clic droit « Désactiver » fait dans le gestionnaire de périphériques : instantané, réversible, et l'écran disparaît complètement, comme débranché. Il dort donc partout ailleurs qu'en session.
+
+**Il se réveille sur demande, et la demande vient du côté qui regarde.** Une nouvelle question sur le canal du produit, comme le son et la cadence : « réveille ton écran virtuel pour une image de cette taille ». Elle part à l'ouverture de la session et la réponse arrive **avant** que l'image ne s'ouvre, parce que le moteur d'en face ne peut capturer qu'un écran déjà là. La taille voyage avec, parce que le pilote lit les tailles qu'on lui a écrites au moment où il se réveille et qu'il n'y a pas de deuxième chance.
+
+**Un refus n'a jamais fait échouer une session, et ça ne change pas.** Un ordinateur sans écran virtuel sert ce que son propre écran sait dessiner et le nôtre étire le reste, ce que faisait chaque session avant que cet écran existe. C'est écrit au journal et la session continue.
+
+**Le rendormissement a deux chemins, et le deuxième est celui qui compte.** Une session qui se termine proprement le dit. Une session dont l'ordinateur a été fermé, débranché ou a planté ne dit rien du tout, et c'est précisément là qu'un écran resterait sur le bureau de quelqu'un sans que personne sache d'où il vient. La surveillance qui tient le moteur regarde donc, à chaque tour, s'il reste réveillé sans personne derrière, et le rendort. Le service l'endort aussi à chaque démarrage, ce qui rattrape un service tué au milieu d'une session.
+
+**Le seul moment où il se montre sans session, et pourquoi il est inévitable.** Le moteur d'en face nomme un écran par une empreinte de son identité que rien d'autre sur la machine ne calcule pareil, et il ne la dit que des écrans qu'il voit. Un écran qui dort n'est jamais vu. Sur un ordinateur qui n'a jamais fait tourner de moteur avec lui réveillé, ce nom ne serait donc jamais appris et l'écran virtuel ne servirait jamais à rien. Il est donc réveillé pour exactement un démarrage du moteur, **une fois dans la vie d'un ordinateur**, et rendormi dès que le nom est écrit. Quelqu'un assis devant voit un deuxième écran apparaître et repartir, une fois.
+
+**Et un défaut du moteur hôte tombait pile en travers.** Il ne cherchait l'écran nommé dans sa configuration qu'à sa toute première énumération. Un écran branché après son démarrage n'était donc jamais repris, quel que soit le nombre de fois qu'il revenait, ce qui est exactement la vie d'un écran virtuel allumé pour une session et éteint après : le moteur aurait continué de capturer l'écran du bureau pendant toute sa vie. Il le préfère maintenant à chaque énumération, et le nom est relu de sa configuration à chaque passage, ce qui dit que c'était l'intention depuis le début.
+
+## D78. Un appairage abandonné bloquait tous les suivants (2026-08-27, pendant M4)
+
+**Le relevé.** « Je ne peux plus me connecter au PC du SAV, c'est quoi ce merdier », avec trois tentatives d'affilée finissant toutes sur `400 Invalid uniqueid`.
+
+**Ce n'était pas le réseau, ni le tunnel, ni le code d'appairage.** Le service a bien ouvert la voie, bien remis le code, et l'échange a bien avancé de trois étapes sur quatre à la première tentative, puis de deux, puis d'une. Cette dégradation-là est la signature du défaut.
+
+**Le moteur hôte garde les appairages en cours dans une table indexée par l'identifiant du client, et il n'y écrivait que si la clé était absente.** Une tentative interrompue n'importe où après sa première étape laisse une entrée dont l'étape a avancé. La tentative suivante du même client se voyait rendre **cette entrée-là** : son nouveau certificat était jeté, lui remettre un code échouait au contrôle d'ordre, et ce contrôle supprime l'entrée par sécurité. L'appel suivant du client ne trouvait donc plus rien et s'entendait répondre que son identifiant était invalide. À partir de là, les deux ordinateurs ne pouvaient plus jamais s'appairer, quoi qu'ils tentent, jusqu'au redémarrage du moteur hôte.
+
+**Décision : demander le certificat du serveur, c'est dire « je commence un appairage », donc c'est le seul appel en droit de dire de quoi il part.** Il remplace ce qui était là au lieu de le retrouver.
+
+**Et la remise du code avait le même défaut vu de l'autre côté.** Elle allait à l'appairage que la table tenait en premier, ce qui, après une tentative abandonnée, n'était pas celui qui attendait. Elle va maintenant à un appairage qui attend vraiment, et le dit clairement quand il n'y en a aucun.
+
+**Le contournement en attendant une recompilation** : redémarrer le service ZyrDesk de la machine d'en face vide cette table.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
