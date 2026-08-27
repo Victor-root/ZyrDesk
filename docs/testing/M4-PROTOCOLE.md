@@ -46,6 +46,10 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
 | **R36** | **Refait, et c'est le sujet du lot.** La frappe partait bien et l'ordinateur d'en face répondait oui, sans que rien n'apparaisse à l'écran : elle était confiée à un aller simple lancé dans la session de l'écran, qui n'est ni un service ni un programme à manifeste, donc aucun des deux cas que Windows accepte. C'est le service lui-même qui presse maintenant. Le journal du service hôte écrit la stratégie réellement en place, sa propre session et celle de l'écran : c'est la ligne à lire si ça ne marche toujours pas |
 | **R37** | Nouveau. Un interrupteur **Son** dans le menu de la session, Actif ou Coupé. Il coupe le son **de cette machine-ci**, sur la tranche du lecteur dans le mélangeur de Windows, et rien d'autre de ce qui joue ici |
+| **R34** | **Refait.** « Appliquer les changements » relançait souvent l'image sans rien appliquer : la relance partait avant que le choix qu'on venait de faire soit écrit, et repartait donc sur les anciens réglages. Elle attend maintenant. À refaire sur les trois réglages, en cliquant **tout de suite** après avoir lâché le curseur |
+| **R17** | Touché. Le codec n'est plus un curseur mais des boutons, comme la souris. Les autres restent des curseurs |
+| **R40** | Nouveau. Le menu du bouton flottant était coupé quand le bouton était posé en bas de l'image. Il s'ouvre maintenant vers le haut quand il n'y a plus de place en dessous |
+| **R41** | Nouveau. Le curseur passait au sens interdit pendant le déplacement du bouton flottant, là où c'est une main qui agrippe qu'il faut voir |
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
 | **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
@@ -1240,6 +1244,24 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Et un choix explicite reste un choix.** Mettre **Clair**, basculer Windows en sombre : ZyrDesk reste clair, barre de titre comprise. C'est voulu, et c'est exactement ce que « Système » ne doit pas faire.
 >
 > **Ce qui n'allait pas.** La vue web se voit imposer une réponse fixe au moment où la fenêtre est bâtie, et le seul mécanisme qui la rafraîchissait était éteint par le fait même que nous imposions un thème à la fenêtre pour accorder sa barre de titre. C'est le coeur qui écoute Windows maintenant.
+
+> **R40 (le menu s'ouvre vers le haut quand il n'y a plus de place en bas)**
+>
+> Pendant une session, prendre le bouton flottant et le poser **tout en bas** de l'image, contre le bord. Puis l'ouvrir.
+>
+> Attendu : le menu s'ouvre **au-dessus** du logo, entier, rien de coupé. Le logo lui-même ne bouge pas d'un pixel : il reste exactement là où la main l'a laissé.
+>
+> Remonter le bouton vers le haut : le menu repasse en dessous, toujours entier. Le faire menu ouvert : il doit se retourner sans laisser de morceau de l'ancien dessin derrière lui.
+>
+> **À vérifier de près, c'est le piège de cette reprise.** Ouvrir le menu en bas, puis changer la **taille** : la ligne **Appliquer les changements** apparaît, ce qui rend le menu plus haut. La fenêtre doit grandir **vers le haut**, et le menu rester entier et bien découpé, sans liseré ni morceau fantôme au-dessus.
+>
+> Le journal donne la mesure : `bouton flottant : LxH demandés, ... ; N morceaux dessinés jusqu'à LxH`. Les deux hauteurs doivent se suivre.
+
+> **R41 (le curseur montre une main pendant qu'on déplace le bouton)**
+>
+> Pendant une session, prendre le bouton flottant et le déplacer sur l'image.
+>
+> Attendu : le curseur est une **main qui agrippe** pendant tout le geste. Jamais un rond barré, jamais un sens interdit, à aucun moment du déplacement.
 
 > **R18 (un réglage survit à tout)**
 >

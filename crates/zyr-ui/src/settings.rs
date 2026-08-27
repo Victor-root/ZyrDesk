@@ -291,9 +291,20 @@ pub async fn remember_display(mode: DisplayMode) {
 /// fail on the service being absent, and that is the trouble worth
 /// showing, not a settings one.
 pub async fn preferred() -> Preferred {
+    what_was_chosen().await.unwrap_or_default()
+}
+
+/// The same, saying so when the service could not be asked.
+///
+/// For the one caller that has something better than the defaults to
+/// fall back on: reopening a picture reads this to know what to reopen
+/// it with, and a service that did not answer at that instant would have
+/// it reopened with settings nobody chose. The person asked for one
+/// thing to change and would watch three others change with it.
+pub async fn what_was_chosen() -> Option<Preferred> {
     match service::ask(&Request::Settings).await {
-        Ok(Answer::Settings(preferred)) => preferred,
-        _ => Preferred::default(),
+        Ok(Answer::Settings(preferred)) => Some(preferred),
+        _ => None,
     }
 }
 

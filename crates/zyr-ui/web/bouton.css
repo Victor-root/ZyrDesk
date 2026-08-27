@@ -44,6 +44,17 @@
   width: max-content;
 }
 
+/* Le bouton posé bas sur l'image : le menu pousse au-dessus du logo au
+   lieu d'en dessous, où il serait coupé par le bord. Le logo ne bouge
+   pas d'un pixel, c'est la fenêtre qui grandit vers le haut, et le bloc
+   se colle donc au bas de celle-ci. C'est le coeur qui décide du sens :
+   la page ignore où sur l'écran elle a été posée. */
+.paquet.vers-le-haut {
+  top: auto;
+  bottom: 0;
+  flex-direction: column-reverse;
+}
+
 /* ---- Le bouton ------------------------------------------------------- */
 
 /* La marque elle-même, posée sur l'image : pas de carte sous elle, elle
@@ -64,7 +75,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  cursor: pointer;
+  cursor: grab;
   opacity: 0.55;
   /* Le logo grandit depuis son coin haut droit, qui est celui par lequel
      la fenêtre est accrochée. Il grandit donc vers l'intérieur, là où il
@@ -105,6 +116,20 @@
 .logo.pris {
   transform: scale(0.97);
   cursor: grabbing;
+}
+
+/* Rien de ce bouton ne se traîne ni ne se sélectionne. Sans cela, le
+   système prenait la prise du logo pour un glisser-déposer d'image et
+   montrait le sens interdit pendant tout le déplacement, là où c'est une
+   main qui agrippe qu'il faut voir. */
+.logo,
+.logo img {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.logo img {
+  pointer-events: none;
 }
 
 .logo:focus-visible {

@@ -317,7 +317,12 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
                 "image relancée avec ce qui est choisi maintenant (le lecteur a dit {ended:?})"
             ));
             say(app, Told::Again);
-            preferred = tauri::async_runtime::block_on(crate::settings::preferred());
+            // What is kept when the service cannot be asked is what the
+            // picture was already showing, never the ordinary settings:
+            // the person asked for one thing to change, not for three
+            // others to go back to what the product does by default.
+            preferred = tauri::async_runtime::block_on(crate::settings::what_was_chosen())
+                .unwrap_or(preferred);
             wanted.settings = what_to_ask_for(app, preferred);
             // The way is opened again with the picture, and what the far
             // computer was asked went with the old one: it has to be

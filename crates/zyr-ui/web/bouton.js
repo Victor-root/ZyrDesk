@@ -55,6 +55,26 @@ const TEMPS_SOUCI = 4000;
 let ouvert = false;
 let effacement = null;
 
+/* De quel côté le menu s'ouvre. Le coeur le décide, parce que lui seul
+   sait où cette fenêtre a été posée sur l'écran ; la page le lui demande
+   en lui disant ce qu'elle dessine, qui est la seule conversation que
+   les deux ont sur la forme de cette fenêtre.
+
+   Quand il s'ouvre vers le haut, le logo reste où la main l'a laissé et
+   le menu pousse au-dessus. La page est alors collée au bas de la
+   fenêtre, et tout ce qu'elle mesure se compte depuis ce bas-là : c'est
+   le haut de la fenêtre qui bouge quand elle grandit. */
+let versLeHaut = false;
+
+function poseLeSens(veut) {
+  if (versLeHaut === veut) {
+    return false;
+  }
+  versLeHaut = veut;
+  vue.paquet.classList.toggle("vers-le-haut", veut);
+  return true;
+}
+
 /* La barre se remplit tant que le menu est ouvert, et pas une seconde de
    plus : des chiffres que personne ne regarde ne valent ni le fichier ni
    le réveil. */
@@ -144,7 +164,14 @@ const LOGO = {
    et il n'y a plus rien qui déborde. */
 function laBoite() {
   const boite = vue.paquet.getBoundingClientRect();
-  return { width: boite.width, height: boite.bottom };
+  // Compté depuis le bord auquel la page est collée. Vers le haut, le
+  // bloc touche le bas de la fenêtre et déborde par le sommet tant
+  // qu'elle est trop courte : la distance du haut du bloc au bas de la
+  // fenêtre est alors exactement sa hauteur, débordement compris.
+  const haut = versLeHaut
+    ? document.documentElement.clientHeight - boite.top
+    : boite.bottom;
+  return { width: boite.width, height: haut };
 }
 
 /* La forme que la page dessine vraiment, en vrais pixels : la plaque du
@@ -162,6 +189,10 @@ function laBoite() {
 function formeOccupee(echelle) {
   const morceaux = [];
   const droite = document.documentElement.clientWidth;
+  // Le bord horizontal ne bouge jamais, le vertical dépend du sens : vers
+  // le haut, c'est le sommet de la fenêtre qui se déplace quand elle
+  // grandit, donc c'est depuis son bas qu'il faut compter.
+  const bas = versLeHaut ? document.documentElement.clientHeight : 0;
   // Arrondi vers l'intérieur, jamais vers l'extérieur : les bords sont
   // remontés et les tailles rabotées. Un morceau arrondi vers le dehors
   // réclame une colonne de pixels que la page n'a pas peinte, et le
@@ -173,7 +204,7 @@ function formeOccupee(echelle) {
   const pose = (gauche, haut, large, haute, rayon) =>
     morceaux.push({
       x: Math.ceil((gauche - droite) * echelle),
-      y: Math.ceil(haut * echelle),
+      y: Math.ceil((haut - bas) * echelle),
       width: Math.floor(large * echelle),
       height: Math.floor(haute * echelle),
       radius: Math.round(rayon * echelle),
@@ -221,10 +252,16 @@ function ajusteLaFenetre() {
     width: Math.ceil(boite.width * echelle),
     height: Math.ceil(boite.height * echelle),
     shape: forme,
-  }).catch(() => {});
+  })
+    // Le coeur répond de quel côté le menu doit s'ouvrir. Un changement
+    // remet la page en page, donc tout ce qui vient d'être mesuré est
+    // à refaire : le suivi ci-dessous s'en charge, puisqu'il ne s'arrête
+    // que quand deux images de suite dessinent la même chose.
+    .then(poseLeSens)
+    .catch(() => {});
   // Ce qui vient d'être envoyé, en un mot : c'est à ça que l'appelant
   // voit si le dessin bouge encore.
-  return JSON.stringify([boite.width, boite.height, forme]);
+  return JSON.stringify([versLeHaut, boite.width, boite.height, forme]);
 }
 
 /* Ce que la page dessine, suivi image par image jusqu'à ce que plus rien
@@ -348,6 +385,11 @@ const LIGNES = {
     ou: (choix) => String(choix.bitrateKbps),
   },
   codec: {
+    // Des boutons et non une barre. Le codec n'est pas une échelle : ce
+    // sont quelques noms sans ordre entre eux, dont un « Automatique »
+    // qui n'est pas une valeur mais un renoncement, et pousser un
+    // curseur promettait un plus et un moins qui n'existent pas.
+    boutons: true,
     valeurs: (menu) => menu.codecs,
     dit: (_menu, valeur) => (valeur === "auto" ? "Automatique" : valeur),
     ou: (choix) => choix.codec,
@@ -360,7 +402,7 @@ const LIGNES = {
 let leMenu = null;
 
 function bloc(nom) {
-  return document.querySelector(`.reglage[data-reglage="${nom}"]`);
+  return document.querySelector(`[data-reglage="${nom}"]`);
 }
 
 /* Chaque curseur va de zéro au nombre de valeurs moins une : ce sont des
@@ -378,6 +420,15 @@ function poseLesValeurs(choix) {
       continue;
     }
     const ou = ligne.ou(choix);
+    if (ligne.boutons) {
+      for (const bouton of ici.querySelectorAll("[data-choix]")) {
+        bouton.setAttribute(
+          "aria-checked",
+          bouton.dataset.choix === ou ? "true" : "false",
+        );
+      }
+      continue;
+    }
     const cran = ligne.valeurs(leMenu).indexOf(ou);
     ici.querySelector("[data-valeur]").textContent = ligne.dit(leMenu, ou);
     const curseur = ici.querySelector("[data-curseur]");
@@ -420,6 +471,12 @@ function choisis(nom, valeur) {
    menu resté ouvert par-dessus serait une nappe posée sur elle. */
 async function applique() {
   try {
+    // Ce qui vient d'être choisi n'est pas forcément encore écrit : un
+    // curseur lâché part au service et met un aller-retour à y arriver,
+    // et la ligne « Appliquer » est déjà à l'écran depuis le choix
+    // d'avant. Relancer sans attendre relisait les réglages tels
+    // qu'ils étaient, et l'image revenait identique.
+    await choixEnCours;
     await invoke("apply_session");
     ouvre(false);
   } catch (raison) {
@@ -427,13 +484,29 @@ async function applique() {
   }
 }
 
-function batisLesCurseurs() {
+function batisLesChoix() {
   for (const [nom, ligne] of Object.entries(LIGNES)) {
     const ici = bloc(nom);
     if (!ici) {
       continue;
     }
     const valeurs = ligne.valeurs(leMenu);
+    if (ligne.boutons) {
+      ici.querySelector(".bascule").replaceChildren(
+        ...valeurs.map((valeur) => {
+          const bouton = document.createElement("button");
+          bouton.type = "button";
+          bouton.className = "bascule-cote";
+          bouton.dataset.choix = valeur;
+          bouton.setAttribute("role", "menuitemradio");
+          bouton.setAttribute("aria-checked", "false");
+          bouton.textContent = ligne.dit(leMenu, valeur);
+          bouton.addEventListener("click", () => choisis(nom, valeur));
+          return bouton;
+        }),
+      );
+      continue;
+    }
     const curseur = ici.querySelector("[data-curseur]");
     curseur.min = "0";
     curseur.max = String(Math.max(valeurs.length - 1, 0));
@@ -537,7 +610,7 @@ async function litLeMenu() {
        mieux que trois lignes de menu. */
     return;
   }
-  batisLesCurseurs();
+  batisLesChoix();
   poseLesValeurs(leMenu.now);
 }
 

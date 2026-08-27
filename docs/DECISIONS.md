@@ -817,6 +817,22 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ce que ça coûte.** Un fil qui dort tout du long, réveillé par Windows lui-même. L'autre façon de faire est d'interroger le registre sur une minuterie, soit mille questions pour une réponse qui change deux fois par jour.
 
+## D66. Quatre reprises sur le bouton flottant (2026-08-27, pendant M4)
+
+**« Appliquer les changements » relançait l'image sans rien appliquer.** Et c'était une course, ce qui explique le « souvent » : lâcher un curseur envoie le choix au service, ce qui prend un aller-retour. La ligne « Appliquer » est déjà à l'écran depuis le choix d'avant, donc rien n'empêche de la cliquer pendant ce voyage. La relance relisait alors les réglages tels qu'ils étaient, et l'image revenait identique. Elle attend maintenant que les choix en vol soient écrits avant de demander quoi que ce soit.
+
+**Et la même relance retombait en silence sur les valeurs d'usine.** La lecture des réglages répondait « ce que fait le produit par défaut » dès que le service ne répondait pas, ce qui est le bon défaut pour une fenêtre qui s'ouvre et le mauvais pour une image qu'on rouvre : la personne demande une chose et en voit changer trois. La relance garde désormais ce que l'image montrait déjà.
+
+**Le codec devient des boutons.** Ce n'est pas une échelle : quelques noms sans ordre entre eux, dont un « Automatique » qui n'est pas une valeur mais un renoncement. Une barre à pousser promettait un plus et un moins qui n'existent pas. Les boutons sont bâtis depuis la liste que le produit tient, jamais recopiés dans la page.
+
+**Le menu s'ouvre vers le haut quand il n'y a plus de place en bas.** La fenêtre du bouton est aussi haute que le menu pendant toute la session et pend par le logo, qui occupe un de ses coins. Accrochée par le haut, un bouton posé bas laissait le menu déborder sous le bord de l'image, où il était simplement coupé. Accrochée par le bas, le menu pousse dans la place qui reste.
+
+**C'est le coeur qui décide du sens, et la page qui obéit.** La page ignore où sur l'écran elle a été posée ; le coeur, lui, connaît l'image et le coin où la main a laissé le logo. La réponse voyage là où les deux se parlent déjà de la forme de cette fenêtre : la page dit ce qu'elle dessine, le coeur répond de quel côté ouvrir.
+
+**Et tout ce que la page mesure se compte alors depuis le bas.** C'est la même règle que pour la largeur, pour la même raison : le dessin est mesuré dans la fenêtre telle qu'elle est et découpé dans celle qu'elle devient. Vers le haut, c'est le sommet de la fenêtre qui se déplace quand elle grandit, donc le bas est le seul bord qui ne bouge pas. Compté depuis le haut, le menu se serait décalé de toute la différence, ce qui est exactement ce qui arrivait à son bord droit avant qu'on compte la largeur depuis la droite.
+
+**Le curseur montre enfin une main qui agrippe.** Il passait au sens interdit pendant tout le déplacement : le logo porte une image, une image se traîne toute seule sous Windows, et le système prenait la prise du bouton pour un glisser-déposer. Plus rien de ce bouton ne se traîne ni ne se sélectionne.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
