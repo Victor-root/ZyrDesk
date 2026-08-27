@@ -41,6 +41,14 @@ static ASKED: AtomicBool = AtomicBool::new(false);
 /// is what silenced them.
 static OWED: AtomicBool = AtomicBool::new(false);
 
+/// Whether somebody was watching this computer at the last look.
+///
+/// Kept for the journal and for nothing else. Without it, a computer
+/// whose speakers stay on says nothing at all about why: the setting
+/// being off, the session never being counted and the mute being refused
+/// all read alike, which is to say they do not read.
+static WATCHED: AtomicBool = AtomicBool::new(false);
+
 /// Brings the speakers into line with what is going on, and does nothing
 /// at all when they already are.
 ///
@@ -49,7 +57,28 @@ static OWED: AtomicBool = AtomicBool::new(false);
 /// since the next turn tries again. Which is what makes the sound come
 /// back on a machine that was left silent, even when nobody is signed in
 /// yet at the moment the service starts.
-pub fn keep_in_step(quiet: bool, log: &Log) {
+pub fn keep_in_step(wanted: bool, a_session_is_open: bool, log: &Log) {
+    // One line per session, whatever is decided, and this is the whole
+    // reason both facts are handed over separately rather than already
+    // multiplied together: what is worth reading is not that the
+    // speakers did nothing, it is why.
+    if WATCHED.swap(a_session_is_open, Ordering::Relaxed) != a_session_is_open {
+        log.write(&format!(
+            "somebody {} watching this computer, and its speakers are {}",
+            if a_session_is_open {
+                "is now"
+            } else {
+                "is no longer"
+            },
+            if wanted {
+                "to be silent while they do"
+            } else {
+                "left alone, nobody having asked for that"
+            }
+        ));
+    }
+
+    let quiet = wanted && a_session_is_open;
     if quiet == ASKED.load(Ordering::Relaxed) {
         return;
     }
@@ -91,6 +120,7 @@ pub fn pick_up_where_it_was_left(log: &Log) {
     log.write("this computer was left silent by a session that did not end properly");
     ASKED.store(true, Ordering::Relaxed);
     OWED.store(true, Ordering::Relaxed);
+    WATCHED.store(true, Ordering::Relaxed);
 }
 
 /// Writes down whether the sound is owed, so a service that never comes
@@ -161,7 +191,7 @@ mod tests {
         // Rien n'est demandé au système : la fonction s'arrête avant.
         // Hors de Windows, toucher aux enceintes échoue toujours, donc
         // « demandé » retombé veut dire qu'on n'y a pas touché.
-        keep_in_step(false, &log);
+        keep_in_step(false, false, &log);
         assert!(!ASKED.load(Ordering::Relaxed));
         assert!(!OWED.load(Ordering::Relaxed));
 

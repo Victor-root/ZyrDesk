@@ -243,7 +243,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         // speakers play. This is also what gives the sound back after a
         // session that ended badly, and what keeps trying until somebody
         // is signed in to give it back in.
-        crate::speakers::keep_in_step(false, log);
+        crate::speakers::keep_in_step(remembered.serving().mute_speakers, false, log);
 
         if !remembered.remote_access() {
             // Remote access is off. The service stays up: it is still
@@ -646,7 +646,8 @@ fn wait_for_the_engine_to_stop(
         // and doing nothing at all when they already are, so a refusal
         // costs one line and is tried again in a moment.
         crate::speakers::keep_in_step(
-            asked.mute_speakers && watched.gateway.a_session_is_open(),
+            asked.mute_speakers,
+            watched.gateway.a_session_is_open(),
             log,
         );
 

@@ -1204,7 +1204,21 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : **les enceintes du PC hôte se taisent** dès que la session s'ouvre, et **le son arrive dans la session** sur le PC client. Fermer la session : les enceintes du PC hôte se remettent à jouer toutes seules.
 >
-> Le journal du service hôte dit `the speakers of this computer are silent while it is being watched`, puis `the speakers of this computer play again`.
+> **Ce que le journal du service hôte doit dire**, et c'est là qu'on regarde en premier, parce que le réglage est celui de l'**hôte** et qu'un relevé pris sur le client n'en dit rien :
+>
+> ```
+> somebody is now watching this computer, and its speakers are to be silent while they do
+> the speakers of this computer are silent while it is being watched
+> ...
+> somebody is no longer watching this computer, and its speakers are to be silent while they do
+> the speakers of this computer play again
+> ```
+>
+> La première ligne tombe à chaque session, quoi qu'il arrive, et c'est elle qui tranche :
+>
+> - `its speakers are left alone, nobody having asked for that` : l'interrupteur n'est pas allumé **sur cette machine-là**. C'est l'erreur la plus courante, l'interrupteur ayant été poussé sur celle depuis laquelle on regarde. Le relevé de la fenêtre le dit aussi, ligne **Son pendant qu'on regarde**, et il faut le lire sur l'ordinateur hôte.
+> - `the speakers would not move:` suivi d'une raison : Windows a refusé, et la raison est écrite.
+> - Aucune ligne du tout : aucune session n'est comptée par la porte de cet ordinateur, ce qui est un autre problème que le son.
 >
 > **Le cas du service qui ne va pas au bout.** Ouvrir une session, laisser le son se couper, puis **éteindre brutalement le PC hôte** (bouton d'alimentation maintenu). Le rallumer. Attendu : les enceintes rejouent toutes seules, et le journal dit `this computer was left silent by a session that did not end properly` suivi de `the speakers of this computer play again`. Windows se souvient d'une carte coupée à travers un redémarrage : sans ce rattrapage, la machine resterait muette pour toujours.
 >

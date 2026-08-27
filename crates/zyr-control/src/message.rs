@@ -711,12 +711,26 @@ mod tests {
                 process: 11248,
             },
             Request::Release { way: WayId(3) },
+            Request::SecureAttention { way: WayId(3) },
             Request::Peers,
             Request::Sessions,
             Request::SetHosting { on: true },
             Request::SetHosting { on: false },
             Request::SetTrust { on: true },
             Request::SetTrust { on: false },
+            // Les trois réglages d'hôte voyagent ensemble dans un seul
+            // message : un champ qui ne fait pas l'aller-retour remet
+            // silencieusement les deux autres à ce qu'ils étaient.
+            Request::ServeLike {
+                serving: Serving::default(),
+            },
+            Request::ServeLike {
+                serving: Serving {
+                    steady_rate: false,
+                    capture: Capture::Windows,
+                    mute_speakers: true,
+                },
+            },
             Request::Authorize {
                 peer: fingerprint(),
                 host: None,

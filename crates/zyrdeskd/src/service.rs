@@ -159,7 +159,7 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // Whatever took the service down, including Windows on its way
     // out: the speakers were only ever quiet for a session, and there
     // is no longer one.
-    crate::speakers::keep_in_step(false, log);
+    crate::speakers::keep_in_step(false, false, log);
     log.write(&format!("service stopped: {}", reason(end)));
 
     // A service that gives up has to tell Windows so, rather than
