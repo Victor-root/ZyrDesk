@@ -53,6 +53,9 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R42** | Nouveau. La touche Windows n'arrivait jamais sur la session : le moteur la retenait derrière une porte qui demandait à sa fenêtre d'être au premier plan, ce qu'une fenêtre portée dans la nôtre ne peut jamais être. Elle part maintenant, avec Impr. écran et Alt+F4, sous un interrupteur **Clavier : Partagé ou Immersif** |
 | **R43** | Nouveau. Le bouton flottant décrochait du curseur pendant un déplacement de haut en bas, et une croix restait par-dessus l'image. Une seule cause : le sens d'ouverture du menu était lu au coeur alors que seule la page sait dans quel sens elle vient de dessiner |
 | **R44** | Nouveau. Une entrée **Verrouiller** dans le menu de la session, qui verrouille l'ordinateur distant. C'est la réponse à Windows+L, qui ne peut pas voyager : la demande prend le canal du produit comme Ctrl+Alt+Suppr, et le service d'en face lève l'écran |
+| **R45** | Nouveau. Le pointeur reste dans l'image quand elle occupe tout l'écran. Le moteur savait le faire et ne le faisait jamais : il posait la question à sa propre fenêtre, qui n'est jamais un écran entier chez nous. Sur une machine à deux écrans le pointeur s'en allait |
+| **R43** | Complété. Le bouton flottant additionnait l'écart depuis le début du geste : une main qui sortait de l'image laissait chaque pixel refusé dans la somme, et revenir ne bougeait rien tant qu'ils n'étaient pas tous rendus |
+| **R46** | Nouveau. Une ligne **Écran d'en face : Fluide ou Économe** dans le menu de la session. C'est le réglage de cadence de la machine regardée, demandé depuis celle qui regarde, et il part avec **Appliquer les changements** |
 | **R27** | **Refait, et c'est le sujet du lot.** L'écran virtuel ne s'installait sur aucune machine à qui le pilote n'avait pas été donné à la main : la lecture de sa signature posait au fichier une question trop large, à laquelle Windows répond par la liste d'empreintes du catalogue et non par les certificats. À refaire sur une machine qui n'a jamais eu d'écran virtuel |
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
@@ -1310,6 +1313,34 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Et rien ne doit rester sur l'image.** Après chaque déplacement et chaque ouverture, regarder autour du bouton : aucun rectangle, aucune croix, aucun morceau clair par-dessus l'image. Le passage du curseur ne doit rien effacer non plus, parce qu'il n'y a rien à effacer.
 > 
 > Dans le journal de la fenêtre, la ligne `N morceaux dessinés jusqu'à LxH` ne doit jamais porter une hauteur de **0** : c'est la signature d'un dessin lu à l'envers, et c'était la cause des deux.
+
+> **R45 (le pointeur reste dans l'image en plein écran)**
+>
+> À faire sur un ordinateur à **deux écrans**, sinon il n'y a rien à voir : c'est là que le pointeur avait où s'échapper.
+>
+> Pendant une session **fenêtrée**, pousser le pointeur vers le bord droit de l'image : il doit en sortir et passer sur le reste du bureau, puis sur le deuxième écran. C'est voulu, les autres fenêtres sont là.
+>
+> Passer en **plein écran** (Alt+&). Repousser le pointeur vers le même bord : il doit maintenant **s'arrêter au bord de l'image** et ne jamais atteindre le deuxième écran.
+>
+> Repasser en fenêtré : il doit pouvoir ressortir aussitôt.
+>
+> Le journal de la fenêtre dit `pointeur tenu dans l'image, qui est tout l'écran` et `pointeur rendu à l'écran, l'image n'en occupe plus la totalité` à chaque bascule.
+>
+> **Et il ne faut pas se retrouver enfermé.** En plein écran avec le pointeur tenu et le clavier immersif, les raccourcis du produit marchent toujours : Alt+& rend l'écran, Alt+é termine la session, Alt+² ouvre le menu.
+
+> **R46 (la cadence de l'écran d'en face se règle depuis ici)**
+>
+> Pendant une session, ouvrir le menu et regarder la ligne **Écran d'en face**. Deux mots : **Économe** et **Fluide**.
+>
+> Mettre **Fluide**, puis **Appliquer les changements**. L'image se relance, **et le moteur de la machine d'en face redémarre au passage** : c'est plus long qu'une relance ordinaire, c'est normal, son moteur ne lit ce réglage qu'à son démarrage.
+>
+> Attendu, une fois revenu : sur un bureau où rien ne bouge, **le pointeur glisse au lieu d'avancer par à-coups**. C'est le seul endroit où ça se voit.
+>
+> Repasser en **Économe** et appliquer : le pointeur redevient saccadé sur un bureau immobile, et la machine d'en face cesse d'encoder pour rien. C'est le bon réglage pour une machine qui n'arrive pas à suivre.
+>
+> Le journal du service **d'en face** dit `a session asked this computer to start resending a still screen`, puis `how this computer serves was changed, the engine starts over with it`. Celui d'ici dit `way N asked the far computer to start resending a still screen`.
+>
+> **Et ça se retient.** Terminer la session, en rouvrir une : la ligne est restée où on l'a laissée, et la machine d'en face est demandée pareil.
 
 > **R18 (un réglage survit à tout)**
 >

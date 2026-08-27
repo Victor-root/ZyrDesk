@@ -68,6 +68,10 @@ impl Answers for NoEngine {
     fn lock_the_screen(&self) -> Result<(), String> {
         Err("le banc de mesure n'a pas d'écran à verrouiller".to_string())
     }
+
+    fn serve_steady(&self, _rate: bool) -> Result<(), String> {
+        Err("le banc de mesure n'a pas de moteur à régler".to_string())
+    }
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);

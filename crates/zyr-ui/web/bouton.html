@@ -268,6 +268,34 @@
           <div class="bascule"></div>
         </div>
 
+        <!-- Ce que l'ordinateur d'en face fait quand rien ne bouge sur
+             son écran. Son moteur n'encode qu'au changement, et sa
+             réponse à lui est la moitié de la cadence demandée : le
+             pointeur avance alors par à-coups sur un bureau immobile.
+             « Fluide » lui demande de renvoyer l'écran quand même, ce
+             qui coûte une image complète encodée soixante fois par
+             seconde pour rien et se paie sur sa machine.
+
+             Ici et pas dans les réglages : la seule personne capable de
+             dire si l'image est fluide est celle qui la regarde, et elle
+             n'est pas devant la machine qu'il faudrait aller régler.
+             C'est la même raison que pour couper son son. Son moteur ne
+             le lit qu'à son démarrage, donc ça se range avec les trois
+             au-dessus et ça part avec eux quand on applique. -->
+        <div
+          class="item item-avec-choix"
+          role="group"
+          aria-label="Écran immobile d'en face"
+          data-reglage="steady"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2.5" y="4" width="19" height="13" rx="2" />
+            <path d="M9 21h6M12 17v4M7 10.5h3l1.5-3 2 6 1.5-3h2" />
+          </svg>
+          <span class="item-mot">Écran d'en face</span>
+          <div class="bascule"></div>
+        </div>
+
         <!-- Ce qui a été choisi n'est pas encore ce qui est à l'écran :
              l'image a été ouverte avec d'autres nombres, et le moteur ne
              les apprend qu'au démarrage. La ligne n'apparaît qu'à ce

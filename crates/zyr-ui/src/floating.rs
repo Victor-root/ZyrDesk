@@ -157,6 +157,8 @@ pub enum Act {
     /// Which of the two computers Alt+Tab, Échap and the Windows key
     /// belong to.
     SystemKeys,
+    /// Whether the pointer is kept inside the picture.
+    PointerLock,
     End,
 }
 
@@ -170,6 +172,7 @@ impl Act {
             "lock" => Some(Act::LockScreen),
             "sound" => Some(Act::Sound),
             "keys" => Some(Act::SystemKeys),
+            "pointer" => Some(Act::PointerLock),
             "end" => Some(Act::End),
             _ => None,
         }
@@ -192,6 +195,7 @@ impl Act {
             Act::Stats => Some(b'S'),
             Act::MouseMode => Some(b'M'),
             Act::SystemKeys => Some(b'K'),
+            Act::PointerLock => Some(b'L'),
             Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
                 None
             }
@@ -212,6 +216,7 @@ impl Act {
             Act::Stats => Some(0x1F),
             Act::MouseMode => Some(0x32),
             Act::SystemKeys => Some(0x25),
+            Act::PointerLock => Some(0x26),
             Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
                 None
             }
@@ -229,6 +234,7 @@ impl std::fmt::Display for Act {
             Act::LockScreen => "verrouillage de l'ordinateur distant",
             Act::Sound => "son de la session",
             Act::SystemKeys => "touches système",
+            Act::PointerLock => "pointeur tenu dans l'image",
             Act::End => "fin de la session",
         })
     }
@@ -274,6 +280,20 @@ pub struct Floating {
     /// the far computer and the menu it had just opened could not be
     /// clicked.
     game_mouse: AtomicBool,
+    /// Whether the engine is keeping the pointer inside the picture.
+    ///
+    /// The engine decides this from its own window being on a whole
+    /// screen, which it can never be here: it is a small windowed one
+    /// carried inside ours for the whole session. Asked there, the
+    /// pointer was free to wander off the picture all session long, and
+    /// on a machine with a second screen it simply left. It is this
+    /// program that knows, so it is this program that says, by throwing
+    /// the engine's own switch for it.
+    ///
+    /// Counted here rather than read, like the two beside it: the engine
+    /// never says where it stands. It starts off, which is what the
+    /// engine leaves it at for a window like ours.
+    pointer_held: AtomicBool,
     /// Whether Alt+Tab, Échap and the Windows key are going to the
     /// session right now rather than to this computer.
     ///
@@ -716,8 +736,10 @@ pub fn watch(app: AppHandle) {
                         state
                             .system_keys
                             .store(preferred.system_keys, Ordering::Relaxed);
+                        state.pointer_held.store(false, Ordering::Relaxed);
                     }
                     put_the_button_up(&app, process);
+                    keep_the_pointer_in_step(&app, process).await;
                     // And the keyboard belongs to the picture whenever
                     // the menu is not being read. The button's own page
                     // says so as it opens and closes, which covers every
@@ -1218,15 +1240,28 @@ pub async fn floating_grab(app: AppHandle) -> Result<bool, String> {
 
     let until = std::time::Instant::now() + AT_MOST;
     let mut moved = false;
+    // Where the button hangs, and where the cursor was when it was last
+    // moved there. Both carried forward step by step rather than measured
+    // from the start of the gesture, and that is the whole of the repair:
+    // the button is held against the picture, so a hand that goes on past
+    // an edge asks for a place the button cannot take. Counted from the
+    // start, every one of those pixels stayed in the sum, and coming back
+    // moved nothing until the hand had given all of them back. The button
+    // sat at the edge while the cursor was half a screen away, which is
+    // exactly what was reported.
+    let mut at = from;
+    let mut was = start;
     while held_down() && std::time::Instant::now() < until {
         let Some(now) = cursor_now() else {
             break;
         };
-        let (dx, dy) = (now.0 - start.0, now.1 - start.1);
-        if moved || dx.abs() >= GRIP || dy.abs() >= GRIP {
-            moved = true;
-            slide(picture, from, dx, dy);
+        if !moved && (now.0 - start.0).abs() < GRIP && (now.1 - start.1).abs() < GRIP {
+            tokio::time::sleep(FOLLOW).await;
+            continue;
         }
+        moved = true;
+        at = slide(picture, at, now.0 - was.0, now.1 - was.1);
+        was = now;
         tokio::time::sleep(FOLLOW).await;
     }
     if moved {
@@ -1235,15 +1270,21 @@ pub async fn floating_grab(app: AppHandle) -> Result<bool, String> {
     Ok(!moved)
 }
 
-/// Puts the button where the mouse has dragged it to.
+/// Puts the button where the mouse has dragged it to, and says where
+/// that turned out to be.
+///
+/// Where it turned out to be, because it is not always where it was
+/// asked: the button is held against the picture. Whoever is following a
+/// hand has to carry that answer forward rather than their own ask, or
+/// the two drift apart by everything the picture refused.
 ///
 /// The distance from the corner of the picture is what is remembered
 /// rather than the place on screen: a session opened later on another
 /// screen, or at another size, then finds the button where it was left
 /// rather than off the edge.
-fn slide(picture: (i32, i32, i32, i32), from: (i32, i32), dx: i32, dy: i32) {
+fn slide(picture: (i32, i32, i32, i32), from: (i32, i32), dx: i32, dy: i32) -> (i32, i32) {
     let Some((left, top, right, bottom)) = its_place() else {
-        return;
+        return from;
     };
     let logo = logo();
     let anchor = held_inside((from.0 + dx, from.1 + dy), picture, logo.0, logo.1);
@@ -1265,6 +1306,7 @@ fn slide(picture: (i32, i32, i32, i32), from: (i32, i32), dx: i32, dy: i32) {
     // and a trip through an event queue at that rhythm is what a button
     // lagging its own cursor is made of.
     put_the_button(anchor, (right - left, bottom - top), 0);
+    anchor
 }
 
 /// Where the button hangs: the top right of the picture, moved by
@@ -1420,6 +1462,12 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
                 .game_mouse
                 .fetch_xor(true, Ordering::Relaxed);
         }
+        Act::PointerLock => {
+            let _ = app
+                .state::<Floating>()
+                .pointer_held
+                .fetch_xor(true, Ordering::Relaxed);
+        }
         Act::SystemKeys => {
             let theirs = !app
                 .state::<Floating>()
@@ -1433,6 +1481,47 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
         _ => {}
     }
     Ok(())
+}
+
+/// Keeps the pointer inside the picture for as long as the picture is
+/// the whole screen, and lets it go the moment it is not.
+///
+/// The engine has this and cannot use it. It ties the pointer to its own
+/// window being on a whole screen, and its window is a small windowed one
+/// carried inside ours for the length of a session: the condition is
+/// false all session long, whatever the person is actually looking at.
+/// Asked there, the pointer wandered off the picture with nothing to stop
+/// it, which on a machine with a second screen means it simply leaves.
+///
+/// So this program answers instead, and says so with the engine's own
+/// switch. The engine stops deciding for itself the first time that
+/// switch is thrown, which is exactly what is wanted: from then on there
+/// is one opinion about the pointer and it is the right one.
+///
+/// Windowed, the pointer must be free to leave: the other windows of this
+/// computer are around the picture and reaching them is the whole reason
+/// somebody is not in full screen.
+///
+/// Nothing is done while the menu is open. Throwing the switch means
+/// handing the keyboard to the picture, and a menu being read is the one
+/// moment the keyboard is somewhere else on purpose.
+async fn keep_the_pointer_in_step(app: &AppHandle, process: u32) {
+    let wanted = crate::picture::on_the_whole_screen();
+    let state = app.state::<Floating>();
+    if wanted == state.pointer_held.load(Ordering::Relaxed) || MENU_UP.load(Ordering::Relaxed) {
+        return;
+    }
+    match type_at_the_picture(app, Act::PointerLock, process).await {
+        Ok(()) => {
+            state.pointer_held.store(wanted, Ordering::Relaxed);
+            note(if wanted {
+                "pointeur tenu dans l'image, qui est tout l'écran"
+            } else {
+                "pointeur rendu à l'écran, l'image n'en occupe plus la totalité"
+            });
+        }
+        Err(reason) => note(&format!("pointeur non réglé : {reason}")),
+    }
 }
 
 /// The player the button is hanging on right now.

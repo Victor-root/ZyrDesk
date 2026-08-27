@@ -81,9 +81,12 @@ pub fn run(args: Args) -> ExitCode {
         settings,
         pair_again: args.pair_again,
         // The command line is the diagnostic path: it asks nothing of
-        // the far computer's speakers, which is a choice made in the
-        // window along with everything else a session looks like.
+        // the far computer's speakers, nor of the rate it serves a still
+        // screen at. Both are choices made in the window, along with
+        // everything else a session looks like, and both leave that
+        // computer exactly as its own settings had it.
         hush_the_far_speakers: false,
+        steady_far_rate: zyr_proto::session::Serving::default().steady_rate,
     };
 
     // Nothing here can close a session while it is opening: the command
@@ -147,6 +150,9 @@ fn tell(step: Step, host: &str) {
         Step::Showing { .. } => {}
         Step::SpeakersLeftAlone { refused } => {
             println!("  Les enceintes de {host} restent allumées : {refused}");
+        }
+        Step::RateLeftAlone { refused } => {
+            println!("  {host} garde sa cadence d'écran immobile : {refused}");
         }
     }
 }

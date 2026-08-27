@@ -398,6 +398,24 @@ pub struct Preferred {
     /// the fault this exists to close, and the menu says which side the
     /// switch is on, so the other way round surprises nobody.
     pub system_keys: bool,
+    /// Whether the far computer resends a still screen at full rate.
+    ///
+    /// A setting of that machine's engine, asked for from here, for the
+    /// same reason its speakers are: the person who can tell whether the
+    /// picture feels smooth is the one watching it, and they are not in
+    /// front of the machine that would have to be told.
+    ///
+    /// It costs that machine a whole frame encoded sixty times a second
+    /// over a desktop where nothing moves, and it buys a pointer that
+    /// glides instead of stepping. Which of the two is worth more depends
+    /// on the machine and on what is being done with it, so it is a
+    /// choice and not a default worth defending.
+    ///
+    /// Its engine reads it when it starts and never again, so changing it
+    /// starts that engine over. The menu therefore treats it like the
+    /// size, the rate and the codec: written down, and applied when the
+    /// picture is opened again.
+    pub steady_far_rate: bool,
 }
 
 impl Default for Preferred {
@@ -411,6 +429,7 @@ impl Default for Preferred {
             stats_overlay: false,
             mute_far_speakers: false,
             system_keys: true,
+            steady_far_rate: Serving::default().steady_rate,
         }
     }
 }
@@ -596,6 +615,7 @@ mod tests {
             // l'image, il dit ce qu'on demande à la machine d'en face.
             mute_far_speakers: true,
             system_keys: false,
+            steady_far_rate: false,
         };
         let settings = preferred.settings(Some((3840, 2160)));
         assert_eq!((settings.width, settings.height), (2560, 1440));

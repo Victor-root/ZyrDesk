@@ -68,6 +68,15 @@ pub struct Wanted {
     /// engine, and the far computer gives its sound back when the way
     /// closes, whatever became of this end.
     pub hush_the_far_speakers: bool,
+    /// Whether the far computer is asked to resend a still screen at
+    /// full rate while this session watches it.
+    ///
+    /// Asked here and nowhere else, for the same reason as the speakers:
+    /// what it costs is paid over there, and the only person who can tell
+    /// whether the picture feels smooth is the one looking at it. Its
+    /// engine reads it when it starts, so it is asked before the session
+    /// opens and never inside one.
+    pub steady_far_rate: bool,
 }
 
 /// What is happening, as it happens.
@@ -110,6 +119,14 @@ pub enum Step {
     /// Windows would not have it, still has a perfectly good session to
     /// give.
     SpeakersLeftAlone { refused: String },
+    /// The far computer would not change the rate it serves a still
+    /// screen at, and the session goes on regardless.
+    ///
+    /// Worth saying and never worth failing over either: what it costs is
+    /// the smoothness of a pointer over a desktop where nothing else is
+    /// moving, which is a session slightly less pleasant and not a
+    /// session missing.
+    RateLeftAlone { refused: String },
 }
 
 /// How long the engines are given to meet, the code having travelled on
@@ -299,6 +316,16 @@ pub fn open(
         && let Err(refused) = driving.hush_the_far_speakers(wanted.hush_the_far_speakers)
     {
         told(Step::SpeakersLeftAlone { refused });
+    }
+
+    // And the same for the rate that computer serves a still screen at,
+    // asked before its engine starts because that is the only moment its
+    // engine reads it. A refusal costs the smoothness of a pointer and
+    // nothing else, so it is written down and the session goes on.
+    if let Some(driving) = &mut driving
+        && let Err(refused) = driving.serve_steady_over_there(wanted.steady_far_rate)
+    {
+        told(Step::RateLeftAlone { refused });
     }
 
     let state = DeviceState::for_device(&identifier_from_address(&wanted.host));
@@ -499,16 +526,30 @@ impl Driving {
         })
     }
 
+    /// Asks the far computer to resend a still screen at full rate, or
+    /// to stop doing it.
+    fn serve_steady_over_there(&mut self, rate: bool) -> Result<(), String> {
+        self.asked(&Request::SteadyFar {
+            way: self.way,
+            rate,
+        })
+    }
+
     /// Asks the far computer to silence its speakers, or to let them
     /// play again.
     fn hush_the_far_speakers(&mut self, quiet: bool) -> Result<(), String> {
-        let request = Request::Hush {
+        self.asked(&Request::Hush {
             way: self.way,
             quiet,
-        };
+        })
+    }
+
+    /// One ask of the service that is either done or refused, and nothing
+    /// else. Three of them have exactly this shape.
+    fn asked(&mut self, request: &Request) -> Result<(), String> {
         match self
             .runtime
-            .block_on(self.service.ask(&request))
+            .block_on(self.service.ask(request))
             .map_err(|e| e.to_string())?
         {
             Answer::Done => Ok(()),
@@ -595,6 +636,7 @@ mod tests {
             settings: SessionSettings::default(),
             pair_again: false,
             hush_the_far_speakers: false,
+            steady_far_rate: true,
         }
     }
 

@@ -51,6 +51,8 @@ struct FakeEngine {
     hushed: Arc<AtomicBool>,
     /// Whether it was asked to lock itself, for the same reason again.
     locked: Arc<AtomicBool>,
+    /// The rate it was last asked to serve a still screen at.
+    steady: Arc<AtomicBool>,
 }
 
 impl Answers for FakeEngine {
@@ -83,6 +85,11 @@ impl Answers for FakeEngine {
         self.locked.store(true, Ordering::Relaxed);
         Ok(())
     }
+
+    fn serve_steady(&self, rate: bool) -> Result<(), String> {
+        self.steady.store(rate, Ordering::Relaxed);
+        Ok(())
+    }
 }
 
 /// The tunnel brought up on both sides, kept alive for the test.
@@ -106,6 +113,8 @@ struct Bench {
     hushed: Arc<AtomicBool>,
     /// Whether it was asked to put its lock screen up.
     locked: Arc<AtomicBool>,
+    /// The rate it was asked to serve a still screen at.
+    steady: Arc<AtomicBool>,
 }
 
 impl Bench {
@@ -143,6 +152,7 @@ impl Bench {
         let attended = Arc::new(AtomicU32::new(0));
         let hushed = Arc::new(AtomicBool::new(false));
         let locked = Arc::new(AtomicBool::new(false));
+        let steady = Arc::new(AtomicBool::new(false));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -152,6 +162,7 @@ impl Bench {
                 attended: attended.clone(),
                 hushed: hushed.clone(),
                 locked: locked.clone(),
+                steady: steady.clone(),
             }),
         )
         .await
@@ -177,6 +188,7 @@ impl Bench {
             attended,
             hushed,
             locked,
+            steady,
         }
     }
 
@@ -299,6 +311,24 @@ async fn verrouiller_l_ordinateur_distant_passe_par_le_canal_du_produit() {
         .await
         .unwrap();
     assert!(bench.locked.load(Ordering::Relaxed));
+}
+
+#[tokio::test]
+async fn la_cadence_de_l_ecran_immobile_se_demande_depuis_le_client() {
+    // Ce que ça coûte est payé là-bas, mais la seule personne capable de
+    // dire si l'image est fluide est celle qui la regarde, et elle n'est
+    // pas devant la machine qu'il faudrait aller régler.
+    let bench = Bench::bring_up(42760, 13).await;
+
+    before_the_end(aside::ask_to_serve_steady(&bench.connection, true))
+        .await
+        .unwrap();
+    assert!(bench.steady.load(Ordering::Relaxed));
+
+    before_the_end(aside::ask_to_serve_steady(&bench.connection, false))
+        .await
+        .unwrap();
+    assert!(!bench.steady.load(Ordering::Relaxed));
 }
 
 #[tokio::test]

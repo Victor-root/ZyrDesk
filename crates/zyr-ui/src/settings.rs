@@ -115,6 +115,11 @@ pub struct SessionChoice {
     pub asked: String,
     pub bitrate_kbps: u32,
     pub codec: String,
+    /// Whether the far computer is asked to resend a still screen at
+    /// full rate. Its own setting, changed from here, which is the whole
+    /// point: the person who can tell whether the picture feels smooth is
+    /// the one watching it.
+    pub steady: bool,
     /// What the size comes down to on this computer, which is the whole
     /// point of the word « screen » and cannot be worked out from it.
     pub width: u32,
@@ -134,6 +139,7 @@ impl SessionChoice {
             asked: preferred.asked.to_string(),
             bitrate_kbps: preferred.bitrate_kbps,
             codec: preferred.codec.to_string(),
+            steady: preferred.steady_far_rate,
             width,
             height,
             to_apply: crate::session::waiting_to_be_applied(&preferred),
@@ -245,6 +251,13 @@ pub async fn choose_session(
             }
             preferred.codec = codec;
         }
+        // Two words and not a list: it is a switch, and the two sides are
+        // named in the window like the ones beside them.
+        "steady" => match value.as_str() {
+            "on" => preferred.steady_far_rate = true,
+            "off" => preferred.steady_far_rate = false,
+            other => return Err(format!("cadence non proposée : {other}")),
+        },
         other => return Err(format!("réglage inconnu : {other}")),
     }
     write_down(preferred).await?;

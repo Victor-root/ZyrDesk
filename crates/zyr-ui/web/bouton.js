@@ -403,6 +403,17 @@ const LIGNES = {
     dit: (_menu, valeur) => (valeur === "auto" ? "Automatique" : valeur),
     ou: (choix) => choix.codec,
   },
+  steady: {
+    // Deux boutons pour la même raison que le codec : deux mots, pas une
+    // échelle. Et ici, contrairement aux trois interrupteurs du haut,
+    // c'est un réglage du moteur d'en face, qui ne le lit qu'à son
+    // démarrage : il se range avec la taille, le débit et le codec, et
+    // part avec eux quand on applique.
+    boutons: true,
+    valeurs: () => ["off", "on"],
+    dit: (_menu, valeur) => (valeur === "on" ? "Fluide" : "Économe"),
+    ou: (choix) => (choix.steady ? "on" : "off"),
+  },
 };
 
 /* Ce que le produit propose, demandé une fois : les crans ne changent pas

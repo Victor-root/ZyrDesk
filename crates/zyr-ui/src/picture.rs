@@ -92,6 +92,17 @@ static SQUARED: AtomicBool = AtomicBool::new(false);
 /// writes it, so it is right before either question is asked.
 static WHOLE_SCREEN: AtomicBool = AtomicBool::new(false);
 
+/// Whether the window is spread over the whole screen right now.
+///
+/// Asked from outside for one thing: the engine keeps the pointer inside
+/// the picture only when it believes it is showing on a whole screen, and
+/// it cannot believe that of its own window, which is a small windowed
+/// one inside ours all session long. So the answer is this program's to
+/// give.
+pub fn on_the_whole_screen() -> bool {
+    WHOLE_SCREEN.load(Ordering::Relaxed)
+}
+
 /// Radius the system rounds a window's corners by, in page pixels.
 ///
 /// Windows has never offered it as a number to ask for; this is the one

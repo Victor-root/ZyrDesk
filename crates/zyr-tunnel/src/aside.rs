@@ -35,7 +35,7 @@ use crate::pump;
 /// Version 1 was three bytes carrying nothing but the ports. Version 2
 /// added the pairing code. Version 3 added the one keystroke no keyboard
 /// can carry. Version 4 added the far computer's speakers.
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 6;
 
 /// Longest message this channel takes.
 ///
@@ -92,6 +92,20 @@ pub trait Answers: Send + Sync + 'static {
     /// idea seen from both sides: a lock screen nobody can raise or
     /// lower from outside the desk is a lock screen worth something.
     fn lock_the_screen(&self) -> Result<(), String>;
+
+    /// Decides whether this computer resends a still screen at full rate
+    /// while somebody is watching it.
+    ///
+    /// Asked from the far end and not settled here, for the same reason
+    /// the speakers are: the only person who can tell whether the picture
+    /// feels smooth is the one looking at it, and they are not in front
+    /// of the machine that would have to be told. What it costs is paid
+    /// here, so the ask is a request and not an order: an answer of no is
+    /// an answer.
+    ///
+    /// The engine reads it when it starts, so saying yes to a change
+    /// starts that engine over.
+    fn serve_steady(&self, rate: bool) -> Result<(), String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -108,6 +122,8 @@ pub enum Question {
     Hush { quiet: bool },
     /// Put your lock screen up.
     Lock,
+    /// Resend a still screen at full rate, or stop doing it.
+    Steady { rate: bool },
 }
 
 /// What comes back.
@@ -122,6 +138,8 @@ pub enum Told {
     Hushed,
     /// The far computer's screen is being locked.
     Locked,
+    /// The far computer serves the way it was asked to.
+    Steady,
 }
 
 impl fmt::Display for Question {
@@ -133,6 +151,9 @@ impl fmt::Display for Question {
             Question::Ports => write!(f, "{VERSION} ports"),
             Question::SecureAttention => write!(f, "{VERSION} sas"),
             Question::Lock => write!(f, "{VERSION} lock"),
+            Question::Steady { rate } => {
+                write!(f, "{VERSION} steady {}", if *rate { "on" } else { "off" })
+            }
             Question::Hush { quiet } => {
                 write!(
                     f,
@@ -152,6 +173,7 @@ impl fmt::Display for Told {
             Told::Attended => write!(f, "{VERSION} attended"),
             Told::Hushed => write!(f, "{VERSION} hushed"),
             Told::Locked => write!(f, "{VERSION} locked"),
+            Told::Steady => write!(f, "{VERSION} steady"),
         }
     }
 }
@@ -164,6 +186,11 @@ impl Question {
             "ports" => Ok(Question::Ports),
             "sas" => Ok(Question::SecureAttention),
             "lock" => Ok(Question::Lock),
+            "steady" => match rest {
+                "on" => Ok(Question::Steady { rate: true }),
+                "off" => Ok(Question::Steady { rate: false }),
+                other => Err(format!("« {other} » ne dit ni oui ni non")),
+            },
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
                 "play" => Ok(Question::Hush { quiet: false }),
@@ -201,6 +228,7 @@ impl Told {
             "attended" => Ok(Ok(Told::Attended)),
             "hushed" => Ok(Ok(Told::Hushed)),
             "locked" => Ok(Ok(Told::Locked)),
+            "steady" => Ok(Ok(Told::Steady)),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -327,6 +355,20 @@ pub async fn ask_to_lock(connection: &Connection) -> io::Result<()> {
     }
 }
 
+/// Asks the far ZyrDesk to resend a still screen at full rate, or to
+/// stop doing it.
+///
+/// Asked at the opening of every session and never in the middle of one:
+/// the far engine reads this when it starts, so a change of it starts
+/// that engine over, and an engine starting over in the middle of a
+/// session is that session going.
+pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Result<()> {
+    match ask(connection, &Question::Steady { rate }).await? {
+        Told::Steady => Ok(()),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -385,6 +427,14 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             .await
             .map_err(|e| format!("le verrouillage n'a pas pu être mené : {e}"))?
             .map(|()| Told::Locked),
+        // Off the thread as well: saying yes writes a file and starts an
+        // engine over.
+        Question::Steady { rate } => {
+            tokio::task::spawn_blocking(move || answering.serve_steady(rate))
+                .await
+                .map_err(|e| format!("la cadence n'a pas pu être réglée : {e}"))?
+                .map(|()| Told::Steady)
+        }
     }
 }
 
@@ -421,6 +471,8 @@ mod tests {
             Question::Hush { quiet: true },
             Question::Hush { quiet: false },
             Question::Lock,
+            Question::Steady { rate: true },
+            Question::Steady { rate: false },
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -435,6 +487,7 @@ mod tests {
             Told::Attended,
             Told::Hushed,
             Told::Locked,
+            Told::Steady,
         ] {
             let said = told.to_string();
             assert_eq!(Told::parse(&said).unwrap(), Ok(told), "sur « {said} »");

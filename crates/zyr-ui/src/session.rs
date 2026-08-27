@@ -147,24 +147,35 @@ pub fn opening() -> bool {
 /// reopen the picture it was written for.
 static OPEN_AGAIN: AtomicU32 = AtomicU32::new(0);
 
-/// The three numbers the picture on screen was opened with.
+/// What the picture on screen was opened with.
 ///
-/// Kept because they cannot be read back from anywhere. What a session
-/// asks for is settled when its engine starts and told to it once, so a
-/// size, a rate or a codec chosen afterwards is written down and nothing
-/// more until the picture is opened again. This is what lets the session's
-/// own menu say which of the two it is showing.
-static SHOWN_AS: Mutex<Option<(Asked, u32, Codec)>> = Mutex::new(None);
+/// Kept because it cannot be read back from anywhere. What a session asks
+/// for is settled when its engine starts and told to it once, so anything
+/// chosen afterwards is written down and nothing more until the picture
+/// is opened again. This is what lets the session's own menu say which of
+/// the two it is showing.
+static SHOWN_AS: Mutex<Option<(Asked, u32, Codec, bool)>> = Mutex::new(None);
 
 /// What the engine is told once, at its start, and never again.
 ///
 /// The rest of what a person chooses is either asked of the engine while
 /// it runs, by the keystrokes it answers to, or belongs to this side of
-/// the picture entirely. Only these three are worth opening the picture
-/// again for, and only these three are compared to know whether they are
-/// still what is on screen.
-fn told_once(preferred: &Preferred) -> (Asked, u32, Codec) {
-    (preferred.asked, preferred.bitrate_kbps, preferred.codec)
+/// the picture entirely. Only these are worth opening the picture again
+/// for, and only these are compared to know whether they are still what
+/// is on screen.
+///
+/// The last of them is told to the far computer's engine rather than to
+/// this one's, and it is here for the same reason as the other three: its
+/// engine reads it when it starts, so changing it means opening the
+/// picture again, which is what asks that computer and starts its engine
+/// over on the way.
+fn told_once(preferred: &Preferred) -> (Asked, u32, Codec, bool) {
+    (
+        preferred.asked,
+        preferred.bitrate_kbps,
+        preferred.codec,
+        preferred.steady_far_rate,
+    )
 }
 
 /// Whether what is chosen now is not what the picture on screen shows.
@@ -207,6 +218,7 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         settings: what_to_ask_for(&app, preferred),
         pair_again: false,
         hush_the_far_speakers: preferred.mute_far_speakers,
+        steady_far_rate: preferred.steady_far_rate,
     };
 
     // On a thread of its own, and not one of the interface's: the
@@ -328,6 +340,7 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
             // computer was asked went with the old one: it has to be
             // asked afresh, and with what is chosen now.
             wanted.hush_the_far_speakers = preferred.mute_far_speakers;
+            wanted.steady_far_rate = preferred.steady_far_rate;
             continue;
         }
 
@@ -481,7 +494,7 @@ fn told(step: Step) -> Option<Told> {
         Step::Paired => Told::Paired,
         Step::Starting => Told::Starting,
         Step::Showing { process, .. } => Told::Showing { process },
-        Step::SpeakersLeftAlone { .. } => return None,
+        Step::SpeakersLeftAlone { .. } | Step::RateLeftAlone { .. } => return None,
     })
 }
 
@@ -506,6 +519,9 @@ fn written(step: &Step) -> String {
         Step::Showing { process, .. } => format!("lecteur en marche, processus {process}"),
         Step::SpeakersLeftAlone { refused } => {
             format!("les enceintes de l'ordinateur distant restent allumées : {refused}")
+        }
+        Step::RateLeftAlone { refused } => {
+            format!("l'ordinateur distant garde sa cadence d'écran immobile : {refused}")
         }
     }
 }

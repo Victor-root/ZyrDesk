@@ -76,6 +76,9 @@ struct Attending {
     /// The sessions coming through this door, so what one of them asks
     /// of this computer outlives the asking.
     sessions: Arc<Sessions>,
+    /// What this computer was told to do, for the one ask that changes
+    /// it: how its own engine serves.
+    remembered: Remembered,
     log: Log,
 }
 
@@ -188,6 +191,38 @@ impl Answers for Attending {
                 Err(refused)
             }
         }
+    }
+
+    /// Sets whether this computer resends a still screen at full rate,
+    /// because a session opening towards it asked.
+    ///
+    /// Written down and nothing more. What acts on it is the watch that
+    /// holds the engine: it sees the setting move and starts the engine
+    /// over, which is the only way an engine learns this. That is also
+    /// why the ask is made at the opening of a session and never in the
+    /// middle of one.
+    ///
+    /// Doing nothing at all when it is already what was asked, which is
+    /// the ordinary case: every session asks, and almost none of them
+    /// changes anything.
+    fn serve_steady(&self, rate: bool) -> Result<(), String> {
+        let mut serving = self.remembered.serving();
+        if serving.steady_rate == rate {
+            return Ok(());
+        }
+        serving.steady_rate = rate;
+        self.remembered.set_serving(serving).map_err(|e| {
+            let refused = e.to_string();
+            self.log.write(&format!(
+                "the rate this computer serves at is unchanged: {refused}"
+            ));
+            refused
+        })?;
+        self.log.write(&format!(
+            "a session asked this computer to {} resending a still screen",
+            if rate { "start" } else { "stop" }
+        ));
+        Ok(())
     }
 }
 
@@ -335,6 +370,7 @@ impl Gateway {
             ports: engine.ports,
             api: Arc::new(EngineApi::new(engine.ports, engine.credentials)),
             sessions: sessions.clone(),
+            remembered: remembered.clone(),
             log: log.clone(),
         });
         Ok(Self {

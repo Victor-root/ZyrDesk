@@ -907,6 +907,38 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ce qu'il faut savoir en s'en servant.** L'image ne se coupe pas : le moteur hôte tourne avec les droits du système et sait capturer l'écran de verrouillage. On voit donc l'ordinateur d'en face se verrouiller, et on peut le déverrouiller de loin si on a le mot de passe, en s'aidant de l'entrée Ctrl+Alt+Suppr quand cette machine la réclame.
 
+## D72. Le pointeur tient dans l'image parce que ZyrDesk le dit, et le bouton suit la main pas à pas (2026-08-27, pendant M4)
+
+**Le relevé, deux morceaux.** « Si je déplace le bouton et que je sors de mon écran à droite, lui reste en place mais ma souris se déplace hors écran à l'infini. Et ce glissement se fait même sans attraper le bouton. »
+
+**Deux causes, une par morceau, et toutes les deux vraies.**
+
+**Le bouton, d'abord : il additionnait sans jamais se recaler.** Le bouton est tenu contre l'image, ce qui est voulu. Mais le déplacement mesurait l'écart depuis le début du geste : une main qui continue au-delà d'un bord demandait une place que le bouton ne peut pas prendre, et chacun de ces pixels restait dans la somme. Revenir n'a alors rien bougé tant que la main n'avait pas tout rendu, et le bouton attendait au bord pendant que le curseur était à un demi-écran de là. C'est exactement ce qui a été décrit.
+
+**Décision : le geste se suit pas à pas, et ce qu'on suit est la place où le bouton est réellement.** Chaque pas part de là où il est, pas de là où il aurait été si l'image avait été infinie. Ce que la place refusée ne prend pas est perdu tout de suite plutôt qu'accumulé.
+
+**Le pointeur, ensuite : le moteur avait ce qu'il fallait et ne pouvait pas s'en servir.** Il sait tenir le pointeur à l'intérieur de l'image, et il le fait quand sa fenêtre occupe un écran entier. Sa fenêtre est une petite fenêtre ordinaire portée dans la nôtre pendant toute la session : la condition est fausse du début à la fin, quoi que la personne soit en train de regarder. Le pointeur pouvait donc sortir de l'image sans que rien ne l'arrête, ce qui sur une machine à deux écrans veut dire qu'il s'en va.
+
+**C'est le même défaut que celui du clavier**, à un mois d'intervalle et pour la même raison : une condition posée sur « ma fenêtre est-elle un écran entier », dans un produit où cette fenêtre n'est jamais rien d'autre qu'un morceau de la nôtre. Toute question de cette forme répond non pour la session entière.
+
+**Décision : c'est ZyrDesk qui répond, et il le dit avec l'interrupteur du moteur.** Le moteur cesse de décider tout seul dès qu'on jette cet interrupteur-là, ce qui est précisément ce qu'on veut : il n'y a plus qu'un avis sur le pointeur et c'est le bon.
+
+**Et il suit le plein écran, pas autre chose.** En fenêtré le pointeur doit pouvoir sortir : les autres fenêtres de cet ordinateur sont autour de l'image, et les atteindre est toute la raison pour laquelle on n'est pas en plein écran. En plein écran il n'y a rien autour, et un pointeur qui part sur le deuxième écran est un pointeur perdu.
+
+## D73. La cadence de l'écran immobile se demande depuis le côté qui regarde (2026-08-27, pendant M4)
+
+**La demande.** « Il faut absolument me rajouter dans le bouton flottant l'option pour choisir si on veut le FPS constant ou pas, parce que dans les réglages c'est relou et en plus je la trouve pas. »
+
+**Il ne la trouvait pas parce qu'elle n'est pas là où elle sert.** Elle existe, sur l'écran d'accueil, dans le bloc « ce que cet ordinateur fait quand c'est lui qu'on regarde ». C'est-à-dire sur la machine qu'il faudrait aller régler à la main, pendant qu'il est assis devant l'autre. C'est mot pour mot la faute de conception de [D64](#d64-couper-le-son-den-face-se-décide-du-côté-qui-regarde-2026-08-27-pendant-m4), et elle a été refaite.
+
+**Ce que le réglage fait.** Le moteur d'en face n'encode que lorsque son écran change, et sa réponse propre est la moitié de la cadence demandée : sur un bureau immobile, le pointeur avance par à-coups. Lui demander de renvoyer l'écran quand même rend le pointeur fluide et coûte une image complète encodée soixante fois par seconde pour rien. Lequel des deux vaut mieux dépend de la machine et de ce qu'on y fait, donc c'est un choix et pas un défaut à défendre.
+
+**Décision : le choix vit avec la session, du côté de celui qui l'ouvre, comme le son.** La seule personne capable de dire si l'image est fluide est celle qui la regarde ; ce que ça coûte est payé en face, donc c'est une demande et non un ordre, et un refus est écrit au journal sans jamais faire échouer la session.
+
+**Et il est demandé à l'ouverture, jamais au milieu.** Le moteur d'en face ne lit ce réglage qu'à son démarrage : en changer le fait repartir, et un moteur qui repart au milieu d'une session est cette session qui s'en va. Il se range donc dans le menu avec la taille, le débit et le codec, qui ont exactement la même contrainte, et il part avec eux quand on applique. C'est la même relance d'image qu'on voit déjà, à ceci près que le moteur d'en face redémarre au passage.
+
+**Ce que ça ne change pas.** L'interrupteur de l'accueil reste ce qu'il est : le réglage de cette machine-ci quand c'est elle qu'on regarde, utile pour la poser une fois d'avance. Les deux disent la même chose sur des machines différentes, et le dernier qui parle gagne, ce qui est le comportement attendu d'un réglage qu'on peut changer des deux bouts.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -302,6 +302,12 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             Ok(()) => Answer::Done,
             Err(reason) => Answer::Refused(reason),
         },
+        Request::SteadyFar { way, rate } => {
+            match answering.ways.ask_to_serve_steady(way, rate).await {
+                Ok(()) => Answer::Done,
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
         Request::Hush { way, quiet } => match answering.ways.ask_to_hush(way, quiet).await {
             Ok(()) => Answer::Done,
             Err(reason) => Answer::Refused(reason),

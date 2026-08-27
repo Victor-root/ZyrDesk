@@ -37,6 +37,7 @@ const STEADY_RATE: &str = "steady_rate";
 const CAPTURE: &str = "capture";
 const MUTE_FAR_SPEAKERS: &str = "mute_far_speakers";
 const SYSTEM_KEYS: &str = "system_keys";
+const STEADY_FAR_RATE: &str = "steady_far_rate";
 
 /// What the file says, when it says anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,6 +202,11 @@ fn rendered(preferences: Preferences) -> String {
          # plutôt que d'agir sur cet ordinateur. Se rebascule en cours de\n\
          # session depuis le menu du bouton flottant.\n\
          {SYSTEM_KEYS} = {}\n\
+         # Demander à l'ordinateur d'en face de réenvoyer son écran à\n\
+         # pleine cadence même quand rien ne bouge : pointeur plus fluide\n\
+         # là-bas, mais une image complète encodée soixante fois par\n\
+         # seconde pour rien. Son moteur le lit à son démarrage.\n\
+         {STEADY_FAR_RATE} = {}\n\
          \n\
          # Ce que cet ordinateur fait quand c'est LUI qu'on regarde.\n\
          # Renvoyer un écran immobile à pleine cadence : plus fluide, mais\n\
@@ -220,6 +226,7 @@ fn rendered(preferences: Preferences) -> String {
         yes_no(preferred.stats_overlay),
         yes_no(preferred.mute_far_speakers),
         yes_no(preferred.system_keys),
+        yes_no(preferred.steady_far_rate),
         yes_no(preferences.serving.steady_rate),
         preferences.serving.capture,
     )
@@ -292,6 +299,9 @@ fn parsed(text: &str) -> Preferences {
                 preferred.mute_far_speakers = told(value, preferred.mute_far_speakers);
             }
             SYSTEM_KEYS => preferred.system_keys = told(value, preferred.system_keys),
+            STEADY_FAR_RATE => {
+                preferred.steady_far_rate = told(value, preferred.steady_far_rate);
+            }
             _ => {}
         }
     }
@@ -326,6 +336,7 @@ mod tests {
                 stats_overlay: true,
                 mute_far_speakers: true,
                 system_keys: false,
+                steady_far_rate: false,
             },
             serving: Serving {
                 steady_rate: false,
