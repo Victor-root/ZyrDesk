@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R48** | Nouveau. Le gel de l'image sur Ctrl+Alt+Suppr. Changer de bureau retire la duplication d'écran au moteur, et il attendait deux cents millisecondes en aveugle avant de redemander, puis vingt de plus avant de réencoder. Le journal du moteur hôte dit maintenant le chiffre. À vérifier après recompilation du **moteur hôte** |
 | **R27** | **Refait, et c'est le sujet du lot.** L'écran virtuel ne s'installait sur aucune machine à qui le pilote n'avait pas été donné à la main : la lecture de sa signature posait au fichier une question trop large, à laquelle Windows répond par la liste d'empreintes du catalogue et non par les certificats. À refaire sur une machine qui n'a jamais eu d'écran virtuel |
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
@@ -1304,6 +1305,20 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Le journal du service **d'en face** dit `the far computer asked this one to lock itself`, et celui de l'ordinateur qui regarde `way N asked the far computer to lock itself`. Un refus est écrit en clair : `this computer not locked: ...`.
 >
 > **Le cas où il n'y a personne.** Si l'ordinateur d'en face est déjà sur son écran de connexion, personne n'est en session dessus et il n'y a rien à verrouiller : le menu répond `no session owns the screen`, ce qui est la vérité et pas une panne.
+
+> **R48 (Ctrl+Alt+Suppr ne gèle plus l'image)**
+>
+> Pendant une session, envoyer **Ctrl+Alt+Suppr** depuis le menu du bouton flottant, cinq ou six fois de suite en laissant deux secondes entre chaque.
+>
+> Attendu : l'image se fige un instant à chaque fois, c'est inévitable, mais **c'est court**. Ce qu'il faut regarder, c'est le chiffre, pas l'impression.
+>
+> **Le chiffre est au journal du moteur hôte**, c'est-à-dire sur l'ordinateur d'en face, dans son fichier de journal. Une ligne par bascule :
+>
+> `Capture reinitialized after 24ms (2ms waiting for the encoders to let the display go, 22ms finding it again)`
+>
+> Avant ce lot, la deuxième moitié valait deux cents millisecondes de plus, et il fallait ajouter jusqu'à vingt millisecondes après la ligne avant que l'image ne reparte. Si tu relis des nombres autour de deux cents, la correction n'est pas en place : vérifie que c'est bien le moteur hôte recompilé qui tourne.
+>
+> **À faire aussi dans l'autre sens.** Se verrouiller avec l'entrée **Verrouiller**, puis Ctrl+Alt+Suppr sur l'écran de connexion : c'est la même bascule de bureau, dans l'autre sens, et elle passe par le même code.
 
 > **R43 (le bouton suit le curseur, et ne laisse rien derrière lui)**
 > 

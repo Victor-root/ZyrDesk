@@ -979,6 +979,24 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ce que ça ne change pas, et qu'il faut dire clairement.** Le moteur client cale déjà l'affichage sur l'écran et jette ce qui arrive plus vite que l'écran ne sait montrer. C'est pour cela qu'il n'y a pas de déchirure, et c'est ce que notre ligne de statistiques compte sous `dropped_jitter_pct`, resté entre 0,05 % et 0,07 % sur les relevés. Les images en trop n'étaient donc jamais affichées : ce qu'elles coûtaient, c'est du travail en face et de la place sur le lien, et c'est déjà une raison suffisante de ne pas les envoyer.
 
+## D76. Attendre en aveugle coûte le pire cas à chaque fois (2026-08-27, pendant M4)
+
+**Le relevé, resté ouvert depuis [D59](#d59-ctrlaltsuppr-voyage-sur-le-canal-du-produit-pas-par-le-clavier-2026-08-26-pendant-m4).** L'image gèle un instant à chaque Ctrl+Alt+Suppr.
+
+**Ce que fait cette touche, et pourquoi le moteur perd la main.** Elle fait changer Windows de **bureau** : le bureau sécurisé n'est pas celui où la session travaille, et la duplication d'écran est retirée au moteur pendant toute la bascule. Le moteur doit donc tout reprendre. C'est normal, ce n'est pas ce qui coûte.
+
+**Ce qui coûte, c'est qu'il attendait sans regarder.** Rien dans le moteur ne peut être prévenu que la bascule est finie : la seule façon de savoir est de redemander. Il redemandait **deux fois, avec deux cents millisecondes de sommeil entre les deux**. Une bascule qui dure trois millisecondes coûtait donc deux cents millisecondes, exactement comme une qui en dure cent quatre-vingt-dix. Le même bout de code était écrit trois fois dans le même fichier.
+
+**Décision : il redemande toutes les cinq millisecondes jusqu'à quatre cents, et le motif est écrit une fois.** Le pire cas est intact, et même allongé : une bascule vraiment lente a maintenant plus de temps qu'avant. C'est le cas courant qui change, et c'est le seul qu'on voit.
+
+**Et la deuxième moitié était dans la synchronisation, plus intéressante que la première.** L'événement qui dit « réinitialisation en cours » réveille les fils qui l'attendent quand on le lève, et quand on l'arrête. Pas quand on l'**efface**, c'est-à-dire au seul changement qui annonce que c'est terminé. Le fil qui encode n'avait donc aucun moyen d'être réveillé et redemandait toutes les vingt millisecondes ; il payait cette période entière après que l'image était redevenue disponible, et cette période-là était la dernière chose entre la bascule et le retour de l'image.
+
+**Décision : effacer réveille, et le fil attend au lieu de redemander.** Une attente bornée, pas infinie : ce type ne connaît pas les raisons d'abandonner que son appelant connaît, donc l'appelant garde la main dessus. C'est un défaut du moteur et pas un besoin ZyrDesk : n'importe quel programme bâti sur ce type l'a.
+
+**Et le moteur dit maintenant le chiffre au lieu de le laisser deviner.** Le journal écrit combien de temps la reprise a pris et laquelle des deux moitiés l'a prise. Ce n'est pas une décoration : sur les deux défauts précédents, le temps perdu l'a été à supposer un chiffre au lieu de le lire, et il n'y avait aucun moyen de le lire.
+
+**Ça franchit le plafond de Sunshine, de deux à trois, et c'est assumé.** Rien de ce qui précède n'est atteignable de l'extérieur : ce sont deux constantes internes et une primitive de synchronisation interne. Ce n'est pas un interrupteur de confort, ce sont deux défauts, et les deux sont candidats à une contribution en amont.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
