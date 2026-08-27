@@ -73,6 +73,9 @@ pub struct AtHand {
 struct Attending {
     ports: EnginePorts,
     api: Arc<EngineApi>,
+    /// The sessions coming through this door, so what one of them asks
+    /// of this computer outlives the asking.
+    sessions: Arc<Sessions>,
     log: Log,
 }
 
@@ -144,6 +147,25 @@ impl Answers for Attending {
             }
         }
     }
+
+    /// Silences this computer's speakers for the length of the session,
+    /// or lets them play again.
+    ///
+    /// Written down rather than acted on. Two reasons, and they are both
+    /// about who is in charge of the sound: several sessions can be open
+    /// at once and any one of them may have asked, and the sound has to
+    /// come back when the last one goes, whatever became of the computer
+    /// that asked. Both are answered by the watch that reads this every
+    /// half second, and by nothing else.
+    fn hush_the_speakers(&self, quiet: bool) -> Result<(), String> {
+        self.sessions.hushing.store(quiet, Ordering::Relaxed);
+        self.log.write(if quiet {
+            "the far computer asked this one's speakers to be silent"
+        } else {
+            "the far computer asked this one's speakers to play again"
+        });
+        Ok(())
+    }
 }
 
 /// Presses it, where there is a Windows to press it on.
@@ -184,6 +206,13 @@ pub struct Gateway {
 struct Sessions {
     open: AtomicUsize,
     ever: AtomicBool,
+    /// Whether a session in progress asked this computer to go quiet.
+    ///
+    /// Not part of a session's own state on purpose: it is asked after
+    /// the session stands, and what matters to the speakers is whether
+    /// anybody at all is asking. It is cleared when the last session
+    /// goes, so the next one starts from silence not being wanted.
+    hushing: AtomicBool,
 }
 
 /// One session, counted for as long as it lasts.
@@ -205,7 +234,12 @@ impl Counted {
 
 impl Drop for Counted {
     fn drop(&mut self) {
-        self.0.open.fetch_sub(1, Ordering::Relaxed);
+        // What the last session asked of this computer's speakers goes
+        // with it. A session that follows and asks nothing must not
+        // inherit the silence of the one before.
+        if self.0.open.fetch_sub(1, Ordering::Relaxed) == 1 {
+            self.0.hushing.store(false, Ordering::Relaxed);
+        }
     }
 }
 
@@ -260,13 +294,13 @@ impl Gateway {
             identity.fingerprint()
         ));
 
+        let sessions = Arc::new(Sessions::default());
         let attending: Arc<dyn Answers> = Arc::new(Attending {
             ports: engine.ports,
             api: Arc::new(EngineApi::new(engine.ports, engine.credentials)),
+            sessions: sessions.clone(),
             log: log.clone(),
         });
-
-        let sessions = Arc::new(Sessions::default());
         Ok(Self {
             tasks: vec![
                 runtime.spawn(keep_the_list_fresh(
@@ -286,6 +320,11 @@ impl Gateway {
     /// Whether somebody is being served right this moment.
     pub fn a_session_is_open(&self) -> bool {
         self.sessions.open.load(Ordering::Relaxed) > 0
+    }
+
+    /// Whether a session in progress asked this computer to go quiet.
+    pub fn silence_was_asked_for(&self) -> bool {
+        self.sessions.hushing.load(Ordering::Relaxed)
     }
 
     /// Whether a session has been served since this door was opened.

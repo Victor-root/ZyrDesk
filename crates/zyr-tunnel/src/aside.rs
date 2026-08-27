@@ -34,8 +34,8 @@ use crate::pump;
 ///
 /// Version 1 was three bytes carrying nothing but the ports. Version 2
 /// added the pairing code. Version 3 added the one keystroke no keyboard
-/// can carry.
-pub const VERSION: u32 = 3;
+/// can carry. Version 4 added the far computer's speakers.
+pub const VERSION: u32 = 4;
 
 /// Longest message this channel takes.
 ///
@@ -72,6 +72,17 @@ pub trait Answers: Send + Sync + 'static {
     /// service. So the ask crosses on the product's own channel, between
     /// the two halves of ZyrDesk, and no engine is any the wiser.
     fn secure_attention(&self) -> Result<(), String>;
+
+    /// Silences this computer's speakers for as long as the session
+    /// lasts, or lets them play again.
+    ///
+    /// Asked by whoever is watching and never decided here. A person
+    /// taking control of a machine in another room is the only one who
+    /// knows whether that room should go quiet, and they are not in it
+    /// to walk over and say so. What this end owes in return is that the
+    /// sound comes back when the session goes, whatever became of the
+    /// computer that asked.
+    fn hush_the_speakers(&self, quiet: bool) -> Result<(), String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -84,6 +95,8 @@ pub enum Question {
     Pair { pin: String, name: String },
     /// Press Ctrl+Alt+Suppr on yourself.
     SecureAttention,
+    /// Go quiet, or play again, for as long as this session lasts.
+    Hush { quiet: bool },
 }
 
 /// What comes back.
@@ -94,6 +107,8 @@ pub enum Told {
     Paired,
     /// The far computer pressed it.
     Attended,
+    /// The far computer's speakers are as they were asked to be.
+    Hushed,
 }
 
 impl fmt::Display for Question {
@@ -104,6 +119,13 @@ impl fmt::Display for Question {
             Question::Pair { pin, name } => write!(f, "{VERSION} pair {pin} {name}"),
             Question::Ports => write!(f, "{VERSION} ports"),
             Question::SecureAttention => write!(f, "{VERSION} sas"),
+            Question::Hush { quiet } => {
+                write!(
+                    f,
+                    "{VERSION} hush {}",
+                    if *quiet { "quiet" } else { "play" }
+                )
+            }
         }
     }
 }
@@ -114,6 +136,7 @@ impl fmt::Display for Told {
             Told::Ports(engine) => write!(f, "{VERSION} ports {}", engine.base()),
             Told::Paired => write!(f, "{VERSION} paired"),
             Told::Attended => write!(f, "{VERSION} attended"),
+            Told::Hushed => write!(f, "{VERSION} hushed"),
         }
     }
 }
@@ -125,6 +148,11 @@ impl Question {
         match verb {
             "ports" => Ok(Question::Ports),
             "sas" => Ok(Question::SecureAttention),
+            "hush" => match rest {
+                "quiet" => Ok(Question::Hush { quiet: true }),
+                "play" => Ok(Question::Hush { quiet: false }),
+                other => Err(format!("« {other} » ne dit ni de se taire ni de jouer")),
+            },
             "pair" => {
                 let (pin, name) = split_first(rest);
                 if pin.is_empty() || name.is_empty() {
@@ -155,6 +183,7 @@ impl Told {
             }
             "paired" => Ok(Ok(Told::Paired)),
             "attended" => Ok(Ok(Told::Attended)),
+            "hushed" => Ok(Ok(Told::Hushed)),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -253,6 +282,20 @@ pub async fn ask_for_the_secure_attention(connection: &Connection) -> io::Result
     }
 }
 
+/// Asks the far ZyrDesk to silence its own speakers, or to let them
+/// play again.
+///
+/// Asked from here because the choice belongs here. Whoever takes
+/// control of a computer in another room is the one who knows that the
+/// room should go quiet, and a setting on that far machine would have to
+/// be walked over to, which is the one thing remote control is for.
+pub async fn ask_to_hush(connection: &Connection, quiet: bool) -> io::Result<()> {
+    match ask(connection, &Question::Hush { quiet }).await? {
+        Told::Hushed => Ok(()),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -295,6 +338,15 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .await
                 .map_err(|e| format!("la frappe n'a pas pu être menée : {e}"))?
                 .map(|()| Told::Attended)
+        }
+        // Off that thread too: silencing a machine's speakers means
+        // starting a program in the session that owns its screen and
+        // waiting for it to come back.
+        Question::Hush { quiet } => {
+            tokio::task::spawn_blocking(move || answering.hush_the_speakers(quiet))
+                .await
+                .map_err(|e| format!("les enceintes n'ont pas pu être touchées : {e}"))?
+                .map(|()| Told::Hushed)
         }
     }
 }

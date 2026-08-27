@@ -411,6 +411,31 @@ impl Ways {
         Ok(())
     }
 
+    /// Asks the far computer to silence its own speakers for the length
+    /// of the session, or to let them play again.
+    ///
+    /// The same shape as the two above, and for the same reason: the
+    /// connection comes out from under the lock before anything waits on
+    /// the network.
+    pub async fn ask_to_hush(&self, way: WayId, quiet: bool) -> Result<(), String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        aside::ask_to_hush(&connection, quiet)
+            .await
+            .map_err(|e| format!("les enceintes de l'ordinateur distant n'ont pas bougé : {e}"))?;
+        self.log.write(&format!(
+            "way {way} asked the far computer's speakers to {}",
+            if quiet { "be silent" } else { "play again" }
+        ));
+        Ok(())
+    }
+
     pub fn hold(&self, way: WayId, process: u32) -> bool {
         let held = self
             .register

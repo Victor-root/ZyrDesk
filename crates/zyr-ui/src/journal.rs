@@ -127,21 +127,6 @@ async fn heading() -> String {
                     "aucune confiance accordée"
                 },
             );
-            // Ce que cet ordinateur fait de son propre son quand on le
-            // regarde. Dans le relevé parce que c'est un réglage de
-            // l'hôte, et qu'un relevé pris sur le client ne dit rien de
-            // l'hôte : la première question devant « le son ne se coupe
-            // pas » est de savoir sur quelle machine l'interrupteur a
-            // été poussé.
-            say(
-                &mut text,
-                "Son pendant qu'on regarde",
-                if standing.serving.mute_speakers {
-                    "enceintes coupées"
-                } else {
-                    "enceintes laissées telles quelles"
-                },
-            );
             say(&mut text, "Sessions ouvertes", &standing.ways.to_string());
         }
         Ok(other) => say(&mut text, "Service", &service::unexpected(other)),

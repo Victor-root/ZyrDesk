@@ -13,7 +13,7 @@
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -46,6 +46,9 @@ struct FakeEngine {
     /// Times Ctrl+Alt+Suppr was asked for. Counted rather than done:
     /// nothing here has a Windows to press it on.
     attended: Arc<AtomicU32>,
+    /// Whether the far computer was asked to go quiet. Written down for
+    /// the same reason: nothing here has speakers to silence.
+    hushed: Arc<AtomicBool>,
 }
 
 impl Answers for FakeEngine {
@@ -68,6 +71,11 @@ impl Answers for FakeEngine {
         self.attended.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
+
+    fn hush_the_speakers(&self, quiet: bool) -> Result<(), String> {
+        self.hushed.store(quiet, Ordering::Relaxed);
+        Ok(())
+    }
 }
 
 /// The tunnel brought up on both sides, kept alive for the test.
@@ -87,6 +95,8 @@ struct Bench {
     handed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
     /// Times the far ZyrDesk was asked to press Ctrl+Alt+Suppr.
     attended: Arc<AtomicU32>,
+    /// Whether the far ZyrDesk was asked to silence its speakers.
+    hushed: Arc<AtomicBool>,
 }
 
 impl Bench {
@@ -122,6 +132,7 @@ impl Bench {
 
         let handed = Arc::new(std::sync::Mutex::new(Vec::new()));
         let attended = Arc::new(AtomicU32::new(0));
+        let hushed = Arc::new(AtomicBool::new(false));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -129,6 +140,7 @@ impl Bench {
                 ports,
                 handed: handed.clone(),
                 attended: attended.clone(),
+                hushed: hushed.clone(),
             }),
         )
         .await
@@ -152,6 +164,7 @@ impl Bench {
             connection: client_connection,
             handed,
             attended,
+            hushed,
         }
     }
 
@@ -238,6 +251,27 @@ async fn ctrl_alt_suppr_travels_on_the_product_s_own_channel() {
         .unwrap();
 
     assert_eq!(bench.attended.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn couper_le_son_de_l_hote_se_demande_depuis_le_client() {
+    // C'est celui qui prend la main qui sait si la pièce d'en face doit
+    // se taire, et il n'est pas dedans pour aller le dire. La demande
+    // traverse donc entre les deux moitiés de ZyrDesk, comme le reste de
+    // ce qui n'appartient à aucun moteur.
+    let bench = Bench::bring_up(42950, 10).await;
+
+    before_the_end(aside::ask_to_hush(&bench.connection, true))
+        .await
+        .unwrap();
+    assert!(bench.hushed.load(Ordering::Relaxed));
+
+    // Et dans l'autre sens, parce qu'une session peut finir sans que la
+    // machine d'en face s'en aperçoive autrement.
+    before_the_end(aside::ask_to_hush(&bench.connection, false))
+        .await
+        .unwrap();
+    assert!(!bench.hushed.load(Ordering::Relaxed));
 }
 
 #[tokio::test]

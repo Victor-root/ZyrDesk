@@ -57,6 +57,17 @@ pub struct Wanted {
     pub settings: SessionSettings,
     /// Pairs again even if the two computers already know each other.
     pub pair_again: bool,
+    /// Whether the far computer's speakers fall silent for the length of
+    /// the session.
+    ///
+    /// Asked from here because the choice belongs here: whoever takes
+    /// control of a machine in another room is the one who knows that the
+    /// room should go quiet, and a setting on that machine would have to
+    /// be walked over to, which is the one thing remote control exists to
+    /// spare. It travels on the product's own channel, never through an
+    /// engine, and the far computer gives its sound back when the way
+    /// closes, whatever became of this end.
+    pub hush_the_far_speakers: bool,
 }
 
 /// What is happening, as it happens.
@@ -91,6 +102,14 @@ pub enum Step {
     /// service believes the session, whoever asked is the only one who
     /// can end it, and ending is asked at that address.
     Showing { process: u32, at: String },
+    /// The far computer would not silence its own speakers, and the
+    /// session goes on regardless.
+    ///
+    /// Worth saying and never worth failing over: a far computer that
+    /// cannot go quiet, because nobody is signed in on it or because
+    /// Windows would not have it, still has a perfectly good session to
+    /// give.
+    SpeakersLeftAlone { refused: String },
 }
 
 /// How long the engines are given to meet, the code having travelled on
@@ -267,6 +286,20 @@ pub fn open(
         }
         None => wanted.host.clone(),
     };
+
+    // Asked as soon as the way stands, before the engine is started: a
+    // session that never opens has still said it, and the far computer
+    // gives its sound back when the way closes either way.
+    //
+    // A refusal is written down and never fatal. A far computer that
+    // cannot silence its own speakers, because nobody is signed in on it
+    // or because Windows would not have it, is a far computer that still
+    // has a perfectly good session to give.
+    if let Some(driving) = &mut driving
+        && let Err(refused) = driving.hush_the_far_speakers(wanted.hush_the_far_speakers)
+    {
+        told(Step::SpeakersLeftAlone { refused });
+    }
 
     let state = DeviceState::for_device(&identifier_from_address(&wanted.host));
     if wanted.pair_again {
@@ -466,6 +499,24 @@ impl Driving {
         })
     }
 
+    /// Asks the far computer to silence its speakers, or to let them
+    /// play again.
+    fn hush_the_far_speakers(&mut self, quiet: bool) -> Result<(), String> {
+        let request = Request::Hush {
+            way: self.way,
+            quiet,
+        };
+        match self
+            .runtime
+            .block_on(self.service.ask(&request))
+            .map_err(|e| e.to_string())?
+        {
+            Answer::Done => Ok(()),
+            Answer::Refused(reason) => Err(reason),
+            other => Err(format!("réponse inattendue du service : {other}")),
+        }
+    }
+
     /// Hands the far computer the code its engine is waiting for.
     ///
     /// The service does the sending: it is the one holding the way, and
@@ -543,6 +594,7 @@ mod tests {
             peer: None,
             settings: SessionSettings::default(),
             pair_again: false,
+            hush_the_far_speakers: false,
         }
     }
 

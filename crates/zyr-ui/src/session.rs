@@ -206,6 +206,7 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         peer: Some(peer),
         settings: what_to_ask_for(&app, preferred),
         pair_again: false,
+        hush_the_far_speakers: preferred.mute_far_speakers,
     };
 
     // On a thread of its own, and not one of the interface's: the
@@ -259,7 +260,9 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
                     crate::floating::expect(app, *process, &towards, at);
                     lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
                 }
-                say(app, told(step));
+                if let Some(told) = told(step) {
+                    say(app, told);
+                }
             },
             // The one thing this crate can answer and the opening cannot: a
             // player the person stopped and a player the far computer turned
@@ -316,6 +319,10 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
             say(app, Told::Again);
             preferred = tauri::async_runtime::block_on(crate::settings::preferred());
             wanted.settings = what_to_ask_for(app, preferred);
+            // The way is opened again with the picture, and what the far
+            // computer was asked went with the old one: it has to be
+            // asked afresh, and with what is chosen now.
+            wanted.hush_the_far_speakers = preferred.mute_far_speakers;
             continue;
         }
 
@@ -454,15 +461,23 @@ fn lay_the_picture_when_it_opens(app: &AppHandle, process: u32) -> bool {
     false
 }
 
-fn told(step: Step) -> Told {
-    match step {
+/// The same moment, as the opening screen shows it, when it shows it at
+/// all.
+///
+/// Not every step is worth a screen. A far computer that would not
+/// silence its own speakers has nothing to do with what the person is
+/// waiting for, and putting it there would replace « the picture is
+/// coming » with a sentence about sound.
+fn told(step: Step) -> Option<Told> {
+    Some(match step {
         Step::Reached { packet } => Told::Reached { packet },
         Step::Pairing { again } => Told::Pairing { again },
         Step::PairingNeeded { pin } => Told::PairingNeeded { pin },
         Step::Paired => Told::Paired,
         Step::Starting => Told::Starting,
         Step::Showing { process, .. } => Told::Showing { process },
-    }
+        Step::SpeakersLeftAlone { .. } => return None,
+    })
 }
 
 /// The same moment, in the journal.
@@ -484,6 +499,9 @@ fn written(step: &Step) -> String {
         Step::Paired => "les deux ordinateurs se connaissent".to_string(),
         Step::Starting => "démarrage du lecteur".to_string(),
         Step::Showing { process, .. } => format!("lecteur en marche, processus {process}"),
+        Step::SpeakersLeftAlone { refused } => {
+            format!("les enceintes de l'ordinateur distant restent allumées : {refused}")
+        }
     }
 }
 

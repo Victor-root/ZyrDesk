@@ -421,29 +421,6 @@
             </div>
           </div>
 
-          <!-- Celui-ci ne redémarre pas le moteur : ce n'est pas lui qui
-               le fait, c'est le service, sur le mélangeur de cette
-               machine. Une session en cours n'est donc pas coupée. -->
-          <div class="reglage">
-            <div class="reglage-mot">
-              <span>Couper le son pendant qu'on regarde</span>
-              <span class="legende">
-                Quand quelqu'un prend la main sur cet ordinateur, ses enceintes
-                se taisent et le son ne part plus que dans la session. La pièce
-                où il se trouve reste silencieuse, celui qui regarde entend
-                tout. Le son revient tout seul à la fin.
-              </span>
-            </div>
-            <button
-              class="interrupteur"
-              id="son-coupe"
-              role="switch"
-              aria-checked="false"
-              aria-label="Couper le son pendant qu'on regarde"
-              disabled
-            ></button>
-          </div>
-
           <div class="reglage">
             <div class="reglage-mot">
               <span>Démarrer avec Windows</span>
@@ -593,6 +570,28 @@
                   Jeu
                 </button>
               </div>
+            </div>
+
+            <!-- Le choix se fait ici, pas sur la machine d'en face :
+                 celui qui prend la main est le seul à savoir si la pièce
+                 d'en face doit se taire, et il n'est pas dedans pour
+                 aller le dire. La demande part avec la session. -->
+            <div class="reglage">
+              <div class="reglage-mot">
+                <span>Couper le son de l'ordinateur distant</span>
+                <span class="legende">
+                  Ses enceintes se taisent pendant toute la session : la pièce
+                  où il se trouve reste silencieuse, et vous entendez tout. Le
+                  son y revient tout seul à la fin.
+                </span>
+              </div>
+              <button
+                class="interrupteur"
+                id="son-distant"
+                role="switch"
+                aria-checked="false"
+                aria-label="Couper le son de l'ordinateur distant"
+              ></button>
             </div>
 
             <div class="reglage">

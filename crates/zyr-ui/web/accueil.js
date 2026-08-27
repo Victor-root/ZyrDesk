@@ -57,8 +57,8 @@ const vue = {
   confiance: document.getElementById("confiance"),
   auDemarrage: document.getElementById("au-demarrage"),
   cadenceContinue: document.getElementById("cadence-continue"),
-  sonCoupe: document.getElementById("son-coupe"),
   stats: document.getElementById("stats"),
+  sonDistant: document.getElementById("son-distant"),
   dossierJournaux: document.getElementById("dossier-journaux"),
   ouvrirDossier: document.getElementById("ouvrir-dossier"),
   reglagesProbleme: document.getElementById("reglages-probleme"),
@@ -849,6 +849,10 @@ function dessineReglages() {
     "aria-checked",
     reglages.statsOverlay ? "true" : "false",
   );
+  vue.sonDistant.setAttribute(
+    "aria-checked",
+    reglages.muteFarSpeakers ? "true" : "false",
+  );
 }
 
 function marque(nom, valeur) {
@@ -883,6 +887,7 @@ async function envoieLeChoix(comment) {
     display: reglages.display,
     absoluteMouse: reglages.absoluteMouse,
     statsOverlay: reglages.statsOverlay,
+    muteFarSpeakers: reglages.muteFarSpeakers,
   };
   comment(veut);
 
@@ -957,17 +962,19 @@ const dessineAuDemarrage = interrupteurMachine(
   (machine) => machine.atBoot,
 );
 
-/* Ce que cet ordinateur fait quand c'est LUI qu'on regarde. Les trois
+/* Ce que cet ordinateur fait quand c'est LUI qu'on regarde. Les deux
    voyagent ensemble parce que le service les écrit ensemble : envoyer
-   l'un sans les autres remettrait les autres à ce qu'ils étaient.
+   l'un sans l'autre remettrait le second à ce qu'il était.
 
-   Changer l'un des deux premiers redémarre son moteur, donc coupe une
-   session que quelqu'un aurait en cours vers cette machine. Le
-   troisième, couper le son, ne passe pas par le moteur et ne coupe
-   rien. C'est dit dans la légende de chaque réglage plutôt qu'ici. */
+   Changer l'un redémarre son moteur, donc coupe une session que
+   quelqu'un aurait en cours vers cette machine. C'est dit dans la
+   légende de chaque réglage plutôt qu'ici. */
 async function envoieLaFaconDeServir(quoi) {
   montre(vue.reglagesProbleme, false);
-  const avant = laFaconDeServir();
+  const avant = {
+    steadyRate: etat !== null && etat.steadyRate,
+    capture: etat === null ? "ddx" : etat.capture,
+  };
   try {
     await invoke("set_serving", { ...avant, ...quoi });
   } catch (raison) {
@@ -978,41 +985,23 @@ async function envoieLaFaconDeServir(quoi) {
   }
 }
 
-/* Ce que le service dit servir en ce moment, dans les mots de la
-   commande. Sans état lisible, les valeurs par défaut du produit :
-   envoyer un réglage sans les autres les écraserait. */
-function laFaconDeServir() {
-  return {
-    steadyRate: etat !== null && etat.steadyRate,
-    capture: etat === null ? "ddx" : etat.capture,
-    muteSpeakers: etat !== null && etat.muteSpeakers,
-  };
-}
-
 function dessineFaconDeServir() {
   if (etat === null) {
     return;
   }
-  for (const [bouton, valeur] of [
-    [vue.cadenceContinue, etat.steadyRate],
-    [vue.sonCoupe, etat.muteSpeakers],
-  ]) {
-    bouton.disabled = etat.unreachable !== null;
-    bouton.setAttribute("aria-checked", valeur ? "true" : "false");
-  }
+  vue.cadenceContinue.disabled = etat.unreachable !== null;
+  vue.cadenceContinue.setAttribute(
+    "aria-checked",
+    etat.steadyRate ? "true" : "false",
+  );
   marque("capture", etat.capture);
 }
 
-for (const [bouton, cle] of [
-  [vue.cadenceContinue, "steadyRate"],
-  [vue.sonCoupe, "muteSpeakers"],
-]) {
-  bouton.addEventListener("click", () => {
-    const veut = bouton.getAttribute("aria-checked") !== "true";
-    bouton.setAttribute("aria-checked", veut ? "true" : "false");
-    envoieLaFaconDeServir({ [cle]: veut });
-  });
-}
+vue.cadenceContinue.addEventListener("click", () => {
+  const veut = vue.cadenceContinue.getAttribute("aria-checked") !== "true";
+  vue.cadenceContinue.setAttribute("aria-checked", veut ? "true" : "false");
+  envoieLaFaconDeServir({ steadyRate: veut });
+});
 
 function soucis(texte) {
   vue.reglagesProblemeTexte.textContent = texte;
@@ -1168,12 +1157,19 @@ for (const bouton of vue.reglages.querySelectorAll(
   });
 }
 
-vue.stats.addEventListener("click", () => {
-  const actif = vue.stats.getAttribute("aria-checked") !== "true";
-  change((veut) => {
-    veut.statsOverlay = actif;
+/* Les deux interrupteurs de la session marchent pareil : ce qui est
+   affiché est ce qui est écrit, et le clic pousse l'inverse. */
+for (const [bouton, cle] of [
+  [vue.stats, "statsOverlay"],
+  [vue.sonDistant, "muteFarSpeakers"],
+]) {
+  bouton.addEventListener("click", () => {
+    const actif = bouton.getAttribute("aria-checked") !== "true";
+    change((veut) => {
+      veut[cle] = actif;
+    });
   });
-});
+}
 
 /* ---- Thème ------------------------------------------------------------ */
 

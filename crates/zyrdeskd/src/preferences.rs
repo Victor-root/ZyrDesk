@@ -35,7 +35,7 @@ const ABSOLUTE_MOUSE: &str = "absolute_mouse";
 const STATS_OVERLAY: &str = "stats_overlay";
 const STEADY_RATE: &str = "steady_rate";
 const CAPTURE: &str = "capture";
-const MUTE_SPEAKERS: &str = "mute_speakers";
+const MUTE_FAR_SPEAKERS: &str = "mute_far_speakers";
 
 /// What the file says, when it says anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,6 +193,9 @@ fn rendered(preferences: Preferences) -> String {
          {ABSOLUTE_MOUSE} = {}\n\
          # Statistiques affichées par-dessus l'image.\n\
          {STATS_OVERLAY} = {}\n\
+         # Couper les enceintes de l'ordinateur d'en face pendant la\n\
+         # session : son de la session inchangé, pièce d'en face muette.\n\
+         {MUTE_FAR_SPEAKERS} = {}\n\
          \n\
          # Ce que cet ordinateur fait quand c'est LUI qu'on regarde.\n\
          # Renvoyer un écran immobile à pleine cadence : plus fluide, mais\n\
@@ -201,11 +204,7 @@ fn rendered(preferences: Preferences) -> String {
          # Façon de capturer l'écran : ddx voit les invites administrateur\n\
          # et l'écran de connexion, wgc est plus rapide sur certaines\n\
          # machines et ne les voit pas.\n\
-         {CAPTURE} = {}\n\
-         # Couper le son des enceintes de cet ordinateur pendant qu'on le\n\
-         # regarde de loin : le son continue de partir dans la session, la\n\
-         # pièce où il se trouve reste silencieuse.\n\
-         {MUTE_SPEAKERS} = {}\n",
+         {CAPTURE} = {}\n",
         yes_no(preferences.remote_access),
         yes_no(preferences.trust_local_network),
         preferred.asked,
@@ -214,9 +213,9 @@ fn rendered(preferences: Preferences) -> String {
         preferred.display_mode,
         yes_no(preferred.absolute_mouse),
         yes_no(preferred.stats_overlay),
+        yes_no(preferred.mute_far_speakers),
         yes_no(preferences.serving.steady_rate),
         preferences.serving.capture,
-        yes_no(preferences.serving.mute_speakers),
     )
 }
 
@@ -283,8 +282,8 @@ fn parsed(text: &str) -> Preferences {
                     preferences.serving.capture = how;
                 }
             }
-            MUTE_SPEAKERS => {
-                preferences.serving.mute_speakers = told(value, preferences.serving.mute_speakers);
+            MUTE_FAR_SPEAKERS => {
+                preferred.mute_far_speakers = told(value, preferred.mute_far_speakers);
             }
             _ => {}
         }
@@ -318,11 +317,11 @@ mod tests {
                 display_mode: DisplayMode::Windowed,
                 absolute_mouse: false,
                 stats_overlay: true,
+                mute_far_speakers: true,
             },
             serving: Serving {
                 steady_rate: false,
                 capture: Capture::Windows,
-                mute_speakers: true,
             },
         }
     }
@@ -442,7 +441,7 @@ mod tests {
         assert!(rendered.contains("codec = HEVC"), "{rendered}");
         assert!(rendered.contains("steady_rate = no"), "{rendered}");
         assert!(rendered.contains("capture = wgc"), "{rendered}");
-        assert!(rendered.contains("mute_speakers = yes"), "{rendered}");
+        assert!(rendered.contains("mute_far_speakers = yes"), "{rendered}");
         assert_eq!(parsed(&rendered), chosen());
     }
 

@@ -30,6 +30,9 @@ pub struct Settings {
     pub display: String,
     pub absolute_mouse: bool,
     pub stats_overlay: bool,
+    /// Whether the far computer's speakers fall silent for the length of
+    /// a session opened from here.
+    pub mute_far_speakers: bool,
     /// What a session opened right now would ask for, so the screen can
     /// say it out loud rather than leave it to be guessed.
     pub width: u32,
@@ -48,6 +51,7 @@ impl Settings {
             display: preferred.display_mode.to_string(),
             absolute_mouse: preferred.absolute_mouse,
             stats_overlay: preferred.stats_overlay,
+            mute_far_speakers: preferred.mute_far_speakers,
             width: settings.width,
             height: settings.height,
             fps: settings.fps,
@@ -64,6 +68,7 @@ pub struct Chosen {
     display: String,
     absolute_mouse: bool,
     stats_overlay: bool,
+    mute_far_speakers: bool,
 }
 
 impl Chosen {
@@ -78,6 +83,7 @@ impl Chosen {
             display_mode: self.display.parse::<DisplayMode>()?,
             absolute_mouse: self.absolute_mouse,
             stats_overlay: self.stats_overlay,
+            mute_far_speakers: self.mute_far_speakers,
             ..preferred
         })
     }
@@ -301,6 +307,7 @@ mod tests {
             display: "windowed".to_string(),
             absolute_mouse: false,
             stats_overlay: true,
+            mute_far_speakers: true,
         }
     }
 
@@ -314,6 +321,7 @@ mod tests {
             display: shown.display,
             absolute_mouse: shown.absolute_mouse,
             stats_overlay: shown.stats_overlay,
+            mute_far_speakers: shown.mute_far_speakers,
         };
         assert_eq!(
             returned.laid_over(Preferred::default()).unwrap(),

@@ -751,6 +751,8 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 ## D61. Les enceintes de l'hôte se taisent sans la carte son de personne (2026-08-26, pendant M4)
 
+> Révisée par [D64](#d64-couper-le-son-den-face-se-décide-du-côté-qui-regarde-2026-08-27-pendant-m4) : le mécanisme est le bon et ne bouge pas, mais le réglage était du mauvais côté. Il appartenait à l'ordinateur regardé ; il appartient maintenant à celui qui regarde, et voyage avec la session.
+
 **Ce que Victor a demandé, et la contrainte qu'il a posée ensuite.** « De base le son de l'hôte reste actif sur le pc physique, faudrait une option pour choisir si on veut que ça coupe le son physiquement pour que le son passe que par le stream. » Puis : « je ne veux absolument pas dépendre de steam, tu te débrouilles comme tu veux mais je ne veux dépendre de personne. »
 
 **La réponse habituelle est une carte son de quelqu'un d'autre.** Les moteurs, le nôtre compris, font ça en installant une deuxième carte son à laquelle aucun câble ne mène, puis en y basculant la sortie de l'ordinateur le temps de la session. Celle qu'ils installent est celle de Steam. C'est exactement la dépendance refusée, et il n'y en a pas d'autre à installer sans acheter un certificat et faire signer un pilote.
@@ -786,6 +788,20 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 **Ce qui le faisait.** La voie était rendue à un seul endroit : à la fin de l'attente d'une session qui avait tourné. Toutes les autres sorties de l'ouverture la laissaient debout, et il y en a plusieurs : un moteur qui ne démarre pas, un appairage refusé, une surveillance qui conclut mal. Le service, lui, ferme une voie quand le processus qu'on lui a dit de surveiller s'en va, et on le lui dit à la toute dernière ligne de l'ouverture. Une voie abandonnée avant cette ligne était donc une voie que personne ne fermerait jamais.
 
 **Décision : la voie est rendue par le fait même d'être lâchée.** Elle appartient à ce qui la tient, et ce qui la tient disparaît sur toutes les routes de sortie, pas seulement sur celle qui marche. Rendre une voie deux fois n'est pas une erreur, ce que le service vérifie déjà par un essai à lui, ce qui rend l'ajout sans danger à côté de tout ce qui pourrait déjà l'avoir dite.
+
+## D64. Couper le son d'en face se décide du côté qui regarde (2026-08-27, pendant M4)
+
+**Ce que Victor a dit en essayant [D61](#d61-les-enceintes-de-lhôte-se-taisent-sans-la-carte-son-de-personne-2026-08-26-pendant-m4).** « Faut évidemment que ça soit côté client que cette option fonctionne, si faut le faire sur l'hôte c'est de la merde. » Il a raison, et c'est une faute de conception et non un oubli.
+
+**Pourquoi c'était le mauvais côté.** Le réglage était une préférence de l'ordinateur regardé : pour couper le son d'une machine dans une autre pièce, il fallait d'abord aller sur cette machine pousser un interrupteur. C'est exactement le geste que la prise en main à distance existe pour éviter. Et celui qui sait si la pièce doit se taire est celui qui vient d'en prendre le contrôle, pas celui qui y est resté.
+
+**Décision : le choix vit avec la session, du côté de celui qui l'ouvre.** Il est rangé avec tout ce qui décrit une session ouverte depuis cet ordinateur, à côté de la taille, du débit, du codec et de la souris. Il part avec l'ouverture, sur le canal que ZyrDesk se réserve dans le tunnel, comme Ctrl+Alt+Suppr et comme le code d'appairage : ce n'est l'affaire d'aucun moteur.
+
+**Ce que le mécanisme garde de D61.** Rien ne change de ce qui coupe réellement le son : le service d'en face coupe le muet de la vraie carte, depuis la session qui tient l'écran, et aucune carte son n'est installée. Ce que la capture emporte est le mélange remis à la carte, recopié avant que la carte applique son muet ; la pièce se tait, le flux garde son son.
+
+**Ce qui est demandé n'est pas ce qui est promis.** La demande part dès que la voie tient, avant même que le moteur démarre, et un refus est écrit au journal sans jamais faire échouer la session : un ordinateur qui ne peut pas se taire, faute de session ouverte dessus ou parce que Windows n'en veut pas, a quand même une session parfaitement bonne à donner.
+
+**Et le silence appartient à la voie, pas à la machine.** Ce que la session a demandé est oublié quand la dernière voie se ferme, de sorte qu'une session suivante qui ne demande rien n'hérite pas du silence de la précédente. Le son revient donc quand la session part, quelle que soit la façon dont elle est partie et quoi qu'il soit advenu de l'ordinateur qui avait demandé.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

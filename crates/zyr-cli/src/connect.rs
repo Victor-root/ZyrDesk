@@ -80,6 +80,10 @@ pub fn run(args: Args) -> ExitCode {
         peer: args.pair,
         settings,
         pair_again: args.pair_again,
+        // The command line is the diagnostic path: it asks nothing of
+        // the far computer's speakers, which is a choice made in the
+        // window along with everything else a session looks like.
+        hush_the_far_speakers: false,
     };
 
     // Nothing here can close a session while it is opening: the command
@@ -141,6 +145,9 @@ fn tell(step: Step, host: &str) {
         // Rien à en dire ici : la ligne de commande n'a pas de
         // bouton flottant à accrocher dessus.
         Step::Showing { .. } => {}
+        Step::SpeakersLeftAlone { refused } => {
+            println!("  Les enceintes de {host} restent allumées : {refused}");
+        }
     }
 }
 

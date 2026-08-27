@@ -243,7 +243,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         // speakers play. This is also what gives the sound back after a
         // session that ended badly, and what keeps trying until somebody
         // is signed in to give it back in.
-        crate::speakers::keep_in_step(remembered.serving().mute_speakers, false, log);
+        crate::speakers::keep_in_step(false, false, log);
 
         if !remembered.remote_access() {
             // Remote access is off. The service stays up: it is still
@@ -630,23 +630,22 @@ fn wait_for_the_engine_to_stop(
             return Life::NoLongerWanted;
         }
 
-        // Only what the engine was told, and not everything under that
-        // heading: muting this computer's speakers is the service's own
-        // doing, and turning it on mid-session must not cut the session
-        // it was turned on for.
-        let asked = remembered.serving();
-        if asked.as_the_engine_reads_it() != serving.as_the_engine_reads_it() {
+        if remembered.serving() != serving {
             log.write("how this computer serves was changed, the engine starts over with it");
             stop_and_say_how(watched.engine, log);
             return Life::ServingChanged;
         }
 
-        // The speakers follow whoever is watching: silent while somebody
-        // is, playing again the moment nobody is. Asked at every turn
-        // and doing nothing at all when they already are, so a refusal
-        // costs one line and is tried again in a moment.
+        // The speakers follow whoever is watching: silent while a session
+        // asked for it, playing again the moment nobody is watching. What
+        // is asked comes from the far computer and never from a setting
+        // here: the person taking control is the one who knows whether
+        // this room should go quiet, and they are not in it to say so.
+        // Asked at every turn and doing nothing at all when they already
+        // are, so a refusal costs one line and is tried again in a
+        // moment.
         crate::speakers::keep_in_step(
-            asked.mute_speakers,
+            watched.gateway.silence_was_asked_for(),
             watched.gateway.a_session_is_open(),
             log,
         );

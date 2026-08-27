@@ -46,7 +46,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
 | **R36** | **Refait, et c'est le sujet du lot.** La frappe partait bien et l'ordinateur d'en face répondait oui, sans que rien n'apparaisse à l'écran : elle était confiée à un aller simple lancé dans la session de l'écran, qui n'est ni un service ni un programme à manifeste, donc aucun des deux cas que Windows accepte. C'est le service lui-même qui presse maintenant. Le journal du service hôte écrit la stratégie réellement en place, sa propre session et celle de l'écran : c'est la ligne à lire si ça ne marche toujours pas |
 | **R37** | Nouveau. Un interrupteur **Son** dans le menu de la session, Actif ou Coupé. Il coupe le son **de cette machine-ci**, sur la tranche du lecteur dans le mélangeur de Windows, et rien d'autre de ce qui joue ici |
-| **R38** | Nouveau. Un réglage d'hôte **Couper le son pendant qu'on regarde**. Les enceintes de l'hôte se taisent, le son continue de partir dans la session, et **aucune carte son n'est installée**. À vérifier aussi : une session en cours n'est pas coupée quand on l'allume, et le son revient après un arrêt brutal |
+| **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
 | **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
 | **S28** | Nouveau. Fermer une session dans les six secondes qui suivent son ouverture, ou une relance par **Appliquer les changements**, repartait en appairage : « l'ordinateur distant ne reconnaît plus celui-ci », puis un refus. La surveillance qui guette un ordinateur nous ayant oubliés demande maintenant à la fenêtre si la session est toujours voulue |
 | **S29** | Nouveau. Une voie restait ouverte pour toujours dès qu'une ouverture échouait, et la fenêtre affichait « Sessions ouvertes : 1 » sans session. La voie est maintenant rendue sur toutes les routes de sortie |
@@ -1194,37 +1194,35 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Le journal de la fenêtre dit `son du lecteur N coupé` puis `son du lecteur N rendu`.
 
-> **R38 (les enceintes de l'hôte se taisent pendant qu'on le regarde)**
+> **R38 (couper le son de l'ordinateur d'en face, depuis celui qui regarde)**
 >
-> Sur le **PC hôte**, dans ses propres réglages, une entrée **Couper le son pendant qu'on regarde**, éteinte par défaut. L'allumer.
+> Le réglage est **sur l'ordinateur depuis lequel on regarde**, dans les réglages de la session, à côté de la taille et du codec : **Couper le son de l'ordinateur distant**. Éteint par défaut. L'allumer.
 >
-> Attendu tout de suite : **rien ne bouge**. Pas de redémarrage du moteur, et une session en cours vers cette machine n'est **pas** coupée. C'est ce qui distingue ce réglage des deux autres réglages d'hôte (R33), que le moteur lit à son démarrage.
+> Mettre de la musique sur l'ordinateur **d'en face**, à un volume audible dans sa pièce. Puis ouvrir une session vers lui.
 >
-> Mettre de la musique sur le PC hôte, à un volume audible dans la pièce. Depuis le PC client, ouvrir une session vers lui.
+> Attendu : **ses enceintes se taisent** dès que la session s'ouvre, et **le son arrive dans la session**. Fermer la session : ses enceintes se remettent à jouer toutes seules.
 >
-> Attendu : **les enceintes du PC hôte se taisent** dès que la session s'ouvre, et **le son arrive dans la session** sur le PC client. Fermer la session : les enceintes du PC hôte se remettent à jouer toutes seules.
+> Il n'y a **rien à régler sur la machine d'en face**, et c'est tout l'objet de l'essai : aller y pousser un interrupteur serait exactement le déplacement que la prise en main à distance existe pour éviter.
 >
-> **Ce que le journal du service hôte doit dire**, et c'est là qu'on regarde en premier, parce que le réglage est celui de l'**hôte** et qu'un relevé pris sur le client n'en dit rien :
+> **Ce que les journaux doivent dire.** Côté client : `way N asked the far computer's speakers to be silent`. Côté hôte :
 >
 > ```
+> the far computer asked this one's speakers to be silent
 > somebody is now watching this computer, and its speakers are to be silent while they do
 > the speakers of this computer are silent while it is being watched
-> ...
-> somebody is no longer watching this computer, and its speakers are to be silent while they do
-> the speakers of this computer play again
 > ```
 >
-> La première ligne tombe à chaque session, quoi qu'il arrive, et c'est elle qui tranche :
+> Et au départ : `the speakers of this computer play again`.
 >
-> - `its speakers are left alone, nobody having asked for that` : l'interrupteur n'est pas allumé **sur cette machine-là**. C'est l'erreur la plus courante, l'interrupteur ayant été poussé sur celle depuis laquelle on regarde. Le relevé de la fenêtre le dit aussi, ligne **Son pendant qu'on regarde**, et il faut le lire sur l'ordinateur hôte.
-> - `the speakers would not move:` suivi d'une raison : Windows a refusé, et la raison est écrite.
-> - Aucune ligne du tout : aucune session n'est comptée par la porte de cet ordinateur, ce qui est un autre problème que le son.
+> - `its speakers are left alone, nobody having asked for that` : la demande n'est pas arrivée. Soit le réglage n'est pas allumé du côté qui regarde, soit les deux machines n'ont pas la même version.
+> - `the speakers would not move:` suivi d'une raison : Windows a refusé sur la machine d'en face, et la raison est écrite.
+> - Côté client, `les enceintes de l'ordinateur distant restent allumées : …` : la machine d'en face a refusé, et la session continue quand même. C'est voulu : un ordinateur qui ne peut pas se taire a quand même une session à donner.
 >
-> **Le cas du service qui ne va pas au bout.** Ouvrir une session, laisser le son se couper, puis **éteindre brutalement le PC hôte** (bouton d'alimentation maintenu). Le rallumer. Attendu : les enceintes rejouent toutes seules, et le journal dit `this computer was left silent by a session that did not end properly` suivi de `the speakers of this computer play again`. Windows se souvient d'une carte coupée à travers un redémarrage : sans ce rattrapage, la machine resterait muette pour toujours.
+> **Le cas du service qui ne va pas au bout.** Ouvrir une session avec le son coupé, puis **éteindre brutalement l'ordinateur d'en face** (bouton d'alimentation maintenu). Le rallumer. Attendu : ses enceintes rejouent toutes seules, et son journal dit `this computer was left silent by a session that did not end properly` suivi de `the speakers of this computer play again`. Windows se souvient d'une carte coupée à travers un redémarrage : sans ce rattrapage, la machine resterait muette pour toujours.
 >
-> **Le cas des enceintes déjà coupées.** Couper le son du PC hôte à la main **avant** d'ouvrir une session, puis ouvrir une session et la fermer. Attendu : le son reste coupé à la fin. Ce produit ne rend que ce qu'il a pris.
+> **Le cas des enceintes déjà coupées.** Couper le son de la machine d'en face à la main **avant** d'ouvrir la session, puis ouvrir et fermer. Attendu : le son y reste coupé à la fin. Ce produit ne rend que ce qu'il a pris.
 >
-> **Ce qu'il ne faut surtout pas voir.** Aucune carte son nouvelle dans la liste des périphériques audio du PC hôte, ni pendant ni après. C'est là toute la différence avec la façon dont les moteurs font ça d'habitude, qui est d'installer celle de Steam. Le journal du moteur hôte doit dire une fois par session `Couldn't find the specified virtual audio sink aucune-carte-son-virtuelle` : c'est la réponse voulue, écrite noir sur blanc.
+> **Ce qu'il ne faut surtout pas voir.** Aucune carte son nouvelle dans la liste des périphériques audio de la machine d'en face, ni pendant ni après. C'est là toute la différence avec la façon dont les moteurs font ça d'habitude, qui est d'installer celle de Steam. Le journal du moteur hôte doit dire une fois par session `Couldn't find the specified virtual audio sink aucune-carte-son-virtuelle` : c'est la réponse voulue, écrite noir sur blanc.
 
 > **R18 (un réglage survit à tout)**
 >

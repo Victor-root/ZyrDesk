@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 16;
+pub const PROTOCOL: u32 = 17;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -114,6 +114,14 @@ pub enum Request {
     /// The far ZyrDesk presses it on its own machine, which is the one
     /// program there the system will let.
     SecureAttention { way: WayId },
+    /// Asks the far computer to silence its own speakers for the length
+    /// of the session, or to let them play again.
+    ///
+    /// A choice made by whoever is watching, which is why it travels at
+    /// all: the person taking control of a machine in another room is the
+    /// only one who knows that the room should go quiet, and a setting on
+    /// that machine would have to be walked over to.
+    Hush { way: WayId, quiet: bool },
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
     Hold { way: WayId, process: u32 },
@@ -200,6 +208,10 @@ impl Request {
             "sas" => Ok(Request::SecureAttention {
                 way: WayId(fields.parsed("way")?),
             }),
+            "hush" => Ok(Request::Hush {
+                way: WayId(fields.parsed("way")?),
+                quiet: fields.text("quiet")? == "yes",
+            }),
             "hold" => Ok(Request::Hold {
                 way: WayId(fields.parsed("way")?),
                 process: fields.parsed("process")?,
@@ -221,7 +233,6 @@ impl Request {
                     capture: fields
                         .parsed("capture")
                         .unwrap_or(Serving::default().capture),
-                    mute_speakers: fields.flag("mute", Serving::default().mute_speakers),
                 },
             }),
             "authorize" => Ok(Request::Authorize {
@@ -258,6 +269,7 @@ impl fmt::Display for Request {
             ),
             Request::Pair { way, pin } => write!(f, "pair way={way} pin={pin}"),
             Request::SecureAttention { way } => write!(f, "sas way={way}"),
+            Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
@@ -266,10 +278,9 @@ impl fmt::Display for Request {
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
             Request::ServeLike { serving } => write!(
                 f,
-                "serving steady={} capture={} mute={}",
+                "serving steady={} capture={}",
                 said(serving.steady_rate),
-                serving.capture,
-                said(serving.mute_speakers)
+                serving.capture
             ),
             Request::Authorize { peer, host, name } => {
                 write!(f, "authorize peer={peer}")?;
@@ -299,7 +310,7 @@ fn said(yes: bool) -> &'static str {
 /// and the answer so the two can never drift apart.
 fn spelled(preferred: &Preferred) -> String {
     format!(
-        "asked={} bitrate={} codec={} display={} mouse={} stats={}",
+        "asked={} bitrate={} codec={} display={} mouse={} stats={} hush={}",
         preferred.asked,
         preferred.bitrate_kbps,
         preferred.codec,
@@ -309,7 +320,8 @@ fn spelled(preferred: &Preferred) -> String {
         } else {
             "game"
         },
-        said(preferred.stats_overlay)
+        said(preferred.stats_overlay),
+        said(preferred.mute_far_speakers)
     )
 }
 
@@ -447,7 +459,6 @@ impl Answer {
                     capture: fields
                         .parsed("capture")
                         .unwrap_or(Serving::default().capture),
-                    mute_speakers: fields.flag("mute", Serving::default().mute_speakers),
                 },
                 ways: fields.parsed("ways")?,
             })),
@@ -487,7 +498,7 @@ impl fmt::Display for Answer {
         match self {
             Answer::Standing(standing) => write!(
                 f,
-                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} at-boot={} steady={} capture={} mute={} ways={}",
+                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} at-boot={} steady={} capture={} ways={}",
                 standing.protocol,
                 packed(&standing.build),
                 standing.fingerprint,
@@ -498,7 +509,6 @@ impl fmt::Display for Answer {
                 said(standing.at_boot),
                 said(standing.serving.steady_rate),
                 standing.serving.capture,
-                said(standing.serving.mute_speakers),
                 standing.ways
             ),
             Answer::Reached(reached) => write!(
@@ -666,6 +676,7 @@ impl<'a> Fields<'a> {
                 Err(_) => fallback.absolute_mouse,
             },
             stats_overlay: self.flag("stats", fallback.stats_overlay),
+            mute_far_speakers: self.flag("hush", fallback.mute_far_speakers),
         }
     }
 }
@@ -712,6 +723,14 @@ mod tests {
             },
             Request::Release { way: WayId(3) },
             Request::SecureAttention { way: WayId(3) },
+            Request::Hush {
+                way: WayId(3),
+                quiet: true,
+            },
+            Request::Hush {
+                way: WayId(3),
+                quiet: false,
+            },
             Request::Peers,
             Request::Sessions,
             Request::SetHosting { on: true },
@@ -728,7 +747,6 @@ mod tests {
                 serving: Serving {
                     steady_rate: false,
                     capture: Capture::Windows,
-                    mute_speakers: true,
                 },
             },
             Request::Authorize {
@@ -766,6 +784,7 @@ mod tests {
             display_mode: DisplayMode::Windowed,
             absolute_mouse: false,
             stats_overlay: true,
+            mute_far_speakers: true,
         }
     }
 
@@ -797,7 +816,6 @@ mod tests {
                 serving: Serving {
                     steady_rate: false,
                     capture: Capture::Windows,
-                    mute_speakers: true,
                 },
                 ways: 0,
             }),
