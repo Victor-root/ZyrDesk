@@ -82,7 +82,9 @@ pub fn run(args: Args) -> ExitCode {
         pair_again: args.pair_again,
     };
 
-    let running = match zyr_session::open(&wanted, &mut |step| tell(step, &args.host)) {
+    // Nothing here can close a session while it is opening: the command
+    // line waits for the opening to finish before it listens to anybody.
+    let running = match zyr_session::open(&wanted, &mut |step| tell(step, &args.host), &|| true) {
         Ok(running) => running,
         Err(e) => return reported(e, &args.host),
     };

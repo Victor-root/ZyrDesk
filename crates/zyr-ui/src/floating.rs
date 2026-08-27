@@ -443,6 +443,19 @@ impl Floating {
             .store(asked, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Whether a close has been asked for, without forgetting it.
+    ///
+    /// Asked while a session is still opening, where nothing else can
+    /// tell a player the person stopped from one the far computer turned
+    /// away: both look like an engine that lost its stream. Left standing
+    /// for `was_closed_on_purpose` to take, since that is what the
+    /// opening reads once it is over.
+    pub fn a_close_was_asked_for(app: &AppHandle) -> bool {
+        app.state::<Floating>()
+            .closing
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Whether the session that just ended was closed on purpose, and
     /// forgets it either way.
     pub fn was_closed_on_purpose(app: &AppHandle) -> bool {

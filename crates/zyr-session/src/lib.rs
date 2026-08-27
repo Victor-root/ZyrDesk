@@ -30,7 +30,7 @@
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use zyr_control::{Answer, Request, Service, WayId};
 use zyr_engine_client::state::identifier_from_address;
@@ -124,6 +124,13 @@ const PAIRING_BY_HAND: Duration = Duration::from_secs(180);
 /// session never pays it.
 const SESSION_TAKES: Duration = Duration::from_secs(6);
 
+/// How long that watch waits before looking up to ask whether the session
+/// is still wanted.
+///
+/// Short enough that a click to close is felt almost at once, long enough
+/// that the wait is not a spin.
+const WATCH_STEP: Duration = Duration::from_millis(100);
+
 #[derive(Debug)]
 pub enum Error {
     /// The engine is not on this machine.
@@ -168,7 +175,12 @@ impl std::error::Error for Error {}
 /// know how the session ended waits for it; whoever does not, walks away.
 pub struct Running {
     session: Session,
-    driving: Option<Driving>,
+    /// The way the service holds for this session, kept to be let go of.
+    ///
+    /// Never read, and named so. It is here for exactly as long as the
+    /// session lasts, and gives the way back the moment this is dropped,
+    /// whichever road the caller took to get there.
+    _driving: Option<Driving>,
     /// Where everything the engine says was collected.
     log: PathBuf,
 }
@@ -183,14 +195,11 @@ impl Running {
         &self.log
     }
 
-    /// Waits for the session to end, and gives the way back at once
-    /// rather than leaving the service to notice.
+    /// Waits for the session to end.
+    ///
+    /// The way goes back on its own a line later, when this is dropped.
     pub fn wait(mut self) -> io::Result<SessionOutcome> {
-        let outcome = self.session.wait();
-        if let Some(driving) = &mut self.driving {
-            driving.let_go();
-        }
-        outcome
+        self.session.wait()
     }
 }
 
@@ -218,7 +227,19 @@ pub fn close_on_the_far_computer(host: &str, at: &str) -> Result<(), Error> {
 }
 
 /// Opens a session, reporting what happens as it happens.
-pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Error> {
+///
+/// `still_wanted` is asked while the opening is being watched, and only
+/// then. Between the picture appearing and this returning there are a
+/// few seconds during which the player stopping is read as the far
+/// computer having turned this one away; a person who closes the session
+/// in those seconds stops the player just the same, and only whoever
+/// took that click can tell the two apart. Answered « no », the watch
+/// simply stops.
+pub fn open(
+    wanted: &Wanted,
+    told: &mut dyn FnMut(Step),
+    still_wanted: &dyn Fn() -> bool,
+) -> Result<Running, Error> {
     let exe = paths::client_engine_exe();
     if !exe.is_file() {
         return Err(Error::EngineMissing(exe));
@@ -280,7 +301,7 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
     // Only when the pairing was skipped. Having just been introduced and
     // still being turned away is another fault entirely, and doing it
     // twice would not make it any better.
-    if already_known && gave_up_at_once(&mut session)? {
+    if already_known && gave_up_at_once(&mut session, still_wanted)? {
         introduce(&engine, &target, driving.as_mut(), true, told)?;
         told(Step::Paired);
         told(Step::Starting);
@@ -301,7 +322,7 @@ pub fn open(wanted: &Wanted, told: &mut dyn FnMut(Step)) -> Result<Running, Erro
 
     Ok(Running {
         session,
-        driving,
+        _driving: driving,
         log,
     })
 }
@@ -343,11 +364,30 @@ fn introduce(
 /// A session that has taken is still running when this returns, and one
 /// the far engine turned away is long gone. Ending straight away of its
 /// own accord is not a failure and is left alone: somebody closed it.
-fn gave_up_at_once(session: &mut Session) -> Result<bool, Error> {
-    let stopped = session
-        .settled(SESSION_TAKES)
-        .map_err(|e| Error::Engine(EngineError::Io(e)))?;
-    Ok(worth_introducing_again(stopped))
+///
+/// Which the exit code does not say. Closing a session hands the far
+/// computer its desktop back, that computer takes the stream away, and
+/// the engine stops the only way it knows how, on a failure: exactly what
+/// a computer that no longer knows this one looks like. So the caller is
+/// asked, in small steps rather than once at the end, and the watch drops
+/// the moment the session stops being wanted. Without it, closing a
+/// session during these few seconds had the two computers introduced
+/// again over a session the person had just left, and the far engine,
+/// asked for a pairing nobody was waiting for, refused it.
+fn gave_up_at_once(session: &mut Session, still_wanted: &dyn Fn() -> bool) -> Result<bool, Error> {
+    let deadline = Instant::now() + SESSION_TAKES;
+    while Instant::now() < deadline {
+        if !still_wanted() {
+            return Ok(false);
+        }
+        let stopped = session
+            .settled(WATCH_STEP)
+            .map_err(|e| Error::Engine(EngineError::Io(e)))?;
+        if stopped.is_some() {
+            return Ok(worth_introducing_again(stopped, still_wanted()));
+        }
+    }
+    Ok(false)
 }
 
 /// Whether what the engine stopped on is worth introducing the two
@@ -356,11 +396,22 @@ fn gave_up_at_once(session: &mut Session) -> Result<bool, Error> {
 /// Still running is a session that has taken. Ending of its own accord is
 /// somebody who closed it, and pairing over that would reopen a session
 /// they had just left.
-fn worth_introducing_again(stopped: Option<SessionOutcome>) -> bool {
-    matches!(
-        stopped,
-        Some(SessionOutcome::Failed | SessionOutcome::Unreachable | SessionOutcome::Unknown { .. })
-    )
+///
+/// And a session no longer wanted is never worth it, whatever the engine
+/// stopped on. Closing a session hands the far computer its desktop back,
+/// that computer takes the stream away, and the engine stops on a
+/// failure: from here that is indistinguishable from a computer that no
+/// longer knows this one. Only the caller knows, so the caller is asked.
+fn worth_introducing_again(stopped: Option<SessionOutcome>, still_wanted: bool) -> bool {
+    still_wanted
+        && matches!(
+            stopped,
+            Some(
+                SessionOutcome::Failed
+                    | SessionOutcome::Unreachable
+                    | SessionOutcome::Unknown { .. }
+            )
+        )
 }
 
 /// The service, and the way it holds for this session.
@@ -462,6 +513,26 @@ impl Driving {
     }
 }
 
+/// The way goes back whatever happens to whoever asked for it.
+///
+/// A guard and not a line at the end of the road that works. Every road
+/// out of `open` after the way stands used to leave it standing: an
+/// engine that would not start, a pairing refused, a session watched and
+/// found wanting. The service closes a way when the process it was told
+/// to watch goes, and it is told that at the very end of `open`, so a way
+/// abandoned before then was a way nobody would ever close. One of them
+/// stayed open for the rest of the evening after a pairing was refused,
+/// with the window showing « Sessions ouvertes: 1 » over no session at
+/// all.
+///
+/// Releasing a way twice is not an error, which is what makes this safe
+/// beside anything else that might already have said it.
+impl Drop for Driving {
+    fn drop(&mut self) {
+        self.let_go();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,7 +555,7 @@ mod tests {
             return;
         }
         let mut steps = Vec::new();
-        let outcome = open(&wanted(), &mut |step| steps.push(step));
+        let outcome = open(&wanted(), &mut |step| steps.push(step), &|| true);
         assert!(matches!(outcome, Err(Error::EngineMissing(_))));
         assert!(steps.is_empty(), "{steps:?}");
     }
@@ -496,17 +567,42 @@ mod tests {
         // été réinstallée, remise à zéro, ou simplement avoir oublié. Le
         // moteur repart alors en moins d'une seconde, et c'est le seul
         // signe qu'on en ait.
-        assert!(worth_introducing_again(Some(Outcome::Failed)));
-        assert!(worth_introducing_again(Some(Outcome::Unreachable)));
-        assert!(worth_introducing_again(Some(Outcome::Unknown {
-            code: Some(9)
-        })));
+        assert!(worth_introducing_again(Some(Outcome::Failed), true));
+        assert!(worth_introducing_again(Some(Outcome::Unreachable), true));
+        assert!(worth_introducing_again(
+            Some(Outcome::Unknown { code: Some(9) }),
+            true
+        ));
 
         // Toujours en cours : la session a pris, on n'y touche pas.
-        assert!(!worth_introducing_again(None));
+        assert!(!worth_introducing_again(None, true));
         // Terminée toute seule : quelqu'un l'a fermée. Réappairer
         // rouvrirait une session qu'on vient de quitter.
-        assert!(!worth_introducing_again(Some(Outcome::Ended)));
+        assert!(!worth_introducing_again(Some(Outcome::Ended), true));
+    }
+
+    #[test]
+    fn une_session_que_l_on_ferme_ne_relance_aucun_appairage() {
+        // Fermer une session rend son bureau à l'ordinateur d'en face,
+        // qui reprend le flux, et le moteur s'arrête de la seule façon
+        // qu'il connaisse : sur un échec. Vu d'ici, c'est exactement un
+        // ordinateur qui ne nous reconnaît plus. Sans la question posée
+        // à l'appelant, fermer pendant les secondes qui suivent
+        // l'ouverture faisait repartir un appairage par-dessus une
+        // session qu'on venait de quitter, et le moteur d'en face, à qui
+        // personne ne demandait de code, le refusait.
+        for arret in [
+            Some(Outcome::Failed),
+            Some(Outcome::Unreachable),
+            Some(Outcome::Unknown { code: Some(9) }),
+            Some(Outcome::Ended),
+            None,
+        ] {
+            assert!(
+                !worth_introducing_again(arret.clone(), false),
+                "sur {arret:?}"
+            );
+        }
     }
 
     #[test]

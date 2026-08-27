@@ -48,6 +48,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R37** | Nouveau. Un interrupteur **Son** dans le menu de la session, Actif ou Coupé. Il coupe le son **de cette machine-ci**, sur la tranche du lecteur dans le mélangeur de Windows, et rien d'autre de ce qui joue ici |
 | **R38** | Nouveau. Un réglage d'hôte **Couper le son pendant qu'on regarde**. Les enceintes de l'hôte se taisent, le son continue de partir dans la session, et **aucune carte son n'est installée**. À vérifier aussi : une session en cours n'est pas coupée quand on l'allume, et le son revient après un arrêt brutal |
 | **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
+| **S28** | Nouveau. Fermer une session dans les six secondes qui suivent son ouverture, ou une relance par **Appliquer les changements**, repartait en appairage : « l'ordinateur distant ne reconnaît plus celui-ci », puis un refus. La surveillance qui guette un ordinateur nous ayant oubliés demande maintenant à la fenêtre si la session est toujours voulue |
+| **S29** | Nouveau. Une voie restait ouverte pour toujours dès qu'une ouverture échouait, et la fenêtre affichait « Sessions ouvertes : 1 » sans session. La voie est maintenant rendue sur toutes les routes de sortie |
 | **S25** | Nouveau. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
 
 ### Confirmé
@@ -1157,6 +1159,24 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > - `the screen is on session N` avec N différent de 0 : quelqu'un est bien connecté sur cette machine. `none` veut dire personne, et il n'y a alors aucun écran à réveiller.
 >
 > **Le service hôte doit avoir été redémarré au moins une fois** avec cette version, sinon la stratégie n'est pas posée. Elle l'est maintenant à chaque démarrage du service, donc il n'y a plus rien à réinstaller.
+
+> **S28 (fermer tout de suite après avoir ouvert)**
+>
+> Ouvrir une session vers un ordinateur déjà connu, attendre que l'image apparaisse, et la fermer **dans les trois secondes** qui suivent, par le menu ou par la croix.
+>
+> Attendu : retour à l'accueil, sans un mot. **Aucune** ligne « l'ordinateur distant ne reconnaît plus celui-ci », **aucun** écran de chargement qui revient, **aucun** refus d'appairage.
+>
+> À refaire dans le cas qui l'avait révélé : pendant une session, ouvrir le menu du bouton flottant, changer la taille, cliquer **Appliquer les changements**, laisser l'image revenir, puis fermer aussitôt.
+>
+> **Pourquoi c'est un piège.** L'ouverture ne s'arrête pas quand l'image apparaît : elle surveille le lecteur six secondes de plus, parce qu'un ordinateur qui nous a oubliés refuse la session en moins d'une seconde et qu'il faut alors se représenter. Or fermer une session arrête le lecteur exactement de la même façon. Seule la fenêtre sait qu'on a cliqué, et c'est elle qu'on interroge maintenant.
+
+> **S29 (aucune voie ne reste ouverte derrière une session ratée)**
+>
+> Après **n'importe quel** échec d'ouverture, regarder la ligne **Sessions ouvertes** de la fenêtre, et le journal du service.
+>
+> Attendu : **0**, et une ligne `way N closed` pour chaque `way N open` du journal. Un nombre qui ne redescend plus est une voie que personne ne fermera : le service ne referme une voie que quand le processus qu'on lui a désigné s'en va, et on ne le lui désigne qu'à la toute fin d'une ouverture réussie.
+>
+> Le plus simple pour le provoquer : couper l'accès distant sur l'ordinateur d'en face, tenter une session, la voir échouer, puis vérifier le compte.
 
 > **R37 (couper le son de la session, ici et pas là-bas)**
 >

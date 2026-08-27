@@ -767,6 +767,26 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Au passage, une dépendance à Steam qui était active par omission.** ZyrDesk n'écrivait aucune ligne de son dans la configuration du moteur, donc héritait de ses défauts : chercher les fichiers de la carte son de Steam sur la machine et l'installer si on les trouve, puis y faire passer le son de l'ordinateur à chaque session. Deux lignes ferment ça. La seconde ne pouvait pas rester vide : vide ne veut pas dire « aucune » pour le moteur, ça veut dire « celle de Steam ». Il lui faut un nom qu'aucune carte ne portera jamais, et il écrit alors une fois par session qu'il ne l'a pas trouvée, ce qui est exactement la réponse voulue, écrite dans son propre journal.
 
+## D62. Fermer une session pendant qu'elle s'ouvre ne relance aucun appairage (2026-08-27, pendant M4)
+
+**Le relevé.** Session ouverte, réglages changés et appliqués, image relancée, tout va bien. Trois secondes plus tard, la session est fermée depuis le menu. Et là : « l'ordinateur distant ne reconnaît plus celui-ci, nouvelle présentation », puis un écran de chargement, puis « l'ordinateur distant a refusé l'appairage ». Rien de tout cela n'avait été demandé.
+
+**Ce qui le faisait.** L'ouverture d'une session ne se termine pas quand l'image apparaît. Ce que cet ordinateur retient d'un appairage n'est qu'une note qu'il s'est écrite à lui-même, et l'ordinateur d'en face peut l'avoir oubliée : il refuse alors la session en moins d'une seconde, dans un journal que personne ne lit. L'ouverture surveille donc le lecteur pendant six secondes après l'avoir démarré, et s'il s'arrête, elle en conclut qu'on ne nous reconnaît plus et représente les deux machines.
+
+**Et fermer une session ressemble exactement à ça.** Fermer rend son bureau à l'ordinateur d'en face, cet ordinateur reprend le flux, et le moteur s'arrête de la seule façon qu'il connaisse : sur un échec. Vu depuis la surveillance, c'est mot pour mot un ordinateur qui ne nous reconnaît plus. D'où un appairage relancé par-dessus une session qu'on venait de quitter, refusé par le moteur d'en face à qui personne ne demandait de code.
+
+**Décision : la surveillance pose la question à celle qui sait.** Le code de sortie du moteur ne distingue pas les deux cas et ne le pourra jamais. La seule chose qui les sépare est qu'une personne a cliqué, et la fenêtre est la seule à le savoir. L'ouverture reçoit donc une question à poser, « est-ce que cette session est toujours voulue », posée par petits pas plutôt qu'une fois à la fin : répondue non, la surveillance s'arrête là, sans conclusion et sans appairage.
+
+**Ce que ça ne change pas.** Une machine qui a vraiment oublié cet ordinateur donne toujours lieu à une nouvelle présentation, et tout de suite. La question n'est posée que pendant ces six secondes-là et nulle part ailleurs.
+
+## D63. La voie revient toujours, pas seulement quand tout s'est bien passé (2026-08-27, pendant M4)
+
+**Le relevé, dans le même incident.** Une fois l'appairage refusé, la fenêtre affichait « Sessions ouvertes : 1 » sans aucune session, et le journal du service montrait une voie ouverte que rien n'a jamais refermée.
+
+**Ce qui le faisait.** La voie était rendue à un seul endroit : à la fin de l'attente d'une session qui avait tourné. Toutes les autres sorties de l'ouverture la laissaient debout, et il y en a plusieurs : un moteur qui ne démarre pas, un appairage refusé, une surveillance qui conclut mal. Le service, lui, ferme une voie quand le processus qu'on lui a dit de surveiller s'en va, et on le lui dit à la toute dernière ligne de l'ouverture. Une voie abandonnée avant cette ligne était donc une voie que personne ne fermerait jamais.
+
+**Décision : la voie est rendue par le fait même d'être lâchée.** Elle appartient à ce qui la tient, et ce qui la tient disparaît sur toutes les routes de sortie, pas seulement sur celle qui marche. Rendre une voie deux fois n'est pas une erreur, ce que le service vérifie déjà par un essai à lui, ce qui rend l'ajout sans danger à côté de tout ce qui pourrait déjà l'avoir dite.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

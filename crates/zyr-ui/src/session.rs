@@ -247,18 +247,25 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
         *SHOWN_AS.lock().expect("réglages de l'image") = Some(told_once(&preferred));
 
         let towards = wanted.host.clone();
-        let running = match zyr_session::open(&wanted, &mut |step| {
-            crate::journal::note(&written(&step));
-            // The floating button hangs on that process, and this window
-            // is the only one that knows its number until the service
-            // does; the way travels with it, so the session can be ended
-            // during the seconds the service does not believe in it yet.
-            if let Step::Showing { process, at } = &step {
-                crate::floating::expect(app, *process, &towards, at);
-                lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
-            }
-            say(app, told(step));
-        }) {
+        let running = match zyr_session::open(
+            &wanted,
+            &mut |step| {
+                crate::journal::note(&written(&step));
+                // The floating button hangs on that process, and this window
+                // is the only one that knows its number until the service
+                // does; the way travels with it, so the session can be ended
+                // during the seconds the service does not believe in it yet.
+                if let Step::Showing { process, at } = &step {
+                    crate::floating::expect(app, *process, &towards, at);
+                    lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
+                }
+                say(app, told(step));
+            },
+            // The one thing this crate can answer and the opening cannot: a
+            // player the person stopped and a player the far computer turned
+            // away both look like an engine that lost its stream.
+            &|| !crate::floating::Floating::a_close_was_asked_for(app),
+        ) {
             Ok(running) => running,
             Err(e) => {
                 crate::journal::note(&format!(
