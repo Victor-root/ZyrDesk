@@ -217,22 +217,29 @@
              nombre de valeurs moins une, et ce que chaque cran veut dire
              est écrit à côté. Une seconde copie de ces listes ici
              s'écarterait de la vraie au premier changement. -->
-        <div class="reglage" data-reglage="asked">
-          <div class="reglage-tete">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="2.5" y="4" width="19" height="13" rx="2" />
-              <path d="M9 21h6M12 17v4" />
-            </svg>
-            <span class="item-mot">Taille</span>
-            <span class="item-touche" data-valeur></span>
-          </div>
-          <input
-            class="curseur"
-            type="range"
-            data-curseur
-            aria-label="Taille"
-          />
-        </div>
+        <!-- La résolution ouvre une liste à elle plutôt que de tenir sur
+             une barre. Les deux premières entrées ne sont pas des
+             nombres : elles disent lequel des deux ordinateurs décide,
+             ce qui est la vraie question, et aucune barre ne sait dire
+             ça. Et il y en a quinze en dessous, ce qui fait des crans
+             qu'on ne vise plus. -->
+        <button
+          class="item"
+          type="button"
+          data-ouvre-panneau="asked"
+          role="menuitem"
+          aria-haspopup="true"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2.5" y="4" width="19" height="13" rx="2" />
+            <path d="M9 21h6M12 17v4" />
+          </svg>
+          <span class="item-mot">Résolution</span>
+          <span class="item-touche" data-valeur="asked"></span>
+          <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
 
         <div class="reglage" data-reglage="bitrate">
           <div class="reglage-tete">
@@ -352,6 +359,29 @@
         </button>
 
         <p class="souci cache" id="souci" role="status"></p>
+      </div>
+
+      <!-- Le sous-menu de la résolution. Il remplace le menu au lieu de
+           s'ouvrir à côté : cette fenêtre est étroite et suit ce que la
+           page occupe, et une colonne de plus la ferait déborder de
+           l'image. Une vue à la fois, avec un retour en haut, se lit dans
+           un espace où un panneau à côté ne tient pas. -->
+      <div class="menu panneau repliee" id="panneau-asked" role="menu">
+        <button
+          class="item retour"
+          type="button"
+          data-ferme-panneau
+          role="menuitem"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 5l-7 7 7 7" />
+          </svg>
+          <span class="item-mot">Résolution</span>
+        </button>
+
+        <div class="separateur" role="separator"></div>
+
+        <div class="sous-liste" data-liste="asked"></div>
       </div>
     </div>
 

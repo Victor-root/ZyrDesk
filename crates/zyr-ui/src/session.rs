@@ -219,6 +219,7 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         pair_again: false,
         hush_the_far_speakers: preferred.mute_far_speakers,
         steady_far_rate: preferred.steady_far_rate,
+        wants_a_screen_over_there: preferred.asked.wants_a_screen_over_there(),
     };
 
     // On a thread of its own, and not one of the interface's: the
@@ -496,7 +497,8 @@ fn told(step: Step) -> Option<Told> {
         Step::Showing { process, .. } => Told::Showing { process },
         Step::SpeakersLeftAlone { .. }
         | Step::RateLeftAlone { .. }
-        | Step::ScreenLeftAlone { .. } => return None,
+        | Step::ScreenLeftAlone { .. }
+        | Step::ScreenOverThere { .. } => return None,
     })
 }
 
@@ -528,6 +530,9 @@ fn written(step: &Step) -> String {
         Step::ScreenLeftAlone { refused } => {
             format!("l'ordinateur distant n'a pas réveillé son écran virtuel : {refused}")
         }
+        Step::ScreenOverThere { wide, high } => format!(
+            "l'ordinateur distant affiche {wide}x{high}, c'est ce qui est demandé au lecteur"
+        ),
     }
 }
 

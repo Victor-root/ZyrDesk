@@ -218,7 +218,7 @@ impl Answers for Attending {
     /// and the session goes on anyway at the other end: a computer with
     /// no virtual screen serves what its own screen can draw, which is
     /// what every computer did before this existed.
-    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<(), String> {
+    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<Option<(u32, u32)>, String> {
         let said = match size {
             Some(size) => screen_awake(size),
             None => screen_asleep(),
@@ -239,7 +239,20 @@ impl Answers for Attending {
         for line in said {
             self.log.write(&line);
         }
-        Ok(())
+        // What this computer is going to be showing. The size that was
+        // asked for when a screen was woken to carry it, and this
+        // machine's own when none was wanted: that second answer is the
+        // whole of what lets a session say « leave that computer as it
+        // is », since nothing at the other end can know what is plugged
+        // in here.
+        let showing = size.or_else(the_main_screen);
+        self.log.write(&match showing {
+            Some((wide, high)) => format!("this computer will be showing {wide}x{high}"),
+            None => "this computer cannot measure its own screen, so the session keeps what it \
+                     guessed"
+                .to_string(),
+        });
+        Ok(showing)
     }
 
     fn serve_steady(&self, rate: bool) -> Result<(), String> {
@@ -261,6 +274,17 @@ impl Answers for Attending {
         ));
         Ok(())
     }
+}
+
+/// Size of this computer's main screen, where there is a Windows to ask.
+#[cfg(windows)]
+fn the_main_screen() -> Option<(u32, u32)> {
+    zyr_screen::the_main_screen()
+}
+
+#[cfg(not(windows))]
+fn the_main_screen() -> Option<(u32, u32)> {
+    None
 }
 
 /// Wakes the virtual screen, where there is a Windows to wake one on.

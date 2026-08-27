@@ -271,11 +271,88 @@
 }
 
 /* Rien ne rentre les lignes vers la droite. Elles l'étaient, d'un chevron
-   plus une gouttière, pour garder une colonne au sous-menu qui s'ouvrait
-   sur le côté. Ce sous-menu n'existe plus, et le retrait est resté : les
-   lignes commençaient plus à droite que les chiffres du haut et que les
-   traits de séparation, et le menu se lisait de travers. Chacune prend
-   maintenant toute la largeur, et tout part du même bord. */
+   plus une gouttière, pour garder une colonne à un sous-menu qui
+   s'ouvrait sur le côté : les lignes commençaient plus à droite que les
+   chiffres du haut et que les traits de séparation, et le menu se lisait
+   de travers. Chacune prend toute la largeur, et tout part du même bord.
+   Le sous-menu de la résolution ne rouvre pas cette porte : il remplace
+   le menu au lieu de s'ouvrir à côté. */
+
+/* ---- Le sous-menu ---------------------------------------------------- */
+
+/* Une vue à la fois. Cette fenêtre est étroite, elle suit ce que la page
+   occupe, et un panneau ouvert à côté la ferait déborder de l'image. */
+/* Retiré du dessin plutôt que rendu invisible : les deux ne sont jamais
+   montrés ensemble, et l'un laissé en place sous l'autre ferait une
+   fenêtre haute de leurs deux hauteurs. C'est aussi pour cela que ce
+   n'est pas la même classe que le menu replié, qui lui garde sa place le
+   temps d'être mesuré. */
+.rangee {
+  display: none;
+}
+
+/* Le chevron qui dit qu'une ligne en ouvre une autre. Poussé au bord,
+   après la valeur en place. */
+.chevron {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--texte-faible);
+}
+
+/* Le retour, qui porte le nom de ce qu'on est en train de régler. */
+.retour .item-mot {
+  font-weight: 600;
+}
+
+/* La liste elle-même. Quinze entrées ne tiennent pas toujours dans la
+   hauteur d'un écran une fois le bouton posé en bas : elle défile, et
+   seule elle, pour que le retour reste sous la main. */
+.sous-liste {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Ce qui est choisi porte une marque. Elle occupe sa place même quand
+   elle ne se voit pas, sans quoi la ligne cochée serait la seule décalée
+   des autres. */
+.sous-liste .item[aria-checked="true"] .coche {
+  opacity: 1;
+}
+
+.coche {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--accent-vif);
+  opacity: 0;
+}
+
+/* Ce que les deux premières entrées veulent dire, écrit sous elles
+   plutôt que caché dans une infobulle : ce sont les deux seules du menu
+   dont le nom ne suffit pas, et une infobulle demande un survol que
+   personne ne fait sur un menu qu'on traverse. */
+.sous-liste .pourquoi {
+  margin: 0 0 var(--pas-2);
+  padding: 0 var(--pas-2) 0 calc(var(--pas-2) + 18px + var(--pas-3));
+  font-size: var(--legende);
+  line-height: 1.4;
+  color: var(--texte-faible);
+  white-space: normal;
+  max-width: 34ch;
+}
 
 /* ---- L'interrupteur à deux côtés ------------------------------------- */
 

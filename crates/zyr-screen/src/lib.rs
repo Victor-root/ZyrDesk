@@ -286,6 +286,26 @@ pub fn awake(_driver: &dyn Driver) -> Result<Option<bool>, Trouble> {
     Ok(None)
 }
 
+/// Size of this machine's main screen, as it stands.
+///
+/// What a session asks for when it wants this computer left exactly as it
+/// is. That size cannot be worked out at the other end: nothing there
+/// knows what is plugged in here, and guessing it wrong is a picture
+/// scaled twice for nothing.
+///
+/// Asked of the system's own display configuration rather than of a
+/// window, because the one asking is a service and a service has no
+/// window and no desktop to put one on.
+#[cfg(windows)]
+pub fn the_main_screen() -> Option<(u32, u32)> {
+    place::the_main_screen()
+}
+
+#[cfg(not(windows))]
+pub fn the_main_screen() -> Option<(u32, u32)> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

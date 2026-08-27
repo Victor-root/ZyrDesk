@@ -1029,6 +1029,24 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Le contournement en attendant une recompilation** : redémarrer le service ZyrDesk de la machine d'en face vide cette table.
 
+## D79. La résolution est une liste, et sa vraie question est « lequel des deux écrans décide » (2026-08-27, pendant M4)
+
+**La demande.** « Pour l'option taille, change ce nom pourri et mets Résolution, ensuite mets-la en sous-menu avec un chevron, et deux options d'abord : utiliser la résolution du client, utiliser la résolution de l'hôte, puis la liste des résolutions. »
+
+**Le nom était faux et la barre l'était aussi.** « Taille » ne dit pas de quoi, et un curseur promet une échelle : plus à droite, plus grand. Or les deux premières entrées de cette liste ne sont pas des tailles du tout, elles disent **lequel des deux ordinateurs décide**, ce qu'aucune barre ne sait exprimer. Et il y en a quinze en dessous, ce qui fait des crans qu'on ne vise plus.
+
+**Décision : une ligne qui ouvre une liste, avec les deux façons de décider en tête et les nombres ensuite.** Chacune des deux porte, écrit dessous, ce qu'elle fait vraiment. Pas une infobulle : une infobulle demande un survol que personne ne fait sur un menu qu'on traverse.
+
+**Le sous-menu remplace le menu au lieu de s'ouvrir à côté.** Cette fenêtre est étroite et suit ce que la page occupe : une colonne de plus la ferait déborder de l'image. C'est aussi la porte qu'on avait déjà refermée une fois, quand un sous-menu latéral décalait toutes les lignes vers la droite pour lui garder une gouttière.
+
+**« Résolution de l'hôte » a demandé bien plus que la ligne du menu.** C'est le seul choix dont le résultat n'est pas connu de ce côté-ci : rien ici ne sait ce qui est branché là-bas. La question d'écran qui voyage déjà avec la session répond donc désormais **la taille que l'ordinateur d'en face va afficher**, et la session s'aligne dessus avant de démarrer son moteur. Sans écran virtuel demandé, cette machine répond la taille de son écran à elle ; avec, elle répond ce qu'on lui a demandé.
+
+**Et c'est le choix qui ne réarrange rien chez l'autre.** Aucun écran virtuel réveillé, aucune résolution changée sous quelqu'un qui est peut-être assis devant. Ce qu'il coûte est de ce côté-ci : l'image est mise à l'échelle pour tenir dans l'écran qui la regarde.
+
+**Ce que la liste offre.** Les quinze tailles sont celles auxquelles les écrans se font, du 3840x2160 au 1024x768, avec leur rapport écrit à droite. Le rapport est calculé et non écrit à côté de chaque nombre : une deuxième table s'écarterait de la première le jour où une taille s'ajoute. Et il n'est pas montré pour les deux premières entrées, dont le résultat dépend d'un écran qu'on n'a pas encore vu.
+
+**Ce qui a été écrit avant continue de vouloir dire ce qu'il voulait dire.** Le choix « écran du client » s'écrivait `screen` dans les préférences déjà posées sur les machines. Il s'écrit `client` maintenant, et `screen` reste lu comme tel : lu et jamais écrit, donc un choix fait une fois ne change pas de sens sous les pieds de qui l'a fait.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

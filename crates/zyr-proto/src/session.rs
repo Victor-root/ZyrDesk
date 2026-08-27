@@ -219,25 +219,39 @@ impl Screen {
     }
 }
 
-/// Size of picture to ask the far computer for.
+/// Which resolution a session runs at, and which of the two computers
+/// decides it.
 ///
-/// The screen by default, and that word rather than a number on purpose:
-/// a picture the size of the screen it lands on is shown pixel for
-/// pixel, and any other size is thrown away twice. The far computer
-/// scales its desktop to what was asked, this end scales that to the
-/// screen, and neither scaling puts back a single pixel of the detail
-/// the first one dropped.
+/// Three answers, and the first two are not sizes at all: they say whose
+/// screen wins. That is the real question, because a picture is thrown
+/// away twice whenever the two disagree. The far computer draws its
+/// desktop at the size that was asked for, this end scales that to the
+/// screen it lands on, and neither scaling puts back a single pixel the
+/// first one dropped.
 ///
-/// A number is still offered, because the screen is not always the right
+/// A number is still offered, because neither screen is always the right
 /// answer. A large screen served over a busy link costs more rate than
-/// the link has; asking for less picture is the honest way to spend
-/// less, and it is a choice, made once, that this remembers.
+/// the link has, and asking for less picture is the honest way to spend
+/// less.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Asked {
-    /// Whatever the screen showing the session turns out to be.
+    /// The screen showing the session, whatever it turns out to be.
+    ///
+    /// The far computer is made to match it, which is why it is the
+    /// default: a pixel sent for a pixel shown, and nothing scaled at
+    /// either end.
     #[default]
-    Screen,
-    /// This size, whatever the screen.
+    Client,
+    /// The far computer's own screen, left exactly as it is.
+    ///
+    /// Nothing over there is touched: no virtual screen, no resolution
+    /// changed under whoever is sitting in front of it. What it costs is
+    /// this end scaling the picture to fit, and what it buys is a machine
+    /// that is not rearranged by being looked at. The size is not known
+    /// here until that computer says it, which it does when the session
+    /// opens.
+    Host,
+    /// This size, whatever either screen is.
     Fixed(u32, u32),
 }
 
@@ -246,16 +260,35 @@ pub enum Asked {
 /// The common screen, which costs nothing to be wrong about.
 pub const UNKNOWN_SCREEN: (u32, u32) = (1920, 1080);
 
-/// The sizes offered, in the order they are offered in.
+/// The resolutions offered, in the order they are offered in.
 ///
 /// Here and not in the window: a second copy of this list written in
-/// JavaScript would drift from this one the day a size is added.
+/// JavaScript would drift from this one the day a size is added. The two
+/// that name a computer rather than a number come first, because they are
+/// the answer nearly everybody wants and the numbers below are the
+/// exception.
+///
+/// The numbers themselves are the shapes screens are actually made in,
+/// from a desk's largest down to a laptop's smallest, sorted by width so
+/// the list reads as one scale even though several shapes share it.
 pub const SIZES_OFFERED: &[Asked] = &[
-    Asked::Screen,
+    Asked::Client,
+    Asked::Host,
     Asked::Fixed(3840, 2160),
+    Asked::Fixed(3840, 1600),
+    Asked::Fixed(3440, 1440),
+    Asked::Fixed(2560, 1600),
     Asked::Fixed(2560, 1440),
+    Asked::Fixed(2560, 1080),
+    Asked::Fixed(1920, 1200),
     Asked::Fixed(1920, 1080),
+    Asked::Fixed(1680, 1050),
+    Asked::Fixed(1600, 1200),
+    Asked::Fixed(1366, 768),
+    Asked::Fixed(1280, 1024),
+    Asked::Fixed(1280, 800),
     Asked::Fixed(1280, 720),
+    Asked::Fixed(1024, 768),
 ];
 
 /// The rates offered, in kilobits a second.
@@ -275,15 +308,31 @@ pub const CODECS_OFFERED: &[Codec] = &[Codec::Auto, Codec::H264, Codec::Hevc, Co
 impl Asked {
     /// The size this comes down to on a computer whose screen has been
     /// measured, `None` standing for one that could not be.
+    ///
+    /// The far computer's own screen comes down to this one's until that
+    /// computer has said otherwise, which it does as the session opens.
+    /// A number is wanted before the tunnel stands, so this is the
+    /// standing-in one, and it is the best guess there is: the two are
+    /// often the same screen, and where they are not, this end knows only
+    /// its own.
     pub fn size(self, screen: Option<(u32, u32)>) -> (u32, u32) {
         let (wide, high) = match self {
-            Asked::Screen => screen.unwrap_or(UNKNOWN_SCREEN),
+            Asked::Client | Asked::Host => screen.unwrap_or(UNKNOWN_SCREEN),
             Asked::Fixed(wide, high) => (wide, high),
         };
         if wide == 0 || high == 0 {
             return UNKNOWN_SCREEN;
         }
         (even(wide), even(high))
+    }
+
+    /// Whether this asks the far computer for a screen of its own making.
+    ///
+    /// False for its own screen alone: that is the whole of what that
+    /// choice means, and it is what keeps a machine from being rearranged
+    /// by being looked at.
+    pub fn wants_a_screen_over_there(self) -> bool {
+        self != Asked::Host
     }
 }
 
@@ -312,7 +361,8 @@ pub fn next_in<T: PartialEq + Copy>(list: &[T], current: T) -> T {
 impl fmt::Display for Asked {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Asked::Screen => f.write_str("screen"),
+            Asked::Client => f.write_str("client"),
+            Asked::Host => f.write_str("host"),
             Asked::Fixed(wide, high) => write!(f, "{wide}x{high}"),
         }
     }
@@ -323,8 +373,15 @@ impl std::str::FromStr for Asked {
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let text = text.trim();
-        if text.eq_ignore_ascii_case("screen") {
-            return Ok(Asked::Screen);
+        // « screen » is what this choice was written down as before the
+        // far computer's own screen was offered beside it, and what every
+        // preferences file written until then still says. Read and never
+        // written, so a choice made once goes on meaning what it meant.
+        if text.eq_ignore_ascii_case("client") || text.eq_ignore_ascii_case("screen") {
+            return Ok(Asked::Client);
+        }
+        if text.eq_ignore_ascii_case("host") {
+            return Ok(Asked::Host);
         }
         let (wide, high) = parse_resolution(text).map_err(|e| e.to_string())?;
         Ok(Asked::Fixed(wide, high))
@@ -619,8 +676,8 @@ mod tests {
         // Le cas qui compte : une image de la taille de l'écran est
         // affichée pixel pour pixel. Demander autre chose, c'est jeter du
         // détail à un bout et l'agrandir à l'autre.
-        assert_eq!(Asked::Screen.size(Some((3840, 2160))), (3840, 2160));
-        assert_eq!(Asked::Screen.size(Some((3440, 1440))), (3440, 1440));
+        assert_eq!(Asked::Client.size(Some((3840, 2160))), (3840, 2160));
+        assert_eq!(Asked::Client.size(Some((3440, 1440))), (3440, 1440));
         // Et un nombre reste un nombre, quel que soit l'écran.
         assert_eq!(
             Asked::Fixed(1920, 1080).size(Some((3840, 2160))),
@@ -630,8 +687,11 @@ mod tests {
 
     #[test]
     fn an_unmeasurable_screen_falls_back_to_the_common_one() {
-        assert_eq!(Asked::Screen.size(None), UNKNOWN_SCREEN);
-        assert_eq!(Asked::Screen.size(Some((0, 0))), UNKNOWN_SCREEN);
+        assert_eq!(Asked::Client.size(None), UNKNOWN_SCREEN);
+        assert_eq!(Asked::Client.size(Some((0, 0))), UNKNOWN_SCREEN);
+        // L'écran d'en face n'est pas connu ici avant que la machine
+        // d'en face ne le dise : en attendant, c'est celui-ci.
+        assert_eq!(Asked::Host.size(Some((2560, 1440))), (2560, 1440));
         assert_eq!(Asked::Fixed(0, 1080).size(None), UNKNOWN_SCREEN);
     }
 
@@ -640,7 +700,7 @@ mod tests {
         // Un encodeur découpe la couleur par moitiés : une taille impaire
         // se fait arrondir quelque part où on ne le voit pas.
         for screen in [(1919, 1079), (3441, 1441), (1366, 768)] {
-            let (wide, high) = Asked::Screen.size(Some(screen));
+            let (wide, high) = Asked::Client.size(Some(screen));
             assert!(wide % 2 == 0 && high % 2 == 0, "{screen:?}");
         }
     }
@@ -652,14 +712,18 @@ mod tests {
         for asked in SIZES_OFFERED {
             assert_eq!(asked.to_string().parse::<Asked>().unwrap(), *asked);
         }
-        assert_eq!("screen".parse::<Asked>().unwrap(), Asked::Screen);
-        assert_eq!("SCREEN".parse::<Asked>().unwrap(), Asked::Screen);
+        // « screen » est ce que les réglages déjà écrits sur les
+        // machines disent pour l'écran du client : ils doivent continuer
+        // de vouloir dire ça.
+        assert_eq!("screen".parse::<Asked>().unwrap(), Asked::Client);
+        assert_eq!("SCREEN".parse::<Asked>().unwrap(), Asked::Client);
+        assert_eq!("host".parse::<Asked>().unwrap(), Asked::Host);
         assert!("n'importe quoi".parse::<Asked>().is_err());
     }
 
     #[test]
     fn a_menu_line_walks_its_list_and_comes_back_to_the_start() {
-        assert_eq!(next_in(SIZES_OFFERED, Asked::Screen), SIZES_OFFERED[1]);
+        assert_eq!(next_in(SIZES_OFFERED, Asked::Client), SIZES_OFFERED[1]);
         assert_eq!(
             next_in(SIZES_OFFERED, *SIZES_OFFERED.last().unwrap()),
             SIZES_OFFERED[0]
@@ -679,7 +743,7 @@ mod tests {
         // Rien ne le recalcule à partir de la taille : ce que la personne
         // a choisi en regardant son image est ce qui part.
         let chosen = Preferred {
-            asked: Asked::Screen,
+            asked: Asked::Client,
             bitrate_kbps: 15_000,
             ..Preferred::default()
         };

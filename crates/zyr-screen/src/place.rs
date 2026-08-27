@@ -251,6 +251,51 @@ pub fn present(driver: &dyn Driver) -> Result<bool, Trouble> {
     Ok(find_device(driver)?.is_some())
 }
 
+/// Size of the machine's main screen, in real pixels.
+///
+/// The main one and not the largest: a desktop can have several, and the
+/// one at the origin is the one a session left alone lands on.
+///
+/// Read from the system's own display configuration rather than from a
+/// window, because the caller here is a service, which has neither a
+/// window nor a desktop to put one on. Nothing about this call needs
+/// either.
+pub fn the_main_screen() -> Option<(u32, u32)> {
+    use windows_sys::Win32::Graphics::Gdi::{
+        DEVMODEW, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICE_PRIMARY_DEVICE,
+        DISPLAY_DEVICEW, ENUM_CURRENT_SETTINGS, EnumDisplayDevicesW, EnumDisplaySettingsW,
+    };
+
+    for index in 0.. {
+        let mut device: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+        device.cb = size_of::<DISPLAY_DEVICEW>() as u32;
+        // SAFETY: the slot is ours with its size written in it as the
+        // call requires, and no name is given so the list is the
+        // machine's own adapters.
+        if unsafe { EnumDisplayDevicesW(std::ptr::null(), index, &mut device, 0) } == 0 {
+            break;
+        }
+        let attached = device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP != 0;
+        let primary = device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE != 0;
+        if !attached || !primary {
+            continue;
+        }
+        let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
+        mode.dmSize = size_of::<DEVMODEW>() as u16;
+        // SAFETY: a name the system just wrote and ended itself, and a
+        // slot of ours with its size written in it.
+        let read = unsafe {
+            EnumDisplaySettingsW(device.DeviceName.as_ptr(), ENUM_CURRENT_SETTINGS, &mut mode)
+        };
+        if read == 0 {
+            break;
+        }
+        return (mode.dmPelsWidth > 0 && mode.dmPelsHeight > 0)
+            .then_some((mode.dmPelsWidth, mode.dmPelsHeight));
+    }
+    None
+}
+
 /// Whether it is awake, `None` when there is no such device at all.
 ///
 /// Read from the same flags the machine's own device tooling writes, so

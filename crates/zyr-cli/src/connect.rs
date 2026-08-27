@@ -87,6 +87,9 @@ pub fn run(args: Args) -> ExitCode {
         // computer exactly as its own settings had it.
         hush_the_far_speakers: false,
         steady_far_rate: zyr_proto::session::Serving::default().steady_rate,
+        // La ligne de commande sert le diagnostic : elle demande une
+        // taille et donc l'écran qu'il faut pour la porter.
+        wants_a_screen_over_there: true,
     };
 
     // Nothing here can close a session while it is opening: the command
@@ -156,6 +159,9 @@ fn tell(step: Step, host: &str) {
         }
         Step::ScreenLeftAlone { refused } => {
             println!("  {host} n'a pas réveillé son écran virtuel : {refused}");
+        }
+        Step::ScreenOverThere { wide, high } => {
+            println!("  {host} affiche {wide}x{high}, c'est ce qui est demandé au lecteur");
         }
     }
 }

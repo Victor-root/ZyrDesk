@@ -94,11 +94,17 @@ impl Answers for FakeEngine {
         Ok(())
     }
 
-    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<(), String> {
+    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<Option<(u32, u32)>, String> {
         *self.screen.lock().unwrap() = size;
-        Ok(())
+        // Ce qu'une vraie machine répondrait quand personne ne veut de
+        // son écran virtuel : la taille de son écran à elle.
+        Ok(size.or(Some(HOST_SCREEN)))
     }
 }
+
+/// Ce que la machine d'en face répond quand la session lui demande de
+/// garder son écran tel quel.
+const HOST_SCREEN: (u32, u32) = (1366, 768);
 
 /// The tunnel brought up on both sides, kept alive for the test.
 ///
@@ -520,13 +526,14 @@ async fn l_ecran_virtuel_se_demande_a_l_ouverture_et_se_rend_a_la_fin() {
     // et le rendre.
     let bench = Bench::bring_up(42770, 15).await;
 
-    before_the_end(aside::ask_for_a_screen(
+    let showing = before_the_end(aside::ask_for_a_screen(
         &bench.connection,
         Some((3840, 2160)),
     ))
     .await
     .unwrap();
     assert_eq!(*bench.screen.lock().unwrap(), Some((3840, 2160)));
+    assert_eq!(showing, Some((3840, 2160)));
 
     // Et la taille demandée voyage : c'est au réveil que le pilote lit
     // les tailles qu'on lui a écrites, il n'y a pas de deuxième chance.
@@ -538,8 +545,12 @@ async fn l_ecran_virtuel_se_demande_a_l_ouverture_et_se_rend_a_la_fin() {
     .unwrap();
     assert_eq!(*bench.screen.lock().unwrap(), Some((2560, 1440)));
 
-    before_the_end(aside::ask_for_a_screen(&bench.connection, None))
+    // Et sans taille, la machine d'en face répond la sienne : c'est ce
+    // qui rend « garder la résolution de l'hôte » possible, puisque rien
+    // de ce côté-ci ne peut deviner ce qui est branché là-bas.
+    let showing = before_the_end(aside::ask_for_a_screen(&bench.connection, None))
         .await
         .unwrap();
     assert_eq!(*bench.screen.lock().unwrap(), None);
+    assert_eq!(showing, Some(HOST_SCREEN));
 }

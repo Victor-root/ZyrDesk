@@ -73,7 +73,10 @@ impl Answers for NoEngine {
         Err("le banc de mesure n'a pas de moteur à régler".to_string())
     }
 
-    fn screen_for_a_session(&self, _size: Option<(u32, u32)>) -> Result<(), String> {
+    fn screen_for_a_session(
+        &self,
+        _size: Option<(u32, u32)>,
+    ) -> Result<Option<(u32, u32)>, String> {
         Err("le banc de mesure n'a pas d'écran virtuel".to_string())
     }
 }

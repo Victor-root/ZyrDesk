@@ -489,6 +489,15 @@ pub enum Answer {
     Session(Session),
     /// What a session opened from this computer is set to.
     Settings(Preferred),
+    /// The size the far computer is going to be showing.
+    ///
+    /// Answered to the one ask that has to come back with a number: a
+    /// session told to leave that computer's screen as it is cannot know
+    /// what that is until it asks. Empty when that computer could not
+    /// measure itself, which leaves the session on what it guessed.
+    Showing {
+        size: Option<(u32, u32)>,
+    },
     /// Done, with nothing to report.
     Done,
     /// Not done, and why. The text is meant for the person, not the
@@ -542,6 +551,15 @@ impl Answer {
                 since: Duration::from_secs(fields.parsed("since")?),
             })),
             "settings" => Ok(Answer::Settings(fields.preferred())),
+            "showing" => Ok(Answer::Showing {
+                size: match fields.text("size")? {
+                    "none" => None,
+                    said => Some(
+                        zyr_proto::session::parse_resolution(said)
+                            .map_err(|e| Malformed(e.to_string()))?,
+                    ),
+                },
+            }),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
             other => Err(Malformed(format!("réponse inconnue « {other} »"))),
@@ -596,6 +614,10 @@ impl fmt::Display for Answer {
                 session.since.as_secs()
             ),
             Answer::Settings(preferred) => write!(f, "settings {}", spelled(preferred)),
+            Answer::Showing { size } => match size {
+                Some((wide, high)) => write!(f, "showing size={wide}x{high}"),
+                None => f.write_str("showing size=none"),
+            },
             Answer::Done => f.write_str("done"),
             // The reason travels on one line: a newline would be read as
             // the start of another message.

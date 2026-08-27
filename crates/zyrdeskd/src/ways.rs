@@ -472,7 +472,7 @@ impl Ways {
         &self,
         way: WayId,
         size: Option<(u32, u32)>,
-    ) -> Result<(), String> {
+    ) -> Result<Option<(u32, u32)>, String> {
         let connection = {
             let register = self.register.lock().expect("registre des voies");
             register.thing(way).map(|open| open.connection.clone())
@@ -481,16 +481,21 @@ impl Ways {
             return Err(format!("la voie {way} n'existe plus"));
         };
 
-        aside::ask_for_a_screen(&connection, size)
+        let showing = aside::ask_for_a_screen(&connection, size)
             .await
             .map_err(|e| format!("l'ordinateur distant n'a pas préparé son écran : {e}"))?;
         self.log.write(&match size {
             Some((wide, high)) => format!(
                 "way {way} asked the far computer to wake its virtual screen for {wide}x{high}"
             ),
-            None => format!("way {way} gave the far computer's virtual screen back"),
+            None => format!("way {way} asked the far computer to keep its own screen"),
         });
-        Ok(())
+        if let Some((wide, high)) = showing {
+            self.log.write(&format!(
+                "way {way}: the far computer is showing {wide}x{high}"
+            ));
+        }
+        Ok(showing)
     }
 
     /// Asks the far computer to put its lock screen up.

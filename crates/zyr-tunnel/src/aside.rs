@@ -124,7 +124,14 @@ pub trait Answers: Send + Sync + 'static {
     /// an answer and never fails a session: a computer with no virtual
     /// screen serves what its own screen can draw, which is what every
     /// computer did before this existed.
-    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<(), String>;
+    ///
+    /// Answers the size this computer is going to be showing, which is
+    /// the size that was asked for when there is a virtual screen to
+    /// wake, and this machine's own when there is not or when none was
+    /// wanted. That answer is the whole of what makes « leave that
+    /// computer as it is » possible: nothing at the other end can know
+    /// what is plugged in here.
+    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<Option<(u32, u32)>, String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -162,8 +169,12 @@ pub enum Told {
     Locked,
     /// The far computer serves the way it was asked to.
     Steady,
-    /// The far computer's virtual screen is where it was asked to be.
-    Screen,
+    /// The far computer's virtual screen is where it was asked to be,
+    /// and it is showing this size. Absent when that computer could not
+    /// measure itself, which leaves the asking end on what it guessed.
+    Screen {
+        size: Option<(u32, u32)>,
+    },
 }
 
 impl fmt::Display for Question {
@@ -202,7 +213,10 @@ impl fmt::Display for Told {
             Told::Hushed => write!(f, "{VERSION} hushed"),
             Told::Locked => write!(f, "{VERSION} locked"),
             Told::Steady => write!(f, "{VERSION} steady"),
-            Told::Screen => write!(f, "{VERSION} screen"),
+            Told::Screen { size } => match size {
+                Some((wide, high)) => write!(f, "{VERSION} screen {wide}x{high}"),
+                None => write!(f, "{VERSION} screen none"),
+            },
         }
     }
 }
@@ -264,7 +278,15 @@ impl Told {
             "hushed" => Ok(Ok(Told::Hushed)),
             "locked" => Ok(Ok(Told::Locked)),
             "steady" => Ok(Ok(Told::Steady)),
-            "screen" => Ok(Ok(Told::Screen)),
+            "screen" => Ok(Ok(Told::Screen {
+                size: match rest {
+                    "none" | "" => None,
+                    said => Some(
+                        zyr_proto::session::parse_resolution(said)
+                            .map_err(|e| unreadable(e.to_string()))?,
+                    ),
+                },
+            })),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -406,14 +428,21 @@ pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Res
 }
 
 /// Asks the far ZyrDesk to wake its virtual screen for a picture that
-/// size, or, with no size, to put it back to sleep.
+/// size, or, with no size, to leave its own screen alone.
 ///
 /// Answered before the picture is opened and not alongside it: the far
 /// engine has to find that screen, and it can only find one that is
 /// already there.
-pub async fn ask_for_a_screen(connection: &Connection, size: Option<(u32, u32)>) -> io::Result<()> {
+///
+/// Answers the size that computer will be showing, which is what makes
+/// « leave it as it is » possible at all: nothing this end knows says
+/// what is plugged in over there.
+pub async fn ask_for_a_screen(
+    connection: &Connection,
+    size: Option<(u32, u32)>,
+) -> io::Result<Option<(u32, u32)>> {
     match ask(connection, &Question::Screen { size }).await? {
-        Told::Screen => Ok(()),
+        Told::Screen { size } => Ok(size),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
 }
@@ -492,7 +521,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             tokio::task::spawn_blocking(move || answering.screen_for_a_session(size))
                 .await
                 .map_err(|e| format!("l'écran n'a pas pu être préparé : {e}"))?
-                .map(|()| Told::Screen)
+                .map(|size| Told::Screen { size })
         }
     }
 }

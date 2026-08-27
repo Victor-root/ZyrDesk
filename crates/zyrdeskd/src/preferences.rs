@@ -479,7 +479,7 @@ mod tests {
                 Preferred::default().bitrate_kbps,
                 "{wrong}"
             );
-            assert_eq!(read.asked, Asked::Screen, "{wrong}");
+            assert_eq!(read.asked, Asked::Client, "{wrong}");
         }
     }
 }

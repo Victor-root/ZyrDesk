@@ -77,6 +77,14 @@ pub struct Wanted {
     /// engine reads it when it starts, so it is asked before the session
     /// opens and never inside one.
     pub steady_far_rate: bool,
+    /// Whether the far computer is asked for a screen of its own making
+    /// to carry this session's picture.
+    ///
+    /// False means leave that machine exactly as it is: no virtual
+    /// screen, no resolution changed under whoever is sitting in front of
+    /// it. The size then comes back from that computer, since nothing
+    /// here can know what is plugged in there.
+    pub wants_a_screen_over_there: bool,
 }
 
 /// What is happening, as it happens.
@@ -135,6 +143,14 @@ pub enum Step {
     /// its own screen can draw and this end stretches the rest, which is
     /// what every session did before that screen existed.
     ScreenLeftAlone { refused: String },
+    /// The far computer said what it will be showing, and it is not what
+    /// this end had asked for.
+    ///
+    /// What a session set to leave that computer's screen alone is
+    /// entirely built on: its size is unknown here until it says it, and
+    /// asking the engine for anything else would scale the picture twice
+    /// for nothing.
+    ScreenOverThere { wide: u32, high: u32 },
 }
 
 /// How long the engines are given to meet, the code having travelled on
@@ -347,10 +363,26 @@ pub fn open(
     // machine's own screen and nothing else, so it is written down and
     // the session goes on: that is what every session did before this
     // screen existed.
-    if let Some(driving) = &mut driving
-        && let Err(refused) = driving.far_screen(Some((settings.width, settings.height)))
-    {
-        told(Step::ScreenLeftAlone { refused });
+    if let Some(driving) = &mut driving {
+        let wanted = wanted
+            .wants_a_screen_over_there
+            .then_some((settings.width, settings.height));
+        match driving.far_screen(wanted) {
+            // What that computer says it will be showing wins over what
+            // this end guessed. It is the only one that knows: a session
+            // asking it to keep its own screen has no way to work that
+            // size out from here, and a session that asked for a size is
+            // told the same one back.
+            Ok(Some((wide, high))) => {
+                if (wide, high) != (settings.width, settings.height) {
+                    settings.width = wide;
+                    settings.height = high;
+                    told(Step::ScreenOverThere { wide, high });
+                }
+            }
+            Ok(None) => {}
+            Err(refused) => told(Step::ScreenLeftAlone { refused }),
+        }
     }
 
     let state = DeviceState::for_device(&identifier_from_address(&wanted.host));
@@ -552,12 +584,24 @@ impl Driving {
     }
 
     /// Asks the far computer to wake its virtual screen for a picture
-    /// that size, or, with no size, to put it back to sleep.
-    fn far_screen(&mut self, size: Option<(u32, u32)>) -> Result<(), String> {
-        self.asked(&Request::FarScreen {
-            way: self.way,
-            size,
-        })
+    /// that size, or, with no size, to leave its own screen alone.
+    ///
+    /// Answers the size that computer will be showing, which is the one
+    /// ask of the three that comes back with something: a session told to
+    /// leave that machine as it is cannot know what that is until it asks.
+    fn far_screen(&mut self, size: Option<(u32, u32)>) -> Result<Option<(u32, u32)>, String> {
+        match self
+            .runtime
+            .block_on(self.service.ask(&Request::FarScreen {
+                way: self.way,
+                size,
+            }))
+            .map_err(|e| e.to_string())?
+        {
+            Answer::Showing { size } => Ok(size),
+            Answer::Refused(reason) => Err(reason),
+            other => Err(format!("réponse inattendue du service : {other}")),
+        }
     }
 
     /// Asks the far computer to resend a still screen at full rate, or
@@ -671,6 +715,7 @@ mod tests {
             pair_again: false,
             hush_the_far_speakers: false,
             steady_far_rate: true,
+            wants_a_screen_over_there: true,
         }
     }
 

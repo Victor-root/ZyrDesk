@@ -303,8 +303,31 @@ function suisLeDessin() {
   pas();
 }
 
+/* Le sous-menu ouvert, ou rien. Une vue à la fois : cette fenêtre est
+   étroite et suit ce que la page occupe, donc le menu s'efface pendant
+   que la liste est là plutôt que de s'empiler avec elle. */
+let panneauOuvert = null;
+
+function montrePanneau(nom) {
+  panneauOuvert = nom;
+  for (const panneau of document.querySelectorAll(".panneau")) {
+    const ici = panneau.id === `panneau-${nom}`;
+    panneau.classList.toggle("rangee", !ici);
+    panneau.classList.toggle("repliee", !ici);
+  }
+  // Le menu se retire du dessin plutôt que de se cacher : laissé en
+  // place sous la liste, la fenêtre ferait leurs deux hauteurs.
+  vue.menu.classList.toggle("rangee", nom !== null);
+  suisLeDessin();
+}
+
 function ouvre(veut) {
   ouvert = veut;
+  // Un menu qu'on rouvre s'ouvre sur lui-même. Rester dans une liste
+  // choisie il y a deux sessions serait un menu qui a l'air d'un autre.
+  if (!veut || panneauOuvert !== null) {
+    montrePanneau(null);
+  }
   vue.menu.classList.toggle("repliee", !veut);
   vue.logo.setAttribute("aria-expanded", veut ? "true" : "false");
   // Cliquer dans cette fenêtre donne le clavier à sa page, et cette
@@ -368,23 +391,56 @@ async function demande(acte) {
    exactement ce qu'on veut savoir avant d'ouvrir la session. */
 const LIGNES = {
   asked: {
-    // Du plus petit au plus grand, de gauche à droite. Le produit les
-    // offre dans son ordre à lui, qui n'est pas celui-là : sur une barre,
-    // pousser vers la droite veut dire demander plus, et l'inverse se lit
-    // comme une panne.
-    valeurs: (menu) =>
-      [...menu.sizes]
-        .sort(
-          (une, autre) => une.width * une.height - autre.width * autre.height,
-        )
-        .map((taille) => taille.value),
+    // Une liste à elle, ouverte par un chevron. Les deux premières
+    // entrées ne sont pas des tailles : elles disent lequel des deux
+    // ordinateurs décide, ce qu'aucune barre ne sait dire, et les quinze
+    // qui suivent feraient des crans qu'on ne vise plus.
+    liste: true,
+    // Dans l'ordre du produit, qui est celui du menu : les deux façons de
+    // décider d'abord, les nombres ensuite du plus grand au plus petit.
+    valeurs: (menu) => menu.sizes.map((taille) => taille.value),
     dit: (menu, valeur) => {
-      const taille = menu.sizes.find((une) => une.value === valeur);
-      if (!taille) {
-        return valeur;
+      if (valeur === "client") {
+        return "Résolution du client";
       }
-      const nombres = `${taille.width} x ${taille.height}`;
-      return valeur === "screen" ? `Écran, ${nombres}` : nombres;
+      if (valeur === "host") {
+        return "Résolution de l'hôte";
+      }
+      const taille = menu.sizes.find((une) => une.value === valeur);
+      return taille ? `${taille.width}x${taille.height}` : valeur;
+    },
+    // Ce que la ligne du menu affiche à droite du mot : ce à quoi le
+    // choix revient réellement ici, puisque « client » ne dit pas si on
+    // demande du 4K ou du 1080p et que c'est justement ce qu'on veut
+    // savoir avant d'ouvrir la session.
+    resume: (menu, valeur) => {
+      if (valeur === "host") {
+        return "hôte";
+      }
+      const taille = menu.sizes.find((une) => une.value === valeur);
+      const nombres = taille ? `${taille.width}x${taille.height}` : valeur;
+      return valeur === "client" ? `client, ${nombres}` : nombres;
+    },
+    // Le rapport de la taille, dit comme les écrans se vendent. Une
+    // colonne à droite dans la liste : deux nombres se comparent mal, et
+    // 21:9 à côté de 16:9 dit tout de suite ce qui va être coupé.
+    aparte: (menu, valeur) => {
+      // Rien pour les deux premières : ce à quoi elles reviennent dépend
+      // de l'écran qu'on a en face, et un rapport écrit là serait celui
+      // de cet ordinateur-ci donné pour celui d'un autre.
+      if (valeur === "client" || valeur === "host") {
+        return "";
+      }
+      const taille = menu.sizes.find((une) => une.value === valeur);
+      return taille && taille.width > 0
+        ? rapport(taille.width, taille.height)
+        : "";
+    },
+    // Ce que les deux premières font, écrit sous elles.
+    pourquoi: {
+      client:
+        "L'ordinateur d'en face est mis à la taille de cet écran-ci. Un pixel envoyé pour un pixel affiché, rien d'étiré nulle part.",
+      host: "L'ordinateur d'en face n'est pas touché : sa résolution reste celle qu'il a, et l'image est mise à l'échelle ici. C'est le choix qui ne réarrange rien chez lui.",
     },
     ou: (choix) => choix.asked,
   },
@@ -416,6 +472,24 @@ const LIGNES = {
   },
 };
 
+/* Le rapport d'une taille, réduit comme on le lit sur une fiche d'écran.
+   Calculé plutôt qu'écrit à côté de chaque nombre : une deuxième table
+   s'écarterait de la première le jour où une taille s'ajoute. Les deux
+   rapports que personne n'écrit sous leur forme réduite sont dits comme
+   tout le monde les dit. */
+function rapport(large, haut) {
+  const pgcd = (a, b) => (b === 0 ? a : pgcd(b, a % b));
+  const par = pgcd(large, haut) || 1;
+  const [x, y] = [large / par, haut / par];
+  if (x === 8 && y === 5) {
+    return "16:10";
+  }
+  if (x === 683 && y === 384) {
+    return "16:9";
+  }
+  return `${x}:${y}`;
+}
+
 /* Ce que le produit propose, demandé une fois : les crans ne changent pas
    d'un clic à l'autre, et les refaire à chaque fois ferait clignoter la
    fenêtre à chaque ouverture. */
@@ -440,6 +514,24 @@ function poseLesValeurs(choix) {
       continue;
     }
     const ou = ligne.ou(choix);
+    if (ligne.liste) {
+      // La ligne du menu dit ce qui est choisi, la liste marque la
+      // même valeur : les deux lisent le même endroit, donc elles ne
+      // peuvent pas se contredire.
+      const dit = document.querySelector(`[data-valeur="${nom}"]`);
+      if (dit) {
+        dit.textContent = (ligne.resume ?? ligne.dit)(leMenu, ou);
+      }
+      for (const entree of document.querySelectorAll(
+        `[data-liste="${nom}"] [data-choix]`,
+      )) {
+        entree.setAttribute(
+          "aria-checked",
+          entree.dataset.choix === ou ? "true" : "false",
+        );
+      }
+      continue;
+    }
     if (ligne.boutons) {
       for (const bouton of ici.querySelectorAll("[data-choix]")) {
         bouton.setAttribute(
@@ -511,6 +603,60 @@ function batisLesChoix() {
       continue;
     }
     const valeurs = ligne.valeurs(leMenu);
+    if (ligne.liste) {
+      const liste = document.querySelector(`[data-liste="${nom}"]`);
+      if (!liste) {
+        continue;
+      }
+      const dedans = [];
+      for (const valeur of valeurs) {
+        const entree = document.createElement("button");
+        entree.type = "button";
+        entree.className = "item";
+        entree.dataset.choix = valeur;
+        entree.setAttribute("role", "menuitemradio");
+        entree.setAttribute("aria-checked", "false");
+
+        const coche = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "svg",
+        );
+        coche.setAttribute("viewBox", "0 0 24 24");
+        coche.setAttribute("aria-hidden", "true");
+        coche.setAttribute("class", "coche");
+        const trait = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path",
+        );
+        trait.setAttribute("d", "M4 12.5l5.5 5.5L20 6");
+        coche.append(trait);
+
+        const mot = document.createElement("span");
+        mot.className = "item-mot";
+        mot.textContent = ligne.dit(leMenu, valeur);
+
+        const cote = document.createElement("span");
+        cote.className = "item-touche";
+        cote.textContent = ligne.aparte ? ligne.aparte(leMenu, valeur) : "";
+
+        entree.append(coche, mot, cote);
+        entree.addEventListener("click", () => {
+          choisis(nom, valeur);
+          montrePanneau(null);
+        });
+        dedans.push(entree);
+
+        const pourquoi = ligne.pourquoi?.[valeur];
+        if (pourquoi) {
+          const dit = document.createElement("p");
+          dit.className = "pourquoi";
+          dit.textContent = pourquoi;
+          dedans.push(dit);
+        }
+      }
+      liste.replaceChildren(...dedans);
+      continue;
+    }
     if (ligne.boutons) {
       ici.querySelector(".bascule").replaceChildren(
         ...valeurs.map((valeur) => {
@@ -692,6 +838,16 @@ vue.logo.addEventListener("click", (evenement) => {
 
 for (const item of document.querySelectorAll("[data-acte]")) {
   item.addEventListener("click", () => demande(item.dataset.acte));
+}
+
+for (const item of document.querySelectorAll("[data-ouvre-panneau]")) {
+  item.addEventListener("click", () =>
+    montrePanneau(item.dataset.ouvrePanneau),
+  );
+}
+
+for (const item of document.querySelectorAll("[data-ferme-panneau]")) {
+  item.addEventListener("click", () => montrePanneau(null));
 }
 
 for (const item of document.querySelectorAll("[data-cacher]")) {

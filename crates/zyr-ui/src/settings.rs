@@ -447,8 +447,21 @@ mod tests {
         // quoi il revient sur cet ordinateur-ci, sinon on ne sait pas si
         // on demande du 4K ou du 1080p.
         let screen = SessionChoice::of(Preferred::default(), Some(a_screen(2560, 1440)));
-        assert_eq!(screen.asked, "screen");
+        assert_eq!(screen.asked, "client");
         assert_eq!((screen.width, screen.height), (2560, 1440));
+
+        // Et l'écran d'en face n'est pas connu ici : en attendant qu'il
+        // le dise, la ligne montre ce qu'une session demanderait, qui est
+        // l'écran de cet ordinateur-ci.
+        let far = SessionChoice::of(
+            Preferred {
+                asked: Asked::Host,
+                ..Preferred::default()
+            },
+            Some(a_screen(2560, 1440)),
+        );
+        assert_eq!(far.asked, "host");
+        assert_eq!((far.width, far.height), (2560, 1440));
 
         let fixed = SessionChoice::of(
             Preferred {
