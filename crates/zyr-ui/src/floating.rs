@@ -152,6 +152,9 @@ pub enum Act {
     SecureAttention,
     /// The session's own sound, hushed or given back on this computer.
     Sound,
+    /// Which of the two computers Alt+Tab, Échap and the Windows key
+    /// belong to.
+    SystemKeys,
     End,
 }
 
@@ -163,6 +166,7 @@ impl Act {
             "mouse" => Some(Act::MouseMode),
             "cad" => Some(Act::SecureAttention),
             "sound" => Some(Act::Sound),
+            "keys" => Some(Act::SystemKeys),
             "end" => Some(Act::End),
             _ => None,
         }
@@ -184,6 +188,7 @@ impl Act {
         match self {
             Act::Stats => Some(b'S'),
             Act::MouseMode => Some(b'M'),
+            Act::SystemKeys => Some(b'K'),
             Act::Fullscreen | Act::SecureAttention | Act::Sound | Act::End => None,
         }
     }
@@ -201,6 +206,7 @@ impl Act {
         match self {
             Act::Stats => Some(0x1F),
             Act::MouseMode => Some(0x32),
+            Act::SystemKeys => Some(0x25),
             Act::Fullscreen | Act::SecureAttention | Act::Sound | Act::End => None,
         }
     }
@@ -214,6 +220,7 @@ impl std::fmt::Display for Act {
             Act::MouseMode => "mode de la souris",
             Act::SecureAttention => "Ctrl+Alt+Suppr",
             Act::Sound => "son de la session",
+            Act::SystemKeys => "touches système",
             Act::End => "fin de la session",
         })
     }
@@ -259,6 +266,14 @@ pub struct Floating {
     /// the far computer and the menu it had just opened could not be
     /// clicked.
     game_mouse: AtomicBool,
+    /// Whether Alt+Tab, Échap and the Windows key are going to the
+    /// session right now rather than to this computer.
+    ///
+    /// Kept here for the same reason as the mouse mode beside it: the
+    /// engine is the one holding those keys and it never says where it
+    /// stands, so this program counts its own switches. The session
+    /// starts on the side its settings asked for.
+    system_keys: AtomicBool,
 }
 
 /// What this window knows of a session it started, before the service
@@ -662,14 +677,18 @@ pub fn watch(app: AppHandle) {
                     // been laid in our window is the wrong corner.
                     crate::picture::hold(&app, process);
                     if adopt(&app, process) {
-                        // A session just adopted starts in the mouse mode
+                        // A session just adopted starts on the two sides
                         // its settings asked for; every toggle after that
                         // goes through this window and is counted as it
                         // is sent.
-                        let game = !crate::settings::preferred().await.absolute_mouse;
-                        app.state::<Floating>()
+                        let preferred = crate::settings::preferred().await;
+                        let state = app.state::<Floating>();
+                        state
                             .game_mouse
-                            .store(game, Ordering::Relaxed);
+                            .store(!preferred.absolute_mouse, Ordering::Relaxed);
+                        state
+                            .system_keys
+                            .store(preferred.system_keys, Ordering::Relaxed);
                     }
                     put_the_button_up(&app, process);
                     // And the keyboard belongs to the picture whenever
@@ -1306,6 +1325,17 @@ pub fn floating_mouse(app: AppHandle) -> bool {
     app.state::<Floating>().game_mouse.load(Ordering::Relaxed)
 }
 
+/// Which computer Alt+Tab, Échap and the Windows key are going to right
+/// now.
+///
+/// True for the session, false for this computer. Believed rather than
+/// asked, exactly as the mouse mode beside it, and for the same reason:
+/// the keys are held in the engine and the engine never says.
+#[tauri::command]
+pub fn floating_keys(app: AppHandle) -> bool {
+    app.state::<Floating>().system_keys.load(Ordering::Relaxed)
+}
+
 /// Asks the session for something, in its own language.
 #[tauri::command]
 pub async fn floating_act(app: AppHandle, what: String) -> Result<(), String> {
@@ -1336,13 +1366,26 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
     let process = the_player(app)?;
 
     type_at_the_picture(app, act, process).await?;
-    // The keystroke left, so the engine will act on it: the mode this
-    // window believes the mouse is in follows the keystrokes it sends.
-    if matches!(act, Act::MouseMode) {
-        let state = app.state::<Floating>();
-        let _ = state
-            .game_mouse
-            .fetch_xor(true, std::sync::atomic::Ordering::Relaxed);
+    // The keystroke left, so the engine will act on it: what this window
+    // believes of the two switches follows the keystrokes it sends.
+    match act {
+        Act::MouseMode => {
+            let _ = app
+                .state::<Floating>()
+                .game_mouse
+                .fetch_xor(true, Ordering::Relaxed);
+        }
+        Act::SystemKeys => {
+            let theirs = !app
+                .state::<Floating>()
+                .system_keys
+                .fetch_xor(true, Ordering::Relaxed);
+            // Remembered, unlike the mouse: this one is thrown back and
+            // forth in the middle of a session, and the side it is left on
+            // is the side the next session should open on.
+            crate::settings::remember_system_keys(theirs).await;
+        }
+        _ => {}
     }
     Ok(())
 }

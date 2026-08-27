@@ -198,5 +198,10 @@ fn build_settings(args: &Args) -> Result<SessionSettings, String> {
         packet_size: None,
         absolute_mouse: !args.relative_mouse,
         stats_overlay: args.stats,
+        // Alt+Tab et la touche Windows partent dans la session, comme
+        // sous l'interface. Rien ici ne peut les rebasculer : le menu qui
+        // le fait est celui du bouton flottant, que cette commande
+        // n'ouvre pas.
+        system_keys: true,
     })
 }

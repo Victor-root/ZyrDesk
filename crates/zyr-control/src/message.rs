@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 17;
+pub const PROTOCOL: u32 = 18;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -310,7 +310,7 @@ fn said(yes: bool) -> &'static str {
 /// and the answer so the two can never drift apart.
 fn spelled(preferred: &Preferred) -> String {
     format!(
-        "asked={} bitrate={} codec={} display={} mouse={} stats={} hush={}",
+        "asked={} bitrate={} codec={} display={} mouse={} stats={} hush={} keys={}",
         preferred.asked,
         preferred.bitrate_kbps,
         preferred.codec,
@@ -321,7 +321,8 @@ fn spelled(preferred: &Preferred) -> String {
             "game"
         },
         said(preferred.stats_overlay),
-        said(preferred.mute_far_speakers)
+        said(preferred.mute_far_speakers),
+        said(preferred.system_keys)
     )
 }
 
@@ -677,6 +678,7 @@ impl<'a> Fields<'a> {
             },
             stats_overlay: self.flag("stats", fallback.stats_overlay),
             mute_far_speakers: self.flag("hush", fallback.mute_far_speakers),
+            system_keys: self.flag("keys", fallback.system_keys),
         }
     }
 }
@@ -785,6 +787,7 @@ mod tests {
             absolute_mouse: false,
             stats_overlay: true,
             mute_far_speakers: true,
+            system_keys: false,
         }
     }
 

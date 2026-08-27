@@ -84,20 +84,33 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         args.push("--report-stats".to_string());
         args.push(path.to_string());
     }
-    // The keys this computer keeps for itself, Alt+Tab first, taken by the
-    // engine and by nothing else. The mode is ours (patch P-M8): the
-    // engine takes them from the focus of its own picture, and leaves Alt,
-    // Control and the Windows key alone so this program keeps its own
-    // shortcuts. Not the engine's « always », which decides from the front
-    // its window can never hold and swallows Alt and Control whole.
+    // The keys this computer keeps for itself, Alt+Tab and the Windows key
+    // first, taken by the engine and by nothing else. The mode is ours
+    // (patch P-M10): the engine takes them from the focus of its own
+    // picture, and leaves Alt, Control and Shift alone so this program
+    // keeps its own shortcuts. Not the engine's « always », which decides
+    // from the front its window can never hold and swallows Alt and
+    // Control whole.
     //
-    // Always, with nothing to turn it off. There was a way of doing this
-    // in ZyrDesk itself, and it could not work: a hook of the system is
-    // served newest first, this program laid its once at the start of a
-    // session and never again, and everything laid after it went ahead of
-    // it ([D43](../../docs/DECISIONS.md), [D47](../../docs/DECISIONS.md)).
+    // Taken by the engine and never by ZyrDesk, whichever way the switch
+    // is thrown. There was a way of doing this in ZyrDesk itself, and it
+    // could not work: a hook of the system is served newest first, this
+    // program laid its once at the start of a session and never again, and
+    // everything laid after it went ahead of it
+    // ([D43](../../docs/DECISIONS.md), [D47](../../docs/DECISIONS.md)).
+    //
+    // The two spellings are one switch and not two modes: they differ only
+    // in which side it starts on, and the menu moves it afterwards without
+    // touching the picture.
     args.push("--capture-system-keys".to_string());
-    args.push("zyrdesk".to_string());
+    args.push(
+        if settings.system_keys {
+            "zyrdesk"
+        } else {
+            "zyrdesk-off"
+        }
+        .to_string(),
+    );
     if settings.absolute_mouse {
         args.push("--absolute-mouse".to_string());
     }
@@ -167,16 +180,27 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_always_takes_the_keys_the_system_keeps_for_itself() {
+    fn les_touches_systeme_sont_toujours_celles_du_moteur() {
         // Le mode demandé n'est jamais « always » : celui-là avale Alt et
         // Ctrl en entier, ce qui coupe tous les raccourcis du produit, qui
-        // sont tous des combinaisons Alt. Et il est demandé à toutes les
-        // sessions, sans réglage pour l'éteindre : l'autre façon de
+        // sont tous des combinaisons Alt. Et c'est toujours le moteur qui
+        // les prend, des deux côtés de l'interrupteur : l'autre façon de
         // prendre ces touches a été retirée parce qu'elle ne pouvait pas
         // marcher, pas parce qu'on lui préférait celle-ci.
         let args = session_arguments("host", &SessionSettings::default());
         assert_eq!(value_of(&args, "--capture-system-keys"), Some("zyrdesk"));
         assert!(!args.iter().any(|a| a == "always"));
+
+        let laissees = SessionSettings {
+            system_keys: false,
+            ..SessionSettings::default()
+        };
+        let args = session_arguments("host", &laissees);
+        assert_eq!(
+            value_of(&args, "--capture-system-keys"),
+            Some("zyrdesk-off")
+        );
+        assert!(!args.iter().any(|a| a == "never"));
     }
 
     #[test]

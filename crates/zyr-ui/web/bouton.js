@@ -22,6 +22,7 @@ const vue = {
   chiffres: document.getElementById("chiffres"),
   flux: document.getElementById("flux"),
   souris: document.getElementById("souris"),
+  touches: document.getElementById("touches"),
   son: document.getElementById("son"),
 };
 
@@ -309,12 +310,13 @@ function ouvre(veut) {
   if (!veut) {
     montre(vue.souci, false);
   } else {
-    // Les deux ont pu bouger pendant que le menu était fermé : le
+    // Les trois ont pu bouger pendant que le menu était fermé : le
     // raccourci du produit bascule la souris, et le mélangeur de Windows
     // est ouvert à tout le monde. Les interrupteurs doivent dire où l'on
     // en est, pas où l'on en était la dernière fois qu'on a regardé.
     litLaSouris();
     litLeSon();
+    litLesTouches();
   }
   // Et la fenêtre suit ce que la page dessine maintenant, jusqu'à ce
   // qu'elle ait fini de le dessiner : taillée sur l'état d'avant, elle
@@ -533,19 +535,20 @@ function batisLesChoix() {
   }
 }
 
-/* ---- Les deux interrupteurs du menu ------------------------------------ */
+/* ---- Les interrupteurs du menu ----------------------------------------- */
 
 /* Deux mots côte à côte, celui qui est en place allumé. La ligne d'avant
    disait « souris bureau ou jeu » et basculait à l'aveugle : elle
    annonçait ce que le clic ferait, jamais où l'on en était, et les deux
    modes ne se distinguent pas à l'oeil sur un bureau immobile.
 
-   Souris et son marchent pareil, donc se construisent pareil. Le côté de
-   droite est celui qui vaut « oui » : jeu pour la souris, coupé pour le
-   son. L'état se relit à chaque ouverture du menu plutôt que retenu ici,
-   parce qu'il peut changer sans passer par cette page. Et cliquer le
-   côté où l'on est déjà ne fait rien, comme tout interrupteur qu'on
-   pousse du côté où il est déjà. */
+   Souris, son et touches système marchent pareil, donc se construisent
+   pareil. Le côté de droite est celui qui vaut « oui » : jeu pour la
+   souris, coupé pour le son, la session pour les touches. L'état se
+   relit à chaque ouverture du menu plutôt que retenu ici, parce qu'il
+   peut changer sans passer par cette page. Et cliquer le côté où l'on
+   est déjà ne fait rien, comme tout interrupteur qu'on pousse du côté où
+   il est déjà. */
 function interrupteur(element, cle, lis, bascule) {
   const cotes = [...element.querySelectorAll(`[data-${cle}]`)];
   const oui = cotes[cotes.length - 1].dataset[cle];
@@ -600,6 +603,13 @@ const litLeSon = interrupteur(
   "son",
   () => invoke("floating_sound"),
   () => invoke("floating_act", { what: "sound" }),
+);
+
+const litLesTouches = interrupteur(
+  vue.touches,
+  "touches",
+  () => invoke("floating_keys"),
+  () => invoke("floating_act", { what: "keys" }),
 );
 
 async function litLeMenu() {

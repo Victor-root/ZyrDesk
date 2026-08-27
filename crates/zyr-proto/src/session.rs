@@ -125,6 +125,12 @@ pub struct SessionSettings {
     /// with relative motion.
     pub absolute_mouse: bool,
     pub stats_overlay: bool,
+    /// Whether Alt+Tab, Échap and the Windows key go to the session
+    /// rather than to this computer.
+    ///
+    /// Only where the session starts: it is a switch, and the menu throws
+    /// it while the picture runs.
+    pub system_keys: bool,
 }
 
 impl Default for SessionSettings {
@@ -139,6 +145,7 @@ impl Default for SessionSettings {
             packet_size: None,
             absolute_mouse: true,
             stats_overlay: false,
+            system_keys: true,
         }
     }
 }
@@ -378,6 +385,19 @@ pub struct Preferred {
     /// is reached is a computer whoever sits in front of it would call
     /// broken.
     pub mute_far_speakers: bool,
+    /// Whether Alt+Tab, Échap and the Windows key belong to the session
+    /// or to the computer that is watching it.
+    ///
+    /// Windows keeps those for itself and hands them to nobody, so a
+    /// session only ever gets them by stepping in front of every keystroke
+    /// of the whole computer. Doing that all the time would be wrong the
+    /// other way round: the hand reaching for Alt+Tab is sometimes
+    /// reaching for a window of this very computer.
+    ///
+    /// On by default. A session whose Windows key quietly does nothing is
+    /// the fault this exists to close, and the menu says which side the
+    /// switch is on, so the other way round surprises nobody.
+    pub system_keys: bool,
 }
 
 impl Default for Preferred {
@@ -390,6 +410,7 @@ impl Default for Preferred {
             absolute_mouse: true,
             stats_overlay: false,
             mute_far_speakers: false,
+            system_keys: true,
         }
     }
 }
@@ -407,6 +428,7 @@ impl Preferred {
             display_mode: self.display_mode,
             absolute_mouse: self.absolute_mouse,
             stats_overlay: self.stats_overlay,
+            system_keys: self.system_keys,
             ..SessionSettings::default()
         }
     }
@@ -573,6 +595,7 @@ mod tests {
             // Rien de ce champ n'atteint le moteur : il ne décrit pas
             // l'image, il dit ce qu'on demande à la machine d'en face.
             mute_far_speakers: true,
+            system_keys: false,
         };
         let settings = preferred.settings(Some((3840, 2160)));
         assert_eq!((settings.width, settings.height), (2560, 1440));
@@ -581,6 +604,9 @@ mod tests {
         assert_eq!(settings.display_mode, DisplayMode::Windowed);
         assert!(!settings.absolute_mouse);
         assert!(settings.stats_overlay);
+        // Le côté où l'interrupteur est laissé est celui où la session
+        // suivante s'ouvre.
+        assert!(!settings.system_keys);
         // La taille de paquet n'est pas un choix : le tunnel la décide.
         assert_eq!(settings.packet_size, None);
     }

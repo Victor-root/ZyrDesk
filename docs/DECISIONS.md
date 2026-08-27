@@ -833,6 +833,26 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Le curseur montre enfin une main qui agrippe.** Il passait au sens interdit pendant tout le déplacement : le logo porte une image, une image se traîne toute seule sous Windows, et le système prenait la prise du bouton pour un glisser-déposer. Plus rien de ce bouton ne se traîne ni ne se sélectionne.
 
+## D67. La touche Windows part dans la session, et un interrupteur dit laquelle des deux machines reçoit ces touches (2026-08-27, pendant M4)
+
+**Le relevé.** « La touche Windows n'envoie pas sur la session quand je suis dessus. » Avec, la façon de faire du produit de référence : un mode immersif, hors duquel Alt+Tab et la touche Windows restent sur l'ordinateur qui regarde, et dans lequel tout part dans le flux.
+
+**Ce qui le faisait, et c'était une moitié manquante et non une fonctionnalité absente.** Il faut deux choses pour qu'une de ces touches parte au loin : que Windows ne l'attrape pas ici, et que le moteur l'envoie là-bas. [D43](#d43-les-touches-du-système-ont-un-seul-propriétaire-et-ce-peut-être-le-moteur-2026-08-24-pendant-m4) avait réglé la première pour Tab et Échap. La seconde était intacte, et elle refusait.
+
+**Le moteur a une porte devant la touche Windows, et elle était posée sur une question sans réponse ici.** Elle demande à sa fenêtre d'être celle que le système appelle le premier plan **et** de tenir la prise clavier de sa bibliothèque d'affichage. La première est impossible chez nous, la fenêtre de l'image étant portée dans la nôtre, donc fille, et le premier plan allant au chef de famille. La seconde est justement ce que notre mode éteint exprès, cette prise avalant Alt et Control en entier et coupant tous les raccourcis du produit. La porte répondait donc non pendant toute la session, et la touche Windows n'a jamais quitté l'ordinateur qui regarde. Tab et Échap ne s'en apercevaient pas : ils ne passent pas par cette porte.
+
+**Décision : la porte est posée sur la même question que le crochet.** « Le clavier est-il réellement à cette fenêtre », qui est la seule réponse vraie ici et que notre correctif calcule déjà pour décider quoi avaler. Une fenêtre ne peut pas avoir deux réponses différentes à la même question dans le même processus.
+
+**Et le crochet avale maintenant la touche Windows.** Sans cela elle partirait au loin **et** ouvrirait le menu Démarrer d'ici, ce qui est pire que les deux comportements pris séparément.
+
+**Décision : c'est un interrupteur, pas un état permanent.** Prendre ces touches tout le temps est faux dans l'autre sens : la main qui va chercher Alt+Tab veut parfois une fenêtre de l'ordinateur qui regarde. Il vit dans le menu du bouton flottant, à côté de ceux de la souris et du son, et il se lit comme eux : les deux côtés écrits, celui qui est en place allumé. Un réglage qui décide où va une touche doit dire où il en est sans qu'on ait à essayer.
+
+**Il se bascule sans relancer l'image.** Par le chemin qui existe déjà pour la souris : ZyrDesk tape le raccourci du moteur dans la fenêtre de l'image. Relancer la session pour changer de côté aurait rendu l'interrupteur inutilisable, puisqu'on le jette justement pour deux secondes.
+
+**Il est retenu, et il vaut « session » par défaut.** Retenu parce que c'est la règle du bouton flottant depuis le début : ce qu'on y règle ne se règle pas à chaque connexion. Et « session » par défaut parce qu'une session dont la touche Windows ne fait rien sans qu'on sache pourquoi est exactement le défaut que tout ceci répare ; l'autre côté ne surprend personne, l'interrupteur étant sous les yeux et le disant.
+
+**Deux touches restent hors de portée, des deux côtés.** Windows+L et Ctrl+Alt+Suppr, qu'aucun crochet ne peut prendre, par construction et pour de bonnes raisons. La seconde a sa propre entrée dans le menu, qui passe par le canal du produit et par le service d'en face ([D59](#d59-ctrlaltsuppr-voyage-sur-le-canal-du-produit-pas-par-le-clavier-2026-08-26-pendant-m4)).
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

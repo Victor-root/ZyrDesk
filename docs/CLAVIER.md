@@ -10,6 +10,16 @@ Une session est ouverte, tout marche, Alt+Tab bascule bien entre les fenêtres d
 
 Le détail qui trompe : ça ressemble à s'y méprendre à un problème de premier plan. Ce n'en est pas un.
 
+## Le deuxième problème, découvert le 2026-08-27
+
+« La touche Windows n'arrive jamais sur la session. »
+
+Deux moitiés sont nécessaires pour qu'une de ces touches parte au loin : que Windows ne l'attrape pas ici, et que le moteur l'envoie là-bas. Le correctif ci-dessous s'occupait de la première et le moteur refusait la seconde.
+
+Le moteur a une porte, qu'il ferme devant la touche Windows et devant le préfixe Windows d'une combinaison. Elle demande deux choses à sa fenêtre : d'être celle que le système appelle le premier plan, et de tenir la prise clavier de la bibliothèque d'affichage. **Aucune des deux ne peut être vraie chez nous** : notre fenêtre est portée dans celle de ZyrDesk, donc jamais au premier plan (piège numéro 2 ci-dessous), et ce mode laisse exprès la prise de la bibliothèque éteinte parce qu'elle avale Alt et Control en entier. La porte répondait donc non pendant toute la session, et la touche Windows restait ici.
+
+Elle est maintenant posée là où la réponse existe vraiment : le même « le clavier est-il réellement à cette fenêtre » que le crochet utilise pour décider. Tab et Échap ne s'en apercevaient pas, eux ne passent pas par cette porte.
+
 ## La règle qui commande tout
 
 Sous Windows, un programme qui veut voir les touches avant tout le monde pose un crochet bas niveau sur le clavier. Ces crochets forment une file, et **le dernier arrivé est servi en premier**. Chaque frappe descend la file, du plus récemment posé au plus ancien, et n'importe lequel peut l'avaler avant les suivants.
@@ -29,9 +39,21 @@ Le moteur reçoit le mode `--capture-system-keys zyrdesk`, qui est à nous (patc
 - **repose son crochet à chaque fois que le clavier revient à sa fenêtre**, donc il redevient le plus récent de la file aux moments précis où la panne se produisait. C'est la moitié qui compte ;
 - décide du **focus de sa propre fenêtre**, jamais du premier plan ;
 - ne prend une touche que si **le clavier vient réellement à cette fenêtre**, ce qui demande le focus *et* le premier plan, question posée d'un coup au système ;
-- n'avale que **Tab et Échap**. Alt, Control, Majuscule et la touche Windows passent intactes.
+- n'avale que **Tab, Échap et la touche Windows**. Alt, Control et Majuscule passent intactes.
 
 Ce qu'il attrape est poussé dans sa file d'événements comme n'importe quelle frappe, donc le chemin qui l'envoie au loin est celui de toutes les autres touches, sans exception à maintenir.
+
+## L'interrupteur
+
+Prendre ces touches tout le temps est faux dans l'autre sens : la main qui va chercher Alt+Tab veut parfois une fenêtre de cet ordinateur-ci, et la touche Windows veut parfois ce menu Démarrer-là.
+
+C'est donc un interrupteur, dans le menu du bouton flottant, à côté de ceux de la souris et du son. À gauche « Ici », à droite « Session », et celui qui est en place est allumé, ce qui est tout l'intérêt : un réglage qui décide où va une touche doit dire où il en est sans qu'on essaie.
+
+- Il se bascule **sans relancer l'image** : ZyrDesk tape le raccourci du moteur `Ctrl+Alt+Maj+K` dans la fenêtre de l'image, exactement comme il bascule déjà la souris avec `Ctrl+Alt+Maj+M`.
+- Il est **retenu** : le côté où on le laisse est celui où la session suivante s'ouvre, ce que la ligne de commande porte en deux valeurs du même mode, `zyrdesk` et `zyrdesk-off`. Ce ne sont pas deux modes : ils ne diffèrent que par le côté de départ.
+- Il vaut « Session » par défaut. Une session dont la touche Windows ne fait rien sans qu'on sache pourquoi est exactement le défaut que tout ceci répare.
+
+**Deux choses ne se prennent jamais, quel que soit le côté.** Windows+L et Ctrl+Alt+Suppr sont hors de portée d'un crochet, par construction et pour de bonnes raisons : ils verrouillent la machine qui est devant vous. Ctrl+Alt+Suppr a sa propre entrée dans le menu, qui passe par le canal du produit et par le service d'en face.
 
 ## Trois pièges, et pourquoi ils sont des pièges
 
@@ -60,8 +82,11 @@ Ce qu'il attrape est poussé dans sa file d'événements comme n'importe quelle 
 |---|---|
 | La capture elle-même | `engines/moonlight-qt/app/streaming/input/zyrsystemkeys.{h,cpp}` |
 | Sa mise en marche et son arrêt | `engines/moonlight-qt/app/streaming/input/input.cpp` |
+| La porte qui laisse partir la touche Windows | `isSystemKeyCaptureActive()`, même fichier |
+| Le raccourci qui bascule l'interrupteur | `engines/moonlight-qt/app/streaming/input/keyboard.cpp` |
 | Le mode en ligne de commande | `engines/moonlight-qt/app/cli/commandlineparser.cpp` |
 | Ce qui le demande | `crates/zyr-engine-client/src/command.rs` |
+| L'interrupteur du menu | `crates/zyr-ui/src/floating.rs`, `crates/zyr-ui/web/bouton.{html,js}` |
 | Le patch au manifeste | P-M10, `patches/MANIFEST.md` |
 
 Il n'y a **rien** côté ZyrDesk. C'est voulu : la deuxième voie a existé, dans `crates/zyr-ui/src/keys.rs`, et elle a été retirée en entier une fois celle-ci validée ([D47](DECISIONS.md)). Deux crochets sur le même clavier, c'est chacun qui répond à l'autre.
@@ -71,7 +96,8 @@ Il n'y a **rien** côté ZyrDesk. C'est voulu : la deuxième voie a existé, dan
 Le moteur écrit dans son propre journal (`session.log`, la trace du moteur client) une ligne par changement, et un relevé de ce qu'il a fait des touches. Ce qu'on y cherche, dans l'ordre :
 
 1. `zyr: the session has the keyboard` / `has lost the keyboard`. Si le clavier ne revient jamais après une première perte, c'est que le focus est lu au mauvais endroit, et le piège numéro 2 ci-dessus est de retour.
-2. Le compte des touches portées à l'ordinateur d'en face contre celui des touches laissées passer. Beaucoup de « laissées passer » avec la session à l'écran veut dire que le crochet n'est plus le premier de la file : regarder si la reposée à chaque retour du clavier fonctionne encore.
-3. Dans le journal de la fenêtre, `le premier plan passe ailleurs : processus N (nom.exe)`. Un tiers qui prend le premier plan pendant qu'on tape est une explication ordinaire et pas une panne.
+2. `zyr: the system's keys now go to the session` / `to this computer`. C'est l'interrupteur, et c'est la première chose à regarder : une touche qui ne part pas alors qu'il est du côté « this computer » n'est pas une panne.
+3. Le compte des touches portées à l'ordinateur d'en face contre celui des touches laissées passer. `passed: N switch off` est l'interrupteur ; beaucoup de « plain » ou de « without the keyboard » avec la session à l'écran veut dire que le crochet n'est plus le premier de la file : regarder si la reposée à chaque retour du clavier fonctionne encore.
+4. Dans le journal de la fenêtre, `le premier plan passe ailleurs : processus N (nom.exe)`. Un tiers qui prend le premier plan pendant qu'on tape est une explication ordinaire et pas une panne.
 
 Ce qu'il ne faut pas faire, si le relevé ne dit rien de clair : ajouter un délai, une exception ou un rattrapage. Les quatre lignes du tableau plus haut sont exactement ça, et elles ont coûté une semaine.

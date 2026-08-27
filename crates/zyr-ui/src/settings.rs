@@ -263,26 +263,65 @@ async fn write_down(preferred: Preferred) -> Result<(), String> {
     }
 }
 
-/// Writes down how a session is shown, the person having just changed it
-/// from inside one.
+/// Writes down one choice the person has just changed from inside a
+/// session.
 ///
 /// A choice made in the middle of a session is a choice all the same: the
 /// next one opens the way the last one was left, without anybody having
 /// to go back to the settings screen to say so twice.
-pub async fn remember_display(mode: DisplayMode) {
+///
+/// `change` says whether it changed anything, so a switch put back where
+/// it already was costs no round trip. Nothing here fails a session: what
+/// the person asked for has already happened, and only its remembering is
+/// at stake.
+async fn remember(named: &str, said: String, change: impl FnOnce(&mut Preferred) -> bool) {
     let mut preferred = preferred().await;
-    if preferred.display_mode == mode {
+    if !change(&mut preferred) {
         return;
     }
-    preferred.display_mode = mode;
     match service::ask(&Request::Choose { preferred }).await {
-        Ok(Answer::Done) => crate::journal::note(&format!("sessions will open {mode} from now on")),
+        Ok(Answer::Done) => crate::journal::note(&said),
         Ok(other) => crate::journal::note(&format!(
-            "display mode not written down: {}",
+            "{named} not written down: {}",
             service::unexpected(other)
         )),
-        Err(reason) => crate::journal::note(&format!("display mode not written down: {reason}")),
+        Err(reason) => crate::journal::note(&format!("{named} not written down: {reason}")),
     }
+}
+
+/// Writes down how a session is shown.
+pub async fn remember_display(mode: DisplayMode) {
+    remember(
+        "display mode",
+        format!("sessions will open {mode} from now on"),
+        |preferred| {
+            let moved = preferred.display_mode != mode;
+            preferred.display_mode = mode;
+            moved
+        },
+    )
+    .await;
+}
+
+/// Writes down which side of the switch the system's keys are on.
+pub async fn remember_system_keys(theirs: bool) {
+    remember(
+        "where the system's keys go",
+        format!(
+            "the system's keys will go to {} from now on",
+            if theirs {
+                "the session"
+            } else {
+                "this computer"
+            }
+        ),
+        |preferred| {
+            let moved = preferred.system_keys != theirs;
+            preferred.system_keys = theirs;
+            moved
+        },
+    )
+    .await;
 }
 
 /// What the service has been told a session should look like.

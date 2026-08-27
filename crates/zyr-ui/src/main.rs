@@ -97,6 +97,7 @@ fn main() {
             floating::floating_act,
             floating::floating_mouse,
             floating::floating_sound,
+            floating::floating_keys,
             theme::set_theme,
             theme::system_theme
         ])

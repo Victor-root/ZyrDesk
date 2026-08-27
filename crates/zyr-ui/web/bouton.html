@@ -134,6 +134,45 @@
           </div>
         </div>
 
+        <!-- Alt+Tab, Échap et la touche Windows : Windows les garde pour
+             lui et ne les donne à personne, donc la session ne les a
+             qu'en passant devant chaque frappe de l'ordinateur entier.
+             Le faire tout le temps serait faux dans l'autre sens : la
+             main qui va chercher Alt+Tab veut parfois une fenêtre d'ici.
+             Même interrupteur que les deux au-dessus, et c'est encore la
+             même question : lequel des deux ordinateurs les reçoit. -->
+        <div
+          class="item item-avec-choix"
+          role="group"
+          aria-label="Touches système"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2" y="5" width="20" height="14" rx="2" />
+            <path d="M6 9h1M9.5 9h1M13 9h1M16.5 9h1M6 13h1M9.5 13h5M17 13h1" />
+          </svg>
+          <span class="item-mot">Alt+Tab, Windows</span>
+          <div class="bascule" id="touches">
+            <button
+              class="bascule-cote"
+              type="button"
+              data-touches="ici"
+              role="menuitemradio"
+              aria-checked="false"
+            >
+              Ici
+            </button>
+            <button
+              class="bascule-cote"
+              type="button"
+              data-touches="session"
+              role="menuitemradio"
+              aria-checked="false"
+            >
+              Session
+            </button>
+          </div>
+        </div>
+
         <!-- Les trois touches que Windows garde pour lui aux deux bouts
              d'une session : cet ordinateur-ci ne les voit jamais, son
              propre Windows les prend avant tout programme, et l'image

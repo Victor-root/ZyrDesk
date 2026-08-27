@@ -36,6 +36,7 @@ const STATS_OVERLAY: &str = "stats_overlay";
 const STEADY_RATE: &str = "steady_rate";
 const CAPTURE: &str = "capture";
 const MUTE_FAR_SPEAKERS: &str = "mute_far_speakers";
+const SYSTEM_KEYS: &str = "system_keys";
 
 /// What the file says, when it says anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,6 +197,10 @@ fn rendered(preferences: Preferences) -> String {
          # Couper les enceintes de l'ordinateur d'en face pendant la\n\
          # session : son de la session inchangé, pièce d'en face muette.\n\
          {MUTE_FAR_SPEAKERS} = {}\n\
+         # Alt+Tab, Échap et la touche Windows partent dans la session\n\
+         # plutôt que d'agir sur cet ordinateur. Se rebascule en cours de\n\
+         # session depuis le menu du bouton flottant.\n\
+         {SYSTEM_KEYS} = {}\n\
          \n\
          # Ce que cet ordinateur fait quand c'est LUI qu'on regarde.\n\
          # Renvoyer un écran immobile à pleine cadence : plus fluide, mais\n\
@@ -214,6 +219,7 @@ fn rendered(preferences: Preferences) -> String {
         yes_no(preferred.absolute_mouse),
         yes_no(preferred.stats_overlay),
         yes_no(preferred.mute_far_speakers),
+        yes_no(preferred.system_keys),
         yes_no(preferences.serving.steady_rate),
         preferences.serving.capture,
     )
@@ -285,6 +291,7 @@ fn parsed(text: &str) -> Preferences {
             MUTE_FAR_SPEAKERS => {
                 preferred.mute_far_speakers = told(value, preferred.mute_far_speakers);
             }
+            SYSTEM_KEYS => preferred.system_keys = told(value, preferred.system_keys),
             _ => {}
         }
     }
@@ -318,6 +325,7 @@ mod tests {
                 absolute_mouse: false,
                 stats_overlay: true,
                 mute_far_speakers: true,
+                system_keys: false,
             },
             serving: Serving {
                 steady_rate: false,
