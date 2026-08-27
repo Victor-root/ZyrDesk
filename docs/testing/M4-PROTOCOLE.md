@@ -57,6 +57,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R43** | Complété. Le bouton flottant additionnait l'écart depuis le début du geste : une main qui sortait de l'image laissait chaque pixel refusé dans la somme, et revenir ne bougeait rien tant qu'ils n'étaient pas tous rendus |
 | **R46** | Nouveau. Une ligne **Écran d'en face : Fluide ou Économe** dans le menu de la session. C'est le réglage de cadence de la machine regardée, demandé depuis celle qui regarde, et il part avec **Appliquer les changements** |
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
+| **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
+| **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
 | **R27** | **Refait, et c'est le sujet du lot.** L'écran virtuel ne s'installait sur aucune machine à qui le pilote n'avait pas été donné à la main : la lecture de sa signature posait au fichier une question trop large, à laquelle Windows répond par la liste d'empreintes du catalogue et non par les certificats. À refaire sur une machine qui n'a jamais eu d'écran virtuel |
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
@@ -1346,6 +1348,28 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Le chiffre qui tranche, et il faut le lire.** Ouvrir les statistiques (Ctrl+Alt+Maj+S) et **ne plus toucher à rien** : ni souris, ni clavier, pendant dix secondes. La cadence doit tenir **60**, ou tout près. Si elle s'installe nettement en dessous, faire le calcul : `1000 / (16,7 + temps d'encodage de l'hôte)`. Si le résultat tombe sur ce que tu lis, c'est ce défaut-là qui est de retour, et pas la machine d'en face qui plafonne.
 >
 > **Et il faut vraiment ne pas bouger la souris.** Dès qu'elle bouge, les images arrivent d'elles-mêmes et la cadence remonte quoi qu'il arrive : c'est ce qui a masqué le défaut pendant tout le temps où il était là.
+
+> **R47 (la session demande la cadence de ton écran)**
+>
+> D'abord savoir ce qu'est ton écran : clic droit sur le bureau, **Paramètres d'affichage**, **Paramètres d'affichage avancés**. Le nombre en hertz est celui qui compte.
+>
+> Ouvrir une session. Sur l'écran d'accueil, la ligne sous **Qualité** doit dire ce nombre-là : `1920 x 1080, 60 images par seconde, 20 Mb/s` sur un écran à soixante, `144 images par seconde` sur un écran à cent quarante-quatre.
+>
+> Le journal de la fenêtre dit la mesure en entier : `écran de cet ordinateur : 1920x1080 pixels réels à 60 Hz, agrandissement 100 %`, puis `image demandée au loin en 1920x1080 à 60 images/s et 20 Mb/s en H.264`.
+>
+> **Ce qui est borné, et pourquoi.** En dessous de trente, la session demande trente quand même : un écran plus lent que ça est une lecture qui a mal tourné. Au-dessus de cent quarante-quatre, elle demande une part entière de la cadence de l'écran, donc cent vingt sur un écran à deux cent quarante : chaque image supplémentaire est payée entièrement par la machine d'en face, et une cadence qui ne divise pas celle de l'écran ferait revenir l'irrégularité qu'on cherche à supprimer.
+>
+> **À faire sur deux écrans différents si tu en as.** Déplacer la fenêtre de ZyrDesk sur l'autre écran avant d'ouvrir la session : c'est l'écran de la fenêtre qui est mesuré, pas l'écran principal.
+
+> **R47bis (il ne part plus d'images en trop)**
+>
+> Pendant une session, avec **Fluide**, ouvrir les statistiques (Ctrl+Alt+Maj+S) et **bouger la souris en continu** pendant dix secondes, en larges cercles.
+>
+> Attendu : la cadence tient la valeur demandée et **ne la dépasse pas**. Sur un écran à soixante, elle doit rester à soixante, pas monter à soixante-cinq ou soixante-dix.
+>
+> **Ce que ça corrige, et pourquoi ça ne se voyait pas à l'oeil.** La machine d'en face envoyait par moments deux images pour une : celle qu'elle venait de capturer et la répétition de la précédente, partie un cheveu trop tôt. Celui qui regarde jetait la répétition, il n'a nulle part où la montrer, donc il n'y a jamais eu de déchirure ni d'image doublée à l'écran. Ce que ça coûtait, c'est du travail en face et de la place sur le lien.
+>
+> **Le chiffre à côté.** Dans la ligne de statistiques, `dropped_jitter_pct` compte exactement ces images jetées faute de place à l'écran. Il doit rester très bas, sous le dixième de pour cent.
 
 > **R18 (un réglage survit à tout)**
 >

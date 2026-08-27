@@ -951,9 +951,33 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Et bouger la souris le masquait entièrement.** Les images arrivent alors d'elles-mêmes, l'attente se termine aussitôt, et la cadence redevient celle de la capture. D'où « ça marche quand je bouge la souris », qui est la description exacte d'un délai qui ne s'applique qu'à l'arrêt.
 
-**Décision : la boucle vise une échéance au lieu d'attendre une durée.** L'attente est ce qu'il reste du temps de cette image-là, donc l'encodage sort de l'attente au lieu de s'y ajouter. Et l'échéance suivante est une période après la précédente, jamais plus d'une période après maintenant : la première moitié tient l'écran immobile à la cadence demandée, la seconde empêche une rafale d'images réelles, qui arrivent plus vite que la boucle ne les attend, de repousser au loin la répétition qui la suit.
+**Décision : la boucle vise une échéance au lieu d'attendre une durée.** L'attente est ce qu'il reste du temps de cette image-là, donc l'encodage sort de l'attente au lieu de s'y ajouter. ~~Et l'échéance suivante est une période après la précédente, jamais plus d'une période après maintenant.~~ Cette seconde moitié est corrigée par [D75](#d75-la-cadence-de-la-session-est-celle-de-lécran-et-une-image-capturée-passe-avant-une-image-répétée-2026-08-27-pendant-m4) : deux grilles de même pas finissent par se toucher, et ce qu'elle produisait alors était des images en trop.
 
 **C'est un patch du moteur hôte, et le premier depuis le renommage.** Il n'a rien de ZyrDesk : le défaut touche tout bureau distant servi par ce moteur, et il est candidat à une contribution en amont. Il porte le plafond de Sunshine à deux sur deux, ce qui est le signal que le prochain besoin de ce côté se traite en amont ou par une interface officielle.
+
+## D75. La cadence de la session est celle de l'écran, et une image capturée passe avant une image répétée (2026-08-27, pendant M4)
+
+**Le relevé.** « Je dépasse les 60 fps, il faudrait que ce soit aligné avec mon écran. Là je n'ai pas de déchirure, mais j'ai l'impression que les images supplémentaires cassent la fluidité. »
+
+**Trois choses différentes se cachaient derrière ce chiffre, et une seule était déjà réglée.**
+
+**Un : la cadence demandée était écrite en dur.** Une session s'ouvrait à soixante images par seconde, toujours, quel que soit l'écran devant lequel on est assis. C'est mot pour mot la faute que la taille faisait avant qu'on la mesure : un nombre juste sur l'écran que la plupart des gens ont, et faux sur tous les autres. Sur un écran à cent quarante-quatre, deux rafraîchissements sur trois montrent l'image précédente ; sur un écran à trente, une image sur deux est jetée sans avoir jamais été vue.
+
+**Décision : la session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée au même endroit et au même moment que sa taille.** L'écran de la fenêtre et non l'écran principal, parce qu'un cent quarante-quatre à côté d'un soixante est le cas ordinaire d'un bureau à deux écrans. Bornée entre trente et cent quarante-quatre : en dessous, c'est une lecture qui a mal tourné plutôt qu'un écran sur lequel on travaille ; au-dessus, chaque image supplémentaire est payée entièrement en face, et un bureau distant est du texte et un pointeur, pas un jeu.
+
+**Et un écran plus rapide que le plafond reçoit une part entière de sa propre cadence, pas le plafond.** Tout l'intérêt de mesurer est que les images tombent une par rafraîchissement ; une cadence qui ne divise pas celle de l'écran en met certaines deux par rafraîchissement et laisse les autres réafficher la précédente, ce qui est exactement le défaut qu'on cherche à fermer. Un écran à deux cent quarante reçoit donc cent vingt et non cent quarante-quatre.
+
+**Windows répond zéro ou un pour un écran dont il ne tient pas la cadence, et ça ne veut pas dire « très lent ».** Ces deux valeurs-là veulent dire « pas mesuré » et retombent sur soixante, comme un écran qu'on n'a pas pu mesurer du tout. Sans ça, un écran illisible aurait été moins bien traité qu'un écran invisible.
+
+**Deux : la cadence plancher d'en face était écrite en dur elle aussi, et au même nombre.** Le fichier de configuration du moteur hôte demandait soixante, parce que soixante était ce que toutes les sessions demandaient. Vers un écran à cent quarante-quatre, l'écran immobile serait réémis à soixante ; vers un écran à trente, il l'aurait été à soixante, c'est-à-dire **plus vite que la session ne l'a demandé**. Un plancher au-dessus du plafond est une contradiction, et le moteur ne l'attrapait pas.
+
+**Décision : le plancher est plafonné par ce que la session demande, et la configuration écrit le plafond du produit.** Ce fichier est écrit avant que quiconque sache à quelle cadence la session s'ouvrira ; demander le plus rapide qu'une session atteigne jamais, en sachant que le moteur ne réémettra pas au-delà de ce qui lui est demandé, est la façon exacte de dire « la cadence de la session », quel que soit l'écran.
+
+**Trois : deux grilles de même pas finissent par se toucher, et ce jour-là tout part en double.** C'est la moitié de [D74](#d74-la-cadence-plancher-dun-écran-immobile-est-une-période-pas-un-délai-ajouté-au-travail-2026-08-27-pendant-m4) qu'il fallait reprendre. La répétition existe pour un écran qui a cessé de changer. Mais quand l'écran change, la capture avance sur une grille à elle, à la même cadence que la répétition ; les deux dérivent l'une vers l'autre jusqu'à se toucher, et à cet instant le moindre soubresaut fait expirer l'attente un cheveu avant que l'image n'arrive. Les deux partent. Celui qui regarde jette la répétition, il n'a nulle part où la montrer, mais elle a d'abord été dessinée, encodée et transportée.
+
+**Décision : une image capturée achète une période de battement en plus de la sienne, une image répétée en achète exactement une.** Un écran immobile n'envoie rien du tout : la capture se tait, l'attente expire, et les répétitions tombent alors sur une grille fixe à la cadence demandée, ce qui était le but depuis le début. Une période de battement suffit à ce qu'une image arrivée à l'heure gagne toujours, donc une répétition ne part que lorsqu'une image manque réellement.
+
+**Ce que ça ne change pas, et qu'il faut dire clairement.** Le moteur client cale déjà l'affichage sur l'écran et jette ce qui arrive plus vite que l'écran ne sait montrer. C'est pour cela qu'il n'y a pas de déchirure, et c'est ce que notre ligne de statistiques compte sous `dropped_jitter_pct`, resté entre 0,05 % et 0,07 % sur les relevés. Les images en trop n'étaient donc jamais affichées : ce qu'elles coûtaient, c'est du travail en face et de la place sur le lien, et c'est déjà une raison suffisante de ne pas les envoyer.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

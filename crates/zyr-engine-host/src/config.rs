@@ -66,7 +66,13 @@ pub struct SunshineConfig {
 ///
 /// For a remote desktop, smoothness beats the few redundant frames it
 /// saves: a frozen screen re-encodes for almost nothing.
-const DESKTOP_MINIMUM_FPS: f64 = 60.0;
+///
+/// The fastest a session is ever opened at, and not a number of its own,
+/// because this file is written before anybody knows what rate the
+/// session will ask for. The engine never resends above that rate, so
+/// asking for the ceiling is how this comes out as « the rate of the
+/// session », whatever screen it turns out to be shown on.
+const DESKTOP_MINIMUM_FPS: u32 = zyr_proto::session::FASTEST_RATE;
 
 impl SunshineConfig {
     /// `logs_dir` is the log folder shared by every component: the
@@ -488,7 +494,17 @@ mod tests {
         let rendered = test_config().render_conf();
         // Without this setting, the engine falls back to half the
         // requested rate as soon as the screen stops changing.
-        assert!(rendered.contains("minimum_fps_target = 60"), "{rendered}");
+        //
+        // Le plafond des sessions et non soixante : ce fichier est écrit
+        // avant qu'on sache à quelle cadence la session s'ouvrira, et le
+        // moteur ne réémet jamais au-dessus de ce qu'elle demande.
+        assert!(
+            rendered.contains(&format!(
+                "minimum_fps_target = {}",
+                zyr_proto::session::FASTEST_RATE
+            )),
+            "{rendered}"
+        );
     }
 
     #[test]

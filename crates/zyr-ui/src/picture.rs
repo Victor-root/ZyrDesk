@@ -40,7 +40,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicIsize, Ordering};
 
 use tauri::{AppHandle, Manager};
-use zyr_proto::session::DisplayMode;
+use zyr_proto::session::{DisplayMode, Screen};
 
 /// The engine window this program has taken in hand.
 #[derive(Default)]
@@ -1212,7 +1212,8 @@ fn let_the_corners_go(engine: windows_sys::Win32::Foundation::HWND) {
     LAID.store(0, Ordering::Relaxed);
 }
 
-/// Size of the screen this window sits on, in real pixels.
+/// The screen this window sits on: its size in real pixels, and how many
+/// times a second it refreshes.
 ///
 /// Real pixels and not the ones a page is laid out with: a screen at a
 /// hundred and fifty per cent reports two thirds of what it draws, and
@@ -1220,29 +1221,63 @@ fn let_the_corners_go(engine: windows_sys::Win32::Foundation::HWND) {
 /// mistake this measurement exists to prevent.
 ///
 /// The screen the window is on rather than the main one, because that is
-/// the screen the picture will be shown on.
+/// the screen the picture will be shown on. Two screens on one desk are
+/// rarely the same panel, and a hundred and forty-four next to a sixty
+/// is the ordinary case, not the odd one.
 #[cfg(windows)]
-pub fn the_screen_of_this_computer(app: &AppHandle) -> Option<(u32, u32)> {
+pub fn the_screen_of_this_computer(app: &AppHandle) -> Option<Screen> {
     use windows_sys::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFOEXW, MonitorFromWindow,
     };
 
     let home = home_window(app)?;
-    let mut about: MONITORINFO = unsafe { std::mem::zeroed() };
-    about.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+    let mut about: MONITORINFOEXW = unsafe { std::mem::zeroed() };
+    about.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
     // SAFETY: our own window, and the slot is ours with its size written
-    // in it as the call requires.
+    // in it as the call requires. The wider slot is asked for by that
+    // size, and it is what carries the screen's name out.
     let screen = unsafe {
         let monitor = MonitorFromWindow(home, MONITOR_DEFAULTTONEAREST);
-        (GetMonitorInfoW(monitor, &mut about) != 0).then_some(about.rcMonitor)
+        (GetMonitorInfoW(monitor, (&raw mut about).cast()) != 0).then_some(about)
     }?;
-    let across = u32::try_from(screen.right - screen.left).ok()?;
-    let down = u32::try_from(screen.bottom - screen.top).ok()?;
-    (across > 0 && down > 0).then_some((across, down))
+    let edges = screen.monitorInfo.rcMonitor;
+    let wide = u32::try_from(edges.right - edges.left).ok()?;
+    let high = u32::try_from(edges.bottom - edges.top).ok()?;
+    (wide > 0 && high > 0).then(|| Screen {
+        wide,
+        high,
+        refresh: the_rate_of(&screen.szDevice),
+    })
+}
+
+/// How many times a second the named screen refreshes.
+///
+/// The name comes out of the same call that gave the size, so the rate
+/// read here is that screen's and not the desk's main one. Nought is what
+/// the system itself answers for a screen whose rate it does not hold,
+/// and it is what a failed read answers with here: the two mean the same
+/// thing, and what a session makes of it is settled where the rate is
+/// turned into what it asks for.
+#[cfg(windows)]
+fn the_rate_of(name: &[u16; 32]) -> u32 {
+    use windows_sys::Win32::Graphics::Gdi::{
+        DEVMODEW, ENUM_CURRENT_SETTINGS, EnumDisplaySettingsW,
+    };
+
+    let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
+    mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+    // SAFETY: a name the system just wrote and ended itself, and a slot
+    // of ours with its size written in it as the call requires.
+    let read = unsafe { EnumDisplaySettingsW(name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut mode) };
+    if read == 0 {
+        0
+    } else {
+        mode.dmDisplayFrequency
+    }
 }
 
 #[cfg(not(windows))]
-pub fn the_screen_of_this_computer(_app: &AppHandle) -> Option<(u32, u32)> {
+pub fn the_screen_of_this_computer(_app: &AppHandle) -> Option<Screen> {
     None
 }
 
@@ -1277,31 +1312,35 @@ fn the_magnification(_app: &AppHandle) -> u32 {
 /// write it down.
 pub fn tell_what_is_asked_for(
     app: &AppHandle,
-    screen: Option<(u32, u32)>,
+    screen: Option<Screen>,
     asked: zyr_proto::session::Asked,
     settings: &zyr_proto::session::SessionSettings,
 ) {
     let (wide, high) = (settings.width, settings.height);
     let seen = match screen {
-        Some((across, down)) => format!(
-            "écran de cet ordinateur : {across}x{down} pixels réels, agrandissement {} %",
+        Some(measured) => format!(
+            "écran de cet ordinateur : {}x{} pixels réels à {} Hz, agrandissement {} %",
+            measured.wide,
+            measured.high,
+            measured.refresh,
             the_magnification(app)
         ),
         None => "écran de cet ordinateur : pas mesurable, taille courante supposée".to_string(),
     };
     let why = match screen {
-        Some(measured) if measured == (wide, high) => {
+        Some(measured) if (measured.wide, measured.high) == (wide, high) => {
             "l'écran est demandé entier, un pixel envoyé pour un pixel affiché".to_string()
         }
-        Some((across, down)) => format!(
+        Some(measured) => format!(
             "taille choisie à la main ({asked}) : {:.2} fois moins large et {:.2} fois moins haut que l'écran, donc autant de détail en moins et l'image est étirée à l'arrivée",
-            f64::from(across) / f64::from(wide),
-            f64::from(down) / f64::from(high),
+            f64::from(measured.wide) / f64::from(wide),
+            f64::from(measured.high) / f64::from(high),
         ),
         None => format!("taille demandée : {asked}"),
     };
     crate::journal::note(&format!(
-        "{seen} ; image demandée au loin en {wide}x{high} à {} Mb/s en {}, {why}",
+        "{seen} ; image demandée au loin en {wide}x{high} à {} images/s et {} Mb/s en {}, {why}",
+        settings.fps,
         settings.bitrate_kbps / 1000,
         settings.codec,
     ));

@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 use zyr_control::{Answer, Request};
 use zyr_proto::session::{
-    Asked, CODECS_OFFERED, Codec, DisplayMode, Preferred, RATES_OFFERED, SIZES_OFFERED,
+    Asked, CODECS_OFFERED, Codec, DisplayMode, Preferred, RATES_OFFERED, SIZES_OFFERED, Screen,
 };
 
 use crate::service;
@@ -44,7 +44,7 @@ pub struct Settings {
 impl Settings {
     /// What the screen shows on a computer whose own screen is `screen`,
     /// `None` standing for one that could not be measured.
-    fn shown(preferred: Preferred, screen: Option<(u32, u32)>) -> Self {
+    fn shown(preferred: Preferred, screen: Option<Screen>) -> Self {
         let settings = preferred.settings(screen);
         Self {
             codec: preferred.codec.to_string(),
@@ -133,8 +133,8 @@ pub struct SessionChoice {
 }
 
 impl SessionChoice {
-    fn of(preferred: Preferred, screen: Option<(u32, u32)>) -> Self {
-        let (width, height) = preferred.asked.size(screen);
+    fn of(preferred: Preferred, screen: Option<Screen>) -> Self {
+        let (width, height) = preferred.asked.size(screen.map(Screen::size));
         Self {
             asked: preferred.asked.to_string(),
             bitrate_kbps: preferred.bitrate_kbps,
@@ -191,7 +191,7 @@ pub async fn session_menu(app: tauri::AppHandle) -> SessionMenu {
         sizes: SIZES_OFFERED
             .iter()
             .map(|asked| {
-                let (width, height) = asked.size(screen);
+                let (width, height) = asked.size(screen.map(Screen::size));
                 Offered {
                     value: asked.to_string(),
                     width,
@@ -374,6 +374,16 @@ mod tests {
         }
     }
 
+    /// Un écran ordinaire de cette taille, pour les essais qui ne parlent
+    /// que de taille.
+    fn a_screen(wide: u32, high: u32) -> Screen {
+        Screen {
+            wide,
+            high,
+            refresh: 60,
+        }
+    }
+
     #[test]
     fn what_the_screen_shows_and_sends_back_is_the_same_thing() {
         // Les deux formes se croisent à chaque changement : ce qui
@@ -417,8 +427,18 @@ mod tests {
         assert_eq!((shown.width, shown.height), (1920, 1080));
         assert_eq!(shown.fps, 60);
 
-        let big = Settings::shown(Preferred::default(), Some((3840, 2160)));
+        let big = Settings::shown(
+            Preferred::default(),
+            Some(Screen {
+                wide: 3840,
+                high: 2160,
+                refresh: 144,
+            }),
+        );
         assert_eq!((big.width, big.height), (3840, 2160));
+        // La cadence de l'écran mesuré et non celle du défaut : c'est ce
+        // que la ligne sous « Qualité » doit annoncer.
+        assert_eq!(big.fps, 144);
     }
 
     #[test]
@@ -426,7 +446,7 @@ mod tests {
         // « L'écran » ne se lit pas dans le mot : la ligne doit dire à
         // quoi il revient sur cet ordinateur-ci, sinon on ne sait pas si
         // on demande du 4K ou du 1080p.
-        let screen = SessionChoice::of(Preferred::default(), Some((2560, 1440)));
+        let screen = SessionChoice::of(Preferred::default(), Some(a_screen(2560, 1440)));
         assert_eq!(screen.asked, "screen");
         assert_eq!((screen.width, screen.height), (2560, 1440));
 
@@ -435,7 +455,7 @@ mod tests {
                 asked: Asked::Fixed(1920, 1080),
                 ..Preferred::default()
             },
-            Some((3840, 2160)),
+            Some(a_screen(3840, 2160)),
         );
         assert_eq!((fixed.width, fixed.height), (1920, 1080));
     }

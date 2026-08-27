@@ -150,6 +150,75 @@ impl Default for SessionSettings {
     }
 }
 
+/// The screen a session is going to be shown on, as this computer
+/// measures it.
+///
+/// Its size and its rate, and both for the same reason. A picture asked
+/// for at a size other than the screen it lands on is thrown away twice,
+/// and one asked for at a rate other than the screen refreshes at is
+/// shown unevenly: two frames land inside one refresh and one of them is
+/// never seen, or a refresh comes with nothing new and shows the frame
+/// before it again. Neither is put back by anything downstream, and both
+/// are felt rather than seen, which is why they are worth measuring
+/// rather than assuming.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Screen {
+    pub wide: u32,
+    pub high: u32,
+    /// Times a second it refreshes, as the system rounds it: a panel at
+    /// 59.997 hertz is reported as sixty, which is the number to ask for.
+    pub refresh: u32,
+}
+
+/// Slowest and fastest a session is opened at, whatever a screen says.
+///
+/// A screen slower than the first is a reading that went wrong rather
+/// than a screen anybody works on. Above the second, every extra frame is
+/// paid in full by the far computer, which has to draw it, encode it and
+/// send it, and no desktop needs it: a remote desktop is text and a
+/// pointer, not a game. The ceiling covers the panels people actually sit
+/// in front of, a hundred and forty-four included, and there is nowhere
+/// to turn it down from, so it stands in for the dial that does not
+/// exist.
+pub const SLOWEST_RATE: u32 = 30;
+pub const FASTEST_RATE: u32 = 144;
+
+impl Screen {
+    /// The rate a session opened on this screen asks for.
+    ///
+    /// Nought and one are what Windows answers for a screen whose rate it
+    /// does not hold. They mean « not measured » and not « very slow », so
+    /// they fall back to what every session asked for before anything was
+    /// measured rather than down to the floor, which would make an
+    /// unreadable screen worse off than an unmeasurable one.
+    ///
+    /// A screen faster than the ceiling is served a whole share of its
+    /// own rate rather than the ceiling itself. The whole point of
+    /// measuring is a picture whose frames land one to a refresh, and a
+    /// rate that does not divide the screen's puts some of them two to a
+    /// refresh and leaves others showing the frame before, which is the
+    /// very fault this exists to close. So a screen above the ceiling is
+    /// halved, then divided by three, until what is left fits.
+    pub fn rate(self) -> u32 {
+        match self.refresh {
+            0 | 1 => SessionSettings::default().fps,
+            measured if measured < SLOWEST_RATE => SLOWEST_RATE,
+            measured => {
+                let mut share = 1;
+                while measured / share > FASTEST_RATE {
+                    share += 1;
+                }
+                measured / share
+            }
+        }
+    }
+
+    /// Its size alone, for the parts that only ever cared about that.
+    pub fn size(self) -> (u32, u32) {
+        (self.wide, self.high)
+    }
+}
+
 /// Size of picture to ask the far computer for.
 ///
 /// The screen by default, and that word rather than a number on purpose:
@@ -437,11 +506,17 @@ impl Default for Preferred {
 impl Preferred {
     /// The settings a session opens with on a computer whose screen has
     /// been measured, `None` standing for one that could not be.
-    pub fn settings(self, screen: Option<(u32, u32)>) -> SessionSettings {
-        let (width, height) = self.asked.size(screen);
+    pub fn settings(self, screen: Option<Screen>) -> SessionSettings {
+        let (width, height) = self.asked.size(screen.map(Screen::size));
         SessionSettings {
             width,
             height,
+            // The rate of the screen it lands on, measured, and sixty
+            // when it could not be. Sixty was what every session asked
+            // for before anything was measured: right on the screens
+            // most people have, and a picture shown unevenly on all the
+            // others, which is the same mistake the size used to make.
+            fps: screen.map_or(SessionSettings::default().fps, Screen::rate),
             bitrate_kbps: self.bitrate_kbps,
             codec: self.codec,
             display_mode: self.display_mode,
@@ -484,6 +559,16 @@ pub fn parse_resolution(value: &str) -> Result<(u32, u32), InvalidResolution> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Un écran ordinaire de cette taille, pour les essais qui ne parlent
+    /// que de taille.
+    fn a_screen(wide: u32, high: u32) -> Screen {
+        Screen {
+            wide,
+            high,
+            refresh: 60,
+        }
+    }
 
     #[test]
     fn codecs_carry_the_engine_spelling() {
@@ -598,8 +683,48 @@ mod tests {
             bitrate_kbps: 15_000,
             ..Preferred::default()
         };
-        assert_eq!(chosen.settings(Some((3840, 2160))).bitrate_kbps, 15_000);
+        assert_eq!(
+            chosen.settings(Some(a_screen(3840, 2160))).bitrate_kbps,
+            15_000
+        );
         assert_eq!(chosen.settings(None).bitrate_kbps, 15_000);
+    }
+
+    #[test]
+    fn the_session_asks_for_the_rate_of_the_screen_it_lands_on() {
+        // Un écran à cent quarante-quatre reçoit cent quarante-quatre
+        // images, pas soixante : deux rafraîchissements sur trois
+        // montraient l'image précédente.
+        let on = |refresh| {
+            Preferred::default()
+                .settings(Some(Screen {
+                    wide: 1920,
+                    high: 1080,
+                    refresh,
+                }))
+                .fps
+        };
+        assert_eq!(on(60), 60);
+        assert_eq!(on(144), 144);
+        // Au-dessus du plafond, une part entière de la cadence de
+        // l'écran et non le plafond : les images doivent continuer de
+        // tomber une par rafraîchissement.
+        assert_eq!(on(240), 120);
+        assert_eq!(on(360), 120);
+        assert_eq!(on(165), 82);
+        // Sous le plancher, le plancher.
+        assert_eq!(on(24), SLOWEST_RATE);
+        // Zéro et un sont ce que Windows répond pour un écran dont il ne
+        // tient pas la cadence : « pas mesuré » et non « très lent »,
+        // donc le défaut et pas le plancher.
+        assert_eq!(on(0), SessionSettings::default().fps);
+        assert_eq!(on(1), SessionSettings::default().fps);
+        // Écran non mesurable : ce que le produit demandait avant que
+        // quoi que ce soit soit mesuré.
+        assert_eq!(
+            Preferred::default().settings(None).fps,
+            SessionSettings::default().fps
+        );
     }
 
     #[test]
@@ -617,7 +742,7 @@ mod tests {
             system_keys: false,
             steady_far_rate: false,
         };
-        let settings = preferred.settings(Some((3840, 2160)));
+        let settings = preferred.settings(Some(a_screen(3840, 2160)));
         assert_eq!((settings.width, settings.height), (2560, 1440));
         assert_eq!(settings.bitrate_kbps, 40_000);
         assert_eq!(settings.codec, Codec::Av1);
