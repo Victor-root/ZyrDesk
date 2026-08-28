@@ -1091,6 +1091,30 @@ Le service dit que l'écran dort. Le moteur le voit allumé et le capture. L'un 
 
 **Ce qu'il faut en retenir au-delà de ce défaut.** Deux fois de suite sur ce sujet, on a pris pour acquis ce qu'un appel Windows a répondu au lieu de vérifier ce qui s'était réellement produit : d'abord en croyant qu'un périphérique démarré était un écran prêt ([D80](#d80-un-écran-naît-à-la-taille-quon-lui-demande-et-un-refus-de-windows-se-réessaie-2026-08-27-pendant-m4)), puis en croyant que des drapeaux disaient un état. Tout ce qui touche à l'affichage se vérifie en le regardant, jamais en le déduisant.
 
+## D82. Un service n'a pas de bureau, et on ne range pas un écran pendant que le moteur remet les autres (2026-08-28, pendant M4)
+
+**Le relevé.** La lecture d'état est corrigée depuis [D81](#d81-on-demande-au-périphérique-ce-quil-fait-pas-ce-qui-a-été-écrit-sur-lui-2026-08-27-pendant-m4) et le contrôle passe, mais l'ouverture d'une session traîne cinq secondes et la machine hôte se retrouve avec des écrans rallumés que son propriétaire avait éteints.
+
+**Un : compter les écrans depuis un service ne compte rien.** L'attente posée la veille marchait sur le nombre d'écrans du bureau, lu en parcourant les périphériques d'affichage de ce programme. Cette question-là porte sur le poste de travail de celui qui la pose, et un service est assis sur un poste **sans bureau du tout**. Les écrans sont là, la réponse ne vient pas, et l'attente attendait un changement qui ne pouvait pas se voir : `the virtual screen was woken but has not joined the desktop after 5000 ms` sur un écran parfaitement réveillé, cinq secondes ajoutées à chaque ouverture.
+
+**Ce qui le prouve dans le même relevé.** L'endormissement qui suit réussit du premier coup, donc le périphérique tournait bien ; et le moteur d'en face, en essayant de remettre les écrans, nomme cet écran dans sa topologie, donc il y était.
+
+**Décision : la question se pose à la configuration d'affichage que le système tient, pas au poste de travail de celui qui demande.** C'est aussi ce que lit le moteur d'en face, donc les deux moitiés du produit regardent enfin la même chose.
+
+**Deux : on rangeait l'écran pendant que le moteur remettait les autres.** Une session qui se termine, c'est le moteur d'en face qui remet en place les écrans qu'il avait éteints pour elle, et l'arrangement qu'il remet est celui qui contenait notre écran virtuel. Nous l'endormions dans la même seconde. Le moteur se retrouvait à restaurer un écran qui n'existe plus :
+
+```
+Error: Device {5eb52002-...} does not exist in the available path source data!
+Failed to change topology to: [...]
+Warning: Failed to revert display device configuration. Enabling all of the available devices
+```
+
+**Et « allumer tous les écrans disponibles » est exactement ce qu'il ne faut pas faire chez quelqu'un.** Sur la machine du relevé, un écran éteint par son propriétaire s'est rallumé, et le service a dû redémarrer le moteur par-dessus. Nous avons cassé la disposition d'écrans de quelqu'un en rangeant la nôtre.
+
+**Décision : on attend que le bureau cesse de changer avant d'endormir.** Pas un délai choisi au hasard : le moteur change le compte d'écrans à chaque écran qu'il déplace, donc une période sans aucun changement est une période où plus rien ne se passe. Dix secondes de patience, huit dixièmes de calme pour conclure, et ce que ça coûte est quelques secondes que personne ne regarde.
+
+**Et c'est la troisième fois que le même piège se referme.** Croire qu'un périphérique démarré est un écran prêt, croire que des drapeaux disent un état, croire qu'une énumération répond depuis un service. À chaque fois, une réponse de Windows prise pour la réalité. Tout ce qui touche à l'affichage se vérifie en le regardant, et depuis l'endroit d'où il est visible.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

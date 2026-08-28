@@ -287,6 +287,16 @@ fn settled(before: usize) -> Option<u128> {
 /// case: this is asked at every start of the service and at the end of
 /// every session, so that a computer whose service was killed mid-session
 /// does not keep a screen its owner never asked for.
+///
+/// It waits for the desktop to stop changing first, and that wait is the
+/// point of this whole function. A session ending is the far engine
+/// putting back the screens it had switched off for it, and the
+/// arrangement it puts back is the one that had this screen in it. Taking
+/// the screen away while it is halfway through leaves it restoring a
+/// screen that no longer exists: it gives up, switches every screen it
+/// can find back on to be safe, and the person at this computer finds
+/// monitors they had switched off themselves lit up again. Waiting costs
+/// a few seconds nobody is looking at.
 #[cfg(windows)]
 pub fn go_to_sleep(driver: &dyn Driver) -> Result<Done, Trouble> {
     let mut done = Done::default();
@@ -294,11 +304,55 @@ pub fn go_to_sleep(driver: &dyn Driver) -> Result<Done, Trouble> {
         None => done.step("no virtual screen on this computer to put to sleep"),
         Some(false) => done.step("virtual screen already asleep"),
         Some(true) => {
+            if let Some(waited) = the_desktop_settled() {
+                done.step(format!("the desktop stopped changing after {waited} ms"));
+            } else {
+                done.step(format!(
+                    "the desktop was still changing after {} ms, putting the screen to sleep \
+                     anyway",
+                    SETTLING.as_millis()
+                ));
+            }
             place::sleep(driver, &mut done)?;
             done.changed = true;
         }
     }
     Ok(done)
+}
+
+/// How long the desktop is given to stop changing, and how still it has
+/// to be before it counts as settled.
+///
+/// The long one covers a far engine putting several screens back one at a
+/// time, which is the slowest thing that happens here. The short one is
+/// what says it has finished: it changes the count every time it moves a
+/// screen, so a stretch with no change at all is a stretch with nothing
+/// happening.
+#[cfg(windows)]
+const SETTLING: std::time::Duration = std::time::Duration::from_secs(10);
+#[cfg(windows)]
+const STILLNESS: std::time::Duration = std::time::Duration::from_millis(800);
+
+/// Waits for the desktop to stop being rearranged, and says how long that
+/// took. Nothing when it never stopped.
+#[cfg(windows)]
+fn the_desktop_settled() -> Option<u128> {
+    let start = std::time::Instant::now();
+    let mut seen = place::screens_on_the_desktop();
+    let mut since = start;
+    while start.elapsed() < SETTLING {
+        std::thread::sleep(ASKING_AGAIN);
+        let now = place::screens_on_the_desktop();
+        if now == seen {
+            if since.elapsed() >= STILLNESS {
+                return Some(start.elapsed().as_millis());
+            }
+            continue;
+        }
+        seen = now;
+        since = std::time::Instant::now();
+    }
+    None
 }
 
 #[cfg(not(windows))]
