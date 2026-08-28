@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R56** | **Nouveau, et c'est la correction que R55 a permis de trouver.** Le gel au verrouillage venait du moteur hôte, qui redemandait l'écran deux fois autour de deux cents millisecondes de sommeil : quatre cents millisecondes dormies par réinitialisation, trois réinitialisations par verrouillage. Il redemande maintenant toutes les vingt-cinq millisecondes. À vérifier après recompilation du **moteur hôte** |
 | **R55** | **Instrumentation, pas encore une correction.** L'image se fige une à deux secondes quand on verrouille l'ordinateur distant depuis le menu flottant. Le chemin du verrouillage est maintenant chronométré de bout en bout, des deux côtés, et le programme qui verrouille attend que le bureau change réellement de mains au lieu de répondre sur la simple prise en compte de l'ordre |
 | **R54** | **Nouveau.** La longueur de la route est écrite dans le journal à l'ouverture de chaque session, puis à chaque fois qu'elle double ou qu'elle est divisée par deux. Une session dont le trajet change en cours de route, parce qu'un VPN prend la route par défaut d'une des deux machines, restait totalement invisible en dehors de la fenêtre de statistiques |
 | **R53** | **Nouveau, et c'est la vraie cause du gel.** La session se figeait totalement deux secondes après son ouverture, connexion toujours vivante. Le transport retombe au plus petit paquet garanti dès qu'il juge que le chemin ne porte plus les gros, ce qui arrive sur un tunnel porté dans un autre ; le moteur, lui, garde pour toute la session la taille qu'on lui a dite au départ. Chaque paquet vidéo devenait alors trop gros et était jeté en silence. La taille se calcule sur le plancher garanti maintenant, et ce qui est jeté est écrit dans le journal |
@@ -1426,6 +1427,20 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R56 (le verrouillage ne fige plus une seconde et demie)**
+>
+> **Le moteur hôte doit avoir été recompilé**, sans quoi il n'y a rien à voir.
+>
+> Session ouverte, **Verrouiller** dans le menu flottant. L'image doit repartir presque tout de suite au lieu de rester figée une à deux secondes.
+>
+> **Le chiffre qui le prouve**, dans `engine-console.log` de la machine verrouillée :
+>
+> `Capture reinitialized after ...ms (...ms waiting for the encoders to let the display go, ...ms finding it again)`
+>
+> La seconde moitié, « finding it again », donnait quatre cent vingt-huit à six cent dix millisecondes. Elle doit maintenant tomber à quelques dizaines. La première moitié, elle, ne change pas : ce n'est pas ce qui a été touché.
+>
+> **Compter aussi les lignes.** Il y en avait trois pour un seul verrouillage. Si elles restent trois, c'est le prochain sujet ; si le total du gel est déjà supportable, ça peut attendre.
 
 > **R55 (le verrouillage, chronométré de bout en bout)**
 >

@@ -1203,6 +1203,28 @@ the virtual screen was woken but has not joined the desktop after 5000 ms
 
 **La règle, générale.** Ce que le produit ne peut pas corriger, il doit au moins le dire. Une dégradation invisible coûte plus cher qu'une panne, parce qu'une panne se raconte et qu'une dégradation se subit.
 
+## D88. Le même sommeil en aveugle, un cran plus haut (2026-08-28, pendant M4)
+
+**Le relevé, obtenu parce qu'on l'a enfin mesuré.** L'image se fige une à deux secondes au verrouillage de l'ordinateur d'en face. Le chemin du verrouillage a été chronométré des deux côtés ([R55](testing/M4-PROTOCOLE.md)), et notre moitié est hors de cause : soixante et une millisecondes, puis quarante-neuf. Le moteur, lui, dit ceci :
+
+```
+Capture reinitialized after 702ms (92ms waiting for the encoders to let the display go, 610ms finding it again)
+Capture reinitialized after 489ms (61ms ..., 428ms finding it again)
+Capture reinitialized after 486ms (30ms ..., 456ms finding it again)
+```
+
+**Trois réinitialisations pour un seul verrouillage, et toujours la même moitié qui coûte.** Retrouver l'écran prend quatre cent vingt-huit à six cent dix millisecondes ; l'attente des encodeurs, trente à quatre-vingt-douze.
+
+**Et l'arithmétique est lisible à l'œil nu.** Le moteur redemandait l'écran deux fois, avec deux cents millisecondes de sommeil entre les deux : quatre cents millisecondes de sommeil pur, et vingt-huit de travail réel dans le cas à quatre cent vingt-huit.
+
+**C'est exactement le défaut corrigé par [P-S4](../patches/MANIFEST.md), une copie plus haut, et manquée.** P-S4 a réparé trois copies du motif dans le fichier de la duplication d'écran. Il y en avait une quatrième dans la boucle de capture, sur l'écran lui-même, et elle n'a pas été cherchée.
+
+**Décision : on redemande l'écran au lieu de dormir dessus**, toutes les vingt-cinq millisecondes jusqu'à cinq cents. Vingt-cinq et non cinq comme un cran plus bas : construire un écran n'est pas gratuit, c'est la raison d'être du sommeil d'origine, et tourner à vide dessus serait remplacer un défaut par un autre.
+
+**La leçon, et elle est de méthode.** Un défaut corrigé à un endroit se cherche partout ailleurs dans la même forme, tout de suite, dans le même lot. « Le même motif était écrit trois fois dans le même fichier » aurait dû être une question et pas une conclusion : trois fois dans ce fichier-là, et combien dans les autres.
+
+**Et ce qui l'a rendu trouvable en une soirée** : le chronomètre posé la veille sur le verrouillage. La ligne du moteur ne disait pas seulement « ça a pris sept cents millisecondes », elle disait laquelle des deux moitiés les avait prises. Sans cette séparation, le relevé aurait désigné le moteur sans désigner l'endroit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
