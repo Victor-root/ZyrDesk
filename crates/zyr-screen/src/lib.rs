@@ -325,9 +325,14 @@ pub fn go_to_sleep(driver: &dyn Driver) -> Result<Done, Trouble> {
 ///
 /// The long one covers a far engine putting several screens back one at a
 /// time, which is the slowest thing that happens here. The short one is
-/// what says it has finished: it changes the count every time it moves a
-/// screen, so a stretch with no change at all is a stretch with nothing
-/// happening.
+/// what says it has finished.
+///
+/// What is watched is the machine's screens arriving and leaving, so a
+/// screen the engine merely moves or switches off through the display
+/// configuration goes by unseen. The short wait is therefore worth
+/// something in its own right and not only as a measurement: it is the
+/// moment given to a restore to run before ours is taken away from
+/// under it.
 #[cfg(windows)]
 const SETTLING: std::time::Duration = std::time::Duration::from_secs(10);
 #[cfg(windows)]

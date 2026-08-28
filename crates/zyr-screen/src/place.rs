@@ -251,29 +251,57 @@ pub fn present(driver: &dyn Driver) -> Result<bool, Trouble> {
     Ok(find_device(driver)?.is_some())
 }
 
-/// How many screens the desktop is made of right now.
+/// The number Windows files monitors under.
+///
+/// Fixed by Windows rather than chosen by a driver, which is why it is
+/// written here and not asked of one: whatever grew a screen, the screen
+/// itself is filed under this.
+const MONITORS: GUID = GUID {
+    data1: 0x4d36_e96e,
+    data2: 0xe325,
+    data3: 0x11ce,
+    data4: [0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18],
+};
+
+/// How many screens this machine is showing right now.
 ///
 /// What waking a screen is waited on with. Windows hands back from
 /// starting a device long before that device is a screen anybody can
-/// capture: the desktop has to be rebuilt around it first, and nothing
-/// says when that is done. Counting is enough to know, needs no name, and
-/// is the same question whatever driver grew the screen.
+/// capture: the screen has to be built around it first, and nothing says
+/// when that is done. Counting is enough to know and needs no name.
+///
+/// Counted at the device and not on the desktop, and that is the whole
+/// of why this reads the way it does. The obvious question, « how many
+/// display devices are attached to the desktop », is asked of the window
+/// station the caller sits on, and a service sits on one that has no
+/// desktop at all: the screens are there, the answer is not, and a wait
+/// built on it waits five seconds for a change it can never see. Device
+/// nodes belong to the machine rather than to a session, so this is the
+/// same answer from anywhere, and a virtual screen waking up is a
+/// monitor arriving.
 pub fn screens_on_the_desktop() -> usize {
-    use windows_sys::Win32::Graphics::Gdi::{
-        DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICEW, EnumDisplayDevicesW,
+    // SAFETY: the number is ours and outlives the call.
+    let set = unsafe {
+        SetupDiGetClassDevsW(
+            &MONITORS,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            DIGCF_PRESENT,
+        )
     };
-
+    if set == NOTHING {
+        return 0;
+    }
+    let set = Set(set);
     let mut seen = 0;
     for index in 0.. {
-        let mut device: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
-        device.cb = size_of::<DISPLAY_DEVICEW>() as u32;
-        // SAFETY: the slot is ours with its size written in it as the
-        // call requires, and no name is given so the list is the
-        // machine's own adapters.
-        if unsafe { EnumDisplayDevicesW(std::ptr::null(), index, &mut device, 0) } == 0 {
+        let mut device = empty_device();
+        // SAFETY: the list is alive and the slot is ours with its size
+        // written in it as the call requires.
+        if unsafe { SetupDiEnumDeviceInfo(set.0, index, &mut device) } == 0 {
             break;
         }
-        if device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP != 0 {
+        if started(&device) {
             seen += 1;
         }
     }
@@ -341,24 +369,27 @@ pub fn the_main_screen() -> Option<(u32, u32)> {
 /// started is a device drawing a screen, whatever anybody wrote down
 /// about it.
 pub fn awake(driver: &dyn Driver) -> Result<Option<bool>, Trouble> {
+    let Some(found) = find_device(driver)? else {
+        return Ok(None);
+    };
+    Ok(Some(started(&found.device)))
+}
+
+/// Whether that device node is running.
+///
+/// A node with nothing to say is a node drawing nothing, which is the
+/// answer being asked for rather than a failure worth reporting.
+fn started(device: &SP_DEVINFO_DATA) -> bool {
     use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
         CM_Get_DevNode_Status, CR_SUCCESS, DN_STARTED,
     };
 
-    let Some(found) = find_device(driver)? else {
-        return Ok(None);
-    };
     let mut status = 0u32;
     let mut problem = 0u32;
-    // SAFETY: both slots are ours, and the device node comes from the
-    // list this file opened and still holds.
-    let answer =
-        unsafe { CM_Get_DevNode_Status(&mut status, &mut problem, found.device.DevInst, 0) };
-    if answer != CR_SUCCESS {
-        // No node to ask means nothing is drawing anything.
-        return Ok(Some(false));
-    }
-    Ok(Some(status & DN_STARTED != 0))
+    // SAFETY: both slots are ours, and the device node comes from a list
+    // this file opened and still holds.
+    let answer = unsafe { CM_Get_DevNode_Status(&mut status, &mut problem, device.DevInst, 0) };
+    answer == CR_SUCCESS && status & DN_STARTED != 0
 }
 
 /// Takes a driver package into Windows' own store of drivers.
