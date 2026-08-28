@@ -330,6 +330,35 @@ function lePanneau() {
     : document.getElementById(`panneau-${panneauOuvert}`);
 }
 
+/* Air laissé entre la carte et le bord de l'écran, et plus petite liste
+   qui vaille encore la peine d'être ouverte. */
+const AIR = 32;
+const MOINS_QUE_CA = 200;
+
+/* Borne la liste à ce que l'écran peut porter.
+
+   L'écran et non la fenêtre : cette fenêtre-ci fait exactement la taille
+   de ce que la page dessine, donc la borner à une fraction d'elle-même
+   la bornait à une fraction de ce qu'elle allait devenir. La liste
+   défilait avec la moitié de la carte vide en dessous, sur un écran où
+   il y avait toute la place du monde.
+
+   Ce que la carte occupe autour de la liste est mesuré et non deviné :
+   un titre, un trait et des marges, et rien ne dit d'avance combien ça
+   fait sur un écran agrandi. */
+function borneLaListe(panneau) {
+  const liste = panneau.querySelector(".sous-liste");
+  const ecran = window.screen?.availHeight ?? 0;
+  if (!liste || ecran <= 0) {
+    return;
+  }
+  liste.style.maxHeight = "none";
+  const autour =
+    panneau.getBoundingClientRect().height -
+    liste.getBoundingClientRect().height;
+  liste.style.maxHeight = `${Math.max(ecran - autour - AIR, MOINS_QUE_CA)}px`;
+}
+
 function montrePanneau(nom) {
   panneauOuvert = nom;
   for (const panneau of document.querySelectorAll(".panneau")) {
@@ -339,6 +368,9 @@ function montrePanneau(nom) {
     // permanence.
     panneau.classList.toggle("rangee", !ici);
     panneau.classList.toggle("repliee", !ici);
+    if (ici) {
+      borneLaListe(panneau);
+    }
   }
   for (const item of document.querySelectorAll("[data-ouvre-panneau]")) {
     item.setAttribute(
@@ -375,6 +407,14 @@ function ouvre(veut) {
     litLaSouris();
     litLeSon();
     litLeClavier();
+    // Et le reste avec, pour la même raison exactement. Résolution,
+    // débit, codec et cadence d'en face sont lus une fois au chargement
+    // de la page, et la page vit toute la session : appliquer un
+    // changement rouvre l'image avec, mais le menu continuait de
+    // montrer ce qu'il avait lu au début, donc « Appliquer les
+    // changements » restait affiché pour toujours, sur des réglages
+    // déjà appliqués.
+    litLeMenu();
   }
   // Et la fenêtre suit ce que la page dessine maintenant, jusqu'à ce
   // qu'elle ait fini de le dessiner : taillée sur l'état d'avant, elle
@@ -463,12 +503,6 @@ const LIGNES = {
       return taille && taille.width > 0
         ? rapport(taille.width, taille.height)
         : "";
-    },
-    // Ce que les deux premières font, écrit sous elles.
-    pourquoi: {
-      client:
-        "L'ordinateur d'en face est mis à la taille de cet écran-ci. Un pixel envoyé pour un pixel affiché, rien d'étiré nulle part.",
-      host: "L'ordinateur d'en face n'est pas touché : sa résolution reste celle qu'il a, et l'image est mise à l'échelle ici. C'est le choix qui ne réarrange rien chez lui.",
     },
     ou: (choix) => choix.asked,
   },
@@ -676,16 +710,14 @@ function batisLesChoix() {
           montrePanneau(null);
         });
         dedans.push(entree);
-
-        const pourquoi = ligne.pourquoi?.[valeur];
-        if (pourquoi) {
-          const dit = document.createElement("p");
-          dit.className = "pourquoi";
-          dit.textContent = pourquoi;
-          dedans.push(dit);
-        }
       }
       liste.replaceChildren(...dedans);
+      // Rebâtie, elle n'a plus la même hauteur : ce qui la borne est à
+      // remesurer, et seulement quand elle est là pour être mesurée.
+      const panneau = lePanneau();
+      if (panneau?.contains(liste)) {
+        borneLaListe(panneau);
+      }
       continue;
     }
     const ici = bloc(nom);

@@ -342,6 +342,14 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
             // asked afresh, and with what is chosen now.
             wanted.hush_the_far_speakers = preferred.mute_far_speakers;
             wanted.steady_far_rate = preferred.steady_far_rate;
+            // And whether that computer is to grow a screen for this
+            // session at all, which is the one thing the resolution
+            // decides over there. Left as the first opening set it, a
+            // session moved to « the host's own resolution » went on
+            // waking a virtual screen on the far machine and asking it
+            // for a size, which is exactly what that choice exists not
+            // to do.
+            wanted.wants_a_screen_over_there = preferred.asked.wants_a_screen_over_there();
             continue;
         }
 

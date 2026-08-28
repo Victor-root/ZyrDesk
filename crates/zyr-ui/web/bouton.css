@@ -339,12 +339,18 @@
 }
 
 /* La liste elle-même. Quinze entrées ne tiennent pas toujours dans la
-   hauteur d'un écran une fois le bouton posé en bas : elle défile, et
-   seule elle, pour que le retour reste sous la main. */
+   hauteur d'un écran : elle défile alors, et seule elle, pour que le
+   titre reste sous la main.
+
+   Sa hauteur maximale est posée par le script, en pixels, et elle vient
+   de l'écran. Elle était écrite ici en fraction de la fenêtre, ce qui
+   est un serpent qui se mord la queue : cette fenêtre-là fait la taille
+   de ce que la page dessine, donc borner la page à une fraction de la
+   fenêtre revient à la borner à une fraction d'elle-même. La liste
+   défilait avec la moitié de la carte vide en dessous. */
 .sous-liste {
   display: flex;
   flex-direction: column;
-  max-height: 60vh;
   overflow-y: auto;
 }
 
@@ -366,20 +372,6 @@
   stroke-linejoin: round;
   color: var(--accent-vif);
   opacity: 0;
-}
-
-/* Ce que les deux premières entrées veulent dire, écrit sous elles
-   plutôt que caché dans une infobulle : ce sont les deux seules du menu
-   dont le nom ne suffit pas, et une infobulle demande un survol que
-   personne ne fait sur un menu qu'on traverse. */
-.sous-liste .pourquoi {
-  margin: 0 0 var(--pas-2);
-  padding: 0 var(--pas-2) 0 calc(var(--pas-2) + 18px + var(--pas-3));
-  font-size: var(--legende);
-  line-height: 1.4;
-  color: var(--texte-faible);
-  white-space: normal;
-  max-width: 34ch;
 }
 
 /* ---- L'interrupteur à deux côtés ------------------------------------- */
