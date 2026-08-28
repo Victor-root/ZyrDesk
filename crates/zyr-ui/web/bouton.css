@@ -146,6 +146,28 @@
    dessiné nulle part : c'était le clignotement. Ce qui n'est pas dessiné
    est découpé hors de la fenêtre, donc un menu replié ne se voit pas et
    n'attrape aucun clic. */
+/* Le menu et le sous-menu, côte à côte, le sous-menu à gauche.
+
+   À gauche parce que le bloc est accroché au coin haut droit de la
+   fenêtre : c'est de ce côté-là qu'il y a de la place, et une carte
+   ouverte à droite sortirait de l'image. L'ordre du dessin est donc
+   l'inverse de l'ordre de la page, où le menu vient en premier parce
+   qu'il est ce qu'on ouvre en premier.
+
+   Alignées par le haut, et par le bas quand le menu s'ouvre vers le
+   haut : les deux cartes n'ont pas la même hauteur, et c'est le bord
+   d'où elles s'ouvrent qui doit rester commun. */
+.cartes {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  gap: var(--pas-2);
+}
+
+.paquet.vers-le-haut .cartes {
+  align-items: flex-end;
+}
+
 .menu.repliee {
   visibility: hidden;
 }
@@ -306,6 +328,12 @@
 }
 
 /* Le retour, qui porte le nom de ce qu'on est en train de régler. */
+/* Le chevron dit dans quel sens la liste s'ouvre, donc il tourne quand
+   elle est ouverte : elle apparaît à gauche, il pointe vers elle. */
+.item[aria-expanded="true"] .chevron {
+  transform: rotate(180deg);
+}
+
 .retour .item-mot {
   font-weight: 600;
 }

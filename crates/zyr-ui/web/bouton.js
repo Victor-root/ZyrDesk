@@ -158,11 +158,14 @@ const LOGO = {
 };
 
 /* Tout ce que la page peut occuper, qui est le bloc et rien d'autre.
-   Il y avait trois sous-menus à rattraper ici, sortis du flux et donc
-   invisibles à la mesure du bloc, et ils s'ouvraient vers la gauche parce
-   que c'était le seul côté où la fenêtre pouvait grandir sans que le logo
-   bouge. Les curseurs qui les remplacent sont dans le menu, à leur place,
-   et il n'y a plus rien qui déborde. */
+
+   Rien d'autre, et c'est une règle à tenir. Il y avait autrefois trois
+   sous-menus à rattraper ici, sortis du flux et donc invisibles à la
+   mesure du bloc. Celui de la résolution est dans le flux, dans la
+   rangée, à côté du menu : le bloc l'enferme, donc cette mesure le voit
+   sans rien savoir de lui. Un panneau qu'on poserait un jour hors du
+   flux serait à rattraper ici, et c'est exactement ce qu'il ne faut pas
+   refaire. */
 function laBoite() {
   const boite = vue.paquet.getBoundingClientRect();
   // Compté depuis le bord auquel la page est collée. Vers le haut, le
@@ -234,6 +237,15 @@ function formeOccupee(echelle) {
 
   if (ouvert) {
     carte(vue.menu);
+    // La carte du sous-menu, sans quoi la page la dessine et la fenêtre
+    // la découpe aussitôt : la liste s'ouvrait bel et bien, elle était
+    // simplement taillée hors de la fenêtre. De dehors, le menu
+    // disparaissait et rien n'arrivait, ce qui ressemble trait pour
+    // trait à un menu qui se ferme tout seul.
+    const panneau = lePanneau();
+    if (panneau) {
+      carte(panneau);
+    }
   }
   return morceaux;
 }
@@ -303,21 +315,37 @@ function suisLeDessin() {
   pas();
 }
 
-/* Le sous-menu ouvert, ou rien. Une vue à la fois : cette fenêtre est
-   étroite et suit ce que la page occupe, donc le menu s'efface pendant
-   que la liste est là plutôt que de s'empiler avec elle. */
+/* Le sous-menu ouvert, ou rien.
+
+   Il s'ouvre à côté du menu et non à sa place. À sa place, ouvrir la
+   liste effaçait le menu, ce qui ne se lit pas comme une liste qui
+   s'ouvre mais comme un menu qui se ferme : on croyait avoir raté le
+   clic. Côte à côte, on voit d'où l'on vient, on choisit, et le menu est
+   toujours là. */
 let panneauOuvert = null;
+
+function lePanneau() {
+  return panneauOuvert === null
+    ? null
+    : document.getElementById(`panneau-${panneauOuvert}`);
+}
 
 function montrePanneau(nom) {
   panneauOuvert = nom;
   for (const panneau of document.querySelectorAll(".panneau")) {
     const ici = panneau.id === `panneau-${nom}`;
+    // Rangé et non seulement caché : caché, il garderait sa place dans
+    // la rangée et la fenêtre ferait la largeur des deux cartes en
+    // permanence.
     panneau.classList.toggle("rangee", !ici);
     panneau.classList.toggle("repliee", !ici);
   }
-  // Le menu se retire du dessin plutôt que de se cacher : laissé en
-  // place sous la liste, la fenêtre ferait leurs deux hauteurs.
-  vue.menu.classList.toggle("rangee", nom !== null);
+  for (const item of document.querySelectorAll("[data-ouvre-panneau]")) {
+    item.setAttribute(
+      "aria-expanded",
+      item.dataset.ouvrePanneau === nom ? "true" : "false",
+    );
+  }
   suisLeDessin();
 }
 
@@ -848,8 +876,14 @@ for (const item of document.querySelectorAll("[data-acte]")) {
 }
 
 for (const item of document.querySelectorAll("[data-ouvre-panneau]")) {
+  // La même ligne ouvre et referme : une liste ouverte à côté du menu se
+  // referme là où on l'a ouverte, et pas seulement par son titre.
   item.addEventListener("click", () =>
-    montrePanneau(item.dataset.ouvrePanneau),
+    montrePanneau(
+      panneauOuvert === item.dataset.ouvrePanneau
+        ? null
+        : item.dataset.ouvrePanneau,
+    ),
   );
 }
 
