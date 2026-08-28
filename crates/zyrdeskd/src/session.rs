@@ -18,10 +18,11 @@
 //! back in hand.
 
 use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::io;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
     CloseHandle, GENERIC_READ, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
@@ -351,6 +352,7 @@ fn asked_to_go(session: u32, engine: u32) -> io::Result<()> {
         &[LET_GO_ARGUMENT.to_string(), engine.to_string()],
         "the engine's console would not take the interruption",
     )
+    .map(|_| ())
 }
 
 /// Moves this computer's speakers, and says whether they really moved.
@@ -377,8 +379,8 @@ pub fn set_the_speakers(quiet: bool) -> io::Result<bool> {
         &[SPEAKERS_ARGUMENT.to_string(), way.to_string()],
         refused,
     )? {
-        SPEAKERS_MOVED => Ok(true),
-        SPEAKERS_ALREADY => Ok(false),
+        (SPEAKERS_MOVED, _) => Ok(true),
+        (SPEAKERS_ALREADY, _) => Ok(false),
         _ => Err(io::Error::other(refused)),
     }
 }
@@ -442,7 +444,7 @@ pub fn move_the_speakers(quiet: bool) -> u32 {
 /// nothing else. Both refusals protect the same thing: what a lock screen
 /// is worth depends on nobody being able to put one up, or take one
 /// down, from outside the desk it belongs to.
-pub fn lock_the_screen() -> io::Result<()> {
+pub fn lock_the_screen() -> io::Result<Errand> {
     let session =
         session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
     errand(
@@ -450,6 +452,33 @@ pub fn lock_the_screen() -> io::Result<()> {
         &[LOCK_ARGUMENT.to_string()],
         "the screen could not be locked from the session that owns it",
     )
+}
+
+/// How long an errand took, in its two halves.
+///
+/// Split, and not added together, because the two costs have nothing to
+/// do with each other and only one of them is ever worth working on.
+/// Getting a program running in another Windows session is Windows'
+/// price, paid every time and roughly the same; what the program then
+/// takes to answer is the errand itself. A single number cannot say
+/// which of the two a session is waiting on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Errand {
+    /// Time spent getting the program running over there.
+    pub started: Duration,
+    /// Time it then took to do what it went for and answer.
+    pub answered: Duration,
+}
+
+impl fmt::Display for Errand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} ms starting a program in the session on screen, {} ms waiting for it",
+            self.started.as_millis(),
+            self.answered.as_millis()
+        )
+    }
 }
 
 /// Whether this program was started to lock the screen.
@@ -470,7 +499,93 @@ pub fn lock_this_desktop() -> bool {
 
     // Safe: no buffer of ours, and it answers with nought when it
     // refuses.
-    unsafe { LockWorkStation() != 0 }
+    if unsafe { LockWorkStation() } == 0 {
+        return false;
+    }
+    // Waited on from here, which is the only place it can be waited on:
+    // locking hands the screen to another desktop, and which desktop has
+    // the input is a question about the window station of whoever asks.
+    // A service sits on one with no desktop and can only ever be told
+    // « none ». This program is over here, on the interactive one, so
+    // this is where the answer exists.
+    //
+    // Worth the wait rather than answering on the order alone: what the
+    // person at the far end watches is the picture, the picture stops
+    // while the desktop changes hands, and a « done » sent before that
+    // starts is a « done » about nothing anyone can see. It also puts
+    // the number in the host's journal, in the half of the errand it
+    // belongs to.
+    the_desktop_changed_hands();
+    true
+}
+
+/// How long the desktop is given to change hands, and how often that is
+/// asked.
+///
+/// Short at the top because nothing is owed past it: the order was taken,
+/// the machine is locking, and standing here longer would only delay a
+/// « done » that changes nothing. Short at the bottom because what is
+/// being measured is a fraction of a second.
+#[cfg(windows)]
+const CHANGING_HANDS: Duration = Duration::from_millis(1500);
+#[cfg(windows)]
+const ASKING_AGAIN: Duration = Duration::from_millis(10);
+
+/// The desktop nobody is locked out of, and the one a session runs on.
+#[cfg(windows)]
+const ORDINARY_DESKTOP: &str = "Default";
+
+/// Waits until the screen belongs to another desktop than the ordinary
+/// one, which is what locking really means.
+#[cfg(windows)]
+fn the_desktop_changed_hands() -> bool {
+    let start = Instant::now();
+    while start.elapsed() < CHANGING_HANDS {
+        match desktop_with_the_input() {
+            Some(name) if name != ORDINARY_DESKTOP => return true,
+            // No answer at all is the same as not yet: the desktop is
+            // being handed over and there is nothing to open in between.
+            _ => std::thread::sleep(ASKING_AGAIN),
+        }
+    }
+    false
+}
+
+/// Name of the desktop the screen and the keyboard belong to right now.
+///
+/// `Default` while somebody works, `Winlogon` while the machine is
+/// locked or asking for a password.
+#[cfg(windows)]
+fn desktop_with_the_input() -> Option<String> {
+    use windows_sys::Win32::System::StationsAndDesktops::{
+        CloseDesktop, GetUserObjectInformationW, OpenInputDesktop, UOI_NAME,
+    };
+
+    // Safe: nothing of ours is handed over, and a refusal answers null.
+    let desktop = unsafe { OpenInputDesktop(0, 0, GENERIC_READ) };
+    if desktop.is_null() {
+        return None;
+    }
+    let mut name = [0u16; 64];
+    let mut needed = 0u32;
+    // Safe: the desktop is open, and the slot is ours with its length in
+    // bytes given alongside it as the call expects.
+    let read = unsafe {
+        GetUserObjectInformationW(
+            desktop,
+            UOI_NAME,
+            name.as_mut_ptr().cast(),
+            (name.len() * size_of::<u16>()) as u32,
+            &mut needed,
+        )
+    };
+    // Safe: a desktop this function opened, closed exactly once.
+    unsafe { CloseDesktop(desktop) };
+    if read == 0 {
+        return None;
+    }
+    let end = name.iter().position(|letter| *letter == 0).unwrap_or(0);
+    Some(String::from_utf16_lossy(&name[..end]))
 }
 
 /// Runs this program in another Windows session, for one short errand.
@@ -485,9 +600,9 @@ pub fn lock_this_desktop() -> bool {
 /// Detached from any console of its own, since one of the errands is
 /// attaching to somebody else's, which is only possible for a program
 /// that has none.
-fn errand(session: u32, arguments: &[String], refused: &str) -> io::Result<()> {
+fn errand(session: u32, arguments: &[String], refused: &str) -> io::Result<Errand> {
     match errand_code(session, arguments, refused)? {
-        0 => Ok(()),
+        (0, took) => Ok(took),
         _ => Err(io::Error::other(refused.to_string())),
     }
 }
@@ -497,7 +612,8 @@ fn errand(session: u32, arguments: &[String], refused: &str) -> io::Result<()> {
 /// The refusal covers an errand that never came back as well as one that
 /// came back saying no: whoever reads it can do nothing different about
 /// the two, and one message means one language to choose rather than two.
-fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<u32> {
+fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<(u32, Errand)> {
+    let asked_at = Instant::now();
     let ourselves = std::env::current_exe()?;
     let token = service_token_for(session)?;
     let environment = environment_of(&token)?;
@@ -533,6 +649,7 @@ fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<
     }
     let asking = Handle(started.hProcess);
     drop(Handle(started.hThread));
+    let running_at = Instant::now();
 
     // Safe: the handle is valid, and the wait is bounded.
     let waited = unsafe { WaitForSingleObject(asking.0, ASKING.as_millis() as u32) };
@@ -544,7 +661,13 @@ fn errand_code(session: u32, arguments: &[String], refused: &str) -> io::Result<
     if unsafe { GetExitCodeProcess(asking.0, &mut code) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(code)
+    Ok((
+        code,
+        Errand {
+            started: running_at - asked_at,
+            answered: running_at.elapsed(),
+        },
+    ))
 }
 
 /// Taps the engine on the shoulder, from inside its own session.

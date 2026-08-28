@@ -34,5 +34,6 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Registry",
     "Win32_System_RemoteDesktop",
     "Win32_System_Shutdown",
+    "Win32_System_StationsAndDesktops",
     "Win32_System_Threading",
 ] }

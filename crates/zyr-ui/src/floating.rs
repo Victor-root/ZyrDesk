@@ -1686,9 +1686,18 @@ async fn press_ctrl_alt_del_over_there(app: &AppHandle) -> Result<(), String> {
 /// keyboard, and never will.
 async fn lock_over_there(app: &AppHandle) -> Result<(), String> {
     let way = the_way_of_this_session(app).await?;
-    crate::service::ask(&zyr_control::Request::LockScreen { way })
-        .await
-        .map(|_| ())
+    // Timed from here because here is where the picture is watched. The
+    // far computer says what its own half cost, and the two together say
+    // whether a picture that stands still for a second is standing still
+    // on the road or on the machine.
+    let asked_at = std::time::Instant::now();
+    let answer = crate::service::ask(&zyr_control::Request::LockScreen { way }).await;
+    note(&format!(
+        "verrouillage de l'ordinateur distant : {} en {} ms",
+        if answer.is_ok() { "fait" } else { "refusé" },
+        asked_at.elapsed().as_millis()
+    ));
+    answer.map(|_| ())
 }
 
 /// The way this window's own session runs on.

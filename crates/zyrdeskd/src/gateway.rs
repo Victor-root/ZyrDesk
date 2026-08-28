@@ -178,10 +178,20 @@ impl Answers for Attending {
     /// out to the session that owns the screen and comes back, where the
     /// other stays in this process.
     fn lock_the_screen(&self) -> Result<(), String> {
+        // Said before the order goes out, so the journal carries the
+        // moment it was asked as well as the moment it was done. What
+        // happens between the two is the picture standing still, and
+        // lining that stretch up against what the engine says about its
+        // capture is the only way to tell which of the two is at fault.
+        self.log
+            .write("the far computer asked this one to lock itself");
+        let asked_at = std::time::Instant::now();
         match lock_it() {
-            Ok(()) => {
-                self.log
-                    .write("the far computer asked this one to lock itself");
+            Ok(took) => {
+                self.log.write(&format!(
+                    "this computer locked itself after {} ms ({took})",
+                    asked_at.elapsed().as_millis()
+                ));
                 Ok(())
             }
             Err(e) => {
@@ -311,14 +321,14 @@ fn screen_asleep() -> Result<Vec<String>, String> {
     Err("cet ordinateur n'a pas d'écran virtuel".to_string())
 }
 
-/// Locks it, where there is a Windows to lock.
+/// Locks it, where there is a Windows to lock, saying what it cost.
 #[cfg(windows)]
-fn lock_it() -> io::Result<()> {
-    crate::session::lock_the_screen()
+fn lock_it() -> io::Result<String> {
+    crate::session::lock_the_screen().map(|took| took.to_string())
 }
 
 #[cfg(not(windows))]
-fn lock_it() -> io::Result<()> {
+fn lock_it() -> io::Result<String> {
     Err(io::Error::other(
         "cet ordinateur n'a pas d'écran de verrouillage à lever",
     ))
