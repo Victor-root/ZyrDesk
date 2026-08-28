@@ -297,8 +297,18 @@ fn settled(before: usize) -> Option<u128> {
 /// can find back on to be safe, and the person at this computer finds
 /// monitors they had switched off themselves lit up again. Waiting costs
 /// a few seconds nobody is looking at.
+///
+/// And that wait is why `still_nobody` is asked again at the end of it
+/// rather than only at the start. Putting a screen away is not instant,
+/// and a second that goes by is a second in which somebody can ask for
+/// it. The answer taken before the wait was true then and stale now:
+/// acting on it takes the screen away from a session that has already
+/// started asking for it, and the wake that follows arrives at a device
+/// still being stopped. Windows does neither properly, the screen never
+/// becomes a screen, and the session opens on the machine's own at the
+/// wrong size.
 #[cfg(windows)]
-pub fn go_to_sleep(driver: &dyn Driver) -> Result<Done, Trouble> {
+pub fn go_to_sleep(driver: &dyn Driver, still_nobody: &dyn Fn() -> bool) -> Result<Done, Trouble> {
     let mut done = Done::default();
     match place::awake(driver)? {
         None => done.step("no virtual screen on this computer to put to sleep"),
@@ -312,6 +322,13 @@ pub fn go_to_sleep(driver: &dyn Driver) -> Result<Done, Trouble> {
                      anyway",
                     SETTLING.as_millis()
                 ));
+            }
+            if !still_nobody() {
+                done.step(
+                    "a session asked for the virtual screen while it was being put away, so it \
+                     stays awake",
+                );
+                return Ok(done);
             }
             place::sleep(driver, &mut done)?;
             done.changed = true;
@@ -376,7 +393,10 @@ pub fn wake_up(_driver: &dyn Driver, _home: &Path, _wanted: Mode) -> Result<Done
 }
 
 #[cfg(not(windows))]
-pub fn go_to_sleep(_driver: &dyn Driver) -> Result<Done, Trouble> {
+pub fn go_to_sleep(
+    _driver: &dyn Driver,
+    _still_nobody: &dyn Fn() -> bool,
+) -> Result<Done, Trouble> {
     Err(Trouble::NotHere)
 }
 

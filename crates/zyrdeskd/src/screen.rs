@@ -57,7 +57,9 @@ pub fn put_in_place(log: Option<&Log>) {
             // whoever sits at this computer would find a second screen on
             // their desk with no session behind it and no way to guess
             // where it came from.
-            match sleep_after_a_session() {
+            // Nobody can be watching: this runs before the engine that
+            // would serve them has been started.
+            match sleep_after_a_session(&|| true) {
                 Ok(steps) => said.extend(steps),
                 Err(e) => said.push(format!("the virtual screen would not go to sleep: {e}")),
             }
@@ -122,9 +124,15 @@ pub fn wake_for_a_session(size: (u32, u32)) -> Result<Vec<String>, String> {
 }
 
 /// Puts it back to sleep now that no session wants it.
+///
+/// `still_nobody` is asked again at the last moment, once the desktop has
+/// stopped being rearranged, because that wait lasts about a second and a
+/// session can open inside it. Asked only at the start, the screen was
+/// taken away from a session that had just asked for it, and the wake
+/// that followed found a device still being stopped.
 #[cfg(windows)]
-pub fn sleep_after_a_session() -> Result<Vec<String>, String> {
-    zyr_screen::go_to_sleep(zyr_screen::shipped())
+pub fn sleep_after_a_session(still_nobody: &dyn Fn() -> bool) -> Result<Vec<String>, String> {
+    zyr_screen::go_to_sleep(zyr_screen::shipped(), still_nobody)
         .map(|done| done.steps)
         .map_err(|e| e.to_string())
 }
@@ -180,13 +188,18 @@ pub fn wake_to_be_named(log: &Log) -> bool {
 /// end of a session is exactly what the engine is doing, so a refusal
 /// here is ordinary and means try again in a moment, never give up.
 #[cfg(windows)]
-pub fn back_to_sleep(log: &Log) -> bool {
-    match sleep_after_a_session() {
+pub fn back_to_sleep(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
+    match sleep_after_a_session(still_nobody) {
         Ok(said) => {
             for line in said {
                 log.write(&line);
             }
-            true
+            // Asked of the device rather than inferred from nothing
+            // having failed. Leaving it awake for a session that asked
+            // for it in the meantime is a success, and answering « done »
+            // to it would have the caller write down that the screen is
+            // asleep when it is drawing.
+            asleep()
         }
         Err(e) => {
             log.write(&format!(

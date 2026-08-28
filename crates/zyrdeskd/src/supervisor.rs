@@ -107,12 +107,12 @@ fn wake_to_be_named(_log: &Log) -> bool {
 /// Answers whether it really went to sleep: a refusal has to be tried
 /// again, and the caller is the only one that knows when.
 #[cfg(windows)]
-fn put_the_screen_back(log: &Log) -> bool {
-    crate::screen::back_to_sleep(log)
+fn put_the_screen_back(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
+    crate::screen::back_to_sleep(log, still_nobody)
 }
 
 #[cfg(not(windows))]
-fn put_the_screen_back(_log: &Log) -> bool {
+fn put_the_screen_back(_log: &Log, _still_nobody: &dyn Fn() -> bool) -> bool {
     true
 }
 
@@ -567,7 +567,9 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // naming: awake past this point is a second screen on somebody's desk
     // with nobody watching it.
     if named_this_start {
-        put_the_screen_back(log);
+        // Woken for this one start of the engine and for nothing else:
+        // there is no session that could want it.
+        put_the_screen_back(log, &|| true);
     }
     if learned == crate::screen::Learned::StartAgain {
         let _ = engine.stop();
@@ -716,7 +718,10 @@ fn wait_for_the_engine_to_stop(
             log.write(
                 "nobody is watching this computer any more, its virtual screen goes back to sleep",
             );
-            if put_the_screen_back(log) {
+            // The same question again at the end of that wait, which
+            // lasts about a second: a session opening inside it is a
+            // session that wants the screen being put away.
+            if put_the_screen_back(log, &|| watched.gateway.the_screen_is_awake_for_nobody()) {
                 watched.gateway.the_screen_went_to_sleep();
             }
         }

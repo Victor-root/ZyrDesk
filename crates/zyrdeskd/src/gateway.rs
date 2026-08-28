@@ -301,7 +301,9 @@ fn screen_awake(_size: (u32, u32)) -> Result<Vec<String>, String> {
 /// Puts it back to sleep.
 #[cfg(windows)]
 fn screen_asleep() -> Result<Vec<String>, String> {
-    crate::screen::sleep_after_a_session()
+    // The session asking is the one that decides here, and it is asking
+    // now: there is no wait to go stale across.
+    crate::screen::sleep_after_a_session(&|| true)
 }
 
 #[cfg(not(windows))]
