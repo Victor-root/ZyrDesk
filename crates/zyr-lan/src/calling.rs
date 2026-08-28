@@ -18,7 +18,7 @@
 //! list, a computer found twice is one computer, and on a network where
 //! the announcements do pass, nothing here ever has anything to do.
 
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -38,7 +38,13 @@ pub const PORT: u16 = 47001;
 ///
 /// Two computers running different builds of the product have to be able
 /// to say so rather than misread each other.
-const VERSION: u32 = 1;
+///
+/// Two, because a computer now names the addresses it answers at and the
+/// version before this one did not. A build that reads a line the old
+/// way would take the list of addresses for a fingerprint and the
+/// fingerprint for a name, so the two builds say nothing to each other
+/// rather than agree on something false.
+const VERSION: u32 = 2;
 
 /// What every line starts with, so that anything else arriving on this
 /// port is dropped without a thought.
@@ -63,9 +69,25 @@ const SWEEP: Duration = Duration::from_secs(30);
 /// Most addresses a network may hold before it is only ever broadcast to.
 const MOST: u32 = 256;
 
+/// Most addresses a computer names for itself.
+///
+/// A machine with a stack of virtual adapters holds a great many, and
+/// each one named here is another door the far computer knocks on. What
+/// is worth saying fits in a handful, and what is said has to stay one
+/// small datagram.
+const MOST_OWN: usize = 8;
+
+/// What stands in for a computer that named no address at all.
+///
+/// The field holds its place whatever happens: a line is read by
+/// counting words, and an empty field would run two separators together
+/// and shift everything written after it.
+const NO_ADDRESS: &str = "-";
+
 /// Longest thing anybody may say here.
 ///
-/// A name and a fingerprint and no more. Anything longer is not ours.
+/// A name, a fingerprint and a handful of addresses, and no more.
+/// Anything longer is not ours.
 const LIMIT: usize = 512;
 
 /// How long the socket waits before letting the loop look at the clock.
@@ -80,17 +102,39 @@ const WAKE: Duration = Duration::from_millis(500);
 struct Itself {
     port: u16,
     fingerprint: Fingerprint,
+    /// Every address this computer answers at.
+    ///
+    /// Said out loud, because the address a packet arrived from is the
+    /// one address the far computer already knew: it is where it sent
+    /// its question. A machine with a second card, a virtual adapter or
+    /// a VPN holds several, answers on whichever one the routing table
+    /// picked, and stays silent about the rest. Whoever heard it then
+    /// knows one door out of four, has no way to guess the others, and
+    /// opens every session through the door it happened to be told
+    /// about, which on a bad day is the one that wraps the traffic up
+    /// and sends it round the world first.
+    ///
+    /// Announcements over mDNS have always carried the whole list. This
+    /// is the same list, on the path that works when mDNS does not.
+    addresses: Vec<Ipv4Addr>,
     name: String,
 }
 
 impl Itself {
     fn said(&self) -> String {
-        format!("{} {} {}", self.port, self.fingerprint, self.name)
+        format!(
+            "{} {} {} {}",
+            self.port,
+            written(&self.addresses),
+            self.fingerprint,
+            self.name
+        )
     }
 
     /// Reads it back off what is left of a line.
     fn read<'a>(pieces: &mut impl Iterator<Item = &'a str>) -> Option<Self> {
         let port = pieces.next()?.parse().ok()?;
+        let addresses = read_addresses(pieces.next()?);
         // The fingerprint and the name travel together in what is left,
         // the name last since it is the only one that may hold a space.
         let (fingerprint, name) = pieces.next()?.split_once(' ')?;
@@ -101,9 +145,47 @@ impl Itself {
         Some(Itself {
             port,
             fingerprint: fingerprint.parse().ok()?,
+            addresses,
             name: name.to_string(),
         })
     }
+}
+
+/// Writes the addresses a computer answers at as one word.
+fn written(addresses: &[Ipv4Addr]) -> String {
+    if addresses.is_empty() {
+        return NO_ADDRESS.to_string();
+    }
+    addresses
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Reads them back, keeping whatever can be read.
+///
+/// An address that cannot be read is one that cannot be tried, and that
+/// is the whole of what it costs. Throwing the line away over it would
+/// lose a whole computer rather than one of its doors.
+fn read_addresses(field: &str) -> Vec<Ipv4Addr> {
+    if field == NO_ADDRESS {
+        return Vec::new();
+    }
+    field
+        .split(',')
+        .filter_map(|address| address.parse().ok())
+        .collect()
+}
+
+/// Every address this computer answers at, and no more of them than are
+/// worth another computer's time.
+fn own_addresses() -> Vec<Ipv4Addr> {
+    zyr_proto::machine::addresses()
+        .into_iter()
+        .map(|card| card.address)
+        .take(MOST_OWN)
+        .collect()
 }
 
 /// What is said on this port.
@@ -143,7 +225,9 @@ enum Said {
 
 impl Said {
     fn read(line: &str) -> Option<Self> {
-        let mut pieces = line.trim().splitn(5, ' ');
+        // Five words and then the rest: the name is last because it is
+        // the only one that may hold a space of its own.
+        let mut pieces = line.trim().splitn(6, ' ');
         if pieces.next()? != MARK {
             return None;
         }
@@ -242,6 +326,7 @@ pub fn start(
             called: None,
             swept: None,
             listed: Vec::new(),
+            mine: Vec::new(),
         };
         while !watching.load(Ordering::Relaxed) {
             me.once();
@@ -271,6 +356,14 @@ struct Calls {
     /// list that only ever reports arrivals leaves the reader guessing
     /// when something went.
     listed: Vec<(Fingerprint, String)>,
+    /// Where this computer answers, as of the last round.
+    ///
+    /// Read once a round rather than once a line said: it is a question
+    /// to the system, and a machine being swept one address at a time
+    /// answers a great many lines a second. Three seconds is also short
+    /// enough that a card plugged in mid-session is named before anyone
+    /// notices it was not.
+    mine: Vec<Ipv4Addr>,
 }
 
 impl Calls {
@@ -280,6 +373,7 @@ impl Calls {
         let now = Instant::now();
         if self.called.is_none_or(|last| now >= last + ROUND) {
             self.called = Some(now);
+            self.mine = own_addresses();
             self.call_out(now);
         }
         self.listen();
@@ -383,6 +477,7 @@ impl Calls {
         Itself {
             port: TUNNEL_PORT,
             fingerprint: self.fingerprint,
+            addresses: self.mine.clone(),
             name: self.name.clone(),
         }
     }
@@ -398,19 +493,27 @@ impl Calls {
         if said.fingerprint == self.fingerprint {
             return;
         }
+        // Where the line came from leads the list, being the one address
+        // proven to reach that computer from here, and everything it
+        // named about itself follows. All of them are kept: which one is
+        // worth using is found by trying, not by reading.
+        let mut addresses = vec![from.ip()];
+        for address in said.addresses {
+            let address = IpAddr::V4(address);
+            if !addresses.contains(&address) {
+                addresses.push(address);
+            }
+        }
         let peer = Peer {
             name: said.name,
             fingerprint: said.fingerprint,
             address: from.ip(),
-            // The one this answer came from. A computer with several
-            // cards answers on each of them, and every answer adds its
-            // own: the list is gathered, never replaced.
-            addresses: vec![from.ip()],
+            addresses,
             port: said.port,
         };
-        let named = format!("{} at {}", peer.name, peer.address);
+        let known = crate::named(&peer);
         if self.found.note(peer, Instant::now()) {
-            (self.noticed)(&format!("{named} answered a call on the local network"));
+            (self.noticed)(&format!("{known} answered a call on the local network"));
         }
     }
 
@@ -475,6 +578,7 @@ mod tests {
             called: None,
             swept: None,
             listed: Vec::new(),
+            mine: Vec::new(),
         }
     }
 
@@ -632,21 +736,107 @@ mod tests {
         let card = Itself {
             port: TUNNEL_PORT,
             fingerprint: fingerprint(),
+            addresses: vec![
+                "192.168.1.20".parse().unwrap(),
+                "192.168.2.20".parse().unwrap(),
+                "10.141.87.37".parse().unwrap(),
+            ],
             // Un nom d'ordinateur porte des espaces, et il est écrit
             // en dernier pour cela.
             name: "PC de Victor".to_string(),
+        };
+        let nowhere = Itself {
+            addresses: Vec::new(),
+            ..card.clone()
         };
         for said in [
             Said::Who { asking: None },
             Said::Who {
                 asking: Some(card.clone()),
             },
+            Said::Who {
+                asking: Some(nowhere.clone()),
+            },
             Said::Here(card),
+            Said::Here(nowhere),
+            Said::Bye {
+                fingerprint: fingerprint(),
+            },
         ] {
             let line = said.spoken();
             assert_eq!(Said::read(&line), Some(said), "sur « {line} »");
             assert!(line.len() < LIMIT, "« {line} » est trop long");
         }
+    }
+
+    #[test]
+    fn a_line_stays_one_small_datagram_even_on_a_machine_full_of_cards() {
+        // Chaque adresse nommée est une porte de plus à essayer, et la
+        // ligne doit tenir dans un seul datagramme : une machine pleine
+        // d'adaptateurs virtuels en aurait vingt.
+        let card = Itself {
+            port: TUNNEL_PORT,
+            fingerprint: fingerprint(),
+            addresses: (0..MOST_OWN)
+                .map(|step| Ipv4Addr::new(192, 168, step as u8, 200))
+                .collect(),
+            name: "UN-NOM-DORDINATEUR-WINDOWS-TRES-LONG".to_string(),
+        };
+        let line = Said::Here(card.clone()).spoken();
+        assert!(line.len() < LIMIT, "« {line} » fait {} octets", line.len());
+        assert_eq!(Said::read(&line), Some(Said::Here(card)));
+    }
+
+    #[test]
+    fn an_address_nobody_can_read_costs_that_address_and_nothing_more() {
+        // Jeter la ligne entière ferait perdre l'ordinateur au complet
+        // là où il ne manque qu'une de ses portes.
+        assert_eq!(
+            read_addresses("192.168.1.20,pas-une-adresse,192.168.2.20"),
+            [
+                Ipv4Addr::new(192, 168, 1, 20),
+                Ipv4Addr::new(192, 168, 2, 20)
+            ]
+        );
+        assert!(read_addresses(NO_ADDRESS).is_empty());
+    }
+
+    #[test]
+    fn a_computer_says_every_address_it_answers_at() {
+        // Le défaut qui a fait ouvrir toutes les sessions par la même
+        // porte : celle par laquelle la réponse était arrivée. Une
+        // machine à quatre adresses n'en disait aucune, et l'autre bout
+        // n'avait rien à essayer.
+        let list = Found::new();
+        let mut asking = computer("PC-PORTABLE", 1, list.clone());
+        let mut answering = computer("PC de Victor", 2, Found::new());
+        answering.mine = vec![
+            "192.168.1.20".parse().unwrap(),
+            "192.168.2.20".parse().unwrap(),
+        ];
+
+        let door = answering.socket.local_addr().unwrap();
+        asking.say(
+            &Said::Who {
+                asking: Some(asking.itself()),
+            }
+            .spoken(),
+            door,
+        );
+        answering.listen();
+        asking.listen();
+
+        let found = list.peers();
+        assert_eq!(found.len(), 1, "{found:?}");
+        // Celle d'où la réponse est venue d'abord, puis les autres.
+        assert_eq!(
+            found[0].addresses,
+            [
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                "192.168.1.20".parse().unwrap(),
+                "192.168.2.20".parse().unwrap()
+            ]
+        );
     }
 
     #[test]
@@ -657,16 +847,20 @@ mod tests {
             "",
             "bonjour",
             "zyrdesk",
-            "zyrdesk 1",
-            "zyrdesk 1 bonjour",
-            "autrechose 1 who",
+            "zyrdesk 2",
+            "zyrdesk 2 bonjour",
+            "autrechose 2 who",
             // Une version que nous ne parlons pas : on se tait plutôt que
-            // de deviner.
-            "zyrdesk 2 who",
-            "zyrdesk 1 here",
-            "zyrdesk 1 here 47000",
-            "zyrdesk 1 here 47000 pas-une-empreinte PC",
-            "zyrdesk 1 here pas-un-port 0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 PC",
+            // de deviner. Celle d'avant lisait la liste d'adresses comme
+            // une empreinte, ce qui est exactement l'erreur à ne pas
+            // commettre en silence.
+            "zyrdesk 1 who",
+            "zyrdesk 3 who",
+            "zyrdesk 2 here",
+            "zyrdesk 2 here 47000",
+            "zyrdesk 2 here 47000 192.168.1.20",
+            "zyrdesk 2 here 47000 192.168.1.20 pas-une-empreinte PC",
+            "zyrdesk 2 here pas-un-port 192.168.1.20 0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 PC",
         ] {
             assert_eq!(Said::read(line), None, "« {line} » aurait dû être ignoré");
         }
@@ -676,7 +870,10 @@ mod tests {
     fn a_computer_without_a_name_is_not_a_computer() {
         // Une carte sans titre ne se reconnaît pas : mieux vaut ignorer
         // l'annonce que d'afficher une ligne vide sur laquelle cliquer.
-        let line = format!("{MARK} {VERSION} here {TUNNEL_PORT} {} ", fingerprint());
+        let line = format!(
+            "{MARK} {VERSION} here {TUNNEL_PORT} {NO_ADDRESS} {} ",
+            fingerprint()
+        );
         assert_eq!(Said::read(&line), None);
     }
 }

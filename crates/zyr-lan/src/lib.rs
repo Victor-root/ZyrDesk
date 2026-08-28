@@ -143,11 +143,15 @@ impl Found {
     /// a way for anyone on the network to sweep somebody else off a
     /// screen: the next round would bring it back, but the flicker would
     /// be a nuisance to inflict.
+    ///
+    /// Any of its addresses and not merely the first: a machine leaving
+    /// says so on whichever card the routing table hands it, which is
+    /// rarely the one it happened to be heard on first.
     fn forget_the_one_at(&self, fingerprint: Fingerprint, from: IpAddr) -> Option<String> {
         let mut found = self.0.lock().expect("found peers");
         let gone = found
             .get(&fingerprint)
-            .filter(|(peer, _)| peer.address == from)
+            .filter(|(peer, _)| peer.addresses.contains(&from))
             .map(|(peer, _)| peer.name.clone())?;
         found.remove(&fingerprint);
         Some(gone)
@@ -353,7 +357,7 @@ fn collect(
             }
         }
         ServiceEvent::ServiceResolved(info) => {
-            let Some((peer, announced)) = read(&info) else {
+            let Some(peer) = read(&info) else {
                 noticed("an announcement arrived incomplete and was left aside");
                 return;
             };
@@ -362,9 +366,9 @@ fn collect(
             if peer.fingerprint == mine {
                 return;
             }
-            let named = named(&peer, &announced);
+            let known = named(&peer);
             if found.note(peer, Instant::now()) {
-                noticed(&format!("found {named} on the local network"));
+                noticed(&format!("found {known} on the local network"));
             }
         }
         ServiceEvent::ServiceRemoved(_, fullname) => {
@@ -389,12 +393,7 @@ fn instance_of(fullname: &str) -> &str {
 /// Anything on the network can announce anything: a record missing a
 /// field, or carrying something that is not a fingerprint, is dropped
 /// rather than shown half-empty.
-///
-/// Hands back the computer and every address it announced: the second is
-/// worth writing down even though only the first is used, since a
-/// machine reached at the wrong one of its addresses is otherwise a
-/// silent failure with nothing to look at.
-fn read(info: &mdns_sd::ResolvedService) -> Option<(Peer, Vec<IpAddr>)> {
+fn read(info: &mdns_sd::ResolvedService) -> Option<Peer> {
     let fingerprint: Fingerprint = info.get_property_val_str(CLE_EMPREINTE)?.parse().ok()?;
     let name = info.get_property_val_str(CLE_NOM)?.trim();
     if name.is_empty() {
@@ -406,14 +405,13 @@ fn read(info: &mdns_sd::ResolvedService) -> Option<(Peer, Vec<IpAddr>)> {
             .map(|scoped| scoped.to_ip_addr())
             .collect(),
     );
-    let peer = Peer {
+    Some(Peer {
         name: name.to_string(),
         fingerprint,
         address: *announced.first()?,
-        addresses: announced.clone(),
+        addresses: announced,
         port: info.port,
-    };
-    Some((peer, announced))
+    })
 }
 
 /// Puts the addresses a computer announced into a settled order.
@@ -430,16 +428,23 @@ fn in_order(mut announced: Vec<IpAddr>) -> Vec<IpAddr> {
 
 /// How a computer just found is named in the journal.
 ///
-/// Every address it announced, and not only the one that will be used:
-/// the day a computer is reached at the wrong one of its addresses, this
-/// line is what says so.
-fn named(peer: &Peer, announced: &[IpAddr]) -> String {
-    let elsewhere: Vec<String> = announced.iter().skip(1).map(ToString::to_string).collect();
+/// Every address it answers at, and not only the one that will be tried
+/// first: the day a computer is reached at the wrong one of its
+/// addresses, this line is what says so. It is also the only place a
+/// journal shows how many doors a session had to choose between, which
+/// is worth more than it sounds when one of them leads through a VPN.
+pub(crate) fn named(peer: &Peer) -> String {
+    let elsewhere: Vec<String> = peer
+        .addresses
+        .iter()
+        .filter(|address| **address != peer.address)
+        .map(ToString::to_string)
+        .collect();
     if elsewhere.is_empty() {
         return format!("{} at {}", peer.name, peer.address);
     }
     format!(
-        "{} at {}, also announced at {}",
+        "{} at {}, also answering at {}",
         peer.name,
         peer.address,
         elsewhere.join(", ")
@@ -531,6 +536,31 @@ mod tests {
     }
 
     #[test]
+    fn every_address_a_computer_answers_at_is_kept() {
+        // Le défaut qui a coûté une session par jour : une machine à
+        // plusieurs cartes se fait entendre sur chacune d'elles, et la
+        // dernière arrivée effaçait les précédentes. On ouvrait donc la
+        // session par une adresse tirée au sort, dont une menait par un
+        // VPN et coûtait soixante millisecondes.
+        let found = Found::new();
+        found.note(at(1, "PC-BUREAU", "192.168.1.20"), Instant::now());
+        found.note(at(1, "PC-BUREAU", "192.168.2.20"), Instant::now());
+        found.note(at(1, "PC-BUREAU", "192.168.1.20"), Instant::now());
+
+        let seen = found.peers();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert_eq!(
+            seen[0].addresses,
+            [
+                "192.168.1.20".parse::<IpAddr>().unwrap(),
+                "192.168.2.20".parse().unwrap()
+            ]
+        );
+        // La première entendue reste celle qu'on essaie d'abord.
+        assert_eq!(seen[0].address, "192.168.1.20".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
     fn a_computer_that_stops_answering_is_forgotten() {
         // Unplugged, asleep or crashed, it says nothing on its way out.
         let found = Found::new();
@@ -592,13 +622,15 @@ mod tests {
 
     #[test]
     fn a_computer_found_says_where_else_it_answers() {
-        let un: IpAddr = "192.168.1.20".parse().unwrap();
-        let deux: IpAddr = "192.168.2.20".parse().unwrap();
-        let found = peer(1, "PC-BUREAU");
-        assert_eq!(named(&found, &[un]), "PC-BUREAU at 192.168.1.20");
+        // La ligne qui manquait le jour où une session est partie par le
+        // mauvais côté d'une machine à quatre adresses : le journal n'en
+        // montrait qu'une, et rien ne disait qu'il y avait un choix.
+        let mut found = peer(1, "PC-BUREAU");
+        assert_eq!(named(&found), "PC-BUREAU at 192.168.1.20");
+        found.addresses.push("192.168.2.20".parse().unwrap());
         assert_eq!(
-            named(&found, &[un, deux]),
-            "PC-BUREAU at 192.168.1.20, also announced at 192.168.2.20"
+            named(&found),
+            "PC-BUREAU at 192.168.1.20, also answering at 192.168.2.20"
         );
     }
 
