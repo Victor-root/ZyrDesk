@@ -44,11 +44,14 @@ const SEND_QUEUE: usize = 128 * 1024;
 /// Receive queue, sized to absorb a burst of frames.
 const RECEIVE_QUEUE: usize = 8 * 1024 * 1024;
 
-/// Rhythm at which path discovery is read back.
-const DISCOVERY_POLL: Duration = Duration::from_millis(50);
-
-/// Identical readings in a row after which the path counts as settled.
-const SETTLED_READINGS: u32 = 3;
+/// Smallest packet QUIC requires every path to carry.
+///
+/// This is not a choice of ours. A connection whose path cannot carry
+/// this cannot exist at all, and it is exactly what the transport falls
+/// back to the moment it decides the path has stopped carrying anything
+/// bigger. Whatever else happens to a path while a session runs, this
+/// much of it holds.
+const GUARANTEED_MTU: u16 = 1200;
 
 #[derive(Debug)]
 pub enum EndpointError {
@@ -70,6 +73,25 @@ impl std::fmt::Display for EndpointError {
 }
 
 impl std::error::Error for EndpointError {}
+
+/// What the path under a connection is carrying right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Carrying {
+    /// Payload one datagram can carry at this instant.
+    pub usable_datagram: u16,
+    /// Times the transport decided the path had stopped carrying the
+    /// packet size it had settled on, and fell back to the floor.
+    ///
+    /// Anything but zero on a session whose picture froze is the answer:
+    /// the engine was told a size the path then stopped accepting, and
+    /// it cannot be told another one until the next session.
+    pub narrowings: u64,
+    /// Datagrams that actually went out.
+    pub sent: u64,
+    /// Packets the transport itself saw lost on the path.
+    pub lost: u64,
+    pub round_trip: Duration,
+}
 
 /// A datagram could not be handed over.
 #[derive(Debug)]
@@ -300,33 +322,64 @@ impl Connection {
             .map(|size| u16::try_from(size).unwrap_or(u16::MAX))
     }
 
-    /// Waits for path discovery to settle, then reports the usable room
-    /// it ends up with.
+    /// Payload one datagram is certain to carry for the whole life of
+    /// this connection.
     ///
-    /// The transport starts from a cautious size and probes upwards.
-    /// Asking too early would give a needlessly small packet size, and
-    /// the engine would keep it for the whole session: it cannot change
-    /// it along the way.
-    pub async fn settled_usable_datagram(&self, patience: Duration) -> Option<u16> {
-        let deadline = std::time::Instant::now() + patience;
-        let mut best = self.usable_datagram()?;
-        let mut unchanged = 0;
-
-        while unchanged < SETTLED_READINGS && std::time::Instant::now() < deadline {
-            tokio::time::sleep(DISCOVERY_POLL).await;
-            let current = self.usable_datagram()?;
-            if current > best {
-                best = current;
-                unchanged = 0;
-            } else {
-                unchanged += 1;
-            }
-        }
-        Some(best)
+    /// Not what the path offers at this instant: what it can never stop
+    /// offering. The two are very different, and the difference is a
+    /// session that freezes.
+    ///
+    /// The transport probes upwards for a bigger packet, and when those
+    /// bigger packets start disappearing it decides the path has stopped
+    /// carrying them and drops straight back to the smallest packet QUIC
+    /// requires of any path at all. That happens a second or two into a
+    /// session, on exactly the paths where it matters: a private tunnel
+    /// carried inside another one, where the first probe gets through
+    /// and nothing does once real video is flowing.
+    ///
+    /// The engine cannot follow. It is told a packet size once, as it
+    /// starts, and keeps it for the whole session. Sized on the
+    /// measurement of the moment, every video packet became too large to
+    /// send the instant the transport dropped back, and every one of
+    /// them was thrown away. The connection went on perfectly, the
+    /// control channel with it, and the picture simply stopped: the
+    /// worst shape a failure can take, because nothing anywhere says it
+    /// happened.
+    ///
+    /// So the size is taken from the floor rather than the ceiling. What
+    /// it costs is a few more packets for the same picture on a path
+    /// that would have carried larger ones. What it buys is a session
+    /// that cannot be killed by the path narrowing under it.
+    pub fn guaranteed_usable_datagram(&self) -> Option<u16> {
+        let usable = self.usable_datagram()?;
+        // What the transport spends on its own headers. Measured rather
+        // than worked out: it depends on the length of the connection
+        // identifiers and on what the far end announced, and it does not
+        // change with the size of the packet carrying it.
+        let overhead = self.inner.stats().path.current_mtu.checked_sub(usable)?;
+        GUARANTEED_MTU.checked_sub(overhead)
     }
 
     pub fn round_trip(&self) -> Duration {
         self.inner.rtt()
+    }
+
+    /// What the path is doing, read in one go.
+    ///
+    /// Together and not one call at a time, because these numbers are
+    /// only worth anything beside each other: room left with nothing
+    /// dropped is a healthy path, the same room with packets dropped is
+    /// a session whose picture has stopped, and neither reads as
+    /// anything on its own.
+    pub fn carrying(&self) -> Carrying {
+        let stats = self.inner.stats();
+        Carrying {
+            usable_datagram: self.usable_datagram().unwrap_or(0),
+            narrowings: stats.path.black_holes_detected,
+            sent: stats.frame_tx.datagram,
+            lost: stats.path.lost_packets,
+            round_trip: stats.path.rtt,
+        }
     }
 
     /// Datagrams that actually went out on the network.
@@ -452,19 +505,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_usable_room_never_shrinks_once_settled() {
+    async fn the_room_promised_is_never_more_than_the_room_of_the_moment() {
+        // La taille de paquet demandée au moteur vaut pour toute la
+        // session, et le chemin, lui, peut se rétrécir en cours de
+        // route : le transport retombe alors au plancher garanti. Une
+        // taille prise sur la mesure du moment ne passait plus du tout,
+        // et l'image se figeait sans que rien ne le dise.
         let pair = pair().await;
-        let immediate = pair.client_side.usable_datagram().unwrap();
-        let settled = pair
-            .client_side
-            .settled_usable_datagram(PATIENCE)
-            .await
-            .unwrap();
+        let now = pair.client_side.usable_datagram().unwrap();
+        let promised = pair.client_side.guaranteed_usable_datagram().unwrap();
+        assert!(promised <= now, "{promised} promis contre {now} mesurés");
+        // Et il en reste assez pour un vrai paquet vidéo, sans quoi la
+        // prudence ne servirait qu'à refuser les sessions.
+        let size = crate::mtu::packet_size(promised).expect("le plancher doit rester utilisable");
         assert!(
-            settled >= immediate,
-            "{settled} once settled against {immediate} straight away"
+            size.bytes >= crate::mtu::MINIMUM_SIZE,
+            "{} octets de paquet pour un plancher de {} (promis {promised}, mesuré {now})",
+            size.bytes,
+            crate::mtu::MINIMUM_SIZE
         );
-        assert_eq!(settled, pair.client_side.usable_datagram().unwrap());
     }
 
     #[tokio::test]

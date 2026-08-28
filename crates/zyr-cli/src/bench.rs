@@ -82,8 +82,6 @@ impl Answers for NoEngine {
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
-/// Time given to the transport to find the path's packet size.
-const PATH_DISCOVERY: Duration = Duration::from_secs(2);
 /// Rhythm at which the host bench watches for the traffic to start.
 const WATCH_STEP: Duration = Duration::from_millis(200);
 
@@ -250,8 +248,7 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
         .await?;
 
     let usable = connection
-        .settled_usable_datagram(PATH_DISCOVERY)
-        .await
+        .guaranteed_usable_datagram()
         .ok_or("le chemin n'accepte aucun datagramme")?;
     let size = zyr_transport::packet_size(usable)?;
 

@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R53** | **Nouveau, et c'est la vraie cause du gel.** La session se figeait totalement deux secondes après son ouverture, connexion toujours vivante. Le transport retombe au plus petit paquet garanti dès qu'il juge que le chemin ne porte plus les gros, ce qui arrive sur un tunnel porté dans un autre ; le moteur, lui, garde pour toute la session la taille qu'on lui a dite au départ. Chaque paquet vidéo devenait alors trop gros et était jeté en silence. La taille se calcule sur le plancher garanti maintenant, et ce qui est jeté est écrit dans le journal |
 | **R52bis** | **Refait, et la correction d'avant ne servait à rien.** La course entre les adresses était juste, mais il n'y en avait qu'une à essayer : un ordinateur qui se présentait ne disait pas où il répond, donc l'autre ne connaissait que l'adresse d'où la réponse était arrivée. Une machine à quatre cartes n'en montrait qu'une. Elle les nomme toutes maintenant, et la course a enfin de quoi courir |
 | **R52** | **Nouveau, et c'est un vrai défaut de fond.** L'adresse d'un ordinateur à plusieurs cartes était tirée au sort : la dernière réponse arrivée gagnait. Avec un VPN actif, le tirage tombait sur le chemin qui traverse le tunnel, d'où soixante-trois millisecondes de latence sur un bureau. Toutes les adresses sont gardées maintenant, et la voie s'ouvre vers toutes à la fois : la première qui répond gagne |
 | **R49quinquies** | **Refait, et la moitié annoncée la fois d'avant n'avait jamais été écrite.** Les cinq secondes perdues à chaque ouverture étaient toujours là. Les écrans se comptent maintenant au périphérique, qui appartient à la machine et répond donc depuis un service, au lieu de passer par un bureau que le service n'a pas |
@@ -1407,6 +1408,22 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Le chiffre qui tranche.** Ouvrir les statistiques (Ctrl+Alt+Maj+S) et lire **Réseau**. Sur deux machines du même réseau, ce doit être **1 ou 2 ms**, VPN allumé ou éteint. Si tu lis soixante et quelques, la session est partie par le tunnel du VPN et la correction n'est pas en place.
 >
 > **À faire dans les deux sens**, et avec le VPN allumé sur une seule des deux machines puis sur les deux : ce sont trois situations différentes et la course doit gagner les trois.
+
+> **R53 (l'image ne se fige plus, VPN dans VPN compris)**
+>
+> **L'essai qui échouait.** VPN allumé, ouvrir une session vers une machine joignable par un tunnel privé. Avant, l'image arrivait, tenait une à deux secondes et se figeait complètement : la fenêtre répondait encore, le clavier partait encore, et plus une seule image nouvelle. Il fallait fermer avec la croix.
+>
+> Attendu : l'image continue. **Tenir la session au moins cinq minutes** en bougeant des fenêtres sur la machine d'en face, ce qui est ce qui produit le plus d'images.
+>
+> **La ligne à surveiller dans le journal du service**, et elle ne doit plus jamais apparaître :
+>
+> `way 1: the path no longer carries packets the size the engine was told to send, so the picture is stopping`
+>
+> Si elle apparaît quand même, elle donne la place restante sur le chemin et le nombre de rétrécissements : c'est exactement ce qu'il faut m'envoyer.
+>
+> L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
+>
+> **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
 
 > **R52bis (chaque ordinateur dit toutes ses adresses)**
 >

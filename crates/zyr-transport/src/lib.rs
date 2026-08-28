@@ -12,7 +12,8 @@ pub mod path;
 
 pub use congestion::{MediaController, MediaProfile};
 pub use endpoint::{
-    Bytes, Connection, DatagramError, EndpointError, RecvStream, SendStream, TunnelEndpoint,
+    Bytes, Carrying, Connection, DatagramError, EndpointError, RecvStream, SendStream,
+    TunnelEndpoint,
 };
 pub use identity::{AllowedPeers, Fingerprint, Identity};
 pub use mtu::{PacketSize, packet_size};

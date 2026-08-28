@@ -34,12 +34,6 @@ use zyr_tunnel::{Tunnel, aside};
 /// Where the tunnel leaves from: any interface, any port.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
-/// Time left to path discovery before the packet size is fixed.
-///
-/// The engine keeps that size for the whole session and cannot change it
-/// along the way, so it is worth a moment's wait.
-const PATH_DISCOVERY: Duration = Duration::from_secs(2);
-
 /// How long a way may stay tied to nothing before it is closed.
 ///
 /// It covers everything between the way being opened and the player
@@ -57,11 +51,24 @@ const SWEEP: Duration = Duration::from_secs(2);
 
 /// What one way out is made of. Dropping it closes it.
 struct Open {
-    _tunnel: Tunnel,
+    tunnel: Tunnel,
     _endpoint: TunnelEndpoint,
     /// The way itself, kept open to speak to the far ZyrDesk rather than
     /// to its engine: the pairing code travels this way.
     connection: Connection,
+    /// What has already been said about this way going wrong.
+    ///
+    /// A tunnel that starts throwing packets away throws away all of
+    /// them, thousands a minute: what is worth a line in the journal is
+    /// the moment it starts, not each one it drops.
+    complained: Complaints,
+}
+
+/// Losses this way has already been complained about.
+#[derive(Default)]
+struct Complaints {
+    too_large: bool,
+    dropped_from_the_queue: bool,
 }
 
 /// The computer a way leads to.
@@ -390,8 +397,7 @@ impl Ways {
         })?;
 
         let usable = connection
-            .settled_usable_datagram(PATH_DISCOVERY)
-            .await
+            .guaranteed_usable_datagram()
             .ok_or("le chemin n'annonce aucune taille de datagramme")?;
         let packet = packet_size(usable).map_err(|e| e.to_string())?;
 
@@ -410,9 +416,10 @@ impl Ways {
                 at: format!("{address}:{}", engine.http()),
             },
             Open {
-                _tunnel: tunnel,
+                tunnel,
                 _endpoint: endpoint,
                 connection,
+                complained: Complaints::default(),
             },
         );
         self.log
@@ -624,6 +631,7 @@ impl Ways {
     pub async fn keep_tidy(self) {
         loop {
             tokio::time::sleep(SWEEP).await;
+            self.say_what_is_being_lost();
             let finished = self
                 .register
                 .lock()
@@ -633,6 +641,47 @@ impl Ways {
                 self.log
                     .write(&format!("way {way} has nothing left to serve"));
                 self.release(way);
+            }
+        }
+    }
+
+    /// Says out loud when a way stops carrying what it is handed.
+    ///
+    /// A tunnel drops packets in two places and both were silent, which
+    /// is how a picture came to freeze while every log said the session
+    /// was fine. One is a packet too large for the path, thrown away
+    /// rather than cut in two; the other is the send queue overflowing,
+    /// where the transport sacrifices the oldest. Neither ends the
+    /// session, and that is exactly why they have to be said: a session
+    /// that dies leaves a reason behind, a session that goes quiet
+    /// leaves nothing at all.
+    ///
+    /// Said once per way and per kind. It starts and does not stop, so
+    /// the moment is the news and the count is not.
+    fn say_what_is_being_lost(&self) {
+        let mut register = self.register.lock().expect("registre des voies");
+        for (way, kept) in register.kept.iter_mut() {
+            let reading = kept.thing.tunnel.reading();
+            let path = kept.thing.connection.carrying();
+
+            if reading.too_large > 0 && !kept.thing.complained.too_large {
+                kept.thing.complained.too_large = true;
+                self.log.write(&format!(
+                    "way {way}: the path no longer carries packets the size the engine was told \
+                     to send, so the picture is stopping. {} dropped, {} bytes of room left, {} \
+                     narrowings seen",
+                    reading.too_large, path.usable_datagram, path.narrowings
+                ));
+            }
+
+            let queued = reading.to_tunnel.saturating_sub(path.sent);
+            if queued > 0 && !kept.thing.complained.dropped_from_the_queue {
+                kept.thing.complained.dropped_from_the_queue = true;
+                self.log.write(&format!(
+                    "way {way}: the path is not taking packets as fast as the engine makes them, \
+                     {queued} sacrificed so far, round trip {} ms",
+                    path.round_trip.as_millis()
+                ));
             }
         }
     }

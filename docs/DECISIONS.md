@@ -1173,6 +1173,24 @@ the virtual screen was woken but has not joined the desktop after 5000 ms
 
 **La règle qui manquait.** Une décision qui décrit un changement de code se relit contre le code. Écrite mais pas appliquée, elle est pire qu'absente : elle raye le défaut de la liste.
 
+## D86. Une taille qu'on ne peut plus changer se prend sur le plancher, pas sur le plafond (2026-08-28, pendant M4)
+
+**Le mot qui a tout débloqué.** « Dès que la session est établie, au bout de deux secondes, elle se fige totalement. » Pas une coupure : un **gel**. La connexion tient, la fenêtre répond, le clavier part, et l'image s'arrête net.
+
+**Ce que ça élimine d'un coup.** Une connexion perdue coupe tout et laisse une raison derrière elle. Un gel avec la connexion vivante veut dire que ce qui passe par les canaux fiables continue de passer et que ce qui passe par les datagrammes ne passe plus. Chez nous, les canaux fiables portent le contrôle et le RTSP ; les datagrammes portent la vidéo et le son. Le journal du moteur client le dit sans ambiguïté : quelques images décodées, puis plus rien, et le contrôle encore debout quinze secondes plus tard.
+
+**Le mécanisme, vérifié dans le transport et pas supposé.** Le transport part d'un paquet prudent et sonde vers le haut. Quand les gros paquets commencent à disparaître, il conclut que le chemin ne les porte plus et **retombe d'un coup au plus petit paquet que QUIC impose à tout chemin**, puis attend une minute avant de resonder. Cette bascule prend une seconde ou deux, et elle arrive exactement sur les chemins où elle compte : un tunnel privé porté à l'intérieur d'un autre, où la première sonde passe et où plus rien ne passe une fois la vidéo lancée.
+
+**Et le moteur ne peut pas suivre.** On lui dit une taille de paquet une fois, à son démarrage, et il la garde toute la session. Nous la calculions sur la mesure du moment : 1290 octets. À la seconde où le transport retombait au plancher, **chaque paquet vidéo devenait trop gros pour être envoyé**, et chacun était jeté. En silence.
+
+**Décision : la taille demandée au moteur se calcule sur ce que le chemin ne peut plus cesser d'offrir, pas sur ce qu'il offre à l'instant.** Une valeur qu'on ne pourra plus corriger se prend au pire cas, c'est la seule lecture qui vaille quelque chose. Le surcoût mesuré est de 1101 octets par paquet au lieu de 1290, soit quinze pour cent de paquets en plus pour la même image, et ce que ça achète est une session que le chemin ne peut plus tuer en se rétrécissant sous elle. Le plancher garanti n'est pas un chiffre choisi par nous : c'est celui en dessous duquel une connexion QUIC ne peut pas exister du tout.
+
+**Effet de bord agréable** : les deux secondes d'attente qui servaient à laisser la découverte se faire disparaissent de l'ouverture de chaque session.
+
+**Et la vraie faute, celle qui a coûté quatre jours : le silence.** Le tunnel jette des paquets à deux endroits, et les deux étaient muets. Un paquet trop gros pour le chemin, jeté plutôt que découpé ; et la file d'envoi qui déborde, où le transport sacrifie les plus anciens. Aucun des deux ne termine la session, **et c'est précisément pour ça qu'il faut les dire** : une session qui meurt laisse une raison, une session qui se tait ne laisse rien. Les deux comptes existaient en mémoire depuis le début et personne ne les lisait. Ils sont écrits dans le journal maintenant, une fois par voie et par espèce, avec la place qui reste sur le chemin et le nombre de fois où il s'est rétréci.
+
+**La règle.** Un endroit du produit qui jette quelque chose sans le dire est un défaut à part entière, même quand jeter est la bonne décision. Ce qui se perd en silence finit par se payer en journées.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
