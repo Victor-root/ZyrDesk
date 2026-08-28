@@ -509,11 +509,8 @@ function poseLesValeurs(choix) {
   }
   leMenu.now = choix;
   for (const [nom, ligne] of Object.entries(LIGNES)) {
-    const ici = bloc(nom);
-    if (!ici) {
-      continue;
-    }
     const ou = ligne.ou(choix);
+    // Cherchée là où elle vit, comme au-dessus.
     if (ligne.liste) {
       // La ligne du menu dit ce qui est choisi, la liste marque la
       // même valeur : les deux lisent le même endroit, donc elles ne
@@ -530,6 +527,10 @@ function poseLesValeurs(choix) {
           entree.dataset.choix === ou ? "true" : "false",
         );
       }
+      continue;
+    }
+    const ici = bloc(nom);
+    if (!ici) {
       continue;
     }
     if (ligne.boutons) {
@@ -598,11 +599,13 @@ async function applique() {
 
 function batisLesChoix() {
   for (const [nom, ligne] of Object.entries(LIGNES)) {
-    const ici = bloc(nom);
-    if (!ici) {
-      continue;
-    }
     const valeurs = ligne.valeurs(leMenu);
+    // Une ligne qui ouvre un panneau est cherchée là où un panneau vit,
+    // et jamais parmi les réglages. Elle n'en est pas un : sur le menu
+    // elle est un bouton avec un chevron, et son contenu est ailleurs,
+    // dans la page du panneau. Cherchée parmi les réglages, elle n'était
+    // trouvée nulle part, la liste ne se remplissait jamais, et ouvrir
+    // le sous-menu remplaçait le menu par une page vide.
     if (ligne.liste) {
       const liste = document.querySelector(`[data-liste="${nom}"]`);
       if (!liste) {
@@ -655,6 +658,10 @@ function batisLesChoix() {
         }
       }
       liste.replaceChildren(...dedans);
+      continue;
+    }
+    const ici = bloc(nom);
+    if (!ici) {
       continue;
     }
     if (ligne.boutons) {
