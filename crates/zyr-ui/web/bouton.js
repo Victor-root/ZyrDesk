@@ -213,10 +213,32 @@ function formeOccupee(echelle) {
       height: Math.floor(haute * echelle),
       radius: Math.round(rayon * echelle),
     });
+  // Une carte, rognée à ce que la page peut avoir dessiné.
+  //
+  // Rognée, et c'est tout le sujet de l'éclair vu en ouvrant la liste
+  // pour la première fois. La fenêtre est accrochée par son coin haut
+  // droit et grandit vers la gauche : tant qu'elle ne l'a pas fait, une
+  // carte qui s'ouvre de ce côté est posée en dehors de la page, et une
+  // vue web ne peint pas ce qui est dehors. Découpée quand même, la
+  // fenêtre montrait son propre fond à cette place, le temps d'une
+  // image, avant de grandir. Et une seule fois, parce que cette
+  // fenêtre-là ne rétrécit jamais : la fois d'après elle est déjà assez
+  // large et il n'y a plus rien à découvrir.
+  //
+  // Ce qui est rogné revient au tour suivant : le suivi ne s'arrête que
+  // sur deux images identiques, et la fenêtre aura grandi entre-temps.
+  const dessous = document.documentElement.clientHeight;
   const carte = (element) => {
     const ou = element.getBoundingClientRect();
+    const gauche = Math.max(ou.left, 0);
+    const haut = Math.max(ou.top, 0);
+    const large = Math.min(ou.right, droite) - gauche;
+    const haute = Math.min(ou.bottom, dessous) - haut;
+    if (large <= 0 || haute <= 0) {
+      return;
+    }
     const rayon = parseFloat(getComputedStyle(element).borderTopLeftRadius);
-    pose(ou.left, ou.top, ou.width, ou.height, rayon || 0);
+    pose(gauche, haut, large, haute, rayon || 0);
   };
 
   // Les deux écrans tels qu'ils sont rendus, agrandissement du survol
