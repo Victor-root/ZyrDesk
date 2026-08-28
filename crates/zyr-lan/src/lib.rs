@@ -66,8 +66,18 @@ pub struct Peer {
     pub name: String,
     /// What has to be recognised before anything opens.
     pub fingerprint: Fingerprint,
-    /// Where to reach it.
+    /// Where to reach it: the one shown and written down.
     pub address: IpAddr,
+    /// Every address it announced, that one included and first.
+    ///
+    /// Kept and not thrown away, and that is the whole of what this field
+    /// is for. A computer with a second card, a virtual adapter or a VPN
+    /// announces several, they arrive in no order, and only one of them
+    /// is a good way to reach it: the others go through something that
+    /// wraps the traffic up and sends it somewhere else first. Picking
+    /// one by its number and hoping is how a session ends up crossing a
+    /// tunnel to reach a machine on the same desk.
+    pub addresses: Vec<IpAddr>,
     pub port: u16,
 }
 
@@ -100,12 +110,29 @@ impl Found {
     ///
     /// A machine re-announces itself for as long as it runs, so only the
     /// first time is worth telling anyone about.
+    ///
+    /// The addresses are gathered rather than replaced, and that is not
+    /// bookkeeping. A computer with several cards answers a call on every
+    /// one of them, each answer arriving separately: replacing left the
+    /// last one to arrive standing, which is a coin toss, and the losing
+    /// side of that toss is a session sent through whatever the other
+    /// card leads to. All of them are kept, and the one worth using is
+    /// found by trying, not by guessing.
     fn note(&self, peer: Peer, now: Instant) -> bool {
-        self.0
-            .lock()
-            .expect("found peers")
-            .insert(peer.fingerprint, (peer, now))
-            .is_none()
+        let mut found = self.0.lock().expect("found peers");
+        let Some((known, seen)) = found.get_mut(&peer.fingerprint) else {
+            found.insert(peer.fingerprint, (peer, now));
+            return true;
+        };
+        *seen = now;
+        known.name = peer.name;
+        known.port = peer.port;
+        for address in peer.addresses {
+            if !known.addresses.contains(&address) {
+                known.addresses.push(address);
+            }
+        }
+        false
     }
 
     /// Takes a computer off the list on its own say-so.
@@ -383,6 +410,7 @@ fn read(info: &mdns_sd::ResolvedService) -> Option<(Peer, Vec<IpAddr>)> {
         name: name.to_string(),
         fingerprint,
         address: *announced.first()?,
+        addresses: announced.clone(),
         port: info.port,
     };
     Some((peer, announced))
@@ -429,10 +457,16 @@ mod tests {
     }
 
     fn peer(seed: u8, name: &str) -> Peer {
+        at(seed, name, "192.168.1.20")
+    }
+
+    fn at(seed: u8, name: &str, address: &str) -> Peer {
+        let address: IpAddr = address.parse().unwrap();
         Peer {
             name: name.to_string(),
             fingerprint: fingerprint(seed),
-            address: "192.168.1.20".parse().unwrap(),
+            address,
+            addresses: vec![address],
             port: TUNNEL_PORT,
         }
     }

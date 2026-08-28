@@ -142,6 +142,11 @@ fn open(
 }
 
 /// One end of the tunnel.
+///
+/// Cloneable, and cheaply: the thing underneath is a handle several
+/// owners are meant to hold. What wants that is opening towards a
+/// computer's several addresses at once, each attempt on its own task.
+#[derive(Clone)]
 pub struct TunnelEndpoint {
     endpoint: Endpoint,
 }

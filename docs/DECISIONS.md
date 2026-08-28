@@ -1115,6 +1115,22 @@ Warning: Failed to revert display device configuration. Enabling all of the avai
 
 **Et c'est la troisième fois que le même piège se referme.** Croire qu'un périphérique démarré est un écran prêt, croire que des drapeaux disent un état, croire qu'une énumération répond depuis un service. À chaque fois, une réponse de Windows prise pour la réalité. Tout ce qui touche à l'affichage se vérifie en le regardant, et depuis l'endroit d'où il est visible.
 
+## D83. On ne devine pas par où passer, on essaie (2026-08-28, pendant M4)
+
+**Le relevé, et il est net cette fois.** « Ça marche sans Mullvad, mais dès que je le remets, ça casse le flux au bout de deux secondes. Dans exactement les mêmes conditions, le logiciel de référence n'a pas ce problème. »
+
+**Le chiffre qui l'accompagne** : `Average network latency: 63 ms (variance: 0 ms)` entre deux ordinateurs posés sur le même bureau. Variance nulle : ce n'est pas de l'encombrement, c'est un chemin qui ajoute systématiquement soixante-trois millisecondes. Une session est encore possible, agréable non.
+
+**Ce que nous faisions, et c'était un tirage au sort.** Une machine avec plusieurs cartes répond à un appel sur chacune, et chaque réponse arrive à part. Nous écrivions le pair et **remplacions** son adresse à chaque réponse : celle qui restait était celle de la dernière arrivée. Sur la machine du relevé, deux chemins existent vers le même ordinateur, et le tirage tombait sur celui qui traverse un réseau virtuel, lui-même repris par le VPN.
+
+**Et rien ne permet de les distinguer en regardant.** Une adresse, ce sont quatre nombres. Lequel de ces nombres mène à travers un tunnel n'est écrit nulle part, ni dans l'adresse, ni dans le nom de la carte, ni dans ce que Windows en dit. Choisir « la première » ou « la plus petite » revient au même : deviner.
+
+**Décision : toutes les adresses sont gardées, et la voie s'ouvre vers toutes à la fois. La première qui répond gagne.** Ce n'est pas une astuce, c'est la seule façon d'avoir la réponse : le chemin le plus rapide est celui qui répond le premier, par définition, et il n'y a rien à interpréter. Les autres tentatives sont abandonnées dès qu'il y a un gagnant.
+
+**Le journal dit qui a gagné et en combien de temps**, parce que le jour où quelqu'un se demandera par où passe sa session, c'est cette ligne qui répondra : `192.168.1.20:47000 answered first, after 3 ms`.
+
+**Ce que ça règle au-delà du VPN.** Toute machine avec une deuxième carte, un adaptateur virtuel, une machine virtuelle ou un réseau maillé était exposée au même tirage, et le perdait silencieusement une fois sur deux. Le symptôme n'était pas une panne mais une session simplement moins bonne, ce qui est le genre de défaut que personne ne signale et que tout le monde subit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

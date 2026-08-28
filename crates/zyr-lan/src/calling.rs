@@ -402,6 +402,10 @@ impl Calls {
             name: said.name,
             fingerprint: said.fingerprint,
             address: from.ip(),
+            // The one this answer came from. A computer with several
+            // cards answers on each of them, and every answer adds its
+            // own: the list is gathered, never replaced.
+            addresses: vec![from.ip()],
             port: said.port,
         };
         let named = format!("{} at {}", peer.name, peer.address);

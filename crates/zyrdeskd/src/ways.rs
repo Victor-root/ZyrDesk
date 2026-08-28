@@ -258,14 +258,25 @@ impl Ways {
         host: &str,
         peer: Fingerprint,
         media: MediaProfile,
+        also: &[IpAddr],
     ) -> Result<Reached, String> {
-        let remote = resolve(host)?;
+        let asked = resolve(host)?;
+        let candidates = every_way_there(asked, also);
         // Written down before anything is tried. What the person sees of
         // a failure is a sentence in a window they will have closed by
         // the time anyone looks; the trace is what remains, and it is
         // worth as much as the attempt itself.
-        self.log
-            .write(&format!("opening a way to {remote}, expecting {peer}"));
+        self.log.write(&match candidates.len() {
+            1 => format!("opening a way to {asked}, expecting {peer}"),
+            count => format!(
+                "opening a way to {peer}, racing {count} addresses: {}",
+                candidates
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        });
 
         let identity =
             Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
@@ -277,7 +288,10 @@ impl Ways {
             .reserve(peer)
             .ok_or("plus d'adresse locale disponible pour une session de plus")?;
 
-        match self.dig(remote, host, peer, media, device, &identity).await {
+        match self
+            .dig(&candidates, host, peer, media, device, &identity)
+            .await
+        {
             Ok(reached) => Ok(reached),
             Err(e) => {
                 self.register
@@ -288,10 +302,54 @@ impl Ways {
                 // l'écran, sur plusieurs lignes, et le journal en compte
                 // une par événement.
                 self.log
-                    .write(&format!("no way to {remote}: {}", e.replace('\n', " ")));
+                    .write(&format!("no way to {asked}: {}", e.replace('\n', " ")));
                 Err(e)
             }
         }
+    }
+
+    /// Opens towards every address at once and keeps whichever answers
+    /// first, dropping the rest.
+    ///
+    /// A computer on the same desk often has several addresses, and they
+    /// are not worth the same at all: one is the cable between the two
+    /// machines, another belongs to a virtual adapter or a VPN that wraps
+    /// the traffic up and sends it somewhere far away before bringing it
+    /// back. Sixty milliseconds of latency between two computers on one
+    /// desk is what the second kind costs, and no session survives that
+    /// pleasantly.
+    ///
+    /// Nothing here can tell them apart by looking: an address is four
+    /// numbers, and which of them leads through a tunnel is not written
+    /// anywhere. So they are all tried at once and the fastest to answer
+    /// wins, which is the same answer arrived at by measuring instead of
+    /// guessing. The losers are dropped the moment there is a winner.
+    async fn race(
+        &self,
+        endpoint: &TunnelEndpoint,
+        candidates: &[SocketAddr],
+    ) -> Result<(Connection, u128, SocketAddr), String> {
+        let started = Instant::now();
+        let mut running = tokio::task::JoinSet::new();
+        for address in candidates {
+            let towards = endpoint.clone();
+            let address = *address;
+            running.spawn(async move { (address, towards.connect(address).await) });
+        }
+
+        let mut refused = Vec::new();
+        while let Some(finished) = running.join_next().await {
+            let Ok((address, outcome)) = finished else {
+                continue;
+            };
+            match outcome {
+                Ok(connection) => {
+                    return Ok((connection, started.elapsed().as_millis(), address));
+                }
+                Err(e) => refused.push(format!("{address} : {e}")),
+            }
+        }
+        Err(refused.join(" ; "))
     }
 
     /// Everything between the address being taken and the way being
@@ -299,7 +357,7 @@ impl Ways {
     /// back exactly once.
     async fn dig(
         &self,
-        remote: SocketAddr,
+        candidates: &[SocketAddr],
         host: &str,
         peer: Fingerprint,
         media: MediaProfile,
@@ -310,10 +368,14 @@ impl Ways {
             TunnelEndpoint::client(identity, peer, media, SocketAddr::new(EVERY_INTERFACE, 0))
                 .map_err(|e| e.to_string())?;
 
-        let connection = endpoint
-            .connect(remote)
+        let (connection, took, through) = self
+            .race(&endpoint, candidates)
             .await
             .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
+        if candidates.len() > 1 {
+            self.log
+                .write(&format!("{through} answered first, after {took} ms"));
+        }
 
         // The first real exchange, and the moment authorisation is
         // proven: a connection succeeds before the other computer has
@@ -577,6 +639,24 @@ impl Ways {
 }
 
 /// Where the tunnel has to knock. Only the port is ours to add.
+/// Every way there worth trying, the one that was asked for first.
+///
+/// First because it is the one somebody named, or the one the product
+/// wrote down, and a race whose entrants all answer should be won by the
+/// expected one. The others come from what that computer answered on: a
+/// machine with two cards answers on both, and only trying tells which
+/// one is the cable and which is a detour.
+fn every_way_there(asked: SocketAddr, also: &[IpAddr]) -> Vec<SocketAddr> {
+    let mut ways = vec![asked];
+    for address in also {
+        let candidate = SocketAddr::new(*address, TUNNEL_PORT);
+        if !ways.contains(&candidate) {
+            ways.push(candidate);
+        }
+    }
+    ways
+}
+
 fn resolve(host: &str) -> Result<SocketAddr, String> {
     use std::net::ToSocketAddrs;
     format!("{host}:{TUNNEL_PORT}")

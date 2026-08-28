@@ -283,7 +283,17 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             })
         }
         Request::Reach { host, peer, media } => {
-            match answering.ways.open(&host, peer, media).await {
+            // Every address that computer has answered on, so the way is
+            // opened through the one that is actually fast rather than
+            // the one that happened to be written down.
+            let also: Vec<std::net::IpAddr> = answering
+                .neighbours
+                .peers()
+                .into_iter()
+                .find(|seen| seen.fingerprint == peer)
+                .map(|seen| seen.addresses)
+                .unwrap_or_default();
+            match answering.ways.open(&host, peer, media, &also).await {
                 Ok(reached) => Answer::Reached(reached),
                 Err(reason) => Answer::Refused(reason),
             }
