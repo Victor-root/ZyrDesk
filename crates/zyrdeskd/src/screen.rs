@@ -174,15 +174,26 @@ pub fn wake_to_be_named(log: &Log) -> bool {
 }
 
 /// Puts it back to sleep, saying so, whoever asked.
+///
+/// Answers whether it is asleep now. Windows refuses to stop a display
+/// device while something else is rearranging the desktop, which at the
+/// end of a session is exactly what the engine is doing, so a refusal
+/// here is ordinary and means try again in a moment, never give up.
 #[cfg(windows)]
-pub fn back_to_sleep(log: &Log) {
+pub fn back_to_sleep(log: &Log) -> bool {
     match sleep_after_a_session() {
         Ok(said) => {
             for line in said {
                 log.write(&line);
             }
+            true
         }
-        Err(e) => log.write(&format!("the virtual screen would not go to sleep: {e}")),
+        Err(e) => {
+            log.write(&format!(
+                "the virtual screen would not go to sleep, trying again in a moment: {e}"
+            ));
+            false
+        }
     }
 }
 

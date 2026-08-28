@@ -1047,6 +1047,26 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **Ce qui a été écrit avant continue de vouloir dire ce qu'il voulait dire.** Le choix « écran du client » s'écrivait `screen` dans les préférences déjà posées sur les machines. Il s'écrit `client` maintenant, et `screen` reste lu comme tel : lu et jamais écrit, donc un choix fait une fois ne change pas de sens sous les pieds de qui l'a fait.
 
+## D80. Un écran naît à la taille qu'on lui demande, et un refus de Windows se réessaie (2026-08-27, pendant M4)
+
+**Le relevé.** « Gros plantages depuis la maj, impossible de tenir plus de 5 s. » Les journaux des deux machines l'expliquent en trois lignes, et le défaut est bien celui que [D77](#d77-lécran-virtuel-dort-entre-les-sessions-2026-08-27-pendant-m4) avait introduit.
+
+**Un : l'écran se réveillait à la mauvaise taille.** Un écran virtuel qui démarre porte **la première taille de sa liste**, et la liste était dans un ordre fixe qui commence au plus petit. Une session demandant 1920x1080 recevait donc un écran né en 1280x720, et le moteur d'en face devait réarranger tout le bureau une seconde fois pour le corriger. Sur une machine à trois écrans, cette seconde réorganisation tombait pendant que ce moteur éteignait déjà les autres écrans pour la session : les deux se défaisaient l'un l'autre, et l'image ne tenait pas.
+
+**Décision : la taille demandée passe en tête de la liste.** L'écran naît à la bonne taille, il n'y a plus rien à corriger, et il ne reste qu'une seule réorganisation du bureau au lieu de deux.
+
+**Et le service ne mentait plus qu'à moitié.** Il répondait « cet ordinateur affichera 1920x1080 » pendant que l'écran faisait 1280x720. C'est vrai maintenant.
+
+**Deux : un refus de Windows était compté comme un succès.** Le journal de la machine hôte : `the virtual screen would not go to sleep: Windows a refusé, code 13`. Windows refuse d'arrêter un périphérique d'affichage pendant que quelque chose d'autre réorganise le bureau, ce qui à la fin d'une session est exactement ce que le moteur est en train de faire, puisqu'il remet les écrans qu'il avait éteints. Un refus est donc **ordinaire** et veut dire « recommence dans un instant ».
+
+**Il était noté comme fait quand même.** L'écran restait allumé pour toujours, plus rien ne le regardait, et le moteur suivant le trouvait au démarrage et le capturait à la taille qu'il portait ce jour-là. C'est ce qu'on lit dans le relevé : `screens the engine sees: VDD by MTT (on at 1280x720)`, puis `Capture size : 1280x720` alors que les deux vrais écrans sont en 3840x2160.
+
+**Décision : on réessaie jusqu'à ce que ce soit fait, toutes les deux secondes.** Ce qui est écrit dans le journal est ce qui s'est passé, pas ce qu'on espérait.
+
+**Trois, et c'était déjà corrigé la veille : répondre trop tôt.** Windows rend la main quand le périphérique a démarré, pas quand l'écran fait partie du bureau. Le réveil attend maintenant que le bureau compte un écran de plus.
+
+**La leçon des trois.** Réveiller un écran, c'est demander à Windows de refaire son bureau, et le moteur d'en face fait exactement la même chose au même moment pour la même session. Chaque fois qu'on lui donne moins de travail, il y a moins de risque que les deux se croisent. C'est la même famille de défaut que celle décrite au sujet des écrans qu'un moteur n'arrive pas à remettre : deux programmes qui réarrangent la même chose se défont l'un l'autre.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

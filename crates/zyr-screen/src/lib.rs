@@ -199,10 +199,22 @@ pub fn uninstall(driver: &dyn Driver, package: &Path, home: &Path) -> Result<Don
 #[cfg(windows)]
 pub fn wake_up(driver: &dyn Driver, home: &Path, wanted: Mode) -> Result<Done, Trouble> {
     let mut done = Done::default();
-    let mut modes: Vec<Mode> = ALWAYS_OFFERED.to_vec();
-    if !modes.contains(&wanted) {
-        modes.push(wanted);
-    }
+    // The size wanted goes first, and that is not tidiness. A screen
+    // waking up wears the first size on its list, and the engine then
+    // finds it at that size: with the list in a fixed order, every
+    // session was served a screen born at the smallest size offered, and
+    // it took a second rearrangement of the whole desktop to put it
+    // right. On a machine with several screens that second rearrangement
+    // lands while the engine is already reconfiguring them, and the two
+    // undo each other. Born at the size that was asked for, there is
+    // nothing left to change.
+    let mut modes: Vec<Mode> = vec![wanted];
+    modes.extend(
+        ALWAYS_OFFERED
+            .iter()
+            .copied()
+            .filter(|mode| *mode != wanted),
+    );
     let sizes_changed = driver.write_modes(home, &modes, &mut done)?;
     match place::awake(driver)? {
         None => {
@@ -354,6 +366,39 @@ pub fn the_main_screen() -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_size_a_session_asked_for_is_the_one_the_screen_is_born_at() {
+        // Un écran qui se réveille porte la première taille de sa liste.
+        // Laissée dans un ordre fixe, chaque session recevait un écran né
+        // à la plus petite taille offerte, et il fallait réarranger tout
+        // le bureau une deuxième fois pour la corriger, pendant que le
+        // moteur le réarrangeait déjà.
+        let wanted = Mode::new(1920, 1080, 60);
+        let mut modes: Vec<Mode> = vec![wanted];
+        modes.extend(
+            ALWAYS_OFFERED
+                .iter()
+                .copied()
+                .filter(|mode| *mode != wanted),
+        );
+        assert_eq!(modes[0], wanted);
+        // Et elle n'y est qu'une fois, même quand elle est déjà offerte.
+        assert_eq!(modes.iter().filter(|mode| **mode == wanted).count(), 1);
+        assert_eq!(modes.len(), ALWAYS_OFFERED.len());
+
+        // Une taille que personne n'offrait s'ajoute sans en chasser une.
+        let unusual = Mode::new(2048, 1152, 60);
+        let mut modes: Vec<Mode> = vec![unusual];
+        modes.extend(
+            ALWAYS_OFFERED
+                .iter()
+                .copied()
+                .filter(|mode| *mode != unusual),
+        );
+        assert_eq!(modes[0], unusual);
+        assert_eq!(modes.len(), ALWAYS_OFFERED.len() + 1);
+    }
 
     #[test]
     fn the_sizes_a_screen_is_born_with_cover_the_usual_ones() {

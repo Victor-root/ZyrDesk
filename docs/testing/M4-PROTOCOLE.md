@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R49bis** | **Refait, et c'est ce qui faisait tout tomber.** L'écran virtuel se réveillait à la plus petite taille de sa liste, pas à celle demandée, donc le moteur devait réarranger le bureau une seconde fois pendant qu'il l'arrangeait déjà. Et un refus de Windows d'endormir l'écran était compté comme un succès, donc l'écran restait allumé pour toujours |
 | **R51** | **Nouveau.** « Taille » devient **Résolution** et s'ouvre en sous-menu : la résolution du client, celle de l'hôte, puis quinze tailles avec leur rapport. Celle de l'hôte est nouvelle et ne réarrange rien chez lui |
 | **R49** | **Nouveau, et c'est le sujet du lot.** L'écran virtuel était actif en permanence : deux écrans en permanence dans les paramètres d'affichage, sur une machine que personne ne regarde. Il dort maintenant et ne se réveille que pour une session, à la demande de celui qui regarde |
 | **R50** | **Refait, et c'est un défaut du moteur hôte.** Plus moyen de s'appairer : `400 Invalid uniqueid` à chaque tentative, de plus en plus tôt. Un appairage abandonné restait dans la table du moteur et cassait tous les suivants entre les deux mêmes ordinateurs, définitivement, jusqu'au redémarrage de ce moteur. À vérifier après recompilation du **moteur hôte** |
@@ -1352,6 +1353,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Résolution de l'hôte**, à vérifier avec soin, c'est le nouveau. Choisir, appliquer, et regarder **l'écran physique de l'ordinateur d'en face** : sa résolution ne doit **pas** changer, et **aucun écran virtuel ne doit apparaître**. Le journal du service d'ici dit `way N asked the far computer to keep its own screen` puis `way N: the far computer is showing 1920x1080`, et celui de la fenêtre `l'ordinateur distant affiche 1920x1080, c'est ce qui est demandé au lecteur`.
 >
 > **Le cas qui prouve que ça marche vraiment** : depuis un écran 4K, prendre la main sur une machine 1080p en **Résolution de l'hôte**. L'image doit arriver en 1080p et être agrandie ici, pas rognée et pas déformée. En **Résolution du client**, la même session doit passer la machine d'en face en 4K sur son écran virtuel.
+
+> **R49bis (l'écran virtuel naît à la bonne taille, et il se rendort vraiment)**
+>
+> **Sur l'ordinateur hôte**, ouvrir les paramètres d'affichage et les laisser ouverts. Ouvrir une session vers lui depuis l'autre machine.
+>
+> Attendu : l'écran virtuel apparaît **directement à la taille demandée**. S'il apparaît en 1280x720 puis change, la correction n'est pas en place. Le journal du service d'en face dit `virtual screen on the desktop after ... ms`, puis `this computer will be showing 1920x1080` doit être la vérité.
+>
+> Fermer la session. L'écran doit repartir. **S'il ne repart pas tout de suite**, ce n'est pas grave : Windows refuse parfois pendant que le moteur remet les écrans en place. Le journal dit alors `the virtual screen would not go to sleep, trying again in a moment`, et il doit repartir dans les deux à quatre secondes. Ce qu'il ne faut plus jamais voir, c'est un écran resté allumé sans session.
+>
+> **Le cas qui prouve le second défaut** : ouvrir et fermer trois sessions d'affilée, vite. Puis regarder les paramètres d'affichage : un seul écran de plus que d'habitude pendant les sessions, aucun après.
 
 > **R50 (l'appairage se refait autant de fois qu'on veut)**
 >

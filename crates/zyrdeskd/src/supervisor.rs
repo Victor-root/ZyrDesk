@@ -104,13 +104,17 @@ fn wake_to_be_named(_log: &Log) -> bool {
     false
 }
 
+/// Answers whether it really went to sleep: a refusal has to be tried
+/// again, and the caller is the only one that knows when.
 #[cfg(windows)]
-fn put_the_screen_back(log: &Log) {
-    crate::screen::back_to_sleep(log);
+fn put_the_screen_back(log: &Log) -> bool {
+    crate::screen::back_to_sleep(log)
 }
 
 #[cfg(not(windows))]
-fn put_the_screen_back(_log: &Log) {}
+fn put_the_screen_back(_log: &Log) -> bool {
+    true
+}
 
 fn screen_asleep() -> bool {
     crate::screen::asleep()
@@ -653,6 +657,10 @@ fn wait_for_the_engine_to_stop(
     log: &Log,
 ) -> Life {
     let mut last_look = Instant::now();
+    // Apart from the one above: this one paces trying again after a
+    // refusal, and the two would otherwise reset each other and leave a
+    // refused screen unlooked at.
+    let mut last_sleep_try = Instant::now() - SCREEN_WATCH;
     loop {
         if order.stop_asked() {
             log.write("stop asked for, the engine is being stopped");
@@ -692,12 +700,25 @@ fn wait_for_the_engine_to_stop(
         // every session whose computer was closed, unplugged or crashed,
         // and without it such a session would leave a screen on this
         // machine's desk until somebody noticed.
-        if watched.gateway.the_screen_is_awake_for_nobody() {
+        //
+        // Tried again until it works, and that is the whole of the second
+        // half. Windows refuses to stop a display device while something
+        // else is rearranging the desktop, which at the end of a session
+        // is exactly what the engine is doing: it is putting back the
+        // screens it had switched off. Counting a refusal as done left
+        // the screen awake for ever, with nothing ever looking at it
+        // again, and the next engine to start found it and captured it at
+        // whatever size it happened to be wearing.
+        if watched.gateway.the_screen_is_awake_for_nobody()
+            && last_sleep_try.elapsed() >= SCREEN_WATCH
+        {
+            last_sleep_try = Instant::now();
             log.write(
                 "nobody is watching this computer any more, its virtual screen goes back to sleep",
             );
-            put_the_screen_back(log);
-            watched.gateway.the_screen_went_to_sleep();
+            if put_the_screen_back(log) {
+                watched.gateway.the_screen_went_to_sleep();
+            }
         }
 
         // The exit code is asked for first: it is the only thing that
