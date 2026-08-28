@@ -49,6 +49,13 @@ const GRACE: Duration = Duration::from_secs(120);
 /// How often the ways are looked over.
 const SWEEP: Duration = Duration::from_secs(2);
 
+/// Round trip below which a change is not worth a line.
+///
+/// A wait this short is not felt by anybody, and on a cable the round
+/// trip wanders between a third of a millisecond and one, which doubles
+/// and halves constantly while meaning nothing at all.
+const NOTICEABLE: Duration = Duration::from_millis(5);
+
 /// What one way out is made of. Dropping it closes it.
 struct Open {
     tunnel: Tunnel,
@@ -56,19 +63,21 @@ struct Open {
     /// The way itself, kept open to speak to the far ZyrDesk rather than
     /// to its engine: the pairing code travels this way.
     connection: Connection,
-    /// What has already been said about this way going wrong.
+    /// What the journal has already been told about this way.
     ///
     /// A tunnel that starts throwing packets away throws away all of
-    /// them, thousands a minute: what is worth a line in the journal is
-    /// the moment it starts, not each one it drops.
-    complained: Complaints,
+    /// them, thousands a minute, and a round trip moves a little at
+    /// every reading: what is worth a line is the moment something
+    /// changes, never the reading itself.
+    told: Told,
 }
 
-/// Losses this way has already been complained about.
-#[derive(Default)]
-struct Complaints {
+/// What has already been said about one way.
+struct Told {
     too_large: bool,
     dropped_from_the_queue: bool,
+    /// Round trip the last line gave.
+    round_trip: Duration,
 }
 
 /// The computer a way leads to.
@@ -408,6 +417,11 @@ impl Ways {
             .await
             .map_err(|e| format!("les ports locaux n'ont pas pu être ouverts : {e}"))?;
 
+        // Where the road starts, so the journal has something to compare
+        // the rest of the session against: an address that answered
+        // quickly can still be routed the long way round a minute later,
+        // and the only trace of it was a number in a window.
+        let opened_at = connection.round_trip();
         let way = self.register.lock().expect("registre des voies").settle(
             device,
             Towards {
@@ -419,11 +433,17 @@ impl Ways {
                 tunnel,
                 _endpoint: endpoint,
                 connection,
-                complained: Complaints::default(),
+                told: Told {
+                    too_large: false,
+                    dropped_from_the_queue: false,
+                    round_trip: opened_at,
+                },
             },
         );
-        self.log
-            .write(&format!("way {way} open towards {host} on {address}"));
+        self.log.write(&format!(
+            "way {way} open towards {host} on {address}, round trip {} ms",
+            opened_at.as_millis()
+        ));
 
         Ok(Reached {
             way,
@@ -631,7 +651,7 @@ impl Ways {
     pub async fn keep_tidy(self) {
         loop {
             tokio::time::sleep(SWEEP).await;
-            self.say_what_is_being_lost();
+            self.say_how_the_ways_are_doing();
             let finished = self
                 .register
                 .lock()
@@ -645,7 +665,8 @@ impl Ways {
         }
     }
 
-    /// Says out loud when a way stops carrying what it is handed.
+    /// Says out loud when a way stops carrying what it is handed, or
+    /// when the road it takes changes length.
     ///
     /// A tunnel drops packets in two places and both were silent, which
     /// is how a picture came to freeze while every log said the session
@@ -656,16 +677,22 @@ impl Ways {
     /// that dies leaves a reason behind, a session that goes quiet
     /// leaves nothing at all.
     ///
-    /// Said once per way and per kind. It starts and does not stop, so
-    /// the moment is the news and the count is not.
-    fn say_what_is_being_lost(&self) {
+    /// The round trip is the other half, and it answers a question
+    /// nothing else could: a session whose road doubles in length mid
+    /// way is still a session, and the only trace of it was a number in
+    /// a window nobody had open. Said when it doubles or halves, never
+    /// at every reading.
+    ///
+    /// Said once per way and per kind of loss. Losses start and do not
+    /// stop, so the moment is the news and the count is not.
+    fn say_how_the_ways_are_doing(&self) {
         let mut register = self.register.lock().expect("registre des voies");
         for (way, kept) in register.kept.iter_mut() {
             let reading = kept.thing.tunnel.reading();
             let path = kept.thing.connection.carrying();
 
-            if reading.too_large > 0 && !kept.thing.complained.too_large {
-                kept.thing.complained.too_large = true;
+            if reading.too_large > 0 && !kept.thing.told.too_large {
+                kept.thing.told.too_large = true;
                 self.log.write(&format!(
                     "way {way}: the path no longer carries packets the size the engine was told \
                      to send, so the picture is stopping. {} dropped, {} bytes of room left, {} \
@@ -675,16 +702,36 @@ impl Ways {
             }
 
             let queued = reading.to_tunnel.saturating_sub(path.sent);
-            if queued > 0 && !kept.thing.complained.dropped_from_the_queue {
-                kept.thing.complained.dropped_from_the_queue = true;
+            if queued > 0 && !kept.thing.told.dropped_from_the_queue {
+                kept.thing.told.dropped_from_the_queue = true;
                 self.log.write(&format!(
                     "way {way}: the path is not taking packets as fast as the engine makes them, \
                      {queued} sacrificed so far, round trip {} ms",
                     path.round_trip.as_millis()
                 ));
             }
+
+            if worth_saying(kept.thing.told.round_trip, path.round_trip) {
+                let before = kept.thing.told.round_trip;
+                kept.thing.told.round_trip = path.round_trip;
+                self.log.write(&format!(
+                    "way {way} towards {}: the road is now {} ms, it was {} ms",
+                    kept.towards.host,
+                    path.round_trip.as_millis(),
+                    before.as_millis()
+                ));
+            }
         }
     }
+}
+
+/// Whether a change in round trip is worth a line in the journal.
+///
+/// Doubling or halving, and only once the wait is long enough to be
+/// felt. Anything smaller is the ordinary breathing of a network, and a
+/// journal that reports breathing reports nothing.
+fn worth_saying(before: Duration, now: Duration) -> bool {
+    now.max(before) >= NOTICEABLE && (now >= before * 2 || before >= now * 2)
 }
 
 /// Where the tunnel has to knock. Only the port is ours to add.
@@ -830,6 +877,22 @@ mod tests {
         let way = register.settle(device, towards("192.168.1.20"), "session");
         assert!(register.release(way).is_some());
         assert!(register.release(way).is_none());
+    }
+
+    #[test]
+    fn only_a_road_that_really_changed_length_is_worth_a_line() {
+        let ms = Duration::from_millis;
+        // Le cas qui a valu cette ligne : la session double de longueur
+        // en cours de route parce que le chemin passe soudain ailleurs,
+        // et rien nulle part ne le disait.
+        assert!(worth_saying(ms(11), ms(24)));
+        assert!(worth_saying(ms(24), ms(11)));
+        // Un réseau qui respire n'est pas une nouvelle.
+        assert!(!worth_saying(ms(11), ms(14)));
+        // Et sur un câble, un tiers de milliseconde qui en devient une
+        // double sans que personne ne sente quoi que ce soit.
+        assert!(!worth_saying(Duration::from_micros(300), ms(1)));
+        assert!(!worth_saying(ms(1), Duration::from_micros(300)));
     }
 
     #[test]

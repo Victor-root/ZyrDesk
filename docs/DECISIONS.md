@@ -1191,6 +1191,18 @@ the virtual screen was woken but has not joined the desktop after 5000 ms
 
 **La règle.** Un endroit du produit qui jette quelque chose sans le dire est un défaut à part entière, même quand jeter est la bonne décision. Ce qui se perd en silence finit par se payer en journées.
 
+## D87. La longueur de la route se dit, parce qu'elle change en cours de session (2026-08-28, pendant M4)
+
+**Le relevé, et il vient de l'usage.** Le gel est réglé ([D86](#d86-une-taille-quon-ne-peut-plus-changer-se-prend-sur-le-plancher-pas-sur-le-plafond-2026-08-28-pendant-m4)). Reste ceci : « le ping est multiplié par au moins deux quand je réactive le VPN commercial sur la machine hôte ».
+
+**Ce que notre code fait, et il ne fait rien d'autre.** La session est ouverte vers une adresse du réseau privé maillé de son propriétaire, et elle y reste : nous remettons un paquet au système pour cette adresse-là, avant comme après. Ce qui a bougé n'est pas notre destination, c'est la route que prennent les paquets **du maillage lui-même** une fois qu'un autre VPN a pris la route par défaut de la machine. Le maillage part alors faire un détour avant de sortir. La destination est identique, le trajet a doublé.
+
+**Ce n'est donc pas un défaut du produit, et ce n'en est pas moins un défaut du produit.** Nous ne choisissons pas cette route et nous ne pouvons pas la choisir. Mais la session a doublé de longueur pendant qu'elle tournait, et **rien nulle part ne l'a dit** : le seul endroit où ça se voyait était un compteur dans une fenêtre de statistiques que personne n'a ouverte. C'est la même faute que celle du paquet jeté en silence, une semaine plus tôt, sous une autre forme.
+
+**Décision : la longueur de la route est écrite à l'ouverture de chaque voie, et réécrite chaque fois qu'elle double ou qu'elle est divisée par deux.** Pas à chaque lecture : un réseau respire, et un journal qui rapporte la respiration ne rapporte rien. Et pas en dessous de cinq millisecondes, parce que sur un câble la route passe d'un tiers de milliseconde à une milliseconde sans que personne ne sente quoi que ce soit.
+
+**La règle, générale.** Ce que le produit ne peut pas corriger, il doit au moins le dire. Une dégradation invisible coûte plus cher qu'une panne, parce qu'une panne se raconte et qu'une dégradation se subit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

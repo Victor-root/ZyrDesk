@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R54** | **Nouveau.** La longueur de la route est écrite dans le journal à l'ouverture de chaque session, puis à chaque fois qu'elle double ou qu'elle est divisée par deux. Une session dont le trajet change en cours de route, parce qu'un VPN prend la route par défaut d'une des deux machines, restait totalement invisible en dehors de la fenêtre de statistiques |
 | **R53** | **Nouveau, et c'est la vraie cause du gel.** La session se figeait totalement deux secondes après son ouverture, connexion toujours vivante. Le transport retombe au plus petit paquet garanti dès qu'il juge que le chemin ne porte plus les gros, ce qui arrive sur un tunnel porté dans un autre ; le moteur, lui, garde pour toute la session la taille qu'on lui a dite au départ. Chaque paquet vidéo devenait alors trop gros et était jeté en silence. La taille se calcule sur le plancher garanti maintenant, et ce qui est jeté est écrit dans le journal |
 | **R52bis** | **Refait, et la correction d'avant ne servait à rien.** La course entre les adresses était juste, mais il n'y en avait qu'une à essayer : un ordinateur qui se présentait ne disait pas où il répond, donc l'autre ne connaissait que l'adresse d'où la réponse était arrivée. Une machine à quatre cartes n'en montrait qu'une. Elle les nomme toutes maintenant, et la course a enfin de quoi courir |
 | **R52** | **Nouveau, et c'est un vrai défaut de fond.** L'adresse d'un ordinateur à plusieurs cartes était tirée au sort : la dernière réponse arrivée gagnait. Avec un VPN actif, le tirage tombait sur le chemin qui traverse le tunnel, d'où soixante-trois millisecondes de latence sur un bureau. Toutes les adresses sont gardées maintenant, et la voie s'ouvre vers toutes à la fois : la première qui répond gagne |
@@ -1424,6 +1425,18 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R54 (le journal dit quand le trajet s'allonge)**
+>
+> À l'ouverture d'une session, le journal du service donne le point de départ : `way 1 open towards 192.168.2.5 on 127.77.27.36, round trip 12 ms`.
+>
+> **L'essai.** Session ouverte et qui tourne, activer le VPN commercial sur l'une des deux machines. Le journal doit écrire, dans les deux secondes :
+>
+> `way 1 towards 192.168.2.5: the road is now 24 ms, it was 12 ms`
+>
+> Puis le désactiver : la ligne repart dans l'autre sens.
+>
+> **Ce que ça ne fait pas**, et c'est volontaire : ça ne déplace pas la session. La destination n'a pas changé, c'est le trajet vers elle qui a changé, et ce trajet-là appartient à la machine et à ses réglages de VPN, pas à ZyrDesk. La ligne existe pour que ça se voie sans ouvrir les statistiques.
 
 > **R52bis (chaque ordinateur dit toutes ses adresses)**
 >
