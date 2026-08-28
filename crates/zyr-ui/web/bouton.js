@@ -385,10 +385,10 @@ function montrePanneau(nom) {
   panneauOuvert = nom;
   for (const panneau of document.querySelectorAll(".panneau")) {
     const ici = panneau.id === `panneau-${nom}`;
-    // Rangé et non seulement caché : caché, il garderait sa place dans
-    // la rangée et la fenêtre ferait la largeur des deux cartes en
-    // permanence.
-    panneau.classList.toggle("rangee", !ici);
+    // Caché et non rangé : il garde sa place, donc la fenêtre a sa
+    // taille définitive dès l'ouverture du menu et n'a plus jamais à
+    // grandir. Une fenêtre qui grandit découvre une bande que la page
+    // n'a pas encore peinte, et c'est de là que vient le clignotement.
     panneau.classList.toggle("repliee", !ici);
     if (ici) {
       borneLaListe(panneau);

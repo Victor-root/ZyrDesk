@@ -302,17 +302,6 @@
 
 /* ---- Le sous-menu ---------------------------------------------------- */
 
-/* Une vue à la fois. Cette fenêtre est étroite, elle suit ce que la page
-   occupe, et un panneau ouvert à côté la ferait déborder de l'image. */
-/* Retiré du dessin plutôt que rendu invisible : les deux ne sont jamais
-   montrés ensemble, et l'un laissé en place sous l'autre ferait une
-   fenêtre haute de leurs deux hauteurs. C'est aussi pour cela que ce
-   n'est pas la même classe que le menu replié, qui lui garde sa place le
-   temps d'être mesuré. */
-.rangee {
-  display: none;
-}
-
 /* Le chevron qui dit qu'une ligne en ouvre une autre. Poussé au bord,
    après la valeur en place. */
 .chevron {

@@ -376,10 +376,12 @@
         </div>
 
         <!-- Le sous-menu de la résolution, ouvert à gauche du menu.
-             Rangé et non seulement caché tant qu'il est fermé : caché, il
-             garderait sa place dans la rangée et la fenêtre ferait la
-             largeur des deux cartes en permanence. -->
-        <div class="menu panneau rangee repliee" id="panneau-asked" role="menu">
+             Caché et non rangé tant qu'il est fermé : il garde sa place,
+             donc la fenêtre a sa taille définitive dès le premier
+             affichage du menu et n'a plus jamais à grandir. C'est la
+             règle que le menu lui-même suit depuis toujours, et grandir
+             est ce qui fait clignoter cette fenêtre-là. -->
+        <div class="menu panneau repliee" id="panneau-asked" role="menu">
           <button
             class="item retour"
             type="button"
