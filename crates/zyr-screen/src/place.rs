@@ -18,14 +18,14 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
-    CONFIGFLAG_DISABLED, DICD_GENERATE_ID, DICS_DISABLE, DICS_ENABLE, DICS_FLAG_CONFIGSPECIFIC,
-    DICS_FLAG_GLOBAL, DICS_PROPCHANGE, DIF_PROPERTYCHANGE, DIF_REGISTERDEVICE, DIF_REMOVE,
-    DIGCF_PRESENT, HDEVINFO, INSTALLFLAG_FORCE, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
-    SP_PROPCHANGE_PARAMS, SPDRP_CONFIGFLAGS, SPDRP_HARDWAREID, SPOST_NONE, SUOI_FORCEDELETE,
-    SetupCopyOEMInfW, SetupDiCallClassInstaller, SetupDiCreateDeviceInfoList,
-    SetupDiCreateDeviceInfoW, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
-    SetupDiGetClassDevsW, SetupDiGetDeviceRegistryPropertyW, SetupDiSetClassInstallParamsW,
-    SetupDiSetDeviceRegistryPropertyW, SetupUninstallOEMInfW, UpdateDriverForPlugAndPlayDevicesW,
+    DICD_GENERATE_ID, DICS_DISABLE, DICS_ENABLE, DICS_FLAG_CONFIGSPECIFIC, DICS_FLAG_GLOBAL,
+    DICS_PROPCHANGE, DIF_PROPERTYCHANGE, DIF_REGISTERDEVICE, DIF_REMOVE, DIGCF_PRESENT, HDEVINFO,
+    INSTALLFLAG_FORCE, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_PROPCHANGE_PARAMS,
+    SPDRP_HARDWAREID, SPOST_NONE, SUOI_FORCEDELETE, SetupCopyOEMInfW, SetupDiCallClassInstaller,
+    SetupDiCreateDeviceInfoList, SetupDiCreateDeviceInfoW, SetupDiDestroyDeviceInfoList,
+    SetupDiEnumDeviceInfo, SetupDiGetClassDevsW, SetupDiGetDeviceRegistryPropertyW,
+    SetupDiSetClassInstallParamsW, SetupDiSetDeviceRegistryPropertyW, SetupUninstallOEMInfW,
+    UpdateDriverForPlugAndPlayDevicesW,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_FILE_NOT_FOUND, ERROR_INSUFFICIENT_BUFFER, ERROR_NO_MORE_ITEMS, GetLastError,
@@ -327,35 +327,38 @@ pub fn the_main_screen() -> Option<(u32, u32)> {
 
 /// Whether it is awake, `None` when there is no such device at all.
 ///
-/// Read from the same flags the machine's own device tooling writes, so
-/// a screen somebody switched off by hand reads as asleep here, which is
-/// the truth and what this product should act on.
+/// Asked of the device itself, and this is the whole of the answer's
+/// worth. The obvious place to read it is the flags the machine's own
+/// device tooling writes, and those flags say what somebody **asked
+/// for**, not what happened: Windows refuses to stop a display device
+/// while something else is rearranging the desktop, and when it refuses
+/// it has already written down that the device is off. A screen that
+/// went on drawing therefore read as asleep, so nothing ever tried to
+/// stop it again, and the next engine to start found it and captured it.
+///
+/// What the device is actually doing is a different question with a
+/// different answer, and it is the one asked here: a device that is
+/// started is a device drawing a screen, whatever anybody wrote down
+/// about it.
 pub fn awake(driver: &dyn Driver) -> Result<Option<bool>, Trouble> {
+    use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
+        CM_Get_DevNode_Status, CR_SUCCESS, DN_STARTED,
+    };
+
     let Some(found) = find_device(driver)? else {
         return Ok(None);
     };
-    let mut flags = 0u32;
-    let mut kind = 0u32;
-    let mut written = 0u32;
-    // SAFETY: the set and the device live in `found`, and the slot is
-    // ours with its size given alongside it.
-    let ok = unsafe {
-        SetupDiGetDeviceRegistryPropertyW(
-            found.set.0,
-            &found.device,
-            SPDRP_CONFIGFLAGS,
-            &mut kind,
-            std::ptr::from_mut(&mut flags).cast::<u8>(),
-            size_of::<u32>() as u32,
-            &mut written,
-        )
-    };
-    // A device that has never been switched either way carries no flags
-    // at all, and that is a device Windows is showing: awake.
-    if ok == 0 {
-        return Ok(Some(true));
+    let mut status = 0u32;
+    let mut problem = 0u32;
+    // SAFETY: both slots are ours, and the device node comes from the
+    // list this file opened and still holds.
+    let answer =
+        unsafe { CM_Get_DevNode_Status(&mut status, &mut problem, found.device.DevInst, 0) };
+    if answer != CR_SUCCESS {
+        // No node to ask means nothing is drawing anything.
+        return Ok(Some(false));
     }
-    Ok(Some(flags & CONFIGFLAG_DISABLED == 0))
+    Ok(Some(status & DN_STARTED != 0))
 }
 
 /// Takes a driver package into Windows' own store of drivers.

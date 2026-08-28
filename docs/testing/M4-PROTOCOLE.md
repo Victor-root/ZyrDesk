@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R49ter** | **Refait, et c'est la racine des deux d'avant.** L'état de l'écran virtuel était lu dans des drapeaux qui disent ce qui a été demandé, pas ce qui s'est passé : un écran que Windows avait refusé d'éteindre se lisait comme éteint, donc plus rien ne l'éteignait, et le moteur le capturait en 1280x720 en permanence. La question se pose au périphérique maintenant |
 | **R49bis** | **Refait, et c'est ce qui faisait tout tomber.** L'écran virtuel se réveillait à la plus petite taille de sa liste, pas à celle demandée, donc le moteur devait réarranger le bureau une seconde fois pendant qu'il l'arrangeait déjà. Et un refus de Windows d'endormir l'écran était compté comme un succès, donc l'écran restait allumé pour toujours |
 | **R51** | **Nouveau.** « Taille » devient **Résolution** et s'ouvre en sous-menu : la résolution du client, celle de l'hôte, puis quinze tailles avec leur rapport. Celle de l'hôte est nouvelle et ne réarrange rien chez lui |
 | **R49** | **Nouveau, et c'est le sujet du lot.** L'écran virtuel était actif en permanence : deux écrans en permanence dans les paramètres d'affichage, sur une machine que personne ne regarde. Il dort maintenant et ne se réveille que pour une session, à la demande de celui qui regarde |
@@ -1363,6 +1364,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > Fermer la session. L'écran doit repartir. **S'il ne repart pas tout de suite**, ce n'est pas grave : Windows refuse parfois pendant que le moteur remet les écrans en place. Le journal dit alors `the virtual screen would not go to sleep, trying again in a moment`, et il doit repartir dans les deux à quatre secondes. Ce qu'il ne faut plus jamais voir, c'est un écran resté allumé sans session.
 >
 > **Le cas qui prouve le second défaut** : ouvrir et fermer trois sessions d'affilée, vite. Puis regarder les paramètres d'affichage : un seul écran de plus que d'habitude pendant les sessions, aucun après.
+
+> **R49ter (le journal dit la vérité sur l'écran virtuel)**
+>
+> C'est le contrôle qui prouve que les deux d'avant tiennent. **Sur l'ordinateur hôte**, hors session, redémarrer le service et lire son journal.
+>
+> Il doit dire `virtual screen already asleep` **et** la ligne `screens the engine sees:` juste après ne doit **pas** contenir `VDD by MTT`. Les deux ensemble, ou aucune confiance : si le service dit qu'il dort et que le moteur le voit, c'est ce défaut-là qui est de retour.
+>
+> Et `Capture size` dans le journal du moteur hôte doit être la taille de l'écran physique de cette machine, pas 1280x720.
+>
+> **Le seul cas où l'écran doit être vu par le moteur au démarrage**, c'est la toute première fois de la vie de l'ordinateur, celle où il est réveillé une seconde pour être nommé (R49). Le journal le dit alors en clair.
 
 > **R50 (l'appairage se refait autant de fois qu'on veut)**
 >

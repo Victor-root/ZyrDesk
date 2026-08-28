@@ -1067,6 +1067,30 @@ Le mode `zyrdesk` est demandé au moteur à chaque session, sans interrupteur. U
 
 **La leçon des trois.** Réveiller un écran, c'est demander à Windows de refaire son bureau, et le moteur d'en face fait exactement la même chose au même moment pour la même session. Chaque fois qu'on lui donne moins de travail, il y a moins de risque que les deux se croisent. C'est la même famille de défaut que celle décrite au sujet des écrans qu'un moteur n'arrive pas à remettre : deux programmes qui réarrangent la même chose se défont l'un l'autre.
 
+## D81. On demande au périphérique ce qu'il fait, pas ce qui a été écrit sur lui (2026-08-27, pendant M4)
+
+**Le relevé, et il se contredit tout seul.** Sur la machine hôte, à une seconde d'intervalle :
+
+```
+08:11:12 virtual screen already asleep
+08:11:13 screens the engine sees: VDD by MTT (on at 1280x720) ; ...
+08:11:13 the engine is capturing the virtual screen
+```
+
+Le service dit que l'écran dort. Le moteur le voit allumé et le capture. L'un des deux se trompe, et c'est le nôtre.
+
+**Ce qu'on lisait.** L'état du périphérique était lu dans les drapeaux que l'outillage de Windows écrit quand quelqu'un active ou désactive un matériel. Ces drapeaux disent ce qui a été **demandé**, pas ce qui s'est passé. Or Windows refuse d'arrêter un périphérique d'affichage pendant que quelque chose d'autre réorganise le bureau, et **quand il refuse, il a déjà écrit que le périphérique est éteint**.
+
+**La cascade complète, et elle explique tout ce qui a été relevé depuis deux jours.** Un écran qui a continué de dessiner se lisait donc comme endormi. Alors :
+- Plus rien n'essayait de l'arrêter : `virtual screen already asleep` sur un écran allumé, à chaque démarrage du service.
+- Le réveil suivant le trouvait « endormi », le réveillait pour rien, puis attendait qu'un écran de plus rejoigne le bureau, ce qui n'arrivait jamais puisqu'il y était déjà : `the virtual screen was woken but has not joined the desktop after 5000 ms`.
+- Et une demande d'endormissement sur un périphérique que Windows croit déjà éteint est refusée avec le code 13, qu'on lisait comme un vrai refus alors que c'est « c'est déjà écrit ».
+- Pendant ce temps l'écran restait sur le bureau en 1280x720, le moteur hôte le trouvait à son démarrage et le capturait : cet ordinateur servait un bureau de 1280x720 étiré, en permanence, session ou pas.
+
+**Décision : la question se pose au périphérique lui-même.** Un périphérique démarré est un périphérique qui dessine un écran, quoi que quiconque ait écrit à son sujet. C'est une autre question que « qu'est-ce qui a été demandé », elle a une autre réponse, et c'est celle-ci qui compte.
+
+**Ce qu'il faut en retenir au-delà de ce défaut.** Deux fois de suite sur ce sujet, on a pris pour acquis ce qu'un appel Windows a répondu au lieu de vérifier ce qui s'était réellement produit : d'abord en croyant qu'un périphérique démarré était un écran prêt ([D80](#d80-un-écran-naît-à-la-taille-quon-lui-demande-et-un-refus-de-windows-se-réessaie-2026-08-27-pendant-m4)), puis en croyant que des drapeaux disaient un état. Tout ce qui touche à l'affichage se vérifie en le regardant, jamais en le déduisant.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
