@@ -1101,6 +1101,8 @@ Le service dit que l'écran dort. Le moteur le voit allumé et le capture. L'un 
 
 **Décision : la question se pose à la configuration d'affichage que le système tient, pas au poste de travail de celui qui demande.** C'est aussi ce que lit le moteur d'en face, donc les deux moitiés du produit regardent enfin la même chose.
 
+> Cette moitié-là de D82 n'a jamais été écrite dans le code, et la voie annoncée n'était pas la bonne. Corrigée et remplacée par [D85](#d85-une-décision-écrite-nest-pas-une-décision-appliquée-2026-08-28-pendant-m4).
+
 **Deux : on rangeait l'écran pendant que le moteur remettait les autres.** Une session qui se termine, c'est le moteur d'en face qui remet en place les écrans qu'il avait éteints pour elle, et l'arrangement qu'il remet est celui qui contenait notre écran virtuel. Nous l'endormions dans la même seconde. Le moteur se retrouvait à restaurer un écran qui n'existe plus :
 
 ```
@@ -1130,6 +1132,46 @@ Warning: Failed to revert display device configuration. Enabling all of the avai
 **Le journal dit qui a gagné et en combien de temps**, parce que le jour où quelqu'un se demandera par où passe sa session, c'est cette ligne qui répondra : `192.168.1.20:47000 answered first, after 3 ms`.
 
 **Ce que ça règle au-delà du VPN.** Toute machine avec une deuxième carte, un adaptateur virtuel, une machine virtuelle ou un réseau maillé était exposée au même tirage, et le perdait silencieusement une fois sur deux. Le symptôme n'était pas une panne mais une session simplement moins bonne, ce qui est le genre de défaut que personne ne signale et que tout le monde subit.
+
+## D84. La course n'a servi à rien parce qu'il n'y avait qu'un concurrent (2026-08-28, pendant M4)
+
+**Le relevé, et il tient en une ligne.** Sur la machine qui appelle, au moment d'ouvrir la session :
+
+```
+opening a way to 192.168.2.20:47000, expecting 0829cc7e...
+```
+
+**Cette phrase-là n'est écrite que dans un seul cas : quand il n'y a qu'une adresse à essayer.** La course décidée en [D83](#d83-on-ne-devine-pas-par-où-passer-on-essaie-2026-08-28-pendant-m4) écrit une autre phrase, qui nomme les adresses en lice. Elle n'a jamais eu lieu. Les chiffres du client le confirment sans discuter : `Average network latency: 59 ms`, inchangé.
+
+**Pourquoi une seule.** La machine d'en face a quatre adresses, son propre journal les nomme toutes. Celle qui appelle n'en connaissait qu'une, et il n'y avait rien à garder en plus : sur cette machine, la découverte par annonce mDNS ne passe pas, et l'autre chemin de découverte, celui qui appelle directement, **n'apprenait qu'une adresse par nature**. Celle d'où la réponse est arrivée. C'est-à-dire celle où la question avait été envoyée : on redécouvrait ce qu'on savait déjà.
+
+**Le défaut n'était donc pas dans le rangement, il était dans ce qui se dit.** Une machine qui se présente disait son port, son empreinte et son nom. Elle ne disait pas où elle répond. Une machine à quatre cartes répond sur celle que sa table de routage a choisie et se tait sur les trois autres ; celle qui l'écoute connaît une porte sur quatre, n'a aucun moyen de deviner les autres, et ouvre toutes ses sessions par celle dont on lui a parlé.
+
+**Décision : un ordinateur qui se présente nomme toutes les adresses auxquelles il répond.** C'est ce que l'annonce mDNS a toujours fait ; c'est désormais aussi ce que dit l'appel direct, qui est le chemin qui marche quand mDNS ne passe pas. Huit adresses au plus, parce que chacune est une porte de plus à essayer et que la ligne doit tenir dans un seul petit datagramme.
+
+**Ce que ça oblige à changer d'autre.** Le numéro de version de ce dialogue passe de 1 à 2. Deux versions différentes ne se parlent plus au lieu de se mécomprendre : lue à l'ancienne, la nouvelle ligne prendrait la liste d'adresses pour une empreinte et l'empreinte pour un nom, ce qui est exactement le genre d'accord faux qu'un numéro de version existe pour empêcher.
+
+**Et le journal dit enfin ce qu'il fallait.** `PC-VICTOR at 192.168.2.20, also answering at 192.168.1.20, 10.141.87.37` : la ligne qui manquait, celle qui dit qu'il y avait un choix à faire.
+
+**La leçon, et c'est la deuxième fois cette semaine.** Une correction qui repose sur une donnée doit se demander d'où vient cette donnée. La course était juste, son entrée était vide, et rien dans le code ne disait qu'une liste d'adresses pouvait n'en contenir qu'une pour une raison structurelle.
+
+## D85. Une décision écrite n'est pas une décision appliquée (2026-08-28, pendant M4)
+
+**Le relevé.** Sur la machine hôte, la ligne que [D82](#d82-un-service-na-pas-de-bureau-et-on-ne-range-pas-un-écran-pendant-que-le-moteur-remet-les-autres-2026-08-28-pendant-m4) déclarait réglée, mot pour mot :
+
+```
+the virtual screen was woken but has not joined the desktop after 5000 ms
+```
+
+**Le diagnostic de D82 était bon, sa correction n'a jamais été écrite.** Le texte annonçait que le comptage passerait par la configuration d'affichage du système. Le code, lui, comptait toujours les périphériques d'affichage du programme, c'est-à-dire la question aveugle depuis un service. Seule une ligne de dépendance avait bougé, sans que rien ne l'utilise. Cinq secondes perdues à chaque ouverture de session, sur un écran parfaitement réveillé.
+
+**Et la réponse annoncée n'était pas la bonne non plus.** Toutes les questions d'affichage de Windows passent par le poste de travail de celui qui demande, la configuration d'affichage comprise. Un service n'en a pas. Choisir cette voie, c'était remplacer une question aveugle par une autre en espérant.
+
+**Ce dont nous avons la preuve, en revanche**, c'est que les périphériques répondent depuis le service : c'est déjà comme ça que l'écran virtuel est trouvé, réveillé, interrogé et endormi, et ces opérations-là marchent. Un périphérique appartient à la machine, pas à une session.
+
+**Décision : les écrans se comptent au périphérique.** Un écran qui se réveille, c'est un moniteur qui arrive dans la liste des moniteurs de la machine, et cette liste-là répond de partout. C'est la même mesure pour les deux attentes qui en dépendent : celle qui attend qu'un écran devienne un écran, et celle qui attend que le bureau cesse de bouger avant de ranger le nôtre.
+
+**La règle qui manquait.** Une décision qui décrit un changement de code se relit contre le code. Écrite mais pas appliquée, elle est pire qu'absente : elle raye le défaut de la liste.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

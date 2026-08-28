@@ -59,7 +59,9 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R52bis** | **Refait, et la correction d'avant ne servait à rien.** La course entre les adresses était juste, mais il n'y en avait qu'une à essayer : un ordinateur qui se présentait ne disait pas où il répond, donc l'autre ne connaissait que l'adresse d'où la réponse était arrivée. Une machine à quatre cartes n'en montrait qu'une. Elle les nomme toutes maintenant, et la course a enfin de quoi courir |
 | **R52** | **Nouveau, et c'est un vrai défaut de fond.** L'adresse d'un ordinateur à plusieurs cartes était tirée au sort : la dernière réponse arrivée gagnait. Avec un VPN actif, le tirage tombait sur le chemin qui traverse le tunnel, d'où soixante-trois millisecondes de latence sur un bureau. Toutes les adresses sont gardées maintenant, et la voie s'ouvre vers toutes à la fois : la première qui répond gagne |
+| **R49quinquies** | **Refait, et la moitié annoncée la fois d'avant n'avait jamais été écrite.** Les cinq secondes perdues à chaque ouverture étaient toujours là. Les écrans se comptent maintenant au périphérique, qui appartient à la machine et répond donc depuis un service, au lieu de passer par un bureau que le service n'a pas |
 | **R49quater** | **Refait.** L'attente à l'ouverture ne voyait rien : compter les écrans depuis un service revient à interroger un poste de travail sans bureau, donc cinq secondes perdues à chaque session. Et l'écran était rangé pendant que le moteur remettait les autres en place, ce qui lui faisait rallumer des écrans que le propriétaire avait éteints |
 | **R49ter** | **Refait, et c'est la racine des deux d'avant.** L'état de l'écran virtuel était lu dans des drapeaux qui disent ce qui a été demandé, pas ce qui s'est passé : un écran que Windows avait refusé d'éteindre se lisait comme éteint, donc plus rien ne l'éteignait, et le moteur le capturait en 1280x720 en permanence. La question se pose au périphérique maintenant |
 | **R49bis** | **Refait, et c'est ce qui faisait tout tomber.** L'écran virtuel se réveillait à la plus petite taille de sa liste, pas à celle demandée, donc le moteur devait réarranger le bureau une seconde fois pendant qu'il l'arrangeait déjà. Et un refus de Windows d'endormir l'écran était compté comme un succès, donc l'écran restait allumé pour toujours |
@@ -1387,6 +1389,12 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Le journal du service d'en face dit `the desktop stopped changing after ... ms` avant d'endormir l'écran, et celui du moteur ne doit **pas** contenir `Failed to revert display device configuration`.
 
+> **R49quinquies (le chrono, pour de bon cette fois)**
+>
+> **Exactement le même essai que le chrono de R49quater**, à refaire parce que la correction annoncée alors n'avait jamais été écrite dans le code : les cinq secondes étaient toujours là au relevé suivant.
+>
+> Ce qui change dessous : les écrans se comptent au périphérique, comme l'écran virtuel est déjà trouvé et réveillé, au lieu de passer par un bureau que le service n'a pas. `virtual screen on the desktop after ... ms` doit donner quelques centaines de millisecondes.
+
 > **R52 (la session prend le chemin le plus court, VPN ou pas)**
 >
 > **Avec le VPN allumé**, ouvrir une session entre deux machines du même réseau local.
@@ -1399,6 +1407,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Le chiffre qui tranche.** Ouvrir les statistiques (Ctrl+Alt+Maj+S) et lire **Réseau**. Sur deux machines du même réseau, ce doit être **1 ou 2 ms**, VPN allumé ou éteint. Si tu lis soixante et quelques, la session est partie par le tunnel du VPN et la correction n'est pas en place.
 >
 > **À faire dans les deux sens**, et avec le VPN allumé sur une seule des deux machines puis sur les deux : ce sont trois situations différentes et la course doit gagner les trois.
+
+> **R52bis (chaque ordinateur dit toutes ses adresses)**
+>
+> **La ligne à lire avant même d'ouvrir une session.** Sur chaque machine, dans le journal du service, chercher la ligne où l'autre est trouvée. Elle doit maintenant nommer plus d'une adresse quand la machine d'en face en a plusieurs :
+>
+> `PC-VICTOR at 192.168.2.20, also answering at 192.168.1.20, 10.141.87.37`
+>
+> Si elle n'en nomme qu'une, c'est que la machine d'en face n'en a qu'une, ou qu'elle n'a pas été recompilée. **Les deux machines doivent l'être** : ce dialogue change de version, et deux versions différentes ne se parlent plus du tout par ce chemin (l'annonce mDNS, elle, continue de marcher).
+>
+> **Puis ouvrir la session** et vérifier la ligne de R52 : `racing N addresses`, avec N supérieur à 1. Si le journal dit encore `opening a way to <adresse>, expecting <empreinte>`, c'est qu'il n'y a toujours qu'un seul chemin connu et rien n'est réglé.
 
 > **R50 (l'appairage se refait autant de fois qu'on veut)**
 >
