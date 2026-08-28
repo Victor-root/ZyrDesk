@@ -210,8 +210,25 @@ pub fn wake_up(driver: &dyn Driver, home: &Path, wanted: Mode) -> Result<Done, T
             return Ok(done);
         }
         Some(false) => {
+            let before = place::screens_on_the_desktop();
             place::wake(driver, &mut done)?;
             done.changed = true;
+            // Waited on, and this is not politeness. Windows hands back
+            // from starting a device long before that device is a screen
+            // anybody can capture: the desktop is rebuilt around it
+            // afterwards, and nothing says when. The session asking is
+            // told the screen is ready and starts its engine on that
+            // word, so answering early is telling it to capture a screen
+            // that is not there yet, which is a session opening onto
+            // nothing.
+            done.step(match settled(before) {
+                Some(waited) => format!("virtual screen on the desktop after {waited} ms"),
+                None => format!(
+                    "the virtual screen was woken but has not joined the desktop after {} ms, the \
+                     session opens on what is there",
+                    JOINING_THE_DESKTOP.as_millis()
+                ),
+            });
         }
         Some(true) if sizes_changed => {
             place::restart(driver, &mut done)?;
@@ -222,6 +239,34 @@ pub fn wake_up(driver: &dyn Driver, home: &Path, wanted: Mode) -> Result<Done, T
         )),
     }
     Ok(done)
+}
+
+/// How long a woken screen is given to become one of the desktop's, and
+/// how often that is asked.
+///
+/// Generous at the top because the machine being woken is sometimes busy
+/// serving a session already, and short at the bottom because everything
+/// waiting on this is a person watching an empty window.
+#[cfg(windows)]
+const JOINING_THE_DESKTOP: std::time::Duration = std::time::Duration::from_secs(5);
+#[cfg(windows)]
+const ASKING_AGAIN: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Waits for the desktop to be made of one more screen than it was.
+///
+/// Answers how long that took, or nothing when it never happened. Counted
+/// rather than named: what is being waited on is Windows finishing, and a
+/// screen that is on the desktop is exactly what the far engine can find.
+#[cfg(windows)]
+fn settled(before: usize) -> Option<u128> {
+    let start = std::time::Instant::now();
+    while start.elapsed() < JOINING_THE_DESKTOP {
+        if place::screens_on_the_desktop() > before {
+            return Some(start.elapsed().as_millis());
+        }
+        std::thread::sleep(ASKING_AGAIN);
+    }
+    None
 }
 
 /// Puts it back to sleep, which is where it belongs between sessions.

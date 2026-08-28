@@ -251,6 +251,35 @@ pub fn present(driver: &dyn Driver) -> Result<bool, Trouble> {
     Ok(find_device(driver)?.is_some())
 }
 
+/// How many screens the desktop is made of right now.
+///
+/// What waking a screen is waited on with. Windows hands back from
+/// starting a device long before that device is a screen anybody can
+/// capture: the desktop has to be rebuilt around it first, and nothing
+/// says when that is done. Counting is enough to know, needs no name, and
+/// is the same question whatever driver grew the screen.
+pub fn screens_on_the_desktop() -> usize {
+    use windows_sys::Win32::Graphics::Gdi::{
+        DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICEW, EnumDisplayDevicesW,
+    };
+
+    let mut seen = 0;
+    for index in 0.. {
+        let mut device: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+        device.cb = size_of::<DISPLAY_DEVICEW>() as u32;
+        // SAFETY: the slot is ours with its size written in it as the
+        // call requires, and no name is given so the list is the
+        // machine's own adapters.
+        if unsafe { EnumDisplayDevicesW(std::ptr::null(), index, &mut device, 0) } == 0 {
+            break;
+        }
+        if device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP != 0 {
+            seen += 1;
+        }
+    }
+    seen
+}
+
 /// Size of the machine's main screen, in real pixels.
 ///
 /// The main one and not the largest: a desktop can have several, and the
