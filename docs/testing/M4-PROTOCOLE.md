@@ -29,7 +29,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R5** | Nouveau logo, et dessiné à chaque taille au lieu d'être réduit d'une seule : à comparer aux icônes voisines dans la barre des tâches |
 | **R32** | Le plein écran n'a plus ni angles arrondis ni liseré, et l'image touche vraiment les quatre bords |
 | **R33** | Deux réglages nouveaux côté hôte : renvoyer ou non un écran immobile, et la façon de filmer l'écran. Ce sont les deux seuls leviers qui restent sur la cadence |
-| **S2**, **S7** | Le bureau distant ne change plus de définition : il déménage sur un écran que ZyrDesk fait pousser, et l'écran physique de l'hôte s'éteint le temps de la session |
+| **S2**, **S7** | **Repris par R59 : c'est l'écran principal de l'hôte qui prend la taille demandée, et il la reprend à la fin.** Aucun écran n'est éteint et aucun n'est créé. La version précédente de cet essai, où le bureau déménageait sur un écran fabriqué pendant que les autres s'éteignaient, ne vaut plus |
 | **R30**, **R31** | Ce qu'il reste de l'écran virtuel à vérifier : que tout soit bien remis en place à la fin d'une session, et que le retrait du produit ne laisse rien |
 | **S6**, **S8** | Rien n'a changé pour eux, mais ils passent par le même chemin : à refaire une fois pour être sûr que l'écran virtuel ne réintroduit pas de bande noire |
 | **S23** | Nouveau. Éteindre l'hôte depuis la session lui laissait son écran à la taille du client. Le moteur hôte est maintenant prié de partir avant d'être pris, et le journal du service dit lequel des deux s'est produit |
@@ -59,7 +59,8 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
-| **R58** | **Nouveau.** La session portait la taille de l'écran du client mais pas son agrandissement : depuis un portable à 125 %, le bureau distant arrivait à la bonne résolution avec tout écrit deux fois plus petit qu'à la maison. L'agrandissement voyage maintenant avec la taille, et ZyrDesk le pose lui-même sur l'écran virtuel, le moteur hôte n'ayant aucun réglage pour ça |
+| **R59** | **Refait, et c'est le sujet du lot : ZyrDesk n'éteint plus aucun écran.** Une session posait la taille demandée sur l'écran virtuel de l'hôte et **éteignait tous les autres** le temps de la session, une télé éteinte depuis des semaines revenant en prime à chaque démarrage du service. Une session règle maintenant la taille de l'écran principal de l'hôte et ne touche à rien d'autre. Tout le bureau est relevé avant, et remis après : écrans éteints, places, tailles, cadences, agrandissements, orientations et écran principal. Le moteur ne s'occupe plus des écrans du tout |
+| **R58** | **Nouveau.** La session portait la taille de l'écran du client mais pas son agrandissement : depuis un portable à 125 %, le bureau distant arrivait à la bonne résolution avec tout écrit deux fois plus petit qu'à la maison. L'agrandissement voyage maintenant avec la taille, et ZyrDesk le pose lui-même sur l'écran servi, le moteur hôte n'ayant aucun réglage pour ça |
 | **R57** | **Nouveau, et c'est le pire de la série parce qu'il se répétait à l'infini.** Lancer ZyrDesk rallumait des écrans que leur propriétaire avait éteints, à chaque démarrage. Le moteur gardait un arrangement d'écrans à remettre qui nommait notre écran virtuel, lequel dort entre les sessions : l'essai échouait donc toujours, et ce qu'il fait quand il échoue est rallumer tout ce qu'il trouve. Un tel arrangement est maintenant jeté au démarrage du service |
 | **R56** | **Nouveau, et c'est la correction que R55 a permis de trouver.** Le gel au verrouillage venait du moteur hôte, qui redemandait l'écran deux fois autour de deux cents millisecondes de sommeil : quatre cents millisecondes dormies par réinitialisation, trois réinitialisations par verrouillage. Il redemande maintenant toutes les vingt-cinq millisecondes. À vérifier après recompilation du **moteur hôte** |
 | **R55** | **Instrumentation, pas encore une correction.** L'image se fige une à deux secondes quand on verrouille l'ordinateur distant depuis le menu flottant. Le chemin du verrouillage est maintenant chronométré de bout en bout, des deux côtés, et le programme qui verrouille attend que le bureau change réellement de mains au lieu de répondre sur la simple prise en compte de l'ordre |
@@ -618,7 +619,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : la définition est **celle demandée par la session**, que la ligne du journal du client annonce mot pour mot (`image demandée au loin en …`). En qualité **Qualité**, c'est la définition de l'écran du PC client notée en S2 ; sur les deux autres marches, c'est le plafond de la marche, `1280 x 720` ou `1920 x 1080`.
 >
-> Ce n'est plus l'écran de l'hôte qui a changé de taille : c'est un écran que ZyrDesk fait pousser sur l'hôte, sur lequel son bureau déménage le temps de la session. C'est ce qui permet à un portable de servir un écran plus grand que le sien sans rien agrandir. L'écran physique de l'hôte s'éteint pendant ce temps, et se rallume à la fin (R29, R30).
+> C'est l'écran principal de l'hôte qui prend la taille demandée, et lui seul : les autres écrans restent allumés, à leur place et à leur taille, et rien n'est créé. Tout son bureau est relevé avant d'être touché et remis à la fin, écrans éteints compris (R59). La version d'avant, où le bureau déménageait sur un écran fabriqué pendant que les autres s'éteignaient, a été retirée : elle rendait l'hôte inutilisable pour la personne assise devant.
 >
 > Si la définition n'a pas changé, c'est la cause des bandes noires **et** du flou, et rien d'autre ne les corrigera : le moteur hôte filme le bureau tel quel, remplit de noir ce qui manque et agrandit le reste. Le journal du service hôte dit pourquoi, avec `virtual screen` et `screens the engine sees`.
 
@@ -1363,7 +1364,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Résolution de l'hôte**, à vérifier avec soin, c'est le nouveau. Choisir, appliquer, et regarder **l'écran physique de l'ordinateur d'en face** : sa résolution ne doit **pas** changer, et **aucun écran virtuel ne doit apparaître**. Le journal du service d'ici dit `way N asked the far computer to keep its own screen` puis `way N: the far computer is showing 1920x1080`, et celui de la fenêtre `l'ordinateur distant affiche 1920x1080, c'est ce qui est demandé au lecteur`.
 >
-> **Le cas qui prouve que ça marche vraiment** : depuis un écran 4K, prendre la main sur une machine 1080p en **Résolution de l'hôte**. L'image doit arriver en 1080p et être agrandie ici, pas rognée et pas déformée. En **Résolution du client**, la même session doit passer la machine d'en face en 4K sur son écran virtuel.
+> **Le cas qui prouve que ça marche vraiment** : depuis un écran 4K, prendre la main sur une machine 1080p en **Résolution de l'hôte**. L'image doit arriver en 1080p et être agrandie ici, pas rognée et pas déformée. En **Résolution du client**, la même session doit passer l'écran principal de la machine d'en face en 4K, s'il en est capable, et le lui rendre en 1080p à la fin (R59).
 
 > **R49bis (l'écran virtuel naît à la bonne taille, et il se rendort vraiment)**
 >
@@ -1429,6 +1430,35 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R59 (tes écrans restent allumés, et tout revient exactement comme avant)**
+>
+> **C'est l'essai le plus important du lot, et il se prépare.** Sur le **PC hôte**, arranger les écrans exactement comme on les veut : celui de droite et celui de gauche dans le bon ordre, la télé **éteinte** dans les paramètres d'affichage de Windows, l'écran principal désigné. Noter mentalement, ou en photo, ce que montrent les paramètres d'affichage.
+>
+> **L'essai :** ouvrir une session en **Résolution du client** depuis un portable 1920x1200, la garder une minute, la fermer.
+>
+> **Ce qui doit se passer pendant :** l'écran principal de l'hôte passe en 1920x1200, et **rien d'autre ne bouge**. Les autres écrans restent allumés, à leur taille, à leur place. La télé reste éteinte. Aucun écran nouveau n'apparaît.
+>
+> **Ce qui doit se passer après :** tout revient exactement comme avant, dans la seconde. Rouvrir les paramètres d'affichage et comparer avec la photo : mêmes écrans allumés, mêmes tailles, mêmes places, même écran principal, télé toujours éteinte.
+>
+> **Les lignes qui le disent**, dans `service.log` de l'hôte :
+>
+> `a session asks this computer's main screen for 1920x1200@125, and its desk is written down first`
+> `this computer's desk is written down before the session touches it (N screens)`
+> `\\.\DISPLAY1 is showing 1920x1200`
+> `this computer is showing 1920x1200`
+>
+> puis, à la fin :
+>
+> `this computer's screens are back the way they were (N of them)`
+>
+> **Ce qu'on ne doit plus jamais voir :** `dd_configuration_option` dans la configuration du moteur, un écran qui s'éteint pendant une session, ou la télé qui se rallume au démarrage du service.
+>
+> **Le fichier qui sert de preuve.** Pendant la session, `data/screen/desk-before.txt` porte une ligne par écran, lisible à l'oeil : c'est ce qui sera remis. Après la session il doit avoir **disparu**. S'il est encore là, c'est que la remise a échoué, et ses lignes disent ce qu'on attendait.
+>
+> **Les deux cas qui finissent mal, et ils comptent autant que le premier.** Ouvrir une session, puis **arracher le Wi-Fi du portable** : le bureau de l'hôte doit revenir tout seul en quelques secondes (`nobody is watching this computer any more, its desk goes back the way it was`). Puis, session ouverte, **tuer le service de l'hôte** et le relancer : au démarrage il doit dire `a desk was left the way a session left it by a run that did not finish, putting it back`.
+>
+> **Et la machine sans écran, si tu peux l'essayer.** Sur une machine dont on débranche physiquement l'écran, l'écran virtuel reprend son rôle et c'est le seul cas où il sert encore : le journal dit `no screen is plugged into this computer, so the engine is aimed at the one it grew for itself`.
 
 > **R58 (le bureau distant est à la taille de l'écran d'ici, et écrit de la même taille)**
 >

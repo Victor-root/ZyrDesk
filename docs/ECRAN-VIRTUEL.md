@@ -1,5 +1,26 @@
 # Écran virtuel : faire pousser un écran sur l'ordinateur hôte
 
+## Où il sert, et où il ne sert plus
+
+**Sur une machine qui n'a aucun écran branché, et là seulement**
+([D91](DECISIONS.md)). Un serveur dans un placard, une tour dont on a
+débranché le moniteur : il n'y a rien à filmer, et l'écran qu'on fait
+pousser est la seule chose qui existe.
+
+Partout ailleurs, une session règle la taille de l'écran principal de
+l'hôte et ne touche à rien d'autre. Ni écran éteint, ni écran déplacé, ni
+écran créé. Ce document décrit donc la moitié de secours du produit, pas
+son chemin ordinaire.
+
+**Pourquoi ce recul.** Faire pousser un écran ne suffit pas : pour que le
+bureau se déplace dessus, il faut éteindre tous les autres, sans quoi la
+session ne montre qu'un fond vide. C'est cette moitié-là qui a été jugée
+inacceptable, et à juste titre : trois écrans 4K éteints pour qu'un seul
+porte une image de portable, et une télé rallumée à chaque démarrage. On
+avait réglé un problème de netteté en en créant un plus gros. Ce que la
+netteté coûte maintenant, c'est la taille de l'écran principal de l'hôte
+pendant la session, et il est remis après.
+
 ## Le problème
 
 Un ordinateur ne peut envoyer que ce qu'il dessine.
@@ -102,19 +123,24 @@ dans `data/screen/engine-screen.txt`, et redémarre le moteur une fois,
 parce que le moteur ne lit ce réglage qu'à son démarrage. Les démarrages
 suivants sont renseignés d'avance.
 
-**Pendant une session.** Le moteur est configuré avec
-`output_name = <l'écran virtuel>` et
-`dd_configuration_option = ensure_only_display` : il allume l'écran
-virtuel et **éteint les autres** le temps de la session.
+**Pendant une session, sur une machine sans écran.** Le moteur est
+configuré avec `output_name = <l'écran virtuel>`, et rien d'autre : c'est
+le seul écran de cette machine, donc il n'y a rien à éteindre et rien à
+déplacer. Le service le réveille à la taille demandée quand la session
+arrive, et le rendort quand plus personne ne regarde.
 
-Éteindre les autres n'est pas une brutalité, c'est le seul comportement
-correct. Un écran devant lequel personne n'est assis est un bureau vide :
-la barre des tâches, les fenêtres et les icônes sont sur l'écran de la
-personne d'en face. Une session à qui on montrerait l'écran vide
-montrerait une copie blanche de l'ordinateur. Tout éteindre sauf lui
-déplace le bureau entier dessus. L'écran de la personne assise devant
-s'éteint pendant ce temps, et `dd_config_revert_on_disconnect = enabled`
-remet tout en place à la fin.
+Le nom est écrit au démarrage du moteur, qui est le seul moment où il lit
+quel écran filmer, et il n'est écrit **que** si la machine n'a aucun
+écran à elle. Une machine qui en a un n'entend jamais parler de l'écran
+virtuel : le moteur filme l'écran principal, celui où est le bureau.
+
+**Ce que le moteur ne fait plus du tout.** Cinq lignes de sa configuration
+lui demandaient d'arranger les écrans : poser la taille, éteindre le
+reste, tout remettre à la fin. Elles sont parties. Le moteur remet un
+arrangement relevé à son propre démarrage, abandonne dès que quelque
+chose d'autre a bougé un écran entre-temps, et rallume alors tout ce
+qu'il trouve. C'est le produit qui relève le bureau et qui le remet
+maintenant ([D91](DECISIONS.md), `crates/zyr-screen/src/arrangement.rs`).
 
 ## L'agrandissement
 

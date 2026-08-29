@@ -1272,6 +1272,24 @@ or removed). Enabling all of the available devices:
 
 **Et ça ne fait jamais échouer une session.** Une session sur un écran écrit à la mauvaise taille reste une session ; une session refusée pour ça n'en est plus une. Ce qui s'est passé part dans le journal de l'hôte, en une phrase, et la session continue.
 
+## D91. On ne touche pas aux écrans de quelqu'un, on lui rend son bureau (2026-08-29, pendant M4)
+
+**Le relevé, et il annule une partie de [D77](#d77-lécran-virtuel-dort-entre-les-sessions-2026-08-27-pendant-m4).** « Il m'a coupé mes écrans physiques pour s'afficher sur un seul côté client, c'est pas ce que je veux, faut qu'il laisse les écrans physiques comme ils sont. Là actuellement ZyrDesk désactive mes écrans, c'est pas bon. » Trois écrans 4K éteints pour qu'un seul porte une image de 1920x1200, et une télé rallumée à chaque démarrage du service.
+
+**Ce qu'on avait construit, et pourquoi c'était trop.** L'écran virtuel résolvait un vrai problème : servir une image plus grande que l'écran de l'hôte sans déformer, et sans déranger la personne assise devant. Mais pour que le bureau se déplace dessus, il fallait éteindre les autres, et c'est cette moitié-là qui est insupportable. On avait résolu un problème de netteté en en créant un plus grand.
+
+**Décision : une session règle la taille de l'écran principal de l'hôte, et rien d'autre ne bouge.** Rien n'est éteint, rien ne change de place, rien ne pousse. C'est ce que font les bureaux distants qui ne fabriquent pas d'écran, et c'est ce que Victor demande explicitement en le comparant à ce qu'il connaît.
+
+**L'écran virtuel garde le seul usage pour lequel il est réellement bon** : une machine qui n'a aucun écran branché, dans un placard, où il est la seule chose à filmer. C'est décidé au démarrage du moteur, qui est le seul moment où il lit quel écran filmer, et il est réveillé depuis le service parce que démarrer un périphérique d'affichage demande les droits administrateur.
+
+**Le moteur ne s'occupe plus des écrans du tout, et c'est la moitié qui compte.** Il sait le faire et le faisait : cinq lignes de sa configuration lui demandaient de poser la taille, d'éteindre le reste et de tout remettre à la fin. Il remet un arrangement relevé à son propre démarrage, il abandonne dès que quelque chose d'autre a bougé un écran entre-temps, et **ce qu'il fait quand il abandonne est rallumer tous les écrans qu'il trouve**. C'est exactement ce qu'on lisait dans les journaux de Victor. Ces cinq lignes sont parties.
+
+**C'est donc le produit qui promet, et qui tient.** Avant qu'une session ne touche à quoi que ce soit, tout le bureau est écrit sur le disque : pour chaque écran, allumé ou éteint, sa place par rapport aux autres, sa taille, sa cadence, son agrandissement, son orientation, et lequel est le principal. À la fin, tout est remis, écrans éteints compris. Une ligne par écran, lisible à l'oeil : ce fichier est ce qu'on ouvre quand un bureau est revenu de travers.
+
+**Et il survit à la machine.** La note est écrite avant de toucher au bureau et effacée seulement une fois tout remis, donc elle survit au service, et c'est tout l'intérêt : les sessions qui laissent un bureau derrière elles sont celles dont l'ordinateur a été fermé, débranché ou a planté, et celles-là ne disent rien à personne. Elle est relue au démarrage du moteur et honorée là.
+
+**Le service cesse enfin d'être aveugle sur les écrans.** Tout ce que Windows dit de l'arrangement des écrans est répondu pour le poste de travail de celui qui demande, et un service siège sur un poste qui n'en a aucun. Interrogé sur ce qu'il montrait, l'hôte répondait qu'il ne savait pas mesurer son propre écran, et la session gardait la taille qu'elle avait supposée : c'est de là que venait un client en 1920x1200 persuadé qu'un hôte en 3840x2160 lui montrait du 1920x1200. La session qui tient l'écran écrit ce qu'elle voit, le service le lit. C'est la quatrième course qu'on envoie là-bas, après le verrouillage, les enceintes et l'agrandissement.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
