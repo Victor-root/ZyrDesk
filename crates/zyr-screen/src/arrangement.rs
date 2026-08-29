@@ -409,7 +409,15 @@ mod windows_only {
         // changed nothing but the magnification, so nothing here was ever
         // out of place, and a laptop was handed back drawing everything a
         // third too large until its owner put it right by hand.
-        for seat in seats.iter().filter(|seat| seat.on && seat.scale != 0) {
+        //
+        // Asked even of a screen whose magnification could not be read
+        // when the desk was noted, and that is not a detail: a screen
+        // left holding a step that means nothing cannot be read, so the
+        // next session notes nothing for it, so nothing is put back, so
+        // it stays that way. Once in that state a laptop never comes out
+        // of it on its own, and the only thing that ever did was somebody
+        // opening the display settings by hand.
+        for seat in seats.iter().filter(|seat| seat.on) {
             said.extend(drawn_as_before(seat));
         }
         (true, said)
@@ -445,11 +453,22 @@ mod windows_only {
             seen = crate::magnify::reading(&seat.adapter);
         }
         match seen {
+            // Already where it was noted.
             Ok(now) if now == seat.scale => None,
+            // Nothing was noted for it, and it answers: whatever it is
+            // drawing at, it is drawing at something, and this has no
+            // business choosing for it.
+            Ok(_) if seat.scale == 0 => None,
             Err(why @ NotRead::NoSuchScreen) => Some(format!(
                 "{} was not put back to {} %: {why}",
                 seat.adapter, seat.scale
             )),
+            // Wrong, or holding a step that is no magnification at all.
+            // Both are written rather than read, and nothing noted then
+            // means asking Windows for the one it recommends: that is the
+            // way out of a screen stuck holding what a session left, and
+            // there is no better answer to be had, the one it had being
+            // exactly what cannot be read.
             _ => Some(crate::magnify::magnify(&seat.adapter, seat.scale)),
         }
     }
