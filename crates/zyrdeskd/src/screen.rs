@@ -22,8 +22,21 @@ use zyr_proto::paths;
 /// and written down because learning it costs the engine a restart.
 const LEARNED: &str = "engine-screen.txt";
 
+/// Where the identifier the engine knows this computer's main screen by
+/// is kept.
+///
+/// Learned the same way and for the same reason, and it is the one that
+/// matters on every ordinary computer: told nothing, the engine films
+/// whichever screen its graphics card enumerates first, and that is not
+/// the same screen from one enumeration to the next.
+const MAIN: &str = "engine-main-screen.txt";
+
 fn learned_path() -> PathBuf {
     paths::virtual_screen_dir().join(LEARNED)
+}
+
+fn main_path() -> PathBuf {
+    paths::virtual_screen_dir().join(MAIN)
 }
 
 /// Puts the virtual screen on this computer, if it is not on it already.
@@ -589,10 +602,24 @@ pub fn take_away(log: Option<&Log>) {
 ///
 /// Absent means one of two things, and they are not worth telling apart
 /// here: no virtual screen on this computer, or one that no engine has
-/// listed yet. Either way the engine is started without being told which
-/// screen to capture, and it captures the main one.
+/// listed yet. Either way there is nothing to aim a computer with no
+/// screen of its own at, and the engine films what it finds.
 pub fn remembered() -> Option<String> {
-    let said = std::fs::read_to_string(learned_path()).ok()?;
+    read_name(&learned_path())
+}
+
+/// The identifier the host engine knows this computer's main screen by,
+/// as learned at some earlier start.
+///
+/// Absent on the first start of an engine on this computer, and only
+/// then: the name is written down as soon as an engine has listed its
+/// screens once, and the engine is started over so it is aimed there.
+pub fn main_remembered() -> Option<String> {
+    read_name(&main_path())
+}
+
+fn read_name(path: &Path) -> Option<String> {
+    let said = std::fs::read_to_string(path).ok()?;
     let said = said.trim();
     (!said.is_empty()).then(|| said.to_string())
 }
@@ -607,22 +634,39 @@ pub enum Learned {
     StartAgain,
 }
 
-/// Reads the engine's own list of screens and picks the virtual one out.
+/// What was true of this computer when the engine was started, which is
+/// the only moment the engine reads which screen to film.
+#[derive(Debug, Clone, Copy)]
+pub struct AsStarted<'a> {
+    /// The screen it was aimed at, under the engine's own name for it,
+    /// or nothing at all.
+    pub aimed_at: Option<&'a str>,
+    /// Whether this computer has no screen of its own, in which case the
+    /// screen it grows for itself is the only thing there is to film.
+    pub on_its_own: bool,
+    /// Whether that grown screen is asleep, which is why the engine
+    /// cannot see it and must not be taken for a computer without one.
+    pub asleep: bool,
+}
+
+/// Reads the engine's own list of screens and aims it at the right one.
 ///
-/// Two things can be wrong and both are put right here. The virtual
-/// screen may be there under a name the engine was not started with,
-/// which is what happens the first time this computer ever runs one; and
-/// the engine may have been started aimed at a screen that is no longer
-/// there, which is what happens when the driver goes. That second one
-/// matters more than it looks: the engine is not merely told which
-/// screen to capture but told to put every other screen out for the
-/// length of a session, and it is worth being sure that screen exists.
-pub fn learn_from(
-    engine_log: &std::path::Path,
-    started_with: Option<&str>,
-    asleep: bool,
-    log: &Log,
-) -> Learned {
+/// Which screen that is depends on the computer. One with a screen of
+/// its own is filmed at its main screen, and naming it is not a nicety:
+/// told nothing, the engine films whichever screen its graphics card
+/// enumerates first, which is not the main one on every machine and not
+/// even the same one from one enumeration to the next. A screen being
+/// resized drops out of that enumeration for as long as the change
+/// lasts, so a host whose main screen had just been put at a session's
+/// size went on filming the screen beside it.
+///
+/// One with no screen at all is filmed at the screen it grew for itself,
+/// and there two things can be wrong. That screen may be there under a
+/// name the engine was not started with, which is what happens the first
+/// time this computer ever runs one; and the engine may have been
+/// started aimed at a screen that is no longer there, which is what
+/// happens when the driver goes.
+pub fn learn_from(engine_log: &std::path::Path, as_started: AsStarted<'_>, log: &Log) -> Learned {
     /// The engine lists its screens as it starts and answers on its own
     /// port a moment later, but the two are not the same moment and the
     /// log is written through a buffer. Read a few times rather than
@@ -673,13 +717,17 @@ pub fn learn_from(
             .join(" ; ")
     ));
 
+    if !as_started.on_its_own {
+        return aim_at_the_main_screen(&text, as_started.aimed_at, log);
+    }
+
     let Some(ours) = zyr_screen::engine::the_virtual_screen(&text, driver) else {
         // Asleep is not gone, and telling them apart is the whole of this
         // branch. The screen sleeps at the device between sessions, so
         // the engine cannot see it and is not supposed to: forgetting its
         // name here would throw away, at every start, the one thing that
         // costs an engine restart to learn.
-        if asleep {
+        if as_started.asleep {
             log.write(
                 "the virtual screen is asleep, as it is between sessions, so the engine does not \
                  see it; its name is kept for the session that wakes it",
@@ -690,7 +738,7 @@ pub fn learn_from(
             "no virtual screen among them: looked for one calling itself the way {} does",
             driver.name()
         ));
-        let Some(gone) = started_with else {
+        let Some(gone) = as_started.aimed_at else {
             log.write(
                 "the engine captures the main screen, so a session asking for more than that \
                  screen can draw gets it blown up",
@@ -714,15 +762,15 @@ pub fn learn_from(
         return Learned::StartAgain;
     };
 
-    if started_with == Some(ours.device_id.as_str()) {
+    if as_started.aimed_at == Some(ours.device_id.as_str()) {
         log.write(&format!(
-            "the engine is capturing the virtual screen ({}), and puts every other screen out for \
-             the length of a session",
+            "the engine is capturing the virtual screen ({}), this computer having no screen of \
+             its own",
             ours.device_id
         ));
         return Learned::NothingToChange;
     }
-    if let Err(e) = write_learned(&ours.device_id) {
+    if let Err(e) = write_name(&learned_path(), &ours.device_id) {
         log.write(&format!(
             "the virtual screen's name could not be written down: {e}"
         ));
@@ -732,7 +780,45 @@ pub fn learn_from(
         "virtual screen found under a name the engine was not started with ({} instead of {}), \
          the engine starts over so it captures it",
         ours.device_id,
-        started_with.unwrap_or("none")
+        as_started.aimed_at.unwrap_or("none")
+    ));
+    Learned::StartAgain
+}
+
+/// Aims the engine at this computer's main screen, on a computer that
+/// has one.
+///
+/// Naming it is what keeps the engine on it. Told nothing, the engine
+/// films whichever screen its graphics card enumerates first and takes
+/// the first one that answers whenever it has to start filming again;
+/// a screen being resized answers nothing for the length of the change,
+/// so the screen a session had just put at its own size was exactly the
+/// one the engine walked away from.
+fn aim_at_the_main_screen(text: &str, aimed_at: Option<&str>, log: &Log) -> Learned {
+    let Some(main) = zyr_screen::engine::the_main_screen(text) else {
+        log.write(
+            "the engine named no main screen among them, so it films whichever one it finds first",
+        );
+        return Learned::NothingToChange;
+    };
+    if aimed_at == Some(main.device_id.as_str()) {
+        log.write(&format!(
+            "the engine is filming this computer's main screen ({})",
+            main.device_id
+        ));
+        return Learned::NothingToChange;
+    }
+    if let Err(e) = write_name(&main_path(), &main.device_id) {
+        log.write(&format!(
+            "the name of this computer's main screen could not be written down: {e}"
+        ));
+        return Learned::NothingToChange;
+    }
+    log.write(&format!(
+        "this computer's main screen is {} and the engine was aimed at {}, so it starts over to \
+         film the right one",
+        main.device_id,
+        aimed_at.unwrap_or("whichever it found first")
     ));
     Learned::StartAgain
 }
@@ -812,15 +898,15 @@ impl Watching {
 /// writes its list at every one of its starts, and this turns that list
 /// into the answer instead of half of it.
 fn showing(screen: &zyr_screen::Screen) -> String {
+    let main = if screen.main { ", the main one" } else { "" };
     match screen.size {
-        Some((width, height)) if screen.active => format!("on at {width}x{height}"),
-        _ if screen.active => "on, size unsaid".to_string(),
+        Some((width, height)) if screen.active => format!("on at {width}x{height}{main}"),
+        _ if screen.active => format!("on, size unsaid{main}"),
         _ => "off".to_string(),
     }
 }
 
-fn write_learned(device_id: &str) -> std::io::Result<()> {
-    let path = learned_path();
+fn write_name(path: &Path, device_id: &str) -> std::io::Result<()> {
     if let Some(folder) = path.parent() {
         std::fs::create_dir_all(folder)?;
     }

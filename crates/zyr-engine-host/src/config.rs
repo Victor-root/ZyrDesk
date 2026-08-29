@@ -113,10 +113,15 @@ impl SunshineConfig {
 
     /// Screen to capture, by the name the engine knows it under.
     ///
-    /// Only ever the screen this computer grew for itself, and only on a
-    /// computer with no screen of its own to film. Everywhere else the
-    /// engine is left to film the main screen, which is the one the
-    /// desktop is on and the one a session is put at the size of.
+    /// Its own name for it and no other: the engine looks this up in the
+    /// list it publishes, and anything that is not in that list names
+    /// nothing at all, on which it silently films what it finds.
+    ///
+    /// Said on every computer. The main screen where there are screens,
+    /// the one this computer grew for itself where there are none. Left
+    /// unsaid, the engine films whichever screen the graphics card
+    /// enumerates first, and picks again every time it has to start
+    /// filming over.
     pub fn with_screen(mut self, output_name: impl Into<String>) -> Self {
         self.output_name = Some(output_name.into());
         self
@@ -405,11 +410,15 @@ mod tests {
         assert!(!rendered.contains("output_name"));
         assert!(!rendered.contains("adapter_name"));
 
+        // L'écran se nomme du nom que le moteur lui donne, jamais de
+        // celui que Windows numérote : ce dernier ne figure pas dans la
+        // liste qu'il consulte, donc il ne nomme rien et le moteur filme
+        // ce qu'il trouve, sans le dire.
         let with_both = test_config()
-            .with_screen(r"\\.\DISPLAY1")
+            .with_screen("{aed131a5-3850-5dc6-89be-4967cca4ef04}")
             .with_gpu("NVIDIA GeForce RTX 4070")
             .render_conf();
-        assert!(with_both.contains(r"output_name = \\.\DISPLAY1"));
+        assert!(with_both.contains("output_name = {aed131a5-3850-5dc6-89be-4967cca4ef04}"));
         assert!(with_both.contains("adapter_name = NVIDIA GeForce RTX 4070"));
     }
 

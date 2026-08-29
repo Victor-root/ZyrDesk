@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R59sexies** | **Nouveau, et c'est la moitié de R59quinquies qui manquait.** Le bureau de l'hôte revenait bien à sa taille, mais le client recevait **l'autre écran** : le moteur n'était jamais dit lequel filmer, donc il prenait celui que la carte graphique énumère en premier, et il reprenait le premier écran qui répond chaque fois qu'il doit recommencer à filmer. Or un écran dont on change la définition disparaît de cette énumération pendant tout le changement : celui que la session venait de régler était exactement celui que le moteur laissait tomber. L'écran filmé est maintenant nommé sur toute machine, et le moteur redemande l'écran nommé pendant trois secondes avant de se rabattre. **À vérifier après recompilation du moteur hôte** |
 | **R59quinquies** | **Nouveau, et c'est un vieux défaut revenu par une autre porte.** Passer une session en cours de **Résolution du client** à **Résolution de l'hôte** laissait l'hôte à la taille du client pour le reste de la soirée. Basculer ferme une voie et en ouvre une autre dans la même seconde, et la remise en place du bureau, elle, tourne sur le fil qui tient le moteur et n'a pas encore eu son tour. Une session qui demande l'écran de l'hôte rend maintenant son bureau elle-même avant de répondre |
 | **R59quater** | **Nouveau, et c'est la moitié qui manquait à R59ter.** La taille revenait, l'agrandissement non : un écran passé à 175 % pendant que son bureau était en 4K se retrouve, une fois ce bureau rentré, sur un cran que Windows ne sait plus nommer, et il ne répond alors plus rien du tout. Ce qui est remis est maintenant l'agrandissement relevé avant la session, pour **tout écran allumé**, et un cran devenu illisible est réécrit sans être lu. Ce que chaque écran dessine est en plus retenu d'une session à l'autre dans `data/screen/screen-scales.txt`, pour qu'un écran devenu muet reprenne l'agrandissement de son propriétaire et jamais celui que Windows recommande |
 | **R59ter** | **Refait deux fois, et c'est la seconde qui compte.** Un portable 1920x1200 à qui on demande du 3840x2160 refusait, et le relevé a montré que sa carte graphique n'offre réellement rien au-delà de sa dalle : la liste s'arrête à 1920x1200. Le produit de référence y arrive quand même, parce qu'il ne demande pas la même chose. L'ancienne interface d'affichage de Windows ne connaît qu'une taille par écran, qui est le signal envoyé à la dalle ; la moderne sépare la taille du **bureau** de celle de la **dalle**, et la carte graphique réduit la première dans la seconde. Un portable dessine alors un vrai bureau 4K, et son propriétaire le voit en petit, avec des bandes là où les formats diffèrent. C'est la seconde tentative maintenant, quand la dalle n'offre pas la taille. **La moitié taille est acquise** sur le vrai portable, journal à l'appui : `draws a 3840x2160 desktop, shrunk into its own panel`, puis `this computer is showing 3840x2160`. Ce qui reste à vérifier est le retour et les deux cas qui finissent mal |
@@ -1434,6 +1435,26 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R59sexies (le moteur filme l'écran principal, et il y reste)**
+>
+> **L'essai se fait sur l'hôte à plusieurs écrans**, et c'est le seul endroit où il se voit. Ouvrir une session en **Résolution du client** vers le PC à deux écrans 4K, en regardant ce qui arrive.
+>
+> Attendu : c'est **l'écran principal** de l'hôte qui arrive, celui de droite, et il y reste. Ce qui se passait avant : l'écran principal prenait bien la taille demandée, et l'image reçue était celle de l'écran de gauche, aplatie dans cette taille.
+>
+> **La ligne qui le dit**, dans `service.log` de l'hôte, au démarrage du moteur :
+>
+> `the engine is aimed at this computer's main screen ({...})`
+>
+> Et la liste juste au-dessus dit maintenant lequel des écrans est le principal :
+>
+> `screens the engine sees: SAMSUNG ({...}, off) ; U28G2G6B ({...}, on at 3840x2160, the main one) ; ...`
+>
+> **Le premier démarrage après cette mise à jour redémarre le moteur une fois**, le temps d'apprendre ce nom, et le journal le dit : `this computer's main screen is {...} and the engine was aimed at whichever it found first, so it starts over to film the right one`. Aux démarrages suivants, plus de redémarrage.
+>
+> **La moitié qui est dans le moteur hôte**, et qui demande sa recompilation : c'est elle qui empêche le moteur de se rabattre sur l'écran d'à côté pendant qu'on change la définition du bon. Sans elle, le nom seul ne suffit pas au moment précis du basculement.
+>
+> **Les deux essais à refaire ensemble** : R59quinquies juste en dessous, qui est le basculement lui-même, et celui-ci, qui est l'écran filmé. C'est le même clic.
 
 > **R59quinquies (basculer sur la résolution de l'hôte lui rend son bureau)**
 >

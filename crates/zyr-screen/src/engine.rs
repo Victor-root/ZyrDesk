@@ -41,6 +41,15 @@ pub struct Screen {
     /// size and no place, which is exactly the state a virtual screen
     /// sits in between sessions.
     pub active: bool,
+    /// Whether it is the one the desktop starts at.
+    ///
+    /// Which is the screen a session is served from and the screen a
+    /// session puts at a size, so it is the one the engine is aimed at.
+    /// Read here rather than worked out, for the reason the whole of this
+    /// file exists: the engine is the authority on what its screens are,
+    /// and it is the only thing that can name one in a way its own
+    /// configuration accepts.
+    pub main: bool,
     /// How many pixels it is showing, when it is showing any.
     ///
     /// Read rather than asked of Windows, for the same reason as the rest
@@ -89,6 +98,10 @@ pub fn screens_in_the_log(log: &str) -> Vec<Screen> {
                 friendly_name: text("friendly_name"),
                 display_name: text("display_name"),
                 active: info.is_some(),
+                main: info
+                    .and_then(|info| info.get("primary"))
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
                 size: side("width").zip(side("height")),
             })
         })
@@ -121,6 +134,20 @@ pub fn the_virtual_screen(log: &str, driver: &dyn Driver) -> Option<Screen> {
     screens_in_the_log(log)
         .into_iter()
         .find(|screen| driver.is_its_screen(&screen.friendly_name))
+}
+
+/// The main screen among them, under the name the engine takes orders by.
+///
+/// The one the engine is aimed at on any computer that has a screen of
+/// its own. Left unnamed, the engine films whichever screen its graphics
+/// card enumerates first, which is not the main one on every machine and
+/// is not even the same one from one enumeration to the next: a host
+/// whose main screen had just been resized for a session went on filming
+/// the screen beside it for the rest of the evening.
+pub fn the_main_screen(log: &str) -> Option<Screen> {
+    screens_in_the_log(log)
+        .into_iter()
+        .find(|screen| screen.main)
 }
 
 /// The text of the last list the log holds.
@@ -222,6 +249,18 @@ mod tests {
         // Une session ordinaire n'en parle jamais.
         assert!(!could_not_put_the_screens_back(LOG));
         assert!(!could_not_put_the_screens_back(""));
+    }
+
+    #[test]
+    fn the_main_screen_is_picked_out_by_what_the_engine_says_of_it() {
+        // C'est l'écran que le moteur doit filmer sur toute machine qui a
+        // un écran à elle. Sans ce nom, il filme celui que la carte
+        // graphique énumère en premier, qui n'est pas le même d'une
+        // énumération à l'autre.
+        let main = the_main_screen(LOG).unwrap();
+        assert_eq!(main.display_name, r"\\.\DISPLAY1");
+        // L'écran virtuel est éteint : il n'est le principal de personne.
+        assert!(!screens_in_the_log(LOG)[0].main);
     }
 
     #[test]

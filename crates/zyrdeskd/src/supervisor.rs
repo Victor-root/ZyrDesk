@@ -585,26 +585,43 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     look_at_the_desk(log);
     // Which screen to capture is read once, as the engine starts, so it
     // is decided here or not at all. A computer with a screen of its own
-    // is not told: the engine films the main one, which is where the
-    // desktop is and which a session is put at the size of.
+    // is aimed at its main screen, which is where the desktop is and
+    // which a session is put at the size of.
     //
     // The screen this computer grows for itself is for the computer that
     // has none, a machine in a cupboard with nothing plugged into it, and
-    // there it is the only thing there is to film. Absent the first time
-    // this computer ever runs, since the name is the engine's own and the
-    // engine has not said it yet; learned below and used from the next
-    // start on. Woken only where it has never been named, and put back
-    // below as soon as it has: the engine names the screens it can see,
-    // and one that sleeps between sessions is seen by nobody.
+    // there it is the only thing there is to film. Woken only where it
+    // has never been named, and put back below as soon as it has: the
+    // engine names the screens it can see, and one that sleeps between
+    // sessions is seen by nobody.
+    //
+    // Either name is absent the first time this computer ever runs an
+    // engine, the name being the engine's own and the engine not having
+    // said it yet; both are learned below and used from the next start
+    // on, which costs that one start a restart.
     let named_this_start = wake_to_be_named(log);
     let on_its_own = crate::screen::showing_now().is_none();
-    let aiming_at = crate::screen::remembered().filter(|_| on_its_own);
+    // Named on every computer, and not only on the one with nothing
+    // plugged in. Left unnamed, the engine films whichever screen the
+    // graphics card enumerates first, and it takes the first screen that
+    // answers each time it has to start filming again: a screen being
+    // resized answers nothing while the change lasts, so the very screen
+    // a session had just put at its own size was the one the engine
+    // walked away from, for the rest of that session.
+    let aiming_at = match on_its_own {
+        true => crate::screen::remembered(),
+        false => crate::screen::main_remembered(),
+    };
     let config = match &aiming_at {
         Some(screen) => {
-            log.write(
-                "no screen is plugged into this computer, so the engine is aimed at the one it \
-                 grew for itself",
-            );
+            log.write(&if on_its_own {
+                format!(
+                    "no screen is plugged into this computer, so the engine is aimed at the one it \
+                     grew for itself ({screen})"
+                )
+            } else {
+                format!("the engine is aimed at this computer's main screen ({screen})")
+            });
             config.with_screen(screen)
         }
         None => config,
@@ -636,11 +653,14 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
 
     // Asked now and not later: the engine writes its list of screens as
     // it starts and never again, and what is being looked for in it is
-    // the one name that lets the next start aim at the virtual screen.
+    // the one name that lets the next start aim at the right screen.
     let learned = crate::screen::learn_from(
         &engine_log,
-        aiming_at.as_deref(),
-        !named_this_start && screen_asleep(),
+        crate::screen::AsStarted {
+            aimed_at: aiming_at.as_deref(),
+            on_its_own,
+            asleep: !named_this_start && screen_asleep(),
+        },
         log,
     );
     // Back to sleep the moment it has been named, whatever came of the

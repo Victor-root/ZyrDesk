@@ -1324,6 +1324,16 @@ or removed). Enabling all of the available devices:
 
 **Et cette mémoire n'écoute que le propriétaire.** Elle n'est mise à jour que tant que le relevé d'avant session n'existe pas, c'est-à-dire tant que le bureau est encore celui de son propriétaire. Dès qu'une session le tient, ce que les écrans dessinent est l'oeuvre de cette session : le retenir reviendrait à servir, à la prochaine session incapable de lire un écran, l'agrandissement qu'un inconnu avait demandé.
 
+## D93. On nomme toujours l'écran que le moteur filme (2026-08-30, pendant M4)
+
+**Le relevé.** « Ça change bien côté physique mais côté client non, et en plus il m'affiche mon écran de gauche alors qu'avant de switcher de mode de résolution j'étais sur l'écran principal. » L'écran physique de l'hôte prenait bien la taille demandée et la rendait bien à la fin ; ce que le client recevait était l'autre écran, aplati dans la taille demandée.
+
+**Le moteur n'était jamais dit quel écran filmer, et ce n'était pas un oubli anodin.** Sans nom dans sa configuration, il filme celui que la carte graphique énumère en premier, ce qui n'est déjà pas l'écran principal sur toutes les machines. Pire, il reprend le premier écran qui répond chaque fois qu'il doit recommencer à filmer, et il doit recommencer précisément quand on change une définition. Or **un écran dont on change la définition disparaît de cette énumération pendant tout le changement** : celui que la session venait de régler était exactement celui que le moteur laissait tomber, au profit du voisin, pour le reste de la session.
+
+**Décision : l'écran filmé est nommé, sur toute machine.** L'écran principal de l'hôte quand la machine a des écrans, celui qu'elle fait pousser quand elle n'en a aucun. C'est la même mécanique dans les deux cas, et elle existait déjà pour le second : le moteur est la seule chose qui sache nommer un écran d'une façon que sa propre configuration accepte, donc son nom est **lu dans son journal** et jamais recalculé, écrit à côté du service, et le moteur redémarre une fois quand ce nom change. Il ne lit ce réglage qu'à son démarrage.
+
+**Et la moitié qui reste est dans le moteur.** Nommer l'écran ne suffit pas tant que n'importe quel autre fait l'affaire au moment où il manque. Les deux boucles de reprise du moteur prenaient le premier écran qui répondait ; elles redemandent maintenant l'écran nommé pendant trois secondes avant de se rabattre, ce qui est long devant un changement de définition et court devant un écran vraiment débranché. C'est le complément de P-S5, dans la fonction que P-S5 avait déjà corrigée à moitié, et ce n'est toujours pas une fonctionnalité ZyrDesk : c'est un défaut qui touche tout bureau distant servi par ce moteur.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
