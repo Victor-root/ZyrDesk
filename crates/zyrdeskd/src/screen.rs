@@ -217,7 +217,15 @@ pub fn showing_now() -> Option<(u32, u32)> {
 #[cfg(windows)]
 pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
     let mut said = Vec::new();
-    let desk = zyr_screen::arrangement::as_it_stands();
+    let mut desk = zyr_screen::arrangement::as_it_stands();
+    // Before anything else is done with it, and in that order: what can
+    // be read is remembered, then what cannot is filled in from what was
+    // remembered before. This is what keeps somebody who chose 150 % on a
+    // screen Windows would have drawn at 125 % from being handed 125 %
+    // back, which is the whole difference between putting a desk back and
+    // putting back a desk that resembles it.
+    said.extend(remember_what_can_be_read(&desk));
+    said.extend(fill_in_what_cannot(&mut desk));
     let Some(main) = desk.iter().find(|seat| seat.main && seat.on).cloned() else {
         said.push(
             "no screen of this computer's own is switched on, so there is nothing to put at a \
@@ -307,6 +315,111 @@ pub fn give_the_desk_back() -> Vec<String> {
         said.push(format!(
             "the desk that was written down could not be forgotten: {e}"
         ));
+    }
+    said
+}
+
+/// Where the last magnification known for each screen is kept.
+///
+/// Outlives every session and every run of the service, which is the
+/// point of it. A screen holding a magnification that can no longer be
+/// read has lost what it was, and Windows keeps no history: without this
+/// the only answer left is the one Windows recommends, and somebody who
+/// deliberately chose otherwise gets handed the default instead of their
+/// own desk.
+#[cfg(windows)]
+const KNOWN: &str = "screen-scales.txt";
+
+#[cfg(windows)]
+fn known_path() -> PathBuf {
+    paths::virtual_screen_dir().join(KNOWN)
+}
+
+/// What was last read for each screen, by the name that survives a
+/// restart.
+///
+/// A line each, `screen percent`, and a line that will not read is
+/// skipped rather than failing the rest: this is a memory, and half a
+/// memory beats none.
+#[cfg(windows)]
+fn what_was_known() -> Vec<(String, u32)> {
+    let Ok(text) = std::fs::read_to_string(known_path()) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let (screen, percent) = line.trim().split_once(' ')?;
+            Some((screen.to_string(), percent.trim().parse().ok()?))
+        })
+        .collect()
+}
+
+/// Writes down what can be read now, keeping what was known about the
+/// screens this desk says nothing about.
+///
+/// Says nothing at all when nothing changed, which is nearly every time:
+/// this runs at every start of the engine and at the opening of every
+/// session, and a line each would bury the journal.
+#[cfg(windows)]
+fn remember_what_can_be_read(desk: &[zyr_screen::arrangement::Seat]) -> Vec<String> {
+    let mut known = what_was_known();
+    let mut changed = false;
+    for seat in desk
+        .iter()
+        .filter(|seat| seat.on && seat.scale != 0 && !seat.screen.is_empty())
+    {
+        match known.iter_mut().find(|(screen, _)| *screen == seat.screen) {
+            Some((_, percent)) if *percent == seat.scale => {}
+            Some((_, percent)) => {
+                *percent = seat.scale;
+                changed = true;
+            }
+            None => {
+                known.push((seat.screen.clone(), seat.scale));
+                changed = true;
+            }
+        }
+    }
+    if !changed {
+        return Vec::new();
+    }
+    let text = known
+        .iter()
+        .map(|(screen, percent)| format!("{screen} {percent}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    match write_beside(KNOWN, &text) {
+        Ok(()) => Vec::new(),
+        Err(e) => vec![format!(
+            "what this computer's screens draw at could not be written down: {e}"
+        )],
+    }
+}
+
+/// Fills in the magnification of a screen that could not say, from what
+/// was known of it before.
+///
+/// The one case this exists for: a screen left holding a step that means
+/// nothing after a session cannot be read at all, so a desk noted while
+/// it is in that state would carry no magnification for it and put none
+/// back. What it was is not lost, it was simply not asked for at the
+/// right moment, and this is the moment.
+#[cfg(windows)]
+fn fill_in_what_cannot(desk: &mut [zyr_screen::arrangement::Seat]) -> Vec<String> {
+    let known = what_was_known();
+    let mut said = Vec::new();
+    for seat in desk
+        .iter_mut()
+        .filter(|seat| seat.on && seat.scale == 0 && !seat.screen.is_empty())
+    {
+        let Some((_, percent)) = known.iter().find(|(screen, _)| *screen == seat.screen) else {
+            continue;
+        };
+        said.push(format!(
+            "{} will not say how large it draws, so what it drew at last time is used: {percent} %",
+            seat.adapter
+        ));
+        seat.scale = *percent;
     }
     said
 }
