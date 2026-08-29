@@ -673,6 +673,22 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         log.write("a screen was left awake by a run that did not finish, putting it back");
         put_the_grown_screen_away(log, &|| true);
     }
+    // And the desk itself, for the same run that did not finish. What
+    // says a session left one behind is the note it wrote before touching
+    // anything, which outlives the service that wrote it: nothing else
+    // could, the whole point of the note being to survive the machine
+    // being switched off in the middle of a session.
+    //
+    // Here rather than before the engine started, for the reason just
+    // above and doubled: rearranging a desktop while the engine is
+    // arranging one is how two programs undo each other all evening.
+    if !crate::screen::noted_before().is_empty() {
+        log.write(
+            "a desk was left the way a session left it by a run that did not finish, putting it \
+             back",
+        );
+        put_the_desk_back(log);
+    }
     if learned == crate::screen::Learned::StartAgain {
         let _ = engine.stop();
         return Ok(Life::VirtualScreenLearned);

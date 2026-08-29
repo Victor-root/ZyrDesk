@@ -166,7 +166,6 @@ pub fn forget_what_cannot_be_put_back(log: &Log) {
 /// they left them ». Written when a session first changes anything,
 /// removed once everything is back, and read at the start of the service
 /// so a run that never got to finish is caught up with.
-#[cfg(windows)]
 const BEFORE: &str = "desk-before.txt";
 
 /// Where what this computer is showing is written down, for the service
@@ -180,7 +179,6 @@ const BEFORE: &str = "desk-before.txt";
 /// the session on screen writes it down and the service reads it.
 const SHOWING: &str = "showing.txt";
 
-#[cfg(windows)]
 fn before_path() -> PathBuf {
     paths::virtual_screen_dir().join(BEFORE)
 }
@@ -190,7 +188,6 @@ fn showing_path() -> PathBuf {
 }
 
 /// The desk as it was before a session touched it, if one did.
-#[cfg(windows)]
 pub fn noted_before() -> Vec<zyr_screen::arrangement::Seat> {
     std::fs::read_to_string(before_path())
         .map(|text| zyr_screen::arrangement::read(&text))
