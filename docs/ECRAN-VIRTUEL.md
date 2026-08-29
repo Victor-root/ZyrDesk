@@ -151,30 +151,36 @@ regarde, agrandissement compris ([D90](DECISIONS.md)).
 
 Le moteur hôte n'a rien pour ça : ses options d'écran couvrent la
 définition, la fréquence, le HDR et l'arrangement, et s'arrêtent là. Le
-chiffre est donc posé par ZyrDesk, sur l'écran que ZyrDesk a lui-même
-fait pousser, juste après son réveil et avant que le moteur n'ouvre
-dessus.
+chiffre est donc posé par ZyrDesk lui-même, sur l'écran principal de
+l'hôte, juste après la taille et seulement si cette taille est réellement
+arrivée.
 
 Windows ne publie qu'un seul chemin pour l'écrire, un message privé sur
 l'appel qui lit la configuration d'affichage, et `magnify.rs` est le seul
-fichier qui le connaisse. Il parle en pas le long de la liste que Windows
-offre plutôt qu'en pour cent, et compte ces pas depuis celui que Windows
-recommande pour l'écran en question.
+fichier qui le connaisse. Il ne parle pas en pour cent mais en pas le
+long d'une liste fixe, comptés depuis celui que Windows recommande pour
+cet écran **à la taille qu'il a en ce moment**. Changer la taille du
+bureau déplace donc la recommandation sans toucher au pas, et le même pas
+ne veut alors plus dire le même pourcentage ([D92](DECISIONS.md)).
 
-Deux choses en découlent, et elles valent d'être sues avant d'y toucher.
-La course tourne dans la session qui tient l'écran et jamais dans le
-service : tout ce que Windows dit de l'arrangement des écrans est répondu
-pour le poste de travail de celui qui demande, et celui d'un service n'a
-aucun écran dessus. Et rien de tout cela ne fait échouer une session :
-ce qui s'est passé part en une phrase dans le journal de l'hôte, et la
-session continue.
+Trois choses en découlent, et elles valent d'être sues avant d'y toucher.
+Un écran laissé sur un pas qui n'est plus dans la liste ne répond plus
+rien du tout, et c'est le seul cas où on lui écrit sans le lire. Ce que
+chaque écran dessine est retenu d'une session à l'autre dans
+`data/screen/screen-scales.txt`, pour qu'un écran devenu muet reprenne
+l'agrandissement de son propriétaire et non celui que Windows
+recommande. Et la course tourne dans la session qui tient l'écran et
+jamais dans le service : tout ce que Windows dit de l'arrangement des
+écrans est répondu pour le poste de travail de celui qui demande, et
+celui d'un service n'a aucun écran dessus.
+
+Rien de tout cela ne fait échouer une session : ce qui s'est passé part
+en une phrase dans le journal de l'hôte, et la session continue.
 
 Une session qui ne nomme aucun agrandissement, parce qu'elle n'a pas su
 mesurer son écran ou parce qu'une taille a été choisie à la main, reçoit
-celui que Windows recommande pour cette taille-là. C'est posé à chaque
-réveil : cet écran n'appartient qu'aux sessions, et le laisser où la
-session précédente l'a mis serait une machine qui se souvient du bureau
-d'une autre.
+celui que Windows recommande pour cette taille-là : cette taille n'est
+l'écran de personne, il n'y a donc rien à copier.
 
 ## La frontière dans le code
 

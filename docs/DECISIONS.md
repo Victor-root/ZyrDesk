@@ -1304,6 +1304,22 @@ or removed). Enabling all of the available devices:
 
 **Le service cesse enfin d'être aveugle sur les écrans.** Tout ce que Windows dit de l'arrangement des écrans est répondu pour le poste de travail de celui qui demande, et un service siège sur un poste qui n'en a aucun. Interrogé sur ce qu'il montrait, l'hôte répondait qu'il ne savait pas mesurer son propre écran, et la session gardait la taille qu'elle avait supposée : c'est de là que venait un client en 1920x1200 persuadé qu'un hôte en 3840x2160 lui montrait du 1920x1200. La session qui tient l'écran écrit ce qu'elle voit, le service le lit. C'est la quatrième course qu'on envoie là-bas, après le verrouillage, les enceintes et l'agrandissement.
 
+## D92. Un agrandissement n'est pas un pourcentage, c'est un pas compté depuis une recommandation qui bouge (2026-08-29, pendant M4)
+
+**Le relevé, et il a fallu quatre essais pour en venir à bout.** « Le PC portable reste à 100 %, il ne revient pas à 125 %. » La taille revenait bien, l'agrandissement non, et le journal n'avait qu'une seule chose à dire : cet écran ne répond pas. Il disait vrai, et c'était la mauvaise question.
+
+**Ce que Windows garde n'est pas ce qu'il montre.** La page des paramètres affiche « 125 % », mais ce qui est réellement écrit pour l'écran est un **pas** le long d'une liste fixe, compté depuis celui que Windows recommande **pour cet écran à la taille qu'il a en ce moment**. Changer la taille du bureau déplace la recommandation : le pas n'a pas bougé, ce qu'il veut dire a changé. C'est ainsi qu'un écran 4K à 175 % passé en 1920x1200 se retrouve à 125 % sans que rien n'ait été écrit dessus, et qu'il revient à 175 % tout seul quand le bureau rentre à la maison.
+
+**Le piège, lui, n'a rien d'accidentel.** Poser 175 % pendant que le bureau est en 3840x2160, puis ramener ce bureau à 1920x1200, laisse l'écran sur un pas qui n'est plus dans la liste annoncée. Le journal a fini par le dire mot pour mot : « il est au pas -2 d'une liste comptée depuis le pas 1, qui va de -1 à 3 ». Un pas hors de la liste ne vaut aucun pourcentage, et l'écran interrogé ne répond plus rien du tout.
+
+**De là partait un cercle dont on ne sort pas tout seul.** Un écran qu'on ne peut plus lire ne met rien dans le relevé fait avant la session suivante ; ce qui n'est pas relevé n'est pas remis ; donc il reste dans cet état, indéfiniment. La seule chose qui en sortait un portable était d'ouvrir les paramètres d'affichage à la main. Deux choses cassent ce cercle. Un pas qui ne veut plus rien dire n'est pas une raison d'abandonner, c'est le seul cas où écrire sans lire est exactement juste ; et l'agrandissement est remis pour **tout écran allumé**, pas seulement pour ceux dont la taille est revenue de travers.
+
+**Un troisième oubli tenait à la même famille.** Les appels qui décrivent les écrans doivent être prévenus qu'un bureau peut différer de sa dalle, sans quoi ils ne savent pas décrire un écran dans cet état et répondent que cette machine n'a aucun écran. Un portable dont le bureau avait été agrandi pour une session n'était donc plus trouvé du tout : ni son agrandissement remis, ni son bureau compté comme rendu.
+
+**Décision : ce qu'on remet est l'agrandissement de la personne, jamais un défaut.** Victor l'a posé en une phrase : « si ton code c'est juste se baser sur la recommandation de Windows ça me convient pas, il faut que ça reprenne le scaling d'avant la session, si des users n'utilisent pas le scaling recommandé après ils sont aussi dans la merde. » C'est exactement le contraire de ce que le code faisait alors, et c'est lui qui a raison.
+
+**Donc une mémoire, et elle survit à tout.** Un fichier à côté du relevé, `data/screen/screen-scales.txt`, une ligne par écran désigné par l'identité qui survit à un redémarrage et non par sa place dans la liste. Il retient le dernier agrandissement qui a pu être lu, il est mis à jour dès qu'il change, et il n'est relu que pour un écran qui refuse de répondre. La recommandation de Windows existe toujours, mais elle est descendue au tout dernier rang : elle ne sert plus qu'à un écran jamais lu une seule fois, c'est-à-dire à une machine où ce fichier n'existe pas encore.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
