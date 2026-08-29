@@ -312,8 +312,13 @@ mod windows_only {
     pub fn put_back(seats: &[Seat]) -> Vec<String> {
         let mut said = Vec::new();
         let mut written = 0;
+        // Read once and not once per screen. A desk of twenty adapters,
+        // which is what Windows lists on an ordinary machine, would
+        // otherwise cost twenty full enumerations and four hundred asks
+        // about magnifications, for one answer that does not change while
+        // this loop runs: nothing is applied until the end.
+        let now = as_it_stands();
         for seat in seats {
-            let now = as_it_stands();
             let Some(here) = now.iter().find(|other| other.adapter == seat.adapter) else {
                 said.push(format!(
                     "{} is no longer one of this computer's screens, so it was left alone",
@@ -353,12 +358,72 @@ mod windows_only {
                 std::ptr::null(),
             )
         };
-        said.push(if applied == DISP_CHANGE_SUCCESSFUL {
-            format!("this computer's screens are back the way they were ({written} of them)")
-        } else {
-            format!("Windows refused the arrangement of {written} screens ({applied})")
-        });
+        if applied != DISP_CHANGE_SUCCESSFUL {
+            said.push(format!(
+                "Windows refused the arrangement of {written} screens ({})",
+                why(applied)
+            ));
+            return said;
+        }
+        said.push(format!(
+            "this computer's screens are back the way they were ({written} of them)"
+        ));
+        // And how large each of them draws, which the call above knows
+        // nothing about: it is carried on the newer half of Windows, so
+        // it is put back separately and afterwards. Afterwards because a
+        // magnification belongs to a screen at a size, and the sizes have
+        // only just come back.
+        //
+        // This is the half that was missing, and it is the one somebody
+        // notices: a session that could not take the size it asked for
+        // changed nothing but the magnification, so nothing here was ever
+        // out of place, and a laptop was handed back drawing everything a
+        // third too large until its owner put it right by hand.
+        for seat in seats.iter().filter(|seat| seat.on && seat.scale != 0) {
+            said.extend(drawn_as_before(seat));
+        }
         said
+    }
+
+    /// Puts one screen's magnification back, insisting a little, and says
+    /// nothing at all when it was already right.
+    ///
+    /// The arrangement has only just been applied, and the two halves of
+    /// Windows do not arrive together: a screen asked about too early is
+    /// not in the newer one's configuration yet, and what comes back then
+    /// is « there is no such screen » rather than a wrong number. Waiting
+    /// for it costs nothing on a desk that is already back, which is
+    /// every desk that did not have to be rearranged.
+    fn drawn_as_before(seat: &Seat) -> Option<String> {
+        const TRIES: u32 = 10;
+        const BETWEEN: std::time::Duration = std::time::Duration::from_millis(100);
+
+        for _ in 0..TRIES {
+            match crate::magnify::of(&seat.adapter) {
+                Some(now) if now == seat.scale => return None,
+                Some(_) => return Some(crate::magnify::magnify(&seat.adapter, seat.scale)),
+                None => std::thread::sleep(BETWEEN),
+            }
+        }
+        Some(format!(
+            "{} never came back for its {} % to be put back",
+            seat.adapter, seat.scale
+        ))
+    }
+
+    /// What Windows means by the number it answers with.
+    ///
+    /// Named rather than printed, because the one that matters is easy to
+    /// mistake for a failure of ours: a screen that will not take a size
+    /// is a screen saying so, not a bug at this end.
+    fn why(answer: i32) -> String {
+        match answer {
+            -1 => "it failed".to_string(),
+            -2 => "that screen does not have that size".to_string(),
+            -4 => "the flags were wrong".to_string(),
+            -5 => "one of the values was wrong".to_string(),
+            other => format!("answer {other}"),
+        }
     }
 
     /// Puts one screen at that size, and says what happened.
@@ -396,7 +461,10 @@ mod windows_only {
         if answer == DISP_CHANGE_SUCCESSFUL {
             format!("{screen} is showing {wide}x{high}")
         } else {
-            format!("Windows would not put {screen} at {wide}x{high} ({answer})")
+            format!(
+                "Windows would not put {screen} at {wide}x{high}: {}",
+                why(answer)
+            )
         }
     }
 
@@ -524,6 +592,19 @@ mod tests {
         let said = seat().to_string();
         assert!(said.contains("at=-3840,0"), "{said}");
         assert_eq!(said.parse::<Seat>().unwrap().at, (-3840, 0));
+    }
+
+    #[test]
+    fn the_magnification_is_part_of_what_is_noted_and_put_back() {
+        // Le cas de Victor, et il a dû le réparer à la main plusieurs
+        // fois : un portable 1920x1200 à qui on demande du 3840x2160 à
+        // 175 % refuse la taille, garde la sienne, et se retrouve
+        // néanmoins à 175 %. Rien n'ayant changé de taille, une remise
+        // qui ne remet que les tailles ne remet rien du tout, et
+        // l'agrandissement reste où la session l'a mis.
+        let said = seat().to_string();
+        assert!(said.contains("scale=175"), "{said}");
+        assert_eq!(said.parse::<Seat>().unwrap().scale, 175);
     }
 
     #[test]

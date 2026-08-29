@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R59bis** | **Refait, et c'est l'autre sens qui n'allait pas.** Depuis un écran 4K à 175 % vers un portable 1920x1200, l'hôte refusait la taille demandée, gardait la sienne, et prenait quand même l'agrandissement du client : le portable restait en 1920x1200 mais à 175 %, et ne revenait jamais à 125 % à la déconnexion, ce qu'il fallait réparer à la main. Deux causes. L'agrandissement était relevé et jamais remis, donc une session qui n'avait changé que lui ne remettait rien du tout. Et il était posé même quand la taille avait été refusée, alors qu'il n'appartient plus à rien dans ce cas |
 | **R59** | **Refait, et c'est le sujet du lot : ZyrDesk n'éteint plus aucun écran.** Une session posait la taille demandée sur l'écran virtuel de l'hôte et **éteignait tous les autres** le temps de la session, une télé éteinte depuis des semaines revenant en prime à chaque démarrage du service. Une session règle maintenant la taille de l'écran principal de l'hôte et ne touche à rien d'autre. Tout le bureau est relevé avant, et remis après : écrans éteints, places, tailles, cadences, agrandissements, orientations et écran principal. Le moteur ne s'occupe plus des écrans du tout |
 | **R58** | **Nouveau.** La session portait la taille de l'écran du client mais pas son agrandissement : depuis un portable à 125 %, le bureau distant arrivait à la bonne résolution avec tout écrit deux fois plus petit qu'à la maison. L'agrandissement voyage maintenant avec la taille, et ZyrDesk le pose lui-même sur l'écran servi, le moteur hôte n'ayant aucun réglage pour ça |
 | **R57** | **Nouveau, et c'est le pire de la série parce qu'il se répétait à l'infini.** Lancer ZyrDesk rallumait des écrans que leur propriétaire avait éteints, à chaque démarrage. Le moteur gardait un arrangement d'écrans à remettre qui nommait notre écran virtuel, lequel dort entre les sessions : l'essai échouait donc toujours, et ce qu'il fait quand il échoue est rallumer tout ce qu'il trouve. Un tel arrangement est maintenant jeté au démarrage du service |
@@ -1430,6 +1431,23 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R59bis (l'hôte qui ne sait pas dessiner ce qu'on lui demande garde tout ce qu'il a)**
+>
+> **Le sens qui manquait, et il se fait dans l'autre sens que R59** : depuis le **PC 4K à 175 %**, prendre la main sur le **portable 1920x1200 à 125 %**, en **Résolution du client**.
+>
+> Le portable ne sait pas dessiner du 3840x2160. Ce qui doit se passer : il **garde sa taille et son agrandissement**, l'image arrive en 1920x1200 et elle est agrandie sur l'écran 4K. Ce qui ne doit **pas** se passer : le portable à 1920x1200 dessiné à 175 %, tout deux fois trop gros.
+>
+> **Et surtout, à la déconnexion** : le portable doit être **exactement** comme avant, 1920x1200 à 125 %. C'est ce qui obligeait à remettre 125 % à la main.
+>
+> **Les lignes qui le disent**, dans `service.log` du portable :
+>
+> `Windows would not put \\.\DISPLAY1 at 3840x2160: that screen does not have that size`
+> `\\.\DISPLAY1 cannot draw 3840x2160, so it keeps its own size and its own magnification`
+>
+> La deuxième est la nouvelle, et c'est elle qui compte. L'ancienne trace disait `\\.\DISPLAY1 draws at 175 %` juste après le refus : si elle revient, le défaut est revenu avec.
+>
+> **Le cas jumeau, à faire aussi** : en **Résolution de l'hôte** dans ce même sens, rien ne doit changer du tout sur le portable, ni la taille ni l'agrandissement.
 
 > **R59 (tes écrans restent allumés, et tout revient exactement comme avant)**
 >

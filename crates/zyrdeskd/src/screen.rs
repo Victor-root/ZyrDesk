@@ -248,7 +248,24 @@ pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
         if (wide, high) != (main.wide, main.high) {
             said.push(zyr_screen::arrangement::put_at(&main.adapter, wide, high));
         }
-        said.push(zyr_screen::magnify::magnify(&main.adapter, scale));
+        // Only once the size is really there, and read rather than
+        // assumed. A screen that cannot draw the size it was asked for
+        // says so and keeps the one it has, and the magnification that
+        // came with that size then belongs to nothing: a 1920x1200 laptop
+        // asked for 3840x2160 at 175 % stayed at 1920x1200 and got the
+        // 175 %, so its owner was handed back a desk with everything on
+        // it a third too large and had to put it right by hand.
+        let got = zyr_screen::arrangement::as_it_stands()
+            .into_iter()
+            .find(|seat| seat.adapter == main.adapter);
+        if got.is_some_and(|seat| (seat.wide, seat.high) == (wide, high)) {
+            said.push(zyr_screen::magnify::magnify(&main.adapter, scale));
+        } else {
+            said.push(format!(
+                "{} cannot draw {wide}x{high}, so it keeps its own size and its own magnification",
+                main.adapter
+            ));
+        }
     }
     // Read again rather than worked out: what was asked for and what
     // Windows did are two different things, and the far end is told the
