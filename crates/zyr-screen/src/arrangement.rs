@@ -211,8 +211,9 @@ mod windows_only {
     use windows_sys::Win32::Graphics::Gdi::{
         CDS_NORESET, CDS_SET_PRIMARY, CDS_UPDATEREGISTRY, ChangeDisplaySettingsExW, DEVMODEW,
         DISP_CHANGE_SUCCESSFUL, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICE_PRIMARY_DEVICE,
-        DISPLAY_DEVICEW, DM_DISPLAYFREQUENCY, DM_DISPLAYORIENTATION, DM_PELSHEIGHT, DM_PELSWIDTH,
-        DM_POSITION, ENUM_CURRENT_SETTINGS, EnumDisplayDevicesW, EnumDisplaySettingsExW,
+        DISPLAY_DEVICEW, DM_BITSPERPEL, DM_DISPLAYFREQUENCY, DM_DISPLAYORIENTATION, DM_PELSHEIGHT,
+        DM_PELSWIDTH, DM_POSITION, EDS_RAWMODE, ENUM_CURRENT_SETTINGS, EnumDisplayDevicesW,
+        EnumDisplaySettingsExW,
     };
 
     /// What every one of this computer's screens is doing now.
@@ -440,11 +441,13 @@ mod windows_only {
     /// serves the one it has, and the picture is stretched at the other
     /// end exactly as it was before any of this existed.
     pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
-        let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
-        mode.dmSize = size_of::<DEVMODEW>() as u16;
-        mode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
-        mode.dmPelsWidth = wide;
-        mode.dmPelsHeight = high;
+        let Some(mode) = the_mode_for(screen, wide, high) else {
+            return format!(
+                "{screen} does not offer {wide}x{high}, so it keeps the size it has; what it does \
+                 offer is {}",
+                offered(screen)
+            );
+        };
         let name = super::wide(screen);
         // SAFETY: the name and the mode are ours and outlive the call.
         // Applied on its own and not written down for later, because
@@ -459,13 +462,128 @@ mod windows_only {
             )
         };
         if answer == DISP_CHANGE_SUCCESSFUL {
-            format!("{screen} is showing {wide}x{high}")
+            format!(
+                "{screen} is showing {wide}x{high} at {} Hz",
+                mode.dmDisplayFrequency
+            )
         } else {
             format!(
                 "Windows would not put {screen} at {wide}x{high}: {}",
                 why(answer)
             )
         }
+    }
+
+    /// The mode this screen offers at that size, described the way
+    /// Windows describes it.
+    ///
+    /// Asked for rather than made up, and that is the whole of this
+    /// function. A mode built here from a width and a height alone
+    /// carries no colour depth and no rate, and Windows matches it
+    /// against what the driver offers: a size the screen can perfectly
+    /// well draw is then refused with « that screen does not have that
+    /// size », which is what happened to a laptop asked for 3840x2160.
+    ///
+    /// Asked twice when the first answer is no. The plain list is what
+    /// the monitor says of itself, and it stops at the size of the
+    /// panel; the raw one is what the graphics card will really produce,
+    /// which on nearly every laptop includes sizes larger than the panel,
+    /// drawn whole and then shrunk into it. That second list is what lets
+    /// a 1920x1200 laptop serve a 4K desktop, and it is where the ability
+    /// this product grew a whole virtual screen for was sitting all
+    /// along.
+    ///
+    /// Among the modes at that size, the rate the screen is running at
+    /// wins, then the fastest: a session must not quietly drop a 144 Hz
+    /// screen to 60.
+    fn the_mode_for(screen: &str, wide: u32, high: u32) -> Option<DEVMODEW> {
+        let name = super::wide(screen);
+        let now = at_present(&name);
+        let mut best: Option<DEVMODEW> = None;
+        for raw in [0, EDS_RAWMODE] {
+            for index in 0.. {
+                let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
+                mode.dmSize = size_of::<DEVMODEW>() as u16;
+                // SAFETY: a name of ours, ended, and a slot of ours
+                // carrying its own size as the call requires.
+                if unsafe { EnumDisplaySettingsExW(name.as_ptr(), index, &mut mode, raw) } == 0 {
+                    break;
+                }
+                if mode.dmPelsWidth != wide || mode.dmPelsHeight != high {
+                    continue;
+                }
+                if mode.dmDisplayFrequency == now {
+                    return Some(with_everything(mode));
+                }
+                if best.is_none_or(|kept| kept.dmDisplayFrequency < mode.dmDisplayFrequency) {
+                    best = Some(mode);
+                }
+            }
+            if best.is_some() {
+                break;
+            }
+        }
+        best.map(with_everything)
+    }
+
+    /// Says which of the mode's fields are meant, which is every one that
+    /// describes a picture.
+    ///
+    /// The mode came from Windows whole, so all of them are filled in and
+    /// all of them are wanted. Only the place is left out: this changes
+    /// one screen's size and moves nothing.
+    fn with_everything(mut mode: DEVMODEW) -> DEVMODEW {
+        mode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY;
+        mode
+    }
+
+    /// The rate that screen is running at now, or nought.
+    fn at_present(name: &[u16]) -> u32 {
+        let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
+        mode.dmSize = size_of::<DEVMODEW>() as u16;
+        // SAFETY: as above, asking for what is in use rather than a list.
+        let read =
+            unsafe { EnumDisplaySettingsExW(name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut mode, 0) };
+        if read == 0 {
+            0
+        } else {
+            mode.dmDisplayFrequency
+        }
+    }
+
+    /// The sizes that screen will draw, for the journal when one of them
+    /// is not the one wanted.
+    ///
+    /// The whole point is to be readable by somebody deciding whether a
+    /// size they asked for was unreasonable, so it is the sizes and not
+    /// the modes: a screen offers the same size at several rates and
+    /// depths, and naming it once is enough.
+    fn offered(screen: &str) -> String {
+        let name = super::wide(screen);
+        let mut sizes: Vec<(u32, u32)> = Vec::new();
+        for raw in [0, EDS_RAWMODE] {
+            for index in 0.. {
+                let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
+                mode.dmSize = size_of::<DEVMODEW>() as u16;
+                // SAFETY: as above.
+                if unsafe { EnumDisplaySettingsExW(name.as_ptr(), index, &mut mode, raw) } == 0 {
+                    break;
+                }
+                let size = (mode.dmPelsWidth, mode.dmPelsHeight);
+                if !sizes.contains(&size) {
+                    sizes.push(size);
+                }
+            }
+        }
+        // Biggest first: what somebody reading this wants to know is how
+        // large this screen goes, and the list is long.
+        sizes.sort_unstable_by_key(|(wide, high)| std::cmp::Reverse(wide * high));
+        sizes.truncate(8);
+        sizes
+            .iter()
+            .map(|(wide, high)| format!("{wide}x{high}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// Writes one screen down without applying it.
