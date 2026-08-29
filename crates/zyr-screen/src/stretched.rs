@@ -34,13 +34,13 @@
 use windows_sys::Win32::Devices::Display::{
     DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
     DISPLAYCONFIG_DEVICE_INFO_SET_SUPPORT_VIRTUAL_RESOLUTION, DISPLAYCONFIG_MODE_INFO,
-    DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE, DISPLAYCONFIG_MODE_INFO_TYPE_TARGET,
-    DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX,
-    DISPLAYCONFIG_SCALING_IDENTITY, DISPLAYCONFIG_SOURCE_DEVICE_NAME,
-    DISPLAYCONFIG_SUPPORT_VIRTUAL_RESOLUTION, DisplayConfigGetDeviceInfo,
-    DisplayConfigSetDeviceInfo, GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS,
-    QDC_VIRTUAL_MODE_AWARE, QueryDisplayConfig, SDC_ALLOW_CHANGES, SDC_APPLY,
-    SDC_USE_SUPPLIED_DISPLAY_CONFIG, SDC_VIRTUAL_MODE_AWARE, SetDisplayConfig,
+    DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
+    DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_PATH_INFO,
+    DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX, DISPLAYCONFIG_SCALING_IDENTITY,
+    DISPLAYCONFIG_SOURCE_DEVICE_NAME, DISPLAYCONFIG_SUPPORT_VIRTUAL_RESOLUTION,
+    DisplayConfigGetDeviceInfo, DisplayConfigSetDeviceInfo, GetDisplayConfigBufferSizes,
+    QDC_ONLY_ACTIVE_PATHS, QDC_VIRTUAL_MODE_AWARE, QueryDisplayConfig, SDC_ALLOW_CHANGES,
+    SDC_APPLY, SDC_USE_SUPPLIED_DISPLAY_CONFIG, SDC_VIRTUAL_MODE_AWARE, SetDisplayConfig,
 };
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 
@@ -85,6 +85,31 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
     } else {
         DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX
     };
+    // And the third block, which is the one that was missing. Told that a
+    // desktop may differ from its panel, a path carries not two halves but
+    // three: the desktop's own size, the panel's, and this, which says
+    // where the desktop lands and how much of it is shown. Changing the
+    // first without this one describes a desktop of one size laid out for
+    // another, and Windows answers that the request itself is malformed
+    // rather than that the size is impossible, which is exactly what it
+    // answered.
+    //
+    // The whole desktop, shown whole: this product asks for a bigger desk,
+    // never for a corner of one.
+    if let Some(image) = the_desktop_image_of(&paths[path], &modes) {
+        let whole = windows_sys::Win32::Foundation::RECTL {
+            left: 0,
+            top: 0,
+            right: wide as i32,
+            bottom: high as i32,
+        };
+        // Written as what this mode's `infoType` says it holds, which was
+        // checked when it was found.
+        modes[image].Anonymous.desktopImageInfo.PathSourceSize.x = wide as i32;
+        modes[image].Anonymous.desktopImageInfo.PathSourceSize.y = high as i32;
+        modes[image].Anonymous.desktopImageInfo.DesktopImageRegion = whole;
+        modes[image].Anonymous.desktopImageInfo.DesktopImageClip = whole;
+    }
     // SAFETY: both lists are ours, and their lengths are the ones being
     // handed over. Told to apply what is supplied rather than to work
     // something out, and told that a desktop may differ in size from the
@@ -111,7 +136,10 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
             }
         )
     } else {
-        format!("Windows would not give {screen} a {wide}x{high} desktop (answer {answer})")
+        format!(
+            "Windows would not give {screen} a {wide}x{high} desktop: {}",
+            why(answer)
+        )
     }
 }
 
@@ -198,6 +226,27 @@ fn allow_more_than_the_panel(path: &DISPLAYCONFIG_PATH_INFO) -> bool {
     unsafe { DisplayConfigSetDeviceInfo((&raw mut asking).cast()) == ERROR_SUCCESS as i32 }
 }
 
+/// Where that path keeps the block saying how its desktop lands on its
+/// panel, when it has one.
+///
+/// The lower half of the same word that carries the panel's own mode in
+/// its upper half, which is the sort of thing that is obvious only once
+/// it has cost an afternoon.
+fn the_desktop_image_of(
+    path: &DISPLAYCONFIG_PATH_INFO,
+    modes: &[DISPLAYCONFIG_MODE_INFO],
+) -> Option<usize> {
+    // SAFETY: reading the union as the word it also is.
+    let word = unsafe { path.targetInfo.Anonymous.modeInfoIdx };
+    let index = word & u32::from(u16::MAX);
+    (index != u32::from(u16::MAX))
+        .then_some(index as usize)
+        .filter(|index| {
+            *index < modes.len()
+                && modes[*index].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE
+        })
+}
+
 /// Whether a desktop that size lands on the panel one pixel for one,
 /// which is when there is nothing to shrink and nothing to letterbox.
 fn fills_the_panel(
@@ -234,4 +283,20 @@ fn mode_at(word: u32, modes: &[DISPLAYCONFIG_MODE_INFO]) -> Option<usize> {
     (index != u32::from(u16::MAX))
         .then_some(index as usize)
         .filter(|index| *index < modes.len())
+}
+
+/// What Windows means by the number this call answers with.
+///
+/// Named because the difference between them decides what to try next: a
+/// malformed request is ours to fix, a size refused is the machine's
+/// answer, and there is no telling them apart from a bare number.
+fn why(answer: i32) -> String {
+    match answer {
+        5 => "it is not allowed to".to_string(),
+        31 => "it failed".to_string(),
+        50 => "this computer does not support it".to_string(),
+        87 => "the request itself was malformed, which is ours to fix".to_string(),
+        1004 => "the flags were wrong".to_string(),
+        other => format!("answer {other}"),
+    }
 }
