@@ -369,6 +369,25 @@ mod windows_only {
         said.push(format!(
             "this computer's screens are back the way they were ({written} of them)"
         ));
+        // The one thing the call above cannot undo, because it cannot do
+        // it either: a desktop that was made larger than the panel it is
+        // drawn on. Asking the old way for the size the panel really has
+        // usually settles it, and this is the net for when it does not,
+        // since a laptop left with a desktop bigger than itself is
+        // exactly the sort of thing somebody has to repair by hand.
+        let now = as_it_stands();
+        for seat in seats.iter().filter(|seat| seat.on) {
+            let back = now.iter().any(|other| {
+                other.adapter == seat.adapter && (other.wide, other.high) == (seat.wide, seat.high)
+            });
+            if !back {
+                said.push(crate::stretched::put_at(
+                    &seat.adapter,
+                    seat.wide,
+                    seat.high,
+                ));
+            }
+        }
         // And how large each of them draws, which the call above knows
         // nothing about: it is carried on the newer half of Windows, so
         // it is put back separately and afterwards. Afterwards because a
@@ -442,10 +461,16 @@ mod windows_only {
     /// end exactly as it was before any of this existed.
     pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
         let Some(mode) = the_mode_for(screen, wide, high) else {
+            // Not the end of it, and this is where a laptop is won or
+            // lost. A panel that offers nothing larger than itself can
+            // still be given a desktop larger than itself, drawn whole
+            // and shrunk into it by the graphics card, and that is what
+            // the newer half of Windows is for.
             return format!(
-                "{screen} does not offer {wide}x{high}, so it keeps the size it has; what it does \
-                 offer is {}",
-                offered(screen)
+                "{screen} offers no {wide}x{high} of its own ({}), so a desktop that size is asked \
+                 for instead: {}",
+                offered(screen),
+                crate::stretched::put_at(screen, wide, high)
             );
         };
         let name = super::wide(screen);

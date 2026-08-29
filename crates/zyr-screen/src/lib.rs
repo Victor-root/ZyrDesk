@@ -36,6 +36,8 @@ pub mod magnify;
 #[cfg(windows)]
 mod place;
 #[cfg(windows)]
+pub mod stretched;
+#[cfg(windows)]
 mod vouching;
 
 use std::fmt;
