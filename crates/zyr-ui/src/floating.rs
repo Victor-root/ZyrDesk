@@ -2050,8 +2050,19 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
     };
     // SAFETY: a window of ours, and the rectangle is ours.
     let taken = unsafe { GetWindowRgnBox(button, &mut held) };
+    // Counted from the edge the pieces were counted from, which is the
+    // bottom when the menu opens upward. Counted from the top whatever
+    // the drawing, this line reported a height of nought on every menu
+    // opening upward: a zero height is the signature this journal is
+    // read for, and it was printing one of its own.
+    let upward = DRAWN_UPWARD.load(Ordering::Relaxed);
     let drawn = shape.iter().fold((0, 0), |(wide, high), piece| {
-        (wide.max(-piece.x), high.max(piece.y + piece.height))
+        let reach = if upward {
+            -piece.y
+        } else {
+            piece.y + piece.height
+        };
+        (wide.max(-piece.x), high.max(reach))
     });
     note(&format!(
         "bouton flottant découpé en {} morceaux jusqu'à {}x{} ; \
