@@ -130,8 +130,10 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
     // is refused, and it is what makes this work on the machines it does.
     let exactly = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE;
     let mut answer = ask_for(&paths, &modes, exactly);
+    let mut asked = "asked for exactly";
     if answer != ERROR_SUCCESS as i32 {
         answer = ask_for(&paths, &modes, exactly | SDC_ALLOW_CHANGES);
+        asked = "refused as asked, so Windows was left free to adjust it";
     }
     if answer != ERROR_SUCCESS as i32 {
         return Some(format!(
@@ -156,7 +158,7 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
             }
         ),
         Some((now_wide, now_high)) => format!(
-            "Windows took the request for a {wide}x{high} desktop on {screen} and left it drawing \
+            "Windows said yes to a {wide}x{high} desktop on {screen} ({asked}) and left it drawing \
              {now_wide}x{now_high}{}",
             what_may_stand_in_the_way(&paths[found.path], found.image)
         ),
@@ -253,9 +255,9 @@ fn desktop_of(screen: &str) -> Option<(u32, u32)> {
 /// What is known to stop a screen taking a desktop larger than its panel,
 /// for the journal.
 ///
-/// Windows says none of this in the answer it gives, and both of these
-/// are the difference between « this machine cannot » and « we asked
-/// badly », which is the first question anybody reading that line has.
+/// Windows says none of this in the answer it gives, and all of it is the
+/// difference between « this machine cannot » and « we asked badly »,
+/// which is the first question anybody reading that line has.
 fn what_may_stand_in_the_way(path: &DISPLAYCONFIG_PATH_INFO, image: Option<usize>) -> &'static str {
     if path.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE == 0 {
         return "; this screen does not support a desktop that differs in size from its panel, so \
@@ -265,7 +267,12 @@ fn what_may_stand_in_the_way(path: &DISPLAYCONFIG_PATH_INFO, image: Option<usize
         return "; this screen carries nothing saying where its desktop lands on its panel, which \
                 is what a desktop larger than the panel is described with";
     }
-    ""
+    // Everything Windows needs was there and it still did not do it. What
+    // is left is below Windows: a graphics card that draws nothing larger
+    // than the panel on this output, which is the ordinary state of some
+    // of them and is not something a request can change.
+    "; the request carried everything Windows asks for, so what is left is a graphics card that \
+     draws no desktop larger than the panel on this output"
 }
 
 /// The desktop as Windows describes it, told that a desktop may be

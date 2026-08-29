@@ -1450,9 +1450,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Et si cette machine ne sait vraiment pas le faire**, la ligne le dit maintenant avec les deux chiffres et la raison, au lieu d'annoncer une réussite :
 >
-> `Windows took the request for a 1920x1200 desktop on \\.\DISPLAY1 and left it drawing 1920x1080; this screen does not support a desktop that differs in size from its panel, so there is no larger one to be had on it`
+> `Windows said yes to a 1920x1200 desktop on \\.\DISPLAY1 (asked for exactly) and left it drawing 1920x1080; the request carried everything Windows asks for, so what is left is a graphics card that draws no desktop larger than the panel on this output`
 >
-> C'est cette ligne-là qu'il faut m'envoyer : elle sépare « cette machine ne peut pas » de « on a mal demandé », et les deux se réparent différemment.
+> C'est cette ligne-là qu'il faut m'envoyer : elle sépare « cette machine ne peut pas » de « on a mal demandé », et les deux se réparent différemment. **Toutes les machines ne savent pas le faire** : celles qui y arrivent jusqu'ici ont une carte Intel et une dalle interne, celle qui n'y arrive pas a une carte d'un autre fabricant et un écran externe. Sur celle-là, résolution de l'hôte et résolution du client donnent la même image, et c'est honnête plutôt que cassé.
 >
 > **Le retour compte autant** : à la déconnexion, le PC doit revenir en 1920x1080 sans bandes, tout seul.
 
