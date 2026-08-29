@@ -301,8 +301,21 @@ mod windows_only {
         super::read_wide(&screen.DeviceID)
     }
 
-    /// Puts an arrangement back, and says what happened in one sentence
-    /// per screen plus one for the whole.
+    /// Puts an arrangement back, saying whether the screens are where
+    /// they were and what happened in one sentence per screen.
+    ///
+    /// The answer is a word of its own and not a sentence to be searched
+    /// for. Whoever asks has to know whether to try again, and reading
+    /// that out of the last line cost an evening: a line added after it
+    /// turned every successful return into a failure, and the watch that
+    /// tries again did so every two seconds for as long as the service
+    /// ran.
+    ///
+    /// What it answers about is the arrangement: which screens are on,
+    /// where, and at what size. How large each draws is put back too, and
+    /// is deliberately not part of the answer. A desk back in every
+    /// respect but one number is a desk somebody can use, and it is not
+    /// worth taking a screen away from them every two seconds over.
     ///
     /// Nothing here fails a session. This runs when a session is already
     /// over, and the worst it can do is leave a desktop the way the
@@ -310,7 +323,7 @@ mod windows_only {
     /// it must never do is stop half way and leave two screens sitting on
     /// top of each other, which is why every screen is written down
     /// without being applied and the whole lot is applied at the end.
-    pub fn put_back(seats: &[Seat]) -> Vec<String> {
+    pub fn put_back(seats: &[Seat]) -> (bool, Vec<String>) {
         let mut said = Vec::new();
         let mut written = 0;
         // Read once and not once per screen. A desk of twenty adapters,
@@ -345,7 +358,7 @@ mod windows_only {
         }
         if written == 0 {
             said.push("no screen could be put back the way it was".to_string());
-            return said;
+            return (false, said);
         }
         // SAFETY: no name and no mode is how this call is told to apply
         // everything written down above, which is the whole point of
@@ -364,29 +377,26 @@ mod windows_only {
                 "Windows refused the arrangement of {written} screens ({})",
                 why(applied)
             ));
-            return said;
+            return (false, said);
         }
         said.push(format!(
             "this computer's screens are back the way they were ({written} of them)"
         ));
         // The one thing the call above cannot undo, because it cannot do
         // it either: a desktop that was made larger than the panel it is
-        // drawn on. Asking the old way for the size the panel really has
-        // usually settles it, and this is the net for when it does not,
-        // since a laptop left with a desktop bigger than itself is
-        // exactly the sort of thing somebody has to repair by hand.
-        let now = as_it_stands();
+        // drawn on. Asked of every screen that is on and not only of the
+        // ones whose size came back wrong, because the size is only half
+        // of it: a desktop put back to the size of its panel while still
+        // laid out to be shrunk into it is a desktop Windows still calls
+        // stretched, and everything that reads a screen afterwards has to
+        // be told so. Asking costs nothing on a screen that was never
+        // stretched, which answers that it has nothing to do.
         for seat in seats.iter().filter(|seat| seat.on) {
-            let back = now.iter().any(|other| {
-                other.adapter == seat.adapter && (other.wide, other.high) == (seat.wide, seat.high)
-            });
-            if !back {
-                said.push(crate::stretched::put_at(
-                    &seat.adapter,
-                    seat.wide,
-                    seat.high,
-                ));
-            }
+            said.extend(crate::stretched::put_at(
+                &seat.adapter,
+                seat.wide,
+                seat.high,
+            ));
         }
         // And how large each of them draws, which the call above knows
         // nothing about: it is carried on the newer half of Windows, so
@@ -402,7 +412,7 @@ mod windows_only {
         for seat in seats.iter().filter(|seat| seat.on && seat.scale != 0) {
             said.extend(drawn_as_before(seat));
         }
-        said
+        (true, said)
     }
 
     /// Puts one screen's magnification back, insisting a little, and says
@@ -466,11 +476,12 @@ mod windows_only {
             // still be given a desktop larger than itself, drawn whole
             // and shrunk into it by the graphics card, and that is what
             // the newer half of Windows is for.
+            let stretched = crate::stretched::put_at(screen, wide, high)
+                .unwrap_or_else(|| format!("{screen} already draws a {wide}x{high} desktop"));
             return format!(
                 "{screen} offers no {wide}x{high} of its own ({}), so a desktop that size is asked \
-                 for instead: {}",
-                offered(screen),
-                crate::stretched::put_at(screen, wide, high)
+                 for instead: {stretched}",
+                offered(screen)
             );
         };
         let name = super::wide(screen);
@@ -659,8 +670,11 @@ pub fn as_it_stands() -> Vec<Seat> {
 }
 
 #[cfg(not(windows))]
-pub fn put_back(_seats: &[Seat]) -> Vec<String> {
-    vec!["this computer has no screens to put back".to_string()]
+pub fn put_back(_seats: &[Seat]) -> (bool, Vec<String>) {
+    (
+        true,
+        vec!["this computer has no screens to put back".to_string()],
+    )
 }
 
 #[cfg(not(windows))]

@@ -290,10 +290,7 @@ pub fn give_the_desk_back() -> Vec<String> {
     if noted.is_empty() {
         return vec!["no desk was written down, so there is nothing to put back".to_string()];
     }
-    let mut said = zyr_screen::arrangement::put_back(&noted);
-    let back = said
-        .last()
-        .is_some_and(|last| last.contains("back the way they were"));
+    let (back, mut said) = zyr_screen::arrangement::put_back(&noted);
     if !back {
         said.push(
             "this computer's desk is not back yet, so what it was is kept for another try"

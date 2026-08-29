@@ -44,18 +44,25 @@ use windows_sys::Win32::Devices::Display::{
 };
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 
-/// Puts that screen's desktop at that size, whatever its panel draws, and
-/// says what happened.
+/// Puts that screen's desktop at that size, whatever its panel draws,
+/// and says what happened.
+///
+/// Says nothing at all when there was nothing to do, which is the answer
+/// on every screen that was never stretched: this is asked of each of
+/// them when a desk is put back, and a line each would bury the ones
+/// that matter.
 ///
 /// Never fails a session. A computer that will not take it serves the
 /// size it has and the picture is stretched at the other end, which is
 /// what happened before any of this existed.
-pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
+pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
     let Some((mut paths, mut modes)) = the_desktop_as_it_is() else {
-        return format!("Windows would not describe its desktop, so {screen} was left alone");
+        return Some(format!(
+            "Windows would not describe its desktop, so {screen} was left alone"
+        ));
     };
     let Some(path) = the_path_of(&paths, screen) else {
-        return format!("{screen} is not among the screens of this desktop");
+        return Some(format!("{screen} is not among the screens of this desktop"));
     };
     // Windows switches this off per screen, and a screen with it off
     // refuses every desktop larger than its panel. It is what the box
@@ -67,12 +74,24 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
     let word = unsafe { paths[path].sourceInfo.Anonymous.modeInfoIdx };
     let source = match mode_at(word, &modes) {
         Some(source) if modes[source].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE => source,
-        _ => return format!("{screen} has no desktop of its own to resize"),
+        _ => return Some(format!("{screen} has no desktop of its own to resize")),
     };
     // SAFETY: the union is read as what `infoType` just said it holds.
     let before = unsafe { modes[source].Anonymous.sourceMode };
-    if (before.width, before.height) == (wide, high) {
-        return format!("{screen} already draws a {wide}x{high} desktop");
+    // Both halves have to be right, and the second is the one that was
+    // missed. A desktop back at the size of its panel but still laid out
+    // to be shrunk into it is one Windows goes on calling stretched, and
+    // a stretched desktop cannot even be described to whatever reads a
+    // screen next unless that reader was told to expect one.
+    let wanted_scaling = if fills_the_panel(&paths[path], &modes, wide, high) {
+        DISPLAYCONFIG_SCALING_IDENTITY
+    } else {
+        DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX
+    };
+    if (before.width, before.height) == (wide, high)
+        && paths[path].targetInfo.scaling == wanted_scaling
+    {
+        return None;
     }
     modes[source].Anonymous.sourceMode.width = wide;
     modes[source].Anonymous.sourceMode.height = high;
@@ -80,11 +99,7 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
     // desktop of one shape squeezed into a panel of another is everything
     // on it subtly the wrong shape, which is worse to sit in front of than
     // a black band. The panel keeps its own size either way.
-    paths[path].targetInfo.scaling = if fills_the_panel(&paths[path], &modes, wide, high) {
-        DISPLAYCONFIG_SCALING_IDENTITY
-    } else {
-        DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX
-    };
+    paths[path].targetInfo.scaling = wanted_scaling;
     // And the third block, which is the one that was missing. Told that a
     // desktop may differ from its panel, a path carries not two halves but
     // three: the desktop's own size, the panel's, and this, which says
@@ -126,9 +141,14 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
                 | SDC_VIRTUAL_MODE_AWARE,
         )
     };
-    if answer == ERROR_SUCCESS as i32 {
+    Some(if answer == ERROR_SUCCESS as i32 {
         format!(
-            "{screen} draws a {wide}x{high} desktop, shrunk into its own panel{}",
+            "{screen} draws a {wide}x{high} desktop{}{}",
+            if wanted_scaling == DISPLAYCONFIG_SCALING_IDENTITY {
+                ""
+            } else {
+                ", shrunk into its own panel"
+            },
             if allowed {
                 " (its panel had to be told to take desktops larger than itself)"
             } else {
@@ -140,7 +160,7 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
             "Windows would not give {screen} a {wide}x{high} desktop: {}",
             why(answer)
         )
-    }
+    })
 }
 
 /// The desktop as Windows describes it, told that a desktop may be

@@ -184,16 +184,22 @@ fn the_screen_called(screen: &str) -> Option<(Luid, u32)> {
     use windows_sys::Win32::Devices::Display::{
         DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_MODE_INFO,
         DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo,
-        GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
+        GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QDC_VIRTUAL_MODE_AWARE,
+        QueryDisplayConfig,
     };
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 
+    // Told that a desktop may differ in size from the panel it is drawn
+    // on, because on this machine it sometimes does. Asked without that,
+    // Windows cannot describe a desktop in that state at all and answers
+    // that it has no screens: a laptop whose desktop had been stretched
+    // for a session was then never found again, so its magnification was
+    // never put back and the desk was never counted as returned.
+    let asked = QDC_ONLY_ACTIVE_PATHS | QDC_VIRTUAL_MODE_AWARE;
     let mut paths = 0u32;
     let mut modes = 0u32;
     // SAFETY: both counts are ours, and nothing else is handed over.
-    if unsafe { GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut paths, &mut modes) }
-        != ERROR_SUCCESS
-    {
+    if unsafe { GetDisplayConfigBufferSizes(asked, &mut paths, &mut modes) } != ERROR_SUCCESS {
         return None;
     }
     let mut found: Vec<DISPLAYCONFIG_PATH_INFO> =
@@ -204,7 +210,7 @@ fn the_screen_called(screen: &str) -> Option<(Luid, u32)> {
     // for, and the counts go back in so the call can shorten them.
     if unsafe {
         QueryDisplayConfig(
-            QDC_ONLY_ACTIVE_PATHS,
+            asked,
             &mut paths,
             found.as_mut_ptr(),
             &mut modes,
