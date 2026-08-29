@@ -33,6 +33,8 @@
 //! this errand into the session on screen, the same way it sends the one
 //! that puts the lock screen up.
 
+use std::fmt;
+
 /// The magnifications Windows offers, in the order it offers them.
 ///
 /// Fixed by Windows and not by us: the private message below speaks in
@@ -104,25 +106,75 @@ struct Luid {
 /// session with its magnification not put back, and the only thing the
 /// journal could say was that the screen never came back, which is what
 /// all three look like from outside.
-pub fn reading(screen: &str) -> Result<u32, String> {
+pub fn reading(screen: &str) -> Result<u32, NotRead> {
     let Some((adapter, id)) = the_screen_called(screen) else {
-        return Err(format!(
-            "{screen} is not among the screens Windows describes"
-        ));
+        return Err(NotRead::NoSuchScreen);
     };
     let Some(now) = read(adapter, id) else {
-        return Err(format!("Windows would not say how large {screen} draws"));
+        return Err(NotRead::NoAnswer);
     };
     let recommended = usize::try_from(-now.lowest).unwrap_or(0);
     let percent = at(recommended, now.current);
     if percent == 0 {
-        return Err(format!(
-            "{screen} draws at a magnification not on the list Windows offers: it is at step {} \
-             counted from step {recommended}, which goes from {} to {}",
-            now.current, now.lowest, now.highest
-        ));
+        return Err(NotRead::OffTheList {
+            current: now.current,
+            lowest: now.lowest,
+            highest: now.highest,
+            recommended,
+        });
     }
     Ok(percent)
+}
+
+/// What stopped a screen from saying how large it draws.
+///
+/// Told apart because they call for different things, and one of them is
+/// the opposite of what it looks like. A screen off the list is not a
+/// screen to give up on: it is a screen holding a magnification that no
+/// longer means anything, which is the one case where writing without
+/// reading is exactly right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotRead {
+    /// Windows does not describe that screen at all. Worth waiting for:
+    /// an arrangement that has only just been applied arrives in the two
+    /// halves of Windows a moment apart.
+    NoSuchScreen,
+    /// It describes the screen but will not answer about this.
+    NoAnswer,
+    /// It answers with a step that is not a magnification.
+    ///
+    /// Which happens after a session, and is not Windows being strange.
+    /// These steps are counted from whatever Windows recommends for the
+    /// screen **at its current size**, so a magnification set while the
+    /// desktop was one size becomes, once the desktop is another size, a
+    /// step counted from somewhere else: a laptop given 175 % on a 4K
+    /// desktop came home to 1920x1200 sitting at step -2 of a list that
+    /// starts at -1.
+    OffTheList {
+        current: i32,
+        lowest: i32,
+        highest: i32,
+        recommended: usize,
+    },
+}
+
+impl fmt::Display for NotRead {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NotRead::NoSuchScreen => write!(f, "it is not among the screens Windows describes"),
+            NotRead::NoAnswer => write!(f, "Windows would not say how large it draws"),
+            NotRead::OffTheList {
+                current,
+                lowest,
+                highest,
+                recommended,
+            } => write!(
+                f,
+                "it sits at step {current} of a list counted from step {recommended} that goes \
+                 from {lowest} to {highest}, which is no magnification at all"
+            ),
+        }
+    }
 }
 
 /// The same, for whoever has nothing to do with a refusal.

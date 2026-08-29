@@ -418,35 +418,40 @@ mod windows_only {
     /// Puts one screen's magnification back, insisting a little, and says
     /// nothing at all when it was already right.
     ///
-    /// The arrangement has only just been applied, and the two halves of
-    /// Windows do not arrive together: a screen asked about too early is
-    /// not in the newer one's configuration yet, and what comes back then
-    /// is « there is no such screen » rather than a wrong number. Waiting
-    /// for it costs nothing on a desk that is already back, which is
-    /// every desk that did not have to be rearranged.
+    /// Only one of the ways a screen can decline to say how large it
+    /// draws is worth waiting for: the arrangement has only just been
+    /// applied, and the two halves of Windows do not arrive together, so
+    /// a screen asked about too early is simply not described yet.
+    ///
+    /// The other ways are not reasons to give up, and treating them as
+    /// such is what left a laptop at the wrong magnification. A screen
+    /// sitting at a step that is no magnification is a screen holding the
+    /// remains of what a session set: 175 % asked for while its desktop
+    /// was 4K, counted from a recommendation that changed when the
+    /// desktop came home. There is nothing to read there and nothing to
+    /// wait for. It is written.
     fn drawn_as_before(seat: &Seat) -> Option<String> {
+        use crate::magnify::NotRead;
+
         const TRIES: u32 = 10;
         const BETWEEN: std::time::Duration = std::time::Duration::from_millis(100);
 
-        let mut refused = String::new();
-        for _ in 0..TRIES {
-            match crate::magnify::reading(&seat.adapter) {
-                Ok(now) if now == seat.scale => return None,
-                Ok(_) => return Some(crate::magnify::magnify(&seat.adapter, seat.scale)),
-                Err(why) => {
-                    refused = why;
-                    std::thread::sleep(BETWEEN);
-                }
+        let mut seen = crate::magnify::reading(&seat.adapter);
+        for _ in 1..TRIES {
+            if !matches!(seen, Err(NotRead::NoSuchScreen)) {
+                break;
             }
+            std::thread::sleep(BETWEEN);
+            seen = crate::magnify::reading(&seat.adapter);
         }
-        // What stopped it and not merely that something did. Three
-        // different things look alike from here and want three different
-        // fixes, and a sentence saying only that a screen never came back
-        // sent an evening down the wrong one.
-        Some(format!(
-            "{} was not put back to {} %: {refused}",
-            seat.adapter, seat.scale
-        ))
+        match seen {
+            Ok(now) if now == seat.scale => None,
+            Err(why @ NotRead::NoSuchScreen) => Some(format!(
+                "{} was not put back to {} %: {why}",
+                seat.adapter, seat.scale
+            )),
+            _ => Some(crate::magnify::magnify(&seat.adapter, seat.scale)),
+        }
     }
 
     /// What Windows means by the number it answers with.
