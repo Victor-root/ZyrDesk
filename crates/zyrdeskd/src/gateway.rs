@@ -204,19 +204,25 @@ impl Answers for Attending {
         }
     }
 
-    /// Wakes this computer's virtual screen for a session, or puts it
-    /// back to sleep.
+    /// Puts this computer's desk where a session wants it, and answers
+    /// what it ends up showing.
     ///
-    /// The screen sleeps whenever no session wants it, which is nearly
-    /// always. That is not thrift, it is the difference between a product
-    /// that leaves a second screen on somebody's desk from the day it is
-    /// installed and one that does not: a machine nobody is looking at
-    /// has the screens its owner plugged in and no others.
+    /// A size named is the size its main screen takes, its whole desk
+    /// having been written down first so it can be given back. No size
+    /// named is a session asking for this computer's own desk, which is
+    /// the one its owner left and not the one an earlier session left
+    /// behind: that one is given back here, before the answer is worked
+    /// out.
     ///
-    /// A refusal is written down and handed back rather than swallowed,
-    /// and the session goes on anyway at the other end: a computer with
-    /// no virtual screen serves what its own screen can draw, which is
-    /// what every computer did before this existed.
+    /// The screen this computer grew for itself is the exception on both
+    /// counts, and it is for the machine that has no screen at all: there
+    /// is no desk to write down, nothing to give back, and it is woken
+    /// from here rather than from the session on screen.
+    ///
+    /// A refusal is written down rather than swallowed, and the session
+    /// goes on anyway at the other end: a computer that will not take the
+    /// size serves the one it has and the picture is stretched over
+    /// there, which is what every computer did before this existed.
     fn screen_for_a_session(
         &self,
         wanted: Option<WantedScreen>,
@@ -230,13 +236,46 @@ impl Answers for Attending {
                 "a session asks this computer's main screen for {screen}, and its desk is written \
                  down first"
             ),
-            None => "a session asks this computer to keep its own screen, so nothing on this desk \
-                     moves"
-                .to_string(),
+            None => "a session asks this computer to keep its own screen".to_string(),
         });
+        // Its own screen is the one its owner left, and that is the desk
+        // written down before an earlier session moved it, never the one
+        // that session left behind. Switching a session from the client's
+        // resolution to the host's is exactly this case: the way carrying
+        // the size closes and the next one opens in the same second, so
+        // nothing in between ever put the desk back, and a 4K host went on
+        // serving 1920x1200 of itself for the rest of the evening.
+        //
+        // Only while nobody else is watching. Another session is being
+        // served the size it asked for, and pulling the desk out from
+        // under it is the one thing none of this is allowed to do.
+        if wanted.is_none()
+            && self.sessions.only_this_one()
+            && !crate::screen::noted_before().is_empty()
+        {
+            self.log.write(
+                "this session wants this computer's own screen, so the desk an earlier one took is \
+                 given back first",
+            );
+            match give_the_desk_back() {
+                Ok(took) => self.log.write(&format!(
+                    "the desk was put back from the session on screen ({took})"
+                )),
+                Err(e) => self
+                    .log
+                    .write(&format!("this computer's desk was left as it was: {e}")),
+            }
+        }
         match hold_the_desk_for(wanted) {
+            // What says somebody's screens are not the way they left them
+            // is the note the errand writes, and never the asking: a
+            // session that wanted this computer's own screen leaves
+            // nothing behind to put back, and claiming otherwise has the
+            // watch below announce a desk coming home that never left.
             Ok(took) => {
-                self.sessions.desk_held.store(true, Ordering::Relaxed);
+                self.sessions
+                    .desk_held
+                    .store(!crate::screen::noted_before().is_empty(), Ordering::Relaxed);
                 self.log.write(&format!(
                     "the desk was set from the session on screen ({took})"
                 ));
@@ -346,6 +385,24 @@ fn hold_the_desk_for(_wanted: Option<WantedScreen>) -> io::Result<String> {
     Err(io::Error::other("cet ordinateur n'a pas d'écran à régler"))
 }
 
+/// Puts this computer's desk back where it was noted, saying what it cost.
+///
+/// From here as well as from the watch that holds the engine, because a
+/// session asking for this computer's own screen cannot wait for that
+/// watch: it is answered with the size this computer shows, and the
+/// answer is what the far end opens its picture at.
+#[cfg(windows)]
+fn give_the_desk_back() -> io::Result<String> {
+    crate::session::give_the_desk_back().map(|took| took.to_string())
+}
+
+#[cfg(not(windows))]
+fn give_the_desk_back() -> io::Result<String> {
+    Err(io::Error::other(
+        "cet ordinateur n'a pas de bureau à rendre",
+    ))
+}
+
 /// Wakes the screen this computer grew for itself, for the one machine
 /// that has nothing else to film.
 #[cfg(windows)]
@@ -426,6 +483,19 @@ struct Sessions {
     /// by the watch that holds the engine, on its own thread, which is
     /// where it is acted on.
     desk_held: AtomicBool,
+}
+
+impl Sessions {
+    /// Whether the session asking is the only one here.
+    ///
+    /// Asked from inside a session, which is counted from the moment it
+    /// is taken in: one is this one and nobody else. A session that asks
+    /// while another is still being shown out reads two and leaves the
+    /// desk where it is, which is what every session did before this
+    /// question was asked at all.
+    fn only_this_one(&self) -> bool {
+        self.open.load(Ordering::Relaxed) <= 1
+    }
 }
 
 /// One session, counted for as long as it lasts.

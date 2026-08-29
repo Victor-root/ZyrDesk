@@ -224,7 +224,15 @@ pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
     // screen Windows would have drawn at 125 % from being handed 125 %
     // back, which is the whole difference between putting a desk back and
     // putting back a desk that resembles it.
-    said.extend(remember_what_can_be_read(&desk));
+    //
+    // Remembered only while this desk is still its owner's. A note means
+    // a session already has it, and what the screens draw at then is that
+    // session's doing: writing it down would hand somebody, at the next
+    // session that cannot read a screen, the magnification a stranger
+    // asked for.
+    if !before_path().exists() {
+        said.extend(remember_what_can_be_read(&desk));
+    }
     said.extend(fill_in_what_cannot(&mut desk));
     let Some(main) = desk.iter().find(|seat| seat.main && seat.on).cloned() else {
         said.push(

@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R59quinquies** | **Nouveau, et c'est un vieux défaut revenu par une autre porte.** Passer une session en cours de **Résolution du client** à **Résolution de l'hôte** laissait l'hôte à la taille du client pour le reste de la soirée. Basculer ferme une voie et en ouvre une autre dans la même seconde, et la remise en place du bureau, elle, tourne sur le fil qui tient le moteur et n'a pas encore eu son tour. Une session qui demande l'écran de l'hôte rend maintenant son bureau elle-même avant de répondre |
 | **R59quater** | **Nouveau, et c'est la moitié qui manquait à R59ter.** La taille revenait, l'agrandissement non : un écran passé à 175 % pendant que son bureau était en 4K se retrouve, une fois ce bureau rentré, sur un cran que Windows ne sait plus nommer, et il ne répond alors plus rien du tout. Ce qui est remis est maintenant l'agrandissement relevé avant la session, pour **tout écran allumé**, et un cran devenu illisible est réécrit sans être lu. Ce que chaque écran dessine est en plus retenu d'une session à l'autre dans `data/screen/screen-scales.txt`, pour qu'un écran devenu muet reprenne l'agrandissement de son propriétaire et jamais celui que Windows recommande |
 | **R59ter** | **Refait deux fois, et c'est la seconde qui compte.** Un portable 1920x1200 à qui on demande du 3840x2160 refusait, et le relevé a montré que sa carte graphique n'offre réellement rien au-delà de sa dalle : la liste s'arrête à 1920x1200. Le produit de référence y arrive quand même, parce qu'il ne demande pas la même chose. L'ancienne interface d'affichage de Windows ne connaît qu'une taille par écran, qui est le signal envoyé à la dalle ; la moderne sépare la taille du **bureau** de celle de la **dalle**, et la carte graphique réduit la première dans la seconde. Un portable dessine alors un vrai bureau 4K, et son propriétaire le voit en petit, avec des bandes là où les formats diffèrent. C'est la seconde tentative maintenant, quand la dalle n'offre pas la taille. **La moitié taille est acquise** sur le vrai portable, journal à l'appui : `draws a 3840x2160 desktop, shrunk into its own panel`, puis `this computer is showing 3840x2160`. Ce qui reste à vérifier est le retour et les deux cas qui finissent mal |
 | **R59bis** | **Refait, et c'est l'autre sens qui n'allait pas.** Depuis un écran 4K à 175 % vers un portable 1920x1200, l'hôte refusait la taille demandée, gardait la sienne, et prenait quand même l'agrandissement du client : le portable restait en 1920x1200 mais à 175 %, et ne revenait jamais à 125 % à la déconnexion, ce qu'il fallait réparer à la main. Deux causes. L'agrandissement était relevé et jamais remis, donc une session qui n'avait changé que lui ne remettait rien du tout. Et il était posé même quand la taille avait été refusée, alors qu'il n'appartient plus à rien dans ce cas |
@@ -1433,6 +1434,23 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R59quinquies (basculer sur la résolution de l'hôte lui rend son bureau)**
+>
+> **L'essai, et il tient en trois clics.** Ouvrir une session en **Résolution du client** vers l'hôte 4K, laisser l'image arriver, puis, **sans fermer la session**, ouvrir le menu du bouton flottant et passer en **Résolution de l'hôte**.
+>
+> Attendu : l'hôte revient en **3840x2160 à 175 %**, donc à son propre bureau, et l'image reçue devient une image 4K. Ce qui se passait avant : il restait en 1920x1200, et il y restait pour toutes les sessions suivantes de la soirée, y compris après les avoir fermées.
+>
+> **Les lignes qui le disent**, dans `service.log` de l'hôte, au moment du basculement :
+>
+> `a session asks this computer to keep its own screen`
+> `this session wants this computer's own screen, so the desk an earlier one took is given back first`
+> `this computer's screens are back the way they were (N of them)`
+> `this computer is showing 3840x2160`
+>
+> La dernière est celle qui tranche : c'est ce que l'hôte annonce au client. Si elle dit encore 1920x1200, le bureau n'a pas été rendu.
+>
+> **Et le chemin inverse, à faire dans la foulée** : repasser en **Résolution du client** sans fermer la session. L'hôte doit reprendre 1920x1200, et revenir à son 4K à la fermeture.
 
 > **R59quater (l'agrandissement revient, y compris celui que Windows ne sait plus dire)**
 >
