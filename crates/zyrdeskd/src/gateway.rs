@@ -34,6 +34,7 @@ use zyr_lan::Found;
 use zyr_proto::log::Log;
 use zyr_proto::net::{EnginePorts, TUNNEL_PORT};
 use zyr_proto::paths;
+use zyr_proto::session::WantedScreen;
 use zyr_transport::{
     AllowedPeers, EndpointError, Fingerprint, Identity, MediaProfile, TunnelEndpoint, authorized,
 };
@@ -203,18 +204,6 @@ impl Answers for Attending {
         }
     }
 
-    /// Sets whether this computer resends a still screen at full rate,
-    /// because a session opening towards it asked.
-    ///
-    /// Written down and nothing more. What acts on it is the watch that
-    /// holds the engine: it sees the setting move and starts the engine
-    /// over, which is the only way an engine learns this. That is also
-    /// why the ask is made at the opening of a session and never in the
-    /// middle of one.
-    ///
-    /// Doing nothing at all when it is already what was asked, which is
-    /// the ordinary case: every session asks, and almost none of them
-    /// changes anything.
     /// Wakes this computer's virtual screen for a session, or puts it
     /// back to sleep.
     ///
@@ -228,7 +217,11 @@ impl Answers for Attending {
     /// and the session goes on anyway at the other end: a computer with
     /// no virtual screen serves what its own screen can draw, which is
     /// what every computer did before this existed.
-    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<Option<(u32, u32)>, String> {
+    fn screen_for_a_session(
+        &self,
+        wanted: Option<WantedScreen>,
+    ) -> Result<Option<(u32, u32)>, String> {
+        let size = wanted.map(|screen| (screen.wide, screen.high));
         let said = match size {
             Some(size) => screen_awake(size),
             None => screen_asleep(),
@@ -249,6 +242,36 @@ impl Answers for Attending {
         for line in said {
             self.log.write(&line);
         }
+        // Now that the screen is there, and before the engine opens on
+        // it: how large it draws is a property of the pixels the engine
+        // is about to capture, and changing it under a picture somebody
+        // is already watching makes everything on that desktop jump.
+        //
+        // Asked at every waking and not only when a session names a
+        // number: this screen belongs to the sessions and to nobody else,
+        // so leaving it wherever the session before happened to put it is
+        // one machine remembering another one's desk.
+        if let Some(screen) = wanted {
+            // Said before the order goes out, like the lock above. What
+            // became of it is written from the session that owns the
+            // screen, since that is the only place it can be known, and
+            // it lands in this journal a moment before this call is back.
+            self.log.write(&match screen.scale {
+                0 => "the session named no magnification, so the virtual screen goes back to the \
+                      one Windows recommends for it"
+                    .to_string(),
+                percent => format!(
+                    "the virtual screen is asked to draw at {percent} %, the way the screen \
+                     watching it does"
+                ),
+            });
+            self.log.write(&match magnify_it(screen.scale) {
+                Ok(took) => {
+                    format!("the magnification was asked for from the session on screen ({took})")
+                }
+                Err(e) => format!("the magnification was not asked for: {e}"),
+            });
+        }
         // What this computer is going to be showing. The size that was
         // asked for when a screen was woken to carry it, and this
         // machine's own when none was wanted: that second answer is the
@@ -265,6 +288,18 @@ impl Answers for Attending {
         Ok(showing)
     }
 
+    /// Sets whether this computer resends a still screen at full rate,
+    /// because a session opening towards it asked.
+    ///
+    /// Written down and nothing more. What acts on it is the watch that
+    /// holds the engine: it sees the setting move and starts the engine
+    /// over, which is the only way an engine learns this. That is also
+    /// why the ask is made at the opening of a session and never in the
+    /// middle of one.
+    ///
+    /// Doing nothing at all when it is already what was asked, which is
+    /// the ordinary case: every session asks, and almost none of them
+    /// changes anything.
     fn serve_steady(&self, rate: bool) -> Result<(), String> {
         let mut serving = self.remembered.serving();
         if serving.steady_rate == rate {
@@ -319,6 +354,23 @@ fn screen_asleep() -> Result<Vec<String>, String> {
 #[cfg(not(windows))]
 fn screen_asleep() -> Result<Vec<String>, String> {
     Err("cet ordinateur n'a pas d'écran virtuel".to_string())
+}
+
+/// Sets how large the virtual screen draws, saying what it cost.
+///
+/// From the session that owns the screen and never from here: everything
+/// Windows says about the arrangement of screens is answered for the
+/// window station of whoever asks, and the service's carries none.
+#[cfg(windows)]
+fn magnify_it(percent: u32) -> io::Result<String> {
+    crate::session::magnify_the_screen(percent).map(|took| took.to_string())
+}
+
+#[cfg(not(windows))]
+fn magnify_it(_percent: u32) -> io::Result<String> {
+    Err(io::Error::other(
+        "cet ordinateur n'a pas d'écran virtuel à agrandir",
+    ))
 }
 
 /// Locks it, where there is a Windows to lock, saying what it cost.

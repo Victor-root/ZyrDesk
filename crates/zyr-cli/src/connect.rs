@@ -88,8 +88,11 @@ pub fn run(args: Args) -> ExitCode {
         hush_the_far_speakers: false,
         steady_far_rate: zyr_proto::session::Serving::default().steady_rate,
         // La ligne de commande sert le diagnostic : elle demande une
-        // taille et donc l'écran qu'il faut pour la porter.
+        // taille et donc l'écran qu'il faut pour la porter. Mais elle ne
+        // mesure aucun écran, donc elle n'a pas d'agrandissement à
+        // réclamer : l'ordinateur d'en face garde le sien.
         wants_a_screen_over_there: true,
+        far_magnification: 0,
     };
 
     // Nothing here can close a session while it is opening: the command

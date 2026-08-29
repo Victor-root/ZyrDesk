@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R58** | **Nouveau.** La session portait la taille de l'écran du client mais pas son agrandissement : depuis un portable à 125 %, le bureau distant arrivait à la bonne résolution avec tout écrit deux fois plus petit qu'à la maison. L'agrandissement voyage maintenant avec la taille, et ZyrDesk le pose lui-même sur l'écran virtuel, le moteur hôte n'ayant aucun réglage pour ça |
 | **R57** | **Nouveau, et c'est le pire de la série parce qu'il se répétait à l'infini.** Lancer ZyrDesk rallumait des écrans que leur propriétaire avait éteints, à chaque démarrage. Le moteur gardait un arrangement d'écrans à remettre qui nommait notre écran virtuel, lequel dort entre les sessions : l'essai échouait donc toujours, et ce qu'il fait quand il échoue est rallumer tout ce qu'il trouve. Un tel arrangement est maintenant jeté au démarrage du service |
 | **R56** | **Nouveau, et c'est la correction que R55 a permis de trouver.** Le gel au verrouillage venait du moteur hôte, qui redemandait l'écran deux fois autour de deux cents millisecondes de sommeil : quatre cents millisecondes dormies par réinitialisation, trois réinitialisations par verrouillage. Il redemande maintenant toutes les vingt-cinq millisecondes. À vérifier après recompilation du **moteur hôte** |
 | **R55** | **Instrumentation, pas encore une correction.** L'image se fige une à deux secondes quand on verrouille l'ordinateur distant depuis le menu flottant. Le chemin du verrouillage est maintenant chronométré de bout en bout, des deux côtés, et le programme qui verrouille attend que le bureau change réellement de mains au lieu de répondre sur la simple prise en compte de l'ordre |
@@ -1428,6 +1429,26 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R58 (le bureau distant est à la taille de l'écran d'ici, et écrit de la même taille)**
+>
+> **Il faut un client dont l'agrandissement Windows n'est pas 100 %.** Un portable est le cas courant : Windows y met 125 % ou 150 % tout seul. Le vérifier dans ses paramètres d'affichage, sous « Mise à l'échelle ».
+>
+> **L'essai :** depuis ce client, en **Résolution du client**, ouvrir une session vers l'hôte. Le bureau distant doit arriver à la bonne taille **et écrit de la même taille qu'ici**. Avant, tout y était deux fois plus petit : la résolution passait, l'agrandissement non.
+>
+> **Les lignes qui le disent.** Dans le journal de la fenêtre, côté client, la ligne d'ouverture porte maintenant l'agrandissement mesuré : `écran de cet ordinateur : 1920x1200 pixels réels à 60 Hz, agrandissement 125 %`.
+>
+> Dans `service.log` de l'**hôte**, trois lignes dans cet ordre :
+>
+> `the virtual screen is asked to draw at 125 %, the way the screen watching it does`
+> `the virtual screen draws at 125 %`
+> `the magnification was asked for from the session on screen (...)`
+>
+> **Les deux cas où l'agrandissement ne voyage pas, et c'est voulu.** En **Résolution de l'hôte**, rien n'est touché du tout, ni la taille ni l'agrandissement : c'est ce que cette entrée promet. Avec une **taille choisie à la main**, l'écran virtuel prend l'agrandissement que Windows recommande pour cette taille-là, puisque cette taille n'est l'écran de personne. Le journal de l'hôte le dit : `the session named no magnification, so the virtual screen goes back to the one Windows recommends for it`.
+>
+> **Ce qu'il ne faut pas voir :** l'écran physique de l'hôte changer d'agrandissement. Seul l'écran virtuel est touché, jamais celui de son propriétaire.
+>
+> **Les deux machines doivent porter ce lot.** L'agrandissement ajoute un champ au dialecte que les deux moitiés du produit parlent entre elles, donc la version de ce dialecte monte : une machine restée en arrière le dit au lieu de mal comprendre, et la session est refusée avec un message qui nomme la version.
 
 > **R57 (lancer ZyrDesk ne touche plus aux écrans de personne)**
 >

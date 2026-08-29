@@ -19,6 +19,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
+use zyr_proto::session::WantedScreen;
 use zyr_transport::{Identity, MediaProfile, TunnelEndpoint};
 use zyr_tunnel::{Answers, Tunnel, aside};
 
@@ -53,9 +54,9 @@ struct FakeEngine {
     locked: Arc<AtomicBool>,
     /// The rate it was last asked to serve a still screen at.
     steady: Arc<AtomicBool>,
-    /// The size its virtual screen was last asked to wake for, `None`
-    /// standing for the ask to put it back to sleep.
-    screen: Arc<std::sync::Mutex<Option<(u32, u32)>>>,
+    /// The screen its virtual one was last asked to be, `None` standing
+    /// for the ask to put it back to sleep.
+    screen: Arc<std::sync::Mutex<Option<WantedScreen>>>,
 }
 
 impl Answers for FakeEngine {
@@ -94,11 +95,16 @@ impl Answers for FakeEngine {
         Ok(())
     }
 
-    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<Option<(u32, u32)>, String> {
-        *self.screen.lock().unwrap() = size;
+    fn screen_for_a_session(
+        &self,
+        wanted: Option<WantedScreen>,
+    ) -> Result<Option<(u32, u32)>, String> {
+        *self.screen.lock().unwrap() = wanted;
         // Ce qu'une vraie machine répondrait quand personne ne veut de
         // son écran virtuel : la taille de son écran à elle.
-        Ok(size.or(Some(HOST_SCREEN)))
+        Ok(wanted
+            .map(|screen| (screen.wide, screen.high))
+            .or(Some(HOST_SCREEN)))
     }
 }
 
@@ -129,8 +135,8 @@ struct Bench {
     locked: Arc<AtomicBool>,
     /// The rate it was asked to serve a still screen at.
     steady: Arc<AtomicBool>,
-    /// The size its virtual screen was last asked to wake for.
-    screen: Arc<std::sync::Mutex<Option<(u32, u32)>>>,
+    /// The screen its virtual one was last asked to be.
+    screen: Arc<std::sync::Mutex<Option<WantedScreen>>>,
 }
 
 impl Bench {
@@ -169,7 +175,7 @@ impl Bench {
         let hushed = Arc::new(AtomicBool::new(false));
         let locked = Arc::new(AtomicBool::new(false));
         let steady = Arc::new(AtomicBool::new(false));
-        let screen: Arc<std::sync::Mutex<Option<(u32, u32)>>> =
+        let screen: Arc<std::sync::Mutex<Option<WantedScreen>>> =
             Arc::new(std::sync::Mutex::new(None));
         let host = Tunnel::host(
             host_side.unwrap(),
@@ -526,28 +532,37 @@ async fn l_ecran_virtuel_se_demande_a_l_ouverture_et_se_rend_a_la_fin() {
     // et le rendre.
     let bench = Bench::bring_up(42770, 15).await;
 
-    let showing = before_the_end(aside::ask_for_a_screen(
-        &bench.connection,
-        Some((3840, 2160)),
-    ))
-    .await
-    .unwrap();
-    assert_eq!(*bench.screen.lock().unwrap(), Some((3840, 2160)));
+    let asked = WantedScreen {
+        wide: 3840,
+        high: 2160,
+        scale: 150,
+    };
+    let showing = before_the_end(aside::ask_for_a_screen(&bench.connection, Some(asked)))
+        .await
+        .unwrap();
+    // L'agrandissement voyage avec la taille : un écran à la bonne taille
+    // mais pas au bon agrandissement, c'est le bureau de quelqu'un
+    // d'autre à la bonne résolution.
+    assert_eq!(*bench.screen.lock().unwrap(), Some(asked));
     assert_eq!(showing, Some((3840, 2160)));
 
-    // Et la taille demandée voyage : c'est au réveil que le pilote lit
-    // les tailles qu'on lui a écrites, il n'y a pas de deuxième chance.
-    before_the_end(aside::ask_for_a_screen(
-        &bench.connection,
-        Some((2560, 1440)),
-    ))
-    .await
-    .unwrap();
-    assert_eq!(*bench.screen.lock().unwrap(), Some((2560, 1440)));
+    // Et ce qui est demandé voyage à chaque fois : c'est au réveil que le
+    // pilote lit les tailles qu'on lui a écrites, il n'y a pas de
+    // deuxième chance.
+    let asked = WantedScreen {
+        wide: 2560,
+        high: 1440,
+        scale: 125,
+    };
+    before_the_end(aside::ask_for_a_screen(&bench.connection, Some(asked)))
+        .await
+        .unwrap();
+    assert_eq!(*bench.screen.lock().unwrap(), Some(asked));
 
-    // Et sans taille, la machine d'en face répond la sienne : c'est ce
-    // qui rend « garder la résolution de l'hôte » possible, puisque rien
-    // de ce côté-ci ne peut deviner ce qui est branché là-bas.
+    // Et sans rien de demandé, la machine d'en face répond la sienne :
+    // c'est ce qui rend « garder la résolution de l'hôte » possible,
+    // puisque rien de ce côté-ci ne peut deviner ce qui est branché
+    // là-bas.
     let showing = before_the_end(aside::ask_for_a_screen(&bench.connection, None))
         .await
         .unwrap();

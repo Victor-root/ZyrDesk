@@ -212,14 +212,16 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         preferred.display_mode == zyr_proto::session::DisplayMode::Fullscreen,
     );
 
+    let (settings, far_magnification) = what_to_ask_for(&app, preferred);
     let wanted = Wanted {
         host: host.trim().to_string(),
         peer: Some(peer),
-        settings: what_to_ask_for(&app, preferred),
+        settings,
         pair_again: false,
         hush_the_far_speakers: preferred.mute_far_speakers,
         steady_far_rate: preferred.steady_far_rate,
         wants_a_screen_over_there: preferred.asked.wants_a_screen_over_there(),
+        far_magnification,
     };
 
     // On a thread of its own, and not one of the interface's: the
@@ -239,11 +241,16 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
 /// And the choices are read at the last moment rather than held: they can
 /// have been changed from the settings screen since this window opened, or
 /// from the session's own menu since the picture was last opened.
-fn what_to_ask_for(app: &AppHandle, preferred: Preferred) -> SessionSettings {
+///
+/// Two things come out of the one measurement, because they are one
+/// measurement: what to ask the engine for, and how large the far screen
+/// is asked to draw. Measuring twice would let the two disagree about the
+/// screen they describe.
+fn what_to_ask_for(app: &AppHandle, preferred: Preferred) -> (SessionSettings, u32) {
     let screen = crate::picture::the_screen_of_this_computer(app);
     let settings = preferred.settings(screen);
-    crate::picture::tell_what_is_asked_for(app, screen, preferred.asked, &settings);
-    settings
+    crate::picture::tell_what_is_asked_for(screen, preferred.asked, &settings);
+    (settings, preferred.asked.magnification(screen))
 }
 
 /// Opens the session and holds it, from the first tunnel to the last
@@ -336,7 +343,7 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
             // others to go back to what the product does by default.
             preferred = tauri::async_runtime::block_on(crate::settings::what_was_chosen())
                 .unwrap_or(preferred);
-            wanted.settings = what_to_ask_for(app, preferred);
+            (wanted.settings, wanted.far_magnification) = what_to_ask_for(app, preferred);
             // The way is opened again with the picture, and what the far
             // computer was asked went with the old one: it has to be
             // asked afresh, and with what is chosen now.

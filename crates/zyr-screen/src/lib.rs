@@ -31,6 +31,8 @@ pub mod engine;
 pub mod mtt;
 
 #[cfg(windows)]
+pub mod magnify;
+#[cfg(windows)]
 mod place;
 #[cfg(windows)]
 mod vouching;

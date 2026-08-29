@@ -362,6 +362,8 @@ pub async fn what_was_chosen() -> Option<Preferred> {
 
 #[cfg(test)]
 mod tests {
+    use zyr_proto::session::LIFE_SIZE;
+
     use super::*;
 
     fn chosen() -> Chosen {
@@ -381,6 +383,7 @@ mod tests {
             wide,
             high,
             refresh: 60,
+            scale: LIFE_SIZE,
         }
     }
 
@@ -433,6 +436,7 @@ mod tests {
                 wide: 3840,
                 high: 2160,
                 refresh: 144,
+                scale: LIFE_SIZE,
             }),
         );
         assert_eq!((big.width, big.height), (3840, 2160));

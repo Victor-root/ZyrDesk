@@ -168,6 +168,19 @@ pub struct Screen {
     /// Times a second it refreshes, as the system rounds it: a panel at
     /// 59.997 hertz is reported as sixty, which is the number to ask for.
     pub refresh: u32,
+    /// How much larger than life the system draws on it, in percent.
+    ///
+    /// A hundred is life size. It belongs beside the other two and not
+    /// somewhere else, because a screen is not described without it: the
+    /// same panel at the same size draws text half as tall at a hundred
+    /// as it does at two hundred, and a session that carries the size
+    /// without this one hands somebody a desk that is theirs in shape and
+    /// nobody's in scale.
+    ///
+    /// Nought means it could not be read, and it is never asked for: a
+    /// magnification nobody measured is a guess, and a guess is worse
+    /// than letting the far computer keep its own recommendation.
+    pub scale: u32,
 }
 
 /// Slowest and fastest a session is opened at, whatever a screen says.
@@ -182,6 +195,9 @@ pub struct Screen {
 /// exist.
 pub const SLOWEST_RATE: u32 = 30;
 pub const FASTEST_RATE: u32 = 144;
+
+/// Life size: a screen drawing exactly what it is asked to draw.
+pub const LIFE_SIZE: u32 = 100;
 
 impl Screen {
     /// The rate a session opened on this screen asks for.
@@ -333,6 +349,75 @@ impl Asked {
     /// by being looked at.
     pub fn wants_a_screen_over_there(self) -> bool {
         self != Asked::Host
+    }
+
+    /// How much larger than life that screen is asked to draw, nought
+    /// asking for whatever the far computer recommends for it.
+    ///
+    /// A number only when it is this computer's screen being mirrored.
+    /// That is the one case where the answer is known: the panel the
+    /// session is watched on is measured, and a screen made in its image
+    /// owes it the magnification as much as the size. A size picked by
+    /// hand is nobody's panel, so there is nothing to copy and Windows'
+    /// own recommendation for that size is the better answer; and the far
+    /// computer's own screen is left alone entirely, magnification
+    /// included, which is the whole of what that choice promises and is
+    /// why no screen is asked for at all in that case.
+    pub fn magnification(self, screen: Option<Screen>) -> u32 {
+        match self {
+            Asked::Client => screen.map_or(0, |screen| screen.scale),
+            Asked::Host | Asked::Fixed(..) => 0,
+        }
+    }
+}
+
+/// The screen a session asks the far computer to put up for it.
+///
+/// A size and a magnification, and they travel as one because they are
+/// one ask. A screen given the size of the panel a session is watched on
+/// but not the way that panel draws is not that panel: the same pixels
+/// carry text half as tall, and whoever asked to work on their own desk
+/// is handed somebody else's at the right resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WantedScreen {
+    pub wide: u32,
+    pub high: u32,
+    /// How much larger than life, in percent, as [`Screen::scale`] holds
+    /// it.
+    ///
+    /// Nought names none, and asks for whatever the far computer's own
+    /// Windows recommends for a screen that size. It is what a session
+    /// that could not measure the screen it is watched on says, and what
+    /// one that asked for a size rather than for a screen says: a
+    /// magnification taken off a panel nobody is looking at is worse than
+    /// no magnification at all.
+    pub scale: u32,
+}
+
+/// One spelling of it, written here and read here.
+///
+/// It crosses two channels on its way over, the one between our own
+/// programs and the one between the two computers, and a second table
+/// would drift from this one the day a field is added.
+impl fmt::Display for WantedScreen {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}x{}@{}", self.wide, self.high, self.scale)
+    }
+}
+
+impl std::str::FromStr for WantedScreen {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let (size, magnification) = text.split_once('@').ok_or_else(|| {
+            format!("écran attendu sous la forme LARGEURxHAUTEUR@AGRANDISSEMENT : {text}")
+        })?;
+        let (wide, high) = parse_resolution(size).map_err(|e| e.to_string())?;
+        let scale = magnification
+            .trim()
+            .parse()
+            .map_err(|_| format!("agrandissement attendu en pour cent : {magnification}"))?;
+        Ok(WantedScreen { wide, high, scale })
     }
 }
 
@@ -624,6 +709,7 @@ mod tests {
             wide,
             high,
             refresh: 60,
+            scale: LIFE_SIZE,
         }
     }
 
@@ -696,6 +782,58 @@ mod tests {
     }
 
     #[test]
+    fn the_magnification_of_this_screen_travels_only_when_it_is_this_screen() {
+        // Le cas de Victor : un portable à cent vingt-cinq pour cent. La
+        // session portait la taille et pas l'agrandissement, donc le
+        // texte arrivait deux fois plus petit qu'à la maison.
+        let mine = Screen {
+            wide: 1920,
+            high: 1200,
+            refresh: 60,
+            scale: 125,
+        };
+        assert_eq!(Asked::Client.magnification(Some(mine)), 125);
+        // Une taille choisie à la main n'est l'écran de personne : rien à
+        // copier, et la recommandation de Windows vaut mieux qu'un
+        // agrandissement pris sur un autre panneau.
+        assert_eq!(Asked::Fixed(1280, 720).magnification(Some(mine)), 0);
+        // Et « l'écran de l'hôte » veut dire qu'on n'y touche pas, ni à
+        // la taille ni au reste.
+        assert_eq!(Asked::Host.magnification(Some(mine)), 0);
+        // Un écran qu'on n'a pas su mesurer ne réclame rien : un
+        // agrandissement deviné est pire qu'aucun.
+        assert_eq!(Asked::Client.magnification(None), 0);
+    }
+
+    #[test]
+    fn the_screen_a_session_asks_for_survives_being_written_and_read_back() {
+        // Il traverse deux canaux, celui entre nos programmes et celui
+        // entre les deux ordinateurs : une seule écriture, une seule
+        // lecture.
+        for wanted in [
+            WantedScreen {
+                wide: 1920,
+                high: 1200,
+                scale: 125,
+            },
+            WantedScreen {
+                wide: 3840,
+                high: 2160,
+                scale: 0,
+            },
+        ] {
+            let said = wanted.to_string();
+            assert_eq!(said.parse::<WantedScreen>().unwrap(), wanted, "{said}");
+        }
+        // Une taille toute seule n'est pas cet écran-là : l'agrandissement
+        // manquant se dirait zéro et rien ne distinguerait « laisse le
+        // tien » d'un message tronqué.
+        assert!("1920x1200".parse::<WantedScreen>().is_err());
+        assert!("1920x1200@".parse::<WantedScreen>().is_err());
+        assert!("1920x1200@beaucoup".parse::<WantedScreen>().is_err());
+    }
+
+    #[test]
     fn every_size_asked_for_can_be_cut_into_colour_by_halves() {
         // Un encodeur découpe la couleur par moitiés : une taille impaire
         // se fait arrondir quelque part où on ne le voit pas.
@@ -765,6 +903,7 @@ mod tests {
                     wide: 1920,
                     high: 1080,
                     refresh,
+                    scale: LIFE_SIZE,
                 }))
                 .fps
         };

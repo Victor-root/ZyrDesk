@@ -75,7 +75,7 @@ impl Answers for NoEngine {
 
     fn screen_for_a_session(
         &self,
-        _size: Option<(u32, u32)>,
+        _wanted: Option<zyr_proto::session::WantedScreen>,
     ) -> Result<Option<(u32, u32)>, String> {
         Err("le banc de mesure n'a pas d'écran virtuel".to_string())
     }

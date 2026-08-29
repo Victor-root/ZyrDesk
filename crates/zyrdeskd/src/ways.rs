@@ -28,6 +28,7 @@ use zyr_control::{Reached, Session, WayId};
 use zyr_proto::log::Log;
 use zyr_proto::net::{TUNNEL_PORT, device_loopback_addr};
 use zyr_proto::paths;
+use zyr_proto::session::WantedScreen;
 use zyr_transport::{Connection, Fingerprint, Identity, MediaProfile, TunnelEndpoint, packet_size};
 use zyr_tunnel::{Tunnel, aside};
 
@@ -551,7 +552,7 @@ impl Ways {
     }
 
     /// Asks the far computer to wake its virtual screen for a picture
-    /// that size, or, with no size, to put it back to sleep.
+    /// like that one, or, with nothing asked for, to put it back to sleep.
     ///
     /// Asked at the opening of a session and answered before the picture
     /// is opened: the far engine has to find that screen, and it only
@@ -560,7 +561,7 @@ impl Ways {
     pub async fn ask_for_a_screen(
         &self,
         way: WayId,
-        size: Option<(u32, u32)>,
+        wanted: Option<WantedScreen>,
     ) -> Result<Option<(u32, u32)>, String> {
         let connection = {
             let register = self.register.lock().expect("registre des voies");
@@ -570,13 +571,13 @@ impl Ways {
             return Err(format!("la voie {way} n'existe plus"));
         };
 
-        let showing = aside::ask_for_a_screen(&connection, size)
+        let showing = aside::ask_for_a_screen(&connection, wanted)
             .await
             .map_err(|e| format!("l'ordinateur distant n'a pas préparé son écran : {e}"))?;
-        self.log.write(&match size {
-            Some((wide, high)) => format!(
-                "way {way} asked the far computer to wake its virtual screen for {wide}x{high}"
-            ),
+        self.log.write(&match wanted {
+            Some(screen) => {
+                format!("way {way} asked the far computer to wake its virtual screen for {screen}")
+            }
             None => format!("way {way} asked the far computer to keep its own screen"),
         });
         if let Some((wide, high)) = showing {

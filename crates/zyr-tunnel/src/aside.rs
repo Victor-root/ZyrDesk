@@ -25,6 +25,7 @@ use std::sync::Arc;
 
 use tokio::io::AsyncWriteExt;
 use zyr_proto::net::{BasePortOutOfRange, EnginePorts};
+use zyr_proto::session::WantedScreen;
 use zyr_transport::{Connection, RecvStream, SendStream};
 
 use crate::channel::StreamChannel;
@@ -36,8 +37,9 @@ use crate::pump;
 /// added the pairing code. Version 3 added the one keystroke no keyboard
 /// can carry. Version 4 added the far computer's speakers. Version 7
 /// added the virtual screen, which now sleeps between sessions and has
-/// to be asked for.
-pub const VERSION: u32 = 7;
+/// to be asked for. Version 8 added how large that screen draws, without
+/// which it is the right size and nobody's desk.
+pub const VERSION: u32 = 8;
 
 /// Longest message this channel takes.
 ///
@@ -110,7 +112,7 @@ pub trait Answers: Send + Sync + 'static {
     fn serve_steady(&self, rate: bool) -> Result<(), String>;
 
     /// Wakes this computer's virtual screen for a session that wants a
-    /// picture of that size, or puts it back to sleep.
+    /// picture like that one, or puts it back to sleep.
     ///
     /// The virtual screen is what lets a computer be asked for a picture
     /// its own screen could not draw. It sleeps whenever no session wants
@@ -131,7 +133,15 @@ pub trait Answers: Send + Sync + 'static {
     /// wanted. That answer is the whole of what makes « leave that
     /// computer as it is » possible: nothing at the other end can know
     /// what is plugged in here.
-    fn screen_for_a_session(&self, size: Option<(u32, u32)>) -> Result<Option<(u32, u32)>, String>;
+    ///
+    /// How large that screen draws comes with the size and is honoured
+    /// with it, since the two are one ask: a screen the size of the panel
+    /// somebody is watching, drawn the way that panel draws. Nought names
+    /// none, and takes what this computer's own Windows recommends.
+    fn screen_for_a_session(
+        &self,
+        wanted: Option<WantedScreen>,
+    ) -> Result<Option<(u32, u32)>, String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -150,9 +160,9 @@ pub enum Question {
     Lock,
     /// Resend a still screen at full rate, or stop doing it.
     Steady { rate: bool },
-    /// Wake your virtual screen for a picture this size, or, with no
-    /// size, put it back to sleep.
-    Screen { size: Option<(u32, u32)> },
+    /// Wake your virtual screen for a picture like this one, or, with
+    /// nothing asked for, put it back to sleep.
+    Screen { wanted: Option<WantedScreen> },
 }
 
 /// What comes back.
@@ -189,8 +199,8 @@ impl fmt::Display for Question {
             Question::Steady { rate } => {
                 write!(f, "{VERSION} steady {}", if *rate { "on" } else { "off" })
             }
-            Question::Screen { size } => match size {
-                Some((wide, high)) => write!(f, "{VERSION} screen {wide}x{high}"),
+            Question::Screen { wanted } => match wanted {
+                Some(screen) => write!(f, "{VERSION} screen {screen}"),
                 None => write!(f, "{VERSION} screen none"),
             },
             Question::Hush { quiet } => {
@@ -235,10 +245,10 @@ impl Question {
                 other => Err(format!("« {other} » ne dit ni oui ni non")),
             },
             "screen" => match rest {
-                "none" => Ok(Question::Screen { size: None }),
-                asked => zyr_proto::session::parse_resolution(asked)
-                    .map(|size| Question::Screen { size: Some(size) })
-                    .map_err(|e| e.to_string()),
+                "none" => Ok(Question::Screen { wanted: None }),
+                asked => asked.parse().map(|screen| Question::Screen {
+                    wanted: Some(screen),
+                }),
             },
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
@@ -427,8 +437,8 @@ pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Res
     }
 }
 
-/// Asks the far ZyrDesk to wake its virtual screen for a picture that
-/// size, or, with no size, to leave its own screen alone.
+/// Asks the far ZyrDesk to wake its virtual screen for a picture like
+/// that one, or, with nothing asked for, to leave its own screen alone.
 ///
 /// Answered before the picture is opened and not alongside it: the far
 /// engine has to find that screen, and it can only find one that is
@@ -439,9 +449,9 @@ pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Res
 /// what is plugged in over there.
 pub async fn ask_for_a_screen(
     connection: &Connection,
-    size: Option<(u32, u32)>,
+    wanted: Option<WantedScreen>,
 ) -> io::Result<Option<(u32, u32)>> {
-    match ask(connection, &Question::Screen { size }).await? {
+    match ask(connection, &Question::Screen { wanted }).await? {
         Told::Screen { size } => Ok(size),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
@@ -517,8 +527,8 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         // a screen is Windows starting a device, and the answer is not
         // sent until it has, because the computer asking opens its
         // picture on it.
-        Question::Screen { size } => {
-            tokio::task::spawn_blocking(move || answering.screen_for_a_session(size))
+        Question::Screen { wanted } => {
+            tokio::task::spawn_blocking(move || answering.screen_for_a_session(wanted))
                 .await
                 .map_err(|e| format!("l'écran n'a pas pu être préparé : {e}"))?
                 .map(|size| Told::Screen { size })
@@ -561,6 +571,26 @@ mod tests {
             Question::Lock,
             Question::Steady { rate: true },
             Question::Steady { rate: false },
+            // L'agrandissement voyage collé à la taille : un écran à la
+            // bonne taille sans lui, c'est le bureau de quelqu'un
+            // d'autre à la bonne résolution.
+            Question::Screen {
+                wanted: Some(WantedScreen {
+                    wide: 1920,
+                    high: 1200,
+                    scale: 125,
+                }),
+            },
+            // Zéro veut dire « aucun demandé » : c'est ce que dit une
+            // session qui n'a pas pu mesurer son propre écran.
+            Question::Screen {
+                wanted: Some(WantedScreen {
+                    wide: 3840,
+                    high: 2160,
+                    scale: 0,
+                }),
+            },
+            Question::Screen { wanted: None },
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -576,6 +606,10 @@ mod tests {
             Told::Hushed,
             Told::Locked,
             Told::Steady,
+            Told::Screen {
+                size: Some((1920, 1200)),
+            },
+            Told::Screen { size: None },
         ] {
             let said = told.to_string();
             assert_eq!(Told::parse(&said).unwrap(), Ok(told), "sur « {said} »");

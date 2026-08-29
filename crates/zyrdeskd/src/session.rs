@@ -97,6 +97,19 @@ pub const SPEAKERS_ALREADY: u32 = 2;
 /// what makes a lock screen worth trusting.
 pub const LOCK_ARGUMENT: &str = "--lock-the-screen";
 
+/// And the same for how large the virtual screen draws; see
+/// `magnify_this_desktop`.
+///
+/// It carries the magnification in per cent, the way the speakers' errand
+/// carries which way they go: one errand, one name, one thing to keep in
+/// step.
+///
+/// Here for the reason all of these are here. Everything Windows says
+/// about the arrangement of screens is answered for the window station of
+/// whoever asks, and a service sits on one with no screens at all: asked
+/// from there, there is no screen to magnify and no way to be told so.
+pub const MAGNIFY_ARGUMENT: &str = "--magnify-the-screen";
+
 /// Time left to the ask itself: starting a program in another session,
 /// attaching to a console and sending one interruption down it.
 ///
@@ -452,6 +465,58 @@ pub fn lock_the_screen() -> io::Result<Errand> {
         &[LOCK_ARGUMENT.to_string()],
         "the screen could not be locked from the session that owns it",
     )
+}
+
+/// Sets how large this computer's virtual screen draws, from the session
+/// that owns it.
+///
+/// Asked as soon as that screen is awake and before the engine starts on
+/// it: what the engine captures is pixels, and the magnification decides
+/// how many of them a letter is made of. Set afterwards it would land in
+/// the middle of a picture somebody is already watching, and everything
+/// on the desktop would jump.
+///
+/// Never fails a session. What the session loses is a desktop drawn the
+/// size it is drawn at the other end, which is a session slightly wrong
+/// and not a session missing, and the sentence saying why goes into this
+/// computer's journal from over there.
+pub fn magnify_the_screen(percent: u32) -> io::Result<Errand> {
+    let session =
+        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
+    errand(
+        session,
+        &[MAGNIFY_ARGUMENT.to_string(), percent.to_string()],
+        "the virtual screen could not be magnified from the session that owns it",
+    )
+}
+
+/// The magnification this program was started to set, if that is what it
+/// was started for.
+pub fn the_magnification_asked_for() -> Option<u32> {
+    the_magnification_named_in(std::env::args())
+}
+
+/// The same, over any list of arguments, so it can be read without
+/// starting a program to hold them.
+fn the_magnification_named_in(arguments: impl Iterator<Item = String>) -> Option<u32> {
+    let mut after = arguments.skip_while(|a| a != MAGNIFY_ARGUMENT);
+    after.next()?;
+    after.next()?.parse().ok()
+}
+
+/// Sets it, from inside the session that owns the screen.
+///
+/// This is the whole of what this program does when started with
+/// `MAGNIFY_ARGUMENT`. What happened is written into the service's own
+/// journal from here rather than carried back in an exit code: there is
+/// more than one way for a magnification not to be set, and a number
+/// would tell nobody which of them happened.
+#[cfg(windows)]
+pub fn magnify_this_desktop(percent: u32) {
+    let said = zyr_screen::magnify::magnify(zyr_screen::shipped(), percent);
+    if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
+        log.write(&said);
+    }
 }
 
 /// How long an errand took, in its two halves.

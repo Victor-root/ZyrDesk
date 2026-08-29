@@ -116,6 +116,40 @@ déplace le bureau entier dessus. L'écran de la personne assise devant
 s'éteint pendant ce temps, et `dd_config_revert_on_disconnect = enabled`
 remet tout en place à la fin.
 
+## L'agrandissement
+
+Une taille toute seule ne décrit pas un écran. Le même panneau à la même
+définition écrit un texte deux fois plus petit à cent pour cent qu'à deux
+cents, et « la résolution du client » promet le bureau de la personne qui
+regarde, agrandissement compris ([D90](DECISIONS.md)).
+
+Le moteur hôte n'a rien pour ça : ses options d'écran couvrent la
+définition, la fréquence, le HDR et l'arrangement, et s'arrêtent là. Le
+chiffre est donc posé par ZyrDesk, sur l'écran que ZyrDesk a lui-même
+fait pousser, juste après son réveil et avant que le moteur n'ouvre
+dessus.
+
+Windows ne publie qu'un seul chemin pour l'écrire, un message privé sur
+l'appel qui lit la configuration d'affichage, et `magnify.rs` est le seul
+fichier qui le connaisse. Il parle en pas le long de la liste que Windows
+offre plutôt qu'en pour cent, et compte ces pas depuis celui que Windows
+recommande pour l'écran en question.
+
+Deux choses en découlent, et elles valent d'être sues avant d'y toucher.
+La course tourne dans la session qui tient l'écran et jamais dans le
+service : tout ce que Windows dit de l'arrangement des écrans est répondu
+pour le poste de travail de celui qui demande, et celui d'un service n'a
+aucun écran dessus. Et rien de tout cela ne fait échouer une session :
+ce qui s'est passé part en une phrase dans le journal de l'hôte, et la
+session continue.
+
+Une session qui ne nomme aucun agrandissement, parce qu'elle n'a pas su
+mesurer son écran ou parce qu'une taille a été choisie à la main, reçoit
+celui que Windows recommande pour cette taille-là. C'est posé à chaque
+réveil : cet écran n'appartient qu'aux sessions, et le laisser où la
+session précédente l'a mis serait une machine qui se souvient du bureau
+d'une autre.
+
 ## La frontière dans le code
 
 Elle est tenue au même endroit que celle des moteurs, et pour la même
@@ -128,6 +162,7 @@ crates/zyr-screen/
   src/mtt.rs        le seul pilote livré, et tout ce qui lui est propre
   src/place.rs      la mécanique Windows, la même pour n'importe quel pilote
   src/vouching.rs   désigner l'éditeur comme attendu, idem
+  src/magnify.rs    la taille à laquelle Windows écrit sur cet écran
   src/engine.rs     lire la liste d'écrans du moteur
 ```
 

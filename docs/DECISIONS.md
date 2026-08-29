@@ -1252,6 +1252,26 @@ or removed). Enabling all of the available devices:
 
 **La règle.** Quand un moteur tient une promesse qu'il ne pourra jamais honorer, ce n'est pas à lui de s'en apercevoir : c'est à celui qui a créé la condition. Nous endormons cet écran, donc c'est nous qui savons qu'un arrangement qui le nomme est mort-né.
 
+## D90. Un écran se décrit par sa taille et par la taille de ce qu'on y écrit (2026-08-29, pendant M4)
+
+**Le relevé.** « Je suis en mode résolution client, il a bien mis la résolution mais pas le scaling : je suis à 125 % sur mon portable et du coup l'écran n'est pas scalé. » La session portait 1920x1200, l'écran virtuel naissait en 1920x1200, et tout ce qui était écrit dessus arrivait deux fois plus petit qu'à la maison.
+
+**Une taille toute seule ne décrit pas un écran.** Le même panneau à la même définition écrit un texte deux fois plus petit à cent pour cent qu'à deux cents. « La résolution du client » promet le bureau de la personne qui regarde, et son bureau c'est autant l'agrandissement que le nombre de pixels : la moitié qui manquait était la moitié qu'on voit.
+
+**Le moteur hôte n'a rien pour ça.** Ses options d'écran couvrent la définition, la fréquence, le HDR et l'arrangement des écrans, et s'arrêtent là. Il n'y a pas de réglage à lui passer, donc rien à demander en amont : c'est ZyrDesk qui pose l'agrandissement, sur l'écran qu'il a lui-même fait pousser.
+
+**Windows ne publie qu'un seul chemin pour le faire**, et c'est un message privé sur l'appel qui lit la configuration d'affichage. Sa propre page de paramètres l'utilise, tous les outils qui déplacent ce chiffre l'utilisent, et il n'a pas bougé depuis Windows 8.1. Il se demande par numéro et non par nom, il parle en pas le long de la liste que Windows offre plutôt qu'en pour cent, et il compte ces pas depuis celui que Windows recommande pour cet écran-là. Les trois sont écrits dans le fichier qui l'appelle, avec ce qu'ils veulent dire.
+
+**Décision : l'agrandissement voyage collé à la taille, dans une seule valeur.** Séparés, les deux dérivent au premier changement, et un écran qui a l'un sans l'autre est le bureau de quelqu'un d'autre à la bonne résolution. La demande d'écran qui traverse le tunnel porte donc « largeur x hauteur @ agrandissement », d'un bout à l'autre.
+
+**Zéro veut dire « aucun demandé », et prend ce que Windows recommande.** Deux cas le disent : une session qui n'a pas su mesurer l'écran qu'elle regarde, et une session qui a demandé une taille à la main. Cette taille n'est l'écran de personne, il n'y a donc rien à copier, et un agrandissement pris sur un autre panneau vaut moins que la recommandation de Windows. C'est posé à chaque réveil et pas seulement quand un chiffre est nommé : cet écran n'appartient qu'aux sessions, le laisser là où la session précédente l'a mis serait une machine qui se souvient du bureau d'une autre.
+
+**Et « résolution de l'hôte » ne touche toujours à rien**, agrandissement compris : aucun écran n'est demandé du tout dans ce cas, ce qui est exactement ce que cette entrée promet.
+
+**Où ça tourne, et pourquoi ce détour.** Tout ce que Windows dit de l'arrangement des écrans est répondu pour le poste de travail de celui qui demande, et un service siège sur un poste sans le moindre écran : depuis là, il n'y a rien à agrandir. Le service envoie donc cette course dans la session qui tient l'écran, exactement comme celle qui lève l'écran de verrouillage et celle qui coupe les enceintes. C'est la quatrième, et la forme était déjà là.
+
+**Et ça ne fait jamais échouer une session.** Une session sur un écran écrit à la mauvaise taille reste une session ; une session refusée pour ça n'en est plus une. Ce qui s'est passé part dans le journal de l'hôte, en une phrase, et la session continue.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -1212,13 +1212,17 @@ fn let_the_corners_go(engine: windows_sys::Win32::Foundation::HWND) {
     LAID.store(0, Ordering::Relaxed);
 }
 
-/// The screen this window sits on: its size in real pixels, and how many
-/// times a second it refreshes.
+/// The screen this window sits on: its size in real pixels, how many
+/// times a second it refreshes, and how much larger than life it draws.
 ///
 /// Real pixels and not the ones a page is laid out with: a screen at a
 /// hundred and fifty per cent reports two thirds of what it draws, and
 /// asking the far computer for two thirds of a screen is exactly the
-/// mistake this measurement exists to prevent.
+/// mistake this measurement exists to prevent. The magnification is
+/// measured all the same and carried beside the size, because the far
+/// computer needs it to draw at the size this one reads at: real pixels
+/// answer how sharp the picture is, and this answers how large anything
+/// in it looks.
 ///
 /// The screen the window is on rather than the main one, because that is
 /// the screen the picture will be shown on. Two screens on one desk are
@@ -1247,6 +1251,7 @@ pub fn the_screen_of_this_computer(app: &AppHandle) -> Option<Screen> {
         wide,
         high,
         refresh: the_rate_of(&screen.szDevice),
+        scale: the_magnification(app),
     })
 }
 
@@ -1283,23 +1288,25 @@ pub fn the_screen_of_this_computer(_app: &AppHandle) -> Option<Screen> {
 
 /// How much the system is drawing this window's page bigger than life.
 ///
-/// Not used to decide anything, only to explain a measurement that
-/// surprises: a screen reported at two thirds of its size is a window
-/// that was asked the question in the wrong units, and that shows here.
+/// Asked of the window rather than of the screen, which is the same
+/// answer read the short way: Windows hands a per-monitor aware window
+/// the magnification of the screen it sits on, and that is the screen
+/// measured just above. A hundred and twenty dots to the inch is a
+/// quarter larger than life, and the ninety-six it is counted from is
+/// the number Windows has meant by life size since it had a settings
+/// page at all.
 #[cfg(windows)]
 fn the_magnification(app: &AppHandle) -> u32 {
     use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
+    use zyr_proto::session::LIFE_SIZE;
+
+    const LIFE_SIZE_IN_DOTS: u32 = 96;
 
     let Some(home) = home_window(app) else {
-        return 100;
+        return LIFE_SIZE;
     };
     // SAFETY: our own window, read only.
-    unsafe { GetDpiForWindow(home) }.max(96) * 100 / 96
-}
-
-#[cfg(not(windows))]
-fn the_magnification(_app: &AppHandle) -> u32 {
-    100
+    unsafe { GetDpiForWindow(home) }.max(LIFE_SIZE_IN_DOTS) * LIFE_SIZE / LIFE_SIZE_IN_DOTS
 }
 
 /// Says what screen the picture is about to land on, what was asked of
@@ -1311,7 +1318,6 @@ fn the_magnification(_app: &AppHandle) -> u32 {
 /// never sent, so the moment that number is settled is the moment to
 /// write it down.
 pub fn tell_what_is_asked_for(
-    app: &AppHandle,
     screen: Option<Screen>,
     asked: zyr_proto::session::Asked,
     settings: &zyr_proto::session::SessionSettings,
@@ -1320,10 +1326,7 @@ pub fn tell_what_is_asked_for(
     let seen = match screen {
         Some(measured) => format!(
             "écran de cet ordinateur : {}x{} pixels réels à {} Hz, agrandissement {} %",
-            measured.wide,
-            measured.high,
-            measured.refresh,
-            the_magnification(app)
+            measured.wide, measured.high, measured.refresh, measured.scale
         ),
         None => "écran de cet ordinateur : pas mesurable, taille courante supposée".to_string(),
     };

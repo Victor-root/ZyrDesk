@@ -37,7 +37,7 @@ use zyr_engine_client::state::identifier_from_address;
 use zyr_engine_client::{ClientEngine, DeviceState, EngineError, Session, SessionOutcome};
 use zyr_proto::paths;
 use zyr_proto::random;
-use zyr_proto::session::SessionSettings;
+use zyr_proto::session::{SessionSettings, WantedScreen};
 use zyr_transport::{Fingerprint, MediaProfile};
 
 // Handed back by `Running::wait`, so callers do not have to reach past
@@ -85,6 +85,14 @@ pub struct Wanted {
     /// it. The size then comes back from that computer, since nothing
     /// here can know what is plugged in there.
     pub wants_a_screen_over_there: bool,
+    /// How much larger than life that screen is asked to draw, in per
+    /// cent, when one is asked for at all.
+    ///
+    /// Nought names none and takes whatever that computer recommends for
+    /// a screen that size. A session that mirrors the screen it is
+    /// watched on knows the number and owes it: the size makes the
+    /// picture sharp, and this makes what is in it the size it is here.
+    pub far_magnification: u32,
 }
 
 /// What is happening, as it happens.
@@ -364,10 +372,12 @@ pub fn open(
     // the session goes on: that is what every session did before this
     // screen existed.
     if let Some(driving) = &mut driving {
-        let wanted = wanted
-            .wants_a_screen_over_there
-            .then_some((settings.width, settings.height));
-        match driving.far_screen(wanted) {
+        let asked_for = wanted.wants_a_screen_over_there.then_some(WantedScreen {
+            wide: settings.width,
+            high: settings.height,
+            scale: wanted.far_magnification,
+        });
+        match driving.far_screen(asked_for) {
             // What that computer says it will be showing wins over what
             // this end guessed. It is the only one that knows: a session
             // asking it to keep its own screen has no way to work that
@@ -584,17 +594,18 @@ impl Driving {
     }
 
     /// Asks the far computer to wake its virtual screen for a picture
-    /// that size, or, with no size, to leave its own screen alone.
+    /// like that one, or, with nothing asked for, to leave its own screen
+    /// alone.
     ///
     /// Answers the size that computer will be showing, which is the one
     /// ask of the three that comes back with something: a session told to
     /// leave that machine as it is cannot know what that is until it asks.
-    fn far_screen(&mut self, size: Option<(u32, u32)>) -> Result<Option<(u32, u32)>, String> {
+    fn far_screen(&mut self, wanted: Option<WantedScreen>) -> Result<Option<(u32, u32)>, String> {
         match self
             .runtime
             .block_on(self.service.ask(&Request::FarScreen {
                 way: self.way,
-                size,
+                wanted,
             }))
             .map_err(|e| e.to_string())?
         {
@@ -716,6 +727,7 @@ mod tests {
             hush_the_far_speakers: false,
             steady_far_rate: true,
             wants_a_screen_over_there: true,
+            far_magnification: 0,
         }
     }
 

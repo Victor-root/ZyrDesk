@@ -16,7 +16,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use zyr_proto::net::EnginePorts;
-use zyr_proto::session::{Preferred, Serving};
+use zyr_proto::session::{Preferred, Serving, WantedScreen};
 use zyr_transport::{Fingerprint, MediaProfile};
 
 /// Version of this dialect.
@@ -140,7 +140,7 @@ pub enum Request {
     /// it is asked at the opening of a session and never inside one.
     SteadyFar { way: WayId, rate: bool },
     /// Asks the far computer to wake its virtual screen for a picture
-    /// that size, or, with no size, to put it back to sleep.
+    /// like that one, or, with nothing asked for, to put it back to sleep.
     ///
     /// That screen is what lets a computer be asked for a picture its own
     /// screen could not draw, and it sleeps whenever no session wants it:
@@ -149,7 +149,7 @@ pub enum Request {
     /// before the picture opens, because the far engine has to find it.
     FarScreen {
         way: WayId,
-        size: Option<(u32, u32)>,
+        wanted: Option<WantedScreen>,
     },
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
@@ -250,12 +250,9 @@ impl Request {
             }),
             "farscreen" => Ok(Request::FarScreen {
                 way: WayId(fields.parsed("way")?),
-                size: match fields.text("size")? {
+                wanted: match fields.text("screen")? {
                     "none" => None,
-                    asked => Some(
-                        zyr_proto::session::parse_resolution(asked)
-                            .map_err(|e| Malformed(e.to_string()))?,
-                    ),
+                    asked => Some(asked.parse().map_err(Malformed)?),
                 },
             }),
             "hold" => Ok(Request::Hold {
@@ -319,9 +316,9 @@ impl fmt::Display for Request {
             Request::SteadyFar { way, rate } => {
                 write!(f, "steady way={way} rate={}", said(*rate))
             }
-            Request::FarScreen { way, size } => match size {
-                Some((wide, high)) => write!(f, "farscreen way={way} size={wide}x{high}"),
-                None => write!(f, "farscreen way={way} size=none"),
+            Request::FarScreen { way, wanted } => match wanted {
+                Some(screen) => write!(f, "farscreen way={way} screen={screen}"),
+                None => write!(f, "farscreen way={way} screen=none"),
             },
             Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
@@ -819,6 +816,31 @@ mod tests {
             Request::Hush {
                 way: WayId(3),
                 quiet: false,
+            },
+            // L'agrandissement voyage avec la taille : un écran à la
+            // bonne taille sans lui, c'est le bureau de quelqu'un d'autre
+            // à la bonne résolution.
+            Request::FarScreen {
+                way: WayId(3),
+                wanted: Some(WantedScreen {
+                    wide: 1920,
+                    high: 1200,
+                    scale: 125,
+                }),
+            },
+            // Zéro veut dire « aucun demandé », et c'est ce que dit une
+            // session qui n'a pas pu mesurer son propre écran.
+            Request::FarScreen {
+                way: WayId(3),
+                wanted: Some(WantedScreen {
+                    wide: 2560,
+                    high: 1440,
+                    scale: 0,
+                }),
+            },
+            Request::FarScreen {
+                way: WayId(3),
+                wanted: None,
             },
             Request::Peers,
             Request::Sessions,

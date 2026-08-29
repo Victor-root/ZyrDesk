@@ -318,8 +318,8 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
-        Request::FarScreen { way, size } => {
-            match answering.ways.ask_for_a_screen(way, size).await {
+        Request::FarScreen { way, wanted } => {
+            match answering.ways.ask_for_a_screen(way, wanted).await {
                 Ok(size) => Answer::Showing { size },
                 Err(reason) => Answer::Refused(reason),
             }
