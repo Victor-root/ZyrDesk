@@ -141,6 +141,12 @@ fn hold_the_service(log: &Log) -> ServiceResult<()> {
     // existed, and nothing said so. Asked for here as well, where it does
     // nothing at all when the screen is already there.
     crate::screen::put_in_place(Some(log));
+    // Here and only here: no session can be running at the start of the
+    // service, so an arrangement of screens the engine still owes back is
+    // one a run that never finished left behind. The one kind it can
+    // never honour is dropped now, before the engine is started and tries
+    // it again.
+    crate::screen::forget_what_cannot_be_put_back(log);
     // And a fourth time, for the same reason again, which this one has
     // already cost: laid only where the service is registered, the
     // policy that lets Ctrl+Alt+Suppr be pressed never reached a computer

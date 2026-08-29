@@ -1225,6 +1225,33 @@ Capture reinitialized after 486ms (30ms ..., 456ms finding it again)
 
 **Et ce qui l'a rendu trouvable en une soirée** : le chronomètre posé la veille sur le verrouillage. La ligne du moteur ne disait pas seulement « ça a pris sept cents millisecondes », elle disait laquelle des deux moitiés les avait prises. Sans cette séparation, le relevé aurait désigné le moteur sans désigner l'endroit.
 
+## D89. Une dette qu'on ne peut pas payer n'est pas une dette, c'est un piège (2026-08-29, pendant M4)
+
+**Le relevé, et il est sans appel.** « Quand je lance ZyrDesk, ça me fout en l'air mes paramétrages d'écran par défaut, c'est insupportable de devoir tout refaire à chaque fois. » Dans le journal du moteur, à chacun de ses démarrages :
+
+```
+Trying to revert applied display device settings. API is available: true
+Error: Device {5eb52002-...} does not exist in the available path source data!
+Error: Failed to change topology to: [["{5eb52002-...}"]]
+Warning: Failed to revert display device configuration (will retry once devices are added
+or removed). Enabling all of the available devices:
+  ["{7db8b83a-...} - SAMSUNG", "{a1676a5f-...} - U28G2G6B", "{aed131a5-...} - U28G2G6B"]
+```
+
+**Ce numéro-là est celui de notre écran virtuel.** Le moteur garde l'arrangement d'écrans qu'il a trouvé avant qu'une session ne le change, et il le remet à chacune de ses vies jusqu'à y arriver. C'est juste, et c'est exactement le seul cas où ça ne peut pas marcher.
+
+**Notre écran virtuel dort entre les sessions.** Un arrangement qui le nomme nomme donc un écran qui n'existe pas au moment où le moteur essaie. L'essai échoue, et ce que le moteur fait quand il échoue est **rallumer tous les écrans qu'il trouve**. Puis il garde l'arrangement et recommence au démarrage suivant. Et à tous les suivants. L'écran que son propriétaire avait éteint se rallumait à chaque lancement du produit, pour toujours, sans rien pour briser le cercle.
+
+**Et le moteur ne peut rien y comprendre.** Il n'a aucun moyen de distinguer un écran parti d'un écran endormi, ni la moindre raison de soupçonner que l'un des deux va revenir. Ce côté-ci le sait, puisque c'est lui qui l'endort.
+
+**Décision : au démarrage du service, un arrangement qui nomme notre écran virtuel est jeté.** Au démarrage et nulle part ailleurs : c'est le seul instant où aucune session ne peut être en cours, donc le seul où un arrangement en attente vient forcément d'une exécution qui ne s'est pas terminée.
+
+**Et seulement celui-là.** Un arrangement qui ne nomme que de vrais écrans est une vraie dette envers une vraie personne : il est laissé exactement où il est.
+
+**L'autre moitié, dans le même lot.** L'écran virtuel laissé allumé par une exécution interrompue était rangé au démarrage du service, **juste avant** que le moteur ne démarre. C'était lui retirer un périphérique d'affichage une seconde avant qu'il n'essaie de remettre un arrangement qui le nomme, et c'était en même temps l'événement qui le fait réessayer, puisqu'il réessaie à chaque ajout ou retrait de périphérique. Il est rangé après, une fois que le moteur a dit ce qu'il avait à dire, et le rangement attend déjà que le bureau cesse de changer avant de toucher à quoi que ce soit.
+
+**La règle.** Quand un moteur tient une promesse qu'il ne pourra jamais honorer, ce n'est pas à lui de s'en apercevoir : c'est à celui qui a créé la condition. Nous endormons cet écran, donc c'est nous qui savons qu'un arrangement qui le nomme est mort-né.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

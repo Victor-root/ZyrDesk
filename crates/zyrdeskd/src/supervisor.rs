@@ -570,6 +570,28 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         // Woken for this one start of the engine and for nothing else:
         // there is no session that could want it.
         put_the_screen_back(log, &|| true);
+    } else if !screen_asleep() {
+        // Left awake by a run that never got to finish: the machine was
+        // switched off, or the service fell over, with a session in
+        // progress. It has to go, and it has to go **here** rather than
+        // before the engine was started.
+        //
+        // Before, it collided with the engine head on. An engine starting
+        // up tries to put back the arrangement of screens a session it
+        // never finished had changed, and it retries that every time a
+        // display device is added or removed. Taking our screen away a
+        // second earlier was therefore both the thing that made the
+        // arrangement it wants to restore impossible and the very event
+        // that made it try again, and what it does when it fails is
+        // switch every screen it can find back on. Somebody's screens
+        // came out of it rearranged at every start of the service.
+        //
+        // Started first, the engine has said what it had to say, and
+        // putting the screen away waits for the desktop to stop changing
+        // before touching anything, which is what it has always done at
+        // the end of a session.
+        log.write("a screen was left awake by a run that did not finish, putting it back");
+        put_the_screen_back(log, &|| true);
     }
     if learned == crate::screen::Learned::StartAgain {
         let _ = engine.stop();

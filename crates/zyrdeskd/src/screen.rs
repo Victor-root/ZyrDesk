@@ -50,20 +50,17 @@ pub fn put_in_place(log: Option<&Log>) {
     let driver = zyr_screen::shipped();
     match zyr_screen::present(driver) {
         Ok(true) => {
-            let mut said = vec!["virtual screen already in place".to_string()];
-            // Asleep at every start of the service, whatever it was left
-            // as. A service that was killed in the middle of a session
-            // left it awake, and nothing else would ever put it back:
-            // whoever sits at this computer would find a second screen on
-            // their desk with no session behind it and no way to guess
-            // where it came from.
-            // Nobody can be watching: this runs before the engine that
-            // would serve them has been started.
-            match sleep_after_a_session(&|| true) {
-                Ok(steps) => said.extend(steps),
-                Err(e) => said.push(format!("the virtual screen would not go to sleep: {e}")),
-            }
-            write_down(log, said);
+            // Left as it is, and that is deliberate. A service killed in
+            // the middle of a session leaves the screen awake, and it
+            // does have to go back; but not here, and not now. The engine
+            // has not been started yet, and an engine starting up spends
+            // its first moments putting back an arrangement of screens
+            // that a session it never finished had changed. Taking a
+            // display device away from under it, a second before it
+            // begins, is what left somebody's screens rearranged at every
+            // start of the service. The supervisor does it once the
+            // engine has had its say.
+            write_down(log, vec!["virtual screen already in place".to_string()]);
             return;
         }
         Ok(false) => {}
@@ -102,6 +99,65 @@ pub fn put_in_place(log: Option<&Log>) {
         ],
     };
     write_down(log, said);
+}
+
+/// Where the engine writes the arrangement of screens it owes this
+/// computer back.
+///
+/// Beside its own executable, in the folder it keeps its papers in, and
+/// named by the engine and not by us.
+#[cfg(windows)]
+fn what_the_engine_owes_back() -> PathBuf {
+    paths::host_engine_dir()
+        .join("config")
+        .join("display_device.state")
+}
+
+/// Throws away an arrangement the engine can never put back.
+///
+/// The engine saves the arrangement of screens it found before a session
+/// changed it, and puts that arrangement back at the start of every one
+/// of its lives until it succeeds. That is right, and this is the one
+/// case where it cannot work.
+///
+/// Our virtual screen sleeps between sessions. An arrangement that names
+/// it therefore names a screen that does not exist at the moment the
+/// engine tries, so the attempt fails, and what the engine does when it
+/// fails is **switch every screen it can find back on**. It then keeps
+/// that arrangement and tries again at its next start, and at every one
+/// after that: a screen its owner had switched off came back on every
+/// single time the service started, for ever, with nothing to break the
+/// circle.
+///
+/// The engine cannot know any of this. It has no way of telling a screen
+/// that is gone from a screen that is asleep, and no reason to suspect
+/// that one of them will be back. This side does know, so this is where
+/// the circle is broken: an arrangement naming our screen is not a
+/// promise worth keeping, it is a trap, and it goes.
+///
+/// Only that one. An arrangement naming nothing but real screens is a
+/// real debt to a real person, and it is left exactly where it is.
+#[cfg(windows)]
+pub fn forget_what_cannot_be_put_back(log: &Log) {
+    let Some(ours) = remembered() else {
+        return;
+    };
+    let owed = what_the_engine_owes_back();
+    let Ok(said) = std::fs::read_to_string(&owed) else {
+        return;
+    };
+    if !said.contains(&ours) {
+        return;
+    }
+    match std::fs::remove_file(&owed) {
+        Ok(()) => log.write(&format!(
+            "the engine was holding an arrangement of screens it can never put back, naming this              computer's virtual screen ({ours}) which sleeps between sessions; it has been              dropped, so it stops switching every screen back on at each start"
+        )),
+        Err(e) => log.write(&format!(
+            "the engine holds an arrangement of screens it can never put back ({}), and it could              not be dropped: {e}",
+            owed.display()
+        )),
+    }
 }
 
 /// Wakes the virtual screen for a session that wants a picture that size.
