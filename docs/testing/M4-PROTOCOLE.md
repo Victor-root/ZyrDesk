@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R59septies** | **Nouveau, sur un troisième ordinateur.** Depuis le portable 1920x1200 vers un PC 1920x1080, en résolution du client, il ne se passait rien : le journal disait dans la même seconde que l'écran dessinait un bureau 1920x1200 **et** qu'il ne savait pas le dessiner. Windows avait répondu « c'est fait » sans rien faire. Deux causes : l'interrupteur qui autorise un bureau plus grand que la dalle était posé **après** la lecture du bureau, alors que ce qu'un chemin d'affichage dit de lui-même est calculé au moment où on le lit ; et on autorisait Windows à ajuster la demande, ce qui lui permet de répondre oui sans rien ajuster. L'interrupteur est posé en premier, la demande est faite exactement, et le résultat est **relu** au lieu d'être cru |
 | **R59sexies** | **Nouveau, et c'est la moitié de R59quinquies qui manquait.** Le bureau de l'hôte revenait bien à sa taille, mais le client recevait **l'autre écran** : le moteur n'était jamais dit lequel filmer, donc il prenait celui que la carte graphique énumère en premier, et il reprenait le premier écran qui répond chaque fois qu'il doit recommencer à filmer. Or un écran dont on change la définition disparaît de cette énumération pendant tout le changement : celui que la session venait de régler était exactement celui que le moteur laissait tomber. L'écran filmé est maintenant nommé sur toute machine, et le moteur redemande l'écran nommé pendant trois secondes avant de se rabattre. **À vérifier après recompilation du moteur hôte** |
 | **R59quinquies** | **Nouveau, et c'est un vieux défaut revenu par une autre porte.** Passer une session en cours de **Résolution du client** à **Résolution de l'hôte** laissait l'hôte à la taille du client pour le reste de la soirée. Basculer ferme une voie et en ouvre une autre dans la même seconde, et la remise en place du bureau, elle, tourne sur le fil qui tient le moteur et n'a pas encore eu son tour. Une session qui demande l'écran de l'hôte rend maintenant son bureau elle-même avant de répondre |
 | **R59quater** | **Nouveau, et c'est la moitié qui manquait à R59ter.** La taille revenait, l'agrandissement non : un écran passé à 175 % pendant que son bureau était en 4K se retrouve, une fois ce bureau rentré, sur un cran que Windows ne sait plus nommer, et il ne répond alors plus rien du tout. Ce qui est remis est maintenant l'agrandissement relevé avant la session, pour **tout écran allumé**, et un cran devenu illisible est réécrit sans être lu. Ce que chaque écran dessine est en plus retenu d'une session à l'autre dans `data/screen/screen-scales.txt`, pour qu'un écran devenu muet reprenne l'agrandissement de son propriétaire et jamais celui que Windows recommande |
@@ -1435,6 +1436,25 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R59septies (un « c'est fait » de Windows qui n'a rien fait)**
+>
+> **L'essai** : depuis le portable **1920x1200**, prendre la main sur un PC dont l'écran est **1920x1080**, en **Résolution du client**.
+>
+> Attendu : le PC dessine un bureau **1920x1200** dans sa dalle 1920x1080, donc avec des bandes noires en haut et en bas, et le journal annonce `this computer is showing 1920x1200`. Ce qui se passait avant : deux lignes qui se contredisaient dans la même seconde, la seconde ayant raison, et l'image arrivait en 1920x1080 comme si on avait choisi la résolution de l'hôte.
+>
+> **Les lignes qui le disent**, dans `service.log` de l'hôte :
+>
+> `\\.\DISPLAY1 offered no 1920x1200 of its own (...), so a desktop that size is asked for instead: \\.\DISPLAY1 draws a 1920x1200 desktop, shrunk into its own panel`
+> `this computer is showing 1920x1200`
+>
+> **Et si cette machine ne sait vraiment pas le faire**, la ligne le dit maintenant avec les deux chiffres et la raison, au lieu d'annoncer une réussite :
+>
+> `Windows took the request for a 1920x1200 desktop on \\.\DISPLAY1 and left it drawing 1920x1080; this screen does not support a desktop that differs in size from its panel, so there is no larger one to be had on it`
+>
+> C'est cette ligne-là qu'il faut m'envoyer : elle sépare « cette machine ne peut pas » de « on a mal demandé », et les deux se réparent différemment.
+>
+> **Le retour compte autant** : à la déconnexion, le PC doit revenir en 1920x1080 sans bandes, tout seul.
 
 > **R59sexies (le moteur filme l'écran principal, et il y reste)**
 >

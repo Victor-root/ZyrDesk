@@ -1334,6 +1334,16 @@ or removed). Enabling all of the available devices:
 
 **Et la moitié qui reste est dans le moteur.** Nommer l'écran ne suffit pas tant que n'importe quel autre fait l'affaire au moment où il manque. Les deux boucles de reprise du moteur prenaient le premier écran qui répondait ; elles redemandent maintenant l'écran nommé pendant trois secondes avant de se rabattre, ce qui est long devant un changement de définition et court devant un écran vraiment débranché. C'est le complément de P-S5, dans la fonction que P-S5 avait déjà corrigée à moitié, et ce n'est toujours pas une fonctionnalité ZyrDesk : c'est un défaut qui touche tout bureau distant servi par ce moteur.
 
+## D94. Un « oui » de Windows sur l'affichage se relit, il ne se croit pas (2026-08-30, pendant M4)
+
+**Le relevé.** Sur un troisième ordinateur, écran 1920x1080, une session en résolution du client demande 1920x1200. Le journal écrit coup sur coup deux phrases qui se contredisent : « `\\.\DISPLAY1` dessine un bureau 1920x1200 réduit dans sa dalle », puis « `\\.\DISPLAY1` ne sait pas dessiner 1920x1200, donc il garde sa taille ». La seconde est la vraie. Windows avait répondu « c'est fait » sans rien faire.
+
+**Deux causes, et la première est la nôtre.** L'interrupteur qui autorise un bureau plus grand que la dalle se pose écran par écran, et ce qu'un chemin d'affichage dit de lui-même est calculé **au moment où on le lit**. On le lisait avant de poser l'interrupteur : le chemin ne portait donc pas la marque qui autorise un bureau différent de sa dalle, et toute la demande était écrite dans des termes que Windows ignore poliment. Sur le portable, où l'interrupteur était déjà posé, cela ne se voyait pas. L'interrupteur est maintenant posé d'abord, et le bureau relu ensuite.
+
+**La seconde est un mot de trop dans la demande.** On disait à Windows qu'il avait le droit d'ajuster ce qu'on lui demandait, et ce qu'il fait d'une demande qu'il ne peut pas satisfaire du tout est répondre « oui » en n'ajustant rien. On demande maintenant **exactement**, ce qui l'oblige à faire ou à dire pourquoi, et l'autorisation d'ajuster n'est donnée qu'en second recours, sur une demande déjà refusée telle quelle.
+
+**Décision : sur cet appel, on relit toujours.** Ce que la fonction annonce est ce que l'écran dessine après coup, jamais ce qu'on lui a demandé. Une taille qui n'a pas été prise le dit avec les deux chiffres, et le journal nomme les deux choses connues qui l'empêchent : un écran qui ne sait pas porter de bureau différent de sa dalle, ou un chemin qui ne porte pas le bloc décrivant où le bureau se pose. C'est la différence entre « cette machine ne peut pas » et « on a mal demandé », et c'est la première question de qui lit cette ligne.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

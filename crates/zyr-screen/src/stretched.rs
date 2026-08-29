@@ -35,7 +35,7 @@ use windows_sys::Win32::Devices::Display::{
     DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
     DISPLAYCONFIG_DEVICE_INFO_SET_SUPPORT_VIRTUAL_RESOLUTION, DISPLAYCONFIG_MODE_INFO,
     DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
-    DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_PATH_INFO,
+    DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SCALING,
     DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX, DISPLAYCONFIG_SCALING_IDENTITY,
     DISPLAYCONFIG_SOURCE_DEVICE_NAME, DISPLAYCONFIG_SUPPORT_VIRTUAL_RESOLUTION,
     DisplayConfigGetDeviceInfo, DisplayConfigSetDeviceInfo, GetDisplayConfigBufferSizes,
@@ -43,6 +43,7 @@ use windows_sys::Win32::Devices::Display::{
     SDC_APPLY, SDC_USE_SUPPLIED_DISPLAY_CONFIG, SDC_VIRTUAL_MODE_AWARE, SetDisplayConfig,
 };
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+use windows_sys::Win32::Graphics::Gdi::DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE;
 
 /// Puts that screen's desktop at that size, whatever its panel draws,
 /// and says what happened.
@@ -56,50 +57,43 @@ use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 /// size it has and the picture is stretched at the other end, which is
 /// what happened before any of this existed.
 pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
+    let Some((paths, modes)) = the_desktop_as_it_is() else {
+        return Some(format!(
+            "Windows would not describe its desktop, so {screen} was left alone"
+        ));
+    };
+    let Some(found) = the_screen_in(&paths, &modes, screen, wide, high) else {
+        return Some(format!("{screen} is not among the screens of this desktop"));
+    };
+    if found.already {
+        return None;
+    }
+    // Windows switches this off per screen, and a screen with it off
+    // refuses every desktop larger than its panel. It is what the box
+    // saying « the resolution you chose is not supported » is made of, and
+    // turning it on is the whole difference between this working and not.
+    let allowed = allow_more_than_the_panel(&paths[found.path]);
+    // And read again afterwards, which is the half that was missing. What
+    // a path says about itself is worked out when it is read, and a path
+    // read while that switch was off does not carry the mark that lets
+    // its desktop differ from its panel: the whole request was then
+    // written in terms Windows quietly ignores, and it answered success
+    // while leaving the desktop exactly where it was.
     let Some((mut paths, mut modes)) = the_desktop_as_it_is() else {
         return Some(format!(
             "Windows would not describe its desktop, so {screen} was left alone"
         ));
     };
-    let Some(path) = the_path_of(&paths, screen) else {
+    let Some(found) = the_screen_in(&paths, &modes, screen, wide, high) else {
         return Some(format!("{screen} is not among the screens of this desktop"));
     };
-    // Windows switches this off per screen, and a screen with it off
-    // refuses every desktop larger than its panel. It is what the box
-    // saying « the resolution you chose is not supported » is made of, and
-    // turning it on is the whole difference between this working and not.
-    let allowed = allow_more_than_the_panel(&paths[path]);
-    // SAFETY: reading the union as the word it also is, which is how
-    // both halves of the index are reached at once.
-    let word = unsafe { paths[path].sourceInfo.Anonymous.modeInfoIdx };
-    let source = match mode_at(word, &modes) {
-        Some(source) if modes[source].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE => source,
-        _ => return Some(format!("{screen} has no desktop of its own to resize")),
-    };
-    // SAFETY: the union is read as what `infoType` just said it holds.
-    let before = unsafe { modes[source].Anonymous.sourceMode };
-    // Both halves have to be right, and the second is the one that was
-    // missed. A desktop back at the size of its panel but still laid out
-    // to be shrunk into it is one Windows goes on calling stretched, and
-    // a stretched desktop cannot even be described to whatever reads a
-    // screen next unless that reader was told to expect one.
-    let wanted_scaling = if fills_the_panel(&paths[path], &modes, wide, high) {
-        DISPLAYCONFIG_SCALING_IDENTITY
-    } else {
-        DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX
-    };
-    if (before.width, before.height) == (wide, high)
-        && paths[path].targetInfo.scaling == wanted_scaling
-    {
-        return None;
-    }
-    modes[source].Anonymous.sourceMode.width = wide;
-    modes[source].Anonymous.sourceMode.height = high;
+    modes[found.source].Anonymous.sourceMode.width = wide;
+    modes[found.source].Anonymous.sourceMode.height = high;
     // Centred and keeping its shape rather than stretched to fill: a
     // desktop of one shape squeezed into a panel of another is everything
     // on it subtly the wrong shape, which is worse to sit in front of than
     // a black band. The panel keeps its own size either way.
-    paths[path].targetInfo.scaling = wanted_scaling;
+    paths[found.path].targetInfo.scaling = found.scaling;
     // And the third block, which is the one that was missing. Told that a
     // desktop may differ from its panel, a path carries not two halves but
     // three: the desktop's own size, the panel's, and this, which says
@@ -111,7 +105,7 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
     //
     // The whole desktop, shown whole: this product asks for a bigger desk,
     // never for a corner of one.
-    if let Some(image) = the_desktop_image_of(&paths[path], &modes) {
+    if let Some(image) = found.image {
         let whole = windows_sys::Win32::Foundation::RECTL {
             left: 0,
             top: 0,
@@ -125,26 +119,32 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
         modes[image].Anonymous.desktopImageInfo.DesktopImageRegion = whole;
         modes[image].Anonymous.desktopImageInfo.DesktopImageClip = whole;
     }
-    // SAFETY: both lists are ours, and their lengths are the ones being
-    // handed over. Told to apply what is supplied rather than to work
-    // something out, and told that a desktop may differ in size from the
-    // panel it lands on, which is the whole point.
-    let answer = unsafe {
-        SetDisplayConfig(
-            paths.len() as u32,
-            paths.as_ptr(),
-            modes.len() as u32,
-            modes.as_ptr(),
-            SDC_APPLY
-                | SDC_USE_SUPPLIED_DISPLAY_CONFIG
-                | SDC_ALLOW_CHANGES
-                | SDC_VIRTUAL_MODE_AWARE,
-        )
-    };
-    Some(if answer == ERROR_SUCCESS as i32 {
-        format!(
+    // Asked for exactly, and only then asked for approximately.
+    //
+    // Windows can be told it may adjust a request it cannot carry out as
+    // written, and what it then does with one it cannot carry out at all
+    // is answer success having changed nothing: a screen was told it drew
+    // a 1920x1200 desktop while it went on drawing 1920x1080, and the
+    // journal repeated it. Asked exactly, it either does it or says why;
+    // the permission to adjust is only worth having when the exact thing
+    // is refused, and it is what makes this work on the machines it does.
+    let exactly = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE;
+    let mut answer = ask_for(&paths, &modes, exactly);
+    if answer != ERROR_SUCCESS as i32 {
+        answer = ask_for(&paths, &modes, exactly | SDC_ALLOW_CHANGES);
+    }
+    if answer != ERROR_SUCCESS as i32 {
+        return Some(format!(
+            "Windows would not give {screen} a {wide}x{high} desktop: {}{}",
+            why(answer),
+            what_may_stand_in_the_way(&paths[found.path], found.image)
+        ));
+    }
+    // Read back rather than believed, for the reason just above.
+    Some(match desktop_of(screen) {
+        Some(size) if size == (wide, high) => format!(
             "{screen} draws a {wide}x{high} desktop{}{}",
-            if wanted_scaling == DISPLAYCONFIG_SCALING_IDENTITY {
+            if found.scaling == DISPLAYCONFIG_SCALING_IDENTITY {
                 ""
             } else {
                 ", shrunk into its own panel"
@@ -154,13 +154,118 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
             } else {
                 ""
             }
-        )
-    } else {
-        format!(
-            "Windows would not give {screen} a {wide}x{high} desktop: {}",
-            why(answer)
-        )
+        ),
+        Some((now_wide, now_high)) => format!(
+            "Windows took the request for a {wide}x{high} desktop on {screen} and left it drawing \
+             {now_wide}x{now_high}{}",
+            what_may_stand_in_the_way(&paths[found.path], found.image)
+        ),
+        None => format!(
+            "{screen} would not say what desktop it draws after being given a {wide}x{high} one"
+        ),
     })
+}
+
+/// Where one screen keeps the three things this changes, and whether
+/// they are already what is wanted.
+struct Found {
+    path: usize,
+    source: usize,
+    /// Where its desktop lands on its panel, when the path carries that
+    /// at all. A path that does not is a path with no larger desktop to
+    /// be had on it.
+    image: Option<usize>,
+    /// Both halves have to be right, and the second is the one that was
+    /// missed. A desktop back at the size of its panel but still laid out
+    /// to be shrunk into it is one Windows goes on calling stretched, and
+    /// a stretched desktop cannot even be described to whatever reads a
+    /// screen next unless that reader was told to expect one.
+    scaling: DISPLAYCONFIG_SCALING,
+    already: bool,
+}
+
+/// Finds that screen among those paths, with everything this needs of it.
+fn the_screen_in(
+    paths: &[DISPLAYCONFIG_PATH_INFO],
+    modes: &[DISPLAYCONFIG_MODE_INFO],
+    screen: &str,
+    wide: u32,
+    high: u32,
+) -> Option<Found> {
+    let path = the_path_of(paths, screen)?;
+    // SAFETY: reading the union as the word it also is, which is how
+    // both halves of the index are reached at once.
+    let word = unsafe { paths[path].sourceInfo.Anonymous.modeInfoIdx };
+    let source = mode_at(word, modes)
+        .filter(|source| modes[*source].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)?;
+    // SAFETY: the union is read as what `infoType` just said it holds.
+    let before = unsafe { modes[source].Anonymous.sourceMode };
+    let scaling = if fills_the_panel(&paths[path], modes, wide, high) {
+        DISPLAYCONFIG_SCALING_IDENTITY
+    } else {
+        DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX
+    };
+    Some(Found {
+        path,
+        source,
+        image: the_desktop_image_of(&paths[path], modes),
+        scaling,
+        already: (before.width, before.height) == (wide, high)
+            && paths[path].targetInfo.scaling == scaling,
+    })
+}
+
+/// Hands the whole desktop over, as supplied, and answers what Windows
+/// made of it.
+fn ask_for(paths: &[DISPLAYCONFIG_PATH_INFO], modes: &[DISPLAYCONFIG_MODE_INFO], how: u32) -> i32 {
+    // SAFETY: both lists are ours, and their lengths are the ones being
+    // handed over. Told to apply what is supplied rather than to work
+    // something out, and told that a desktop may differ in size from the
+    // panel it lands on, which is the whole point.
+    unsafe {
+        SetDisplayConfig(
+            paths.len() as u32,
+            paths.as_ptr(),
+            modes.len() as u32,
+            modes.as_ptr(),
+            how,
+        )
+    }
+}
+
+/// The size of the desktop that screen is drawing right now.
+///
+/// Asked again rather than worked out from what was sent: what was asked
+/// for and what Windows did are two different things, and on this call
+/// they can differ without Windows saying so.
+fn desktop_of(screen: &str) -> Option<(u32, u32)> {
+    let (paths, modes) = the_desktop_as_it_is()?;
+    let path = the_path_of(&paths, screen)?;
+    // SAFETY: reading the union as the word it also is.
+    let word = unsafe { paths[path].sourceInfo.Anonymous.modeInfoIdx };
+    let source = mode_at(word, &modes)
+        .filter(|source| modes[*source].infoType == DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE)?;
+    // SAFETY: the union is read as what `infoType` just said it holds.
+    let now = unsafe { modes[source].Anonymous.sourceMode };
+    Some((now.width, now.height))
+}
+
+/// What is known to stop a screen taking a desktop larger than its panel,
+/// for the journal.
+///
+/// Windows says none of this in the answer it gives, and both of these
+/// are the difference between « this machine cannot » and « we asked
+/// badly », which is the first question anybody reading that line has.
+fn what_may_stand_in_the_way(path: &DISPLAYCONFIG_PATH_INFO, image: Option<usize>) -> &'static str {
+    if path.flags & DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE == 0 {
+        return "; this screen does not support a desktop that differs in size from its panel, so \
+                there is no larger one to be had on it";
+    }
+    if image.is_none() {
+        return "; this screen carries nothing saying where its desktop lands on its panel, which \
+                is what a desktop larger than the panel is described with";
+    }
+    ""
 }
 
 /// The desktop as Windows describes it, told that a desktop may be
