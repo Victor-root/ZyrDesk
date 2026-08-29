@@ -232,8 +232,13 @@ pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
     // rather than somebody's desk.
     if wanted.is_some() && !before_path().exists() {
         match write_beside(BEFORE, &zyr_screen::arrangement::written(&desk)) {
+            // The main screen is spelled out beside the count, because it
+            // is the one the session changes and the one whose way back
+            // is read out of this note. A count alone says a note was
+            // written; this says what it will put back.
             Ok(()) => said.push(format!(
-                "this computer's desk is written down before the session touches it ({} screens)",
+                "this computer's desk is written down before the session touches it ({} screens); \
+                 the one it will change is {main}",
                 desk.len()
             )),
             // Worth saying loudly. Everything else here can be undone by

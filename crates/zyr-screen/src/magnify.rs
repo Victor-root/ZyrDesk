@@ -96,16 +96,41 @@ struct Luid {
     high: i32,
 }
 
-/// How large that screen draws, in per cent, or nothing when Windows
-/// will not say.
+/// How large that screen draws, in per cent, or what stopped the answer.
+///
+/// Three different things can stop it and they call for three different
+/// fixes, so they are told apart here rather than folded into one
+/// « nothing ». That distinction is not a nicety: a desk came back from a
+/// session with its magnification not put back, and the only thing the
+/// journal could say was that the screen never came back, which is what
+/// all three look like from outside.
+pub fn reading(screen: &str) -> Result<u32, String> {
+    let Some((adapter, id)) = the_screen_called(screen) else {
+        return Err(format!(
+            "{screen} is not among the screens Windows describes"
+        ));
+    };
+    let Some(now) = read(adapter, id) else {
+        return Err(format!("Windows would not say how large {screen} draws"));
+    };
+    let recommended = usize::try_from(-now.lowest).unwrap_or(0);
+    let percent = at(recommended, now.current);
+    if percent == 0 {
+        return Err(format!(
+            "{screen} draws at a magnification not on the list Windows offers: it is at step {} \
+             counted from step {recommended}, which goes from {} to {}",
+            now.current, now.lowest, now.highest
+        ));
+    }
+    Ok(percent)
+}
+
+/// The same, for whoever has nothing to do with a refusal.
 ///
 /// Read by the arrangement that is noted before a session, so the desk
 /// comes back with everything on it the size it was.
 pub fn of(screen: &str) -> Option<u32> {
-    let (adapter, id) = the_screen_called(screen)?;
-    let now = read(adapter, id)?;
-    let recommended = usize::try_from(-now.lowest).unwrap_or(0);
-    Some(at(recommended, now.current)).filter(|percent| *percent != 0)
+    reading(screen).ok()
 }
 
 /// Sets how large that screen draws, and says what happened.

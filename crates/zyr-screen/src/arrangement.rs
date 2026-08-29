@@ -428,15 +428,23 @@ mod windows_only {
         const TRIES: u32 = 10;
         const BETWEEN: std::time::Duration = std::time::Duration::from_millis(100);
 
+        let mut refused = String::new();
         for _ in 0..TRIES {
-            match crate::magnify::of(&seat.adapter) {
-                Some(now) if now == seat.scale => return None,
-                Some(_) => return Some(crate::magnify::magnify(&seat.adapter, seat.scale)),
-                None => std::thread::sleep(BETWEEN),
+            match crate::magnify::reading(&seat.adapter) {
+                Ok(now) if now == seat.scale => return None,
+                Ok(_) => return Some(crate::magnify::magnify(&seat.adapter, seat.scale)),
+                Err(why) => {
+                    refused = why;
+                    std::thread::sleep(BETWEEN);
+                }
             }
         }
+        // What stopped it and not merely that something did. Three
+        // different things look alike from here and want three different
+        // fixes, and a sentence saying only that a screen never came back
+        // sent an evening down the wrong one.
         Some(format!(
-            "{} never came back for its {} % to be put back",
+            "{} was not put back to {} %: {refused}",
             seat.adapter, seat.scale
         ))
     }
@@ -476,12 +484,16 @@ mod windows_only {
             // still be given a desktop larger than itself, drawn whole
             // and shrunk into it by the graphics card, and that is what
             // the newer half of Windows is for.
+            // Read before anything is changed, and that is the whole of
+            // this line. Read after, it lists the size that was just
+            // granted and reads as a contradiction: « offers no 3840x2160
+            // (3840x2160, ...) », which is true twice over and useless.
+            let had = offered(screen);
             let stretched = crate::stretched::put_at(screen, wide, high)
                 .unwrap_or_else(|| format!("{screen} already draws a {wide}x{high} desktop"));
             return format!(
-                "{screen} offers no {wide}x{high} of its own ({}), so a desktop that size is asked \
-                 for instead: {stretched}",
-                offered(screen)
+                "{screen} offered no {wide}x{high} of its own ({had}), so a desktop that size is \
+                 asked for instead: {stretched}"
             );
         };
         let name = super::wide(screen);
