@@ -52,6 +52,7 @@ use windows_sys::Win32::System::Threading::{
     STARTF_USESTDHANDLES, STARTUPINFOW, TerminateProcess, WaitForSingleObject,
 };
 use zyr_engine_host::{Launch, Launcher, Parting, Running};
+use zyr_proto::session::WantedScreen;
 
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
@@ -97,18 +98,28 @@ pub const SPEAKERS_ALREADY: u32 = 2;
 /// what makes a lock screen worth trusting.
 pub const LOCK_ARGUMENT: &str = "--lock-the-screen";
 
-/// And the same for how large the virtual screen draws; see
-/// `magnify_this_desktop`.
+/// And the same for this computer's desk; see `do_this_to_the_desk`.
 ///
-/// It carries the magnification in per cent, the way the speakers' errand
-/// carries which way they go: one errand, one name, one thing to keep in
-/// step.
+/// Two names and not one, because they are two errands with nothing in
+/// common but the subject: one holds the desk for a session that is
+/// starting, the other gives it back when that session has gone. The
+/// first carries what the session wants, the second carries nothing at
+/// all, what to put back having been written down when it was taken.
 ///
 /// Here for the reason all of these are here. Everything Windows says
 /// about the arrangement of screens is answered for the window station of
 /// whoever asks, and a service sits on one with no screens at all: asked
-/// from there, there is no screen to magnify and no way to be told so.
-pub const MAGNIFY_ARGUMENT: &str = "--magnify-the-screen";
+/// from there, this computer has no screens, which is what it used to
+/// answer a session that asked what it was showing.
+pub const DESK_ARGUMENT: &str = "--hold-the-desk";
+pub const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
+
+/// What the first of those carries when a session wants the desk noted
+/// and nothing moved, which is what « keep your own screen » asks for.
+///
+/// A word and not an absent argument: an errand that names what it wants
+/// and an errand that lost its argument on the way must not look alike.
+const NOTHING_WANTED: &str = "none";
 
 /// Time left to the ask itself: starting a program in another session,
 /// attaching to a console and sending one interruption down it.
@@ -467,55 +478,109 @@ pub fn lock_the_screen() -> io::Result<Errand> {
     )
 }
 
-/// Sets how large this computer's virtual screen draws, from the session
-/// that owns it.
+/// Notes this computer's desk and puts its main screen where a session
+/// wants it, from the session that owns that screen.
 ///
-/// Asked as soon as that screen is awake and before the engine starts on
-/// it: what the engine captures is pixels, and the magnification decides
-/// how many of them a letter is made of. Set afterwards it would land in
-/// the middle of a picture somebody is already watching, and everything
-/// on the desktop would jump.
+/// Asked before the engine opens on it: what the engine captures is
+/// pixels, and both the size and the magnification decide how many of
+/// them a letter is made of. Changed afterwards they would land in the
+/// middle of a picture somebody is already watching, and everything on
+/// the desktop would jump.
 ///
-/// Never fails a session. What the session loses is a desktop drawn the
-/// size it is drawn at the other end, which is a session slightly wrong
-/// and not a session missing, and the sentence saying why goes into this
-/// computer's journal from over there.
-pub fn magnify_the_screen(percent: u32) -> io::Result<Errand> {
+/// Nothing asked for still runs, and is not a wasted errand: it is how
+/// the service learns what this computer is showing, which it cannot see
+/// for itself and used to answer « I cannot measure my own screen » to.
+///
+/// Never fails a session. What a session loses is a desk the size it
+/// asked for, which is a session slightly wrong and not a session
+/// missing, and the sentences saying why go into this computer's journal.
+pub fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<Errand> {
+    let session =
+        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
+    let asked = match wanted {
+        Some(screen) => screen.to_string(),
+        None => NOTHING_WANTED.to_string(),
+    };
+    errand(
+        session,
+        &[DESK_ARGUMENT.to_string(), asked],
+        "this computer's desk could not be set from the session that owns the screen",
+    )
+}
+
+/// Puts the desk back the way it was noted, from the session that owns
+/// the screen.
+///
+/// Asked when the last session goes, and asked again by the watch that
+/// holds the engine for as long as a desk stays noted: a session whose
+/// computer was closed, unplugged or crashed says nothing at all, and
+/// that is exactly the session after which somebody's screens would stay
+/// the way a stranger left them.
+pub fn give_the_desk_back() -> io::Result<Errand> {
     let session =
         session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
     errand(
         session,
-        &[MAGNIFY_ARGUMENT.to_string(), percent.to_string()],
-        "the virtual screen could not be magnified from the session that owns it",
+        &[DESK_BACK_ARGUMENT.to_string()],
+        "this computer's desk could not be put back from the session that owns the screen",
     )
 }
 
-/// The magnification this program was started to set, if that is what it
+/// What this program was started to do to the desk, if that is what it
 /// was started for.
-pub fn the_magnification_asked_for() -> Option<u32> {
-    the_magnification_named_in(std::env::args())
+pub fn the_desk_asked_for() -> Option<Desk> {
+    the_desk_named_in(std::env::args())
+}
+
+/// One errand about this computer's desk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Desk {
+    /// Note it, and put the main screen where a session wants it. Nothing
+    /// wanted notes it and moves nothing.
+    Hold(Option<WantedScreen>),
+    /// Put it back the way it was noted.
+    Back,
 }
 
 /// The same, over any list of arguments, so it can be read without
 /// starting a program to hold them.
-fn the_magnification_named_in(arguments: impl Iterator<Item = String>) -> Option<u32> {
-    let mut after = arguments.skip_while(|a| a != MAGNIFY_ARGUMENT);
+fn the_desk_named_in(arguments: impl Iterator<Item = String>) -> Option<Desk> {
+    let arguments: Vec<String> = arguments.collect();
+    if arguments.iter().any(|a| a == DESK_BACK_ARGUMENT) {
+        return Some(Desk::Back);
+    }
+    let mut after = arguments.into_iter().skip_while(|a| a != DESK_ARGUMENT);
     after.next()?;
-    after.next()?.parse().ok()
+    let asked = after.next()?;
+    if asked == NOTHING_WANTED {
+        return Some(Desk::Hold(None));
+    }
+    // A size that will not read is not nothing asked for: it is an errand
+    // that was meant to move a screen and cannot say where to. Answering
+    // « note the desk and move nothing » to it would leave the session
+    // watching a desk at the wrong size with nothing in any journal.
+    asked.parse().ok().map(|screen| Desk::Hold(Some(screen)))
 }
 
-/// Sets it, from inside the session that owns the screen.
+/// Does it, from inside the session that owns the screen.
 ///
-/// This is the whole of what this program does when started with
-/// `MAGNIFY_ARGUMENT`. What happened is written into the service's own
-/// journal from here rather than carried back in an exit code: there is
-/// more than one way for a magnification not to be set, and a number
-/// would tell nobody which of them happened.
+/// This is the whole of what this program does when started with either
+/// desk argument. What happened is written into the service's own journal
+/// from here rather than carried back in an exit code: there is more than
+/// one way for a desk not to move, and a number would tell nobody which
+/// of them happened.
 #[cfg(windows)]
-pub fn magnify_this_desktop(percent: u32) {
-    let said = zyr_screen::magnify::magnify(zyr_screen::shipped(), percent);
+pub fn do_this_to_the_desk(asked: Desk) {
+    let said = match asked {
+        Desk::Hold(wanted) => crate::screen::hold_the_desk_for(
+            wanted.map(|screen| (screen.wide, screen.high, screen.scale)),
+        ),
+        Desk::Back => crate::screen::give_the_desk_back(),
+    };
     if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
-        log.write(&said);
+        for line in said {
+            log.write(&line);
+        }
     }
 }
 

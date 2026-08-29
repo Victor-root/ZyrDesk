@@ -52,7 +52,6 @@ pub struct SunshineConfig {
     encryption: InnerEncryption,
     serving: Serving,
     output_name: Option<String>,
-    alone_on_the_screen: bool,
     adapter_name: Option<String>,
 }
 
@@ -91,7 +90,6 @@ impl SunshineConfig {
             encryption: InnerEncryption::default(),
             serving: Serving::default(),
             output_name: None,
-            alone_on_the_screen: false,
             adapter_name: None,
         }
     }
@@ -114,27 +112,13 @@ impl SunshineConfig {
     }
 
     /// Screen to capture, by the name the engine knows it under.
+    ///
+    /// Only ever the screen this computer grew for itself, and only on a
+    /// computer with no screen of its own to film. Everywhere else the
+    /// engine is left to film the main screen, which is the one the
+    /// desktop is on and the one a session is put at the size of.
     pub fn with_screen(mut self, output_name: impl Into<String>) -> Self {
         self.output_name = Some(output_name.into());
-        self
-    }
-
-    /// The screen this computer grew for a session, which is to be the
-    /// only one there is while that session lasts.
-    ///
-    /// The only one, and not merely the one being captured. A screen
-    /// nobody is sitting in front of is an empty desktop: the taskbar,
-    /// the windows and the icons are all on the screen the person here
-    /// has, and a session shown the empty one would show nothing at all.
-    /// Putting the others out for the length of the session moves the
-    /// whole desktop onto it, which is what makes the far end see this
-    /// computer rather than a blank copy of it.
-    ///
-    /// The screen here goes dark meanwhile, which is the same thing the
-    /// engine already does to its size and puts back afterwards.
-    pub fn with_screen_of_its_own(mut self, output_name: impl Into<String>) -> Self {
-        self.output_name = Some(output_name.into());
-        self.alone_on_the_screen = true;
         self
     }
 
@@ -231,52 +215,26 @@ impl SunshineConfig {
             format!("file_apps = {}", shown(&self.apps_path())),
             format!("file_state = {}", shown(&self.state_path())),
             format!("credentials_file = {}", shown(&self.credentials_path())),
-            // The far desktop is put at the size and the rate the session
-            // asks for, and put back afterwards.
+            // Nothing here tells the engine to touch this computer's
+            // screens, and that is the whole of what is said about them:
+            // left alone, it touches none of them.
             //
-            // Without this the engine leaves the desktop as it is and
-            // squeezes it into the stream, keeping its shape by burning
-            // black bars into every frame it sends. A sixteen by ten
-            // laptop watched on a sixteen by nine screen loses ninety-six
-            // pixels of picture down each side, for good, before anything
-            // is even encoded, and no amount of care at this end can put
-            // them back.
+            // It offers to, and it was taken up on the offer, and that is
+            // exactly what had to be undone. Asked to put a screen at the
+            // size a session wants, it also puts every other screen out
+            // for the length of that session, then puts back an
+            // arrangement it noted at its own start. It gives up on that
+            // as soon as anything else has moved a screen since, and what
+            // it does when it gives up is switch every screen it can find
+            // back on. Somebody with three screens and a television they
+            // switch on twice a month got the television back at every
+            // start of the service, and one of the three stayed dark.
             //
-            // Five lines and not one, because each does a different
-            // fifth. The first turns the whole thing on: left alone the
-            // engine touches nothing, whatever the others say. The next
-            // two say what may be changed. The fourth says when to put it
-            // back, and it is not the obvious answer: the engine
-            // otherwise waits for the application it is showing to stop,
-            // and the one we show is the far desktop itself, which never
-            // stops. Leaving a session without closing it would hand back
-            // a laptop still at the size we gave it.
-            //
-            // The fifth says how long to wait first, and the answer is
-            // not at all. The engine's own answer is three seconds, meant
-            // to spare a screen two changes when somebody drops out and
-            // comes straight back. It costs far more than it saves here.
-            // Shutting the far computer down from inside the session is
-            // the ordinary way to end one, and then the session ends
-            // because that computer is already going: a reading of it
-            // showed one second between the session ending and Windows
-            // taking the engine away, with the putting back due at three.
-            // It never ran, and a computer came back up the next morning
-            // still wearing the size of a laptop. Put back at once, the
-            // screen is home before the machine has finished leaving, and
-            // Windows keeps it that way by itself.
-            format!(
-                "dd_configuration_option = {}",
-                if self.alone_on_the_screen {
-                    "ensure_only_display"
-                } else {
-                    "ensure_active"
-                }
-            ),
-            "dd_resolution_option = auto".to_string(),
-            "dd_refresh_rate_option = auto".to_string(),
-            "dd_config_revert_on_disconnect = enabled".to_string(),
-            "dd_config_revert_delay = 0".to_string(),
+            // So the product does it: it notes the desk before a session,
+            // puts the one screen the session watches at the size it
+            // asked for, and puts the whole desk back afterwards, off
+            // screens included. The engine is left with the one job it is
+            // good at, which is filming what is in front of it.
             format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
         ]);
@@ -359,39 +317,23 @@ mod tests {
     }
 
     #[test]
-    fn the_far_desktop_is_resized_for_the_session_and_put_back_after() {
-        // Sans ces cinq lignes, le moteur garde le bureau tel quel et
-        // grave des bandes noires dans chaque image pour lui garder sa
-        // forme. Sans l'avant-dernière, il ne remet jamais rien : le
-        // bureau que nous montrons ne s'arrête pas, et c'est à son arrêt
-        // qu'il rendrait la main.
+    fn the_engine_is_told_nothing_at_all_about_this_computers_screens() {
+        // Le relevé de Victor : « il m'a coupé mes écrans physiques ».
+        // Le moteur sait arranger les écrans et le faisait, y compris
+        // éteindre ceux qu'il ne filme pas et rallumer une télé que son
+        // propriétaire garde éteinte. C'est le produit qui relève le
+        // bureau et le remet maintenant ; le moteur filme, et rien
+        // d'autre. Aucune de ces lignes ne doit reparaître.
         let rendered = test_config().render_conf();
         for line in [
-            "dd_configuration_option = ensure_active",
-            "dd_resolution_option = auto",
-            "dd_refresh_rate_option = auto",
-            "dd_config_revert_on_disconnect = enabled",
-            "dd_config_revert_delay = 0",
+            "dd_configuration_option",
+            "dd_resolution_option",
+            "dd_refresh_rate_option",
+            "dd_config_revert_on_disconnect",
+            "dd_config_revert_delay",
         ] {
-            assert!(rendered.contains(line), "{line} manque dans la conf");
+            assert!(!rendered.contains(line), "{line} est revenu dans la conf");
         }
-    }
-
-    #[test]
-    fn the_screen_is_put_back_at_once_and_not_three_seconds_later() {
-        // Zéro et pas un petit nombre, et c'est le tout de la ligne. La
-        // façon ordinaire de finir une session est d'éteindre
-        // l'ordinateur d'en face depuis cette session, et la session finit
-        // alors parce que cet ordinateur s'en va déjà : un relevé a montré
-        // une seconde entre la fin de la session et Windows emportant le
-        // moteur, la remise en place étant prévue à trois. Elle n'a jamais
-        // eu lieu, et la machine est revenue le lendemain à la taille d'un
-        // portable.
-        let rendered = test_config().render_conf();
-        assert!(rendered.contains("dd_config_revert_delay = 0"));
-        // Le défaut du moteur est de trois secondes, et il ne doit
-        // surtout pas revenir par la bande.
-        assert!(!rendered.contains("dd_config_revert_delay = 3"));
     }
 
     #[test]
@@ -472,21 +414,16 @@ mod tests {
     }
 
     #[test]
-    fn a_screen_grown_for_the_session_becomes_the_only_one() {
-        // Sinon la session montre un bureau vide : la barre des tâches,
-        // les fenêtres et les icônes sont sur l'écran de la personne
-        // assise devant, pas sur celui qu'on vient de faire pousser.
-        let ordinary = test_config().render_conf();
-        assert!(ordinary.contains("dd_configuration_option = ensure_active"));
-
+    fn the_screen_a_computer_grew_is_named_without_a_word_about_the_others() {
+        // Nommer l'écran à filmer et arranger les écrans sont deux choses
+        // différentes, et elles étaient devenues une seule. Un ordinateur
+        // sans écran branché fait pousser le sien et le nomme ici ; ce
+        // qu'il ne fait plus, c'est demander au moteur d'éteindre le reste.
         let grown = test_config()
-            .with_screen_of_its_own("{64243705-4020-5895-b923-adc862c3457e}")
+            .with_screen("{64243705-4020-5895-b923-adc862c3457e}")
             .render_conf();
-        assert!(grown.contains("dd_configuration_option = ensure_only_display"));
         assert!(grown.contains("output_name = {64243705-4020-5895-b923-adc862c3457e}"));
-        // Et tout est remis en place à la fin, sans quoi l'écran de la
-        // personne assise devant resterait éteint.
-        assert!(grown.contains("dd_config_revert_on_disconnect = enabled"));
+        assert!(!grown.contains("dd_configuration_option"));
     }
 
     #[test]

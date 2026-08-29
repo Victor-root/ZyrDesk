@@ -160,6 +160,150 @@ pub fn forget_what_cannot_be_put_back(log: &Log) {
     }
 }
 
+/// Where the desk is written down before a session touches it.
+///
+/// Its presence is the whole of « somebody's screens are not the way
+/// they left them ». Written when a session first changes anything,
+/// removed once everything is back, and read at the start of the service
+/// so a run that never got to finish is caught up with.
+#[cfg(windows)]
+const BEFORE: &str = "desk-before.txt";
+
+/// Where what this computer is showing is written down, for the service
+/// to read.
+///
+/// The service cannot see a screen. Everything Windows says about the
+/// arrangement of screens is answered for the window station of whoever
+/// asks, and a service sits on one with no screens at all: asked from
+/// there, this computer has no screens and no sizes, which is exactly
+/// what it used to answer a session that asked what it was showing. So
+/// the session on screen writes it down and the service reads it.
+const SHOWING: &str = "showing.txt";
+
+#[cfg(windows)]
+fn before_path() -> PathBuf {
+    paths::virtual_screen_dir().join(BEFORE)
+}
+
+fn showing_path() -> PathBuf {
+    paths::virtual_screen_dir().join(SHOWING)
+}
+
+/// The desk as it was before a session touched it, if one did.
+#[cfg(windows)]
+pub fn noted_before() -> Vec<zyr_screen::arrangement::Seat> {
+    std::fs::read_to_string(before_path())
+        .map(|text| zyr_screen::arrangement::read(&text))
+        .unwrap_or_default()
+}
+
+/// What this computer's main screen is showing, as the session on screen
+/// last wrote it down.
+pub fn showing_now() -> Option<(u32, u32)> {
+    let text = std::fs::read_to_string(showing_path()).ok()?;
+    zyr_screen::arrangement::read(&text)
+        .into_iter()
+        .find(|seat| seat.main && seat.on)
+        .map(|seat| (seat.wide, seat.high))
+}
+
+/// Notes this computer's desk, puts its main screen at the size and
+/// magnification a session asked for, and writes down what it ends up
+/// showing.
+///
+/// Runs in the session that owns the screen and nowhere else, which is
+/// the whole reason this is an errand rather than a function call.
+///
+/// Nothing here fails a session. A computer that will not take the size
+/// serves the one it has and the picture is stretched at the other end,
+/// which is what every session did before any of this existed.
+#[cfg(windows)]
+pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
+    let mut said = Vec::new();
+    let desk = zyr_screen::arrangement::as_it_stands();
+    let Some(main) = desk.iter().find(|seat| seat.main && seat.on).cloned() else {
+        said.push(
+            "no screen of this computer's own is switched on, so there is nothing to put at a \
+             size; the session is served what the engine finds"
+                .to_string(),
+        );
+        return said;
+    };
+    // Noted before anything is touched, and only once: a second session
+    // that follows the first must not note a desk the first one had
+    // already changed, or what is put back is the middle of a session
+    // rather than somebody's desk.
+    if wanted.is_some() && !before_path().exists() {
+        match write_beside(BEFORE, &zyr_screen::arrangement::written(&desk)) {
+            Ok(()) => said.push(format!(
+                "this computer's desk is written down before the session touches it ({} screens)",
+                desk.len()
+            )),
+            // Worth saying loudly. Everything else here can be undone by
+            // hand in a minute; this is the note that says what to undo.
+            Err(e) => said.push(format!(
+                "this computer's desk could not be written down, so a session must not change it: \
+                 {e}"
+            )),
+        }
+    }
+    if let Some((wide, high, scale)) = wanted.filter(|_| before_path().exists()) {
+        if (wide, high) != (main.wide, main.high) {
+            said.push(zyr_screen::arrangement::put_at(&main.adapter, wide, high));
+        }
+        said.push(zyr_screen::magnify::magnify(&main.adapter, scale));
+    }
+    // Read again rather than worked out: what was asked for and what
+    // Windows did are two different things, and the far end is told the
+    // second.
+    let now = zyr_screen::arrangement::as_it_stands();
+    if let Err(e) = write_beside(SHOWING, &zyr_screen::arrangement::written(&now)) {
+        said.push(format!(
+            "what this computer is showing was not written down: {e}"
+        ));
+    }
+    said
+}
+
+/// Puts the desk back exactly as it was noted, and forgets the note.
+///
+/// The note is removed only once Windows has taken the arrangement back,
+/// so a refusal is tried again rather than forgotten: a desk left the way
+/// a session left it is the one thing this must never do quietly.
+#[cfg(windows)]
+pub fn give_the_desk_back() -> Vec<String> {
+    let noted = noted_before();
+    if noted.is_empty() {
+        return vec!["no desk was written down, so there is nothing to put back".to_string()];
+    }
+    let mut said = zyr_screen::arrangement::put_back(&noted);
+    let back = said
+        .last()
+        .is_some_and(|last| last.contains("back the way they were"));
+    if !back {
+        said.push(
+            "this computer's desk is not back yet, so what it was is kept for another try"
+                .to_string(),
+        );
+        return said;
+    }
+    if let Err(e) = std::fs::remove_file(before_path()) {
+        said.push(format!(
+            "the desk that was written down could not be forgotten: {e}"
+        ));
+    }
+    said
+}
+
+/// Writes one of this folder's notes, making the folder if it is not
+/// there yet.
+#[cfg(windows)]
+fn write_beside(name: &str, text: &str) -> std::io::Result<()> {
+    let home = paths::virtual_screen_dir();
+    std::fs::create_dir_all(&home)?;
+    std::fs::write(home.join(name), text)
+}
+
 /// Wakes the virtual screen for a session that wants a picture that size.
 ///
 /// The one moment it is awake. Between sessions it sleeps at the device,

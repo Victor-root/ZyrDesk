@@ -104,13 +104,16 @@ fn main() -> ExitCode {
         };
     }
 
-    // And a fifth, to set how large the virtual screen draws. The same
-    // blindness again: what Windows says about the arrangement of screens
-    // is answered for the window station of whoever asks, and the
-    // service's has no screens on it at all.
+    // And a fifth, about this computer's desk: holding it for a session
+    // that is starting, or giving it back once that session has gone. The
+    // same blindness again, and the worst case of it: what Windows says
+    // about the arrangement of screens is answered for the window station
+    // of whoever asks, and the service's has no screens on it at all, so
+    // from there this computer has no screens to note and none to put
+    // back.
     #[cfg(windows)]
-    if let Some(percent) = session::the_magnification_asked_for() {
-        session::magnify_this_desktop(percent);
+    if let Some(asked) = session::the_desk_asked_for() {
+        session::do_this_to_the_desk(asked);
         return ExitCode::SUCCESS;
     }
 

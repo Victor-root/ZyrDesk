@@ -221,67 +221,76 @@ impl Answers for Attending {
         &self,
         wanted: Option<WantedScreen>,
     ) -> Result<Option<(u32, u32)>, String> {
-        let size = wanted.map(|screen| (screen.wide, screen.high));
-        let said = match size {
-            Some(size) => screen_awake(size),
-            None => screen_asleep(),
-        };
-        let said = match said {
-            Ok(said) => {
-                self.sessions
-                    .screen_awake
-                    .store(size.is_some(), Ordering::Relaxed);
-                said
+        // Said before the errand goes out, like the lock above. What
+        // became of it is written from the session that owns the screen,
+        // since that is the only place any of it can be known, and it
+        // lands in this journal a moment before this call is back.
+        self.log.write(&match wanted {
+            Some(screen) => format!(
+                "a session asks this computer's main screen for {screen}, and its desk is written \
+                 down first"
+            ),
+            None => "a session asks this computer to keep its own screen, so nothing on this desk \
+                     moves"
+                .to_string(),
+        });
+        match hold_the_desk_for(wanted) {
+            Ok(took) => {
+                self.sessions.desk_held.store(true, Ordering::Relaxed);
+                self.log.write(&format!(
+                    "the desk was set from the session on screen ({took})"
+                ));
             }
-            Err(refused) => {
-                self.log
-                    .write(&format!("the virtual screen stayed as it was: {refused}"));
-                return Err(refused);
-            }
-        };
-        for line in said {
-            self.log.write(&line);
+            // Never fails a session. A computer that will not take the
+            // size serves the one it has and the picture is stretched at
+            // the other end, which is what every session did before any
+            // of this existed.
+            Err(e) => self
+                .log
+                .write(&format!("this computer's desk was left as it was: {e}")),
         }
-        // Now that the screen is there, and before the engine opens on
-        // it: how large it draws is a property of the pixels the engine
-        // is about to capture, and changing it under a picture somebody
-        // is already watching makes everything on that desktop jump.
+        // A computer with nothing plugged into it has no desk to hold and
+        // none to give back. What it has is the screen it grows for
+        // itself, and that one is woken from here rather than from the
+        // session on screen: starting a display device is administrator
+        // work, which a service has and a signed-in person may not.
         //
-        // Asked at every waking and not only when a session names a
-        // number: this screen belongs to the sessions and to nobody else,
-        // so leaving it wherever the session before happened to put it is
-        // one machine remembering another one's desk.
-        if let Some(screen) = wanted {
-            // Said before the order goes out, like the lock above. What
-            // became of it is written from the session that owns the
-            // screen, since that is the only place it can be known, and
-            // it lands in this journal a moment before this call is back.
-            self.log.write(&match screen.scale {
-                0 => "the session named no magnification, so the virtual screen goes back to the \
-                      one Windows recommends for it"
-                    .to_string(),
-                percent => format!(
-                    "the virtual screen is asked to draw at {percent} %, the way the screen \
-                     watching it does"
-                ),
-            });
-            self.log.write(&match magnify_it(screen.scale) {
-                Ok(took) => {
-                    format!("the magnification was asked for from the session on screen ({took})")
+        // The engine is already aimed at it, that having been settled
+        // when it started, which is the one moment it reads which screen
+        // to film.
+        let grown = match wanted.filter(|_| crate::screen::showing_now().is_none()) {
+            Some(screen) => {
+                self.log.write(
+                    "no screen is plugged into this computer, so the one it grew for itself is \
+                     woken for this session",
+                );
+                match wake_the_grown_screen((screen.wide, screen.high)) {
+                    Ok(said) => {
+                        for line in said {
+                            self.log.write(&line);
+                        }
+                        Some((screen.wide, screen.high))
+                    }
+                    Err(refused) => {
+                        self.log.write(&format!(
+                            "the screen this computer grew stayed as it was: {refused}"
+                        ));
+                        None
+                    }
                 }
-                Err(e) => format!("the magnification was not asked for: {e}"),
-            });
-        }
-        // What this computer is going to be showing. The size that was
-        // asked for when a screen was woken to carry it, and this
-        // machine's own when none was wanted: that second answer is the
-        // whole of what lets a session say « leave that computer as it
-        // is », since nothing at the other end can know what is plugged
-        // in here.
-        let showing = size.or_else(the_main_screen);
+            }
+            None => None,
+        };
+        // What this computer ends up showing, read from what the session
+        // on screen just wrote down rather than worked out here: what was
+        // asked for and what Windows did are two different things, and a
+        // service cannot see a screen to tell them apart. The grown
+        // screen is the exception and has to be: it is not on any desk a
+        // session could have looked at.
+        let showing = grown.or_else(crate::screen::showing_now);
         self.log.write(&match showing {
-            Some((wide, high)) => format!("this computer will be showing {wide}x{high}"),
-            None => "this computer cannot measure its own screen, so the session keeps what it \
+            Some((wide, high)) => format!("this computer is showing {wide}x{high}"),
+            None => "this computer could not say what it is showing, so the session keeps what it \
                      guessed"
                 .to_string(),
         });
@@ -321,56 +330,32 @@ impl Answers for Attending {
     }
 }
 
-/// Size of this computer's main screen, where there is a Windows to ask.
-#[cfg(windows)]
-fn the_main_screen() -> Option<(u32, u32)> {
-    zyr_screen::the_main_screen()
-}
-
-#[cfg(not(windows))]
-fn the_main_screen() -> Option<(u32, u32)> {
-    None
-}
-
-/// Wakes the virtual screen, where there is a Windows to wake one on.
-#[cfg(windows)]
-fn screen_awake(size: (u32, u32)) -> Result<Vec<String>, String> {
-    crate::screen::wake_for_a_session(size)
-}
-
-#[cfg(not(windows))]
-fn screen_awake(_size: (u32, u32)) -> Result<Vec<String>, String> {
-    Err("cet ordinateur n'a pas d'écran virtuel".to_string())
-}
-
-/// Puts it back to sleep.
-#[cfg(windows)]
-fn screen_asleep() -> Result<Vec<String>, String> {
-    // The session asking is the one that decides here, and it is asking
-    // now: there is no wait to go stale across.
-    crate::screen::sleep_after_a_session(&|| true)
-}
-
-#[cfg(not(windows))]
-fn screen_asleep() -> Result<Vec<String>, String> {
-    Err("cet ordinateur n'a pas d'écran virtuel".to_string())
-}
-
-/// Sets how large the virtual screen draws, saying what it cost.
+/// Notes this computer's desk and puts its main screen where a session
+/// wants it, saying what it cost.
 ///
 /// From the session that owns the screen and never from here: everything
 /// Windows says about the arrangement of screens is answered for the
 /// window station of whoever asks, and the service's carries none.
 #[cfg(windows)]
-fn magnify_it(percent: u32) -> io::Result<String> {
-    crate::session::magnify_the_screen(percent).map(|took| took.to_string())
+fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<String> {
+    crate::session::hold_the_desk_for(wanted).map(|took| took.to_string())
 }
 
 #[cfg(not(windows))]
-fn magnify_it(_percent: u32) -> io::Result<String> {
-    Err(io::Error::other(
-        "cet ordinateur n'a pas d'écran virtuel à agrandir",
-    ))
+fn hold_the_desk_for(_wanted: Option<WantedScreen>) -> io::Result<String> {
+    Err(io::Error::other("cet ordinateur n'a pas d'écran à régler"))
+}
+
+/// Wakes the screen this computer grew for itself, for the one machine
+/// that has nothing else to film.
+#[cfg(windows)]
+fn wake_the_grown_screen(size: (u32, u32)) -> Result<Vec<String>, String> {
+    crate::screen::wake_for_a_session(size)
+}
+
+#[cfg(not(windows))]
+fn wake_the_grown_screen(_size: (u32, u32)) -> Result<Vec<String>, String> {
+    Err("cet ordinateur n'a pas d'écran virtuel".to_string())
 }
 
 /// Locks it, where there is a Windows to lock, saying what it cost.
@@ -431,16 +416,16 @@ struct Sessions {
     /// anybody at all is asking. It is cleared when the last session
     /// goes, so the next one starts from silence not being wanted.
     hushing: AtomicBool,
-    /// Whether a session has woken this computer's virtual screen.
+    /// Whether a session has this computer's desk, which is to say
+    /// whether somebody's screens are not the way they left them.
     ///
     /// Here for the same reason as the hush, and put back the same way,
-    /// but the putting back is not done where it is noticed: waking and
-    /// sleeping a screen is Windows starting and stopping a device, which
-    /// takes long enough that it has no business happening while a
-    /// session is being torn down. What is written here is read by the
-    /// watch that holds the engine, on its own thread, which is where it
-    /// is acted on.
-    screen_awake: AtomicBool,
+    /// but the putting back is not done where it is noticed: rearranging
+    /// a desktop takes long enough that it has no business happening
+    /// while a session is being torn down. What is written here is read
+    /// by the watch that holds the engine, on its own thread, which is
+    /// where it is acted on.
+    desk_held: AtomicBool,
 }
 
 /// One session, counted for as long as it lasts.
@@ -567,22 +552,25 @@ impl Gateway {
         self.sessions.ever.load(Ordering::Relaxed)
     }
 
-    /// Whether the virtual screen is awake with nobody left watching it.
+    /// Whether a session still has this computer's desk with nobody left
+    /// watching it.
     ///
     /// Asked by the watch that holds the engine, which is on a thread
-    /// where stopping a device is allowed to take its time. A session
+    /// where rearranging a desktop is allowed to take its time. A session
     /// that ends properly says so itself and this never fires; this is
     /// for the sessions that do not, which is every one whose computer
-    /// was closed, unplugged or crashed.
-    pub fn the_screen_is_awake_for_nobody(&self) -> bool {
-        self.sessions.screen_awake.load(Ordering::Relaxed)
+    /// was closed, unplugged or crashed, and those are exactly the ones
+    /// after which somebody's screens would stay the way a stranger left
+    /// them.
+    pub fn the_desk_is_held_for_nobody(&self) -> bool {
+        self.sessions.desk_held.load(Ordering::Relaxed)
             && self.sessions.open.load(Ordering::Relaxed) == 0
     }
 
-    /// Says the screen has been put back to sleep, so it is not asked for
-    /// again on the next turn of that watch.
-    pub fn the_screen_went_to_sleep(&self) {
-        self.sessions.screen_awake.store(false, Ordering::Relaxed);
+    /// Says the desk is back, so it is not asked for again on the next
+    /// turn of that watch.
+    pub fn the_desk_came_back(&self) {
+        self.sessions.desk_held.store(false, Ordering::Relaxed);
     }
 }
 

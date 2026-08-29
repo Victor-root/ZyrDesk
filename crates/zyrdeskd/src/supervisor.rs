@@ -104,15 +104,76 @@ fn wake_to_be_named(_log: &Log) -> bool {
     false
 }
 
-/// Answers whether it really went to sleep: a refusal has to be tried
-/// again, and the caller is the only one that knows when.
+/// Puts the screen this computer grew for itself back to sleep.
+///
+/// Answers whether it really went: a refusal has to be tried again, and
+/// the caller is the only one that knows when.
 #[cfg(windows)]
-fn put_the_screen_back(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
+fn put_the_grown_screen_away(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
     crate::screen::back_to_sleep(log, still_nobody)
 }
 
 #[cfg(not(windows))]
-fn put_the_screen_back(_log: &Log, _still_nobody: &dyn Fn() -> bool) -> bool {
+fn put_the_grown_screen_away(_log: &Log, _still_nobody: &dyn Fn() -> bool) -> bool {
+    true
+}
+
+/// Writes down what this computer's screens are doing, from the session
+/// that owns them.
+///
+/// Nothing is moved: this is the errand that holds a desk for a session,
+/// asked for nothing at all, which is how it doubles as the one way a
+/// service ever learns what is plugged into its own machine.
+#[cfg(windows)]
+fn look_at_the_desk(log: &Log) {
+    match crate::session::hold_the_desk_for(None) {
+        Ok(took) => log.write(&format!(
+            "this computer's screens were looked at from the session on screen ({took})"
+        )),
+        Err(e) => log.write(&format!("this computer could not look at its screens: {e}")),
+    }
+}
+
+#[cfg(not(windows))]
+fn look_at_the_desk(_log: &Log) {}
+
+/// Puts this computer's desk back the way it was noted before a session
+/// took it, from the session that owns the screen.
+///
+/// Answers whether it really went back: a refusal has to be tried again,
+/// and the caller is the only one that knows when.
+#[cfg(windows)]
+fn put_the_desk_back(log: &Log) -> bool {
+    // The computer with nothing plugged into it never had a desk noted,
+    // and what it has instead goes away here: the screen it grew for
+    // itself, which is a second screen on nobody's desk the moment the
+    // last session stops watching it.
+    if !screen_asleep() {
+        put_the_grown_screen_away(log, &|| true);
+    }
+    if crate::screen::noted_before().is_empty() {
+        return true;
+    }
+    match crate::session::give_the_desk_back() {
+        Ok(took) => {
+            log.write(&format!(
+                "the desk was put back from the session on screen ({took})"
+            ));
+            // What became of it is written into this journal from over
+            // there, since that is the only place it can be known. What
+            // is known here is only that the errand ran, and the note
+            // itself is what says whether there is still work to do.
+            crate::screen::noted_before().is_empty()
+        }
+        Err(e) => {
+            log.write(&format!("this computer's desk was not put back: {e}"));
+            false
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn put_the_desk_back(_log: &Log) -> bool {
     true
 }
 
@@ -516,17 +577,36 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     let serving = remembered.serving();
     let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir())
         .with_serving(serving);
+    // What this computer's screens are doing, asked of the session that
+    // owns them because a service cannot see one. Asked here rather than
+    // when a session wants to know, so the answer is already in hand at
+    // the one moment it decides something: whether this computer has a
+    // screen of its own to film at all.
+    look_at_the_desk(log);
     // Which screen to capture is read once, as the engine starts, so it
-    // is decided here or not at all. Absent the first time this computer
-    // ever runs, since the name is the engine's own and the engine has
-    // not said it yet; learned below and used from the next start on.
-    // Woken only where it has never been named, and put back below as
-    // soon as it has: the engine names the screens it can see, and one
-    // that sleeps between sessions is seen by nobody.
+    // is decided here or not at all. A computer with a screen of its own
+    // is not told: the engine films the main one, which is where the
+    // desktop is and which a session is put at the size of.
+    //
+    // The screen this computer grows for itself is for the computer that
+    // has none, a machine in a cupboard with nothing plugged into it, and
+    // there it is the only thing there is to film. Absent the first time
+    // this computer ever runs, since the name is the engine's own and the
+    // engine has not said it yet; learned below and used from the next
+    // start on. Woken only where it has never been named, and put back
+    // below as soon as it has: the engine names the screens it can see,
+    // and one that sleeps between sessions is seen by nobody.
     let named_this_start = wake_to_be_named(log);
-    let aiming_at = crate::screen::remembered();
+    let on_its_own = crate::screen::showing_now().is_none();
+    let aiming_at = crate::screen::remembered().filter(|_| on_its_own);
     let config = match &aiming_at {
-        Some(screen) => config.with_screen_of_its_own(screen),
+        Some(screen) => {
+            log.write(
+                "no screen is plugged into this computer, so the engine is aimed at the one it \
+                 grew for itself",
+            );
+            config.with_screen(screen)
+        }
         None => config,
     };
     let engine_log = config.log_path();
@@ -569,7 +649,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     if named_this_start {
         // Woken for this one start of the engine and for nothing else:
         // there is no session that could want it.
-        put_the_screen_back(log, &|| true);
+        put_the_grown_screen_away(log, &|| true);
     } else if !screen_asleep() {
         // Left awake by a run that never got to finish: the machine was
         // switched off, or the service fell over, with a session in
@@ -591,7 +671,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         // before touching anything, which is what it has always done at
         // the end of a session.
         log.write("a screen was left awake by a run that did not finish, putting it back");
-        put_the_screen_back(log, &|| true);
+        put_the_grown_screen_away(log, &|| true);
     }
     if learned == crate::screen::Learned::StartAgain {
         let _ = engine.stop();
@@ -726,25 +806,17 @@ fn wait_for_the_engine_to_stop(
         // machine's desk until somebody noticed.
         //
         // Tried again until it works, and that is the whole of the second
-        // half. Windows refuses to stop a display device while something
-        // else is rearranging the desktop, which at the end of a session
-        // is exactly what the engine is doing: it is putting back the
-        // screens it had switched off. Counting a refusal as done left
-        // the screen awake for ever, with nothing ever looking at it
-        // again, and the next engine to start found it and captured it at
-        // whatever size it happened to be wearing.
-        if watched.gateway.the_screen_is_awake_for_nobody()
-            && last_sleep_try.elapsed() >= SCREEN_WATCH
+        // half. A refusal counted as done would leave somebody's screens
+        // the way a stranger left them, with nothing ever looking at them
+        // again, which is the one outcome this must never have.
+        if watched.gateway.the_desk_is_held_for_nobody() && last_sleep_try.elapsed() >= SCREEN_WATCH
         {
             last_sleep_try = Instant::now();
             log.write(
-                "nobody is watching this computer any more, its virtual screen goes back to sleep",
+                "nobody is watching this computer any more, its desk goes back the way it was",
             );
-            // The same question again at the end of that wait, which
-            // lasts about a second: a session opening inside it is a
-            // session that wants the screen being put away.
-            if put_the_screen_back(log, &|| watched.gateway.the_screen_is_awake_for_nobody()) {
-                watched.gateway.the_screen_went_to_sleep();
+            if put_the_desk_back(log) {
+                watched.gateway.the_desk_came_back();
             }
         }
 
