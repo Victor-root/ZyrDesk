@@ -26,6 +26,7 @@
 //! [`mtt`], not touching anything here or anywhere else in the product,
 //! which is the same border the engines are held behind.
 
+pub mod arrangement;
 pub mod driver;
 pub mod engine;
 pub mod mtt;

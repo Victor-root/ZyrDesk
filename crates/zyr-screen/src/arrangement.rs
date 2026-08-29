@@ -1,0 +1,557 @@
+//! Where this computer's screens are, and how to put them back there.
+//!
+//! A session changes the screens of the computer being watched. Whatever
+//! it changes, the person sitting in front of that computer gets their
+//! desk back exactly as they left it when the session ends: which screens
+//! were on, which were off, where each one sat relative to the others,
+//! what size and rate it drew at, which way round it was turned, and
+//! which of them Windows called the main one.
+//!
+//! That is a promise this product makes and keeps itself. The host engine
+//! offers to do it and cannot be trusted with it: it puts back an
+//! arrangement it noted at its own start, it gives up when something else
+//! has moved a screen in the meantime, and what it does when it gives up
+//! is switch every screen it can find back on. A screen its owner had
+//! deliberately turned off came back at every start, and one that was on
+//! stayed off. So the engine is told to leave the screens alone entirely,
+//! and this file is what notes them and what puts them back.
+//!
+//! # Where this runs
+//!
+//! In the session that owns the screen, like the magnification beside it.
+//! Everything Windows says about the arrangement of screens is answered
+//! for the window station of whoever asks, and a service sits on one with
+//! no screens at all: asked from there, there is nothing to note and
+//! nothing to put back.
+//!
+//! # Why the old call and not the new one
+//!
+//! Windows has two ways to move screens around. The newer one describes a
+//! whole desktop at once and is what the magnification's private message
+//! rides on; the older one takes one screen at a time, writes each into
+//! the registry without applying it, and then applies the lot in a single
+//! step. The second is what this wants: an arrangement has to arrive all
+//! at once, because half an arrangement is a desktop with two screens
+//! sitting on top of each other, and Windows would be within its rights
+//! to refuse the half that comes second.
+
+use std::fmt;
+use std::str::FromStr;
+
+/// One screen of this computer, as it stood at some moment.
+///
+/// Carries both names it answers to, and they are not the same kind of
+/// name. `adapter` is what Windows takes orders about, and it is only a
+/// position in a list: unplug a monitor and the one after it moves up.
+/// `screen` is the screen itself, and it survives everything short of
+/// being plugged into another socket. Noting both is what lets an
+/// arrangement be put back onto the screens it was taken from rather than
+/// onto whatever now answers to the same list position.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seat {
+    /// What Windows takes orders about, `\\.\DISPLAY1` and its like.
+    pub adapter: String,
+    /// What this screen is, whoever it is plugged into. Empty when
+    /// Windows would not say, which happens for a screen that is off.
+    pub screen: String,
+    /// Whether it was drawing at all. A screen that is off has no size
+    /// and no place, and that is exactly the state this exists to
+    /// remember: it is the one somebody chose on purpose and the one the
+    /// engine kept undoing.
+    pub on: bool,
+    pub wide: u32,
+    pub high: u32,
+    /// Times a second, as Windows counts it.
+    pub refresh: u32,
+    /// Where its top left corner sits on the desktop, in pixels, counted
+    /// from the main screen's own corner. This is the whole of « my
+    /// screen 1 is on the right and screen 2 on the left ».
+    pub at: (i32, i32),
+    /// Which way round it is turned, in quarter turns clockwise.
+    pub turned: u32,
+    /// Whether Windows called this one the main screen.
+    pub main: bool,
+    /// How much larger than life it draws, in per cent. Nought when it
+    /// could not be read, which is not worth failing anything over: a
+    /// screen put back at the right size and the wrong magnification is
+    /// most of the way home.
+    pub scale: u32,
+}
+
+/// One spelling of a seat, written here and read here.
+///
+/// A line of `key=value` and not a shape from a library: this is written
+/// to a file that outlives a session, and sometimes outlives the run of
+/// the program that wrote it. It is read back by a later run, and by
+/// whoever opens the file to find out why their screens came back wrong.
+impl fmt::Display for Seat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "adapter={} screen={} on={} size={}x{} rate={} at={},{} turned={} main={} scale={}",
+            self.adapter,
+            if self.screen.is_empty() {
+                "none"
+            } else {
+                &self.screen
+            },
+            if self.on { "yes" } else { "no" },
+            self.wide,
+            self.high,
+            self.refresh,
+            self.at.0,
+            self.at.1,
+            self.turned,
+            if self.main { "yes" } else { "no" },
+            self.scale,
+        )
+    }
+}
+
+impl FromStr for Seat {
+    type Err = String;
+
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        let mut adapter = None;
+        let mut screen = String::new();
+        let mut on = false;
+        let mut size = None;
+        let mut refresh = 0;
+        let mut at = (0, 0);
+        let mut turned = 0;
+        let mut main = false;
+        let mut scale = 0;
+        for field in line.split_whitespace() {
+            let Some((key, value)) = field.split_once('=') else {
+                return Err(format!("« {field} » n'est pas clé=valeur"));
+            };
+            let number = |what: &str| {
+                value
+                    .parse::<u32>()
+                    .map_err(|_| format!("{what} attendu en nombre : {value}"))
+            };
+            match key {
+                "adapter" => adapter = Some(value.to_string()),
+                "screen" => {
+                    screen = if value == "none" {
+                        String::new()
+                    } else {
+                        value.to_string()
+                    }
+                }
+                "on" => on = value == "yes",
+                "size" => {
+                    let (wide, high) = value
+                        .split_once('x')
+                        .ok_or_else(|| format!("taille attendue LARGEURxHAUTEUR : {value}"))?;
+                    size = Some((
+                        wide.parse::<u32>().map_err(|_| "largeur".to_string())?,
+                        high.parse::<u32>().map_err(|_| "hauteur".to_string())?,
+                    ));
+                }
+                "rate" => refresh = number("cadence")?,
+                "at" => {
+                    let (x, y) = value
+                        .split_once(',')
+                        .ok_or_else(|| format!("place attendue X,Y : {value}"))?;
+                    at = (
+                        x.parse::<i32>().map_err(|_| "abscisse".to_string())?,
+                        y.parse::<i32>().map_err(|_| "ordonnée".to_string())?,
+                    );
+                }
+                "turned" => turned = number("quarts de tour")?,
+                "main" => main = value == "yes",
+                "scale" => scale = number("agrandissement")?,
+                other => return Err(format!("« {other} » n'est pas un champ d'écran")),
+            }
+        }
+        let adapter = adapter.ok_or_else(|| "aucun écran nommé sur la ligne".to_string())?;
+        let (wide, high) = size.unwrap_or((0, 0));
+        Ok(Seat {
+            adapter,
+            screen,
+            on,
+            wide,
+            high,
+            refresh,
+            at,
+            turned,
+            main,
+            scale,
+        })
+    }
+}
+
+/// Every screen of this computer, in the order Windows lists them.
+///
+/// One line each, so a file holding one is read by eye as easily as by
+/// program. Blank lines and anything that will not read are skipped
+/// rather than failing the whole: an arrangement that puts back three
+/// screens out of four is worth more than one that puts back none.
+pub fn written(seats: &[Seat]) -> String {
+    seats
+        .iter()
+        .map(|seat| seat.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Reads back what [`written`] wrote.
+pub fn read(text: &str) -> Vec<Seat> {
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| line.parse().ok())
+        .collect()
+}
+
+#[cfg(windows)]
+mod windows_only {
+    use super::Seat;
+
+    use windows_sys::Win32::Graphics::Gdi::{
+        CDS_NORESET, CDS_SET_PRIMARY, CDS_UPDATEREGISTRY, ChangeDisplaySettingsExW, DEVMODEW,
+        DISP_CHANGE_SUCCESSFUL, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICE_PRIMARY_DEVICE,
+        DISPLAY_DEVICEW, DM_DISPLAYFREQUENCY, DM_DISPLAYORIENTATION, DM_PELSHEIGHT, DM_PELSWIDTH,
+        DM_POSITION, ENUM_CURRENT_SETTINGS, EnumDisplayDevicesW, EnumDisplaySettingsExW,
+    };
+
+    /// What every one of this computer's screens is doing now.
+    ///
+    /// Screens that are off are in here too, and they are the point: a
+    /// screen somebody turned off on purpose is the one thing an
+    /// arrangement most needs to carry, and the one the engine kept
+    /// switching back on.
+    pub fn as_it_stands() -> Vec<Seat> {
+        let mut seats = Vec::new();
+        for index in 0.. {
+            let mut adapter: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+            adapter.cb = size_of::<DISPLAY_DEVICEW>() as u32;
+            // SAFETY: the slot is ours with its size written in it as the
+            // call requires, and no name is given so the list is the
+            // machine's own adapters.
+            if unsafe { EnumDisplayDevicesW(std::ptr::null(), index, &mut adapter, 0) } == 0 {
+                break;
+            }
+            let name = super::read_wide(&adapter.DeviceName);
+            if name.is_empty() {
+                continue;
+            }
+            let on = adapter.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP != 0;
+            let main = adapter.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE != 0;
+            let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
+            mode.dmSize = size_of::<DEVMODEW>() as u16;
+            // SAFETY: a name the system just wrote and ended itself, and
+            // a slot of ours carrying its own size.
+            let read = unsafe {
+                EnumDisplaySettingsExW(
+                    adapter.DeviceName.as_ptr(),
+                    ENUM_CURRENT_SETTINGS,
+                    &mut mode,
+                    0,
+                )
+            };
+            let (wide, high, refresh, at, turned) = if read == 0 {
+                (0, 0, 0, (0, 0), 0)
+            } else {
+                // SAFETY: the two halves of this union are told apart by
+                // what the call was asked for, and a display mode is
+                // always the second: the first describes paper.
+                let placed = unsafe { mode.Anonymous1.Anonymous2 };
+                (
+                    mode.dmPelsWidth,
+                    mode.dmPelsHeight,
+                    mode.dmDisplayFrequency,
+                    (placed.dmPosition.x, placed.dmPosition.y),
+                    placed.dmDisplayOrientation,
+                )
+            };
+            seats.push(Seat {
+                screen: the_screen_itself(&adapter.DeviceName),
+                scale: crate::magnify::of(&name).unwrap_or(0),
+                adapter: name,
+                on,
+                wide,
+                high,
+                refresh,
+                at,
+                turned,
+                main,
+            });
+        }
+        seats
+    }
+
+    /// What the screen plugged into that adapter is, by a name that
+    /// outlives a restart.
+    ///
+    /// Empty when Windows will not say, which is the ordinary answer for
+    /// an adapter with nothing drawing on it. That costs nothing: an
+    /// adapter with no screen on it is put back off, which is what it
+    /// already is.
+    fn the_screen_itself(adapter: &[u16]) -> String {
+        let mut screen: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+        screen.cb = size_of::<DISPLAY_DEVICEW>() as u32;
+        // SAFETY: the name is one the system wrote and ended itself, and
+        // the slot is ours with its size in it. Nought is the first
+        // screen on that adapter, which is the only one there ever is.
+        if unsafe { EnumDisplayDevicesW(adapter.as_ptr(), 0, &mut screen, 0) } == 0 {
+            return String::new();
+        }
+        super::read_wide(&screen.DeviceID)
+    }
+
+    /// Puts an arrangement back, and says what happened in one sentence
+    /// per screen plus one for the whole.
+    ///
+    /// Nothing here fails a session. This runs when a session is already
+    /// over, and the worst it can do is leave a desktop the way the
+    /// session left it, which is what happened before this existed. What
+    /// it must never do is stop half way and leave two screens sitting on
+    /// top of each other, which is why every screen is written down
+    /// without being applied and the whole lot is applied at the end.
+    pub fn put_back(seats: &[Seat]) -> Vec<String> {
+        let mut said = Vec::new();
+        let mut written = 0;
+        for seat in seats {
+            let now = as_it_stands();
+            let Some(here) = now.iter().find(|other| other.adapter == seat.adapter) else {
+                said.push(format!(
+                    "{} is no longer one of this computer's screens, so it was left alone",
+                    seat.adapter
+                ));
+                continue;
+            };
+            // The list position is not the screen. A monitor unplugged
+            // while the session ran moves every screen after it up one,
+            // and putting a 4K arrangement onto whatever now answers to
+            // that position is worse than doing nothing at all.
+            if !seat.screen.is_empty() && !here.screen.is_empty() && here.screen != seat.screen {
+                said.push(format!(
+                    "{} is not the screen it was, so it was left alone",
+                    seat.adapter
+                ));
+                continue;
+            }
+            match ask_for(seat) {
+                true => written += 1,
+                false => said.push(format!("Windows would not take {} back", seat.adapter)),
+            }
+        }
+        if written == 0 {
+            said.push("no screen could be put back the way it was".to_string());
+            return said;
+        }
+        // SAFETY: no name and no mode is how this call is told to apply
+        // everything written down above, which is the whole point of
+        // having written it down without applying it.
+        let applied = unsafe {
+            ChangeDisplaySettingsExW(
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null(),
+            )
+        };
+        said.push(if applied == DISP_CHANGE_SUCCESSFUL {
+            format!("this computer's screens are back the way they were ({written} of them)")
+        } else {
+            format!("Windows refused the arrangement of {written} screens ({applied})")
+        });
+        said
+    }
+
+    /// Puts one screen at that size, and says what happened.
+    ///
+    /// The whole of what a session does to the computer it watches, and
+    /// deliberately the smallest thing that could work: one screen, its
+    /// size, nothing moved, nothing switched off. What it costs the
+    /// person sitting in front of that computer is their main screen
+    /// changing size for the length of a session, which is what every
+    /// remote desktop that does not grow a screen of its own costs them,
+    /// and it is put back afterwards from the arrangement noted first.
+    ///
+    /// Never fails a session: a computer that will not take the size
+    /// serves the one it has, and the picture is stretched at the other
+    /// end exactly as it was before any of this existed.
+    pub fn put_at(screen: &str, wide: u32, high: u32) -> String {
+        let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
+        mode.dmSize = size_of::<DEVMODEW>() as u16;
+        mode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
+        mode.dmPelsWidth = wide;
+        mode.dmPelsHeight = high;
+        let name = super::wide(screen);
+        // SAFETY: the name and the mode are ours and outlive the call.
+        // Applied on its own and not written down for later, because
+        // this one is wanted now: the picture opens on it.
+        let answer = unsafe {
+            ChangeDisplaySettingsExW(
+                name.as_ptr(),
+                &mode,
+                std::ptr::null_mut(),
+                CDS_UPDATEREGISTRY,
+                std::ptr::null(),
+            )
+        };
+        if answer == DISP_CHANGE_SUCCESSFUL {
+            format!("{screen} is showing {wide}x{high}")
+        } else {
+            format!("Windows would not put {screen} at {wide}x{high} ({answer})")
+        }
+    }
+
+    /// Writes one screen down without applying it.
+    fn ask_for(seat: &Seat) -> bool {
+        let mut mode: DEVMODEW = unsafe { std::mem::zeroed() };
+        mode.dmSize = size_of::<DEVMODEW>() as u16;
+        mode.dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT;
+        if seat.on {
+            mode.dmPelsWidth = seat.wide;
+            mode.dmPelsHeight = seat.high;
+            mode.dmFields |= DM_DISPLAYFREQUENCY | DM_DISPLAYORIENTATION;
+            mode.dmDisplayFrequency = seat.refresh;
+            mode.Anonymous1.Anonymous2.dmDisplayOrientation = seat.turned;
+            mode.Anonymous1.Anonymous2.dmPosition.x = seat.at.0;
+            mode.Anonymous1.Anonymous2.dmPosition.y = seat.at.1;
+        }
+        // A size of nought is how this call is told a screen is to draw
+        // nothing at all, which is what having been switched off means.
+        let mut how = CDS_UPDATEREGISTRY | CDS_NORESET;
+        if seat.on && seat.main {
+            how |= CDS_SET_PRIMARY;
+        }
+        let name = super::wide(&seat.adapter);
+        // SAFETY: the name and the mode are ours and outlive the call,
+        // which is told to write this down rather than apply it.
+        let answer = unsafe {
+            ChangeDisplaySettingsExW(
+                name.as_ptr(),
+                &mode,
+                std::ptr::null_mut(),
+                how,
+                std::ptr::null(),
+            )
+        };
+        answer == DISP_CHANGE_SUCCESSFUL
+    }
+}
+
+#[cfg(windows)]
+pub use windows_only::{as_it_stands, put_at, put_back};
+
+/// Nowhere else has screens to arrange, and the shape above stays
+/// compiled and tested everywhere: reading and writing an arrangement is
+/// ordinary text work with nothing platform-specific about it.
+#[cfg(not(windows))]
+pub fn as_it_stands() -> Vec<Seat> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+pub fn put_back(_seats: &[Seat]) -> Vec<String> {
+    vec!["this computer has no screens to put back".to_string()]
+}
+
+#[cfg(not(windows))]
+pub fn put_at(screen: &str, _wide: u32, _high: u32) -> String {
+    format!("this computer has no {screen} to resize")
+}
+
+#[cfg(windows)]
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn read_wide(from: &[u16]) -> String {
+    let end = from.iter().position(|letter| *letter == 0).unwrap_or(0);
+    String::from_utf16_lossy(&from[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seat() -> Seat {
+        Seat {
+            adapter: r"\\.\DISPLAY1".to_string(),
+            screen: r"MONITOR\SAM7180\{4d36e96e-e325-11ce-bfc1-08002be10318}\0002".to_string(),
+            on: true,
+            wide: 3840,
+            high: 2160,
+            refresh: 60,
+            at: (-3840, 0),
+            turned: 0,
+            main: false,
+            scale: 175,
+        }
+    }
+
+    #[test]
+    fn a_screen_survives_being_written_down_and_read_back() {
+        // Ce qui est écrit ici est relu après une session, parfois après
+        // un redémarrage : une seule écriture, une seule lecture.
+        let said = seat().to_string();
+        assert_eq!(said.parse::<Seat>().unwrap(), seat(), "{said}");
+    }
+
+    #[test]
+    fn a_screen_that_was_off_carries_that_and_nothing_else() {
+        // C'est le cas qui a fâché Victor : sa télé est éteinte presque
+        // toujours, et une session la rallumait. Éteint est un état qu'on
+        // relève et qu'on remet, pas une absence.
+        let off = Seat {
+            on: false,
+            wide: 0,
+            high: 0,
+            refresh: 0,
+            at: (0, 0),
+            main: false,
+            screen: String::new(),
+            ..seat()
+        };
+        let said = off.to_string();
+        assert!(said.contains("on=no"), "{said}");
+        assert!(said.contains("screen=none"), "{said}");
+        assert_eq!(said.parse::<Seat>().unwrap(), off);
+    }
+
+    #[test]
+    fn the_place_of_a_screen_is_kept_including_to_the_left() {
+        // « Mon écran 1 est à droite et l'écran 2 à gauche » : la place
+        // du second est négative, et un relevé qui la perd rend un bureau
+        // en miroir de celui qu'on avait.
+        let said = seat().to_string();
+        assert!(said.contains("at=-3840,0"), "{said}");
+        assert_eq!(said.parse::<Seat>().unwrap().at, (-3840, 0));
+    }
+
+    #[test]
+    fn a_whole_desk_survives_it_too() {
+        let desk = vec![
+            seat(),
+            Seat {
+                adapter: r"\\.\DISPLAY2".to_string(),
+                at: (0, 0),
+                main: true,
+                ..seat()
+            },
+            Seat {
+                adapter: r"\\.\DISPLAY3".to_string(),
+                on: false,
+                screen: String::new(),
+                ..seat()
+            },
+        ];
+        assert_eq!(read(&written(&desk)), desk);
+    }
+
+    #[test]
+    fn a_line_that_will_not_read_costs_only_that_line() {
+        // Trois écrans remis sur quatre valent mieux qu'aucun, et un
+        // fichier à moitié écrit par une machine qui s'est éteinte est
+        // exactement ce à quoi il faut survivre.
+        let text = format!("{}\n\nn'importe quoi\n", seat());
+        assert_eq!(read(&text), vec![seat()]);
+    }
+}

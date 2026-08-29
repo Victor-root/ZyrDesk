@@ -1,4 +1,4 @@
-//! How large Windows draws everything on the virtual screen.
+//! How large Windows draws everything on a screen.
 //!
 //! A remote desktop that carries the size of a screen but not how large
 //! that screen draws is only half a remote desktop. A laptop at
@@ -6,6 +6,11 @@
 //! same desk as the same panel at life size: the text is half as tall,
 //! and the person who asked to see their own screen sees somebody else's
 //! idea of it.
+//!
+//! Read as well as written, because it is half of what a screen is: an
+//! arrangement noted before a session and put back after it carries this
+//! number beside the size, or the desk comes back with everything on it
+//! the wrong size.
 //!
 //! Windows keeps that number per screen and offers no documented way to
 //! set it. What it does have is a private message on the same call that
@@ -27,8 +32,6 @@
 //! from there, this finds nothing to set. The service therefore sends
 //! this errand into the session on screen, the same way it sends the one
 //! that puts the lock screen up.
-
-use crate::driver::Driver;
 
 /// The magnifications Windows offers, in the order it offers them.
 ///
@@ -93,33 +96,43 @@ struct Luid {
     high: i32,
 }
 
-/// Sets how large the virtual screen draws, and says what happened.
+/// How large that screen draws, in per cent, or nothing when Windows
+/// will not say.
 ///
-/// Nought asks for the magnification Windows recommends for that screen,
-/// which is what a session that could not measure the screen it is
-/// watched on wants: this screen belongs to the sessions and to nobody
-/// else, so it is settled at every waking rather than left wherever the
-/// session before happened to put it.
+/// Read by the arrangement that is noted before a session, so the desk
+/// comes back with everything on it the size it was.
+pub fn of(screen: &str) -> Option<u32> {
+    let (adapter, id) = the_screen_called(screen)?;
+    let now = read(adapter, id)?;
+    let recommended = usize::try_from(-now.lowest).unwrap_or(0);
+    Some(at(recommended, now.current)).filter(|percent| *percent != 0)
+}
+
+/// Sets how large that screen draws, and says what happened.
+///
+/// Nought asks for the magnification Windows recommends for it, which is
+/// what a session that could not measure the screen it is watched on
+/// wants: a magnification taken off a panel nobody is looking at is
+/// worse than the one this computer would have chosen itself.
 ///
 /// Never fails anything: the answer is a sentence for the journal, and a
 /// screen at the wrong magnification is a screen.
-pub fn magnify(driver: &dyn Driver, percent: u32) -> String {
+pub fn magnify(screen: &str, percent: u32) -> String {
     if percent != 0 && !OFFERED.contains(&percent) {
         return format!(
-            "{percent} % is not a magnification Windows offers, the virtual screen keeps its own"
+            "{percent} % is not a magnification Windows offers, {screen} keeps its own"
         );
     }
-    let Some((adapter, id)) = the_virtual_screen(driver) else {
-        return "the virtual screen is not among the screens this session shows, so how large it \
-                draws was left alone"
-            .to_string();
+    let Some((adapter, id)) = the_screen_called(screen) else {
+        return format!(
+            "{screen} is not among the screens this session shows, so how large it draws was left \
+             alone"
+        );
     };
     let now = match read(adapter, id) {
         Some(now) => now,
         None => {
-            return "Windows would not say how large the virtual screen draws, so it was left \
-                    alone"
-                .to_string();
+            return format!("Windows would not say how large {screen} draws, so it was left alone");
         }
     };
     // The recommended magnification sits at `-lowest` in the list, so a
@@ -136,18 +149,18 @@ pub fn magnify(driver: &dyn Driver, percent: u32) -> String {
     let wanted = at(recommended, step);
     if step < now.lowest || step > now.highest {
         return format!(
-            "the virtual screen will not draw at {wanted} %: Windows offers it from {} % to {} %",
+            "{screen} will not draw at {wanted} %: Windows offers it from {} % to {} %",
             at(recommended, now.lowest),
             at(recommended, now.highest)
         );
     }
     if step == now.current {
-        return format!("the virtual screen already draws at {wanted} %");
+        return format!("{screen} already draws at {wanted} %");
     }
     if set(adapter, id, step) {
-        format!("the virtual screen draws at {wanted} %")
+        format!("{screen} draws at {wanted} %")
     } else {
-        format!("Windows refused to make the virtual screen draw at {wanted} %")
+        format!("Windows refused to make {screen} draw at {wanted} %")
     }
 }
 
@@ -160,16 +173,17 @@ fn at(recommended: usize, step: i32) -> u32 {
         .unwrap_or(0)
 }
 
-/// Which screen of this session is ours, named the way the display
-/// configuration names screens.
+/// Which of this session's screens Windows takes orders about under that
+/// name, `\\.\DISPLAY1` and its like.
 ///
-/// By what the screen calls itself rather than by where it sits: a
-/// desktop's screens change places, and the driver publishes a name that
-/// nothing else on the machine publishes.
-fn the_virtual_screen(driver: &dyn Driver) -> Option<(Luid, u32)> {
+/// The two halves of Windows name screens differently, and this is the
+/// join between them: the call that arranges screens takes the name in
+/// the list, while the one that carries the magnification takes a pair of
+/// numbers. Only the newer call can be asked to say both, so it is asked.
+fn the_screen_called(screen: &str) -> Option<(Luid, u32)> {
     use windows_sys::Win32::Devices::Display::{
-        DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME, DISPLAYCONFIG_MODE_INFO,
-        DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_TARGET_DEVICE_NAME, DisplayConfigGetDeviceInfo,
+        DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_MODE_INFO,
+        DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo,
         GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
     };
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
@@ -202,23 +216,22 @@ fn the_virtual_screen(driver: &dyn Driver) -> Option<(Luid, u32)> {
         return None;
     }
     for path in found.iter().take(paths as usize) {
-        let mut about: DISPLAYCONFIG_TARGET_DEVICE_NAME = unsafe { std::mem::zeroed() };
-        about.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
-        about.header.size = size_of::<DISPLAYCONFIG_TARGET_DEVICE_NAME>() as u32;
-        about.header.adapterId = path.targetInfo.adapterId;
-        about.header.id = path.targetInfo.id;
+        let mut about: DISPLAYCONFIG_SOURCE_DEVICE_NAME = unsafe { std::mem::zeroed() };
+        about.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        about.header.size = size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32;
+        about.header.adapterId = path.sourceInfo.adapterId;
+        about.header.id = path.sourceInfo.id;
         // SAFETY: the block is ours, opens on the header the call reads,
         // and carries its own size as that header requires.
         if unsafe { DisplayConfigGetDeviceInfo((&raw mut about).cast()) } != ERROR_SUCCESS as i32 {
             continue;
         }
         let end = about
-            .monitorFriendlyDeviceName
+            .viewGdiDeviceName
             .iter()
             .position(|letter| *letter == 0)
             .unwrap_or(0);
-        let called = String::from_utf16_lossy(&about.monitorFriendlyDeviceName[..end]);
-        if driver.is_its_screen(&called) {
+        if String::from_utf16_lossy(&about.viewGdiDeviceName[..end]) == screen {
             return Some((
                 Luid {
                     low: path.sourceInfo.adapterId.LowPart,
