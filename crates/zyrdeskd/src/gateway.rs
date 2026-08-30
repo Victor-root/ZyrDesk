@@ -411,6 +411,27 @@ impl Answers for Attending {
             .write("a computer asked this one for its journal, and it was handed over");
         Ok(self.machine.journal(self.fingerprint, &self.log))
     }
+
+    /// Empties this computer's journal, because a far one asked.
+    ///
+    /// The line saying so is written after the emptying and not before,
+    /// so the page opens on the moment it was cleared rather than on
+    /// nothing at all. It is the same order the window uses on its own
+    /// machine, and for the same reason.
+    fn empty_the_journal(&self) -> Result<(), String> {
+        let refused = zyr_proto::journal::emptied();
+        self.log
+            .write("a computer asked this one to empty its journal");
+        if refused.is_empty() {
+            return Ok(());
+        }
+        let reason = format!(
+            "une partie du journal n'a pas pu être vidée : {}",
+            refused.join(" ; ")
+        );
+        self.log.write(&reason);
+        Err(reason)
+    }
 }
 
 impl Attending {

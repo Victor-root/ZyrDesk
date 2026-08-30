@@ -80,6 +80,7 @@ fn main() {
             journal::journal,
             journal::far_journal,
             journal::clear_journal,
+            journal::clear_far_journal,
             mesures::session_measures,
             session::connect,
             session::sessions,

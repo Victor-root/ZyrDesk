@@ -851,9 +851,9 @@ async function montreLeJournal() {
   vue.journalMot.textContent = distant
     ? "Ce que l'ordinateur distant a écrit chez lui, lu d'ici, à copier tel quel en cas de problème."
     : "Tout ce que le produit a écrit, à copier tel quel en cas de problème.";
-  // Vider et ouvrir le dossier n'ont de sens que chez soi : ces
-  // fichiers-là sont sur l'autre machine.
-  montre(vue.viderJournal, !distant);
+  // Ouvrir le dossier n'a de sens que chez soi : celui d'en face est sur
+  // l'autre machine. Vider, si : on vide les deux journaux, on refait ce
+  // qui ne marche pas, et on lit les deux.
   montre(vue.ouvrirJournaux, !distant);
 
   vue.journal.showModal();
@@ -919,8 +919,21 @@ async function viderJournal() {
   }
   reposeLeVidage();
 
+  // Vidé là où il est écrit : celui de cette machine tout de suite,
+  // celui d'en face en le lui demandant. Le second passe par le tunnel
+  // et prend le temps qu'il faut, donc il se dit.
+  const demande = journalDe;
+  vue.journalTexte.textContent =
+    demande === null ? "Vidage…" : `Vidage du journal de ${demande.name}…`;
   try {
-    await invoke("clear_journal");
+    if (demande === null) {
+      await invoke("clear_journal");
+    } else {
+      await invoke("clear_far_journal", {
+        host: demande.address,
+        fingerprint: demande.fingerprint,
+      });
+    }
   } catch (raison) {
     // Montré dans le journal lui-même : c'est là que regarde la personne
     // qui vient de cliquer, et il est sur le point d'être relu.

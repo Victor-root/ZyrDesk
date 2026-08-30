@@ -74,9 +74,11 @@ fn gathered_here(reason: &str) -> String {
 ///
 /// Asked for before a test, so that what comes out afterwards is that
 /// test and nothing else: a journal carrying three weeks of unrelated
-/// lines is a journal nobody reads to the end. Only this computer's, and
-/// that is deliberate: emptying a machine somebody else is looking at
-/// would throw away the very lines they are reading.
+/// lines is a journal nobody reads to the end.
+///
+/// Done here rather than through the service, which the far one has to
+/// go through: this one has to work when the service does not answer,
+/// and that is when a fresh page is wanted most.
 #[tauri::command]
 pub fn clear_journal() -> Result<(), String> {
     let refused = zyr_proto::journal::emptied();
@@ -92,6 +94,31 @@ pub fn clear_journal() -> Result<(), String> {
         "une partie du journal n'a pas pu être vidée :\n  {}",
         refused.join("\n  ")
     ))
+}
+
+/// Empties another computer's journal.
+///
+/// The other half of reading one, and the reason both halves are here:
+/// a fault is found by emptying both journals, doing the thing that goes
+/// wrong, and reading both. Emptying only the one within arm's reach
+/// leaves the walk to the other machine exactly where it was.
+#[tauri::command]
+pub async fn clear_far_journal(host: String, fingerprint: String) -> Result<(), String> {
+    let peer = fingerprint
+        .trim()
+        .parse()
+        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+    match service::ask(&Request::ClearFarJournal { host, peer }).await {
+        Ok(Answer::Done) => {
+            note(&format!("journal de {peer} vidé"));
+            Ok(())
+        }
+        Ok(other) => Err(service::unexpected(other)),
+        Err(reason) => {
+            note(&format!("journal de {peer} non vidé : {reason}"));
+            Err(reason)
+        }
+    }
 }
 
 /// Where the window writes its own trace.

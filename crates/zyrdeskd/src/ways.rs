@@ -20,6 +20,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -325,24 +326,22 @@ impl Ways {
         }
     }
 
-    /// Fetches another computer's journal, without opening a way to it.
+    /// Opens a connection to a computer for one question, and no more.
     ///
     /// A way is a session's worth of machinery: a local address that
     /// stands in for the far engine, seven ports opened onto it, and a
     /// register entry that outlives the window which asked. None of that
-    /// is wanted here. Reading a journal is one question and one answer,
-    /// so the connection is opened, asked, and dropped, and the far
-    /// computer is left exactly as it was found.
+    /// is wanted for a single question, so the connection is opened,
+    /// asked, and dropped, and the far computer is left as it was found.
     ///
-    /// Asked of a computer nobody is watching, most of the time, which is
-    /// exactly when it is wanted: what is being looked for is usually the
-    /// reason nobody can watch it.
-    pub async fn ask_a_computer_for_its_journal(
+    /// The endpoint comes back with the connection because it has to
+    /// outlive it: dropped on its own, it takes the socket underneath.
+    async fn a_word_with(
         &self,
         host: &str,
         peer: Fingerprint,
         also: &[IpAddr],
-    ) -> Result<String, String> {
+    ) -> Result<(TunnelEndpoint, Connection), String> {
         let asked = resolve(host)?;
         let candidates = every_way_there(asked, also);
         let identity =
@@ -358,17 +357,51 @@ impl Ways {
         let (connection, _, through) = race(&endpoint, &candidates)
             .await
             .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
-        let text = aside::ask_for_the_journal(&connection).await.map_err(|e| {
-            format!(
-                "{host} n'a pas donné son journal : {e}\n  \
-                 Vérifiez que l'accès distant y est actif et que cet ordinateur y est autorisé."
-            )
-        })?;
+        self.log
+            .write(&format!("a word with {through}, for one question"));
+        Ok((endpoint, connection))
+    }
+
+    /// Fetches another computer's journal.
+    ///
+    /// Asked of a computer nobody is watching, most of the time, which is
+    /// exactly when it is wanted: what is being looked for is usually the
+    /// reason nobody can watch it.
+    pub async fn ask_a_computer_for_its_journal(
+        &self,
+        host: &str,
+        peer: Fingerprint,
+        also: &[IpAddr],
+    ) -> Result<String, String> {
+        let (_endpoint, connection) = self.a_word_with(host, peer, also).await?;
+        let text = aside::ask_for_the_journal(&connection)
+            .await
+            .map_err(|e| refused_by(host, "n'a pas donné son journal", &e))?;
         self.log.write(&format!(
-            "{through} handed its journal over, {} characters",
+            "{host} handed its journal over, {} characters",
             text.len()
         ));
         Ok(text)
+    }
+
+    /// Asks another computer to empty its journal.
+    ///
+    /// The other half of reading one: a fault is found by emptying both
+    /// journals, doing the thing that goes wrong, and reading both, and
+    /// emptying only one of the two leaves the walk to the other machine
+    /// exactly where it was.
+    pub async fn ask_a_computer_to_empty_its_journal(
+        &self,
+        host: &str,
+        peer: Fingerprint,
+        also: &[IpAddr],
+    ) -> Result<(), String> {
+        let (_endpoint, connection) = self.a_word_with(host, peer, also).await?;
+        aside::ask_to_empty_the_journal(&connection)
+            .await
+            .map_err(|e| refused_by(host, "n'a pas vidé son journal", &e))?;
+        self.log.write(&format!("{host} emptied its journal"));
+        Ok(())
     }
 
     /// Everything between the address being taken and the way being
@@ -725,6 +758,18 @@ impl Ways {
             }
         }
     }
+}
+
+/// A refusal from a computer that answered, written to be read.
+///
+/// The hint matters more than the reason on this one: a computer that
+/// answers the door and then says no is almost always one that has not
+/// been told to let this machine in.
+fn refused_by(host: &str, what: &str, reason: &impl fmt::Display) -> String {
+    format!(
+        "{host} {what} : {reason}\n  \
+         Vérifiez que l'accès distant y est actif et que cet ordinateur y est autorisé."
+    )
 }
 
 /// Opens towards every address at once and keeps whichever answers

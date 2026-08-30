@@ -182,6 +182,23 @@ fn kept(written: std::io::Result<()>) -> Result<(), Answer> {
     })
 }
 
+/// Every address that computer has answered on.
+///
+/// A machine with two cards answers on both, and only trying tells which
+/// one is the cable and which is a detour through a virtual adapter. So
+/// whatever is being reached for is reached through all of them at once
+/// and the fastest to answer wins.
+fn every_address_of(peer: Fingerprint, answering: &Answering) -> Vec<std::net::IpAddr> {
+    answering
+        .machine
+        .neighbours
+        .peers()
+        .into_iter()
+        .find(|seen| seen.fingerprint == peer)
+        .map(|seen| seen.addresses)
+        .unwrap_or_default()
+}
+
 async fn one(request: Request, answering: &Answering) -> Answer {
     match request {
         Request::Standing => {
@@ -200,17 +217,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             })
         }
         Request::Reach { host, peer, media } => {
-            // Every address that computer has answered on, so the way is
-            // opened through the one that is actually fast rather than
-            // the one that happened to be written down.
-            let also: Vec<std::net::IpAddr> = answering
-                .machine
-                .neighbours
-                .peers()
-                .into_iter()
-                .find(|seen| seen.fingerprint == peer)
-                .map(|seen| seen.addresses)
-                .unwrap_or_default();
+            let also = every_address_of(peer, answering);
             match answering.machine.ways.open(&host, peer, media, &also).await {
                 Ok(reached) => Answer::Reached(reached),
                 Err(reason) => Answer::Refused(reason),
@@ -400,17 +407,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 .journal(answering.fingerprint, &answering.log),
         ),
         Request::FarJournal { host, peer } => {
-            // Every address that computer has answered on, exactly as a
-            // session is opened: a machine with two cards answers on
-            // both, and only trying tells which one leads anywhere.
-            let also: Vec<std::net::IpAddr> = answering
-                .machine
-                .neighbours
-                .peers()
-                .into_iter()
-                .find(|seen| seen.fingerprint == peer)
-                .map(|seen| seen.addresses)
-                .unwrap_or_default();
+            let also = every_address_of(peer, answering);
             match answering
                 .machine
                 .ways
@@ -418,6 +415,18 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 .await
             {
                 Ok(text) => Answer::Journal(text),
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
+        Request::ClearFarJournal { host, peer } => {
+            let also = every_address_of(peer, answering);
+            match answering
+                .machine
+                .ways
+                .ask_a_computer_to_empty_its_journal(&host, peer, &also)
+                .await
+            {
+                Ok(()) => Answer::Done,
                 Err(reason) => Answer::Refused(reason),
             }
         }

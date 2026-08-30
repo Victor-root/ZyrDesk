@@ -57,6 +57,9 @@ struct FakeEngine {
     /// The screen its virtual one was last asked to be, `None` standing
     /// for the ask to put it back to sleep.
     screen: Arc<std::sync::Mutex<Option<WantedScreen>>>,
+    /// Whether its journal was emptied. Written down rather than done:
+    /// nothing here has four files to cut.
+    emptied: Arc<AtomicBool>,
 }
 
 impl Answers for FakeEngine {
@@ -108,7 +111,15 @@ impl Answers for FakeEngine {
     }
 
     fn journal(&self) -> Result<String, String> {
+        if self.emptied.load(Ordering::Relaxed) {
+            return Ok(String::new());
+        }
         Ok(host_journal())
+    }
+
+    fn empty_the_journal(&self) -> Result<(), String> {
+        self.emptied.store(true, Ordering::Relaxed);
+        Ok(())
     }
 }
 
@@ -158,6 +169,8 @@ struct Bench {
     steady: Arc<AtomicBool>,
     /// The screen its virtual one was last asked to be.
     screen: Arc<std::sync::Mutex<Option<WantedScreen>>>,
+    /// Whether its journal was emptied.
+    emptied: Arc<AtomicBool>,
 }
 
 impl Bench {
@@ -198,6 +211,7 @@ impl Bench {
         let steady = Arc::new(AtomicBool::new(false));
         let screen: Arc<std::sync::Mutex<Option<WantedScreen>>> =
             Arc::new(std::sync::Mutex::new(None));
+        let emptied = Arc::new(AtomicBool::new(false));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -209,6 +223,7 @@ impl Bench {
                 locked: locked.clone(),
                 steady: steady.clone(),
                 screen: screen.clone(),
+                emptied: emptied.clone(),
             }),
         )
         .await
@@ -236,6 +251,7 @@ impl Bench {
             locked,
             steady,
             screen,
+            emptied,
         }
     }
 
@@ -606,4 +622,18 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
     // Et elle pèse bien plus qu'une question : c'est tout l'intérêt de
     // deux plafonds séparés sur ce canal.
     assert!(page.len() > 20_000, "{} octets", page.len());
+
+    // L'autre moitié, et elle vient du même besoin : on vide les deux
+    // journaux, on refait ce qui ne marche pas, on lit les deux. Vider
+    // seulement celui qu'on a sous la main laisse la marche jusqu'à
+    // l'autre machine exactement là où elle était.
+    before_the_end(aside::ask_to_empty_the_journal(&bench.connection))
+        .await
+        .unwrap();
+    assert!(bench.emptied.load(Ordering::Relaxed));
+
+    let page = before_the_end(aside::ask_for_the_journal(&bench.connection))
+        .await
+        .unwrap();
+    assert!(page.is_empty(), "{page}");
 }

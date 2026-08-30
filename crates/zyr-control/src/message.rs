@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 22;
+pub const PROTOCOL: u32 = 23;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -225,6 +225,13 @@ pub enum Request {
     /// spare. It travels on the product's own channel, between the two
     /// halves of ZyrDesk, and no engine is any the wiser.
     FarJournal { host: String, peer: Fingerprint },
+    /// Empties another computer's journal.
+    ///
+    /// The other half of reading it. A fault is found by emptying both
+    /// journals, doing the thing that goes wrong, and reading both;
+    /// being able to empty only one of the two leaves the walk to the
+    /// other machine exactly where it was.
+    ClearFarJournal { host: String, peer: Fingerprint },
     /// What a session opened from this computer is set to.
     Settings,
     /// Changes it, for this session and all the ones after.
@@ -310,6 +317,10 @@ impl Request {
                 host: unpacked(fields.text("host")?),
                 peer: fields.parsed("peer")?,
             }),
+            "clear-far-journal" => Ok(Request::ClearFarJournal {
+                host: unpacked(fields.text("host")?),
+                peer: fields.parsed("peer")?,
+            }),
             "settings" => Ok(Request::Settings),
             "choose" => Ok(Request::Choose {
                 preferred: fields.preferred(),
@@ -369,6 +380,9 @@ impl fmt::Display for Request {
             Request::Journal => f.write_str("journal"),
             Request::FarJournal { host, peer } => {
                 write!(f, "far-journal host={} peer={peer}", packed(host))
+            }
+            Request::ClearFarJournal { host, peer } => {
+                write!(f, "clear-far-journal host={} peer={peer}", packed(host))
             }
             Request::Settings => f.write_str("settings"),
             Request::Choose { preferred } => write!(f, "choose {}", spelled(preferred)),
@@ -912,6 +926,10 @@ mod tests {
             // Une adresse écrite à la main peut porter une espace, ici
             // comme partout ailleurs.
             Request::FarJournal {
+                host: "pc de victor.local".to_string(),
+                peer: fingerprint(),
+            },
+            Request::ClearFarJournal {
                 host: "pc de victor.local".to_string(),
                 peer: fingerprint(),
             },

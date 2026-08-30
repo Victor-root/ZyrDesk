@@ -40,8 +40,9 @@ use crate::pump;
 /// to be asked for. Version 8 added how large that screen draws, without
 /// which it is the right size and nobody's desk. Version 9 added the far
 /// computer's journal, which is the first thing here worth a page rather
-/// than a line.
-pub const VERSION: u32 = 9;
+/// than a line, and version 10 the emptying of it, without which reading
+/// it means reading three weeks of unrelated lines.
+pub const VERSION: u32 = 10;
 
 /// Longest question this channel takes.
 ///
@@ -170,6 +171,20 @@ pub trait Answers: Send + Sync + 'static {
     /// which is to take the screen, the keyboard and the mouse of this
     /// machine. A page of what it has written down is less than that.
     fn journal(&self) -> Result<String, String>;
+
+    /// Empties this computer's journal.
+    ///
+    /// The other half of reading one, and useless without it. A fault is
+    /// found by emptying both journals, doing the thing that goes wrong,
+    /// and reading both: a page carrying three weeks of unrelated lines
+    /// is a page nobody reads to the end. Doing that from one side only
+    /// leaves the walk to the other machine exactly where it was.
+    ///
+    /// What it costs if somebody asks for it carelessly is what this
+    /// computer had written down, which is why the person who asks is
+    /// made to ask twice at the other end. It is still far less than
+    /// what the same computer may already do here.
+    fn empty_the_journal(&self) -> Result<(), String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -193,6 +208,8 @@ pub enum Question {
     Screen { wanted: Option<WantedScreen> },
     /// Hand over your journal, so it can be read from here.
     Journal,
+    /// Empty your journal, so what comes after is only what comes after.
+    EmptyTheJournal,
 }
 
 /// What comes back.
@@ -219,6 +236,8 @@ pub enum Told {
     Journal {
         text: String,
     },
+    /// The far computer's journal is empty.
+    Emptied,
 }
 
 impl fmt::Display for Question {
@@ -238,6 +257,7 @@ impl fmt::Display for Question {
                 None => write!(f, "{VERSION} screen none"),
             },
             Question::Journal => write!(f, "{VERSION} journal"),
+            Question::EmptyTheJournal => write!(f, "{VERSION} empty-journal"),
             Question::Hush { quiet } => {
                 write!(
                     f,
@@ -266,6 +286,7 @@ impl fmt::Display for Told {
             // closing the stream, so nothing here has to be folded onto
             // one line the way the control channel folds a refusal.
             Told::Journal { text } => write!(f, "{VERSION} journal {text}"),
+            Told::Emptied => write!(f, "{VERSION} emptied"),
         }
     }
 }
@@ -290,6 +311,7 @@ impl Question {
                 }),
             },
             "journal" => Ok(Question::Journal),
+            "empty-journal" => Ok(Question::EmptyTheJournal),
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
                 "play" => Ok(Question::Hush { quiet: false }),
@@ -340,6 +362,7 @@ impl Told {
             "journal" => Ok(Ok(Told::Journal {
                 text: rest.to_string(),
             })),
+            "emptied" => Ok(Ok(Told::Emptied)),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -517,6 +540,19 @@ pub async fn ask_for_the_journal(connection: &Connection) -> io::Result<String> 
     }
 }
 
+/// Asks the far ZyrDesk to empty its journal.
+///
+/// The other half of reading one. A fault is found by emptying both
+/// journals, doing the thing that goes wrong, and reading both; being
+/// able to empty only one of the two leaves the walk to the other
+/// machine exactly where it was.
+pub async fn ask_to_empty_the_journal(connection: &Connection) -> io::Result<()> {
+    match ask(connection, &Question::EmptyTheJournal).await? {
+        Told::Emptied => Ok(()),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -600,6 +636,13 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             .await
             .map_err(|e| format!("le journal n'a pas pu être rassemblé : {e}"))?
             .map(|text| Told::Journal { text }),
+        // Off it too: emptying is four files opened and cut on a disk.
+        Question::EmptyTheJournal => {
+            tokio::task::spawn_blocking(move || answering.empty_the_journal())
+                .await
+                .map_err(|e| format!("le journal n'a pas pu être vidé : {e}"))?
+                .map(|()| Told::Emptied)
+        }
     }
 }
 
@@ -659,6 +702,7 @@ mod tests {
             },
             Question::Screen { wanted: None },
             Question::Journal,
+            Question::EmptyTheJournal,
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -686,6 +730,7 @@ mod tests {
                        ligne\nune autre"
                     .to_string(),
             },
+            Told::Emptied,
         ] {
             let said = told.to_string();
             assert_eq!(Told::parse(&said).unwrap(), Ok(told), "sur « {said} »");
