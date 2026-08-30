@@ -1364,6 +1364,22 @@ Les écrans physiques sont donc éteints le temps de la session. Ce n'est pas ce
 
 **Les garde-fous, parce que c'est la seule partie qui compte vraiment.** Le bureau ne déménage et rien ne s'éteint que si le relevé d'avant session existe : sans papier disant comment revenir, on ne touche à rien. Tout est écrit d'un coup et appliqué d'un coup, jamais moitié par moitié : la moitié d'un tel arrangement serait un ordinateur avec deux écrans l'un sur l'autre, ou pire, aucun. À la fin d'une session, **le bureau est remis d'abord et l'écran virtuel endormi ensuite**, dans cet ordre : l'inverse laisserait Windows décider où poser le bureau et l'arrangement remis un instant plus tard se battrait contre sa décision. Et un écran resté allumé par une exécution qui n'a pas fini est endormi au démarrage suivant du service, comme il l'était déjà.
 
+## D96. Le journal d'un ordinateur se lit d'où l'on est (2026-08-30, pendant M4)
+
+**Le besoin, dit par Victor.** « Pour faire l'aller-retour c'est hyper relou. » Une panne de session se diagnostique sur les deux journaux à la fois, celui de la machine qui regarde et celui de la machine regardée, et jusqu'ici le second se copiait en marchant jusqu'à elle. C'est exactement l'aller-retour qu'un bureau à distance existe pour supprimer, et c'était le dernier qui restait.
+
+**Décision : un seul auteur du journal, deux lecteurs.** C'est le **service** qui rassemble la page, pas la fenêtre. La moitié de ce qu'un journal dit n'est connue que de lui : l'empreinte de la machine, ce qui empêche l'accès distant, la confiance au réseau local, les ordinateurs vus, les sessions ouvertes. Une fenêtre qui lirait les quatre fichiers toute seule aurait une page amputée précisément des lignes que personne ne peut recalculer.
+
+Ce qui compte n'est pas l'économie de code, c'est que **la page lue de loin soit la même que la page lue sur place**. Deux versions de la même page, écrites à deux endroits, se seraient mises à diverger au premier ajout, et deux journaux qu'on ne peut plus comparer ligne à ligne ne servent à rien.
+
+**Et quand le service se tait, la fenêtre rassemble ce qu'elle peut.** C'est justement le moment où l'on ouvre un journal. Elle écrit alors les quatre fichiers et le silence du service à la place des lignes manquantes, plutôt que de laisser un blanc ou de refuser la page.
+
+**Qui a le droit de lire.** Ceux que cet ordinateur laisse déjà entrer, et personne d'autre. La question mérite d'être posée franchement, parce que c'est une permission accordée sans que la personne assise devant la machine soit consultée. La réponse est qu'elle est **plus petite que celle qu'ils ont déjà** : ces ordinateurs-là peuvent prendre l'écran, le clavier et la souris de cette machine. Une page de ce qu'elle a écrit est moins que cela. La lecture laisse en outre une ligne dans le journal de la machine lue, comme tout ce qu'un ordinateur distant demande ici.
+
+**Ce qui ne se fait pas de loin : vider.** Effacer le journal d'une machine que quelqu'un d'autre est en train de lire jetterait exactement les lignes qu'il regarde. Vider et ouvrir le dossier restent chez soi ; de loin, on lit et on copie.
+
+**Deux plafonds au lieu d'un, sur les deux canaux.** C'est le premier message du produit qui pèse une page et non une ligne, et les deux canaux avaient jusqu'ici une seule limite pour les deux sens. Un plafond protège **celui qui écoute de celui qui parle**, et les deux côtés ne sont pas exposés à la même chose : le service écoute n'importe quel programme que la personne peut lancer, un programme n'écoute que le service qu'il a appelé ; cet ordinateur prend des questions de tous ceux qu'il laisse entrer, et des réponses seulement de la machine où il est allé. Les questions gardent donc leur limite ancienne, et seules les réponses ont le droit de peser une page.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

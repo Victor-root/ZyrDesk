@@ -7,6 +7,7 @@
 mod control;
 mod gateway;
 mod known;
+mod machine;
 mod preferences;
 mod restart;
 mod screen;

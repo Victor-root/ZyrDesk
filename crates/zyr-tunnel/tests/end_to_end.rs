@@ -106,11 +106,32 @@ impl Answers for FakeEngine {
             .map(|screen| (screen.wide, screen.high))
             .or(Some(HOST_SCREEN)))
     }
+
+    fn journal(&self) -> Result<String, String> {
+        Ok(host_journal())
+    }
 }
 
 /// Ce que la machine d'en face répond quand la session lui demande de
 /// garder son écran tel quel.
 const HOST_SCREEN: (u32, u32) = (1366, 768);
+
+/// Un journal de la taille de ceux que le produit écrit vraiment.
+///
+/// Bien au-delà de ce que ce canal acceptait avant lui : c'est le premier
+/// message qui pèse une page et non une ligne, et c'est ce que ce test
+/// existe pour vérifier.
+fn host_journal() -> String {
+    let mut page = String::from("ZyrDesk 0.1.0\nOrdinateur       : PC du SAV");
+    page.push_str("\n\n--- Le service (service.log) ---");
+    for line in 0..480 {
+        page.push_str(&format!(
+            "\n2026-08-30T12:00:{:02}Z  ligne {line} du journal de la machine d'en face",
+            line % 60
+        ));
+    }
+    page
+}
 
 /// The tunnel brought up on both sides, kept alive for the test.
 ///
@@ -568,4 +589,21 @@ async fn l_ecran_virtuel_se_demande_a_l_ouverture_et_se_rend_a_la_fin() {
         .unwrap();
     assert_eq!(*bench.screen.lock().unwrap(), None);
     assert_eq!(showing, Some(HOST_SCREEN));
+}
+
+#[tokio::test]
+async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
+    // Lire le journal de l'ordinateur distant sans marcher jusqu'à lui,
+    // c'est la panne diagnostiquée sur les deux journaux à la fois. Ce
+    // qui arrive doit donc être la page entière, lignes comprises : une
+    // page tronquée en silence se lit comme une page complète.
+    let bench = Bench::bring_up(42780, 16).await;
+
+    let page = before_the_end(aside::ask_for_the_journal(&bench.connection))
+        .await
+        .unwrap();
+    assert_eq!(page, host_journal());
+    // Et elle pèse bien plus qu'une question : c'est tout l'intérêt de
+    // deux plafonds séparés sur ce canal.
+    assert!(page.len() > 20_000, "{} octets", page.len());
 }

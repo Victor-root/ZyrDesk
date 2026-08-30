@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 21;
+pub const PROTOCOL: u32 = 22;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -210,6 +210,21 @@ pub enum Request {
     /// Windows asks for administrator rights every single time, so the
     /// service stops itself instead, on a channel it already answers.
     Stop,
+    /// This computer's journal, gathered.
+    ///
+    /// Asked of the service rather than read off the disk, because half
+    /// of what a journal says is what the service holds: this computer's
+    /// fingerprint, what stands in the way of it being reachable, who it
+    /// sees on the network. A window reading the files by itself would
+    /// have a page missing exactly the lines nobody can work out alone.
+    Journal,
+    /// Another computer's journal, fetched from it.
+    ///
+    /// The whole point of it: reading the far machine's journal spares
+    /// walking to it, which is the errand a remote desktop exists to
+    /// spare. It travels on the product's own channel, between the two
+    /// halves of ZyrDesk, and no engine is any the wiser.
+    FarJournal { host: String, peer: Fingerprint },
     /// What a session opened from this computer is set to.
     Settings,
     /// Changes it, for this session and all the ones after.
@@ -290,6 +305,11 @@ impl Request {
                 on: fields.text("on")? == "yes",
             }),
             "stop" => Ok(Request::Stop),
+            "journal" => Ok(Request::Journal),
+            "far-journal" => Ok(Request::FarJournal {
+                host: unpacked(fields.text("host")?),
+                peer: fields.parsed("peer")?,
+            }),
             "settings" => Ok(Request::Settings),
             "choose" => Ok(Request::Choose {
                 preferred: fields.preferred(),
@@ -346,6 +366,10 @@ impl fmt::Display for Request {
             Request::Forget { peer } => write!(f, "forget peer={peer}"),
             Request::SetAtBoot { on } => write!(f, "at-boot on={}", said(*on)),
             Request::Stop => f.write_str("stop"),
+            Request::Journal => f.write_str("journal"),
+            Request::FarJournal { host, peer } => {
+                write!(f, "far-journal host={} peer={peer}", packed(host))
+            }
             Request::Settings => f.write_str("settings"),
             Request::Choose { preferred } => write!(f, "choose {}", spelled(preferred)),
         }
@@ -495,6 +519,12 @@ pub enum Answer {
     Showing {
         size: Option<(u32, u32)>,
     },
+    /// One computer's journal, whole.
+    ///
+    /// The only answer that carries a page rather than a handful of
+    /// fields, and it travels folded onto one line like a refusal does:
+    /// a newline would be read as the start of another message.
+    Journal(String),
     /// Done, with nothing to report.
     Done,
     /// Not done, and why. The text is meant for the person, not the
@@ -557,6 +587,7 @@ impl Answer {
                     ),
                 },
             }),
+            "journal" => Ok(Answer::Journal(unfolded(rest.trim()))),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
             other => Err(Malformed(format!("réponse inconnue « {other} »"))),
@@ -615,6 +646,7 @@ impl fmt::Display for Answer {
                 Some((wide, high)) => write!(f, "showing size={wide}x{high}"),
                 None => f.write_str("showing size=none"),
             },
+            Answer::Journal(text) => write!(f, "journal {}", folded(text)),
             Answer::Done => f.write_str("done"),
             // The reason travels on one line: a newline would be read as
             // the start of another message.
@@ -876,6 +908,13 @@ mod tests {
             Request::SetAtBoot { on: true },
             Request::SetAtBoot { on: false },
             Request::Stop,
+            Request::Journal,
+            // Une adresse écrite à la main peut porter une espace, ici
+            // comme partout ailleurs.
+            Request::FarJournal {
+                host: "pc de victor.local".to_string(),
+                peer: fingerprint(),
+            },
             Request::Settings,
             Request::Choose {
                 preferred: preferred(),
@@ -966,6 +1005,15 @@ mod tests {
             }),
             Answer::Settings(preferred()),
             Answer::Settings(Preferred::default()),
+            // Une page entière sur une ligne, avec ce qu'un journal
+            // porte vraiment : des retours à la ligne et des chemins
+            // Windows, dont les barres obliques inverses ne doivent pas
+            // se relire comme des retours à la ligne.
+            Answer::Journal(
+                "ZyrDesk 0.1.0\nJournaux         : C:\\ProgramData\\ZyrDesk\\logs\n\n\
+                 --- Le service (service.log) ---\nune ligne\nune autre"
+                    .to_string(),
+            ),
             Answer::Done,
             Answer::Refused("cet ordinateur a refusé l'accès".to_string()),
         ]

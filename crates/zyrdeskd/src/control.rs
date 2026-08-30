@@ -11,54 +11,18 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::io;
-use std::sync::{Arc, Mutex};
 
 use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_control::pipe::Heard;
-use zyr_control::{Answer, Door, Holdup, PROTOCOL, Request, Standing};
-use zyr_lan::Found;
+use zyr_control::{Answer, Door, PROTOCOL, Request, Standing};
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 use zyr_transport::{Fingerprint, authorized};
 
 use crate::known;
-use crate::preferences::Remembered;
+use crate::machine::Machine;
 use crate::supervisor::StopOrder;
-use crate::ways::Ways;
-
-/// Whether this computer can be reached right now, and what is in the
-/// way when it is not.
-///
-/// The supervisor opens it once the engine answers and the tunnel is
-/// standing, and holds it back whenever something stops that from
-/// happening. It is the one thing the desk cannot work out on its own,
-/// and the reason matters as much as the fact: an engine that is missing
-/// and an engine that is starting look alike from a window, and only one
-/// of the two is worth waiting for.
-#[derive(Clone)]
-pub struct Hosting(Arc<Mutex<Option<Holdup>>>);
-
-impl Hosting {
-    /// Not reachable yet, and nothing wrong with that.
-    pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(Some(Holdup::Starting))))
-    }
-
-    /// The tunnel stands: this computer can be reached.
-    pub fn open(&self) {
-        *self.0.lock().expect("état de l'accès distant") = None;
-    }
-
-    /// It cannot, for this reason.
-    pub fn held_by(&self, holdup: Holdup) {
-        *self.0.lock().expect("état de l'accès distant") = Some(holdup);
-    }
-
-    fn standing(&self) -> Option<Holdup> {
-        *self.0.lock().expect("état de l'accès distant")
-    }
-}
 
 /// The desk, open. Dropping it closes the channel.
 pub struct Desk {
@@ -93,10 +57,7 @@ impl Desk {
 #[derive(Clone)]
 pub struct Answering {
     pub fingerprint: Fingerprint,
-    pub ways: Ways,
-    pub hosting: Hosting,
-    pub remembered: Remembered,
-    pub neighbours: Found,
+    pub machine: Machine,
     /// What ends the service. Held here so that quitting the interface
     /// can take the service with it without asking Windows, which would
     /// mean an administrator prompt at every quit.
@@ -177,9 +138,17 @@ async fn converse(mut talking: Heard, answering: Answering) {
 /// `Done`; everything else is one.
 async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
     match request {
-        Request::Peers => ended(on_screen(answering).into_iter().map(Answer::Peer).collect()),
+        Request::Peers => ended(
+            answering
+                .machine
+                .on_screen(&answering.log)
+                .into_iter()
+                .map(Answer::Peer)
+                .collect(),
+        ),
         Request::Sessions => ended(
             answering
+                .machine
                 .ways
                 .held()
                 .into_iter()
@@ -188,58 +157,6 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
         ),
         other => vec![one(other, answering).await],
     }
-}
-
-/// The computers the home screen shows.
-///
-/// Those announcing themselves on the local network, and then those
-/// written down by hand that are not announcing anything. A computer on
-/// both lists is announced once: what the network says of it is fresher
-/// than what was written down months ago, its address most of all.
-fn on_screen(answering: &Answering) -> Vec<zyr_control::Peer> {
-    let written = match known::read(&paths::known_computers()) {
-        Ok(written) => written,
-        Err(e) => {
-            answering
-                .log
-                .write(&format!("written-down computers unreadable: {e}"));
-            Vec::new()
-        }
-    };
-
-    let mut shown: Vec<zyr_control::Peer> = answering
-        .neighbours
-        .peers()
-        .into_iter()
-        .map(|peer| zyr_control::Peer {
-            written: written
-                .iter()
-                .any(|known| known.fingerprint == peer.fingerprint),
-            name: peer.name,
-            fingerprint: peer.fingerprint,
-            host: peer.address.to_string(),
-            port: peer.port,
-            seen: true,
-        })
-        .collect();
-
-    for computer in written {
-        if shown
-            .iter()
-            .any(|peer| peer.fingerprint == computer.fingerprint)
-        {
-            continue;
-        }
-        shown.push(zyr_control::Peer {
-            name: computer.name,
-            fingerprint: computer.fingerprint,
-            host: computer.host,
-            port: zyr_proto::net::TUNNEL_PORT,
-            seen: false,
-            written: true,
-        });
-    }
-    shown
 }
 
 /// Closes a list with the ending that says it is whole.
@@ -268,18 +185,18 @@ fn kept(written: std::io::Result<()>) -> Result<(), Answer> {
 async fn one(request: Request, answering: &Answering) -> Answer {
     match request {
         Request::Standing => {
-            let held = answering.hosting.standing();
+            let held = answering.machine.hosting.standing();
             Answer::Standing(Standing {
                 protocol: PROTOCOL,
                 build: zyr_proto::BUILD.to_string(),
                 fingerprint: answering.fingerprint,
                 hosting: held.is_none(),
                 holdup: held.unwrap_or_default(),
-                wanted: answering.remembered.remote_access(),
-                trusting: answering.remembered.trust_local_network(),
+                wanted: answering.machine.remembered.remote_access(),
+                trusting: answering.machine.remembered.trust_local_network(),
                 at_boot: at_boot(),
-                serving: answering.remembered.serving(),
-                ways: answering.ways.count(),
+                serving: answering.machine.remembered.serving(),
+                ways: answering.machine.ways.count(),
             })
         }
         Request::Reach { host, peer, media } => {
@@ -287,97 +204,113 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             // opened through the one that is actually fast rather than
             // the one that happened to be written down.
             let also: Vec<std::net::IpAddr> = answering
+                .machine
                 .neighbours
                 .peers()
                 .into_iter()
                 .find(|seen| seen.fingerprint == peer)
                 .map(|seen| seen.addresses)
                 .unwrap_or_default();
-            match answering.ways.open(&host, peer, media, &also).await {
+            match answering.machine.ways.open(&host, peer, media, &also).await {
                 Ok(reached) => Answer::Reached(reached),
                 Err(reason) => Answer::Refused(reason),
             }
         }
-        Request::Pair { way, pin } => match answering.ways.hand_over_the_code(way, &pin).await {
-            Ok(()) => Answer::Done,
-            Err(reason) => Answer::Refused(reason),
-        },
-        Request::SecureAttention { way } => {
-            match answering.ways.ask_for_the_secure_attention(way).await {
+        Request::Pair { way, pin } => {
+            match answering.machine.ways.hand_over_the_code(way, &pin).await {
                 Ok(()) => Answer::Done,
                 Err(reason) => Answer::Refused(reason),
             }
         }
-        Request::LockScreen { way } => match answering.ways.ask_to_lock(way).await {
+        Request::SecureAttention { way } => {
+            match answering
+                .machine
+                .ways
+                .ask_for_the_secure_attention(way)
+                .await
+            {
+                Ok(()) => Answer::Done,
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
+        Request::LockScreen { way } => match answering.machine.ways.ask_to_lock(way).await {
             Ok(()) => Answer::Done,
             Err(reason) => Answer::Refused(reason),
         },
         Request::SteadyFar { way, rate } => {
-            match answering.ways.ask_to_serve_steady(way, rate).await {
+            match answering.machine.ways.ask_to_serve_steady(way, rate).await {
                 Ok(()) => Answer::Done,
                 Err(reason) => Answer::Refused(reason),
             }
         }
         Request::FarScreen { way, wanted } => {
-            match answering.ways.ask_for_a_screen(way, wanted).await {
+            match answering.machine.ways.ask_for_a_screen(way, wanted).await {
                 Ok(size) => Answer::Showing { size },
                 Err(reason) => Answer::Refused(reason),
             }
         }
-        Request::Hush { way, quiet } => match answering.ways.ask_to_hush(way, quiet).await {
-            Ok(()) => Answer::Done,
-            Err(reason) => Answer::Refused(reason),
-        },
+        Request::Hush { way, quiet } => {
+            match answering.machine.ways.ask_to_hush(way, quiet).await {
+                Ok(()) => Answer::Done,
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
         Request::Hold { way, process } => {
-            if answering.ways.hold(way, process) {
+            if answering.machine.ways.hold(way, process) {
                 Answer::Done
             } else {
                 Answer::Refused(format!("la voie {way} n'existe plus"))
             }
         }
         Request::Release { way } => {
-            answering.ways.release(way);
+            answering.machine.ways.release(way);
             // A way already closed is the state that was asked for,
             // reached: saying no would make closing twice an error.
             Answer::Done
         }
-        Request::SetHosting { on } => match kept(answering.remembered.set_remote_access(on)) {
-            Ok(()) => {
-                answering.log.write(if on {
-                    "remote access turned on"
-                } else {
-                    "remote access turned off"
-                });
-                Answer::Done
+        Request::SetHosting { on } => {
+            match kept(answering.machine.remembered.set_remote_access(on)) {
+                Ok(()) => {
+                    answering.log.write(if on {
+                        "remote access turned on"
+                    } else {
+                        "remote access turned off"
+                    });
+                    Answer::Done
+                }
+                Err(refusal) => refusal,
             }
-            Err(refusal) => refusal,
-        },
+        }
         // The engine reads both of these once, when it starts, so
         // writing them down is only half the job: the supervisor sees
         // them change and starts it again. Said in the answer, since a
         // session in progress goes with it.
-        Request::ServeLike { serving } => match kept(answering.remembered.set_serving(serving)) {
-            Ok(()) => {
-                answering.log.write(&format!(
-                    "this computer will serve with a steady rate {} and {} capture",
-                    if serving.steady_rate { "on" } else { "off" },
-                    serving.capture
-                ));
-                Answer::Done
+        Request::ServeLike { serving } => {
+            match kept(answering.machine.remembered.set_serving(serving)) {
+                Ok(()) => {
+                    answering.log.write(&format!(
+                        "this computer will serve with a steady rate {} and {} capture",
+                        if serving.steady_rate { "on" } else { "off" },
+                        serving.capture
+                    ));
+                    Answer::Done
+                }
+                Err(refusal) => refusal,
             }
-            Err(refusal) => refusal,
-        },
-        Request::SetTrust { on } => match kept(answering.remembered.set_trust_local_network(on)) {
-            Ok(()) => {
-                answering.log.write(if on {
-                    "the local network is trusted again"
-                } else {
-                    "the local network is no longer trusted"
-                });
-                Answer::Done
+        }
+        Request::SetTrust { on } => {
+            match kept(answering.machine.remembered.set_trust_local_network(on)) {
+                Ok(()) => {
+                    answering.log.write(if on {
+                        "the local network is trusted again"
+                    } else {
+                        "the local network is no longer trusted"
+                    });
+                    Answer::Done
+                }
+                Err(refusal) => refusal,
             }
-            Err(refusal) => refusal,
-        },
+        }
         Request::Authorize { peer, host, name } => {
             // Cette empreinte est déjà celle de cet ordinateur : l'écrire
             // n'ouvrirait rien et laisserait croire à un appairage fait.
@@ -461,9 +394,36 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             answering.order.ask_for_a_stop();
             Answer::Done
         }
-        Request::Settings => Answer::Settings(answering.remembered.read().preferred),
+        Request::Journal => Answer::Journal(
+            answering
+                .machine
+                .journal(answering.fingerprint, &answering.log),
+        ),
+        Request::FarJournal { host, peer } => {
+            // Every address that computer has answered on, exactly as a
+            // session is opened: a machine with two cards answers on
+            // both, and only trying tells which one leads anywhere.
+            let also: Vec<std::net::IpAddr> = answering
+                .machine
+                .neighbours
+                .peers()
+                .into_iter()
+                .find(|seen| seen.fingerprint == peer)
+                .map(|seen| seen.addresses)
+                .unwrap_or_default();
+            match answering
+                .machine
+                .ways
+                .ask_a_computer_for_its_journal(&host, peer, &also)
+                .await
+            {
+                Ok(text) => Answer::Journal(text),
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
+        Request::Settings => Answer::Settings(answering.machine.remembered.read().preferred),
         Request::Choose { preferred } => {
-            match kept(answering.remembered.set_preferred(preferred)) {
+            match kept(answering.machine.remembered.set_preferred(preferred)) {
                 Ok(()) => {
                     answering.log.write("session settings changed");
                     Answer::Done
@@ -480,7 +440,9 @@ async fn one(request: Request, answering: &Answering) -> Answer {
 mod tests {
     use super::*;
 
-    use zyr_control::{Service, WayId};
+    use zyr_control::{Holdup, Service, WayId};
+
+    use crate::machine::Hosting;
 
     /// The desk, open on a channel of its own, with everything it needs
     /// around it. Anything asking for the network is left out: what is
@@ -502,17 +464,19 @@ mod tests {
             let log = Log::open(&folder.join("service.log")).unwrap();
             let channel = format!("zyrdeskd-test-{}-{what}", std::process::id());
             let fingerprint = zyr_transport::Identity::generate().unwrap().fingerprint();
-            let hosting = Hosting::new();
+            let machine = Machine {
+                hosting: Hosting::new(),
+                ways: crate::ways::Ways::new(log.clone()),
+                remembered: crate::preferences::Remembered::at(folder.join("preferences.conf")),
+                neighbours: zyr_lan::Found::new(),
+            };
 
             let desk = Desk::open(
                 runtime,
                 &channel,
                 Answering {
                     fingerprint,
-                    ways: Ways::new(log.clone()),
-                    hosting: hosting.clone(),
-                    remembered: Remembered::at(folder.join("preferences.conf")),
-                    neighbours: Found::new(),
+                    machine: machine.clone(),
                     order: StopOrder::new(),
                     log: log.clone(),
                 },
@@ -522,7 +486,7 @@ mod tests {
             Self {
                 _desk: desk,
                 channel,
-                hosting,
+                hosting: machine.hosting,
                 fingerprint,
                 folder,
             }

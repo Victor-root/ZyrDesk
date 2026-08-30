@@ -325,48 +325,50 @@ impl Ways {
         }
     }
 
-    /// Opens towards every address at once and keeps whichever answers
-    /// first, dropping the rest.
+    /// Fetches another computer's journal, without opening a way to it.
     ///
-    /// A computer on the same desk often has several addresses, and they
-    /// are not worth the same at all: one is the cable between the two
-    /// machines, another belongs to a virtual adapter or a VPN that wraps
-    /// the traffic up and sends it somewhere far away before bringing it
-    /// back. Sixty milliseconds of latency between two computers on one
-    /// desk is what the second kind costs, and no session survives that
-    /// pleasantly.
+    /// A way is a session's worth of machinery: a local address that
+    /// stands in for the far engine, seven ports opened onto it, and a
+    /// register entry that outlives the window which asked. None of that
+    /// is wanted here. Reading a journal is one question and one answer,
+    /// so the connection is opened, asked, and dropped, and the far
+    /// computer is left exactly as it was found.
     ///
-    /// Nothing here can tell them apart by looking: an address is four
-    /// numbers, and which of them leads through a tunnel is not written
-    /// anywhere. So they are all tried at once and the fastest to answer
-    /// wins, which is the same answer arrived at by measuring instead of
-    /// guessing. The losers are dropped the moment there is a winner.
-    async fn race(
+    /// Asked of a computer nobody is watching, most of the time, which is
+    /// exactly when it is wanted: what is being looked for is usually the
+    /// reason nobody can watch it.
+    pub async fn ask_a_computer_for_its_journal(
         &self,
-        endpoint: &TunnelEndpoint,
-        candidates: &[SocketAddr],
-    ) -> Result<(Connection, u128, SocketAddr), String> {
-        let started = Instant::now();
-        let mut running = tokio::task::JoinSet::new();
-        for address in candidates {
-            let towards = endpoint.clone();
-            let address = *address;
-            running.spawn(async move { (address, towards.connect(address).await) });
-        }
+        host: &str,
+        peer: Fingerprint,
+        also: &[IpAddr],
+    ) -> Result<String, String> {
+        let asked = resolve(host)?;
+        let candidates = every_way_there(asked, also);
+        let identity =
+            Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
+        let endpoint = TunnelEndpoint::client(
+            &identity,
+            peer,
+            MediaProfile::default(),
+            SocketAddr::new(EVERY_INTERFACE, 0),
+        )
+        .map_err(|e| e.to_string())?;
 
-        let mut refused = Vec::new();
-        while let Some(finished) = running.join_next().await {
-            let Ok((address, outcome)) = finished else {
-                continue;
-            };
-            match outcome {
-                Ok(connection) => {
-                    return Ok((connection, started.elapsed().as_millis(), address));
-                }
-                Err(e) => refused.push(format!("{address} : {e}")),
-            }
-        }
-        Err(refused.join(" ; "))
+        let (connection, _, through) = race(&endpoint, &candidates)
+            .await
+            .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
+        let text = aside::ask_for_the_journal(&connection).await.map_err(|e| {
+            format!(
+                "{host} n'a pas donné son journal : {e}\n  \
+                 Vérifiez que l'accès distant y est actif et que cet ordinateur y est autorisé."
+            )
+        })?;
+        self.log.write(&format!(
+            "{through} handed its journal over, {} characters",
+            text.len()
+        ));
+        Ok(text)
     }
 
     /// Everything between the address being taken and the way being
@@ -385,8 +387,7 @@ impl Ways {
             TunnelEndpoint::client(identity, peer, media, SocketAddr::new(EVERY_INTERFACE, 0))
                 .map_err(|e| e.to_string())?;
 
-        let (connection, took, through) = self
-            .race(&endpoint, candidates)
+        let (connection, took, through) = race(&endpoint, candidates)
             .await
             .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
         if candidates.len() > 1 {
@@ -724,6 +725,48 @@ impl Ways {
             }
         }
     }
+}
+
+/// Opens towards every address at once and keeps whichever answers
+/// first, dropping the rest.
+///
+/// A computer on the same desk often has several addresses, and they are
+/// not worth the same at all: one is the cable between the two machines,
+/// another belongs to a virtual adapter or a VPN that wraps the traffic
+/// up and sends it somewhere far away before bringing it back. Sixty
+/// milliseconds of latency between two computers on one desk is what the
+/// second kind costs, and no session survives that pleasantly.
+///
+/// Nothing here can tell them apart by looking: an address is four
+/// numbers, and which of them leads through a tunnel is not written
+/// anywhere. So they are all tried at once and the fastest to answer
+/// wins, which is the same answer arrived at by measuring instead of
+/// guessing. The losers are dropped the moment there is a winner.
+async fn race(
+    endpoint: &TunnelEndpoint,
+    candidates: &[SocketAddr],
+) -> Result<(Connection, u128, SocketAddr), String> {
+    let started = Instant::now();
+    let mut running = tokio::task::JoinSet::new();
+    for address in candidates {
+        let towards = endpoint.clone();
+        let address = *address;
+        running.spawn(async move { (address, towards.connect(address).await) });
+    }
+
+    let mut refused = Vec::new();
+    while let Some(finished) = running.join_next().await {
+        let Ok((address, outcome)) = finished else {
+            continue;
+        };
+        match outcome {
+            Ok(connection) => {
+                return Ok((connection, started.elapsed().as_millis(), address));
+            }
+            Err(e) => refused.push(format!("{address} : {e}")),
+        }
+    }
+    Err(refused.join(" ; "))
 }
 
 /// Whether a change in round trip is worth a line in the journal.

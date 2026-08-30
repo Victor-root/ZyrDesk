@@ -78,6 +78,7 @@ fn main() {
             folders::logs_folder,
             folders::open_folder,
             journal::journal,
+            journal::far_journal,
             journal::clear_journal,
             mesures::session_measures,
             session::connect,

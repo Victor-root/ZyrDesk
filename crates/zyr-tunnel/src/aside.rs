@@ -38,14 +38,28 @@ use crate::pump;
 /// can carry. Version 4 added the far computer's speakers. Version 7
 /// added the virtual screen, which now sleeps between sessions and has
 /// to be asked for. Version 8 added how large that screen draws, without
-/// which it is the right size and nobody's desk.
-pub const VERSION: u32 = 8;
+/// which it is the right size and nobody's desk. Version 9 added the far
+/// computer's journal, which is the first thing here worth a page rather
+/// than a line.
+pub const VERSION: u32 = 9;
 
-/// Longest message this channel takes.
+/// Longest question this channel takes.
 ///
 /// It carries port numbers, a four-digit code and a machine name.
 /// Anything longer is not one of ours.
-const LIMIT: usize = 512;
+const LONGEST_QUESTION: usize = 512;
+
+/// Longest answer this channel takes.
+///
+/// A ceiling protects whoever is listening from whoever is speaking, and
+/// the two sides are not exposed to the same thing: this computer takes
+/// questions from anyone it lets in, and answers only from the computer
+/// it went to. One answer carries a whole journal, which is a page and
+/// not a line, so the two ceilings part company here rather than a
+/// question being allowed to weigh a page. Four times what a journal can
+/// weigh at its very largest, its four files being read from the end and
+/// cut.
+const LONGEST_ANSWER: usize = 4 * 1024 * 1024;
 
 /// What the host side answers on ZyrDesk's own channel.
 ///
@@ -142,6 +156,20 @@ pub trait Answers: Send + Sync + 'static {
         &self,
         wanted: Option<WantedScreen>,
     ) -> Result<Option<(u32, u32)>, String>;
+
+    /// This computer's journal, gathered and handed over whole.
+    ///
+    /// Asked because the walk to the other machine is the errand a
+    /// remote desktop exists to spare, and reading its journal is the
+    /// one thing that still made anybody take it: a fault is diagnosed
+    /// on both journals at once or on neither.
+    ///
+    /// Handed to whoever this computer already lets in, and to nobody
+    /// else. That is not a small permission granted lightly; it is a
+    /// smaller one than the permission those computers already hold,
+    /// which is to take the screen, the keyboard and the mouse of this
+    /// machine. A page of what it has written down is less than that.
+    fn journal(&self) -> Result<String, String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -163,6 +191,8 @@ pub enum Question {
     /// Wake your virtual screen for a picture like this one, or, with
     /// nothing asked for, put it back to sleep.
     Screen { wanted: Option<WantedScreen> },
+    /// Hand over your journal, so it can be read from here.
+    Journal,
 }
 
 /// What comes back.
@@ -185,6 +215,10 @@ pub enum Told {
     Screen {
         size: Option<(u32, u32)>,
     },
+    /// The far computer's journal, whole.
+    Journal {
+        text: String,
+    },
 }
 
 impl fmt::Display for Question {
@@ -203,6 +237,7 @@ impl fmt::Display for Question {
                 Some(screen) => write!(f, "{VERSION} screen {screen}"),
                 None => write!(f, "{VERSION} screen none"),
             },
+            Question::Journal => write!(f, "{VERSION} journal"),
             Question::Hush { quiet } => {
                 write!(
                     f,
@@ -227,6 +262,10 @@ impl fmt::Display for Told {
                 Some((wide, high)) => write!(f, "{VERSION} screen {wide}x{high}"),
                 None => write!(f, "{VERSION} screen none"),
             },
+            // Whole, lines and all: this channel ends a message by
+            // closing the stream, so nothing here has to be folded onto
+            // one line the way the control channel folds a refusal.
+            Told::Journal { text } => write!(f, "{VERSION} journal {text}"),
         }
     }
 }
@@ -250,6 +289,7 @@ impl Question {
                     wanted: Some(screen),
                 }),
             },
+            "journal" => Ok(Question::Journal),
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
                 "play" => Ok(Question::Hush { quiet: false }),
@@ -296,6 +336,9 @@ impl Told {
                             .map_err(|e| unreadable(e.to_string()))?,
                     ),
                 },
+            })),
+            "journal" => Ok(Ok(Told::Journal {
+                text: rest.to_string(),
             })),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
@@ -345,7 +388,11 @@ fn shortened(reason: &str) -> String {
 }
 
 /// How long a refusal may be, the rest of its message deducted.
-const ROOM: usize = LIMIT - 32;
+///
+/// Measured against what a question weighs and not against what an
+/// answer may: a refusal is a sentence written to be read by a person,
+/// and one that ran to a page would be a page nobody reads.
+const ROOM: usize = LONGEST_QUESTION - 32;
 
 /// Asks the far ZyrDesk something. Client side.
 ///
@@ -358,7 +405,7 @@ pub async fn ask(connection: &Connection, question: &Question) -> io::Result<Tol
     sending.shutdown().await?;
 
     let heard = receiving
-        .read_to_end(LIMIT)
+        .read_to_end(LONGEST_ANSWER)
         .await
         .map_err(io::Error::other)?;
     match Told::parse(&String::from_utf8_lossy(&heard))? {
@@ -457,6 +504,19 @@ pub async fn ask_for_a_screen(
     }
 }
 
+/// Asks the far ZyrDesk for its journal.
+///
+/// The one question here that is asked outside any session: reading the
+/// journal of a computer nobody is watching is exactly the moment it is
+/// wanted, since what is being looked for is usually why nobody can
+/// watch it.
+pub async fn ask_for_the_journal(connection: &Connection) -> io::Result<String> {
+    match ask(connection, &Question::Journal).await? {
+        Told::Journal { text } => Ok(text),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -464,7 +524,7 @@ pub async fn answer(
     answering: Arc<dyn Answers>,
 ) -> io::Result<()> {
     let asked = receiving
-        .read_to_end(LIMIT)
+        .read_to_end(LONGEST_QUESTION)
         .await
         .map_err(io::Error::other)?;
     let said = String::from_utf8_lossy(&asked).to_string();
@@ -533,6 +593,13 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .map_err(|e| format!("l'écran n'a pas pu être préparé : {e}"))?
                 .map(|size| Told::Screen { size })
         }
+        // Off the thread as well: gathering a journal is four files read
+        // from a disk, and a disk that has gone to sleep takes its time
+        // about waking up.
+        Question::Journal => tokio::task::spawn_blocking(move || answering.journal())
+            .await
+            .map_err(|e| format!("le journal n'a pas pu être rassemblé : {e}"))?
+            .map(|text| Told::Journal { text }),
     }
 }
 
@@ -591,6 +658,7 @@ mod tests {
                 }),
             },
             Question::Screen { wanted: None },
+            Question::Journal,
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -610,6 +678,14 @@ mod tests {
                 size: Some((1920, 1200)),
             },
             Told::Screen { size: None },
+            // Un journal voyage entier, lignes comprises : ce canal
+            // termine un message en fermant le flux, donc rien n'a
+            // besoin d'être replié sur une ligne.
+            Told::Journal {
+                text: "ZyrDesk 0.1.0\nOrdinateur       : PC de Victor\n\n--- Le service ---\nune \
+                       ligne\nune autre"
+                    .to_string(),
+            },
         ] {
             let said = told.to_string();
             assert_eq!(Told::parse(&said).unwrap(), Ok(told), "sur « {said} »");
@@ -627,11 +703,15 @@ mod tests {
 
     #[test]
     fn another_version_is_named_rather_than_misread() {
-        // La moitié la plus ancienne du produit doit être nommée, pas
-        // devinée : c'est la seule panne qui se répare en une phrase.
-        let refusal = Question::parse("9 ports").unwrap_err();
+        // La moitié du produit qui ne parle pas la même version doit être
+        // nommée, pas devinée : c'est la seule panne qui se répare en une
+        // phrase. Comptée depuis la version courante, pour que ce test ne
+        // se mette pas à parler de la version du jour à chaque fois qu'on
+        // en ajoute une.
+        let autre = VERSION + 1;
+        let refusal = Question::parse(&format!("{autre} ports")).unwrap_err();
         assert!(
-            refusal.contains('9') && refusal.contains("version"),
+            refusal.contains(&autre.to_string()) && refusal.contains("version"),
             "{refusal}"
         );
 
@@ -676,7 +756,11 @@ mod tests {
             format!("{}é", "x".repeat(ROOM - 1)),
         ] {
             let message = format!("{VERSION} no {}", shortened(&reason));
-            assert!(message.len() <= LIMIT, "{} octets", message.len());
+            assert!(
+                message.len() <= LONGEST_QUESTION,
+                "{} octets",
+                message.len()
+            );
             assert!(matches!(Told::parse(&message), Ok(Err(_))), "{message}");
         }
 

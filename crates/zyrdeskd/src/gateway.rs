@@ -30,7 +30,6 @@ use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_engine_host::Credentials;
 use zyr_engine_host::api::EngineApi;
-use zyr_lan::Found;
 use zyr_proto::log::Log;
 use zyr_proto::net::{EnginePorts, TUNNEL_PORT};
 use zyr_proto::paths;
@@ -40,7 +39,7 @@ use zyr_transport::{
 };
 use zyr_tunnel::{Answers, Tunnel};
 
-use crate::preferences::Remembered;
+use crate::machine::Machine;
 
 /// Every network interface: the computer is reachable from wherever the
 /// other one is.
@@ -88,9 +87,11 @@ struct Attending {
     /// The sessions coming through this door, so what one of them asks
     /// of this computer outlives the asking.
     sessions: Arc<Sessions>,
-    /// What this computer was told to do, for the one ask that changes
-    /// it: how its own engine serves.
-    remembered: Remembered,
+    /// This computer, for the two asks that are about it rather than
+    /// about a session: how its own engine serves, and its journal.
+    machine: Machine,
+    /// This computer's fingerprint, which its journal opens on.
+    fingerprint: Fingerprint,
     log: Log,
 }
 
@@ -376,12 +377,12 @@ impl Answers for Attending {
     /// the ordinary case: every session asks, and almost none of them
     /// changes anything.
     fn serve_steady(&self, rate: bool) -> Result<(), String> {
-        let mut serving = self.remembered.serving();
+        let mut serving = self.machine.remembered.serving();
         if serving.steady_rate == rate {
             return Ok(());
         }
         serving.steady_rate = rate;
-        self.remembered.set_serving(serving).map_err(|e| {
+        self.machine.remembered.set_serving(serving).map_err(|e| {
             let refused = e.to_string();
             self.log.write(&format!(
                 "the rate this computer serves at is unchanged: {refused}"
@@ -393,6 +394,22 @@ impl Answers for Attending {
             if rate { "start" } else { "stop" }
         ));
         Ok(())
+    }
+
+    /// Hands this computer's journal over, whole.
+    ///
+    /// The same page the person sitting here would read, gathered the
+    /// same way: a journal read from another computer that differed from
+    /// the one read on the spot would be worth nothing to compare, and
+    /// comparing the two is the whole reason for asking.
+    ///
+    /// Said in this computer's own journal as it goes out. Somebody
+    /// reading a machine from elsewhere leaves a trace on it, like every
+    /// other thing a far computer may ask for here.
+    fn journal(&self) -> Result<String, String> {
+        self.log
+            .write("a computer asked this one for its journal, and it was handed over");
+        Ok(self.machine.journal(self.fingerprint, &self.log))
     }
 }
 
@@ -657,13 +674,7 @@ impl Drop for Gateway {
 
 impl Gateway {
     /// Opens the tunnel and serves whoever is authorised.
-    pub fn open(
-        runtime: &Handle,
-        engine: AtHand,
-        neighbours: Found,
-        remembered: Remembered,
-        log: &Log,
-    ) -> io::Result<Self> {
+    pub fn open(runtime: &Handle, engine: AtHand, machine: Machine, log: &Log) -> io::Result<Self> {
         // The transport registers with the runtime as it is built, so it
         // has to be built from inside it.
         let _guard = runtime.enter();
@@ -671,7 +682,7 @@ impl Gateway {
         let identity =
             Identity::load_or_create(&paths::identity_dir()).map_err(io::Error::other)?;
         let list = paths::authorized_devices();
-        let starting = let_in(authorized::read(&list)?, &neighbours, &remembered);
+        let starting = let_in(authorized::read(&list)?, &machine);
         let allowed: AllowedPeers = starting.iter().copied().collect();
         if starting.is_empty() {
             log.write(
@@ -704,7 +715,8 @@ impl Gateway {
             api: Arc::new(EngineApi::new(engine.ports, engine.credentials)),
             films_the_grown_screen: engine.films_the_grown_screen,
             sessions: sessions.clone(),
-            remembered: remembered.clone(),
+            machine: machine.clone(),
+            fingerprint: identity.fingerprint(),
             log: log.clone(),
         });
         Ok(Self {
@@ -713,8 +725,7 @@ impl Gateway {
                     list,
                     allowed,
                     starting,
-                    neighbours,
-                    remembered,
+                    machine,
                     log.clone(),
                 )),
                 runtime.spawn(serve(endpoint, attending, sessions.clone(), log.clone())),
@@ -835,8 +846,7 @@ async fn keep_the_list_fresh(
     list: PathBuf,
     allowed: AllowedPeers,
     starting: Vec<Fingerprint>,
-    neighbours: Found,
-    remembered: Remembered,
+    machine: Machine,
     log: Log,
 ) {
     let mut reported: Option<String> = None;
@@ -847,7 +857,7 @@ async fn keep_the_list_fresh(
                 if reported.take().is_some() {
                     log.write("authorised devices readable again");
                 }
-                let now = let_in(written, &neighbours, &remembered);
+                let now = let_in(written, &machine);
                 for said in apart(&known, &now) {
                     log.write(&said);
                 }
@@ -895,15 +905,12 @@ fn apart(before: &[Fingerprint], now: &[Fingerprint]) -> Vec<String> {
 /// covers exactly what the network already carries: a machine that can
 /// speak on it. Nothing arriving from outside it is ever let in this
 /// way, and the day sessions cross the Internet an account takes over.
-fn let_in(
-    written: Vec<Fingerprint>,
-    neighbours: &Found,
-    remembered: &Remembered,
-) -> Vec<Fingerprint> {
-    if !remembered.trust_local_network() {
+fn let_in(written: Vec<Fingerprint>, machine: &Machine) -> Vec<Fingerprint> {
+    if !machine.remembered.trust_local_network() {
         return written;
     }
-    let seen = neighbours
+    let seen = machine
+        .neighbours
         .peers()
         .into_iter()
         .map(|peer| peer.fingerprint)
@@ -933,13 +940,19 @@ mod tests {
         format!("{seed:02x}").repeat(32).parse().unwrap()
     }
 
-    fn remembered(what: &str) -> (Remembered, PathBuf) {
+    fn machine(what: &str) -> (Machine, PathBuf) {
         let folder = std::env::temp_dir().join(format!(
             "zyrdeskd-gateway-{}-{what}",
             zyr_proto::random::alphanumeric_string(8)
         ));
-        let path = folder.join("preferences.conf");
-        (Remembered::at(path), folder)
+        let log = Log::open(&folder.join("service.log")).expect("un journal");
+        let machine = Machine {
+            hosting: crate::machine::Hosting::new(),
+            ways: crate::ways::Ways::new(log),
+            remembered: crate::preferences::Remembered::at(folder.join("preferences.conf")),
+            neighbours: zyr_lan::Found::new(),
+        };
+        (machine, folder)
     }
 
     #[test]
@@ -980,13 +993,13 @@ mod tests {
 
     #[test]
     fn trust_turned_off_leaves_only_what_was_written_down() {
-        let (remembered, folder) = remembered("sans-confiance");
-        assert!(remembered.trust_local_network());
-        remembered.set_trust_local_network(false).unwrap();
+        let (machine, folder) = machine("sans-confiance");
+        assert!(machine.remembered.trust_local_network());
+        machine.remembered.set_trust_local_network(false).unwrap();
 
         // Rien de ce que le réseau annonce ne doit plus entrer : c'est
         // le seul effet attendu de cet interrupteur.
-        let devices = let_in(vec![fingerprint(1)], &Found::new(), &remembered);
+        let devices = let_in(vec![fingerprint(1)], &machine);
         assert_eq!(devices, vec![fingerprint(1)]);
 
         let _ = std::fs::remove_dir_all(&folder);

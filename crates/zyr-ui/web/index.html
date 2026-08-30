@@ -220,9 +220,11 @@
     <dialog class="dialogue journal" id="journal">
       <div class="dialogue-corps" tabindex="-1" autofocus>
         <div class="reglages-entete">
+          <!-- Le titre et le mot suivent l'ordinateur dont c'est le
+               journal : celui-ci, ou l'un de ceux de l'accueil. -->
           <div class="reglage-mot">
-            <h2 class="sous-titre">Journal</h2>
-            <span class="legende">
+            <h2 class="sous-titre" id="journal-titre">Journal</h2>
+            <span class="legende" id="journal-mot">
               Tout ce que le produit a écrit, à copier tel quel en cas de
               problème.
             </span>

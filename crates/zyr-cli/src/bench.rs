@@ -79,6 +79,10 @@ impl Answers for NoEngine {
     ) -> Result<Option<(u32, u32)>, String> {
         Err("le banc de mesure n'a pas d'écran virtuel".to_string())
     }
+
+    fn journal(&self) -> Result<String, String> {
+        Err("le banc de mesure ne tient pas de journal".to_string())
+    }
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);

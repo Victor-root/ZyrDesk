@@ -60,6 +60,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
 | **R46ter** | **Refait, et c'est un défaut que j'avais introduit moi-même en corrigeant R46bis.** « Fluide » n'atteignait jamais la cadence demandée et variait exactement comme « Économe » : relevé à 50 images/s pour 60 demandées, avec 2,35 ms d'encodage et 1 ms de réseau, donc rien n'était à l'étroit. Une image capturée achetait **deux** périodes comptées depuis son arrivée, si bien qu'un écran changeant entre la moitié de la cadence visée et la cadence visée ne déclenchait jamais la moindre répétition : le moteur servait ce que le bureau produisait, c'est-à-dire ce que donne le fait de ne rien demander. Les deux réglages étaient donc identiques sur tout bureau qui change plus de trente fois par seconde. La grille des créneaux est maintenant fixe et une image presque à l'heure prend son propre créneau. **À vérifier après recompilation du moteur hôte** |
+| **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. De loin on lit et on copie : **Vider** et **Ouvrir le dossier** disparaissent, ils ne valent que chez soi |
 | **R61** | **Instrumentation, pas encore une correction.** L'ouverture d'une session paraît nettement plus lente qu'avant, sans que rien ne dise où passe le temps : les horodatages du journal sont à la seconde et chaque morceau de l'ouverture est plus court que ça. Une ligne unique la découpe maintenant en millisecondes, dans `interface.log` du client : joindre l'ordinateur distant, lui demander ce qu'il faut, lancer le lecteur, attendre sa première image. C'est cette ligne qu'il faut relever avant de toucher à quoi que ce soit |
 | **R60** | **Nouveau, et c'est la réponse à R59septies.** Sur une machine dont la carte graphique ne dessine rien de plus grand que sa dalle, une session en résolution du client est maintenant servie sur l'écran que la machine fait pousser : il est réveillé à la taille demandée et le bureau déménage dessus le temps de la session. Les écrans physiques sont **éteints** le temps de la session, et c'est voulu : laissés allumés ils forment la seconde moitié d'un bureau que personne ne voit, les fenêtres y disparaissent et le pointeur sort de l'image. Vu de loin, une machine à un écran doit ressembler à une machine à un écran. Tout revient à la déconnexion, le bureau d'abord et l'écran virtuel ensuite. La bascule s'apprend en essayant : la **première** session qui découvre le mur est servie comme avant, et c'est la **suivante** qui en profite, le moteur ne lisant quel écran filmer qu'à son démarrage |
 | **R59septies** | **Nouveau, sur un troisième ordinateur.** Depuis le portable 1920x1200 vers un PC 1920x1080, en résolution du client, il ne se passait rien : le journal disait dans la même seconde que l'écran dessinait un bureau 1920x1200 **et** qu'il ne savait pas le dessiner. Windows avait répondu « c'est fait » sans rien faire. Deux causes : l'interrupteur qui autorise un bureau plus grand que la dalle était posé **après** la lecture du bureau, alors que ce qu'un chemin d'affichage dit de lui-même est calculé au moment où on le lit ; et on autorisait Windows à ajuster la demande, ce qui lui permet de répondre oui sans rien ajuster. L'interrupteur est posé en premier, la demande est faite exactement, et le résultat est **relu** au lieu d'être cru |
@@ -1453,6 +1454,36 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Demande la recompilation du moteur hôte.**
 
+> **R62 (le journal de l'ordinateur d'en face, lu d'ici)**
+>
+> **Sans ouvrir la moindre session.** Sur l'accueil, dans « Mes ordinateurs », chaque carte porte maintenant une petite icône de journal en haut à droite. Cliquer celle d'un autre ordinateur.
+>
+> Attendu : la même fenêtre que le journal local, titrée **Journal de PC-SAV**, et dedans la page de cette machine-là. Elle commence par sa version, son nom et ses adresses, puis vient ce que seul son service sait dire :
+>
+> ```
+> ZyrDesk 0.1.0 (...)
+> Ordinateur       : PC-SAV
+> Adresses         : 192.168.1.31 (Ethernet)
+> Service          : ..., dialecte 22
+> Empreinte        : 0829cc7e...
+> Accès distant    : activé, prêt à être contrôlé
+> Réseau local     : ordinateurs de confiance
+> Sessions ouvertes: 0
+> Ordinateurs vus  : PC-VICTOR (192.168.1.20)
+> ```
+>
+> Puis les quatre fichiers, exactement comme sur place : le service, le moteur client, le moteur hôte, la fenêtre.
+>
+> **Ce qu'il faut vérifier en priorité** : que c'est bien le nom de l'**autre** machine sur la ligne « Ordinateur », et pas celui de celle où l'on est. C'est la seule erreur qui rendrait la page trompeuse plutôt qu'absente.
+>
+> **Les deux boutons qui doivent avoir disparu** : **Vider** et **Ouvrir le dossier**. Ces fichiers-là ne sont pas ici, et vider le journal d'une machine qu'on est en train de lire jetterait justement ce qu'on lit. **Actualiser** et **Copier tout** restent.
+>
+> **Le cas qui finit mal, et il doit finir proprement** : cliquer le journal d'un ordinateur éteint, ou débranché du réseau. Attendu : la fenêtre s'ouvre quand même et affiche le refus en toutes lettres, celui-là même qu'aurait donné une tentative de session, plutôt que de rester sur « Lecture… » ou de ne rien faire.
+>
+> **Et une trace des deux côtés** : dans `service.log` de la machine lue, `a computer asked this one for its journal, and it was handed over`. Lire une machine à distance laisse une ligne chez elle, comme tout le reste.
+>
+> **Le journal local ne doit pas avoir changé** : le bouton de l'en-tête ouvre la même page qu'avant, avec Vider et Ouvrir le dossier. Elle vient maintenant du service ; si le service est arrêté, la page arrive quand même, avec la raison écrite sur la ligne **Service** et les quatre fichiers en dessous.
+
 > **R61 (où passent les secondes d'une ouverture)**
 >
 > **Rien à faire, juste à lire.** Ouvrir une session, n'importe laquelle, et relever la dernière ligne de l'ouverture dans `interface.log` du **client** :
@@ -1861,6 +1892,18 @@ Quand quelque chose ne marche pas, la première question est toujours la même :
 > Cliquer **Copier tout**, coller dans un bloc-notes : tout doit s'y retrouver, tel quel.
 >
 > Le bouton **Vider** sert à partir d'une page blanche avant un essai. L'ordre compte : vider, **puis** relancer le service, puis lire. Vider après coup efface ce que le service a écrit en démarrant, c'est-à-dire précisément ce qu'on voulait lire.
+>
+> **Et quand le service est arrêté**, la page doit venir quand même : c'est le moment où on l'ouvre le plus. La ligne **Service** porte alors la raison de son silence, et les quatre fichiers sont là malgré tout.
+
+> **R23bis (le journal de l'ordinateur d'en face)**
+>
+> Sur l'accueil, la petite icône de journal en haut à droite d'une carte de « Mes ordinateurs ». Aucune session n'est nécessaire.
+>
+> Attendu : la même fenêtre, titrée **Journal de …** au nom de cette machine, et remplie de ce qu'elle a écrit chez elle. La ligne **Ordinateur** doit porter son nom à elle : c'est la seule erreur qui rendrait la page trompeuse plutôt qu'absente. **Vider** et **Ouvrir le dossier** disparaissent, ces fichiers ne sont pas ici ; **Actualiser** et **Copier tout** restent.
+>
+> Sur un ordinateur éteint, la fenêtre s'ouvre quand même et montre le refus en toutes lettres, le même qu'aurait donné une tentative de session.
+>
+> Lire une machine à distance laisse une ligne chez elle : `a computer asked this one for its journal, and it was handed over`.
 
 > **R24 (le journal raconte l'appairage)**
 >

@@ -44,6 +44,8 @@ const vue = {
   problemeTexte: document.getElementById("probleme-texte"),
   ouvrirJournal: document.getElementById("ouvrir-journal"),
   journal: document.getElementById("journal"),
+  journalTitre: document.getElementById("journal-titre"),
+  journalMot: document.getElementById("journal-mot"),
   fermerJournal: document.getElementById("fermer-journal"),
   journalTexte: document.getElementById("journal-texte"),
   copierJournal: document.getElementById("copier-journal"),
@@ -85,6 +87,11 @@ const TEMPS_ANNONCE = 6000;
 
 const MINUTE = 60;
 const HEURE = 3600;
+
+/* Un dessin ne se crée pas comme le reste de la page : sans cet
+   espace de noms, le navigateur en fait une balise inconnue et
+   n'affiche rien. */
+const SVG = "http://www.w3.org/2000/svg";
 
 /* Ce que le service dit du réseau et de ce qui tourne. La fenêtre ne
    s'en souvient pas d'elle-même : une session appartient au service, et
@@ -448,10 +455,22 @@ function dessineSessions() {
    perdrait le survol en cours. On ne touche qu'à ce qui a changé. */
 let listeAffichee = "";
 
+/* La carte porte deux gestes qui n'ont rien à voir : se connecter, et
+   lire le journal de cette machine. Cliquer n'importe où se connecte,
+   comme avant ; le bouton du journal se pose par-dessus, dans un coin.
+   Un bouton dans un bouton n'existe pas en HTML, donc la carte est un
+   cadre et le grand clic une surface qui la recouvre. */
 function carte(ordinateur) {
-  const element = document.createElement("button");
-  element.type = "button";
+  const element = document.createElement("div");
   element.className = "carte ordinateur";
+
+  const clic = document.createElement("button");
+  clic.type = "button";
+  clic.className = "ordinateur-clic";
+  clic.disabled = occupe();
+  // La surface ne porte aucun mot : sans étiquette, elle s'annoncerait
+  // comme un bouton vide à qui n'a que la voix pour lire l'écran.
+  clic.setAttribute("aria-label", `Se connecter à ${ordinateur.name}`);
 
   const nom = document.createElement("p");
   nom.className = "sous-titre ordinateur-nom";
@@ -462,7 +481,7 @@ function carte(ordinateur) {
   nom.append(pastille, texte);
 
   const adresse = document.createElement("p");
-  adresse.className = "legende";
+  adresse.className = "legende ordinateur-adresse";
   /* La pastille grise ne dit rien à elle seule : ce qui l'explique est
      écrit à côté. Cet ordinateur n'est pas absent, c'est ce réseau qui ne
      porte pas les annonces. */
@@ -478,14 +497,53 @@ function carte(ordinateur) {
   if (sien) {
     element.classList.add("en-session");
   }
+  if (occupe()) {
+    element.classList.add("occupee");
+  }
   appel.textContent = sien ? "Session en cours" : "Se connecter";
-  element.disabled = occupe();
 
-  element.append(nom, adresse, appel);
-  element.addEventListener("click", () =>
+  clic.addEventListener("click", () =>
     lance(ordinateur.address, ordinateur.fingerprint),
   );
+
+  element.append(clic, nom, adresse, appel, boutonJournal(ordinateur));
   return element;
+}
+
+/* Le journal de la machine d'en face, sans avoir à aller devant elle.
+   Il reste cliquable pendant une session : c'est même là qu'on en a le
+   plus besoin, quand quelque chose vient de mal se passer. */
+function boutonJournal(ordinateur) {
+  const bouton = document.createElement("button");
+  bouton.type = "button";
+  bouton.className = "bouton discret icone ordinateur-journal";
+  bouton.title = `Journal de ${ordinateur.name}`;
+  bouton.setAttribute("aria-label", `Journal de ${ordinateur.name}`);
+  bouton.append(dessinDuJournal());
+  bouton.addEventListener("click", () => ouvrirJournalDistant(ordinateur));
+  return bouton;
+}
+
+/* Le même dessin que le bouton du journal de l'en-tête : c'est le même
+   geste, sur une autre machine. */
+function dessinDuJournal() {
+  const dessin = document.createElementNS(SVG, "svg");
+  dessin.setAttribute("viewBox", "0 0 24 24");
+  dessin.setAttribute("fill", "none");
+  dessin.setAttribute("stroke", "currentColor");
+  dessin.setAttribute("stroke-width", "2");
+  dessin.setAttribute("stroke-linecap", "round");
+  dessin.setAttribute("aria-hidden", "true");
+
+  const page = document.createElementNS(SVG, "path");
+  page.setAttribute("d", "M5 3h11l3 3v15H5z");
+  page.setAttribute("stroke-linejoin", "round");
+
+  const lignes = document.createElementNS(SVG, "path");
+  lignes.setAttribute("d", "M9 9h6M9 13h6M9 17h4");
+
+  dessin.append(page, lignes);
+  return dessin;
 }
 
 /* Un ordinateur qui n'est pas sur ce réseau, ou dont l'annonce est
@@ -768,14 +826,68 @@ listen("session-ended", ({ payload }) => {
 
 /* ---- Journal ----------------------------------------------------------- */
 
+/* De quel ordinateur est le journal ouvert. Nul pour celui-ci : c'est le
+   seul dont on peut aussi vider les fichiers et ouvrir le dossier. */
+let journalDe = null;
+
 async function ouvrirJournal() {
+  journalDe = null;
+  await montreLeJournal();
+}
+
+/* Le journal de la machine d'en face, lu d'ici. L'aller-retour de la
+   panne, c'est de marcher jusqu'à elle pour recopier ce qu'elle a
+   écrit : c'est exactement ce que ce bouton supprime. */
+async function ouvrirJournalDistant(ordinateur) {
+  journalDe = ordinateur;
+  await montreLeJournal();
+}
+
+async function montreLeJournal() {
+  const distant = journalDe !== null;
+  vue.journalTitre.textContent = distant
+    ? `Journal de ${journalDe.name}`
+    : "Journal";
+  vue.journalMot.textContent = distant
+    ? "Ce que l'ordinateur distant a écrit chez lui, lu d'ici, à copier tel quel en cas de problème."
+    : "Tout ce que le produit a écrit, à copier tel quel en cas de problème.";
+  // Vider et ouvrir le dossier n'ont de sens que chez soi : ces
+  // fichiers-là sont sur l'autre machine.
+  montre(vue.viderJournal, !distant);
+  montre(vue.ouvrirJournaux, !distant);
+
   vue.journal.showModal();
   await rafraichirJournal();
 }
 
 async function rafraichirJournal() {
-  vue.journalTexte.textContent = "Lecture…";
-  vue.journalTexte.textContent = await invoke("journal");
+  const demande = journalDe;
+  vue.journalTexte.textContent =
+    demande === null ? "Lecture…" : `Lecture du journal de ${demande.name}…`;
+
+  let texte;
+  try {
+    texte =
+      demande === null
+        ? await invoke("journal")
+        : await invoke("far_journal", {
+            host: demande.address,
+            fingerprint: demande.fingerprint,
+          });
+  } catch (raison) {
+    // Montré dans le journal lui-même : c'est là que regarde la personne
+    // qui vient de cliquer, et un ordinateur qui ne répond pas est déjà
+    // la moitié de la réponse.
+    texte = String(raison);
+  }
+
+  // Joindre une machine distante prend le temps qu'il faut : le journal
+  // a pu être refermé, ou avoir changé d'ordinateur, entre-temps. Ce qui
+  // arrive en retard n'écrase pas ce qui est à l'écran.
+  if (demande !== journalDe) {
+    return;
+  }
+  vue.journalTexte.textContent = texte;
   // Le plus récent est en bas : c'est là que se trouve ce qui vient
   // d'arriver, et c'est ce qu'on ouvre le journal pour lire.
   vue.journalTexte.scrollTop = vue.journalTexte.scrollHeight;

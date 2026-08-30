@@ -144,14 +144,13 @@
 }
 
 .ordinateur {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--pas-2);
   padding: var(--pas-4);
   text-align: left;
   cursor: pointer;
-  /* La carte entière est le bouton : cliquer un ordinateur, c'est s'y
-     connecter. Le détail viendra ailleurs. */
   font: inherit;
   color: inherit;
   transition:
@@ -160,12 +159,31 @@
     transform var(--duree-courte) var(--courbe);
 }
 
-.ordinateur:hover:not(:disabled) {
+/* Cliquer un ordinateur, c'est s'y connecter, n'importe où sur la carte.
+   Mais la carte porte aussi le bouton de son journal, et un bouton dans
+   un bouton n'existe pas en HTML : le grand clic est donc une surface
+   qui recouvre la carte, et le journal se pose par-dessus. */
+.ordinateur-clic {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: inherit;
+}
+
+.ordinateur-clic:focus-visible {
+  outline: 2px solid var(--accent-vif);
+  outline-offset: 2px;
+}
+
+.ordinateur:not(.occupee):hover:not(:disabled) {
   border-color: var(--accent);
   background: var(--surface-2);
 }
 
-.ordinateur:active:not(:disabled) {
+.ordinateur:not(.occupee):active:not(:disabled) {
   transform: translateY(1px);
 }
 
@@ -175,16 +193,26 @@
 }
 
 /* Une seule session à la fois : le reste s'efface le temps qu'elle dure,
-   au lieu de laisser croire à un clic qui ne fera rien. */
-.ordinateur:disabled {
+   au lieu de laisser croire à un clic qui ne fera rien. La tuile qui
+   ajoute est un bouton entier et s'efface d'un bloc ; une carte s'efface
+   par ses mots, pour que le bouton de son journal reste allumé. */
+.ordinateur:disabled,
+.ordinateur.occupee {
   cursor: default;
+}
+
+.ordinateur:disabled {
+  opacity: 0.5;
+}
+
+.ordinateur.occupee:not(.en-session) .ordinateur-nom,
+.ordinateur.occupee:not(.en-session) .ordinateur-adresse {
   opacity: 0.5;
 }
 
 /* Celui qui porte la session n'est pas mis de côté : c'est chez lui que
    ça se passe. */
-.ordinateur.en-session:disabled {
-  opacity: 1;
+.ordinateur.en-session {
   border-color: color-mix(in srgb, var(--en-ligne) 40%, var(--trait));
 }
 
@@ -198,12 +226,32 @@
   align-items: center;
   gap: var(--pas-2);
   min-width: 0;
+  /* La place du bouton du journal est réservée : sans elle, un nom un
+     peu long passerait dessous. */
+  padding-right: var(--pas-6);
 }
 
 .ordinateur-nom > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Toujours là et jamais au premier plan : il attend d'être cherché, et
+   il ne s'efface pas quand une session occupe la fenêtre, puisque c'est
+   justement à ce moment-là qu'on veut lire ce que la machine d'en face
+   a écrit. */
+.ordinateur-journal {
+  position: absolute;
+  top: var(--pas-3);
+  right: var(--pas-3);
+  opacity: 0.4;
+  transition: opacity var(--duree-courte) var(--courbe);
+}
+
+.ordinateur:hover .ordinateur-journal,
+.ordinateur-journal:focus-visible {
+  opacity: 1;
 }
 
 /* Ce qui n'apparaît qu'au survol ne doit pas faire bouger la carte :
@@ -215,8 +263,8 @@
   transition: opacity var(--duree-courte) var(--courbe);
 }
 
-.ordinateur:hover .ordinateur-appel,
-.ordinateur:focus-visible .ordinateur-appel {
+.ordinateur:not(.occupee):hover .ordinateur-appel,
+.ordinateur:not(.occupee):focus-within .ordinateur-appel {
   opacity: 1;
 }
 

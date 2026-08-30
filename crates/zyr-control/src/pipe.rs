@@ -18,24 +18,48 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 /// Name of the channel the product uses.
 pub const CHANNEL: &str = "ZyrDesk";
 
-/// Longest message accepted, generous for a line of fields.
+/// Longest message the service takes, generous for a line of fields.
 ///
 /// Without a ceiling, anything able to reach the channel could hold the
 /// service on a line that never ends.
-const LONGEST_MESSAGE: u64 = 8 * 1024;
+const LONGEST_REQUEST: u64 = 8 * 1024;
+
+/// Longest message a program takes from the service.
+///
+/// A ceiling is there to protect whoever is listening from whoever is
+/// speaking, and the two sides of this channel are not exposed to the
+/// same thing: the service listens to any program the person can run,
+/// while a program listens only to the service it called. One answer
+/// carries a whole journal, which is a page and not a line, so the two
+/// ceilings part company here rather than the service being asked to
+/// take a page from anybody. Four times what a journal can weigh at its
+/// very largest, its four files being read from the end and cut.
+const LONGEST_ANSWER: u64 = 4 * 1024 * 1024;
 
 /// One exchange with the other side, message by message.
 pub struct Conversation<S> {
     lines: BufReader<S>,
+    /// Longest message this side will take from the other.
+    longest: u64,
 }
 
 impl<S> Conversation<S>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    fn over(stream: S) -> Self {
+    /// The listening side: it takes requests from whoever calls.
+    fn listening(stream: S) -> Self {
         Self {
             lines: BufReader::new(stream),
+            longest: LONGEST_REQUEST,
+        }
+    }
+
+    /// The calling side: it takes answers from the service alone.
+    fn calling(stream: S) -> Self {
+        Self {
+            lines: BufReader::new(stream),
+            longest: LONGEST_ANSWER,
         }
     }
 
@@ -43,7 +67,7 @@ where
     pub async fn hear(&mut self) -> io::Result<Option<String>> {
         let mut line = String::new();
         let read = (&mut self.lines)
-            .take(LONGEST_MESSAGE)
+            .take(self.longest)
             .read_line(&mut line)
             .await?;
         if read == 0 {
@@ -178,7 +202,7 @@ mod mechanism {
             let spare = instance(&self.channel, false)?;
             let connecting = std::mem::replace(&mut self.waiting, spare);
             connecting.connect().await?;
-            Ok(Conversation::over(connecting))
+            Ok(Conversation::listening(connecting))
         }
     }
 
@@ -198,7 +222,7 @@ mod mechanism {
         let path = address(channel);
         for attempt in 0..ATTEMPTS {
             match ClientOptions::new().open(&path) {
-                Ok(client) => return Ok(Conversation::over(client)),
+                Ok(client) => return Ok(Conversation::calling(client)),
                 Err(e)
                     if attempt + 1 < ATTEMPTS
                         && e.raw_os_error()
@@ -250,12 +274,12 @@ mod mechanism {
 
         pub async fn accept(&mut self) -> io::Result<Heard> {
             let (stream, _) = self.listener.accept().await?;
-            Ok(Conversation::over(stream))
+            Ok(Conversation::listening(stream))
         }
     }
 
     pub async fn call(channel: &str) -> io::Result<Spoken> {
-        Ok(Conversation::over(
+        Ok(Conversation::calling(
             UnixStream::connect(address(channel)).await?,
         ))
     }
@@ -312,7 +336,7 @@ mod tests {
         });
 
         let mut speaking = call(&channel).await.unwrap();
-        let endless = "x".repeat(LONGEST_MESSAGE as usize + 1);
+        let endless = "x".repeat(LONGEST_REQUEST as usize + 1);
         // Written without its ending: the service must give up on it
         // rather than hold a task on a line that never comes.
         let _ = speaking.lines.get_mut().write_all(endless.as_bytes()).await;

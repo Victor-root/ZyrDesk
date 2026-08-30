@@ -34,8 +34,9 @@ use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Launcher, Sunshine
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
-use crate::control::{Answering, Desk, Hosting};
+use crate::control::{Answering, Desk};
 use crate::gateway::{AtHand, Gateway};
+use crate::machine::{Hosting, Machine};
 use crate::preferences::Remembered;
 use crate::restart::{self, Next, Policy};
 use crate::ways::Ways;
@@ -274,15 +275,6 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         }
     };
 
-    // The desk and the ways out live as long as the service, not as
-    // long as one engine: reaching another computer has nothing to do
-    // with this one being reachable.
-    let ways = Ways::new(log.clone());
-    let hosting = Hosting::new();
-    // What was asked for last time, honoured before anyone has said
-    // anything this time.
-    let remembered = Remembered::at(paths::preferences());
-
     // The neighbourhood is announced for as long as the service runs,
     // not for as long as an engine does: a computer that only appeared
     // once its owner opened a window would be no use to anyone.
@@ -295,23 +287,25 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             None
         }
     };
-    let neighbours = neighbourhood
-        .as_ref()
-        .map(|n| n.found())
-        .unwrap_or_default();
-    let around_here = neighbours.clone();
+    // What this computer holds lives as long as the service, not as long
+    // as one engine: reaching another computer has nothing to do with
+    // this one being reachable, and neither has anything to do with the
+    // engine of the moment.
+    let machine = Machine {
+        hosting: Hosting::new(),
+        ways: Ways::new(log.clone()),
+        // What was asked for last time, honoured before anyone has said
+        // anything this time.
+        remembered: Remembered::at(paths::preferences()),
+        neighbours: neighbourhood
+            .as_ref()
+            .map(|n| n.found())
+            .unwrap_or_default(),
+    };
     // Not being able to answer the interface leaves this computer
     // reachable all the same, so it is worth saying loudly and carrying
     // on rather than giving up on remote access entirely.
-    let _desk = match desk(
-        runtime.handle(),
-        ways.clone(),
-        hosting.clone(),
-        remembered.clone(),
-        neighbours,
-        order.clone(),
-        log,
-    ) {
+    let _desk = match desk(runtime.handle(), machine.clone(), order.clone(), log) {
         Ok(desk) => Some(desk),
         Err(e) => {
             log.write(&format!(
@@ -320,7 +314,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             None
         }
     };
-    runtime.spawn(ways.keep_tidy());
+    runtime.spawn(machine.ways.clone().keep_tidy());
 
     let mut policy = Policy::new();
     let runtime_path = EngineRuntime::standard_path();
@@ -328,9 +322,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         exe: &exe,
         runtime_path: &runtime_path,
         runtime: runtime.handle(),
-        hosting: &hosting,
-        remembered: &remembered,
-        neighbours: &around_here,
+        machine: &machine,
         order,
         log,
     };
@@ -350,7 +342,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
         // is signed in to give it back in.
         crate::speakers::keep_in_step(false, false, log);
 
-        if !remembered.remote_access() {
+        if !machine.remembered.remote_access() {
             // Remote access is off. The service stays up: it is still
             // what opens the ways out, answers the interface and
             // announces nothing on the network. Only being reachable
@@ -358,7 +350,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             if !refused {
                 log.write("remote access is off, this computer cannot be reached");
                 refused = true;
-                hosting.held_by(Holdup::Starting);
+                machine.hosting.held_by(Holdup::Starting);
             }
             if !wait(SESSION_SETTLING, order) {
                 return End::Asked;
@@ -382,7 +374,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             if !engineless {
                 log.write(&format!("host engine not found: {}", exe.display()));
                 engineless = true;
-                hosting.held_by(Holdup::EngineMissing);
+                machine.hosting.held_by(Holdup::EngineMissing);
             }
             if !wait(ENGINE_WATCH, order) {
                 return End::Asked;
@@ -472,7 +464,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
                      unreachable until remote access is turned off and on again",
                     policy.failures()
                 ));
-                hosting.held_by(Holdup::EngineWontStand);
+                machine.hosting.held_by(Holdup::EngineWontStand);
                 given_up = true;
             }
             Next::Restart(delay) => {
@@ -491,13 +483,9 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
 }
 
 /// Opens the desk the interface and the command line talk to.
-#[allow(clippy::too_many_arguments)]
 fn desk(
     runtime: &tokio::runtime::Handle,
-    ways: Ways,
-    hosting: Hosting,
-    remembered: Remembered,
-    neighbours: zyr_lan::Found,
+    machine: Machine,
     order: StopOrder,
     log: &Log,
 ) -> Result<Desk, String> {
@@ -508,10 +496,7 @@ fn desk(
         zyr_control::CHANNEL,
         Answering {
             fingerprint: identity.fingerprint(),
-            ways,
-            hosting,
-            remembered,
-            neighbours,
+            machine,
             order,
             log: log.clone(),
         },
@@ -564,9 +549,7 @@ struct Around<'a> {
     exe: &'a std::path::Path,
     runtime_path: &'a std::path::Path,
     runtime: &'a tokio::runtime::Handle,
-    hosting: &'a Hosting,
-    remembered: &'a Remembered,
-    neighbours: &'a zyr_lan::Found,
+    machine: &'a Machine,
     order: &'a StopOrder,
     log: &'a Log,
 }
@@ -579,9 +562,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         exe,
         runtime_path,
         runtime,
-        hosting,
-        remembered,
-        neighbours,
+        machine,
         order,
         log,
     } = around;
@@ -595,7 +576,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // Read once, here, and compared against later: the engine is told
     // this at its start and never again, so a change while it runs is
     // only honoured by starting another one.
-    let serving = remembered.serving();
+    let serving = machine.remembered.serving();
     let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir())
         .with_serving(serving);
     // What this computer's screens are doing, asked of the session that
@@ -764,13 +745,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         credentials,
         films_the_grown_screen,
     };
-    let gateway = match Gateway::open(
-        runtime,
-        at_hand,
-        (*neighbours).clone(),
-        (*remembered).clone(),
-        log,
-    ) {
+    let gateway = match Gateway::open(runtime, at_hand, (*machine).clone(), log) {
         Ok(gateway) => gateway,
         Err(e) => {
             let _ = engine.stop();
@@ -778,7 +753,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
             return Err(format!("the tunnel could not be opened: {e}"));
         }
     };
-    hosting.open();
+    machine.hosting.open();
     log.write("remote access active");
 
     let life = {
@@ -798,12 +773,12 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
             session,
             serving,
             films_the_grown_screen,
-            remembered,
+            &machine.remembered,
             order,
             log,
         )
     };
-    hosting.held_by(Holdup::Starting);
+    machine.hosting.held_by(Holdup::Starting);
     drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
     Ok(life)
