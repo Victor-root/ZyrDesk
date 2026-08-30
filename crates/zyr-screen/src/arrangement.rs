@@ -658,20 +658,28 @@ mod windows_only {
             .join(", ")
     }
 
-    /// Moves this computer's desktop onto that screen, at that size, and
-    /// makes everything else sit around it.
+    /// Leaves this computer showing that screen and that screen only, at
+    /// that size, for the length of a session.
     ///
     /// For the one computer that cannot draw the size a session asks for
     /// on any screen it owns: the screen it grows for itself takes that
-    /// size, and the desktop moves there for the length of the session.
+    /// size and carries the desktop, and this computer's own screens are
+    /// switched off until the desk goes home.
     ///
-    /// Nothing is switched off, and that is the whole of the safety. The
-    /// screens somebody is looking at stay lit and keep their own sizes;
-    /// what they show is the desktop's far side rather than its middle.
-    /// If this computer were to fall over on the spot, Windows would find
-    /// the grown screen gone at the next start and put the desktop back
-    /// on a real one by itself, because there is always a real one on.
-    pub fn put_the_desktop_on(screen: &str, wide: u32, high: u32) -> (bool, Vec<String>) {
+    /// Off and not merely pushed aside, and that is the point rather than
+    /// a detail. Left on, they are a second screen of a desktop nobody
+    /// can see: windows land on them and vanish from the session, the
+    /// pointer walks off the edge of the picture into nothing, and
+    /// Windows arranges everything across both. A computer with one
+    /// screen has to look like a computer with one screen from the other
+    /// end, whatever it took here to get there.
+    ///
+    /// What makes that safe is not this function but the note taken
+    /// before it: every screen is written down, on or off, and put back
+    /// when the session ends or at the next start of the service if this
+    /// computer never got to finish. That is the promise, and it is the
+    /// same one that already covers sizes, places and magnifications.
+    pub fn put_the_desktop_alone_on(screen: &str, wide: u32, high: u32) -> (bool, Vec<String>) {
         let now = as_it_stands();
         let Some(here) = now.iter().find(|seat| seat.adapter == screen).cloned() else {
             return (
@@ -690,29 +698,34 @@ mod windows_only {
                 )],
             );
         }
-        // Everything is placed from the new main screen's corner, because
-        // that is what being the main screen means to Windows: it sits at
-        // the origin and the others are said relative to it.
-        let (from_x, from_y) = here.at;
+        // The one that stays sits at the origin, which is what being the
+        // main screen means to Windows, and every other one that was on
+        // is written down as off. Written and not applied, all of them,
+        // so the desktop goes from what it was to what it is to be in one
+        // step: half of this arrangement would be a computer with two
+        // screens on top of each other, or worse, none at all.
         let mut said = Vec::new();
         let mut written = 0;
+        let mut put_out = 0;
         for seat in now.into_iter().filter(|seat| seat.on) {
             let theirs = seat.adapter == here.adapter;
             let wanted = Seat {
-                at: (seat.at.0 - from_x, seat.at.1 - from_y),
+                at: (0, 0),
                 main: theirs,
-                wide: if theirs { wide } else { seat.wide },
-                high: if theirs { high } else { seat.high },
+                on: theirs,
+                wide: if theirs { wide } else { 0 },
+                high: if theirs { high } else { 0 },
                 ..seat
             };
             match ask_for(&wanted) {
-                true => written += 1,
+                true if theirs => written += 1,
+                true => put_out += 1,
                 false => said.push(format!("Windows would not place {}", wanted.adapter)),
             }
         }
         if written == 0 {
             said.push(format!(
-                "no screen could be placed around {screen}, so the desktop stays where it is"
+                "{screen} could not be made this computer's only screen, so nothing was changed"
             ));
             return (false, said);
         }
@@ -730,14 +743,14 @@ mod windows_only {
         };
         if applied != DISP_CHANGE_SUCCESSFUL {
             said.push(format!(
-                "Windows refused to move the desktop onto {screen} ({})",
+                "Windows refused to leave {screen} on its own ({})",
                 why(applied)
             ));
             return (false, said);
         }
         said.push(format!(
-            "this computer's desktop is on {screen} at {wide}x{high} for the length of the \
-             session, and its own screens are still on"
+            "{screen} is this computer's only screen at {wide}x{high} for the length of the \
+             session, its own {put_out} being switched off and written down to come back"
         ));
         (true, said)
     }
@@ -779,7 +792,7 @@ mod windows_only {
 }
 
 #[cfg(windows)]
-pub use windows_only::{as_it_stands, put_at, put_back, put_the_desktop_on};
+pub use windows_only::{as_it_stands, put_at, put_back, put_the_desktop_alone_on};
 
 /// Nowhere else has screens to arrange, and the shape above stays
 /// compiled and tested everywhere: reading and writing an arrangement is
@@ -798,7 +811,7 @@ pub fn put_back(_seats: &[Seat]) -> (bool, Vec<String>) {
 }
 
 #[cfg(not(windows))]
-pub fn put_the_desktop_on(_screen: &str, _wide: u32, _high: u32) -> (bool, Vec<String>) {
+pub fn put_the_desktop_alone_on(_screen: &str, _wide: u32, _high: u32) -> (bool, Vec<String>) {
     (
         false,
         vec!["this computer has no screens to put a desktop on".to_string()],

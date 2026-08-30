@@ -327,10 +327,12 @@ pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
 /// refused that size. The service has woken that screen just before this;
 /// putting a desktop on it is window station work, so it happens here.
 ///
-/// Nothing is switched off. The screens somebody may be sitting in front
-/// of stay lit at their own sizes, showing the far side of a desktop
-/// whose middle has moved: that is the price, and it is paid back in full
-/// when the desk goes home.
+/// This computer's own screens are switched off while it lasts, and that
+/// is the price. Left on they are a second screen of a desktop nobody can
+/// see, windows land on them and vanish from the session and the pointer
+/// walks off the edge of the picture: a computer with one screen has to
+/// look like one from the other end. It is paid back in full when the
+/// desk goes home, which is what the note taken first is for.
 #[cfg(windows)]
 pub fn take_the_grown_screen_for(wanted: (u32, u32, u32)) -> Vec<String> {
     let (wide, high, scale) = wanted;
@@ -350,7 +352,7 @@ pub fn take_the_grown_screen_for(wanted: (u32, u32, u32)) -> Vec<String> {
                 .to_string(),
         ];
     };
-    let (moved, mut said) = zyr_screen::arrangement::put_the_desktop_on(&grown, wide, high);
+    let (moved, mut said) = zyr_screen::arrangement::put_the_desktop_alone_on(&grown, wide, high);
     if moved {
         said.push(zyr_screen::magnify::magnify(&grown, scale));
     }
