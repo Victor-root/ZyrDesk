@@ -1402,6 +1402,12 @@ La seconde : **tout pixel que la page n'a pas encore peint montre ce fond**, et 
 
 3. **Le fond lui-même.** Il est maintenant peint du bleu très sombre du contour du logo. L'alpha est ignoré sous Windows, donc ça ne rend pas la fenêtre transparente : ça choisit **la couleur que porte l'échec à l'être**. Le logo est cerné de cette couleur sur tout son tour, donc un bord lissé qui s'appuie dessus s'appuie sur lui-même et disparaît ; et un pixel pas encore peint devient le noir du logo au lieu d'un bloc blanc sur l'image de quelqu'un.
 
+**Quatrième endroit, trouvé au journal : la découpe courait devant le dessin.** Le liseré blanc du bord gauche, pendant l'animation du survol et jamais au repos. Les nombres le disent sans ambiguïté : le bord gauche de la découpe passe de 1019 à 1013 pendant que le logo grandit, soit six colonnes découvertes. Le logo grandit depuis son coin haut droit, donc c'est bien par la gauche qu'il s'étend.
+
+La page mesure dans le rappel d'animation, c'est-à-dire **avant que l'image mesurée soit peinte**, et la découpe est posée dans la foulée. Pendant au moins une image, elle montre donc six colonnes que la vue web n'a pas encore touchées.
+
+Poser la découpe sur l'image d'avant plutôt que sur celle qui vient ne règle rien : ça déplace le défaut du grandissement au rétrécissement. **La règle juste est l'intersection des deux** : par morceau, le plus petit de ce qui vient d'être peint et de ce qui va l'être. Elle est toujours à l'intérieur de ce qui est peint, dans les deux sens. Elle coûte un ou deux pixels rognés sur un bord lissé tant que ça bouge, ce qui ne se voit pas, et rien du tout dès que c'est immobile, les deux dessins étant alors le même. Un morceau qui vient d'apparaître, la carte du menu par exemple, attend une image pour la même raison : personne ne l'a encore peint.
+
 **Ce qui reste, et il faut le dire.** La vraie réponse à l'escalier des coins n'est pas une meilleure couleur de fond, c'est une transparence par pixel qui marche, ce qui veut dire aller voir pourquoi la couche du dessous la refuse. Tant qu'on découpe au masque, les coins seront durs. C'est le prochain travail sur ce bouton, pas celui-ci.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)

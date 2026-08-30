@@ -67,12 +67,28 @@ let effacement = null;
    le haut de la fenêtre qui bouge quand elle grandit. */
 let versLeHaut = false;
 
+/* La forme envoyée à l'image d'avant.
+
+   Gardée pour une raison et une seule : la découpe ne doit jamais
+   réclamer un pixel que la page n'a pas encore peint. Ce qui est mesuré
+   ici l'est dans le rappel d'animation, donc avant que l'image mesurée
+   soit peinte, et la découpe est posée aussitôt. Le logo grandit vers la
+   gauche au survol, donc la découpe découvrait six colonnes que la vue
+   web n'avait pas encore touchées, et le fond de la fenêtre s'y voyait :
+   c'est le liseré blanc du bord gauche, pendant l'animation et jamais au
+   repos. */
+let formeAvant = [];
+
 function poseLeSens(veut) {
   if (versLeHaut === veut) {
     return false;
   }
   versLeHaut = veut;
   vue.paquet.classList.toggle("vers-le-haut", veut);
+  // Le dessin d'avant ne veut plus rien dire : il était compté depuis
+  // l'autre bord, et le comparer à celui d'après reviendrait à comparer
+  // deux choses qui ne parlent pas des mêmes pixels.
+  formeAvant = [];
   return true;
 }
 
@@ -279,10 +295,55 @@ function formeOccupee(echelle) {
    En vrais pixels et non en pixels de page : sur un écran agrandi les
    deux ne valent pas la même chose, et une fenêtre taillée dans la
    mauvaise unité laisse voir son propre fond tout autour du bouton. */
+/* Le plus petit des deux dessins, morceau par morceau.
+
+   Une découpe posée sur ce qui va être dessiné laisse voir le fond là où
+   le dessin grandit ; posée sur ce qui vient de l'être, elle le laisse
+   voir là où il rétrécit. L'intersection des deux n'a ni l'un ni l'autre
+   défaut : elle est toujours à l'intérieur de ce qui est peint, dans les
+   deux sens. Ce qu'elle coûte est un ou deux pixels rognés sur un bord
+   lissé pendant que ça bouge, et rien du tout dès que c'est immobile,
+   les deux dessins étant alors le même.
+
+   Un morceau qui vient d'apparaître, la carte du menu par exemple,
+   attend une image : personne ne l'a encore peint. */
+function auPlusPetit(avant, maintenant) {
+  // Rien avant : la toute première forme d'une fenêtre, ou la première
+  // après un changement de sens. La fenêtre n'est pas encore montrée à
+  // ce moment-là, donc il n'y a rien à découvrir, et une forme vide la
+  // laisserait entière le temps d'une image, ce qui serait un rectangle
+  // de fond posé sur l'image.
+  if (avant.length === 0) {
+    return maintenant;
+  }
+  const commun = Math.min(avant.length, maintenant.length);
+  const morceaux = [];
+  for (let rang = 0; rang < commun; rang += 1) {
+    const a = avant[rang];
+    const b = maintenant[rang];
+    const x = Math.max(a.x, b.x);
+    const y = Math.max(a.y, b.y);
+    const width = Math.min(a.x + a.width, b.x + b.width) - x;
+    const height = Math.min(a.y + a.height, b.y + b.height) - y;
+    if (width > 0 && height > 0) {
+      morceaux.push({
+        x,
+        y,
+        width,
+        height,
+        radius: Math.min(a.radius, b.radius),
+      });
+    }
+  }
+  return morceaux;
+}
+
 function ajusteLaFenetre() {
   const boite = laBoite();
   const echelle = window.devicePixelRatio || 1;
-  const forme = formeOccupee(echelle);
+  const dessine = formeOccupee(echelle);
+  const forme = auPlusPetit(formeAvant, dessine);
+  formeAvant = dessine;
   invoke("floating_size", {
     width: Math.ceil(boite.width * echelle),
     height: Math.ceil(boite.height * echelle),
