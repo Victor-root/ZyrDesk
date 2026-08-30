@@ -1446,9 +1446,12 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > `\\.\DISPLAY1 draws nothing larger than itself, so the next engine on this computer films the screen it grows instead and a session can borrow that one`
 >
-> **À la fermeture**, le moteur redémarre tout seul, personne ne regardant plus :
+> **À la fermeture**, le bureau revient d'abord, **puis** le moteur redémarre tout seul, personne ne regardant plus. L'ordre compte et il se lit dans le journal :
 >
+> `this computer's screens are back the way they were (N of them)`
 > `this computer's own screens draw nothing larger than themselves, so the engine starts over to film the screen it grew instead`
+>
+> Si la seconde ligne arrive **avant** la première, ou si tu vois `a desk was left the way a session left it by a run that did not finish`, c'est que le moteur est reparti trop tôt : envoie-le moi.
 > `this computer is filmed on the screen it grew for itself ({...}), its own drawing nothing larger than themselves`
 >
 > **La deuxième session**, la même : elle doit arriver à la taille demandée.

@@ -871,8 +871,16 @@ fn wait_for_the_engine_to_stop(
         // is filmed on. Read while nobody is watching and never during a
         // session: starting the engine over takes the tunnel with it, and
         // with the tunnel every session going through it.
+        //
+        // And never while a desk is still noted, which is the half that
+        // was missed. Putting a desk back is paced a couple of seconds
+        // slower than this, so the engine went first, and the desk came
+        // home through the path meant for a run that did not finish: it
+        // did come home, three seconds late and under a sentence that was
+        // not true. Somebody's screens come first, the engine can wait.
         if !watched.gateway.a_session_is_open()
             && !films_the_grown_screen
+            && crate::screen::noted_before().is_empty()
             && crate::screen::the_main_screen_is_stuck()
         {
             log.write(
