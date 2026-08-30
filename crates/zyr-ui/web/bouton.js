@@ -728,16 +728,25 @@ function choisis(nom, valeur) {
    c'est parti : ce qui suit est l'image qui s'en va et revient, et un
    menu resté ouvert par-dessus serait une nappe posée sur elle. */
 async function applique() {
+  // Ce qui vient d'être choisi n'est pas forcément encore écrit : un
+  // curseur lâché part au service et met un aller-retour à y arriver,
+  // et la ligne « Appliquer » est déjà à l'écran depuis le choix
+  // d'avant. Relancer sans attendre relisait les réglages tels
+  // qu'ils étaient, et l'image revenait identique.
+  await choixEnCours;
+  // Refermé avant de partir, et non après. L'image s'en va et revient,
+  // ce qui prend des secondes et met un écran de chargement à sa place ;
+  // le menu attendait la fin pour se replier, donc il restait posé
+  // dessus tout du long, avec la fenêtre découpée à sa taille à lui.
+  // C'était une nappe de menu par-dessus le chargement, et elle ne
+  // partait qu'une fois l'image revenue.
+  ouvre(false);
   try {
-    // Ce qui vient d'être choisi n'est pas forcément encore écrit : un
-    // curseur lâché part au service et met un aller-retour à y arriver,
-    // et la ligne « Appliquer » est déjà à l'écran depuis le choix
-    // d'avant. Relancer sans attendre relisait les réglages tels
-    // qu'ils étaient, et l'image revenait identique.
-    await choixEnCours;
     await invoke("apply_session");
-    ouvre(false);
   } catch (raison) {
+    // Rouvert pour porter le refus : la ligne qui le dit vit dans le
+    // menu, et un menu fermé la dirait à personne.
+    ouvre(true);
     souci(String(raison));
   }
 }

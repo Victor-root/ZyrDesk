@@ -460,10 +460,10 @@ fn how_it_shows() -> u32 {
     // side of the gap, and nothing else in this journal says it happened.
     if SHOWN.swap(up, Ordering::Relaxed) != up {
         note(&format!(
-            "bouton flottant {} (dessiné : {}, masqué à la main : {})",
+            "bouton flottant {} (masqué à la main : {}) ; il portait alors {}",
             if up { "montré" } else { "retiré" },
-            READY.load(Ordering::Relaxed),
-            HIDDEN.load(Ordering::Relaxed)
+            HIDDEN.load(Ordering::Relaxed),
+            what_it_wears()
         ));
     }
     if up { SWP_SHOWWINDOW } else { SWP_HIDEWINDOW }
@@ -472,6 +472,44 @@ fn how_it_shows() -> u32 {
 /// Whether the button was showing the last time that was decided.
 #[cfg(windows)]
 static SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// The shape the window is wearing right now, as the system holds it.
+///
+/// Asked of the system and not of what was last sent to it, because the
+/// two parting company is the one fault worth catching: a window shown
+/// wearing a shape larger than what its page draws shows its own ground
+/// in the difference, and that is a white patch over the picture until
+/// something cuts it again.
+#[cfg(windows)]
+fn what_it_wears() -> String {
+    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::Graphics::Gdi::GetWindowRgnBox;
+
+    let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
+    if button.is_null() {
+        return "aucune fenêtre".to_string();
+    }
+    let mut held = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: a window of ours, and the rectangle is ours.
+    let taken = unsafe { GetWindowRgnBox(button, &mut held) };
+    format!(
+        "la découpe ({}, {}, {}, {}), sorte {taken}, dans une fenêtre {}",
+        held.left,
+        held.top,
+        held.right,
+        held.bottom,
+        match its_place() {
+            Some((left, top, right, bottom)) =>
+                format!("{}x{} en ({left}, {top})", right - left, bottom - top),
+            None => "plus là".to_string(),
+        }
+    )
+}
 
 #[cfg(not(windows))]
 fn how_it_shows() -> u32 {
@@ -882,23 +920,24 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         // over a dark product.
         .theme(home.theme().ok())
         .decorations(false)
-        .transparent(true)
-        // And the ground under the page painted the logo's own outline,
-        // because transparent is refused somewhere below and this window
-        // has a ground whatever it asks for. That ground was white, and
-        // every white thing ever seen around this button was it: the
-        // hairline down its edge, the flash when the menu closes, and
-        // the fringe on its rounded corners, which is not aliasing but a
-        // half-transparent edge blended against whatever is underneath.
-        // Underneath is this. The logo is drawn outlined in exactly this
-        // colour all the way round, so an edge that leans on it leans on
-        // itself and disappears; and a pixel the page has not painted
-        // yet is now the dark of the logo rather than a white block over
-        // somebody's picture.
+        // Not asked to be transparent, and that is the point.
         //
-        // The alpha channel is dropped on Windows, so this cannot be a
-        // way to ask for transparency. It is a way to choose which
-        // colour the failure to get it wears.
+        // It was asked, and refused, which is the whole reason this
+        // window is cut to a shape instead: nothing is drawn outside a
+        // shape, so the shape does the work transparency would have
+        // done. What asking for it anyway still did was stop the ground
+        // below the page from being given a colour, and that ground was
+        // white. Every white thing ever seen around this button was it:
+        // the hairline down its edge, the flash when the menu closes,
+        // and the fringe on its rounded corners, which is not aliasing
+        // but a half-transparent edge blended against whatever lies
+        // underneath.
+        //
+        // Underneath is now the logo's own outline. The logo is drawn
+        // cased in exactly this colour all the way round, so an edge
+        // that leans on it leans on itself and disappears; and a pixel
+        // the page has not painted yet is the dark of the logo rather
+        // than a white block over somebody's picture.
         .background_color(tauri::window::Color(9, 13, 22, 255))
         .shadow(false)
         .resizable(false)
