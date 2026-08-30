@@ -258,73 +258,16 @@ fn at(recommended: usize, step: i32) -> u32 {
 /// the list, while the one that carries the magnification takes a pair of
 /// numbers. Only the newer call can be asked to say both, so it is asked.
 fn the_screen_called(screen: &str) -> Option<(Luid, u32)> {
-    use windows_sys::Win32::Devices::Display::{
-        DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_MODE_INFO,
-        DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo,
-        GetDisplayConfigBufferSizes, QDC_ONLY_ACTIVE_PATHS, QDC_VIRTUAL_MODE_AWARE,
-        QueryDisplayConfig,
-    };
-    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
-
-    // Told that a desktop may differ in size from the panel it is drawn
-    // on, because on this machine it sometimes does. Asked without that,
-    // Windows cannot describe a desktop in that state at all and answers
-    // that it has no screens: a laptop whose desktop had been stretched
-    // for a session was then never found again, so its magnification was
-    // never put back and the desk was never counted as returned.
-    let asked = QDC_ONLY_ACTIVE_PATHS | QDC_VIRTUAL_MODE_AWARE;
-    let mut paths = 0u32;
-    let mut modes = 0u32;
-    // SAFETY: both counts are ours, and nothing else is handed over.
-    if unsafe { GetDisplayConfigBufferSizes(asked, &mut paths, &mut modes) } != ERROR_SUCCESS {
-        return None;
-    }
-    let mut found: Vec<DISPLAYCONFIG_PATH_INFO> =
-        vec![unsafe { std::mem::zeroed() }; paths as usize];
-    let mut shapes: Vec<DISPLAYCONFIG_MODE_INFO> =
-        vec![unsafe { std::mem::zeroed() }; modes as usize];
-    // SAFETY: both lists are ours and hold what the counts above asked
-    // for, and the counts go back in so the call can shorten them.
-    if unsafe {
-        QueryDisplayConfig(
-            asked,
-            &mut paths,
-            found.as_mut_ptr(),
-            &mut modes,
-            shapes.as_mut_ptr(),
-            std::ptr::null_mut(),
-        )
-    } != ERROR_SUCCESS
-    {
-        return None;
-    }
-    for path in found.iter().take(paths as usize) {
-        let mut about: DISPLAYCONFIG_SOURCE_DEVICE_NAME = unsafe { std::mem::zeroed() };
-        about.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
-        about.header.size = size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32;
-        about.header.adapterId = path.sourceInfo.adapterId;
-        about.header.id = path.sourceInfo.id;
-        // SAFETY: the block is ours, opens on the header the call reads,
-        // and carries its own size as that header requires.
-        if unsafe { DisplayConfigGetDeviceInfo((&raw mut about).cast()) } != ERROR_SUCCESS as i32 {
-            continue;
-        }
-        let end = about
-            .viewGdiDeviceName
-            .iter()
-            .position(|letter| *letter == 0)
-            .unwrap_or(0);
-        if String::from_utf16_lossy(&about.viewGdiDeviceName[..end]) == screen {
-            return Some((
-                Luid {
-                    low: path.sourceInfo.adapterId.LowPart,
-                    high: path.sourceInfo.adapterId.HighPart,
-                },
-                path.sourceInfo.id,
-            ));
-        }
-    }
-    None
+    let (paths, _) = crate::desktop::as_windows_has_it()?;
+    paths.iter().find_map(|path| {
+        (crate::desktop::gdi_name(path)? == screen).then_some((
+            Luid {
+                low: path.sourceInfo.adapterId.LowPart,
+                high: path.sourceInfo.adapterId.HighPart,
+            },
+            path.sourceInfo.id,
+        ))
+    })
 }
 
 fn read(adapter: Luid, id: u32) -> Option<Magnification> {

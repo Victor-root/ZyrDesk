@@ -144,16 +144,30 @@ fn look_at_the_desk(_log: &Log) {}
 /// and the caller is the only one that knows when.
 #[cfg(windows)]
 fn put_the_desk_back(log: &Log) -> bool {
+    // The desk first and the grown screen after it, and that order is the
+    // whole of the safety. A session that borrowed the grown screen has
+    // this computer's desktop on it: taking that screen away first leaves
+    // Windows to decide where the desktop lands, and the arrangement put
+    // back a moment later would be fighting whatever it decided. Put back
+    // first, the desktop is already home on a screen its owner can see,
+    // and the grown one goes away with nothing on it.
+    //
     // The computer with nothing plugged into it never had a desk noted,
-    // and what it has instead goes away here: the screen it grew for
-    // itself, which is a second screen on nobody's desk the moment the
-    // last session stops watching it.
+    // and there is nothing to put back before its grown screen goes.
+    let back = if crate::screen::noted_before().is_empty() {
+        true
+    } else {
+        the_desk_as_it_was(log)
+    };
     if !screen_asleep() {
         put_the_grown_screen_away(log, &|| true);
     }
-    if crate::screen::noted_before().is_empty() {
-        return true;
-    }
+    back
+}
+
+/// Puts back what was noted, saying whether it really went back.
+#[cfg(windows)]
+fn the_desk_as_it_was(log: &Log) -> bool {
     match crate::session::give_the_desk_back() {
         Ok(took) => {
             log.write(&format!(
@@ -217,6 +231,10 @@ enum Life {
     /// engine reads that once, at its own start, so it was stopped on
     /// purpose and the next one is told the new answer.
     ServingChanged,
+    /// Which screen this computer is filmed on changed while the engine
+    /// ran, its own having refused a size a session asked for. It reads
+    /// that at its start and never again, so it was stopped on purpose.
+    ScreenToFilmChanged,
     /// It said it could not put this computer's screens back the way it
     /// found them. It was stopped on purpose, which is what makes it try
     /// again.
@@ -430,7 +448,10 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             // Straight away rather than after the settling delay: the
             // engine was stopped on purpose the moment it had said what
             // was wanted of it, and nothing on the machine moved.
-            if matches!(life, Life::VirtualScreenLearned | Life::ServingChanged) {
+            if matches!(
+                life,
+                Life::VirtualScreenLearned | Life::ServingChanged | Life::ScreenToFilmChanged
+            ) {
                 continue;
             }
             if !wait(SESSION_SETTLING, order) {
@@ -600,7 +621,15 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // said it yet; both are learned below and used from the next start
     // on, which costs that one start a restart.
     let named_this_start = wake_to_be_named(log);
+    // Two computers are filmed on the screen they grow rather than on one
+    // of their own: the one with nothing plugged in, which has no other,
+    // and the one whose own screens draw nothing larger than themselves,
+    // which cannot serve a session the size it asks for. Settled here
+    // because the engine reads which screen to film at its start and
+    // never again, and a session may only borrow that screen where the
+    // engine is already looking at it.
     let on_its_own = crate::screen::showing_now().is_none();
+    let films_the_grown_screen = on_its_own || crate::screen::the_main_screen_is_stuck();
     // Named on every computer, and not only on the one with nothing
     // plugged in. Left unnamed, the engine films whichever screen the
     // graphics card enumerates first, and it takes the first screen that
@@ -608,16 +637,20 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // resized answers nothing while the change lasts, so the very screen
     // a session had just put at its own size was the one the engine
     // walked away from, for the rest of that session.
-    let aiming_at = match on_its_own {
+    let aiming_at = match films_the_grown_screen {
         true => crate::screen::remembered(),
         false => crate::screen::main_remembered(),
     };
     let config = match &aiming_at {
         Some(screen) => {
-            log.write(&if on_its_own {
+            log.write(&if films_the_grown_screen {
                 format!(
-                    "no screen is plugged into this computer, so the engine is aimed at the one it \
-                     grew for itself ({screen})"
+                    "this computer is filmed on the screen it grew for itself ({screen}), {}",
+                    if on_its_own {
+                        "having none of its own"
+                    } else {
+                        "its own drawing nothing larger than themselves"
+                    }
                 )
             } else {
                 format!("the engine is aimed at this computer's main screen ({screen})")
@@ -658,7 +691,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         &engine_log,
         crate::screen::AsStarted {
             aimed_at: aiming_at.as_deref(),
-            on_its_own,
+            films_the_grown_screen,
             asleep: !named_this_start && screen_asleep(),
         },
         log,
@@ -726,7 +759,11 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // Opened last: an engine that never answered has nothing to serve,
     // and dropped first at the end, since a tunnel leading to a stopped
     // engine only makes the other computer wait.
-    let at_hand = AtHand { ports, credentials };
+    let at_hand = AtHand {
+        ports,
+        credentials,
+        films_the_grown_screen,
+    };
     let gateway = match Gateway::open(
         runtime,
         at_hand,
@@ -756,7 +793,15 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
             heard: false,
             dealt_with: false,
         };
-        wait_for_the_engine_to_stop(&mut watched, session, serving, remembered, order, log)
+        wait_for_the_engine_to_stop(
+            &mut watched,
+            session,
+            serving,
+            films_the_grown_screen,
+            remembered,
+            order,
+            log,
+        )
     };
     hosting.held_by(Holdup::Starting);
     drop(gateway);
@@ -792,6 +837,7 @@ fn wait_for_the_engine_to_stop(
     watched: &mut Watched<'_>,
     session: u32,
     serving: zyr_proto::session::Serving,
+    films_the_grown_screen: bool,
     remembered: &Remembered,
     order: &StopOrder,
     log: &Log,
@@ -818,6 +864,23 @@ fn wait_for_the_engine_to_stop(
             log.write("how this computer serves was changed, the engine starts over with it");
             stop_and_say_how(watched.engine, log);
             return Life::ServingChanged;
+        }
+
+        // A session has just found out that this computer's own screens
+        // draw nothing larger than themselves, which changes the screen it
+        // is filmed on. Read while nobody is watching and never during a
+        // session: starting the engine over takes the tunnel with it, and
+        // with the tunnel every session going through it.
+        if !watched.gateway.a_session_is_open()
+            && !films_the_grown_screen
+            && crate::screen::the_main_screen_is_stuck()
+        {
+            log.write(
+                "this computer's own screens draw nothing larger than themselves, so the engine \
+                 starts over to film the screen it grew instead",
+            );
+            stop_and_say_how(watched.engine, log);
+            return Life::ScreenToFilmChanged;
         }
 
         // The speakers follow whoever is watching: silent while a session

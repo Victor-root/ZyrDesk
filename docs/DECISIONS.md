@@ -1346,6 +1346,18 @@ or removed). Enabling all of the available devices:
 
 **Et les deux corrections faites, la réponse est la troisième.** Sur ce PC, le chemin porte bien la marque et bien le bloc, la demande est faite exactement, et Windows répond oui en laissant l'écran où il est. Les deux machines qui marchent ont une carte Intel et une dalle interne ; celle qui ne marche pas a une carte d'un autre fabricant et un écran externe, dont la liste de modes ne contient rien au-delà de la dalle. Un bureau plus grand que la dalle n'est donc pas une chose qu'on obtient partout, et ce n'est pas la demande qui décide.
 
+## D95. L'écran virtuel revient, en dernier recours et sans rien éteindre (2026-08-30, pendant M4)
+
+**Le relevé, et il ferme la question de [D94](#d94-un-oui-de-windows-sur-laffichage-se-relit-il-ne-se-croit-pas).** Un PC dont la carte graphique ne dessine aucun bureau plus grand que sa dalle, quelle que soit la forme demandée : essai fait depuis un client 16:10 puis depuis un client 16:9, même refus. Sur cette machine, résolution de l'hôte et résolution du client donnaient la même image, et rien dans notre code ne pouvait y changer quoi que ce soit.
+
+**Le mur est réel et il n'est pas le nôtre.** Pour qu'un client reçoive un bureau plus grand, il faut que le bureau de l'hôte soit plus grand ; si sa dalle ne sait pas l'afficher, la personne assise devant ne peut pas le voir. Le produit de référence a le même mur et s'en sort de la même façon : là où il ne peut pas étirer la dalle, il pose un écran que personne ne regarde.
+
+**Décision : la machine qui ne peut pas est filmée sur l'écran qu'elle fait pousser.** C'est le second usage de cet écran, à côté de celui de [D91](#d91-on-ne-touche-pas-aux-écrans-de-quelquun-on-lui-rend-son-bureau) qui le réservait à la machine sans aucun écran branché. La différence avec ce qui avait été retiré à l'époque tient en une phrase : **rien n'est éteint**. Les écrans que quelqu'un regarde restent allumés, à leur taille, à leur place ; ce qu'ils montrent est le bord d'un bureau dont le milieu a déménagé, et tout revient à la fin.
+
+**Ce n'est appris qu'en essayant, et retenu.** Un écran qui a refusé une fois un bureau plus grand que lui refusera toujours, alors son nom est écrit à côté du service. Le moteur ne lit quel écran filmer qu'à son démarrage, et le redémarrer emporte le tunnel et avec lui toutes les sessions en cours : la bascule ne peut donc pas se faire au milieu d'une session. Elle se fait quand plus personne ne regarde. Concrètement, la première session qui découvre le mur est servie comme avant, et c'est la suivante qui profite de l'écran virtuel.
+
+**Les garde-fous, parce que c'est la seule partie qui compte vraiment.** Le bureau ne déménage que si le relevé d'avant session existe : sans papier disant comment revenir, on ne bouge rien. Rien n'est éteint, donc un écran réel reste allumé quoi qu'il arrive, et une machine qui tomberait en panne à cet instant retrouve son bureau toute seule au redémarrage, Windows ne laissant pas un ordinateur sans écran principal. À la fin d'une session, **le bureau est remis d'abord et l'écran virtuel endormi ensuite**, dans cet ordre : l'inverse laisserait Windows décider où poser le bureau et l'arrangement remis un instant plus tard se battrait contre sa décision. Et un écran resté allumé par une exécution qui n'a pas fini est endormi au démarrage suivant du service, comme il l'était déjà.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

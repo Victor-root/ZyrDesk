@@ -32,15 +32,13 @@
 //! screens on it, and from there there is no desktop to resize.
 
 use windows_sys::Win32::Devices::Display::{
-    DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
-    DISPLAYCONFIG_DEVICE_INFO_SET_SUPPORT_VIRTUAL_RESOLUTION, DISPLAYCONFIG_MODE_INFO,
-    DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE, DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE,
-    DISPLAYCONFIG_MODE_INFO_TYPE_TARGET, DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SCALING,
-    DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX, DISPLAYCONFIG_SCALING_IDENTITY,
-    DISPLAYCONFIG_SOURCE_DEVICE_NAME, DISPLAYCONFIG_SUPPORT_VIRTUAL_RESOLUTION,
-    DisplayConfigGetDeviceInfo, DisplayConfigSetDeviceInfo, GetDisplayConfigBufferSizes,
-    QDC_ONLY_ACTIVE_PATHS, QDC_VIRTUAL_MODE_AWARE, QueryDisplayConfig, SDC_ALLOW_CHANGES,
-    SDC_APPLY, SDC_USE_SUPPLIED_DISPLAY_CONFIG, SDC_VIRTUAL_MODE_AWARE, SetDisplayConfig,
+    DISPLAYCONFIG_DEVICE_INFO_HEADER, DISPLAYCONFIG_DEVICE_INFO_SET_SUPPORT_VIRTUAL_RESOLUTION,
+    DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_MODE_INFO_TYPE_DESKTOP_IMAGE,
+    DISPLAYCONFIG_MODE_INFO_TYPE_SOURCE, DISPLAYCONFIG_MODE_INFO_TYPE_TARGET,
+    DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SCALING, DISPLAYCONFIG_SCALING_ASPECTRATIOCENTEREDMAX,
+    DISPLAYCONFIG_SCALING_IDENTITY, DISPLAYCONFIG_SUPPORT_VIRTUAL_RESOLUTION,
+    DisplayConfigSetDeviceInfo, SDC_ALLOW_CHANGES, SDC_APPLY, SDC_USE_SUPPLIED_DISPLAY_CONFIG,
+    SDC_VIRTUAL_MODE_AWARE, SetDisplayConfig,
 };
 use windows_sys::Win32::Foundation::ERROR_SUCCESS;
 use windows_sys::Win32::Graphics::Gdi::DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE;
@@ -57,7 +55,7 @@ use windows_sys::Win32::Graphics::Gdi::DISPLAYCONFIG_PATH_SUPPORT_VIRTUAL_MODE;
 /// size it has and the picture is stretched at the other end, which is
 /// what happened before any of this existed.
 pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
-    let Some((paths, modes)) = the_desktop_as_it_is() else {
+    let Some((paths, modes)) = crate::desktop::as_windows_has_it() else {
         return Some(format!(
             "Windows would not describe its desktop, so {screen} was left alone"
         ));
@@ -79,7 +77,7 @@ pub fn put_at(screen: &str, wide: u32, high: u32) -> Option<String> {
     // its desktop differ from its panel: the whole request was then
     // written in terms Windows quietly ignores, and it answered success
     // while leaving the desktop exactly where it was.
-    let Some((mut paths, mut modes)) = the_desktop_as_it_is() else {
+    let Some((mut paths, mut modes)) = crate::desktop::as_windows_has_it() else {
         return Some(format!(
             "Windows would not describe its desktop, so {screen} was left alone"
         ));
@@ -194,7 +192,9 @@ fn the_screen_in(
     wide: u32,
     high: u32,
 ) -> Option<Found> {
-    let path = the_path_of(paths, screen)?;
+    let path = paths
+        .iter()
+        .position(|path| crate::desktop::gdi_name(path).is_some_and(|name| name == screen))?;
     // SAFETY: reading the union as the word it also is, which is how
     // both halves of the index are reached at once.
     let word = unsafe { paths[path].sourceInfo.Anonymous.modeInfoIdx };
@@ -241,8 +241,10 @@ fn ask_for(paths: &[DISPLAYCONFIG_PATH_INFO], modes: &[DISPLAYCONFIG_MODE_INFO],
 /// for and what Windows did are two different things, and on this call
 /// they can differ without Windows saying so.
 fn desktop_of(screen: &str) -> Option<(u32, u32)> {
-    let (paths, modes) = the_desktop_as_it_is()?;
-    let path = the_path_of(&paths, screen)?;
+    let (paths, modes) = crate::desktop::as_windows_has_it()?;
+    let path = paths
+        .iter()
+        .position(|path| crate::desktop::gdi_name(path).is_some_and(|name| name == screen))?;
     // SAFETY: reading the union as the word it also is.
     let word = unsafe { paths[path].sourceInfo.Anonymous.modeInfoIdx };
     let source = mode_at(word, &modes)
@@ -273,67 +275,6 @@ fn what_may_stand_in_the_way(path: &DISPLAYCONFIG_PATH_INFO, image: Option<usize
     // of them and is not something a request can change.
     "; the request carried everything Windows asks for, so what is left is a graphics card that \
      draws no desktop larger than the panel on this output"
-}
-
-/// The desktop as Windows describes it, told that a desktop may be
-/// larger than the panel it is drawn on.
-///
-/// Asked that way from the start and not only when writing: the lists
-/// that come back are the ones handed straight back, and a list read
-/// without that flag describes a world where the two sizes are the same.
-fn the_desktop_as_it_is() -> Option<(Vec<DISPLAYCONFIG_PATH_INFO>, Vec<DISPLAYCONFIG_MODE_INFO>)> {
-    let asked = QDC_ONLY_ACTIVE_PATHS | QDC_VIRTUAL_MODE_AWARE;
-    let mut paths = 0u32;
-    let mut modes = 0u32;
-    // SAFETY: both counts are ours, and nothing else is handed over.
-    if unsafe { GetDisplayConfigBufferSizes(asked, &mut paths, &mut modes) } != ERROR_SUCCESS {
-        return None;
-    }
-    let mut found: Vec<DISPLAYCONFIG_PATH_INFO> =
-        vec![unsafe { std::mem::zeroed() }; paths as usize];
-    let mut shapes: Vec<DISPLAYCONFIG_MODE_INFO> =
-        vec![unsafe { std::mem::zeroed() }; modes as usize];
-    // SAFETY: both lists are ours and hold what the counts above asked
-    // for, and the counts go back in so the call can shorten them.
-    if unsafe {
-        QueryDisplayConfig(
-            asked,
-            &mut paths,
-            found.as_mut_ptr(),
-            &mut modes,
-            shapes.as_mut_ptr(),
-            std::ptr::null_mut(),
-        )
-    } != ERROR_SUCCESS
-    {
-        return None;
-    }
-    found.truncate(paths as usize);
-    shapes.truncate(modes as usize);
-    Some((found, shapes))
-}
-
-/// Which of those paths carries the screen Windows takes orders about
-/// under that name.
-fn the_path_of(paths: &[DISPLAYCONFIG_PATH_INFO], screen: &str) -> Option<usize> {
-    paths.iter().position(|path| {
-        let mut about: DISPLAYCONFIG_SOURCE_DEVICE_NAME = unsafe { std::mem::zeroed() };
-        about.header.r#type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
-        about.header.size = size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32;
-        about.header.adapterId = path.sourceInfo.adapterId;
-        about.header.id = path.sourceInfo.id;
-        // SAFETY: the block is ours, opens on the header the call reads,
-        // and carries its own size as that header requires.
-        if unsafe { DisplayConfigGetDeviceInfo((&raw mut about).cast()) } != ERROR_SUCCESS as i32 {
-            return false;
-        }
-        let end = about
-            .viewGdiDeviceName
-            .iter()
-            .position(|letter| *letter == 0)
-            .unwrap_or(0);
-        String::from_utf16_lossy(&about.viewGdiDeviceName[..end]) == screen
-    })
 }
 
 /// Lets that screen take a desktop larger than its own panel, and says

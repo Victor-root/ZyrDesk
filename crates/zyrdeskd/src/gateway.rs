@@ -68,12 +68,23 @@ const PAIRING_RETRY: Duration = Duration::from_millis(200);
 pub struct AtHand {
     pub ports: EnginePorts,
     pub credentials: Credentials,
+    /// Whether it was started filming the screen this computer grows for
+    /// itself rather than one of its own.
+    ///
+    /// Decided before the engine started, because that is the one moment
+    /// it reads which screen to film, and carried here because a session
+    /// only borrows that screen where the engine is already looking at
+    /// it. Borrowing it otherwise would move somebody's desktop onto a
+    /// screen nobody is filming.
+    pub films_the_grown_screen: bool,
 }
 
 /// The local engine, and the one thing a far computer may ask of it.
 struct Attending {
     ports: EnginePorts,
     api: Arc<EngineApi>,
+    /// Whether the engine is filming the screen this computer grew.
+    films_the_grown_screen: bool,
     /// The sessions coming through this door, so what one of them asks
     /// of this computer outlives the asking.
     sessions: Arc<Sessions>,
@@ -288,37 +299,40 @@ impl Answers for Attending {
                 .log
                 .write(&format!("this computer's desk was left as it was: {e}")),
         }
-        // A computer with nothing plugged into it has no desk to hold and
-        // none to give back. What it has is the screen it grows for
-        // itself, and that one is woken from here rather than from the
-        // session on screen: starting a display device is administrator
-        // work, which a service has and a signed-in person may not.
+        // The screen this computer grows for itself is woken from here
+        // rather than from the session on screen: starting a display
+        // device is administrator work, which a service has and a
+        // signed-in person may not. The engine is already aimed at it,
+        // that having been settled when it started, which is the one
+        // moment it reads which screen to film.
         //
-        // The engine is already aimed at it, that having been settled
-        // when it started, which is the one moment it reads which screen
-        // to film.
-        let grown = match wanted.filter(|_| crate::screen::showing_now().is_none()) {
-            Some(screen) => {
+        // Two computers need it, and they need different things of it. One
+        // has nothing plugged in at all, so the grown screen is the only
+        // thing there is to film and Windows puts the desktop on it
+        // unasked. The other has screens that draw nothing larger than
+        // themselves, so it is woken at the size asked for and the desktop
+        // is moved onto it, which is the errand below.
+        let showing = crate::screen::showing_now();
+        let grown = match wanted {
+            Some(screen) if showing.is_none() => {
                 self.log.write(
                     "no screen is plugged into this computer, so the one it grew for itself is \
                      woken for this session",
                 );
-                match wake_the_grown_screen((screen.wide, screen.high)) {
-                    Ok(said) => {
-                        for line in said {
-                            self.log.write(&line);
-                        }
-                        Some((screen.wide, screen.high))
-                    }
-                    Err(refused) => {
-                        self.log.write(&format!(
-                            "the screen this computer grew stayed as it was: {refused}"
-                        ));
-                        None
-                    }
-                }
+                self.wake_the_one_it_grew(screen)
+                    .map(|()| (screen.wide, screen.high))
             }
-            None => None,
+            Some(screen)
+                if self.films_the_grown_screen && showing != Some((screen.wide, screen.high)) =>
+            {
+                self.log.write(
+                    "this computer's own screens draw nothing larger than themselves, so the one \
+                     it grew is woken at the size asked for and the desktop moves onto it",
+                );
+                self.wake_the_one_it_grew(screen)
+                    .and_then(|()| self.move_the_desktop_onto_it(screen))
+            }
+            _ => None,
         };
         // What this computer ends up showing, read from what the session
         // on screen just wrote down rather than worked out here: what was
@@ -369,6 +383,49 @@ impl Answers for Attending {
     }
 }
 
+impl Attending {
+    /// Wakes the screen this computer grew, at that size, saying what
+    /// came of it.
+    fn wake_the_one_it_grew(&self, screen: WantedScreen) -> Option<()> {
+        match wake_the_grown_screen((screen.wide, screen.high)) {
+            Ok(said) => {
+                for line in said {
+                    self.log.write(&line);
+                }
+                Some(())
+            }
+            Err(refused) => {
+                self.log.write(&format!(
+                    "the screen this computer grew stayed as it was: {refused}"
+                ));
+                None
+            }
+        }
+    }
+
+    /// Moves this computer's desktop onto that screen, from the session
+    /// that owns the screens, and answers what it ends up showing.
+    ///
+    /// Answered from what that session writes down rather than from what
+    /// was asked for, like everything else about screens here: a desktop
+    /// that did not move is a session served the wrong size, and the far
+    /// end has to be told the size that really arrived.
+    fn move_the_desktop_onto_it(&self, screen: WantedScreen) -> Option<(u32, u32)> {
+        match take_the_grown_screen(screen) {
+            Ok(took) => self.log.write(&format!(
+                "the desktop was moved from the session on screen ({took})"
+            )),
+            Err(e) => {
+                self.log.write(&format!(
+                    "this computer's desktop was left where it is: {e}"
+                ));
+                return None;
+            }
+        }
+        crate::screen::showing_now()
+    }
+}
+
 /// Notes this computer's desk and puts its main screen where a session
 /// wants it, saying what it cost.
 ///
@@ -400,6 +457,23 @@ fn give_the_desk_back() -> io::Result<String> {
 fn give_the_desk_back() -> io::Result<String> {
     Err(io::Error::other(
         "cet ordinateur n'a pas de bureau à rendre",
+    ))
+}
+
+/// Moves this computer's desktop onto the screen it grew for itself,
+/// saying what it cost.
+///
+/// From the session that owns the screens, and only once the service has
+/// woken that screen: the two halves cannot be done from the same place.
+#[cfg(windows)]
+fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<String> {
+    crate::session::take_the_grown_screen(wanted).map(|took| took.to_string())
+}
+
+#[cfg(not(windows))]
+fn take_the_grown_screen(_wanted: WantedScreen) -> io::Result<String> {
+    Err(io::Error::other(
+        "cet ordinateur n'a pas d'écran à faire pousser",
     ))
 }
 
@@ -581,6 +655,7 @@ impl Gateway {
         let attending: Arc<dyn Answers> = Arc::new(Attending {
             ports: engine.ports,
             api: Arc::new(EngineApi::new(engine.ports, engine.credentials)),
+            films_the_grown_screen: engine.films_the_grown_screen,
             sessions: sessions.clone(),
             remembered: remembered.clone(),
             log: log.clone(),

@@ -299,6 +299,13 @@ pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
                 "{} cannot draw {wide}x{high}, so it keeps its own size and its own magnification",
                 main.adapter
             ));
+            // Written down, because it decides something the service can
+            // only decide before the engine starts: which screen it films.
+            // A screen that has once refused a desktop larger than itself
+            // refuses every one after it, so the next engine on this
+            // computer is aimed at the screen it grows for itself instead,
+            // and a session can then borrow that one.
+            said.extend(remember_it_is_stuck(&main));
         }
     }
     // Read again rather than worked out: what was asked for and what
@@ -311,6 +318,109 @@ pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
         ));
     }
     said
+}
+
+/// Moves this computer's desktop onto the screen it grew for itself, at
+/// the size a session asked for.
+///
+/// The last thing tried, and only where this computer's own screens have
+/// refused that size. The service has woken that screen just before this;
+/// putting a desktop on it is window station work, so it happens here.
+///
+/// Nothing is switched off. The screens somebody may be sitting in front
+/// of stay lit at their own sizes, showing the far side of a desktop
+/// whose middle has moved: that is the price, and it is paid back in full
+/// when the desk goes home.
+#[cfg(windows)]
+pub fn take_the_grown_screen_for(wanted: (u32, u32, u32)) -> Vec<String> {
+    let (wide, high, scale) = wanted;
+    // Refused outright rather than half done: without the note there is
+    // nothing that says how to put this computer back, and moving a
+    // desktop with no way back is the one thing none of this may do.
+    if !before_path().exists() {
+        return vec![
+            "this computer's desk was never written down, so its desktop is not moved anywhere"
+                .to_string(),
+        ];
+    }
+    let Some(grown) = zyr_screen::desktop::the_screen_the_driver_grew(zyr_screen::shipped()) else {
+        return vec![
+            "the screen this computer grows for itself is not among its screens, so the desktop \
+             stays where it is"
+                .to_string(),
+        ];
+    };
+    let (moved, mut said) = zyr_screen::arrangement::put_the_desktop_on(&grown, wide, high);
+    if moved {
+        said.push(zyr_screen::magnify::magnify(&grown, scale));
+    }
+    // Read again rather than worked out, as everywhere else: the far end
+    // is told what this computer ended up showing and never what it was
+    // asked for.
+    let now = zyr_screen::arrangement::as_it_stands();
+    if let Err(e) = write_beside(SHOWING, &zyr_screen::arrangement::written(&now)) {
+        said.push(format!(
+            "what this computer is showing was not written down: {e}"
+        ));
+    }
+    said
+}
+
+/// Where the screens that have refused a desktop larger than themselves
+/// are remembered.
+///
+/// One line per screen, by the name that survives a restart. Read before
+/// the engine starts, because which screen it films is settled there and
+/// nowhere else, and a computer whose own screen cannot take a session's
+/// size has to be filmed on the screen it grows instead.
+const STUCK: &str = "screens-stuck-at-their-size.txt";
+
+fn stuck_path() -> PathBuf {
+    paths::virtual_screen_dir().join(STUCK)
+}
+
+/// Whether that screen has already refused a desktop larger than itself.
+fn stuck_at_its_size(screen: &str) -> bool {
+    std::fs::read_to_string(stuck_path())
+        .map(|text| text.lines().any(|line| line.trim() == screen))
+        .unwrap_or(false)
+}
+
+/// Whether the screen this computer serves a session from draws nothing
+/// larger than itself.
+///
+/// Asked before the engine starts, which is the one moment it can be
+/// answered for: a computer whose main screen is stuck is filmed on the
+/// screen it grows for itself, so that a session can borrow that one.
+pub fn the_main_screen_is_stuck() -> bool {
+    std::fs::read_to_string(showing_path())
+        .map(|text| zyr_screen::arrangement::read(&text))
+        .unwrap_or_default()
+        .into_iter()
+        .any(|seat| {
+            seat.main && seat.on && !seat.screen.is_empty() && stuck_at_its_size(&seat.screen)
+        })
+}
+
+/// Writes that down, saying so once and never again.
+#[cfg(windows)]
+fn remember_it_is_stuck(main: &zyr_screen::arrangement::Seat) -> Vec<String> {
+    if main.screen.is_empty() || stuck_at_its_size(&main.screen) {
+        return Vec::new();
+    }
+    let known = std::fs::read_to_string(stuck_path()).unwrap_or_default();
+    let text = format!("{}{}\n", known, main.screen);
+    match write_beside(STUCK, &text) {
+        Ok(()) => vec![format!(
+            "{} draws nothing larger than itself, so the next engine on this computer films the \
+             screen it grows instead and a session can borrow that one",
+            main.adapter
+        )],
+        Err(e) => vec![format!(
+            "that {} draws nothing larger than itself could not be written down: {e}",
+            main.adapter
+        )],
+    }
 }
 
 /// Puts the desk back exactly as it was noted, and forgets the note.
@@ -641,9 +751,9 @@ pub struct AsStarted<'a> {
     /// The screen it was aimed at, under the engine's own name for it,
     /// or nothing at all.
     pub aimed_at: Option<&'a str>,
-    /// Whether this computer has no screen of its own, in which case the
-    /// screen it grows for itself is the only thing there is to film.
-    pub on_its_own: bool,
+    /// Whether it was aimed at the screen this computer grows for itself
+    /// rather than at one of this computer's own.
+    pub films_the_grown_screen: bool,
     /// Whether that grown screen is asleep, which is why the engine
     /// cannot see it and must not be taken for a computer without one.
     pub asleep: bool,
@@ -717,7 +827,7 @@ pub fn learn_from(engine_log: &std::path::Path, as_started: AsStarted<'_>, log: 
             .join(" ; ")
     ));
 
-    if !as_started.on_its_own {
+    if !as_started.films_the_grown_screen {
         return aim_at_the_main_screen(&text, as_started.aimed_at, log);
     }
 

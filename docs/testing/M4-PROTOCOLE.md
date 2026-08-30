@@ -59,6 +59,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
+| **R60** | **Nouveau, et c'est la réponse à R59septies.** Sur une machine dont la carte graphique ne dessine rien de plus grand que sa dalle, une session en résolution du client est maintenant servie sur l'écran que la machine fait pousser : il est réveillé à la taille demandée et le bureau déménage dessus le temps de la session. **Rien n'est éteint**, les écrans physiques restent allumés à leur taille, et tout revient à la déconnexion, le bureau d'abord et l'écran virtuel ensuite. La bascule s'apprend en essayant : la **première** session qui découvre le mur est servie comme avant, et c'est la **suivante** qui en profite, le moteur ne lisant quel écran filmer qu'à son démarrage |
 | **R59septies** | **Nouveau, sur un troisième ordinateur.** Depuis le portable 1920x1200 vers un PC 1920x1080, en résolution du client, il ne se passait rien : le journal disait dans la même seconde que l'écran dessinait un bureau 1920x1200 **et** qu'il ne savait pas le dessiner. Windows avait répondu « c'est fait » sans rien faire. Deux causes : l'interrupteur qui autorise un bureau plus grand que la dalle était posé **après** la lecture du bureau, alors que ce qu'un chemin d'affichage dit de lui-même est calculé au moment où on le lit ; et on autorisait Windows à ajuster la demande, ce qui lui permet de répondre oui sans rien ajuster. L'interrupteur est posé en premier, la demande est faite exactement, et le résultat est **relu** au lieu d'être cru |
 | **R59sexies** | **Nouveau, et c'est la moitié de R59quinquies qui manquait.** Le bureau de l'hôte revenait bien à sa taille, mais le client recevait **l'autre écran** : le moteur n'était jamais dit lequel filmer, donc il prenait celui que la carte graphique énumère en premier, et il reprenait le premier écran qui répond chaque fois qu'il doit recommencer à filmer. Or un écran dont on change la définition disparaît de cette énumération pendant tout le changement : celui que la session venait de régler était exactement celui que le moteur laissait tomber. L'écran filmé est maintenant nommé sur toute machine, et le moteur redemande l'écran nommé pendant trois secondes avant de se rabattre. **À vérifier après recompilation du moteur hôte** |
 | **R59quinquies** | **Nouveau, et c'est un vieux défaut revenu par une autre porte.** Passer une session en cours de **Résolution du client** à **Résolution de l'hôte** laissait l'hôte à la taille du client pour le reste de la soirée. Basculer ferme une voie et en ouvre une autre dans la même seconde, et la remise en place du bureau, elle, tourne sur le fil qui tient le moteur et n'a pas encore eu son tour. Une session qui demande l'écran de l'hôte rend maintenant son bureau elle-même avant de répondre |
@@ -1436,6 +1437,34 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > L'autre ligne, plus ordinaire, dit que le chemin ne prend pas les paquets aussi vite que le moteur les produit : `the path is not taking packets as fast as the engine makes them`. Celle-là est un problème de débit, pas de taille, et elle donne le temps d'aller-retour.
 >
 > **Et la session doit s'ouvrir deux secondes plus vite qu'avant** : l'attente qui servait à mesurer le chemin n'a plus lieu d'être.
+
+> **R60 (l'écran virtuel en dernier recours, et tout revient)**
+>
+> **Sur le PC dont la carte graphique refuse tout bureau plus grand que sa dalle.** Cet essai en compte deux à la suite, et c'est voulu.
+>
+> **La première session**, en **Résolution du client** : elle est servie à la taille de l'hôte, comme avant. Le journal de l'hôte dit ce qui vient d'être appris :
+>
+> `\\.\DISPLAY1 draws nothing larger than itself, so the next engine on this computer films the screen it grows instead and a session can borrow that one`
+>
+> **À la fermeture**, le moteur redémarre tout seul, personne ne regardant plus :
+>
+> `this computer's own screens draw nothing larger than themselves, so the engine starts over to film the screen it grew instead`
+> `this computer is filmed on the screen it grew for itself ({...}), its own drawing nothing larger than themselves`
+>
+> **La deuxième session**, la même : elle doit arriver à la taille demandée.
+>
+> `this computer's own screens draw nothing larger than themselves, so the one it grew is woken at the size asked for and the desktop moves onto it`
+> `this computer's desktop is on \\.\DISPLAY2 at 1920x1200 for the length of the session, and its own screens are still on`
+> `this computer is showing 1920x1200`
+>
+> **Ce qu'il faut regarder sur l'hôte pendant la session, et c'est le point le plus important** : son écran physique **reste allumé**, à sa propre taille. Il montre un bout de bureau vide, pas du noir. Si l'écran s'éteint ou devient noir, arrête tout et envoie-moi le journal.
+>
+> **Et le retour, qui compte encore plus.** À la déconnexion, dans cet ordre : le bureau revient sur l'écran physique, puis l'écran virtuel s'endort. Le journal le dit dans cet ordre aussi.
+>
+> `this computer's screens are back the way they were (N of them)`
+> puis les lignes de l'écran virtuel qui s'endort.
+>
+> **Les trois cas qui finissent mal, à faire tous les trois** : fermer la session normalement, arracher le réseau du client en pleine session, et tuer le service de l'hôte en pleine session puis le relancer. Dans les trois, l'écran physique de l'hôte doit revenir exactement comme avant et l'écran virtuel disparaître des paramètres d'affichage.
 
 > **R59septies (un « c'est fait » de Windows qui n'a rien fait)**
 >

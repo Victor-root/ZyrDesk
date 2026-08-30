@@ -114,6 +114,17 @@ pub const LOCK_ARGUMENT: &str = "--lock-the-screen";
 pub const DESK_ARGUMENT: &str = "--hold-the-desk";
 pub const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
 
+/// And a third, for the computer whose own screens cannot draw the size
+/// a session asked for: the desktop moves onto the screen this computer
+/// grew for itself, which the service has just woken at that size.
+///
+/// Its own errand and not part of the first, because the two happen
+/// either side of something only the service can do. Starting a display
+/// device is administrator work, so the service wakes the screen; putting
+/// a desktop on it is window station work, so the session on screen does
+/// that. One cannot wait for the other inside a single errand.
+pub const DESK_GROWN_ARGUMENT: &str = "--take-the-grown-screen";
+
 /// What the first of those carries when a session wants the desk noted
 /// and nothing moved, which is what « keep your own screen » asks for.
 ///
@@ -508,6 +519,22 @@ pub fn hold_the_desk_for(wanted: Option<WantedScreen>) -> io::Result<Errand> {
     )
 }
 
+/// Moves this computer's desktop onto the screen it grew for itself, at
+/// the size a session asked for, from the session that owns the screen.
+///
+/// Asked only after the service has woken that screen, and only where
+/// this computer's own screens refused the size: everywhere else the
+/// desktop stays where its owner left it.
+pub fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<Errand> {
+    let session =
+        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
+    errand(
+        session,
+        &[DESK_GROWN_ARGUMENT.to_string(), wanted.to_string()],
+        "this computer's desktop could not be moved onto the screen it grew for itself",
+    )
+}
+
 /// Puts the desk back the way it was noted, from the session that owns
 /// the screen.
 ///
@@ -540,6 +567,9 @@ pub enum Desk {
     Hold(Option<WantedScreen>),
     /// Put it back the way it was noted.
     Back,
+    /// Move the desktop onto the screen this computer grew for itself,
+    /// at that size, this computer's own screens having refused it.
+    Borrow(WantedScreen),
 }
 
 /// The same, over any list of arguments, so it can be read without
@@ -549,9 +579,10 @@ fn the_desk_named_in(arguments: impl Iterator<Item = String>) -> Option<Desk> {
     if arguments.iter().any(|a| a == DESK_BACK_ARGUMENT) {
         return Some(Desk::Back);
     }
-    let mut after = arguments.into_iter().skip_while(|a| a != DESK_ARGUMENT);
-    after.next()?;
-    let asked = after.next()?;
+    if let Some(asked) = after_the_word(&arguments, DESK_GROWN_ARGUMENT) {
+        return asked.parse().ok().map(Desk::Borrow);
+    }
+    let asked = after_the_word(&arguments, DESK_ARGUMENT)?;
     if asked == NOTHING_WANTED {
         return Some(Desk::Hold(None));
     }
@@ -560,6 +591,13 @@ fn the_desk_named_in(arguments: impl Iterator<Item = String>) -> Option<Desk> {
     // « note the desk and move nothing » to it would leave the session
     // watching a desk at the wrong size with nothing in any journal.
     asked.parse().ok().map(|screen| Desk::Hold(Some(screen)))
+}
+
+/// What follows that word among those arguments, when it is there and
+/// something follows it.
+fn after_the_word(arguments: &[String], word: &str) -> Option<String> {
+    let at = arguments.iter().position(|argument| argument == word)?;
+    arguments.get(at + 1).cloned()
 }
 
 /// Does it, from inside the session that owns the screen.
@@ -576,6 +614,9 @@ pub fn do_this_to_the_desk(asked: Desk) {
             wanted.map(|screen| (screen.wide, screen.high, screen.scale)),
         ),
         Desk::Back => crate::screen::give_the_desk_back(),
+        Desk::Borrow(screen) => {
+            crate::screen::take_the_grown_screen_for((screen.wide, screen.high, screen.scale))
+        }
     };
     if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
         for line in said {

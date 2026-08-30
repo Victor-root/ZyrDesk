@@ -32,6 +32,8 @@ pub mod engine;
 pub mod mtt;
 
 #[cfg(windows)]
+pub mod desktop;
+#[cfg(windows)]
 pub mod magnify;
 #[cfg(windows)]
 mod place;
