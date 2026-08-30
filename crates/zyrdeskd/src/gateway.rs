@@ -460,11 +460,7 @@ impl Answers for Attending {
 /// What the local engine wrote down about its own encoders, in the
 /// product's own spelling.
 fn what_this_engine_can_encode() -> String {
-    let log = paths::logs_dir().join("engine-console.log");
-    let Ok(text) = std::fs::read_to_string(&log) else {
-        return String::new();
-    };
-    zyr_engine_host::encoders::found_in(&text)
+    zyr_engine_host::encoders::found_for(&paths::logs_dir())
         .iter()
         .map(ToString::to_string)
         .collect::<Vec<_>>()

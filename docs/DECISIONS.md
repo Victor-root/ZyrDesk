@@ -1428,6 +1428,10 @@ Ce qui n'est pas dans la réponse est barré dans le menu, avec le mot qui expli
 
 **« Automatique » n'est jamais hors de portée**, puisque c'est le choix de ne pas choisir. Et c'est déjà ce que le produit fait par défaut, ce qui répond à l'autre moitié de la demande : le réglage retenu est celui de la personne, et tant qu'elle n'a rien dit, c'est aux deux moteurs de s'entendre.
 
+**Lequel des journaux du moteur, et c'est une correction.** La première version lisait `engine-console.log`, la sortie console que le service capte à côté du moteur. Elle n'a rien donné du tout, et pour deux raisons qui se cumulent. Ce fichier est **vide sur certaines machines** : sur le PC de Victor, la section « Le moteur hôte » du journal ne contient rien, alors que le moteur tourne parfaitement. Et c'est un **des quatre fichiers que le bouton « Vider » efface**, y compris depuis l'autre bout d'un tunnel depuis D96 : vider son journal aurait retiré la réponse jusqu'au redémarrage suivant du moteur.
+
+Ce qui est lu est donc `engine.log`, **le journal que le moteur écrit lui-même**. C'est déjà celui d'où sortent les écrans (D93), il n'est pas rassemblé par le journal du produit, et personne ne l'efface. La règle qui en sort vaut pour tout ce qui viendra : **ce que le produit relit du moteur se relit dans le journal du moteur, jamais dans une copie que le produit tient à côté.**
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -14,8 +14,34 @@
 //! Working it out here instead would mean copying the engine's own idea
 //! of what its graphics card can do, which is a copy that would be wrong
 //! on the first machine nobody tested.
+//!
+//! Read from the log the engine writes itself, which is the same one the
+//! screens come out of and is not one of the four the journal gathers.
+//! The first try read the console output captured beside it instead, and
+//! that was wrong twice over: it is empty on some machines, and it is
+//! emptied whenever somebody clears their journal, which is a thing this
+//! product now offers to do from the other end of a tunnel.
+
+use std::path::Path;
 
 use zyr_proto::session::Codec;
+
+/// What the engine in that folder of logs says it can encode.
+///
+/// Read from the log the engine writes itself, and never from the console
+/// output this product captures beside it: that capture is empty on some
+/// machines, and it is one of the four files the journal empties, so a
+/// person clearing their journal would silently take the answer away.
+///
+/// Read as it comes, accents or not, like every other reading of this
+/// log: an engine that wrote a line in another encoding must cost that
+/// line and not the whole answer.
+pub fn found_for(logs_dir: &Path) -> Vec<Codec> {
+    let Ok(bytes) = std::fs::read(crate::config::engine_log_in(logs_dir)) else {
+        return Vec::new();
+    };
+    found_in(&String::from_utf8_lossy(&bytes))
+}
 
 /// Where the engine says its trials begin.
 ///
@@ -117,6 +143,31 @@ Info: Found AV1 encoder: av1_nvenc [nvenc]
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn it_is_the_engines_own_log_that_is_read() {
+        // Et jamais la sortie console captée à côté : elle est vide sur
+        // certaines machines, et c'est un des quatre fichiers que le
+        // bouton « Vider » efface, y compris depuis l'autre bout d'un
+        // tunnel. La réponse aurait disparu au premier vidage.
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdesk-encoders-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("engine-console.log"), "").unwrap();
+        std::fs::write(crate::config::engine_log_in(&folder), A_RUN).unwrap();
+
+        assert_eq!(found_for(&folder), vec![Codec::H264, Codec::Hevc]);
+
+        // Et un moteur qui n'a rien écrit du tout ne dit rien, plutôt
+        // que de faire échouer la lecture.
+        let vide = folder.join("vide");
+        std::fs::create_dir_all(&vide).unwrap();
+        assert!(found_for(&vide).is_empty());
+
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]

@@ -42,6 +42,17 @@ pub enum Listening {
     Network,
 }
 
+/// Where the engine writes its own log, in a folder of logs.
+///
+/// Named here and read from here, so the two never part company. It is
+/// not one of the four files the journal gathers and empties, and that
+/// matters: everything this product reads back out of the engine is read
+/// from this file, and a file the person can empty is a file that stops
+/// answering the moment they do.
+pub fn engine_log_in(logs_dir: &Path) -> PathBuf {
+    logs_dir.join("engine.log")
+}
+
 /// Settings of one host engine instance.
 #[derive(Debug, Clone)]
 pub struct SunshineConfig {
@@ -170,7 +181,7 @@ impl SunshineConfig {
 
     /// Log the engine writes itself.
     pub fn log_path(&self) -> PathBuf {
-        self.logs_dir.join("engine.log")
+        engine_log_in(&self.logs_dir)
     }
 
     /// Folders the engine assumes exist when it starts.
