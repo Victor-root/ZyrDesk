@@ -451,12 +451,27 @@ fn logo() -> (i32, i32) {
 fn how_it_shows() -> u32 {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_HIDEWINDOW, SWP_SHOWWINDOW};
 
-    if READY.load(Ordering::Relaxed) && !HIDDEN.load(Ordering::Relaxed) {
-        SWP_SHOWWINDOW
-    } else {
-        SWP_HIDEWINDOW
+    let up = READY.load(Ordering::Relaxed) && !HIDDEN.load(Ordering::Relaxed);
+    // Written down when it turns and never otherwise: this is asked at
+    // every laying, which is every step of a hand dragging our window.
+    //
+    // Worth a line because a button taken down and put back up is the one
+    // thing that can leave it wearing a shape and a drawing from either
+    // side of the gap, and nothing else in this journal says it happened.
+    if SHOWN.swap(up, Ordering::Relaxed) != up {
+        note(&format!(
+            "bouton flottant {} (dessiné : {}, masqué à la main : {})",
+            if up { "montré" } else { "retiré" },
+            READY.load(Ordering::Relaxed),
+            HIDDEN.load(Ordering::Relaxed)
+        ));
     }
+    if up { SWP_SHOWWINDOW } else { SWP_HIDEWINDOW }
 }
+
+/// Whether the button was showing the last time that was decided.
+#[cfg(windows)]
+static SHOWN: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(windows))]
 fn how_it_shows() -> u32 {
@@ -868,6 +883,23 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         .theme(home.theme().ok())
         .decorations(false)
         .transparent(true)
+        // And the ground under the page painted the logo's own outline,
+        // because transparent is refused somewhere below and this window
+        // has a ground whatever it asks for. That ground was white, and
+        // every white thing ever seen around this button was it: the
+        // hairline down its edge, the flash when the menu closes, and
+        // the fringe on its rounded corners, which is not aliasing but a
+        // half-transparent edge blended against whatever is underneath.
+        // Underneath is this. The logo is drawn outlined in exactly this
+        // colour all the way round, so an edge that leans on it leans on
+        // itself and disappears; and a pixel the page has not painted
+        // yet is now the dark of the logo rather than a white block over
+        // somebody's picture.
+        //
+        // The alpha channel is dropped on Windows, so this cannot be a
+        // way to ask for transparency. It is a way to choose which
+        // colour the failure to get it wears.
+        .background_color(tauri::window::Color(9, 13, 22, 255))
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
@@ -1053,8 +1085,19 @@ pub fn floating_size(
     // corner the button hangs from, which is the logo's own, and the logo
     // is the one part of this window nobody may see move.
     let (Some(corner), Some(was)) = (where_it_hangs(), its_place()) else {
+        // Said out loud, once per run of them. The page swallows this
+        // refusal and stops asking as soon as two of its frames draw the
+        // same thing, so a shape refused here is a shape never applied,
+        // and nothing anywhere said so: the button then wears whatever
+        // it was last cut to, over a drawing that has moved on.
+        if !REFUSING.swap(true, Ordering::Relaxed) {
+            note("bouton flottant : forme refusée, la fenêtre n'est plus là pour être découpée");
+        }
         return Err("le bouton flottant n'est plus là".to_string());
     };
+    if REFUSING.swap(false, Ordering::Relaxed) {
+        note("bouton flottant : la fenêtre répond à nouveau, la forme reprend");
+    }
     let size = (
         (width as i32).max(was.2 - was.0),
         (height as i32).max(was.3 - was.1),
@@ -1125,6 +1168,10 @@ fn the_shape_of(shape: &[Piece], size: (i32, i32), upward: bool) -> u64 {
     // Nought is reserved for a window nobody has cut yet.
     how.finish().max(1)
 }
+
+/// Whether the last shape the page sent was refused, so a run of them
+/// costs one line and not one per frame.
+static REFUSING: AtomicBool = AtomicBool::new(false);
 
 /// The last size this window was given, so a change of it can be written
 /// down and nothing else.
@@ -1836,7 +1883,6 @@ fn remember_the_button(window: &tauri::WebviewWindow) {
     if let Ok(handle) = window.hwnd() {
         ITS_WINDOW.store(handle.0 as isize, Ordering::Relaxed);
         SHAPED.store(0, Ordering::Relaxed);
-        CUT_INTO.store(0, Ordering::Relaxed);
     }
 }
 
@@ -1952,14 +1998,19 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
             // that moves.
             let left = size.0 + piece.x;
             let top = if upward { size.1 + piece.y } else { piece.y };
-            // One more pixel each way: a shape is cut exclusive of its
-            // right and bottom edge, and a logo short of its last row is
-            // a logo with a line missing.
+            // Exactly the pixels the page painted, and not one more. A
+            // shape is cut exclusive of its right and bottom edge, so a
+            // piece `width` wide covers `left` to `left + width`; asking
+            // for one more claims a column the page never painted, which
+            // the window fills with its own ground. That is the pale
+            // hairline seen down the right of the logo, and it is the
+            // same fault the page already guards against on the other
+            // two edges by rounding its measurements inward.
             let one = CreateRoundRectRgn(
                 left,
                 top,
-                left + piece.width + 1,
-                top + piece.height + 1,
+                left + piece.width,
+                top + piece.height,
                 piece.radius * 2,
                 piece.radius * 2,
             );
@@ -1970,12 +2021,23 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
             DeleteObject(one);
         }
         // The system owns it from here, but only once it has taken it:
-        // refused, it is still ours to free. Redrawn on the spot, since
-        // most of the time this is the only thing that changes: the
-        // window keeps one size for the whole session, and opening the
-        // menu or running a hand over the logo is a change of shape and
-        // nothing else.
-        if SetWindowRgn(button, whole, 1) == 0 {
+        // refused, it is still ours to free.
+        //
+        // Handed over without asking for a redraw, and that one word is
+        // the whole of the white artifact. Asked to redraw, the system
+        // wipes the window with the brush it was made with before
+        // anything else happens, and that brush is white; the web view
+        // paints over it whenever it next gets round to it, which on the
+        // machine's busiest second is not soon. What showed in between
+        // was the shape itself filled with white, which is to say a white
+        // logo standing over the picture, and it stayed until something
+        // moved. Every cut did it; the ones nobody noticed were the ones
+        // where a hand was on the logo and the next frame was a
+        // millisecond away.
+        //
+        // What is wanted instead is below: the window drawn again, its
+        // ground left alone.
+        if SetWindowRgn(button, whole, 0) == 0 {
             DeleteObject(whole);
             return;
         }
@@ -2019,16 +2081,13 @@ fn draw_it_all_again(button: windows_sys::Win32::Foundation::HWND) {
     };
 }
 
-/// How many pieces the window was last cut into, so a change of state can
-/// be written down and a hand running over the logo cannot.
-#[cfg(windows)]
-static CUT_INTO: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-
 /// Says what the window was cut to, and what the system holds of it.
 ///
-/// Once per change of state and not once per frame: the shape is asked
-/// for again on every frame of the logo's own animation, and the piece
-/// count is what tells those apart from a menu opening or closing.
+/// Every cut, and there are few: a cut only happens when the shape it
+/// would make differs from the one the window wears, so the logo's own
+/// animation and the once-a-second measures cost nothing here. What is
+/// left is the moments that matter, which is the menu opening, the menu
+/// closing, and the window changing size.
 ///
 /// Worth having at all because this is the one fault a screenshot cannot
 /// show. What the button looks like is entirely this shape, so a shape
@@ -2039,9 +2098,6 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::Graphics::Gdi::GetWindowRgnBox;
 
-    if CUT_INTO.swap(shape.len(), Ordering::Relaxed) == shape.len() {
-        return;
-    }
     let mut held = RECT {
         left: 0,
         top: 0,
@@ -2065,11 +2121,17 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
         (wide.max(-piece.x), high.max(reach))
     });
     note(&format!(
-        "bouton flottant découpé en {} morceaux jusqu'à {}x{} ; \
+        "bouton flottant découpé en {} morceaux jusqu'à {}x{}, dessiné vers le {} ({} voulu) ; \
          le système en tient ({}, {}, {}, {}), sorte {taken} ; la fenêtre est {}",
         shape.len(),
         drawn.0,
         drawn.1,
+        if upward { "haut" } else { "bas" },
+        if UPWARD.load(Ordering::Relaxed) {
+            "haut"
+        } else {
+            "bas"
+        },
         held.left,
         held.top,
         held.right,

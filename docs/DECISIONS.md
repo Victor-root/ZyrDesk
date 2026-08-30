@@ -1384,6 +1384,26 @@ Un journal ne se lit pas, il se compare. La manière dont on trouve une panne es
 
 **Deux plafonds au lieu d'un, sur les deux canaux.** C'est le premier message du produit qui pèse une page et non une ligne, et les deux canaux avaient jusqu'ici une seule limite pour les deux sens. Un plafond protège **celui qui écoute de celui qui parle**, et les deux côtés ne sont pas exposés à la même chose : le service écoute n'importe quel programme que la personne peut lancer, un programme n'écoute que le service qu'il a appelé ; cet ordinateur prend des questions de tous ceux qu'il laisse entrer, et des réponses seulement de la machine où il est allé. Les questions gardent donc leur limite ancienne, et seules les réponses ont le droit de peser une page.
 
+## D97. Le bouton flottant n'est pas transparent, il est découpé, et tout ce qui est blanc autour de lui vient de là (2026-08-30, pendant M4)
+
+**Le symptôme, dit par Victor.** « Cet artefact blanc avec la croix par-dessus le FAB », qui apparaît presque à chaque fois après **Appliquer** sur un changement de résolution, plus « un effet aliasing autour ». Deux plaintes, une seule cause.
+
+**Ce que le bouton est vraiment.** Sa fenêtre est demandée transparente, et l'une des couches sous la page refuse de l'être. Ce qui a été fait à la place est une **découpe** : la page mesure ce qu'elle dessine, le cœur taille la fenêtre à cette forme avec une région du système, et rien n'est dessiné hors d'une région. Ça marche, mais ça a deux conséquences qu'il faut regarder en face.
+
+La première : **une région est un masque à un bit**. Elle n'a pas de demi-pixels. La page, elle, dessine des coins arrondis lissés. Le masque coupe donc la courbe en escalier, et là où il ne la coupe pas, les pixels à demi transparents du bord sont mélangés non pas à l'image derrière, mais **au fond de la fenêtre**, puisque la fenêtre est opaque. Ce n'est pas de l'aliasing : c'est un bord lissé posé sur le mauvais fond.
+
+La seconde : **tout pixel que la page n'a pas encore peint montre ce fond**, et ce fond était blanc.
+
+**Trois endroits fabriquaient du blanc, et c'étaient les trois plaintes.**
+
+1. **La découpe demandait un redessin.** Poser une région en demandant le redessin fait effacer la fenêtre au pinceau de sa classe *avant* que quoi que ce soit d'autre arrive, et la vue web repeint quand elle peut. Ce qui se voyait entre les deux, c'était la forme elle-même remplie de blanc, c'est-à-dire un logo blanc posé sur l'image, et il restait là jusqu'à ce que quelque chose bouge. **Appliquer** est le pire moment possible pour ça : le menu se referme, donc la forme change, donc on découpe, à la seconde exacte où la machine est la plus occupée à relancer une session vidéo. La demande de redessin est retirée ; il y en avait déjà un juste après, écrit exprès pour ne pas effacer le fond.
+
+2. **Le masque réclamait un pixel de plus que la page n'en peint.** La page rogne ses mesures vers l'intérieur, exprès, pour ne jamais réclamer une colonne qu'elle n'a pas peinte. Le cœur, écrit cinq jours plus tôt, rajoutait un pixel à droite et en bas de chaque morceau. Personne n'était revenu enlever le second en ajoutant le premier : les deux se battaient, et il restait un liseré clair sur deux bords.
+
+3. **Le fond lui-même.** Il est maintenant peint du bleu très sombre du contour du logo. L'alpha est ignoré sous Windows, donc ça ne rend pas la fenêtre transparente : ça choisit **la couleur que porte l'échec à l'être**. Le logo est cerné de cette couleur sur tout son tour, donc un bord lissé qui s'appuie dessus s'appuie sur lui-même et disparaît ; et un pixel pas encore peint devient le noir du logo au lieu d'un bloc blanc sur l'image de quelqu'un.
+
+**Ce qui reste, et il faut le dire.** La vraie réponse à l'escalier des coins n'est pas une meilleure couleur de fond, c'est une transparence par pixel qui marche, ce qui veut dire aller voir pourquoi la couche du dessous la refuse. Tant qu'on découpe au masque, les coins seront durs. C'est le prochain travail sur ce bouton, pas celui-ci.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
