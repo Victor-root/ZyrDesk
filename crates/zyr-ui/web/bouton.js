@@ -640,6 +640,16 @@ function rapport(large, haut) {
    fenêtre à chaque ouverture. */
 let leMenu = null;
 
+/* Ce que la machine d'en face a dit ne pas savoir encoder.
+
+   Rien du tout veut dire qu'elle n'a rien dit, jamais qu'elle ne sait
+   rien faire : hors session, ou pendant que son moteur démarre, la
+   question n'a pas de réponse, et une question sans réponse doit laisser
+   le menu exactement comme il était. */
+function horsDePortee(nom, valeur) {
+  return nom === "codec" && (leMenu?.beyondIt ?? []).includes(valeur);
+}
+
 function bloc(nom) {
   return document.querySelector(`[data-reglage="${nom}"]`);
 }
@@ -826,6 +836,16 @@ function batisLesChoix() {
           bouton.setAttribute("role", "menuitemradio");
           bouton.setAttribute("aria-checked", "false");
           bouton.textContent = ligne.dit(leMenu, valeur);
+          // Ce que la machine d'en face ne sait pas faire ne se clique
+          // pas. Elle est la seule à le savoir : c'est elle qui encode,
+          // et un codec qu'elle ne peut pas produire n'échoue nulle
+          // part, les deux moteurs s'entendent sur un autre en silence.
+          // Le menu continuait alors d'afficher un choix qui n'était plus
+          // honoré depuis le début de la session.
+          if (horsDePortee(nom, valeur)) {
+            bouton.disabled = true;
+            bouton.title = "Cet ordinateur ne sait pas encoder ce format";
+          }
           bouton.addEventListener("click", () => choisis(nom, valeur));
           return bouton;
         }),

@@ -61,6 +61,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
 | **R46ter** | **Refait, et c'est un défaut que j'avais introduit moi-même en corrigeant R46bis.** « Fluide » n'atteignait jamais la cadence demandée et variait exactement comme « Économe » : relevé à 50 images/s pour 60 demandées, avec 2,35 ms d'encodage et 1 ms de réseau, donc rien n'était à l'étroit. Une image capturée achetait **deux** périodes comptées depuis son arrivée, si bien qu'un écran changeant entre la moitié de la cadence visée et la cadence visée ne déclenchait jamais la moindre répétition : le moteur servait ce que le bureau produisait, c'est-à-dire ce que donne le fait de ne rien demander. Les deux réglages étaient donc identiques sur tout bureau qui change plus de trente fois par seconde. La grille des créneaux est maintenant fixe et une image presque à l'heure prend son propre créneau. **À vérifier après recompilation du moteur hôte** |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
+| **R63** | **Nouveau.** Un codec que la machine d'en face ne sait pas encoder est **barré** dans le menu de la session, avec le mot qui le dit au survol. Elle est la seule à le savoir, ça dépend de sa carte graphique : on le lui demande, et elle répond en lisant ce que son propre moteur a écrit en démarrant. Choisir AV1 vers une machine qui n'en fait pas ne cassait rien, les deux moteurs s'entendaient sur autre chose en silence, mais le menu continuait d'afficher AV1 pour toute la session. « Automatique » n'est jamais barré, c'est le choix de ne pas choisir, et c'est le réglage par défaut |
 | **R61** | **Instrumentation, pas encore une correction.** L'ouverture d'une session paraît nettement plus lente qu'avant, sans que rien ne dise où passe le temps : les horodatages du journal sont à la seconde et chaque morceau de l'ouverture est plus court que ça. Une ligne unique la découpe maintenant en millisecondes, dans `interface.log` du client : joindre l'ordinateur distant, lui demander ce qu'il faut, lancer le lecteur, attendre sa première image. C'est cette ligne qu'il faut relever avant de toucher à quoi que ce soit |
 | **R60** | **Nouveau, et c'est la réponse à R59septies.** Sur une machine dont la carte graphique ne dessine rien de plus grand que sa dalle, une session en résolution du client est maintenant servie sur l'écran que la machine fait pousser : il est réveillé à la taille demandée et le bureau déménage dessus le temps de la session. Les écrans physiques sont **éteints** le temps de la session, et c'est voulu : laissés allumés ils forment la seconde moitié d'un bureau que personne ne voit, les fenêtres y disparaissent et le pointeur sort de l'image. Vu de loin, une machine à un écran doit ressembler à une machine à un écran. Tout revient à la déconnexion, le bureau d'abord et l'écran virtuel ensuite. La bascule s'apprend en essayant : la **première** session qui découvre le mur est servie comme avant, et c'est la **suivante** qui en profite, le moteur ne lisant quel écran filmer qu'à son démarrage |
 | **R59septies** | **Nouveau, sur un troisième ordinateur.** Depuis le portable 1920x1200 vers un PC 1920x1080, en résolution du client, il ne se passait rien : le journal disait dans la même seconde que l'écran dessinait un bureau 1920x1200 **et** qu'il ne savait pas le dessiner. Windows avait répondu « c'est fait » sans rien faire. Deux causes : l'interrupteur qui autorise un bureau plus grand que la dalle était posé **après** la lecture du bureau, alors que ce qu'un chemin d'affichage dit de lui-même est calculé au moment où on le lit ; et on autorisait Windows à ajuster la demande, ce qui lui permet de répondre oui sans rien ajuster. L'interrupteur est posé en premier, la demande est faite exactement, et le résultat est **relu** au lieu d'être cru |
@@ -1453,6 +1454,29 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Et le cas d'origine, à refaire aussi** : un bureau parfaitement immobile, rien qui bouge, en Fluide. La cadence doit rester à ce qui a été demandé et non tomber à la moitié.
 >
 > **Demande la recompilation du moteur hôte.**
+
+> **R63 (un codec que la machine d'en face ne sait pas faire)**
+>
+> **Le cas à reproduire est celui de Victor** : un hôte à carte Intel, qui fait du H.264 et du HEVC mais pas d'AV1. Son journal le dit, à chaque démarrage de son moteur :
+>
+> ```
+> Found H.264 encoder: h264_qsv [quicksync]
+> Found HEVC encoder: hevc_qsv [quicksync]
+> ```
+>
+> Aucune ligne pour l'AV1, et plus haut la raison : `Could not open codec [av1_qsv]`.
+>
+> Ouvrir une session vers cette machine, puis le menu du bouton flottant, et regarder la ligne **Codec**.
+>
+> Attendu : **AV1 barré et pâle**, et le survol qui dit « Cet ordinateur ne sait pas encoder ce format ». Les trois autres restent cliquables. Barré et non retiré : une possibilité qui disparaît d'un ordinateur à l'autre laisse croire à un menu qui change d'avis, alors que c'est la machine regardée qui n'a pas la même carte.
+>
+> **Ce que ça remplace** : choisir AV1 ne cassait rien, les deux moteurs s'entendaient sur du HEVC en silence, mais le menu affichait AV1 pour toute la session sur un choix qui n'avait jamais été honoré.
+>
+> **La ligne du service de l'hôte, à relever** : `a session asked what this computer can encode: H.264 HEVC`.
+>
+> **Le cas où il ne faut rien griser** : le menu ouvert hors session, ou pendant que le moteur d'en face démarre encore. Rien n'est barré, parce que la question n'a pas de réponse. Une absence de réponse n'est pas « il ne sait rien faire » : un ordinateur qui n'encoderait rien ne pourrait pas être regardé du tout.
+>
+> **Et vers une machine NVIDIA**, qui fait les trois : rien ne doit être barré.
 
 > **R62 (le journal de l'ordinateur d'en face, lu d'ici)**
 >

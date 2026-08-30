@@ -622,6 +622,33 @@ impl Ways {
         Ok(showing)
     }
 
+    /// Asks the far computer which pictures its engine can make.
+    ///
+    /// The same shape as the others: the connection comes out from under
+    /// the lock before anything waits on the network.
+    pub async fn ask_what_it_can_encode(&self, way: WayId) -> Result<String, String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        let named = aside::ask_what_it_can_encode(&connection)
+            .await
+            .map_err(|e| format!("l'ordinateur distant n'a pas dit ce qu'il sait encoder : {e}"))?;
+        self.log.write(&format!(
+            "way {way}: the far computer can encode {}",
+            if named.is_empty() {
+                "it has not said"
+            } else {
+                &named
+            }
+        ));
+        Ok(named)
+    }
+
     /// Asks the far computer to put its lock screen up.
     ///
     /// The same shape again. This is what stands in for Windows+L, which

@@ -1412,6 +1412,22 @@ Poser la découpe sur l'image d'avant plutôt que sur celle qui vient ne règle 
 
 **Ce qui reste, et il faut le dire.** La vraie réponse à l'escalier des coins n'est pas une meilleure couleur de fond, c'est une transparence par pixel qui marche, ce qui veut dire aller voir pourquoi la couche du dessous la refuse. Tant qu'on découpe au masque, les coins seront durs. C'est le prochain travail sur ce bouton, pas celui-ci.
 
+## D98. Un codec que la machine d'en face ne sait pas faire ne s'offre pas (2026-08-31, pendant M4)
+
+**Le symptôme, dit par Victor.** Il choisit AV1 en sachant que sa machine hôte ne sait pas l'encoder. La session s'ouvre très bien, en HEVC, parce que les deux moteurs s'entendent entre eux sur ce qu'ils savent faire. Mais **AV1 reste coché dans le menu**, pour toute la session, et rien ne dit que ce choix n'a pas été honoré. « C'est un peu mal foutu. »
+
+Il a raison, et c'est même le pire genre de défaut : rien n'échoue, rien ne se voit, et le menu ment tranquillement.
+
+**Qui sait, et qui ne sait pas.** Le codec est choisi par l'ordinateur qui regarde et encodé par l'ordinateur regardé. Le second est **le seul** à savoir s'il en est capable : ça dépend de sa carte graphique, pas de la nôtre. Rien du côté qui choisit ne peut le deviner.
+
+**Décision : on demande, on ne devine pas.** Une question de plus sur le canal du produit, posée pendant la session : « qu'est-ce que ton moteur sait encoder ? » L'hôte répond en lisant ce que **son propre moteur a écrit à son démarrage**, exactement comme pour les écrans (D93) : ce moteur essaie chaque encodeur que la machine pourrait avoir et note ceux qui ont répondu. Recalculer ça de notre côté voudrait dire recopier son idée de ce qu'une carte sait faire, et une copie pareille est fausse sur la première machine que personne n'a testée.
+
+Ce qui n'est pas dans la réponse est barré dans le menu, avec le mot qui explique au survol. **Barré et pas effacé** : une possibilité qui disparaît d'un ordinateur à l'autre laisse croire à un menu qui change d'avis, là où c'est la machine d'en face qui n'a pas la même carte.
+
+**Une réponse vide veut dire « il n'a rien dit », jamais « il ne sait rien faire ».** Hors session, ou pendant que son moteur démarre, la question n'a pas de réponse ; et un ordinateur qui n'encoderait rien ne pourrait pas être regardé du tout. Une question sans réponse laisse donc le menu exactement comme il était plutôt que d'en griser la moitié.
+
+**« Automatique » n'est jamais hors de portée**, puisque c'est le choix de ne pas choisir. Et c'est déjà ce que le produit fait par défaut, ce qui répond à l'autre moitié de la demande : le réglage retenu est celui de la personne, et tant qu'elle n'a rien dit, c'est aux deux moteurs de s'entendre.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

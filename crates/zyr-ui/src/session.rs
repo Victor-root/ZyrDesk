@@ -122,6 +122,23 @@ pub async fn sessions() -> Vec<Ongoing> {
     .unwrap_or_default()
 }
 
+/// The way the session in progress is held on, or nothing.
+///
+/// Asked of the service rather than remembered here, for the reason the
+/// whole of this module is written that way: a session belongs to the
+/// service and outlives this window, so a window opened in the middle of
+/// one never saw it start and has nothing of its own to read.
+///
+/// The first, when there are several. Only one session at a time can be
+/// opened from this window, so there is only ever one; a second would be
+/// somebody else's, and its far computer is not the one on screen here.
+pub async fn the_way_in_use() -> Option<zyr_control::WayId> {
+    sessions()
+        .await
+        .first()
+        .map(|session| zyr_control::WayId(session.way))
+}
+
 /// Set from the moment a session is asked for to the moment it is over.
 ///
 /// The window's own screen refuses to ask for two sessions at once, but

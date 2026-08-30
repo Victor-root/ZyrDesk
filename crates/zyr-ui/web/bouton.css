@@ -398,9 +398,20 @@
     color var(--duree-courte) var(--courbe);
 }
 
-.bascule-cote:hover {
+.bascule-cote:hover:not(:disabled) {
   background: var(--surface-3);
   color: var(--texte);
+}
+
+/* Ce que la machine d'en face ne sait pas faire. Elle garde sa place :
+   une possibilité qui disparaît d'un ordinateur à l'autre laisse croire
+   à un menu qui change d'avis, là où c'est la machine regardée qui n'a
+   pas la même carte graphique. Barré plutôt qu'effacé, donc, et le
+   survol dit lequel. */
+.bascule-cote:disabled {
+  cursor: default;
+  opacity: 0.4;
+  text-decoration: line-through;
 }
 
 .bascule-cote:focus-visible {

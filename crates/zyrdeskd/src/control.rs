@@ -262,6 +262,12 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
+        Request::FarCodecs { way } => {
+            match answering.machine.ways.ask_what_it_can_encode(way).await {
+                Ok(named) => Answer::Codecs(named),
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
         Request::Hold { way, process } => {
             if answering.machine.ways.hold(way, process) {
                 Answer::Done

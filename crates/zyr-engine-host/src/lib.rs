@@ -9,6 +9,7 @@
 pub mod api;
 pub mod config;
 pub mod credentials;
+pub mod encoders;
 pub mod launch;
 pub mod ports;
 pub mod process;

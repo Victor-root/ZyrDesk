@@ -41,8 +41,10 @@ use crate::pump;
 /// which it is the right size and nobody's desk. Version 9 added the far
 /// computer's journal, which is the first thing here worth a page rather
 /// than a line, and version 10 the emptying of it, without which reading
-/// it means reading three weeks of unrelated lines.
-pub const VERSION: u32 = 10;
+/// it means reading three weeks of unrelated lines. Version 11 asks what
+/// the far computer can encode, so a menu stops offering what that
+/// computer was never going to make.
+pub const VERSION: u32 = 11;
 
 /// Longest question this channel takes.
 ///
@@ -185,6 +187,20 @@ pub trait Answers: Send + Sync + 'static {
     /// made to ask twice at the other end. It is still far less than
     /// what the same computer may already do here.
     fn empty_the_journal(&self) -> Result<(), String>;
+
+    /// Which pictures this computer's engine can actually make.
+    ///
+    /// The codec is chosen by whoever is watching and encoded here, and
+    /// this end is the only one that knows whether it can. Asking for one
+    /// it cannot make breaks nothing: the two engines agree on another
+    /// between themselves and the session opens. What was wrong is that
+    /// nothing said so, and the menu over there went on showing a choice
+    /// that had not been honoured since the session began.
+    ///
+    /// An empty answer is « it has not said » and never « none »: a
+    /// computer that could encode nothing could not be watched at all, so
+    /// that answer would be about the reading and not about the machine.
+    fn codecs(&self) -> Result<String, String>;
 }
 
 /// What one ZyrDesk asks the other.
@@ -210,6 +226,8 @@ pub enum Question {
     Journal,
     /// Empty your journal, so what comes after is only what comes after.
     EmptyTheJournal,
+    /// Which pictures your engine can actually make.
+    Codecs,
 }
 
 /// What comes back.
@@ -238,6 +256,13 @@ pub enum Told {
     },
     /// The far computer's journal is empty.
     Emptied,
+    /// What the far computer's engine can encode, in the product's own
+    /// spelling, one name after another. Empty is « it has not said »
+    /// and never « none »: a computer that could encode nothing could
+    /// not be watched at all.
+    Codecs {
+        named: String,
+    },
 }
 
 impl fmt::Display for Question {
@@ -258,6 +283,7 @@ impl fmt::Display for Question {
             },
             Question::Journal => write!(f, "{VERSION} journal"),
             Question::EmptyTheJournal => write!(f, "{VERSION} empty-journal"),
+            Question::Codecs => write!(f, "{VERSION} codecs"),
             Question::Hush { quiet } => {
                 write!(
                     f,
@@ -287,6 +313,7 @@ impl fmt::Display for Told {
             // one line the way the control channel folds a refusal.
             Told::Journal { text } => write!(f, "{VERSION} journal {text}"),
             Told::Emptied => write!(f, "{VERSION} emptied"),
+            Told::Codecs { named } => write!(f, "{VERSION} codecs {named}"),
         }
     }
 }
@@ -312,6 +339,7 @@ impl Question {
             },
             "journal" => Ok(Question::Journal),
             "empty-journal" => Ok(Question::EmptyTheJournal),
+            "codecs" => Ok(Question::Codecs),
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
                 "play" => Ok(Question::Hush { quiet: false }),
@@ -363,6 +391,9 @@ impl Told {
                 text: rest.to_string(),
             })),
             "emptied" => Ok(Ok(Told::Emptied)),
+            "codecs" => Ok(Ok(Told::Codecs {
+                named: rest.to_string(),
+            })),
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -553,6 +584,18 @@ pub async fn ask_to_empty_the_journal(connection: &Connection) -> io::Result<()>
     }
 }
 
+/// Asks the far ZyrDesk which pictures its engine can make.
+///
+/// Asked while a session is open, since that is when it can be acted on:
+/// the answer decides what the menu of that session may offer, and a
+/// codec that computer cannot make has no business being offered.
+pub async fn ask_what_it_can_encode(connection: &Connection) -> io::Result<String> {
+    match ask(connection, &Question::Codecs).await? {
+        Told::Codecs { named } => Ok(named),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -643,6 +686,12 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .map_err(|e| format!("le journal n'a pas pu être vidé : {e}"))?
                 .map(|()| Told::Emptied)
         }
+        // And off it as well: the answer is read from what the engine
+        // wrote down when it started, which is a file on a disk.
+        Question::Codecs => tokio::task::spawn_blocking(move || answering.codecs())
+            .await
+            .map_err(|e| format!("les codecs n'ont pas pu être lus : {e}"))?
+            .map(|named| Told::Codecs { named }),
     }
 }
 
@@ -703,6 +752,7 @@ mod tests {
             Question::Screen { wanted: None },
             Question::Journal,
             Question::EmptyTheJournal,
+            Question::Codecs,
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -731,6 +781,14 @@ mod tests {
                     .to_string(),
             },
             Told::Emptied,
+            Told::Codecs {
+                named: "H.264 HEVC".to_string(),
+            },
+            // Rien dit n'est pas « aucun » : il faut que les deux
+            // traversent le canal sans se confondre.
+            Told::Codecs {
+                named: String::new(),
+            },
         ] {
             let said = told.to_string();
             assert_eq!(Told::parse(&said).unwrap(), Ok(told), "sur « {said} »");

@@ -432,6 +432,43 @@ impl Answers for Attending {
         self.log.write(&reason);
         Err(reason)
     }
+
+    /// Says which pictures this computer's engine can make.
+    ///
+    /// Read from what that engine wrote down when it started, and never
+    /// worked out here: the engine tries every encoder the machine might
+    /// have and writes down the ones that answered, so it is the one
+    /// authority on what this graphics card can do. A copy of its
+    /// reasoning would be wrong on the first machine nobody tested.
+    ///
+    /// Nothing read is « it has not said », which the far end shows as no
+    /// opinion rather than as a machine that can encode nothing.
+    fn codecs(&self) -> Result<String, String> {
+        let named = what_this_engine_can_encode();
+        self.log.write(&format!(
+            "a session asked what this computer can encode: {}",
+            if named.is_empty() {
+                "its engine has not said".to_string()
+            } else {
+                named.clone()
+            }
+        ));
+        Ok(named)
+    }
+}
+
+/// What the local engine wrote down about its own encoders, in the
+/// product's own spelling.
+fn what_this_engine_can_encode() -> String {
+    let log = paths::logs_dir().join("engine-console.log");
+    let Ok(text) = std::fs::read_to_string(&log) else {
+        return String::new();
+    };
+    zyr_engine_host::encoders::found_in(&text)
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl Attending {

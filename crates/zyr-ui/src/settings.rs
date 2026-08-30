@@ -180,6 +180,13 @@ pub struct SessionMenu {
     pub sizes: Vec<Offered>,
     pub rates: Vec<u32>,
     pub codecs: Vec<String>,
+    /// The ones the far computer's engine says it cannot make.
+    ///
+    /// Empty means it has not said, which is every menu opened outside a
+    /// session and every far computer whose engine has not finished
+    /// starting. Empty is never « it can make none »: a computer that
+    /// could encode nothing could not be watched at all.
+    pub beyond_it: Vec<String>,
     pub now: SessionChoice,
 }
 
@@ -201,8 +208,40 @@ pub async fn session_menu(app: tauri::AppHandle) -> SessionMenu {
             .collect(),
         rates: RATES_OFFERED.to_vec(),
         codecs: CODECS_OFFERED.iter().map(Codec::to_string).collect(),
+        beyond_it: beyond_the_far_computer().await,
         now: SessionChoice::of(preferred, screen),
     }
+}
+
+/// The codecs the far computer of the session in progress cannot make.
+///
+/// Worked out from what it says it can, and not the other way round: a
+/// computer names what it found, and anything it did not name is either
+/// beyond it or a codec this product has never heard of. « Automatique »
+/// is never beyond anybody, being the choice not to choose.
+///
+/// Nothing at all when there is no session, when the way is gone, or when
+/// that computer's engine has not said: an unanswered question must leave
+/// the menu exactly as it was rather than grey half of it out.
+async fn beyond_the_far_computer() -> Vec<String> {
+    let Some(way) = crate::session::the_way_in_use().await else {
+        return Vec::new();
+    };
+    let Ok(Answer::Codecs(named)) = service::ask(&Request::FarCodecs { way }).await else {
+        return Vec::new();
+    };
+    let can: Vec<Codec> = named
+        .split_whitespace()
+        .filter_map(|it| it.parse().ok())
+        .collect();
+    if can.is_empty() {
+        return Vec::new();
+    }
+    CODECS_OFFERED
+        .iter()
+        .filter(|codec| **codec != Codec::Auto && !can.contains(codec))
+        .map(Codec::to_string)
+        .collect()
 }
 
 /// Sets one line of the session menu to one of the values it offers,

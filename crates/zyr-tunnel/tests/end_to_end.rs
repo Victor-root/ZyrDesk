@@ -121,7 +121,15 @@ impl Answers for FakeEngine {
         self.emptied.store(true, Ordering::Relaxed);
         Ok(())
     }
+
+    fn codecs(&self) -> Result<String, String> {
+        Ok(HOST_CODECS.to_string())
+    }
 }
+
+/// Ce qu'une machine à carte Intel sait faire : pas d'AV1. C'est le cas
+/// pour lequel cette question existe.
+const HOST_CODECS: &str = "H.264 HEVC";
 
 /// Ce que la machine d'en face répond quand la session lui demande de
 /// garder son écran tel quel.
@@ -636,4 +644,12 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
         .await
         .unwrap();
     assert!(page.is_empty(), "{page}");
+
+    // Et ce que cette machine sait encoder, qui décide de ce que le menu
+    // d'en face a le droit d'offrir. Elle est la seule à le savoir :
+    // c'est elle qui encode.
+    let named = before_the_end(aside::ask_what_it_can_encode(&bench.connection))
+        .await
+        .unwrap();
+    assert_eq!(named, HOST_CODECS);
 }

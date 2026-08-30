@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 23;
+pub const PROTOCOL: u32 = 24;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -151,6 +151,13 @@ pub enum Request {
         way: WayId,
         wanted: Option<WantedScreen>,
     },
+    /// Asks the far computer which pictures its engine can make.
+    ///
+    /// Asked through an open way, so during a session: the answer decides
+    /// what that session's menu may offer, and a codec that computer
+    /// cannot make has no business being offered. Nothing said back is
+    /// « it has not said », never « none ».
+    FarCodecs { way: WayId },
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
     Hold { way: WayId, process: u32 },
@@ -277,6 +284,9 @@ impl Request {
                     asked => Some(asked.parse().map_err(Malformed)?),
                 },
             }),
+            "farcodecs" => Ok(Request::FarCodecs {
+                way: WayId(fields.parsed("way")?),
+            }),
             "hold" => Ok(Request::Hold {
                 way: WayId(fields.parsed("way")?),
                 process: fields.parsed("process")?,
@@ -352,6 +362,7 @@ impl fmt::Display for Request {
                 None => write!(f, "farscreen way={way} screen=none"),
             },
             Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
+            Request::FarCodecs { way } => write!(f, "farcodecs way={way}"),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
@@ -533,6 +544,9 @@ pub enum Answer {
     Showing {
         size: Option<(u32, u32)>,
     },
+    /// What the far computer's engine can encode, in the product's own
+    /// spelling, one name after another. Empty is « it has not said ».
+    Codecs(String),
     /// One computer's journal, whole.
     ///
     /// The only answer that carries a page rather than a handful of
@@ -601,6 +615,7 @@ impl Answer {
                     ),
                 },
             }),
+            "codecs" => Ok(Answer::Codecs(rest.trim().to_string())),
             "journal" => Ok(Answer::Journal(unfolded(rest.trim()))),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
@@ -660,6 +675,7 @@ impl fmt::Display for Answer {
                 Some((wide, high)) => write!(f, "showing size={wide}x{high}"),
                 None => f.write_str("showing size=none"),
             },
+            Answer::Codecs(named) => write!(f, "codecs {named}"),
             Answer::Journal(text) => write!(f, "journal {}", folded(text)),
             Answer::Done => f.write_str("done"),
             // The reason travels on one line: a newline would be read as
@@ -925,6 +941,7 @@ mod tests {
             Request::Journal,
             // Une adresse écrite à la main peut porter une espace, ici
             // comme partout ailleurs.
+            Request::FarCodecs { way: WayId(7) },
             Request::FarJournal {
                 host: "pc de victor.local".to_string(),
                 peer: fingerprint(),
