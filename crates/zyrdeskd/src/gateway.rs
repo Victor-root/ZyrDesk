@@ -257,13 +257,18 @@ impl Answers for Attending {
         // nothing in between ever put the desk back, and a 4K host went on
         // serving 1920x1200 of itself for the rest of the evening.
         //
-        // Only while nobody else is watching. Another session is being
-        // served the size it asked for, and pulling the desk out from
-        // under it is the one thing none of this is allowed to do.
-        if wanted.is_none()
-            && self.sessions.only_this_one()
-            && !crate::screen::noted_before().is_empty()
-        {
+        // Asked of no other session first, and that is a change. It used
+        // to be done only while nothing else was open, so as never to pull
+        // the desk from under somebody else; but a session closing and the
+        // next one opening in the same second are counted together for as
+        // long as the first takes to be shown out, and the switch lands in
+        // exactly that second. It came out a coin toss: the same three
+        // clicks worked one evening and did nothing the next. A session
+        // that asks for this computer's own screen gets this computer's
+        // own screen, and what that costs a second viewer is a picture
+        // changing size, against a first viewer served the wrong screen
+        // altogether. That the two can even overlap is [O1], still open.
+        if wanted.is_none() && !crate::screen::noted_before().is_empty() {
             self.log.write(
                 "this session wants this computer's own screen, so the desk an earlier one took is \
                  given back first",
@@ -276,6 +281,14 @@ impl Answers for Attending {
                     .log
                     .write(&format!("this computer's desk was left as it was: {e}")),
             }
+            // And the grown screen goes with it, in that order. A desk
+            // that had been moved onto it leaves it standing there empty,
+            // and the engine on such a computer is aimed at it: left
+            // awake, it would film an empty screen and this session would
+            // be served a bare wallpaper instead of the desktop it asked
+            // for. Asleep, the engine falls back to a real screen, which
+            // is exactly what this session wants.
+            self.put_the_grown_screen_away();
         }
         match hold_the_desk_for(wanted) {
             // What says somebody's screens are not the way they left them
@@ -403,6 +416,42 @@ impl Attending {
         }
     }
 
+    /// Puts the screen this computer grew back to sleep, if it is awake.
+    ///
+    /// Asked when a session wants this computer's own screen back, after
+    /// the desk itself has gone home: the two go in that order or Windows
+    /// decides where the desktop lands and the arrangement put back a
+    /// moment earlier is undone.
+    fn put_the_grown_screen_away(&self) {
+        if crate::screen::asleep() {
+            return;
+        }
+        // Nobody is asked whether somebody wants it: the session asking
+        // for this computer's own screen is the one that wants it gone,
+        // and it is being answered right now.
+        match sleep_the_grown_screen() {
+            Ok(said) => {
+                for line in said {
+                    self.log.write(&line);
+                }
+            }
+            Err(refused) => self.log.write(&format!(
+                "the screen this computer grew would not go to sleep: {refused}"
+            )),
+        }
+        // Asked of the device rather than taken on trust, because a
+        // refusal has a consequence somebody will see: this computer is
+        // filmed on that screen, and a screen left awake with nothing on
+        // it is a session served a bare wallpaper. Said plainly here, so
+        // the journal explains what the person is looking at.
+        if !crate::screen::asleep() {
+            self.log.write(
+                "the screen this computer grew is still awake, so this session is served that \
+                 screen rather than the desktop; it goes away when the last session does",
+            );
+        }
+    }
+
     /// Moves this computer's desktop onto that screen, from the session
     /// that owns the screens, and answers what it ends up showing.
     ///
@@ -475,6 +524,17 @@ fn take_the_grown_screen(_wanted: WantedScreen) -> io::Result<String> {
     Err(io::Error::other(
         "cet ordinateur n'a pas d'écran à faire pousser",
     ))
+}
+
+/// Puts that screen back to sleep, where there is one.
+#[cfg(windows)]
+fn sleep_the_grown_screen() -> Result<Vec<String>, String> {
+    crate::screen::sleep_after_a_session(&|| true)
+}
+
+#[cfg(not(windows))]
+fn sleep_the_grown_screen() -> Result<Vec<String>, String> {
+    Err("cet ordinateur n'a pas d'écran virtuel".to_string())
 }
 
 /// Wakes the screen this computer grew for itself, for the one machine
@@ -557,19 +617,6 @@ struct Sessions {
     /// by the watch that holds the engine, on its own thread, which is
     /// where it is acted on.
     desk_held: AtomicBool,
-}
-
-impl Sessions {
-    /// Whether the session asking is the only one here.
-    ///
-    /// Asked from inside a session, which is counted from the moment it
-    /// is taken in: one is this one and nobody else. A session that asks
-    /// while another is still being shown out reads two and leaves the
-    /// desk where it is, which is what every session did before this
-    /// question was asked at all.
-    fn only_this_one(&self) -> bool {
-        self.open.load(Ordering::Relaxed) <= 1
-    }
 }
 
 /// One session, counted for as long as it lasts.
