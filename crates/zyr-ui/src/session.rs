@@ -268,10 +268,12 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
         *SHOWN_AS.lock().expect("réglages de l'image") = Some(told_once(&preferred));
 
         let towards = wanted.host.clone();
+        let mut opening = Opening::begins();
         let running = match zyr_session::open(
             &wanted,
             &mut |step| {
                 crate::journal::note(&written(&step));
+                opening.reached(&step);
                 // The floating button hangs on that process, and this window
                 // is the only one that knows its number until the service
                 // does; the way travels with it, so the session can be ended
@@ -322,6 +324,7 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
                 WINDOW_TAKES.as_secs()
             ));
         }
+        crate::journal::note(&opening.how_long_it_took());
         say(app, Told::Live);
 
         // Waiting costs nothing here and buys the one thing the person
@@ -515,6 +518,66 @@ fn told(step: Step) -> Option<Told> {
         | Step::ScreenLeftAlone { .. }
         | Step::ScreenOverThere { .. } => return None,
     })
+}
+
+/// How long an opening took, in its parts.
+///
+/// One line at the end rather than four timestamps to subtract by hand.
+/// Opening a session is the wait a person actually feels, it is made of
+/// four very different things, and only one of them is ours to shorten:
+/// guessing which one has already cost an evening, twice. Written where
+/// the timestamps in this journal cannot answer, since they are cut to
+/// the second and every part of this is smaller than that.
+struct Opening {
+    asked: std::time::Instant,
+    reached: Option<std::time::Duration>,
+    starting: Option<std::time::Duration>,
+    showing: Option<std::time::Duration>,
+}
+
+impl Opening {
+    fn begins() -> Self {
+        Self {
+            asked: std::time::Instant::now(),
+            reached: None,
+            starting: None,
+            showing: None,
+        }
+    }
+
+    /// Notes when a step was reached, for the three that mark a boundary.
+    ///
+    /// The questions put to the far computer say nothing when they are
+    /// answered, only when they are refused, so they cannot be timed one
+    /// by one from here. They all sit between the tunnel standing and the
+    /// player starting, and that is how they are counted: together.
+    fn reached(&mut self, step: &Step) {
+        let so_far = self.asked.elapsed();
+        match step {
+            Step::Reached { .. } => self.reached = Some(so_far),
+            Step::Starting => self.starting = Some(so_far),
+            Step::Showing { .. } => self.showing = Some(so_far),
+            _ => {}
+        }
+    }
+
+    fn how_long_it_took(&self) -> String {
+        let whole = self.asked.elapsed();
+        let since =
+            |from: Option<std::time::Duration>, to: Option<std::time::Duration>| match (from, to) {
+                (Some(from), Some(to)) => format!("{} ms", to.saturating_sub(from).as_millis()),
+                _ => "non mesuré".to_string(),
+            };
+        format!(
+            "l'image est là après {} ms : {} pour joindre l'ordinateur distant, {} à lui demander \
+             ce qu'il faut, {} à lancer le lecteur, {} avant sa première image",
+            whole.as_millis(),
+            since(Some(std::time::Duration::ZERO), self.reached),
+            since(self.reached, self.starting),
+            since(self.starting, self.showing),
+            since(self.showing, Some(whole)),
+        )
+    }
 }
 
 /// The same moment, in the journal.
