@@ -1637,6 +1637,14 @@ Le pourquoi tient en une phrase, et le commentaire qui installe le suivi énonç
 
 **Décision : la barre est posée dès le chargement, remplie de tirets.** C'est déjà ce que la lecture écrit pour un nombre manquant, donc rien de neuf n'est inventé ; la barre a sa largeur définitive avant que le menu s'ouvre, et la fenêtre n'a plus jamais à grandir de la session. Mesuré dans un navigateur : dix-huit pixels avant, zéro après.
 
+**Le saut est parti, le liseré est resté, et l'instrument avait un défaut de plus.** Le journal de la session suivante le confirme sur les deux points : la fenêtre vaut 1423 pixels de large avant que le menu s'ouvre et ne bouge plus, donc plus de saut ; et Victor voit toujours l'éclair.
+
+**Onze photos irréprochables pendant que l'oeil voit un défaut ne veulent pas dire qu'il n'y en a pas, elles veulent dire que la photo est prise trop tôt.** Elle l'était : au bout de `floating_size`, une milliseconde après avoir posé la forme. La forme est remise au système et la fenêtre seulement marquée comme voulant être dessinée ; ni le compositeur ni la page n'ont bougé à cet instant, donc la photo montre l'image d'avant, celle qui est juste.
+
+**Décision : la photo de ce que la découpe a découvert est prise une image plus tard**, au tout début de l'appel suivant, que la page fait à son image suivante. Et seulement quand la découpe **grandit** : une découpe qui rétrécit ne peut que cacher des pixels déjà peints, elle n'a rien à découvrir. Et une seule par série : l'animation du logo fait grandir la découpe à chacune de ses sept images, et sept copies de l'écran par passage de main se paieraient sur la session, ce qui n'est pas un prix à faire payer à un produit pour un instrument.
+
+Le calcul de ce que la forme atteint depuis les deux bords qui ne bougent pas était écrit deux fois à l'identique dans ce fichier ; il l'est une seule, et sert aussi à savoir si la découpe a grandi.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

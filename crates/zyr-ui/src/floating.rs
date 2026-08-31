@@ -1157,6 +1157,10 @@ pub fn floating_size(
     shape: Vec<Piece>,
     upward: bool,
 ) -> Result<bool, String> {
+    // Before anything at all, and that is the whole point of it: if the
+    // last cut uncovered something, this is the first moment the screen
+    // shows it. See `note_that_the_cut_grew`.
+    photograph_what_grew();
     // Read before anything moves, and while the drawing still on screen
     // is the one this window was last placed for: what is kept is the
     // corner the button hangs from, which is the logo's own, and the logo
@@ -1228,6 +1232,7 @@ pub fn floating_size(
     let drawn = the_shape_of(&shape, standing, upward);
     if SHAPED.swap(drawn, Ordering::Relaxed) != drawn {
         cut_to_what_is_drawn(&shape, standing);
+        note_that_the_cut_grew(&shape, upward);
     }
     // The page has drawn something, so there is something to show.
     READY.store(true, Ordering::Relaxed);
@@ -1237,17 +1242,17 @@ pub fn floating_size(
     Ok(UPWARD.load(Ordering::Relaxed))
 }
 
-/// A picture of the button's own window, taken at the two moments the
-/// white artefact is reported at.
+/// A picture of the screen at the button, taken when its window changes
+/// size and when its menu opens or closes.
 ///
-/// The window changing size, and the menu opening or closing. The first
-/// trigger alone missed the ones that mattered: this window is resized
-/// when the menu is opened for the first time and never again, so every
-/// later opening, which is when the flash is seen, went unphotographed.
+/// The first trigger alone missed the ones that mattered: this window is
+/// resized when the menu is opened for the first time and never again, so
+/// every later opening went unphotographed. The third moment, a cut that
+/// has just grown, is taken a frame later and lives in
+/// `note_that_the_cut_grew`.
 ///
-/// And those two only. The logo's own animation changes the shape ten
-/// times a second, and a picture of a window costs a copy of the whole
-/// of it.
+/// And those only. The logo's own animation changes the shape ten times a
+/// second, and a picture costs a copy of a piece of the screen.
 #[cfg(windows)]
 fn photograph_the_window(was: (i32, i32, i32, i32), size: (i32, i32), pieces: usize) {
     let resized = size != (was.2 - was.0, was.3 - was.1);
@@ -1276,6 +1281,85 @@ static PIECES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::
 
 #[cfg(not(windows))]
 fn photograph_the_window(_was: (i32, i32, i32, i32), _size: (i32, i32), _pieces: usize) {}
+
+/// How far the shape reached at the last cut, packed as the two halves of
+/// one number, which is what an atomic holds.
+#[cfg(windows)]
+static REACHED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Whether the cut was already growing at the last one, so a whole
+/// animation of them costs one picture and not one per frame.
+#[cfg(windows)]
+static GROWING: AtomicBool = AtomicBool::new(false);
+
+/// Whether a picture of what the last cut uncovered is owed.
+#[cfg(windows)]
+static UNCOVERED: AtomicBool = AtomicBool::new(false);
+
+/// Remembers that this cut grew, without photographing it yet.
+///
+/// A cut that shrinks can only hide pixels the page has already painted;
+/// a cut that grows uncovers window, and if there is anything to see that
+/// is when it shows. So only the growing ones are worth a picture, and
+/// only the first of a run: the logo's animation grows the cut on each of
+/// its seven frames, and seven copies of the screen for one hand passing
+/// over the button would be paid for by the session.
+///
+/// And not photographed on the spot. Taken there, the picture shows the
+/// frame before: the shape is handed over and the window merely marked as
+/// wanting to be drawn, and a millisecond later neither the compositor
+/// nor the page has done anything about it. That is why eleven pictures
+/// of this button came back faultless while the eye saw a flash. It is
+/// taken at the top of the next call, which the page makes on its next
+/// frame, and by then the screen shows what the cut did.
+#[cfg(windows)]
+fn note_that_the_cut_grew(shape: &[Piece], upward: bool) {
+    let reach = how_far_it_reaches(shape, upward);
+    let both = (u64::from(reach.0 as u32) << 32) | u64::from(reach.1 as u32);
+    let before = REACHED.swap(both, Ordering::Relaxed);
+    let was = ((before >> 32) as u32 as i32, before as u32 as i32);
+    let grew = reach.0 > was.0 || reach.1 > was.1;
+    if grew && !GROWING.swap(true, Ordering::Relaxed) {
+        UNCOVERED.store(true, Ordering::Relaxed);
+    }
+    if !grew {
+        GROWING.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Photographs what the last cut uncovered, one frame after it did.
+#[cfg(windows)]
+fn photograph_what_grew() {
+    if !UNCOVERED.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    let button = ITS_WINDOW.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
+    if !button.is_null() {
+        crate::portrait::portrait_of_the_button(button, "la découpe venait de s'agrandir");
+    }
+}
+
+#[cfg(not(windows))]
+fn note_that_the_cut_grew(_shape: &[Piece], _upward: bool) {}
+
+#[cfg(not(windows))]
+fn photograph_what_grew() {}
+
+/// How far the drawing reaches from the two edges its pieces are counted
+/// from, which is the width and the height a window needs to hold it all.
+///
+/// Opening upward the pieces are counted from the bottom, so what reaches
+/// furthest is the one whose top is highest above that edge.
+fn how_far_it_reaches(shape: &[Piece], upward: bool) -> (i32, i32) {
+    shape.iter().fold((0, 0), |(wide, high), piece| {
+        let reach = if upward {
+            -piece.y
+        } else {
+            piece.y + piece.height
+        };
+        (wide.max(-piece.x), high.max(reach))
+    })
+}
 
 /// The shape this window was last cut to, so an identical cut can be
 /// left alone; see `floating_size`. Nought is « never cut », which is
@@ -1324,19 +1408,7 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece])
     if SIZED.swap(both, Ordering::Relaxed) == both {
         return;
     }
-    // How far the drawing reaches from the two edges it is counted from,
-    // which is the width and the height a window has to have to hold all
-    // of it. Opening upward it is counted from the bottom, so what
-    // reaches furthest is the piece whose top is highest above that edge.
-    let upward = DRAWN_UPWARD.load(Ordering::Relaxed);
-    let drawn = shape.iter().fold((0, 0), |(wide, high), piece| {
-        let reach = if upward {
-            -piece.y
-        } else {
-            piece.y + piece.height
-        };
-        (wide.max(-piece.x), high.max(reach))
-    });
+    let drawn = how_far_it_reaches(shape, DRAWN_UPWARD.load(Ordering::Relaxed));
     let now = its_place().map(|(left, top, right, bottom)| (right - left, bottom - top));
     note(&format!(
         "bouton flottant : {}x{} demandés, {}x{} avant, {} après ; \
@@ -2244,14 +2316,7 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
     // opening upward: a zero height is the signature this journal is
     // read for, and it was printing one of its own.
     let upward = DRAWN_UPWARD.load(Ordering::Relaxed);
-    let drawn = shape.iter().fold((0, 0), |(wide, high), piece| {
-        let reach = if upward {
-            -piece.y
-        } else {
-            piece.y + piece.height
-        };
-        (wide.max(-piece.x), high.max(reach))
-    });
+    let drawn = how_far_it_reaches(shape, upward);
     say_where_the_cut_falls(shape);
     // Only what has changed, and never the frame in between. This runs on
     // every cut, a cut happens on every frame of the hover animation, and
@@ -2706,6 +2771,9 @@ fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
     crate::portrait::start_over();
     LAST_PIECES.lock().expect("derniers morceaux dits").clear();
     *LAST_SAID.lock().expect("dernière découpe dite") = None;
+    REACHED.store(0, Ordering::Relaxed);
+    GROWING.store(false, Ordering::Relaxed);
+    UNCOVERED.store(false, Ordering::Relaxed);
 
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GWL_EXSTYLE, GWL_STYLE, GetLayeredWindowAttributes, GetWindowLongPtrW, LWA_ALPHA,
