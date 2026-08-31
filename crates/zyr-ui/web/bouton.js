@@ -213,22 +213,42 @@ function formeOccupee(echelle) {
   // le haut, c'est le sommet de la fenêtre qui se déplace quand elle
   // grandit, donc c'est depuis son bas qu'il faut compter.
   const bas = versLeHaut ? document.documentElement.clientHeight : 0;
-  // Arrondi vers l'intérieur, jamais vers l'extérieur : les bords sont
-  // remontés et les tailles rabotées. Un morceau arrondi vers le dehors
-  // réclame une colonne de pixels que la page n'a pas peinte, et le
-  // système la remplit de son propre blanc avant que la vue web ait
-  // repeint. C'est le liseré clair qu'on voyait sur la gauche du bouton,
-  // surtout en le déplaçant : à chaque pas, la fenêtre bouge, le système
-  // recopie ce qu'il peut et efface la bande découverte au pinceau blanc.
-  // Un pixel peint en moins ne se voit pas ; un pixel blanc de trop, si.
-  const pose = (gauche, haut, large, haute, rayon) =>
+  // Chaque bord arrondi vers l'extérieur, et les quatre de la même façon.
+  //
+  // C'est ce qui rend la bordure régulière. La découpe est un pochoir à un
+  // bit par pixel : ce qu'elle laisse dehors disparaît. Arrondie vers
+  // l'intérieur, elle rognait le bord lissé du dessin d'une fraction de
+  // pixel différente sur chaque côté, et comme un pixel ne se coupe pas en
+  // deux, ça faisait un contour épais d'un pixel ici et de deux là. C'est
+  // le « pas du tout homogène, plus épais à gauche » rapporté sur fond
+  // blanc.
+  //
+  // Arrondie vers le dehors, elle contient tout ce que la page a dessiné,
+  // sur les quatre bords : le contour qu'on voit est celui que la page a
+  // peint, avec son lissage, et il est le même partout.
+  //
+  // Ce que ça réclame en plus est une frange d'un pixel que personne n'a
+  // peinte, et elle ne coûte plus rien depuis que la fenêtre est vraiment
+  // transparente : un pixel non peint n'y est plus blanc, il n'y est rien.
+  // C'était l'inverse avant, et c'est pour ça que ce calcul arrondissait
+  // dans l'autre sens : le liseré clair sur la gauche du bouton, surtout
+  // en le déplaçant, était cette frange remplie au pinceau du système.
+  //
+  // Les bords sont arrondis, pas l'origine et la taille chacune de leur
+  // côté : arrondir l'origine vers le dehors et la taille vers le haut
+  // décale le bord opposé de la somme des deux, et c'est reparti pour une
+  // bordure inégale, dans l'autre sens.
+  const pose = (gauche, haut, large, haute, rayon) => {
+    const x = Math.floor((gauche - droite) * echelle);
+    const y = Math.floor((haut - bas) * echelle);
     morceaux.push({
-      x: Math.ceil((gauche - droite) * echelle),
-      y: Math.ceil((haut - bas) * echelle),
-      width: Math.floor(large * echelle),
-      height: Math.floor(haute * echelle),
+      x,
+      y,
+      width: Math.ceil((gauche + large - droite) * echelle) - x,
+      height: Math.ceil((haut + haute - bas) * echelle) - y,
       radius: Math.round(rayon * echelle),
     });
+  };
   // Une carte, rognée à ce que la page peut avoir dessiné.
   //
   // Rognée, et c'est tout le sujet de l'éclair vu en ouvrant la liste

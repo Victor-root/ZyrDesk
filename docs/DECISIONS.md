@@ -1485,7 +1485,13 @@ La session ordinaire ne fait jamais ce tour-là : elle demande l'écran principa
 
 **Et la couleur de fond s'en va avec, ce n'est pas un oubli.** Les deux s'excluent : la boîte à outils peint cette couleur sur toute la fenêtre avant que la page soit dessinée, donc une fenêtre qui en aurait une serait de cette couleur et de rien d'autre. Ce qu'elle achetait disparaît sans rien coûter : un pixel que la page n'a pas encore peint ne montre plus du blanc, il ne montre rien, parce que le fond de la vue web devient transparent en même temps.
 
-**Ce qui reste découpé, et pourquoi.** La découpe n'est pas retirée. Elle ne sert plus à faire le bord, elle sert à laisser passer les clics : hors de la forme, la souris atteint l'image de la session. Elle continue donc de couper, mais les pixels qu'elle coupe sont désormais ceux que la page a dessinés à moitié transparents, donc la marche se voit beaucoup moins. Si Victor la voit encore, la suite est d'élargir la découpe d'un pixel pour qu'elle ne rogne plus le bord lissé du tout : ça ne se fait qu'une fois qu'on sait que la transparence marche, sinon c'est le liseré clair de D97 qui revient.
+**Ce qui reste découpé, et pourquoi.** La découpe n'est pas retirée. Elle ne sert plus à faire le bord, elle sert à laisser passer les clics : hors de la forme, la souris atteint l'image de la session.
+
+**Et la découpe arrondit maintenant vers le dehors, ce qui est la seconde moitié.** Victor : « c'est mieux, mais la bordure noire n'est pas du tout homogène, elle est plus épaisse à gauche. » Le journal confirme au passage que la transparence a bien pris : aucune ligne de refus.
+
+La mesure arrondissait chaque morceau **vers l'intérieur**, et pas de la même quantité sur les quatre bords : l'origine était remontée d'une fraction de pixel et la taille rabotée d'une autre, donc le bord opposé bougeait de la somme des deux. Un pochoir n'ayant pas de demi-pixel, ça rognait le bord lissé d'un pixel d'un côté et de deux de l'autre, et le contour ressortait épais ici et fin là. Sur fond blanc, ça se voit.
+
+Chaque bord est désormais arrondi vers le dehors, et les quatre de la même façon : la découpe contient tout ce que la page a dessiné, donc le contour qu'on voit est celui que la page a peint, avec son lissage, partout pareil. Ce que ça réclame en plus est une frange d'un pixel que personne n'a peinte, et **c'est précisément ce qui ne coûtait rien qu'une fois la transparence acquise** : cette frange était blanche avant, c'était le liseré de D97, et elle n'est plus rien du tout. Les bords sont arrondis un par un et non l'origine puis la taille, sinon l'erreur se cumule sur le bord opposé et la bordure redevient inégale dans l'autre sens.
 
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 
