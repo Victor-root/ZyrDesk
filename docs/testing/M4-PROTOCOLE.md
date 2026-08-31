@@ -1470,6 +1470,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Le bord à comparer côté par côté** : le contour à gauche du logo et celui en haut doivent faire la même épaisseur. C'est là que le défaut se voyait, et c'est là qu'il faut regarder.
 >
+> **Et le test qui sépare le net du mou** : regarder le bouton la souris **loin de lui**, puis la souris **posée dessus**, puis **bouton enfoncé**. Les trois doivent être aussi nets l'un que l'autre. Avant, seul le premier l'était : le bouton grandissait par une mise à l'échelle, qui étire l'image déjà dessinée au lieu de la redessiner, donc tout ce qui n'était pas l'échelle un était rééchantillonné. C'est ce qui donnait « de temps en temps c'est nickel et après ça rechie ».
+>
 > **Et le survol, qui est le cas le plus dur.** Passer la souris sur le logo : il grandit de six pour cent, et il doit garder son contour noir **pendant toute l'animation**, sur les quatre bords, sans marche franche à gauche ni en bas. C'est de ce côté qu'il grandit, et c'est là que la découpe le rognait. **Le premier survol après l'ouverture de la session compte double** : c'est celui-là qui ratait, les suivants trouvant le style déjà calculé.
 >
 > **Ce que le journal en dit**, et c'est là qu'il faut regarder si ça ne va toujours pas. Trois choses, et elles se disent une fois par session pour ne pas se noyer les unes les autres.
