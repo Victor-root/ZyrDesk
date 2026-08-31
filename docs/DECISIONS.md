@@ -1645,6 +1645,22 @@ Le pourquoi tient en une phrase, et le commentaire qui installe le suivi énonç
 
 Le calcul de ce que la forme atteint depuis les deux bords qui ne bougent pas était écrit deux fois à l'identique dans ce fichier ; il l'est une seule, et sert aussi à savoir si la découpe a grandi.
 
+**Et l'appareil braqué au bon instant n'a rien vu non plus.** Vingt-quatre photos, dont six prises exactement une image après un agrandissement de la découpe : toutes donnent la même chose au bord gauche, noir pur, puis le contour à 9,13,22, puis l'or à 239,181,54. Pas un pixel pâle. Ce qui ferme une porte de plus : au moment visé, le produit qui se regarde lui-même voit un bouton irréprochable.
+
+**Ce qui a débloqué la suite est venu d'un autre modèle, appelé en renfort par Victor, et il faut lui rendre deux points sur trois.**
+
+Le point faux d'abord : il affirmait voir dans `bouton-8.bmp` le contour blanc d'un ancien logo dépasser derrière le nouveau. Ce fichier a été relu pixel par pixel et classé en entier : fond noir, contour `#090D16`, or, blanc du dessin, et les lissages entre eux. Rien d'autre. Il n'y a pas de fantôme dans cette image.
+
+**Le premier point juste : `SetLayeredWindowAttributes(…, 255, LWA_ALPHA)` ne veut pas dire « chaque pixel porte son alpha ».** Il règle **une seule opacité pour toute la fenêtre**, la documentation du système est explicite, et l'alpha par pixel de cette fenêtre vient d'ailleurs, du flou-derrière sur région vide que pose la boîte à outils. Le journal de ce produit imprimait donc une phrase fausse depuis le jour où cette ligne a été écrite. **Décision : la phrase est corrigée, l'appel est gardé.** La fenêtre a été mesurée avec et sans, la plaque est partie avec lui, et ce qu'un compositeur fait d'une fenêtre une fois qu'elle est en calque n'est pas quelque chose que les deux documentations tranchent entre elles. Retirer un appel dont on ne comprend pas l'effet parce que son commentaire était mal écrit serait échanger une erreur d'énoncé contre une erreur de code.
+
+**Le second point juste, et c'est celui qui compte : il ne faut pas mieux synchroniser une découpe animée, il faut cesser de l'animer.** Le rendu du navigateur, l'appel vers le coeur et la composition de Windows sont trois files d'attente indépendantes ; le décalage d'une image posé plus haut met les deux premières dans le bon ordre et ne garantit rien sur la troisième. C'est une critique juste de cette correction-là.
+
+**Décision : le bouton ne change plus de taille.** Sa boîte porte en permanence la plus grande des trois tailles et c'est l'image dedans qui grandit et rétrécit. Mesuré dans un navigateur : la boîte du bouton et celle du bloc entier valent le même nombre au centième près au repos, au survol et enfoncé, dans les deux sens d'ouverture. La forme envoyée au coeur ne bouge donc plus pendant l'animation, et le coeur ne redécoupant que quand la forme change, **plus un seul appel de découpe n'est fait entre l'ouverture et la fermeture du menu**. La fenêtre cesse aussi de grandir d'un pixel par image de survol.
+
+Le décalage d'une image est gardé, non pour ce qu'il devait corriger et n'a pas corrigé, mais parce qu'il reste le bon ordre pour les formes qui changent encore, le menu et la barre des mesures. Son commentaire, qui lui attribuait le liseré pâle, est corrigé : cette explication a été démentie par l'essai suivant et une explication fausse laissée dans le code vaut moins que pas d'explication du tout.
+
+**Ce que ça coûte et qu'il faut regarder en premier.** La découpe est celle du plus grand des trois dessins, donc au repos elle dépasse de deux ou trois pixels en bas et à gauche. Ces pixels sont censés ne rien montrer. Si un liseré pâle apparaît désormais **en permanence** au lieu de faire un éclair, c'est la réponse que six photos n'ont pas su donner : la marge est le défaut, et cette moitié-là se défait en un commit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

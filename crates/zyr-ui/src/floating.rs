@@ -2743,15 +2743,23 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
                 | SWP_NOACTIVATE
                 | SWP_NOOWNERZORDER,
         );
-        // No colour is keyed out, so the first argument is unread; the
-        // second is the one that matters, and two hundred and fifty-five
-        // is what says « every pixel carries its own ».
+        // No colour is keyed out, so the first argument is unread, and
+        // two hundred and fifty-five is « nothing taken off the whole ».
+        //
+        // Not what makes each pixel carry its own alpha, which is what
+        // this line used to claim and what the journal used to print:
+        // this call sets one opacity for the whole window and the
+        // system's own documentation says so. Per-pixel alpha comes from
+        // the toolkit, which turns on blur-behind over an empty region.
+        // The call is kept because the window was measured with it and
+        // without it and the plate went away with it; what a window is
+        // composited from once it is layered is not something the two
+        // documentations settle between them. Kept and said plainly is
+        // the honest state of it.
         SetLayeredWindowAttributes(button, 0, 255, LWA_ALPHA)
     };
     if told == 0 {
-        note(
-            "bouton flottant : Windows a refusé la transparence par pixel, le bouton sera posé sur une plaque",
-        );
+        note("bouton flottant : Windows a refusé l'alpha d'ensemble du calque");
     }
     say_what_it_wears(button);
 }
@@ -2790,8 +2798,15 @@ fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
     // SAFETY: our own window, read only.
     let style = unsafe { GetWindowLongPtrW(button, GWL_EXSTYLE) } as u32;
     let wearing = |what: u32| style & what != 0;
+    // « alpha d'ensemble » et pas « chaque pixel porte le sien », qui est
+    // ce que cette ligne disait et qui est faux : cet appel-là règle une
+    // opacité unique pour toute la fenêtre, la documentation du système
+    // est explicite dessus, et l'alpha par pixel de cette fenêtre vient
+    // d'ailleurs, du flou-derrière sur région vide que pose la boîte à
+    // outils. Le journal affirmait donc une chose que l'appel ne fait
+    // pas ; l'appel est gardé, la phrase est corrigée.
     note(&format!(
-        "bouton flottant : styles {style:#x} (par pixel {}, sans clic {}, sans premier plan {}, \
+        "bouton flottant : styles {style:#x} (calque {}, sans clic {}, sans premier plan {}, \
          hors barre {}) ; alpha relu {}, {}",
         wearing(WS_EX_LAYERED),
         wearing(WS_EX_TRANSPARENT),
@@ -2803,8 +2818,8 @@ fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
             format!("{alpha} sur 255")
         },
         match (how & LWA_ALPHA != 0, how & LWA_COLORKEY != 0) {
-            (true, false) => "chaque pixel porte le sien".to_string(),
-            (true, true) => format!("alpha et couleur effacée {keyed:#x}"),
+            (true, false) => "alpha d'ensemble".to_string(),
+            (true, true) => format!("alpha d'ensemble et couleur effacée {keyed:#x}"),
             (false, true) => format!("couleur effacée {keyed:#x}, pas d'alpha"),
             (false, false) => "aucun des deux".to_string(),
         }

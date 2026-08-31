@@ -419,23 +419,18 @@ function poseLaFenetre(mesure) {
    une image n'y est pas encore peinte : le navigateur avance l'animation,
    appelle ce suivi, et ne peint qu'ensuite. La forme envoyée était donc
    celle de l'image à venir, posée sur l'écran qui montrait encore la
-   précédente, c'est-à-dire exactement l'image d'avance que le paragraphe
-   ci-dessus interdit. Tant que le dessin rétrécit, ça ne se voit pas :
-   une découpe plus petite ne fait que cacher des pixels déjà peints. Dès
-   qu'il grandit, elle découvre une bande de fenêtre que la page n'a pas
-   encore peinte, et la bande est **à gauche** puisque le logo est
-   accroché par son coin haut droit et grandit vers la gauche.
+   précédente. D'où ce qui suit : on mesure à chaque image et on pose **la
+   mesure de l'image d'avant**, qui est celle que l'écran montre.
 
-   Le journal le donne au pixel près, en plein survol : la découpe passe
-   de `(1328, …)` à `(1326, …)` pendant que le dessin passe de 77 à 78
-   pixels de large. Deux pixels de fenêtre découverts d'un coup, une
-   image trop tôt. C'est le liseré pâle mesuré à deux pixels sur le bord
-   gauche, et c'est l'éclair au clic : relâcher rend au logo sa taille,
-   donc le fait grandir.
-
-   D'où ce qui suit : on mesure à chaque image et on pose **la mesure de
-   l'image d'avant**, qui est celle que l'écran montre. La découpe ne peut
-   alors plus rien découvrir que la page n'ait déjà peint. */
+   Ce qui met les deux dans le bon ordre et ne garantit rien : le rendu du
+   navigateur, l'appel vers le coeur et la composition de Windows sont
+   trois files d'attente indépendantes, et une image de décalage ici ne
+   les met pas d'accord. Ça a été essayé contre le liseré pâle du bord
+   gauche et ça ne l'a pas enlevé. Ce qui l'attaque vraiment est ailleurs,
+   dans `bouton.css` : le bouton ne change plus de taille du tout, donc la
+   forme envoyée d'ici ne bouge plus pendant l'animation et le coeur n'a
+   plus rien à redécouper. Le bon ordre reste bon pour les formes qui
+   changent encore, le menu et la barre des mesures. */
 let animation = null;
 
 function suisLeDessin() {
