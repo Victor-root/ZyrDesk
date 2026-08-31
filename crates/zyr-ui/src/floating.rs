@@ -2233,13 +2233,14 @@ type Told = (usize, bool, i32, Option<(i32, i32)>);
 #[cfg(windows)]
 static LAST_SAID: Mutex<Option<Told>> = Mutex::new(None);
 
-/// The pieces the line below last said, so a piece is only said again
-/// when its own numbers change.
+/// The pieces the line below last said, so the same numbers are never
+/// said twice, and empty until this button has said anything at all.
 ///
-/// Said at every cut, it came several times a second, and a journal keeps
-/// the last hundred and twenty lines of a file: it pushed out the very
-/// line it was written to deliver, in the one journal that was gathered
-/// to read it. A shape that has not moved has nothing to add.
+/// Said at every cut, it came ten times a second while a hand rested on
+/// the logo, and a journal keeps the last hundred and twenty lines of a
+/// file: it pushed out the very line it was written to deliver, in the
+/// one journal that was gathered to read it. A shape that has not moved
+/// has nothing to add.
 #[cfg(windows)]
 static LAST_PIECES: Mutex<Vec<Piece>> = Mutex::new(Vec::new());
 
@@ -2259,11 +2260,20 @@ static LAST_PIECES: Mutex<Vec<Piece>> = Mutex::new(Vec::new());
 /// pixel while the drawing's is not, so a margin that is comfortable
 /// along the edges can be nothing at all in the corners.
 ///
-/// Said whenever a piece's numbers change, and never twice for the same
-/// ones.
+/// Said once when the button is built, and after that only when the cut
+/// really does bite, which is a margin gone negative and nothing else.
+/// Never twice for the same numbers either way.
+///
+/// The two halves of that rule are both paid for. Told at every cut, the
+/// line drowned the journal while a hand rested on the logo; told
+/// whenever a margin fell under a whole pixel, it drowned it just the
+/// same, the corner margin at rest being 0,93 for ever. Only the numbers
+/// that mean « the stencil is cutting into the drawing » are worth
+/// waking a journal for.
 #[cfg(windows)]
 fn say_where_the_cut_falls(shape: &[Piece]) {
     let mut before = LAST_PIECES.lock().expect("derniers morceaux dits");
+    let first = before.is_empty();
     for (rank, piece) in shape.iter().enumerate() {
         if before.get(rank) == Some(piece) {
             continue;
@@ -2283,6 +2293,9 @@ fn say_where_the_cut_falls(shape: &[Piece]) {
         const OUT_OF_ITS_BOX: f32 = 1.0 - std::f32::consts::FRAC_1_SQRT_2;
         let corner = margins[0].min(margins[1])
             + (piece.radius as f32 - piece.drawn_radius) * OUT_OF_ITS_BOX;
+        if !first && margins.iter().all(|margin| *margin >= 0.0) && corner >= 0.0 {
+            continue;
+        }
         note(&format!(
             "bouton flottant, morceau {} : dessiné {:.2}x{:.2} en ({left:.2}, {top:.2}) \
              coins {:.2}, contour {:.2} px ; découpé ({}, {}, {}, {}) coins {} ; marges \

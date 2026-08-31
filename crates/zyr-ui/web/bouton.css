@@ -69,39 +69,42 @@
    franc en permanence il tient la place d'un objet dont on ne se sert
    qu'une fois de temps en temps.
 
-   Il ne change jamais de taille, et c'est toute la netteté de ce bouton.
-   Le dessin est vectoriel, l'écran est une grille, et les deux ne
-   s'accordent qu'à certaines tailles. Quarante-quatre pixels de page sur
-   un écran agrandi à 125 % font cinquante-cinq pixels réels, et
-   cinquante-cinq sur les quatre cent quarante du dessin tombent juste :
-   un huitième. Chaque nombre du dessin y atterrit alors sur un pixel
-   entier, un demi ou un quart, et deux de ses quatre bords verticaux
-   tombent pile sur la grille. À toute autre taille les mêmes nombres
-   tombent n'importe où, et un trait noir qui s'arrête au milieu d'un
-   pixel y est gris.
+   Il grandit et rétrécit par sa taille et jamais par une mise à
+   l'échelle, et c'est toute la netteté de ce bouton. Une mise à l'échelle
+   ne redessine rien : le navigateur a rasterisé le logo une fois, à sa
+   taille, et le compositeur étire ensuite cette image-là. Un dessin de
+   cinquante-cinq pixels réels rendu à cinquante-huit ou à cinquante-trois
+   est donc rééchantillonné, ce qui est exactement « le tour n'est pas
+   lisse » ; et comme il n'est rééchantillonné que quand l'échelle n'est
+   pas un, ça donne « de temps en temps c'est nickel et après ça rechie ».
+   Changer la taille, au contraire, refait la mise en page et redessine le
+   dessin vectoriel à la taille voulue : c'est net à toutes les tailles.
 
-   Mesuré sur le dessin lui-même, sur fond blanc, coins arrondis exclus :
-   à cinquante-cinq pixels, un peu plus de la moitié des bords droits du
-   contour sont un noir franc ; à cinquante-huit et trois dixièmes, qui
-   étaient les six pour cent du survol, il en reste un sur cinquante. Même
-   dessin, même contour, seulement décalé de la grille. Le grandissement
-   coûtait donc exactement ce qu'on lui demandait d'apporter.
-
-   Ce qui répond au pointeur est l'opacité, qui ne déplace aucun bord. */
+   La taille se change sur le bouton et l'image le suit à cent pour cent,
+   donc un seul nombre commande les deux. */
 .logo {
   display: block;
-  width: 44px;
-  height: 44px;
+  /* La taille au repos, d'où partent les deux autres. */
+  --taille: 44px;
+  width: var(--taille);
+  height: var(--taille);
   padding: 0;
   border: none;
   background: transparent;
   cursor: grab;
   opacity: 0.55;
-  transition: opacity var(--duree-courte) var(--courbe);
+  transition:
+    width var(--duree-courte) var(--courbe),
+    height var(--duree-courte) var(--courbe),
+    opacity var(--duree-courte) var(--courbe);
 }
 
-/* L'image remplit le bouton : la taille se pose sur l'un et l'autre la
-   suit, donc un seul nombre commande les deux. */
+/* Le logo grandit depuis son coin haut droit, qui est celui par lequel la
+   fenêtre est accrochée, donc vers l'intérieur, là où il y a la place. Ce
+   n'est pas réglé ici : le bloc est collé en haut à droite et aligne ses
+   enfants à droite, donc un bouton plus large s'étend vers la gauche et
+   un bouton plus haut vers le bas. Centré, il déborderait de la découpe
+   et le survol rognerait ses quatre coins au lieu de le mettre en avant. */
 .logo > img {
   display: block;
   width: 100%;
@@ -117,6 +120,10 @@
   opacity: 1;
 }
 
+.logo:hover {
+  --taille: 46.64px;
+}
+
 /* Pris en main : le curseur dit qu'il se déplace, pas qu'il se clique.
 
    Une classe à nous et non « :active », que le navigateur pose et retire
@@ -125,6 +132,7 @@
    bouton restait « appuyé » jusqu'à la fin de la session, main agrippée
    comprise. Ici c'est la fin du geste, connue de Rust, qui l'enlève. */
 .logo.pris {
+  --taille: 42.68px;
   cursor: grabbing;
 }
 

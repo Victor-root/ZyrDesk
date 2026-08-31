@@ -200,12 +200,11 @@ function laBoite() {
    d'avant, pour ne jamais réclamer un pixel que la vue web n'avait pas
    encore peint : ces pixels-là étaient blancs. Ils ne le sont plus, la
    fenêtre étant vraiment transparente, et ce qui restait était le coût de
-   cette prudence : le logo grandissait alors de six pour cent au survol,
-   depuis son coin haut droit, donc de plusieurs pixels vers la gauche et
-   vers le bas, et la découpe restait une image en arrière tout du long.
-   Elle coupait donc en plein milieu du dessin, ce qui enlevait le contour
-   noir de ces deux bords-là et laissait à la place l'escalier du
-   pochoir. */
+   cette prudence : au survol, le logo grandit de six pour cent depuis son
+   coin haut droit, donc de plusieurs pixels vers la gauche et vers le bas,
+   et la découpe restait une image en arrière tout du long. Elle coupait
+   donc en plein milieu du dessin, ce qui enlevait le contour noir de ces
+   deux bords-là et laissait à la place l'escalier du pochoir. */
 function formeOccupee(echelle) {
   const morceaux = [];
   const droite = document.documentElement.clientWidth;
@@ -384,10 +383,9 @@ function ajusteLaFenetre() {
    du logo, donc plus rien ne redessinait, et elle restait là jusqu'au
    survol suivant.
 
-   Ce que la page dessine bouge quand le menu s'ouvre, quand une valeur
-   change de longueur, et quand la fenêtre grandit pour contenir tout ça,
-   ce qui prend plusieurs images. On s'arrête dès que deux images de suite
-   dessinent la même forme. */
+   Le logo change aussi de taille par une animation, au survol et quand
+   une main le prend, et la suivre est exactement la même chose. On
+   s'arrête dès que deux images de suite dessinent la même forme. */
 let animation = null;
 
 function suisLeDessin() {
@@ -1021,6 +1019,35 @@ async function litLeMenu() {
    simple clic. */
 let pris = false;
 
+for (const quand of ["pointerenter", "pointerleave", "pointerdown"]) {
+  vue.logo.addEventListener(quand, suisLeDessin);
+}
+
+/* Et les animations elles-mêmes, ce qui n'est pas la même chose que la
+   souris qui arrive.
+
+   Le suivi s'arrête dès que deux images de suite dessinent la même forme,
+   ce qui est juste au repos et faux au démarrage d'une animation : entre
+   le moment où la souris entre et celui où le navigateur crée vraiment la
+   transition, il passe une image ou deux pendant lesquelles rien n'a
+   encore bougé. Le suivi s'y arrêtait, et la découpe restait celle du
+   repos pendant tout le grandissement : le logo grandissait hors de sa
+   propre découpe et perdait son contour à gauche et en bas. Ça ne se
+   voyait qu'au premier survol, les suivants trouvant le style déjà calculé
+   et la transition démarrée à l'image d'après.
+
+   « transitionrun » est envoyé au moment où la transition est créée, donc
+   exactement là où le suivi doit repartir, et « transitionend » à la fin,
+   pour poser la découpe sur la forme définitive. */
+for (const quand of [
+  "transitionrun",
+  "transitionstart",
+  "transitionend",
+  "transitioncancel",
+]) {
+  vue.logo.addEventListener(quand, suisLeDessin);
+}
+
 vue.logo.addEventListener("pointerdown", async (evenement) => {
   if (evenement.button !== 0) {
     return;
@@ -1042,9 +1069,6 @@ vue.logo.addEventListener("pointerdown", async (evenement) => {
   } finally {
     pris = false;
     vue.logo.classList.remove("pris");
-    // Le bouton a pu être posé en bas de l'image, et c'est le coeur qui
-    // sait de quel côté le menu s'ouvre désormais : il ne le dit qu'en
-    // réponse à une mesure.
     suisLeDessin();
   }
 });
