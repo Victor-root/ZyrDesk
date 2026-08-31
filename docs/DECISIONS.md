@@ -1432,6 +1432,22 @@ Ce qui n'est pas dans la réponse est barré dans le menu, avec le mot qui expli
 
 Ce qui est lu est donc `engine.log`, **le journal que le moteur écrit lui-même**. C'est déjà celui d'où sortent les écrans (D93), il n'est pas rassemblé par le journal du produit, et personne ne l'efface. La règle qui en sort vaut pour tout ce qui viendra : **ce que le produit relit du moteur se relit dans le journal du moteur, jamais dans une copie que le produit tient à côté.**
 
+## D99. On ne fournit une photo de sa propre fenêtre que quand Windows ne peut pas la prendre (2026-08-31, pendant M4)
+
+**Le symptôme, dit par Victor.** Dans le Win+Tab du client, pendant une session, la vignette de ZyrDesk est nettement plus petite que celles de toutes les autres fenêtres, alors que la fenêtre est agrandie. Et pareil en plein écran.
+
+**D'où ça vient.** Ce que Win+Tab, Alt+Tab et la barre des tâches montrent est une photo que le système prend d'une fenêtre. ZyrDesk lui disait de ne pas la prendre : il levait les deux attributs qui veulent dire « cette fenêtre fournit elle-même son image », et répondait au message par lequel le système la réclame.
+
+C'était juste au moment où ça a été écrit. L'image de la session est dans une fenêtre à elle, posée par-dessus la nôtre ; le système photographiant **une** fenêtre, il ramenait la page d'accueil que la session cache. Fournir l'image nous-mêmes était la seule réponse.
+
+Ça a cessé d'être vrai. Depuis que l'image est **portée** par notre fenêtre pendant toute la session, c'est-à-dire adoptée comme fenêtre fille, elle est dessinée dans notre composition à nous : la photo du système la contient déjà, et de plein droit. L'ancien réflexe est resté, et il coûtait exactement ce que Victor voit. Une fenêtre qui fournit son image n'est plus jamais photographiée en direct, et cette image ne peut pas dépasser la taille que le système réclame dans son message, laquelle est bien plus petite que la carte que Win+Tab dessine. La vignette était donc plafonnée à cette taille-là, quelle que soit la taille de la fenêtre.
+
+**Décision.** La question « qui photographie la session ? » se pose à un seul endroit et se lit sur un seul fait : est-ce que l'image est portée par notre fenêtre ? Si oui, le système prend sa photo lui-même, et il la prend à la taille qu'il veut. Si non, ZyrDesk fournit la sienne comme avant.
+
+Le « si non » n'est pas théorique et c'est pour ça qu'il reste : Windows peut refuser l'adoption, ce qui arrive quand les deux fenêtres ne mesurent pas l'écran de la même façon, et le journal le dit quand ça arrive. Sur une machine comme celle-là, la session est de nouveau deux fenêtres posées l'une sur l'autre, et la photo du système redeviendrait fausse. La règle vaut donc pour les deux cas au lieu d'en supposer un.
+
+**Ce qu'on en retient.** Une réponse au système qui remplace ce qu'il sait faire tout seul se paye toujours quelque part, ici en taille. Quand la raison qui l'a justifiée disparaît, ce n'est pas neutre de la laisser : c'est un défaut qui vieillit tout seul.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

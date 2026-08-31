@@ -1487,7 +1487,7 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // Where the front is going, said by the system as it moves it.
         // It takes a thread of its own here and gives it back below.
         watch_the_front();
-        offer_a_picture_of_the_session(home, true);
+        who_photographs_the_session(home);
         round_the_window(home, true);
         light_the_bar(home);
         // A session can open straight onto the whole screen, in which
@@ -1527,7 +1527,7 @@ fn give_the_window_back(app: &AppHandle) {
         // on it.
         unsafe { RemoveWindowSubclass(home, Some(lit), LIT) };
         stop_watching_the_front();
-        offer_a_picture_of_the_session(home, false);
+        who_photographs_the_session(home);
         round_the_window(home, false);
     });
 }
@@ -2130,25 +2130,37 @@ fn say_the_size_again(engine: windows_sys::Win32::Foundation::HWND, size: (i32, 
 
 /* ---- Ce que les autres fenêtres montrent de la nôtre ----------------- */
 
-/// Offers the system a picture of the session whenever it wants to show
-/// this window somewhere small, or stops offering.
+/// Says who photographs this window for Alt+Tab and the taskbar: the
+/// system itself, or this program.
 ///
-/// What Alt+Tab and the taskbar show is a photograph the system takes of
-/// a window. It photographs one window, and the session is in another
-/// laid over it, so what it got was the home screen underneath: a
-/// session shown as the page it is hiding. Told that this window has a
-/// picture of its own, the system asks for it instead, which is the two
-/// messages the handler answers below.
+/// What those show is a photograph the system takes of a window, and it
+/// photographs one window. The session is drawn in another, so where
+/// that other window stands is what decides whether the photograph is
+/// right. Carried inside ours, the picture is drawn in our own
+/// composition and the system's photograph already holds it, at whatever
+/// size the system wants it. Laid over ours, it is a window of its own
+/// that the photograph does not reach, and what shows instead is the
+/// home screen the session is hiding; that is the one case where this
+/// window offers a picture of its own, and it is the case where the
+/// system refused to take the picture in, plus the moment at the start
+/// of a session before it has been asked.
 ///
-/// Given back at the end of the session, when the home screen really is
-/// what this window shows.
+/// Offered in both cases, as it was, it cost the size. A window that
+/// answers with a bitmap is never photographed live again, and that
+/// bitmap may be no larger than what the system asks for in the message
+/// answered below, which is a good deal smaller than the card Alt+Tab
+/// draws: a session stood there smaller than every other window on the
+/// desk, however large its own window was.
 #[cfg(windows)]
-fn offer_a_picture_of_the_session(home: windows_sys::Win32::Foundation::HWND, may: bool) {
+fn who_photographs_the_session(home: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Graphics::Dwm::{
         DWMWA_FORCE_ICONIC_REPRESENTATION, DWMWA_HAS_ICONIC_BITMAP, DwmSetWindowAttribute,
     };
 
-    let yes: i32 = i32::from(may);
+    // Nothing to offer outside a session, and nothing to put right while
+    // the picture rides inside our window.
+    let yes: i32 =
+        i32::from(the_engines_window().is_some() && CARRIED.load(Ordering::Relaxed) == 0);
     for what in [DWMWA_HAS_ICONIC_BITMAP, DWMWA_FORCE_ICONIC_REPRESENTATION] {
         // SAFETY: our own window, an attribute made to be set, and the
         // value is ours, of the size the call is told.
@@ -2602,6 +2614,9 @@ fn carry_the_picture(
             SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOSENDCHANGING,
         );
         CARRIED.store(style, Ordering::Relaxed);
+        // And the system's own photograph of our window becomes right
+        // again, the session being drawn inside it from here.
+        who_photographs_the_session(home);
         // And the keyboard with it, which being a child costs.
         hand_the_keyboard_over(engine, true);
         // The same crossing as the one at the other end of a gesture,
@@ -3092,10 +3107,12 @@ unsafe extern "system" fn lit(
             unsafe { DefSubclassProc(window, message, wparam, lparam) }
         }
         // The system wants something to show this window as, small: in
-        // Alt+Tab, or hovering its button in the taskbar. It would take
-        // a photograph of this window, and the session is in another one
-        // laid over it, so it would show the page the session is hiding.
-        // Handed the session instead.
+        // Alt+Tab, or hovering its button in the taskbar. It only asks
+        // when this window has offered to answer, which is when the
+        // session is in a window laid over ours rather than carried
+        // inside it; see `who_photographs_the_session`. It would then
+        // photograph our window alone and show the page the session is
+        // hiding. Handed the session instead.
         //
         // The size it will take is in the message for a thumbnail, and
         // its own for a preview, which is shown at the window's size.

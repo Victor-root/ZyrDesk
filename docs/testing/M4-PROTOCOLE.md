@@ -60,6 +60,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
 | **R46ter** | **Refait, et c'est un défaut que j'avais introduit moi-même en corrigeant R46bis.** « Fluide » n'atteignait jamais la cadence demandée et variait exactement comme « Économe » : relevé à 50 images/s pour 60 demandées, avec 2,35 ms d'encodage et 1 ms de réseau, donc rien n'était à l'étroit. Une image capturée achetait **deux** périodes comptées depuis son arrivée, si bien qu'un écran changeant entre la moitié de la cadence visée et la cadence visée ne déclenchait jamais la moindre répétition : le moteur servait ce que le bureau produisait, c'est-à-dire ce que donne le fait de ne rien demander. Les deux réglages étaient donc identiques sur tout bureau qui change plus de trente fois par seconde. La grille des créneaux est maintenant fixe et une image presque à l'heure prend son propre créneau. **À vérifier après recompilation du moteur hôte** |
+| **R64** | **Nouveau.** Pendant une session, la vignette de ZyrDesk dans Win+Tab et Alt+Tab est de la taille des autres. Elle était nettement plus petite, quelle que soit la taille de la fenêtre, plein écran compris : ZyrDesk disait à Windows de ne pas photographier sa fenêtre et lui fournissait l'image lui-même, ce qui plafonne la vignette à la taille que Windows réclame. C'était nécessaire quand l'image de la session était une fenêtre posée par-dessus la nôtre, ça ne l'est plus depuis qu'elle est portée par notre fenêtre |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
 | **R63** | **Nouveau.** Un codec que la machine d'en face ne sait pas encoder est **barré** dans le menu de la session, avec le mot qui le dit au survol. Elle est la seule à le savoir, ça dépend de sa carte graphique : on le lui demande, et elle répond en lisant ce que son propre moteur a écrit en démarrant. Choisir AV1 vers une machine qui n'en fait pas ne cassait rien, les deux moteurs s'entendaient sur autre chose en silence, mais le menu continuait d'afficher AV1 pour toute la session. « Automatique » n'est jamais barré, c'est le choix de ne pas choisir, et c'est le réglage par défaut |
 | **R61** | **Instrumentation, pas encore une correction.** L'ouverture d'une session paraît nettement plus lente qu'avant, sans que rien ne dise où passe le temps : les horodatages du journal sont à la seconde et chaque morceau de l'ouverture est plus court que ça. Une ligne unique la découpe maintenant en millisecondes, dans `interface.log` du client : joindre l'ordinateur distant, lui demander ce qu'il faut, lancer le lecteur, attendre sa première image. C'est cette ligne qu'il faut relever avant de toucher à quoi que ce soit |
@@ -1454,6 +1455,20 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Et le cas d'origine, à refaire aussi** : un bureau parfaitement immobile, rien qui bouge, en Fluide. La cadence doit rester à ce qui a été demandé et non tomber à la moitié.
 >
 > **Demande la recompilation du moteur hôte.**
+
+> **R64 (la vignette de la session dans Win+Tab)**
+>
+> Session ouverte, fenêtre **agrandie**. Faire Win+Tab, ou maintenir Alt+Tab.
+>
+> Attendu : la carte de ZyrDesk est **de la même taille** que celles des autres fenêtres agrandies, et elle montre le bureau distant. Ce qu'on voyait avant : une carte deux fois plus petite que ses voisines, avec la bonne image dedans.
+>
+> **À refaire en plein écran**, où c'était pareil, et **fenêtre réduite en taille**, où la carte doit simplement suivre la fenêtre comme celle de n'importe quel programme.
+>
+> **Et une fois la session fermée** : la carte montre la page d'accueil, à sa taille normale.
+>
+> **Ce que ça remplace** : ZyrDesk levait les deux attributs qui veulent dire « cette fenêtre fournit elle-même son image » pendant toute la session. Une fenêtre qui répond ça n'est plus jamais photographiée en direct, et l'image qu'elle fournit ne peut pas dépasser la taille que Windows réclame dans sa demande, bien plus petite que la carte dessinée.
+>
+> **Le cas où l'ancien comportement doit revenir tout seul** : une machine où Windows refuse que notre fenêtre adopte celle du moteur. Le journal du client le dit alors mot pour mot : `l'image n'a pas pu être portée par la fenêtre`. Sur celle-là, la session redevient deux fenêtres posées l'une sur l'autre, ZyrDesk refournit son image, et la vignette est de nouveau petite mais **juste** : sans ça elle montrerait la page d'accueil au lieu du bureau distant.
 
 > **R63 (un codec que la machine d'en face ne sait pas faire)**
 >
