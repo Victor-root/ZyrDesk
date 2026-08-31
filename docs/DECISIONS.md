@@ -1597,6 +1597,14 @@ L'alpha vaut zéro et il est lu : la couche fenêtre l'ignore et prend le noir, 
 
 Ce n'est pas une correction, c'est un instrument, et c'est ce qui manquait depuis le début : **trois raisonnements de suite valent moins qu'une mesure.**
 
+**Et l'instrument a répondu à la première session.** La septième photo, prise à l'instant où le menu s'ouvre, est gardée dans le dépôt à `docs/testing/captures/bouton-flottant-decoupe-decalee.png`. On y voit, sans rien avoir à déduire : **la carte du menu dessinée dix-huit pixels à gauche de la forme gardée pour elle.**
+
+**Ce que ça veut dire.** Les morceaux de la forme sont comptés depuis le bord droit de la fenêtre, et la page les compte dans la fenêtre **telle qu'elle est**. Le cœur, lui, découpait contre la taille que la fenêtre **allait avoir**, au motif qu'une forme plus large que sa fenêtre est simplement rognée par elle et que ça ne coûtait donc rien. Ça coûtait dix-huit pixels : ouvrir le menu élargit cette fenêtre d'autant, et découper contre la nouvelle largeur pose toute la forme dix-huit pixels à droite de ce qui est réellement peint. Une bande de fenêtre que personne n'a peinte apparaît le long d'un bord de la carte, et le logo est rogné de l'autre. **C'est le flash blanc, et c'est ici qu'il se fabrique.**
+
+**Décision : on découpe contre la taille que la fenêtre a, pas contre celle qu'elle prend.** Une image de l'ancienne forme sur l'ancien dessin est exactement ce qu'on veut, puisque les deux vont ensemble. La page redemande à l'image suivante, mise en page à la nouvelle largeur cette fois, et c'est celle-là qui est découpée contre la nouvelle largeur, la fenêtre l'ayant alors pour de bon.
+
+**Et la leçon sur l'instrument.** Une capture d'écran d'une fenêtre découpée ne montre que ce que la découpe laisse passer, c'est-à-dire précisément la partie qui a l'air juste. Trois explications ont été bâties sur ces captures et les trois étaient fausses. La première photo prise de l'intérieur a suffi.
+
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)

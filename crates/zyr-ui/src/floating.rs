@@ -1200,10 +1200,23 @@ pub fn floating_size(
         );
     }
 
-    // The shape first, and against the size the window is about to have
-    // rather than the one it has: a shape wider than the window it is put
-    // on is simply clipped by it, so setting it early costs nothing, while
-    // a window briefly at its new size under its old shape shows.
+    // The shape, and against the size the window **has** rather than the
+    // one it is about to have. Those pieces are counted from the window's
+    // right edge, and the page counted them in the window as it stands:
+    // cut against a width the page has not laid itself out in yet, they
+    // land the whole difference to the right of what is actually painted.
+    //
+    // That is not reasoning, it is a photograph. Opening the menu widens
+    // this window by eighteen pixels, and the picture the button takes of
+    // itself at that moment shows the menu's card drawn eighteen pixels
+    // to the left of the shape kept for it: a strip of window nobody has
+    // painted along one edge of the card, and the logo shaved on the
+    // other. That strip is the white flash, and this is where it is made.
+    //
+    // The page asks again on its next frame, laid out at the new width,
+    // and that one is cut against the new width because the window has
+    // it by then. One frame of the old shape over the old drawing is what
+    // is wanted: they match.
     //
     // And only when it is a different shape. Cutting is neither free nor
     // silent: the system redraws the window on every cut, and what it
@@ -1211,9 +1224,10 @@ pub fn floating_size(
     // The page asks for this several times a frame while a hand runs over
     // the logo, and once a second all session long for the measures,
     // nearly always with the very shape the window already wears.
-    let drawn = the_shape_of(&shape, size, upward);
+    let standing = (was.2 - was.0, was.3 - was.1);
+    let drawn = the_shape_of(&shape, standing, upward);
     if SHAPED.swap(drawn, Ordering::Relaxed) != drawn {
-        cut_to_what_is_drawn(&shape, size);
+        cut_to_what_is_drawn(&shape, standing);
     }
     // The page has drawn something, so there is something to show.
     READY.store(true, Ordering::Relaxed);

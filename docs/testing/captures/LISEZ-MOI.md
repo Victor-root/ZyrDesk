@@ -17,3 +17,11 @@ Sans couleur de fond, la boîte à outils n'efface rien, et ce qui n'est jamais 
 D'où les deux choses que Victor rapportait sans qu'elles s'expliquent : ça part quand la souris arrive, et la capture d'écran ne la prend pas. Le survol rendait le logo entier, donc opaque, donc il la couvrait.
 
 Voir [D101](../../DECISIONS.md) pour la décision, et [R66](../M4-PROTOCOLE.md) pour l'essai.
+
+## `bouton-flottant-decoupe-decalee.png`
+
+La fenêtre du bouton flottant **photographiée par le produit lui-même**, découpe non appliquée, à l'instant exact où le menu s'ouvre. C'est la septième des huit que le bouton prend quand sa fenêtre change de taille, et c'est celle qui a donné la réponse après trois explications fausses.
+
+Ce qu'elle montre : ouvrir le menu élargit cette fenêtre de dix-huit pixels, et **la carte du menu y est dessinée dix-huit pixels à gauche de la forme gardée pour elle**. La découpe était faite contre la largeur que la fenêtre allait avoir, alors que la page avait mesuré dans celle qu'elle avait encore. D'où une bande de fenêtre que personne n'a peinte le long d'un bord de la carte, et le logo rogné de l'autre : c'est le flash blanc.
+
+Une capture d'écran ne pouvait pas le montrer, puisqu'elle ne montre que ce que la découpe laisse passer, c'est-à-dire précisément la partie qui a l'air juste.
