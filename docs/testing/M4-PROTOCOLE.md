@@ -1470,11 +1470,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **À vérifier la souris loin du bouton**, et c'est tout le piège : le survol le rendait franc, donc opaque, donc il couvrait le défaut. Le voile de l'outil de capture de Windows fait la même chose, ce qui a longtemps rendu ce défaut impossible à photographier.
 >
-> **Le flash au clic, qui est le même défaut pris sur le vif.** Cliquer sur le bouton et regarder : rien de blanc ne doit apparaître au bord du logo, même une image. Un clic change l'activation de la fenêtre, et c'est très exactement le moment où le système repeint le cadre d'une fenêtre ; ce cadre est peint **dans** la fenêtre, sous la page, donc une page transparente ne le couvre pas. Les styles qui lui donnaient un cadre lui sont maintenant retirés.
+> **Le flash au clic, qui est le même défaut pris sur le vif.** Cliquer sur le bouton, plusieurs fois, et regarder : rien de blanc ne doit apparaître au bord du logo, même une seule image. Un clic ouvre le menu, ouvrir le menu **retaille la fenêtre**, et la bande de mémoire tampon que la fenêtre gagne en grandissant n'a jamais été peinte par personne. La fenêtre reçoit désormais un fond **noir pur**, que la boîte à outils efface sur toute sa surface et que le compositeur rend entièrement transparent : plus un seul pixel de cette fenêtre n'est de la mémoire que personne n'a écrite.
 >
-> **Et la ligne qui le vérifie**, dans le journal de la fenêtre : `bouton flottant : style ordinaire 0x… (barre de titre …, menu système …, bordure …, cadre redimensionnable …)`. **Les quatre doivent dire `false`.** Un seul « true » est un cadre que le système peindra sous le logo à chaque clic.
+> **Le cas qui dit que ce fond a mal tourné** : le bouton posé sur une **plaque noire** carrée. Le noir doit être pur, à quatre unités près il redevient opaque, et c'est exactement l'erreur d'une première tentative.
 >
-> Cette ligne est écrite **une seule fois, à l'ouverture de la session**. Pour la lire, ouvrir une session et envoyer le journal **sans jouer avec le menu du bouton** : chaque ouverture et fermeture du menu coûte quatre lignes, et un journal n'en garde que cent vingt.
+> **Et deux lignes de vérification**, dans le journal de la fenêtre, écrites une seule fois à l'ouverture : `styles 0x… (par pixel true, …)` et `style ordinaire 0x… (barre de titre false, menu système false, bordure false, cadre redimensionnable false)`. Les quatre doivent dire `false` : une fenêtre découpée sur un dessin n'a pas de cadre à montrer.
+>
+> Ces lignes sont écrites **une seule fois, à l'ouverture de la session**. Pour les lire, ouvrir une session et envoyer le journal **sans jouer avec le menu du bouton** : chaque ouverture et fermeture du menu coûte quatre lignes, et un journal n'en garde que cent vingt.
 >
 > **Et le cas qui dit que ça n'a pas marché** : le bouton posé sur une plaque de couleur, ou un carré blanc à la place du logo. Le journal de la fenêtre le dit alors mot pour mot : `bouton flottant : Windows a refusé la transparence par pixel`. S'il ne le dit pas et que la plaque est là quand même, c'est que le compositeur accepte les appels sans les honorer, et il faut le signaler : c'est le seul cas que ni le code ni le journal ne savent voir.
 >

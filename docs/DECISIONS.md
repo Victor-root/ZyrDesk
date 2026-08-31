@@ -1483,7 +1483,9 @@ La session ordinaire ne fait jamais ce tour-là : elle demande l'écran principa
 
 **Décision.** On redemande la transparence, et on ajoute nous-mêmes la moitié manquante juste après la construction de la fenêtre, au même endroit où ses autres styles sont posés. C'est deux appels, sur notre propre fenêtre, comme les coins arrondis le sont déjà.
 
-**Et la couleur de fond s'en va avec, ce n'est pas un oubli.** Les deux s'excluent : la boîte à outils peint cette couleur sur toute la fenêtre avant que la page soit dessinée, donc une fenêtre qui en aurait une serait de cette couleur et de rien d'autre. Ce qu'elle achetait disparaît sans rien coûter : un pixel que la page n'a pas encore peint ne montre plus du blanc, il ne montre rien, parce que le fond de la vue web devient transparent en même temps.
+**Et la couleur de fond s'en va avec, ce n'est pas un oubli.** Les deux semblent s'exclure : la boîte à outils peint cette couleur sur toute la fenêtre avant que la page soit dessinée, donc une fenêtre qui en aurait une serait de cette couleur et de rien d'autre. Ce qu'elle achetait paraît disparaître sans rien coûter : un pixel que la page n'a pas encore peint ne montrerait plus du blanc mais rien, le fond de la vue web devenant transparent en même temps.
+
+**Cette phrase est fausse sur ses deux moitiés, et c'est elle qui a coûté le plus cher.** Voir « le fond noir pur » plus bas : les deux ne s'excluent pas, et un pixel que personne n'a peint ne montre pas rien.
 
 **Ce qui reste découpé, et pourquoi.** La découpe n'est pas retirée. Elle ne sert plus à faire le bord, elle sert à laisser passer les clics : hors de la forme, la souris atteint l'image de la session.
 
@@ -1576,6 +1578,18 @@ La lecture de la boîte à outils dit déjà quoi attendre : elle crée toute fe
 **Décision : cette fenêtre n'a plus de cadre à peindre.** Là où ses styles sont déjà repris pour la transparence, on lui retire tout ce qui lui en donne un : barre de titre, bordure, cadre de dialogue, cadre redimensionnable, menu système, boutons réduire et agrandir, et les quatre bords relevés côté styles étendus. Un style n'est relu qu'au recalcul du cadre, donc on le demande dans la foulée, sans bouger ni retailler ni réactiver la fenêtre. Un bouton découpé à la forme d'un dessin n'a pas de cadre à montrer, donc on ne lui en donne pas à peindre.
 
 Ce n'est pas une supposition : la boîte à outils a été lue, elle bâtit toute fenêtre avec `WS_CAPTION | WS_CLIPSIBLINGS | WS_SYSMENU` et n'ôte que `WS_CAPTION` et `WS_THICKFRAME` quand on demande « sans décorations ». Les styles étendus relevés dans le journal de Victor, `0x80c0190`, portent `WS_EX_WINDOWEDGE` au bit près. Le journal dira désormais quatre « false » si la reprise a pris.
+
+**Et le journal a répondu quatre « false » et l'artefact était toujours là.** `style ordinaire 0x4000000`, styles étendus passés de `0x80c0190` à `0x80c0090` : la reprise a bien pris, la fenêtre n'a plus rien qui lui donne un cadre, et ça n'a rien changé. La piste était fausse. Elle reste juste sur un point, et c'est le seul qu'on garde : une fenêtre découpée sur un dessin n'a pas de cadre à montrer, donc on ne lui en laisse pas.
+
+**Le fond noir pur, qui est la vraie réponse, et elle était dans la boîte à outils depuis le début.** Cette boîte à outils ne demande pas au système une fenêtre transparente. Elle allume **le flou derrière la fenêtre sur une région vide**, qui est le vieux tour dont toute la règle tient en une phrase : **un pixel peint en noir pur y devient entièrement transparent**.
+
+Or, sans couleur de fond, elle **n'efface rien du tout**. Son traitement de l'effacement se lit en douze lignes : s'il y a une couleur, elle remplit toute la zone client avec ; sinon elle passe la main, et la classe de la fenêtre n'a pas de pinceau. Ce qui n'est jamais effacé, c'est **la mémoire tampon de la fenêtre**, que personne n'a nettoyée et qui contient ce qui s'y trouvait avant. C'est ça, la croix : de la mémoire jamais peinte, montrée là où la page ne peint pas.
+
+**Et ça explique le clic, ce que ni le fondu ni le cadre n'expliquaient.** Ouvrir le menu **retaille la fenêtre**, une fenêtre qui grandit fait grandir ce tampon, et la bande neuve n'a jamais été peinte par personne. D'où un artefact qui apparaît au clic et repart à l'image suivante, quand la page a fini de peindre par-dessus.
+
+**Décision : la fenêtre reçoit un fond, et ce fond est le noir pur.** La boîte à outils efface alors toute la zone client à chaque fois, et chacun de ces pixels est transparent puisqu'il est noir pur. Rien du dessin de ce produit n'est noir pur, le contour du logo étant 9,13,22, donc rien de ce qu'on peint n'est rendu translucide au passage. La tentative de la première moitié de cette décision avait pris justement ce 9,13,22 comme fond et conclu que les deux s'excluaient : il n'était pas assez noir, donc il restait opaque, donc le bouton se retrouvait posé sur une plaque. **Quatre unités de rouge séparaient une plaque d'une fenêtre propre.**
+
+L'alpha vaut zéro et il est lu : la couche fenêtre l'ignore et prend le noir, la couche vue web l'honore et reste transparente. C'est écrit dans la documentation des deux couches.
 
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 

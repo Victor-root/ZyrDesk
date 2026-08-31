@@ -935,14 +935,34 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         // against the picture underneath rather than against a ground, and
         // the edge is the one the page drew.
         //
-        // No ground colour is asked for with it, and the two are exclusive
-        // rather than merely unnecessary: the toolkit paints that colour
-        // over the whole window before the page is drawn, so a window that
-        // had one would be that colour and nothing else. The web view's own
-        // ground goes transparent at the same time, which is what a pixel
-        // nobody has painted yet now shows: nothing, instead of the white
-        // block this button used to put over somebody's picture.
         .transparent(true)
+        // And a ground of pure black with it, which is not a contradiction
+        // but the other half of how this toolkit makes a window
+        // transparent. It does not ask the system for a transparent
+        // window: it turns the blur behind the window on over an empty
+        // region, which is the old trick whose whole rule is that **a
+        // pixel painted pure black becomes fully transparent**.
+        //
+        // Without a ground colour the toolkit erases nothing at all, and
+        // what is never erased is the window's own back buffer: memory
+        // nobody cleared, holding whatever was last in it. That is the
+        // white artefact this button has been showing since it became
+        // transparent, and the flash on every click: opening the menu
+        // resizes the window, a resize grows that buffer, and the new
+        // strip of it has never been painted by anybody.
+        //
+        // Pure black, so it costs nothing: the ground is erased over the
+        // whole window and every pixel of it is transparent. Nothing in
+        // this product's own drawing is pure black, the logo's outline
+        // being 9,13,22, so nothing of ours is made see-through by it.
+        // An earlier attempt used that outline colour as the ground and
+        // concluded the two were exclusive: it was not black enough, so
+        // it stayed opaque and the button sat on a plate.
+        //
+        // The alpha is nought and that is read: the window layer ignores
+        // it and takes the black, the web view layer honours it and stays
+        // transparent.
+        .background_color(tauri::window::Color(0, 0, 0, 0))
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
