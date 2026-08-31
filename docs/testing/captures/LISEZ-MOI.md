@@ -36,6 +36,16 @@ Cette marge est celle que `formeOccupee` prend au-delà de ce que la page peint 
 
 Voir [D101](../../DECISIONS.md) et [R66](../M4-PROTOCOLE.md).
 
+## `bouton-flottant-saut-menu.png`
+
+Les photos 7 et 8 prises par le bouton lui-même sur PC-VICTOR, côte à côte et agrandies cinq fois. Ce sont deux images consécutives, recopiées de l'écran, au moment où le menu s'ouvre pour la première fois de la session.
+
+Ce qu'elles montrent sans qu'il y ait rien à déduire : **le bouton entier saute de dix-huit pixels vers la gauche pendant une image**. Le trait bleu est au même endroit sur les deux et marque le bord gauche du logo sur la photo 7. Les deux photos sont prises au même endroit de l'écran, les deux fenêtres ayant le même bord droit (3827), donc le déplacement est réel et non un effet du cadrage.
+
+**Ce que le journal en dit au même instant** : `1423x1353 demandés, 1405x1353 avant, 1423x1353 après`. La fenêtre s'élargit de dix-huit pixels à la première ouverture du menu, parce que c'est là que la barre des mesures est bâtie et que c'est elle qui décide de la largeur de la carte. La fenêtre étant accrochée par son coin haut droit, l'élargir déplace son bord gauche, et la vue web garde le temps d'une image son dessin d'avant collé au nouveau bord.
+
+La barre est désormais posée dès le chargement, remplie de tirets : mesuré dans un navigateur, dix-huit pixels d'écart avant, zéro après.
+
 ## `bouton-flottant-decoupe-decalee.png`
 
 La fenêtre du bouton flottant **photographiée par le produit lui-même**, découpe non appliquée, à l'instant exact où le menu s'ouvre. C'est la septième des huit que le bouton prend quand sa fenêtre change de taille, et c'est celle qui a donné la réponse après trois explications fausses.

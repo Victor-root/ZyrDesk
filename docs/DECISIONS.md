@@ -1623,6 +1623,20 @@ Cette marge est celle que la page prend au-delà de ce qu'elle peint pour que la
 
 L'image de Victor est gardée dans le dépôt à `docs/testing/captures/bouton-flottant-liseret-gauche.png`, avec sa mesure. C'est la deuxième pièce à conviction rangée là, et pour la même raison que la première : elle coûte une manipulation à refaire.
 
+**Et l'instrument, recopiant l'écran, a rendu deux réponses du premier coup.**
+
+**La première est dans le journal et se lit au pixel près.** En plein survol, la découpe passe de `(1328, 2, 1403, 76)` à `(1326, 2, 1403, 78)` pendant que le dessin passe de 77 à 78 pixels de large. La découpe gagne deux pixels à gauche là où le dessin en gagne un : elle est **posée une image trop tôt**.
+
+Le pourquoi tient en une phrase, et le commentaire qui installe le suivi énonçait déjà la règle sans la tenir : **une mesure prise dans une image n'y est pas encore peinte.** Le navigateur avance l'animation, appelle le suivi, et ne peint qu'ensuite ; la forme envoyée est donc celle de l'image à venir, posée sur un écran qui montre encore la précédente. Tant que le dessin rétrécit ça ne se voit pas, une découpe plus petite ne faisant que cacher des pixels déjà peints. Dès qu'il grandit, elle découvre une bande de fenêtre que la page n'a pas encore peinte, **à gauche**, puisque le logo est accroché par son coin haut droit. Deux pixels, à gauche, pendant une image : c'est le liseré mesuré, et c'est l'éclair au clic, relâcher rendant au logo sa taille donc le faisant grandir.
+
+**Décision : on mesure à chaque image et on pose la mesure de l'image d'avant**, qui est celle que l'écran montre. La découpe ne peut alors plus rien découvrir que la page n'ait déjà peint, ce qui est la règle écrite depuis le début. Le suivi s'arrête toujours sur deux images identiques, donc la forme finale part quand même.
+
+**La seconde réponse est la photo 8, et elle se voit sans rien mesurer.** Le bouton entier y est dessiné **dix-huit pixels à gauche** de sa place, le temps d'une image, juste après la première ouverture du menu. Le journal donne la cause : la fenêtre passe de 1405 à 1423 pixels de large à cet instant précis. Elle est accrochée par son coin haut droit, donc l'élargir déplace son bord gauche, et la vue web garde le temps d'une image son dessin d'avant collé au nouveau bord.
+
+**Ce qui l'élargit est la barre des mesures.** Elle est bâtie à la première lecture, c'est-à-dire à la première ouverture du menu, et c'est elle qui décide de la largeur de la carte. Tout le reste du menu est déjà mesuré au chargement, les raccourcis compris, précisément pour que la fenêtre ait sa taille avant qu'on clique.
+
+**Décision : la barre est posée dès le chargement, remplie de tirets.** C'est déjà ce que la lecture écrit pour un nombre manquant, donc rien de neuf n'est inventé ; la barre a sa largeur définitive avant que le menu s'ouvre, et la fenêtre n'a plus jamais à grandir de la session. Mesuré dans un navigateur : dix-huit pixels avant, zéro après.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

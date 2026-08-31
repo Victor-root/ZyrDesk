@@ -96,6 +96,29 @@ async function litLesMesures() {
   } catch {
     dit = {};
   }
+  poseLesMesures(dit);
+  // Les chiffres ont une largeur fixe et la ligne du dessous est la plus
+  // courte du menu, donc rien ne bouge d'ordinaire ; ceci est le filet
+  // pour le jour où quelque chose bougera, la fenêtre étant taillée sur
+  // ce que la page dessine et pas sur ce qu'elle dessinait avant.
+  suisLeDessin();
+}
+
+/* Les quatre chiffres écrits, ce qui manque écrit `-`.
+
+   Posés dès le chargement et non à la première lecture, et ce n'est pas
+   de la coquetterie : c'est cette barre qui décide de la largeur du menu,
+   donc de celle de la fenêtre. Vide, elle la faisait trop étroite, et la
+   première ouverture du menu élargissait la fenêtre d'autant : dix-huit
+   pixels sur PC-VICTOR, la largeur exacte dépendant de la police et de
+   l'agrandissement. Or cette fenêtre est accrochée par son coin haut
+   droit : l'élargir déplace son bord gauche, et la vue web garde le temps
+   d'une image son dessin d'avant collé au nouveau bord. Le bouton entier
+   sautait donc de dix-huit pixels vers la gauche pendant une image, ce
+   que la photo 8 de PC-VICTOR montre au pixel près. Remplie de tirets dès
+   le départ, la barre a sa largeur définitive avant que le menu s'ouvre,
+   et la fenêtre n'a plus jamais à grandir. */
+function poseLesMesures(dit) {
   vue.chiffres.replaceChildren(
     ...MESURES.map((quoi) => {
       const bloc = document.createElement("span");
@@ -112,11 +135,6 @@ async function litLesMesures() {
     }),
   );
   vue.flux.textContent = leFlux(dit);
-  // Les chiffres ont une largeur fixe et la ligne du dessous est la plus
-  // courte du menu, donc rien ne bouge d'ordinaire ; ceci est le filet
-  // pour le jour où quelque chose bougera, la fenêtre étant taillée sur
-  // ce que la page dessine et pas sur ce qu'elle dessinait avant.
-  suisLeDessin();
 }
 
 /* La ligne grise sous les chiffres : de quoi est faite l'image. Ce qui
@@ -336,38 +354,48 @@ function formeOccupee(echelle) {
   return morceaux;
 }
 
-/* La fenêtre suit ce que la page peut occuper, mesuré et non deviné : le
-   menu n'a pas la même hauteur selon ce qu'il contient, et les valeurs
+/* Ce que la page dessine à cet instant, mesuré et non deviné : le menu
+   n'a pas la même hauteur selon ce qu'il contient, et les valeurs
    écrites au-dessus des curseurs n'ont pas toutes la même longueur.
 
    En vrais pixels et non en pixels de page : sur un écran agrandi les
    deux ne valent pas la même chose, et une fenêtre taillée dans la
-   mauvaise unité laisse voir son propre fond tout autour du bouton. */
-function ajusteLaFenetre() {
+   mauvaise unité laisse voir son propre fond tout autour du bouton.
+
+   Mesurer et poser sont deux gestes séparés, et c'est tout le sujet de
+   `suisLeDessin`. */
+function leDessin() {
   const boite = laBoite();
   const echelle = window.devicePixelRatio || 1;
   const forme = formeOccupee(echelle);
-  invoke("floating_size", {
-    width: Math.ceil(boite.width * echelle),
-    height: Math.ceil(boite.height * echelle),
-    shape: forme,
-    // De quel côté ce dessin-là a été mesuré. Sans ce mot, le coeur
-    // découpe et pose la fenêtre selon le sens qu'il voudrait plutôt que
-    // selon celui qui est à l'écran, et les deux diffèrent le temps que
-    // la page entende la réponse : le logo se retrouvait alors à une
-    // hauteur de menu de la main qui le tenait, et la découpe laissait
-    // un trou que le système remplissait de son propre fond.
-    upward: versLeHaut,
-  })
+  return {
+    mesure: {
+      width: Math.ceil(boite.width * echelle),
+      height: Math.ceil(boite.height * echelle),
+      shape: forme,
+      // De quel côté ce dessin-là a été mesuré. Sans ce mot, le coeur
+      // découpe et pose la fenêtre selon le sens qu'il voudrait plutôt
+      // que selon celui qui est à l'écran, et les deux diffèrent le
+      // temps que la page entende la réponse : le logo se retrouvait
+      // alors à une hauteur de menu de la main qui le tenait, et la
+      // découpe laissait un trou que le système remplissait de son
+      // propre fond.
+      upward: versLeHaut,
+    },
+    // Ce qui vient d'être mesuré, en un mot : c'est à ça qu'on voit si le
+    // dessin bouge encore.
+    mot: JSON.stringify([versLeHaut, boite.width, boite.height, forme]),
+  };
+}
+
+function poseLaFenetre(mesure) {
+  invoke("floating_size", mesure)
     // Le coeur répond de quel côté le menu doit s'ouvrir. Un changement
     // remet la page en page, donc tout ce qui vient d'être mesuré est
     // à refaire : le suivi ci-dessous s'en charge, puisqu'il ne s'arrête
     // que quand deux images de suite dessinent la même chose.
     .then(poseLeSens)
     .catch(() => {});
-  // Ce qui vient d'être envoyé, en un mot : c'est à ça que l'appelant
-  // voit si le dessin bouge encore.
-  return JSON.stringify([versLeHaut, boite.width, boite.height, forme]);
 }
 
 /* Ce que la page dessine, suivi image par image jusqu'à ce que plus rien
@@ -385,17 +413,47 @@ function ajusteLaFenetre() {
 
    Le logo change aussi de taille par une animation, au survol et quand
    une main le prend, et la suivre est exactement la même chose. On
-   s'arrête dès que deux images de suite dessinent la même forme. */
+   s'arrête dès que deux images de suite dessinent la même forme.
+
+   **Et cette règle était énoncée sans être tenue.** Une mesure prise dans
+   une image n'y est pas encore peinte : le navigateur avance l'animation,
+   appelle ce suivi, et ne peint qu'ensuite. La forme envoyée était donc
+   celle de l'image à venir, posée sur l'écran qui montrait encore la
+   précédente, c'est-à-dire exactement l'image d'avance que le paragraphe
+   ci-dessus interdit. Tant que le dessin rétrécit, ça ne se voit pas :
+   une découpe plus petite ne fait que cacher des pixels déjà peints. Dès
+   qu'il grandit, elle découvre une bande de fenêtre que la page n'a pas
+   encore peinte, et la bande est **à gauche** puisque le logo est
+   accroché par son coin haut droit et grandit vers la gauche.
+
+   Le journal le donne au pixel près, en plein survol : la découpe passe
+   de `(1328, …)` à `(1326, …)` pendant que le dessin passe de 77 à 78
+   pixels de large. Deux pixels de fenêtre découverts d'un coup, une
+   image trop tôt. C'est le liseré pâle mesuré à deux pixels sur le bord
+   gauche, et c'est l'éclair au clic : relâcher rend au logo sa taille,
+   donc le fait grandir.
+
+   D'où ce qui suit : on mesure à chaque image et on pose **la mesure de
+   l'image d'avant**, qui est celle que l'écran montre. La découpe ne peut
+   alors plus rien découvrir que la page n'ait déjà peint. */
 let animation = null;
 
 function suisLeDessin() {
   cancelAnimationFrame(animation);
   let avant = "";
   let immobile = 0;
+  // Ce qui est peint à l'écran, qui est ce qui a été mesuré à l'image
+  // d'avant. Rien à la première, et c'est juste : à ce moment-là rien de
+  // ce qui vient d'être mesuré n'est encore à l'écran.
+  let peint = null;
   const pas = () => {
-    const ici = ajusteLaFenetre();
-    immobile = ici === avant ? immobile + 1 : 0;
-    avant = ici;
+    const ici = leDessin();
+    if (peint) {
+      poseLaFenetre(peint.mesure);
+    }
+    peint = ici;
+    immobile = ici.mot === avant ? immobile + 1 : 0;
+    avant = ici.mot;
     animation = immobile < 2 ? requestAnimationFrame(pas) : null;
   };
   pas();
@@ -1176,6 +1234,7 @@ async function ditLesRaccourcis() {
   suisLeDessin();
 }
 
+poseLesMesures({});
 ditLesRaccourcis();
 litLeMenu();
 
