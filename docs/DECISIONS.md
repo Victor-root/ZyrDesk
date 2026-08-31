@@ -1511,7 +1511,7 @@ Le tour pixelisé au repos : arrondir vers le dehors laisse **zéro** de marge q
 
 **Et le journal dit ces nombres-là**, morceau par morceau : le dessin en vrais pixels non arrondis, la découpe, les quatre marges et celle du coin. Une marge négative est le pochoir qui coupe dans le dessin, et c'est la seule chose qu'on ne pouvait pas lire jusqu'ici, puisqu'elle se joue sur des fractions de pixel que les nombres arrondis avaient déjà perdues. La fenêtre dit aussi, une fois à sa construction, les styles qu'elle porte vraiment et l'alpha relu : poser un style et l'avoir ne sont pas la même phrase, et la différence entre les deux est toute la différence entre un bord lisse et un bouton posé sur une plaque.
 
-**Et une leçon sur le débogage lui-même, payée sur le premier journal.** Ces lignes étaient écrites à chaque découpe, donc dix fois par seconde tant qu'une main restait sur le bouton. Un journal garde les cent vingt dernières lignes d'un fichier : douze secondes de survol ont chassé tout le reste, **y compris la ligne des styles**, dans le seul journal qui avait été rassemblé pour la lire. Un débogage qui noie sa propre réponse ne débogue rien. Elles se disent donc une fois par session, plus chaque fois qu'une marge passe sous le pixel, ce qui est le seul cas que quelqu'un ait besoin de lire ; et la ligne de la découpe elle-même ne se redit que quand quelque chose y change vraiment, le nombre de morceaux, la taille de la fenêtre ou un refus.
+**Et une leçon sur le débogage lui-même, payée sur le premier journal.** Ces lignes étaient écrites à chaque découpe, donc dix fois par seconde tant qu'une main restait sur le bouton. Un journal garde les cent vingt dernières lignes d'un fichier : douze secondes de survol ont chassé tout le reste, **y compris la ligne des styles**, dans le seul journal qui avait été rassemblé pour la lire. Un débogage qui noie sa propre réponse ne débogue rien. **Une ligne ne se dit donc que quand ce qu'elle dit a changé** : un morceau qui n'a pas bougé n'a rien à ajouter, et la ligne de la découpe elle-même ne se redit que quand le nombre de morceaux, la taille de la fenêtre ou un refus changent. La règle est la même pour les deux, elle est complète et elle est bornée, là où « une fois par session plus les cas graves » laissait un cas grave permanent se répéter indéfiniment.
 
 **Ce que les nombres ont répondu.** Toutes les marges entre 1,0 et 2,0, dans les coins entre 0,82 et 1,6 : **le pochoir ne mord plus nulle part**. Ce qui reste n'est donc pas la découpe.
 
@@ -1519,11 +1519,31 @@ Le tour pixelisé au repos : arrondir vers le dehors laisse **zéro** de marge q
 
 Or **une mise à l'échelle CSS ne redessine rien**. Le navigateur rasterise le logo une fois, à sa taille, et le compositeur étire ensuite cette image. Un dessin de cinquante-cinq pixels réels rendu à cinquante-huit ou à cinquante-trois est donc **rééchantillonné**, ce qui est précisément un tour qui n'est pas net. Et comme il ne l'est que quand l'échelle n'est pas un, ça donne mot pour mot « de temps en temps c'est nickel et après ça rechie » : net quand la souris est ailleurs, mou dès qu'on l'approche ou qu'on appuie.
 
-**Le bouton grandit donc par sa taille et non par une mise à l'échelle.** Changer la taille refait la mise en page et redessine le dessin vectoriel à la taille voulue : c'est net à toutes les tailles, y compris pendant l'animation. Une seule variable porte les trois tailles, le dessin suit à cent pour cent, et le coin d'ancrage est déjà donné par le bloc, qui est collé en haut à droite et aligne ses enfants à droite.
+**Le bouton a donc grandi par sa taille et non par une mise à l'échelle.** Changer la taille refait la mise en page et redessine le dessin vectoriel à la taille voulue, là où l'échelle étirait une image déjà faite. Le coin d'ancrage était déjà donné par le bloc, qui est collé en haut à droite et aligne ses enfants à droite.
 
-**La règle qui en sort, et elle vaut pour tout ce produit.** Un dessin vectoriel qu'on anime se anime par sa taille. Une mise à l'échelle est une loupe posée sur une photo : elle est gratuite pour le compositeur et elle coûte la netteté, ce qui est exactement le mauvais côté du marché pour une marque de cinquante pixels posée sur le travail de quelqu'un.
+**La règle qui en sort, et elle vaut pour tout ce produit.** Un dessin vectoriel qu'on anime s'anime par sa taille. Une mise à l'échelle est une loupe posée sur une photo : elle est gratuite pour le compositeur et elle coûte la netteté, ce qui est exactement le mauvais côté du marché pour une marque de cinquante pixels posée sur le travail de quelqu'un.
 
-**Ce qui reste vrai malgré tout**, et il faut le dire : sur le portable de Victor, à 125 %, le logo entier fait **55 pixels réels** et son contour **3,5**. Même parfaitement rasterisé, un trait de trois pixels et demi avec des coins arrondis de dix ne peut pas être plus lisse que trois pixels et demi le permettent, et un agrandissement de capture d'écran le montre pour ce qu'il est. Si ça ne suffit pas, la suite n'est plus une correction : c'est un choix de taille de bouton ou de dessin, et c'est à Victor de le dire.
+**Et redessiner net ne sert à rien si on redessine à côté de la grille.** Victor : « un peu mieux, mais là sur la droite c'est pas lisse. »
+
+Cette fois la réponse a été **mesurée et non raisonnée** : le logo a été dessiné pour de vrai dans un navigateur, à 125 %, sur fond blanc, et les pixels de ses bords ont été comptés. Un bord est franc quand le premier pixel peint est déjà le noir plein du contour ; il est gris quand c'est une teinte intermédiaire. Coins arrondis exclus, puisque là le dégradé est le dessin lui-même :
+
+| Taille du logo | Bords droits d'un noir franc |
+|---|---|
+| 55,00 px (repos) | 52 % |
+| 53,35 px (appuyé, -3 %) | 28 % |
+| 58,30 px (survol, +6 %) | **2 %** |
+
+**La taille de repos n'est pas une taille parmi d'autres, c'est la bonne.** 55 sur les 440 du dessin tombent juste : un huitième. Chaque nombre du dessin y atterrit donc sur un pixel entier, un demi ou un quart, et deux de ses quatre bords verticaux tombent pile sur la grille. À 58,30 les mêmes nombres tombent n'importe où, et un trait noir qui s'arrête au milieu d'un pixel y est gris. Le grandissement du survol coûtait donc très exactement ce qu'on lui demandait d'apporter.
+
+**Trois échappatoires ont été essayées et mesurées, aucune ne tient.**
+
+- *Caler la boîte du bouton sur un pixel entier.* Déjà le cas, et sans effet : décalée d'un demi-pixel, elle échange simplement les bords francs contre les autres (58 bords francs contre 48), et tout décalage vertical la fait chuter à 12.
+- *Arrondir la taille du survol à un pixel entier*, 58 au lieu de 58,30. On remonte un peu, on reste très loin du repos : ce qui compte n'est pas que la boîte tombe sur la grille, c'est le **rapport** de la taille aux 440 unités du dessin.
+- *Caler le dessin lui-même* sur des multiples de 8 unités. Ça marche, et bien : 62 % de bords francs au repos au lieu de 52. Mais uniquement à 125 % avec un bouton de 44 points. Pour que tous les nombres d'un dessin tombent juste à 100, 125, 150, 175 et 200 % à la fois, chacun doit être un multiple d'un **onzième** de la boîte, ce qui pour un contour d'un quinzième est impossible. Ce serait un réglage pour une machine, donc un bricolage.
+
+**Décision : le bouton ne change plus jamais de taille.** Ni au survol, ni sous la main. Ce qui répond au pointeur est l'opacité, qui passe déjà de 0,55 à 1 et ne déplace aucun bord ; la prise en main garde son curseur, et le bouton qui suit la souris est de toute façon le plus fort des retours. Tombent avec elle les écoutes ajoutées pour suivre cette animation, celles du pointeur comme celles des transitions : sans animation de forme, elles ne suivraient plus rien.
+
+**Ce qui reste vrai malgré tout**, et il faut le dire : sur le portable de Victor, à 125 %, le logo entier fait **55 pixels réels** et son contour **3,5**. Un trait de trois pixels et demi ne peut pas s'arrêter net des deux côtés : il fera toujours trois pixels pleins et un demi. Le repos est donc le mieux que ce dessin puisse donner à cette taille, et c'est maintenant l'état permanent du bouton. Si ça ne suffit pas, la suite n'est plus une correction : c'est un choix de taille de bouton ou de dessin, et c'est à Victor de le dire.
 
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 

@@ -1079,7 +1079,7 @@ pub fn lower(app: &AppHandle) {
 /// window as it stands and the cut is made in the window as it becomes:
 /// counted from the left, the whole drawing landed short by the
 /// difference between the two, and the menu lost its right edge.
-#[derive(serde::Deserialize)]
+#[derive(Clone, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Piece {
     x: i32,
@@ -2233,17 +2233,15 @@ type Told = (usize, bool, i32, Option<(i32, i32)>);
 #[cfg(windows)]
 static LAST_SAID: Mutex<Option<Told>> = Mutex::new(None);
 
-/// Whether the button has yet said, this time it was built, what it draws
-/// and what it wears.
+/// The pieces the line below last said, so a piece is only said again
+/// when its own numbers change.
 ///
-/// The two lines that answer « is the stencil biting into the drawing »
-/// and « is the transparency really there ». They are worth one telling
-/// each and no more: said at every cut, they came ten times a second
-/// while a hand hovered, and a journal keeps its last hundred and twenty
-/// lines. They pushed out the very line they were written to deliver, in
-/// the one journal that was gathered to read it.
+/// Said at every cut, it came several times a second, and a journal keeps
+/// the last hundred and twenty lines of a file: it pushed out the very
+/// line it was written to deliver, in the one journal that was gathered
+/// to read it. A shape that has not moved has nothing to add.
 #[cfg(windows)]
-static TOLD_WHAT_IT_DRAWS: AtomicBool = AtomicBool::new(false);
+static LAST_PIECES: Mutex<Vec<Piece>> = Mutex::new(Vec::new());
 
 /// Says, piece by piece, how far the cut falls from what the page painted.
 ///
@@ -2261,17 +2259,15 @@ static TOLD_WHAT_IT_DRAWS: AtomicBool = AtomicBool::new(false);
 /// pixel while the drawing's is not, so a margin that is comfortable
 /// along the edges can be nothing at all in the corners.
 ///
-/// Said once when the button is built, and after that only when a margin
-/// falls under a whole pixel, which is the only case anybody needs to
-/// read: everything else is the cut doing its job, ten times a second.
+/// Said whenever a piece's numbers change, and never twice for the same
+/// ones.
 #[cfg(windows)]
 fn say_where_the_cut_falls(shape: &[Piece]) {
-    /// Under this, the cut is close enough to the drawing for the
-    /// smoothing to reach it, and it is worth a line.
-    const TOO_CLOSE: f32 = 1.0;
-
-    let first = !TOLD_WHAT_IT_DRAWS.swap(true, Ordering::Relaxed);
+    let mut before = LAST_PIECES.lock().expect("derniers morceaux dits");
     for (rank, piece) in shape.iter().enumerate() {
+        if before.get(rank) == Some(piece) {
+            continue;
+        }
         let [left, top, right, bottom] = piece.drawn;
         // Positive is the cut outside the drawing, which is what is
         // wanted on all four; negative is the drawing cut into.
@@ -2287,9 +2283,6 @@ fn say_where_the_cut_falls(shape: &[Piece]) {
         const OUT_OF_ITS_BOX: f32 = 1.0 - std::f32::consts::FRAC_1_SQRT_2;
         let corner = margins[0].min(margins[1])
             + (piece.radius as f32 - piece.drawn_radius) * OUT_OF_ITS_BOX;
-        if !first && margins.iter().all(|margin| *margin >= TOO_CLOSE) && corner >= TOO_CLOSE {
-            continue;
-        }
         note(&format!(
             "bouton flottant, morceau {} : dessiné {:.2}x{:.2} en ({left:.2}, {top:.2}) \
              coins {:.2}, contour {:.2} px ; découpé ({}, {}, {}, {}) coins {} ; marges \
@@ -2314,6 +2307,8 @@ fn say_where_the_cut_falls(shape: &[Piece]) {
             margins[3],
         ));
     }
+    before.clear();
+    before.extend_from_slice(shape);
 }
 
 /// The logo's own numbers, read off `zyrdesk.svg`: how wide one of its two
@@ -2565,7 +2560,7 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
 fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
     // A new button says everything it has to say once more: it is a new
     // window, with its own styles and its own drawing.
-    TOLD_WHAT_IT_DRAWS.store(false, Ordering::Relaxed);
+    LAST_PIECES.lock().expect("derniers morceaux dits").clear();
     *LAST_SAID.lock().expect("dernière découpe dite") = None;
 
     use windows_sys::Win32::UI::WindowsAndMessaging::{
