@@ -1470,6 +1470,25 @@ La session ordinaire ne fait jamais ce tour-là : elle demande l'écran principa
 
 **Et la liste vient de la machine d'en face, comme les codecs (D98) et les écrans (D93).** C'est son moteur qui nomme ses écrans, avec une empreinte que rien d'autre ne calcule pareil. Une liste vide veut dire « il n'a rien dit », jamais « il n'a pas d'écran ».
 
+## D101. La transparence du bouton flottant n'était pas refusée, elle était demandée à moitié (2026-08-31, pendant M4)
+
+**Le symptôme, dit par Victor.** Sur un fond blanc, la bordure noire autour du logo du bouton flottant est « toute saccadée », pas lisse. C'est l'escalier que D97 avait nommé et laissé ouvert.
+
+**Pourquoi aucune couleur de fond ne peut y répondre.** La fenêtre du bouton est découpée à la forme que la page dessine, et une découpe du système est **un masque à un bit par pixel**. Elle n'a pas de demi-pixel. Une fenêtre opaque a donc un bord dur, quelle que soit sa couleur : le contraste change, la marche reste. La seule réponse est que les pixels à demi couverts se mélangent à l'image derrière plutôt qu'à un fond, c'est-à-dire une vraie transparence par pixel.
+
+**Ce qui manquait, et c'est établi et non deviné.** La boîte à outils demande la transparence en disant au compositeur d'honorer l'alpha de chaque pixel, avec une région de flou vide. C'est tout ce qu'elle fait. Deux choses le disent :
+
+- La **documentation du compositeur** elle-même prévient que « certaines opérations GDI ne préservent pas l'alpha, donc attention aux fenêtres filles, dont l'alpha est imprévisible ». Notre fenêtre est un cadre qui porte une vue web, laquelle est exactement une fenêtre fille.
+- Les autres boîtes à outils qui ont eu cette panne l'ont corrigée **au même endroit** : il faut en plus que la fenêtre se déclare *layered* et annonce une opacité constante de 255, ce qui est la façon documentée de dire « prends l'alpha de chaque pixel et pas un seul nombre pour tous ».
+
+**Décision.** On redemande la transparence, et on ajoute nous-mêmes la moitié manquante juste après la construction de la fenêtre, au même endroit où ses autres styles sont posés. C'est deux appels, sur notre propre fenêtre, comme les coins arrondis le sont déjà.
+
+**Et la couleur de fond s'en va avec, ce n'est pas un oubli.** Les deux s'excluent : la boîte à outils peint cette couleur sur toute la fenêtre avant que la page soit dessinée, donc une fenêtre qui en aurait une serait de cette couleur et de rien d'autre. Ce qu'elle achetait disparaît sans rien coûter : un pixel que la page n'a pas encore peint ne montre plus du blanc, il ne montre rien, parce que le fond de la vue web devient transparent en même temps.
+
+**Ce qui reste découpé, et pourquoi.** La découpe n'est pas retirée. Elle ne sert plus à faire le bord, elle sert à laisser passer les clics : hors de la forme, la souris atteint l'image de la session. Elle continue donc de couper, mais les pixels qu'elle coupe sont désormais ceux que la page a dessinés à moitié transparents, donc la marche se voit beaucoup moins. Si Victor la voit encore, la suite est d'élargir la découpe d'un pixel pour qu'elle ne rogne plus le bord lissé du tout : ça ne se fait qu'une fois qu'on sait que la transparence marche, sinon c'est le liseré clair de D97 qui revient.
+
+**Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

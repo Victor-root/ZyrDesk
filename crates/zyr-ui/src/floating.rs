@@ -920,25 +920,29 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         // over a dark product.
         .theme(home.theme().ok())
         .decorations(false)
-        // Not asked to be transparent, and that is the point.
+        // Asked to be transparent, and this time with the half that was
+        // missing; see `let_the_alpha_through`.
         //
-        // It was asked, and refused, which is the whole reason this
-        // window is cut to a shape instead: nothing is drawn outside a
-        // shape, so the shape does the work transparency would have
-        // done. What asking for it anyway still did was stop the ground
-        // below the page from being given a colour, and that ground was
-        // white. Every white thing ever seen around this button was it:
-        // the hairline down its edge, the flash when the menu closes,
-        // and the fringe on its rounded corners, which is not aliasing
-        // but a half-transparent edge blended against whatever lies
-        // underneath.
+        // It matters for exactly one thing: the edge. The shape this
+        // window is cut to is a mask with one bit per pixel and no half
+        // pixels, so it cuts the page's smooth rounded corners into a
+        // staircase, and what that staircase steps between is the window's
+        // ground and somebody else's picture. Reported as « la bordure est
+        // toute saccadée », and it cannot be answered by a better ground:
+        // any opaque window has a hard edge, whatever colour it is.
         //
-        // Underneath is now the logo's own outline. The logo is drawn
-        // cased in exactly this colour all the way round, so an edge
-        // that leans on it leans on itself and disappears; and a pixel
-        // the page has not painted yet is the dark of the logo rather
-        // than a white block over somebody's picture.
-        .background_color(tauri::window::Color(9, 13, 22, 255))
+        // Transparent, the pixels the page draws half-covered are blended
+        // against the picture underneath rather than against a ground, and
+        // the edge is the one the page drew.
+        //
+        // No ground colour is asked for with it, and the two are exclusive
+        // rather than merely unnecessary: the toolkit paints that colour
+        // over the whole window before the page is drawn, so a window that
+        // had one would be that colour and nothing else. The web view's own
+        // ground goes transparent at the same time, which is what a pixel
+        // nobody has painted yet now shows: nothing, instead of the white
+        // block this button used to put over somebody's picture.
+        .transparent(true)
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
@@ -2349,6 +2353,7 @@ fn keep_out_of_the_way(app: &AppHandle, window: &tauri::WebviewWindow) {
             style | (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) as isize,
         );
     }
+    let_the_alpha_through(button);
 
     let Some(home) = app
         .get_webview_window(crate::HOME)
@@ -2358,6 +2363,52 @@ fn keep_out_of_the_way(app: &AppHandle, window: &tauri::WebviewWindow) {
     };
     // SAFETY: both windows are ours, and only the owner is written.
     unsafe { SetWindowLongPtrW(button, GWLP_HWNDPARENT, home.0 as isize) };
+}
+
+/// Gives the window the half of transparency the toolkit does not ask
+/// for, without which asking for it changes nothing.
+///
+/// Asking a window to be transparent has the toolkit tell the compositor
+/// to honour the alpha of every pixel, which it does by handing it an
+/// empty blur region. That was the whole of it, and on Windows 10 and 11
+/// it is not enough: the compositor's own documentation warns that a
+/// window's children contribute alpha it cannot predict, and this window
+/// is a frame carrying a web view, which is a child. Asked and no more,
+/// the window came out opaque, which is why this button has been cut to a
+/// shape ever since and why its edge is a staircase.
+///
+/// What was missing is this: the window declares itself layered, and says
+/// that its one constant alpha is « fully opaque », which is the way that
+/// call is documented to mean « use the alpha of each pixel and not one
+/// number for all of them ». Toolkits that had this fault fixed it here,
+/// and nowhere else.
+///
+/// Said in the journal when the system refuses, and only then: a refusal
+/// is the difference between a button with a smooth edge and a button
+/// standing on a coloured plate, and there is nothing else on screen that
+/// would say which of the two happened.
+#[cfg(windows)]
+fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, LWA_ALPHA, SetLayeredWindowAttributes, SetWindowLongPtrW,
+        WS_EX_LAYERED,
+    };
+
+    // SAFETY: a window we have just built, whose extended style is read
+    // and written back, and which is then told how to read its own alpha.
+    let told = unsafe {
+        let style = GetWindowLongPtrW(button, GWL_EXSTYLE);
+        SetWindowLongPtrW(button, GWL_EXSTYLE, style | WS_EX_LAYERED as isize);
+        // No colour is keyed out, so the first argument is unread; the
+        // second is the one that matters, and two hundred and fifty-five
+        // is what says « every pixel carries its own ».
+        SetLayeredWindowAttributes(button, 0, 255, LWA_ALPHA)
+    };
+    if told == 0 {
+        note(
+            "bouton flottant : Windows a refusé la transparence par pixel, le bouton sera posé sur une plaque",
+        );
+    }
 }
 
 #[cfg(not(windows))]
