@@ -785,6 +785,14 @@ listen("session-step", ({ payload }) => {
     case "reached":
       etape(`Tunnel établi, paquets de ${payload.packet} octets.`, null);
       break;
+    // Plusieurs secondes, et c'est nous qui les avons demandées : le
+    // moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc
+    // changer d'écran veut dire le relancer, et la voie s'en va avec lui
+    // le temps qu'il revienne. Dit, sinon l'écran d'ouverture resterait
+    // sur « tunnel établi » pendant que ce tunnel-là se referme.
+    case "farScreenChanging":
+      etape("L'ordinateur distant change d'écran, il redémarre…", null);
+      break;
     case "pairing":
       etape(
         payload.again

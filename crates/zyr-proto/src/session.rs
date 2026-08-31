@@ -371,6 +371,103 @@ impl Asked {
     }
 }
 
+/// One of the far computer's own screens, as that computer names it.
+///
+/// A machine with two screens plugged in serves one of them, and which
+/// one is not something this end can work out: the identifier is a digest
+/// that computer's engine alone computes, and nothing here has any
+/// business recomputing it. So the whole description is asked for and
+/// carried as it comes.
+///
+/// Only the screens that computer is actually showing on are ever
+/// described this way. One that is switched off is not a screen anybody
+/// asks to look at, and offering it would offer a black picture.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FarScreen {
+    /// What the far computer's engine takes orders by. Opaque here on
+    /// purpose: it is read from that computer and handed straight back to
+    /// it.
+    pub id: String,
+    /// Whether it is the one that computer starts its desktop on.
+    ///
+    /// The one a session is served from unless somebody says otherwise,
+    /// which is what makes « the main one » a promise rather than
+    /// whichever screen a graphics card happened to enumerate first.
+    pub main: bool,
+    pub wide: u32,
+    pub high: u32,
+    /// What the screen calls itself, which is the only part a person
+    /// reads. Last, and it takes the whole of what is left: a monitor's
+    /// name carries spaces far more often than not.
+    pub name: String,
+}
+
+/// One spelling, written here and read here.
+///
+/// It crosses the tunnel and then the channel between our own programs,
+/// and a second table would drift from this one the day a field is added.
+impl fmt::Display for FarScreen {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} {}x{} {}",
+            self.id,
+            if self.main { "main" } else { "other" },
+            self.wide,
+            self.high,
+            self.name
+        )
+    }
+}
+
+impl std::str::FromStr for FarScreen {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let mut words = text.trim().splitn(4, char::is_whitespace);
+        let id = words.next().unwrap_or_default().trim();
+        let which = words.next().unwrap_or_default().trim();
+        let size = words.next().unwrap_or_default().trim();
+        let name = words.next().unwrap_or_default().trim();
+        if id.is_empty() {
+            return Err(format!("écran sans identifiant : {text}"));
+        }
+        let main = match which {
+            "main" => true,
+            "other" => false,
+            other => return Err(format!("« {other} » ne dit pas si c'est l'écran principal")),
+        };
+        let (wide, high) = parse_resolution(size).map_err(|e| e.to_string())?;
+        Ok(FarScreen {
+            id: id.to_string(),
+            main,
+            wide,
+            high,
+            name: name.to_string(),
+        })
+    }
+}
+
+/// A whole list of them, one to a line.
+///
+/// A line that cannot be read is dropped rather than failing the list: a
+/// screen whose description this version does not understand costs that
+/// screen and never the menu.
+pub fn far_screens_written(screens: &[FarScreen]) -> String {
+    screens
+        .iter()
+        .map(FarScreen::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn far_screens_read(text: &str) -> Vec<FarScreen> {
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| line.parse().ok())
+        .collect()
+}
+
 /// The screen a session asks the far computer to put up for it.
 ///
 /// A size and a magnification, and they travel as one because they are
@@ -803,6 +900,46 @@ mod tests {
         // Un écran qu'on n'a pas su mesurer ne réclame rien : un
         // agrandissement deviné est pire qu'aucun.
         assert_eq!(Asked::Client.magnification(None), 0);
+    }
+
+    #[test]
+    fn the_far_computers_screens_survive_being_written_and_read_back() {
+        // Ils traversent le tunnel puis le canal entre nos programmes :
+        // une seule écriture, une seule lecture. Le cas de Victor : deux
+        // écrans allumés sur la machine d'en face.
+        let screens = vec![
+            FarScreen {
+                id: "{daeac860-f4db-5208-b1f5-cf59444fb768}".to_string(),
+                main: true,
+                wide: 2560,
+                high: 1440,
+                name: "ROG PG279Q".to_string(),
+            },
+            // Un nom d'écran porte des espaces bien plus souvent qu'on ne
+            // le croit : il voyage en fin de ligne pour cette raison.
+            FarScreen {
+                id: "{64243705-4020-5895-b923-adc862c3457e}".to_string(),
+                main: false,
+                wide: 1920,
+                high: 1080,
+                name: "Dell U2412M (HDMI)".to_string(),
+            },
+        ];
+        let written = far_screens_written(&screens);
+        assert_eq!(far_screens_read(&written), screens);
+    }
+
+    #[test]
+    fn a_screen_line_this_version_cannot_read_costs_that_screen_and_not_the_list() {
+        // Une version d'en face qui décrirait un écran autrement ne doit
+        // pas vider le menu : on perd cet écran-là, pas les autres.
+        let mixed = "{aaa} main 1920x1080 Un écran\nn'importe quoi\n{bbb} other 1280x720 Un autre";
+        let read = far_screens_read(mixed);
+        assert_eq!(read.len(), 2);
+        assert_eq!(read[0].name, "Un écran");
+        assert!(!read[1].main);
+        // Et rien du tout se lit comme rien du tout.
+        assert!(far_screens_read("").is_empty());
     }
 
     #[test]

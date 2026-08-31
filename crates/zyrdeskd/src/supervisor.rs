@@ -264,6 +264,13 @@ pub enum End {
 pub fn run(order: &StopOrder, log: &Log) -> End {
     let exe = paths::host_engine_exe();
 
+    // A screen some session picked belongs to that session and to nothing
+    // else. A computer coming back up still serving the screen somebody
+    // chose last week would be a computer rearranged by having been looked
+    // at, with nobody there to notice: its main screen is the answer until
+    // a session says otherwise.
+    crate::screen::forget_the_screen_a_session_asked_for();
+
     // One runtime for the whole life of the service: the tunnel is
     // rebuilt with each engine, but rebuilding the threads underneath it
     // every time would be waste.
@@ -618,9 +625,14 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // resized answers nothing while the change lasts, so the very screen
     // a session had just put at its own size was the one the engine
     // walked away from, for the rest of that session.
+    // And on an ordinary computer, the screen it is to be served from:
+    // the one a session asked for, and its main one when none did. The
+    // watch below reads that same answer again while the engine runs, so
+    // a session asking for the screen beside this one is a start over and
+    // not a wish nobody acts on.
     let aiming_at = match films_the_grown_screen {
         true => crate::screen::remembered(),
-        false => crate::screen::main_remembered(),
+        false => crate::screen::the_screen_to_film(),
     };
     let config = match &aiming_at {
         Some(screen) => {
@@ -744,6 +756,8 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         ports,
         credentials,
         films_the_grown_screen,
+        engine_log: engine_log.clone(),
+        aimed_at: aiming_at.clone(),
     };
     let gateway = match Gateway::open(runtime, at_hand, (*machine).clone(), log) {
         Ok(gateway) => gateway,
@@ -772,7 +786,10 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
             &mut watched,
             session,
             serving,
-            films_the_grown_screen,
+            Aimed {
+                grown: films_the_grown_screen,
+                at: aiming_at.as_deref(),
+            },
             &machine.remembered,
             order,
             log,
@@ -782,6 +799,21 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     drop(gateway);
     let _ = EngineRuntime::remove(runtime_path);
     Ok(life)
+}
+
+/// Which screen the engine was started filming, which is the one moment
+/// it reads that.
+///
+/// The two travel together because they are one answer: a computer with
+/// no screen of its own films the one it grows, and every other computer
+/// films a screen it has, named. Read again while it runs, and a
+/// difference is an engine that has to start over.
+#[derive(Clone, Copy)]
+struct Aimed<'a> {
+    /// Whether it films the screen this computer grew for itself.
+    grown: bool,
+    /// The screen it was aimed at, under the engine's own name for it.
+    at: Option<&'a str>,
 }
 
 /// One engine, and everything used to keep an eye on it while it lives.
@@ -812,7 +844,7 @@ fn wait_for_the_engine_to_stop(
     watched: &mut Watched<'_>,
     session: u32,
     serving: zyr_proto::session::Serving,
-    films_the_grown_screen: bool,
+    aimed: Aimed<'_>,
     remembered: &Remembered,
     order: &StopOrder,
     log: &Log,
@@ -841,6 +873,29 @@ fn wait_for_the_engine_to_stop(
             return Life::ServingChanged;
         }
 
+        // A session has asked to be served from another of this computer's
+        // screens, or to come back to its main one. The engine reads which
+        // screen to film when it starts and never again, so this is the
+        // only way to answer, and the session that asked knows: it is told
+        // that this computer is starting over, and it waits and comes back
+        // rather than finding out from a way that broke under it.
+        //
+        // Not held back until nobody is watching, unlike the case below.
+        // The session that asked has no picture yet, it is what is waiting
+        // on this, and holding the change until it closed would be holding
+        // it for ever.
+        let should_be = crate::screen::the_screen_to_film();
+        if !aimed.grown && should_be.as_deref() != aimed.at {
+            log.write(&format!(
+                "a session asked this computer to be served from {}, and the engine was filming \
+                 {}, so it starts over",
+                should_be.as_deref().unwrap_or("its main screen"),
+                aimed.at.unwrap_or("whichever screen it found first")
+            ));
+            stop_and_say_how(watched.engine, log);
+            return Life::ScreenToFilmChanged;
+        }
+
         // A session has just found out that this computer's own screens
         // draw nothing larger than themselves, which changes the screen it
         // is filmed on. Read while nobody is watching and never during a
@@ -854,7 +909,7 @@ fn wait_for_the_engine_to_stop(
         // did come home, three seconds late and under a sentence that was
         // not true. Somebody's screens come first, the engine can wait.
         if !watched.gateway.a_session_is_open()
-            && !films_the_grown_screen
+            && !aimed.grown
             && crate::screen::noted_before().is_empty()
             && crate::screen::the_main_screen_is_stuck()
         {

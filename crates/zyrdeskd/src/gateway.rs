@@ -76,6 +76,21 @@ pub struct AtHand {
     /// it. Borrowing it otherwise would move somebody's desktop onto a
     /// screen nobody is filming.
     pub films_the_grown_screen: bool,
+    /// Where the engine writes down the screens it can see.
+    ///
+    /// The one authority on what this computer's screens are called: the
+    /// identifier is a digest the engine alone computes, and working it
+    /// out again here would be a copy that is wrong on the first machine
+    /// nobody tested.
+    pub engine_log: PathBuf,
+    /// Which screen the engine was started filming, under its own name
+    /// for it.
+    ///
+    /// The one moment that is settled, so it is carried rather than asked
+    /// for again: what a session wants is written down the instant it
+    /// asks, and comparing the ask against the note would answer « you
+    /// have it » to a session whose engine has not started over yet.
+    pub aimed_at: Option<String>,
 }
 
 /// The local engine, and the one thing a far computer may ask of it.
@@ -84,6 +99,11 @@ struct Attending {
     api: Arc<EngineApi>,
     /// Whether the engine is filming the screen this computer grew.
     films_the_grown_screen: bool,
+    /// Where the engine writes down the screens it can see, which is
+    /// where the list this computer offers is read from.
+    engine_log: PathBuf,
+    /// Which screen the engine was started filming.
+    aimed_at: Option<String>,
     /// The sessions coming through this door, so what one of them asks
     /// of this computer outlives the asking.
     sessions: Arc<Sessions>,
@@ -455,6 +475,84 @@ impl Answers for Attending {
         ));
         Ok(named)
     }
+
+    /// Says which screens this computer is showing on.
+    ///
+    /// Read from what the engine wrote down when it started, like the
+    /// codecs just above and for the same reason: the identifier a screen
+    /// is asked for by is a digest that engine alone computes, and a copy
+    /// of that recipe that drifts by one byte names nothing at all.
+    ///
+    /// A computer filmed on the screen it grows for itself offers none of
+    /// this. It has no screen of its own to choose between, which is the
+    /// whole reason it grows one, and offering the grown one would offer
+    /// the very screen the session is already being served from.
+    fn screens(&self) -> Result<String, String> {
+        if self.films_the_grown_screen {
+            self.log.write(
+                "a session asked which screens this computer has: it is filmed on the screen it \
+                 grew for itself, so there is none to choose between",
+            );
+            return Ok(String::new());
+        }
+        let screens = crate::screen::on_this_computer(&self.engine_log);
+        self.log.write(&format!(
+            "a session asked which screens this computer has: {}",
+            if screens.is_empty() {
+                "its engine has not said".to_string()
+            } else {
+                screens
+                    .iter()
+                    .map(|screen| format!("{} ({})", screen.name, screen.id))
+                    .collect::<Vec<_>>()
+                    .join(" ; ")
+            }
+        ));
+        Ok(zyr_proto::session::far_screens_written(&screens))
+    }
+
+    /// Serves this computer's picture from that screen from now on.
+    ///
+    /// Written down and nothing more, exactly like the rate this computer
+    /// serves a still screen at. What acts on it is the watch that holds
+    /// the engine: it sees the note move and starts the engine over, which
+    /// is the only way an engine learns which screen to film.
+    ///
+    /// Which is why the answer says so. Starting that engine over takes
+    /// this very tunnel with it, so the session that asked is told to wait
+    /// and come back rather than left to find out from a way that broke
+    /// under it.
+    ///
+    /// Doing nothing at all when it is already the screen being filmed,
+    /// which is the ordinary case: every session asks, and almost none of
+    /// them changes anything.
+    fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Filming, String> {
+        // A computer filmed on the screen it grew has one screen to give
+        // and no choice to offer; a session asking for its main screen is
+        // asking for what it is already getting.
+        if self.films_the_grown_screen {
+            return Ok(zyr_tunnel::Filming::Already);
+        }
+        crate::screen::film_this_screen(id.as_deref()).map_err(|refused| {
+            self.log.write(&format!(
+                "the screen this computer is served from is unchanged: {refused}"
+            ));
+            refused
+        })?;
+        // Weighed against the screen the engine was **started** filming
+        // and never against the note that was just written: the note is
+        // what the next engine will read, and answering from it would
+        // tell a session it has what it asked for while the engine that
+        // is running is still on the other screen.
+        if crate::screen::the_screen_to_film() == self.aimed_at {
+            return Ok(zyr_tunnel::Filming::Already);
+        }
+        self.log.write(&format!(
+            "a session asked to be served from {}, so this computer's engine starts over",
+            id.as_deref().unwrap_or("this computer's main screen")
+        ));
+        Ok(zyr_tunnel::Filming::StartingOver)
+    }
 }
 
 /// What the local engine wrote down about its own encoders, in the
@@ -768,6 +866,8 @@ impl Gateway {
             ports: engine.ports,
             api: Arc::new(EngineApi::new(engine.ports, engine.credentials)),
             films_the_grown_screen: engine.films_the_grown_screen,
+            engine_log: engine.engine_log,
+            aimed_at: engine.aimed_at,
             sessions: sessions.clone(),
             machine: machine.clone(),
             fingerprint: identity.fingerprint(),

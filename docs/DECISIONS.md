@@ -1448,6 +1448,28 @@ Le « si non » n'est pas théorique et c'est pour ça qu'il reste : Windows peu
 
 **Ce qu'on en retient.** Une réponse au système qui remplace ce qu'il sait faire tout seul se paye toujours quelque part, ici en taille. Quand la raison qui l'a justifiée disparaît, ce n'est pas neutre de la laisser : c'est un défaut qui vieillit tout seul.
 
+## D100. La session dit quel écran de l'hôte elle regarde, et celui qui ne dit rien regarde le principal (2026-08-31, pendant M4)
+
+**La demande de Victor.** Son PC a deux écrans allumés et une télé éteinte en troisième. Il veut pouvoir basculer entre les deux écrans allumés depuis le bouton flottant, et il veut que par défaut ce soit **l'écran principal** qui soit pris, pas le secondaire.
+
+**Le fait qui commande tout le reste.** Le moteur de l'hôte lit quel écran filmer **une seule fois, à son démarrage**. Il n'y a pas de moyen de le lui redire en cours de route : ce n'est pas un choix de conception de notre côté, c'est ainsi que le moteur est fait. Changer d'écran veut donc dire redémarrer ce moteur, et redémarrer ce moteur emporte le tunnel, donc la session.
+
+Le moteur sait bien basculer d'écran en direct, par une frappe réservée venue du client, mais il le fait **par numéro dans l'énumération de la carte graphique**, et cette énumération est précisément celle dont D93 dit qu'elle n'est pas fiable : elle change d'un appel à l'autre, et un écran en train d'être redimensionné en sort. Ce chemin-là a donc été écarté.
+
+**Décision : la session porte l'écran, comme elle porte déjà la taille, le débit et le codec.** À chaque ouverture, elle dit à l'hôte de quel écran elle veut être servie ; rien de nommé veut dire son écran principal. L'hôte l'écrit, et son moteur redémarre si ce n'est pas celui qu'il filme.
+
+Il **le dit** plutôt que de laisser l'autre bout le découvrir sur une voie qui casse : la réponse est soit « j'y suis déjà », soit « je redémarre ». Sur la seconde, le client lâche la voie, laisse au moteur d'en face le temps de revenir, rouvre une voie et repose la question, jusqu'à huit fois. L'écran d'ouverture le dit à la personne, parce que c'est plusieurs secondes qu'on lui a fait attendre.
+
+La session ordinaire ne fait jamais ce tour-là : elle demande l'écran principal, qui est celui que l'hôte filme déjà, et la réponse arrive du premier coup.
+
+**Pourquoi l'écran choisi ne va pas dans les réglages.** Il nomme **un** écran d'**un** ordinateur : l'identifiant est une empreinte que le moteur de cette machine-là est seul à calculer. Écrit dans les préférences, il partirait demander à une autre machine un écran qui n'est pas le sien. Il vit donc le temps de la session, et une nouvelle session s'ouvre sur l'écran principal d'en face.
+
+**Et c'est ça, la réponse à « que ça prenne l'écran principal par défaut ».** Une session qui ne dit rien demande l'écran principal, donc une machine laissée sur un écran secondaire par une session précédente revient au principal à la session suivante, en payant un redémarrage de moteur que le journal explique. Le service oublie aussi ce choix à son démarrage : un ordinateur qui redémarre ne doit pas revenir en servant l'écran que quelqu'un avait choisi la semaine d'avant, sans personne pour le voir.
+
+**Ce qui est offert et ce qui ne l'est pas.** Seuls les écrans sur lesquels la machine affiche vraiment. Un écran éteint, la télé de Victor par exemple, ne montrerait qu'une image noire ; et l'écran que le produit fait pousser n'est un écran pour personne assis devant la machine. Une machine à un seul écran n'a pas de choix à offrir : la ligne du menu ne s'affiche pas du tout, plutôt que de proposer de choisir entre une chose et elle-même.
+
+**Et la liste vient de la machine d'en face, comme les codecs (D98) et les écrans (D93).** C'est son moteur qui nomme ses écrans, avec une empreinte que rien d'autre ne calcule pareil. Une liste vide veut dire « il n'a rien dit », jamais « il n'a pas d'écran ».
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

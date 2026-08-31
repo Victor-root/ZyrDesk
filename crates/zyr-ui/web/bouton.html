@@ -250,6 +250,31 @@
             </svg>
           </button>
 
+          <!-- Lequel des écrans de la machine d'en face on regarde. Une
+               liste comme la résolution, et pour la même raison : ce sont
+               des noms d'écrans, sans ordre entre eux, et il peut y en
+               avoir plus de deux. La ligne est cachée tant que cette
+               machine n'en a pas plusieurs : un menu qui propose de
+               choisir entre une seule chose est une ligne qui ne peut
+               qu'être là où elle est déjà. -->
+          <button
+            class="item cache"
+            type="button"
+            data-ouvre-panneau="screen"
+            role="menuitem"
+            aria-haspopup="true"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2" y="4" width="13" height="9" rx="1.5" />
+              <rect x="9" y="11" width="13" height="9" rx="1.5" />
+            </svg>
+            <span class="item-mot">Écran de l'hôte</span>
+            <span class="item-touche" data-valeur="screen"></span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
           <div class="reglage" data-reglage="bitrate">
             <div class="reglage-tete">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -397,6 +422,27 @@
           <div class="separateur" role="separator"></div>
 
           <div class="sous-liste" data-liste="asked"></div>
+        </div>
+
+        <!-- Le sous-menu des écrans de la machine d'en face, bâti sur ce
+             qu'elle a répondu : c'est elle qui nomme ses écrans, et rien
+             d'ici ne sait ce qui y est branché. -->
+        <div class="menu panneau repliee" id="panneau-screen" role="menu">
+          <button
+            class="item retour"
+            type="button"
+            data-ferme-panneau
+            role="menuitem"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M15 5l-7 7 7 7" />
+            </svg>
+            <span class="item-mot">Écran de l'hôte</span>
+          </button>
+
+          <div class="separateur" role="separator"></div>
+
+          <div class="sous-liste" data-liste="screen"></div>
         </div>
       </div>
     </div>

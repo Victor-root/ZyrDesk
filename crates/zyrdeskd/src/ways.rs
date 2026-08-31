@@ -649,6 +649,70 @@ impl Ways {
         Ok(named)
     }
 
+    /// Asks the far computer which screens it is showing on.
+    ///
+    /// The same shape again. A machine with two screens plugged in serves
+    /// one of them, and the list is what the session's menu offers to
+    /// choose from. Nothing said back is « it has not said ».
+    pub async fn ask_what_screens_it_has(&self, way: WayId) -> Result<String, String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        let listed = aside::ask_what_screens_it_has(&connection)
+            .await
+            .map_err(|e| format!("l'ordinateur distant n'a pas dit quels écrans il a : {e}"))?;
+        self.log.write(&format!(
+            "way {way}: the far computer is showing on {}",
+            if listed.is_empty() {
+                "screens it has not named".to_string()
+            } else {
+                listed.lines().collect::<Vec<_>>().join(" ; ")
+            }
+        ));
+        Ok(listed)
+    }
+
+    /// Asks the far computer to serve its picture from that screen.
+    ///
+    /// The same shape again, and one answer worth carrying whole: that
+    /// computer's engine reads which screen to film when it starts, so it
+    /// either is on that screen already or it is starting over, and
+    /// starting over takes this very way with it.
+    pub async fn ask_to_film_this_screen(
+        &self,
+        way: WayId,
+        id: Option<String>,
+    ) -> Result<bool, String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        let named = id.clone();
+        let how = aside::ask_to_film_this_screen(&connection, id)
+            .await
+            .map_err(|e| format!("l'ordinateur distant n'a pas changé d'écran : {e}"))?;
+        let starting_over = how == aside::Filming::StartingOver;
+        self.log.write(&format!(
+            "way {way}: the far computer serves from {} and {}",
+            named.as_deref().unwrap_or("its main screen"),
+            if starting_over {
+                "is starting its engine over, so this way is about to go"
+            } else {
+                "was already on it"
+            }
+        ));
+        Ok(starting_over)
+    }
+
     /// Asks the far computer to put its lock screen up.
     ///
     /// The same shape again. This is what stands in for Windows+L, which

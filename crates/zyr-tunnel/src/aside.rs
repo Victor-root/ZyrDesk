@@ -43,8 +43,10 @@ use crate::pump;
 /// than a line, and version 10 the emptying of it, without which reading
 /// it means reading three weeks of unrelated lines. Version 11 asks what
 /// the far computer can encode, so a menu stops offering what that
-/// computer was never going to make.
-pub const VERSION: u32 = 11;
+/// computer was never going to make. Version 12 asks which screens that
+/// computer has and which of them to be served from, a machine with two
+/// of them having had no way to offer the second.
+pub const VERSION: u32 = 12;
 
 /// Longest question this channel takes.
 ///
@@ -201,6 +203,43 @@ pub trait Answers: Send + Sync + 'static {
     /// computer that could encode nothing could not be watched at all, so
     /// that answer would be about the reading and not about the machine.
     fn codecs(&self) -> Result<String, String>;
+
+    /// Which screens this computer is showing on, one to a line.
+    ///
+    /// Only the ones it is actually showing on: a screen that is switched
+    /// off, and the one it grows for itself between sessions, are not
+    /// screens anybody asks to be served from, and offering them would
+    /// offer a black picture.
+    ///
+    /// Named by this computer and by nothing else. The identifier is a
+    /// digest its own engine computes, and the far end has no business
+    /// recomputing it: it reads the list and hands one of them back.
+    fn screens(&self) -> Result<String, String>;
+
+    /// Serves this computer's picture from that screen from now on.
+    ///
+    /// Nothing named means the main one, which is what every session asks
+    /// for until somebody says otherwise: a machine that went on serving
+    /// the screen a previous session picked would be a machine rearranged
+    /// by having been looked at.
+    ///
+    /// Answers whether it is already filming that screen, or whether its
+    /// engine has to start over to do it. The engine reads which screen
+    /// to film once, when it starts, so there is no third answer; and
+    /// starting over takes the tunnel with it, which is why the answer
+    /// says so plainly rather than leaving the far end to find out from a
+    /// broken way.
+    fn film_this_screen(&self, id: Option<String>) -> Result<Filming, String>;
+}
+
+/// What a computer answers when it is told which screen to serve from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Filming {
+    /// It is on that screen already, and the session may go on.
+    Already,
+    /// Its engine has to start over, which takes this tunnel with it. The
+    /// far end waits and comes back.
+    StartingOver,
 }
 
 /// What one ZyrDesk asks the other.
@@ -228,6 +267,11 @@ pub enum Question {
     EmptyTheJournal,
     /// Which pictures your engine can actually make.
     Codecs,
+    /// Which screens you are showing on.
+    Screens,
+    /// Serve your picture from that screen, or, with nothing named, from
+    /// your main one.
+    FilmThisScreen { id: Option<String> },
 }
 
 /// What comes back.
@@ -263,6 +307,17 @@ pub enum Told {
     Codecs {
         named: String,
     },
+    /// The screens the far computer is showing on, one to a line. Empty
+    /// is « it has not said », which is a computer whose engine has not
+    /// finished starting.
+    Screens {
+        listed: String,
+    },
+    /// The far computer is serving from the screen that was named, or is
+    /// starting its engine over to do it.
+    Filming {
+        how: Filming,
+    },
 }
 
 impl fmt::Display for Question {
@@ -284,6 +339,15 @@ impl fmt::Display for Question {
             Question::Journal => write!(f, "{VERSION} journal"),
             Question::EmptyTheJournal => write!(f, "{VERSION} empty-journal"),
             Question::Codecs => write!(f, "{VERSION} codecs"),
+            Question::Screens => write!(f, "{VERSION} screens"),
+            // « main » rather than nothing at all, so a question that
+            // names no screen still reads as a question: the identifiers
+            // themselves are the far computer's own digests, written
+            // between braces, and none of them can be that word.
+            Question::FilmThisScreen { id } => match id {
+                Some(id) => write!(f, "{VERSION} film {id}"),
+                None => write!(f, "{VERSION} film main"),
+            },
             Question::Hush { quiet } => {
                 write!(
                     f,
@@ -314,6 +378,18 @@ impl fmt::Display for Told {
             Told::Journal { text } => write!(f, "{VERSION} journal {text}"),
             Told::Emptied => write!(f, "{VERSION} emptied"),
             Told::Codecs { named } => write!(f, "{VERSION} codecs {named}"),
+            // One screen to a line, whole, for the reason the journal
+            // above travels whole: this channel ends a message by closing
+            // the stream.
+            Told::Screens { listed } => write!(f, "{VERSION} screens {listed}"),
+            Told::Filming { how } => write!(
+                f,
+                "{VERSION} filming {}",
+                match how {
+                    Filming::Already => "already",
+                    Filming::StartingOver => "starting-over",
+                }
+            ),
         }
     }
 }
@@ -340,6 +416,13 @@ impl Question {
             "journal" => Ok(Question::Journal),
             "empty-journal" => Ok(Question::EmptyTheJournal),
             "codecs" => Ok(Question::Codecs),
+            "screens" => Ok(Question::Screens),
+            "film" => Ok(Question::FilmThisScreen {
+                id: match rest {
+                    "main" | "" => None,
+                    named => Some(named.to_string()),
+                },
+            }),
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
                 "play" => Ok(Question::Hush { quiet: false }),
@@ -394,6 +477,18 @@ impl Told {
             "codecs" => Ok(Ok(Told::Codecs {
                 named: rest.to_string(),
             })),
+            "screens" => Ok(Ok(Told::Screens {
+                listed: rest.to_string(),
+            })),
+            "filming" => match rest {
+                "already" => Ok(Ok(Told::Filming {
+                    how: Filming::Already,
+                })),
+                "starting-over" => Ok(Ok(Told::Filming {
+                    how: Filming::StartingOver,
+                })),
+                other => Err(unreadable(format!("« filming {other} » ne dit rien"))),
+            },
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
         }
@@ -596,6 +691,37 @@ pub async fn ask_what_it_can_encode(connection: &Connection) -> io::Result<Strin
     }
 }
 
+/// Asks the far ZyrDesk which screens it is showing on.
+///
+/// Asked while a session is open, since that is when it can be acted on:
+/// the answer fills the line of the menu that offers to be served from
+/// another of that machine's screens.
+pub async fn ask_what_screens_it_has(connection: &Connection) -> io::Result<String> {
+    match ask(connection, &Question::Screens).await? {
+        Told::Screens { listed } => Ok(listed),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
+/// Asks the far ZyrDesk to serve its picture from that screen, or, with
+/// nothing named, from its main one.
+///
+/// Asked at the opening of every session and never in the middle of one.
+/// The far engine reads which screen to film when it starts and never
+/// again, so a change of it starts that engine over, and an engine
+/// starting over takes the tunnel with it: the answer says which of the
+/// two happened, and the caller waits and comes back when it is the
+/// second.
+pub async fn ask_to_film_this_screen(
+    connection: &Connection,
+    id: Option<String>,
+) -> io::Result<Filming> {
+    match ask(connection, &Question::FilmThisScreen { id }).await? {
+        Told::Filming { how } => Ok(how),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -692,6 +818,20 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             .await
             .map_err(|e| format!("les codecs n'ont pas pu être lus : {e}"))?
             .map(|named| Told::Codecs { named }),
+        // Off it as well, and for the same reason as the codecs: the list
+        // is read from what the engine wrote down when it started.
+        Question::Screens => tokio::task::spawn_blocking(move || answering.screens())
+            .await
+            .map_err(|e| format!("les écrans n'ont pas pu être lus : {e}"))?
+            .map(|listed| Told::Screens { listed }),
+        // And off it too: it writes down which screen to film, which the
+        // watch holding the engine reads a moment later.
+        Question::FilmThisScreen { id } => {
+            tokio::task::spawn_blocking(move || answering.film_this_screen(id))
+                .await
+                .map_err(|e| format!("l'écran à filmer n'a pas pu être choisi : {e}"))?
+                .map(|how| Told::Filming { how })
+        }
     }
 }
 
@@ -753,6 +893,13 @@ mod tests {
             Question::Journal,
             Question::EmptyTheJournal,
             Question::Codecs,
+            Question::Screens,
+            // Rien de nommé veut dire l'écran principal, et c'est ce que
+            // demande toute session tant que personne n'a dit autre chose.
+            Question::FilmThisScreen { id: None },
+            Question::FilmThisScreen {
+                id: Some("{daeac860-f4db-5208-b1f5-cf59444fb768}".to_string()),
+            },
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -788,6 +935,21 @@ mod tests {
             // traversent le canal sans se confondre.
             Told::Codecs {
                 named: String::new(),
+            },
+            // La liste des écrans voyage entière, une ligne par écran,
+            // comme le journal et pour la même raison.
+            Told::Screens {
+                listed: "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M"
+                    .to_string(),
+            },
+            Told::Screens {
+                listed: String::new(),
+            },
+            Told::Filming {
+                how: Filming::Already,
+            },
+            Told::Filming {
+                how: Filming::StartingOver,
             },
         ] {
             let said = told.to_string();

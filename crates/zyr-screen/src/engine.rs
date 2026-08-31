@@ -136,20 +136,6 @@ pub fn the_virtual_screen(log: &str, driver: &dyn Driver) -> Option<Screen> {
         .find(|screen| driver.is_its_screen(&screen.friendly_name))
 }
 
-/// The main screen among them, under the name the engine takes orders by.
-///
-/// The one the engine is aimed at on any computer that has a screen of
-/// its own. Left unnamed, the engine films whichever screen its graphics
-/// card enumerates first, which is not the main one on every machine and
-/// is not even the same one from one enumeration to the next: a host
-/// whose main screen had just been resized for a session went on filming
-/// the screen beside it for the rest of the evening.
-pub fn the_main_screen(log: &str) -> Option<Screen> {
-    screens_in_the_log(log)
-        .into_iter()
-        .find(|screen| screen.main)
-}
-
 /// The text of the last list the log holds.
 ///
 /// The list is written as one record whose first line carries the
@@ -257,10 +243,11 @@ mod tests {
         // un écran à elle. Sans ce nom, il filme celui que la carte
         // graphique énumère en premier, qui n'est pas le même d'une
         // énumération à l'autre.
-        let main = the_main_screen(LOG).unwrap();
+        let screens = screens_in_the_log(LOG);
+        let main = screens.iter().find(|screen| screen.main).unwrap();
         assert_eq!(main.display_name, r"\\.\DISPLAY1");
         // L'écran virtuel est éteint : il n'est le principal de personne.
-        assert!(!screens_in_the_log(LOG)[0].main);
+        assert!(!screens[0].main);
     }
 
     #[test]

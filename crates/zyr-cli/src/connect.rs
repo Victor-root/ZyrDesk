@@ -93,6 +93,11 @@ pub fn run(args: Args) -> ExitCode {
         // réclamer : l'ordinateur d'en face garde le sien.
         wants_a_screen_over_there: true,
         far_magnification: 0,
+        // Et l'écran principal de la machine d'en face, qui est ce que
+        // demande toute session tant que personne n'a dit autre chose.
+        // Choisir entre plusieurs écrans se fait en les regardant, donc
+        // dans la fenêtre, et jamais ici.
+        far_screen: None,
     };
 
     // Nothing here can close a session while it is opening: the command
@@ -165,6 +170,12 @@ fn tell(step: Step, host: &str) {
         }
         Step::ScreenOverThere { wide, high } => {
             println!("  {host} affiche {wide}x{high}, c'est ce qui est demandé au lecteur");
+        }
+        Step::FarScreenChanging => {
+            println!("  {host} change d'écran, son moteur redémarre...");
+        }
+        Step::FarScreenLeftAlone { refused } => {
+            println!("  {host} garde l'écran qu'il filme : {refused}");
         }
     }
 }

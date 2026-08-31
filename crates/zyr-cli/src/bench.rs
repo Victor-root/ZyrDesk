@@ -91,6 +91,14 @@ impl Answers for NoEngine {
     fn codecs(&self) -> Result<String, String> {
         Err("le banc de mesure n'encode rien".to_string())
     }
+
+    fn screens(&self) -> Result<String, String> {
+        Err("le banc de mesure ne filme aucun écran".to_string())
+    }
+
+    fn film_this_screen(&self, _id: Option<String>) -> Result<zyr_tunnel::Filming, String> {
+        Err("le banc de mesure ne filme aucun écran".to_string())
+    }
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);

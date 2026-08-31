@@ -93,6 +93,19 @@ pub struct Wanted {
     /// watched on knows the number and owes it: the size makes the
     /// picture sharp, and this makes what is in it the size it is here.
     pub far_magnification: u32,
+    /// Which of the far computer's own screens to be served from, under
+    /// that computer's own name for it.
+    ///
+    /// Nothing named is its main screen, which is what every session asks
+    /// for until somebody says otherwise. A machine with two screens
+    /// plugged in shows one of them, and the choice belongs to whoever is
+    /// watching: they are the one looking at it, and they are not in the
+    /// room to lean over and drag a window across.
+    ///
+    /// Its engine reads which screen to film when it starts and never
+    /// again, so this is settled before the session opens, and changing
+    /// it starts that engine over.
+    pub far_screen: Option<String>,
 }
 
 /// What is happening, as it happens.
@@ -159,6 +172,19 @@ pub enum Step {
     /// asking the engine for anything else would scale the picture twice
     /// for nothing.
     ScreenOverThere { wide: u32, high: u32 },
+    /// The far computer is starting its engine over so as to be served
+    /// from another of its screens, which takes the way with it.
+    ///
+    /// Said rather than passed over in silence: it is several seconds of
+    /// an opening that would otherwise look stuck, and it is the one
+    /// step of an opening this end asked for and can explain.
+    FarScreenChanging,
+    /// The far computer would not change which of its screens it serves
+    /// from, and the session goes on regardless.
+    ///
+    /// What it costs is being served the screen it is already on, which
+    /// is what every session got before this was offered.
+    FarScreenLeftAlone { refused: String },
 }
 
 /// How long the engines are given to meet, the code having travelled on
@@ -294,6 +320,92 @@ pub fn close_on_the_far_computer(host: &str, at: &str) -> Result<(), Error> {
         .map_err(Error::Closing)
 }
 
+/// How many times the far computer is given to come back on the screen
+/// this session asked for.
+///
+/// Two would do for the change itself: one ask to set it going, one to
+/// find it done. The rest is for an engine that takes its time, and there
+/// is an end to it: a computer that answers « starting over » for ever is
+/// a computer this session cannot open on, and saying so beats waiting.
+const SCREEN_TRIES: u32 = 8;
+
+/// How long its engine is given between two asks.
+///
+/// An engine's whole start, near enough: it is stopped, started again and
+/// waited for on its own ports, and asking again sooner only costs a
+/// refusal and another wait.
+const ENGINE_COMES_BACK: Duration = Duration::from_secs(2);
+
+/// Opens the way, and gets the far computer onto the screen this session
+/// is to be served from.
+///
+/// The two are one errand because the second can undo the first. That
+/// computer's engine reads which of its screens to film when it starts
+/// and never again, so a change of screen starts it over, and starting it
+/// over closes every way through it, this one included. It says which of
+/// the two happened rather than letting this end find out from a way that
+/// broke underneath it, so what is left to do here is let go, give it a
+/// moment, and ask again on a fresh way until it answers that it is
+/// already there.
+///
+/// The ordinary session never goes round twice: it asks for the far
+/// computer's main screen, which is what that computer is already
+/// filming, and the answer comes back on the first ask.
+fn the_way_and_the_screen(
+    wanted: &Wanted,
+    peer: Fingerprint,
+    settings: &SessionSettings,
+    told: &mut dyn FnMut(Step),
+) -> Result<Driving, Error> {
+    let mut asked_already = false;
+    let mut last = String::new();
+    for attempt in 0..SCREEN_TRIES {
+        if attempt > 0 {
+            std::thread::sleep(ENGINE_COMES_BACK);
+        }
+        let mut driving = match Driving::towards(&wanted.host, peer, settings) {
+            Ok(driving) => driving,
+            // A computer that cannot be reached is ordinarily the end of
+            // the opening. While its engine is starting over, which is a
+            // thing this session asked it to do, it is a moment to wait
+            // through and nothing more.
+            Err(reason) if asked_already => {
+                last = reason;
+                continue;
+            }
+            Err(reason) => return Err(Error::Service(reason)),
+        };
+        told(Step::Reached {
+            packet: driving.packet,
+        });
+        match driving.film_this_far_screen(wanted.far_screen.clone()) {
+            Ok(false) => return Ok(driving),
+            Ok(true) => {
+                told(Step::FarScreenChanging);
+                asked_already = true;
+                // Let go rather than wait to be pushed: that way is about
+                // to be closed from the other end.
+                drop(driving);
+            }
+            // Never fatal. A far computer that will not change screen
+            // serves the one it is on, which is what every session was
+            // served before this was offered.
+            Err(refused) => {
+                told(Step::FarScreenLeftAlone { refused });
+                return Ok(driving);
+            }
+        }
+    }
+    Err(Error::Service(format!(
+        "l'ordinateur distant n'est pas revenu après avoir changé d'écran.{}",
+        if last.is_empty() {
+            String::new()
+        } else {
+            format!("\n  Détail : {last}")
+        }
+    )))
+}
+
 /// Opens a session, reporting what happens as it happens.
 ///
 /// `still_wanted` is asked while the opening is being watched, and only
@@ -317,15 +429,12 @@ pub fn open(
 
     // The way stands before the engine is told anything: what the engine
     // is handed is a local address that only exists once it is open.
+    //
+    // And which of the far computer's screens this session is served from
+    // is settled on that way before anything else, because settling it
+    // can take the way away; see `the_way_and_the_screen`.
     let mut driving = match wanted.peer {
-        Some(peer) => {
-            let driving =
-                Driving::towards(&wanted.host, peer, &settings).map_err(Error::Service)?;
-            told(Step::Reached {
-                packet: driving.packet,
-            });
-            Some(driving)
-        }
+        Some(peer) => Some(the_way_and_the_screen(wanted, peer, &settings, told)?),
         None => None,
     };
     let target = match &driving {
@@ -615,6 +724,26 @@ impl Driving {
         }
     }
 
+    /// Asks the far computer to serve its picture from that screen, and
+    /// says whether it is starting its engine over to do it.
+    ///
+    /// Starting over takes this very way with it, so the answer is worth
+    /// carrying whole rather than being reduced to done or not done.
+    fn film_this_far_screen(&mut self, id: Option<String>) -> Result<bool, String> {
+        match self
+            .runtime
+            .block_on(
+                self.service
+                    .ask(&Request::FilmFarScreen { way: self.way, id }),
+            )
+            .map_err(|e| e.to_string())?
+        {
+            Answer::Filming { starting_over } => Ok(starting_over),
+            Answer::Refused(reason) => Err(reason),
+            other => Err(format!("réponse inattendue du service : {other}")),
+        }
+    }
+
     /// Asks the far computer to resend a still screen at full rate, or
     /// to stop doing it.
     fn serve_steady_over_there(&mut self, rate: bool) -> Result<(), String> {
@@ -728,6 +857,7 @@ mod tests {
             steady_far_rate: true,
             wants_a_screen_over_there: true,
             far_magnification: 0,
+            far_screen: None,
         }
     }
 

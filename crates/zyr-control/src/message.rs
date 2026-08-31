@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 24;
+pub const PROTOCOL: u32 = 25;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -158,6 +158,21 @@ pub enum Request {
     /// cannot make has no business being offered. Nothing said back is
     /// « it has not said », never « none ».
     FarCodecs { way: WayId },
+    /// Asks the far computer which screens it is showing on.
+    ///
+    /// Asked through an open way, so during a session: a machine with two
+    /// screens plugged in serves one of them, and the list is what the
+    /// session's menu offers to choose from. Nothing said back is « it
+    /// has not said », never « that computer has no screen ».
+    FarScreens { way: WayId },
+    /// Asks the far computer to serve its picture from that screen.
+    ///
+    /// Nothing named is its main screen, which is what every session asks
+    /// for until somebody says otherwise. Its engine reads which screen
+    /// to film when it starts, so the answer says whether it is on that
+    /// screen already or whether it is starting over, which takes the way
+    /// with it.
+    FilmFarScreen { way: WayId, id: Option<String> },
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
     Hold { way: WayId, process: u32 },
@@ -287,6 +302,16 @@ impl Request {
             "farcodecs" => Ok(Request::FarCodecs {
                 way: WayId(fields.parsed("way")?),
             }),
+            "farscreens" => Ok(Request::FarScreens {
+                way: WayId(fields.parsed("way")?),
+            }),
+            "filmfar" => Ok(Request::FilmFarScreen {
+                way: WayId(fields.parsed("way")?),
+                id: match fields.text("screen")? {
+                    "main" => None,
+                    named => Some(named.to_string()),
+                },
+            }),
             "hold" => Ok(Request::Hold {
                 way: WayId(fields.parsed("way")?),
                 process: fields.parsed("process")?,
@@ -363,6 +388,15 @@ impl fmt::Display for Request {
             },
             Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
             Request::FarCodecs { way } => write!(f, "farcodecs way={way}"),
+            Request::FarScreens { way } => write!(f, "farscreens way={way}"),
+            // « main » rather than nothing at all: a field with no value
+            // is a field nobody wrote, and the identifiers themselves are
+            // the far computer's own digests, written between braces.
+            Request::FilmFarScreen { way, id } => write!(
+                f,
+                "filmfar way={way} screen={}",
+                id.as_deref().unwrap_or("main")
+            ),
             Request::Hold { way, process } => write!(f, "hold way={way} process={process}"),
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
@@ -547,6 +581,17 @@ pub enum Answer {
     /// What the far computer's engine can encode, in the product's own
     /// spelling, one name after another. Empty is « it has not said ».
     Codecs(String),
+    /// The screens the far computer is showing on, one to a line.
+    ///
+    /// Folded onto one line to travel, like the journal below and for the
+    /// same reason: a newline here would be read as the start of another
+    /// message. Empty is « it has not said ».
+    Screens(String),
+    /// The far computer is serving from the screen that was named, or is
+    /// starting its engine over to do it, which takes the way with it.
+    Filming {
+        starting_over: bool,
+    },
     /// One computer's journal, whole.
     ///
     /// The only answer that carries a page rather than a handful of
@@ -616,6 +661,10 @@ impl Answer {
                 },
             }),
             "codecs" => Ok(Answer::Codecs(rest.trim().to_string())),
+            "screens" => Ok(Answer::Screens(unfolded(rest.trim()))),
+            "filming" => Ok(Answer::Filming {
+                starting_over: rest.trim() == "starting-over",
+            }),
             "journal" => Ok(Answer::Journal(unfolded(rest.trim()))),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
@@ -676,6 +725,16 @@ impl fmt::Display for Answer {
                 None => f.write_str("showing size=none"),
             },
             Answer::Codecs(named) => write!(f, "codecs {named}"),
+            Answer::Screens(listed) => write!(f, "screens {}", folded(listed)),
+            Answer::Filming { starting_over } => write!(
+                f,
+                "filming {}",
+                if *starting_over {
+                    "starting-over"
+                } else {
+                    "already"
+                }
+            ),
             Answer::Journal(text) => write!(f, "journal {}", folded(text)),
             Answer::Done => f.write_str("done"),
             // The reason travels on one line: a newline would be read as
@@ -942,6 +1001,17 @@ mod tests {
             // Une adresse écrite à la main peut porter une espace, ici
             // comme partout ailleurs.
             Request::FarCodecs { way: WayId(7) },
+            Request::FarScreens { way: WayId(7) },
+            // Rien de nommé veut dire l'écran principal, et c'est ce que
+            // demande toute session tant que personne n'a dit autre chose.
+            Request::FilmFarScreen {
+                way: WayId(7),
+                id: None,
+            },
+            Request::FilmFarScreen {
+                way: WayId(7),
+                id: Some("{daeac860-f4db-5208-b1f5-cf59444fb768}".to_string()),
+            },
             Request::FarJournal {
                 host: "pc de victor.local".to_string(),
                 peer: fingerprint(),
@@ -1049,6 +1119,18 @@ mod tests {
                  --- Le service (service.log) ---\nune ligne\nune autre"
                     .to_string(),
             ),
+            // Une ligne par écran, repliées pour voyager comme le fait
+            // le journal juste au-dessus.
+            Answer::Screens(
+                "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M".to_string(),
+            ),
+            Answer::Screens(String::new()),
+            Answer::Filming {
+                starting_over: true,
+            },
+            Answer::Filming {
+                starting_over: false,
+            },
             Answer::Done,
             Answer::Refused("cet ordinateur a refusé l'accès".to_string()),
         ]

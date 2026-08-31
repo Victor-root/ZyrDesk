@@ -18,7 +18,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use zyr_control::{Answer, Request};
-use zyr_proto::session::{Asked, Codec, Preferred, SessionSettings};
+use zyr_proto::session::{Asked, Codec, FarScreen, Preferred, SessionSettings};
 use zyr_session::{Outcome, Step, Wanted};
 
 use crate::service;
@@ -66,6 +66,15 @@ enum Told {
     /// and the window shows them the same way. It only has to be told
     /// that one is starting, since nobody clicked anything to start it.
     Again,
+    /// The far computer is starting its engine over so as to be served
+    /// from another of its screens.
+    ///
+    /// The one wait inside an opening that is nobody's fault and several
+    /// seconds long: its engine reads which screen to film only when it
+    /// starts. Said out loud, or the opening screen would sit there
+    /// saying « tunnel ouvert » while the way it names is being closed
+    /// and opened again underneath it.
+    FarScreenChanging,
 }
 
 /// How a session finished, or failed to start.
@@ -171,7 +180,26 @@ static OPEN_AGAIN: AtomicU32 = AtomicU32::new(0);
 /// chosen afterwards is written down and nothing more until the picture
 /// is opened again. This is what lets the session's own menu say which of
 /// the two it is showing.
-static SHOWN_AS: Mutex<Option<(Asked, u32, Codec, bool)>> = Mutex::new(None);
+static SHOWN_AS: Mutex<Option<ToldOnce>> = Mutex::new(None);
+
+/// Which of the far computer's screens this session is served from.
+///
+/// Empty is that computer's main screen, which is what every session
+/// asks for until somebody says otherwise. Held here for the length of a
+/// session and written into no settings file, deliberately: it names one
+/// screen of one particular computer, and carrying it to the next
+/// session would mean asking a different machine for a screen that is
+/// not its own. A machine left showing the screen some earlier session
+/// picked is a machine rearranged by having been looked at.
+static FAR_SCREEN: Mutex<Option<String>> = Mutex::new(None);
+
+/// The screens the far computer of the session in progress is showing
+/// on, as it last named them.
+///
+/// Asked of that computer when the menu is opened and kept, so the menu
+/// can say which screen is being watched without asking again at every
+/// draw.
+static FAR_SCREENS: Mutex<Vec<FarScreen>> = Mutex::new(Vec::new());
 
 /// What the engine is told once, at its start, and never again.
 ///
@@ -181,18 +209,88 @@ static SHOWN_AS: Mutex<Option<(Asked, u32, Codec, bool)>> = Mutex::new(None);
 /// for, and only these are compared to know whether they are still what
 /// is on screen.
 ///
-/// The last of them is told to the far computer's engine rather than to
-/// this one's, and it is here for the same reason as the other three: its
-/// engine reads it when it starts, so changing it means opening the
+/// The last two are told to the far computer's engine rather than to this
+/// one's, and they are here for the same reason as the first three: its
+/// engine reads them when it starts, so changing one means opening the
 /// picture again, which is what asks that computer and starts its engine
 /// over on the way.
-fn told_once(preferred: &Preferred) -> (Asked, u32, Codec, bool) {
-    (
-        preferred.asked,
-        preferred.bitrate_kbps,
-        preferred.codec,
-        preferred.steady_far_rate,
-    )
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ToldOnce {
+    asked: Asked,
+    bitrate_kbps: u32,
+    codec: Codec,
+    steady_far_rate: bool,
+    far_screen: Option<String>,
+}
+
+fn told_once(preferred: &Preferred) -> ToldOnce {
+    ToldOnce {
+        asked: preferred.asked,
+        bitrate_kbps: preferred.bitrate_kbps,
+        codec: preferred.codec,
+        steady_far_rate: preferred.steady_far_rate,
+        far_screen: the_far_screen(),
+    }
+}
+
+/// Which of the far computer's screens the session is to be served from.
+///
+/// Empty is that computer's main screen. The two are one answer said two
+/// ways, so picking the main screen by hand writes nothing here: left as
+/// two answers, choosing the screen a session is already on would have
+/// offered to open the picture again for a change that is not one.
+pub fn the_far_screen() -> Option<String> {
+    FAR_SCREEN.lock().expect("écran d'en face").clone()
+}
+
+/// The same, under the name the menu marks it by.
+///
+/// What was asked for, and the far computer's main screen when nothing
+/// was: the menu has one line per screen and no line for « the main one »,
+/// so the answer has to name a screen even when the choice was to name
+/// none.
+pub fn the_far_screen_named() -> String {
+    the_far_screen()
+        .or_else(|| {
+            the_far_screens()
+                .into_iter()
+                .find(|screen| screen.main)
+                .map(|screen| screen.id)
+        })
+        .unwrap_or_default()
+}
+
+/// Asks to be served from that screen, or from the far computer's main
+/// one when nothing is named.
+///
+/// Written down and nothing more, exactly like the size, the rate and the
+/// codec beside it: what a session is served from is settled when the far
+/// engine starts, so the picture on screen goes on showing the screen it
+/// was opened with and the menu offers to open it again.
+pub fn ask_for_the_far_screen(id: Option<String>) {
+    *FAR_SCREEN.lock().expect("écran d'en face") = id;
+}
+
+/// The far computer's screens, as it last named them.
+pub fn the_far_screens() -> Vec<FarScreen> {
+    FAR_SCREENS.lock().expect("écrans d'en face").clone()
+}
+
+/// Writes down what the far computer answered about its screens.
+///
+/// Kept so that a screen picked from the menu can be weighed against what
+/// that computer actually offered: an identifier from anywhere else is a
+/// window and a far computer that no longer agree, and honouring it would
+/// hide that.
+///
+/// An empty answer is « it has not said » and never « it has none », so
+/// it leaves what was known standing rather than emptying the line under
+/// a menu somebody has open.
+pub fn remember_the_far_screens(screens: &[FarScreen]) {
+    if screens.is_empty() {
+        return;
+    }
+    *FAR_SCREENS.lock().expect("écrans d'en face") = screens.to_vec();
 }
 
 /// Whether what is chosen now is not what the picture on screen shows.
@@ -200,8 +298,8 @@ fn told_once(preferred: &Preferred) -> (Asked, u32, Codec, bool) {
 /// False when nothing is on screen: there is then nothing to apply it to,
 /// and the next session opens with it anyway.
 pub fn waiting_to_be_applied(preferred: &Preferred) -> bool {
-    match *SHOWN_AS.lock().expect("réglages de l'image") {
-        Some(shown) => shown != told_once(preferred),
+    match SHOWN_AS.lock().expect("réglages de l'image").as_ref() {
+        Some(shown) => *shown != told_once(preferred),
         None => false,
     }
 }
@@ -219,6 +317,13 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
     if crate::floating::a_session_is_up(&app) || OPENING.swap(true, Ordering::SeqCst) {
         return Err("une session est déjà en cours".to_string());
     }
+
+    // A session opens on the far computer's main screen, whatever screen
+    // some earlier session was watching on some other machine. The choice
+    // names one screen of one particular computer, so carrying it over
+    // would be asking this one for a screen that is not its own.
+    ask_for_the_far_screen(None);
+    FAR_SCREENS.lock().expect("écrans d'en face").clear();
 
     let preferred = crate::settings::preferred().await;
     // The window takes the screen before anything else does, so the
@@ -239,6 +344,7 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
         steady_far_rate: preferred.steady_far_rate,
         wants_a_screen_over_there: preferred.asked.wants_a_screen_over_there(),
         far_magnification,
+        far_screen: None,
     };
 
     // On a thread of its own, and not one of the interface's: the
@@ -377,6 +483,10 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
             // for a size, which is exactly what that choice exists not
             // to do.
             wanted.wants_a_screen_over_there = preferred.asked.wants_a_screen_over_there();
+            // And which of that computer's screens to be served from,
+            // which is the whole reason a person opens the picture again
+            // on a machine with two of them.
+            wanted.far_screen = the_far_screen();
             continue;
         }
 
@@ -530,9 +640,15 @@ fn told(step: Step) -> Option<Told> {
         Step::Paired => Told::Paired,
         Step::Starting => Told::Starting,
         Step::Showing { process, .. } => Told::Showing { process },
+        // The one of these the person is left waiting through, so it is
+        // the one that goes on the opening screen: the far computer is
+        // starting its engine over, and that is several seconds during
+        // which nothing else would say anything at all.
+        Step::FarScreenChanging => Told::FarScreenChanging,
         Step::SpeakersLeftAlone { .. }
         | Step::RateLeftAlone { .. }
         | Step::ScreenLeftAlone { .. }
+        | Step::FarScreenLeftAlone { .. }
         | Step::ScreenOverThere { .. } => return None,
     })
 }
@@ -628,6 +744,13 @@ fn written(step: &Step) -> String {
         Step::ScreenOverThere { wide, high } => format!(
             "l'ordinateur distant affiche {wide}x{high}, c'est ce qui est demandé au lecteur"
         ),
+        Step::FarScreenChanging => {
+            "l'ordinateur distant change d'écran, son moteur redémarre et la voie sera rouverte"
+                .to_string()
+        }
+        Step::FarScreenLeftAlone { refused } => {
+            format!("l'ordinateur distant garde l'écran qu'il filme : {refused}")
+        }
     }
 }
 

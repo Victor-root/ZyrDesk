@@ -60,6 +60,9 @@ struct FakeEngine {
     /// Whether its journal was emptied. Written down rather than done:
     /// nothing here has four files to cut.
     emptied: Arc<AtomicBool>,
+    /// Which of its screens it was last asked to be served from, `None`
+    /// standing for its main one, which is what it films to begin with.
+    filming: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl Answers for FakeEngine {
@@ -125,11 +128,30 @@ impl Answers for FakeEngine {
     fn codecs(&self) -> Result<String, String> {
         Ok(HOST_CODECS.to_string())
     }
+
+    fn screens(&self) -> Result<String, String> {
+        Ok(HOST_SCREENS.to_string())
+    }
+
+    /// Ce que ferait une vraie machine : elle filme son écran principal
+    /// et il faut redémarrer son moteur pour en filmer un autre.
+    fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Filming, String> {
+        let mut filming = self.filming.lock().unwrap();
+        if *filming == id {
+            return Ok(zyr_tunnel::Filming::Already);
+        }
+        *filming = id;
+        Ok(zyr_tunnel::Filming::StartingOver)
+    }
 }
 
 /// Ce qu'une machine à carte Intel sait faire : pas d'AV1. C'est le cas
 /// pour lequel cette question existe.
 const HOST_CODECS: &str = "H.264 HEVC";
+
+/// Deux écrans allumés sur la machine d'en face, le principal d'abord :
+/// c'est le cas qui a valu la question.
+const HOST_SCREENS: &str = "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M";
 
 /// Ce que la machine d'en face répond quand la session lui demande de
 /// garder son écran tel quel.
@@ -179,6 +201,8 @@ struct Bench {
     screen: Arc<std::sync::Mutex<Option<WantedScreen>>>,
     /// Whether its journal was emptied.
     emptied: Arc<AtomicBool>,
+    /// Which of its screens it was last asked to be served from.
+    filming: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl Bench {
@@ -220,6 +244,7 @@ impl Bench {
         let screen: Arc<std::sync::Mutex<Option<WantedScreen>>> =
             Arc::new(std::sync::Mutex::new(None));
         let emptied = Arc::new(AtomicBool::new(false));
+        let filming: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -232,6 +257,7 @@ impl Bench {
                 steady: steady.clone(),
                 screen: screen.clone(),
                 emptied: emptied.clone(),
+                filming: filming.clone(),
             }),
         )
         .await
@@ -260,6 +286,7 @@ impl Bench {
             steady,
             screen,
             emptied,
+            filming,
         }
     }
 
@@ -652,4 +679,36 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
         .await
         .unwrap();
     assert_eq!(named, HOST_CODECS);
+
+    // Et les écrans de cette machine, avec celui qu'on veut regarder. Le
+    // cas de Victor : deux écrans allumés en face, et aucun moyen jusque-là
+    // de demander le second.
+    let listed = before_the_end(aside::ask_what_screens_it_has(&bench.connection))
+        .await
+        .unwrap();
+    assert_eq!(listed, HOST_SCREENS);
+    let read = zyr_proto::session::far_screens_read(&listed);
+    assert_eq!(read.len(), 2);
+    assert!(read[0].main);
+
+    // L'écran principal est celui qu'elle filme déjà : toute session le
+    // demande, et presque aucune ne change quoi que ce soit.
+    assert_eq!(
+        before_the_end(aside::ask_to_film_this_screen(&bench.connection, None))
+            .await
+            .unwrap(),
+        zyr_tunnel::Filming::Already
+    );
+    // L'autre lui coûte un redémarrage de son moteur, et elle le dit
+    // plutôt que de laisser l'autre bout le découvrir sur un tunnel cassé.
+    assert_eq!(
+        before_the_end(aside::ask_to_film_this_screen(
+            &bench.connection,
+            Some(read[1].id.clone())
+        ))
+        .await
+        .unwrap(),
+        zyr_tunnel::Filming::StartingOver
+    );
+    assert_eq!(*bench.filming.lock().unwrap(), Some(read[1].id.clone()));
 }

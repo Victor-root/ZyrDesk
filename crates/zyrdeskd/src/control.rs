@@ -268,6 +268,23 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
+        Request::FarScreens { way } => {
+            match answering.machine.ways.ask_what_screens_it_has(way).await {
+                Ok(listed) => Answer::Screens(listed),
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
+        Request::FilmFarScreen { way, id } => {
+            match answering
+                .machine
+                .ways
+                .ask_to_film_this_screen(way, id)
+                .await
+            {
+                Ok(starting_over) => Answer::Filming { starting_over },
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
         Request::Hold { way, process } => {
             if answering.machine.ways.hold(way, process) {
                 Answer::Done

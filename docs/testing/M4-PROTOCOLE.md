@@ -60,6 +60,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
 | **R46ter** | **Refait, et c'est un défaut que j'avais introduit moi-même en corrigeant R46bis.** « Fluide » n'atteignait jamais la cadence demandée et variait exactement comme « Économe » : relevé à 50 images/s pour 60 demandées, avec 2,35 ms d'encodage et 1 ms de réseau, donc rien n'était à l'étroit. Une image capturée achetait **deux** périodes comptées depuis son arrivée, si bien qu'un écran changeant entre la moitié de la cadence visée et la cadence visée ne déclenchait jamais la moindre répétition : le moteur servait ce que le bureau produisait, c'est-à-dire ce que donne le fait de ne rien demander. Les deux réglages étaient donc identiques sur tout bureau qui change plus de trente fois par seconde. La grille des créneaux est maintenant fixe et une image presque à l'heure prend son propre créneau. **À vérifier après recompilation du moteur hôte** |
+| **R65** | **Nouveau.** Une ligne **Écran de l'hôte** dans le menu du bouton flottant, qui liste les écrans allumés de la machine d'en face et permet d'en changer. Elle n'apparaît que quand cette machine en a plusieurs. Les écrans éteints n'y sont pas, ni l'écran virtuel du produit. Le moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc changer d'écran le redémarre et la session se rouvre toute seule : l'écran d'ouverture le dit. Une session qui ne choisit rien est servie sur l'**écran principal** d'en face, y compris après une session qui en avait choisi un autre |
 | **R64** | **Nouveau.** Pendant une session, la vignette de ZyrDesk dans Win+Tab et Alt+Tab est de la taille des autres. Elle était nettement plus petite, quelle que soit la taille de la fenêtre, plein écran compris : ZyrDesk disait à Windows de ne pas photographier sa fenêtre et lui fournissait l'image lui-même, ce qui plafonne la vignette à la taille que Windows réclame. C'était nécessaire quand l'image de la session était une fenêtre posée par-dessus la nôtre, ça ne l'est plus depuis qu'elle est portée par notre fenêtre |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
 | **R63** | **Nouveau.** Un codec que la machine d'en face ne sait pas encoder est **barré** dans le menu de la session, avec le mot qui le dit au survol. Elle est la seule à le savoir, ça dépend de sa carte graphique : on le lui demande, et elle répond en lisant ce que son propre moteur a écrit en démarrant. Choisir AV1 vers une machine qui n'en fait pas ne cassait rien, les deux moteurs s'entendaient sur autre chose en silence, mais le menu continuait d'afficher AV1 pour toute la session. « Automatique » n'est jamais barré, c'est le choix de ne pas choisir, et c'est le réglage par défaut |
@@ -1455,6 +1456,24 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Et le cas d'origine, à refaire aussi** : un bureau parfaitement immobile, rien qui bouge, en Fluide. La cadence doit rester à ce qui a été demandé et non tomber à la moitié.
 >
 > **Demande la recompilation du moteur hôte.**
+
+> **R65 (choisir lequel des écrans de l'hôte on regarde)**
+>
+> **Le cas à reproduire est celui de Victor** : un PC hôte avec deux écrans allumés et une télé branchée mais désactivée.
+>
+> Session ouverte vers cette machine, puis le menu du bouton flottant. Une ligne **Écran de l'hôte** est là, sous **Résolution**, avec le nom de l'écran regardé à droite. Elle ouvre une liste.
+>
+> Attendu dans la liste : **les deux écrans allumés, et eux seuls**. La télé éteinte n'y est pas, l'écran virtuel du produit non plus. Le principal est marqué « (principal) », sa taille est écrite à droite de chaque ligne, et c'est lui qui est coché tant que personne n'a choisi.
+>
+> Choisir le second écran, puis **Appliquer les changements**. L'écran d'ouverture revient et dit **« L'ordinateur distant change d'écran, il redémarre… »**, puis la session revient sur l'autre écran. Ça prend quelques secondes : le moteur d'en face ne lit quel écran filmer qu'à son démarrage, il n'y a pas d'autre moyen.
+>
+> **La ligne du service de l'hôte, à relever** : `a session asked to be served from {…}, so this computer's engine starts over`, puis, au démarrage suivant, `the engine is filming the screen a session asked to be served from ({…})`.
+>
+> **Le retour à l'écran principal, qui est la moitié qu'il ne faut pas rater.** Fermer la session, puis en rouvrir une sans rien choisir : elle doit être servie sur l'**écran principal**, pas sur celui de la session d'avant. Le même redémarrage a lieu, et le journal de l'hôte le dit : `a session asked this computer to be served from its main screen`.
+>
+> **Le cas où la ligne ne doit pas exister** : une session vers une machine à un seul écran. Pas de ligne **Écran de l'hôte** du tout, puisqu'il n'y a rien à choisir. Pareil pendant que le moteur d'en face démarre encore : une absence de réponse ne doit pas afficher une liste d'un seul élément.
+>
+> **Et le cas de l'écran débranché** : choisir le second écran, puis le débrancher côté hôte. À la session suivante, la machine est filmée sur son écran principal, et son journal le dit : `a session asked to be served from a screen this computer is not showing on (…), so its main screen is filmed instead`.
 
 > **R64 (la vignette de la session dans Win+Tab)**
 >

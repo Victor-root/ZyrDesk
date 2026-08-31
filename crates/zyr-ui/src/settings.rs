@@ -17,7 +17,8 @@
 use serde::{Deserialize, Serialize};
 use zyr_control::{Answer, Request};
 use zyr_proto::session::{
-    Asked, CODECS_OFFERED, Codec, DisplayMode, Preferred, RATES_OFFERED, SIZES_OFFERED, Screen,
+    Asked, CODECS_OFFERED, Codec, DisplayMode, FarScreen, Preferred, RATES_OFFERED, SIZES_OFFERED,
+    Screen,
 };
 
 use crate::service;
@@ -124,7 +125,14 @@ pub struct SessionChoice {
     /// point of the word « screen » and cannot be worked out from it.
     pub width: u32,
     pub height: u32,
-    /// Whether these three are not what the picture on screen is showing.
+    /// Which of the far computer's screens the session is served from,
+    /// empty naming its main one.
+    ///
+    /// Apart from the rest and written into no settings file: it names one
+    /// screen of one particular computer, so it lasts as long as the
+    /// session and no longer.
+    pub screen: String,
+    /// Whether what is chosen is not what the picture on screen shows.
     ///
     /// The one thing the window cannot work out for itself: a choice is
     /// written down the moment it is made, so what is chosen and what is
@@ -140,6 +148,7 @@ impl SessionChoice {
             bitrate_kbps: preferred.bitrate_kbps,
             codec: preferred.codec.to_string(),
             steady: preferred.steady_far_rate,
+            screen: crate::session::the_far_screen_named(),
             width,
             height,
             to_apply: crate::session::waiting_to_be_applied(&preferred),
@@ -168,18 +177,41 @@ pub struct Offered {
     pub height: u32,
 }
 
-/// Everything the three lines of the session menu offer, and where they
-/// stand right now.
+/// One of the far computer's screens, as the menu offers it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfferedScreen {
+    /// What travels back when it is picked. That computer's own name for
+    /// the screen, opaque here on purpose.
+    pub id: String,
+    /// What a person reads.
+    pub name: String,
+    /// Whether it is the one that computer starts its desktop on, which
+    /// is the one a session is served from unless somebody says
+    /// otherwise.
+    pub main: bool,
+    pub wide: u32,
+    pub high: u32,
+}
+
+/// Everything the lines of the session menu offer, and where they stand
+/// right now.
 ///
 /// Handed over whole rather than a list at a time: the window builds the
-/// three lists once, when it opens, and a person clicking through them
-/// then waits for nothing.
+/// lists once, when it opens, and a person clicking through them then
+/// waits for nothing.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionMenu {
     pub sizes: Vec<Offered>,
     pub rates: Vec<u32>,
     pub codecs: Vec<String>,
+    /// The screens the far computer is showing on.
+    ///
+    /// Empty outside a session, on a far computer whose engine has not
+    /// said, and on one that has a single screen worth offering: the line
+    /// then does not show at all, which is right in all three cases.
+    pub screens: Vec<OfferedScreen>,
     /// The ones the far computer's engine says it cannot make.
     ///
     /// Empty means it has not said, which is every menu opened outside a
@@ -208,8 +240,44 @@ pub async fn session_menu(app: tauri::AppHandle) -> SessionMenu {
             .collect(),
         rates: RATES_OFFERED.to_vec(),
         codecs: CODECS_OFFERED.iter().map(Codec::to_string).collect(),
+        screens: the_far_computers_screens().await,
         beyond_it: beyond_the_far_computer().await,
         now: SessionChoice::of(preferred, screen),
+    }
+}
+
+/// The screens the far computer of the session in progress is showing on.
+///
+/// Asked of that computer, because nothing here can know what is plugged
+/// in over there. Nothing at all when there is no session, when the way is
+/// gone, or when its engine has not said: an unanswered question leaves
+/// the menu without that line rather than offering a list of one.
+///
+/// A single screen is no choice, so it is not offered either. Every
+/// computer with one screen would otherwise carry a menu line that can
+/// only be set to what it already is.
+async fn the_far_computers_screens() -> Vec<OfferedScreen> {
+    let Some(way) = crate::session::the_way_in_use().await else {
+        return Vec::new();
+    };
+    let Ok(Answer::Screens(listed)) = service::ask(&Request::FarScreens { way }).await else {
+        return Vec::new();
+    };
+    let screens = zyr_proto::session::far_screens_read(&listed);
+    crate::session::remember_the_far_screens(&screens);
+    if screens.len() < 2 {
+        return Vec::new();
+    }
+    screens.iter().map(offered).collect()
+}
+
+fn offered(screen: &FarScreen) -> OfferedScreen {
+    OfferedScreen {
+        id: screen.id.clone(),
+        name: screen.name.clone(),
+        main: screen.main,
+        wide: screen.wide,
+        high: screen.high,
     }
 }
 
@@ -289,6 +357,27 @@ pub async fn choose_session(
                 return Err(format!("codec non proposé : {value}"));
             }
             preferred.codec = codec;
+        }
+        // Written down nowhere, so it never reaches the service: which of
+        // the far computer's screens is being watched names one screen of
+        // one particular machine, and it lasts exactly as long as the
+        // session does.
+        "screen" => {
+            let Some(picked) = crate::session::the_far_screens()
+                .into_iter()
+                .find(|screen| screen.id == value)
+            else {
+                return Err(format!("écran non proposé : {value}"));
+            };
+            // Its main screen is what a session asks for when it asks for
+            // nothing, so picking it by hand is asking for nothing: said
+            // any other way, choosing the screen the session is already on
+            // would offer to open the picture again for no change at all.
+            crate::session::ask_for_the_far_screen((!picked.main).then_some(picked.id));
+            return Ok(SessionChoice::of(
+                preferred,
+                crate::picture::the_screen_of_this_computer(&app),
+            ));
         }
         // Two words and not a list: it is a switch, and the two sides are
         // named in the window like the ones beside them.

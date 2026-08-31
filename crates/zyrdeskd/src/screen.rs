@@ -31,12 +31,32 @@ const LEARNED: &str = "engine-screen.txt";
 /// the same screen from one enumeration to the next.
 const MAIN: &str = "engine-main-screen.txt";
 
+/// Where the screen a session asked to be served from is kept.
+///
+/// A machine with two screens plugged in shows one of them, and which one
+/// is the watcher's choice: they are the one looking at it, and they are
+/// not in the room to lean over and drag a window. Written here rather
+/// than held in memory for the reason the two above are: the engine reads
+/// which screen to film once, when it starts, so the choice has to
+/// outlive the engine that was running when it was made.
+///
+/// Absent means the main screen, which is what every session asks for
+/// until somebody says otherwise. A machine left showing the screen some
+/// previous session picked would be a machine rearranged by having been
+/// looked at, so nothing but a session's own ask ever puts a name here,
+/// and the service empties it at every start.
+const WANTED: &str = "engine-wanted-screen.txt";
+
 fn learned_path() -> PathBuf {
     paths::virtual_screen_dir().join(LEARNED)
 }
 
 fn main_path() -> PathBuf {
     paths::virtual_screen_dir().join(MAIN)
+}
+
+fn wanted_path() -> PathBuf {
+    paths::virtual_screen_dir().join(WANTED)
 }
 
 /// Puts the virtual screen on this computer, if it is not on it already.
@@ -730,6 +750,96 @@ pub fn main_remembered() -> Option<String> {
     read_name(&main_path())
 }
 
+/// The screen a session asked this computer to be served from, if one
+/// asked at all.
+fn wanted_by_a_session() -> Option<String> {
+    read_name(&wanted_path())
+}
+
+/// The screen the engine should be filming right now.
+///
+/// What a session asked for, and this computer's main screen when none
+/// did. The one place that answer is worked out: it is read before the
+/// engine starts, to aim it, and again while it runs, to know that it is
+/// aimed somewhere else and has to start over. Two readings that could
+/// drift apart would be an engine restarting for ever.
+pub fn the_screen_to_film() -> Option<String> {
+    wanted_by_a_session().or_else(main_remembered)
+}
+
+/// Writes down which screen a session wants to be served from, or forgets
+/// the ask.
+///
+/// Nothing named is the main screen, which is what every session asks for
+/// unless somebody says otherwise. Whether that changed anything is not
+/// answered here and is not this note's to answer: what decides is the
+/// screen the engine was **started** on, which the caller holds.
+pub fn film_this_screen(id: Option<&str>) -> Result<(), String> {
+    let path = wanted_path();
+    if wanted_by_a_session().as_deref() == id {
+        return Ok(());
+    }
+    match id {
+        Some(id) => write_name(&path, id)
+            .map_err(|e| format!("l'écran demandé n'a pas pu être écrit : {e}"))?,
+        None => match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("l'écran demandé n'a pas pu être oublié : {e}")),
+        },
+    }
+    Ok(())
+}
+
+/// Forgets any screen a session asked for.
+///
+/// Called when the service starts, and there only. A computer that came
+/// back up still serving the screen somebody picked last week would be a
+/// computer rearranged by having been looked at, and nobody would be
+/// there to see it: the main screen is what this machine answers with
+/// until a session says otherwise.
+pub fn forget_the_screen_a_session_asked_for() {
+    let _ = std::fs::remove_file(wanted_path());
+}
+
+/// The screens this computer is showing on, as its engine named them.
+///
+/// Only the ones it is really showing on, and never the one it grows for
+/// itself: a screen that is switched off shows a black picture, and the
+/// grown one is not a screen anybody sitting at this machine can see.
+///
+/// Empty means the engine has not said, which is every engine that has
+/// not finished starting. Empty is never « this computer has no screen »:
+/// that answer would be about the reading and not about the machine.
+pub fn on_this_computer(engine_log: &Path) -> Vec<zyr_proto::session::FarScreen> {
+    let Ok(bytes) = std::fs::read(engine_log) else {
+        return Vec::new();
+    };
+    let driver = zyr_screen::shipped();
+    zyr_screen::engine::screens_in_the_log(&String::from_utf8_lossy(&bytes))
+        .into_iter()
+        .filter(|screen| screen.active && !driver.is_its_screen(&screen.friendly_name))
+        .filter_map(|screen| {
+            let (wide, high) = screen.size?;
+            Some(zyr_proto::session::FarScreen {
+                id: screen.device_id,
+                main: screen.main,
+                wide,
+                high,
+                // What a person reads. The name the screen publishes when
+                // it has one, and the number Windows gives it when it does
+                // not: two nameless screens on one desk have to be telling
+                // apart somehow.
+                name: if screen.friendly_name.is_empty() {
+                    screen.display_name
+                } else {
+                    screen.friendly_name
+                },
+            })
+        })
+        .collect()
+}
+
 fn read_name(path: &Path) -> Option<String> {
     let said = std::fs::read_to_string(path).ok()?;
     let said = said.trim();
@@ -830,7 +940,7 @@ pub fn learn_from(engine_log: &std::path::Path, as_started: AsStarted<'_>, log: 
     ));
 
     if !as_started.films_the_grown_screen {
-        return aim_at_the_main_screen(&text, as_started.aimed_at, log);
+        return aim_at_the_right_screen(&seen, as_started.aimed_at, log);
     }
 
     let Some(ours) = zyr_screen::engine::the_virtual_screen(&text, driver) else {
@@ -897,39 +1007,74 @@ pub fn learn_from(engine_log: &std::path::Path, as_started: AsStarted<'_>, log: 
     Learned::StartAgain
 }
 
-/// Aims the engine at this computer's main screen, on a computer that
-/// has one.
+/// Aims the engine at the screen this computer is to be served from, on
+/// a computer that has screens of its own.
 ///
-/// Naming it is what keeps the engine on it. Told nothing, the engine
-/// films whichever screen its graphics card enumerates first and takes
-/// the first one that answers whenever it has to start filming again;
-/// a screen being resized answers nothing for the length of the change,
-/// so the screen a session had just put at its own size was exactly the
-/// one the engine walked away from.
-fn aim_at_the_main_screen(text: &str, aimed_at: Option<&str>, log: &Log) -> Learned {
-    let Some(main) = zyr_screen::engine::the_main_screen(text) else {
+/// Which one that is: the screen a session asked for, and this computer's
+/// main screen when none did. Naming it is what keeps the engine on it.
+/// Told nothing, the engine films whichever screen its graphics card
+/// enumerates first and takes the first one that answers whenever it has
+/// to start filming again; a screen being resized answers nothing for the
+/// length of the change, so the screen a session had just put at its own
+/// size was exactly the one the engine walked away from.
+fn aim_at_the_right_screen(
+    seen: &[zyr_screen::engine::Screen],
+    aimed_at: Option<&str>,
+    log: &Log,
+) -> Learned {
+    let Some(main) = seen.iter().find(|screen| screen.main) else {
         log.write(
             "the engine named no main screen among them, so it films whichever one it finds first",
         );
         return Learned::NothingToChange;
     };
-    if aimed_at == Some(main.device_id.as_str()) {
-        log.write(&format!(
-            "the engine is filming this computer's main screen ({})",
-            main.device_id
-        ));
-        return Learned::NothingToChange;
-    }
-    if let Err(e) = write_name(&main_path(), &main.device_id) {
+    // Written down whatever else happens here: it is the answer this
+    // computer gives every session that asks for no screen in particular,
+    // and this is the only place it is ever learned.
+    if main_remembered().as_deref() != Some(main.device_id.as_str())
+        && let Err(e) = write_name(&main_path(), &main.device_id)
+    {
         log.write(&format!(
             "the name of this computer's main screen could not be written down: {e}"
         ));
         return Learned::NothingToChange;
     }
+
+    // The screen a session asked for, as long as it is still one this
+    // computer is showing on. One that has been unplugged since is
+    // forgotten rather than waited for: nothing would ever bring it back
+    // on its own, and the engine would start over for ever trying to film
+    // a screen that is not there.
+    let asked_for = wanted_by_a_session().filter(|id| {
+        let showing = seen
+            .iter()
+            .any(|screen| screen.active && &screen.device_id == id);
+        if !showing {
+            log.write(&format!(
+                "a session asked to be served from a screen this computer is not showing on \
+                 ({id}), so its main screen is filmed instead"
+            ));
+            forget_the_screen_a_session_asked_for();
+        }
+        showing
+    });
+    let its_own = asked_for.is_none();
+    let film = asked_for.unwrap_or_else(|| main.device_id.clone());
+
+    if aimed_at == Some(film.as_str()) {
+        log.write(&format!(
+            "the engine is filming {} ({film})",
+            if its_own {
+                "this computer's main screen"
+            } else {
+                "the screen a session asked to be served from"
+            }
+        ));
+        return Learned::NothingToChange;
+    }
     log.write(&format!(
-        "this computer's main screen is {} and the engine was aimed at {}, so it starts over to \
-         film the right one",
-        main.device_id,
+        "this computer is to be filmed on {film} and the engine was aimed at {}, so it starts \
+         over to film the right one",
         aimed_at.unwrap_or("whichever it found first")
     ));
     Learned::StartAgain
@@ -1059,6 +1204,68 @@ mod tests {
             .open(log)
             .unwrap();
         file.write_all(said.as_bytes()).unwrap();
+    }
+
+    /// Le cas de Victor, mot pour mot : deux écrans allumés, la télé
+    /// éteinte en troisième, et l'écran virtuel du produit à côté.
+    const A_DESK: &str = r#"
+[2026-08-31 09:12:03]: Info: Currently available display devices:
+[
+    {
+        "device_id": "{64243705-4020-5895-b923-adc862c3457e}",
+        "display_name": "",
+        "friendly_name": "VDD by MTT",
+        "info": null
+    },
+    {
+        "device_id": "{daeac860-f4db-5208-b1f5-cf59444fb768}",
+        "display_name": "\\\\.\\DISPLAY1",
+        "friendly_name": "ROG PG279Q",
+        "info": {
+            "primary": true,
+            "resolution": { "height": 1440, "width": 2560 }
+        }
+    },
+    {
+        "device_id": "{11111111-4020-5895-b923-adc862c3457e}",
+        "display_name": "\\\\.\\DISPLAY2",
+        "friendly_name": "Dell U2412M",
+        "info": {
+            "primary": false,
+            "resolution": { "height": 1080, "width": 1920 }
+        }
+    },
+    {
+        "device_id": "{22222222-4020-5895-b923-adc862c3457e}",
+        "display_name": "",
+        "friendly_name": "SAMSUNG TV",
+        "info": null
+    }
+]
+"#;
+
+    #[test]
+    fn only_the_screens_this_computer_is_really_showing_on_are_offered() {
+        // L'écran éteint ne montrerait qu'une image noire, et l'écran que
+        // le produit fait pousser n'est pas un écran que quelqu'un assis
+        // devant la machine peut voir : ni l'un ni l'autre n'est un écran
+        // qu'on demande à regarder.
+        let (log, folder) = a_log("ecrans");
+        add(&log, A_DESK);
+
+        let seen = on_this_computer(&log);
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].name, "ROG PG279Q");
+        assert!(seen[0].main);
+        assert_eq!((seen[0].wide, seen[0].high), (2560, 1440));
+        assert_eq!(seen[1].name, "Dell U2412M");
+        assert!(!seen[1].main);
+
+        // Et un moteur qui n'a rien écrit ne dit rien, plutôt que de
+        // faire échouer la lecture.
+        assert!(on_this_computer(&folder.join("rien.log")).is_empty());
+
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

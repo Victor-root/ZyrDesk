@@ -589,6 +589,36 @@ const LIGNES = {
     },
     ou: (choix) => choix.asked,
   },
+  screen: {
+    // Une liste à elle, comme la résolution, et pour la même raison : ce
+    // sont des noms d'écrans, sans ordre entre eux, et une machine peut
+    // en avoir plus de deux. Ils viennent de la machine d'en face et
+    // d'elle seule : c'est elle qui nomme ses écrans, et rien d'ici ne
+    // sait ce qui y est branché.
+    liste: true,
+    valeurs: (menu) => menu.screens.map((ecran) => ecran.id),
+    dit: (menu, valeur) => {
+      const ecran = menu.screens.find((un) => un.id === valeur);
+      if (!ecran) {
+        return valeur;
+      }
+      return ecran.main ? `${ecran.name} (principal)` : ecran.name;
+    },
+    // Le nom seul sur la ligne du menu : « (principal) » y prendrait la
+    // place du nom sans rien apprendre, la liste le disant déjà.
+    resume: (menu, valeur) => {
+      const ecran = menu.screens.find((un) => un.id === valeur);
+      return ecran ? ecran.name : "";
+    },
+    // Sa taille en colonne à droite, comme le rapport l'est pour la
+    // résolution : deux écrans se distinguent d'abord par là, et un nom
+    // de modèle ne dit rien à qui ne l'a pas acheté.
+    aparte: (menu, valeur) => {
+      const ecran = menu.screens.find((un) => un.id === valeur);
+      return ecran ? `${ecran.wide}x${ecran.high}` : "";
+    },
+    ou: (choix) => choix.screen,
+  },
   bitrate: {
     valeurs: (menu) => menu.rates.map(String),
     dit: (_menu, valeur) => `${Math.round(Number(valeur) / 1000)} Mb/s`,
@@ -814,6 +844,14 @@ function batisLesChoix() {
         dedans.push(entree);
       }
       liste.replaceChildren(...dedans);
+      // Une liste vide est une ligne qui ne peut mener nulle part : la
+      // machine d'en face n'a qu'un écran, ou son moteur n'a pas encore
+      // dit lesquels. La ligne du menu s'efface avec elle plutôt que
+      // d'ouvrir un panneau vide.
+      const laLigne = document.querySelector(`[data-ouvre-panneau="${nom}"]`);
+      if (laLigne) {
+        montre(laLigne, valeurs.length > 0);
+      }
       // Rebâtie, elle n'a plus la même hauteur : ce qui la borne est à
       // remesurer, et seulement quand elle est là pour être mesurée.
       const panneau = lePanneau();
