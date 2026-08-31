@@ -1219,8 +1219,30 @@ pub fn floating_size(
     READY.store(true, Ordering::Relaxed);
     put_the_button(corner, size, how_it_shows());
     tell_the_button(was, size, &shape);
+    photograph_the_window(was, size);
     Ok(UPWARD.load(Ordering::Relaxed))
 }
+
+/// A picture of the button's own window, taken when it has just changed
+/// size.
+///
+/// That is the moment the white artefact shows, and the one moment
+/// nobody has been able to look at: a screenshot of a cut window only
+/// ever shows what the cut lets through, and three answers argued from
+/// screenshots have been wrong.
+#[cfg(windows)]
+fn photograph_the_window(was: (i32, i32, i32, i32), size: (i32, i32)) {
+    if size == (was.2 - was.0, was.3 - was.1) {
+        return;
+    }
+    let button = ITS_WINDOW.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
+    if !button.is_null() {
+        crate::portrait::portrait_of_the_button(button, "elle vient de changer de taille");
+    }
+}
+
+#[cfg(not(windows))]
+fn photograph_the_window(_was: (i32, i32, i32, i32), _size: (i32, i32)) {}
 
 /// The shape this window was last cut to, so an identical cut can be
 /// left alone; see `floating_size`. Nought is « never cut », which is
@@ -2646,7 +2668,9 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
 #[cfg(windows)]
 fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
     // A new button says everything it has to say once more: it is a new
-    // window, with its own styles and its own drawing.
+    // window, with its own styles and its own drawing, and its own
+    // pictures to sit for.
+    crate::portrait::start_over();
     LAST_PIECES.lock().expect("derniers morceaux dits").clear();
     *LAST_SAID.lock().expect("dernière découpe dite") = None;
 

@@ -1591,6 +1591,12 @@ Or, sans couleur de fond, elle **n'efface rien du tout**. Son traitement de l'ef
 
 L'alpha vaut zéro et il est lu : la couche fenêtre l'ignore et prend le noir, la couche vue web l'honore et reste transparente. C'est écrit dans la documentation des deux couches.
 
+**Et ça n'a rien changé non plus, ce qui fait trois.** L'écran d'en face vu au travers, le cadre de la fenêtre, le tampon jamais effacé : trois réponses raisonnées, trois fois faux. Chacune des trois a été plaidée à partir d'une **capture d'écran**, et une capture d'écran d'une fenêtre découpée ne montre que ce que la découpe laisse passer. Ce que personne n'a jamais regardé, c'est **la fenêtre elle-même**, la part que la découpe cache comprise, qui est pourtant le seul endroit d'où l'artefact puisse venir.
+
+**Décision : le bouton se photographie.** À chaque fois que sa fenêtre change de taille, qui est le moment où l'artefact se montre, le coin haut droit de cette fenêtre est écrit en image à côté du journal, découpe non appliquée. Huit au plus par session, et le journal dit où. Le seul appel de copie qui atteigne une fenêtre dessinée sur la carte graphique est déjà employé dans ce produit pour la vignette de session : c'est la même surface qui sert, rendue commune plutôt que réécrite.
+
+Ce n'est pas une correction, c'est un instrument, et c'est ce qui manquait depuis le début : **trois raisonnements de suite valent moins qu'une mesure.**
+
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)

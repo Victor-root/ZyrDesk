@@ -2251,8 +2251,8 @@ fn hand_over_a_picture(
         // the system asked for. Both are told to be the right way up and
         // with a channel the system reads as « all of it shows », which
         // is what a thumbnail is handed as.
-        let whole = plain_surface(taking, (wide, high));
-        let small = plain_surface(holding, size);
+        let (whole, _) = plain_surface(taking, (wide, high));
+        let (small, _) = plain_surface(holding, size);
         let mut done = false;
         if !whole.is_null() && !small.is_null() {
             let was_taking = SelectObject(taking, whole.cast());
@@ -2291,12 +2291,19 @@ fn hand_over_a_picture(
 /// A surface of that size the system is willing to take as a thumbnail:
 /// four channels, the right way up.
 ///
+/// The pixels come back beside it, for whoever wants to read them
+/// rather than hand them on: a picture of a window written to a file
+/// needs the bytes, and a thumbnail handed to the system does not.
+///
 /// SAFETY: the caller owns the drawing context and frees what comes back.
 #[cfg(windows)]
-unsafe fn plain_surface(
+pub(crate) unsafe fn plain_surface(
     onto: windows_sys::Win32::Graphics::Gdi::HDC,
     size: (i32, i32),
-) -> windows_sys::Win32::Graphics::Gdi::HBITMAP {
+) -> (
+    windows_sys::Win32::Graphics::Gdi::HBITMAP,
+    *mut core::ffi::c_void,
+) {
     use windows_sys::Win32::Graphics::Gdi::{
         BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateDIBSection, DIB_RGB_COLORS,
     };
@@ -2320,7 +2327,7 @@ unsafe fn plain_surface(
     let mut pixels = std::ptr::null_mut();
     // SAFETY: the description above is filled in whole, and the two
     // slots the call may write to are ours.
-    unsafe {
+    let sheet = unsafe {
         CreateDIBSection(
             onto,
             &about,
@@ -2329,7 +2336,8 @@ unsafe fn plain_surface(
             std::ptr::null_mut(),
             0,
         )
-    }
+    };
+    (sheet, pixels)
 }
 
 /* ---- Porter l'image le temps d'un déplacement ----------------------- */

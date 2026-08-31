@@ -1474,6 +1474,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Le cas qui dit que ce fond a mal tourné** : le bouton posé sur une **plaque noire** carrée. Le noir doit être pur, à quatre unités près il redevient opaque, et c'est exactement l'erreur d'une première tentative.
 >
+> **Et si l'artefact est encore là, ce sont les photos qu'il faut envoyer, pas une capture d'écran.** Le bouton se photographie lui-même à chaque fois que sa fenêtre change de taille : le journal dit `bouton flottant photographié dans …`, et les fichiers `bouton-1.bmp` à `bouton-8.bmp` sont dans le dossier des journaux. Ils montrent la fenêtre **découpe non appliquée**, donc la part que l'oeil ne voit jamais, qui est le seul endroit d'où l'artefact puisse venir. Une capture d'écran, elle, ne montre que ce que la découpe laisse passer : c'est ce qui a fait tomber trois explications à côté.
+>
 > **Et deux lignes de vérification**, dans le journal de la fenêtre, écrites une seule fois à l'ouverture : `styles 0x… (par pixel true, …)` et `style ordinaire 0x… (barre de titre false, menu système false, bordure false, cadre redimensionnable false)`. Les quatre doivent dire `false` : une fenêtre découpée sur un dessin n'a pas de cadre à montrer.
 >
 > Ces lignes sont écrites **une seule fois, à l'ouverture de la session**. Pour les lire, ouvrir une session et envoyer le journal **sans jouer avec le menu du bouton** : chaque ouverture et fermeture du menu coûte quatre lignes, et un journal n'en garde que cent vingt.
