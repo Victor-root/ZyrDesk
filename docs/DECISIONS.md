@@ -1493,6 +1493,16 @@ La mesure arrondissait chaque morceau **vers l'intérieur**, et pas de la même 
 
 Chaque bord est désormais arrondi vers le dehors, et les quatre de la même façon : la découpe contient tout ce que la page a dessiné, donc le contour qu'on voit est celui que la page a peint, avec son lissage, partout pareil. Ce que ça réclame en plus est une frange d'un pixel que personne n'a peinte, et **c'est précisément ce qui ne coûtait rien qu'une fois la transparence acquise** : cette frange était blanche avant, c'était le liseré de D97, et elle n'est plus rien du tout. Les bords sont arrondis un par un et non l'origine puis la taille, sinon l'erreur se cumule sur le bord opposé et la bordure redevient inégale dans l'autre sens.
 
+**Troisième et dernière prudence tombée pour la même raison : la découpe ne reste plus une image en arrière.** Victor : « au survol ça zoome sans la bordure noire, et c'est pas super lisse quand même. »
+
+C'est la règle de l'intersection posée par D97, qui découpait sur le plus petit du dessin d'avant et du dessin qui vient. Elle existait pour la même raison que les deux autres : la page mesure dans le rappel d'animation, donc avant que l'image mesurée soit peinte, et un pixel réclamé trop tôt était blanc.
+
+Ce que D97 estimait qu'elle coûtait, « un ou deux pixels rognés pendant que ça bouge », était faux d'un ordre de grandeur. Le logo grandit de six pour cent au survol depuis son coin haut droit : sur un logo de soixante-dix-sept pixels, ça fait près de cinq pixels, et ils tombent entièrement sur le bord gauche et le bord bas. La découpe coupait donc en plein milieu du dessin pendant toute l'animation : elle enlevait le contour noir de ces deux bords et le remplaçait par l'escalier franc du pochoir. C'est exactement les deux plaintes en une.
+
+Elle est retirée : la découpe suit le dessin qui vient. Un pixel réclamé une image trop tôt ne montre plus rien, ce qui ne se voit pas, là où une bordure absente sur deux côtés se voit tout de suite.
+
+**Ce qu'il faut retenir des trois.** La fenêtre était opaque, donc chaque prudence évitait du blanc et coûtait de la netteté ; personne ne pouvait payer le second prix tant que le premier existait. La transparence acquise, les trois prudences n'achetaient plus rien et ne coûtaient plus que leur prix. Elles sont tombées dans l'ordre où Victor les a vues, ce qui est la seule façon honnête de les enlever : une à la fois, en regardant.
+
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)

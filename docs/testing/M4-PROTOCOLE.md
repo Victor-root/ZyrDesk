@@ -1469,6 +1469,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Et le cas qui dit que ça n'a pas marché** : le bouton posé sur une plaque de couleur, ou un carré blanc à la place du logo. Le journal de la fenêtre le dit alors mot pour mot : `bouton flottant : Windows a refusé la transparence par pixel`. S'il ne le dit pas et que la plaque est là quand même, c'est que le compositeur accepte les appels sans les honorer, et il faut le signaler : c'est le seul cas que ni le code ni le journal ne savent voir.
 >
 > **Le bord à comparer côté par côté** : le contour à gauche du logo et celui en haut doivent faire la même épaisseur. C'est là que le défaut se voyait, et c'est là qu'il faut regarder.
+>
+> **Et le survol, qui est le cas le plus dur.** Passer la souris sur le logo : il grandit de six pour cent, et il doit garder son contour noir **pendant toute l'animation**, sur les quatre bords, sans marche franche à gauche ni en bas. C'est de ce côté qu'il grandit, et c'est là que la découpe le rognait.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >
