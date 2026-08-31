@@ -1233,30 +1233,49 @@ pub fn floating_size(
     READY.store(true, Ordering::Relaxed);
     put_the_button(corner, size, how_it_shows());
     tell_the_button(was, size, &shape);
-    photograph_the_window(was, size);
+    photograph_the_window(was, size, shape.len());
     Ok(UPWARD.load(Ordering::Relaxed))
 }
 
-/// A picture of the button's own window, taken when it has just changed
-/// size.
+/// A picture of the button's own window, taken at the two moments the
+/// white artefact is reported at.
 ///
-/// That is the moment the white artefact shows, and the one moment
-/// nobody has been able to look at: a screenshot of a cut window only
-/// ever shows what the cut lets through, and three answers argued from
-/// screenshots have been wrong.
+/// The window changing size, and the menu opening or closing. The first
+/// trigger alone missed the ones that mattered: this window is resized
+/// when the menu is opened for the first time and never again, so every
+/// later opening, which is when the flash is seen, went unphotographed.
+///
+/// And those two only. The logo's own animation changes the shape ten
+/// times a second, and a picture of a window costs a copy of the whole
+/// of it.
 #[cfg(windows)]
-fn photograph_the_window(was: (i32, i32, i32, i32), size: (i32, i32)) {
-    if size == (was.2 - was.0, was.3 - was.1) {
+fn photograph_the_window(was: (i32, i32, i32, i32), size: (i32, i32), pieces: usize) {
+    let resized = size != (was.2 - was.0, was.3 - was.1);
+    let opened = PIECES.swap(pieces, Ordering::Relaxed) != pieces;
+    if !resized && !opened {
         return;
     }
     let button = ITS_WINDOW.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
-    if !button.is_null() {
-        crate::portrait::portrait_of_the_button(button, "elle vient de changer de taille");
+    if button.is_null() {
+        return;
     }
+    crate::portrait::portrait_of_the_button(
+        button,
+        match (resized, opened) {
+            (true, true) => "elle change de taille et le menu s'ouvre ou se ferme",
+            (true, false) => "elle vient de changer de taille",
+            _ => "le menu vient de s'ouvrir ou de se fermer",
+        },
+    );
 }
 
+/// How many pieces the shape had last time, so an opening or a closing
+/// menu is told apart from the logo breathing under a hand.
+#[cfg(windows)]
+static PIECES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 #[cfg(not(windows))]
-fn photograph_the_window(_was: (i32, i32, i32, i32), _size: (i32, i32)) {}
+fn photograph_the_window(_was: (i32, i32, i32, i32), _size: (i32, i32), _pieces: usize) {}
 
 /// The shape this window was last cut to, so an identical cut can be
 /// left alone; see `floating_size`. Nought is « never cut », which is

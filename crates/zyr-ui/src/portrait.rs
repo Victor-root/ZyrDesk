@@ -37,11 +37,12 @@ use crate::journal::note;
 /// that is looked at once.
 const SIDE: i32 = 320;
 
-/// How many are kept in a session.
+/// How many are kept at a time.
 ///
-/// One a session would miss the interesting ones: the artefact shows
-/// when the window is resized, and this window is resized four or five
-/// times before anybody has clicked anything.
+/// A ring rather than the first eight: this window is resized half a
+/// dozen times while a session opens, and the first eight were all of
+/// them, none of which anybody had clicked. The last eight are the ones
+/// somebody has just caused.
 const AT_MOST: usize = 8;
 
 static TAKEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -58,16 +59,15 @@ pub fn start_over() {
 /// worth a session.
 pub fn portrait_of_the_button(button: HWND, why: &str) {
     let rank = TAKEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    if rank >= AT_MOST {
-        return;
-    }
     match take_it(button) {
         Some((pixels, wide, high)) => {
-            let where_to = zyr_proto::paths::logs_dir().join(format!("bouton-{}.bmp", rank + 1));
+            let where_to =
+                zyr_proto::paths::logs_dir().join(format!("bouton-{}.bmp", rank % AT_MOST + 1));
             match write_it(&where_to, &pixels, wide, high) {
                 Ok(()) => note(&format!(
-                    "bouton flottant photographié dans {} : {wide}x{high} du coin haut droit de sa fenêtre, {why}",
-                    where_to.display()
+                    "bouton flottant photographié dans {} : photo {}, {wide}x{high} du coin haut droit de sa fenêtre, {why}",
+                    where_to.display(),
+                    rank + 1
                 )),
                 Err(fault) => note(&format!(
                     "bouton flottant : la photo n'a pas pu être écrite : {fault}"
