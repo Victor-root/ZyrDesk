@@ -1685,6 +1685,12 @@ La géométrie tient en une phrase : le point d'un coin arrondi le plus proche d
 
 **Et le seuil de la ligne change de sens avec elle.** Elle ne se dit plus quand une marge devient négative, ce qui est désormais l'état normal du coin, mais **quand une marge atteint un pixel entier**, qui est la seule chose qui ne doit jamais arriver : un pixel entier de marge est un pixel de fenêtre que la page ne peint pas, et on sait maintenant ce qu'on y voit.
 
+**Décision : l'appareil photo du bouton est retiré.** Il a servi une soirée, d'abord en demandant à la fenêtre de se redessiner, ce qui ne montre jamais qu'une page juste, puis en recopiant l'écran. Trente-cinq photos, dont une quinzaine prises pile au bon instant, ont toutes montré un bouton irréprochable pendant que l'oeil voyait le défaut, et on sait maintenant pourquoi : ce qu'un compositeur ajoute au moment de composer n'est pas dans ce qu'on recopie de l'écran. **Un instrument aveugle au défaut qu'il vise n'a rien à faire dans un produit**, surtout au prix d'une copie de trois cent vingt pixels de côté sur le fil qui dessine, à chaque agrandissement de la découpe, c'est-à-dire plusieurs fois par ouverture de menu. Ce qui reste de lui est ce qu'il a appris, écrit ici et dans le protocole, et les deux images qu'il a produites, rangées dans `docs/testing/captures`.
+
+**Et un défaut voisin, rapporté en même temps et qui n'est pas celui-ci : le bouton se téléporte et revient.** Les journaux des quatre derniers builds portent tous le même saut, avant comme après les corrections de ce soir : le coin haut droit de cette fenêtre, qui n'est censé jamais bouger, change une fois par session.
+
+**Deux règles décident où le bouton est accroché et elles ne sont pas d'accord.** Celle du coeur, quand la page redemande une taille, dit « là où il est déjà » et la lit sur la fenêtre elle-même. Celle qui suit l'image, appelée à chaque fois que l'image est posée, dit « le coin de l'image plus le décalage rangé ». Tant que les deux coïncident on ne voit rien ; dès qu'elles divergent, le bouton fait l'aller-retour entre les deux, ce qui est exactement « il se téléporte et il revient ». **À corriger en donnant une seule source à cette position**, et c'est le décalage rangé qui est la bonne : c'est lui qu'un déplacement écrit et lui qui survit à la session.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

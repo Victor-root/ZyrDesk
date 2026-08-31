@@ -37,11 +37,6 @@ mod tray;
 #[cfg(windows)]
 mod elevated;
 
-// The button photographing its own window, for a fault that a screenshot
-// cannot show: a cut window only ever shows what the cut lets through.
-#[cfg(windows)]
-mod portrait;
-
 // Being told where the front is going is a thing only Windows does, and
 // the watch that hears it lives on a thread of its own.
 #[cfg(windows)]
