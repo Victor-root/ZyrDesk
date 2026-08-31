@@ -1466,6 +1466,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **À regarder aussi au survol et à l'ouverture du menu**, qui sont les deux moments où la découpe est refaite : rien de blanc ne doit apparaître ni au bord gauche pendant l'animation, ni sous le menu quand il se referme.
 >
+> **La croix par-dessus le bouton, et ce qu'elle est vraiment.** La capture est gardée à [`captures/bouton-flottant-croix.png`](captures/bouton-flottant-croix.png), avec la mesure : le bouton y est composé à 0,55, donc **ce qu'on voit à travers lui est l'écran de l'ordinateur d'en face**, et la croix était le bouton de fermeture d'une fenêtre qui passait derrière. Ce n'est donc pas un artefact à chasser mais le fondu au repos qui, la fenêtre étant vraiment transparente, se fait maintenant sur l'image distante au lieu du fond de ZyrDesk. À regarder **la souris loin du bouton**, puisque le survol le rend franc et fait disparaître le phénomène : c'est ce qui l'a longtemps rendu insaisissable.
+>
 > **Et le cas qui dit que ça n'a pas marché** : le bouton posé sur une plaque de couleur, ou un carré blanc à la place du logo. Le journal de la fenêtre le dit alors mot pour mot : `bouton flottant : Windows a refusé la transparence par pixel`. S'il ne le dit pas et que la plaque est là quand même, c'est que le compositeur accepte les appels sans les honorer, et il faut le signaler : c'est le seul cas que ni le code ni le journal ne savent voir.
 >
 > **Le bord à comparer côté par côté** : le contour à gauche du logo et celui en haut doivent faire la même épaisseur. C'est là que le défaut se voyait, et c'est là qu'il faut regarder.

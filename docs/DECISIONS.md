@@ -1549,6 +1549,16 @@ Cette fois la réponse a été **mesurée et non raisonnée** : le logo a été 
 
 **Ce qui reste vrai malgré tout**, et il faut le dire : sur le portable de Victor, à 125 %, le logo entier fait **55 pixels réels** et son contour **3,5**. Un trait de trois pixels et demi ne peut pas s'arrêter net des deux côtés : il fera toujours trois pixels pleins et un demi. Le repos reste le mieux que ce dessin puisse donner à cette taille. Si ça ne suffit pas, la suite n'est plus une correction : c'est un choix de taille de bouton ou de dessin, et c'est à Victor de le dire.
 
+**Et la croix, enfin nommée, parce qu'on a fini par regarder ses pixels.** Victor l'a montrée depuis juillet et elle a été expliquée deux fois, différemment, sans jamais être mesurée. La capture est désormais rangée dans le dépôt, à `docs/testing/captures/bouton-flottant-croix.png`, parce qu'elle est pénible à reprendre : l'outil de capture de Windows la fait disparaître le temps de son propre voile.
+
+L'or du logo vaut `239,181,54` dans le dessin. Dans la capture il vaut `131,99,30` là où le fond derrière est noir, et `228,201,139` là où il est clair. 131 / 239 = **0,548**, et le second cas le confirme. C'est l'opacité au repos, `0.55`, écrite dans la feuille de style.
+
+**Donc la croix n'est pas posée sur le bouton, c'est l'écran d'en face vu au travers.** C'était le bouton de fermeture d'une fenêtre qui passait derrière ; ce sera autre chose la fois suivante.
+
+**Et c'est cette décision-ci qui l'a fabriquée.** Le fondu au repos est ancien et voulu : « au repos elle s'efface, et un survol la rend entière ». Tant que la fenêtre était opaque, s'effacer voulait dire se fondre dans **le fond sombre de ZyrDesk**, et ça se voyait comme un logo pâli. La transparence acquise, la même ligne de style veut dire se fondre dans **ce que l'ordinateur d'en face est en train de montrer**. Personne n'a décidé ce changement-là, il est tombé de l'autre.
+
+**Et il n'y a pas de troisième voie, c'est le point à comprendre.** S'effacer, c'est se mélanger au fond ; se mélanger au fond, c'est le laisser passer. Un bouton qui s'efface sur une image quelconque est un bouton au travers duquel on voit cette image, et aucun réglage ne sépare les deux. Le choix est donc entre un bouton discret et traversé, et un bouton franc et opaque, et c'est un choix de produit qui appartient à Victor.
+
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
