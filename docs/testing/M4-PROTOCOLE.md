@@ -1470,7 +1470,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Le bord à comparer côté par côté** : le contour à gauche du logo et celui en haut doivent faire la même épaisseur. C'est là que le défaut se voyait, et c'est là qu'il faut regarder.
 >
-> **Et le survol, qui est le cas le plus dur.** Passer la souris sur le logo : il grandit de six pour cent, et il doit garder son contour noir **pendant toute l'animation**, sur les quatre bords, sans marche franche à gauche ni en bas. C'est de ce côté qu'il grandit, et c'est là que la découpe le rognait.
+> **Et le survol, qui est le cas le plus dur.** Passer la souris sur le logo : il grandit de six pour cent, et il doit garder son contour noir **pendant toute l'animation**, sur les quatre bords, sans marche franche à gauche ni en bas. C'est de ce côté qu'il grandit, et c'est là que la découpe le rognait. **Le premier survol après l'ouverture de la session compte double** : c'est celui-là qui ratait, les suivants trouvant le style déjà calculé.
+>
+> **Ce que le journal en dit**, et c'est là qu'il faut regarder si ça ne va toujours pas. Une ligne par morceau à chaque découpe : `dessiné (…) coins … ; découpé (…) coins … ; marges g … h … d … b …, dans le coin …`. Les cinq marges doivent être **positives**, c'est-à-dire la découpe en dehors du dessin. Une seule négative est le pochoir qui coupe dans le dessin, et c'est exactement ce qui se voit comme un bord en escalier. Et une ligne à la construction du bouton : `styles 0x… (par pixel oui, …) ; alpha relu 255 sur 255, chaque pixel porte le sien` ; tout autre chose que ça et la transparence n'est pas là.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

@@ -139,6 +139,10 @@ function montre(element, visible) {
   element.classList.toggle("cache", !visible);
 }
 
+/* Ce que la découpe prend au-delà de ce que la page peint, en vrais
+   pixels. Voir `pose`. */
+const MARGE = 1;
+
 /* Ce que le logo dessine, dans son propre dessin (zyrdesk.svg) : deux
    écrans aux coins arrondis, décalés en diagonale, et rien entre eux. Le
    dessin fait foi, la fenêtre est découpée dessus : ces nombres se
@@ -233,15 +237,44 @@ function formeOccupee(echelle) {
   // côté : arrondir l'origine vers le dehors et la taille vers le haut
   // décale le bord opposé de la somme des deux, et c'est reparti pour une
   // bordure inégale, dans l'autre sens.
+  //
+  // Et un pixel de plus par-dessus l'arrondi, qui n'est pas du luxe : sans
+  // lui, il reste zéro dans le cas où un bord tombe pile sur un pixel, et
+  // ce zéro-là se paye dans les coins. Un coin arrondi n'est pas un bord :
+  // au plus loin de l'angle, un rayon r ne dépasse de la boîte que de
+  // 0,29 r, et la découpe et le dessin n'ont pas exactement le même rayon
+  // puisque celui de la découpe est arrondi au pixel. La marge y tombait à
+  // un dixième de pixel, donc sous le lissage du dessin, donc le pochoir
+  // coupait dedans : c'est le tour pixelisé qui restait au repos.
+  //
+  // Ce pixel ne se voit pas : la fenêtre est transparente, donc il n'y est
+  // rien. Il élargit d'autant ce qui attrape les clics, ce qui à cette
+  // taille-là ne se sent pas non plus.
   const pose = (gauche, haut, large, haute, rayon) => {
-    const x = Math.floor((gauche - droite) * echelle);
-    const y = Math.floor((haut - bas) * echelle);
+    // Le dessin en vrais pixels, sans arrondi : c'est ce que la page
+    // peint, et c'est à ça que le journal compare la découpe.
+    const dessin = [
+      (gauche - droite) * echelle,
+      (haut - bas) * echelle,
+      (gauche + large - droite) * echelle,
+      (haut + haute - bas) * echelle,
+    ];
+    const x = Math.floor(dessin[0]) - MARGE;
+    const y = Math.floor(dessin[1]) - MARGE;
     morceaux.push({
       x,
       y,
-      width: Math.ceil((gauche + large - droite) * echelle) - x,
-      height: Math.ceil((haut + haute - bas) * echelle) - y,
-      radius: Math.round(rayon * echelle),
+      width: Math.ceil(dessin[2]) + MARGE - x,
+      height: Math.ceil(dessin[3]) + MARGE - y,
+      // Arrondi vers le bas et non au plus proche : un coin moins rond
+      // que celui du dessin déborde de sa boîte, un coin plus rond y
+      // rentre. Au plus proche, une fois sur deux il rentrait, et il
+      // mangeait dans le coin la marge que le pixel ci-dessus venait de
+      // donner. Vers le bas, la marge du coin ne peut plus être plus
+      // petite que celle des bords.
+      radius: Math.floor(rayon * echelle),
+      drawn: dessin,
+      drawnRadius: rayon * echelle,
     });
   };
   // Une carte, rognée à ce que la page peut avoir dessiné.
@@ -987,6 +1020,31 @@ async function litLeMenu() {
 let pris = false;
 
 for (const quand of ["pointerenter", "pointerleave", "pointerdown"]) {
+  vue.logo.addEventListener(quand, suisLeDessin);
+}
+
+/* Et les animations elles-mêmes, ce qui n'est pas la même chose que la
+   souris qui arrive.
+
+   Le suivi s'arrête dès que deux images de suite dessinent la même forme,
+   ce qui est juste au repos et faux au démarrage d'une animation : entre
+   le moment où la souris entre et celui où le navigateur crée vraiment la
+   transition, il passe une image ou deux pendant lesquelles rien n'a
+   encore bougé. Le suivi s'y arrêtait, et la découpe restait celle du
+   repos pendant tout le grandissement : le logo grandissait hors de sa
+   propre découpe et perdait son contour à gauche et en bas. Ça ne se
+   voyait qu'au premier survol, les suivants trouvant le style déjà calculé
+   et la transition démarrée à l'image d'après.
+
+   « transitionrun » est envoyé au moment où la transition est créée, donc
+   exactement là où le suivi doit repartir, et « transitionend » à la fin,
+   pour poser la découpe sur la forme définitive. */
+for (const quand of [
+  "transitionrun",
+  "transitionstart",
+  "transitionend",
+  "transitioncancel",
+]) {
   vue.logo.addEventListener(quand, suisLeDessin);
 }
 

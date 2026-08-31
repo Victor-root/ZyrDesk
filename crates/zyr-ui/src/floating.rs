@@ -1080,12 +1080,26 @@ pub fn lower(app: &AppHandle) {
 /// counted from the left, the whole drawing landed short by the
 /// difference between the two, and the menu lost its right edge.
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Piece {
     x: i32,
     y: i32,
     width: i32,
     height: i32,
     radius: i32,
+    /// What the page really paints, in real pixels and not rounded to
+    /// any of them: left, top, right, bottom, counted from the same two
+    /// edges as the four above.
+    ///
+    /// Carried for the journal and for nothing else. Whether the cut
+    /// clips the drawing is the one question this button keeps being
+    /// asked, it is a question about fractions of a pixel, and it cannot
+    /// be answered from the rounded numbers: they are what is being
+    /// weighed.
+    drawn: [f32; 4],
+    /// The same for the corner it is rounded by, which is where the two
+    /// curves come closest and where a cut bites first.
+    drawn_radius: f32,
 }
 
 /// Grows the button to what the page turned out to need, keeping the
@@ -2185,6 +2199,59 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
             None => "plus là".to_string(),
         }
     ));
+    say_where_the_cut_falls(shape);
+}
+
+/// Says, piece by piece, how far the cut falls from what the page painted.
+///
+/// The one question this button keeps being asked, and the one the line
+/// above cannot answer: whether the stencil bites into the drawing. It is
+/// a question about fractions of a pixel, so the drawing is carried here
+/// unrounded and the four margins are subtracted rather than reasoned
+/// about. A negative one is the cut inside the drawing, which is a hard
+/// edge cut through a smoothed one, which is what « le tour est pixelisé »
+/// looks like from in here.
+///
+/// The corner is named apart because it is where the two curves come
+/// closest: at forty-five degrees a corner of radius r only reaches
+/// 0.29 r out of its box, and the cut's radius is rounded to a whole
+/// pixel while the drawing's is not, so a margin that is comfortable
+/// along the edges can be nothing at all in the corners.
+#[cfg(windows)]
+fn say_where_the_cut_falls(shape: &[Piece]) {
+    for (rank, piece) in shape.iter().enumerate() {
+        let [left, top, right, bottom] = piece.drawn;
+        // Positive is the cut outside the drawing, which is what is
+        // wanted on all four; negative is the drawing cut into.
+        let margins = (
+            left - piece.x as f32,
+            top - piece.y as f32,
+            (piece.x + piece.width) as f32 - right,
+            (piece.y + piece.height) as f32 - bottom,
+        );
+        // What the corner has left once the radius has been rounded, at
+        // the point of the arc furthest from the box. The smallest of the
+        // two edges it sits between decides it.
+        const OUT_OF_ITS_BOX: f32 = 1.0 - std::f32::consts::FRAC_1_SQRT_2;
+        let corner =
+            margins.0.min(margins.1) + (piece.radius as f32 - piece.drawn_radius) * OUT_OF_ITS_BOX;
+        note(&format!(
+            "bouton flottant, morceau {} : dessiné ({left:.2}, {top:.2}, {right:.2}, \
+             {bottom:.2}) coins {:.2} ; découpé ({}, {}, {}, {}) coins {} ; marges \
+             g {:.2} h {:.2} d {:.2} b {:.2}, dans le coin {corner:.2}",
+            rank + 1,
+            piece.drawn_radius,
+            piece.x,
+            piece.y,
+            piece.x + piece.width,
+            piece.y + piece.height,
+            piece.radius,
+            margins.0,
+            margins.1,
+            margins.2,
+            margins.3,
+        ));
+    }
 }
 
 #[cfg(not(windows))]
@@ -2409,6 +2476,51 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
             "bouton flottant : Windows a refusé la transparence par pixel, le bouton sera posé sur une plaque",
         );
     }
+    say_what_it_wears(button);
+}
+
+/// Reads back what the window ended up wearing, and writes it down.
+///
+/// Asked of the system rather than assumed from the calls just made:
+/// setting a style and having it is not the same statement, and the
+/// difference between the two is the whole of « le bouton est posé sur
+/// une plaque » against « le bord est lisse ». Said once, when the button
+/// is built, which is the only moment any of it changes.
+#[cfg(windows)]
+fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetLayeredWindowAttributes, GetWindowLongPtrW, LWA_ALPHA, LWA_COLORKEY,
+        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    };
+
+    let mut keyed = 0u32;
+    let mut alpha = 0u8;
+    let mut how = 0u32;
+    // SAFETY: our own window, and the three slots are ours. A refusal is
+    // one of the answers and leaves them as they were.
+    let read = unsafe { GetLayeredWindowAttributes(button, &mut keyed, &mut alpha, &mut how) };
+    // SAFETY: our own window, read only.
+    let style = unsafe { GetWindowLongPtrW(button, GWL_EXSTYLE) } as u32;
+    let wearing = |what: u32| style & what != 0;
+    note(&format!(
+        "bouton flottant : styles {style:#x} (par pixel {}, sans clic {}, sans premier plan {}, \
+         hors barre {}) ; alpha relu {}, {}",
+        wearing(WS_EX_LAYERED),
+        wearing(WS_EX_TRANSPARENT),
+        wearing(WS_EX_NOACTIVATE),
+        wearing(WS_EX_TOOLWINDOW),
+        if read == 0 {
+            "refusé".to_string()
+        } else {
+            format!("{alpha} sur 255")
+        },
+        match (how & LWA_ALPHA != 0, how & LWA_COLORKEY != 0) {
+            (true, false) => "chaque pixel porte le sien".to_string(),
+            (true, true) => format!("alpha et couleur effacée {keyed:#x}"),
+            (false, true) => format!("couleur effacée {keyed:#x}, pas d'alpha"),
+            (false, false) => "aucun des deux".to_string(),
+        }
+    ));
 }
 
 #[cfg(not(windows))]
