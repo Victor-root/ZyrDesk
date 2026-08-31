@@ -1553,11 +1553,19 @@ Cette fois la réponse a été **mesurée et non raisonnée** : le logo a été 
 
 L'or du logo vaut `239,181,54` dans le dessin. Dans la capture il vaut `131,99,30` là où le fond derrière est noir, et `228,201,139` là où il est clair. 131 / 239 = **0,548**, et le second cas le confirme. C'est l'opacité au repos, `0.55`, écrite dans la feuille de style.
 
-**Donc la croix n'est pas posée sur le bouton, c'est l'écran d'en face vu au travers.** C'était le bouton de fermeture d'une fenêtre qui passait derrière ; ce sera autre chose la fois suivante.
+**Première conclusion, et elle était fausse : « c'est l'écran d'en face vu au travers ».** Victor l'a refusée tout de suite, et il avait raison : « ça me le fait sur les trois PC exactement pareil, donc il y a forcément quelque chose qui amène cette cochonnerie ». Trois machines qui montrent la même chose ne regardent pas un contenu, elles montrent un défaut.
 
-**Et c'est cette décision-ci qui l'a fabriquée.** Le fondu au repos est ancien et voulu : « au repos elle s'efface, et un survol la rend entière ». Tant que la fenêtre était opaque, s'effacer voulait dire se fondre dans **le fond sombre de ZyrDesk**, et ça se voyait comme un logo pâli. La transparence acquise, la même ligne de style veut dire se fondre dans **ce que l'ordinateur d'en face est en train de montrer**. Personne n'a décidé ce changement-là, il est tombé de l'autre.
+**La preuve tient en une phrase, et elle était sous les yeux depuis le début.** La chose claire **s'arrête pile au bord du logo**, et le noir tout autour d'elle est pur. Or ce qui serait derrière la fenêtre se verrait aussi à côté du bouton, la capture étant deux fois plus large que lui. Donc elle n'est pas derrière la fenêtre : elle est **dedans, sous la page**.
 
-**Et il n'y a pas de troisième voie, c'est le point à comprendre.** S'effacer, c'est se mélanger au fond ; se mélanger au fond, c'est le laisser passer. Un bouton qui s'efface sur une image quelconque est un bouton au travers duquel on voit cette image, et aucun réglage ne sépare les deux. Le choix est donc entre un bouton discret et traversé, et un bouton franc et opaque, et c'est un choix de produit qui appartient à Victor.
+**Ce qu'il y a dessous, obtenu en retirant le logo par le calcul.** Chaque pixel de la capture vaut 0,55 fois le dessin plus 0,45 fois ce qu'il y a dessous ; le dessin est connu, donc le dessous se calcule. Ce qui sort est sans ambiguïté : **une barre de titre claire avec un bouton de fermeture**, carré blanc et croix noire, et la zone client sombre en dessous. C'est le cadre qu'un système peint dans une fenêtre à sa naissance.
+
+**Et c'est bien cette décision-ci qui l'a révélé.** Tant que la fenêtre était opaque, la boîte à outils repeignait son fond sur toute sa surface avant chaque dessin de la page, donc ce cadre était couvert et personne ne l'avait jamais vu. Devenue vraiment transparente, elle ne repeint plus rien, et un logo à 55 % ne couvre pas ce qu'il y a dessous : il s'y mélange. C'est exactement la mesure.
+
+**Et ça explique les deux détails que personne n'arrivait à relier.** « Ça part quand j'approche la souris » : le survol rendait le logo entier, donc opaque, donc il couvrait le cadre. « La capture d'écran ne la prend pas » : le voile de l'outil de capture fait la même chose.
+
+**Décision : le bouton est franc en permanence.** Le fondu au repos couvrait mal quelque chose qui ne devrait pas être là, et il n'y avait pas de demi-mesure possible : s'effacer, c'est se mélanger à ce qu'il y a dessous, quel que soit ce dessous. Opaque, le logo couvre le cadre entièrement, ce que le survol prouvait déjà sur les machines de Victor. Le bouton reste discret par sa taille, et le survol continue de le faire grandir.
+
+**Et le journal dit désormais le style ordinaire de cette fenêtre**, à côté de ses styles étendus : barre de titre, menu système, bordure, cadre redimensionnable. C'est la moitié qui manquait pour nommer le peintre de ce cadre, et couvrir n'est pas guérir : tant qu'on ne sait pas qui le peint, il est là.
 
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 

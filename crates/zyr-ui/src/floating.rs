@@ -2577,8 +2577,9 @@ fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
     *LAST_SAID.lock().expect("dernière découpe dite") = None;
 
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GetLayeredWindowAttributes, GetWindowLongPtrW, LWA_ALPHA, LWA_COLORKEY,
-        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+        GWL_EXSTYLE, GWL_STYLE, GetLayeredWindowAttributes, GetWindowLongPtrW, LWA_ALPHA,
+        LWA_COLORKEY, WS_BORDER, WS_CAPTION, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        WS_EX_TRANSPARENT, WS_SYSMENU, WS_THICKFRAME,
     };
 
     let mut keyed = 0u32;
@@ -2608,6 +2609,24 @@ fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
             (false, true) => format!("couleur effacée {keyed:#x}, pas d'alpha"),
             (false, false) => "aucun des deux".to_string(),
         }
+    ));
+
+    // And the ordinary style beside them, which is the half that was
+    // missing when this button was asked what painted the frame found
+    // baked into its own window. A caption, a system menu, a border or a
+    // sizing frame are all painted by the system into the window itself,
+    // before the page has drawn anything, and a page that never paints
+    // over them leaves them there for the life of the session.
+    // SAFETY: our own window, read only.
+    let plain = unsafe { GetWindowLongPtrW(button, GWL_STYLE) } as u32;
+    let has = |what: u32| plain & what != 0;
+    note(&format!(
+        "bouton flottant : style ordinaire {plain:#x} (barre de titre {}, menu système {}, \
+         bordure {}, cadre redimensionnable {})",
+        has(WS_CAPTION),
+        has(WS_SYSMENU),
+        has(WS_BORDER),
+        has(WS_THICKFRAME),
     ));
 }
 

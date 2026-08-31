@@ -64,10 +64,25 @@
    est découpée sur sa plaque, donc une ombre tomberait entièrement hors
    de ce qui est dessiné.
 
-   Au repos elle s'efface, et un survol la rend entière. Le bouton est
-   posé par-dessus le travail de quelqu'un pendant toute une session :
-   franc en permanence il tient la place d'un objet dont on ne se sert
-   qu'une fois de temps en temps.
+   Franc en permanence, et ce n'est plus un choix d'allure : il s'effaçait
+   au repos, à 55 %, et un survol le rendait entier. Mesuré sur une capture
+   de Victor, l'or du logo y vaut 131,99,30 pour 239,181,54 dans le dessin,
+   soit très exactement 0,55 : c'est ce fondu-là qui laissait voir « la
+   fameuse croix ».
+
+   Ce qu'on voyait au travers n'était pas l'image de la session, et c'est
+   ce qui a mis si longtemps à être compris : la chose s'arrête pile au
+   bord du logo alors que le noir tout autour est pur, donc elle n'est pas
+   derrière la fenêtre, elle est dedans, sous la page. C'est un cadre de
+   fenêtre, barre de titre et bouton de fermeture, peint par le système
+   dans cette fenêtre à sa naissance. Tant que la fenêtre était opaque, la
+   boîte à outils repeignait son fond par-dessus et personne ne l'a jamais
+   vu ; devenue vraiment transparente, elle ne repeint plus rien, et un
+   logo à moitié transparent ne le couvre pas.
+
+   D'où « ça disparaît quand je passe la souris dessus » et « la capture
+   d'écran ne la prend pas » : le survol le rendait entier, donc opaque,
+   donc il le couvrait.
 
    Il grandit et rétrécit par sa taille et jamais par une mise à
    l'échelle, et c'est toute la netteté de ce bouton. Une mise à l'échelle
@@ -92,11 +107,9 @@
   border: none;
   background: transparent;
   cursor: grab;
-  opacity: 0.55;
   transition:
     width var(--duree-courte) var(--courbe),
-    height var(--duree-courte) var(--courbe),
-    opacity var(--duree-courte) var(--courbe);
+    height var(--duree-courte) var(--courbe);
 }
 
 /* Le logo grandit depuis son coin haut droit, qui est celui par lequel la
@@ -109,15 +122,6 @@
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.logo:hover,
-.logo:focus-visible,
-/* Menu ouvert : le bouton est en train de servir, donc il est franc,
-   survol ou pas. Sans cela il redevenait pâle dès que la souris
-   descendait dans le menu qu'il venait d'ouvrir. */
-.logo[aria-expanded="true"] {
-  opacity: 1;
 }
 
 .logo:hover {
