@@ -2400,16 +2400,21 @@ static LAST_PIECES: Mutex<Vec<Piece>> = Mutex::new(Vec::new());
 /// pixel while the drawing's is not, so a margin that is comfortable
 /// along the edges can be nothing at all in the corners.
 ///
-/// Said once when the button is built, and after that only when the cut
-/// really does bite, which is a margin gone negative and nothing else.
-/// Never twice for the same numbers either way.
+/// Said once when the button is built, and after that only when one of
+/// the five margins reaches a whole pixel, which is the one thing that
+/// must never happen: a whole pixel of margin is a pixel of window the
+/// page paints nothing in, and a window pixel nobody paints is not empty,
+/// it is the frosted glass the toolkit turns on to be transparent at all.
+/// That was the fault, and this line is what catches it coming back.
 ///
-/// The two halves of that rule are both paid for. Told at every cut, the
-/// line drowned the journal while a hand rested on the logo; told
-/// whenever a margin fell under a whole pixel, it drowned it just the
-/// same, the corner margin at rest being 0,93 for ever. Only the numbers
-/// that mean « the stencil is cutting into the drawing » are worth
-/// waking a journal for.
+/// Never twice for the same numbers, and no other threshold. Told at
+/// every cut, the line drowned the journal while a hand rested on the
+/// logo; told whenever a margin fell under a whole pixel, it drowned it
+/// just as fast. A margin between nought and one is the ordinary state of
+/// a stencil laid on a drawing whose edges fall between pixels, and the
+/// corner one dips a quarter of a pixel below nought by design, the cut's
+/// corner being rounded to sit inside the drawing's rather than outside
+/// it.
 #[cfg(windows)]
 fn say_where_the_cut_falls(shape: &[Piece]) {
     let mut before = LAST_PIECES.lock().expect("derniers morceaux dits");
@@ -2428,12 +2433,23 @@ fn say_where_the_cut_falls(shape: &[Piece]) {
             (piece.y + piece.height) as f32 - bottom,
         ];
         // What the corner has left once the radius has been rounded, at
-        // the point of the arc furthest from the box. The smallest of the
-        // two edges it sits between decides it.
+        // the point of the arc closest to the box's own corner, which is
+        // the one at forty-five degrees and sits a shade under three
+        // tenths of the radius in from each edge. The smaller the radius,
+        // the less the arc is set in, so the further out it reaches: the
+        // drawing's own radius is the larger of the two here, and the
+        // difference is added the way round it is because the cut's arc
+        // is the one that reaches out.
+        //
+        // It used to be subtracted, which is a sign the wrong way round.
+        // The journal therefore called every corner negative, on every
+        // cut, which is both a lie and a flood; and that lie is what put
+        // a whole pixel of margin on the four edges in the first place,
+        // the pixel that turned out to be the fault itself.
         const OUT_OF_ITS_BOX: f32 = 1.0 - std::f32::consts::FRAC_1_SQRT_2;
         let corner = margins[0].min(margins[1])
-            + (piece.radius as f32 - piece.drawn_radius) * OUT_OF_ITS_BOX;
-        if !first && margins.iter().all(|margin| *margin >= 0.0) && corner >= 0.0 {
+            + (piece.drawn_radius - piece.radius as f32) * OUT_OF_ITS_BOX;
+        if !first && margins.iter().chain([&corner]).all(|margin| *margin < 1.0) {
             continue;
         }
         note(&format!(

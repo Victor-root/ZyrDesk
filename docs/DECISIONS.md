@@ -1675,6 +1675,16 @@ La crainte qui avait fait ajouter ce pixel était le coin, où un rayon arrondi 
 
 **Et la boîte du bouton redevient celle du dessin.** La fixer à la plus grande des trois tailles était le geste qui a rendu le défaut permanent ; il a servi à le nommer, il n'a plus de raison d'être. Ce qui reste de cette tentative est le bon ordre entre mesurer et poser, qui vaut pour les formes qui changent encore.
 
+**« Très fortement réduit mais il y en a encore », et cette fois c'est le journal qui a donné la suite.** Débarrassé du pixel de marge, il s'est mis à écrire ses lignes de marges à chaque découpe, avec une marge de coin négative partout, de -0,02 à -0,24. Or **ce signe était à l'envers depuis le jour où cette ligne a été écrite.**
+
+La géométrie tient en une phrase : le point d'un coin arrondi le plus proche du coin de sa boîte est celui à quarante-cinq degrés, et il est en retrait de 0,29 fois le rayon sur chaque axe. **Un rayon plus petit est donc moins en retrait, donc il va plus loin dehors.** Le rayon de la découpe étant arrondi vers le bas, il était le plus petit des deux, donc la découpe dépassait du dessin à chaque coin ; et le journal, qui soustrayait là où il fallait ajouter, appelait ça une marge négative, c'est-à-dire l'inverse exact de ce qui se passait. Vérifié sur un cas du journal : il imprimait -0,24 là où la géométrie donne +0,24.
+
+**Cette erreur de signe est ce qui a fait poser le pixel de marge sur les quatre bords**, celui qui s'est révélé être le défaut lui-même. Une ligne de journal fausse coûte plus cher qu'une ligne de journal absente.
+
+**Décision : le signe est corrigé, et le rayon de la découpe est arrondi vers le haut.** Un coin plus rond rentre dans le dessin au lieu d'en dépasser, ce qui est la même règle que `MARGE` appliquée là où elle manquait. Rejoué sur les vingt-trois morceaux que le journal de NOTEBOOK-VICTOR a écrits : vers le bas, la découpe dépasse du dessin aux vingt-trois coins sur vingt-trois ; vers le haut, à douze, et ce qui reste ne vient plus du rayon mais de la marge du bord, qui est la situation ordinaire d'un pochoir posé sur un dessin dont les bords tombent entre deux pixels. Ce que ça coûte de l'autre côté est un quart de pixel mordu à la pointe du coin.
+
+**Et le seuil de la ligne change de sens avec elle.** Elle ne se dit plus quand une marge devient négative, ce qui est désormais l'état normal du coin, mais **quand une marge atteint un pixel entier**, qui est la seule chose qui ne doit jamais arriver : un pixel entier de marge est un pixel de fenêtre que la page ne peint pas, et on sait maintenant ce qu'on y voit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -1512,7 +1512,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Ce que le journal en dit**, et c'est là qu'il faut regarder si ça ne va toujours pas.
 >
-> Une ligne par morceau, **à la construction du bouton seulement**, puis uniquement si une marge devient **négative** : `dessiné LxH en (…) coins …, contour … px ; découpé (…) coins … ; marges g … h … d … b …, dans le coin …`. Les cinq marges doivent être positives, c'est-à-dire la découpe en dehors du dessin ; une seule négative est le pochoir qui coupe dans le dessin, et c'est ce qui se voit comme un bord en escalier. Un seuil plus généreux ne vaut rien : au repos la marge du coin vaut 0,93, donc tout seuil au pixel est franchi en permanence et la ligne revient à chaque découpe, dix fois par seconde sous la souris, jusqu'à chasser du journal tout le reste.
+> Une ligne par morceau, **à la construction du bouton seulement**, puis uniquement si une marge **atteint un pixel entier** : `dessiné LxH en (…) coins …, contour … px ; découpé (…) coins … ; marges g … h … d … b …, dans le coin …`. Les cinq doivent rester **entre zéro et un**, et celle du coin peut descendre à un quart de pixel sous zéro, ce qui est voulu : le rayon de la découpe est arrondi vers le haut pour que le coin rentre dans le dessin plutôt que d'en dépasser. **Un pixel entier de marge est le défaut** : c'est un pixel de fenêtre que la page ne peint pas, et on sait maintenant ce qu'on y voit.
+>
+> Le signe de la marge du coin était à l'envers, et la ligne a donc menti depuis le jour où elle a été écrite. C'est ce mensonge qui a fait poser le pixel de marge sur les quatre bords, celui qui s'est révélé être le défaut.
 >
 > `contour … px` est le nombre qui décide de tout le reste une fois la découpe mise hors de cause : c'est l'épaisseur du trait noir en vrais pixels sur l'écran regardé. En dessous de trois ou quatre, un contour ne peut pas être plus lisse que ce que trois pixels permettent, quoi qu'on fasse de la composition.
 >

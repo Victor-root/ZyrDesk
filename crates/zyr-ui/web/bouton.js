@@ -306,13 +306,21 @@ function formeOccupee(echelle) {
       y,
       width: Math.ceil(dessin[2]) + MARGE - x,
       height: Math.ceil(dessin[3]) + MARGE - y,
-      // Arrondi vers le bas et non au plus proche : un coin moins rond
-      // que celui du dessin déborde de sa boîte, un coin plus rond y
-      // rentre. Au plus proche, une fois sur deux il rentrait, et il
-      // mangeait dans le coin la marge que le pixel ci-dessus venait de
-      // donner. Vers le bas, la marge du coin ne peut plus être plus
-      // petite que celle des bords.
-      radius: Math.floor(rayon * echelle),
+      // Arrondi vers le haut, et c'est la même règle que `MARGE` : un
+      // coin moins rond que celui du dessin **déborde** de sa boîte, un
+      // coin plus rond y rentre, et ce qui déborde du dessin n'est peint
+      // par personne.
+      //
+      // Il était arrondi vers le bas, du temps où déborder était sans
+      // conséquence. Rejoué sur les vingt-trois morceaux que le journal
+      // de NOTEBOOK-VICTOR a écrits : vers le bas, la découpe dépasse du
+      // dessin aux **vingt-trois** coins sur vingt-trois ; vers le haut,
+      // à douze, et ce qu'il en reste ne vient plus du rayon mais de la
+      // marge du bord, qui est la même situation qu'en ligne droite et
+      // ne se voit pas. Ce que ça coûte de l'autre côté est un quart de
+      // pixel mordu à la pointe du coin, contre un pixel entier sur des
+      // bords entiers du temps où l'arrondi se faisait vers l'intérieur.
+      radius: Math.ceil(rayon * echelle),
       drawn: dessin,
       drawnRadius: rayon * echelle,
     });
