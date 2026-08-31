@@ -1472,7 +1472,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Et le survol, qui est le cas le plus dur.** Passer la souris sur le logo : il grandit de six pour cent, et il doit garder son contour noir **pendant toute l'animation**, sur les quatre bords, sans marche franche à gauche ni en bas. C'est de ce côté qu'il grandit, et c'est là que la découpe le rognait. **Le premier survol après l'ouverture de la session compte double** : c'est celui-là qui ratait, les suivants trouvant le style déjà calculé.
 >
-> **Ce que le journal en dit**, et c'est là qu'il faut regarder si ça ne va toujours pas. Une ligne par morceau à chaque découpe : `dessiné (…) coins … ; découpé (…) coins … ; marges g … h … d … b …, dans le coin …`. Les cinq marges doivent être **positives**, c'est-à-dire la découpe en dehors du dessin. Une seule négative est le pochoir qui coupe dans le dessin, et c'est exactement ce qui se voit comme un bord en escalier. Et une ligne à la construction du bouton : `styles 0x… (par pixel oui, …) ; alpha relu 255 sur 255, chaque pixel porte le sien` ; tout autre chose que ça et la transparence n'est pas là.
+> **Ce que le journal en dit**, et c'est là qu'il faut regarder si ça ne va toujours pas. Trois choses, et elles se disent une fois par session pour ne pas se noyer les unes les autres.
+>
+> Une ligne par morceau à l'ouverture : `dessiné LxH en (…) coins …, contour … px ; découpé (…) coins … ; marges g … h … d … b …, dans le coin …`. Les cinq marges doivent être **positives**, c'est-à-dire la découpe en dehors du dessin. Une seule négative est le pochoir qui coupe dans le dessin, et c'est ce qui se voit comme un bord en escalier ; elle est alors redite à chaque fois que ça arrive.
+>
+> `contour … px` est le nombre qui décide de tout le reste une fois la découpe mise hors de cause : c'est l'épaisseur du trait noir en vrais pixels sur l'écran regardé. En dessous de trois ou quatre, un contour ne peut pas être plus lisse que ce que trois pixels permettent, quoi qu'on fasse de la composition.
+>
+> Et une ligne à la construction du bouton : `styles 0x… (par pixel oui, …) ; alpha relu 255 sur 255, chaque pixel porte le sien` ; tout autre chose que ça et la transparence n'est pas là.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

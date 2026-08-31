@@ -2177,6 +2177,29 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
         };
         (wide.max(-piece.x), high.max(reach))
     });
+    say_where_the_cut_falls(shape);
+    // Only what has changed, and never the frame in between. This runs on
+    // every cut, a cut happens on every frame of the hover animation, and
+    // a journal keeps the last hundred and twenty lines of a file: told at
+    // every turn, twelve seconds of a hand resting on the button pushed
+    // out everything else, this button's own answers included. What is
+    // worth a line is the shape changing kind, the window changing size,
+    // and a refusal; the frames of an animation between two of those say
+    // the same thing forty times.
+    let said = (
+        shape.len(),
+        upward,
+        taken,
+        its_place().map(|(left, top, right, bottom)| (right - left, bottom - top)),
+    );
+    let changed = LAST_SAID
+        .lock()
+        .expect("dernière découpe dite")
+        .replace(said)
+        .is_none_or(|before| before != said);
+    if !changed {
+        return;
+    }
     note(&format!(
         "bouton flottant découpé en {} morceaux jusqu'à {}x{}, dessiné vers le {} ({} voulu) ; \
          le système en tient ({}, {}, {}, {}), sorte {taken} ; la fenêtre est {}",
@@ -2199,8 +2222,28 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
             None => "plus là".to_string(),
         }
     ));
-    say_where_the_cut_falls(shape);
 }
+
+/// What the line above last said, so it is only said again when it
+/// changes: how many pieces, which way the menu opens, whether the system
+/// took the shape, and the size of the window.
+#[cfg(windows)]
+type Told = (usize, bool, i32, Option<(i32, i32)>);
+
+#[cfg(windows)]
+static LAST_SAID: Mutex<Option<Told>> = Mutex::new(None);
+
+/// Whether the button has yet said, this time it was built, what it draws
+/// and what it wears.
+///
+/// The two lines that answer « is the stencil biting into the drawing »
+/// and « is the transparency really there ». They are worth one telling
+/// each and no more: said at every cut, they came ten times a second
+/// while a hand hovered, and a journal keeps its last hundred and twenty
+/// lines. They pushed out the very line they were written to deliver, in
+/// the one journal that was gathered to read it.
+#[cfg(windows)]
+static TOLD_WHAT_IT_DRAWS: AtomicBool = AtomicBool::new(false);
 
 /// Says, piece by piece, how far the cut falls from what the page painted.
 ///
@@ -2217,42 +2260,74 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
 /// 0.29 r out of its box, and the cut's radius is rounded to a whole
 /// pixel while the drawing's is not, so a margin that is comfortable
 /// along the edges can be nothing at all in the corners.
+///
+/// Said once when the button is built, and after that only when a margin
+/// falls under a whole pixel, which is the only case anybody needs to
+/// read: everything else is the cut doing its job, ten times a second.
 #[cfg(windows)]
 fn say_where_the_cut_falls(shape: &[Piece]) {
+    /// Under this, the cut is close enough to the drawing for the
+    /// smoothing to reach it, and it is worth a line.
+    const TOO_CLOSE: f32 = 1.0;
+
+    let first = !TOLD_WHAT_IT_DRAWS.swap(true, Ordering::Relaxed);
     for (rank, piece) in shape.iter().enumerate() {
         let [left, top, right, bottom] = piece.drawn;
         // Positive is the cut outside the drawing, which is what is
         // wanted on all four; negative is the drawing cut into.
-        let margins = (
+        let margins = [
             left - piece.x as f32,
             top - piece.y as f32,
             (piece.x + piece.width) as f32 - right,
             (piece.y + piece.height) as f32 - bottom,
-        );
+        ];
         // What the corner has left once the radius has been rounded, at
         // the point of the arc furthest from the box. The smallest of the
         // two edges it sits between decides it.
         const OUT_OF_ITS_BOX: f32 = 1.0 - std::f32::consts::FRAC_1_SQRT_2;
-        let corner =
-            margins.0.min(margins.1) + (piece.radius as f32 - piece.drawn_radius) * OUT_OF_ITS_BOX;
+        let corner = margins[0].min(margins[1])
+            + (piece.radius as f32 - piece.drawn_radius) * OUT_OF_ITS_BOX;
+        if !first && margins.iter().all(|margin| *margin >= TOO_CLOSE) && corner >= TOO_CLOSE {
+            continue;
+        }
         note(&format!(
-            "bouton flottant, morceau {} : dessiné ({left:.2}, {top:.2}, {right:.2}, \
-             {bottom:.2}) coins {:.2} ; découpé ({}, {}, {}, {}) coins {} ; marges \
+            "bouton flottant, morceau {} : dessiné {:.2}x{:.2} en ({left:.2}, {top:.2}) \
+             coins {:.2}, contour {:.2} px ; découpé ({}, {}, {}, {}) coins {} ; marges \
              g {:.2} h {:.2} d {:.2} b {:.2}, dans le coin {corner:.2}",
             rank + 1,
+            right - left,
+            bottom - top,
             piece.drawn_radius,
+            // What the outline of the logo comes to at this size, which is
+            // the number the eye is actually judging: the drawing gives it
+            // as a twenty-eighth of its own box, and everything else about
+            // this button is downstream of how many pixels that is.
+            (right - left) * OUTLINE / LOGO_SCREEN,
             piece.x,
             piece.y,
             piece.x + piece.width,
             piece.y + piece.height,
             piece.radius,
-            margins.0,
-            margins.1,
-            margins.2,
-            margins.3,
+            margins[0],
+            margins[1],
+            margins[2],
+            margins[3],
         ));
     }
 }
+
+/// The logo's own numbers, read off `zyrdesk.svg`: how wide one of its two
+/// screens is, outline included, and how thick that outline is.
+///
+/// Here so the journal can say what the outline comes to in real pixels
+/// on the screen it is being looked at. That number is the whole of what
+/// « ce n'est pas lisse » is about once the cut has been cleared: an
+/// outline three pixels wide with corners rounded by ten cannot be
+/// smoother than three pixels allow, however it is composited.
+#[cfg(windows)]
+const LOGO_SCREEN: f32 = 356.0;
+#[cfg(windows)]
+const OUTLINE: f32 = 28.0;
 
 #[cfg(not(windows))]
 fn cut_to_what_is_drawn(_shape: &[Piece], _size: (i32, i32)) {}
@@ -2488,6 +2563,11 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
 /// is built, which is the only moment any of it changes.
 #[cfg(windows)]
 fn say_what_it_wears(button: windows_sys::Win32::Foundation::HWND) {
+    // A new button says everything it has to say once more: it is a new
+    // window, with its own styles and its own drawing.
+    TOLD_WHAT_IT_DRAWS.store(false, Ordering::Relaxed);
+    *LAST_SAID.lock().expect("dernière découpe dite") = None;
+
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GWL_EXSTYLE, GetLayeredWindowAttributes, GetWindowLongPtrW, LWA_ALPHA, LWA_COLORKEY,
         WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
