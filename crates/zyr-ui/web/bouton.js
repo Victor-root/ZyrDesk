@@ -13,6 +13,7 @@ const listen = window.__TAURI__.event.listen;
 const vue = {
   paquet: document.getElementById("paquet"),
   logo: document.getElementById("logo"),
+  dessin: document.querySelector(".logo img"),
   menu: document.getElementById("menu"),
   souci: document.getElementById("souci"),
   retour: document.getElementById("retour"),
@@ -184,10 +185,10 @@ function montre(element, visible) {
    demi-pixel de dessin ; un pixel pas peint du tout se voit comme du
    verre. Le premier est le lissage qu'on veut, le second est le défaut.
 
-   Le rayon des coins reste arrondi vers le bas, donc le coin de la
-   découpe est un peu moins rond que celui du dessin et déborde encore de
-   quelques dixièmes de pixel, ce que le journal vérifie : les cinq marges
-   qu'il écrit doivent rester positives. */
+   Le rayon des coins suit la même règle, arrondi vers le haut pour que le
+   coin de la découpe rentre dans celui du dessin au lieu d'en dépasser.
+   Le journal le vérifie : les cinq marges qu'il écrit doivent rester
+   entre zéro et un, et il ne parle que si l'une atteint un pixel. */
 const MARGE = 0;
 
 /* Ce que le logo dessine, dans son propre dessin (zyrdesk.svg) : deux
@@ -357,7 +358,12 @@ function formeOccupee(echelle) {
   // compris : la découpe épouse ce qui est dessiné à cet instant, et rien
   // d'autre. Le vide entre les deux n'est pas dessiné, donc il n'est pas
   // découpé, donc les clics y passent jusqu'à l'image.
-  const logo = vue.logo.getBoundingClientRect();
+  //
+  // Mesuré sur le dessin et non sur le bouton qui le porte, et les deux
+  // ne font plus la même taille : le bouton garde la plus grande des
+  // trois pour que la mise en page ne bouge jamais, le dessin dedans
+  // respire. Voir `bouton.css`.
+  const logo = vue.dessin.getBoundingClientRect();
   const part = logo.width / LOGO.boite;
   for (const ecran of LOGO.ecrans) {
     pose(
@@ -445,38 +451,36 @@ function poseLaFenetre(mesure) {
    une main le prend, et la suivre est exactement la même chose. On
    s'arrête dès que deux images de suite dessinent la même forme.
 
-   **Et cette règle était énoncée sans être tenue.** Une mesure prise dans
-   une image n'y est pas encore peinte : le navigateur avance l'animation,
-   appelle ce suivi, et ne peint qu'ensuite. La forme envoyée était donc
-   celle de l'image à venir, posée sur l'écran qui montrait encore la
-   précédente. D'où ce qui suit : on mesure à chaque image et on pose **la
-   mesure de l'image d'avant**, qui est celle que l'écran montre.
+   **Ce qui est mesuré est posé dans la foulée, et surtout pas une image
+   plus tard.** Ça a été essayé : mesurer à chaque image et poser la mesure
+   de l'image d'avant, pour que la découpe ne coure jamais devant ce que la
+   page a peint. Ça n'a pas enlevé le liseré pâle, qui venait d'ailleurs,
+   et ça a coûté beaucoup plus cher que ça n'a rapporté.
 
-   Ce qui met les deux dans le bon ordre et ne garantit rien : le rendu du
-   navigateur, l'appel vers le coeur et la composition de Windows sont
-   trois files d'attente indépendantes, et une image de décalage ici ne
-   les met pas d'accord. Ça a été essayé contre le liseré pâle du bord
-   gauche et ça ne l'a pas enlevé. Ce qui l'attaque vraiment est ailleurs,
-   dans `bouton.css` : le bouton ne change plus de taille du tout, donc la
-   forme envoyée d'ici ne bouge plus pendant l'animation et le coeur n'a
-   plus rien à redécouper. Le bon ordre reste bon pour les formes qui
-   changent encore, le menu et la barre des mesures. */
+   Ce que ce message porte n'est pas que la forme : c'est aussi **de quel
+   côté la page a dessiné**. Quand ce sens change, le coeur déplace la
+   fenêtre de toute sa hauteur moins le logo, pour que le logo ne bouge
+   pas d'un pixel : accroché par le haut, la fenêtre pend sous le logo ;
+   accroché par le bas, elle monte au-dessus. Posé une image trop tard, ce
+   déplacement arrive après que la page a déjà redessiné dans l'autre
+   sens, et pendant cette image-là **le logo est neuf cents pixels plus
+   bas, à l'autre bout de l'écran, avant de revenir**. C'est le « il se
+   téléporte et il revient » rapporté en ouvrant le menu.
+
+   Ce que le décalage devait protéger est protégé autrement, et mieux : la
+   découpe ne prend plus un seul pixel que la page ne peigne pas, ni sur
+   les bords ni dans les coins. Une découpe posée une image trop tôt ne
+   montre alors que le lissage du dessin une image trop tôt, ce qui ne se
+   voit pas. */
 let animation = null;
 
 function suisLeDessin() {
   cancelAnimationFrame(animation);
   let avant = "";
   let immobile = 0;
-  // Ce qui est peint à l'écran, qui est ce qui a été mesuré à l'image
-  // d'avant. Rien à la première, et c'est juste : à ce moment-là rien de
-  // ce qui vient d'être mesuré n'est encore à l'écran.
-  let peint = null;
   const pas = () => {
     const ici = leDessin();
-    if (peint) {
-      poseLaFenetre(peint.mesure);
-    }
-    peint = ici;
+    poseLaFenetre(ici.mesure);
     immobile = ici.mot === avant ? immobile + 1 : 0;
     avant = ici.mot;
     animation = immobile < 2 ? requestAnimationFrame(pas) : null;
