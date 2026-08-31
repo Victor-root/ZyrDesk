@@ -1607,6 +1607,22 @@ Ce n'est pas une correction, c'est un instrument, et c'est ce qui manquait depui
 
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 
+**Et ça n'a rien changé non plus, ce qui fait quatre.** La correction est juste en elle-même, la photo la prouve, et l'artefact est resté. Une cinquième explication a suivi, tirée du blanc de la carte du menu : le bouton serait dans le mauvais thème. Victor a répondu « claire ». Le blanc était donc la bonne couleur, et ça faisait cinq.
+
+**L'instrument ne pouvait pas répondre, et c'est de sa faute.** `PrintWindow` ne copie rien : il **demande à la fenêtre de se redessiner**, et une fenêtre qui se redessine dessine ce que la page dit, qui est juste par définition. Deux archives de photos sont revenues vides pour cette seule raison, et ce n'était pas une réponse rassurante, c'était un instrument aveugle au défaut qu'il devait montrer. Le défaut n'est pas dans ce que la page dit. Il est dans ce qui arrive à l'écran, et l'écran est la seule surface où le compositeur, la découpe et la page sont déjà additionnés.
+
+**Alors on a mesuré l'image que Victor a filmée, et elle porte deux choses dont une seule est un défaut.** La tache blanche ronde posée sur le coin bas droit de l'écran or est **le pointeur de la souris**, la main fermée que la page demande sur le logo pendant qu'on le tient. Victor l'avait déjà dit d'une capture précédente, et c'est aussi pourquoi aucune photo de la fenêtre ne l'a jamais montrée : une copie de fenêtre ne prend pas le pointeur. Cette tache-là a coûté une session entière à courir après.
+
+**Le défaut est un liseré pâle le long du bord gauche, dehors, avec du noir pur au-delà**, et il suit toute la silhouette gauche du dessin, les deux écrans et l'arrondi entre eux compris. Sur une ligne au milieu de l'écran or : noir jusqu'à 1,5,10, puis 117,122,129, puis **203,209,216**, puis 115,121,129, puis le contour du dessin à 9,13,20. Large de deux pixels, dehors, collé au dessin.
+
+**Et la même marge sur les trois autres bords est noire** : 5,8,15 en haut, 6,9,15 à droite, 8,11,15 en bas, sur la même image. La page rendue telle quelle dans un navigateur, au même agrandissement et en thème clair, n'a ce liseré nulle part : il ne vient donc pas de ce qu'elle dessine.
+
+Cette marge est celle que la page prend au-delà de ce qu'elle peint pour que la découpe ne morde jamais dans le bord lissé du dessin. C'est **le seul endroit de cette fenêtre que la page ne peint pas**, et le commentaire qui l'installe affirme qu'elle ne coûte rien depuis que la fenêtre est transparente. La mesure dit le contraire, et à gauche seulement. Le pourquoi du « à gauche seulement » n'est pas su, et on ne l'invente pas : c'est le seul bord qui bouge, la fenêtre étant accrochée par son coin haut droit et ne grandissant que vers la gauche.
+
+**Décision : l'instrument copie l'écran.** Au lieu de demander à la fenêtre de se redessiner, on recopie le rectangle de l'écran au coin haut droit de cette fenêtre. Ce qui en revient est exactement ce que l'oeil voit, découpe et compositeur compris, donc le liseré y sera, en vraie taille, à côté des chiffres de la découpe que le journal écrit déjà. Le reste ne bouge pas : mêmes deux moments, mêmes huit photos en anneau, même endroit.
+
+L'image de Victor est gardée dans le dépôt à `docs/testing/captures/bouton-flottant-liseret-gauche.png`, avec sa mesure. C'est la deuxième pièce à conviction rangée là, et pour la même raison que la première : elle coûte une manipulation à refaire.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

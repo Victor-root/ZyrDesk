@@ -1,18 +1,18 @@
-//! A picture of the floating button's own window, written beside the
-//! journal.
+//! A picture of the floating button as the screen shows it, written
+//! beside the journal.
 //!
-//! Three answers about this button's white artefact have been reasoned
-//! out and three have been wrong: the far computer's screen seen
-//! through it, the window's frame, the window's unerased ground. Each
-//! was argued from a screenshot, and a screenshot of a cut window shows
-//! only what the cut lets through. What nobody has ever looked at is the
-//! window itself, the part the cut hides included, which is where the
-//! artefact has to come from.
+//! It photographed itself with `PrintWindow` first, and that is why two
+//! archives of pictures came back with nothing in them. `PrintWindow`
+//! does not copy anything: it asks the window to draw itself again, and
+//! a window asked to draw itself again draws what the page says, which
+//! is right by definition. The fault is not in what the page says. It is
+//! in what ends up on the screen: a pale hairline two pixels wide, along
+//! the outside of the button's left edge, exactly in the one pixel the
+//! cut takes beyond what the page paints. Measured on Victor's frame at
+//! 203,209,216 where the same margin on the other three edges is 2 to 8.
 //!
-//! So the button photographs itself. `PrintWindow` with the flag that
-//! renders the full content is the one call that reaches a window drawn
-//! by a composition surface, which is what a web view is; the cut plays
-//! no part in it, so what comes back is everything the window holds.
+//! So it is copied from the screen instead, which is the only surface
+//! where the compositor, the cut and the page are all already added up.
 //! Written as a bitmap because a bitmap is a header and the pixels, and
 //! anything more would be a dependency for a picture nobody keeps.
 
@@ -22,19 +22,19 @@ use std::path::PathBuf;
 
 use windows_sys::Win32::Foundation::{HWND, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
+    BitBlt, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, ReleaseDC, SRCCOPY, SelectObject,
 };
-use windows_sys::Win32::Storage::Xps::PrintWindow;
-use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, PW_RENDERFULLCONTENT};
+use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
 use crate::journal::note;
 
-/// How much of the window is kept, counted from its top right corner.
+/// How much of the screen is kept, counted from the window's top right
+/// corner.
 ///
 /// The corner the button hangs from, so the logo is always in it, and
-/// wide enough to carry a good part of what the cut throws away. The
-/// whole window would be a session's worth of megabytes for a picture
-/// that is looked at once.
+/// wide enough to carry the menu's first lines and a band of the picture
+/// beside them. The whole window would be a session's worth of megabytes
+/// for a picture that is looked at once.
 const SIDE: i32 = 320;
 
 /// How many are kept at a time.
@@ -65,7 +65,7 @@ pub fn portrait_of_the_button(button: HWND, why: &str) {
                 zyr_proto::paths::logs_dir().join(format!("bouton-{}.bmp", rank % AT_MOST + 1));
             match write_it(&where_to, &pixels, wide, high) {
                 Ok(()) => note(&format!(
-                    "bouton flottant photographié dans {} : photo {}, {wide}x{high} du coin haut droit de sa fenêtre, {why}",
+                    "bouton flottant photographié dans {} : photo {}, {wide}x{high} de l'écran au coin haut droit de sa fenêtre, {why}",
                     where_to.display(),
                     rank + 1
                 )),
@@ -78,7 +78,7 @@ pub fn portrait_of_the_button(button: HWND, why: &str) {
     }
 }
 
-/// The top right corner of the window, in whatever it really holds.
+/// The screen at the window's top right corner, as it stands.
 fn take_it(button: HWND) -> Option<(Vec<u8>, i32, i32)> {
     let mut place = RECT {
         left: 0,
@@ -91,9 +91,10 @@ fn take_it(button: HWND) -> Option<(Vec<u8>, i32, i32)> {
     if unsafe { GetWindowRect(button, &mut place) } == 0 {
         return None;
     }
-    let wide = place.right - place.left;
-    let high = place.bottom - place.top;
-    if wide <= 0 || high <= 0 {
+    let side = SIDE
+        .min(place.right - place.left)
+        .min(place.bottom - place.top);
+    if side <= 0 {
         return None;
     }
 
@@ -102,31 +103,39 @@ fn take_it(button: HWND) -> Option<(Vec<u8>, i32, i32)> {
     // surface holding them is still alive.
     unsafe {
         let screen = GetDC(std::ptr::null_mut());
-        let taking = CreateCompatibleDC(screen);
-        ReleaseDC(std::ptr::null_mut(), screen);
-        if taking.is_null() {
+        if screen.is_null() {
             return None;
         }
-        let (sheet, pixels) = crate::picture::plain_surface(taking, (wide, high));
+        let taking = CreateCompatibleDC(screen);
+        if taking.is_null() {
+            ReleaseDC(std::ptr::null_mut(), screen);
+            return None;
+        }
+        let (sheet, pixels) = crate::picture::plain_surface(taking, (side, side));
         let mut kept = None;
         if !sheet.is_null() && !pixels.is_null() {
             let before = SelectObject(taking, sheet.cast());
-            if PrintWindow(button, taking, PW_RENDERFULLCONTENT) != 0 {
-                let side = SIDE.min(wide).min(high);
-                let from = ((wide - side) as usize) * 4;
-                let line = (wide as usize) * 4;
-                let all = std::slice::from_raw_parts(pixels as *const u8, line * high as usize);
-                let mut some = Vec::with_capacity((side * side * 4) as usize);
-                for y in 0..side as usize {
-                    let row = y * line + from;
-                    some.extend_from_slice(&all[row..row + (side as usize) * 4]);
-                }
-                kept = Some((some, side, side));
+            if BitBlt(
+                taking,
+                0,
+                0,
+                side,
+                side,
+                screen,
+                place.right - side,
+                place.top,
+                SRCCOPY,
+            ) != 0
+            {
+                let all =
+                    std::slice::from_raw_parts(pixels as *const u8, (side * side * 4) as usize);
+                kept = Some((all.to_vec(), side, side));
             }
             SelectObject(taking, before);
             DeleteObject(sheet.cast());
         }
         DeleteDC(taking);
+        ReleaseDC(std::ptr::null_mut(), screen);
         kept
     }
 }

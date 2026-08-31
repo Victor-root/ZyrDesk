@@ -18,6 +18,24 @@ D'où les deux choses que Victor rapportait sans qu'elles s'expliquent : ça par
 
 Voir [D101](../../DECISIONS.md) pour la décision, et [R66](../M4-PROTOCOLE.md) pour l'essai.
 
+## `bouton-flottant-liseret-gauche.png`
+
+Le bouton flottant sur PC-VICTOR pendant une session, 106 x 105 pixels, image extraite d'un enregistrement d'écran au moment d'un clic. C'est « l'artefact blanc à gauche » : celui qui apparaît en cliquant et qui fait un éclair.
+
+**Deux choses s'y voient, et une seule est un défaut.**
+
+La tache blanche ronde posée sur le coin bas droit de l'écran or est **le pointeur de la souris**, la main fermée que la page demande sur le logo pendant qu'on le tient (`cursor: grabbing`). Victor l'avait déjà dit d'une capture précédente. C'est aussi pourquoi les photos que le bouton prenait de lui-même n'en montraient jamais rien : aucune copie d'une fenêtre ne prend le pointeur.
+
+Le défaut est **le liseré pâle le long du bord gauche**, dehors, avec du noir pur au-delà. Il suit toute la silhouette gauche du dessin, les deux écrans et l'arrondi entre eux compris.
+
+**Ce que les pixels disent.** Sur une ligne au milieu de l'écran or : noir jusqu'à x = 28 (1,5,10), puis 117,122,129, puis **203,209,216**, puis 115,121,129, puis le contour sombre du dessin à 9,13,20. La bande claire est donc dehors, collée au dessin, large de deux pixels.
+
+**Et la même marge, sur les trois autres bords, est noire** : 5,8,15 en haut, 6,9,15 à droite, 8,11,15 en bas. Mesuré sur la même image.
+
+Cette marge est celle que `formeOccupee` prend au-delà de ce que la page peint (`MARGE = 1`), pour que la découpe ne morde jamais dans le bord lissé du dessin. C'est le seul endroit de cette fenêtre que la page ne peint pas, et le commentaire qui l'installe affirme qu'elle ne coûte rien depuis que la fenêtre est transparente. La mesure dit le contraire, à gauche seulement. Le pourquoi du « à gauche seulement » n'est pas su : c'est le seul bord qui bouge, la fenêtre étant accrochée par son coin haut droit et ne grandissant que vers la gauche.
+
+Voir [D101](../../DECISIONS.md) et [R66](../M4-PROTOCOLE.md).
+
 ## `bouton-flottant-decoupe-decalee.png`
 
 La fenêtre du bouton flottant **photographiée par le produit lui-même**, découpe non appliquée, à l'instant exact où le menu s'ouvre. C'est la septième des huit que le bouton prend quand sa fenêtre change de taille, et c'est celle qui a donné la réponse après trois explications fausses.
