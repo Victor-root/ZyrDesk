@@ -1676,6 +1676,20 @@ unsafe extern "system" fn the_front_moved(
 #[cfg(windows)]
 fn say_where_the_front_went(window: windows_sys::Win32::Foundation::HWND) {
     if CARRIED.load(Ordering::Relaxed) == 0 {
+        // Outside a session nothing is said, and nothing is remembered
+        // either: the next session says where the front is even if it
+        // has not moved since the last one closed.
+        FRONT_SAID.store(0, Ordering::Relaxed);
+        return;
+    }
+    // And only when it is a different window. The system sends this for
+    // every hand-over it makes, including the ones that hand the front
+    // back to who already had it: clicking the floating button a dozen
+    // times wrote the same line thirty times, a journal keeps the last
+    // hundred and twenty lines of a file, and what it pushed out was the
+    // button saying what it wears, which is said once and is the answer
+    // being looked for.
+    if FRONT_SAID.swap(window as isize, Ordering::Relaxed) == window as isize {
         return;
     }
     crate::journal::note(&format!(
@@ -1683,6 +1697,11 @@ fn say_where_the_front_went(window: windows_sys::Win32::Foundation::HWND) {
         in_these_words(whose_window(window), window)
     ));
 }
+
+/// The window this last said held the front, so the same one is not said
+/// twice running.
+#[cfg(windows)]
+static FRONT_SAID: AtomicIsize = AtomicIsize::new(0);
 
 /// Draws the title bar lit or dim according to who holds the front, and
 /// says so in the journal when that changes.

@@ -1567,6 +1567,10 @@ L'or du logo vaut `239,181,54` dans le dessin. Dans la capture il vaut `131,99,3
 
 **Et le journal dit désormais le style ordinaire de cette fenêtre**, à côté de ses styles étendus : barre de titre, menu système, bordure, cadre redimensionnable. C'est la moitié qui manquait pour nommer le peintre de ce cadre, et couvrir n'est pas guérir : tant qu'on ne sait pas qui le peint, il est là.
 
+La lecture de la boîte à outils dit déjà quoi attendre : elle crée toute fenêtre avec `WS_CAPTION | WS_CLIPSIBLINGS | WS_SYSMENU` et, sans décorations, n'enlève que `WS_CAPTION` et `WS_THICKFRAME`. **Le menu système reste**, et `WS_EX_WINDOWEDGE` avec lui, ce que les styles étendus déjà relevés confirment au bit près. La ligne dira si un cadre y est resté pour autant.
+
+**Et la même règle a servi une troisième fois, pour que cette ligne-là arrive.** Le premier journal envoyé après la correction ne la contenait pas : elle avait été chassée par trente lignes « le premier plan passe à ZyrDesk » écrites d'affilée, le système envoyant cet avis à chaque passation, y compris celles qui rendent le premier plan à qui l'avait déjà. Une douzaine de clics sur le bouton suffisaient. Elle ne se dit plus que quand la fenêtre au premier plan change vraiment.
+
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
