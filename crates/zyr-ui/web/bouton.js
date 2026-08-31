@@ -158,8 +158,37 @@ function montre(element, visible) {
 }
 
 /* Ce que la découpe prend au-delà de ce que la page peint, en vrais
-   pixels. Voir `pose`. */
-const MARGE = 1;
+   pixels, et c'est zéro.
+
+   **Un pixel de fenêtre que la page n'a pas peint n'est pas vide.** C'est
+   la réponse à une chasse d'une soirée entière, et elle a été obtenue en
+   rendant le défaut permanent au lieu de courir après un éclair : la
+   découpe a été agrandie exprès de trois pixels, et le liseré pâle est
+   passé d'un clignotement de deux pixels à une bande permanente de quatre
+   le long de tout le bord gauche. Mesurée sur NOTEBOOK-VICTOR : fond brun
+   49,39,29, puis **215,228,241** quatre fois, puis le contour du logo à
+   9,13,22. Sur fond noir la même bande valait 203,209,216 : elle n'a donc
+   pas de couleur à elle, elle éclaircit ce qu'il y a derrière. C'est du
+   verre dépoli, celui que la boîte à outils allume pour obtenir la
+   transparence par pixel, et il se voit partout où la page ne peint rien.
+
+   C'est aussi pourquoi vingt-quatre photos prises par le bouton lui-même,
+   dont six pile au bon instant, n'ont jamais rien montré : ce que le
+   compositeur ajoute au moment de composer n'est pas dans ce qu'on recopie
+   de l'écran.
+
+   Donc la découpe ne prend plus rien de plus. Les bords restent arrondis
+   vers le dehors, ce qui suffit : `Math.floor` d'un bord gauche prend le
+   pixel qui **contient** ce bord, et ce pixel-là est peint, en partie,
+   par le lissage du dessin. Un pixel à moitié peint se voit comme un
+   demi-pixel de dessin ; un pixel pas peint du tout se voit comme du
+   verre. Le premier est le lissage qu'on veut, le second est le défaut.
+
+   Le rayon des coins reste arrondi vers le bas, donc le coin de la
+   découpe est un peu moins rond que celui du dessin et déborde encore de
+   quelques dixièmes de pixel, ce que le journal vérifie : les cinq marges
+   qu'il écrit doivent rester positives. */
+const MARGE = 0;
 
 /* Ce que le logo dessine, dans son propre dessin (zyrdesk.svg) : deux
    écrans aux coins arrondis, décalés en diagonale, et rien entre eux. Le
@@ -244,30 +273,23 @@ function formeOccupee(echelle) {
   // sur les quatre bords : le contour qu'on voit est celui que la page a
   // peint, avec son lissage, et il est le même partout.
   //
-  // Ce que ça réclame en plus est une frange d'un pixel que personne n'a
-  // peinte, et elle ne coûte plus rien depuis que la fenêtre est vraiment
-  // transparente : un pixel non peint n'y est plus blanc, il n'y est rien.
-  // C'était l'inverse avant, et c'est pour ça que ce calcul arrondissait
-  // dans l'autre sens : le liseré clair sur la gauche du bouton, surtout
-  // en le déplaçant, était cette frange remplie au pinceau du système.
+  // Vers le dehors et pas plus loin : le pixel qui contient le bord, et
+  // pas celui d'après. Le premier est peint, en partie, par le lissage du
+  // dessin ; le second ne l'est par personne, et un pixel que personne ne
+  // peint se voit. C'est tout le sujet de `MARGE`, qui vaut zéro pour
+  // cette raison et pour aucune autre.
   //
   // Les bords sont arrondis, pas l'origine et la taille chacune de leur
   // côté : arrondir l'origine vers le dehors et la taille vers le haut
   // décale le bord opposé de la somme des deux, et c'est reparti pour une
   // bordure inégale, dans l'autre sens.
   //
-  // Et un pixel de plus par-dessus l'arrondi, qui n'est pas du luxe : sans
-  // lui, il reste zéro dans le cas où un bord tombe pile sur un pixel, et
-  // ce zéro-là se paye dans les coins. Un coin arrondi n'est pas un bord :
-  // au plus loin de l'angle, un rayon r ne dépasse de la boîte que de
-  // 0,29 r, et la découpe et le dessin n'ont pas exactement le même rayon
-  // puisque celui de la découpe est arrondi au pixel. La marge y tombait à
-  // un dixième de pixel, donc sous le lissage du dessin, donc le pochoir
-  // coupait dedans : c'est le tour pixelisé qui restait au repos.
-  //
-  // Ce pixel ne se voit pas : la fenêtre est transparente, donc il n'y est
-  // rien. Il élargit d'autant ce qui attrape les clics, ce qui à cette
-  // taille-là ne se sent pas non plus.
+  // Le coin tient par le rayon et non par une marge. Un coin arrondi n'est
+  // pas un bord : au plus loin de l'angle, un rayon r ne dépasse de sa
+  // boîte que de 0,29 r. Le rayon de la découpe est arrondi vers le bas,
+  // donc son coin est un peu moins rond que celui du dessin, donc il
+  // déborde par là où un bord ne déborde pas. Le journal écrit cette
+  // marge-là avec les quatre autres et elle doit rester positive.
   const pose = (gauche, haut, large, haute, rayon) => {
     // Le dessin en vrais pixels, sans arrondi : c'est ce que la page
     // peint, et c'est à ça que le journal compare la découpe.

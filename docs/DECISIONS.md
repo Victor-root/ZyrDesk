@@ -1661,6 +1661,20 @@ Le décalage d'une image est gardé, non pour ce qu'il devait corriger et n'a pa
 
 **Ce que ça coûte et qu'il faut regarder en premier.** La découpe est celle du plus grand des trois dessins, donc au repos elle dépasse de deux ou trois pixels en bas et à gauche. Ces pixels sont censés ne rien montrer. Si un liseré pâle apparaît désormais **en permanence** au lieu de faire un éclair, c'est la réponse que six photos n'ont pas su donner : la marge est le défaut, et cette moitié-là se défait en un commit.
 
+**Et c'est exactement ce qui s'est passé. « En effet c'est pire ».**
+
+La capture est gardée à `docs/testing/captures/bouton-flottant-marge-non-peinte.png`. Le liseré est passé d'un clignotement de deux pixels au clic à **une bande permanente de quatre pixels** le long de tout le bord gauche et du coin haut gauche. Sur une ligne au milieu du logo, sur fond de bureau brun : `49,39,29`, puis **`215,228,241` quatre fois**, puis `102,110,121`, puis le contour du dessin à `9,13,22`.
+
+**Un pixel de fenêtre que la page n'a pas peint n'est pas vide.** C'est la réponse, et il aura fallu rendre le défaut permanent pour l'obtenir, après avoir couru toute une soirée derrière un éclair d'une image. Sur fond noir la même bande valait `203,209,216`, sur fond brun `215,228,241` : elle n'a pas de couleur à elle, **elle éclaircit ce qu'il y a derrière**. C'est du verre dépoli, celui que la boîte à outils allume en posant un flou-derrière sur région vide pour obtenir la transparence par pixel, et il se voit partout où la page ne peint rien.
+
+**Et ça explique enfin la dernière anomalie**, celle qui rendait toutes les mesures contradictoires : vingt-quatre photos prises par le bouton lui-même, dont six pile au bon instant, montraient un bouton irréprochable pendant que l'oeil voyait le défaut. Ce qu'un compositeur ajoute **au moment de composer** n'est pas dans ce qu'on recopie de l'écran. L'instrument n'était pas mal braqué, il est aveugle à cette classe de défaut, et il fallait le savoir plutôt que de continuer à l'affiner.
+
+**Décision : la découpe ne prend plus un seul pixel au-delà de ce que la page peint.** `MARGE` passe de un à zéro. Les bords restent arrondis vers le dehors, ce qui suffit et ne coûte rien : `Math.floor` d'un bord gauche prend le pixel qui **contient** ce bord, et ce pixel-là est peint, en partie, par le lissage du dessin. Un pixel à moitié peint se voit comme un demi-pixel de dessin ; un pixel pas peint du tout se voit comme du verre. Le premier est le lissage qu'on veut, le second était le défaut.
+
+La crainte qui avait fait ajouter ce pixel était le coin, où un rayon arrondi au pixel pouvait mordre dans le dessin. Le calcul a été rejoué sur les nombres réels des deux machines, ceux que le journal écrit : à `MARGE = 0`, les cinq marges restent positives partout, la plus petite valant cinq centièmes de pixel et celle des coins quinze. La découpe contient donc toujours le dessin entier, sans rien prendre autour.
+
+**Et la boîte du bouton redevient celle du dessin.** La fixer à la plus grande des trois tailles était le geste qui a rendu le défaut permanent ; il a servi à le nommer, il n'a plus de raison d'être. Ce qui reste de cette tentative est le bon ordre entre mesurer et poser, qui vaut pour les formes qui changent encore.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

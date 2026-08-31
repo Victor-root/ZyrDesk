@@ -36,6 +36,18 @@ Cette marge est celle que `formeOccupee` prend au-delà de ce que la page peint 
 
 Voir [D101](../../DECISIONS.md) et [R66](../M4-PROTOCOLE.md).
 
+## `bouton-flottant-marge-non-peinte.png`
+
+**C'est la capture qui a donné la réponse**, après une soirée entière de fausses pistes. Le bouton flottant sur NOTEBOOK-VICTOR, 107 x 77 pixels, agrandissement 125 %, sur un fond de bureau brun.
+
+Elle a été obtenue en **rendant le défaut permanent au lieu de courir après un éclair**. La découpe de la fenêtre a été agrandie exprès de trois pixels, en la calculant sur la plus grande des trois tailles du logo au lieu de celle du moment. Le liseré, qui n'était qu'un clignotement de deux pixels au clic, est devenu une bande permanente de quatre pixels le long de tout le bord gauche et du coin haut gauche.
+
+**Ce que les pixels disent.** Sur une ligne au milieu du logo : fond brun `49,39,29`, puis **`215,228,241` quatre fois**, puis `102,110,121`, puis le contour du dessin à `9,13,22`, puis l'or. Sur la capture précédente, prise sur fond noir, la même bande valait `203,209,216`. **Elle n'a donc pas de couleur à elle : elle éclaircit ce qu'il y a derrière.** C'est du verre dépoli, celui que la boîte à outils allume pour obtenir la transparence par pixel, et il se voit partout où la page ne peint rien.
+
+**Conclusion, et c'est la fin de la chasse : un pixel de fenêtre que la page n'a pas peint n'est pas vide.** La découpe prenait un pixel de plus que le dessin sur les quatre bords, par prudence ; ce pixel-là était le défaut. Elle n'en prend plus aucun.
+
+**Et ça explique la dernière anomalie.** Vingt-quatre photos prises par le bouton lui-même, dont six pile au bon instant, n'ont jamais rien montré : ce qu'un compositeur ajoute au moment de composer n'est pas dans ce qu'on recopie de l'écran.
+
 ## `bouton-flottant-saut-menu.png`
 
 Les photos 7 et 8 prises par le bouton lui-même sur PC-VICTOR, côte à côte et agrandies cinq fois. Ce sont deux images consécutives, recopiées de l'écran, au moment où le menu s'ouvre pour la première fois de la session.

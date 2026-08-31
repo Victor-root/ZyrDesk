@@ -95,61 +95,47 @@
    Changer la taille, au contraire, refait la mise en page et redessine le
    dessin vectoriel à la taille voulue : c'est net à toutes les tailles.
 
-   La taille se change sur l'image et le bouton ne bouge pas, et ces deux
-   moitiés-là ne sont pas décoratives.
+   La taille se change sur le bouton et l'image le suit à cent pour cent,
+   donc un seul nombre commande les deux.
 
-   Le bouton fait toujours la plus grande des trois tailles. C'est lui que
-   la page mesure, donc c'est sur lui que la fenêtre est taillée : une
-   boîte qui ne bouge pas est une découpe qui ne bouge pas, et une fenêtre
-   qui ne change pas de taille. Le coeur ne redécoupe que quand la forme
-   change, donc pendant toute l'animation il ne fait plus **aucun** appel
-   au système.
-
-   C'est le seul remède connu à ce qu'une découpe découvre : agrandir une
-   découpe, c'est montrer des pixels de fenêtre que la page n'a pas encore
-   peints, et la page, le compositeur et le système sont trois files
-   d'attente indépendantes qu'aucune image d'avance ou de retard ne met
-   d'accord. On a essayé de les synchroniser ; il fallait cesser d'animer.
-
-   Ce que ça coûte : la découpe est celle du plus grand des trois dessins,
-   donc au repos elle dépasse de deux ou trois pixels en bas et à gauche.
-   Ces pixels-là ne se voient pas, la fenêtre étant transparente, et ils
-   n'attrapent que des clics destinés au bouton. */
+   Et la boîte suit le dessin au pixel près, ce qui a été essayé autrement
+   et démenti par l'oeil en une session. Fixée à la plus grande des trois
+   tailles, elle ne bougeait plus, donc la découpe ne bougeait plus non
+   plus : plus aucun appel au système pendant l'animation, ce qui devait
+   être la fin d'une découpe qui découvre. Ça a rendu le liseré **pire et
+   permanent**, quatre pixels de bleuté clair tout le long du bord gauche,
+   parce que la découpe contenait alors trois pixels que la page ne peint
+   jamais. Ce qui remplit ces pixels-là n'est pas rien : voir `MARGE` dans
+   bouton.js. */
 .logo {
-  display: flex;
-  /* Le dessin est collé au coin par lequel la fenêtre est accrochée,
-     donc en haut à droite, et il grandit vers l'intérieur, là où il y a
-     la place. Centré, il déborderait de la découpe. */
-  align-items: flex-start;
-  justify-content: flex-end;
+  display: block;
   /* La taille au repos, d'où partent les deux autres. */
   --taille: 44px;
-  /* La plus grande des trois. La boîte la porte en permanence. */
-  --taille-max: 46.64px;
-  width: var(--taille-max);
-  height: var(--taille-max);
+  width: var(--taille);
+  height: var(--taille);
   padding: 0;
   border: none;
   background: transparent;
   cursor: grab;
-}
-
-/* Le menu poussant au-dessus, c'est le bas du bouton qui ne bouge pas. */
-.paquet.vers-le-haut .logo {
-  align-items: flex-end;
-}
-
-.logo > img {
-  display: block;
-  width: var(--taille);
-  height: var(--taille);
   transition:
     width var(--duree-courte) var(--courbe),
     height var(--duree-courte) var(--courbe);
 }
 
+/* Le logo grandit depuis son coin haut droit, qui est celui par lequel la
+   fenêtre est accrochée, donc vers l'intérieur, là où il y a la place. Ce
+   n'est pas réglé ici : le bloc est collé en haut à droite et aligne ses
+   enfants à droite, donc un bouton plus large s'étend vers la gauche et
+   un bouton plus haut vers le bas. Centré, il déborderait de la découpe
+   et le survol rognerait ses quatre coins au lieu de le mettre en avant. */
+.logo > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .logo:hover {
-  --taille: var(--taille-max);
+  --taille: 46.64px;
 }
 
 /* Pris en main : le curseur dit qu'il se déplace, pas qu'il se clique.
