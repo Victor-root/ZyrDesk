@@ -10,7 +10,9 @@ Le bouton flottant pendant une session, sur PC-SAV, 91 x 98 pixels réels. C'est
 
 **Et ce n'est pas l'écran d'en face qu'on voit au travers**, ce qui a été cru d'abord et à tort. La preuve tient en une phrase : la chose claire **s'arrête pile au bord du logo**, et le noir tout autour d'elle est pur. Ce qui serait derrière la fenêtre se verrait aussi à côté du bouton. Donc elle est **dans la fenêtre du bouton, sous la page**.
 
-En retirant le logo par le calcul, pixel par pixel, ce qui reste est sans ambiguïté : **une barre de titre claire avec un bouton de fermeture**, carré blanc et croix noire, et la zone client sombre en dessous. C'est le cadre que le système peint dans une fenêtre à sa naissance. Tant que cette fenêtre était opaque, la boîte à outils repeignait son fond par-dessus à chaque effacement et personne ne l'a jamais vu ; devenue vraiment transparente, elle ne repeint plus rien, et un logo à 55 % ne le couvre pas.
+En retirant le logo par le calcul, pixel par pixel, ce qui reste est sans ambiguïté : **une barre de titre claire avec un bouton de fermeture**, carré blanc et croix noire, et la zone client sombre en dessous. C'est le cadre que le système peint dans une fenêtre, à sa naissance et **à chaque fois qu'elle change d'activation**, ce que Victor a nommé sans le savoir : « ça n'apparaît que quand on clique dessus, ça fait un flash ». Tant que cette fenêtre était opaque, la boîte à outils repeignait son fond par-dessus à chaque effacement et personne ne l'a jamais vu ; devenue vraiment transparente, elle ne repeint plus rien, et un logo à 55 % ne le couvre pas.
+
+Les styles qui donnaient un cadre à cette fenêtre lui sont depuis retirés, donc le système n'en peint plus.
 
 D'où les deux choses que Victor rapportait sans qu'elles s'expliquent : ça part quand la souris arrive, et la capture d'écran ne la prend pas. Le survol rendait le logo entier, donc opaque, donc il la couvrait.
 

@@ -1571,6 +1571,12 @@ La lecture de la boîte à outils dit déjà quoi attendre : elle crée toute fe
 
 **Et la même règle a servi une troisième fois, pour que cette ligne-là arrive.** Le premier journal envoyé après la correction ne la contenait pas : elle avait été chassée par trente lignes « le premier plan passe à ZyrDesk » écrites d'affilée, le système envoyant cet avis à chaque passation, y compris celles qui rendent le premier plan à qui l'avait déjà. Une douzaine de clics sur le bouton suffisaient. Elle ne se dit plus que quand la fenêtre au premier plan change vraiment.
 
+**Et c'est Victor qui a donné le dernier mot, sans le savoir : « ça n'apparaît que quand on clique dessus, ça fait un flash ».** Un clic est très exactement le moment où le système repeint le cadre d'une fenêtre, puisque c'est là qu'elle change d'activation. Le cadre n'est donc pas peint une fois à la naissance et oublié : il est **repeint à chaque activation**, dans la fenêtre elle-même, sous une page qui ne le couvre pas. Le logo opaque cachait le résultat au repos ; le flash est le même cadre pris entre le coup de pinceau du système et celui de la page.
+
+**Décision : cette fenêtre n'a plus de cadre à peindre.** Là où ses styles sont déjà repris pour la transparence, on lui retire tout ce qui lui en donne un : barre de titre, bordure, cadre de dialogue, cadre redimensionnable, menu système, boutons réduire et agrandir, et les quatre bords relevés côté styles étendus. Un style n'est relu qu'au recalcul du cadre, donc on le demande dans la foulée, sans bouger ni retailler ni réactiver la fenêtre. Un bouton découpé à la forme d'un dessin n'a pas de cadre à montrer, donc on ne lui en donne pas à peindre.
+
+Ce n'est pas une supposition : la boîte à outils a été lue, elle bâtit toute fenêtre avec `WS_CAPTION | WS_CLIPSIBLINGS | WS_SYSMENU` et n'ôte que `WS_CAPTION` et `WS_THICKFRAME` quand on demande « sans décorations ». Les styles étendus relevés dans le journal de Victor, `0x80c0190`, portent `WS_EX_WINDOWEDGE` au bit près. Le journal dira désormais quatre « false » si la reprise a pris.
+
 **Et un refus se dit.** Si Windows refuse ces deux appels, le journal l'écrit. C'est la différence entre un bouton au bord lisse et un bouton posé sur une plaque, et rien d'autre à l'écran ne dirait lequel des deux on regarde.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)

@@ -2539,16 +2539,70 @@ fn keep_out_of_the_way(app: &AppHandle, window: &tauri::WebviewWindow) {
 /// would say which of the two happened.
 #[cfg(windows)]
 fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GetWindowLongPtrW, LWA_ALPHA, SetLayeredWindowAttributes, SetWindowLongPtrW,
-        WS_EX_LAYERED,
+        GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, LWA_ALPHA, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SetLayeredWindowAttributes,
+        SetWindowLongPtrW, SetWindowPos, WS_BORDER, WS_CAPTION, WS_DLGFRAME, WS_EX_CLIENTEDGE,
+        WS_EX_DLGMODALFRAME, WS_EX_LAYERED, WS_EX_STATICEDGE, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
+        WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
     };
 
-    // SAFETY: a window we have just built, whose extended style is read
-    // and written back, and which is then told how to read its own alpha.
+    /// Everything that gives this window a frame of its own, which is
+    /// the whole of what the system paints into it before the page has
+    /// drawn anything.
+    ///
+    /// The toolkit builds every window with a caption and a system menu
+    /// and, asked for no decorations, removes only the caption and the
+    /// sizing frame. The system menu stays, and the raised edge with it,
+    /// which the styles read back from this very window confirm bit for
+    /// bit. A frame is painted in the window itself, not over the page,
+    /// so a transparent page never covers it: that is « la fameuse croix
+    /// par-dessus le FAB », and the white flash on every click, a click
+    /// being exactly when the system repaints a window's frame.
+    ///
+    /// A button that is cut to the shape of a drawing has no frame to
+    /// show, so it is given none to paint.
+    const NO_FRAME: u32 = WS_CAPTION
+        | WS_BORDER
+        | WS_DLGFRAME
+        | WS_THICKFRAME
+        | WS_SYSMENU
+        | WS_MINIMIZEBOX
+        | WS_MAXIMIZEBOX;
+    const NO_EDGE: u32 =
+        WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_DLGMODALFRAME;
+
+    // SAFETY: a window we have just built, whose two styles are read and
+    // written back, which is told how to read its own alpha, and which is
+    // then asked to work its frame out again. Nothing here moves it,
+    // resizes it, restacks it or activates it.
     let told = unsafe {
+        let plain = GetWindowLongPtrW(button, GWL_STYLE);
+        SetWindowLongPtrW(button, GWL_STYLE, plain & !(NO_FRAME as isize));
         let style = GetWindowLongPtrW(button, GWL_EXSTYLE);
-        SetWindowLongPtrW(button, GWL_EXSTYLE, style | WS_EX_LAYERED as isize);
+        SetWindowLongPtrW(
+            button,
+            GWL_EXSTYLE,
+            (style | WS_EX_LAYERED as isize) & !(NO_EDGE as isize),
+        );
+        // A style is only read when the frame is worked out again, and
+        // nothing else here asks for that: without this the window keeps
+        // the frame it was born with for the rest of the session.
+        SetWindowPos(
+            button,
+            std::ptr::null_mut::<std::ffi::c_void>() as HWND,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED
+                | SWP_NOMOVE
+                | SWP_NOSIZE
+                | SWP_NOZORDER
+                | SWP_NOACTIVATE
+                | SWP_NOOWNERZORDER,
+        );
         // No colour is keyed out, so the first argument is unread; the
         // second is the one that matters, and two hundred and fifty-five
         // is what says « every pixel carries its own ».

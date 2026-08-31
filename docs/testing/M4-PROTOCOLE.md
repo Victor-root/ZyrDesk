@@ -1470,7 +1470,11 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **À vérifier la souris loin du bouton**, et c'est tout le piège : le survol le rendait franc, donc opaque, donc il couvrait le défaut. Le voile de l'outil de capture de Windows fait la même chose, ce qui a longtemps rendu ce défaut impossible à photographier.
 >
-> **Et la ligne qui nomme le peintre**, dans le journal de la fenêtre : `bouton flottant : style ordinaire 0x… (barre de titre …, menu système …, bordure …, cadre redimensionnable …)`. Un « oui » sur l'un des quatre est le cadre en question. Couvrir n'est pas guérir : tant que cette ligne dit oui, il est là sous le logo.
+> **Le flash au clic, qui est le même défaut pris sur le vif.** Cliquer sur le bouton et regarder : rien de blanc ne doit apparaître au bord du logo, même une image. Un clic change l'activation de la fenêtre, et c'est très exactement le moment où le système repeint le cadre d'une fenêtre ; ce cadre est peint **dans** la fenêtre, sous la page, donc une page transparente ne le couvre pas. Les styles qui lui donnaient un cadre lui sont maintenant retirés.
+>
+> **Et la ligne qui le vérifie**, dans le journal de la fenêtre : `bouton flottant : style ordinaire 0x… (barre de titre …, menu système …, bordure …, cadre redimensionnable …)`. **Les quatre doivent dire `false`.** Un seul « true » est un cadre que le système peindra sous le logo à chaque clic.
+>
+> Cette ligne est écrite **une seule fois, à l'ouverture de la session**. Pour la lire, ouvrir une session et envoyer le journal **sans jouer avec le menu du bouton** : chaque ouverture et fermeture du menu coûte quatre lignes, et un journal n'en garde que cent vingt.
 >
 > **Et le cas qui dit que ça n'a pas marché** : le bouton posé sur une plaque de couleur, ou un carré blanc à la place du logo. Le journal de la fenêtre le dit alors mot pour mot : `bouton flottant : Windows a refusé la transparence par pixel`. S'il ne le dit pas et que la plaque est là quand même, c'est que le compositeur accepte les appels sans les honorer, et il faut le signaler : c'est le seul cas que ni le code ni le journal ne savent voir.
 >
