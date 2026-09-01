@@ -1156,6 +1156,7 @@ pub fn floating_size(
     height: u32,
     shape: Vec<Piece>,
     upward: bool,
+    painted: f64,
 ) -> Result<bool, String> {
     // Read before anything moves, and while the drawing still on screen
     // is the one this window was last placed for: what is kept is the
@@ -1232,7 +1233,7 @@ pub fn floating_size(
     // The page has drawn something, so there is something to show.
     READY.store(true, Ordering::Relaxed);
     put_the_button(corner, size, how_it_shows());
-    tell_the_button(was, size, &shape);
+    tell_the_button(was, size, &shape, painted);
     Ok(UPWARD.load(Ordering::Relaxed))
 }
 
@@ -1294,7 +1295,7 @@ static SIZED: AtomicI64 = AtomicI64::new(0);
 ///
 /// Once per change. The logo is measured every frame while a hand runs
 /// over it, and the size does not change on any of them.
-fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece]) {
+fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece], painted: f64) {
     let both = (i64::from(size.0) << 32) | i64::from(size.1) & 0xFFFF_FFFF;
     if SIZED.swap(both, Ordering::Relaxed) == both {
         return;
@@ -1303,7 +1304,8 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece])
     let now = its_place().map(|(left, top, right, bottom)| (right - left, bottom - top));
     note(&format!(
         "bouton flottant : {}x{} demandés, {}x{} avant, {} après ; \
-         {} morceaux dessinés jusqu'à {}x{}",
+         {} morceaux dessinés jusqu'à {}x{} ; bord droit peint à {painted:.2}, \
+         soit {:.2} px de fenêtre que la page n'atteint pas",
         size.0,
         size.1,
         was.2 - was.0,
@@ -1315,6 +1317,7 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece])
         shape.len(),
         drawn.0,
         drawn.1,
+        f64::from(size.0) - painted,
     ));
 }
 
@@ -2340,7 +2343,14 @@ fn say_where_the_cut_falls(shape: &[Piece]) {
         const OUT_OF_ITS_BOX: f32 = 1.0 - std::f32::consts::FRAC_1_SQRT_2;
         let corner = margins[0].min(margins[1])
             + (piece.drawn_radius - piece.radius as f32) * OUT_OF_ITS_BOX;
-        if !first && margins.iter().chain([&corner]).all(|margin| *margin < 1.0) {
+        // Dit aussi la première fois qu'un morceau apparaît, et pas
+        // seulement à la toute première découpe : la carte du menu
+        // n'existe pas encore quand le bouton est bâti, donc sans ça ses
+        // marges ne seraient jamais écrites, alors que ce sont les plus
+        // longues du dessin. C'est celle-là qui portait la rangée pâle de
+        // quatre cent soixante pixels sous le menu.
+        let neuf = first || rank >= before.len();
+        if !neuf && margins.iter().chain([&corner]).all(|margin| *margin < 1.0) {
             continue;
         }
         note(&format!(

@@ -1520,6 +1520,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > `contour … px` est le nombre qui décide de tout le reste une fois la découpe mise hors de cause : c'est l'épaisseur du trait noir en vrais pixels sur l'écran regardé. En dessous de trois ou quatre, un contour ne peut pas être plus lisse que ce que trois pixels permettent, quoi qu'on fasse de la composition.
 >
 > Et une ligne à la construction du bouton : `styles 0x… (calque true, …) ; alpha relu 255 sur 255, alpha d'ensemble`. Cette ligne disait « chaque pixel porte le sien », ce qui est faux : l'appel qu'elle relit règle **une seule opacité pour toute la fenêtre**, la documentation du système est explicite dessus, et l'alpha par pixel vient d'ailleurs, du flou-derrière sur région vide que pose la boîte à outils. L'appel est gardé, la fenêtre ayant été mesurée avec et sans et la plaque étant partie avec lui ; c'est la phrase qui était fausse.
+>
+> **Ce qui reste du liseré une fois la marge enlevée, et qui est de la virgule flottante.** Le journal de NOTEBOOK-VICTOR écrivait `découpé (-47, 2, -1, 37) ; marges g 0.50 h 0.50 d 1.00 b 0.25`, donc **un pixel entier** au bord droit, sur un bord qui tombe pourtant pile sur un vrai pixel. Le calcul passe par une fraction qui n'existe pas en binaire, le bord sort à -1,9999999999999574 au lieu de -2, et l'arrondi vers le dehors réclame là-dessus une colonne entière que la page ne peint jamais. Les bords et le rayon sont maintenant calés sur un grain d'un 1024e de pixel avant d'être arrondis, ce qui est à la fois au-dessus du bruit des mesures du navigateur et en dessous du plus petit pas que la mise en page sache produire.
+>
+> **Ce que le journal doit dire maintenant** : plus une seule marge à `1.00`, ni au bord droit ni sous la carte du menu. Une marge qui atteint un pixel entier reste le défaut, et c'est la seule chose que cette ligne signale.
+>
+> **Et la ligne de la carte du menu, qu'on ne voyait jamais.** Les marges ne s'écrivaient qu'à la construction du bouton, où la carte n'existe pas encore, alors que c'est elle qui portait la marge la plus longue. Elles s'écrivent maintenant aussi **la première fois qu'un morceau apparaît** : ouvrir le menu une fois doit donc produire une ligne `dessiné … découpé … marges …` de plus, celle de la carte.
+>
+> **Et l'écart entre ce que la page peint et ce que la fenêtre mesure**, écrit au bout de la ligne de taille : `… ; bord droit peint à …, soit … px de fenêtre que la page n'atteint pas`. Ce nombre doit rester **sous le pixel**. La page compte tout depuis `clientWidth`, qui est un entier de pixels de page, et le coeur repose la forme depuis le bord droit réel de la fenêtre, qui est un entier de vrais pixels ; s'ils s'écartent, toute la découpe glisse d'une fraction de pixel et le halo devient un trait franc. **C'est le nombre à relever si le bouton paraît propre sur une machine et sale sur l'autre**, et il faut le comparer entre PC-VICTOR et NOTEBOOK-VICTOR.
+>
+> **Et l'agrandissement de l'écran compte** : refaire le tour à 125 %, 150 % et 175 %. C'est à 175 % que ce qui reste se voit le mieux.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

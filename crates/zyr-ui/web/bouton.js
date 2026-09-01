@@ -191,6 +191,36 @@ function montre(element, visible) {
    entre zéro et un, et il ne parle que si l'une atteint un pixel. */
 const MARGE = 0;
 
+/* Le grain auquel les bords sont calés avant d'être arrondis, et ce n'est
+   pas de la coquetterie : c'est **le liseré que Victor voit**.
+
+   Le bord droit de l'écran du fond du logo tombe pile sur un pixel réel :
+   il est à 424/440 du dessin, le logo fait 55 pixels réels à 125 %, et
+   424/440 x 55 = 53 tout rond. Mais 44/440 n'existe pas en binaire, donc
+   ce bord sort du calcul à -1,9999999999999574 au lieu de -2, et
+   `Math.ceil` réclame alors **une colonne entière** que la page ne peint
+   jamais. Le journal de NOTEBOOK-VICTOR l'écrit noir sur blanc :
+   `découpé (-47, 2, -1, 37) ; marges g 0.50 h 0.50 d 1.00 b 0.25`, et
+   `b 1.00` sous la carte du menu. Quatre nombres, tous les quatre sortis
+   de ce seul écart de 4e-14.
+
+   Le grain vaut un 1024e de pixel, et il est choisi entre deux bornes.
+   Au-dessus du bruit : celui du calcul est de l'ordre de 1e-13, mais
+   `getBoundingClientRect` rend ses nombres en simple précision, donc un
+   bord réellement posé sur le pixel 943 revient à 943,0000305, et jusqu'à
+   2,4e-4 sur les grandes coordonnées d'un écran 4K. Un millionième de
+   pixel ne rattraperait pas la rangée sous la carte ; un 1024e, qui vaut
+   9,8e-4, est quatre fois au-dessus. En dessous de la vraie géométrie :
+   la mise en page ne connaît pas plus fin que le 64e de pixel de page, ce
+   qui fait 20, 24 et 28 /1024e de pixel réel à 125, 150 et 175 %. Tous
+   les vrais bords sont donc déjà des multiples exacts du grain et le
+   calage ne leur fait rien du tout.
+
+   Une puissance de deux parce qu'elle est exacte en binaire : le calage
+   lui-même n'ajoute pas d'erreur. */
+const GRAIN = 1 / 1024;
+const auPixel = (valeur) => Math.round(valeur / GRAIN) * GRAIN;
+
 /* Ce que le logo dessine, dans son propre dessin (zyrdesk.svg) : deux
    écrans aux coins arrondis, décalés en diagonale, et rien entre eux. Le
    dessin fait foi, la fenêtre est découpée dessus : ces nombres se
@@ -227,7 +257,18 @@ function laBoite() {
   const haut = versLeHaut
     ? document.documentElement.clientHeight - boite.top
     : boite.bottom;
-  return { width: boite.width, height: haut };
+  // Et le bord droit auquel le bloc est collé, en fractions de pixel de
+  // page. Il ne sert pas à la découpe, il sert à la vérifier : tout ce
+  // que la page mesure se compte depuis `clientWidth`, qui est un entier
+  // de pixels de page, tandis que le coeur repose la forme depuis le bord
+  // droit réel de la fenêtre, qui est un entier de vrais pixels. Les deux
+  // ne tombent au même endroit que si la largeur divisée par
+  // l'agrandissement tombe juste, et sinon toute la découpe glisse d'une
+  // fraction de pixel : des pixels à demi peints deviennent des pixels
+  // pas peints du tout, c'est-à-dire un halo qui devient un trait franc.
+  // Le journal compare les deux et le dit. C'est la seule chose qui
+  // explique qu'un même bouton paraisse propre ici et sale là.
+  return { width: boite.width, height: haut, droite: boite.right };
 }
 
 /* La forme que la page dessine vraiment, en vrais pixels : la plaque du
@@ -295,11 +336,12 @@ function formeOccupee(echelle) {
     // Le dessin en vrais pixels, sans arrondi : c'est ce que la page
     // peint, et c'est à ça que le journal compare la découpe.
     const dessin = [
-      (gauche - droite) * echelle,
-      (haut - bas) * echelle,
-      (gauche + large - droite) * echelle,
-      (haut + haute - bas) * echelle,
+      auPixel((gauche - droite) * echelle),
+      auPixel((haut - bas) * echelle),
+      auPixel((gauche + large - droite) * echelle),
+      auPixel((haut + haute - bas) * echelle),
     ];
+    const rayonDessine = auPixel(rayon * echelle);
     const x = Math.floor(dessin[0]) - MARGE;
     const y = Math.floor(dessin[1]) - MARGE;
     morceaux.push({
@@ -321,9 +363,9 @@ function formeOccupee(echelle) {
       // ne se voit pas. Ce que ça coûte de l'autre côté est un quart de
       // pixel mordu à la pointe du coin, contre un pixel entier sur des
       // bords entiers du temps où l'arrondi se faisait vers l'intérieur.
-      radius: Math.ceil(rayon * echelle),
+      radius: Math.ceil(rayonDessine),
       drawn: dessin,
-      drawnRadius: rayon * echelle,
+      drawnRadius: rayonDessine,
     });
   };
   // Une carte, rognée à ce que la page peut avoir dessiné.
@@ -417,6 +459,10 @@ function leDessin() {
       // découpe laissait un trou que le système remplissait de son
       // propre fond.
       upward: versLeHaut,
+      // Le bord droit que la page peint pour de bon, en vrais pixels.
+      // Voir `laBoite` : le coeur le compare à la largeur de la fenêtre
+      // et écrit l'écart, qui dit si la découpe glisse.
+      painted: boite.droite * echelle,
     },
     // Ce qui vient d'être mesuré, en un mot : c'est à ça qu'on voit si le
     // dessin bouge encore.
