@@ -36,8 +36,8 @@ tokio = { version = "1.53.1", features = [
 # Le dessin de l'interface : Direct2D et DirectWrite, fournis par Windows
 # lui-même, donc rien n'est embarqué. Ce sont des objets COM, que
 # `windows-sys` ne sait pas décrire et que `windows` décrit : les deux
-# caisses sont de la même famille et celle-ci est déjà dans le verrou du
-# projet, tirée par la boîte à outils.
+# caisses sont de la même famille, et celle-ci est déjà dans le verrou du
+# projet, tirée par la brique du son.
 windows = { version = "0.61.3", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct2D",
