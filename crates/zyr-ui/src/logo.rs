@@ -143,6 +143,9 @@ const GROWS_IN: std::time::Duration = std::time::Duration::from_millis(120);
 /// One more frame of that growth, asked for by the beat.
 const GROWING: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 
+/// Le curseur à redire, demandé d'ailleurs que du fil de la fenêtre.
+const CURSEUR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+
 /// The window itself, and what it is showing.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 /// The side of the window in real pixels, which is the largest of the
@@ -267,7 +270,20 @@ pub fn shown_now(visible: bool) {
 /// et non l'appui : un simple clic presse le bouton lui aussi, et il ne
 /// doit pas pour autant montrer la croix des quatre directions.
 pub fn moving(yes: bool) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
+
     MOVING.store(yes, Ordering::Relaxed);
+    // Le système ne redemande la forme du curseur qu'au prochain
+    // mouvement de la souris : sans ce mot-là, la croix des quatre
+    // directions resterait affichée après le lâcher, jusqu'à ce que la
+    // main bouge d'un pixel.
+    let window = ITS_WINDOW.load(Ordering::Relaxed);
+    if window != 0 {
+        // SAFETY: un message déposé dans la file d'une fenêtre à nous,
+        // depuis le fil qui suit le geste.
+        unsafe { PostMessageW(window as HWND, CURSEUR, 0, 0) };
+    }
 }
 
 /// Takes the logo's window down with the session.
@@ -607,8 +623,7 @@ unsafe extern "system" fn answer(
         TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DefWindowProcW, HTCLIENT, IDC_HAND, IDC_SIZEALL, LoadCursorW, SetCursor, WM_LBUTTONDOWN,
-        WM_MOUSEMOVE, WM_SETCURSOR,
+        DefWindowProcW, HTCLIENT, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_SETCURSOR,
     };
 
     match message {
@@ -634,14 +649,16 @@ unsafe extern "system" fn answer(
             0
         }
         WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
-            let shape = if MOVING.load(Ordering::Relaxed) {
-                IDC_SIZEALL
-            } else {
-                IDC_HAND
-            };
-            // SAFETY: a cursor of the system's own, asked for by name.
-            unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), shape)) };
+            curseur();
             1
+        }
+        // Redit sans que la souris ait bougé : le geste vient de finir et
+        // la forme qu'il montrait n'est plus la bonne.
+        CURSEUR => {
+            if sous_la_main(window) {
+                curseur();
+            }
+            0
         }
         WM_LBUTTONDOWN => {
             taken(window);
@@ -656,6 +673,39 @@ unsafe extern "system" fn answer(
         }
         // SAFETY: the system's own answer to everything not answered here.
         _ => unsafe { DefWindowProcW(window, message, holding, with) },
+    }
+}
+
+/// Pose la forme que le curseur doit avoir sur le logo.
+fn curseur() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        IDC_HAND, IDC_SIZEALL, LoadCursorW, SetCursor,
+    };
+
+    let shape = if MOVING.load(Ordering::Relaxed) {
+        IDC_SIZEALL
+    } else {
+        IDC_HAND
+    };
+    // SAFETY: a cursor of the system's own, asked for by name.
+    unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), shape)) };
+}
+
+/// Si la souris est bien sur cette fenêtre-là.
+///
+/// Le curseur appartient à tout le monde : le poser alors que la main est
+/// ailleurs changerait la forme montrée par la fenêtre d'à côté.
+fn sous_la_main(window: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, WindowFromPoint};
+
+    let mut ou = POINT { x: 0, y: 0 };
+    // SAFETY: une place à remplir, et la fenêtre que le système rend.
+    unsafe {
+        if GetCursorPos(&mut ou) == 0 {
+            return false;
+        }
+        WindowFromPoint(ou) == window
     }
 }
 
