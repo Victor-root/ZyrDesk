@@ -222,6 +222,20 @@ const PAIRING_BY_HAND: Duration = Duration::from_secs(180);
 /// session never pays it.
 const SESSION_TAKES: Duration = Duration::from_secs(6);
 
+/// Stops the opening where it stands when the person has let it go.
+///
+/// Written once and called at every step that can take seconds: opening
+/// a way, waiting for a far engine to start over, introducing the two
+/// computers, starting the player. An opening only asked about at its
+/// very end is an opening a person cannot close, and the close is a
+/// click on the cross of the window they are watching it in.
+fn carry_on(still_wanted: &dyn Fn() -> bool) -> Result<(), Error> {
+    if still_wanted() {
+        return Ok(());
+    }
+    Err(Error::Abandoned)
+}
+
 /// How long that watch waits before looking up to ask whether the session
 /// is still wanted.
 ///
@@ -246,6 +260,13 @@ pub enum Error {
     Closing(EngineError),
     /// The device's own state could not be reset.
     State(io::Error),
+    /// The person closed the window on the opening before there was a
+    /// picture, so it was let go of.
+    ///
+    /// Not a failure, and the one road out of here that has nothing to
+    /// show anybody: whoever asked for the session is the one who asked
+    /// for this too.
+    Abandoned,
 }
 
 impl fmt::Display for Error {
@@ -260,6 +281,7 @@ impl fmt::Display for Error {
             Error::Engine(e) => write!(f, "démarrage de la session : {e}"),
             Error::Closing(e) => write!(f, "fermeture sur l'ordinateur distant : {e}"),
             Error::State(e) => write!(f, "réinitialisation de l'appairage : {e}"),
+            Error::Abandoned => f.write_str("ouverture abandonnée avant l'image"),
         }
     }
 }
@@ -362,6 +384,7 @@ fn the_way_and_what_its_engine_reads_once(
     peer: Fingerprint,
     settings: &SessionSettings,
     told: &mut dyn FnMut(Step),
+    still_wanted: &dyn Fn() -> bool,
 ) -> Result<Driving, Error> {
     let mut asked_already = false;
     let mut last = String::new();
@@ -369,6 +392,10 @@ fn the_way_and_what_its_engine_reads_once(
         if attempt > 0 {
             std::thread::sleep(ENGINE_COMES_BACK);
         }
+        // Asked at every round: this is where an opening spends its
+        // seconds when the far computer's engine is starting over, and
+        // it is exactly where somebody gives up on it.
+        carry_on(still_wanted)?;
         let mut driving = match Driving::towards(&wanted.host, peer, settings) {
             Ok(driving) => driving,
             // A computer that cannot be reached is ordinarily the end of
@@ -436,13 +463,18 @@ fn the_way_and_what_its_engine_reads_once(
 
 /// Opens a session, reporting what happens as it happens.
 ///
-/// `still_wanted` is asked while the opening is being watched, and only
-/// then. Between the picture appearing and this returning there are a
-/// few seconds during which the player stopping is read as the far
-/// computer having turned this one away; a person who closes the session
-/// in those seconds stops the player just the same, and only whoever
-/// took that click can tell the two apart. Answered « no », the watch
-/// simply stops.
+/// `still_wanted` is asked at every step of the opening that can take
+/// seconds, and answered « no » it gives up where it stands and comes
+/// back `Abandoned`: an opening is watched on a screen with a cross in
+/// its corner, and a cross that does nothing for half a minute is a
+/// cross nobody believes twice. Whatever had been started by then is
+/// stopped on the way out.
+///
+/// It is asked during the watch that follows the picture too, and there
+/// for a second reason: in those few seconds the player stopping is read
+/// as the far computer having turned this one away, a person who closes
+/// the session stops the player just the same, and only whoever took
+/// that click can tell the two apart.
 pub fn open(
     wanted: &Wanted,
     told: &mut dyn FnMut(Step),
@@ -463,7 +495,11 @@ pub fn open(
     // take the way away; see `the_way_and_what_its_engine_reads_once`.
     let mut driving = match wanted.peer {
         Some(peer) => Some(the_way_and_what_its_engine_reads_once(
-            wanted, peer, &settings, told,
+            wanted,
+            peer,
+            &settings,
+            told,
+            still_wanted,
         )?),
         None => None,
     };
@@ -524,6 +560,11 @@ pub fn open(
         }
     }
 
+    // The far computer has been asked everything it is asked before a
+    // picture: what it answered took seconds, and a person who closed the
+    // window during them is not to be handed a session now.
+    carry_on(still_wanted)?;
+
     let state = DeviceState::for_device(&identifier_from_address(&wanted.host));
     if wanted.pair_again {
         state.forget().map_err(Error::State)?;
@@ -534,10 +575,18 @@ pub fn open(
     let engine = ClientEngine::new(&exe, state).with_log(&log);
 
     if !already_known {
-        introduce(&engine, &target, driving.as_mut(), false, told)?;
+        introduce(
+            &engine,
+            &target,
+            driving.as_mut(),
+            false,
+            told,
+            still_wanted,
+        )?;
         told(Step::Paired);
     }
 
+    carry_on(still_wanted)?;
     told(Step::Starting);
     let mut session = engine
         .start_session(&target, &settings)
@@ -546,6 +595,14 @@ pub fn open(
         process: session.process_id(),
         at: target.clone(),
     });
+    // A player started for somebody who has already gone is stopped here
+    // rather than left running: nothing else knows about it yet, and
+    // there is a whole picture between this and the moment the service
+    // does.
+    if let Err(gone) = carry_on(still_wanted) {
+        let _ = session.stop();
+        return Err(gone);
+    }
 
     // What this computer remembers of a pairing is a note it wrote to
     // itself, and the far computer is the only one that decides. It can
@@ -558,8 +615,9 @@ pub fn open(
     // still being turned away is another fault entirely, and doing it
     // twice would not make it any better.
     if already_known && gave_up_at_once(&mut session, still_wanted)? {
-        introduce(&engine, &target, driving.as_mut(), true, told)?;
+        introduce(&engine, &target, driving.as_mut(), true, told, still_wanted)?;
         told(Step::Paired);
+        carry_on(still_wanted)?;
         told(Step::Starting);
         session = engine
             .start_session(&target, &settings)
@@ -595,24 +653,32 @@ fn introduce(
     driving: Option<&mut Driving>,
     again: bool,
     told: &mut dyn FnMut(Step),
+    still_wanted: &dyn Fn() -> bool,
 ) -> Result<(), Error> {
     let pin = random::pairing_pin();
+
+    let met = |settled: Result<bool, EngineError>| match settled {
+        Ok(true) => Ok(()),
+        // The engine is stopped by the pairing's own way out, so there is
+        // nothing left of it to take down here.
+        Ok(false) => Err(Error::Abandoned),
+        Err(e) => Err(Error::Pairing(e)),
+    };
 
     let Some(driving) = driving else {
         // No tunnel, so no channel to carry the code: the diagnostic
         // path, and the only place anybody still types one.
         told(Step::PairingNeeded { pin: pin.clone() });
-        return engine
+        return met(engine
             .start_pairing(target, &pin)
             .map_err(Error::Pairing)?
-            .settled(PAIRING_BY_HAND)
-            .map_err(Error::Pairing);
+            .settled(PAIRING_BY_HAND, still_wanted));
     };
 
     told(Step::Pairing { again });
     let pairing = engine.start_pairing(target, &pin).map_err(Error::Pairing)?;
     driving.hand_over_the_code(&pin).map_err(Error::Handover)?;
-    pairing.settled(PAIRING_PATIENCE).map_err(Error::Pairing)
+    met(pairing.settled(PAIRING_PATIENCE, still_wanted))
 }
 
 /// Whether the engine stopped before showing anything.

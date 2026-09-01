@@ -1300,7 +1300,17 @@ async fn the_way_of_this_session(app: &App) -> Result<zyr_control::WayId, String
 /// this window wrote down when it started the player, and without that
 /// fallback the cross and the menu answered « aucune session en cours »
 /// over a running picture.
+///
+/// And before there is a player at all, there is an opening: a tunnel
+/// being raced for, a far engine starting over, two computers being
+/// introduced. Closing then is closing that, and it is said before
+/// anything else here so the opening reads it at its very next step
+/// rather than after the question below has been round the service.
 async fn end_the_session(app: &App) -> Result<(), String> {
+    let opening = crate::session::opening();
+    if opening {
+        Floating::closing(app, true);
+    }
     let watched = *app.floating().watched.lock().expect("session suivie");
 
     let mut sessions = crate::session::sessions().await;
@@ -1331,7 +1341,14 @@ async fn end_the_session(app: &App) -> Result<(), String> {
                         expected.at.clone(),
                     )
                 });
-            expected.ok_or("aucune session en cours")?
+            // An opening with no player yet has been let go of above,
+            // and that is the whole of what closing means at that
+            // moment: there is nothing to hand back and nothing to stop.
+            match expected {
+                Some(session) => session,
+                None if opening => return Ok(()),
+                None => return Err("aucune session en cours".to_string()),
+            }
         }
     };
     note(&format!("fermeture demandée sur {towards} à travers {at}"));

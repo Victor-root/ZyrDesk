@@ -461,11 +461,21 @@ impl Pairing {
     /// puts no limit of its own on it, so a far computer that stops
     /// answering halfway would leave a session opening with nothing on
     /// screen and nothing to say.
-    pub fn settled(mut self, patience: Duration) -> Result<(), EngineError> {
+    ///
+    /// `wanted` is asked at every turn of the wait, and `false` comes
+    /// back the moment it says no: this is the longest wait of an
+    /// opening, and an opening a person cannot give up on for half a
+    /// minute is an opening that ignores them. The engine is stopped on
+    /// the way out, by `Drop`, exactly as a wait that ran out stops it.
+    pub fn settled(
+        mut self,
+        patience: Duration,
+        wanted: &dyn Fn() -> bool,
+    ) -> Result<bool, EngineError> {
         let deadline = Instant::now() + patience;
         loop {
             match self.engine.try_wait()? {
-                Some(status) if status.success() => return Ok(()),
+                Some(status) if status.success() => return Ok(true),
                 Some(status) => {
                     return Err(EngineError::PairingFailed {
                         code: status.code(),
@@ -473,6 +483,9 @@ impl Pairing {
                     });
                 }
                 None => {}
+            }
+            if !wanted() {
+                return Ok(false);
             }
             if Instant::now() >= deadline {
                 // The engine is stopped on the way out, by `Drop`.
@@ -524,6 +537,19 @@ impl Session {
     pub fn wait(&mut self) -> io::Result<SessionOutcome> {
         let status = self.engine.wait()?;
         Ok(outcome_of(status.code()))
+    }
+
+    /// Stops the engine, the person having let go of the opening before
+    /// there was ever a picture.
+    ///
+    /// Killed rather than asked: what would be asked is the far computer
+    /// through this very engine, which is a round trip nobody is waiting
+    /// for, and the desk over there is handed back on the way out by
+    /// whoever closed the session. Waited for afterwards, so no process
+    /// of ours outlives the ask.
+    pub fn stop(&mut self) -> io::Result<()> {
+        self.engine.kill()?;
+        self.engine.wait().map(|_| ())
     }
 
     /// Watches the session just long enough to know it has taken.
@@ -661,7 +687,7 @@ PC-VICTOR is already paired";
         };
 
         let started = Instant::now();
-        let outcome = pairing.settled(Duration::from_millis(300));
+        let outcome = pairing.settled(Duration::from_millis(300), &|| true);
         assert!(
             matches!(outcome, Err(EngineError::PairingTimedOut(_))),
             "{outcome:?}"

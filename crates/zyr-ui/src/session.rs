@@ -256,6 +256,12 @@ pub async fn connect(app: App, host: String, fingerprint: String) -> Result<(), 
         return Err("une session est déjà en cours".to_string());
     }
 
+    // Nobody has closed a session that has not begun. Read and put down
+    // here rather than trusted: the opening asks it at every step now,
+    // and a « closed » left standing by whatever came before would let
+    // this one go before its first question.
+    crate::floating::Floating::was_closed_on_purpose(&app);
+
     // A session opens on the far computer's main screen, whatever screen
     // some earlier session was watching on some other machine. The choice
     // names one screen of one particular computer, so carrying it over
@@ -353,6 +359,17 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             &|| !crate::floating::Floating::a_close_was_asked_for(app),
         ) {
             Ok(running) => running,
+            // Let go of by the person, from the cross of the window or
+            // the shortcut: there is nothing to show them about it, they
+            // are the one who asked. The flag is taken here rather than
+            // left standing, since no session will end to take it.
+            Err(zyr_session::Error::Abandoned) => {
+                crate::floating::Floating::was_closed_on_purpose(app);
+                crate::journal::note(
+                    "ouverture abandonnée : la session a été fermée avant l'image",
+                );
+                return finish(app, true, String::new());
+            }
             Err(e) => {
                 crate::journal::note(&format!(
                     "session non ouverte : {}",
@@ -378,7 +395,9 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         // Costs nothing where it was already right: by the time the
         // service holds an ordinary session, the picture has been in our
         // window for seconds.
-        if !lay_the_picture_when_it_opens(app, process) {
+        if !lay_the_picture_when_it_opens(app, process)
+            && !crate::floating::Floating::a_close_was_asked_for(app)
+        {
             crate::journal::note(&format!(
                 "le lecteur {process} n'a pas ouvert d'image en {} s, l'écran d'ouverture est \
                  retiré quand même",
@@ -556,6 +575,13 @@ fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
     while std::time::Instant::now() < until {
         if crate::picture::hold(app, process) {
             return true;
+        }
+        // A picture nobody is waiting for any more is not waited for
+        // here either: this is where an opening spends its last twenty
+        // seconds, and a person who closes the window during them was
+        // otherwise left watching the opening screen to the end of it.
+        if crate::floating::Floating::a_close_was_asked_for(app) {
+            return false;
         }
         std::thread::sleep(WINDOW_STEP);
     }

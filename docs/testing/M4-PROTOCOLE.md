@@ -67,6 +67,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R70** | **Nouveau, et c'est le menu dessiné au complet.** Il lui manquait le curseur du débit, le codec, « Écran d'en face », « Appliquer les changements » et les deux listes qui s'ouvrent à gauche, résolution et écran de l'hôte : tout y est. Avec eux, deux réparations et un changement de couleur. Les interrupteurs étaient écrasés à la largeur de leur marge, parce qu'une mesure de texte était prise dans une boîte alignée à droite et large comme la moitié du plus grand nombre représentable ; la barre des mesures était tassée, parce que le texte y était empilé sur sa taille de caractère et non sur la hauteur de sa ligne. Et **l'accent du produit est maintenant l'or du logo** au lieu du bleu, dans tout le produit et pas seulement dans ce menu |
 | **R73** | **Nouveau, et c'est la fin de la boîte à outils.** La fenêtre, sa boucle de messages, l'icône près de l'horloge et l'instance unique sont écrites par le produit. Il ne reste plus aucune dépendance à une couche web, ni pour compiler ni pour tourner : trois cent vingt et une caisses de moins dans le verrou du projet. L'icône près de l'horloge est maintenant **dessinée** à la taille exacte que la barre demande, comme le reste du produit, au lieu d'être une image parmi six qu'il fallait choisir |
 | **R46**, **R46quater** | **Refait, et c'est un défaut trouvé par Victor.** Changer « Écran d'en face » pendant une session coupait la session : le moteur d'en face redémarre pour lire ce réglage, ce qui emportait la voie que l'image venait d'ouvrir. La demande se règle maintenant avant que l'image s'ouvre, comme le changement d'écran, et l'écran d'ouverture le dit |
+| **R75** | **Nouveau, et c'est un défaut trouvé par Victor.** La croix ne faisait rien sur l'écran d'ouverture : la barre s'arrêtait une seconde et l'ouverture continuait. Elle annule maintenant l'ouverture, à n'importe quel moment de celle-ci, et revient à l'accueil sans message d'erreur |
 | **R74** | **Nouveau.** Le menu du bouton flottant s'ouvre maintenant **à gauche du bouton** quand il n'a la place ni dessous ni dessus, c'est-à-dire quand le bouton est posé vers le milieu de l'image. Il y était coupé par le bas |
 | **R51**, **R65** | Touchés. Un sous-menu s'ouvre **en face de la ligne qui l'ouvre** et non plus en haut de la carte : une liste de deux écrans se posait tout en haut pendant qu'on cliquait une ligne du bas |
 | **R17** | Touché. Le curseur du **débit** avance d'un mégabit par cran au lieu de sauter de cinq à dix. Les bornes ne changent pas : de 5 à 80 Mb/s |
@@ -1676,6 +1677,25 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > ```
 >
 > **Et l'agrandissement de l'écran** : refaire le tour à 125, 150 et 175 %.
+
+> **R75 (la croix annule une ouverture)**
+>
+> **C'est le défaut relevé par Victor** : sur l'écran d'ouverture, la croix ne faisait rien, la barre marquait une pause d'une seconde et l'ouverture continuait.
+>
+> Ouvrir une session et cliquer la croix **à chacun de ces moments**, un essai par moment :
+>
+> 1. Tout de suite, pendant « Tunnel établi ».
+> 2. Pendant « Démarrage de l'image… ».
+> 3. Pendant « L'image arrive… », qui est le plus long des trois.
+> 4. Et si l'occasion se présente, pendant « L'ordinateur distant change d'écran, il redémarre… » : basculer l'écran de l'hôte, appliquer, et cliquer la croix pendant le redémarrage.
+>
+> Attendu à chaque fois : **retour immédiat à l'accueil**, en une seconde ou deux, **sans message rouge**. Une annulation n'est pas un échec, et personne n'a besoin qu'on lui explique ce qu'il vient de demander.
+>
+> **Rien ne doit rester derrière.** Le gestionnaire des tâches ne doit plus montrer de « ZyrDesk : Moteur d'affichage », l'écran ne doit pas être resté pris par une session, et une nouvelle session doit pouvoir s'ouvrir tout de suite après, sans redémarrer quoi que ce soit. Ce dernier point est le piège : c'est là que se verrait une annulation qui reste écrite quelque part.
+>
+> Le journal de la fenêtre dit `ouverture abandonnée : la session a été fermée avant l'image`.
+>
+> **Et le raccourci fait la même chose** : Alt+É pendant une ouverture doit l'annuler exactement comme la croix.
 
 > **R74 (le menu s'ouvre à côté du bouton quand il n'a la place ni dessous ni dessus)**
 >

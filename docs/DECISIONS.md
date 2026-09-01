@@ -1999,6 +1999,18 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Le dialecte change des deux côtés**, celui du tunnel et celui du canal de commande : deux moitiés du produit installées à des dates différentes le disent au lieu de se mécomprendre. Les deux ordinateurs se mettent à jour ensemble.
 
+## D115. La croix annule une ouverture, à n'importe quel moment de l'ouverture (2026-09-01, pendant M4)
+
+**Le constat, de Victor.** Sur l'écran d'ouverture, la croix ne fait rien : « ça met juste en pause la barre de chargement pendant une seconde et c'est tout ».
+
+**Ce qui se passait.** La croix demandait la fin de la session, et cette demande cherche une session à terminer : d'abord auprès du service, ce qui prend la seconde en question, puis dans ce que la fenêtre a écrit quand elle a lancé le lecteur. Pendant une ouverture, il n'y a ni l'un ni l'autre la plupart du temps, et la demande s'arrêtait là, sur une ligne de journal que personne ne lit. Plus loin dans l'ouverture, quand le lecteur venait de partir, elle l'arrêtait bien, mais la fenêtre restait vingt secondes de plus à attendre une image qui n'arriverait jamais.
+
+**Et l'ouverture ne demandait qu'à la fin si on la voulait encore.** La question existait, mais elle n'était posée que pendant les six secondes de veille qui suivent l'image. Tout ce qui précède, qui est là où une ouverture passe son temps (la course aux adresses, un moteur d'en face qui redémarre, deux ordinateurs qu'on présente), ne la posait jamais.
+
+**Décision : la croix pendant une ouverture est une annulation, et elle est dite avant tout le reste.** Elle n'attend plus qu'on lui trouve une session : elle marque l'ouverture comme lâchée, et c'est cette marque que l'ouverture lit **à chacun de ses pas**, du premier au dernier. Ce qui avait été lancé est arrêté en sortant, y compris un lecteur parti une seconde plus tôt, et l'appairage, qui est la plus longue attente de toutes, la lit à chacun de ses tours au lieu de tenir trente secondes.
+
+**Une annulation n'est pas un échec.** Elle revient à l'accueil sans ligne rouge : celui qui l'a demandée n'a rien à apprendre de sa propre demande. Le journal la garde, l'écran non.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
