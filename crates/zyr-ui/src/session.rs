@@ -590,12 +590,17 @@ fn told(step: Step) -> Option<(String, Option<String>)> {
         Step::Paired => ("Les deux ordinateurs se connaissent.".to_string(), None),
         Step::Starting => ("Démarrage de l'image…".to_string(), None),
         Step::Showing { .. } => ("L'image arrive…".to_string(), None),
-        // The one of these the person is left waiting through, so it is
-        // the one that goes on the opening screen: the far computer is
+        // The two of these the person is left waiting through, so they
+        // are the ones that go on the opening screen: the far computer is
         // starting its engine over, and that is several seconds during
         // which nothing else would say anything at all.
         Step::FarScreenChanging => (
             "L'ordinateur distant change d'écran, il redémarre…".to_string(),
+            None,
+        ),
+        Step::FarRateChanging => (
+            "L'ordinateur distant change sa façon d'envoyer un écran immobile, il redémarre…"
+                .to_string(),
             None,
         ),
         Step::SpeakersLeftAlone { .. }
@@ -701,6 +706,9 @@ fn written(step: &Step) -> String {
             "l'ordinateur distant change d'écran, son moteur redémarre et la voie sera rouverte"
                 .to_string()
         }
+        Step::FarRateChanging => "l'ordinateur distant change sa cadence d'écran immobile, son \
+                                  moteur redémarre et la voie sera rouverte"
+            .to_string(),
         Step::FarScreenLeftAlone { refused } => {
             format!("l'ordinateur distant garde l'écran qu'il filme : {refused}")
         }

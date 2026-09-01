@@ -66,6 +66,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R69** | **Nouveau.** Le menu dessiné prend vie : les quatre chiffres du moteur se remplissent et se renouvellent une fois par seconde tant que la carte est ouverte, la phrase du flux dit de quoi l'image est faite, et les trois interrupteurs **Souris**, **Son** et **Clavier** sont là, chacun relu à l'ouverture plutôt que retenu. Deux réparations avec eux : l'icône « Masquer ce bouton » ne ressemblait à rien parce que le lecteur de dessins ne connaissait pas la courbe de Bézier, la seule du produit, et un chemin illisible se dit maintenant dans le journal au lieu de laisser une icône à moitié dessinée ; et le côté allumé d'un interrupteur s'écrivait avec une couleur qui n'existait pas, `--sur-accent`, employée par la page et définie nulle part |
 | **R70** | **Nouveau, et c'est le menu dessiné au complet.** Il lui manquait le curseur du débit, le codec, « Écran d'en face », « Appliquer les changements » et les deux listes qui s'ouvrent à gauche, résolution et écran de l'hôte : tout y est. Avec eux, deux réparations et un changement de couleur. Les interrupteurs étaient écrasés à la largeur de leur marge, parce qu'une mesure de texte était prise dans une boîte alignée à droite et large comme la moitié du plus grand nombre représentable ; la barre des mesures était tassée, parce que le texte y était empilé sur sa taille de caractère et non sur la hauteur de sa ligne. Et **l'accent du produit est maintenant l'or du logo** au lieu du bleu, dans tout le produit et pas seulement dans ce menu |
 | **R73** | **Nouveau, et c'est la fin de la boîte à outils.** La fenêtre, sa boucle de messages, l'icône près de l'horloge et l'instance unique sont écrites par le produit. Il ne reste plus aucune dépendance à une couche web, ni pour compiler ni pour tourner : trois cent vingt et une caisses de moins dans le verrou du projet. L'icône près de l'horloge est maintenant **dessinée** à la taille exacte que la barre demande, comme le reste du produit, au lieu d'être une image parmi six qu'il fallait choisir |
+| **R46**, **R46quater** | **Refait, et c'est un défaut trouvé par Victor.** Changer « Écran d'en face » pendant une session coupait la session : le moteur d'en face redémarre pour lire ce réglage, ce qui emportait la voie que l'image venait d'ouvrir. La demande se règle maintenant avant que l'image s'ouvre, comme le changement d'écran, et l'écran d'ouverture le dit |
 | **R74** | **Nouveau.** Le menu du bouton flottant s'ouvre maintenant **à gauche du bouton** quand il n'a la place ni dessous ni dessus, c'est-à-dire quand le bouton est posé vers le milieu de l'image. Il y était coupé par le bas |
 | **R51**, **R65** | Touchés. Un sous-menu s'ouvre **en face de la ligne qui l'ouvre** et non plus en haut de la carte : une liste de deux écrans se posait tout en haut pendant qu'on cliquait une ligne du bas |
 | **R17** | Touché. Le curseur du **débit** avance d'un mégabit par cran au lieu de sauter de cinq à dix. Les bornes ne changent pas : de 5 à 80 Mb/s |
@@ -2158,13 +2159,27 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Repasser en **Économe** et appliquer : le pointeur redevient saccadé sur un bureau immobile, et la machine d'en face cesse d'encoder pour rien. C'est le bon réglage pour une machine qui n'arrive pas à suivre.
 >
-> Le journal du service **d'en face** dit `a session asked this computer to start resending a still screen`, puis `how this computer serves was changed, the engine starts over with it`. Celui d'ici dit `way N asked the far computer to start resending a still screen`.
+> Le journal du service **d'en face** dit `a session asked this computer to start resending a still screen`, puis `how this computer serves was changed, the engine starts over with it`. Celui d'ici dit `way N asked the far computer to start resending a still screen, and it is starting its engine over, so this way is about to go`, puis une voie neuve quelques secondes plus tard.
 >
 > **Et ça se retient.** Terminer la session, en rouvrir une : la ligne est restée où on l'a laissée, et la machine d'en face est demandée pareil.
 >
 > **Le chiffre qui tranche, et il faut le lire.** Ouvrir les statistiques (Ctrl+Alt+Maj+S) et **ne plus toucher à rien** : ni souris, ni clavier, pendant dix secondes. La cadence doit tenir **60**, ou tout près. Si elle s'installe nettement en dessous, faire le calcul : `1000 / (16,7 + temps d'encodage de l'hôte)`. Si le résultat tombe sur ce que tu lis, c'est ce défaut-là qui est de retour, et pas la machine d'en face qui plafonne.
 >
 > **Et il faut vraiment ne pas bouger la souris.** Dès qu'elle bouge, les images arrivent d'elles-mêmes et la cadence remonte quoi qu'il arrive : c'est ce qui a masqué le défaut pendant tout le temps où il était là.
+
+> **R46quater (changer la cadence d'en face ne coupe plus la session)**
+>
+> **C'est le défaut relevé par Victor** : mettre **Économe** pendant une session, appliquer, et la session tombait avec « L'ordinateur distant a refusé l'appairage ». Se reconnecter marchait, et le réglage était bien pris.
+>
+> Pendant une session, basculer **Écran d'en face** d'un côté à l'autre, puis **Appliquer les changements**. À refaire **dans les deux sens**, deux fois chacun.
+>
+> Attendu : l'écran d'ouverture affiche **« L'ordinateur distant change sa façon d'envoyer un écran immobile, il redémarre… »**, puis l'image revient toute seule. C'est plus long qu'une relance ordinaire, une dizaine de secondes, et c'est le redémarrage du moteur d'en face. **Aucune session ne doit tomber, et aucune ligne d'appairage refusé ne doit apparaître.**
+>
+> **Appliquer une seconde fois sans rien changer** doit être une relance ordinaire et rapide : le moteur d'en face est déjà comme on le demande, il ne redémarre pas, et l'écran d'ouverture ne dit donc rien de lui.
+>
+> **Et les deux ensemble**, qui est le cas le plus long : changer **Écran de l'hôte** et **Écran d'en face** avant d'appliquer une seule fois. Le moteur d'en face redémarre une fois pour l'un, une fois pour l'autre, les deux messages passent à l'écran, et l'image revient.
+>
+> Le journal de la fenêtre en garde la trace : `l'ordinateur distant change sa cadence d'écran immobile, son moteur redémarre et la voie sera rouverte`.
 
 > **R47 (la session demande la cadence de ton écran)**
 >

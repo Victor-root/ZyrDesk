@@ -6,7 +6,7 @@ pub mod frame;
 pub mod pump;
 pub mod tunnel;
 
-pub use aside::{Answers, Filming, Question, Told};
+pub use aside::{Answers, Question, Settled, Told};
 pub use channel::{DatagramChannel, StreamChannel};
 pub use pump::{Counters, Reading};
 pub use tunnel::Tunnel;

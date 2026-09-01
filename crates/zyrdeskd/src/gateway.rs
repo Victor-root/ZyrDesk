@@ -91,6 +91,12 @@ pub struct AtHand {
     /// asks, and comparing the ask against the note would answer « you
     /// have it » to a session whose engine has not started over yet.
     pub aimed_at: Option<String>,
+    /// Whether the engine was started resending a still screen at full
+    /// rate.
+    ///
+    /// Carried for the same reason as the screen above, and answered the
+    /// same way: it is read at the engine's start and never again.
+    pub serves_steady: bool,
 }
 
 /// The local engine, and the one thing a far computer may ask of it.
@@ -104,6 +110,8 @@ struct Attending {
     engine_log: PathBuf,
     /// Which screen the engine was started filming.
     aimed_at: Option<String>,
+    /// Whether it was started resending a still screen at full rate.
+    serves_steady: bool,
     /// The sessions coming through this door, so what one of them asks
     /// of this computer outlives the asking.
     sessions: Arc<Sessions>,
@@ -387,33 +395,45 @@ impl Answers for Attending {
     /// Sets whether this computer resends a still screen at full rate,
     /// because a session opening towards it asked.
     ///
-    /// Written down and nothing more. What acts on it is the watch that
-    /// holds the engine: it sees the setting move and starts the engine
-    /// over, which is the only way an engine learns this. That is also
-    /// why the ask is made at the opening of a session and never in the
-    /// middle of one.
+    /// Written down, and the writing is all this does. What acts on it is
+    /// the watch that holds the engine: it sees the setting move and
+    /// starts the engine over, which is the only way an engine learns
+    /// this.
     ///
-    /// Doing nothing at all when it is already what was asked, which is
-    /// the ordinary case: every session asks, and almost none of them
-    /// changes anything.
-    fn serve_steady(&self, rate: bool) -> Result<(), String> {
+    /// Which is why the answer says which of the two happened, exactly as
+    /// the screen to film below does. Starting that engine over takes the
+    /// tunnel with it, so the session that asked is told to wait and come
+    /// back rather than left to open its picture through a way about to
+    /// break under it.
+    ///
+    /// Writing nothing at all when the note already says what was asked,
+    /// which is the ordinary case: every session asks, and almost none of
+    /// them changes anything.
+    fn serve_steady(&self, rate: bool) -> Result<zyr_tunnel::Settled, String> {
         let mut serving = self.machine.remembered.serving();
-        if serving.steady_rate == rate {
-            return Ok(());
-        }
-        serving.steady_rate = rate;
-        self.machine.remembered.set_serving(serving).map_err(|e| {
-            let refused = e.to_string();
+        if serving.steady_rate != rate {
+            serving.steady_rate = rate;
+            self.machine.remembered.set_serving(serving).map_err(|e| {
+                let refused = e.to_string();
+                self.log.write(&format!(
+                    "the rate this computer serves at is unchanged: {refused}"
+                ));
+                refused
+            })?;
             self.log.write(&format!(
-                "the rate this computer serves at is unchanged: {refused}"
+                "a session asked this computer to {} resending a still screen",
+                if rate { "start" } else { "stop" }
             ));
-            refused
-        })?;
-        self.log.write(&format!(
-            "a session asked this computer to {} resending a still screen",
-            if rate { "start" } else { "stop" }
-        ));
-        Ok(())
+        }
+        // Weighed against the rate the engine was **started** at and
+        // never against the note that may have just been written: the
+        // note is what the next engine will read, and answering from it
+        // would tell a session it has what it asked for while the engine
+        // that is running still serves the other way.
+        if rate == self.serves_steady {
+            return Ok(zyr_tunnel::Settled::Already);
+        }
+        Ok(zyr_tunnel::Settled::StartingOver)
     }
 
     /// Hands this computer's journal over, whole.
@@ -526,12 +546,12 @@ impl Answers for Attending {
     /// Doing nothing at all when it is already the screen being filmed,
     /// which is the ordinary case: every session asks, and almost none of
     /// them changes anything.
-    fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Filming, String> {
+    fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
         // A computer filmed on the screen it grew has one screen to give
         // and no choice to offer; a session asking for its main screen is
         // asking for what it is already getting.
         if self.films_the_grown_screen {
-            return Ok(zyr_tunnel::Filming::Already);
+            return Ok(zyr_tunnel::Settled::Already);
         }
         crate::screen::film_this_screen(id.as_deref()).map_err(|refused| {
             self.log.write(&format!(
@@ -545,13 +565,13 @@ impl Answers for Attending {
         // tell a session it has what it asked for while the engine that
         // is running is still on the other screen.
         if crate::screen::the_screen_to_film() == self.aimed_at {
-            return Ok(zyr_tunnel::Filming::Already);
+            return Ok(zyr_tunnel::Settled::Already);
         }
         self.log.write(&format!(
             "a session asked to be served from {}, so this computer's engine starts over",
             id.as_deref().unwrap_or("this computer's main screen")
         ));
-        Ok(zyr_tunnel::Filming::StartingOver)
+        Ok(zyr_tunnel::Settled::StartingOver)
     }
 }
 
@@ -868,6 +888,7 @@ impl Gateway {
             films_the_grown_screen: engine.films_the_grown_screen,
             engine_log: engine.engine_log,
             aimed_at: engine.aimed_at,
+            serves_steady: engine.serves_steady,
             sessions: sessions.clone(),
             machine: machine.clone(),
             fingerprint: identity.fingerprint(),

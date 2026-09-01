@@ -96,9 +96,13 @@ impl Answers for FakeEngine {
         Ok(())
     }
 
-    fn serve_steady(&self, rate: bool) -> Result<(), String> {
-        self.steady.store(rate, Ordering::Relaxed);
-        Ok(())
+    /// Comme une vraie machine : son moteur lit la cadence à son
+    /// démarrage, donc en changer le fait repartir.
+    fn serve_steady(&self, rate: bool) -> Result<zyr_tunnel::Settled, String> {
+        if self.steady.swap(rate, Ordering::Relaxed) == rate {
+            return Ok(zyr_tunnel::Settled::Already);
+        }
+        Ok(zyr_tunnel::Settled::StartingOver)
     }
 
     fn screen_for_a_session(
@@ -135,13 +139,13 @@ impl Answers for FakeEngine {
 
     /// Ce que ferait une vraie machine : elle filme son écran principal
     /// et il faut redémarrer son moteur pour en filmer un autre.
-    fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Filming, String> {
+    fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
         let mut filming = self.filming.lock().unwrap();
         if *filming == id {
-            return Ok(zyr_tunnel::Filming::Already);
+            return Ok(zyr_tunnel::Settled::Already);
         }
         *filming = id;
-        Ok(zyr_tunnel::Filming::StartingOver)
+        Ok(zyr_tunnel::Settled::StartingOver)
     }
 }
 
@@ -418,14 +422,32 @@ async fn la_cadence_de_l_ecran_immobile_se_demande_depuis_le_client() {
     // pas devant la machine qu'il faudrait aller régler.
     let bench = Bench::bring_up(42760, 13).await;
 
-    before_the_end(aside::ask_to_serve_steady(&bench.connection, true))
-        .await
-        .unwrap();
+    // Et un changement lui coûte un redémarrage de son moteur, qu'elle
+    // dit plutôt que de laisser l'autre bout le découvrir sur un tunnel
+    // cassé : c'est la même réponse que pour l'écran à filmer.
+    assert_eq!(
+        before_the_end(aside::ask_to_serve_steady(&bench.connection, true))
+            .await
+            .unwrap(),
+        zyr_tunnel::Settled::StartingOver
+    );
     assert!(bench.steady.load(Ordering::Relaxed));
 
-    before_the_end(aside::ask_to_serve_steady(&bench.connection, false))
-        .await
-        .unwrap();
+    // Redemandée telle quelle, elle ne coûte rien du tout, ce qui est le
+    // cas ordinaire : toute session la demande.
+    assert_eq!(
+        before_the_end(aside::ask_to_serve_steady(&bench.connection, true))
+            .await
+            .unwrap(),
+        zyr_tunnel::Settled::Already
+    );
+
+    assert_eq!(
+        before_the_end(aside::ask_to_serve_steady(&bench.connection, false))
+            .await
+            .unwrap(),
+        zyr_tunnel::Settled::StartingOver
+    );
     assert!(!bench.steady.load(Ordering::Relaxed));
 }
 
@@ -697,7 +719,7 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
         before_the_end(aside::ask_to_film_this_screen(&bench.connection, None))
             .await
             .unwrap(),
-        zyr_tunnel::Filming::Already
+        zyr_tunnel::Settled::Already
     );
     // L'autre lui coûte un redémarrage de son moteur, et elle le dit
     // plutôt que de laisser l'autre bout le découvrir sur un tunnel cassé.
@@ -708,7 +730,7 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
         ))
         .await
         .unwrap(),
-        zyr_tunnel::Filming::StartingOver
+        zyr_tunnel::Settled::StartingOver
     );
     assert_eq!(*bench.filming.lock().unwrap(), Some(read[1].id.clone()));
 }

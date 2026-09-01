@@ -1981,6 +1981,24 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Décision : un cran par mégabit, de 5 à 80 Mb/s.** Les bornes ne bougent pas, l'espacement si. Le curseur est la manière dont on cherche le débit que sa propre liaison porte vraiment, en regardant l'image pendant qu'on le pousse, et un curseur qui saute dix mégabits n'est pas quelque chose avec quoi on cherche. Rien d'autre ne change : ce sont toujours des rangs qui sont poussés et non des nombres, et rien n'est écrit tant que la main tient le pouce.
 
+## D114. Ce que le moteur d'en face ne lit qu'à son démarrage se règle avant d'ouvrir l'image, jamais après (2026-09-01, pendant M4)
+
+**Le constat, relevé par Victor, journaux à l'appui.** Passer « Écran d'en face » en Économe pendant une session coupait la session. Se reconnecter marchait, et le réglage était bien pris en compte.
+
+**Ce qui se passait, à la seconde près.** Appliquer relance l'image : le lecteur s'arrête, une voie s'ouvre vers l'ordinateur d'en face, la cadence lui est demandée, et le lecteur repart. Or cette demande écrit un fichier chez lui, et la veille qui tient son moteur voit ce fichier bouger et **redémarre le moteur**, ce qui emporte le tunnel et donc la voie qu'on vient d'ouvrir. Le lecteur, lancé une seconde plus tôt, se retrouvait à parler à un moteur en train de mourir : `closed by peer: 0`, lu ici comme un refus d'appairage, et la session tombait. La reconnexion d'après marchait pour la seule raison que le moteur avait fini de redémarrer et que la cadence était déjà écrite.
+
+**Ce n'est pas nouveau et ce n'était pas oublié.** [D73](#d73-la-cadence-de-lécran-immobile-se-demande-depuis-le-côté-qui-regarde-2026-08-27-pendant-m4) dit exactement ça : « un moteur qui repart au milieu d'une session est cette session qui s'en va », d'où une demande faite à l'ouverture et jamais au milieu. Elle **était** faite à l'ouverture. Ce qui manquait est que le redémarrage tombe alors au milieu de **cette ouverture-là**.
+
+**L'écran à filmer, lui, avait déjà la réponse.** Il a la même contrainte, il l'a rencontrée avant, et il a été réglé pour de bon : l'ordinateur d'en face **répond** s'il est déjà comme on le demande ou s'il redémarre pour l'être, et celui qui demande lâche la voie, attend, et redemande sur une voie neuve jusqu'à ce que la réponse soit « déjà ». Rien de tout ça n'est deviné depuis une voie qui casse.
+
+**Décision : les deux demandes que le moteur d'en face ne lit qu'à son démarrage sont une seule affaire, réglée avant que l'image s'ouvre.** L'écran à filmer et la cadence de l'écran immobile voyagent maintenant dans la même boucle, sur la même voie, avec la même réponse en deux mots : « déjà » ou « je redémarre ». Une session ordinaire n'y passe qu'une fois, les deux réponses étant « déjà ».
+
+**Et la réponse est pesée contre le moteur qui tourne, pas contre le fichier.** Le fichier est ce que le **prochain** moteur lira : répondre d'après lui dirait « tu l'as » à une session dont le moteur n'a pas encore redémarré. Ce que le moteur en marche a lu à son démarrage voyage donc jusqu'à la porte, comme l'écran filmé le fait déjà.
+
+**Ce que ça donne à l'écran.** L'écran d'ouverture dit « L'ordinateur distant change sa façon d'envoyer un écran immobile, il redémarre… », comme il le dit déjà pour un changement d'écran. Quelques secondes de plus, dites, au lieu d'une session qui tombe.
+
+**Le dialecte change des deux côtés**, celui du tunnel et celui du canal de commande : deux moitiés du produit installées à des dates différentes le disent au lieu de se mécomprendre. Les deux ordinateurs se mettent à jour ensemble.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

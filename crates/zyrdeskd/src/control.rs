@@ -246,7 +246,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         },
         Request::SteadyFar { way, rate } => {
             match answering.machine.ways.ask_to_serve_steady(way, rate).await {
-                Ok(()) => Answer::Done,
+                Ok(starting_over) => Answer::Settled { starting_over },
                 Err(reason) => Answer::Refused(reason),
             }
         }
@@ -281,7 +281,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 .ask_to_film_this_screen(way, id)
                 .await
             {
-                Ok(starting_over) => Answer::Filming { starting_over },
+                Ok(starting_over) => Answer::Settled { starting_over },
                 Err(reason) => Answer::Refused(reason),
             }
         }

@@ -45,8 +45,12 @@ use crate::pump;
 /// the far computer can encode, so a menu stops offering what that
 /// computer was never going to make. Version 12 asks which screens that
 /// computer has and which of them to be served from, a machine with two
-/// of them having had no way to offer the second.
-pub const VERSION: u32 = 12;
+/// of them having had no way to offer the second. Version 13 has the
+/// cadence of a still screen answered like the screen to film, « already
+/// » or « starting over »: it is read once by the far engine too, and a
+/// session that asked for it and then opened its picture through the way
+/// that was about to go fell over on its first picture.
+pub const VERSION: u32 = 13;
 
 /// Longest question this channel takes.
 ///
@@ -126,9 +130,12 @@ pub trait Answers: Send + Sync + 'static {
     /// here, so the ask is a request and not an order: an answer of no is
     /// an answer.
     ///
-    /// The engine reads it when it starts, so saying yes to a change
-    /// starts that engine over.
-    fn serve_steady(&self, rate: bool) -> Result<(), String>;
+    /// The engine reads it when it starts, so a change of it starts that
+    /// engine over, and starting over takes the tunnel with it: the
+    /// answer says which of the two happened, exactly as the screen to
+    /// film below does, rather than leaving the far end to find out from
+    /// a way that broke underneath it.
+    fn serve_steady(&self, rate: bool) -> Result<Settled, String>;
 
     /// Wakes this computer's virtual screen for a session that wants a
     /// picture like that one, or puts it back to sleep.
@@ -229,13 +236,18 @@ pub trait Answers: Send + Sync + 'static {
     /// starting over takes the tunnel with it, which is why the answer
     /// says so plainly rather than leaving the far end to find out from a
     /// broken way.
-    fn film_this_screen(&self, id: Option<String>) -> Result<Filming, String>;
+    fn film_this_screen(&self, id: Option<String>) -> Result<Settled, String>;
 }
 
-/// What a computer answers when it is told which screen to serve from.
+/// What a computer answers when it is told something its engine only
+/// reads when it starts.
+///
+/// Two of them: which of its screens to film, and whether it resends a
+/// still screen at full rate. Both are read once, so both have the same
+/// two answers, and the second of them takes the tunnel with it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Filming {
-    /// It is on that screen already, and the session may go on.
+pub enum Settled {
+    /// It is that way already, and the session may go on.
     Already,
     /// Its engine has to start over, which takes this tunnel with it. The
     /// far end waits and comes back.
@@ -286,8 +298,6 @@ pub enum Told {
     Hushed,
     /// The far computer's screen is being locked.
     Locked,
-    /// The far computer serves the way it was asked to.
-    Steady,
     /// The far computer's virtual screen is where it was asked to be,
     /// and it is showing this size. Absent when that computer could not
     /// measure itself, which leaves the asking end on what it guessed.
@@ -313,10 +323,14 @@ pub enum Told {
     Screens {
         listed: String,
     },
-    /// The far computer is serving from the screen that was named, or is
-    /// starting its engine over to do it.
-    Filming {
-        how: Filming,
+    /// The far computer is as it was asked to be, or is starting its
+    /// engine over to be it.
+    ///
+    /// The answer to both of the questions its engine only reads at
+    /// startup: which screen to film, and the rate a still screen is
+    /// served at. Which one it answers is whichever was asked.
+    Settled {
+        how: Settled,
     },
 }
 
@@ -367,7 +381,6 @@ impl fmt::Display for Told {
             Told::Attended => write!(f, "{VERSION} attended"),
             Told::Hushed => write!(f, "{VERSION} hushed"),
             Told::Locked => write!(f, "{VERSION} locked"),
-            Told::Steady => write!(f, "{VERSION} steady"),
             Told::Screen { size } => match size {
                 Some((wide, high)) => write!(f, "{VERSION} screen {wide}x{high}"),
                 None => write!(f, "{VERSION} screen none"),
@@ -382,12 +395,12 @@ impl fmt::Display for Told {
             // above travels whole: this channel ends a message by closing
             // the stream.
             Told::Screens { listed } => write!(f, "{VERSION} screens {listed}"),
-            Told::Filming { how } => write!(
+            Told::Settled { how } => write!(
                 f,
-                "{VERSION} filming {}",
+                "{VERSION} settled {}",
                 match how {
-                    Filming::Already => "already",
-                    Filming::StartingOver => "starting-over",
+                    Settled::Already => "already",
+                    Settled::StartingOver => "starting-over",
                 }
             ),
         }
@@ -460,7 +473,6 @@ impl Told {
             "attended" => Ok(Ok(Told::Attended)),
             "hushed" => Ok(Ok(Told::Hushed)),
             "locked" => Ok(Ok(Told::Locked)),
-            "steady" => Ok(Ok(Told::Steady)),
             "screen" => Ok(Ok(Told::Screen {
                 size: match rest {
                     "none" | "" => None,
@@ -480,14 +492,14 @@ impl Told {
             "screens" => Ok(Ok(Told::Screens {
                 listed: rest.to_string(),
             })),
-            "filming" => match rest {
-                "already" => Ok(Ok(Told::Filming {
-                    how: Filming::Already,
+            "settled" => match rest {
+                "already" => Ok(Ok(Told::Settled {
+                    how: Settled::Already,
                 })),
-                "starting-over" => Ok(Ok(Told::Filming {
-                    how: Filming::StartingOver,
+                "starting-over" => Ok(Ok(Told::Settled {
+                    how: Settled::StartingOver,
                 })),
-                other => Err(unreadable(format!("« filming {other} » ne dit rien"))),
+                other => Err(unreadable(format!("« settled {other} » ne dit rien"))),
             },
             "no" => Ok(Err(rest.to_string())),
             other => Err(unreadable(format!("réponse inconnue « {other} »"))),
@@ -625,10 +637,12 @@ pub async fn ask_to_lock(connection: &Connection) -> io::Result<()> {
 /// Asked at the opening of every session and never in the middle of one:
 /// the far engine reads this when it starts, so a change of it starts
 /// that engine over, and an engine starting over in the middle of a
-/// session is that session going.
-pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Result<()> {
+/// session is that session going. The answer says which of the two
+/// happened, exactly as the screen to film does, and the caller waits
+/// and comes back when it is the second.
+pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Result<Settled> {
     match ask(connection, &Question::Steady { rate }).await? {
-        Told::Steady => Ok(()),
+        Told::Settled { how } => Ok(how),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
 }
@@ -715,9 +729,9 @@ pub async fn ask_what_screens_it_has(connection: &Connection) -> io::Result<Stri
 pub async fn ask_to_film_this_screen(
     connection: &Connection,
     id: Option<String>,
-) -> io::Result<Filming> {
+) -> io::Result<Settled> {
     match ask(connection, &Question::FilmThisScreen { id }).await? {
-        Told::Filming { how } => Ok(how),
+        Told::Settled { how } => Ok(how),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
 }
@@ -786,7 +800,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             tokio::task::spawn_blocking(move || answering.serve_steady(rate))
                 .await
                 .map_err(|e| format!("la cadence n'a pas pu être réglée : {e}"))?
-                .map(|()| Told::Steady)
+                .map(|how| Told::Settled { how })
         }
         // Off it too, and this one takes the longest of them all: waking
         // a screen is Windows starting a device, and the answer is not
@@ -830,7 +844,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             tokio::task::spawn_blocking(move || answering.film_this_screen(id))
                 .await
                 .map_err(|e| format!("l'écran à filmer n'a pas pu être choisi : {e}"))?
-                .map(|how| Told::Filming { how })
+                .map(|how| Told::Settled { how })
         }
     }
 }
@@ -914,7 +928,6 @@ mod tests {
             Told::Attended,
             Told::Hushed,
             Told::Locked,
-            Told::Steady,
             Told::Screen {
                 size: Some((1920, 1200)),
             },
@@ -945,11 +958,11 @@ mod tests {
             Told::Screens {
                 listed: String::new(),
             },
-            Told::Filming {
-                how: Filming::Already,
+            Told::Settled {
+                how: Settled::Already,
             },
-            Told::Filming {
-                how: Filming::StartingOver,
+            Told::Settled {
+                how: Settled::StartingOver,
             },
         ] {
             let said = told.to_string();

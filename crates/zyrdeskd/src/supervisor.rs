@@ -758,6 +758,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         films_the_grown_screen,
         engine_log: engine_log.clone(),
         aimed_at: aiming_at.clone(),
+        serves_steady: serving.steady_rate,
     };
     let gateway = match Gateway::open(runtime, at_hand, (*machine).clone(), log) {
         Ok(gateway) => gateway,

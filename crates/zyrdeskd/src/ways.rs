@@ -565,8 +565,11 @@ impl Ways {
     ///
     /// Asked at the opening of every session, and almost never changing
     /// anything: the far computer does nothing at all when it is already
-    /// serving the way it was asked to.
-    pub async fn ask_to_serve_steady(&self, way: WayId, rate: bool) -> Result<(), String> {
+    /// serving the way it was asked to. When it does change something,
+    /// its engine reads this at its start and nowhere else, so it starts
+    /// over and takes this very way with it: the answer says which of the
+    /// two happened, like the screen to film below.
+    pub async fn ask_to_serve_steady(&self, way: WayId, rate: bool) -> Result<bool, String> {
         let connection = {
             let register = self.register.lock().expect("registre des voies");
             register.thing(way).map(|open| open.connection.clone())
@@ -575,14 +578,20 @@ impl Ways {
             return Err(format!("la voie {way} n'existe plus"));
         };
 
-        aside::ask_to_serve_steady(&connection, rate)
+        let how = aside::ask_to_serve_steady(&connection, rate)
             .await
             .map_err(|e| format!("l'ordinateur distant n'a pas réglé sa cadence : {e}"))?;
+        let starting_over = how == aside::Settled::StartingOver;
         self.log.write(&format!(
-            "way {way} asked the far computer to {} resending a still screen",
-            if rate { "start" } else { "stop" }
+            "way {way} asked the far computer to {} resending a still screen, and it {}",
+            if rate { "start" } else { "stop" },
+            if starting_over {
+                "is starting its engine over, so this way is about to go"
+            } else {
+                "was already serving that way"
+            }
         ));
-        Ok(())
+        Ok(starting_over)
     }
 
     /// Asks the far computer to wake its virtual screen for a picture
@@ -700,7 +709,7 @@ impl Ways {
         let how = aside::ask_to_film_this_screen(&connection, id)
             .await
             .map_err(|e| format!("l'ordinateur distant n'a pas changé d'écran : {e}"))?;
-        let starting_over = how == aside::Filming::StartingOver;
+        let starting_over = how == aside::Settled::StartingOver;
         self.log.write(&format!(
             "way {way}: the far computer serves from {} and {}",
             named.as_deref().unwrap_or("its main screen"),

@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 25;
+pub const PROTOCOL: u32 = 26;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -587,9 +587,14 @@ pub enum Answer {
     /// same reason: a newline here would be read as the start of another
     /// message. Empty is « it has not said ».
     Screens(String),
-    /// The far computer is serving from the screen that was named, or is
-    /// starting its engine over to do it, which takes the way with it.
-    Filming {
+    /// The far computer is as it was asked to be, or is starting its
+    /// engine over to be it, which takes the way with it.
+    ///
+    /// The answer to both of the asks its engine only reads at its start:
+    /// which of its screens to film, and whether it resends a still
+    /// screen at full rate. Which of the two it answers is whichever was
+    /// asked.
+    Settled {
         starting_over: bool,
     },
     /// One computer's journal, whole.
@@ -662,7 +667,7 @@ impl Answer {
             }),
             "codecs" => Ok(Answer::Codecs(rest.trim().to_string())),
             "screens" => Ok(Answer::Screens(unfolded(rest.trim()))),
-            "filming" => Ok(Answer::Filming {
+            "settled" => Ok(Answer::Settled {
                 starting_over: rest.trim() == "starting-over",
             }),
             "journal" => Ok(Answer::Journal(unfolded(rest.trim()))),
@@ -726,9 +731,9 @@ impl fmt::Display for Answer {
             },
             Answer::Codecs(named) => write!(f, "codecs {named}"),
             Answer::Screens(listed) => write!(f, "screens {}", folded(listed)),
-            Answer::Filming { starting_over } => write!(
+            Answer::Settled { starting_over } => write!(
                 f,
-                "filming {}",
+                "settled {}",
                 if *starting_over {
                     "starting-over"
                 } else {
@@ -1125,10 +1130,10 @@ mod tests {
                 "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M".to_string(),
             ),
             Answer::Screens(String::new()),
-            Answer::Filming {
+            Answer::Settled {
                 starting_over: true,
             },
-            Answer::Filming {
+            Answer::Settled {
                 starting_over: false,
             },
             Answer::Done,

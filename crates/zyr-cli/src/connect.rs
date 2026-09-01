@@ -174,6 +174,9 @@ fn tell(step: Step, host: &str) {
         Step::FarScreenChanging => {
             println!("  {host} change d'écran, son moteur redémarre...");
         }
+        Step::FarRateChanging => {
+            println!("  {host} change sa cadence d'écran immobile, son moteur redémarre...");
+        }
         Step::FarScreenLeftAlone { refused } => {
             println!("  {host} garde l'écran qu'il filme : {refused}");
         }

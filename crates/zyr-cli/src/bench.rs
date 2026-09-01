@@ -69,7 +69,7 @@ impl Answers for NoEngine {
         Err("le banc de mesure n'a pas d'écran à verrouiller".to_string())
     }
 
-    fn serve_steady(&self, _rate: bool) -> Result<(), String> {
+    fn serve_steady(&self, _rate: bool) -> Result<zyr_tunnel::Settled, String> {
         Err("le banc de mesure n'a pas de moteur à régler".to_string())
     }
 
@@ -96,7 +96,7 @@ impl Answers for NoEngine {
         Err("le banc de mesure ne filme aucun écran".to_string())
     }
 
-    fn film_this_screen(&self, _id: Option<String>) -> Result<zyr_tunnel::Filming, String> {
+    fn film_this_screen(&self, _id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
         Err("le banc de mesure ne filme aucun écran".to_string())
     }
 }
