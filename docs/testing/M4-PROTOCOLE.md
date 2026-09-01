@@ -1546,7 +1546,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > essai du bord 3/5 : découpé en carré, sans calque. Regarde le bouton, prends une capture, puis ferme la session et rouvre-la pour passer au suivant.
 > ```
 >
-> **Le décor à mettre avant de commencer** : un fond bien uni derrière le bouton sur le bureau distant, et **deux fois** de préférence, une fois sur du blanc et une fois sur du noir. C'est la comparaison des deux qui dit si ce qu'on voit a une couleur à lui ou s'il éclaircit ce qu'il y a derrière.
+> **Le décor à mettre avant de commencer, et c'est ce qui a raté la première fois** : le bouton doit être posé **sur du clair**, une fenêtre blanche du bureau distant par exemple. Pas sur la bande noire que l'image laisse sur le côté quand elle ne remplit pas la fenêtre : sur du noir, une fenêtre opaque au fond noir et une fenêtre transparente donnent le même pixel, et les essais 3 et 5 ne prouvent alors rien. Traîner le bouton là une fois suffit, il y reste d'une session à l'autre.
 >
 > **Les cinq essais**
 >
@@ -1568,6 +1568,12 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > - Si les essais 3, 4 et 5 donnent tous la même chose que le 2, aucun des trois n'est en cause et le verre vient d'ailleurs. C'est un résultat aussi, et il ferme trois portes d'un coup.
 >
 > **Le journal complet est à envoyer avec les captures.** Les cinq lignes `essai du bord …` disent dans quel ordre les captures ont été prises, et c'est ce qui les rend lisibles.
+>
+> **Ce que le premier passage a donné, sur PC-VICTOR à 175 %** : rien du tout aux essais 2, 3 et 5, et un carré **noir et opaque** au quatrième. Le carré du quatrième mesure cent quatre-vingts pixels de large là où il déborde sur la fenêtre claire d'en face, ce qui est exactement quatre logos une fois retirée la part posée sur la bande noire : **la découpe en carré a donc bien eu lieu aux quatre essais**, et elle ne se voit pas quand la transparence est là. **Un pixel de fenêtre que la page ne peint pas ne montre rien**, ce qui démonte la thèse du verre dépoli. Les essais 3 et 5 restent à refaire sur du clair, le bouton ayant été posé sur du noir.
+>
+> **Et la page a été mesurée de son côté**, rendue dans un navigateur à 125, 150 et 175 %, sur fond noir et sur fond blanc : à l'extérieur du dessin il n'y a **que le fond**, puis le lissage du contour, puis le contour. La page ne peint rien autour du dessin, donc le liseré n'est pas un halo du logo.
+>
+> **Et une ligne de journal à surveiller pendant tout ça** : `bouton flottant : la page finit à …, la fenêtre à …, soit … px d'écart`. Une fois le bouton posé et le menu ouvert une fois, ce dernier nombre doit rester **sous le pixel**. Il est gros pendant que la fenêtre grandit, ce qui est normal : la page mesure dans la fenêtre telle qu'elle est, donc une page encore mise en page pour la fenêtre d'avant donne son ancien bord. C'est la dernière valeur, celle qui ne bouge plus, qui compte.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

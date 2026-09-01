@@ -1243,7 +1243,8 @@ pub fn floating_size(
     // The page has drawn something, so there is something to show.
     READY.store(true, Ordering::Relaxed);
     put_the_button(corner, size, how_it_shows());
-    tell_the_button(was, size, &shape, painted);
+    say_where_the_page_ends(standing.0, painted);
+    tell_the_button(was, size, &shape);
     Ok(UPWARD.load(Ordering::Relaxed))
 }
 
@@ -1305,7 +1306,7 @@ static SIZED: AtomicI64 = AtomicI64::new(0);
 ///
 /// Once per change. The logo is measured every frame while a hand runs
 /// over it, and the size does not change on any of them.
-fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece], painted: f64) {
+fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece]) {
     let both = (i64::from(size.0) << 32) | i64::from(size.1) & 0xFFFF_FFFF;
     if SIZED.swap(both, Ordering::Relaxed) == both {
         return;
@@ -1314,8 +1315,7 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece],
     let now = its_place().map(|(left, top, right, bottom)| (right - left, bottom - top));
     note(&format!(
         "bouton flottant : {}x{} demandés, {}x{} avant, {} après ; \
-         {} morceaux dessinés jusqu'à {}x{} ; bord droit peint à {painted:.2}, \
-         soit {:.2} px de fenêtre que la page n'atteint pas",
+         {} morceaux dessinés jusqu'à {}x{}",
         size.0,
         size.1,
         was.2 - was.0,
@@ -1327,7 +1327,41 @@ fn tell_the_button(was: (i32, i32, i32, i32), size: (i32, i32), shape: &[Piece],
         shape.len(),
         drawn.0,
         drawn.1,
-        f64::from(size.0) - painted,
+    ));
+}
+
+/// The last pair said, so the line is written when it changes and not on
+/// every frame the page draws.
+static ENDED: AtomicI64 = AtomicI64::new(i64::MIN);
+
+/// Says where the page's right edge falls, against the window's own.
+///
+/// Everything the page sends is counted from its right edge, and the core
+/// lays it from the window's. They are meant to be the same edge: the
+/// page's block is pinned to the right of the view, so the block's right
+/// edge is the view's, and the view's is the window's. But the page
+/// measures in its own kind of pixel and the window is a whole number of
+/// real ones, so a window whose width is not a whole number of page
+/// pixels puts the two a fraction apart. Everything drawn then lands that
+/// fraction off, all the way round the drawing, which is how a half
+/// painted pixel becomes an unpainted one.
+///
+/// The two numbers are said and nothing is concluded from them here. Held
+/// against each other they also say something the core cannot ask for:
+/// the page measures in the window as it stands, so a page still laid out
+/// for a window it has outgrown gives its old edge, and the gap is then
+/// not a fraction but hundreds of pixels. That is not a fault, a shape
+/// counted from an edge stays right wherever that edge is; but it does
+/// mean the pair is only worth weighing when the two are close.
+fn say_where_the_page_ends(standing: i32, painted: f64) {
+    let both = (i64::from(standing) << 32) | (painted * 100.0) as i64 & 0xFFFF_FFFF;
+    if ENDED.swap(both, Ordering::Relaxed) == both {
+        return;
+    }
+    note(&format!(
+        "bouton flottant : la page finit à {painted:.2}, la fenêtre à {standing}, \
+         soit {:.2} px d'écart",
+        f64::from(standing) - painted
     ));
 }
 
