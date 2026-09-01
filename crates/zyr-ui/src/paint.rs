@@ -42,7 +42,7 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
-    D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE,
+    D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE,
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_LINE_JOIN_ROUND,
     D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
     D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
@@ -51,11 +51,11 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL,
-    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
-    DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_TRIMMING,
-    DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWriteCreateFactory,
-    IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
+    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
+    DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    DWRITE_WORD_WRAPPING_NO_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat,
+    IDWriteTextLayout, IDWriteTextLayout1,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
@@ -63,7 +63,7 @@ use windows::Win32::Graphics::Gdi::{
     DeleteDC, DeleteObject, GetDC, HBITMAP, HDC, HGDIOBJ, ReleaseDC, SelectObject,
 };
 use windows::Win32::UI::WindowsAndMessaging::{ULW_ALPHA, UpdateLayeredWindow};
-use windows::core::HSTRING;
+use windows::core::{HSTRING, Interface};
 use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::design::{Couleur, Ombre};
@@ -149,6 +149,13 @@ pub struct Plume {
     /// chaque signe doit tenir la place de son voisin.
     pub fixe: bool,
     pub trop: Trop,
+    /// Ce qu'on ajoute entre deux signes, en vrais pixels.
+    ///
+    /// Ce que la feuille de style appelle `letter-spacing` : une étiquette
+    /// de section en capitales et un code d'appairage se lisent mal
+    /// resserrés, et c'est le seul endroit où l'espace entre les lettres
+    /// est un choix du dessin.
+    pub espace: f32,
 }
 
 impl Plume {
@@ -161,6 +168,16 @@ impl Plume {
             cale: Cale::Gauche,
             fixe: false,
             trop: Trop::ALaLigne,
+            espace: 0.0,
+        }
+    }
+
+    /// La même, les signes écartés d'autant de fois leur taille : c'est
+    /// en `em` que la feuille de style l'écrit.
+    pub fn ecartee(self, part: f32) -> Self {
+        Plume {
+            espace: self.taille * part,
+            ..self
         }
     }
 
@@ -191,9 +208,13 @@ impl Plume {
     }
 }
 
-/// Une plume telle qu'on la retrouve : sa taille comptée au millième de
-/// pixel, un nombre à virgule ne se comparant pas autrement sans risquer
-/// de refabriquer la même police à chaque ligne.
+/// Une plume telle qu'on retrouve sa police : sa taille comptée au
+/// millième de pixel, un nombre à virgule ne se comparant pas autrement
+/// sans risquer de refabriquer la même police à chaque ligne.
+///
+/// L'écart entre les signes n'en fait pas partie, et ce n'est pas un
+/// oubli : il se pose sur la mise en page d'un mot et non sur la police,
+/// donc deux plumes qui ne diffèrent que par lui partagent la même.
 #[derive(Clone, Copy, PartialEq)]
 struct Clef {
     taille: u32,
@@ -293,6 +314,8 @@ pub struct Toile {
     /// icônes demandent, et le demander une fois vaut mieux que le
     /// redemander à chaque trait.
     style: ID2D1StrokeStyle,
+    /// Et le même en pointillés, pour ce qui attend d'être rempli.
+    pointille: ID2D1StrokeStyle,
     fabrique: ID2D1Factory,
 }
 
@@ -353,19 +376,20 @@ impl Toile {
                 .CreateSolidColorBrush(&D2D1_COLOR_F::default(), None)
                 .ok()?;
             let ecriture: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()?;
+            let trait_ = |tirets| D2D1_STROKE_STYLE_PROPERTIES {
+                startCap: D2D1_CAP_STYLE_ROUND,
+                endCap: D2D1_CAP_STYLE_ROUND,
+                dashCap: D2D1_CAP_STYLE_ROUND,
+                lineJoin: D2D1_LINE_JOIN_ROUND,
+                miterLimit: 10.0,
+                dashStyle: tirets,
+                dashOffset: 0.0,
+            };
             let style = fabrique
-                .CreateStrokeStyle(
-                    &D2D1_STROKE_STYLE_PROPERTIES {
-                        startCap: D2D1_CAP_STYLE_ROUND,
-                        endCap: D2D1_CAP_STYLE_ROUND,
-                        dashCap: D2D1_CAP_STYLE_ROUND,
-                        lineJoin: D2D1_LINE_JOIN_ROUND,
-                        miterLimit: 10.0,
-                        dashStyle: D2D1_DASH_STYLE_SOLID,
-                        dashOffset: 0.0,
-                    },
-                    None,
-                )
+                .CreateStrokeStyle(&trait_(D2D1_DASH_STYLE_SOLID), None)
+                .ok()?;
+            let pointille = fabrique
+                .CreateStrokeStyle(&trait_(D2D1_DASH_STYLE_DASH), None)
                 .ok()?;
 
             Some(Toile {
@@ -380,6 +404,7 @@ impl Toile {
                 polices: std::cell::RefCell::new(Vec::new()),
                 chemins: std::cell::RefCell::new(Vec::new()),
                 style,
+                pointille,
                 fabrique,
             })
         }
@@ -536,6 +561,29 @@ impl Toile {
         );
     }
 
+    /// Le contour d'un rectangle arrondi, en pointillés.
+    ///
+    /// Ce que la feuille de style écrit `border-style: dashed`, et qui
+    /// dit une seule chose dans tout le produit : ceci attend d'être
+    /// rempli. Une carte pleine se borde d'un trait continu.
+    pub fn trace_pointille(&self, cadre: Cadre, rayon: f32, epaisseur: f32, couleur: Couleur) {
+        // SAFETY: comme au-dessus, avec le style pointillé fabriqué en
+        // même temps que l'autre.
+        unsafe {
+            self.pinceau.SetColor(&teinte(couleur));
+            self.cible.DrawRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: cadre.dit(),
+                    radiusX: rayon,
+                    radiusY: rayon,
+                },
+                &self.pinceau,
+                epaisseur,
+                &self.pointille,
+            );
+        }
+    }
+
     /// L'ombre portée d'un rectangle arrondi, en vrais pixels.
     ///
     /// Faite de la silhouette redessinée en s'écartant, chacune très
@@ -581,19 +629,22 @@ impl Toile {
     /// Centré en hauteur, donc un bloc replié veut un cadre de sa propre
     /// hauteur : `hauteur` la donne.
     pub fn ecris(&self, mot: &str, plume: Plume, couleur: Couleur, cadre: Cadre) {
-        let Some(police) = self.police(plume) else {
+        let Some(mise) = self.mise_en_page(
+            mot,
+            plume,
+            cadre.droite - cadre.gauche,
+            cadre.bas - cadre.haut,
+        ) else {
             return;
         };
         // SAFETY: une mise en page à nous, employée le temps d'un dessin.
         unsafe {
             self.pinceau.SetColor(&teinte(couleur));
-            self.cible.DrawText(
-                &lettres(mot),
-                &police,
-                &cadre.dit(),
+            self.cible.DrawTextLayout(
+                vers((cadre.gauche, cadre.haut)),
+                &mise,
                 &self.pinceau,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
-                DWRITE_MEASURING_MODE_NATURAL,
             );
         }
     }
@@ -636,16 +687,52 @@ impl Toile {
     /// revient alors à rien du tout. C'est ce qui écrasait les
     /// interrupteurs du menu à la largeur de leur seule marge.
     fn mesure(&self, mot: &str, plume: Plume, large: f32) -> Option<DWRITE_TEXT_METRICS> {
-        let police = self.police(plume)?;
+        let mise = self.mise_en_page(mot, plume, large, AU_LARGE)?;
         // SAFETY: une mise en page à nous, mesurée et rendue aussitôt.
         unsafe {
-            let mise: IDWriteTextLayout = self
-                .ecriture
-                .CreateTextLayout(&lettres(mot), &police, large, AU_LARGE)
-                .ok()?;
             let mut mesure = DWRITE_TEXT_METRICS::default();
             mise.GetMetrics(&mut mesure).ok()?;
             Some(mesure)
+        }
+    }
+
+    /// Un mot mis en page dans cette boîte, prêt à être mesuré ou
+    /// dessiné.
+    ///
+    /// Le même chemin pour les deux, et c'est tout l'intérêt : ce qui est
+    /// mesuré est exactement ce qui sera dessiné, écart entre les signes
+    /// compris.
+    fn mise_en_page(
+        &self,
+        mot: &str,
+        plume: Plume,
+        large: f32,
+        haute: f32,
+    ) -> Option<IDWriteTextLayout> {
+        let police = self.police(plume)?;
+        // SAFETY: une fabrique et une mise en page à nous.
+        unsafe {
+            let mise: IDWriteTextLayout = self
+                .ecriture
+                .CreateTextLayout(&lettres(mot), &police, large, haute)
+                .ok()?;
+            if plume.espace != 0.0 {
+                // Derrière le mot et non devant : c'est ce que fait
+                // `letter-spacing`, qui écarte les signes sans décaler le
+                // premier de son bord.
+                if let Ok(ecartee) = mise.cast::<IDWriteTextLayout1>() {
+                    let _ = ecartee.SetCharacterSpacing(
+                        0.0,
+                        plume.espace,
+                        0.0,
+                        DWRITE_TEXT_RANGE {
+                            startPosition: 0,
+                            length: u32::MAX,
+                        },
+                    );
+                }
+            }
+            Some(mise)
         }
     }
 

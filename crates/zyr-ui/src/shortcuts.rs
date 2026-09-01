@@ -26,8 +26,6 @@ use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
-
 /// What a combination can be asked to do.
 ///
 /// Three, and no more: what a person reaches for without leaving the
@@ -62,17 +60,13 @@ impl Doing {
 }
 
 /// Keys held down alongside the one that is pressed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Held {
-    #[serde(default)]
     pub ctrl: bool,
-    #[serde(default)]
     pub alt: bool,
-    #[serde(default)]
     pub shift: bool,
     /// The Windows key. Named as the system names it rather than as the
     /// key is engraved, since that engraving changes with the machine.
-    #[serde(default)]
     pub win: bool,
 }
 
@@ -84,9 +78,8 @@ impl Held {
 
 /// One combination: what is held, and the place of the key that is
 /// pressed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Combination {
-    #[serde(flatten)]
     pub held: Held,
     /// The place of the key, named the way a web page names it:
     /// `KeyX`, `Digit1`, `Backquote`, `F5`.
@@ -348,19 +341,36 @@ fn scan_code_of(key: &str) -> Option<u16> {
         .map(|(_, code)| *code)
 }
 
-/// Chaque combinaison en vigueur, écrite comme elle est gravée sur le
-/// clavier branché.
+/// The same the other way: what key sits at this place.
 ///
-/// Pour le menu que ZyrDesk dessine, qui les lit à côté de ce qu'elles
-/// font. Le produit retient la place d'une touche et non le signe
-/// dessus ; ceci refait le chemin en sens inverse, exactement comme la
-/// page le fait de son côté avec ce que le navigateur sait du clavier.
-pub fn engraved() -> Vec<(Doing, String)> {
+/// What the settings screen needs to take a combination from the
+/// keyboard. A place this product does not know is no combination at
+/// all, and saying so is what stops a shortcut being filed under a key
+/// nothing can ever register.
+pub fn placed(scan: u16) -> Option<&'static str> {
+    KEYS.iter()
+        .find(|(_, code)| *code == scan)
+        .map(|(name, _)| *name)
+}
+
+/// Chaque combinaison, écrite comme elle est gravée sur le clavier
+/// branché, et rien pour ce à quoi aucune touche n'est attribuée.
+///
+/// Le produit retient la place d'une touche et non le signe dessus ; ceci
+/// refait le chemin en sens inverse. Lu par le menu de la session, qui
+/// dit à côté de chaque ligne la touche qui la déclenche, et par l'écran
+/// des réglages, où les trois se choisissent.
+pub fn engraved() -> Vec<(Doing, Option<String>)> {
     let bound = read_or_shipped(&zyr_proto::paths::keyboard_shortcuts());
-    bound
-        .in_force()
+    Doing::ALL
         .into_iter()
-        .map(|(doing, combination)| (doing, spelled(combination)))
+        .map(|doing| {
+            let said = bound
+                .get(doing)
+                .filter(|combination| combination.stands())
+                .map(spelled);
+            (doing, said)
+        })
         .collect()
 }
 
@@ -423,52 +433,18 @@ fn engraved_key(key: &str) -> String {
 
 /* ---- Ce que la fenêtre demande --------------------------------------- */
 
-/// One line of the settings screen.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Shown {
-    /// What it does, filed under the same name everywhere.
-    pub doing: String,
-    /// The combination, or nothing when no key has been given to it.
-    pub combination: String,
-}
-
-#[tauri::command]
-pub fn shortcuts() -> Vec<Shown> {
-    let bound = read_or_shipped(&zyr_proto::paths::keyboard_shortcuts());
-    Doing::ALL
-        .into_iter()
-        .map(|doing| Shown {
-            doing: doing.name().to_string(),
-            combination: bound
-                .get(doing)
-                .map(ToString::to_string)
-                .unwrap_or_default(),
-        })
-        .collect()
-}
-
 /// Gives a key to one thing, or takes its key away when nothing is
 /// given.
-#[tauri::command]
-pub fn bind(doing: String, combination: String) -> Result<(), String> {
-    let doing = Doing::read(&doing).ok_or_else(|| format!("raccourci inconnu : {doing}"))?;
-    let combination = combination.trim();
-    let wanted = if combination.is_empty() {
-        None
-    } else {
-        let read = combination
-            .parse::<Combination>()
-            .map_err(|()| format!("combinaison illisible : {combination}"))?;
-        if !read.stands() {
-            return Err(
-                "cette combinaison ne peut pas être prise : il faut au moins une touche \
-                        tenue, et une touche que ZyrDesk sait placer sur un clavier."
-                    .to_string(),
-            );
-        }
-        Some(read)
-    };
+pub fn bind(doing: Doing, wanted: Option<Combination>) -> Result<(), String> {
+    if let Some(read) = &wanted
+        && !read.stands()
+    {
+        return Err(
+            "cette combinaison ne peut pas être prise : il faut au moins une touche \
+                    tenue, et une touche que ZyrDesk sait placer sur un clavier."
+                .to_string(),
+        );
+    }
 
     let path = zyr_proto::paths::keyboard_shortcuts();
     let mut bound = read(&path).map_err(|e| e.to_string())?;

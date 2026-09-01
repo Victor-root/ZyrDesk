@@ -667,7 +667,7 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
     // Minimised counts as not on screen and has to be asked for
     // separately: a window down in the taskbar still calls itself
     // visible.
-    let Some(home) = app.get_webview_window(crate::HOME) else {
+    let Some(home) = app.get_window(crate::HOME) else {
         return;
     };
     if !home.is_visible().unwrap_or(false) || home.is_minimized().unwrap_or(false) {
@@ -689,7 +689,9 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         // besoin de savoir de combien un pixel de page compte ici et quel
         // thème la fenêtre porte.
         let scale = home.scale_factor().unwrap_or(1.0) as f32;
-        crate::menu::raise(app, scale, home.theme().ok() == Some(tauri::Theme::Light));
+        // Le thème est demandé au produit et non à la fenêtre : c'est la
+        // même réponse pour tous les écrans, et une seule à tenir.
+        crate::menu::raise(app, scale, crate::theme::light());
     }
     lay_the_button(picture);
 }
@@ -703,7 +705,7 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
 /// and seventy-seven of the other.
 fn button_size(app: &AppHandle) -> u32 {
     let scale = app
-        .get_webview_window(crate::HOME)
+        .get_window(crate::HOME)
         .and_then(|window| window.scale_factor().ok())
         .unwrap_or(1.0);
     (BUTTON * scale).ceil() as u32
@@ -929,7 +931,7 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
     // the taskbar, is a button floating over somebody else's work. The
     // shortcut asks to do something with the session, so the session
     // comes back.
-    if let Some(home) = app.get_webview_window(crate::HOME)
+    if let Some(home) = app.get_window(crate::HOME)
         && (!home.is_visible().unwrap_or(false) || home.is_minimized().unwrap_or(false))
     {
         crate::show_home(app);

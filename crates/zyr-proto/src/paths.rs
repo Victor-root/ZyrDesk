@@ -186,6 +186,16 @@ pub fn floating_button() -> PathBuf {
     data_dir().join("floating-button.conf")
 }
 
+/// Whether the interface follows Windows or was told to be light or
+/// dark.
+///
+/// Apart for the same reason again: it says what somebody wants to look
+/// at on this machine. It used to live in the browser's own store, which
+/// went with the browser.
+pub fn chosen_theme() -> PathBuf {
+    data_dir().join("theme.conf")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,6 +217,9 @@ mod tests {
             known_computers(),
             preferences(),
             hushed_speakers(),
+            keyboard_shortcuts(),
+            floating_button(),
+            chosen_theme(),
         ] {
             assert!(
                 path.starts_with(&root),

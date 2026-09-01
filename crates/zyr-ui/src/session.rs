@@ -20,80 +20,15 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
-use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use zyr_control::{Answer, Request};
 use zyr_proto::session::{Asked, Codec, FarScreen, Preferred, SessionSettings};
 use zyr_session::{Outcome, Step, Wanted};
 
 use crate::service;
 
-/// Names the interface listens on. One per moment worth drawing.
-const STEP: &str = "session-step";
-const ENDED: &str = "session-ended";
-
-/// A moment of the opening, on its way to the window.
-#[derive(Serialize, Clone)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-enum Told {
-    /// The tunnel stands.
-    Reached {
-        packet: u16,
-    },
-    /// The two computers have never met, and are being introduced.
-    Pairing {
-        /// They believed they knew each other, and the far one did not
-        /// agree.
-        again: bool,
-    },
-    /// The same, without a tunnel to carry the code. Only the diagnostic
-    /// path gets here, and the window never opens one.
-    PairingNeeded {
-        pin: String,
-    },
-    Paired,
-    Starting,
-    /// The engine is running, as that process.
-    Showing {
-        process: u32,
-    },
-    /// The picture is in our window, and the session belongs to the
-    /// service now.
-    ///
-    /// Not one of these two things and then the other: the opening screen
-    /// comes down on this, so it has to wait for the later of them, and
-    /// the later one is the picture.
-    Live,
-    /// The picture is being opened again, the person having changed what
-    /// the session asks for.
-    ///
-    /// The steps that follow are the ones an opening always goes through,
-    /// and the window shows them the same way. It only has to be told
-    /// that one is starting, since nobody clicked anything to start it.
-    Again,
-    /// The far computer is starting its engine over so as to be served
-    /// from another of its screens.
-    ///
-    /// The one wait inside an opening that is nobody's fault and several
-    /// seconds long: its engine reads which screen to film only when it
-    /// starts. Said out loud, or the opening screen would sit there
-    /// saying « tunnel ouvert » while the way it names is being closed
-    /// and opened again underneath it.
-    FarScreenChanging,
-}
-
-/// How a session finished, or failed to start.
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct Finished {
-    /// True when nothing went wrong.
-    ok: bool,
-    /// What to show the person. Empty when there is nothing to say.
-    message: String,
-}
-
 /// A session already under way, as the service describes it.
-#[derive(Serialize)]
+#[derive(PartialEq)]
 pub struct Ongoing {
     /// Remote computer, as it was named when the session was asked for.
     pub towards: String,
@@ -119,7 +54,6 @@ pub struct Ongoing {
 /// An empty list is the ordinary answer, and so is the one given when
 /// the service cannot be reached: the home card already says out loud
 /// that it is not running, and saying it twice would only add noise.
-#[tauri::command]
 pub async fn sessions() -> Vec<Ongoing> {
     service::list(&Request::Sessions, |answer| match answer {
         Answer::Session(session) => Some(Ongoing {
@@ -309,7 +243,6 @@ pub fn waiting_to_be_applied(preferred: &Preferred) -> bool {
     }
 }
 
-#[tauri::command]
 pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Result<(), String> {
     let peer = fingerprint
         .trim()
@@ -410,8 +343,8 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
                     crate::floating::expect(app, *process, &towards, at);
                     lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
                 }
-                if let Some(told) = told(step) {
-                    say(app, told);
+                if let Some((detail, code)) = told(step) {
+                    crate::accueil::etape(app, &detail, code);
                 }
             },
             // The one thing this crate can answer and the opening cannot: a
@@ -453,7 +386,7 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
             ));
         }
         crate::journal::note(&opening.how_long_it_took());
-        say(app, Told::Live);
+        crate::accueil::range_l_ouverture(app);
 
         // Waiting costs nothing here and buys the one thing the person
         // wants afterwards: whether the session ended by itself or fell
@@ -467,7 +400,7 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
             crate::journal::note(&format!(
                 "image relancée avec ce qui est choisi maintenant (le lecteur a dit {ended:?})"
             ));
-            say(app, Told::Again);
+            crate::accueil::relance(app);
             // What is kept when the service cannot be asked is what the
             // picture was already showing, never the ordinary settings:
             // the person asked for one thing to change, not for three
@@ -541,7 +474,6 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
 /// Only a session this window is driving: the numbers to open it again
 /// with live on that window's own thread, and a session opened elsewhere
 /// has nobody here to hear this.
-#[tauri::command]
 pub async fn apply_session(app: AppHandle) -> Result<(), String> {
     if !opening() {
         return Err(
@@ -637,19 +569,35 @@ fn lay_the_picture_when_it_opens(app: &AppHandle, process: u32) -> bool {
 /// silence its own speakers has nothing to do with what the person is
 /// waiting for, and putting it there would replace « the picture is
 /// coming » with a sentence about sound.
-fn told(step: Step) -> Option<Told> {
+fn told(step: Step) -> Option<(String, Option<String>)> {
     Some(match step {
-        Step::Reached { packet } => Told::Reached { packet },
-        Step::Pairing { again } => Told::Pairing { again },
-        Step::PairingNeeded { pin } => Told::PairingNeeded { pin },
-        Step::Paired => Told::Paired,
-        Step::Starting => Told::Starting,
-        Step::Showing { process, .. } => Told::Showing { process },
+        Step::Reached { packet } => (format!("Tunnel établi, paquets de {packet} octets."), None),
+        Step::Pairing { again: false } => (
+            "Premier accès à cet ordinateur : les deux font connaissance. Rien à faire."
+                .to_string(),
+            None,
+        ),
+        Step::Pairing { again: true } => (
+            "Cet ordinateur ne nous reconnaît plus : les deux font connaissance à nouveau. Rien \
+             à faire."
+                .to_string(),
+            None,
+        ),
+        Step::PairingNeeded { pin } => (
+            "Tapez ce code sur l'ordinateur que vous voulez contrôler :".to_string(),
+            Some(pin),
+        ),
+        Step::Paired => ("Les deux ordinateurs se connaissent.".to_string(), None),
+        Step::Starting => ("Démarrage de l'image…".to_string(), None),
+        Step::Showing { .. } => ("L'image arrive…".to_string(), None),
         // The one of these the person is left waiting through, so it is
         // the one that goes on the opening screen: the far computer is
         // starting its engine over, and that is several seconds during
         // which nothing else would say anything at all.
-        Step::FarScreenChanging => Told::FarScreenChanging,
+        Step::FarScreenChanging => (
+            "L'ordinateur distant change d'écran, il redémarre…".to_string(),
+            None,
+        ),
         Step::SpeakersLeftAlone { .. }
         | Step::RateLeftAlone { .. }
         | Step::ScreenLeftAlone { .. }
@@ -759,12 +707,6 @@ fn written(step: &Step) -> String {
     }
 }
 
-/// An event the window may or may not still be there to hear. A closed
-/// window is not a reason to stop driving the session.
-fn say(app: &AppHandle, what: Told) {
-    let _ = app.emit(STEP, what);
-}
-
 /// What state the home window is in, in words.
 ///
 /// Written on both sides of the ending. A session that finishes must
@@ -774,7 +716,7 @@ fn say(app: &AppHandle, what: Told) {
 fn how_the_window_stands(app: &AppHandle, when: &str) {
     use tauri::Manager as _;
 
-    let Some(window) = app.get_webview_window(crate::HOME) else {
+    let Some(window) = app.get_window(crate::HOME) else {
         crate::journal::note(&format!("{when} : plus de fenêtre d'accueil"));
         return;
     };
@@ -819,7 +761,11 @@ fn finish(app: &AppHandle, ok: bool, message: String) {
     // the session or by the system, which takes a window covering the
     // whole screen down when the front leaves it.
     crate::show_home(app);
-    let _ = app.emit(ENDED, Finished { ok, message });
+    if ok {
+        crate::accueil::range_l_ouverture(app);
+    } else {
+        crate::accueil::echoue(app, &message);
+    }
     how_the_window_stands(app, "fin de session, après");
 }
 

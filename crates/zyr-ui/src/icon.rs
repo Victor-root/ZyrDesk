@@ -41,7 +41,7 @@ pub fn on_the_window(app: &AppHandle) {
     };
 
     let Some(home) = app
-        .get_webview_window(crate::HOME)
+        .get_window(crate::HOME)
         .and_then(|window| window.hwnd().ok())
     else {
         return;

@@ -15,11 +15,8 @@
 // compilée et éprouvée partout.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use serde::Serialize;
-
 /// One reading, in the words the page shows.
-#[derive(Default, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub struct Mesures {
     /// What a frame costs this computer to decode, in milliseconds.
     pub decode_ms: Option<f64>,
@@ -49,7 +46,6 @@ pub struct Mesures {
 /// has nothing to show and that is not a fault, it is a bar that fills in
 /// a moment. An error here would put a red line in front of somebody for
 /// something that rights itself.
-#[tauri::command]
 pub fn session_measures() -> Mesures {
     std::fs::read_to_string(zyr_proto::paths::session_stats())
         .ok()

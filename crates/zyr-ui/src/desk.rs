@@ -5,16 +5,22 @@
 //! but not running, which is something the person can act on, and this
 //! is where they act on it.
 
+// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
+// lui-même, et ce qui dessine n'existe que sous Windows comme les
+// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
+// fichier reste compilé et vérifié, il n'est simplement appelé par
+// personne.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use std::path::PathBuf;
 
-use serde::Serialize;
 use zyr_control::{Answer, Holdup, Request};
 use zyr_proto::paths;
 
 use crate::service;
 
 /// A ZyrDesk the home screen shows.
-#[derive(Serialize)]
+#[derive(Clone, PartialEq)]
 pub struct Peer {
     pub name: String,
     pub fingerprint: String,
@@ -28,8 +34,7 @@ pub struct Peer {
 }
 
 /// What the home screen shows about this computer.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(PartialEq)]
 pub struct Standing {
     /// Name the person knows this machine by.
     pub name: String,
@@ -92,7 +97,6 @@ fn named(holdup: Holdup) -> &'static str {
     }
 }
 
-#[tauri::command]
 pub async fn standing() -> Standing {
     match asked().await {
         Ok(standing) => standing,
@@ -105,7 +109,6 @@ pub async fn standing() -> Standing {
 /// Kept under the person's eyes and shown beside the service's own: the
 /// two are built together and installed together, and the day they
 /// differ, that is the fault, whatever else it looks like.
-#[tauri::command]
 pub fn build() -> String {
     zyr_proto::version_line()
 }
@@ -115,7 +118,6 @@ pub fn build() -> String {
 /// An empty list is an answer, not a failure: a network with nobody else
 /// on it is the ordinary case on a first install. Only the service being
 /// absent is worth saying out loud, and the home card already says it.
-#[tauri::command]
 pub async fn peers() -> Vec<Peer> {
     service::list(&Request::Peers, |answer| match answer {
         Answer::Peer(peer) => Some(Peer {
@@ -135,7 +137,6 @@ pub async fn peers() -> Vec<Peer> {
 ///
 /// Answers with what to show if it could not be done: a switch that
 /// moved without anything happening behind it would be a lie.
-#[tauri::command]
 pub async fn set_hosting(on: bool) -> Result<(), String> {
     match service::ask(&Request::SetHosting { on }).await? {
         Answer::Done => Ok(()),
@@ -144,7 +145,6 @@ pub async fn set_hosting(on: bool) -> Result<(), String> {
 }
 
 /// Decides whether the ZyrDesk of this network are let in on sight.
-#[tauri::command]
 pub async fn set_trust(on: bool) -> Result<(), String> {
     match service::ask(&Request::SetTrust { on }).await? {
         Answer::Done => Ok(()),
@@ -159,7 +159,6 @@ pub async fn set_trust(on: bool) -> Result<(), String> {
 /// here. The engine reads both when it starts, so the service stops it
 /// and starts it again, which ends a session in progress towards this
 /// computer.
-#[tauri::command]
 pub async fn set_serving(steady_rate: bool, capture: String) -> Result<(), String> {
     let serving = zyr_proto::session::Serving {
         steady_rate,
@@ -178,7 +177,6 @@ pub async fn set_serving(steady_rate: bool, capture: String) -> Result<(), Strin
 /// anybody has signed in, and this window starts with the session, so
 /// the icon is there to say so. Turned off, nothing of this product runs
 /// until somebody opens it.
-#[tauri::command]
 pub async fn set_at_boot(on: bool) -> Result<(), String> {
     match service::ask(&Request::SetAtBoot { on }).await? {
         Answer::Done => {}
@@ -208,7 +206,6 @@ pub async fn set_at_boot(on: bool) -> Result<(), String> {
 /// Asked of the service rather than of Windows: stopping a service the
 /// ordinary way wants administrator rights, and a product that asked for
 /// them every time somebody quit would be unusable.
-#[tauri::command]
 pub async fn stop_service() -> Result<(), String> {
     match service::ask(&Request::Stop).await? {
         Answer::Done => Ok(()),
@@ -226,7 +223,6 @@ pub async fn stop_service() -> Result<(), String> {
 /// With an address, the computer also stays on the home screen: writing
 /// it down once has to be enough, or the copying this replaces would
 /// simply happen at every session instead of at the first.
-#[tauri::command]
 pub async fn authorize(
     fingerprint: String,
     host: Option<String>,
@@ -257,7 +253,6 @@ pub async fn authorize(
 /// And out of the list of those allowed in, at the same time: one that
 /// disappeared from the screen while still being able to reach this
 /// computer would be a promise the product does not keep.
-#[tauri::command]
 pub async fn forget(fingerprint: String) -> Result<(), String> {
     let peer = fingerprint
         .trim()
@@ -278,7 +273,6 @@ pub async fn forget(fingerprint: String) -> Result<(), String> {
 /// the one prompt the person ever sees: a service is what makes this
 /// computer reachable before anybody has signed in, and Windows lets no
 /// program register one on its own.
-#[tauri::command]
 pub async fn start_service() -> Result<(), String> {
     let program = service_program()?;
     crate::journal::note(&format!("mise en service demandée : {}", program.display()));

@@ -50,9 +50,10 @@ jobs:
           submodules: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # L'interface s'appuie sur la couche web du système. Sous Windows
-      # elle est déjà là ; sous Linux elle s'installe, et sans elle la
-      # compilation de l'espace de travail entier s'arrête.
+      # La boîte à outils de la fenêtre se lie à la couche web du
+      # système, même si plus rien du produit ne dessine dedans. Sous
+      # Windows elle est déjà là ; sous Linux elle s'installe, et sans
+      # elle la compilation de l'espace de travail entier s'arrête.
       - name: Installer de quoi compiler l'interface
         if: runner.os == 'Linux'
         run: |

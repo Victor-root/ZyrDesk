@@ -3,14 +3,17 @@ use std::fmt::Write as _;
 /// The design system, read from the one file that holds it.
 ///
 /// Colours, spacings, radii, shadows and text sizes are written once, in
-/// `web/design.css`, and the interface drawn by this program reads them
-/// from there rather than keeping a second copy. Two copies of a palette
-/// is two palettes: the first colour changed in one of them is the day
-/// the product stops looking like itself.
+/// `design.css`, and the interface drawn by this program reads them from
+/// there rather than keeping a second copy. Two copies of a palette is
+/// two palettes: the first colour changed in one of them is the day the
+/// product stops looking like itself.
 ///
-/// The day the last page goes, this file's source moves into Rust and
-/// nothing else changes: everything already reads what comes out of here.
-const DESIGN: &str = "web/design.css";
+/// It keeps the notation it was written in, and no browser reads it any
+/// more: a stylesheet writes two themes side by side, and reading it
+/// here is what checks that the two declare the same roles. Transcribing
+/// forty values into Rust by hand would be the one thing this whole file
+/// exists to prevent.
+const DESIGN: &str = "design.css";
 
 fn main() {
     println!("cargo:rerun-if-changed={DESIGN}");

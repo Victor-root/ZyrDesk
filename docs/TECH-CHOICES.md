@@ -7,7 +7,7 @@ Chaque brique, le choix retenu, la raison, et les alternatives sérieusement con
 | Brique | Choix | Raison principale |
 |---|---|---|
 | Cœur, service, tunnel, CLI, broker | Rust | Sûreté mémoire pour du code réseau exposé en permanence, performances, écosystème exact (tokio, quinn/iroh, axum, windows-service) |
-| Interface | Tauri v2 (web + cœur Rust) | Plafond visuel maximal pour un rendu premium ; d'autres produits commerciaux de streaming réputés utilisent une UI en technologies web sans compromis sur la latence ; ~3 Mo ; updater intégré ; la vidéo ne traverse jamais la WebView |
+| Interface | Dessinée par le produit, en Direct2D et DirectWrite, dans une fenêtre nue de Tauri v2 | Rien n'est embarqué, le texte est rendu par le moteur du système ; zéro processus de navigateur ; le système de design reste écrit une seule fois. Tauri ne fournit plus que la fenêtre, la boucle d'événements et l'icône de zone de notification |
 | Moteur hôte | Sunshine officiel en processus enfant | Zéro modification visée : pilotage complet par config/CLI/REST vérifié sur le code |
 | Moteur client | moonlight-qt officiel en processus enfant | Pipeline décodage D3D11VA + présentation D3D11 + frame pacing : des années de réglages Windows qu'on ne réécrit pas |
 | Transport | iroh (plan B quinn) derrière un trait `ZyrTransport` | Traversée NAT + relais + migration de chemin intégrés et en production ; décision verrouillée par le banc M2 |
@@ -22,9 +22,17 @@ Chaque brique, le choix retenu, la raison, et les alternatives sérieusement con
 
 ## Justifications détaillées et alternatives rejetées
 
+Interface : ce qui a été choisi, puis ce qui s'est passé
+
+Le choix d'origine était Tauri v2 avec une interface en technologies web. Il a tenu jusqu'à ce qu'un défaut le mette en défaut : le liseré pâle du bouton flottant, cherché pendant onze essais, venait de la vue web elle-même, seule couche de ce bouton dont le fond est blanc. La remplacer par un dessin fait par le produit a réglé le liseré et, du même coup, quatre autres défauts que ce bouton portait depuis sa naissance ([D96](DECISIONS.md)). De là, le menu de la session, puis l'accueil, sont passés du même côté.
+
+Le résultat : **le produit dessine son interface lui-même**, en Direct2D et DirectWrite, qui sont fournis par Windows. Rien n'est embarqué, le texte est rendu par le moteur qui rend celui du système, et il n'y a plus de processus de navigateur du tout. Le système de design n'a pas bougé : il est toujours écrit une seule fois et lu à la compilation. Ce que Tauri fournit encore est la fenêtre, sa boucle d'événements et l'icône de zone de notification.
+
+Ce que le raisonnement d'origine avait juste : la vidéo ne traverse jamais l'interface, donc sa technologie n'influence pas la latence. Ce qu'il avait manqué : une interface posée **par-dessus** une vidéo n'est pas dans le chemin de l'image mais elle est dans le même pixel, et là un navigateur ne sait pas se taire.
+
 Interface : Tauri v2 plutôt que...
 
-- Slint (Rust natif) : sérieux et léger, mais atteindre un rendu réellement premium y coûte beaucoup plus d'effort qu'en web (écosystème de design réduit), et la version gratuite impose une attribution visible (sinon licence commerciale payante). Reconsidérable si la WebView devenait un problème avéré.
+- Slint (Rust natif) : sérieux et léger, mais atteindre un rendu réellement premium y coûte beaucoup plus d'effort qu'en web (écosystème de design réduit), et la version gratuite impose une attribution visible (sinon licence commerciale payante). Le produit a fini par dessiner lui-même, ce qui revient au même effort sans la licence ni la dépendance.
 - Flutter desktop : très beau rendu possible, mais runtime lourd, deuxième langage (Dart) à vie dans le projet, et desktop Windows moins mûr que le mobile.
 - Qt Quick : capable, mais liaison Rust (cxx-qt) pré-1.0, contraintes LGPL de déploiement à gérer, et style par défaut loin de la cible.
 - egui / iced : pas au niveau visuel exigé sans effort massif ; le rendu en mode immédiat consomme du CPU en continu, exactement ce qu'un produit de streaming doit éviter.

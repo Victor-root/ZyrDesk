@@ -1905,6 +1905,24 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Et la question au loin se repose jusqu'à ce qu'elle soit répondue.** Ce que la machine d'en face sait encoder n'est connu qu'une fois son moteur démarré et le chemin en train de servir la session : posée une seule fois à l'ouverture du bouton, la question tombait toujours avant, et le menu proposait un codec que cette machine-là ne sait pas faire. Le journal du service le montre à la seconde près. Elle est reposée une fois par seconde tant que la réponse manque, et plus du tout ensuite.
 
+## D110. L'accueil sort de la vue web, et il ne reste plus de navigateur nulle part (2026-09-01, pendant M4)
+
+**Demandé par Victor**, une fois la vue web réduite au seul accueil : « si il reste que l'accueil vas y ducoup migre en full natif ».
+
+**Ce qui reste de la boîte à outils.** Une fenêtre, sa boucle d'événements et l'icône de zone de notification. Elle est maintenant construite **nue** : plus aucun navigateur n'est ouvert dans le produit, et son dedans est une toile que ce programme peint, comme le logo et le menu de la session. Les vingt-cinq commandes qui existaient pour qu'une page pose ses questions n'existent plus : ce sont des appels. Les événements qu'une page écoutait sont des appels aussi.
+
+**Ce qui a été gagné en route.** La couche de dessin a appris ce qu'une vraie page demande : une plume qui porte ensemble la taille, la graisse, le calage, la famille et ce qu'un mot fait quand il ne tient pas ; l'espace entre les signes, que le système de design réclame pour les étiquettes en capitales et pour le code d'appairage ; la hauteur d'un bloc replié à une largeur donnée, sans quoi on n'empile pas des paragraphes ; le trait en pointillés de ce qui attend d'être rempli ; et de quoi se verser dans une fenêtre ordinaire, encadrée et opaque, là où une fenêtre à calque reçoit son image et sa place en un seul geste.
+
+**Mesurer et dessiner sont la même marche.** Ce qu'un dialogue prend de haut est ce que ses lignes prennent : la marche se fait une fois muette pour compter, une fois pour poser. Une deuxième arithmétique écrite à côté se répondrait juste jusqu'au premier mot rallongé.
+
+**Les trois champs de saisie sont ceux de Windows**, et c'est le seul endroit du produit qui emprunte un objet du système. Écrire du texte est aussi le seul endroit où le système fait mieux que nous : le curseur, la sélection, le presse-papiers, les claviers qui composent leurs signes. Ils vivent le temps du dialogue qui les porte, dans le cadre que nous dessinons, et la tabulation, Entrée et Échap leur sont reprises pour que le dialogue se comporte comme un dialogue.
+
+**Le thème ne vit plus dans le navigateur.** Le choix vivait dans le magasin de la page, qui s'en va avec elle : il est dans un fichier, à côté de la place du bouton flottant, relu avant que la fenêtre s'ouvre. Et ce que Windows demande est relu par le fil qui le surveille et par personne d'autre : une question au registre par bascule, et non une par image dessinée.
+
+**Le système de design n'a pas bougé.** Il est toujours écrit une seule fois et lu à la compilation. Le fichier garde sa notation, que plus aucun navigateur ne lit : elle écrit deux thèmes côte à côte, et la relire à la compilation est ce qui vérifie que les deux disent bien les mêmes rôles. Recopier quarante valeurs à la main serait exactement ce que tout ce mécanisme existe pour éviter.
+
+**Ce que ça coûte.** La fenêtre nue est derrière la porte « unstable » de la boîte à outils, qui ne range que celle-là : c'est la seule sorte que ce produit emploie désormais, et le verrou du projet épingle la version. Le jour où la boîte à outils ne fournit plus que ça, la fenêtre devient la nôtre et rien d'autre ne bouge.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

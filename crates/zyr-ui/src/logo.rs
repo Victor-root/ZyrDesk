@@ -41,7 +41,8 @@ use crate::paint::Cadre;
 /// the same logo as everywhere else in the product rather than a second
 /// one that drifts.
 ///
-/// `zyrdesk.svg` draws two screens with a stroke centred on their path,
+/// `packaging/brand/zyrdesk.svg` draws two screens with a stroke centred
+/// on their path,
 /// so each is painted from half a stroke outside its rectangle to half a
 /// stroke inside. Its frame runs from 36 to 476, four hundred and forty
 /// units wide, and everything below is counted in those.
@@ -209,7 +210,7 @@ pub fn raise(app: &AppHandle, side: u32, upward: bool, anchor: (i32, i32)) {
         return;
     }
     let owner = app
-        .get_webview_window(crate::HOME)
+        .get_window(crate::HOME)
         .and_then(|home| home.hwnd().ok())
         .map(|handle| handle.0 as isize)
         .unwrap_or(0);

@@ -229,7 +229,7 @@ pub fn let_go(app: &AppHandle) {
 /// its window went inside ours.
 pub fn take_the_screen(app: &AppHandle, whole: bool) -> Result<(), String> {
     let window = app
-        .get_webview_window(crate::HOME)
+        .get_window(crate::HOME)
         .ok_or("la fenêtre de ZyrDesk n'est plus là")?;
     // Written down before the window moves, not after. Taking the screen
     // is what makes the system ask what the frame should be, and the
@@ -268,7 +268,7 @@ pub fn take_the_screen_for_a_session(app: &AppHandle, whole: bool) -> Result<(),
     if whole {
         return Ok(());
     }
-    app.get_webview_window(crate::HOME)
+    app.get_window(crate::HOME)
         .ok_or("la fenêtre de ZyrDesk n'est plus là")?
         .maximize()
         .map_err(|e| e.to_string())
@@ -282,7 +282,7 @@ pub fn take_the_screen_for_a_session(app: &AppHandle, whole: bool) -> Result<(),
 /// down, and what it writes is what the next session opens as.
 pub fn toggle_the_screen(app: &AppHandle) -> Result<(), String> {
     let window = app
-        .get_webview_window(crate::HOME)
+        .get_window(crate::HOME)
         .ok_or("la fenêtre de ZyrDesk n'est plus là")?;
     let whole = !window.is_fullscreen().map_err(|e| e.to_string())?;
     take_the_screen(app, whole)?;
@@ -339,7 +339,7 @@ pub fn hold_the_shape(app: &AppHandle) {
     if wide <= 0 || high <= 0 {
         return;
     }
-    let Some(window) = app.get_webview_window(crate::HOME) else {
+    let Some(window) = app.get_window(crate::HOME) else {
         return;
     };
     // Covering the screen is a shape nobody chose and nobody drags, and
@@ -3619,7 +3619,7 @@ pub(crate) fn the_engines_window() -> Option<windows_sys::Win32::Foundation::HWN
 /// Our own window, as the system knows it.
 #[cfg(windows)]
 fn home_window(app: &AppHandle) -> Option<windows_sys::Win32::Foundation::HWND> {
-    app.get_webview_window(crate::HOME)
+    app.get_window(crate::HOME)
         .and_then(|window| window.hwnd().ok())
         .map(|handle| handle.0 as _)
 }

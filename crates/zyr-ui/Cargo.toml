@@ -24,7 +24,12 @@ zyr-transport.workspace = true
 # La zone de notification est la seule trace que ZyrDesk laisse quand sa
 # fenêtre est fermée : sans elle, un produit qui rend la machine
 # joignable tournerait sans que rien ne le dise.
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# « unstable » ouvre la fenêtre **nue**, sans navigateur dedans : c'est la
+# seule sorte que la boîte à outils range derrière cette porte, et c'est
+# la seule dont ce produit se sert depuis que tout est dessiné ici. Le
+# verrou du projet épingle la version, donc ce que cette porte ouvre ne
+# bouge pas sous nos pieds entre deux compilations.
+tauri = { version = "2", features = ["tray-icon", "image-png", "unstable"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
 
@@ -63,6 +68,12 @@ windows-sys = { version = "0.61.2", features = [
     # avec l'impression, d'où cette porte-là.
     "Win32_Storage_Xps",
     "Win32_System_Com",
+    # Copier au presse-papiers : le geste est rangé par windows-sys avec
+    # les échanges entre programmes, le format du texte avec l'OLE, et la
+    # mémoire qu'on remet au système avec la mémoire.
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
     # SHELLEXECUTEINFOW porte un champ de registre, et windows-sys range
     # donc toute la famille ShellExecuteEx derrière cette porte-là.
     "Win32_System_LibraryLoader",

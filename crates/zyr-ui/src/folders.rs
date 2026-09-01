@@ -4,14 +4,20 @@
 //! where each engine is expected. The window names them and opens them
 //! itself, so nobody is ever walked through a disk over the phone.
 //!
-//! Which folder is decided here and never by the window: a path arriving
-//! from a page and handed to the system as it came would open anything
-//! at all.
+//! Which folder is decided here and never elsewhere: a path arriving
+//! from anywhere else and handed to the system as it came would open
+//! anything at all.
+
+// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
+// lui-même, et ce qui dessine n'existe que sous Windows comme les
+// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
+// fichier reste compilé et vérifié, il n'est simplement appelé par
+// personne.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde::Serialize;
 use zyr_proto::paths;
 
 /// A folder the window is allowed to name.
@@ -46,8 +52,7 @@ impl Which {
 /// The two halves are told apart on purpose: without the host engine
 /// this computer cannot be controlled, without the client one it cannot
 /// control anything, and neither costs the other.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(PartialEq)]
 pub struct Engines {
     pub host_here: bool,
     pub client_here: bool,
@@ -55,7 +60,6 @@ pub struct Engines {
     pub client_folder: String,
 }
 
-#[tauri::command]
 pub fn engines() -> Engines {
     Engines {
         host_here: paths::host_engine_exe().is_file(),
@@ -66,14 +70,12 @@ pub fn engines() -> Engines {
 }
 
 /// Where the product writes what it has to say.
-#[tauri::command]
 pub fn logs_folder() -> String {
     paths::logs_dir().display().to_string()
 }
 
 /// Opens one of them, so a problem can be looked at without anyone
 /// having to be told where to click.
-#[tauri::command]
 pub fn open_folder(which: String) -> Result<(), String> {
     let folder = Which::read(&which)?.path();
     std::fs::create_dir_all(&folder)

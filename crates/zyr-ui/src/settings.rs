@@ -20,7 +20,6 @@
 // partout.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use serde::{Deserialize, Serialize};
 use zyr_control::{Answer, Request};
 use zyr_proto::session::{
     Asked, CODECS_OFFERED, Codec, DisplayMode, FarScreen, Preferred, RATES_OFFERED, SIZES_OFFERED,
@@ -30,8 +29,7 @@ use zyr_proto::session::{
 use crate::service;
 
 /// What the settings screen shows.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(PartialEq)]
 pub struct Settings {
     pub codec: String,
     pub display: String,
@@ -68,35 +66,48 @@ impl Settings {
 }
 
 /// What the screen sends back. Only the choices: the rest follows.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Chosen {
-    codec: String,
-    display: String,
-    absolute_mouse: bool,
-    stats_overlay: bool,
-    mute_far_speakers: bool,
+    pub codec: Codec,
+    pub display: DisplayMode,
+    pub absolute_mouse: bool,
+    pub stats_overlay: bool,
+    pub mute_far_speakers: bool,
 }
 
 impl Chosen {
+    /// What the screen would send back if nothing were touched.
+    ///
+    /// The screen changes one line at a time and hands the whole thing
+    /// back, so it has to start from what is written down: built any
+    /// other way, every click would carry four settings nobody chose.
+    pub fn of(preferred: Preferred) -> Self {
+        Self {
+            codec: preferred.codec,
+            display: preferred.display_mode,
+            absolute_mouse: preferred.absolute_mouse,
+            stats_overlay: preferred.stats_overlay,
+            mute_far_speakers: preferred.mute_far_speakers,
+        }
+    }
+
     /// Lays these choices over the ones already written down.
     ///
     /// Over and not instead of: this screen no longer carries every
     /// setting, and the ones it does not carry belong to whoever set
     /// them, which is the session's own menu.
-    fn laid_over(&self, preferred: Preferred) -> Result<Preferred, String> {
-        Ok(Preferred {
-            codec: self.codec.parse::<Codec>()?,
-            display_mode: self.display.parse::<DisplayMode>()?,
+    fn laid_over(&self, preferred: Preferred) -> Preferred {
+        Preferred {
+            codec: self.codec,
+            display_mode: self.display,
             absolute_mouse: self.absolute_mouse,
             stats_overlay: self.stats_overlay,
             mute_far_speakers: self.mute_far_speakers,
             ..preferred
-        })
+        }
     }
 }
 
-#[tauri::command]
 pub async fn settings(app: tauri::AppHandle) -> Settings {
     Settings::shown(
         preferred().await,
@@ -105,10 +116,8 @@ pub async fn settings(app: tauri::AppHandle) -> Settings {
 }
 
 /// Changes what every session from now on looks like.
-#[tauri::command]
 pub async fn choose(chosen: Chosen) -> Result<(), String> {
-    let preferred = chosen.laid_over(preferred().await)?;
-    write_down(preferred).await
+    write_down(chosen.laid_over(preferred().await)).await
 }
 
 /// The three lines of the session menu, as they stand.
@@ -116,8 +125,7 @@ pub async fn choose(chosen: Chosen) -> Result<(), String> {
 /// Machine values and not words: what a size or a rate is called in
 /// French is the window's business, and the window is where the rest of
 /// what a person reads is written.
-#[derive(Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(PartialEq)]
 pub struct SessionChoice {
     pub asked: String,
     pub bitrate_kbps: u32,
@@ -163,8 +171,7 @@ impl SessionChoice {
 }
 
 /// One value a line of the session menu offers.
-#[derive(Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(PartialEq)]
 pub struct Offered {
     /// What travels and is written down.
     pub value: String,
@@ -176,8 +183,7 @@ pub struct Offered {
 }
 
 /// One of the far computer's screens, as the menu offers it.
-#[derive(Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(PartialEq)]
 pub struct OfferedScreen {
     /// What travels back when it is picked. That computer's own name for
     /// the screen, opaque here on purpose.
@@ -198,8 +204,7 @@ pub struct OfferedScreen {
 /// Handed over whole rather than a list at a time: the window builds the
 /// lists once, when it opens, and a person clicking through them then
 /// waits for nothing.
-#[derive(Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[derive(PartialEq)]
 pub struct SessionMenu {
     pub sizes: Vec<Offered>,
     pub rates: Vec<u32>,
@@ -220,7 +225,6 @@ pub struct SessionMenu {
     pub now: SessionChoice,
 }
 
-#[tauri::command]
 pub async fn session_menu(app: tauri::AppHandle) -> SessionMenu {
     let screen = crate::picture::the_screen_of_this_computer(&app);
     let preferred = preferred().await;
@@ -325,7 +329,6 @@ async fn beyond_the_far_computer() -> Vec<String> {
 /// down. These come from a list the product handed over itself, so a
 /// value from anywhere else is a window and a service that no longer
 /// agree, and quietly keeping it would hide that.
-#[tauri::command]
 pub async fn choose_session(
     app: tauri::AppHandle,
     which: String,
@@ -494,8 +497,8 @@ mod tests {
 
     fn chosen() -> Chosen {
         Chosen {
-            codec: "HEVC".to_string(),
-            display: "windowed".to_string(),
+            codec: Codec::Hevc,
+            display: DisplayMode::Windowed,
             absolute_mouse: false,
             stats_overlay: true,
             mute_far_speakers: true,
@@ -517,18 +520,8 @@ mod tests {
     fn what_the_screen_shows_and_sends_back_is_the_same_thing() {
         // Les deux formes se croisent à chaque changement : ce qui
         // s'affiche doit pouvoir être renvoyé tel quel.
-        let shown = Settings::shown(chosen().laid_over(Preferred::default()).unwrap(), None);
-        let returned = Chosen {
-            codec: shown.codec,
-            display: shown.display,
-            absolute_mouse: shown.absolute_mouse,
-            stats_overlay: shown.stats_overlay,
-            mute_far_speakers: shown.mute_far_speakers,
-        };
-        assert_eq!(
-            returned.laid_over(Preferred::default()).unwrap(),
-            chosen().laid_over(Preferred::default()).unwrap()
-        );
+        let written = chosen().laid_over(Preferred::default());
+        assert_eq!(Chosen::of(written), chosen());
     }
 
     #[test]
@@ -541,7 +534,7 @@ mod tests {
             bitrate_kbps: 15_000,
             ..Preferred::default()
         };
-        let after = chosen().laid_over(set_from_the_menu).unwrap();
+        let after = chosen().laid_over(set_from_the_menu);
         assert_eq!(after.asked, Asked::Fixed(2560, 1440));
         assert_eq!(after.bitrate_kbps, 15_000);
         assert_eq!(after.codec, Codec::Hevc);
@@ -601,15 +594,5 @@ mod tests {
             Some(a_screen(3840, 2160)),
         );
         assert_eq!((fixed.width, fixed.height), (1920, 1080));
-    }
-
-    #[test]
-    fn a_value_the_product_does_not_know_is_refused_and_named() {
-        let nonsense = Chosen {
-            codec: "ultra".to_string(),
-            ..chosen()
-        };
-        let refusal = nonsense.laid_over(Preferred::default()).unwrap_err();
-        assert!(refusal.contains("ultra"), "{refusal}");
     }
 }

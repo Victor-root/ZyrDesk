@@ -16,6 +16,13 @@
 //! behind the picture, where anything it put on screen would be read by
 //! nobody.
 
+// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
+// lui-même, et ce qui dessine n'existe que sous Windows comme les
+// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
+// fichier reste compilé et vérifié, il n'est simplement appelé par
+// personne.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -27,7 +34,6 @@ use zyr_proto::paths;
 use crate::service;
 
 /// This computer's journal, ready to be copied out.
-#[tauri::command]
 pub async fn journal() -> String {
     match service::ask(&Request::Journal).await {
         Ok(Answer::Journal(text)) => text,
@@ -46,7 +52,6 @@ pub async fn journal() -> String {
 /// to it, and one that is asleep or gone answers nothing at all. The
 /// refusal that comes back then is the same one a session would have
 /// been refused with, which is what makes it worth reading.
-#[tauri::command]
 pub async fn far_journal(host: String, fingerprint: String) -> Result<String, String> {
     let peer = fingerprint
         .trim()
@@ -79,7 +84,6 @@ fn gathered_here(reason: &str) -> String {
 /// Done here rather than through the service, which the far one has to
 /// go through: this one has to work when the service does not answer,
 /// and that is when a fresh page is wanted most.
-#[tauri::command]
 pub fn clear_journal() -> Result<(), String> {
     let refused = zyr_proto::journal::emptied();
 
@@ -102,7 +106,6 @@ pub fn clear_journal() -> Result<(), String> {
 /// a fault is found by emptying both journals, doing the thing that goes
 /// wrong, and reading both. Emptying only the one within arm's reach
 /// leaves the walk to the other machine exactly where it was.
-#[tauri::command]
 pub async fn clear_far_journal(host: String, fingerprint: String) -> Result<(), String> {
     let peer = fingerprint
         .trim()

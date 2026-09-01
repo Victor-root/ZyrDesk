@@ -1,14 +1,15 @@
 //! Le système de design de ZyrDesk, du côté de ce qui est dessiné.
 //!
 //! Les couleurs, les espacements, les rayons, les ombres et les tailles
-//! de texte sont écrits une seule fois, dans `web/design.css`, et lus
-//! d'ici à la compilation. Rien n'est recopié : deux copies d'une
-//! palette, ce sont deux palettes, et la première couleur changée dans
-//! l'une est le jour où le produit cesse de se ressembler.
+//! de texte sont écrits une seule fois, dans `design.css`, et lus d'ici à
+//! la compilation. Rien n'est recopié : deux copies d'une palette, ce
+//! sont deux palettes, et la première couleur changée dans l'une est le
+//! jour où le produit cesse de se ressembler.
 //!
-//! Le jour où la dernière page s'en va, la source de ces valeurs
-//! reviendra dans ce fichier et rien d'autre ne bougera : tout lit déjà
-//! ce qui en sort.
+//! Plus aucun navigateur ne lit ce fichier. Il garde sa notation parce
+//! qu'elle écrit deux thèmes côte à côte, et parce que le lire à la
+//! compilation est ce qui vérifie que les deux disent bien les mêmes
+//! rôles.
 //!
 //! Tous les rôles sont extraits, y compris ceux que rien ne dessine
 //! encore : le système de design est une palette, pas une liste de
@@ -39,6 +40,33 @@ impl Couleur {
         blue: 0.0,
         alpha: 0.0,
     };
+
+    /// Le noir plein.
+    ///
+    /// Dont seule la part employée sert : c'est ce qu'une boîte de
+    /// dialogue pose sur ce qu'elle recouvre, et le seul endroit du
+    /// produit où une couleur n'est pas un rôle.
+    pub const NOIR: Couleur = Couleur {
+        red: 0.0,
+        green: 0.0,
+        blue: 0.0,
+        alpha: 1.0,
+    };
+
+    /// Celle-ci mêlée à celle-là, dans cette proportion.
+    ///
+    /// Ce que la feuille de style écrit `color-mix(in srgb, ... 8%,
+    /// ...)` : la teinte d'un rôle passée sur un fond, là où poser une
+    /// deuxième couleur pleine donnerait une couleur de plus à tenir.
+    pub fn melee(self, fond: Couleur, part: f32) -> Couleur {
+        let entre = |mien: f32, sien: f32| sien + (mien - sien) * part;
+        Couleur {
+            red: entre(self.red, fond.red),
+            green: entre(self.green, fond.green),
+            blue: entre(self.blue, fond.blue),
+            alpha: entre(self.alpha, fond.alpha),
+        }
+    }
 
     /// La même, posée en voile.
     ///

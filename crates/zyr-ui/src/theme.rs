@@ -5,80 +5,177 @@
 //! window is open: everything else on the machine switches the moment
 //! Windows does, and a product that does not is the odd one out.
 //!
-//! # Why the page cannot answer this on its own
+//! # Where the choice lives
 //!
-//! A web page asks its browser `prefers-color-scheme` and is told. Here
-//! the browser is a web view embedded in our window, and the toolkit
-//! pins that view's colour scheme to one fixed answer when the window is
-//! built, taken from the system at that instant. It is right at the
-//! first frame and frozen from then on: Windows switching afterwards
-//! changes nothing the page can see, and the event a page would listen
-//! for never fires.
+//! In a file beside the other things this machine remembers about
+//! itself, read once when the program opens. It used to live in the web
+//! view's own store, which went with the web view; and a store the
+//! product cannot read from Rust would have left the window drawing
+//! itself in one theme and its frame in another.
 //!
-//! There is one road out of that in the toolkit, and this program had
-//! blocked it. The toolkit refreshes the view when it sees Windows
-//! switch, unless a theme has been forced on the window; and the window
-//! was being forced to a theme on every start, so that its title bar
-//! would match the page. The two ends were therefore fighting: matching
-//! the frame cost the following.
-//!
-//! # So Windows is asked directly
+//! # And Windows is asked directly
 //!
 //! The same value the toolkit itself reads, from the same place, and
 //! watched rather than sampled: Windows raises a hand when it changes,
-//! and every window is told. The page then holds no opinion of its own
-//! about the system, which is the point. And the window is only ever
-//! forced to a theme when somebody actually chose one, so following
-//! stays followed, title bar and all.
+//! and the window is redrawn. Nothing here polls a registry on a timer
+//! for an answer that changes twice a day.
 
-use tauri::{AppHandle, Theme, Window};
+// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
+// lui-même, et ce qui dessine n'existe que sous Windows comme les
+// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
+// fichier reste compilé et vérifié, il n'est simplement appelé par
+// personne.
+#![cfg_attr(not(windows), allow(dead_code))]
 
-/// Name the pages listen on to be told what Windows wants now.
-#[cfg(windows)]
-const CHANGED: &str = "system-theme";
+use std::sync::atomic::{AtomicU8, Ordering};
 
-/// The three answers the page may give, spelled as it spells them.
-const FOLLOW: &str = "systeme";
-const LIGHT: &str = "clair";
+use tauri::{AppHandle, Manager, Theme};
 
-/// Whether Windows is asking for a light interface right now.
-///
-/// Asked by the page as it loads, so it never has to trust a colour
-/// scheme frozen at some earlier moment.
-#[tauri::command]
-pub fn system_theme() -> bool {
-    windows_wants_light()
+/// The three answers, spelled as the file spells them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Choix {
+    Systeme,
+    Clair,
+    Sombre,
 }
 
-/// Matches the window to what the person chose.
+impl Choix {
+    /// The three, in the order the settings screen offers them.
+    pub const ALL: [Choix; 3] = [Choix::Systeme, Choix::Clair, Choix::Sombre];
+
+    /// What the file writes.
+    fn name(self) -> &'static str {
+        match self {
+            Choix::Systeme => "systeme",
+            Choix::Clair => "clair",
+            Choix::Sombre => "sombre",
+        }
+    }
+
+    /// What a person reads.
+    pub fn word(self) -> &'static str {
+        match self {
+            Choix::Systeme => "Système",
+            Choix::Clair => "Clair",
+            Choix::Sombre => "Sombre",
+        }
+    }
+
+    fn read(said: &str) -> Option<Choix> {
+        Choix::ALL.into_iter().find(|choix| choix.name() == said)
+    }
+
+    fn rank(self) -> u8 {
+        match self {
+            Choix::Systeme => 0,
+            Choix::Clair => 1,
+            Choix::Sombre => 2,
+        }
+    }
+
+    fn of(rank: u8) -> Choix {
+        Choix::ALL
+            .into_iter()
+            .find(|choix| choix.rank() == rank)
+            .unwrap_or(Choix::Systeme)
+    }
+}
+
+/// What was chosen, read from the file once and held in a number from
+/// then on: this is asked for on the thread that draws, where nothing
+/// may touch a disk.
+static CHOISI: AtomicU8 = AtomicU8::new(0);
+
+/// And what Windows wants, read by the thread that watches it and by
+/// nobody else.
 ///
-/// The frame belongs to Windows and not to the page, so the page cannot
-/// reach it: without this, a light interface would keep a dark title
-/// bar, which is exactly the kind of seam a product is judged on.
+/// One question to the registry per switch, and not one per picture
+/// drawn: what draws asks this hundreds of times while a hand moves
+/// across the window.
+static WINDOWS_VEUT_CLAIR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Reads back what was chosen the last time somebody chose.
+///
+/// Once, when the program opens, and before the window is shown: a
+/// window that opened in the wrong theme even for one beat would be seen
+/// doing it.
+pub fn what_was_chosen() {
+    WINDOWS_VEUT_CLAIR.store(windows_wants_light(), Ordering::Relaxed);
+    let path = zyr_proto::paths::chosen_theme();
+    let Ok(written) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    let said = written
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("theme")?.trim().strip_prefix('='));
+    if let Some(choix) = said.and_then(|said| Choix::read(said.trim())) {
+        CHOISI.store(choix.rank(), Ordering::Relaxed);
+    }
+}
+
+/// What was chosen: follow Windows unless somebody said otherwise.
+pub fn chosen() -> Choix {
+    Choix::of(CHOISI.load(Ordering::Relaxed))
+}
+
+/// Whether the interface is light right now.
+///
+/// What was chosen, or what Windows wants when nothing was. Everything
+/// that draws asks this and nothing else: one answer for the whole
+/// product, so no screen can hold an opinion of its own.
+pub fn light() -> bool {
+    match chosen() {
+        Choix::Clair => true,
+        Choix::Sombre => false,
+        Choix::Systeme => WINDOWS_VEUT_CLAIR.load(Ordering::Relaxed),
+    }
+}
+
+/// Takes a new choice, writes it down, and puts it on the window.
+pub fn choose(app: &AppHandle, choix: Choix) {
+    CHOISI.store(choix.rank(), Ordering::Relaxed);
+    let written = format!(
+        "# Le thème de l'interface ZyrDesk : systeme, clair ou sombre.\n\
+         # « systeme » suit ce que Windows demande.\n\
+         # Écrit par ZyrDesk, peut se corriger à la main.\n\
+         theme = {}\n",
+        choix.name()
+    );
+    if let Err(e) = zyr_proto::files::replace(&zyr_proto::paths::chosen_theme(), &written) {
+        crate::journal::note(&format!("thème non retenu : {e}"));
+    }
+    on_the_window(app);
+}
+
+/// Matches the window's frame to what was chosen.
+///
+/// The frame belongs to Windows and not to us, and it is the one part of
+/// the window this program does not draw: without this, a light
+/// interface would keep a dark title bar, which is exactly the kind of
+/// seam a product is judged on.
 ///
 /// « Follow » is handed over as no choice at all rather than as the
 /// colour it comes to right now. The two look identical for one second
 /// and are opposites afterwards: a window told nothing follows Windows
 /// by itself, frame and all, while a window told « light » stays light
-/// for ever and, worse, makes the toolkit stop reporting that Windows
-/// switched at all.
-#[tauri::command]
-pub fn set_theme(window: Window, choix: String) {
-    let wanted = match choix.as_str() {
-        FOLLOW => None,
-        chosen => Some(if chosen == LIGHT {
-            Theme::Light
-        } else {
-            Theme::Dark
-        }),
+/// for ever.
+pub fn on_the_window(app: &AppHandle) {
+    let wanted = match chosen() {
+        Choix::Systeme => None,
+        Choix::Clair => Some(Theme::Light),
+        Choix::Sombre => Some(Theme::Dark),
     };
-    // A window that refuses the change is not worth stopping for: the
-    // page is already drawn in the right theme, only its frame is not.
-    let _ = window.set_theme(wanted);
+    // A window that refuses the change is not worth stopping for: what
+    // this program draws is already in the right theme, only its frame is
+    // not.
+    if let Some(window) = app.get_window(crate::HOME) {
+        let _ = window.set_theme(wanted);
+    }
 }
 
-/// Follows what Windows wants for as long as the program runs, and tells
-/// every window each time it changes.
+/// Follows what Windows wants for as long as the program runs, and has
+/// the window redrawn each time it changes.
 ///
 /// On a thread of its own, asleep the whole time: Windows wakes it. The
 /// alternative is asking the registry on a timer, which is a question
@@ -91,8 +188,6 @@ pub fn watch(app: AppHandle) {
         RegNotifyChangeKeyValue, RegOpenKeyExW,
     };
     use windows_sys::Win32::System::Threading::{CreateEventW, INFINITE, WaitForSingleObject};
-
-    use tauri::Emitter;
 
     std::thread::spawn(move || {
         let name = wide(PERSONALIZE);
@@ -138,11 +233,17 @@ pub fn watch(app: AppHandle) {
             let now = windows_wants_light();
             if now != said {
                 said = now;
+                WINDOWS_VEUT_CLAIR.store(now, Ordering::Relaxed);
                 note(&format!(
                     "Windows demande maintenant une interface {}",
                     if now { "claire" } else { "sombre" }
                 ));
-                let _ = app.emit(CHANGED, now);
+                // Only when nobody has chosen: a window forced to a theme
+                // does not follow, and redrawing it here would repaint the
+                // same picture in the same colours.
+                if chosen() == Choix::Systeme {
+                    crate::accueil::redraw(&app);
+                }
             }
         }
 
@@ -216,4 +317,30 @@ fn wide(text: &str) -> Vec<u16> {
 #[cfg(windows)]
 fn note(what: &str) {
     crate::journal::note(what);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_choice_is_written_and_read_back_as_itself() {
+        // Le fichier est le seul endroit où le choix survit à la fenêtre :
+        // un nom qui ne se relit pas est un choix perdu au redémarrage.
+        for choix in Choix::ALL {
+            assert_eq!(Choix::read(choix.name()), Some(choix));
+            assert!(!choix.word().is_empty());
+        }
+        assert_eq!(Choix::read("bleu"), None);
+    }
+
+    #[test]
+    fn a_choice_survives_the_number_it_is_held_as() {
+        for choix in Choix::ALL {
+            assert_eq!(Choix::of(choix.rank()), choix);
+        }
+        // Ce que dit un fichier abîmé : suivre Windows, comme au premier
+        // démarrage.
+        assert_eq!(Choix::of(9), Choix::Systeme);
+    }
 }

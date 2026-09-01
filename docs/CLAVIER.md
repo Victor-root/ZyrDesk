@@ -103,7 +103,7 @@ Les deux sont exactement symétriques et pour la même raison, vue des deux côt
 | Le raccourci qui bascule l'interrupteur | `engines/moonlight-qt/app/streaming/input/keyboard.cpp` |
 | Le mode en ligne de commande | `engines/moonlight-qt/app/cli/commandlineparser.cpp` |
 | Ce qui le demande | `crates/zyr-engine-client/src/command.rs` |
-| L'interrupteur du menu | `crates/zyr-ui/src/floating.rs`, `crates/zyr-ui/web/bouton.{html,js}` |
+| L'interrupteur du menu | `crates/zyr-ui/src/floating.rs`, `crates/zyr-ui/src/menu.rs` |
 | Le patch au manifeste | P-M10, `patches/MANIFEST.md` |
 
 Il n'y a **rien** côté ZyrDesk. C'est voulu : la deuxième voie a existé, dans `crates/zyr-ui/src/keys.rs`, et elle a été retirée en entier une fois celle-ci validée ([D47](DECISIONS.md)). Deux crochets sur le même clavier, c'est chacun qui répond à l'autre.

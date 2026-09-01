@@ -4,6 +4,10 @@
 //! and the far computer's side of everything; this program asks it
 //! questions and shows the answers.
 //!
+//! And it draws them itself. There is no web view left anywhere in this
+//! product: the window the toolkit opens is a bare one, and its inside is
+//! a canvas this program paints, like the floating button and its menu.
+//!
 //! The one thing it does hold is the player of a session, which it
 //! starts and which goes when it goes. That is deliberate: a player left
 //! running behind a window that is no longer there would hold the far
@@ -36,9 +40,30 @@ mod logo;
 #[cfg(windows)]
 mod paint;
 
+// Les icônes que ce programme dessine, partagées par tous ses écrans.
+#[cfg(windows)]
+mod icones;
+
 // Le menu du bouton flottant, dessiné par ce programme.
 #[cfg(windows)]
 mod menu;
+
+// La fenêtre d'accueil, dessinée par ce programme.
+#[cfg(windows)]
+mod accueil;
+
+/// Hors de Windows il n'y a pas de fenêtre d'accueil, et pas de session
+/// non plus : ce qu'une session raconte pendant qu'elle s'ouvre tombe
+/// alors dans le vide, comme tout le reste de ce qui dessine.
+#[cfg(not(windows))]
+mod accueil {
+    use tauri::AppHandle;
+
+    pub fn etape(_app: &AppHandle, _detail: &str, _code: Option<String>) {}
+    pub fn relance(_app: &AppHandle) {}
+    pub fn range_l_ouverture(_app: &AppHandle) {}
+    pub fn echoue(_app: &AppHandle, _texte: &str) {}
+}
 
 mod mesures;
 mod picture;
@@ -78,39 +103,14 @@ fn main() {
         .manage(floating::Floating::default())
         .manage(picture::Picture::default())
         .manage(tray::Shown::default())
-        .invoke_handler(tauri::generate_handler![
-            desk::standing,
-            desk::build,
-            desk::peers,
-            desk::set_hosting,
-            desk::set_trust,
-            desk::set_serving,
-            desk::authorize,
-            desk::forget,
-            desk::set_at_boot,
-            desk::start_service,
-            desk::stop_service,
-            folders::engines,
-            folders::logs_folder,
-            folders::open_folder,
-            journal::journal,
-            journal::far_journal,
-            journal::clear_journal,
-            journal::clear_far_journal,
-            session::connect,
-            session::sessions,
-            settings::settings,
-            settings::choose,
-            shortcuts::shortcuts,
-            shortcuts::bind,
-            theme::set_theme,
-            theme::system_theme
-        ])
         .setup(|app| {
             journal::opened();
-            // Ce que Windows veut, suivi tant que le programme tourne :
-            // la vue web ne peut pas le voir changer, sa réponse à elle
-            // étant figée à la construction de la fenêtre.
+            // Ce que la personne a choisi de regarder, relu avant que la
+            // fenêtre s'ouvre : une fenêtre qui s'ouvrirait dans le
+            // mauvais thème, même le temps d'un battement, se verrait.
+            theme::what_was_chosen();
+            open_home(app.handle())?;
+            // Ce que Windows veut, suivi tant que le programme tourne.
             theme::watch(app.handle().clone());
             // The window's own icon, which the toolkit has already put a
             // stretched one of: taken from the compiled resource at the
@@ -134,6 +134,12 @@ fn main() {
             // is left to us has to be asked of the system rather than
             // waited for as an ordinary key press.
             shortcuts::listen(app.handle().clone());
+            // Et l'accueil lui-même, dessiné dans le dedans de cette
+            // fenêtre. En dernier : il demande au service ce qu'il
+            // montre, et le service vient d'être réveillé.
+            #[cfg(windows)]
+            accueil::raise(app.handle());
+            show_home(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -182,10 +188,13 @@ fn main() {
                     picture::hold_the_shape(window.app_handle());
                 }
                 // The window has changed screen, or the screen has
-                // changed magnification: the icon is counted in real
-                // pixels, so it is asked for again at the new ones.
+                // changed magnification: the icon and everything drawn
+                // inside are counted in real pixels, so both are asked
+                // for again at the new ones.
                 WindowEvent::ScaleFactorChanged { .. } => {
                     icon::on_the_window(window.app_handle());
+                    #[cfg(windows)]
+                    accueil::mesure_l_ecran(window.app_handle());
                 }
                 _ => {}
             }
@@ -194,13 +203,36 @@ fn main() {
         .expect("l'interface ZyrDesk n'a pas pu démarrer");
 }
 
+/// Opens the one window, bare.
+///
+/// Bare because nothing of this product is a web page any more: the
+/// toolkit gives us a window, a frame and an event loop, and what is
+/// inside it is drawn by this program. Built here rather than declared in
+/// the configuration, which only ever makes windows with a browser in
+/// them.
+fn open_home(app: &tauri::AppHandle) -> tauri::Result<()> {
+    tauri::window::WindowBuilder::new(app, HOME)
+        .title("ZyrDesk")
+        .inner_size(1060.0, 720.0)
+        .min_inner_size(880.0, 600.0)
+        .resizable(true)
+        .center()
+        // Cachée le temps qu'on la remplisse : une fenêtre montrée avant
+        // d'avoir été peinte se voit vide, et c'est la première image du
+        // produit.
+        .visible(false)
+        .build()?;
+    theme::on_the_window(app);
+    Ok(())
+}
+
 /// Brings the home window back, wherever it was left.
 ///
 /// The picture and the floating button come back with it without being
 /// told: both are windows the system knows this one owns, and it puts
 /// them back up when it puts this one back up.
 pub fn show_home(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window(HOME) else {
+    let Some(window) = app.get_window(HOME) else {
         return;
     };
     let _ = window.show();

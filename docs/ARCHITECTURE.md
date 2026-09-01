@@ -38,7 +38,7 @@ Idées initiales abandonnées après étude :
                    WSS sortant                WSS sortant
                         /                          \
    PC CLIENT                                          PC HÔTE
-   ZyrDesk.exe (UI Tauri, tray) ── pipe ──┐   ┌── pipe ── ZyrDesk.exe (UI, tray,
+   ZyrDesk.exe (interface, tray) ─ pipe ──┐   ┌── pipe ── ZyrDesk.exe (UI, tray,
    zyrdesk-session.exe (Moonlight dérivé) │   │            agent presse-papiers)
         │ loopback 127.77.x.y             │   │
         └── zyrdeskd (service) ═══════════╧═══╧═ zyrdeskd (service, SYSTEM)
@@ -56,7 +56,7 @@ En fonctionnement normal, le flux média circule directement entre les deux PC. 
 
 | Processus | Rôle | Compte | Durée de vie |
 |---|---|---|---|
-| `ZyrDesk.exe` | Interface (Tauri), bouton flottant pendant une session, icône de zone de notification, agent presse-papiers côté hôte | Utilisateur connecté | Session utilisateur |
+| `ZyrDesk.exe` | Interface, dessinée par le produit lui-même, bouton flottant pendant une session, icône de zone de notification, agent presse-papiers côté hôte | Utilisateur connecté | Session utilisateur |
 | `zyrdeskd.exe` | Service Windows : identité de l'appareil, lien broker, LES DEUX extrémités de tunnel (rôle client et rôle hôte), cycle de vie des moteurs, serveur IPC | LocalSystem | Démarre avec Windows |
 | `zyrdesk-host-engine.exe` | Sunshine dérivé : capture, encodage, protocole, strictement lié à 127.0.0.1 | SYSTEM, dans la session console | Tant que « Autoriser l'accès distant » est actif |
 | `zyrdesk-session.exe` | Moonlight dérivé : fenêtre vidéo, décodage, entrées | Utilisateur connecté | Une session distante |
@@ -137,7 +137,7 @@ ZyrDesk/
 │  ├─ zyr-device/              # identité Ed25519, secrets DPAPI (profil SYSTEM), enrôlement
 │  ├─ zyr-broker-client/       # client WSS présence/signalisation, tickets
 │  ├─ zyrdeskd/                # binaire service Windows : registre de sessions, serveur pipe, tous les tunnels
-│  ├─ zyr-ui/                  # app Tauri v2 (cœur Rust + web/) : design system, écrans, journal, bouton flottant
+│  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, journal, bouton flottant
 │  └─ zyr-cli/                 # doctor, session sans UI, banc de mesure, bundle de diagnostic
 ├─ broker/zyr-broker/          # binaire unique axum + WSS + SQLite (AGPLv3) ; deploy/ (Docker, auto-hébergement)
 ├─ engines/
