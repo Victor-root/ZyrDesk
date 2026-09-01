@@ -1235,6 +1235,17 @@ pub fn floating_size(
     // The page asks for this several times a frame while a hand runs over
     // the logo, and once a second all session long for the measures,
     // nearly always with the very shape the window already wears.
+    // One of the trials cuts to the box holding the whole drawing rather
+    // than to the drawing. It is not a rounding: the shape stops changing
+    // while the logo grows, shrinks and travels, so the dedup below stops
+    // cutting at all between one menu and the next, which is what that
+    // trial is asking about.
+    let shape = if crate::trial::now().frozen {
+        one_box(&shape).map_or(shape, |box_| vec![box_])
+    } else {
+        shape
+    };
+
     let standing = (was.2 - was.0, was.3 - was.1);
     let drawn = the_shape_of(&shape, standing, upward);
     if SHAPED.swap(drawn, Ordering::Relaxed) != drawn {
@@ -1246,6 +1257,29 @@ pub fn floating_size(
     say_where_the_page_ends(standing.0, painted);
     tell_the_button(was, size, &shape);
     Ok(UPWARD.load(Ordering::Relaxed))
+}
+
+/// The one rectangle holding every piece of a shape, for the trial that
+/// cuts to the box rather than to the drawing.
+///
+/// The corners are square and the drawing it says it paints is the box
+/// itself: nothing weighs a cut against a drawing any more once the two
+/// are meant to differ, and a rounded box would only be a second guess at
+/// what the drawing already says exactly.
+fn one_box(shape: &[Piece]) -> Option<Piece> {
+    let left = shape.iter().map(|piece| piece.x).min()?;
+    let top = shape.iter().map(|piece| piece.y).min()?;
+    let right = shape.iter().map(|piece| piece.x + piece.width).max()?;
+    let bottom = shape.iter().map(|piece| piece.y + piece.height).max()?;
+    Some(Piece {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+        radius: 0,
+        drawn: [left as f32, top as f32, right as f32, bottom as f32],
+        drawn_radius: 0.0,
+    })
 }
 
 /// How far the drawing reaches from the two edges its pieces are counted

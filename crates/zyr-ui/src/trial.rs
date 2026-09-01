@@ -1,5 +1,5 @@
 //! The one thing left to try on the button's edge: build that window
-//! five different ways and look at each of them.
+//! six different ways and look at each of them.
 //!
 //! What is known and measured: a pixel of that window the page does not
 //! paint is not empty, it shows frosted glass that lightens whatever is
@@ -25,6 +25,16 @@
 //! were wrong. A square turns it into two hundred pixels of nothing but
 //! unpainted window, and nobody has to squint at anything.
 //!
+//! And one trial that is not about the glass at all, because the first
+//! run moved the question. The pale edging turns out to show **only when
+//! the button is clicked or dragged**, never at rest, which is to say
+//! only at the moments the window is cut again. So one trial cuts once,
+//! to a plain rectangle holding everything the page can draw, and never
+//! again while the logo grows, shrinks or travels. If the edging goes
+//! with it, the cut is the fault and this trial is also the fix: a mask
+//! only has to contain what the page paints, and what it contains but
+//! nobody paints has now been measured as invisible.
+//!
 //! One trial per session, in order, and the journal says which one is
 //! running. This is an instrument, not a feature: it goes the day it has
 //! answered, like the camera before it.
@@ -36,6 +46,9 @@ use crate::journal::note;
 /// How the button's window is built and cut for one trial.
 #[derive(Clone, Copy)]
 pub struct Trial {
+    /// Cut once, to a plain rectangle holding everything the page can
+    /// draw, instead of following the drawing from frame to frame.
+    pub frozen: bool,
     /// Cut to a plain square around the logo instead of to the drawing.
     pub square: bool,
     /// Declare the window layered, with one opacity for all of it.
@@ -52,32 +65,44 @@ pub struct Trial {
 /// which follows a new build says whether anything moved before any of
 /// this touches it. Each of the others switches off one thing and one
 /// only, which is the whole of what makes an answer readable.
-const TRIALS: [Trial; 5] = [
+const TRIALS: [Trial; 6] = [
     Trial {
+        frozen: false,
         square: false,
         layered: true,
         transparent: true,
         ground: true,
     },
     Trial {
+        frozen: true,
+        square: false,
+        layered: true,
+        transparent: true,
+        ground: true,
+    },
+    Trial {
+        frozen: false,
         square: true,
         layered: true,
         transparent: true,
         ground: true,
     },
     Trial {
+        frozen: false,
         square: true,
         layered: false,
         transparent: true,
         ground: true,
     },
     Trial {
+        frozen: false,
         square: true,
         layered: true,
         transparent: false,
         ground: true,
     },
     Trial {
+        frozen: false,
         square: true,
         layered: true,
         transparent: true,
@@ -111,7 +136,6 @@ pub fn starts() -> Trial {
 
 /// The trial in force, for everything that reaches the window later than
 /// the moment it was built.
-#[cfg(windows)]
 pub fn now() -> Trial {
     let started = STARTED.load(Ordering::Relaxed);
     // Nothing started yet is the product as it stands, which is what
@@ -126,7 +150,9 @@ pub fn now() -> Trial {
 /// session, and the whole worth of these five lines is that they can be
 /// trusted.
 fn named(trial: Trial) -> String {
-    let mut what = vec![if trial.square {
+    let mut what = vec![if trial.frozen {
+        "découpe figée sur un rectangle"
+    } else if trial.square {
         "découpé en carré"
     } else {
         "le bouton tel qu'il est"
