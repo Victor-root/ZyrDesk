@@ -148,9 +148,15 @@ static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 /// The side of the window in real pixels, which is the largest of the
 /// three sizes and never changes while a session lasts.
 static ITS_BOX: AtomicU32 = AtomicU32::new(0);
-/// Whether a hand is over it, and whether one is holding it.
+/// Whether a hand is over it, whether one is holding it, and whether the
+/// hold has turned into a move.
+///
+/// Les deux derniers ne sont pas le même moment : un bouton pressé se
+/// dessine pressé tout de suite, mais il ne se déplace qu'une fois la
+/// main partie, et le curseur doit dire lequel des deux arrive.
 static UNDER: AtomicBool = AtomicBool::new(false);
 static TAKEN: AtomicBool = AtomicBool::new(false);
+static MOVING: AtomicBool = AtomicBool::new(false);
 /// Which way the menu opens, which is the corner the logo is drawn in.
 static UPWARD: AtomicBool = AtomicBool::new(false);
 
@@ -258,6 +264,16 @@ pub fn shown_now(visible: bool) {
     unsafe { ShowWindow(window, if visible { SW_SHOWNOACTIVATE } else { SW_HIDE }) };
 }
 
+/// Dit que la main qui tient le bouton a commencé à le déplacer, ou
+/// qu'elle a fini.
+///
+/// Le curseur seul en dépend, et c'est bien le déplacement qu'il annonce
+/// et non l'appui : un simple clic presse le bouton lui aussi, et il ne
+/// doit pas pour autant montrer la croix des quatre directions.
+pub fn moving(yes: bool) {
+    MOVING.store(yes, Ordering::Relaxed);
+}
+
 /// Takes the logo's window down with the session.
 pub fn lower(app: &AppHandle) {
     let window = ITS_WINDOW.swap(0, Ordering::Relaxed);
@@ -266,6 +282,7 @@ pub fn lower(app: &AppHandle) {
     }
     UNDER.store(false, Ordering::Relaxed);
     TAKEN.store(false, Ordering::Relaxed);
+    MOVING.store(false, Ordering::Relaxed);
     *PROGRAM.lock().expect("programme du logo") = None;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
@@ -614,7 +631,7 @@ unsafe extern "system" fn answer(
             0
         }
         WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
-            let shape = if TAKEN.load(Ordering::Relaxed) {
+            let shape = if MOVING.load(Ordering::Relaxed) {
                 IDC_SIZEALL
             } else {
                 IDC_HAND

@@ -799,20 +799,34 @@ pub async fn grabbed(app: &AppHandle) -> bool {
         let Some(now) = cursor_now() else {
             break;
         };
-        if !moved && (now.0 - start.0).abs() < GRIP && (now.1 - start.1).abs() < GRIP {
-            tokio::time::sleep(FOLLOW).await;
-            continue;
+        if !moved {
+            if (now.0 - start.0).abs() < GRIP && (now.1 - start.1).abs() < GRIP {
+                tokio::time::sleep(FOLLOW).await;
+                continue;
+            }
+            moved = true;
+            moving(true);
         }
-        moved = true;
         at = slide(picture, at, now.0 - was.0, now.1 - was.1);
         was = now;
         tokio::time::sleep(FOLLOW).await;
     }
     if moved {
+        moving(false);
         leave_it_there();
     }
     !moved
 }
+
+/// Dit au logo que le geste est devenu un déplacement, au cran près où
+/// il le devient, puis qu'il est fini.
+#[cfg(windows)]
+fn moving(yes: bool) {
+    crate::logo::moving(yes);
+}
+
+#[cfg(not(windows))]
+fn moving(_yes: bool) {}
 
 /// Puts the button where the mouse has dragged it to, and says where
 /// that turned out to be.

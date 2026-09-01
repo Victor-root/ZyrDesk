@@ -1683,6 +1683,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > 6. **La fin de session** : plus rien à l'écran, ni logo ni carte.
 > 7. **Le codec barré doit être barré dès la première ouverture du menu**, et non une seconde après. C'est le point qui vient d'être réparé.
 > 8. **Le sous-menu n'a plus de titre** : la liste commence directement, et on en sort en recliquant la ligne qui l'a ouverte ou en choisissant une valeur.
+> 9. **Le curseur** : main au survol, main encore pendant un clic simple, et croix des quatre directions seulement une fois qu'on traîne réellement le bouton.
 >
 > **Et le clavier ne quitte plus l'image.** Ouvrir le menu, le refermer, puis taper : la session doit entendre tout de suite, sans qu'il faille cliquer dans l'image. Le journal ne doit plus porter la ligne `menu du bouton flottant ouvert` ni `fermé` : ce n'était nécessaire que parce que la page prenait le clavier.
 
