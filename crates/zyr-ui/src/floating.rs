@@ -1089,10 +1089,6 @@ pub fn lower(app: &AppHandle) {
     // yes left standing here would stop the keyboard ever being given
     // back.
     MENU_UP.store(false, Ordering::Relaxed);
-    // The boxes of the trial that cuts once belonged to the window that
-    // had them, and the next session's may be on a screen magnified
-    // differently, where none of those numbers mean anything.
-    FROZEN.lock().expect("découpes figées").clear();
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
@@ -1233,18 +1229,6 @@ pub fn floating_size(
     // The page asks for this several times a frame while a hand runs over
     // the logo, and once a second all session long for the measures,
     // nearly always with the very shape the window already wears.
-
-    // One of the trials cuts to a box worked out once for each shape the
-    // page draws, and never worked out again. The logo growing under the
-    // mouse, shrinking under a click and travelling under a hand all give
-    // the same box, so the dedup below stops cutting at all between one
-    // menu and the next, which is what that trial is asking about.
-    let shape = if crate::trial::now().frozen {
-        frozen_box(&shape)
-    } else {
-        shape
-    };
-
     let standing = (was.2 - was.0, was.3 - was.1);
     let drawn = the_shape_of(&shape, standing, upward);
     if SHAPED.swap(drawn, Ordering::Relaxed) != drawn {
@@ -1256,52 +1240,6 @@ pub fn floating_size(
     say_where_the_page_ends(standing.0, painted);
     tell_the_button(was, size, &shape);
     Ok(UPWARD.load(Ordering::Relaxed))
-}
-
-/// The box each shape of the page was first seen as, for the trial that
-/// cuts once and no more.
-///
-/// Kept by how many pieces the page sent, which is what tells its shapes
-/// apart: two for the logo alone, one more for the menu, one more again
-/// for the list inside it. Everything else the page can do, and it is the
-/// whole of what it does between two menus, only moves those pieces
-/// about.
-static FROZEN: Mutex<Vec<(usize, Piece)>> = Mutex::new(Vec::new());
-
-/// The box this shape is cut to, worked out the first time it is seen.
-fn frozen_box(shape: &[Piece]) -> Vec<Piece> {
-    let mut frozen = FROZEN.lock().expect("découpes figées");
-    if let Some((_, box_)) = frozen.iter().find(|(count, _)| *count == shape.len()) {
-        return vec![box_.clone()];
-    }
-    let Some(box_) = one_box(shape) else {
-        return Vec::new();
-    };
-    frozen.push((shape.len(), box_.clone()));
-    vec![box_]
-}
-
-/// The one rectangle holding every piece of a shape, for the trial that
-/// cuts to the box rather than to the drawing.
-///
-/// The corners are square and the drawing it says it paints is the box
-/// itself: nothing weighs a cut against a drawing any more once the two
-/// are meant to differ, and a rounded box would only be a second guess at
-/// what the drawing already says exactly.
-fn one_box(shape: &[Piece]) -> Option<Piece> {
-    let left = shape.iter().map(|piece| piece.x).min()?;
-    let top = shape.iter().map(|piece| piece.y).min()?;
-    let right = shape.iter().map(|piece| piece.x + piece.width).max()?;
-    let bottom = shape.iter().map(|piece| piece.y + piece.height).max()?;
-    Some(Piece {
-        x: left,
-        y: top,
-        width: right - left,
-        height: bottom - top,
-        radius: 0,
-        drawn: [left as f32, top as f32, right as f32, bottom as f32],
-        drawn_radius: 0.0,
-    })
 }
 
 /// How far the drawing reaches from the two edges its pieces are counted
@@ -2123,12 +2061,35 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
 #[cfg(windows)]
 fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
     use windows_sys::Win32::Foundation::HWND;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+    };
 
     let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
     if button.is_null() {
         return;
     }
+    // The size is said to stand when it stands, which is nearly every
+    // time this is called: a hand dragging the button asks for this a
+    // hundred and twenty times a second, always at the same size.
+    //
+    // That one word is the whole of the white flash. Windows sends the
+    // window a resize whenever it is placed without being told the size
+    // stands, and the toolkit answers a resize by handing the web view
+    // its bounds again. A web view given its bounds again builds its
+    // surface again, and a surface being built shows the web view's own
+    // ground, which is white, until the page's drawing comes back. That
+    // is why the white is there while the button is dragged and while the
+    // menu opens, and nowhere else: those are the only moments this
+    // window moves or changes size. The cut has nothing to do with it,
+    // which is what six trials had to say before this one was found.
+    let stands = its_place()
+        .is_some_and(|(left, top, right, bottom)| right - left == size.0 && bottom - top == size.1);
+    let same_size = if stands && !crate::trial::now().resizes {
+        SWP_NOSIZE
+    } else {
+        0
+    };
     // Opening upward, the corner the window hangs by is its bottom right
     // and no longer its top right: the logo stays where the hand left it
     // and the menu grows above it. Which of the two is read from the
@@ -2149,7 +2110,7 @@ fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
             top,
             size.0,
             size.1,
-            SWP_NOZORDER | SWP_NOACTIVATE | visibility,
+            SWP_NOZORDER | SWP_NOACTIVATE | same_size | visibility,
         )
     };
 }
@@ -2255,10 +2216,7 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
 /// under a hand that is somewhere else does not move again.
 #[cfg(windows)]
 fn draw_it_all_again(button: windows_sys::Win32::Foundation::HWND) {
-    use crate::trial::Redraw;
-    use windows_sys::Win32::Graphics::Gdi::{
-        RDW_ALLCHILDREN, RDW_INVALIDATE, RDW_NOERASE, RedrawWindow,
-    };
+    use windows_sys::Win32::Graphics::Gdi::{RDW_ALLCHILDREN, RDW_INVALIDATE, RedrawWindow};
 
     // Marked as wanting to be drawn, and not drawn here and now. This runs
     // on whichever thread the page asked from, and the window belongs to
@@ -2270,17 +2228,20 @@ fn draw_it_all_again(button: windows_sys::Win32::Foundation::HWND) {
     // white this is here to be rid of: what is wanted is the page drawn
     // again, not the window emptied and then drawn again.
     //
-    // The trials take this line apart, because it is the only thing the
-    // product does at the exact moment the white shows.
-    let asked = match crate::trial::now().redraw {
-        Redraw::AsToday => RDW_INVALIDATE | RDW_ALLCHILDREN,
-        Redraw::NoErase => RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE,
-        Redraw::WindowOnly => RDW_INVALIDATE,
-        Redraw::None => return,
-    };
+    // Measured and cleared: this line was taken apart three ways, with no
+    // erase, without the web view, and not called at all, and the white
+    // was there every time. It is not what makes it.
+    //
     // SAFETY: a window of ours, and neither a rectangle nor a shape is
     // named, so the whole of it is meant.
-    unsafe { RedrawWindow(button, std::ptr::null(), std::ptr::null_mut(), asked) };
+    unsafe {
+        RedrawWindow(
+            button,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            RDW_INVALIDATE | RDW_ALLCHILDREN,
+        )
+    };
 }
 
 /// Says what the window was cut to, and what the system holds of it.
@@ -2741,12 +2702,6 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
     const NO_EDGE: u32 =
         WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_DLGMODALFRAME;
 
-    // One of the trials builds this window without the layered attribute,
-    // to find out whether it is what lights the frosted glass. The frame
-    // is stripped either way: that is a different fault, it is answered,
-    // and nothing about a trial is a reason to hand the cross back.
-    let layered = crate::trial::now().layered;
-
     // SAFETY: a window we have just built, whose two styles are read and
     // written back, which is told how to read its own alpha, and which is
     // then asked to work its frame out again. Nothing here moves it,
@@ -2755,12 +2710,11 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
         let plain = GetWindowLongPtrW(button, GWL_STYLE);
         SetWindowLongPtrW(button, GWL_STYLE, plain & !(NO_FRAME as isize));
         let style = GetWindowLongPtrW(button, GWL_EXSTYLE);
-        let wanted = if layered {
-            style | WS_EX_LAYERED as isize
-        } else {
-            style
-        };
-        SetWindowLongPtrW(button, GWL_EXSTYLE, wanted & !(NO_EDGE as isize));
+        SetWindowLongPtrW(
+            button,
+            GWL_EXSTYLE,
+            (style | WS_EX_LAYERED as isize) & !(NO_EDGE as isize),
+        );
         // A style is only read when the frame is worked out again, and
         // nothing else here asks for that: without this the window keeps
         // the frame it was born with for the rest of the session.
@@ -2791,7 +2745,7 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
         // composited from once it is layered is not something the two
         // documentations settle between them. Kept and said plainly is
         // the honest state of it.
-        !layered || SetLayeredWindowAttributes(button, 0, 255, LWA_ALPHA) != 0
+        SetLayeredWindowAttributes(button, 0, 255, LWA_ALPHA) != 0
     };
     if !told {
         note("bouton flottant : Windows a refusé l'alpha d'ensemble du calque");
