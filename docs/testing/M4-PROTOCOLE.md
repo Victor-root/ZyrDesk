@@ -63,6 +63,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R66** | **Nouveau, et c'est la réponse à ce que D97 laissait ouvert.** Le bord du bouton flottant est lisse **et d'épaisseur égale tout autour**, y compris sur un fond blanc. Deux corrections pour un seul défaut : la transparence par pixel était demandée à moitié, il manquait de déclarer la fenêtre *layered* avec une opacité constante de 255 ; et la découpe arrondissait vers l'intérieur d'une fraction différente sur chaque bord, ce qui rognait le contour d'un pixel d'un côté et de deux de l'autre. Elle arrondit maintenant vers le dehors, également sur les quatre bords. La couleur de fond part avec la transparence, les deux s'excluant, et un pixel pas encore peint ne montre plus rien au lieu de montrer du blanc. Le logo garde son grandissement au survol : il a été retiré une journée, parce que le dessin n'est net qu'à sa taille de repos, où il tombe juste sur la grille de l'écran, et remis aussitôt à la demande de Victor |
 | **R67** | **Nouveau, et c'est la fin du liseré blanc du bouton flottant, confirmée.** Le logo n'est plus une image dans une page web : c'est une fenêtre dont ZyrDesk calcule chaque pixel, transparence comprise. Onze essais avaient éteint tout le reste sans le faire céder, et la vue web était la seule couche jamais mise hors de cause : c'était son fond blanc, laissé une image à l'écran chaque fois qu'elle refaisait sa surface. Le menu reste une page web. Plus de découpe sur le logo, plus de fond à effacer, plus de cadre, plus de clics à laisser passer : quatre défauts de naissance de ce bouton ne peuvent plus se produire |
 | **R68** | **Nouveau, et c'est le déménagement demandé par Victor : l'interface sort de la vue web morceau par morceau.** Le menu du bouton flottant est maintenant dessiné par ZyrDesk lui-même, comme le logo l'est depuis R67 : la carte, son ombre, ses icônes, ses mots, ses raccourcis, le fond qui s'allume sous la souris, et les lignes qui agissent quand on clique. Il s'ouvre au **clic droit** sur le logo, le clic gauche gardant le menu de la vue web pour que les deux se comparent côte à côte sur la même machine. Ce qui est encore dans la page à cette étape est dit dans le journal à chaque ouverture : les lignes à interrupteur, le curseur du débit, les deux sous-menus, et la ligne rouge qui porte un refus |
+| **R69** | **Nouveau.** Le menu dessiné prend vie : les quatre chiffres du moteur se remplissent et se renouvellent une fois par seconde tant que la carte est ouverte, la phrase du flux dit de quoi l'image est faite, et les trois interrupteurs **Souris**, **Son** et **Clavier** sont là, chacun relu à l'ouverture plutôt que retenu. Deux réparations avec eux : l'icône « Masquer ce bouton » ne ressemblait à rien parce que le lecteur de dessins ne connaissait pas la courbe de Bézier, la seule du produit, et un chemin illisible se dit maintenant dans le journal au lieu de laisser une icône à moitié dessinée ; et le côté allumé d'un interrupteur s'écrivait avec une couleur qui n'existait pas, `--sur-accent`, employée par la page et définie nulle part |
 | **R65** | **Nouveau.** Une ligne **Écran de l'hôte** dans le menu du bouton flottant, qui liste les écrans allumés de la machine d'en face et permet d'en changer. Elle n'apparaît que quand cette machine en a plusieurs. Les écrans éteints n'y sont pas, ni l'écran virtuel du produit. Le moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc changer d'écran le redémarre et la session se rouvre toute seule : l'écran d'ouverture le dit. Une session qui ne choisit rien est servie sur l'**écran principal** d'en face, y compris après une session qui en avait choisi un autre |
 | **R64** | **Nouveau.** Pendant une session, la vignette de ZyrDesk dans Win+Tab et Alt+Tab est de la taille des autres. Elle était nettement plus petite, quelle que soit la taille de la fenêtre, plein écran compris : ZyrDesk disait à Windows de ne pas photographier sa fenêtre et lui fournissait l'image lui-même, ce qui plafonne la vignette à la taille que Windows réclame. C'était nécessaire quand l'image de la session était une fenêtre posée par-dessus la nôtre, ça ne l'est plus depuis qu'elle est portée par notre fenêtre |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
@@ -1603,6 +1604,35 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Le clic qui ne compte pas.** Appuyer sur une ligne, garder le bouton enfoncé, glisser hors de cette ligne, relâcher : rien ne doit se produire. C'est ce qui permet de repartir d'un bouton mal visé.
 >
 > **Et l'agrandissement de l'écran** : refaire le tour à 125, 150 et 175 %. La carte est mesurée sur ses propres mots, donc sa largeur change avec l'agrandissement et avec les raccourcis écrits dedans ; ce qui doit rester vrai est que rien n'y est coupé et que le fond du survol tombe exactement sur la ligne.
+
+> **R69 (les parties vivantes du menu dessiné)**
+>
+> Toujours au **clic droit** sur le logo, le clic gauche gardant le menu de la vue web pour la comparaison.
+>
+> **Les quatre chiffres.** Ouvrir la carte : ils portent un tiret pendant un instant, puis se remplissent, et changent une fois par seconde. Sous eux, la phrase du flux : le codec, la taille, la cadence, séparés par des points médians. Ce doit être **les mêmes nombres que dans le menu web** ouvert juste après, au dixième de seconde près.
+>
+> **Et ils s'arrêtent avec la carte.** Refermer la carte, la laisser fermée une minute, la rouvrir : les chiffres repartent tout de suite. Rien ne doit tourner entre les deux, ce qui ne se voit pas mais se lit dans le fait que la machine ne fait rien.
+>
+> **Les trois interrupteurs.** Chacun montre ses deux mots, celui qui est en place plein et de la couleur d'accent, l'autre vide et gris. Le passage de la souris allume le côté qui n'est pas en place, jamais celui qui l'est, et le curseur devient une main sur les deux.
+>
+> 1. **Souris : Bureau / Jeu.** Cliquer le côté où l'on est déjà ne doit rien faire du tout. Cliquer l'autre bascule le mode et l'interrupteur suit.
+> 2. **Son : Actif / Coupé.** Coupe le son de la session **sur cet ordinateur-ci** et non sur celui d'en face. Le vérifier dans le mélangeur de volume de Windows : c'est la ligne du lecteur qui descend, pas les autres. Le couper depuis le mélangeur et rouvrir la carte : l'interrupteur doit dire « Coupé » sans que personne le lui ait dit, parce qu'il relit au lieu de retenir.
+> 3. **Clavier : Partagé / Immersif.** Immersif donne Alt+Tab et la touche Windows à la session.
+>
+> **La carte reste ouverte** après une bascule, là où une action la referme : on regarde l'image après avoir basculé.
+>
+> **Ce que le journal dit maintenant à chaque clic**, ce qui est la façon de trancher entre « la ligne ne marche pas » et « le clic n'est jamais arrivé » :
+>
+> ```
+> menu du bouton flottant : « Statistiques » cliqué
+> menu du bouton flottant : « Souris » mis sur « Jeu »
+> ```
+>
+> **Si une ligne semble ne rien faire**, c'est la ligne suivante du journal qui le dit, et il n'y en a que quatre possibles : `refusé : l'image du lecteur … n'a pas repris le clavier` (le clavier n'est pas à la session), `refusé : Ctrl+Alt+Maj+… est déjà pris par un autre programme`, `… envoyé au lecteur …` (la frappe est partie, c'est le moteur qui l'a ignorée), ou rien du tout (le clic n'est pas arrivé jusqu'ici). Les trois lignes qui passent par le clavier du moteur sont **Statistiques**, **Souris** et **Clavier** : elles répondent ensemble ou pas du tout.
+>
+> **L'icône de « Masquer ce bouton »**, qui ne ressemblait à rien : c'est un oeil barré, le même que dans le menu web. Les comparer côte à côte.
+>
+> **Et le journal ne doit porter aucune ligne `dessin : chemin non lu`.** S'il y en a une, elle nomme le dessin en cause et l'icône correspondante est incomplète.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

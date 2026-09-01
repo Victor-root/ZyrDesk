@@ -35,6 +35,11 @@
   --accent-vif: #60a5fa;
   --accent-sourd: #1e40af;
   --accent-voile: rgba(59, 130, 246, 0.14);
+  /* Ce qui s'écrit par-dessus l'accent. Une couleur d'accent n'est pas
+     un fond de texte tant qu'on n'a pas dit ce qui se lit dessus : sans
+     ce rôle, chaque écran le devine à sa façon, et le côté allumé d'un
+     interrupteur se lisait en clair sur du bleu clair. */
+  --sur-accent: #0b0d12;
 
   /* États système. Une palette réduite, jamais décorative. */
   --en-ligne: #34d399;
@@ -97,6 +102,7 @@
   --accent-vif: #1d4ed8;
   --accent-sourd: #bfdbfe;
   --accent-voile: rgba(37, 99, 235, 0.1);
+  --sur-accent: #ffffff;
 
   --en-ligne: #059669;
   --attention: #b45309;

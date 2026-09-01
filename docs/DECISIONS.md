@@ -1831,6 +1831,34 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Ce que ça dit pour Linux, puisque la question viendra.** La couche de dessin est le seul morceau à réécrire par système : ce qui décrit l'interface, ses lignes, ses icônes, ses couleurs et ses mesures, ne connaît pas Windows. Et tout ce qui entoure ce bouton, la fenêtre qui flotte, les clics qui traversent, la fenêtre du moteur portée dans la nôtre, les raccourcis pris au système, est déjà propre à Windows et l'aurait été avec ou sans navigateur.
 
+## D103. Une icône à moitié dessinée est un défaut qui ne se dit pas, donc elle se dit (2026-09-01, pendant M4)
+
+**Le symptôme, en photo.** L'icône « Masquer ce bouton » du menu dessiné ne ressemblait à rien : un trait en biais et un point. Victor : « l'icône masquer est mal faite, on comprend pas ce que c'est comme logo. »
+
+**La cause, mesurée et non supposée.** Le lecteur de chemins comprenait sept commandes du langage SVG. Les icônes du produit en emploient huit : celle qui manquait est la **courbe de Bézier**, et une seule icône s'en sert, le contour de l'oeil barré. Un passage sur les dix-sept dessins de la page le dit en une ligne : `non lu : Cc`, une fois, sur ce chemin-là et sur aucun autre.
+
+**Ce qui a permis à ce défaut de passer.** Une icône est faite de plusieurs traits, chacun un chemin à part. Celui qui ne se lisait pas disparaissait, **les autres restaient**, et ce qui s'affichait était une icône méconnaissable dont rien nulle part ne disait qu'elle était incomplète. Le commentaire du lecteur promettait pourtant le contraire : « une icône absente à un oubli, et le second se cherche ». La promesse n'était pas tenue.
+
+**Décision : la courbe est ajoutée, et un chemin illisible se dit dans le journal.** Une fois, et retenu comme illisible pour ne pas se redire à chaque image. Les deux vont ensemble : la première moitié répare l'icône d'aujourd'hui, la seconde répare la façon dont on trouvera la prochaine.
+
+**Et ce que ça confirme, une fois de plus dans ce fichier : ce qui n'est pas dit ne se cherche pas.** Trois jours de chasse au liseré blanc tenaient à la même chose.
+
+## D104. Un rôle employé et jamais défini ressemble à un rôle défini (2026-09-01, pendant M4)
+
+**Trouvé en portant les interrupteurs du menu.** La feuille du bouton écrit `color: var(--sur-accent)` sur le côté allumé d'un interrupteur, et **`--sur-accent` n'existe nulle part**. Le navigateur remplace alors par ce qui est hérité, c'est-à-dire la couleur du texte ordinaire : du texte clair sur du bleu clair en thème sombre, du texte sombre sur du bleu foncé en thème clair. Ça se lit mal dans les deux, et rien ne signale une faute.
+
+**Décision : le rôle est créé dans le système de design, pas contourné.** Une couleur d'accent n'est pas un fond de texte tant qu'on n'a pas dit ce qui se lit dessus ; sans ce rôle, chaque écran le devine à sa façon. Défini dans les deux thèmes, il rejoint la palette tout seul, la règle étant que **la palette est exactement ce que le thème clair redit**. La page et le menu dessiné en profitent du même coup, ce qui est le but de n'avoir qu'une source.
+
+## D105. Ce qui vit dans le menu ne vit que pendant qu'on le regarde (2026-09-01, pendant M4)
+
+**Les quatre chiffres.** Le moteur écrit une ligne par seconde dans un fichier ; la carte la lit tant qu'elle est ouverte, et pas une seconde de plus. Des chiffres que personne ne regarde ne valent ni le fichier ni le réveil. La lecture se fait hors du fil qui dessine, et ce fil-là ne reçoit que du texte déjà mis en forme : la mise en forme est ainsi faite une fois par seconde et non une fois par image.
+
+**Le tour de veille porte un numéro**, qui change à chaque ouverture et à chaque fermeture. Sans lui, ouvrir et refermer vite laisserait deux veilles derrière la même carte, et une carte disparue avec sa session en laisserait une pour toute la vie du programme.
+
+**Les trois interrupteurs se relisent, ils ne se retiennent pas.** Le mode de la souris et les touches système sont ce que ce programme croit, parce que c'est lui qui les bascule et que le moteur ne dit jamais où il en est ; le son se demande au mélangeur de Windows, qui le sait et qui est ouvert à tout le monde. Relus à chaque ouverture de la carte et après chaque bascule : un interrupteur qui montre ce qu'il croit plutôt que ce qui est est un interrupteur qu'on ne croit pas deux fois.
+
+**Et la carte reste ouverte quand on bascule**, là où une action la referme. On regarde l'image après avoir basculé, et rouvrir le menu pour la ligne d'à côté ferait deux gestes pour un réglage.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

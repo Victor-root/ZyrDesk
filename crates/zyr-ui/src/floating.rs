@@ -1627,6 +1627,11 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
 /// would leave the two disagreeing until the next switch from here.
 #[tauri::command]
 pub fn floating_mouse(app: AppHandle) -> bool {
+    in_game_mouse(&app)
+}
+
+/// The same, from anywhere in the program rather than from the page.
+pub fn in_game_mouse(app: &AppHandle) -> bool {
     app.state::<Floating>().game_mouse.load(Ordering::Relaxed)
 }
 
@@ -1638,6 +1643,11 @@ pub fn floating_mouse(app: AppHandle) -> bool {
 /// the keys are held in the engine and the engine never says.
 #[tauri::command]
 pub fn floating_keys(app: AppHandle) -> bool {
+    keys_to_the_session(&app)
+}
+
+/// The same, from anywhere in the program rather than from the page.
+pub fn keys_to_the_session(app: &AppHandle) -> bool {
     app.state::<Floating>().system_keys.load(Ordering::Relaxed)
 }
 
@@ -1768,7 +1778,12 @@ fn the_player(app: &AppHandle) -> Result<u32, String> {
 /// nobody trusts twice.
 #[tauri::command]
 pub async fn floating_sound(app: AppHandle) -> Result<bool, String> {
-    let process = the_player(&app)?;
+    hushed(&app).await
+}
+
+/// The same, from anywhere in the program rather than from the page.
+pub async fn hushed(app: &AppHandle) -> Result<bool, String> {
+    let process = the_player(app)?;
     aside(move || zyr_sound::muted(process)).await
 }
 

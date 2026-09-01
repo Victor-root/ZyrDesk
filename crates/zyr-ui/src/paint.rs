@@ -33,22 +33,22 @@
 
 use windows::Win32::Foundation::{HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_HOLLOW,
-    D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F,
+    D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_ROUND,
-    D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_LINE_JOIN_ROUND, D2D1_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
-    D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
+    D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_LINE_JOIN_ROUND,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
+    D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
     D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory,
     ID2D1PathGeometry, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
     DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
 };
@@ -82,7 +82,7 @@ pub enum Trait {
     /// icône qui finit par ne plus être la même, et celles-ci sont déjà
     /// écrites une fois. Ce qui est compris ici est ce dont elles se
     /// servent : aller à, tracer jusqu'à, horizontalement, verticalement,
-    /// un arc, et refermer.
+    /// une courbe, un arc, et refermer.
     Chemin(&'static str),
     /// Un rectangle arrondi : x, y, largeur, hauteur, rayon.
     Rond(f32, f32, f32, f32, f32),
@@ -98,6 +98,14 @@ pub struct Icone {
     pub repere: f32,
     pub epaisseur: f32,
     pub traits: &'static [Trait],
+}
+
+/// Où un mot se cale dans le cadre qu'on lui donne.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Cale {
+    Gauche,
+    Centre,
+    Droite,
 }
 
 /// Un rectangle en vrais pixels, tel que tout ce fichier le compte.
@@ -171,8 +179,9 @@ pub struct Toile {
     polices: std::cell::RefCell<Vec<(u32, bool, IDWriteTextFormat)>>,
     /// Les chemins déjà lus, une fois chacun : une icône est un texte,
     /// et le relire à chaque image serait le relire quinze fois par
-    /// dessin pour le même trait.
-    chemins: std::cell::RefCell<Vec<(&'static str, ID2D1PathGeometry)>>,
+    /// dessin pour le même trait. Ceux qui ne se lisent pas sont retenus
+    /// aussi, sans quoi leur refus se redirait à chaque image.
+    chemins: std::cell::RefCell<Vec<(&'static str, Option<ID2D1PathGeometry>)>>,
     /// Le bout des traits et leurs angles, arrondis : c'est ce que les
     /// icônes demandent, et le demander une fois vaut mieux que le
     /// redemander à chaque trait.
@@ -403,8 +412,25 @@ impl Toile {
         }
     }
 
-    /// Écrit un mot dans ce cadre, aligné à gauche ou à droite et centré
-    /// en hauteur, comme une ligne de menu l'attend.
+    /// Dessine sans rien laisser sortir de ce cadre.
+    ///
+    /// Ce qu'il faut pour montrer une partie d'une forme sans en
+    /// fabriquer une deuxième : les deux côtés d'un interrupteur sont un
+    /// seul rectangle arrondi, et chacun n'en laisse voir que sa moitié.
+    pub fn serre(&self, cadre: Cadre, dedans: impl FnOnce()) {
+        // SAFETY: une cible à nous, entre un début et une fin de dessin,
+        // dont la découpe est refermée avant de rendre la main.
+        unsafe {
+            self.cible
+                .PushAxisAlignedClip(&cadre.dit(), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        }
+        dedans();
+        // SAFETY: la découpe posée juste au-dessus.
+        unsafe { self.cible.PopAxisAlignedClip() };
+    }
+
+    /// Écrit un mot dans ce cadre, calé de ce côté et centré en hauteur,
+    /// comme une ligne de menu l'attend.
     pub fn ecris(
         &self,
         mot: &str,
@@ -412,17 +438,17 @@ impl Toile {
         gras: bool,
         couleur: Couleur,
         cadre: Cadre,
-        a_droite: bool,
+        cale: Cale,
     ) {
         let Some(police) = self.police(taille, gras) else {
             return;
         };
         // SAFETY: une mise en page à nous, employée le temps d'un dessin.
         unsafe {
-            let _ = police.SetTextAlignment(if a_droite {
-                DWRITE_TEXT_ALIGNMENT_TRAILING
-            } else {
-                DWRITE_TEXT_ALIGNMENT_LEADING
+            let _ = police.SetTextAlignment(match cale {
+                Cale::Gauche => DWRITE_TEXT_ALIGNMENT_LEADING,
+                Cale::Centre => DWRITE_TEXT_ALIGNMENT_CENTER,
+                Cale::Droite => DWRITE_TEXT_ALIGNMENT_TRAILING,
             });
             let _ = police.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             self.pinceau.SetColor(&teinte(couleur));
@@ -597,6 +623,10 @@ impl Toile {
     }
 
     /// Le chemin de ce dessin, lu une fois.
+    ///
+    /// Un chemin illisible est retenu comme tel et dit une seule fois. Le
+    /// retenir n'est pas de l'économie : sans ça il serait relu, et donc
+    /// redit, à chaque image dessinée.
     fn chemin(&self, dit: &'static str) -> Option<ID2D1PathGeometry> {
         if let Some((_, deja)) = self
             .chemins
@@ -604,21 +634,31 @@ impl Toile {
             .iter()
             .find(|(autre, _)| std::ptr::eq(*autre, dit))
         {
-            return Some(deja.clone());
+            return deja.clone();
         }
-        let neuf = self.lis(dit)?;
+        let neuf = self.lis(dit);
+        if neuf.is_none() {
+            // Dit et non tu. Une icône est faite de plusieurs traits :
+            // celui qui ne se lit pas disparaît, les autres restent, et
+            // ce qui s'affiche est une icône méconnaissable dont rien ne
+            // dit qu'elle est incomplète. C'est arrivé une fois, à
+            // l'oeil barré du menu, dont le contour est la seule courbe
+            // de Bézier du produit.
+            crate::journal::note(&format!("dessin : chemin non lu, « {dit} »"));
+        }
         self.chemins.borrow_mut().push((dit, neuf.clone()));
-        Some(neuf)
+        neuf
     }
 
     /// Lit un « d » de chemin SVG et en fait une forme.
     ///
     /// Ce qui est compris est ce dont les icônes de ce produit se
     /// servent, et rien de plus : aller à, tracer jusqu'à, tracer à
-    /// l'horizontale, à la verticale, un arc, et refermer. Une lettre
-    /// inconnue arrête la lecture plutôt que d'être sautée : une icône à
-    /// moitié dessinée ressemble à un défaut, une icône absente à un
-    /// oubli, et le second se cherche.
+    /// l'horizontale, à la verticale, une courbe, un arc, et refermer.
+    /// Une lettre inconnue arrête la lecture plutôt que d'être sautée :
+    /// une icône à moitié dessinée ressemble à un défaut, une icône
+    /// absente à un oubli, et le second se cherche. C'est `chemin` qui le
+    /// dit à voix haute.
     fn lis(&self, dit: &str) -> Option<ID2D1PathGeometry> {
         // SAFETY: une forme et son embouchure à nous, refermées avant de
         // sortir.
@@ -669,6 +709,29 @@ impl Toile {
                         let y = nombre()?;
                         ou.1 = if relatif { ou.1 + y } else { y };
                         bouche.AddLine(vers(ou));
+                    }
+                    'C' => {
+                        // Les deux poignées se comptent depuis le point
+                        // d'où la courbe part, donc avant de l'avoir
+                        // quitté.
+                        let (x1, y1) = (nombre()?, nombre()?);
+                        let (x2, y2) = (nombre()?, nombre()?);
+                        let (x, y) = (nombre()?, nombre()?);
+                        let (une, deux) = if relatif {
+                            ((ou.0 + x1, ou.1 + y1), (ou.0 + x2, ou.1 + y2))
+                        } else {
+                            ((x1, y1), (x2, y2))
+                        };
+                        ou = if relatif {
+                            (ou.0 + x, ou.1 + y)
+                        } else {
+                            (x, y)
+                        };
+                        bouche.AddBezier(&D2D1_BEZIER_SEGMENT {
+                            point1: vers(une),
+                            point2: vers(deux),
+                            point3: vers(ou),
+                        });
                     }
                     'A' => {
                         let (rx, ry) = (nombre()?, nombre()?);
