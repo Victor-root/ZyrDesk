@@ -10,24 +10,12 @@
   </head>
   <body class="flottant">
     <div class="paquet" id="paquet">
-      <button
-        class="logo"
-        id="logo"
-        aria-label="Menu de la session"
-        aria-haspopup="menu"
-        aria-expanded="false"
-      >
-        <!-- Une image se traîne toute seule sous Windows, et le
-             curseur passait au sens interdit dès qu'on prenait le
-             bouton : le système croyait à un glisser-déposer. -->
-        <img
-          src="zyrdesk.svg"
-          alt=""
-          width="44"
-          height="44"
-          draggable="false"
-        />
-      </button>
+      <!-- La place du logo, et rien d'autre : le dessin est peint par
+           ZyrDesk dans une fenêtre à lui, pixel par pixel et transparence
+           comprise. Sa place reste prise ici pour que le menu s'ouvre
+           exactement où il s'ouvrait, et cette page ne dessine plus rien
+           dedans. -->
+      <div class="logo" aria-hidden="true"></div>
 
       <!-- Le menu et le sous-menu côte à côte, le second à gauche du
            premier. Ils étaient l'un à la place de l'autre : ouvrir la

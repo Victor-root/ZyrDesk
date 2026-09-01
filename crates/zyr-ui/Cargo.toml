@@ -58,6 +58,9 @@ windows-sys = { version = "0.61.2", features = [
     # plan, au lieu de le lui redemander sans arrêt. Rangé avec
     # l'accessibilité, qui est l'usage d'origine de ces crochets.
     "Win32_UI_Accessibility",
+    # WM_MOUSELEAVE, sans quoi rien ne dit jamais qu'une main a quitté le
+    # logo : windows-sys le range avec les contrôles.
+    "Win32_UI_Controls",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",

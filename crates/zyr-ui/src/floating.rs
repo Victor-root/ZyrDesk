@@ -46,7 +46,7 @@ use crate::journal::note;
 pub const WINDOW: &str = "flottant";
 
 /// Name the page listens on to be told to show its menu.
-const TOGGLE: &str = "floating-toggle";
+pub const TOGGLE: &str = "floating-toggle";
 
 /// Name the page listens on to be told a new session begins: the menu
 /// closes, the last session's refusal goes, the window shrinks back to
@@ -910,9 +910,16 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
     let size = button_size(app) as i32;
     ITS_LOGO.store(size, Ordering::Relaxed);
 
-    // Which way this window is cut and redrawn this time round. An
-    // instrument, and the whole of what it does is in `trial`.
-    crate::trial::starts();
+    // The logo is a window of its own, drawn by this program, and it is
+    // the one a hand comes down on. What is built below carries the menu
+    // and nothing else.
+    #[cfg(windows)]
+    crate::logo::raise(
+        app,
+        size as u32,
+        UPWARD.load(Ordering::Relaxed),
+        hung_from(picture, nudge(), (size, size), margin()),
+    );
 
     let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
         .title("ZyrDesk")
@@ -1089,6 +1096,8 @@ pub fn lower(app: &AppHandle) {
     // yes left standing here would stop the keyboard ever being given
     // back.
     MENU_UP.store(false, Ordering::Relaxed);
+    #[cfg(windows)]
+    crate::logo::lower(app);
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
@@ -1388,37 +1397,37 @@ pub fn floating_hide(app: AppHandle) -> Result<(), String> {
         .get_webview_window(WINDOW)
         .ok_or("le bouton flottant n'est plus là")?;
     HIDDEN.store(true, Ordering::Relaxed);
+    #[cfg(windows)]
+    crate::logo::shown(&app, false);
     window.hide().map_err(|e| e.to_string())
 }
 
 /// Takes hold of the button, moves it with the mouse until it is let go,
 /// and says whether the whole thing turned out to be a plain click.
 ///
-/// The gesture is followed here and not in the page. That window is
-/// forty-four pixels wide: the mouse leaves it on the first movement, and
-/// what a web view reports as the place of a pointer is not always where
-/// that pointer is on the screen. Where the system says the cursor is is
-/// neither of those things, and it is always true.
+/// Called by the logo's own window, which is what a hand comes down on.
+/// The gesture is followed here and not there: that window is forty-four
+/// pixels wide, the mouse leaves it on the first movement, and where the
+/// system says the cursor is is the only answer that is always true.
 ///
 /// Nothing is asked of the page while this runs, and the menu is left
 /// open if it was: a window that changes size under the mouse gets away
 /// from it.
-#[tauri::command]
-pub async fn floating_grab(app: AppHandle) -> Result<bool, String> {
+pub async fn grabbed(app: &AppHandle) -> bool {
     let held = *app
         .state::<Floating>()
         .watched
         .lock()
         .expect("session suivie");
     let (Some(process), Some(from)) = (held, where_it_hangs()) else {
-        return Ok(true);
+        return true;
     };
     // The picture is read once: it does not move while the button is
     // being dragged over it, and looking for it again at every step
     // would mean enumerating every window on the machine a hundred times
     // a second.
     let (Some(start), Some(picture)) = (cursor_now(), picture_of(process)) else {
-        return Ok(true);
+        return true;
     };
 
     let until = std::time::Instant::now() + AT_MOST;
@@ -1450,7 +1459,7 @@ pub async fn floating_grab(app: AppHandle) -> Result<bool, String> {
     if moved {
         leave_it_there();
     }
-    Ok(!moved)
+    !moved
 }
 
 /// Puts the button where the mouse has dragged it to, and says where
@@ -1573,6 +1582,8 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
     // the pointer comes back first. The entry that gives it away again is
     // in that very menu.
     give_the_pointer_back(app);
+    #[cfg(windows)]
+    crate::logo::shown(app, true);
     window.show().map_err(|e| e.to_string())?;
     window.emit(TOGGLE, ()).map_err(|e| e.to_string())
 }
@@ -2060,11 +2071,15 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
 /// neither is what a window that is being got ready wants.
 #[cfg(windows)]
 fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
-    use crate::trial::Move;
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOREDRAW, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
     };
+
+    // The logo hangs from the same corner, and is laid in the same
+    // gesture: one anchor for the two windows is what keeps them from
+    // ever disagreeing about where the button is.
+    crate::logo::lay(anchor, DRAWN_UPWARD.load(Ordering::Relaxed));
 
     let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
     if button.is_null() {
@@ -2083,15 +2098,6 @@ fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
     let stands = its_place()
         .is_some_and(|(left, top, right, bottom)| right - left == size.0 && bottom - top == size.1);
     let same_size = if stands { SWP_NOSIZE } else { 0 };
-    // And the trials, on the last thing this does while a button is held
-    // that it does not do at rest: move.
-    let moving = match crate::trial::now() {
-        Move::AsToday => 0,
-        Move::NoCopy => SWP_NOCOPYBITS,
-        Move::NoRedraw => SWP_NOREDRAW,
-        Move::Still if stands => return,
-        Move::Still => 0,
-    };
     // Opening upward, the corner the window hangs by is its bottom right
     // and no longer its top right: the logo stays where the hand left it
     // and the menu grows above it. Which of the two is read from the
@@ -2112,7 +2118,7 @@ fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
             top,
             size.0,
             size.1,
-            SWP_NOZORDER | SWP_NOACTIVATE | same_size | moving | visibility,
+            SWP_NOZORDER | SWP_NOACTIVATE | same_size | visibility,
         )
     };
 }

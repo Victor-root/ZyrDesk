@@ -12,8 +12,6 @@ const listen = window.__TAURI__.event.listen;
 
 const vue = {
   paquet: document.getElementById("paquet"),
-  logo: document.getElementById("logo"),
-  dessin: document.querySelector(".logo img"),
   menu: document.getElementById("menu"),
   souci: document.getElementById("souci"),
   retour: document.getElementById("retour"),
@@ -221,24 +219,6 @@ const MARGE = 0;
 const GRAIN = 1 / 1024;
 const auPixel = (valeur) => Math.round(valeur / GRAIN) * GRAIN;
 
-/* Ce que le logo dessine, dans son propre dessin (zyrdesk.svg) : deux
-   écrans aux coins arrondis, décalés en diagonale, et rien entre eux. Le
-   dessin fait foi, la fenêtre est découpée dessus : ces nombres se
-   relisent dans le SVG à chaque fois qu'il change, sinon la découpe passe
-   à côté de ce qu'elle est censée épouser.
-
-   Ce sont les rectangles contour compris, donc le rectangle du SVG élargi
-   de la moitié de son trait de chaque côté, et rapportés au coin de la
-   vue plutôt qu'à l'origine du dessin. Pour l'écran du fond : x 118 - 14
-   - 36, y 70 - 14 - 36, largeur 328 + 28, coins 68 + 14. */
-const LOGO = {
-  boite: 440,
-  ecrans: [
-    { x: 68, y: 20, large: 356, haute: 274, rayon: 82 },
-    { x: 16, y: 146, large: 356, haute: 274, rayon: 82 },
-  ],
-};
-
 /* Tout ce que la page peut occuper, qui est le bloc et rien d'autre.
 
    Rien d'autre, et c'est une règle à tenir. Il y avait autrefois trois
@@ -405,17 +385,14 @@ function formeOccupee(echelle) {
   // ne font plus la même taille : le bouton garde la plus grande des
   // trois pour que la mise en page ne bouge jamais, le dessin dedans
   // respire. Voir `bouton.css`.
-  const logo = vue.dessin.getBoundingClientRect();
-  const part = logo.width / LOGO.boite;
-  for (const ecran of LOGO.ecrans) {
-    pose(
-      logo.left + ecran.x * part,
-      logo.top + ecran.y * part,
-      ecran.large * part,
-      ecran.haute * part,
-      ecran.rayon * part,
-    );
-  }
+  // Et le logo n'est plus là-dedans : il est dessiné par ZyrDesk, dans
+  // une fenêtre à lui, pixel par pixel et transparence comprise. Sa place
+  // reste réservée ici pour que le menu s'ouvre exactement où il s'ouvrait
+  // avant, mais cette page ne le peint plus et ne le découpe donc plus.
+  //
+  // Ce qui reste dans cette fenêtre est le menu, et rien d'autre : menu
+  // fermé, elle ne dessine rien, elle est découpée sur rien, et les clics
+  // la traversent en entier.
 
   if (ouvert) {
     carte(vue.menu);
@@ -608,7 +585,6 @@ function ouvre(veut) {
     montrePanneau(null);
   }
   vue.menu.classList.toggle("repliee", !veut);
-  vue.logo.setAttribute("aria-expanded", veut ? "true" : "false");
   // Cliquer dans cette fenêtre donne le clavier à sa page, et cette
   // fenêtre n'est jamais celle que le système considère comme active :
   // rien ne le rend à l'image quand le menu se referme, et la session
@@ -1143,76 +1119,11 @@ async function litLeMenu() {
 
 /* ---- Prendre et déplacer le bouton ------------------------------------- */
 
-/* Le bouton se prend et se pose où on veut sur l'image. Tout le geste
-   est suivi côté Rust, et non ici : cette fenêtre fait cinquante
-   pixels, la souris en sort au premier mouvement, et ce qu'une vue web
-   rapporte de la position d'un pointeur n'est pas toujours l'endroit où
-   ce pointeur se trouve à l'écran. La page dit seulement quand le
-   bouton est pris, et apprend à la fin si c'était un déplacement ou un
-   simple clic. */
-let pris = false;
-
-for (const quand of ["pointerenter", "pointerleave", "pointerdown"]) {
-  vue.logo.addEventListener(quand, suisLeDessin);
-}
-
-/* Et les animations elles-mêmes, ce qui n'est pas la même chose que la
-   souris qui arrive.
-
-   Le suivi s'arrête dès que deux images de suite dessinent la même forme,
-   ce qui est juste au repos et faux au démarrage d'une animation : entre
-   le moment où la souris entre et celui où le navigateur crée vraiment la
-   transition, il passe une image ou deux pendant lesquelles rien n'a
-   encore bougé. Le suivi s'y arrêtait, et la découpe restait celle du
-   repos pendant tout le grandissement : le logo grandissait hors de sa
-   propre découpe et perdait son contour à gauche et en bas. Ça ne se
-   voyait qu'au premier survol, les suivants trouvant le style déjà calculé
-   et la transition démarrée à l'image d'après.
-
-   « transitionrun » est envoyé au moment où la transition est créée, donc
-   exactement là où le suivi doit repartir, et « transitionend » à la fin,
-   pour poser la découpe sur la forme définitive. */
-for (const quand of [
-  "transitionrun",
-  "transitionstart",
-  "transitionend",
-  "transitioncancel",
-]) {
-  vue.logo.addEventListener(quand, suisLeDessin);
-}
-
-vue.logo.addEventListener("pointerdown", async (evenement) => {
-  if (evenement.button !== 0) {
-    return;
-  }
-  // Un geste à la fois. Le relâchement se produit souvent hors de cette
-  // fenêtre, donc la page ne le voit pas : sans ce verrou, deux prises
-  // se superposaient et le bouton finissait par ne plus répondre.
-  if (pris) {
-    return;
-  }
-  pris = true;
-  vue.logo.classList.add("pris");
-  try {
-    if (await invoke("floating_grab")) {
-      ouvre(!ouvert);
-    }
-  } catch {
-    /* Une prise refusée n'est pas un déplacement : rien à dire. */
-  } finally {
-    pris = false;
-    vue.logo.classList.remove("pris");
-    suisLeDessin();
-  }
-});
-
-/* Le clavier ne passe pas par le pointeur : la touche Entrée produit un
-   clic sans lui, et c'est le seul qui arrive jusqu'ici. */
-vue.logo.addEventListener("click", (evenement) => {
-  if (evenement.detail === 0) {
-    ouvre(!ouvert);
-  }
-});
+/* Il n'y a plus rien à écouter ici. Le logo est une fenêtre à lui, dessinée
+   par ZyrDesk, et c'est elle que la main touche : le survol, la prise, le
+   déplacement et le clic s'y passent entiers, sans jamais traverser une
+   vue web. Cette page n'apprend d'elle qu'une chose, l'ouverture du menu,
+   et par le même mot que le raccourci clavier emploie déjà. */
 
 for (const item of document.querySelectorAll("[data-acte]")) {
   item.addEventListener("click", () => demande(item.dataset.acte));

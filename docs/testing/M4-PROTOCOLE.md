@@ -61,7 +61,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
 | **R46ter** | **Refait, et c'est un défaut que j'avais introduit moi-même en corrigeant R46bis.** « Fluide » n'atteignait jamais la cadence demandée et variait exactement comme « Économe » : relevé à 50 images/s pour 60 demandées, avec 2,35 ms d'encodage et 1 ms de réseau, donc rien n'était à l'étroit. Une image capturée achetait **deux** périodes comptées depuis son arrivée, si bien qu'un écran changeant entre la moitié de la cadence visée et la cadence visée ne déclenchait jamais la moindre répétition : le moteur servait ce que le bureau produisait, c'est-à-dire ce que donne le fait de ne rien demander. Les deux réglages étaient donc identiques sur tout bureau qui change plus de trente fois par seconde. La grille des créneaux est maintenant fixe et une image presque à l'heure prend son propre créneau. **À vérifier après recompilation du moteur hôte** |
 | **R66** | **Nouveau, et c'est la réponse à ce que D97 laissait ouvert.** Le bord du bouton flottant est lisse **et d'épaisseur égale tout autour**, y compris sur un fond blanc. Deux corrections pour un seul défaut : la transparence par pixel était demandée à moitié, il manquait de déclarer la fenêtre *layered* avec une opacité constante de 255 ; et la découpe arrondissait vers l'intérieur d'une fraction différente sur chaque bord, ce qui rognait le contour d'un pixel d'un côté et de deux de l'autre. Elle arrondit maintenant vers le dehors, également sur les quatre bords. La couleur de fond part avec la transparence, les deux s'excluant, et un pixel pas encore peint ne montre plus rien au lieu de montrer du blanc. Le logo garde son grandissement au survol : il a été retiré une journée, parce que le dessin n'est net qu'à sa taille de repos, où il tombe juste sur la grille de l'écran, et remis aussitôt à la demande de Victor |
-| **R67** | **Nouveau, et ce n'est pas une vérification mais une expérience.** Le liseré blanc du bouton flottant n'est ni la découpe, ni le redessin, ni le calque, ni la transparence, ni le fond, ni un pixel non peint, ni un message de redimensionnement : sept pistes éteintes une par une, sept fois non. La page est hors de cause, mesurée au repos et en pleine animation. Reste le déplacement de la fenêtre. Quatre sessions, chacune le faisant autrement, la dernière ne le faisant pas du tout. Instrument temporaire, retiré dès qu'il aura répondu |
+| **R67** | **Nouveau, et c'est la fin du liseré blanc, ou la preuve qu'il vient de la fenêtre elle-même.** Le logo du bouton flottant n'est plus une image dans une page web : c'est une fenêtre dont ZyrDesk calcule chaque pixel, transparence comprise. Onze essais avaient éteint tout le reste sans le faire céder, et la vue web était la seule couche jamais mise hors de cause. Le menu reste une page web. Plus de découpe, plus de fond à effacer, plus de cadre, plus de clics à laisser passer : quatre défauts de naissance de ce bouton ne peuvent plus se produire |
 | **R65** | **Nouveau.** Une ligne **Écran de l'hôte** dans le menu du bouton flottant, qui liste les écrans allumés de la machine d'en face et permet d'en changer. Elle n'apparaît que quand cette machine en a plusieurs. Les écrans éteints n'y sont pas, ni l'écran virtuel du produit. Le moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc changer d'écran le redémarre et la session se rouvre toute seule : l'écran d'ouverture le dit. Une session qui ne choisit rien est servie sur l'**écran principal** d'en face, y compris après une session qui en avait choisi un autre |
 | **R64** | **Nouveau.** Pendant une session, la vignette de ZyrDesk dans Win+Tab et Alt+Tab est de la taille des autres. Elle était nettement plus petite, quelle que soit la taille de la fenêtre, plein écran compris : ZyrDesk disait à Windows de ne pas photographier sa fenêtre et lui fournissait l'image lui-même, ce qui plafonne la vignette à la taille que Windows réclame. C'était nécessaire quand l'image de la session était une fenêtre posée par-dessus la nôtre, ça ne l'est plus depuis qu'elle est portée par notre fenêtre |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
@@ -1532,34 +1532,39 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Et l'agrandissement de l'écran compte** : refaire le tour à 125 %, 150 % et 175 %. C'est à 175 % que ce qui reste se voit le mieux.
 
-> **R67 (le blanc du bouton flottant : où il n'est pas, et le dernier endroit où il peut être)**
+> **R67 (le logo du bouton flottant, dessiné par ZyrDesk)**
 >
-> **Ce n'est pas une vérification, c'est une expérience**, et elle demande quatre sessions de suite. Ce build embarque un instrument temporaire qui déplace la fenêtre du bouton d'une façon différente à chaque session. Il sera retiré dès qu'il aura répondu.
+> **Ce qui a changé.** Le logo n'est plus une image dans une page web : c'est une fenêtre à lui, dont ZyrDesk calcule chaque pixel, transparence comprise, et qu'il remet telle quelle à Windows. Le menu, lui, reste une page web, parce que c'est de la vraie interface.
 >
-> **Sept pistes éteintes, sept fois non.** Chacune dans une session à elle, et le blanc est resté à chaque fois : la découpe refaite à chaque image ; la découpe figée pour toute la session ; le redessin sans effacement ; le redessin sans la vue web ; **pas de redessin du tout** ; le calque ; et le message de redimensionnement qu'une pose de fenêtre envoyait pour rien.
+> **Pourquoi.** Onze essais, onze fois non : ni la découpe, ni le redessin, ni le calque, ni le fond, ni la transparence, ni le message de redimensionnement, ni le déplacement. La page a été mesurée hors de cause, au repos et en pleine animation. La vue web était la seule couche jamais éteinte, et la seule dont le fond à elle est blanc.
 >
-> **Et la page est hors de cause, mesurée et non supposée.** Le dessin a été rendu dans un navigateur à 125 et 175 %, sur fond noir et sur fond blanc, au repos **et arrêté net à sept endroits de son animation de survol**. Le pixel le plus clair des quatre pixels qui entourent le dessin vaut `0,0,0` dans tous les cas. La page ne peint rien autour du logo, jamais, même en plein mouvement.
+> **Ce que ça enlève, en plus du navigateur** : il n'y a plus de forme à découper, la forme étant la transparence de l'image ; plus de fond à effacer ; plus de cadre ; et plus de clics à laisser passer, le système les laissant déjà passer là où l'image est claire.
 >
-> **Il ne reste qu'une chose** que le produit fait pendant qu'un bouton est cliqué ou traîné et qu'il ne fait pas au repos : **la fenêtre est déplacée**, cent vingt fois par seconde tant qu'une main la tient.
+> **La ligne qui dit que c'est bien le nouveau** :
 >
-> **Les quatre essais**
+> ```
+> bouton flottant : logo dessiné par ZyrDesk, sans vue web
+> ```
 >
-> 1. **Le bouton tel qu'il est.** Le témoin. Le liseré doit être là.
-> 2. **Sans recopier les pixels au déplacement.**
-> 3. **Sans redessiner au déplacement.**
-> 4. **La fenêtre qui ne se déplace pas.** Le bouton ne suivra pas la main : il reste où il est pendant qu'on le traîne. C'est voulu, c'est le prix de la question, et c'est l'essai qui compte : si le liseré disparaît, c'est le déplacement.
+> **Ce qu'il faut vérifier, et c'est tout le bouton d'un coup**
 >
-> **Ce qu'il faut faire à chaque essai** : ouvrir la session, cliquer sur le bouton plusieurs fois, puis essayer de le traîner, et regarder son bord. Puis fermer la session et en rouvrir une.
+> **Le liseré, qui est la raison de tout ça.** Poser le bouton sur une fenêtre bien blanche du bureau distant, puis sur du bien noir. Cliquer dessus plusieurs fois. Le prendre et le traîner d'un bout à l'autre de l'image. **Aucun blanc nulle part** : ni liseré au bord, ni carré derrière le logo, ni éclair au clic.
 >
-> **Ce que ça peut donner, et rien de tout ça n'est une panne** : aux essais 3 et 4 le bouton va se comporter bizarrement, traînée à l'écran ou bouton qui refuse de bouger. C'est attendu.
+> **Le bord lui-même.** Le contour noir doit être lisse et de la même épaisseur des quatre côtés, sur fond blanc comme sur fond noir. Il n'y a plus de pochoir à un bit par pixel nulle part, donc plus rien qui puisse faire un escalier.
 >
-> **Et la capture, qui vaut plus que les quatre essais réunis.** Attraper le bouton avec la souris, garder le bouton de la souris enfoncé, appuyer sur **Impr. écran** de l'autre main, puis Ctrl+V dans Paint et enregistrer en PNG, dans un zip. Collée dans une conversation l'image ne se mesure pas ; en fichier, les valeurs des pixels du liseré disent d'un coup ce que ces essais cherchent un par un.
+> **Le grandissement au survol.** Passer la souris sur le logo sans cliquer : il grandit de six pour cent, doucement, et redescend quand la souris s'en va. L'appuyer : il rétrécit. C'est calculé à chaque taille et non étiré, donc il doit rester net partout.
 >
-> **Ce que le journal doit dire.**
+> **Le déplacement.** Le prendre et le poser ailleurs. Il suit la main sans traîner, il reste où on le pose, et il ne saute pas. Le curseur devient une main au survol et une croix de déplacement pendant qu'on le tient.
 >
-> `bouton flottant découpé en N morceaux …, le système en tient (…)` : pendant un déplacement, cette ligne revient dix à vingt fois par seconde et le dessin y oscille entre 72 et 79. C'est le logo qui grossit et rétrécit parce que la souris entre et sort de lui pendant que la fenêtre le suit. Ce n'est pas le blanc, mais c'est un défaut à corriger après.
+> **Le menu.** Un clic simple l'ouvre, un autre le ferme. Il s'ouvre exactement où il s'ouvrait avant, la place du logo ayant été gardée dans la page. Vers le haut quand le bouton est posé en bas de l'image. Toutes ses entrées marchent.
 >
-> `bouton flottant : la page finit à …, la fenêtre à …, soit … px d'écart` : une fois le bouton posé, ce dernier nombre doit rester **sous le pixel**. Il est gros pendant que la fenêtre grandit, ce qui est normal.
+> **Ce qui n'attrape plus les clics.** Menu fermé, tout ce qui n'est pas le logo doit laisser passer les clics jusqu'à l'image, y compris le vide entre les deux écrans du logo.
+>
+> **Le masquer et le rappeler.** L'entrée qui range le bouton doit ranger le logo avec le menu, et le raccourci clavier doit ramener les deux.
+>
+> **La fin de session.** Fermer la session : le logo disparaît avec le menu, et il ne reste rien à l'écran.
+>
+> **Et l'agrandissement de l'écran** : refaire le tour à 125, 150 et 175 %.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

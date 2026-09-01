@@ -1781,6 +1781,20 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Décision : la ligne du bord droit est corrigée, parce qu'elle comparait deux instants.** Elle tenait le bord peint par la page contre la largeur que la fenêtre **allait** prendre, alors que la page mesure toujours dans la fenêtre telle qu'elle **est**. Elle a donc écrit `1344.00 px de fenêtre que la page n'atteint pas` sur un bouton parfaitement placé. Elle dit maintenant les deux nombres, la fin de la page et la fin de la fenêtre, sans rien en conclure, et elle se dit quand la paire change au lieu de se dire quand la taille change, ce qui est le seul moyen de l'obtenir une fois tout posé. Une ligne de journal fausse coûte plus cher qu'une ligne absente, et c'est la cinquième fois que ce fichier l'écrit.
 
+**Et le déplacement non plus, ce qui fait onze.** Le dernier essai clouait la fenêtre sur place, le bouton refusait de suivre la main, et le liseré était toujours là. Onze pistes, onze fois non.
+
+**Décision : la vue web sort du logo.** C'est la seule couche que ces onze essais n'ont jamais éteinte, parce qu'ils portaient tous sur ce que **nous** faisions à la fenêtre et jamais sur ce que le navigateur y faisait. C'est aussi la seule dont le fond à elle est blanc. Victor l'a demandé en ces termes, après avoir tout essayé : « fais moi le FAB en natif pour voir ».
+
+**Et ce qui part avec elle est bien plus qu'un navigateur.** La fenêtre du logo est désormais **habillée par l'image qu'on lui donne** : on remet à Windows un rectangle de pixels portant chacun sa transparence, et c'est toute la fenêtre. Il n'y a plus de forme à découper, la forme étant la transparence ; plus de fond à effacer, puisque rien n'est jamais effacé ; plus de cadre ; et plus de clics à laisser passer, le système les laissant déjà passer partout où l'image est claire. **Quatre des défauts que ce bouton porte depuis sa naissance ne peuvent plus se produire du tout**, et la moitié du code qui les combattait s'en va avec.
+
+**Le dessin est calculé, pas redimensionné.** Chaque pixel est déduit de la géométrie du fichier `zyrdesk.svg`, dont les coordonnées sont reprises telles quelles : un rectangle arrondi sait exactement quelle part de chaque pixel il couvre, et c'est ce qu'est un bord lisse. Il n'y a plus nulle part de pochoir à un bit par pixel, qui était la seule chose qui ait jamais donné un bord en escalier à ce bouton.
+
+**Ce qui reste dans la vue web est le menu**, qui est de la vraie interface et n'a rien à faire dessiné à la main. Il ne se déplace jamais et n'existe que pendant qu'il est ouvert. Sa fenêtre garde la place du logo dans sa mise en page, pour que le menu s'ouvre exactement où il s'ouvrait, mais elle ne peint plus rien dedans : menu fermé, elle ne dessine rien, elle est découpée sur rien, et les clics la traversent en entier.
+
+**Et une seule ancre pour les deux fenêtres**, posées dans le même geste : c'est ce qui les empêche de jamais être en désaccord sur l'endroit où se trouve le bouton.
+
+**Si le liseré survit à ça**, il ne restera plus que la fenêtre elle-même, et la réponse sera de changer ce qu'elle est. Mais alors on saura, au lieu de raisonner.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -24,6 +24,12 @@ mod floating;
 mod folders;
 mod icon;
 mod journal;
+
+// Le logo du bouton flottant, dessiné par ce programme : il n'existe
+// que sous Windows, comme la fenêtre qui le porte.
+#[cfg(windows)]
+mod logo;
+
 mod mesures;
 mod picture;
 mod service;
@@ -33,7 +39,6 @@ mod shortcuts;
 mod startup;
 mod theme;
 mod tray;
-mod trial;
 
 #[cfg(windows)]
 mod elevated;
@@ -96,7 +101,6 @@ fn main() {
             floating::floating_size,
             floating::floating_menu,
             floating::floating_hide,
-            floating::floating_grab,
             floating::floating_act,
             floating::floating_mouse,
             floating::floating_sound,
