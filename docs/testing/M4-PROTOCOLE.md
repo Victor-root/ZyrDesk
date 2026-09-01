@@ -61,7 +61,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
 | **R46ter** | **Refait, et c'est un défaut que j'avais introduit moi-même en corrigeant R46bis.** « Fluide » n'atteignait jamais la cadence demandée et variait exactement comme « Économe » : relevé à 50 images/s pour 60 demandées, avec 2,35 ms d'encodage et 1 ms de réseau, donc rien n'était à l'étroit. Une image capturée achetait **deux** périodes comptées depuis son arrivée, si bien qu'un écran changeant entre la moitié de la cadence visée et la cadence visée ne déclenchait jamais la moindre répétition : le moteur servait ce que le bureau produisait, c'est-à-dire ce que donne le fait de ne rien demander. Les deux réglages étaient donc identiques sur tout bureau qui change plus de trente fois par seconde. La grille des créneaux est maintenant fixe et une image presque à l'heure prend son propre créneau. **À vérifier après recompilation du moteur hôte** |
 | **R66** | **Nouveau, et c'est la réponse à ce que D97 laissait ouvert.** Le bord du bouton flottant est lisse **et d'épaisseur égale tout autour**, y compris sur un fond blanc. Deux corrections pour un seul défaut : la transparence par pixel était demandée à moitié, il manquait de déclarer la fenêtre *layered* avec une opacité constante de 255 ; et la découpe arrondissait vers l'intérieur d'une fraction différente sur chaque bord, ce qui rognait le contour d'un pixel d'un côté et de deux de l'autre. Elle arrondit maintenant vers le dehors, également sur les quatre bords. La couleur de fond part avec la transparence, les deux s'excluant, et un pixel pas encore peint ne montre plus rien au lieu de montrer du blanc. Le logo garde son grandissement au survol : il a été retiré une journée, parce que le dessin n'est net qu'à sa taille de repos, où il tombe juste sur la grille de l'écran, et remis aussitôt à la demande de Victor |
-| **R67** | **Nouveau, et ce n'est pas une vérification mais une expérience.** Six sessions de suite, chacune bâtissant le bouton flottant autrement, pour trouver d'où vient le liseré pâle du bord. Le journal dit laquelle des six tourne. La deuxième est la principale : la découpe y est faite une seule fois au lieu de suivre le dessin, ce qui doit dire si le liseré vient de la découpe refaite à chaque image. Instrument temporaire, retiré dès qu'il aura répondu |
+| **R67** | **Nouveau, et ce n'est pas une vérification mais une expérience.** Six sessions de suite, chacune découpant et redessinant le bouton flottant autrement. Le liseré n'est pas un liseré : découpé sur un rectangle, c'est **un carré blanc derrière le logo pendant le clic**, donc c'est toute la fenêtre qui blanchit le temps d'une découpe. Reste à savoir quelle couche peint ce blanc. Le journal dit lequel des six tourne. Instrument temporaire, retiré dès qu'il aura répondu |
 | **R65** | **Nouveau.** Une ligne **Écran de l'hôte** dans le menu du bouton flottant, qui liste les écrans allumés de la machine d'en face et permet d'en changer. Elle n'apparaît que quand cette machine en a plusieurs. Les écrans éteints n'y sont pas, ni l'écran virtuel du produit. Le moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc changer d'écran le redémarre et la session se rouvre toute seule : l'écran d'ouverture le dit. Une session qui ne choisit rien est servie sur l'**écran principal** d'en face, y compris après une session qui en avait choisi un autre |
 | **R64** | **Nouveau.** Pendant une session, la vignette de ZyrDesk dans Win+Tab et Alt+Tab est de la taille des autres. Elle était nettement plus petite, quelle que soit la taille de la fenêtre, plein écran compris : ZyrDesk disait à Windows de ne pas photographier sa fenêtre et lui fournissait l'image lui-même, ce qui plafonne la vignette à la taille que Windows réclame. C'était nécessaire quand l'image de la session était une fenêtre posée par-dessus la nôtre, ça ne l'est plus depuis qu'elle est portée par notre fenêtre |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
@@ -1532,54 +1532,50 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Et l'agrandissement de l'écran compte** : refaire le tour à 125 %, 150 % et 175 %. C'est à 175 % que ce qui reste se voit le mieux.
 
-> **R67 (l'essai du bord : d'où vient le verre dépoli)**
+> **R67 (l'essai du bord : d'où vient le blanc)**
 >
-> **Ce n'est pas une vérification, c'est une expérience**, et elle demande six sessions de suite. Ce build embarque un instrument temporaire qui bâtit le bouton flottant d'une façon différente à chaque session, dans l'ordre. Il sera retiré dès qu'il aura répondu.
+> **Ce n'est pas une vérification, c'est une expérience**, et elle demande six sessions de suite. Ce build embarque un instrument temporaire qui découpe et redessine le bouton flottant d'une façon différente à chaque session, dans l'ordre. Il sera retiré dès qu'il aura répondu.
 >
-> **Ce qu'on sait depuis le premier passage** : un pixel de cette fenêtre que la page ne peint pas ne montre **rien**. Deux cents pixels de fenêtre nue, mis là exprès, sont restés invisibles. **Et le liseré ne se montre qu'au clic et au déplacement**, jamais au repos, c'est-à-dire seulement aux moments où la fenêtre est redécoupée. C'est ce que le deuxième essai va chercher : la découpe faite une seule fois au lieu d'être refaite à chaque image.
+> **Ce qu'on sait, et qui a été mesuré et non raisonné.** Un pixel de cette fenêtre que la page ne peint pas ne montre **rien** au repos : deux cents pixels de fenêtre nue, posés là exprès, sont restés invisibles. Le liseré ne se montre **qu'au clic et au déplacement**. Et découpée sur un rectangle au lieu du dessin, la même chose devient **un carré blanc derrière le logo**. Ce n'est donc pas un liseré : **c'est toute la fenêtre qui devient blanche le temps d'une découpe**, et une découpe collée au dessin n'en laissait passer qu'un trait.
 >
-> **Ce qui reste ouvert** : les essais qui éteignent le calque et le fond ont été faits sur du noir, où une fenêtre opaque au fond noir et une fenêtre transparente donnent le même pixel. Ils sont à refaire sur du clair.
+> **Ce qu'on ne sait pas** : quelle couche peint ce blanc. Le fond de cette fenêtre est un noir pur, donc ce n'est pas elle. Restent la vue web qu'elle porte, qui est une fenêtre à part avec son propre pinceau de fond, et le calque que Windows tient d'elle.
 >
-> **Comment ça marche** : une session = un essai. Ouvrir une session, regarder, capturer, fermer la session, en rouvrir une : c'est l'essai suivant. Après le cinquième ça repart au premier. **Sans fermer ZyrDesk entre deux** : c'est la fermeture de la *session* qui fait avancer, pas celle du programme.
+> **Comment ça marche** : une session = un essai. Ouvrir une session, cliquer sur le bouton, le déplacer, capturer, fermer la session, en rouvrir une : c'est l'essai suivant. Après le sixième ça repart au premier. **Sans fermer ZyrDesk entre deux** : c'est la fermeture de la *session* qui fait avancer.
 >
 > **Le journal dit lequel tourne**, en toutes lettres, au moment où le bouton apparaît :
 >
 > ```
-> essai du bord 3/5 : découpé en carré, sans calque. Regarde le bouton, prends une capture, puis ferme la session et rouvre-la pour passer au suivant.
+> essai du bord 3/6 : le bouton tel qu'il est, sans effacement au redessin. Clique sur le bouton et déplace-le, prends une capture, puis ferme la session et rouvre-la pour passer au suivant.
 > ```
 >
-> **Le décor à mettre avant de commencer, et c'est ce qui a raté la première fois** : le bouton doit être posé **sur du clair**, une fenêtre blanche du bureau distant par exemple. Pas sur la bande noire que l'image laisse sur le côté quand elle ne remplit pas la fenêtre : sur du noir, une fenêtre opaque au fond noir et une fenêtre transparente donnent le même pixel, et les essais 3 et 5 ne prouvent alors rien. Traîner le bouton là une fois suffit, il y reste d'une session à l'autre.
+> **Le décor** : le bouton posé **sur du clair**, une fenêtre blanche du bureau distant par exemple, et une fois **sur du sombre**. Traîner le bouton une fois suffit, il y reste d'une session à l'autre.
 >
 > **Les six essais**
 >
-> 1. **Le bouton tel qu'il est.** Le produit sans rien de changé. Il sert de témoin : si celui-là ne ressemble pas à ce que tu avais avant, c'est autre chose qui a bougé et le reste de l'expérience ne veut rien dire.
-> 2. **Découpe figée sur un rectangle.** La fenêtre est découpée **une seule fois**, sur un rectangle contenant tout le dessin, et plus jamais pendant que le logo grandit sous la souris, rétrécit sous le clic ou voyage sous la main. C'est l'essai du liseré au clic, et c'est celui qui compte maintenant.
-> 3. **Découpé en carré.** La fenêtre n'est plus découpée sur le dessin mais sur un **carré de quatre logos de côté**, accroché au même coin. Tout ce qui est dans ce carré et qui n'est pas le logo est de la fenêtre que personne ne peint. C'est la reproduction du défaut en grand : deux cents pixels au lieu de deux.
-> 4. **Le même carré, sans calque.**
-> 5. **Le même carré, sans transparence.**
-> 6. **Le même carré, sans fond noir.**
+> 1. **Le bouton tel qu'il est.** Le témoin. Le blanc doit être là.
+> 2. **Découpe figée, une par forme.** La fenêtre est découpée une fois par forme que la page dessine, et plus jamais : le logo qui grandit sous la souris, rétrécit sous le clic ou voyage sous la main ne redécoupe plus rien. Il reste au plus deux ou trois découpes dans toute la session.
+> 3. **Sans effacement au redessin.** La découpe ne change pas, mais on dit cette fois au système que rien ne doit être effacé avant de redessiner.
+> 4. **Sans redessin de la vue web.** Seule la fenêtre est redessinée, pas la page qu'elle porte.
+> 5. **Sans redessin du tout.**
+> 6. **Sans calque.**
 >
-> **Ce qu'il faut faire aux essais 1 et 2** : cliquer sur le bouton, le prendre et le déplacer, et regarder son bord pendant ces deux gestes. C'est là et nulle part ailleurs que le liseré se montre. Pour le prendre en photo : **garder le bouton attrapé avec la souris et appuyer sur la touche Impr. écran de l'autre main**, puis coller dans Paint et enregistrer en PNG. C'est le seul moyen, le liseré ne dure qu'un instant au clic mais reste tant que la main tient le bouton.
+> **Ce qu'il faut faire à chaque essai** : ouvrir la session, **cliquer sur le bouton** plusieurs fois, puis **le prendre et le déplacer**, et regarder. Pour le prendre en photo : **garder le bouton attrapé avec la souris et appuyer sur la touche Impr. écran de l'autre main**, puis coller dans Paint et enregistrer en PNG. C'est le seul moyen, le blanc au clic ne dure qu'un instant mais reste tant que la main tient le bouton.
 >
-> **Ce qu'il faut faire aux essais 3 à 6** : ouvrir la session, **ne pas ouvrir le menu** (le carré le couperait), poser la souris loin du bouton, et prendre une capture d'écran de la zone du bouton. Puis fermer la session.
->
-> **Ce que ça peut donner, et rien de tout ça n'est une panne** : à partir du deuxième essai le bouton va avoir l'air cassé, avec un carré autour. Aux essais 3, 4 et 5 il peut devenir une plaque blanche ou une plaque noire. **C'est normal et c'est même le but** : ce qui compte n'est pas si c'est joli, c'est **de quoi le carré est rempli**.
+> **Ce que ça peut donner, et rien de tout ça n'est une panne** : aux essais 4 et 5, quelque chose peut rester traîner à l'écran après avoir refermé le menu, puisque plus rien ne demande à la page de se redessiner. C'est attendu, et c'est justement le prix qu'on cherche à connaître.
 >
 > **Comment se lit le résultat**
 >
-> - Si le liseré au clic et au déplacement **disparaît à l'essai 2**, c'est la découpe refaite à chaque image qui le fabrique, et cet essai est aussi la correction.
-> - Si le carré de l'essai 3 est **pâle et laisse deviner le bureau au travers**, le défaut est reproduit en grand et la suite a un sens.
-> - Si un des essais 4, 5 ou 6 rend le carré **franchement transparent**, on tient le coupable : c'est ce réglage-là qui allume le verre.
-> - Si un des essais rend le carré **franchement opaque**, blanc ou noir, ce réglage n'est pas le coupable, il est juste ce qui rend la fenêtre transparente du tout.
-> - Si les essais 4, 5 et 6 donnent tous la même chose que le 3, aucun des trois n'est en cause et le verre vient d'ailleurs. C'est un résultat aussi, et il ferme trois portes d'un coup.
+> - Un essai où **le blanc disparaît** nomme la couche qui le peint, et c'est fini.
+> - Si l'essai 2 le fait disparaître, la découpe répétée est la faute, et cet essai est aussi la correction : une découpe ne sert plus qu'à laisser passer les clics, puisque ce qu'elle contient et que personne ne peint est invisible.
+> - Si les six donnent la même chose, ni la découpe ni le redessin ni le calque ne sont en cause, et il faudra regarder du côté de la vue web elle-même. C'est un résultat aussi.
 >
 > **Le journal complet est à envoyer avec les captures.** Les six lignes `essai du bord …` disent dans quel ordre les captures ont été prises, et c'est ce qui les rend lisibles.
 >
-> **Ce que le premier passage a donné, sur PC-VICTOR à 175 %** : rien du tout aux essais 2, 3 et 5, et un carré **noir et opaque** au quatrième. Le carré du quatrième mesure cent quatre-vingts pixels de large là où il déborde sur la fenêtre claire d'en face, ce qui est exactement quatre logos une fois retirée la part posée sur la bande noire : **la découpe en carré a donc bien eu lieu aux quatre essais**, et elle ne se voit pas quand la transparence est là. **Un pixel de fenêtre que la page ne peint pas ne montre rien**, ce qui démonte la thèse du verre dépoli. Les essais 3 et 5 restent à refaire sur du clair, le bouton ayant été posé sur du noir.
+> **Et deux lignes de journal à surveiller pendant tout ça.**
 >
-> **Et la page a été mesurée de son côté**, rendue dans un navigateur à 125, 150 et 175 %, sur fond noir et sur fond blanc : à l'extérieur du dessin il n'y a **que le fond**, puis le lissage du contour, puis le contour. La page ne peint rien autour du dessin, donc le liseré n'est pas un halo du logo.
+> `bouton flottant découpé en N morceaux …, le système en tient (…)` : à l'essai 2, elle ne doit paraître que deux ou trois fois dans toute la session. Si elle revient à chaque survol, la découpe n'est pas figée et l'essai ne veut rien dire. Cette ligne ne disait rien du rectangle tenu par le système jusqu'ici, si bien qu'une découpe dont la géométrie bougeait sans que son nombre de morceaux bouge ne s'écrivait pas du tout.
 >
-> **Et une ligne de journal à surveiller pendant tout ça** : `bouton flottant : la page finit à …, la fenêtre à …, soit … px d'écart`. Une fois le bouton posé et le menu ouvert une fois, ce dernier nombre doit rester **sous le pixel**. Il est gros pendant que la fenêtre grandit, ce qui est normal : la page mesure dans la fenêtre telle qu'elle est, donc une page encore mise en page pour la fenêtre d'avant donne son ancien bord. C'est la dernière valeur, celle qui ne bouge plus, qui compte.
+> `bouton flottant : la page finit à …, la fenêtre à …, soit … px d'écart` : une fois le bouton posé, ce dernier nombre doit rester **sous le pixel**. Il est gros pendant que la fenêtre grandit, ce qui est normal : la page mesure dans la fenêtre telle qu'elle est, donc une page encore mise en page pour la fenêtre d'avant donne son ancien bord. C'est la dernière valeur, celle qui ne bouge plus, qui compte.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

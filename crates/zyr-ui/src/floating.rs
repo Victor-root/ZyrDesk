@@ -910,11 +910,11 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
     let size = button_size(app) as i32;
     ITS_LOGO.store(size, Ordering::Relaxed);
 
-    // Which way this window is built and cut this time round. An
+    // Which way this window is cut and redrawn this time round. An
     // instrument, and the whole of what it does is in `trial`.
-    let trial = crate::trial::starts();
+    crate::trial::starts();
 
-    let building = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
+    let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
         .title("ZyrDesk")
         // The same light or dark as the window it hangs over. Both pages
         // decide their own colours, and both offer to follow the system;
@@ -939,8 +939,7 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         // against the picture underneath rather than against a ground, and
         // the edge is the one the page drew.
         //
-        .transparent(trial.transparent);
-    let building = if trial.ground {
+        .transparent(true)
         // And a ground of pure black with it, which is not a contradiction
         // but the other half of how this toolkit makes a window
         // transparent. It does not ask the system for a transparent
@@ -967,12 +966,7 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         // The alpha is nought and that is read: the window layer ignores
         // it and takes the black, the web view layer honours it and stays
         // transparent.
-        building.background_color(tauri::window::Color(0, 0, 0, 0))
-    } else {
-        building
-    };
-
-    let built = building
+        .background_color(tauri::window::Color(0, 0, 0, 0))
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
@@ -1095,6 +1089,10 @@ pub fn lower(app: &AppHandle) {
     // yes left standing here would stop the keyboard ever being given
     // back.
     MENU_UP.store(false, Ordering::Relaxed);
+    // The boxes of the trial that cuts once belonged to the window that
+    // had them, and the next session's may be on a screen magnified
+    // differently, where none of those numbers mean anything.
+    FROZEN.lock().expect("découpes figées").clear();
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
@@ -1235,13 +1233,14 @@ pub fn floating_size(
     // The page asks for this several times a frame while a hand runs over
     // the logo, and once a second all session long for the measures,
     // nearly always with the very shape the window already wears.
-    // One of the trials cuts to the box holding the whole drawing rather
-    // than to the drawing. It is not a rounding: the shape stops changing
-    // while the logo grows, shrinks and travels, so the dedup below stops
-    // cutting at all between one menu and the next, which is what that
-    // trial is asking about.
+
+    // One of the trials cuts to a box worked out once for each shape the
+    // page draws, and never worked out again. The logo growing under the
+    // mouse, shrinking under a click and travelling under a hand all give
+    // the same box, so the dedup below stops cutting at all between one
+    // menu and the next, which is what that trial is asking about.
     let shape = if crate::trial::now().frozen {
-        one_box(&shape).map_or(shape, |box_| vec![box_])
+        frozen_box(&shape)
     } else {
         shape
     };
@@ -1257,6 +1256,29 @@ pub fn floating_size(
     say_where_the_page_ends(standing.0, painted);
     tell_the_button(was, size, &shape);
     Ok(UPWARD.load(Ordering::Relaxed))
+}
+
+/// The box each shape of the page was first seen as, for the trial that
+/// cuts once and no more.
+///
+/// Kept by how many pieces the page sent, which is what tells its shapes
+/// apart: two for the logo alone, one more for the menu, one more again
+/// for the list inside it. Everything else the page can do, and it is the
+/// whole of what it does between two menus, only moves those pieces
+/// about.
+static FROZEN: Mutex<Vec<(usize, Piece)>> = Mutex::new(Vec::new());
+
+/// The box this shape is cut to, worked out the first time it is seen.
+fn frozen_box(shape: &[Piece]) -> Vec<Piece> {
+    let mut frozen = FROZEN.lock().expect("découpes figées");
+    if let Some((_, box_)) = frozen.iter().find(|(count, _)| *count == shape.len()) {
+        return vec![box_.clone()];
+    }
+    let Some(box_) = one_box(shape) else {
+        return Vec::new();
+    };
+    frozen.push((shape.len(), box_.clone()));
+    vec![box_]
 }
 
 /// The one rectangle holding every piece of a shape, for the trial that
@@ -2157,10 +2179,6 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
     if button.is_null() || shape.is_empty() {
         return;
     }
-    if crate::trial::now().square {
-        cut_to_a_square(button, size);
-        return;
-    }
     // SAFETY: every shape made here is ours until the system takes the
     // one they are gathered into.
     unsafe {
@@ -2226,47 +2244,6 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
     say_what_it_was_cut_to(button, shape);
 }
 
-/// Cuts the window to a plain square around the logo, for the trials.
-///
-/// Four logos wide, hung from the same corner the logo is hung from, so
-/// that everything showing inside it that is not the logo is window the
-/// page has not painted, and nothing else. Which is the point: the defect
-/// is two pixels wide against a drawing, and eight explanations have been
-/// argued from photographs of two pixels. This is two hundred pixels of
-/// it, and it is either there or it is not.
-///
-/// Nothing is said in the journal here, and the numbers of the cut are
-/// not either: a square is not meant to match the drawing, so the lines
-/// that weigh one against the other would only be noise. Which trial is
-/// running is said once, where it starts.
-#[cfg(windows)]
-fn cut_to_a_square(button: windows_sys::Win32::Foundation::HWND, size: (i32, i32)) {
-    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
-
-    let side = (ITS_LOGO.load(Ordering::Relaxed) * 4)
-        .min(size.0)
-        .min(size.1);
-    let left = size.0 - side;
-    let top = if DRAWN_UPWARD.load(Ordering::Relaxed) {
-        size.1 - side
-    } else {
-        0
-    };
-    // SAFETY: the shape is ours until the system takes it, and still ours
-    // to free if it refuses.
-    unsafe {
-        let square = CreateRectRgn(left, top, left + side, top + side);
-        if square.is_null() {
-            return;
-        }
-        if SetWindowRgn(button, square, 0) == 0 {
-            DeleteObject(square);
-            return;
-        }
-    }
-    draw_it_all_again(button);
-}
-
 /// Has the window drawn again, and everything carried inside it with it.
 ///
 /// The shape belongs to the window and the drawing belongs to the web
@@ -2278,7 +2255,10 @@ fn cut_to_a_square(button: windows_sys::Win32::Foundation::HWND, size: (i32, i32
 /// under a hand that is somewhere else does not move again.
 #[cfg(windows)]
 fn draw_it_all_again(button: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::Graphics::Gdi::{RDW_ALLCHILDREN, RDW_INVALIDATE, RedrawWindow};
+    use crate::trial::Redraw;
+    use windows_sys::Win32::Graphics::Gdi::{
+        RDW_ALLCHILDREN, RDW_INVALIDATE, RDW_NOERASE, RedrawWindow,
+    };
 
     // Marked as wanting to be drawn, and not drawn here and now. This runs
     // on whichever thread the page asked from, and the window belongs to
@@ -2290,16 +2270,17 @@ fn draw_it_all_again(button: windows_sys::Win32::Foundation::HWND) {
     // white this is here to be rid of: what is wanted is the page drawn
     // again, not the window emptied and then drawn again.
     //
+    // The trials take this line apart, because it is the only thing the
+    // product does at the exact moment the white shows.
+    let asked = match crate::trial::now().redraw {
+        Redraw::AsToday => RDW_INVALIDATE | RDW_ALLCHILDREN,
+        Redraw::NoErase => RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_NOERASE,
+        Redraw::WindowOnly => RDW_INVALIDATE,
+        Redraw::None => return,
+    };
     // SAFETY: a window of ours, and neither a rectangle nor a shape is
     // named, so the whole of it is meant.
-    unsafe {
-        RedrawWindow(
-            button,
-            std::ptr::null(),
-            std::ptr::null_mut(),
-            RDW_INVALIDATE | RDW_ALLCHILDREN,
-        )
-    };
+    unsafe { RedrawWindow(button, std::ptr::null(), std::ptr::null_mut(), asked) };
 }
 
 /// Says what the window was cut to, and what the system holds of it.
@@ -2343,10 +2324,17 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
     // worth a line is the shape changing kind, the window changing size,
     // and a refusal; the frames of an animation between two of those say
     // the same thing forty times.
+    // The rectangle the system holds is part of what has changed, and
+    // leaving it out is not a saving: a cut whose geometry moves without
+    // its piece count moving said nothing at all, which is exactly what
+    // happened the first time the window was cut to a box. A line that
+    // stays silent when the thing it reports has changed is worse than no
+    // line.
     let said = (
         shape.len(),
         upward,
         taken,
+        (held.left, held.top, held.right, held.bottom),
         its_place().map(|(left, top, right, bottom)| (right - left, bottom - top)),
     );
     let changed = LAST_SAID
@@ -2383,9 +2371,9 @@ fn say_what_it_was_cut_to(button: windows_sys::Win32::Foundation::HWND, shape: &
 
 /// What the line above last said, so it is only said again when it
 /// changes: how many pieces, which way the menu opens, whether the system
-/// took the shape, and the size of the window.
+/// took the shape, the rectangle it holds, and the size of the window.
 #[cfg(windows)]
-type Told = (usize, bool, i32, Option<(i32, i32)>);
+type Told = (usize, bool, i32, (i32, i32, i32, i32), Option<(i32, i32)>);
 
 #[cfg(windows)]
 static LAST_SAID: Mutex<Option<Told>> = Mutex::new(None);
