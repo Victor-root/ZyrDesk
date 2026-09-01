@@ -1891,6 +1891,20 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Et l'attention penche vers l'orange, ce qui n'est pas un détail.** Elle était un jaune ambré, à un cheveu du nouvel accent. Deux jaunes voisins dont l'un appelle le clic et l'autre prévient ne se distinguent plus, et c'est justement celui qui prévient qu'il ne faut pas rater.
 
+## D109. Le menu web s'en va, et avec lui mille sept cents lignes (2026-09-01, pendant M4)
+
+**Demandé par Victor**, une fois les deux menus comparés côte à côte : « je vois pas d'autre raison de garder l'ancien menu, tu peux le supprimer et mettre le nouveau sur le clic gauche ».
+
+**Ce qui part avec la page.** La fenêtre du bouton n'existait que pour porter ce menu. Elle emportait avec elle : la découpe et tout ce qui la mesurait, la disait et la refaisait ; la conversation où la page mesurait son propre dessin et où le coeur redimensionnait la fenêtre autour ; l'attente qu'une page finisse par parler et les trois tentatives quand elle ne parlait pas ; la transparence demandée en deux moitiés ; sept commandes ; et deux notions du sens d'ouverture, ce qu'on voulait et ce que la page avait dessiné, qu'il fallait tenir séparées parce qu'elles étaient en désaccord le temps d'une image. **Mille sept cents lignes de moins pour la même interface.**
+
+**Et un souci de moins qui ne se répare pas, il disparaît.** Le menu ne prend plus le clavier : la carte n'est jamais activée et ne porte aucune page qui prendrait le focus. Toute la mécanique qui rendait le clavier à l'image en refermant le menu n'a plus d'objet.
+
+**Le clic gauche ouvre le menu, et le geste du logo est intact** : un clic simple ouvre, un déplacement déplace, et l'animation de la prise est celle qu'elle a toujours été. Le clic droit qui servait à comparer s'en va avec ce qu'il comparait.
+
+**Le sous-menu perd son titre**, demandé aussi : la ligne qui l'ouvre est en face, son chevron s'est retourné vers lui, et la cliquer à nouveau referme. Un titre qui redit le mot d'à côté prend une ligne pour n'apprendre rien.
+
+**Et la question au loin se repose jusqu'à ce qu'elle soit répondue.** Ce que la machine d'en face sait encoder n'est connu qu'une fois son moteur démarré et le chemin en train de servir la session : posée une seule fois à l'ouverture du bouton, la question tombait toujours avant, et le menu proposait un codec que cette machine-là ne sait pas faire. Le journal du service le montre à la seconde près. Elle est reposée une fois par seconde tant que la réponse manque, et plus du tout ensuite.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

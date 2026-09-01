@@ -5,10 +5,15 @@
 //! Nothing polls in the background: numbers nobody is reading are worth
 //! neither the file nor the thread.
 //!
-//! Every number is optional and stays optional all the way to the page. A
+//! Every number is optional and stays optional all the way to the bar. A
 //! window with no decoded frame in it has no decoding time, not a decoding
 //! time of nought, and a bar that draws nought where there is no reading
 //! tells the person something untrue. What is missing is left blank.
+
+// La barre qui les montre est celle du bouton flottant, qui n'existe que
+// sous Windows comme la session qu'elle mesure. La lecture, elle, reste
+// compilée et éprouvée partout.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use serde::Serialize;
 

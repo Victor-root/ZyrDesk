@@ -13,6 +13,12 @@
 //! style, et `echelle` les passe en vrais pixels au moment de dessiner.
 //! C'est le même partage que partout ailleurs, et c'est ce qui permet de
 //! relire une mesure ici et de la retrouver là-bas.
+//!
+//! La fenêtre suit la carte : elle est remesurée à chaque dessin, et
+//! l'image lui est remise en même temps que sa taille. Il n'existe donc
+//! pas d'instant où elle soit grande sans être peinte, ce qui est ce
+//! qu'une vue web ne savait pas faire et ce qui la forçait à se bâtir
+//! une fois pour toutes à sa plus grande taille possible.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
@@ -496,8 +502,6 @@ enum Cible {
     Cote(usize, usize),
     /// La barre d'un curseur.
     Barre(usize),
-    /// Le titre du panneau ouvert, qui le referme.
-    Retour,
     /// Une valeur du panneau ouvert, par son rang dans la liste.
     Valeur(usize),
 }
@@ -507,7 +511,7 @@ impl Cible {
     fn ligne(self) -> Option<usize> {
         match self {
             Cible::Ligne(rang) | Cible::Cote(rang, _) | Cible::Barre(rang) => Some(rang),
-            Cible::Retour | Cible::Valeur(_) => None,
+            Cible::Valeur(_) => None,
         }
     }
 }
@@ -567,6 +571,9 @@ static VERS_LE_HAUT: AtomicBool = AtomicBool::new(false);
 
 /// Ce que la carte prend de large, mesuré sur toutes ses lignes.
 static LARGE_CARTE: AtomicU32 = AtomicU32::new(0);
+
+/// Le tour de veille des réglages, qui arrête le précédent.
+static TOUR_DES_REGLAGES: AtomicU32 = AtomicU32::new(0);
 
 /// Ce que la session propose et où elle en est, demandé à l'ouverture de
 /// la carte.
@@ -1004,13 +1011,44 @@ pub fn raise(app: &AppHandle, echelle: f32, clair: bool) {
     relis_les_reglages(app);
 }
 
-/// Redemande ce que la session propose et où elle en est.
+/// Redemande ce que la session propose et où elle en est, et recommence
+/// tant que la machine d'en face n'a pas dit ce qu'elle sait encoder.
+///
+/// Elle met quelques secondes à le dire : son moteur démarre, puis le
+/// chemin se met à servir la session. Demandée une seule fois à
+/// l'ouverture du bouton, la question tombait toujours avant, et le menu
+/// s'ouvrait en proposant un codec que cette machine-là ne sait pas
+/// faire ; il ne se reprenait qu'une fois la carte déjà sous les yeux, ce
+/// qui se voit.
+///
+/// Un numéro de tour, comme pour les mesures : deux ouvertures rapprochées
+/// ne laissent pas deux veilles derrière la même carte.
 fn relis_les_reglages(app: &AppHandle) {
     let app = app.clone();
+    let tour = TOUR_DES_REGLAGES.fetch_add(1, Ordering::Relaxed) + 1;
     tauri::async_runtime::spawn(async move {
-        let menu = crate::settings::session_menu(app.clone()).await;
-        *REGLAGES.lock().expect("réglages du menu") = Some(menu);
-        redessine(&app);
+        while TOUR_DES_REGLAGES.load(Ordering::Relaxed) == tour
+            && ITS_WINDOW.load(Ordering::Relaxed) != 0
+        {
+            let lu = crate::settings::session_menu(app.clone()).await;
+            // Rien du tout veut dire qu'elle n'a rien dit, jamais qu'elle
+            // ne sait rien faire : c'est donc là-dessus que la question se
+            // repose, et nulle part ailleurs.
+            let repondu = !lu.beyond_it.is_empty();
+            let change = {
+                let mut reglages = REGLAGES.lock().expect("réglages du menu");
+                let change = reglages.as_ref() != Some(&lu);
+                *reglages = Some(lu);
+                change
+            };
+            if change {
+                redessine(&app);
+            }
+            if repondu {
+                return;
+            }
+            tokio::time::sleep(RYTHME).await;
+        }
     });
 }
 
@@ -1084,6 +1122,14 @@ pub fn montre(ouvert: bool) {
 /// Dit si la carte est ouverte, pour qui a besoin de la basculer.
 pub fn ouvert() -> bool {
     OUVERT.load(Ordering::Relaxed)
+}
+
+/// Ce que sa fenêtre prend de haut.
+///
+/// Pour le bouton, qui s'en sert à décider si le menu a la place de
+/// s'ouvrir vers le bas.
+pub fn haute() -> i32 {
+    HAUTE.load(Ordering::Relaxed) as i32
 }
 
 /// Pose la carte sous le logo, ou au-dessus quand le menu s'ouvre vers le
@@ -1412,21 +1458,16 @@ fn largeur_des_panneaux(toile: &Toile, echelle: f32) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// Ce qu'un panneau prend de large : son titre ou sa plus longue valeur.
+/// Ce qu'un panneau prend de large : sa plus longue valeur.
 fn largeur_du_panneau(toile: &Toile, menu: &SessionMenu, quoi: Reglage, echelle: f32) -> f32 {
-    let valeurs = quoi.valeurs(menu);
-    if valeurs.is_empty() {
-        return 0.0;
-    }
-    let titre = autour(toile, mot_du_panneau(quoi), 0.0, echelle);
-    valeurs
+    quoi.valeurs(menu)
         .iter()
         .map(|valeur| {
             let aparte =
                 toile.largeur(&quoi.aparte(menu, valeur), design::LEGENDE * echelle, false);
             autour(toile, &quoi.dit(menu, valeur), aparte, echelle)
         })
-        .fold(titre, f32::max)
+        .fold(0.0, f32::max)
 }
 
 /// La hauteur du plus haut des panneaux, pour la même raison.
@@ -1440,30 +1481,17 @@ fn hauteur_des_panneaux(echelle: f32) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// Ce qu'un panneau prend de haut : son titre, son trait, et ses valeurs.
+/// Ce qu'un panneau prend de haut : ses valeurs, et rien d'autre.
+///
+/// Sans titre : on sait où l'on est, la ligne qui l'a ouvert est en face
+/// et son chevron le dit. Une ligne de plus pour redire le mot d'à côté
+/// serait une ligne de moins pour les valeurs.
 fn hauteur_du_panneau(menu: &SessionMenu, quoi: Reglage, echelle: f32) -> f32 {
     let combien = quoi.valeurs(menu).len();
     if combien == 0 {
         return 0.0;
     }
-    (design::PAS_2 * 2.0
-        + tenue::LIGNE
-        + design::PAS_2 * 2.0
-        + tenue::TRAIT
-        + tenue::LIGNE * combien as f32)
-        * echelle
-}
-
-/// Le mot qu'un panneau porte en tête, qui est celui de la ligne qui
-/// l'ouvre.
-fn mot_du_panneau(quoi: Reglage) -> &'static str {
-    LIGNES
-        .iter()
-        .find_map(|ligne| match ligne {
-            Ligne::Liste(liste) if liste.quoi == quoi => Some(liste.mot),
-            _ => None,
-        })
-        .unwrap_or_default()
+    (design::PAS_2 * 2.0 + tenue::LIGNE * combien as f32) * echelle
 }
 
 /// Le panneau ouvert dans sa fenêtre, à gauche de la carte.
@@ -1494,35 +1522,30 @@ fn panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> Option<Cadre> {
     ))
 }
 
-/// Le titre du panneau ouvert et la place de chacune de ses valeurs.
-fn parcours_du_panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> (Cadre, Vec<Cadre>) {
+/// La place de chacune des valeurs du panneau ouvert.
+fn parcours_du_panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> Vec<Cadre> {
     let Some(panneau) = panneau(toile, quoi, echelle) else {
-        return (Cadre::pose(0.0, 0.0, 0.0, 0.0), Vec::new());
+        return Vec::new();
     };
     let bord = design::PAS_2 * echelle;
-    let dedans = |haut: f32, haute: f32| {
-        Cadre::pose(
-            panneau.gauche + bord,
-            haut,
-            panneau.droite - panneau.gauche - bord * 2.0,
-            haute,
-        )
-    };
-    let titre = dedans(panneau.haut + bord, tenue::LIGNE * echelle);
-    let mut haut = titre.bas + (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle;
     let combien = REGLAGES
         .lock()
         .expect("réglages du menu")
         .as_ref()
         .map_or(0, |menu| quoi.valeurs(menu).len());
-    let valeurs = (0..combien)
+    let mut haut = panneau.haut + bord;
+    (0..combien)
         .map(|_| {
-            let place = dedans(haut, tenue::LIGNE * echelle);
+            let place = Cadre::pose(
+                panneau.gauche + bord,
+                haut,
+                panneau.droite - panneau.gauche - bord * 2.0,
+                tenue::LIGNE * echelle,
+            );
             haut = place.bas;
             place
         })
-        .collect();
-    (titre, valeurs)
+        .collect()
 }
 
 /// De combien l'ombre sort de la carte, de chaque côté.
@@ -1634,12 +1657,10 @@ fn sous(ou: (i32, i32)) -> Option<Cible> {
 
     if let Some(quoi) = *PANNEAU.lock().expect("panneau du menu") {
         let dans_le_panneau = TOILE.with_borrow(|toile| {
-            let toile = toile.as_ref()?;
-            let (titre, valeurs) = parcours_du_panneau(toile, quoi, echelle);
-            if dedans(&titre) {
-                return Some(Cible::Retour);
-            }
-            valeurs.iter().position(dedans).map(Cible::Valeur)
+            parcours_du_panneau(toile.as_ref()?, quoi, echelle)
+                .iter()
+                .position(dedans)
+                .map(Cible::Valeur)
         });
         if dans_le_panneau.is_some() {
             return dans_le_panneau;
@@ -2161,8 +2182,13 @@ impl Pinceau<'_> {
         }
     }
 
-    /// Le panneau d'un réglage, à gauche de la carte : son titre, un
-    /// trait, et ses valeurs dont une porte la marque.
+    /// Le panneau d'un réglage, à gauche de la carte : ses valeurs, dont
+    /// une porte la marque.
+    ///
+    /// Sans titre. On sait où l'on est : la ligne qui l'a ouvert est en
+    /// face, son chevron s'est retourné vers lui, et la cliquer à nouveau
+    /// referme. Un titre qui redit le mot d'à côté prend une ligne pour
+    /// n'apprendre rien.
     fn panneau(&self, quoi: Reglage, survol: Option<Cible>) {
         let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
         let Some(place) = panneau(toile, quoi, echelle) else {
@@ -2173,39 +2199,8 @@ impl Pinceau<'_> {
         toile.remplis(place, rayon, couleurs.surface_1);
         toile.trace_dedans(place, rayon, tenue::TRAIT * echelle, couleurs.trait_fort);
 
-        let (titre, valeurs) = parcours_du_panneau(toile, quoi, echelle);
-        self.survol(
-            titre,
-            (survol == Some(Cible::Retour)).then_some(couleurs.surface_3),
-        );
+        let valeurs = parcours_du_panneau(toile, quoi, echelle);
         let cote = tenue::MARQUE * echelle;
-        toile.icone(
-            &icones::RETOUR,
-            Cadre::pose(
-                titre.gauche + design::PAS_2 * echelle,
-                titre.haut + (titre.bas - titre.haut - cote) / 2.0,
-                cote,
-                cote,
-            ),
-            couleurs.texte,
-        );
-        toile.ecris(
-            mot_du_panneau(quoi),
-            design::CORPS * echelle,
-            true,
-            couleurs.texte,
-            Cadre {
-                gauche: titre.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle,
-                ..titre
-            },
-            Cale::Gauche,
-        );
-        self.separateur(Cadre {
-            haut: titre.bas,
-            bas: titre.bas + (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle,
-            ..titre
-        });
-
         let reglages = REGLAGES.lock().expect("réglages du menu");
         let Some(menu) = reglages.as_ref() else {
             return;
@@ -2472,10 +2467,6 @@ fn agit(cible: Cible) {
                 return;
             }
             choisis(&app, choix.quoi, valeur);
-        }
-        (Cible::Retour, _) => {
-            *PANNEAU.lock().expect("panneau du menu") = None;
-            redessine(&app);
         }
         (Cible::Valeur(rang), _) => {
             let Some(quoi) = *PANNEAU.lock().expect("panneau du menu") else {

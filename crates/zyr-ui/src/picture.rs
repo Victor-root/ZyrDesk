@@ -1433,74 +1433,6 @@ pub fn the_keyboard_back(app: &AppHandle) {
 #[cfg(not(windows))]
 pub fn the_keyboard_back(_app: &AppHandle) {}
 
-/// Gives the session back the keyboard the floating menu took from it.
-///
-/// The front is not asked for back, and was, twice. Closing that menu
-/// drops the front on the desktop with nothing having taken it, and taking
-/// it back from there is a road Windows keeps shut: it hands the front
-/// only to the program that already holds it or that received the last
-/// keystroke, and by then the shell has had both. The journal wrote the
-/// answer in one word, « refusé », on every session it was tried on.
-///
-/// What a fallen front costs is the session's Alt+Tab, for as long as this
-/// program is the one taking those keys; the answer to that is not here
-/// but in who takes them, and it is the engine in the mode that asks it to
-/// ([D43](../../docs/DECISIONS.md)).
-#[cfg(windows)]
-pub fn the_session_back(app: &AppHandle) {
-    let asked = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        give_the_keyboard_to_the_picture(&asked);
-    });
-}
-
-#[cfg(not(windows))]
-pub fn the_session_back(_app: &AppHandle) {}
-
-/// Makes our window behave as the one window a session is, and steps in
-/// front of its messages for as long as the picture is in it.
-///
-/// Two windows laid on one another are not one window until the system is
-/// told so, and this is where it is told: the title bar is lit, and from
-/// here on the window answers what the system asks before acting rather
-/// than after, which is the only moment an answer changes anything:
-/// whether it is still the active window, and what size a drag is about
-/// to give it.
-///
-/// Stepping in front of a window's messages is done from the thread that
-/// draws it, and none of the callers here is that thread: one drives the
-/// session, the other watches it. Handed over rather than done on the
-/// spot.
-#[cfg(windows)]
-fn take_the_window_in_hand(app: &AppHandle) {
-    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
-
-    let asked = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let Some(home) = home_window(&asked) else {
-            return;
-        };
-        // SAFETY: our own window, from the thread that owns it, and the
-        // handler outlives the subclass: it is a plain function of this
-        // program.
-        unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
-        // Where the front is going, said by the system as it moves it.
-        // It takes a thread of its own here and gives it back below.
-        watch_the_front();
-        who_photographs_the_session(home);
-        round_the_window(home, true);
-        light_the_bar(home);
-        // A session can open straight onto the whole screen, in which
-        // case the window took it before this handler was on it and the
-        // system asked about the frame with nobody there to answer.
-        // Asked again now, with the handler in place.
-        if WHOLE_SCREEN.load(Ordering::Relaxed) {
-            no_frame_on_the_whole_screen(&asked);
-        }
-        tell_the_frame(home);
-    });
-}
-
 /// Puts all of that back the way it was, the session being over.
 #[cfg(windows)]
 fn give_the_window_back(app: &AppHandle) {
@@ -3710,6 +3642,50 @@ pub(crate) fn the_front_in_words() -> String {
 #[cfg(not(windows))]
 pub(crate) fn the_keyboard_to_the_picture() -> bool {
     false
+}
+
+/// Makes our window behave as the one window a session is, and steps in
+/// front of its messages for as long as the picture is in it.
+///
+/// Two windows laid on one another are not one window until the system is
+/// told so, and this is where it is told: the title bar is lit, and from
+/// here on the window answers what the system asks before acting rather
+/// than after, which is the only moment an answer changes anything:
+/// whether it is still the active window, and what size a drag is about
+/// to give it.
+///
+/// Stepping in front of a window's messages is done from the thread that
+/// draws it, and none of the callers here is that thread: one drives the
+/// session, the other watches it. Handed over rather than done on the
+/// spot.
+#[cfg(windows)]
+fn take_the_window_in_hand(app: &AppHandle) {
+    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
+
+    let asked = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(home) = home_window(&asked) else {
+            return;
+        };
+        // SAFETY: our own window, from the thread that owns it, and the
+        // handler outlives the subclass: it is a plain function of this
+        // program.
+        unsafe { SetWindowSubclass(home, Some(lit), LIT, 0) };
+        // Where the front is going, said by the system as it moves it.
+        // It takes a thread of its own here and gives it back below.
+        watch_the_front();
+        who_photographs_the_session(home);
+        round_the_window(home, true);
+        light_the_bar(home);
+        // A session can open straight onto the whole screen, in which
+        // case the window took it before this handler was on it and the
+        // system asked about the frame with nobody there to answer.
+        // Asked again now, with the handler in place.
+        if WHOLE_SCREEN.load(Ordering::Relaxed) {
+            no_frame_on_the_whole_screen(&asked);
+        }
+        tell_the_frame(home);
+    });
 }
 
 #[cfg(not(windows))]

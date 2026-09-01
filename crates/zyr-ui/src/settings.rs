@@ -14,6 +14,12 @@
 //! says whether it worked. The lists themselves stay in `zyr-proto`: a
 //! second copy written in JavaScript would drift from them.
 
+// Ce qu'une session propose et ce qu'on y choisit ne se lit que dans le
+// menu du bouton flottant, qui n'existe que sous Windows comme la session
+// elle-même. Le reste de ce fichier, les réglages de l'accueil, sert
+// partout.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use serde::{Deserialize, Serialize};
 use zyr_control::{Answer, Request};
 use zyr_proto::session::{
@@ -110,7 +116,7 @@ pub async fn choose(chosen: Chosen) -> Result<(), String> {
 /// Machine values and not words: what a size or a rate is called in
 /// French is the window's business, and the window is where the rest of
 /// what a person reads is written.
-#[derive(Serialize)]
+#[derive(Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionChoice {
     pub asked: String,
@@ -156,16 +162,8 @@ impl SessionChoice {
     }
 }
 
-#[tauri::command]
-pub async fn session_choice(app: tauri::AppHandle) -> SessionChoice {
-    SessionChoice::of(
-        preferred().await,
-        crate::picture::the_screen_of_this_computer(&app),
-    )
-}
-
 /// One value a line of the session menu offers.
-#[derive(Serialize)]
+#[derive(Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Offered {
     /// What travels and is written down.
@@ -178,7 +176,7 @@ pub struct Offered {
 }
 
 /// One of the far computer's screens, as the menu offers it.
-#[derive(Serialize)]
+#[derive(Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OfferedScreen {
     /// What travels back when it is picked. That computer's own name for
@@ -200,7 +198,7 @@ pub struct OfferedScreen {
 /// Handed over whole rather than a list at a time: the window builds the
 /// lists once, when it opens, and a person clicking through them then
 /// waits for nothing.
-#[derive(Serialize)]
+#[derive(Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionMenu {
     pub sizes: Vec<Offered>,

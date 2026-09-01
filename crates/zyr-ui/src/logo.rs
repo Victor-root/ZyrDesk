@@ -26,14 +26,13 @@
 //! them through wherever the picture is clear. Four of the faults this
 //! button has worn since it was born cannot happen here at all.
 //!
-//! What is left in the web view is the menu, which is real interface and
-//! has no business being redrawn by hand. It never moves, and it only
-//! exists while it is open.
+//! Le menu est une fenêtre à côté, dessinée de la même façon : il ne
+//! reste plus de vue web nulle part sur l'image.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::journal::note;
 
@@ -231,6 +230,32 @@ fn box_of(side: u32) -> u32 {
 /// The side of the logo's window, which is what the menu hangs under.
 pub fn box_side() -> i32 {
     ITS_BOX.load(Ordering::Relaxed) as i32
+}
+
+/// La fenêtre elle-même, pour ce qui a besoin de la nommer au système.
+///
+/// L'écran sur lequel le bouton pend, et donc son agrandissement, se lit
+/// à travers elle : c'est la seule fenêtre du bouton qui soit toujours là.
+pub fn its_window() -> isize {
+    ITS_WINDOW.load(Ordering::Relaxed)
+}
+
+/// Montre ou range le logo depuis le fil qui dessine, où l'on est déjà.
+///
+/// Le même geste que `shown`, sans le détour par la boucle : ce qui pose
+/// le bouton tourne déjà sur ce fil-là, et y repasser par la file des
+/// messages retarderait d'une image un bouton qu'on vient de déplacer.
+pub fn shown_now(visible: bool) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNOACTIVATE, ShowWindow};
+
+    let window = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
+    if window.is_null() {
+        return;
+    }
+    // SAFETY: a window of ours, shown or hidden without taking the front,
+    // on the thread that made it.
+    unsafe { ShowWindow(window, if visible { SW_SHOWNOACTIVATE } else { SW_HIDE }) };
 }
 
 /// Takes the logo's window down with the session.
@@ -563,7 +588,7 @@ unsafe extern "system" fn answer(
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         DefWindowProcW, HTCLIENT, IDC_HAND, IDC_SIZEALL, KillTimer, LoadCursorW, SetCursor,
-        WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_SETCURSOR, WM_TIMER,
+        WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_SETCURSOR, WM_TIMER,
     };
 
     match message {
@@ -602,14 +627,6 @@ unsafe extern "system" fn answer(
             taken(window);
             0
         }
-        // Le menu que ce programme dessine, pendant qu'il se construit :
-        // le clic gauche garde celui de la vue web, de sorte que le
-        // bouton reste entier et que les deux se comparent côte à côte.
-        // Ce cas s'en va avec le dernier morceau du menu web.
-        WM_RBUTTONDOWN => {
-            crate::menu::montre(!crate::menu::ouvert());
-            0
-        }
         WM_TIMER if holding == GROWING => {
             if arrived() {
                 // SAFETY: a clock of ours on a window of ours.
@@ -643,10 +660,10 @@ fn taken(window: windows_sys::Win32::Foundation::HWND) {
         let plain = crate::floating::grabbed(&app).await;
         TAKEN.store(false, Ordering::Relaxed);
         head_for(handle as windows_sys::Win32::Foundation::HWND);
-        // A plain click is what opens and closes the menu, and the menu
-        // belongs to the page: this window has none of it and wants none.
-        if plain && let Some(menu) = app.get_webview_window(crate::floating::WINDOW) {
-            let _ = menu.emit(crate::floating::TOGGLE, ());
+        // A plain click opens and closes the menu; a drag does not, or
+        // the button would open its menu every time it was put down.
+        if plain {
+            crate::menu::montre(!crate::menu::ouvert());
         }
     });
 }

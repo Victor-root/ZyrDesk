@@ -11,6 +11,11 @@
 //! what it holds is what lets a window opened afterwards, or reopened
 //! after a crash, show the session instead of an empty home screen.
 
+// Relancer l'image et savoir par où elle passe ne se demande que depuis
+// le menu du bouton flottant, qui n'existe que sous Windows comme la
+// session elle-même.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
