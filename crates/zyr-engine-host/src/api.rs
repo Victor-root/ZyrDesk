@@ -57,6 +57,19 @@ pub fn stop_trying_url(ports: EnginePorts) -> String {
     )
 }
 
+/// Address of the order to film another of this computer's screens.
+///
+/// The engine reads which screen to film in its configuration, once,
+/// when it starts. This is the other road to it, and it exists because
+/// the first one costs a restart: a restart takes the tunnel with it, and
+/// the tunnel takes every session going through it.
+pub fn film_this_display_url(ports: EnginePorts) -> String {
+    format!(
+        "https://127.0.0.1:{}/api/zyr/film-this-display",
+        ports.web_ui()
+    )
+}
+
 /// Pairing request, built without side effects so it can be checked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinRequest {
@@ -184,6 +197,29 @@ impl EngineApi {
         }
     }
 
+    /// Tells the engine to film that screen from now on.
+    ///
+    /// What it costs the engine is a reinitialization of its capture, the
+    /// same one a desktop switch costs, which a session lives through.
+    /// Nothing is answered about the screen itself: an engine that cannot
+    /// find it waits for it and says so in its own log, exactly as it does
+    /// for the screen its configuration names.
+    pub fn film_this_display(&self, device_id: &str) -> Result<(), ApiError> {
+        let answer = self
+            .agent
+            .post(film_this_display_url(self.ports))
+            .header("Authorization", &self.credentials.authorization_header())
+            .header("Content-Type", "application/json")
+            .send(serde_json::json!({ "name": device_id }).to_string())
+            .map_err(|e| ApiError::Transport(e.to_string()))?;
+        let status = answer.status().as_u16();
+        if (200..300).contains(&status) {
+            Ok(())
+        } else {
+            Err(ApiError::HttpStatus(status))
+        }
+    }
+
     /// Hands a pairing code to the engine.
     pub fn submit_pin(&self, pin: &str, device_name: &str) -> Result<(), ApiError> {
         let request = pin_request(self.ports, &self.credentials, pin, device_name);
@@ -224,6 +260,14 @@ mod tests {
     #[test]
     fn the_health_probe_targets_the_base_port_in_the_clear() {
         assert_eq!(health_url(ports()), "http://127.0.0.1:42100/serverinfo");
+    }
+
+    #[test]
+    fn the_screen_to_film_is_asked_for_on_the_engines_own_interface() {
+        assert_eq!(
+            film_this_display_url(ports()),
+            "https://127.0.0.1:42101/api/zyr/film-this-display"
+        );
     }
 
     #[test]

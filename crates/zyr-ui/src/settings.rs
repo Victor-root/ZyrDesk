@@ -258,7 +258,7 @@ pub async fn session_menu(app: crate::app::App) -> SessionMenu {
 /// A single screen is no choice, so it is not offered either. Every
 /// computer with one screen would otherwise carry a menu line that can
 /// only be set to what it already is.
-async fn the_far_computers_screens() -> Vec<OfferedScreen> {
+pub async fn the_far_computers_screens() -> Vec<OfferedScreen> {
     let Some(way) = crate::session::the_way_in_use().await else {
         return Vec::new();
     };
@@ -359,10 +359,14 @@ pub async fn choose_session(
             }
             preferred.codec = codec;
         }
-        // Written down nowhere, so it never reaches the service: which of
-        // the far computer's screens is being watched names one screen of
-        // one particular machine, and it lasts exactly as long as the
-        // session does.
+        // Written down in no settings file, so it never reaches the
+        // service that keeps them: which of the far computer's screens is
+        // being watched names one screen of one particular machine, and
+        // it lasts exactly as long as the session does.
+        //
+        // And asked of that computer on the spot rather than written down
+        // and applied later: its engine changes the screen it films where
+        // it stands, so there is nothing to apply and nothing to reopen.
         "screen" => {
             let Some(picked) = crate::session::the_far_screens()
                 .into_iter()
@@ -372,9 +376,10 @@ pub async fn choose_session(
             };
             // Its main screen is what a session asks for when it asks for
             // nothing, so picking it by hand is asking for nothing: said
-            // any other way, choosing the screen the session is already on
-            // would offer to open the picture again for no change at all.
-            crate::session::ask_for_the_far_screen((!picked.main).then_some(picked.id));
+            // any other way, that computer serves its main screen to
+            // whoever names no screen at all.
+            let id = (!picked.main).then_some(picked.id);
+            crate::session::watch_the_far_screen(app.clone(), id).await?;
             return Ok(SessionChoice::of(
                 preferred,
                 crate::picture::the_screen_of_this_computer(&app),

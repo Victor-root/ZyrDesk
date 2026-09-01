@@ -148,18 +148,22 @@ static FAR_SCREENS: Mutex<Vec<FarScreen>> = Mutex::new(Vec::new());
 /// for, and only these are compared to know whether they are still what
 /// is on screen.
 ///
-/// The last two are told to the far computer's engine rather than to this
-/// one's, and they are here for the same reason as the first three: its
-/// engine reads them when it starts, so changing one means opening the
+/// The last one is told to the far computer's engine rather than to this
+/// one's, and it is here for the same reason as the first three: its
+/// engine reads it when it starts, so changing it means opening the
 /// picture again, which is what asks that computer and starts its engine
 /// over on the way.
+///
+/// Which of that computer's screens is being watched is **not** here, and
+/// that is the whole point of it: its engine changes screen where it
+/// stands, so the ask goes out the moment it is made and the picture
+/// follows within the second. Nothing to apply, nothing to reopen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ToldOnce {
     asked: Asked,
     bitrate_kbps: u32,
     codec: Codec,
     steady_far_rate: bool,
-    far_screen: Option<String>,
 }
 
 fn told_once(preferred: &Preferred) -> ToldOnce {
@@ -168,7 +172,6 @@ fn told_once(preferred: &Preferred) -> ToldOnce {
         bitrate_kbps: preferred.bitrate_kbps,
         codec: preferred.codec,
         steady_far_rate: preferred.steady_far_rate,
-        far_screen: the_far_screen(),
     }
 }
 
@@ -199,15 +202,100 @@ pub fn the_far_screen_named() -> String {
         .unwrap_or_default()
 }
 
-/// Asks to be served from that screen, or from the far computer's main
-/// one when nothing is named.
+/// Writes down which of the far computer's screens is being watched.
 ///
-/// Written down and nothing more, exactly like the size, the rate and the
-/// codec beside it: what a session is served from is settled when the far
-/// engine starts, so the picture on screen goes on showing the screen it
-/// was opened with and the menu offers to open it again.
+/// What the menu marks, and what a picture opened again asks for. Moved
+/// only once that computer has answered: a mark on a screen nobody is
+/// filming would be the one thing in this menu that lies.
 pub fn ask_for_the_far_screen(id: Option<String>) {
     *FAR_SCREEN.lock().expect("écran d'en face") = id;
+}
+
+/// Watches that screen of the far computer from now on, or its main one
+/// when nothing is named.
+///
+/// Asked the moment it is picked and never held back: that computer's
+/// engine changes the screen it films where it stands, which costs it a
+/// reinitialization of its capture and costs this end nothing at all.
+/// The picture is on the other screen within the second, and the session
+/// never stops.
+///
+/// Two roads over there still end in that engine starting over, and it
+/// says so rather than letting this end find out from a way that breaks:
+/// an engine of an older build, which does not know how to be asked, and
+/// a computer that has never named its main screen. The picture is then
+/// opened again, which is what it took for every change of screen before
+/// this, and the opening screen says what is happening.
+pub async fn watch_the_far_screen(app: App, id: Option<String>) -> Result<(), String> {
+    let way = the_way_in_use()
+        .await
+        .ok_or("aucune session en cours".to_string())?;
+    let starting_over = match crate::service::ask(&Request::FilmFarScreen {
+        way,
+        id: id.clone(),
+    })
+    .await?
+    {
+        Answer::Settled { starting_over } => starting_over,
+        Answer::Refused(reason) => return Err(reason),
+        other => return Err(crate::service::unexpected(other)),
+    };
+    ask_for_the_far_screen(id);
+    crate::journal::note(&format!(
+        "écran de l'ordinateur distant : {}",
+        if starting_over {
+            "son moteur redémarre pour en changer, l'image est relancée"
+        } else {
+            "changé sans rien relancer"
+        }
+    ));
+    if starting_over {
+        return apply_session(app).await;
+    }
+    Ok(())
+}
+
+/// Moves to the next of the far computer's screens, and round to the
+/// first after the last.
+///
+/// What the shortcut does. A far computer with one screen has nothing to
+/// move to, and that is not a failure: it is the ordinary machine, and
+/// the key is simply quiet on it.
+pub async fn watch_the_next_far_screen(app: App) -> Result<(), String> {
+    // Asked of the far computer when this end has never asked: the list
+    // is filled when the menu is opened, and a key that only worked
+    // after somebody had opened the menu once would be a key that
+    // sometimes does nothing.
+    if the_far_screens().is_empty() {
+        crate::settings::the_far_computers_screens().await;
+    }
+    let screens = the_far_screens();
+    let Some(next) = the_one_after(&screens, &the_far_screen_named()) else {
+        return Ok(());
+    };
+    // Its main screen is asked for by naming no screen at all, exactly
+    // as the menu does: the two are one answer said two ways, and a
+    // session that names it would be told « you have it » by a computer
+    // that answers the same thing to nobody naming anything.
+    watch_the_far_screen(app, (!next.main).then(|| next.id.clone())).await
+}
+
+/// The screen after that one in the list, and round to the first after
+/// the last.
+///
+/// Nothing at all when there is nowhere to go, which is a far computer
+/// with one screen and a far computer that has not said.
+fn the_one_after<'a>(screens: &'a [FarScreen], watched: &str) -> Option<&'a FarScreen> {
+    if screens.len() < 2 {
+        return None;
+    }
+    // A screen this list does not know starts the round at the first,
+    // which is what a list that changed under a session leaves behind.
+    let at = screens
+        .iter()
+        .position(|screen| screen.id == watched)
+        .unwrap_or(0);
+    screens.get((at + 1) % screens.len())
 }
 
 /// The far computer's screens, as it last named them.
@@ -800,6 +888,42 @@ fn finish(app: &App, ok: bool, message: String) {
 mod tests {
     use super::*;
     use zyr_proto::session::DisplayMode;
+
+    fn far_screen(id: &str, main: bool) -> FarScreen {
+        FarScreen {
+            id: id.to_string(),
+            main,
+            wide: 3840,
+            high: 2160,
+            name: id.to_string(),
+        }
+    }
+
+    #[test]
+    fn the_shortcut_goes_round_the_far_computers_screens() {
+        let screens = [
+            far_screen("un", true),
+            far_screen("deux", false),
+            far_screen("trois", false),
+        ];
+        for (watched, expected) in [("un", "deux"), ("deux", "trois"), ("trois", "un")] {
+            assert_eq!(
+                the_one_after(&screens, watched).map(|screen| screen.id.as_str()),
+                Some(expected),
+                "depuis « {watched} »"
+            );
+        }
+        // Un écran que la liste ne connaît pas est une liste qui a changé
+        // sous la session : le tour repart du premier.
+        assert_eq!(
+            the_one_after(&screens, "parti").map(|screen| screen.id.as_str()),
+            Some("deux")
+        );
+        // Et un ordinateur à un seul écran n'a nulle part où aller, ce
+        // qui n'est pas une panne : la touche est simplement muette.
+        assert!(the_one_after(&screens[..1], "un").is_none());
+        assert!(the_one_after(&[], "").is_none());
+    }
 
     #[test]
     fn only_what_the_engine_is_told_once_asks_for_the_picture_to_be_reopened() {

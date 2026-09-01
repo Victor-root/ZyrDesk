@@ -2011,6 +2011,26 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Une annulation n'est pas un échec.** Elle revient à l'accueil sans ligne rouge : celui qui l'a demandée n'a rien à apprendre de sa propre demande. Le journal la garde, l'écran non.
 
+## D116. Changer d'écran chez l'hôte ne relance plus rien (2026-09-01, pendant M4)
+
+**La demande de Victor.** « Pour switcher d'écran c'est beaucoup trop long, je ne voudrais pas avoir besoin de recharger la session pour pouvoir switcher, ça devrait être instantané comme Parsec, et vraiment pouvoir switcher entre les deux sans problèmes. »
+
+**Ce que ça coûtait.** Le moteur d'en face lit dans sa configuration quel écran filmer, une fois, à son démarrage. En changer voulait donc dire le redémarrer, ce qui emporte son tunnel, et le tunnel emporte toutes les sessions qui passent dedans : une bascule d'écran coûtait une session qui tombe, un moteur qui repart, un client qui se reconnecte. Une dizaine de secondes, plus l'écran d'ouverture, pour un changement qui devrait être un battement de cils.
+
+**Ce qui existait déjà, et qu'il suffisait de nommer.** La capture du moteur sait changer d'écran là où elle est : un écran choisi à la main, par le raccourci que le client peut envoyer, pose un rang et la capture se réinitialise dessus. C'est exactement le chemin qu'emprunte un changement de bureau, celui de Ctrl+Alt+Suppr, et une session le traverse sans s'en apercevoir. Ce qui manquait n'était pas le mécanisme, c'était de pouvoir demander un écran **par son nom**, qui est ce que le produit connaît.
+
+**Décision : le moteur hôte apprend à filmer un autre écran sans redémarrer, et c'est le produit qui le lui demande.** Le nom demandé prime sur la configuration tant que ce moteur-là vit ; il est cherché à chaque réénumération et attendu pendant qu'un écran change de mode, exactement comme l'écran de la configuration, parce qu'il passe par la même porte. La demande arrive par le serveur de configuration du moteur, sur l'interface locale, avec les identifiants que le produit lui a donnés.
+
+**Le service écrit toujours la note, et il la garde.** Elle est ce que le **prochain** moteur lira : un moteur qui redémarre pour une autre raison revient sur le bon écran. Ce qui change est ce qu'il fait ensuite : il demande au moteur en marche, et la veille qui le tient sait alors que le moteur est là où il doit être, donc elle ne le redémarre pas. Une seule réponse à un seul endroit, partagée entre les deux, faute de quoi ce serait un moteur qui redémarre pour toujours ou un qui ne redémarre jamais.
+
+**Deux chemins finissent encore par un redémarrage, et la réponse le dit** : un moteur d'une compilation antérieure, qui ne sait pas qu'on peut le lui demander, et un ordinateur dont l'écran principal n'a jamais été nommé, c'est-à-dire un qui n'a jamais fini de démarrer un moteur. C'est exactement ce qui se passait avant, donc rien ne casse sur une machine à moitié à jour.
+
+**Du côté qui regarde, il n'y a plus rien à appliquer.** L'écran de l'hôte quitte la liste des réglages qui attendent « Appliquer les changements » : on le choisit, la carte se referme, et l'image est sur l'autre écran. Les autres réglages y restent, parce qu'eux sont dits au moteur à son démarrage.
+
+**Et un raccourci pour ne plus ouvrir le menu du tout.** « Écran suivant de l'hôte » passe d'un écran au suivant et revient au premier après le dernier. Une machine à un seul écran n'a nulle part où aller, et la touche y est simplement muette. Sans combinaison par défaut : c'est un choix, comme les deux autres raccourcis facultatifs.
+
+**Ce que ça ne change pas.** La résolution de la session. Le moteur d'en face redimensionne l'écran qu'il filme dans l'image que la session a demandée, comme il le fait déjà pour un écran plus grand qu'elle : basculer sur un écran de taille différente ne renégocie rien et ne coûte rien. Le pointeur, lui, suit : les encodeurs redisent au moteur les dimensions et la position de l'écran filmé à chaque réinitialisation, donc la souris tombe au bon endroit sur le nouvel écran.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

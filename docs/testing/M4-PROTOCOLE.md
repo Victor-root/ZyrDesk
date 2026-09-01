@@ -67,6 +67,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R70** | **Nouveau, et c'est le menu dessiné au complet.** Il lui manquait le curseur du débit, le codec, « Écran d'en face », « Appliquer les changements » et les deux listes qui s'ouvrent à gauche, résolution et écran de l'hôte : tout y est. Avec eux, deux réparations et un changement de couleur. Les interrupteurs étaient écrasés à la largeur de leur marge, parce qu'une mesure de texte était prise dans une boîte alignée à droite et large comme la moitié du plus grand nombre représentable ; la barre des mesures était tassée, parce que le texte y était empilé sur sa taille de caractère et non sur la hauteur de sa ligne. Et **l'accent du produit est maintenant l'or du logo** au lieu du bleu, dans tout le produit et pas seulement dans ce menu |
 | **R73** | **Nouveau, et c'est la fin de la boîte à outils.** La fenêtre, sa boucle de messages, l'icône près de l'horloge et l'instance unique sont écrites par le produit. Il ne reste plus aucune dépendance à une couche web, ni pour compiler ni pour tourner : trois cent vingt et une caisses de moins dans le verrou du projet. L'icône près de l'horloge est maintenant **dessinée** à la taille exacte que la barre demande, comme le reste du produit, au lieu d'être une image parmi six qu'il fallait choisir |
 | **R46**, **R46quater** | **Refait, et c'est un défaut trouvé par Victor.** Changer « Écran d'en face » pendant une session coupait la session : le moteur d'en face redémarre pour lire ce réglage, ce qui emportait la voie que l'image venait d'ouvrir. La demande se règle maintenant avant que l'image s'ouvre, comme le changement d'écran, et l'écran d'ouverture le dit |
+| **R65**, **R76** | **Refait, et c'est la demande de Victor.** Changer d'écran chez l'hôte coûtait une session qui tombe et se rouvre, une dizaine de secondes. Le moteur d'en face change maintenant d'écran là où il est : le choix agit tout de suite, sans « Appliquer », et un raccourci **Écran suivant de l'hôte** passe de l'un à l'autre sans ouvrir le menu. **Les deux ordinateurs et le moteur hôte doivent être à jour** |
 | **R75** | **Nouveau, et c'est un défaut trouvé par Victor.** La croix ne faisait rien sur l'écran d'ouverture : la barre s'arrêtait une seconde et l'ouverture continuait. Elle annule maintenant l'ouverture, à n'importe quel moment de celle-ci, et revient à l'accueil sans message d'erreur |
 | **R74** | **Nouveau.** Le menu du bouton flottant s'ouvre maintenant **à gauche du bouton** quand il n'a la place ni dessous ni dessus, c'est-à-dire quand le bouton est posé vers le milieu de l'image. Il y était coupé par le bas |
 | **R51**, **R65** | Touchés. Un sous-menu s'ouvre **en face de la ligne qui l'ouvre** et non plus en haut de la carte : une liste de deux écrans se posait tout en haut pendant qu'on cliquait une ligne du bas |
@@ -1697,6 +1698,34 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Et le raccourci fait la même chose** : Alt+É pendant une ouverture doit l'annuler exactement comme la croix.
 
+> **R76 (changer d'écran chez l'hôte est instantané)**
+>
+> **C'est la demande de Victor**, et le défaut qu'elle corrige : basculer d'un écran de l'hôte à l'autre coupait la session, la rouvrait, et prenait une dizaine de secondes.
+>
+> **À faire d'abord** : mettre à jour les deux ordinateurs **et récupérer les moteurs recompilés** (`fetch-engines.ps1` après que la compilation des moteurs soit verte). Le moteur hôte est ce qui change ici : avec l'ancien, tout marche comme avant, en relançant l'image.
+>
+> Session ouverte vers la machine à deux écrans. Menu du bouton flottant, ligne **Écran de l'hôte**, choisir l'autre écran.
+>
+> Attendu : la carte se referme, l'image se fige un instant, et **c'est l'autre écran**. Pas d'écran d'ouverture, pas de reconnexion, pas de ligne **Appliquer les changements** : ce réglage-là n'attend plus rien. Compter : ça doit être **bien en dessous de la seconde**.
+>
+> **Faire l'aller-retour dix fois de suite**, sans attendre entre deux. Rien ne doit se dégrader : ni la session, ni l'image, ni le pointeur.
+>
+> **Le pointeur, justement, est le piège.** Après chaque bascule, promener la souris dans les quatre coins de l'image et cliquer quelque part : le pointeur doit tomber **sur l'écran qu'on regarde**, jamais sur l'autre. C'est ce qui casse en premier si les coordonnées ne suivent pas l'écran filmé.
+>
+> **Et le raccourci** : dans les réglages, section **Raccourcis clavier**, donner une combinaison à **Écran suivant de l'hôte**. Pendant une session, la taper : elle passe à l'écran suivant, et revient au premier après le dernier. À essayer **sans avoir ouvert le menu de la session**, ce qui est le cas où cette machine n'a encore rien demandé à l'autre.
+>
+> **Sur une machine d'en face à un seul écran**, la touche ne doit rien faire du tout : pas d'erreur, pas de ligne rouge, rien.
+>
+> **Les trois journaux, à relever ensemble :**
+>
+> - la fenêtre d'ici (`interface.log`) : `écran de l'ordinateur distant : changé sans rien relancer` ;
+> - le service d'en face (`service.log`) : `a session asked to be served from {…}, and this computer's engine is changing screen where it stands`, et **jamais** `so it starts over` ;
+> - le moteur d'en face (`engine-console.log`) : `zyr: asked to film display [{…}] from now on`, puis `Capture reinitialized after Nms`. C'est ce nombre-là qui dit combien de temps l'image s'est arrêtée.
+>
+> **Ce qui doit encore relancer l'image**, pour être sûr que rien n'a été perdu : la résolution, le débit, le codec et l'écran d'en face gardent leur **Appliquer les changements**. Seul l'écran de l'hôte l'a quitté.
+>
+> **Et le retour à la normale** : terminer la session, en rouvrir une sans rien choisir. Elle doit être servie sur l'**écran principal** de l'hôte, comme avant, et cette bascule-là ne doit rien redémarrer non plus.
+
 > **R74 (le menu s'ouvre à côté du bouton quand il n'a la place ni dessous ni dessus)**
 >
 > C'est la suite de **R40**, qui ne connaissait que deux sens. Un bouton posé **vers le milieu de l'image** ne laisse assez de place ni dessous ni dessus : le menu partait quand même vers le bas et était coupé par le bord de l'image.
@@ -1771,9 +1800,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu dans la liste : **les deux écrans allumés, et eux seuls**. La télé éteinte n'y est pas, l'écran virtuel du produit non plus. Le principal est marqué « (principal) », sa taille est écrite à droite de chaque ligne, et c'est lui qui est coché tant que personne n'a choisi.
 >
-> Choisir le second écran, puis **Appliquer les changements**. L'écran d'ouverture revient et dit **« L'ordinateur distant change d'écran, il redémarre… »**, puis la session revient sur l'autre écran. Ça prend quelques secondes : le moteur d'en face ne lit quel écran filmer qu'à son démarrage, il n'y a pas d'autre moyen.
+> Choisir le second écran : l'image y passe **tout de suite**, sans « Appliquer les changements » et sans que rien ne redémarre. C'est R76, qui remplace ce qui suivait ici : le moteur d'en face changeait d'écran en redémarrant, et la session tombait le temps qu'il revienne.
 >
-> **La ligne du service de l'hôte, à relever** : `a session asked to be served from {…}, so this computer's engine starts over`, puis, au démarrage suivant, `the engine is filming the screen a session asked to be served from ({…})`.
+> **La ligne du service de l'hôte, à relever** : `a session asked to be served from {…}, and this computer's engine is changing screen where it stands`. Elle dit `so this computer's engine starts over` quand le moteur d'en face est d'une compilation antérieure, et tout se passe alors comme avant : l'écran d'ouverture annonce le redémarrage et la session se rouvre.
 >
 > **Le retour à l'écran principal, qui est la moitié qu'il ne faut pas rater.** Fermer la session, puis en rouvrir une sans rien choisir : elle doit être servie sur l'**écran principal**, pas sur celui de la session d'avant. Le même redémarrage a lieu, et le journal de l'hôte le dit : `a session asked this computer to be served from its main screen`.
 >

@@ -691,6 +691,16 @@ impl Reglage {
         }
     }
 
+    /// Si ce réglage change l'image sur-le-champ, plutôt que d'attendre
+    /// qu'on relance.
+    ///
+    /// Un seul le fait : l'écran de l'hôte, dont le moteur d'en face
+    /// change là où il est. Les autres sont dits au moteur à son
+    /// démarrage, donc ils attendent « Appliquer les changements ».
+    fn tout_de_suite(self) -> bool {
+        self == Reglage::Ecran
+    }
+
     /// Ce que la machine d'en face a dit ne pas savoir faire.
     ///
     /// Rien du tout veut dire qu'elle n'a rien dit, jamais qu'elle ne sait
@@ -2380,6 +2390,12 @@ fn agit(cible: Cible) {
             // La liste se referme sur le choix : rester dedans après avoir
             // choisi laisserait croire qu'il reste quelque chose à y faire.
             *PANNEAU.lock().expect("panneau du menu") = None;
+            // Et la carte avec elle quand ce choix se voit tout de suite :
+            // ce qu'on veut regarder alors est l'image, et une carte
+            // laissée par-dessus serait une nappe posée dessus.
+            if quoi.tout_de_suite() {
+                montre(false);
+            }
             choisis(&app, quoi, valeur);
         }
         _ => {}

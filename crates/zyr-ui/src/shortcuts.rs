@@ -38,11 +38,24 @@ pub enum Doing {
     Menu,
     /// Switches the picture between a window and the whole screen.
     Fullscreen,
+    /// Moves to the next screen of the far computer, and round to the
+    /// first after the last.
+    ///
+    /// One key rather than a menu and a list: a machine with two screens
+    /// is looked at from one and then the other and back, which is not
+    /// something anybody wants to open a menu for. It does nothing at all
+    /// on a far computer that has only one.
+    NextScreen,
 }
 
 impl Doing {
     /// All of them, in the order the settings screen shows them.
-    pub const ALL: [Doing; 3] = [Doing::End, Doing::Menu, Doing::Fullscreen];
+    pub const ALL: [Doing; 4] = [
+        Doing::End,
+        Doing::Menu,
+        Doing::Fullscreen,
+        Doing::NextScreen,
+    ];
 
     /// Name this is filed under, in the file and between the window and
     /// the program.
@@ -51,6 +64,7 @@ impl Doing {
             Doing::End => "end",
             Doing::Menu => "menu",
             Doing::Fullscreen => "fullscreen",
+            Doing::NextScreen => "next-screen",
         }
     }
 
@@ -144,6 +158,7 @@ pub struct Bound {
     pub end: Option<Combination>,
     pub menu: Option<Combination>,
     pub fullscreen: Option<Combination>,
+    pub next_screen: Option<Combination>,
 }
 
 impl Bound {
@@ -164,6 +179,7 @@ impl Bound {
                 key: "Backquote".to_string(),
             }),
             fullscreen: None,
+            next_screen: None,
         }
     }
 
@@ -172,6 +188,7 @@ impl Bound {
             Doing::End => self.end.as_ref(),
             Doing::Menu => self.menu.as_ref(),
             Doing::Fullscreen => self.fullscreen.as_ref(),
+            Doing::NextScreen => self.next_screen.as_ref(),
         }
     }
 
@@ -180,6 +197,7 @@ impl Bound {
             Doing::End => &mut self.end,
             Doing::Menu => &mut self.menu,
             Doing::Fullscreen => &mut self.fullscreen,
+            Doing::NextScreen => &mut self.next_screen,
         };
         *slot = combination;
     }
@@ -609,6 +627,16 @@ fn do_it(app: &crate::app::App, doing: Doing) {
         }
         Doing::End => on_the_session(app, crate::floating::Act::End),
         Doing::Fullscreen => on_the_session(app, crate::floating::Act::Fullscreen),
+        // Not one of the things a session is asked for: it is asked of
+        // the far computer, which changes screen where it stands.
+        Doing::NextScreen => {
+            let app = app.clone();
+            crate::app::spawn(async move {
+                if let Err(e) = crate::session::watch_the_next_far_screen(app.clone()).await {
+                    crate::journal::note(&format!("raccourci d'écran sans effet : {e}"));
+                }
+            });
+        }
     }
 }
 

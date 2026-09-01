@@ -752,12 +752,17 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // Opened last: an engine that never answered has nothing to serve,
     // and dropped first at the end, since a tunnel leading to a stopped
     // engine only makes the other computer wait.
+    // What the engine is filming, from the screen it was aimed at. Held
+    // in one place and shared: the door moves it when a session asks for
+    // another screen, and the watch below reads it to know whether the
+    // engine is where it should be.
+    let filming: crate::gateway::Filming = Arc::new(std::sync::Mutex::new(aiming_at.clone()));
     let at_hand = AtHand {
         ports,
         credentials,
         films_the_grown_screen,
         engine_log: engine_log.clone(),
-        aimed_at: aiming_at.clone(),
+        filming: filming.clone(),
         serves_steady: serving.steady_rate,
     };
     let gateway = match Gateway::open(runtime, at_hand, (*machine).clone(), log) {
@@ -789,7 +794,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
             serving,
             Aimed {
                 grown: films_the_grown_screen,
-                at: aiming_at.as_deref(),
+                at: filming,
             },
             &machine.remembered,
             order,
@@ -802,19 +807,23 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     Ok(life)
 }
 
-/// Which screen the engine was started filming, which is the one moment
-/// it reads that.
+/// Which screen the engine is filming, starting with the one it was
+/// aimed at.
 ///
 /// The two travel together because they are one answer: a computer with
 /// no screen of its own films the one it grows, and every other computer
 /// films a screen it has, named. Read again while it runs, and a
 /// difference is an engine that has to start over.
-#[derive(Clone, Copy)]
-struct Aimed<'a> {
+///
+/// The name is shared with the door rather than copied: a session can
+/// ask the engine to change screen where it stands, and what it is
+/// filming then is what the door wrote there.
+#[derive(Clone)]
+struct Aimed {
     /// Whether it films the screen this computer grew for itself.
     grown: bool,
-    /// The screen it was aimed at, under the engine's own name for it.
-    at: Option<&'a str>,
+    /// The screen it is filming, under the engine's own name for it.
+    at: crate::gateway::Filming,
 }
 
 /// One engine, and everything used to keep an eye on it while it lives.
@@ -845,7 +854,7 @@ fn wait_for_the_engine_to_stop(
     watched: &mut Watched<'_>,
     session: u32,
     serving: zyr_proto::session::Serving,
-    aimed: Aimed<'_>,
+    aimed: Aimed,
     remembered: &Remembered,
     order: &StopOrder,
     log: &Log,
@@ -875,23 +884,32 @@ fn wait_for_the_engine_to_stop(
         }
 
         // A session has asked to be served from another of this computer's
-        // screens, or to come back to its main one. The engine reads which
-        // screen to film when it starts and never again, so this is the
-        // only way to answer, and the session that asked knows: it is told
-        // that this computer is starting over, and it waits and comes back
-        // rather than finding out from a way that broke under it.
+        // screens, or to come back to its main one, and the door could not
+        // ask the engine to change screen where it stands. Starting it
+        // over is then the only way left, and the session that asked
+        // knows: it is told that this computer is starting over, and it
+        // waits and comes back rather than finding out from a way that
+        // broke under it.
+        //
+        // The ordinary change never reaches this: the door moves the
+        // engine and moves this with it, so the two agree and nothing
+        // starts over. What is left here is an engine that could not be
+        // asked, and a computer whose main screen has no name yet.
         //
         // Not held back until nobody is watching, unlike the case below.
         // The session that asked has no picture yet, it is what is waiting
         // on this, and holding the change until it closed would be holding
         // it for ever.
         let should_be = crate::screen::the_screen_to_film();
-        if !aimed.grown && should_be.as_deref() != aimed.at {
+        let filming = aimed.at.lock().expect("écran filmé").clone();
+        if !aimed.grown && should_be != filming {
             log.write(&format!(
                 "a session asked this computer to be served from {}, and the engine was filming \
                  {}, so it starts over",
                 should_be.as_deref().unwrap_or("its main screen"),
-                aimed.at.unwrap_or("whichever screen it found first")
+                filming
+                    .as_deref()
+                    .unwrap_or("whichever screen it found first")
             ));
             stop_and_say_how(watched.engine, log);
             return Life::ScreenToFilmChanged;

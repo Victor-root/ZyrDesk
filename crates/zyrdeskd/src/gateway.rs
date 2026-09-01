@@ -22,8 +22,8 @@
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tokio::runtime::Handle;
@@ -63,6 +63,16 @@ const PAIRING_PATIENCE: Duration = Duration::from_secs(10);
 /// Pause between two offers.
 const PAIRING_RETRY: Duration = Duration::from_millis(200);
 
+/// The screen the engine is filming right now, under its own name for
+/// it.
+///
+/// Shared between the door, which can move it while the engine runs, and
+/// the watch that holds the engine, which starts that engine over when
+/// what it is filming is not what should be filmed. One answer in one
+/// place: two would be an engine that starts over for ever, or one that
+/// never does.
+pub type Filming = Arc<Mutex<Option<String>>>;
+
 /// The local engine, as the tunnel has to see it.
 pub struct AtHand {
     pub ports: EnginePorts,
@@ -83,14 +93,15 @@ pub struct AtHand {
     /// out again here would be a copy that is wrong on the first machine
     /// nobody tested.
     pub engine_log: PathBuf,
-    /// Which screen the engine was started filming, under its own name
-    /// for it.
+    /// Which screen the engine is filming, starting with the one it was
+    /// aimed at.
     ///
-    /// The one moment that is settled, so it is carried rather than asked
-    /// for again: what a session wants is written down the instant it
-    /// asks, and comparing the ask against the note would answer « you
-    /// have it » to a session whose engine has not started over yet.
-    pub aimed_at: Option<String>,
+    /// Carried rather than asked for again: what a session wants is
+    /// written down the instant it asks, and comparing the ask against
+    /// the note would answer « you have it » to a session whose engine is
+    /// not there yet. Shared, because asking the engine to film another
+    /// screen moves it without anything starting over.
+    pub filming: Filming,
     /// Whether the engine was started resending a still screen at full
     /// rate.
     ///
@@ -108,8 +119,8 @@ struct Attending {
     /// Where the engine writes down the screens it can see, which is
     /// where the list this computer offers is read from.
     engine_log: PathBuf,
-    /// Which screen the engine was started filming.
-    aimed_at: Option<String>,
+    /// Which screen the engine is filming.
+    filming: Filming,
     /// Whether it was started resending a still screen at full rate.
     serves_steady: bool,
     /// The sessions coming through this door, so what one of them asks
@@ -533,15 +544,21 @@ impl Answers for Attending {
 
     /// Serves this computer's picture from that screen from now on.
     ///
-    /// Written down and nothing more, exactly like the rate this computer
-    /// serves a still screen at. What acts on it is the watch that holds
-    /// the engine: it sees the note move and starts the engine over, which
-    /// is the only way an engine learns which screen to film.
+    /// Written down first, because the note is what the next engine will
+    /// read, and then asked of the engine that is running: it changes the
+    /// screen it films where it stands, which costs it the same
+    /// reinitialization of its capture as a desktop switch, and costs the
+    /// session watching it nothing at all. Nobody restarts, nobody
+    /// reconnects, and the picture is on the other screen within the
+    /// second.
     ///
-    /// Which is why the answer says so. Starting that engine over takes
-    /// this very tunnel with it, so the session that asked is told to wait
-    /// and come back rather than left to find out from a way that broke
-    /// under it.
+    /// Two roads still end in a restart, and the answer says so: an engine
+    /// that cannot be asked, which is one of an older build or one that
+    /// has stopped answering, and a computer whose main screen has never
+    /// been named, which is one that has never finished starting an
+    /// engine. Starting over takes this very tunnel with it, so the
+    /// session that asked is told to wait and come back rather than left
+    /// to find out from a way that broke under it.
     ///
     /// Doing nothing at all when it is already the screen being filmed,
     /// which is the ordinary case: every session asks, and almost none of
@@ -559,17 +576,39 @@ impl Answers for Attending {
             ));
             refused
         })?;
-        // Weighed against the screen the engine was **started** filming
-        // and never against the note that was just written: the note is
-        // what the next engine will read, and answering from it would
-        // tell a session it has what it asked for while the engine that
-        // is running is still on the other screen.
-        if crate::screen::the_screen_to_film() == self.aimed_at {
+        // Weighed against the screen the engine is filming **now**, and
+        // never against the note that was just written: the note is what
+        // the next engine will read, and answering from it would tell a
+        // session it has what it asked for while the engine that is
+        // running is still on the other screen.
+        let should_be = crate::screen::the_screen_to_film();
+        // Read and let go of before anything is asked of the engine: the
+        // watch that holds that engine reads this too, and a lock held
+        // across a question asked over a socket is that watch standing
+        // still for as long as the answer takes.
+        let filming = self.filming.lock().expect("écran filmé").clone();
+        if should_be == filming {
             return Ok(zyr_tunnel::Settled::Already);
         }
+        let named = id.as_deref().unwrap_or("this computer's main screen");
+        if let Some(screen) = should_be.clone() {
+            match self.api.film_this_display(&screen) {
+                Ok(()) => {
+                    *self.filming.lock().expect("écran filmé") = should_be;
+                    self.log.write(&format!(
+                        "a session asked to be served from {named}, and this computer's engine is \
+                         changing screen where it stands"
+                    ));
+                    return Ok(zyr_tunnel::Settled::Already);
+                }
+                Err(refused) => self.log.write(&format!(
+                    "this computer's engine could not be asked to change screen ({refused}), so \
+                     it starts over instead"
+                )),
+            }
+        }
         self.log.write(&format!(
-            "a session asked to be served from {}, so this computer's engine starts over",
-            id.as_deref().unwrap_or("this computer's main screen")
+            "a session asked to be served from {named}, so this computer's engine starts over"
         ));
         Ok(zyr_tunnel::Settled::StartingOver)
     }
@@ -887,7 +926,7 @@ impl Gateway {
             api: Arc::new(EngineApi::new(engine.ports, engine.credentials)),
             films_the_grown_screen: engine.films_the_grown_screen,
             engine_log: engine.engine_log,
-            aimed_at: engine.aimed_at,
+            filming: engine.filming,
             serves_steady: engine.serves_steady,
             sessions: sessions.clone(),
             machine: machine.clone(),

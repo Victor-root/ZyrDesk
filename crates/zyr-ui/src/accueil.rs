@@ -529,6 +529,12 @@ const REGLAGES: &[Element] = &[
         legende: "Bascule l'image de l'un à l'autre.",
         commande: Commande::Touche(Doing::Fullscreen),
     }),
+    Element::Reglage(Reglage {
+        mot: "Écran suivant de l'hôte",
+        legende: "Passe d'un écran de l'ordinateur distant au suivant, sans rien relancer. Ne \
+                  fait rien quand cet ordinateur n'en a qu'un.",
+        commande: Commande::Touche(Doing::NextScreen),
+    }),
     Element::Repli,
     Element::Reglage(Reglage {
         mot: "Codec vidéo",
