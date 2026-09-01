@@ -54,13 +54,8 @@ const TEMPS_CONFIRMATION: std::time::Duration = std::time::Duration::from_secs(4
 /// Le temps qu'une bonne nouvelle reste à l'écran avant de s'effacer.
 const TEMPS_ANNONCE: std::time::Duration = std::time::Duration::from_secs(6);
 
-/// Ce que le fil qui va et vient met à faire un aller, et le rythme
-/// auquel il est redessiné.
+/// Ce que le fil qui va et vient met à faire un aller.
 const VA_ET_VIENT: std::time::Duration = std::time::Duration::from_millis(1400);
-const IMAGE: u32 = 16;
-
-/// L'horloge qui porte ce fil, nommée pour que rien d'autre n'y réponde.
-const ANIME: usize = 1;
 
 /// Une empreinte fait toujours cette longueur. La vérifier ici évite
 /// d'aller déranger le service pour rien.
@@ -840,7 +835,7 @@ unsafe extern "system" fn answer(
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         DefWindowProcW, EN_CHANGE, HTCLIENT, IDC_ARROW, IDC_HAND, LoadCursorW, SetCursor,
         WM_COMMAND, WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-        WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETCURSOR, WM_SYSKEYDOWN, WM_TIMER,
+        WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETCURSOR, WM_SYSKEYDOWN,
     };
 
     match message {
@@ -854,7 +849,7 @@ unsafe extern "system" fn answer(
         // Demandée et non peinte tout de suite : peindre sans que rien
         // n'ait été invalidé ne peint rien du tout, le système ne
         // prêtant alors qu'une surface vide.
-        WM_TIMER if holding == ANIME => {
+        ANIME => {
             invalide(window);
             0
         }
@@ -938,6 +933,9 @@ unsafe extern "system" fn answer(
 /// lui-même.
 const AGIR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
+/// Une image de plus du fil qui va et vient, demandée par le rythme.
+const ANIME: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
+
 /// Où la souris est, en vrais pixels depuis le coin de la toile.
 fn ou_est(with: windows_sys::Win32::Foundation::LPARAM) -> (f32, f32) {
     let x = (with & 0xFFFF) as i16;
@@ -999,21 +997,15 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     horloge(window);
 }
 
-/// Fait battre l'horloge tant qu'un fil va et vient, et l'arrête après.
+/// Fait battre l'accueil tant qu'un fil va et vient, et l'arrête après.
 ///
 /// La seule chose de l'accueil qui bouge sans que personne ne touche à
 /// rien. Ailleurs, rien n'est redessiné tant que rien ne change.
 fn horloge(window: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
-
-    let anime = ETAT.lock().expect("accueil").ouverture.is_some();
-    // SAFETY: une horloge nommée par nous sur une fenêtre à nous.
-    unsafe {
-        if anime {
-            SetTimer(window, ANIME, IMAGE, None);
-        } else {
-            KillTimer(window, ANIME);
-        }
+    if ETAT.lock().expect("accueil").ouverture.is_some() {
+        crate::rythme::bat(window, ANIME);
+    } else {
+        crate::rythme::arrete(window);
     }
 }
 

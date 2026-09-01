@@ -137,13 +137,11 @@ const STANDING: f32 = AT_REST / UNDER_A_HAND;
 const GROWN: f32 = 1.0;
 const SHRUNK: f32 = HELD / UNDER_A_HAND;
 
-/// How long the logo takes to change size, and how often it is redrawn
-/// while it does.
+/// How long the logo takes to change size.
 const GROWS_IN: std::time::Duration = std::time::Duration::from_millis(120);
-const EVERY: u32 = 8;
 
-/// The timer that carries that growth, named so nothing else answers it.
-const GROWING: usize = 1;
+/// One more frame of that growth, asked for by the beat.
+const GROWING: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 
 /// The window itself, and what it is showing.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
@@ -460,8 +458,6 @@ fn wanted() -> f32 {
 /// Starts the logo growing towards what it should be, and says so to the
 /// clock that carries it there.
 fn head_for(window: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::SetTimer;
-
     let aim = wanted();
     {
         let mut growth = GROWTH.lock().expect("croissance du logo");
@@ -472,8 +468,7 @@ fn head_for(window: windows_sys::Win32::Foundation::HWND) {
         growth.to = aim;
         growth.since = Some(std::time::Instant::now());
     }
-    // SAFETY: a window of ours, given a clock named by us.
-    unsafe { SetTimer(window, GROWING, EVERY, None) };
+    crate::rythme::bat(window, GROWING);
 }
 
 /// What fraction of its full size the logo is drawn at right now.
@@ -612,8 +607,8 @@ unsafe extern "system" fn answer(
         TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DefWindowProcW, HTCLIENT, IDC_HAND, IDC_SIZEALL, KillTimer, LoadCursorW, SetCursor,
-        WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_SETCURSOR, WM_TIMER,
+        DefWindowProcW, HTCLIENT, IDC_HAND, IDC_SIZEALL, LoadCursorW, SetCursor, WM_LBUTTONDOWN,
+        WM_MOUSEMOVE, WM_SETCURSOR,
     };
 
     match message {
@@ -652,10 +647,9 @@ unsafe extern "system" fn answer(
             taken(window);
             0
         }
-        WM_TIMER if holding == GROWING => {
+        GROWING => {
             if arrived() {
-                // SAFETY: a clock of ours on a window of ours.
-                unsafe { KillTimer(window, GROWING) };
+                crate::rythme::arrete(window);
             }
             repaint(window);
             0

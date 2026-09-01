@@ -45,6 +45,10 @@ mod paint;
 #[cfg(windows)]
 mod icones;
 
+// Le battement de ce qui bouge, réglé sur le compositeur de Windows.
+#[cfg(windows)]
+mod rythme;
+
 // Le menu du bouton flottant, dessiné par ce programme.
 #[cfg(windows)]
 mod menu;
