@@ -30,22 +30,78 @@ fn main() {
     let out = std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("design.rs");
     std::fs::write(&out, written).expect("le système de design n'a pas pu être écrit");
 
-    // La ressource Windows : le manifeste et l'icône. Ce qui revient est
-    // dit et non tu : sur les autres systèmes c'est « rien à faire », et
-    // sous Windows un refus laisserait un programme sans son icône et
-    // sans ses contrôles modernes, ce qui se cherche longtemps.
-    println!("cargo:rerun-if-changed={RESOURCE}");
+    // La ressource Windows : le manifeste, l'icône et ce que le programme
+    // dit de lui-même. Ce qui revient est dit et non tu : sur les autres
+    // systèmes c'est « rien à faire », et sous Windows un refus laisserait
+    // un programme sans son icône et sans ses contrôles modernes, ce qui
+    // se cherche longtemps.
     println!("cargo:rerun-if-changed=zyrdesk.manifest");
-    let gravee = embed_resource::compile(RESOURCE, embed_resource::NONE);
+    let ecrite = std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join(RESOURCE);
+    std::fs::write(&ecrite, ressource()).expect("la ressource Windows n'a pas pu être écrite");
+    let gravee = embed_resource::compile(&ecrite, embed_resource::NONE);
     if let Err(e) = gravee.manifest_optional() {
         println!("cargo:warning=ressource Windows non gravée : {e}");
     }
 }
 
-/// Ce que Windows lit dans le programme avant de le lancer : les
-/// contrôles modernes, les vrais pixels, et l'icône de la barre des
-/// tâches.
+/// Ce que Windows lit dans le programme avant de le lancer.
 const RESOURCE: &str = "zyrdesk.rc";
+
+/// La ressource Windows du programme, écrite ici parce qu'elle porte la
+/// version, qui est celle du paquet et n'a donc pas à être recopiée.
+///
+/// Le manifeste sous le numéro un, qui est celui que Windows lit dans un
+/// programme. L'icône sous 32512, qui est le numéro d'une icône
+/// d'application : c'est sous celui-là que le système la cherche pour la
+/// barre des tâches, et sous celui-là que `icon.rs` la redemande à la
+/// taille exacte dont il a besoin. Et le nom que le gestionnaire des
+/// tâches affiche, qui est la description du paquet : ZyrDesk fait
+/// tourner plusieurs programmes sur une machine, et chacun doit dire
+/// lequel il est.
+fn ressource() -> String {
+    let dossier = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+    let manifeste = format!("{dossier}/zyrdesk.manifest").replace('\\', "/");
+    let icone = format!("{dossier}/../../packaging/brand/zyrdesk.ico").replace('\\', "/");
+    let version = std::env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION");
+    let nombres = version
+        .split('.')
+        .chain(std::iter::repeat("0"))
+        .take(4)
+        .collect::<Vec<_>>()
+        .join(",");
+    let quoi = std::env::var("CARGO_PKG_DESCRIPTION").expect("CARGO_PKG_DESCRIPTION");
+    format!(
+        r#"#pragma code_page(65001)
+1 24 "{manifeste}"
+32512 ICON "{icone}"
+
+1 VERSIONINFO
+FILEVERSION {nombres}
+PRODUCTVERSION {nombres}
+FILEOS 0x4L
+FILETYPE 0x1L
+{{
+BLOCK "StringFileInfo"
+{{
+BLOCK "040C04B0"
+{{
+VALUE "CompanyName", "ZyrDesk"
+VALUE "FileDescription", "{quoi}"
+VALUE "FileVersion", "{version}"
+VALUE "InternalName", "ZyrDesk"
+VALUE "OriginalFilename", "ZyrDesk.exe"
+VALUE "ProductName", "ZyrDesk"
+VALUE "ProductVersion", "{version}"
+}}
+}}
+BLOCK "VarFileInfo"
+{{
+VALUE "Translation", 0x40C, 1200
+}}
+}}
+"#
+    )
+}
 
 /// The stylesheet with its comments taken out, so a colour named inside
 /// one is never read as a value.

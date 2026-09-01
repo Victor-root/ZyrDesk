@@ -1,6 +1,9 @@
 [package]
 name = "zyr-ui"
-description = "Application ZyrDesk : la seule fenêtre que l'utilisateur voit"
+# Ce que le gestionnaire des tâches affiche. Sans accent : le compilateur
+# de ressources de Windows lit ce nom dans le jeu de caractères du
+# système, et une lettre accentuée y arrive coupée.
+description = "ZyrDesk : l'application"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

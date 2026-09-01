@@ -1941,6 +1941,28 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Ce que ça coûte.** Ce que la boîte à outils faisait dans l'ombre est maintenant écrit et doit être maintenu : la conscience des écrans, dite au démarrage et redite dans le manifeste ; les contrôles modernes du système, sans lesquels le mot en filigrane d'un champ de saisie ne s'affiche pas ; et l'icône du programme, gravée dans la ressource sous le numéro que Windows y cherche. Trois choses, écrites une fois, dans deux fichiers de vingt lignes.
 
+## D112. Chaque programme du produit dit dans le gestionnaire des tâches lequel il est (2026-09-01, pendant M4)
+
+**Le constat, fait par Victor.** Trois lignes dans le gestionnaire des tâches : « ZyrDesk », « ZyrDesk.exe » et « zyrdeskd ». La première est le moteur hôte, la deuxième l'application, la troisième le service, et rien à l'écran ne le dit. Quelqu'un qui ouvre cette liste pour savoir ce qui tourne sur sa machine n'apprend rien, et deux des trois noms sont des noms de fichiers.
+
+**Pourquoi il y en a trois, et pourquoi il en faut trois.** L'application ne peut pas être le service : le service tourne avant qu'une session Windows soit ouverte, et c'est ce qui permet de se connecter à un ordinateur où personne n'est connecté. Le moteur ne peut pas être l'application : c'est un programme d'un autre projet, piloté de l'extérieur, et le faire vivre dans notre processus reviendrait à le forker pour de bon.
+
+**Décision : ce que cette liste affiche est écrit dans chaque programme, et dit lequel il est.** Windows n'y montre pas le nom du fichier mais la description gravée dans l'exécutable. Elle est désormais posée pour les cinq :
+
+| Programme | Ce que la liste affiche |
+|---|---|
+| `ZyrDesk.exe` | ZyrDesk : l'application |
+| `zyrdeskd.exe` | ZyrDesk : le service de connexion distante |
+| `zyrdesk-host-engine.exe` | ZyrDesk : le moteur de diffusion |
+| moteur client | Moteur de session ZyrDesk |
+| `zyr-cli.exe` | ZyrDesk : l'outil en ligne de commande |
+
+Tous commencent par le nom du produit, donc la liste les range ensemble et personne n'a à chercher lequel appartient à quoi.
+
+**Et ce nom est écrit une seule fois par programme**, dans la description de son paquet, d'où la ressource Windows le lit à la compilation. Le nom du moteur hôte est passé par notre script de compilation, le moteur ne portant que ce qu'on lui donne.
+
+**Sans accent, et c'est mesuré et non supposé.** Le compilateur de ressources lit ce nom dans le jeu de caractères du système et non en Unicode, même avec la ligne qui lui demande le contraire : essayé, « le service d'accès distant » arrive dans l'exécutable coupé à « le service d'acc ». Et le nom du moteur hôte voyage en plus par une ligne de commande, où une apostrophe casse la compilation, également essayé. Les cinq noms sont donc écrits sans accent et sans apostrophe là où c'est nécessaire.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

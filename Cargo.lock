@@ -2187,6 +2187,7 @@ dependencies = [
  "clap",
  "tokio",
  "windows-sys 0.61.2",
+ "winresource",
  "zyr-control",
  "zyr-engine-client",
  "zyr-engine-host",

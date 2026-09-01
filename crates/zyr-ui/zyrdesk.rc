@@ -1,9 +1,0 @@
-// Les ressources de ZyrDesk.exe.
-//
-// Le manifeste sous le numéro un, qui est celui que Windows lit dans un
-// programme. L'icône sous 32512, qui est le numéro d'une icône
-// d'application : c'est sous celui-là que le système la cherche pour la
-// barre des tâches, et sous celui-là que `icon.rs` la redemande à la
-// taille exacte dont il a besoin.
-1 24 "zyrdesk.manifest"
-32512 ICON "../../packaging/brand/zyrdesk.ico"
