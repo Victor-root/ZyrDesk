@@ -36,7 +36,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::time::Duration;
 
 use crate::app::App;
@@ -284,19 +284,56 @@ struct Expected {
 
 static NUDGE: AtomicI64 = AtomicI64::new(0);
 
-/// Whether the menu opens upward, the picture having no room below.
+/// D'où la carte du menu s'ouvre, vue du bouton.
 ///
-/// The window is as tall as the menu for the whole session and hangs by
-/// the logo, which sits in one of its corners. Hung by the top, a button
-/// dragged low leaves the menu running off the bottom of the picture,
-/// where it is simply cut off. Hung by the bottom, the menu grows into
-/// the room that is there.
+/// Le bouton se pose n'importe où dans l'image, et la carte est plus
+/// haute que la moitié d'un écran : il n'y a pas un sens qui marche
+/// toujours, il y en a trois, et c'est la place qui reste autour du
+/// bouton qui décide lequel.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Sens {
+    /// Sous le bouton, quand l'image a la place dessous.
+    Bas,
+    /// Au-dessus, quand elle ne l'a qu'au-dessus.
+    Haut,
+    /// À gauche du bouton, quand ni l'un ni l'autre.
+    ///
+    /// Un bouton posé à mi-hauteur ne laisse assez de place ni dessous ni
+    /// dessus, et la carte y était coupée par le bas de l'image. À côté,
+    /// elle a toute la hauteur de l'image pour elle : elle ne part plus
+    /// du bouton, elle se pose à sa gauche et glisse de ce qu'il faut
+    /// pour tenir en entier.
+    Cote,
+}
+
+impl Sens {
+    /// Le sens rangé dans un nombre, le seul type qu'un atomique porte.
+    fn range(self) -> u8 {
+        match self {
+            Sens::Bas => 0,
+            Sens::Haut => 1,
+            Sens::Cote => 2,
+        }
+    }
+
+    /// Et relu. Un nombre que personne d'autre n'écrit : tout ce qui
+    /// n'est pas un sens connu est le sens par défaut.
+    fn lu(range: u8) -> Self {
+        match range {
+            1 => Sens::Haut,
+            2 => Sens::Cote,
+            _ => Sens::Bas,
+        }
+    }
+}
+
+/// Le sens en place, décidé à chaque pose du bouton.
 ///
-/// Decided here and not in the page: the page has no idea where on a
-/// screen it has been put. It is answered back to the page each time the
-/// page says what it draws, which is the one conversation the two have
-/// about this window's shape.
-static UPWARD: AtomicBool = AtomicBool::new(false);
+/// La fenêtre de la carte est aussi haute que la carte pendant toute la
+/// session et pend au logo, qui occupe un de ses coins. Décidé ici et
+/// non dans la carte : elle ne sait pas où on l'a posée sur un écran,
+/// et le logo comme elle ont besoin de la réponse.
+static SENS: AtomicU8 = AtomicU8::new(0);
 
 /// The logo alone, in real pixels, which is not the size of the window
 /// holding it.
@@ -334,25 +371,38 @@ fn how_it_shows() -> u32 {
     0
 }
 
-/// Whether a window that tall, hung at that corner, is better off
-/// growing upward.
+/// D'où une carte de cette hauteur s'ouvre, pour un bouton pendu là.
 ///
-/// Only ever when it would actually help: a picture too short for the
-/// menu either way keeps it below, where at least the top of it is the
-/// part that shows.
-fn opens_upward(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) -> bool {
+/// Dessous tant que ça tient, dessus sinon, et à côté quand ni l'un ni
+/// l'autre : c'est l'ordre dans lequel une carte se lit le plus
+/// naturellement depuis le bouton qui l'ouvre.
+///
+/// Une image trop courte pour la carte quel que soit le sens la garde
+/// du côté où il reste le plus de place : la mettre à côté ne
+/// l'empêcherait pas d'être coupée et lui coûterait en plus de ne plus
+/// partir du bouton.
+fn ou_s_ouvre(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) -> Sens {
     let below = picture.3 - anchor.1;
     if height <= below {
-        return false;
+        return Sens::Bas;
     }
     let above = anchor.1 + logo().1 - picture.1;
-    above > below
+    if height <= above {
+        return Sens::Haut;
+    }
+    if height <= picture.3 - picture.1 {
+        return Sens::Cote;
+    }
+    if above > below { Sens::Haut } else { Sens::Bas }
 }
 
 /// Works the direction out again for a window about to be that tall, and
 /// remembers it.
 fn decide_the_direction(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) {
-    UPWARD.store(opens_upward(picture, anchor, height), Ordering::Relaxed);
+    SENS.store(
+        ou_s_ouvre(picture, anchor, height).range(),
+        Ordering::Relaxed,
+    );
 }
 
 fn nudge() -> (i32, i32) {
@@ -678,7 +728,8 @@ fn put_the_button_up(app: &App, process: u32) {
     #[cfg(windows)]
     {
         let anchor = hung_from(picture, nudge(), (size, size), margin());
-        crate::logo::raise(app, size as u32, UPWARD.load(Ordering::Relaxed), anchor);
+        let sens = Sens::lu(SENS.load(Ordering::Relaxed));
+        crate::logo::raise(app, size as u32, sens == Sens::Haut, anchor);
         // La carte se mesure sur ce que ses lignes demandent, donc elle a
         // besoin de savoir de combien un pixel de page compte ici et quel
         // thème la fenêtre porte.
@@ -845,7 +896,7 @@ fn slide(picture: (i32, i32, i32, i32), from: (i32, i32), dx: i32, dy: i32) -> (
     // the button moves: this runs a hundred times a second under a hand,
     // and a trip through an event queue at that rhythm is what a button
     // lagging its own cursor is made of.
-    put_the_button(anchor);
+    put_the_button(picture, anchor);
     anchor
 }
 
@@ -1333,7 +1384,7 @@ async fn end_the_session(app: &App) -> Result<(), String> {
 pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
     let anchor = hung_from(picture, nudge(), logo(), margin());
     decide_the_direction(picture, anchor, menu_height());
-    put_the_button(anchor);
+    put_the_button(picture, anchor);
 }
 
 /// Ce que la carte du menu prend de haut, qui décide du sens d'ouverture.
@@ -1354,10 +1405,12 @@ fn menu_height() -> i32 {
 /// entre ce qu'on veut et ce qui est dessiné, la page qui prenait une
 /// image de retard étant partie.
 #[cfg(windows)]
-fn put_the_button(anchor: (i32, i32)) {
-    let upward = UPWARD.load(Ordering::Relaxed);
-    crate::logo::lay(anchor, upward);
-    crate::menu::lay(anchor, upward, crate::logo::box_side());
+fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
+    let sens = Sens::lu(SENS.load(Ordering::Relaxed));
+    // Le logo ne connaît que deux coins : à côté, la carte ne part plus
+    // de lui, et il garde donc le coin qu'il a quand elle est dessous.
+    crate::logo::lay(anchor, sens == Sens::Haut);
+    crate::menu::lay(anchor, sens, crate::logo::box_side(), picture);
 
     // Le système remonte une fenêtre possédée avec celle qui la possède,
     // ce qui est juste pour un bouton qui n'est en bas que parce que la
@@ -1381,7 +1434,7 @@ fn put_the_button(anchor: (i32, i32)) {
 static SHOWN: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(windows))]
-fn put_the_button(_anchor: (i32, i32)) {}
+fn put_the_button(_picture: (i32, i32, i32, i32), _anchor: (i32, i32)) {}
 
 /// The smallest picture the button still fits in, in real pixels.
 ///
@@ -1871,6 +1924,28 @@ mod tests {
         assert_eq!(loin, (1_000, 800 - 91));
         let avant = hung_from(image, (-5_000, -5_000), (91, 91), MARGIN);
         assert_eq!(avant, (100 + 91, 200));
+    }
+
+    #[test]
+    fn a_menu_with_no_room_below_nor_above_opens_beside_the_button() {
+        let image = (0, 0, 1_920, 1_080);
+        let bouton = 91;
+        ITS_LOGO.store(bouton, Ordering::Relaxed);
+        let haute = 700;
+        // Le bouton en haut : la carte tient dessous, où elle se lit
+        // depuis lui.
+        assert_eq!(ou_s_ouvre(image, (1_904, 16), haute), Sens::Bas);
+        // En bas : elle ne tient plus que dessus.
+        assert_eq!(ou_s_ouvre(image, (1_904, 1_000), haute), Sens::Haut);
+        // À mi-hauteur : ni l'un ni l'autre, et c'est là qu'elle était
+        // coupée par le bas de l'image.
+        assert_eq!(ou_s_ouvre(image, (1_904, 500), haute), Sens::Cote);
+        // Une image trop courte pour elle de toute façon : à côté elle
+        // serait coupée aussi, donc elle garde le côté où il reste le
+        // plus de place.
+        let courte = (0, 0, 1_920, 600);
+        assert_eq!(ou_s_ouvre(courte, (1_904, 300), haute), Sens::Haut);
+        assert_eq!(ou_s_ouvre(courte, (1_904, 100), haute), Sens::Bas);
     }
 
     #[test]

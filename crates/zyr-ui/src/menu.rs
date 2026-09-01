@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use crate::app::App;
 
 use crate::design::{self, Couleur, Palette};
-use crate::floating::Act;
+use crate::floating::{Act, Sens};
 use crate::icones;
 use crate::journal::note;
 use crate::mesures::Mesures;
@@ -79,9 +79,9 @@ struct Choix {
 /// au-dessus.
 ///
 /// Une échelle : plus grand, plus rapide, et on en cherche le bon cran en
-/// regardant l'image bouger. Les crans viennent du produit, et le curseur
-/// va de zéro au nombre de valeurs moins une : ce sont des crans nommés
-/// et non des nombres, les débits n'étant pas espacés régulièrement.
+/// regardant l'image bouger. Les crans viennent du produit, un par
+/// mégabit, et le curseur va de zéro au nombre de valeurs moins une : il
+/// pousse des rangs et non des nombres, comme les autres lignes à liste.
 struct Curseur {
     icone: &'static Icone,
     mot: &'static str,
@@ -1022,13 +1022,13 @@ pub fn haute() -> i32 {
     HAUTE.load(Ordering::Relaxed) as i32
 }
 
-/// Pose la carte sous le logo, ou au-dessus quand le menu s'ouvre vers le
-/// haut.
+/// Pose la carte sous le logo, au-dessus, ou à sa gauche, selon le sens
+/// que le bouton a décidé.
 ///
 /// La même ancre que le logo, dans le même geste : les deux fenêtres ne
 /// peuvent donc pas être en désaccord sur l'endroit où se trouve le
 /// bouton.
-pub fn lay(anchor: (i32, i32), upward: bool, logo: i32) {
+pub fn lay(anchor: (i32, i32), sens: Sens, logo: i32, picture: (i32, i32, i32, i32)) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
@@ -1048,24 +1048,34 @@ pub fn lay(anchor: (i32, i32), upward: bool, logo: i32) {
     // tombait vingt pixels trop bas et vingt trop à gauche, ce qui se
     // voit au premier coup d'oeil à côté de l'ancien menu.
     let echelle = echelle();
-    VERS_LE_HAUT.store(upward, Ordering::Relaxed);
+    VERS_LE_HAUT.store(sens == Sens::Haut, Ordering::Relaxed);
     let debord = debord_de_l_ombre(echelle).round() as i32;
     let carte_haute = haute - debord * 2;
     // Collée au même bord droit que le logo, et séparée de lui de
     // l'espace que la feuille de style met entre les deux.
     let entre = (design::PAS_2 * echelle).round() as i32;
-    let haut = if upward {
-        anchor.1 - logo - entre - carte_haute
-    } else {
-        anchor.1 + logo + entre
-    } - debord;
+    let (gauche, haut) = match sens {
+        Sens::Bas => (anchor.0 - large, anchor.1 + logo + entre - debord),
+        Sens::Haut => (
+            anchor.0 - large,
+            anchor.1 - logo - entre - carte_haute - debord,
+        ),
+        // À côté, la carte part du haut du bouton et glisse de ce qu'il
+        // faut pour tenir dans l'image : c'est toute sa raison d'être là
+        // plutôt que dessous. Sa fenêtre entière et non sa seule carte,
+        // le panneau d'une liste s'ouvrant dedans.
+        Sens::Cote => (
+            anchor.0 - logo - entre - large,
+            (anchor.1 - debord).clamp(picture.1, (picture.3 - haute).max(picture.1)),
+        ),
+    };
     // SAFETY: une fenêtre à nous, posée sans être activée ni
     // redimensionnée.
     unsafe {
         SetWindowPos(
             window as HWND,
             std::ptr::null_mut(),
-            anchor.0 - large + debord,
+            gauche + debord,
             haut,
             0,
             0,
@@ -1392,10 +1402,11 @@ fn hauteur_du_panneau(menu: &SessionMenu, quoi: Reglage, echelle: f32) -> f32 {
 
 /// Le panneau ouvert dans sa fenêtre, à gauche de la carte.
 fn panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> Option<Cadre> {
-    // La carte d'abord, et le verrou des réglages ensuite : la mesurer
-    // demande ce même verrou, et un verrou repris pendant qu'on le tient
-    // arrête le fil qui dessine pour de bon.
+    // La carte et la ligne d'abord, le verrou des réglages ensuite : les
+    // mesurer demande ce même verrou, et un verrou repris pendant qu'on
+    // le tient arrête le fil qui dessine pour de bon.
     let carte = carte(echelle);
+    let ligne = ligne_du_panneau(quoi, echelle)?;
     let reglages = REGLAGES.lock().expect("réglages du menu");
     let menu = reglages.as_ref()?;
     let haute = hauteur_du_panneau(menu, quoi, echelle);
@@ -1403,19 +1414,28 @@ fn panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> Option<Cadre> {
         return None;
     }
     let large = largeur_du_panneau(toile, menu, quoi, echelle);
-    // Aligné par le bord d'où le menu s'ouvre : les deux cartes n'ont pas
-    // la même hauteur, et c'est ce bord-là qui doit rester commun.
-    let haut = if VERS_LE_HAUT.load(Ordering::Relaxed) {
-        carte.bas - haute
-    } else {
-        carte.haut
-    };
+    // Ouvert en face de la ligne qui l'ouvre, sa première valeur sur
+    // elle : un panneau de deux valeurs collé en haut de la carte
+    // pendant qu'on clique une ligne du bas est un panneau qu'on cherche
+    // des yeux. Il descend de ce qu'il faut pour tenir dans la fenêtre,
+    // qui est bâtie assez haute pour le plus grand d'entre eux.
+    let bord = design::PAS_2 * echelle;
+    let dedans = debord_de_l_ombre(echelle);
+    let bas = (HAUTE.load(Ordering::Relaxed) as f32 - dedans - haute).max(dedans);
     Some(Cadre::pose(
-        carte.gauche - design::PAS_2 * echelle - large,
-        haut,
+        carte.gauche - bord - large,
+        (ligne.haut - bord).clamp(dedans, bas),
         large,
         haute,
     ))
+}
+
+/// Où tombe la ligne qui ouvre ce panneau, quand elle se voit.
+fn ligne_du_panneau(quoi: Reglage, echelle: f32) -> Option<Cadre> {
+    parcours(echelle)
+        .into_iter()
+        .find(|(_, ligne, _)| matches!(ligne, Ligne::Liste(liste) if liste.quoi == quoi))
+        .map(|(_, _, place)| place)
 }
 
 /// La place de chacune des valeurs du panneau ouvert.
@@ -2423,8 +2443,8 @@ fn dit_le_refus(refus: Result<(), String>) {
 /// Pousse le curseur là où la main est, et dit si elle en tenait un.
 ///
 /// Rien n'est écrit tant qu'elle le tient : un curseur poussé d'un bout à
-/// l'autre traverse quinze crans, et chacun serait un aller-retour jusqu'au
-/// service pour un débit que personne n'a voulu.
+/// l'autre traverse tous ses crans, et chacun serait un aller-retour
+/// jusqu'au service pour un débit que personne n'a voulu.
 fn pousse(window: windows_sys::Win32::Foundation::HWND, ou: (i32, i32)) -> bool {
     let Some(Cible::Barre(rang)) = *PRESSEE.lock().expect("appui du menu") else {
         return false;

@@ -1963,6 +1963,24 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Sans accent, et c'est mesuré et non supposé.** Le compilateur de ressources lit ce nom dans le jeu de caractères du système et non en Unicode, même avec la ligne qui lui demande le contraire : essayé, « le service d'accès distant » arrive dans l'exécutable coupé à « le service d'acc ». Et le nom du moteur hôte voyage en plus par une ligne de commande, où une apostrophe casse la compilation, également essayé. Les cinq noms sont donc écrits sans accent et sans apostrophe là où c'est nécessaire.
 
+## D113. Le menu du bouton flottant se pose là où il tient, et le débit se règle au mégabit (2026-09-01, pendant M4)
+
+**Trois constats de Victor, sur la même carte.**
+
+**Un.** Le bouton posé vers le milieu de l'image ouvrait un menu coupé par le bas. [D66](#d66-quatre-reprises-sur-le-bouton-flottant-2026-08-27-pendant-m4) ne connaissait que deux sens, dessous et dessus, et il en manquait un : à mi-hauteur, ni l'un ni l'autre n'a la place, et le choix se faisait alors entre deux sens qui coupent tous les deux.
+
+**Décision : un troisième sens, à gauche du bouton.** La carte y a toute la hauteur de l'image pour elle. Elle part du haut du bouton et glisse vers le haut de ce qu'il faut pour tenir en entier, ce qui est le seul moment où elle ne commence pas exactement au bouton : c'est ce glissement qui la garde entière, et c'est toute la raison d'être de ce sens-là. L'ordre reste dessous, dessus, à côté : c'est l'ordre dans lequel une carte se lit le plus naturellement depuis le bouton qui l'ouvre. Une image trop courte pour la carte quel que soit le sens la garde du côté où il reste le plus de place, comme avant : à côté elle serait coupée aussi, et elle y perdrait en plus de partir du bouton.
+
+**Ce que le logo en sait.** Rien de neuf. Il ne connaît que deux coins, et à côté il garde celui qu'il a quand la carte est dessous : ce sens-là ne le concerne pas, la carte ne partant plus de lui.
+
+**Deux.** Un sous-menu de deux lignes s'ouvrait tout en haut de la carte pendant qu'on cliquait une ligne du bas. Il était aligné sur le bord d'où le menu s'ouvre, ce qui est juste pour la liste des résolutions, trop haute pour partir d'ailleurs, et faux pour toutes les autres.
+
+**Décision : un sous-menu s'ouvre en face de la ligne qui l'ouvre**, sa première valeur sur elle. Il descend ou remonte de ce qu'il faut pour tenir dans sa fenêtre, qui est bâtie assez haute pour le plus grand d'entre eux. La liste des résolutions remonte donc toujours, et c'est le seul cas où le sous-menu ne part pas de sa ligne.
+
+**Trois.** Le curseur du débit sautait de cinq mégabits, puis de dix, puis de vingt : huit crans ronds pour toute l'échelle. C'était une échelle à viser du regard, pas à régler.
+
+**Décision : un cran par mégabit, de 5 à 80 Mb/s.** Les bornes ne bougent pas, l'espacement si. Le curseur est la manière dont on cherche le débit que sa propre liaison porte vraiment, en regardant l'image pendant qu'on le pousse, et un curseur qui saute dix mégabits n'est pas quelque chose avec quoi on cherche. Rien d'autre ne change : ce sont toujours des rangs qui sont poussés et non des nombres, et rien n'est écrit tant que la main tient le pouce.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

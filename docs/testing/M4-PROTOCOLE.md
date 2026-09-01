@@ -66,6 +66,9 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R69** | **Nouveau.** Le menu dessiné prend vie : les quatre chiffres du moteur se remplissent et se renouvellent une fois par seconde tant que la carte est ouverte, la phrase du flux dit de quoi l'image est faite, et les trois interrupteurs **Souris**, **Son** et **Clavier** sont là, chacun relu à l'ouverture plutôt que retenu. Deux réparations avec eux : l'icône « Masquer ce bouton » ne ressemblait à rien parce que le lecteur de dessins ne connaissait pas la courbe de Bézier, la seule du produit, et un chemin illisible se dit maintenant dans le journal au lieu de laisser une icône à moitié dessinée ; et le côté allumé d'un interrupteur s'écrivait avec une couleur qui n'existait pas, `--sur-accent`, employée par la page et définie nulle part |
 | **R70** | **Nouveau, et c'est le menu dessiné au complet.** Il lui manquait le curseur du débit, le codec, « Écran d'en face », « Appliquer les changements » et les deux listes qui s'ouvrent à gauche, résolution et écran de l'hôte : tout y est. Avec eux, deux réparations et un changement de couleur. Les interrupteurs étaient écrasés à la largeur de leur marge, parce qu'une mesure de texte était prise dans une boîte alignée à droite et large comme la moitié du plus grand nombre représentable ; la barre des mesures était tassée, parce que le texte y était empilé sur sa taille de caractère et non sur la hauteur de sa ligne. Et **l'accent du produit est maintenant l'or du logo** au lieu du bleu, dans tout le produit et pas seulement dans ce menu |
 | **R73** | **Nouveau, et c'est la fin de la boîte à outils.** La fenêtre, sa boucle de messages, l'icône près de l'horloge et l'instance unique sont écrites par le produit. Il ne reste plus aucune dépendance à une couche web, ni pour compiler ni pour tourner : trois cent vingt et une caisses de moins dans le verrou du projet. L'icône près de l'horloge est maintenant **dessinée** à la taille exacte que la barre demande, comme le reste du produit, au lieu d'être une image parmi six qu'il fallait choisir |
+| **R74** | **Nouveau.** Le menu du bouton flottant s'ouvre maintenant **à gauche du bouton** quand il n'a la place ni dessous ni dessus, c'est-à-dire quand le bouton est posé vers le milieu de l'image. Il y était coupé par le bas |
+| **R51**, **R65** | Touchés. Un sous-menu s'ouvre **en face de la ligne qui l'ouvre** et non plus en haut de la carte : une liste de deux écrans se posait tout en haut pendant qu'on cliquait une ligne du bas |
+| **R17** | Touché. Le curseur du **débit** avance d'un mégabit par cran au lieu de sauter de cinq à dix. Les bornes ne changent pas : de 5 à 80 Mb/s |
 | **R72** | **Nouveau, et c'est la fin du navigateur tout court.** L'accueil est dessiné par ZyrDesk : plus aucune vue web n'est ouverte dans le produit. Les sept écrans y sont, ainsi que l'écran d'ouverture d'une session. Ce que la boîte à outils fournit encore est la fenêtre, sa boucle d'événements et l'icône de zone de notification ; son dedans est une toile. Les vingt-cinq commandes qui existaient pour qu'une page pose ses questions sont devenues des appels, et le thème, qui vivait dans le magasin du navigateur, vit maintenant dans un fichier à côté de la place du bouton flottant. Les trois champs de saisie sont ceux de Windows, posés dans le cadre que nous dessinons : écrire du texte est le seul endroit où le système fait mieux que nous |
 | **R71** | **Nouveau, et c'est la fin du navigateur sur l'image.** Le menu de la vue web est supprimé, le menu dessiné passe sur le **clic gauche**, et la fenêtre qui portait la page n'existe plus. Mille sept cents lignes s'en vont avec elle : la découpe et tout ce qui la mesurait, la conversation où la page disait son dessin et où le coeur redimensionnait la fenêtre autour, l'attente qu'une page finisse par parler, sept commandes, et le fait que le menu prenait le clavier à l'image. Le sous-menu perd son titre, la ligne qui l'ouvre étant en face. Et ce que la machine d'en face sait encoder est redemandé jusqu'à ce qu'elle réponde, au lieu d'une seule question posée trop tôt |
 | **R65** | **Nouveau.** Une ligne **Écran de l'hôte** dans le menu du bouton flottant, qui liste les écrans allumés de la machine d'en face et permet d'en changer. Elle n'apparaît que quand cette machine en a plusieurs. Les écrans éteints n'y sont pas, ni l'écran virtuel du produit. Le moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc changer d'écran le redémarre et la session se rouvre toute seule : l'écran d'ouverture le dit. Une session qui ne choisit rien est servie sur l'**écran principal** d'en face, y compris après une session qui en avait choisi un autre |
@@ -1302,6 +1305,8 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Remonter le bouton vers le haut : le menu repasse en dessous, toujours entier. Le faire menu ouvert : il doit se retourner sans laisser de morceau de l'ancien dessin derrière lui.
 >
+> **Le troisième sens est dans R74** : posé vers le milieu, où il n'y a la place ni dessous ni dessus, le menu s'ouvre à gauche du bouton.
+>
 > **À vérifier de près, c'est le piège de cette reprise.** Ouvrir le menu en bas, puis changer la **taille** : la ligne **Appliquer les changements** apparaît, ce qui rend le menu plus haut. La fenêtre doit grandir **vers le haut**, et le menu rester entier et bien découpé, sans liseré ni morceau fantôme au-dessus.
 >
 > Le journal donne la mesure : `bouton flottant : LxH demandés, ... ; N morceaux dessinés jusqu'à LxH`. Les deux hauteurs doivent se suivre.
@@ -1670,6 +1675,22 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > ```
 >
 > **Et l'agrandissement de l'écran** : refaire le tour à 125, 150 et 175 %.
+
+> **R74 (le menu s'ouvre à côté du bouton quand il n'a la place ni dessous ni dessus)**
+>
+> C'est la suite de **R40**, qui ne connaissait que deux sens. Un bouton posé **vers le milieu de l'image** ne laisse assez de place ni dessous ni dessus : le menu partait quand même vers le bas et était coupé par le bord de l'image.
+>
+> Pendant une session, prendre le bouton flottant et le poser **à mi-hauteur**, contre le bord droit. Puis l'ouvrir.
+>
+> Attendu : la carte s'ouvre **à gauche du logo**, entière, rien de coupé, séparée de lui du même espace qu'elle l'est quand elle s'ouvre en dessous. Son bord haut part du haut du bouton, et **glisse vers le haut de ce qu'il faut** quand elle ne tiendrait pas sinon : c'est normal et c'est ce qui la garde entière. Le logo, lui, ne bouge pas d'un pixel.
+>
+> **Les trois sens, à la suite, en traînant lentement le bouton du haut vers le bas** : dessous en haut de l'image, à côté au milieu, dessus en bas. Chaque bascule doit se faire sans laisser de morceau de l'ancien dessin derrière elle, et le logo doit rester exactement sous la main pendant tout le trajet.
+>
+> **Avec un sous-menu ouvert**, aussi : ouvrir **Résolution**, qui est la plus longue liste, pendant que la carte est à côté du bouton. La liste et la carte doivent tenir toutes les deux dans l'image, de haut en bas.
+>
+> **Un sous-menu s'ouvre en face de sa ligne** (R51, R65). Ouvrir **Écran de l'hôte**, qui est en bas de la carte et qui ne liste que deux écrans : la liste doit apparaître **juste à gauche de cette ligne-là**, sa première valeur sur elle, et non collée en haut de la carte. Elle descend de ce qu'il faut quand elle ne tiendrait pas sinon. À refaire avec **Résolution**, dont la liste est trop haute pour partir de sa propre ligne : elle remonte, et c'est voulu.
+>
+> **Le curseur du débit avance d'un mégabit** (R17). Le pousser lentement : la valeur écrite au-dessus doit faire 40, 41, 42, et non 40 puis 60. Les bornes ne changent pas, 5 et 80 Mb/s.
 
 > **R73 (plus de boîte à outils du tout)**
 >

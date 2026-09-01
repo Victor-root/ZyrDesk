@@ -307,16 +307,32 @@ pub const SIZES_OFFERED: &[Asked] = &[
     Asked::Fixed(1024, 768),
 ];
 
-/// The rates offered, in kilobits a second.
+/// The lowest and highest rates offered, in megabits a second.
 ///
-/// Wide on purpose, and open at the low end. What a link carries is not
-/// something this product can work out, and neither is what a far
-/// computer can encode in time: the one that matters here is the second,
-/// since a computer that cannot encode a frame in sixteen milliseconds
-/// sends fewer of them however empty the link is.
-pub const RATES_OFFERED: &[u32] = &[
-    5_000, 10_000, 15_000, 20_000, 30_000, 40_000, 60_000, 80_000,
-];
+/// Wide on purpose. What a link carries is not something this product
+/// can work out, and neither is what a far computer can encode in time:
+/// the one that matters here is the second, since a computer that cannot
+/// encode a frame in sixteen milliseconds sends fewer of them however
+/// empty the link is.
+const RATE_LOWEST_MBPS: u32 = 5;
+const RATE_HIGHEST_MBPS: u32 = 80;
+
+/// The rates offered, in kilobits a second: every megabit between those
+/// two.
+///
+/// A megabit apart, and not the handful of round numbers this offered
+/// before. The slider is how a person hunts for the rate their own link
+/// actually carries, watching the picture as they push it, and a slider
+/// that jumps ten megabits at a time is not something one hunts with.
+pub const RATES_OFFERED: [u32; (RATE_HIGHEST_MBPS - RATE_LOWEST_MBPS + 1) as usize] = {
+    let mut rates = [0; (RATE_HIGHEST_MBPS - RATE_LOWEST_MBPS + 1) as usize];
+    let mut at = 0;
+    while at < rates.len() {
+        rates[at] = (RATE_LOWEST_MBPS + at as u32) * 1_000;
+        at += 1;
+    }
+    rates
+};
 
 /// The codecs offered.
 pub const CODECS_OFFERED: &[Codec] = &[Codec::Auto, Codec::H264, Codec::Hevc, Codec::Av1];
@@ -1009,8 +1025,22 @@ mod tests {
             next_in(SIZES_OFFERED, Asked::Fixed(640, 480)),
             SIZES_OFFERED[0]
         );
-        assert_eq!(next_in(RATES_OFFERED, 20_000), 30_000);
+        assert_eq!(next_in(&RATES_OFFERED, 20_000), 21_000);
         assert_eq!(next_in(CODECS_OFFERED, Codec::Av1), Codec::Auto);
+    }
+
+    #[test]
+    fn the_rates_offered_go_up_a_megabit_at_a_time() {
+        // Un cran par mégabit : c'est ce qui permet de viser un débit et
+        // non une tranche de dix.
+        assert_eq!(RATES_OFFERED.first(), Some(&(RATE_LOWEST_MBPS * 1_000)));
+        assert_eq!(RATES_OFFERED.last(), Some(&(RATE_HIGHEST_MBPS * 1_000)));
+        for pair in RATES_OFFERED.windows(2) {
+            assert_eq!(pair[1] - pair[0], 1_000, "entre {} et {}", pair[0], pair[1]);
+        }
+        // Et le débit par défaut reste un cran de la liste : un réglage
+        // écrit qui n'y serait pas serait refusé à la première relecture.
+        assert!(RATES_OFFERED.contains(&SessionSettings::default().bitrate_kbps));
     }
 
     #[test]
