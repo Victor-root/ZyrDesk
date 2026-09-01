@@ -36,6 +36,10 @@ mod logo;
 #[cfg(windows)]
 mod paint;
 
+// Le menu du bouton flottant, dessiné par ce programme.
+#[cfg(windows)]
+mod menu;
+
 mod mesures;
 mod picture;
 mod service;

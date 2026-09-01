@@ -228,6 +228,11 @@ fn box_of(side: u32) -> u32 {
     (side as f32 * UNDER_A_HAND / AT_REST).ceil() as u32
 }
 
+/// The side of the logo's window, which is what the menu hangs under.
+pub fn box_side() -> i32 {
+    ITS_BOX.load(Ordering::Relaxed) as i32
+}
+
 /// Takes the logo's window down with the session.
 pub fn lower(app: &AppHandle) {
     let window = ITS_WINDOW.swap(0, Ordering::Relaxed);
@@ -558,7 +563,7 @@ unsafe extern "system" fn answer(
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         DefWindowProcW, HTCLIENT, IDC_HAND, IDC_SIZEALL, KillTimer, LoadCursorW, SetCursor,
-        WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_SETCURSOR, WM_TIMER,
+        WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_SETCURSOR, WM_TIMER,
     };
 
     match message {
@@ -595,6 +600,14 @@ unsafe extern "system" fn answer(
         }
         WM_LBUTTONDOWN => {
             taken(window);
+            0
+        }
+        // Le menu que ce programme dessine, pendant qu'il se construit :
+        // le clic gauche garde celui de la vue web, de sorte que le
+        // bouton reste entier et que les deux se comparent côte à côte.
+        // Ce cas s'en va avec le dernier morceau du menu web.
+        WM_RBUTTONDOWN => {
+            crate::menu::montre(!crate::menu::ouvert());
             0
         }
         WM_TIMER if holding == GROWING => {

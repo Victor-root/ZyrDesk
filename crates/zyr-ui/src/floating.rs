@@ -914,12 +914,21 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
     // the one a hand comes down on. What is built below carries the menu
     // and nothing else.
     #[cfg(windows)]
-    crate::logo::raise(
-        app,
-        size as u32,
-        UPWARD.load(Ordering::Relaxed),
-        hung_from(picture, nudge(), (size, size), margin()),
-    );
+    {
+        let upward = UPWARD.load(Ordering::Relaxed);
+        crate::logo::raise(
+            app,
+            size as u32,
+            upward,
+            hung_from(picture, nudge(), (size, size), margin()),
+        );
+        // La carte du menu, dessinée par ce programme elle aussi. Elle se
+        // mesure sur ce que ses lignes demandent, donc elle a besoin de
+        // savoir de combien un pixel de page compte ici et de quel thème
+        // la fenêtre porte.
+        let scale = home.scale_factor().unwrap_or(1.0) as f32;
+        crate::menu::raise(app, scale, home.theme().ok() == Some(tauri::Theme::Light));
+    }
 
     let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
         .title("ZyrDesk")
@@ -1097,7 +1106,10 @@ pub fn lower(app: &AppHandle) {
     // back.
     MENU_UP.store(false, Ordering::Relaxed);
     #[cfg(windows)]
-    crate::logo::lower(app);
+    {
+        crate::menu::lower(app);
+        crate::logo::lower(app);
+    }
     if let Some(window) = app.get_webview_window(WINDOW) {
         let _ = window.close();
     }
@@ -2079,7 +2091,9 @@ fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
     // The logo hangs from the same corner, and is laid in the same
     // gesture: one anchor for the two windows is what keeps them from
     // ever disagreeing about where the button is.
-    crate::logo::lay(anchor, DRAWN_UPWARD.load(Ordering::Relaxed));
+    let upward = DRAWN_UPWARD.load(Ordering::Relaxed);
+    crate::logo::lay(anchor, upward);
+    crate::menu::lay(anchor, upward, crate::logo::box_side());
 
     let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
     if button.is_null() {
