@@ -39,6 +39,10 @@ enum Ligne {
     Acte {
         mot: &'static str,
         droite: &'static str,
+        /// Écrite dans la couleur des choses qui ne se défont pas. Une
+        /// seule ligne du menu l'est, et c'est celle qui coupe la
+        /// session.
+        grave: bool,
     },
 }
 
@@ -53,27 +57,33 @@ const LIGNES: [Ligne; 9] = [
     Ligne::Acte {
         mot: "Fenêtré ou plein écran",
         droite: "",
+        grave: false,
     },
     Ligne::Acte {
         mot: "Statistiques",
         droite: "Ctrl+Alt+Maj+S",
+        grave: false,
     },
     Ligne::Acte {
         mot: "Ctrl+Alt+Suppr",
         droite: "sur l'ordinateur distant",
+        grave: false,
     },
     Ligne::Acte {
         mot: "Verrouiller",
         droite: "l'ordinateur distant",
+        grave: false,
     },
     Ligne::Separateur,
     Ligne::Acte {
         mot: "Masquer ce bouton",
         droite: "",
+        grave: false,
     },
     Ligne::Acte {
         mot: "Terminer la session",
         droite: "",
+        grave: true,
     },
 ];
 
@@ -96,16 +106,24 @@ mod tenue {
     pub const SOUS_LE_MOT: f32 = 2.0;
 }
 
-/// Les quatre mesures, dans l'ordre où la barre les montre.
+/// Les quatre mesures, dans l'ordre où elles se lisent.
+///
+/// Les mêmes mots que la page, parce que ce sont les mêmes mesures : les
+/// inventer ici en donnerait quatre autres, et deux barres qui ne disent
+/// pas la même chose sur le même moteur.
 ///
 /// Les mots seulement : les nombres viennent de ce que le moteur écrit
 /// une fois par seconde, et tant qu'ils ne sont pas branchés la barre
-/// montre un tiret, ce qui est ce que la page montre elle aussi pour une
-/// mesure manquante.
-const MESURES: [&str; 4] = ["Latence", "Réseau", "Débit", "Images"];
+/// montre un tiret, ce que la page montre elle aussi pour une mesure
+/// manquante.
+const MESURES: [&str; 4] = ["Décodage", "Encodage", "Réseau", "Débit"];
 
 /// Ce qu'une mesure montre tant qu'elle n'a rien à dire.
 const RIEN: &str = "-";
+
+/// La ligne grise sous les chiffres, qui dit de quoi l'image est faite.
+/// Vide tant que le moteur n'a rien dit, comme dans la page.
+const FLUX: &str = "";
 
 /// La fenêtre de la carte, et ce qu'elle sait d'elle-même.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
@@ -229,21 +247,29 @@ pub fn lay(anchor: (i32, i32), upward: bool, logo: i32) {
         LARGE.load(Ordering::Relaxed) as i32,
         HAUTE.load(Ordering::Relaxed) as i32,
     );
+    // La fenêtre est plus grande que la carte, de tout ce que l'ombre
+    // déborde : c'est donc la **carte** qu'on pose, et la fenêtre autour
+    // d'elle. Posée comme si les deux ne faisaient qu'une, la carte
+    // tombait vingt pixels trop bas et vingt trop à gauche, ce qui se
+    // voit au premier coup d'oeil à côté de l'ancien menu.
+    let echelle = echelle();
+    let debord = debord_de_l_ombre(echelle).round() as i32;
+    let carte_haute = haute - debord * 2;
     // Collée au même bord droit que le logo, et séparée de lui de
     // l'espace que la feuille de style met entre les deux.
-    let entre = (design::PAS_2 * echelle()).round() as i32;
+    let entre = (design::PAS_2 * echelle).round() as i32;
     let haut = if upward {
-        anchor.1 - logo - entre - haute
+        anchor.1 - logo - entre - carte_haute
     } else {
         anchor.1 + logo + entre
-    };
+    } - debord;
     // SAFETY: une fenêtre à nous, posée sans être activée ni
     // redimensionnée.
     unsafe {
         SetWindowPos(
             window as HWND,
             std::ptr::null_mut(),
-            anchor.0 - large,
+            anchor.0 - large + debord,
             haut,
             0,
             0,
@@ -357,7 +383,7 @@ fn taille(toile: &Toile) -> (i32, i32) {
                 haute += hauteur_des_mesures(echelle);
             }
             Ligne::Separateur => haute += (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle,
-            Ligne::Acte { mot, droite } => {
+            Ligne::Acte { mot, droite, .. } => {
                 let mots = toile.largeur(mot, design::CORPS * echelle, false)
                     + toile.largeur(droite, design::LEGENDE * echelle, false);
                 large = large.max(
@@ -455,8 +481,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
                     );
                     y += (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle;
                 }
-                Ligne::Acte { mot, droite } => {
-                    acte(toile, carte, y, echelle, couleurs, mot, droite);
+                Ligne::Acte { mot, droite, grave } => {
+                    acte(toile, carte, y, echelle, couleurs, mot, droite, *grave);
                     y += tenue::LIGNE * echelle;
                 }
             }
@@ -490,6 +516,7 @@ fn acte(
     couleurs: Palette,
     mot: &str,
     droite: &str,
+    grave: bool,
 ) {
     let bord = design::PAS_2 * echelle;
     let dedans = Cadre::pose(
@@ -506,7 +533,11 @@ fn acte(
         mot,
         design::CORPS * echelle,
         false,
-        couleurs.texte,
+        if grave {
+            couleurs.erreur
+        } else {
+            couleurs.texte
+        },
         Cadre {
             gauche: apres_icone,
             ..dedans
@@ -558,6 +589,22 @@ fn mesures(toile: &Toile, carte: Cadre, y: f32, echelle: f32, couleurs: Palette)
                 haut + (design::LEGENDE + tenue::SOUS_LE_MOT) * echelle,
                 colonne,
                 design::CORPS * echelle,
+            ),
+            false,
+        );
+    }
+    if !FLUX.is_empty() {
+        toile.ecris(
+            FLUX,
+            design::LEGENDE * echelle,
+            false,
+            couleurs.texte_faible,
+            Cadre::pose(
+                carte.gauche + bord * 2.0,
+                haut + (design::LEGENDE + tenue::SOUS_LE_MOT + design::CORPS + design::PAS_1)
+                    * echelle,
+                carte.droite - carte.gauche - bord * 4.0,
+                design::LEGENDE * echelle,
             ),
             false,
         );
