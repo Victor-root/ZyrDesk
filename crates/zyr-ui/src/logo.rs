@@ -103,14 +103,26 @@ mod drawing {
     ];
 }
 
-/// The three sizes the logo takes, as fractions of its standing one.
+/// The three sizes the logo takes, in the page pixels they were written
+/// in: at rest, under a hand, and held.
 ///
-/// The same three the page used, kept to the hundredth: at rest, under a
-/// hand, and held. They are what Victor's button does and he has said so
-/// twice; what changed is who draws them.
-const HELD: f32 = 0.97;
-const STANDING: f32 = 1.0;
-const UNDER_A_HAND: f32 = 1.06;
+/// The same three to the hundredth. They are what Victor's button does
+/// and he has said so twice; what changed is who draws them.
+const AT_REST: f32 = 44.0;
+const UNDER_A_HAND: f32 = 46.64;
+const HELD: f32 = 42.68;
+
+/// The three again, as fractions of the window, which is the largest of
+/// them.
+///
+/// The window never changes size, so the logo is drawn as a share of it:
+/// a fraction of one is the whole window, and the standing size is
+/// therefore **not** one. Reading it as one drew the logo six per cent
+/// too big at rest and made it grow out of its own window under a hand,
+/// where it lost its right hand side to the edge.
+const STANDING: f32 = AT_REST / UNDER_A_HAND;
+const GROWN: f32 = 1.0;
+const SHRUNK: f32 = HELD / UNDER_A_HAND;
 
 /// How long the logo takes to change size, and how often it is redrawn
 /// while it does.
@@ -186,7 +198,7 @@ pub fn raise(app: &AppHandle, side: u32, upward: bool, anchor: (i32, i32)) {
 /// out again, and this one is laid a hundred and twenty times a second
 /// while it is dragged.
 fn box_of(side: u32) -> u32 {
-    (side as f32 * UNDER_A_HAND).ceil() as u32
+    (side as f32 * UNDER_A_HAND / AT_REST).ceil() as u32
 }
 
 /// Takes the logo's window down with the session.
@@ -351,15 +363,19 @@ fn build(owner: isize, anchor: (i32, i32)) {
     repaint(window);
     // SAFETY: a window of ours, shown without taking the front.
     unsafe { ShowWindow(window, SW_SHOWNOACTIVATE) };
-    note("bouton flottant : logo dessiné par ZyrDesk, sans vue web");
+    note(&format!(
+        "bouton flottant : logo dessiné par ZyrDesk, sans vue web ; \
+         fenêtre de {side} px, dessin de {:.0} au repos et {side} sous la main",
+        side as f32 * STANDING
+    ));
 }
 
 /// What the logo is heading for, given what a hand is doing to it.
 fn wanted() -> f32 {
     if TAKEN.load(Ordering::Relaxed) {
-        HELD
+        SHRUNK
     } else if UNDER.load(Ordering::Relaxed) {
-        UNDER_A_HAND
+        GROWN
     } else {
         STANDING
     }

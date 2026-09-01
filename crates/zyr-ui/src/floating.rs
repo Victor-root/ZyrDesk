@@ -2145,9 +2145,19 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
     };
 
     let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
-    if button.is_null() || shape.is_empty() {
+    if button.is_null() {
         return;
     }
+    // An empty shape is a shape, and the one this window wears most of
+    // the time: the logo is drawn elsewhere now, so with the menu closed
+    // this page paints nothing at all. Read as « nothing to do » instead,
+    // it left the window wearing no shape whatever, which for a window is
+    // not nothing but everything: the toolkit's own bare rectangle,
+    // fourteen hundred pixels of it with a title bar on top, laid across
+    // the middle of the session.
+    //
+    // Nothing below needs guarding: a shape of no pieces gathers into a
+    // region of no pixels, which is exactly what is wanted.
     // SAFETY: every shape made here is ours until the system takes the
     // one they are gathered into.
     unsafe {
