@@ -910,7 +910,11 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
     let size = button_size(app) as i32;
     ITS_LOGO.store(size, Ordering::Relaxed);
 
-    let built = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
+    // Which way this window is built and cut this time round. An
+    // instrument, and the whole of what it does is in `trial`.
+    let trial = crate::trial::starts();
+
+    let building = WebviewWindowBuilder::new(app, WINDOW, WebviewUrl::App("bouton.html".into()))
         .title("ZyrDesk")
         // The same light or dark as the window it hangs over. Both pages
         // decide their own colours, and both offer to follow the system;
@@ -935,7 +939,8 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         // against the picture underneath rather than against a ground, and
         // the edge is the one the page drew.
         //
-        .transparent(true)
+        .transparent(trial.transparent);
+    let building = if trial.ground {
         // And a ground of pure black with it, which is not a contradiction
         // but the other half of how this toolkit makes a window
         // transparent. It does not ask the system for a transparent
@@ -962,7 +967,12 @@ fn put_the_button_up(app: &AppHandle, process: u32) {
         // The alpha is nought and that is read: the window layer ignores
         // it and takes the black, the web view layer honours it and stays
         // transparent.
-        .background_color(tauri::window::Color(0, 0, 0, 0))
+        building.background_color(tauri::window::Color(0, 0, 0, 0))
+    } else {
+        building
+    };
+
+    let built = building
         .shadow(false)
         .resizable(false)
         .skip_taskbar(true)
@@ -2079,6 +2089,10 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
     if button.is_null() || shape.is_empty() {
         return;
     }
+    if crate::trial::now().square {
+        cut_to_a_square(button, size);
+        return;
+    }
     // SAFETY: every shape made here is ours until the system takes the
     // one they are gathered into.
     unsafe {
@@ -2142,6 +2156,47 @@ fn cut_to_what_is_drawn(shape: &[Piece], size: (i32, i32)) {
     }
     draw_it_all_again(button);
     say_what_it_was_cut_to(button, shape);
+}
+
+/// Cuts the window to a plain square around the logo, for the trials.
+///
+/// Four logos wide, hung from the same corner the logo is hung from, so
+/// that everything showing inside it that is not the logo is window the
+/// page has not painted, and nothing else. Which is the point: the defect
+/// is two pixels wide against a drawing, and eight explanations have been
+/// argued from photographs of two pixels. This is two hundred pixels of
+/// it, and it is either there or it is not.
+///
+/// Nothing is said in the journal here, and the numbers of the cut are
+/// not either: a square is not meant to match the drawing, so the lines
+/// that weigh one against the other would only be noise. Which trial is
+/// running is said once, where it starts.
+#[cfg(windows)]
+fn cut_to_a_square(button: windows_sys::Win32::Foundation::HWND, size: (i32, i32)) {
+    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
+
+    let side = (ITS_LOGO.load(Ordering::Relaxed) * 4)
+        .min(size.0)
+        .min(size.1);
+    let left = size.0 - side;
+    let top = if DRAWN_UPWARD.load(Ordering::Relaxed) {
+        size.1 - side
+    } else {
+        0
+    };
+    // SAFETY: the shape is ours until the system takes it, and still ours
+    // to free if it refuses.
+    unsafe {
+        let square = CreateRectRgn(left, top, left + side, top + side);
+        if square.is_null() {
+            return;
+        }
+        if SetWindowRgn(button, square, 0) == 0 {
+            DeleteObject(square);
+            return;
+        }
+    }
+    draw_it_all_again(button);
 }
 
 /// Has the window drawn again, and everything carried inside it with it.
@@ -2630,6 +2685,12 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
     const NO_EDGE: u32 =
         WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_DLGMODALFRAME;
 
+    // One of the trials builds this window without the layered attribute,
+    // to find out whether it is what lights the frosted glass. The frame
+    // is stripped either way: that is a different fault, it is answered,
+    // and nothing about a trial is a reason to hand the cross back.
+    let layered = crate::trial::now().layered;
+
     // SAFETY: a window we have just built, whose two styles are read and
     // written back, which is told how to read its own alpha, and which is
     // then asked to work its frame out again. Nothing here moves it,
@@ -2638,11 +2699,12 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
         let plain = GetWindowLongPtrW(button, GWL_STYLE);
         SetWindowLongPtrW(button, GWL_STYLE, plain & !(NO_FRAME as isize));
         let style = GetWindowLongPtrW(button, GWL_EXSTYLE);
-        SetWindowLongPtrW(
-            button,
-            GWL_EXSTYLE,
-            (style | WS_EX_LAYERED as isize) & !(NO_EDGE as isize),
-        );
+        let wanted = if layered {
+            style | WS_EX_LAYERED as isize
+        } else {
+            style
+        };
+        SetWindowLongPtrW(button, GWL_EXSTYLE, wanted & !(NO_EDGE as isize));
         // A style is only read when the frame is worked out again, and
         // nothing else here asks for that: without this the window keeps
         // the frame it was born with for the rest of the session.
@@ -2673,9 +2735,9 @@ fn let_the_alpha_through(button: windows_sys::Win32::Foundation::HWND) {
         // composited from once it is layered is not something the two
         // documentations settle between them. Kept and said plainly is
         // the honest state of it.
-        SetLayeredWindowAttributes(button, 0, 255, LWA_ALPHA)
+        !layered || SetLayeredWindowAttributes(button, 0, 255, LWA_ALPHA) != 0
     };
-    if told == 0 {
+    if !told {
         note("bouton flottant : Windows a refusé l'alpha d'ensemble du calque");
     }
     say_what_it_wears(button);

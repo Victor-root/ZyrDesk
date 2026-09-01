@@ -61,6 +61,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
 | **R46ter** | **Refait, et c'est un défaut que j'avais introduit moi-même en corrigeant R46bis.** « Fluide » n'atteignait jamais la cadence demandée et variait exactement comme « Économe » : relevé à 50 images/s pour 60 demandées, avec 2,35 ms d'encodage et 1 ms de réseau, donc rien n'était à l'étroit. Une image capturée achetait **deux** périodes comptées depuis son arrivée, si bien qu'un écran changeant entre la moitié de la cadence visée et la cadence visée ne déclenchait jamais la moindre répétition : le moteur servait ce que le bureau produisait, c'est-à-dire ce que donne le fait de ne rien demander. Les deux réglages étaient donc identiques sur tout bureau qui change plus de trente fois par seconde. La grille des créneaux est maintenant fixe et une image presque à l'heure prend son propre créneau. **À vérifier après recompilation du moteur hôte** |
 | **R66** | **Nouveau, et c'est la réponse à ce que D97 laissait ouvert.** Le bord du bouton flottant est lisse **et d'épaisseur égale tout autour**, y compris sur un fond blanc. Deux corrections pour un seul défaut : la transparence par pixel était demandée à moitié, il manquait de déclarer la fenêtre *layered* avec une opacité constante de 255 ; et la découpe arrondissait vers l'intérieur d'une fraction différente sur chaque bord, ce qui rognait le contour d'un pixel d'un côté et de deux de l'autre. Elle arrondit maintenant vers le dehors, également sur les quatre bords. La couleur de fond part avec la transparence, les deux s'excluant, et un pixel pas encore peint ne montre plus rien au lieu de montrer du blanc. Le logo garde son grandissement au survol : il a été retiré une journée, parce que le dessin n'est net qu'à sa taille de repos, où il tombe juste sur la grille de l'écran, et remis aussitôt à la demande de Victor |
+| **R67** | **Nouveau, et ce n'est pas une vérification mais une expérience.** Cinq sessions de suite, chacune bâtissant le bouton flottant autrement, pour savoir laquelle des trois choses que ZyrDesk fait à cette fenêtre allume le verre dépoli qu'on voit dans les pixels qu'elle ne peint pas. Le journal dit lequel des cinq tourne. Instrument temporaire, retiré dès qu'il aura répondu |
 | **R65** | **Nouveau.** Une ligne **Écran de l'hôte** dans le menu du bouton flottant, qui liste les écrans allumés de la machine d'en face et permet d'en changer. Elle n'apparaît que quand cette machine en a plusieurs. Les écrans éteints n'y sont pas, ni l'écran virtuel du produit. Le moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc changer d'écran le redémarre et la session se rouvre toute seule : l'écran d'ouverture le dit. Une session qui ne choisit rien est servie sur l'**écran principal** d'en face, y compris après une session qui en avait choisi un autre |
 | **R64** | **Nouveau.** Pendant une session, la vignette de ZyrDesk dans Win+Tab et Alt+Tab est de la taille des autres. Elle était nettement plus petite, quelle que soit la taille de la fenêtre, plein écran compris : ZyrDesk disait à Windows de ne pas photographier sa fenêtre et lui fournissait l'image lui-même, ce qui plafonne la vignette à la taille que Windows réclame. C'était nécessaire quand l'image de la session était une fenêtre posée par-dessus la nôtre, ça ne l'est plus depuis qu'elle est portée par notre fenêtre |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
@@ -1530,6 +1531,43 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **Et l'écart entre ce que la page peint et ce que la fenêtre mesure**, écrit au bout de la ligne de taille : `… ; bord droit peint à …, soit … px de fenêtre que la page n'atteint pas`. Ce nombre doit rester **sous le pixel**. La page compte tout depuis `clientWidth`, qui est un entier de pixels de page, et le coeur repose la forme depuis le bord droit réel de la fenêtre, qui est un entier de vrais pixels ; s'ils s'écartent, toute la découpe glisse d'une fraction de pixel et le halo devient un trait franc. **C'est le nombre à relever si le bouton paraît propre sur une machine et sale sur l'autre**, et il faut le comparer entre PC-VICTOR et NOTEBOOK-VICTOR.
 >
 > **Et l'agrandissement de l'écran compte** : refaire le tour à 125 %, 150 % et 175 %. C'est à 175 % que ce qui reste se voit le mieux.
+
+> **R67 (l'essai du bord : d'où vient le verre dépoli)**
+>
+> **Ce n'est pas une vérification, c'est une expérience**, et elle demande cinq sessions de suite. Ce build embarque un instrument temporaire qui bâtit le bouton flottant d'une façon différente à chaque session, dans l'ordre, pour savoir laquelle des trois choses que ZyrDesk fait à cette fenêtre allume le verre dépoli. Il sera retiré dès qu'il aura répondu.
+>
+> **Ce qu'on sait déjà** : un pixel de cette fenêtre que la page ne peint pas montre du verre dépoli qui éclaircit ce qu'il y a derrière, mesuré à `203,209,216` sur du noir et `215,228,241` sur un bureau brun. **Ce qu'on ne sait pas** : lequel des trois réglages de la fenêtre l'allume, le calque, la transparence ou le fond. Les trois se lisent comme inoffensifs dans les documentations, donc on les éteint un par un.
+>
+> **Comment ça marche** : une session = un essai. Ouvrir une session, regarder, capturer, fermer la session, en rouvrir une : c'est l'essai suivant. Après le cinquième ça repart au premier. **Sans fermer ZyrDesk entre deux** : c'est la fermeture de la *session* qui fait avancer, pas celle du programme.
+>
+> **Le journal dit lequel tourne**, en toutes lettres, au moment où le bouton apparaît :
+>
+> ```
+> essai du bord 3/5 : découpé en carré, sans calque. Regarde le bouton, prends une capture, puis ferme la session et rouvre-la pour passer au suivant.
+> ```
+>
+> **Le décor à mettre avant de commencer** : un fond bien uni derrière le bouton sur le bureau distant, et **deux fois** de préférence, une fois sur du blanc et une fois sur du noir. C'est la comparaison des deux qui dit si ce qu'on voit a une couleur à lui ou s'il éclaircit ce qu'il y a derrière.
+>
+> **Les cinq essais**
+>
+> 1. **Le bouton tel qu'il est.** Le produit sans rien de changé. Il sert de témoin : si celui-là ne ressemble pas à ce que tu avais avant, c'est autre chose qui a bougé et le reste de l'expérience ne veut rien dire.
+> 2. **Découpé en carré.** La fenêtre n'est plus découpée sur le dessin mais sur un **carré de quatre logos de côté**, accroché au même coin. Tout ce qui est dans ce carré et qui n'est pas le logo est de la fenêtre que personne ne peint. C'est la reproduction du défaut en grand : deux cents pixels au lieu de deux.
+> 3. **Le même carré, sans calque.**
+> 4. **Le même carré, sans transparence.**
+> 5. **Le même carré, sans fond noir.**
+>
+> **Ce qu'il faut faire à chaque essai** : ouvrir la session, **ne pas ouvrir le menu** (le carré le couperait), poser la souris loin du bouton, et prendre une capture d'écran de la zone du bouton. Puis fermer la session. Cinq captures, plus le journal à la fin.
+>
+> **Ce que ça peut donner, et rien de tout ça n'est une panne** : à partir du deuxième essai le bouton va avoir l'air cassé, avec un carré autour. Aux essais 3, 4 et 5 il peut devenir une plaque blanche ou une plaque noire. **C'est normal et c'est même le but** : ce qui compte n'est pas si c'est joli, c'est **de quoi le carré est rempli**.
+>
+> **Comment se lit le résultat**
+>
+> - Si le carré de l'essai 2 est **pâle et laisse deviner le bureau au travers**, le défaut est reproduit en grand et la suite a un sens.
+> - Si un des essais 3, 4 ou 5 rend le carré **franchement transparent**, on tient le coupable : c'est ce réglage-là qui allume le verre.
+> - Si un des essais rend le carré **franchement opaque**, blanc ou noir, ce réglage n'est pas le coupable, il est juste ce qui rend la fenêtre transparente du tout.
+> - Si les essais 3, 4 et 5 donnent tous la même chose que le 2, aucun des trois n'est en cause et le verre vient d'ailleurs. C'est un résultat aussi, et il ferme trois portes d'un coup.
+>
+> **Le journal complet est à envoyer avec les captures.** Les cinq lignes `essai du bord …` disent dans quel ordre les captures ont été prises, et c'est ce qui les rend lisibles.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

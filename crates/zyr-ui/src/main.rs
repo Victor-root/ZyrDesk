@@ -33,6 +33,7 @@ mod shortcuts;
 mod startup;
 mod theme;
 mod tray;
+mod trial;
 
 #[cfg(windows)]
 mod elevated;
