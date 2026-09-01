@@ -52,7 +52,7 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 ## M4 : Interface v1 + moteurs auto-compilés
 
 - Objectif : le produit ressemble à ZyrDesk et se pilote à la souris.
-- Contenu : app Tauri (accueil, interrupteur hôte, liste LAN sans compte via mDNS, connexion, réglages minimaux), design system v1 (tokens + composants de base), builds reproductibles des moteurs avec rebranding (patchs P-M2), lecteur lancé détaché + rattachement.
+- Contenu : application ZyrDesk (accueil, interrupteur hôte, liste LAN sans compte via mDNS, connexion, réglages minimaux), design system v1 (tokens + composants de base), builds reproductibles des moteurs avec rebranding (patchs P-M2), lecteur lancé détaché + rattachement.
 - Fait : le service tient les deux extrémités de tunnel, y compris sortantes, et se pilote par tube nommé. `zyr-cli connect` ne tient plus rien : il demande une voie, lance le lecteur sur les adresses locales rendues, et dit au service quel processus cette voie sert. Fermer la fenêtre de commande ne coupe plus la session ; une voie que plus personne n'utilise se referme seule. Conséquence attendue de D2 : le service est désormais requis sur le PC client aussi.
 - Fait : le moteur client est compilé par nos soins et porte les patchs P-M2 (marque), P-M1 (aucune fenêtre à lui avant l'image) et P-M5 (codes de sortie distincts, lus par notre superviseur).
 - Fait : le moteur hôte est compilé par nos soins et porte notre nom, notre icône et notre éditeur. Le patch P-S2 se réduit à exposer le seul champ que le moteur ne laissait pas encore choisir ; le reste est passé à la configuration.

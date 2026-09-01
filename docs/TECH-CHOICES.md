@@ -18,7 +18,7 @@ Chaque brique, le choix retenu, la raison, et les alternatives sérieusement con
 | Découverte LAN | mdns-sd | Éprouvé, sans runtime imposé |
 | Mappage de ports | portmapper (UPnP + NAT-PMP + PCP) | Crate maintenue et utilisée en production par iroh |
 | Comptes | Argon2id, jetons courts, TOTP | Standard moderne |
-| Installateur | NSIS via Tauri + étapes personnalisées (service, pare-feu) | Voie recommandée par Tauri, extensible |
+| Installateur | NSIS, script à nous + étapes personnalisées (service, pare-feu) | Un seul format, scriptable, sans dépendance d'outillage |
 
 ## Justifications détaillées et alternatives rejetées
 
@@ -32,13 +32,13 @@ Puis la fenêtre elle-même, sa boucle de messages, son icône près de l'horlog
 
 Ce que le raisonnement d'origine avait juste : la vidéo ne traverse jamais l'interface, donc sa technologie n'influence pas la latence. Ce qu'il avait manqué : une interface posée **par-dessus** une vidéo n'est pas dans le chemin de l'image mais elle est dans le même pixel, et là un navigateur ne sait pas se taire.
 
-Interface : Tauri v2 plutôt que...
+Interface : ce qui avait été écarté à l'époque du choix d'origine
 
 - Slint (Rust natif) : sérieux et léger, mais atteindre un rendu réellement premium y coûte beaucoup plus d'effort qu'en web (écosystème de design réduit), et la version gratuite impose une attribution visible (sinon licence commerciale payante). Le produit a fini par dessiner lui-même, ce qui revient au même effort sans la licence ni la dépendance.
 - Flutter desktop : très beau rendu possible, mais runtime lourd, deuxième langage (Dart) à vie dans le projet, et desktop Windows moins mûr que le mobile.
 - Qt Quick : capable, mais liaison Rust (cxx-qt) pré-1.0, contraintes LGPL de déploiement à gérer, et style par défaut loin de la cible.
 - egui / iced : pas au niveau visuel exigé sans effort massif ; le rendu en mode immédiat consomme du CPU en continu, exactement ce qu'un produit de streaming doit éviter.
-- Electron : validait aussi le besoin (c'est le choix de plusieurs concurrents commerciaux), mais 10 fois plus lourd que Tauri pour le même résultat, sans bénéfice puisque notre cœur est déjà en Rust.
+- Electron : validait aussi le besoin (c'est le choix de plusieurs concurrents commerciaux), mais 10 fois plus lourd pour le même résultat, sans bénéfice puisque notre cœur est déjà en Rust.
 
 Le point non négociable derrière ce choix : la fenêtre vidéo est un processus natif séparé (Direct3D via le moteur client). L'interface n'est jamais dans le chemin de la vidéo, donc sa technologie n'influence pas la latence.
 
@@ -68,7 +68,7 @@ Windows : service en Rust maison plutôt que réutiliser le service de Sunshine
 
 Packaging : NSIS plutôt que MSI
 
-- Recommandation actuelle de Tauri (un seul format), suffisant pour app + service + règles pare-feu + (plus tard) pilote optionnel. MSI reconsidérable si un besoin de déploiement d'entreprise apparaît.
+- Un seul format, scriptable de bout en bout, suffisant pour app + service + règles pare-feu + (plus tard) pilote optionnel. MSI reconsidérable si un besoin de déploiement d'entreprise apparaît.
 
 ## Contraintes transverses actées
 

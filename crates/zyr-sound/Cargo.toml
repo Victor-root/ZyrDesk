@@ -12,7 +12,7 @@ repository.workspace = true
 # structures et des constantes. Écrire ces interfaces à la main
 # reviendrait à recopier des tables de fonctions que rien ne vérifie.
 # Le paquet windows est du même éditeur, il est déjà dans le verrou du
-# dépôt (Tauri s'en sert), et le compilateur y contrôle chaque appel.
+# dépôt (l'interface s'en sert), et le compilateur y contrôle chaque appel.
 windows = { version = "0.61.3", features = [
     "Win32_Media_Audio",
     # Le muet des enceintes, qui est une propriété du périphérique et
