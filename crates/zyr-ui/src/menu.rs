@@ -460,11 +460,17 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         toile.remplis(carte, rayon, couleurs.surface_1);
         toile.trace_dedans(carte, rayon, tenue::TRAIT * echelle, couleurs.trait_fort);
 
+        let pinceau = Pinceau {
+            toile,
+            carte,
+            echelle,
+            couleurs,
+        };
         let mut y = carte.haut + bord;
         for ligne in &LIGNES {
             match ligne {
                 Ligne::Mesures => {
-                    mesures(toile, carte, y, echelle, couleurs);
+                    pinceau.mesures(y);
                     y += hauteur_des_mesures(echelle);
                 }
                 Ligne::Separateur => {
@@ -482,7 +488,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
                     y += (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle;
                 }
                 Ligne::Acte { mot, droite, grave } => {
-                    acte(toile, carte, y, echelle, couleurs, mot, droite, *grave);
+                    pinceau.acte(y, mot, droite, *grave);
                     y += tenue::LIGNE * echelle;
                 }
             }
@@ -506,108 +512,122 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     });
 }
 
-/// Une ligne qu'on clique : la place de son icône, son mot, et ce qui est
-/// écrit à sa droite.
-fn acte(
-    toile: &Toile,
+/// Ce qui ne change pas pendant qu'une carte se dessine : de quoi
+/// dessiner, où est la carte, de combien un pixel de page compte, et le
+/// thème.
+///
+/// Porté ensemble plutôt que passé quatre fois à chaque ligne. Le menu
+/// n'a pour l'instant que deux sortes de lignes ; il en aura les
+/// interrupteurs, le curseur et les listes, et chacune voudrait les
+/// mêmes quatre choses.
+struct Pinceau<'a> {
+    toile: &'a Toile,
     carte: Cadre,
-    y: f32,
     echelle: f32,
     couleurs: Palette,
-    mot: &str,
-    droite: &str,
-    grave: bool,
-) {
-    let bord = design::PAS_2 * echelle;
-    let dedans = Cadre::pose(
-        carte.gauche + bord,
-        y,
-        carte.droite - carte.gauche - bord * 2.0,
-        tenue::LIGNE * echelle,
-    );
-    // La place de l'icône est tenue, l'icône elle-même viendra : un mot
-    // qui glisserait de dix-huit pixels le jour où elle arrive serait une
-    // mise en page à refaire deux fois.
-    let apres_icone = dedans.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle;
-    toile.ecris(
-        mot,
-        design::CORPS * echelle,
-        false,
-        if grave {
-            couleurs.erreur
-        } else {
-            couleurs.texte
-        },
-        Cadre {
-            gauche: apres_icone,
-            ..dedans
-        },
-        false,
-    );
-    if !droite.is_empty() {
+}
+
+impl Pinceau<'_> {
+    /// Une ligne qu'on clique : la place de son icône, son mot, et ce qui
+    /// est écrit à sa droite.
+    fn acte(&self, y: f32, mot: &str, droite: &str, grave: bool) {
+        let (toile, carte, echelle, couleurs) =
+            (self.toile, self.carte, self.echelle, self.couleurs);
+        let bord = design::PAS_2 * echelle;
+        let dedans = Cadre::pose(
+            carte.gauche + bord,
+            y,
+            carte.droite - carte.gauche - bord * 2.0,
+            tenue::LIGNE * echelle,
+        );
+        // La place de l'icône est tenue, l'icône elle-même viendra : un mot
+        // qui glisserait de dix-huit pixels le jour où elle arrive serait une
+        // mise en page à refaire deux fois.
+        let apres_icone = dedans.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle;
         toile.ecris(
-            droite,
-            design::LEGENDE * echelle,
+            mot,
+            design::CORPS * echelle,
             false,
-            couleurs.texte_faible,
+            if grave {
+                couleurs.erreur
+            } else {
+                couleurs.texte
+            },
             Cadre {
-                droite: dedans.droite - design::PAS_2 * echelle,
+                gauche: apres_icone,
                 ..dedans
             },
-            true,
+            false,
         );
+        if !droite.is_empty() {
+            toile.ecris(
+                droite,
+                design::LEGENDE * echelle,
+                false,
+                couleurs.texte_faible,
+                Cadre {
+                    droite: dedans.droite - design::PAS_2 * echelle,
+                    ..dedans
+                },
+                true,
+            );
+        }
     }
 }
 
-/// La barre des quatre mesures : un mot par-dessus un nombre, quatre
-/// fois, et la phrase du flux en dessous.
-fn mesures(toile: &Toile, carte: Cadre, y: f32, echelle: f32, couleurs: Palette) {
-    let bord = design::PAS_2 * echelle;
-    let haut = y + bord;
-    for (rang, mot) in MESURES.iter().enumerate() {
-        let gauche = carte.gauche
-            + bord * 2.0
-            + rang as f32 * (tenue::MESURE + tenue::ENTRE_MESURES) * echelle;
-        let colonne = tenue::MESURE * echelle;
-        toile.ecris(
-            mot,
-            design::LEGENDE * echelle,
-            false,
-            couleurs.texte_faible,
-            Cadre::pose(gauche, haut, colonne, design::LEGENDE * echelle),
-            false,
-        );
-        toile.ecris(
-            // Un tiret tant que le moteur n'a rien dit, le même que celui
-            // que la page montre pour une mesure qui manque.
-            RIEN,
-            design::CORPS * echelle,
-            false,
-            couleurs.texte,
-            Cadre::pose(
-                gauche,
-                haut + (design::LEGENDE + tenue::SOUS_LE_MOT) * echelle,
-                colonne,
-                design::CORPS * echelle,
-            ),
-            false,
-        );
-    }
-    if !FLUX.is_empty() {
-        toile.ecris(
-            FLUX,
-            design::LEGENDE * echelle,
-            false,
-            couleurs.texte_faible,
-            Cadre::pose(
-                carte.gauche + bord * 2.0,
-                haut + (design::LEGENDE + tenue::SOUS_LE_MOT + design::CORPS + design::PAS_1)
-                    * echelle,
-                carte.droite - carte.gauche - bord * 4.0,
+impl Pinceau<'_> {
+    /// La barre des quatre mesures : un mot par-dessus un nombre, quatre
+    /// fois, et la phrase du flux en dessous.
+    fn mesures(&self, y: f32) {
+        let (toile, carte, echelle, couleurs) =
+            (self.toile, self.carte, self.echelle, self.couleurs);
+        let bord = design::PAS_2 * echelle;
+        let haut = y + bord;
+        for (rang, mot) in MESURES.iter().enumerate() {
+            let gauche = carte.gauche
+                + bord * 2.0
+                + rang as f32 * (tenue::MESURE + tenue::ENTRE_MESURES) * echelle;
+            let colonne = tenue::MESURE * echelle;
+            toile.ecris(
+                mot,
                 design::LEGENDE * echelle,
-            ),
-            false,
-        );
+                false,
+                couleurs.texte_faible,
+                Cadre::pose(gauche, haut, colonne, design::LEGENDE * echelle),
+                false,
+            );
+            toile.ecris(
+                // Un tiret tant que le moteur n'a rien dit, le même que celui
+                // que la page montre pour une mesure qui manque.
+                RIEN,
+                design::CORPS * echelle,
+                false,
+                couleurs.texte,
+                Cadre::pose(
+                    gauche,
+                    haut + (design::LEGENDE + tenue::SOUS_LE_MOT) * echelle,
+                    colonne,
+                    design::CORPS * echelle,
+                ),
+                false,
+            );
+        }
+        if !FLUX.is_empty() {
+            toile.ecris(
+                FLUX,
+                design::LEGENDE * echelle,
+                false,
+                couleurs.texte_faible,
+                Cadre::pose(
+                    carte.gauche + bord * 2.0,
+                    haut + (design::LEGENDE + tenue::SOUS_LE_MOT + design::CORPS + design::PAS_1)
+                        * echelle,
+                    carte.droite - carte.gauche - bord * 4.0,
+                    design::LEGENDE * echelle,
+                ),
+                false,
+            );
+        }
     }
 }
 
