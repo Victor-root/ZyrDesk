@@ -713,25 +713,18 @@ fn written(step: &Step) -> String {
 /// leave that window exactly as it found it, and « sometimes it ends up
 /// minimised » is the kind of report that cannot be chased without
 /// knowing which of the two sides it was already on.
-fn how_the_window_stands(app: &AppHandle, when: &str) {
-    use tauri::Manager as _;
-
-    let Some(window) = app.get_window(crate::HOME) else {
+fn how_the_window_stands(_app: &AppHandle, when: &str) {
+    if crate::fenetre::sienne() == 0 {
         crate::journal::note(&format!("{when} : plus de fenêtre d'accueil"));
         return;
-    };
-    fn say(what: tauri::Result<bool>) -> &'static str {
-        match what {
-            Ok(true) => "oui",
-            Ok(false) => "non",
-            Err(_) => "?",
-        }
+    }
+    fn say(what: bool) -> &'static str {
+        if what { "oui" } else { "non" }
     }
     crate::journal::note(&format!(
-        "{when} : accueil réduit={} visible={} plein écran={}",
-        say(window.is_minimized()),
-        say(window.is_visible()),
-        say(window.is_fullscreen()),
+        "{when} : accueil à l'écran={} plein écran={}",
+        say(crate::fenetre::a_l_ecran()),
+        say(crate::fenetre::tient_l_ecran()),
     ));
 }
 

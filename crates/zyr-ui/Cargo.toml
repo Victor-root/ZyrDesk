@@ -24,12 +24,7 @@ zyr-transport.workspace = true
 # La zone de notification est la seule trace que ZyrDesk laisse quand sa
 # fenêtre est fermée : sans elle, un produit qui rend la machine
 # joignable tournerait sans que rien ne le dise.
-# « unstable » ouvre la fenêtre **nue**, sans navigateur dedans : c'est la
-# seule sorte que la boîte à outils range derrière cette porte, et c'est
-# la seule dont ce produit se sert depuis que tout est dessiné ici. Le
-# verrou du projet épingle la version, donc ce que cette porte ouvre ne
-# bouge pas sous nos pieds entre deux compilations.
-tauri = { version = "2", features = ["tray-icon", "image-png", "unstable"] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
 

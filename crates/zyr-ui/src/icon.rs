@@ -30,8 +30,7 @@ use tauri::AppHandle;
 /// in real pixels, and a screen magnified differently asks for different
 /// ones.
 #[cfg(windows)]
-pub fn on_the_window(app: &AppHandle) {
-    use tauri::Manager;
+pub fn on_the_window(_app: &AppHandle) {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
@@ -40,13 +39,10 @@ pub fn on_the_window(app: &AppHandle) {
         SendMessageW, WM_SETICON,
     };
 
-    let Some(home) = app
-        .get_window(crate::HOME)
-        .and_then(|window| window.hwnd().ok())
-    else {
+    let home = crate::fenetre::sienne() as HWND;
+    if home.is_null() {
         return;
-    };
-    let home = home.0 as HWND;
+    }
     // SAFETY: our own window, and our own module; all three calls only
     // read.
     let (ours, dpi) = unsafe { (GetModuleHandleW(std::ptr::null()), GetDpiForWindow(home)) };

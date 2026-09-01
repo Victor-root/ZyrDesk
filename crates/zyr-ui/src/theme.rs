@@ -29,7 +29,7 @@
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use tauri::{AppHandle, Manager, Theme};
+use tauri::AppHandle;
 
 /// The three answers, spelled as the file spells them.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -133,7 +133,7 @@ pub fn light() -> bool {
 }
 
 /// Takes a new choice, writes it down, and puts it on the window.
-pub fn choose(app: &AppHandle, choix: Choix) {
+pub fn choose(choix: Choix) {
     CHOISI.store(choix.rank(), Ordering::Relaxed);
     let written = format!(
         "# Le thème de l'interface ZyrDesk : systeme, clair ou sombre.\n\
@@ -145,33 +145,22 @@ pub fn choose(app: &AppHandle, choix: Choix) {
     if let Err(e) = zyr_proto::files::replace(&zyr_proto::paths::chosen_theme(), &written) {
         crate::journal::note(&format!("thème non retenu : {e}"));
     }
-    on_the_window(app);
+    on_the_window();
 }
 
-/// Matches the window's frame to what was chosen.
+/// Matches the window's frame to what the interface is.
 ///
 /// The frame belongs to Windows and not to us, and it is the one part of
 /// the window this program does not draw: without this, a light
 /// interface would keep a dark title bar, which is exactly the kind of
 /// seam a product is judged on.
 ///
-/// « Follow » is handed over as no choice at all rather than as the
-/// colour it comes to right now. The two look identical for one second
-/// and are opposites afterwards: a window told nothing follows Windows
-/// by itself, frame and all, while a window told « light » stays light
-/// for ever.
-pub fn on_the_window(app: &AppHandle) {
-    let wanted = match chosen() {
-        Choix::Systeme => None,
-        Choix::Clair => Some(Theme::Light),
-        Choix::Sombre => Some(Theme::Dark),
-    };
-    // A window that refuses the change is not worth stopping for: what
-    // this program draws is already in the right theme, only its frame is
-    // not.
-    if let Some(window) = app.get_window(crate::HOME) {
-        let _ = window.set_theme(wanted);
-    }
+/// The colour it comes to and not the choice that led there: the frame
+/// is told what to be, and « follow Windows » is answered by this
+/// program, which is the only one that knows both halves of the
+/// question.
+pub fn on_the_window() {
+    crate::fenetre::habille(light());
 }
 
 /// Follows what Windows wants for as long as the program runs, and has
@@ -242,6 +231,7 @@ pub fn watch(app: AppHandle) {
                 // does not follow, and redrawing it here would repaint the
                 // same picture in the same colours.
                 if chosen() == Choix::Systeme {
+                    on_the_window();
                     crate::accueil::redraw(&app);
                 }
             }

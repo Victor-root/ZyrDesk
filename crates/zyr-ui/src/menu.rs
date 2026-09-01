@@ -23,7 +23,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::design::{self, Couleur, Palette};
 use crate::floating::Act;
@@ -882,11 +882,7 @@ pub fn raise(app: &AppHandle, echelle: f32, clair: bool) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    let owner = app
-        .get_window(crate::HOME)
-        .and_then(|home| home.hwnd().ok())
-        .map(|handle| handle.0 as isize)
-        .unwrap_or(0);
+    let owner = crate::fenetre::sienne();
     *PROGRAM.lock().expect("programme du menu") = Some(app.clone());
     *TOUCHES.lock().expect("raccourcis du menu") = crate::shortcuts::engraved();
     // Quatre tirets avant la première lecture, et non quatre vides : la

@@ -32,7 +32,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::journal::note;
 use crate::paint::Cadre;
@@ -209,11 +209,7 @@ pub fn raise(app: &AppHandle, side: u32, upward: bool, anchor: (i32, i32)) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    let owner = app
-        .get_window(crate::HOME)
-        .and_then(|home| home.hwnd().ok())
-        .map(|handle| handle.0 as isize)
-        .unwrap_or(0);
+    let owner = crate::fenetre::sienne();
     *PROGRAM.lock().expect("programme du logo") = Some(app.clone());
     ITS_BOX.store(box_of(side), Ordering::Relaxed);
     UPWARD.store(upward, Ordering::Relaxed);

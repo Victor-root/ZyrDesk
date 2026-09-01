@@ -82,16 +82,6 @@ static LAID: AtomicI64 = AtomicI64::new(0);
 /// necessarily changing anything else.
 static SQUARED: AtomicBool = AtomicBool::new(false);
 
-/// Set while the window is spread over the whole screen.
-///
-/// Held rather than read from the window, because the two places that
-/// need it are asked at moments when the window cannot answer: the
-/// system asks what the frame is going to be while the window is still
-/// the size it was, and the compositor is told how to draw the corners
-/// before the window has moved. The one door in and out of full screen
-/// writes it, so it is right before either question is asked.
-static WHOLE_SCREEN: AtomicBool = AtomicBool::new(false);
-
 /// Whether the window is spread over the whole screen right now.
 ///
 /// Asked from outside for one thing: the engine keeps the pointer inside
@@ -100,7 +90,7 @@ static WHOLE_SCREEN: AtomicBool = AtomicBool::new(false);
 /// one inside ours all session long. So the answer is this program's to
 /// give.
 pub fn on_the_whole_screen() -> bool {
-    WHOLE_SCREEN.load(Ordering::Relaxed)
+    crate::fenetre::tient_l_ecran()
 }
 
 /// Radius the system rounds a window's corners by, in page pixels.
@@ -228,15 +218,14 @@ pub fn let_go(app: &AppHandle) {
 /// of the screen the session takes stopped being its business the day
 /// its window went inside ours.
 pub fn take_the_screen(app: &AppHandle, whole: bool) -> Result<(), String> {
-    let window = app
-        .get_window(crate::HOME)
-        .ok_or("la fenêtre de ZyrDesk n'est plus là")?;
-    // Written down before the window moves, not after. Taking the screen
-    // is what makes the system ask what the frame should be, and the
-    // answer depends on this: asked with the old value, the window comes
-    // back with a frame it should not have.
-    let was = WHOLE_SCREEN.swap(whole, Ordering::Relaxed);
-    window.set_fullscreen(whole).map_err(|e| e.to_string())?;
+    if crate::fenetre::sienne() == 0 {
+        return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
+    }
+    // La fenêtre écrit ce qu'elle devient avant de bouger, jamais après :
+    // prendre l'écran est ce qui fait demander au système quel cadre elle
+    // aura, et la réponse en dépend.
+    let was = crate::fenetre::tient_l_ecran();
+    crate::fenetre::prend_l_ecran(whole);
     if was != whole {
         no_frame_on_the_whole_screen(app);
     }
@@ -268,10 +257,11 @@ pub fn take_the_screen_for_a_session(app: &AppHandle, whole: bool) -> Result<(),
     if whole {
         return Ok(());
     }
-    app.get_window(crate::HOME)
-        .ok_or("la fenêtre de ZyrDesk n'est plus là")?
-        .maximize()
-        .map_err(|e| e.to_string())
+    if crate::fenetre::sienne() == 0 {
+        return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
+    }
+    crate::fenetre::agrandis();
+    Ok(())
 }
 
 /// The same, the other way from wherever it is, and remembered.
@@ -281,10 +271,10 @@ pub fn take_the_screen_for_a_session(app: &AppHandle, whole: bool) -> Result<(),
 /// the end of a session. So this is the only one that writes anything
 /// down, and what it writes is what the next session opens as.
 pub fn toggle_the_screen(app: &AppHandle) -> Result<(), String> {
-    let window = app
-        .get_window(crate::HOME)
-        .ok_or("la fenêtre de ZyrDesk n'est plus là")?;
-    let whole = !window.is_fullscreen().map_err(|e| e.to_string())?;
+    if crate::fenetre::sienne() == 0 {
+        return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
+    }
+    let whole = !crate::fenetre::tient_l_ecran();
     take_the_screen(app, whole)?;
 
     // Writing it down means asking the service, which is a round trip
@@ -339,25 +329,23 @@ pub fn hold_the_shape(app: &AppHandle) {
     if wide <= 0 || high <= 0 {
         return;
     }
-    let Some(window) = app.get_window(crate::HOME) else {
-        return;
-    };
-    // Covering the screen is a shape nobody chose and nobody drags, and
-    // so is a window put against the edges of the screen by the system.
-    if window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false) {
+    if crate::fenetre::sienne() == 0 {
         return;
     }
-    let Ok(inside) = window.inner_size() else {
+    // Covering the screen is a shape nobody chose and nobody drags, and
+    // so is a window put against the edges of the screen by the system.
+    if crate::fenetre::tient_l_ecran() || crate::fenetre::est_agrandie() {
         return;
-    };
-    let Ok(width) = i32::try_from(inside.width) else {
+    }
+    let inside = crate::fenetre::dedans();
+    let Ok(width) = i32::try_from(inside.0) else {
         return;
     };
     let wanted = across(width, wide, high);
-    if wanted <= 0 || inside.height.abs_diff(wanted as u32) <= ROUNDING {
+    if wanted <= 0 || inside.1.abs_diff(wanted as u32) <= ROUNDING {
         return;
     }
-    let _ = window.set_size(tauri::PhysicalSize::new(inside.width, wanted as u32));
+    crate::fenetre::pose_le_dedans(inside.0, wanted as u32);
 }
 
 /// What is held right now, if anything.
@@ -1832,7 +1820,7 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
     // Kept, so that taking the screen or giving it back can ask again
     // without having to know whether a session is running.
     ROUNDS_WANTED.store(may, Ordering::Relaxed);
-    let whole = WHOLE_SCREEN.load(Ordering::Relaxed);
+    let whole = crate::fenetre::tient_l_ecran();
     let how: i32 = match (may, whole) {
         (_, true) => DWMWCP_DONOTROUND,
         (true, false) => DWMWCP_ROUND,
@@ -3201,9 +3189,9 @@ unsafe extern "system" fn lit(
         // below where it should. Answering that inside is the whole
         // window leaves no strip to draw and nothing to push down.
         WM_NCCALCSIZE
-            if wparam != 0 && (the_picture_rides() || WHOLE_SCREEN.load(Ordering::Relaxed)) =>
+            if wparam != 0 && (the_picture_rides() || crate::fenetre::tient_l_ecran()) =>
         {
-            let whole = WHOLE_SCREEN.load(Ordering::Relaxed);
+            let whole = crate::fenetre::tient_l_ecran();
             // SAFETY: the arguments the system handed in, untouched.
             // Left alone when the window covers the screen: what the
             // block already holds is the window itself, which is the
@@ -3618,10 +3606,9 @@ pub(crate) fn the_engines_window() -> Option<windows_sys::Win32::Foundation::HWN
 
 /// Our own window, as the system knows it.
 #[cfg(windows)]
-fn home_window(app: &AppHandle) -> Option<windows_sys::Win32::Foundation::HWND> {
-    app.get_window(crate::HOME)
-        .and_then(|window| window.hwnd().ok())
-        .map(|handle| handle.0 as _)
+fn home_window(_app: &AppHandle) -> Option<windows_sys::Win32::Foundation::HWND> {
+    let home = crate::fenetre::sienne() as windows_sys::Win32::Foundation::HWND;
+    (!home.is_null()).then_some(home)
 }
 
 #[cfg(not(windows))]
@@ -3681,7 +3668,7 @@ fn take_the_window_in_hand(app: &AppHandle) {
         // case the window took it before this handler was on it and the
         // system asked about the frame with nobody there to answer.
         // Asked again now, with the handler in place.
-        if WHOLE_SCREEN.load(Ordering::Relaxed) {
+        if crate::fenetre::tient_l_ecran() {
             no_frame_on_the_whole_screen(&asked);
         }
         tell_the_frame(home);

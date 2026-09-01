@@ -26,7 +26,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::design::{self, Couleur, Palette};
 use crate::desk::{Peer, Standing};
@@ -693,14 +693,26 @@ fn programme() -> Option<AppHandle> {
 /// au fil qui l'a faite, et une fenêtre faite ailleurs n'entendrait
 /// jamais une souris.
 pub fn raise(app: &AppHandle) {
-    let Some(dehors) = fenetre_du_dehors(app) else {
+    let dehors = crate::fenetre::sienne() as windows_sys::Win32::Foundation::HWND;
+    if dehors.is_null() {
         note("accueil : pas de fenêtre où dessiner");
         return;
-    };
+    }
     *PROGRAM.lock().expect("programme de l'accueil") = Some(app.clone());
-    mesure_l_ecran(app);
+    ECHELLE.store(
+        (crate::fenetre::echelle() * 100.0).round() as u32,
+        Ordering::Relaxed,
+    );
     build(dehors);
     watch(app.clone());
+}
+
+/// La toile, telle que le système la connaît.
+///
+/// Lue par la fenêtre qui la porte, qui la redimensionne avec elle et lui
+/// donne le clavier.
+pub fn sa_toile() -> isize {
+    ITS_WINDOW.load(Ordering::Relaxed)
 }
 
 /// De combien un pixel de page compte sur l'écran où la fenêtre est.
@@ -709,11 +721,7 @@ pub fn raise(app: &AppHandle) {
 /// d'agrandissement : tout ce qui est dessiné en descend, la police des
 /// champs de saisie comprise.
 pub fn mesure_l_ecran(app: &AppHandle) {
-    let Some(window) = app.get_window(crate::HOME) else {
-        return;
-    };
-    let combien = window.scale_factor().unwrap_or(1.0) as f32;
-    let veut = (combien * 100.0).round() as u32;
+    let veut = (crate::fenetre::echelle() * 100.0).round() as u32;
     if ECHELLE.swap(veut, Ordering::Relaxed) == veut {
         return;
     }
@@ -723,19 +731,11 @@ pub fn mesure_l_ecran(app: &AppHandle) {
     redraw(app);
 }
 
-/// La fenêtre que le système encadre, telle que le système la connaît.
-fn fenetre_du_dehors(app: &AppHandle) -> Option<windows_sys::Win32::Foundation::HWND> {
-    app.get_window(crate::HOME)
-        .and_then(|window| window.hwnd().ok())
-        .map(|handle| handle.0 as _)
-}
-
 /// Bâtit la toile et se met devant les messages de la fenêtre qui la
 /// porte.
 fn build(dehors: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows_sys::Win32::UI::Shell::SetWindowSubclass;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, GetClientRect, IDC_ARROW, LoadCursorW, RegisterClassW, WNDCLASSW,
         WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_VISIBLE,
@@ -802,61 +802,10 @@ fn build(dehors: windows_sys::Win32::Foundation::HWND) {
         return;
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
-    // SAFETY: la fenêtre du dehors, depuis le fil qui la possède, et le
-    // gardien lui survit : c'est une simple fonction de ce programme.
-    unsafe { SetWindowSubclass(dehors, Some(suit), SUIT, 0) };
     note(&format!(
         "accueil dessiné par ZyrDesk, sans vue web : toile de {}x{} px",
         dedans.right, dedans.bottom
     ));
-}
-
-/// Le nom sous lequel notre gardien est posé sur la fenêtre du dehors.
-const SUIT: usize = 2;
-
-/// Ce que la fenêtre du dehors nous laisse voir de ce qui lui arrive.
-///
-/// Sa taille, pour que la toile la suive sans attendre un tour de boucle :
-/// ce que la boîte à outils raconte arrive une file plus tard, et une
-/// toile en retard sur son cadre se voit pendant tout un
-/// redimensionnement.
-///
-/// SAFETY: appelée par le système sur le fil qui possède cette fenêtre,
-/// avec les arguments qu'il documente.
-unsafe extern "system" fn suit(
-    window: windows_sys::Win32::Foundation::HWND,
-    message: u32,
-    holding: windows_sys::Win32::Foundation::WPARAM,
-    with: windows_sys::Win32::Foundation::LPARAM,
-    _who: usize,
-    _data: usize,
-) -> windows_sys::Win32::Foundation::LRESULT {
-    use windows_sys::Win32::UI::Shell::DefSubclassProc;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, WM_SIZE};
-
-    if message == WM_SIZE {
-        let toile = ITS_WINDOW.load(Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
-        if !toile.is_null() {
-            use windows_sys::Win32::UI::WindowsAndMessaging::SetWindowPos;
-
-            let (large, haute) = ((with & 0xFFFF) as i32, ((with >> 16) & 0xFFFF) as i32);
-            // SAFETY: une fenêtre à nous, posée sur le dedans de celle
-            // qui vient de changer de taille.
-            unsafe {
-                SetWindowPos(
-                    toile,
-                    std::ptr::null_mut(),
-                    0,
-                    0,
-                    large,
-                    haute,
-                    SWP_NOACTIVATE | SWP_NOZORDER,
-                )
-            };
-        }
-    }
-    // SAFETY: les arguments que le système a donnés, rendus tels quels.
-    unsafe { DefSubclassProc(window, message, holding, with) }
 }
 
 /// Redemande une image, depuis n'importe quel fil.
@@ -3857,7 +3806,7 @@ fn pousse(app: &AppHandle, bouton: Bouton) {
 fn choisis(app: &AppHandle, quoi: Choisi, rang: usize) {
     if quoi == Choisi::Theme {
         if let Some(choix) = Choix::ALL.get(rang) {
-            crate::theme::choose(app, *choix);
+            crate::theme::choose(*choix);
             redraw(app);
         }
         return;
