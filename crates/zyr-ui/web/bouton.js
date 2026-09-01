@@ -159,60 +159,46 @@ function montre(element, visible) {
 /* Ce que la découpe prend au-delà de ce que la page peint, en vrais
    pixels, et c'est zéro.
 
-   **Un pixel de fenêtre que la page n'a pas peint n'est pas vide.** C'est
-   la réponse à une chasse d'une soirée entière, et elle a été obtenue en
-   rendant le défaut permanent au lieu de courir après un éclair : la
-   découpe a été agrandie exprès de trois pixels, et le liseré pâle est
-   passé d'un clignotement de deux pixels à une bande permanente de quatre
-   le long de tout le bord gauche. Mesurée sur NOTEBOOK-VICTOR : fond brun
-   49,39,29, puis **215,228,241** quatre fois, puis le contour du logo à
-   9,13,22. Sur fond noir la même bande valait 203,209,216 : elle n'a donc
-   pas de couleur à elle, elle éclaircit ce qu'il y a derrière. C'est du
-   verre dépoli, celui que la boîte à outils allume pour obtenir la
-   transparence par pixel, et il se voit partout où la page ne peint rien.
+   Ce qui reste à découper ici est la carte du menu, et elle seule : le
+   logo est dessiné par ZyrDesk dans une fenêtre à lui, pixel par pixel,
+   et n'a plus de pochoir du tout.
 
-   C'est aussi pourquoi vingt-quatre photos prises par le bouton lui-même,
-   dont six pile au bon instant, n'ont jamais rien montré : ce que le
-   compositeur ajoute au moment de composer n'est pas dans ce qu'on recopie
-   de l'écran.
+   Zéro parce qu'une découpe n'a qu'un travail, contenir ce que la page
+   peint et rien de plus. Ce qu'elle contient au-delà ne se voit pas,
+   c'est mesuré : deux cents pixels de fenêtre nue, posés là exprès, sont
+   restés invisibles. Mais ils attrapent les clics, et un menu fermé qui
+   avale les clics à côté de lui est un menu qui gêne.
 
-   Donc la découpe ne prend plus rien de plus. Les bords restent arrondis
-   vers le dehors, ce qui suffit : `Math.floor` d'un bord gauche prend le
-   pixel qui **contient** ce bord, et ce pixel-là est peint, en partie,
-   par le lissage du dessin. Un pixel à moitié peint se voit comme un
-   demi-pixel de dessin ; un pixel pas peint du tout se voit comme du
-   verre. Le premier est le lissage qu'on veut, le second est le défaut.
+   Les bords restent arrondis vers le dehors : `Math.floor` d'un bord
+   gauche prend le pixel qui **contient** ce bord, et ce pixel-là est
+   peint, en partie, par le lissage de la carte. Arrondie vers l'intérieur,
+   la découpe rognait ce lissage d'une fraction différente sur chaque côté,
+   ce qui faisait un bord d'un pixel ici et de deux là.
 
    Le rayon des coins suit la même règle, arrondi vers le haut pour que le
-   coin de la découpe rentre dans celui du dessin au lieu d'en dépasser.
+   coin de la découpe rentre dans celui de la carte au lieu d'en dépasser.
    Le journal le vérifie : les cinq marges qu'il écrit doivent rester
    entre zéro et un, et il ne parle que si l'une atteint un pixel. */
 const MARGE = 0;
 
-/* Le grain auquel les bords sont calés avant d'être arrondis, et ce n'est
-   pas de la coquetterie : c'est **le liseré que Victor voit**.
+/* Le grain auquel les bords sont calés avant d'être arrondis.
 
-   Le bord droit de l'écran du fond du logo tombe pile sur un pixel réel :
-   il est à 424/440 du dessin, le logo fait 55 pixels réels à 125 %, et
-   424/440 x 55 = 53 tout rond. Mais 44/440 n'existe pas en binaire, donc
-   ce bord sort du calcul à -1,9999999999999574 au lieu de -2, et
-   `Math.ceil` réclame alors **une colonne entière** que la page ne peint
-   jamais. Le journal de NOTEBOOK-VICTOR l'écrit noir sur blanc :
-   `découpé (-47, 2, -1, 37) ; marges g 0.50 h 0.50 d 1.00 b 0.25`, et
-   `b 1.00` sous la carte du menu. Quatre nombres, tous les quatre sortis
-   de ce seul écart de 4e-14.
+   Sans lui, un bord qui tombe pile sur un vrai pixel en sort à
+   -1,9999999999999574 au lieu de -2, parce que le calcul passe par des
+   fractions qui n'existent pas en binaire, et l'arrondi vers le dehors
+   réclame alors **une colonne entière** que la page ne peint jamais. Le
+   journal l'a écrit noir sur blanc : une marge de `1.00` pile, sur un bord
+   qui ne devait rien réclamer du tout.
 
    Le grain vaut un 1024e de pixel, et il est choisi entre deux bornes.
-   Au-dessus du bruit : celui du calcul est de l'ordre de 1e-13, mais
-   `getBoundingClientRect` rend ses nombres en simple précision, donc un
-   bord réellement posé sur le pixel 943 revient à 943,0000305, et jusqu'à
-   2,4e-4 sur les grandes coordonnées d'un écran 4K. Un millionième de
-   pixel ne rattraperait pas la rangée sous la carte ; un 1024e, qui vaut
-   9,8e-4, est quatre fois au-dessus. En dessous de la vraie géométrie :
-   la mise en page ne connaît pas plus fin que le 64e de pixel de page, ce
-   qui fait 20, 24 et 28 /1024e de pixel réel à 125, 150 et 175 %. Tous
-   les vrais bords sont donc déjà des multiples exacts du grain et le
-   calage ne leur fait rien du tout.
+   Au-dessus du bruit : `getBoundingClientRect` rend ses nombres en simple
+   précision, donc un bord réellement posé sur le pixel 943 revient à
+   943,0000305, et jusqu'à 2,4e-4 sur les grandes coordonnées d'un écran
+   4K ; un 1024e vaut 9,8e-4, quatre fois au-dessus. En dessous de la vraie
+   géométrie : la mise en page ne connaît pas plus fin que le 64e de pixel
+   de page, ce qui fait 20, 24 et 28 /1024es de pixel réel à 125, 150 et
+   175 %, donc tous les vrais bords sont déjà des multiples exacts du grain
+   et le calage ne leur fait rien.
 
    Une puissance de deux parce qu'elle est exacte en binaire : le calage
    lui-même n'ajoute pas d'erreur. */

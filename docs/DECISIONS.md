@@ -1793,7 +1793,15 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Et une seule ancre pour les deux fenêtres**, posées dans le même geste : c'est ce qui les empêche de jamais être en désaccord sur l'endroit où se trouve le bouton.
 
-**Si le liseré survit à ça**, il ne restera plus que la fenêtre elle-même, et la réponse sera de changer ce qu'elle est. Mais alors on saura, au lieu de raisonner.
+**Il n'y a pas survécu. « ENFIN CA MARCHE ».**
+
+**C'était donc bien la vue web**, et l'élimination avait raison là où onze raisonnements s'étaient trompés. Ce qui se voyait n'était pas un liseré mais le fond blanc d'un navigateur, laissé une image à l'écran chaque fois qu'il refaisait sa surface, et la découpe collée au dessin n'en laissait passer qu'un trait de deux pixels. Trois jours à mesurer le bord d'une plaque.
+
+**Deux fautes de plus, corrigées le même jour, et elles valent d'être écrites.** La première : une forme vide est une forme, et c'est celle que la fenêtre du menu porte le plus souvent depuis que le logo est ailleurs. Lue comme « rien à faire », elle laissait cette fenêtre sans découpe du tout, ce qui pour une fenêtre ne veut pas dire rien mais tout : quatorze cents pixels de rectangle nu en travers de la session. La seconde : les trois tailles du logo étaient lues comme des fractions de sa taille de repos alors que sa fenêtre est bâtie à la plus grande, si bien qu'il était dessiné six pour cent trop gros et perdait son côté droit sous la souris.
+
+**Et ce que la chasse laisse comme leçon, en une ligne : les mesures ont eu raison, les raisonnements ont eu tort.** Chaque explication bâtie sur une description a été démentie ; chaque chose éteinte une par une a fini par désigner la bonne. Ce qui a coûté le plus cher n'est aucune des douze pistes, c'est le temps passé à en plaider avant d'en éteindre.
+
+**Décision : les explications démenties sortent du code.** Le commentaire qui installait `MARGE` racontait le verre dépoli, celui du grain disait tenir « le liseré que Victor voit », et la ligne de journal des marges annonçait rattraper le défaut. Les trois gestes restent, tous justes, mais pour la raison qui est vraie : une découpe n'a qu'un travail, contenir ce que la page peint et rien de plus, parce que ce qu'elle contient au-delà attrape les clics.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

@@ -2385,11 +2385,10 @@ static LAST_PIECES: Mutex<Vec<Piece>> = Mutex::new(Vec::new());
 /// along the edges can be nothing at all in the corners.
 ///
 /// Said once when the button is built, and after that only when one of
-/// the five margins reaches a whole pixel, which is the one thing that
-/// must never happen: a whole pixel of margin is a pixel of window the
-/// page paints nothing in, and a window pixel nobody paints is not empty,
-/// it is the frosted glass the toolkit turns on to be transparent at all.
-/// That was the fault, and this line is what catches it coming back.
+/// the five margins reaches a whole pixel. A whole pixel of margin is a
+/// pixel of window the page paints nothing in, which does not show, but
+/// which does catch a click: a menu with a hem of dead ground around it
+/// is a menu that gets in the way of the picture.
 ///
 /// Never twice for the same numbers, and no other threshold. Told at
 /// every cut, the line drowned the journal while a hand rested on the
