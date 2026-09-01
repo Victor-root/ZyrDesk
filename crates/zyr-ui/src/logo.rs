@@ -32,7 +32,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
-use tauri::AppHandle;
+use crate::app::App;
 
 use crate::journal::note;
 use crate::paint::Cadre;
@@ -183,7 +183,7 @@ static GROWTH: Mutex<Growth> = Mutex::new(Growth {
 /// The program, kept here because this window is the only thing that
 /// needs it and nothing hands it one: a hand comes down on it from the
 /// system, not from the toolkit.
-static PROGRAM: Mutex<Option<AppHandle>> = Mutex::new(None);
+static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
 // What this window is drawn on, made once and kept: making it is what
 // costs, drawing on it is not. The same one the whole interface will be
@@ -205,7 +205,7 @@ thread_local! {
 /// Built on the thread that draws, which is the only one whose messages
 /// are ever pumped: a window belongs to the thread that made it, and one
 /// made on the watch's thread would never hear a mouse.
-pub fn raise(app: &AppHandle, side: u32, upward: bool, anchor: (i32, i32)) {
+pub fn raise(app: &App, side: u32, upward: bool, anchor: (i32, i32)) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
@@ -273,7 +273,7 @@ pub fn moving(yes: bool) {
 }
 
 /// Takes the logo's window down with the session.
-pub fn lower(app: &AppHandle) {
+pub fn lower(app: &App) {
     let window = ITS_WINDOW.swap(0, Ordering::Relaxed);
     if window == 0 {
         return;
@@ -293,7 +293,7 @@ pub fn lower(app: &AppHandle) {
 
 /// Shows or hides the logo, for the menu entry that puts the button away
 /// and the shortcut that brings it back.
-pub fn shown(app: &AppHandle, visible: bool) {
+pub fn shown(app: &App, visible: bool) {
     let window = ITS_WINDOW.load(Ordering::Relaxed);
     if window == 0 {
         return;
@@ -512,7 +512,12 @@ fn arrived() -> bool {
 /// Le cadre est carré, comme le repère du dessin : un cadre qui ne l'est
 /// pas laisse simplement du vide en bas, le logo n'occupant pas toute sa
 /// hauteur.
-pub fn marque(toile: &crate::paint::Toile, cadre: Cadre) {
+///
+/// `part` est ce qu'il en reste : un pour la marque pleine, moins pour
+/// une marque en retrait. C'est ce que l'icône près de l'horloge emploie
+/// pour dire que cet ordinateur n'est pas joignable, en restant la même
+/// marque plutôt qu'en devenant un second dessin.
+pub fn marque(toile: &crate::paint::Toile, cadre: Cadre, part: f32) {
     let per_unit = (cadre.droite - cadre.gauche) / drawing::SIDE;
     for shape in &drawing::SHAPES {
         let place = Cadre::pose(
@@ -522,7 +527,7 @@ pub fn marque(toile: &crate::paint::Toile, cadre: Cadre) {
             shape.half.1 * 2.0 * per_unit,
         );
         let radius = shape.radius * per_unit;
-        toile.remplis(place, radius, shape.fill);
+        toile.remplis(place, radius, shape.fill.voile(part));
         if shape.outlined {
             // Sur le bord et non dedans : c'est ce que fait un trait dans
             // le dessin d'origine, et un contour rentré dedans amincirait
@@ -531,7 +536,7 @@ pub fn marque(toile: &crate::paint::Toile, cadre: Cadre) {
                 place,
                 radius,
                 drawing::HALF_STROKE * 2.0 * per_unit,
-                drawing::LINE,
+                drawing::LINE.voile(part),
             );
         }
     }
@@ -571,7 +576,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             return;
         };
         toile.commence(crate::design::Couleur::RIEN);
-        marque(toile, Cadre::pose(left, top, wide, wide));
+        marque(toile, Cadre::pose(left, top, wide, wide), 1.0);
         if !toile.finit() {
             return;
         }
@@ -676,7 +681,7 @@ fn taken(window: windows_sys::Win32::Foundation::HWND) {
     }
     head_for(window);
     let handle = window as isize;
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         let plain = crate::floating::grabbed(&app).await;
         TAKEN.store(false, Ordering::Relaxed);
         head_for(handle as windows_sys::Win32::Foundation::HWND);

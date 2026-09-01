@@ -29,7 +29,7 @@
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use tauri::AppHandle;
+use crate::app::App;
 
 /// The three answers, spelled as the file spells them.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -170,7 +170,7 @@ pub fn on_the_window() {
 /// alternative is asking the registry on a timer, which is a question
 /// asked a thousand times for an answer that changes twice a day.
 #[cfg(windows)]
-pub fn watch(app: AppHandle) {
+pub fn watch(app: App) {
     use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
     use windows_sys::Win32::System::Registry::{
         HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, REG_NOTIFY_CHANGE_LAST_SET, RegCloseKey,
@@ -247,7 +247,7 @@ pub fn watch(app: AppHandle) {
 
 /// Elsewhere there is no Windows to follow, and no window to match.
 #[cfg(not(windows))]
-pub fn watch(_app: AppHandle) {}
+pub fn watch(_app: App) {}
 
 /// Where Windows keeps what it wants applications to look like.
 ///

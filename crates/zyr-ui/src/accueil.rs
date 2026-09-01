@@ -26,7 +26,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 
-use tauri::AppHandle;
+use crate::app::App;
 
 use crate::design::{self, Couleur, Palette};
 use crate::desk::{Peer, Standing};
@@ -659,7 +659,7 @@ static ETAT: Mutex<Etat> = Mutex::new(Etat::neuf());
 static CLIQUABLES: Mutex<Vec<(Quoi, Cadre)>> = Mutex::new(Vec::new());
 /// Le programme, gardé ici parce que rien n'en donne un à une fenêtre du
 /// système.
-static PROGRAM: Mutex<Option<AppHandle>> = Mutex::new(None);
+static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
 // La toile de cette fenêtre, tenue par le fil qui la possède : une
 // surface de dessin et la fenêtre qu'elle habille appartiennent au fil
@@ -676,7 +676,7 @@ fn palette() -> Palette {
     design::palette(crate::theme::light())
 }
 
-fn programme() -> Option<AppHandle> {
+fn programme() -> Option<App> {
     PROGRAM.lock().expect("programme de l'accueil").clone()
 }
 
@@ -692,7 +692,7 @@ fn programme() -> Option<AppHandle> {
 /// Sur le fil qui possède la fenêtre du dehors : une fenêtre appartient
 /// au fil qui l'a faite, et une fenêtre faite ailleurs n'entendrait
 /// jamais une souris.
-pub fn raise(app: &AppHandle) {
+pub fn raise(app: &App) {
     let dehors = crate::fenetre::sienne() as windows_sys::Win32::Foundation::HWND;
     if dehors.is_null() {
         note("accueil : pas de fenêtre où dessiner");
@@ -720,7 +720,7 @@ pub fn sa_toile() -> isize {
 /// Redemandé quand elle change d'écran ou que l'écran change
 /// d'agrandissement : tout ce qui est dessiné en descend, la police des
 /// champs de saisie comprise.
-pub fn mesure_l_ecran(app: &AppHandle) {
+pub fn mesure_l_ecran(app: &App) {
     let veut = (crate::fenetre::echelle() * 100.0).round() as u32;
     if ECHELLE.swap(veut, Ordering::Relaxed) == veut {
         return;
@@ -809,7 +809,7 @@ fn build(dehors: windows_sys::Win32::Foundation::HWND) {
 }
 
 /// Redemande une image, depuis n'importe quel fil.
-pub fn redraw(app: &AppHandle) {
+pub fn redraw(app: &App) {
     let window = ITS_WINDOW.load(Ordering::Relaxed);
     if window == 0 {
         return;
@@ -3003,7 +3003,7 @@ impl Mise<'_> {
 
     fn marque(&self, ou: Cadre) {
         if !self.muet {
-            crate::logo::marque(self.toile, ou);
+            crate::logo::marque(self.toile, ou, 1.0);
         }
     }
 }
@@ -3224,7 +3224,7 @@ fn la_combinaison(
 }
 
 /// Écrit une combinaison, ou la retire, et relit les trois.
-fn pose_la_combinaison(app: &AppHandle, doing: Doing, combination: Option<Combination>) {
+fn pose_la_combinaison(app: &App, doing: Doing, combination: Option<Combination>) {
     let mut etat = ETAT.lock().expect("accueil");
     etat.ecoute = None;
     etat.souci = None;
@@ -3604,7 +3604,7 @@ fn rvb(couleur: Couleur) -> u32 {
 /// Rien n'attend ici : ce qui demande au service part sur son propre fil
 /// et redessine en revenant. Le fil qui dessine ne doit jamais attendre
 /// une réponse qui traverse un tuyau.
-fn fait(app: &AppHandle, quoi: Quoi) {
+fn fait(app: &App, quoi: Quoi) {
     match quoi {
         Quoi::OuvrirJournal => ouvre_le_journal(app, None),
         Quoi::JournalDe(rang) => {
@@ -3713,7 +3713,7 @@ fn fait(app: &AppHandle, quoi: Quoi) {
 }
 
 /// Ce que le bouton d'un bandeau « à faire » répare.
-fn remedie(app: &AppHandle, rang: usize) {
+fn remedie(app: &App, rang: usize) {
     let manque = VU
         .lock()
         .expect("accueil")
@@ -3723,7 +3723,7 @@ fn remedie(app: &AppHandle, rang: usize) {
     match manque {
         Some(Remede::DemarrerLeService) => {
             let app = app.clone();
-            tauri::async_runtime::spawn(async move {
+            crate::app::spawn(async move {
                 if let Err(raison) = crate::desk::start_service().await {
                     annonce(&app, &raison, true);
                 }
@@ -3738,7 +3738,7 @@ fn remedie(app: &AppHandle, rang: usize) {
     }
 }
 
-fn ouvre_un_dossier(app: &AppHandle, lequel: &'static str) {
+fn ouvre_un_dossier(app: &App, lequel: &'static str) {
     if let Err(raison) = crate::folders::open_folder(lequel.to_string()) {
         annonce(app, &raison, true);
     }
@@ -3746,7 +3746,7 @@ fn ouvre_un_dossier(app: &AppHandle, lequel: &'static str) {
 
 /// Pousse un interrupteur, et le tient à sa nouvelle place le temps que
 /// le service en prenne acte.
-fn pousse(app: &AppHandle, bouton: Bouton) {
+fn pousse(app: &App, bouton: Bouton) {
     let veut = {
         let rien = Vu::default();
         let vu = VU.lock().expect("accueil");
@@ -3761,7 +3761,7 @@ fn pousse(app: &AppHandle, bouton: Bouton) {
     redraw(app);
 
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         let servir = || async {
             let dit = crate::desk::standing().await;
             crate::desk::set_serving(
@@ -3803,7 +3803,7 @@ fn pousse(app: &AppHandle, bouton: Bouton) {
 }
 
 /// Choisit un des côtés d'un choix segmenté.
-fn choisis(app: &AppHandle, quoi: Choisi, rang: usize) {
+fn choisis(app: &App, quoi: Choisi, rang: usize) {
     if quoi == Choisi::Theme {
         if let Some(choix) = Choix::ALL.get(rang) {
             crate::theme::choose(*choix);
@@ -3815,7 +3815,7 @@ fn choisis(app: &AppHandle, quoi: Choisi, rang: usize) {
         return;
     };
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         // Celui-ci ne décrit pas ce qu'on demande aux autres mais ce que
         // cet ordinateur fait quand c'est lui qu'on regarde : il ne passe
         // pas par les mêmes réglages.
@@ -3859,7 +3859,7 @@ async fn ecrit_les_reglages(
 /// ordinateur-là, et elle sert de repère pour aller vers lui. Sans le
 /// premier des deux, la machine d'en face serait refusée à l'arrivée et
 /// on n'aurait fait que la moitié du chemin.
-fn connecte(app: &AppHandle) {
+fn connecte(app: &App) {
     let empreinte = texte_du_champ(Champ::Empreinte).trim().to_string();
     let adresse = texte_du_champ(Champ::Adresse).trim().to_string();
     let nom = texte_du_champ(Champ::Nom).trim().to_string();
@@ -3869,7 +3869,7 @@ fn connecte(app: &AppHandle) {
     fait(app, Quoi::Fermer);
 
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         let ecrit = crate::desk::authorize(
             empreinte.clone(),
             (!adresse.is_empty()).then(|| adresse.clone()),
@@ -3909,9 +3909,9 @@ fn connecte(app: &AppHandle) {
 }
 
 /// Oublie un ordinateur écrit à la main, des deux listes à la fois.
-fn oublie(app: &AppHandle, empreinte: String) {
+fn oublie(app: &App, empreinte: String) {
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         if let Err(raison) = crate::desk::forget(empreinte).await {
             fait(&app, Quoi::Fermer);
             annonce(&app, &raison, true);
@@ -3923,7 +3923,7 @@ fn oublie(app: &AppHandle, empreinte: String) {
 }
 
 /// Ouvre une session vers cet ordinateur.
-fn lance(app: &AppHandle, adresse: &str, empreinte: &str, nom: &str) {
+fn lance(app: &App, adresse: &str, empreinte: &str, nom: &str) {
     {
         let vu = VU.lock().expect("accueil");
         let etat = ETAT.lock().expect("accueil");
@@ -3946,7 +3946,7 @@ fn lance(app: &AppHandle, adresse: &str, empreinte: &str, nom: &str) {
     redraw(app);
 
     let (app, adresse, empreinte) = (app.clone(), adresse.to_string(), empreinte.to_string());
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         if let Err(raison) = crate::session::connect(app.clone(), adresse, empreinte).await {
             echoue(&app, &raison);
         }
@@ -3959,7 +3959,7 @@ fn lance(app: &AppHandle, adresse: &str, empreinte: &str, nom: &str) {
 ///
 /// Appelée par ce qui conduit la session : la fenêtre est la seule à
 /// pouvoir dire où en est ce qui n'a pas encore d'image.
-pub fn etape(app: &AppHandle, detail: &str, code: Option<String>) {
+pub fn etape(app: &App, detail: &str, code: Option<String>) {
     {
         let mut etat = ETAT.lock().expect("accueil");
         let Some(ouverture) = etat.ouverture.as_mut() else {
@@ -3973,7 +3973,7 @@ pub fn etape(app: &AppHandle, detail: &str, code: Option<String>) {
 
 /// L'image se relance avec de nouveaux réglages : personne n'a cliqué
 /// pour ouvrir celle-là, donc c'est ici que l'écran d'ouverture revient.
-pub fn relance(app: &AppHandle) {
+pub fn relance(app: &App) {
     {
         let mut etat = ETAT.lock().expect("accueil");
         let vers = etat
@@ -3992,9 +3992,9 @@ pub fn relance(app: &AppHandle) {
 
 /// La fenêtre n'a plus rien à raconter : ce qui se passe maintenant se
 /// lit dans ce que tient le service.
-pub fn range_l_ouverture(app: &AppHandle) {
+pub fn range_l_ouverture(app: &App) {
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         relis(&app).await;
         ETAT.lock().expect("accueil").ouverture = None;
         redraw(&app);
@@ -4002,13 +4002,13 @@ pub fn range_l_ouverture(app: &AppHandle) {
 }
 
 /// Une session qui s'est mal terminée, ou qui n'a pas pu s'ouvrir.
-pub fn echoue(app: &AppHandle, texte: &str) {
+pub fn echoue(app: &App, texte: &str) {
     annonce(app, texte, true);
     range_l_ouverture(app);
 }
 
 /// Le bandeau du haut.
-fn annonce(app: &AppHandle, texte: &str, ennui: bool) {
+fn annonce(app: &App, texte: &str, ennui: bool) {
     ETAT.lock().expect("accueil").annonce = Some(Annonce {
         texte: texte.to_string(),
         ennui,
@@ -4018,14 +4018,14 @@ fn annonce(app: &AppHandle, texte: &str, ennui: bool) {
 }
 
 /// Ce que les réglages ont à redire, qui vit dans leur dialogue.
-fn dit_le_souci(app: &AppHandle, texte: &str) {
+fn dit_le_souci(app: &App, texte: &str) {
     ETAT.lock().expect("accueil").souci = Some(texte.to_string());
     redraw(app);
 }
 
 /* ---- Le journal ---------------------------------------------------------- */
 
-fn ouvre_le_journal(app: &AppHandle, de: Option<Peer>) {
+fn ouvre_le_journal(app: &App, de: Option<Peer>) {
     {
         let mut etat = ETAT.lock().expect("accueil");
         etat.ecran = Ecran::Journal;
@@ -4038,10 +4038,10 @@ fn ouvre_le_journal(app: &AppHandle, de: Option<Peer>) {
     relis_le_journal(app);
 }
 
-fn relis_le_journal(app: &AppHandle) {
+fn relis_le_journal(app: &App) {
     let de = ETAT.lock().expect("accueil").journal_de.clone();
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         let texte = match &de {
             None => crate::journal::journal().await,
             Some(voisin) => {
@@ -4076,7 +4076,7 @@ fn relis_le_journal(app: &AppHandle) {
 
 /// Vider efface la seule trace de ce qui vient de se passer. Un deuxième
 /// clic est demandé, et l'attente retombe d'elle-même.
-fn vide_le_journal(app: &AppHandle) {
+fn vide_le_journal(app: &App) {
     let de = {
         let mut etat = ETAT.lock().expect("accueil");
         let arme = etat
@@ -4095,7 +4095,7 @@ fn vide_le_journal(app: &AppHandle) {
     redraw(app);
 
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         // Vidé là où il est écrit : celui de cette machine tout de suite,
         // celui d'en face en le lui demandant.
         let fait = match &de {
@@ -4123,7 +4123,7 @@ fn vide_le_journal(app: &AppHandle) {
 ///
 /// Le presse-papiers peut refuser, et un bouton qui dit « Copié » sur un
 /// refus enverrait quelqu'un coller du vide sur l'autre ordinateur.
-fn copie(app: &AppHandle, texte: &str, quoi: Quoi) {
+fn copie(app: &App, texte: &str, quoi: Quoi) {
     if !mis_au_presse_papiers(texte) {
         annonce(app, "La copie a été refusée par Windows.", true);
         return;
@@ -4132,7 +4132,7 @@ fn copie(app: &AppHandle, texte: &str, quoi: Quoi) {
     redraw(app);
 
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         tokio::time::sleep(TEMPS_COPIE).await;
         ETAT.lock().expect("accueil").copie = None;
         redraw(&app);
@@ -4182,8 +4182,8 @@ fn mis_au_presse_papiers(texte: &str) -> bool {
 /// Le service peut démarrer après cette fenêtre, ou s'arrêter pendant
 /// qu'elle est ouverte ; une session peut s'ouvrir depuis l'autre bout.
 /// Rien de tout cela ne passe par un clic.
-fn watch(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
+fn watch(app: App) {
+    crate::app::spawn(async move {
         // Ce qui ne bouge pas de toute la vie du programme : demandé une
         // fois.
         {
@@ -4207,7 +4207,7 @@ fn watch(app: AppHandle) {
 /// Ce qui n'a pas changé n'est pas redessiné : la fenêtre reste souvent
 /// ouverte pendant une session, et repeindre une image identique trois
 /// fois par minute serait du processeur pris à l'image de la session.
-async fn relis(app: &AppHandle) -> bool {
+async fn relis(app: &App) -> bool {
     let machine = crate::desk::standing().await;
     let voisins = crate::desk::peers().await;
     let sessions = crate::session::sessions().await;
@@ -4245,9 +4245,9 @@ async fn relis(app: &AppHandle) -> bool {
 }
 
 /// Relit ce que l'écran des réglages montre, et les trois raccourcis.
-fn relis_les_reglages(app: &AppHandle) {
+fn relis_les_reglages(app: &App) {
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         let reglages = crate::settings::settings(app.clone()).await;
         if let Some(vu) = VU.lock().expect("accueil").as_mut() {
             vu.reglages = Some(reglages);

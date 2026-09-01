@@ -30,8 +30,22 @@ fn main() {
     let out = std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("design.rs");
     std::fs::write(&out, written).expect("le système de design n'a pas pu être écrit");
 
-    tauri_build::build()
+    // La ressource Windows : le manifeste et l'icône. Ce qui revient est
+    // dit et non tu : sur les autres systèmes c'est « rien à faire », et
+    // sous Windows un refus laisserait un programme sans son icône et
+    // sans ses contrôles modernes, ce qui se cherche longtemps.
+    println!("cargo:rerun-if-changed={RESOURCE}");
+    println!("cargo:rerun-if-changed=zyrdesk.manifest");
+    let gravee = embed_resource::compile(RESOURCE, embed_resource::NONE);
+    if let Err(e) = gravee.manifest_optional() {
+        println!("cargo:warning=ressource Windows non gravée : {e}");
+    }
 }
+
+/// Ce que Windows lit dans le programme avant de le lancer : les
+/// contrôles modernes, les vrais pixels, et l'icône de la barre des
+/// tâches.
+const RESOURCE: &str = "zyrdesk.rc";
 
 /// The stylesheet with its comments taken out, so a colour named inside
 /// one is never read as a value.

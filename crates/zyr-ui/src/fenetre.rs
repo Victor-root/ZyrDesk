@@ -25,7 +25,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
-use tauri::AppHandle;
+use crate::app::App;
 
 /// Ce que la fenêtre fait de large et de haut en s'ouvrant, et ce en
 /// dessous de quoi elle ne descend pas, en pixels de page.
@@ -69,9 +69,9 @@ const PLACE: usize = 1;
 /// Le programme, gardé ici parce que rien n'en donne un à une fenêtre du
 /// système : ce qui arrive à celle-ci arrive du système, pas d'une boucle
 /// qui saurait à qui parler.
-static PROGRAM: Mutex<Option<AppHandle>> = Mutex::new(None);
+static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
-fn programme() -> Option<AppHandle> {
+fn programme() -> Option<App> {
     PROGRAM.lock().expect("programme de la fenêtre").clone()
 }
 
@@ -79,6 +79,33 @@ fn programme() -> Option<AppHandle> {
 pub fn sienne() -> isize {
     ELLE.load(Ordering::Relaxed)
 }
+
+/// Le nom de sa classe, sous lequel un second ZyrDesk la retrouve.
+const CLASSE: &str = "ZyrDesk";
+
+/// Le message par lequel un second ZyrDesk demande à celui qui tourne de
+/// se montrer, plutôt que d'ouvrir une deuxième fenêtre.
+#[cfg(windows)]
+const MONTRE_TOI: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
+
+/// Demande à la fenêtre du ZyrDesk qui tourne déjà de revenir.
+#[cfg(windows)]
+pub fn montre_celle_qui_tourne() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
+
+    let classe: Vec<u16> = CLASSE.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: un nom qui survit à l'appel, et un message qui n'appartient
+    // qu'à nous, posté à une fenêtre de notre propre classe.
+    unsafe {
+        let deja = FindWindowW(classe.as_ptr(), std::ptr::null());
+        if !deja.is_null() {
+            PostMessageW(deja, MONTRE_TOI, 0, 0);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn montre_celle_qui_tourne() {}
 
 /* ---- L'ouvrir ------------------------------------------------------- */
 
@@ -88,7 +115,7 @@ pub fn sienne() -> isize {
 /// montrée avant d'avoir été peinte se voit vide. C'est `montre` qui la
 /// découvre, une fois l'accueil posé dedans.
 #[cfg(windows)]
-pub fn ouvre(app: &AppHandle) -> Result<(), String> {
+pub fn ouvre(app: &App) -> Result<(), String> {
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::HiDpi::GetDpiForSystem;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -101,8 +128,8 @@ pub fn ouvre(app: &AppHandle) -> Result<(), String> {
     }
     *PROGRAM.lock().expect("programme de la fenêtre") = Some(app.clone());
 
-    let classe = wide("ZyrDesk");
-    let titre = wide("ZyrDesk");
+    let classe = wide(CLASSE);
+    let titre = wide(CLASSE);
     // SAFETY: no argument beyond what is asked for.
     let dpi = unsafe { GetDpiForSystem() };
     let (large, haute) = (pour(OUVERTE.0, dpi as i32), pour(OUVERTE.1, dpi as i32));
@@ -168,7 +195,7 @@ pub fn ouvre(app: &AppHandle) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-pub fn ouvre(_app: &AppHandle) -> Result<(), String> {
+pub fn ouvre(_app: &App) -> Result<(), String> {
     Err("ZyrDesk n'ouvre de fenêtre que sous Windows".to_string())
 }
 
@@ -253,8 +280,12 @@ unsafe extern "system" fn repond(
                     )
                 };
             }
+            // Remise au tour suivant et non faite ici : la tenir à sa
+            // forme la redimensionne, ce qui ferait revenir ce
+            // message-ci pendant qu'on y répond.
             if let Some(app) = programme() {
-                crate::picture::hold_the_shape(&app);
+                let sien = app.clone();
+                let _ = app.run_on_main_thread(move || crate::picture::hold_the_shape(&sien));
             }
             0
         }
@@ -291,8 +322,8 @@ unsafe extern "system" fn repond(
                     SWP_NOACTIVATE | SWP_NOZORDER,
                 )
             };
+            crate::icon::on_the_window();
             if let Some(app) = programme() {
-                crate::icon::on_the_window(&app);
                 crate::accueil::mesure_l_ecran(&app);
             }
             0
@@ -310,9 +341,17 @@ unsafe extern "system" fn repond(
             }
             0
         }
-        // SAFETY: la réponse du système à tout ce qui n'est pas répondu
-        // ici.
-        _ => unsafe { DefWindowProcW(window, message, holding, with) },
+        _ => {
+            // Un second ZyrDesk vient d'être lancé : celui qui tourne se
+            // montre, et l'autre s'arrête sans rien ouvrir.
+            if message == MONTRE_TOI {
+                montre();
+                return 0;
+            }
+            // SAFETY: la réponse du système à tout ce qui n'est pas
+            // répondu ici.
+            unsafe { DefWindowProcW(window, message, holding, with) }
+        }
     }
 }
 

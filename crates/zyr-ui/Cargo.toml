@@ -13,7 +13,10 @@ name = "ZyrDesk"
 path = "src/main.rs"
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+# La ressource Windows du programme : son manifeste, qui demande les
+# contrôles modernes du système et dit que ce programme compte en vrais
+# pixels, et son icône, celle que la barre des tâches dessine.
+embed-resource = "3"
 
 [dependencies]
 zyr-proto.workspace = true
@@ -21,18 +24,15 @@ zyr-control.workspace = true
 zyr-session.workspace = true
 zyr-sound.workspace = true
 zyr-transport.workspace = true
-# La zone de notification est la seule trace que ZyrDesk laisse quand sa
-# fenêtre est fermée : sans elle, un produit qui rend la machine
-# joignable tournerait sans que rien ne le dise.
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-serde = { version = "1", features = ["derive"] }
-tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
+tokio = { version = "1.53.1", features = [
+    "rt",
+    "rt-multi-thread",
+    "net",
+    "sync",
+    "time",
+] }
 
 [target.'cfg(windows)'.dependencies]
-# Un seul ZyrDesk à la fois : deux programmes voudraient dire deux
-# boutons flottants sur la même session. Le produit ne tourne que sous
-# Windows, et la dépendance n'est tirée que là.
-tauri-plugin-single-instance = "2"
 # Le dessin de l'interface : Direct2D et DirectWrite, fournis par Windows
 # lui-même, donc rien n'est embarqué. Ce sont des objets COM, que
 # `windows-sys` ne sait pas décrire et que `windows` décrit : les deux

@@ -50,14 +50,14 @@ pub fn unexpected(answer: Answer) -> String {
 /// is not answering yet, and a window that stayed grey until Windows had
 /// finished would look broken.
 pub fn wake_the_service() {
-    tauri::async_runtime::spawn(async {
+    crate::app::spawn(async {
         // Already standing: opening the window a second time must not
         // shake a service that is holding a session.
         if Service::join().await.is_ok() {
             return;
         }
         crate::journal::note("service muet, démarrage demandé");
-        let outcome = tauri::async_runtime::spawn_blocking(started).await;
+        let outcome = crate::app::spawn_blocking(started).await;
         crate::journal::note(&match outcome {
             Ok(Ok(())) => "service demandé au démarrage".to_string(),
             Ok(Err(e)) => format!("service non démarré : {e}"),

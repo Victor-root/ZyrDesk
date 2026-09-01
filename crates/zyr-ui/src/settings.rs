@@ -108,7 +108,7 @@ impl Chosen {
     }
 }
 
-pub async fn settings(app: tauri::AppHandle) -> Settings {
+pub async fn settings(app: crate::app::App) -> Settings {
     Settings::shown(
         preferred().await,
         crate::picture::the_screen_of_this_computer(&app),
@@ -225,7 +225,7 @@ pub struct SessionMenu {
     pub now: SessionChoice,
 }
 
-pub async fn session_menu(app: tauri::AppHandle) -> SessionMenu {
+pub async fn session_menu(app: crate::app::App) -> SessionMenu {
     let screen = crate::picture::the_screen_of_this_computer(&app);
     let preferred = preferred().await;
     SessionMenu {
@@ -330,7 +330,7 @@ async fn beyond_the_far_computer() -> Vec<String> {
 /// value from anywhere else is a window and a service that no longer
 /// agree, and quietly keeping it would hide that.
 pub async fn choose_session(
-    app: tauri::AppHandle,
+    app: crate::app::App,
     which: String,
     value: String,
 ) -> Result<SessionChoice, String> {

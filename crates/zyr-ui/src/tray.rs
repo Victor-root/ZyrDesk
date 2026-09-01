@@ -9,61 +9,31 @@
 //! be taken over and dim while it cannot, its tooltip says which in
 //! words, and the one thing its menu offers besides opening the window
 //! is a way to stop everything at once.
+//!
+//! **Elle est dessinée**, comme tout le reste du produit, à la taille
+//! exacte que la barre demande. Il n'y a donc aucune image à réduire ni à
+//! agrandir : c'était le seul moyen d'avoir une icône nette à seize
+//! pixels comme à vingt-huit, et c'est maintenant la même marque que
+//! celle du bouton flottant et de l'accueil, tracée par le même dessin.
+
+// Une zone de notification est une chose du système, et ce produit ne
+// tourne que sous Windows. Ailleurs, il n'y a pas d'icône à poser.
+#![cfg_attr(not(windows), allow(dead_code, unused_imports))]
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicIsize, Ordering};
 
-use tauri::image::Image;
-use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-use tauri::tray::{TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager};
+use crate::app::App;
 
-/// What the menu entries are called on the way back.
-const OPEN: &str = "open";
-const QUIT: &str = "quit";
+/// Ce que le menu répond quand on choisit une de ses lignes.
+const OUVRIR: usize = 1;
+const QUITTER: usize = 2;
 
-/// The product's own icon, compiled in, at the sizes this bar draws at.
+/// Ce qu'il reste de la marque quand cet ordinateur n'est pas joignable.
 ///
-/// Drawn from the same file the window and the installer use: one drawing
-/// for the whole product, and no second one to keep in step.
-///
-/// One image per size, and never one reduced from another. The tray is
-/// handed a single picture and Windows scales it to whatever the bar is
-/// drawing at, so handing it the largest meant handing it a two hundred
-/// and fifty-six pixel drawing to be squeezed into twenty-eight. That is
-/// the difference between an icon that looks drawn and one that looks
-/// blurred, and it is the same mistake the .ico file was making.
-const DRAWINGS: &[(u32, &[u8])] = &[
-    (
-        16,
-        include_bytes!("../../../packaging/brand/zyrdesk-16.png"),
-    ),
-    (
-        20,
-        include_bytes!("../../../packaging/brand/zyrdesk-20.png"),
-    ),
-    (
-        24,
-        include_bytes!("../../../packaging/brand/zyrdesk-24.png"),
-    ),
-    (
-        28,
-        include_bytes!("../../../packaging/brand/zyrdesk-28.png"),
-    ),
-    (
-        32,
-        include_bytes!("../../../packaging/brand/zyrdesk-32.png"),
-    ),
-    (
-        40,
-        include_bytes!("../../../packaging/brand/zyrdesk-40.png"),
-    ),
-];
-
-/// How much of the icon is left when this computer cannot be reached.
-///
-/// Dim rather than another drawing: it stays recognisable at sixteen
-/// pixels, where a second symbol would only be a smudge.
-const DIMMED: u16 = 90;
+/// Pâlie plutôt qu'un autre dessin : elle reste reconnaissable à seize
+/// pixels, là où un second symbole ne serait qu'une tache.
+const EN_RETRAIT: f32 = 90.0 / 255.0;
 
 /// What the icon last said, so it is only redrawn when it changes.
 ///
@@ -76,38 +46,124 @@ const DIMMED: u16 = 90;
 #[derive(Default)]
 pub struct Shown(Mutex<Option<(bool, bool)>>);
 
-/// Puts the icon up, for as long as the program runs.
-pub fn raise(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, OPEN, "Ouvrir ZyrDesk", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, QUIT, "Quitter", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &quit])?;
+/// La fenêtre qui reçoit ce que l'icône a à dire, et l'icône elle-même
+/// telle que le système la garde.
+static SA_FENETRE: AtomicIsize = AtomicIsize::new(0);
+static SON_DESSIN: AtomicIsize = AtomicIsize::new(0);
 
-    TrayIconBuilder::with_id(NAME)
-        .icon(drawn(false)?)
-        .tooltip("ZyrDesk")
-        .menu(&menu)
-        // Left click opens the window, which is what everyone expects of
-        // an icon down there; the menu stays on the right button.
-        .show_menu_on_left_click(false)
-        .on_menu_event(chosen)
-        .on_tray_icon_event(clicked)
-        .build(app)?;
+/// Le numéro sous lequel cette icône est déposée, et le message par
+/// lequel elle parle.
+const ELLE: u32 = 1;
+#[cfg(windows)]
+const DIT: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+
+/// Puts the icon up, for as long as the program runs.
+#[cfg(windows)]
+pub fn raise() -> Result<(), String> {
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::Shell::{
+        NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, Shell_NotifyIconW,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, HWND_MESSAGE, RegisterClassW, WNDCLASSW,
+    };
+
+    if SA_FENETRE.load(Ordering::Relaxed) != 0 {
+        return Ok(());
+    }
+    let classe: Vec<u16> = "ZyrDeskIcone".encode_utf16().chain(Some(0)).collect();
+    // SAFETY: une classe déclarée une fois et une fenêtre bâtie dessus,
+    // sur le fil qui pompera ses messages. Elle ne montre rien : c'est ce
+    // que le système demande pour porter une icône.
+    let sienne = unsafe {
+        let instance = GetModuleHandleW(std::ptr::null());
+        let class = WNDCLASSW {
+            style: 0,
+            lpfnWndProc: Some(repond),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: instance,
+            hIcon: std::ptr::null_mut(),
+            hCursor: std::ptr::null_mut(),
+            hbrBackground: std::ptr::null_mut(),
+            lpszMenuName: std::ptr::null(),
+            lpszClassName: classe.as_ptr(),
+        };
+        RegisterClassW(&class);
+        CreateWindowExW(
+            0,
+            classe.as_ptr(),
+            std::ptr::null(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            HWND_MESSAGE,
+            std::ptr::null_mut(),
+            instance,
+            std::ptr::null(),
+        )
+    };
+    if sienne.is_null() {
+        return Err("l'icône de la zone de notification n'a pas de fenêtre".to_string());
+    }
+    SA_FENETRE.store(sienne as isize, Ordering::Relaxed);
+
+    let mut depose = deposee(sienne);
+    depose.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    depose.uCallbackMessage = DIT;
+    depose.hIcon = dessinee(false);
+    SON_DESSIN.store(depose.hIcon as isize, Ordering::Relaxed);
+    ecris(&mut depose.szTip, "ZyrDesk");
+    // SAFETY: un bloc à nous, dont la taille est écrite dedans comme
+    // l'appel le demande.
+    if unsafe { Shell_NotifyIconW(NIM_ADD, &depose) } == 0 {
+        return Err("Windows n'a pas pris l'icône de la zone de notification".to_string());
+    }
     Ok(())
 }
 
-/// Name the icon answers to, so it can be found again to be changed.
-const NAME: &str = "zyrdesk";
+#[cfg(not(windows))]
+pub fn raise() -> Result<(), String> {
+    Err("il n'y a pas de zone de notification hors de Windows".to_string())
+}
+
+/// Le bloc que le système attend, rempli de ce qui ne change jamais.
+#[cfg(windows)]
+fn deposee(
+    sienne: windows_sys::Win32::Foundation::HWND,
+) -> windows_sys::Win32::UI::Shell::NOTIFYICONDATAW {
+    use windows_sys::Win32::UI::Shell::NOTIFYICONDATAW;
+
+    // SAFETY: un bloc à nous, rempli de zéros puis des seuls champs que
+    // les drapeaux annoncent.
+    let mut depose: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
+    depose.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+    depose.hWnd = sienne;
+    depose.uID = ELLE;
+    depose
+}
+
+/// Écrit un mot dans un des champs de longueur fixe du système.
+#[cfg(windows)]
+fn ecris(ou: &mut [u16], mot: &str) {
+    for (place, lettre) in ou.iter_mut().zip(mot.encode_utf16().chain(Some(0))) {
+        *place = lettre;
+    }
+}
 
 /// How often the icon asks what this computer is doing.
 ///
-/// From here rather than from the page: a window that is hidden has its
-/// timers slowed to a crawl by the system, and the icon has to keep
-/// telling the truth precisely when the window is nowhere to be seen.
+/// From here rather than from anywhere that draws: a window that is
+/// hidden has its timers slowed to a crawl by the system, and the icon
+/// has to keep telling the truth precisely when the window is nowhere to
+/// be seen.
 const LOOK: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Keeps the icon saying the truth, for as long as the program runs.
-pub fn watch(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
+pub fn watch(app: App) {
+    crate::app::spawn(async move {
         loop {
             let standing = crate::desk::standing().await;
             let playing = crate::floating::a_session_is_up(&app);
@@ -124,25 +180,48 @@ pub fn watch(app: AppHandle) {
 /// goes away with it, and this icon is then the only thing on screen that
 /// says the far computer is still being held. Somebody who has forgotten
 /// that has to be able to read it here.
-fn says(app: &AppHandle, reachable: bool, playing: bool) {
-    let shown = app.state::<Shown>();
-    let mut last = shown.0.lock().expect("état de l'icône");
+#[cfg(windows)]
+fn says(app: &App, reachable: bool, playing: bool) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::Shell::{NIF_ICON, NIF_TIP, NIM_MODIFY, Shell_NotifyIconW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::DestroyIcon;
+
+    let mut last = app.shown().0.lock().expect("état de l'icône");
     if *last == Some((reachable, playing)) {
         return;
     }
-    let Some(icon) = app.tray_by_id(NAME) else {
+    let sienne = SA_FENETRE.load(Ordering::Relaxed) as HWND;
+    if sienne.is_null() {
         return;
-    };
-    if let Ok(drawing) = drawn(!reachable) {
-        let _ = icon.set_icon(Some(drawing));
     }
-    let _ = icon.set_tooltip(Some(match (playing, reachable) {
-        (true, _) => "ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre",
-        (false, true) => "ZyrDesk : cet ordinateur peut être contrôlé",
-        (false, false) => "ZyrDesk : cet ordinateur n'est pas joignable",
-    }));
+    let mut depose = deposee(sienne);
+    depose.uFlags = NIF_ICON | NIF_TIP;
+    depose.hIcon = dessinee(!reachable);
+    ecris(
+        &mut depose.szTip,
+        match (playing, reachable) {
+            (true, _) => "ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre",
+            (false, true) => "ZyrDesk : cet ordinateur peut être contrôlé",
+            (false, false) => "ZyrDesk : cet ordinateur n'est pas joignable",
+        },
+    );
+    // SAFETY: un bloc à nous, et l'ancien dessin rendu une fois que le
+    // système ne s'en sert plus.
+    unsafe {
+        if Shell_NotifyIconW(NIM_MODIFY, &depose) == 0 {
+            let _ = DestroyIcon(depose.hIcon);
+            return;
+        }
+        let avant = SON_DESSIN.swap(depose.hIcon as isize, Ordering::Relaxed);
+        if avant != 0 {
+            let _ = DestroyIcon(avant as _);
+        }
+    }
     *last = Some((reachable, playing));
 }
+
+#[cfg(not(windows))]
+fn says(_app: &App, _reachable: bool, _playing: bool) {}
 
 /// The side, in real pixels, this bar draws an icon at.
 ///
@@ -151,62 +230,111 @@ fn says(app: &AppHandle, reachable: bool, playing: bool) {
 /// seventy-five, and so on. Asked of the system rather than worked out,
 /// since it is the system that decides.
 #[cfg(windows)]
-fn asked_for() -> u32 {
+fn asked_for() -> i32 {
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
 
     // SAFETY: no argument beyond the metric asked for.
-    u32::try_from(unsafe { GetSystemMetrics(SM_CXSMICON) }).unwrap_or(16)
+    unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16)
 }
 
-#[cfg(not(windows))]
-fn asked_for() -> u32 {
-    16
-}
-
-/// The icon, bright or dimmed.
-fn drawn(dim: bool) -> tauri::Result<Image<'static>> {
-    // The smallest that is not too small. A drawing enlarged by the
-    // system is soft, one reduced by it is soft as well, but the second
-    // keeps everything it was drawn with while the first invents.
-    let wanted = asked_for();
-    let (_, bytes) = DRAWINGS
-        .iter()
-        .find(|(side, _)| *side >= wanted)
-        .unwrap_or_else(|| DRAWINGS.last().expect("un dessin au moins"));
-    let drawing = Image::from_bytes(bytes)?;
-    if !dim {
-        return Ok(drawing.to_owned());
-    }
-    let (width, height) = (drawing.width(), drawing.height());
-    let mut faded = drawing.rgba().to_vec();
-    // Only what makes a pixel visible is touched: dimming the colours
-    // instead would turn the drawing grey on a dark background and black
-    // on a light one.
-    // Four bytes to a pixel, said as a size and not as a number: taken as
-    // a number the slices come back one at a time and nothing promises
-    // they are four long, and every reading of one has to answer for a
-    // length that cannot happen.
-    for pixel in faded.as_chunks_mut::<4>().0 {
-        pixel[3] = (u16::from(pixel[3]) * DIMMED / 255) as u8;
-    }
-    Ok(Image::new_owned(faded, width, height))
-}
-
-fn clicked(icon: &TrayIcon, event: TrayIconEvent) {
-    let TrayIconEvent::Click { button, .. } = event else {
-        return;
+/// La marque, tracée à la taille que la barre demande.
+///
+/// Rien n'est réduit ni agrandi : c'est le dessin lui-même qui est fait à
+/// cette taille-là, ce qui est la seule façon d'avoir un bord net à seize
+/// pixels.
+#[cfg(windows)]
+fn dessinee(en_retrait: bool) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
+    let cote = asked_for();
+    let Some(toile) = crate::paint::Toile::neuve(cote, cote) else {
+        return std::ptr::null_mut();
     };
-    if button == tauri::tray::MouseButton::Left {
-        crate::show_home(icon.app_handle());
+    toile.commence(crate::design::Couleur::RIEN);
+    crate::logo::marque(
+        &toile,
+        crate::paint::Cadre::pose(0.0, 0.0, cote as f32, cote as f32),
+        if en_retrait { EN_RETRAIT } else { 1.0 },
+    );
+    if !toile.finit() {
+        return std::ptr::null_mut();
     }
+    toile
+        .en_icone()
+        .map_or(std::ptr::null_mut(), |icone| icone.0 as _)
 }
 
-fn chosen(app: &AppHandle, event: MenuEvent) {
-    match event.id().as_ref() {
-        OPEN => crate::show_home(app),
-        QUIT => quit(app),
+/// SAFETY: appelée par le système sur le fil qui a fait cette fenêtre,
+/// avec les arguments qu'il documente.
+#[cfg(windows)]
+unsafe extern "system" fn repond(
+    window: windows_sys::Win32::Foundation::HWND,
+    message: u32,
+    holding: windows_sys::Win32::Foundation::WPARAM,
+    with: windows_sys::Win32::Foundation::LPARAM,
+) -> windows_sys::Win32::Foundation::LRESULT {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{DefWindowProcW, WM_LBUTTONUP, WM_RBUTTONUP};
+
+    if message == DIT {
+        match (with & 0xFFFF) as u32 {
+            // Le clic gauche ouvre la fenêtre, ce que tout le monde
+            // attend d'une icône là-dessous ; le menu reste sur le bouton
+            // droit.
+            WM_LBUTTONUP => ouvre(),
+            WM_RBUTTONUP => deroule(window),
+            _ => {}
+        }
+        return 0;
+    }
+    // SAFETY: la réponse du système à tout ce qui n'est pas répondu ici.
+    unsafe { DefWindowProcW(window, message, holding, with) }
+}
+
+/// Ce que le menu de l'icône propose, et ce qu'il fait de la réponse.
+#[cfg(windows)]
+fn deroule(window: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, MF_SEPARATOR, MF_STRING,
+        SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    };
+
+    let ouvrir: Vec<u16> = "Ouvrir ZyrDesk".encode_utf16().chain(Some(0)).collect();
+    let quitter: Vec<u16> = "Quitter".encode_utf16().chain(Some(0)).collect();
+    let mut ou = POINT { x: 0, y: 0 };
+    // SAFETY: un menu fait ici et défait ici, et la place du curseur lue
+    // dans un bloc à nous. Le premier plan est donné à cette fenêtre
+    // avant de dérouler le menu, faute de quoi le menu resterait ouvert
+    // après le clic suivant : c'est ce que le système demande.
+    let choisi = unsafe {
+        GetCursorPos(&mut ou);
+        let menu = CreatePopupMenu();
+        if menu.is_null() {
+            return;
+        }
+        AppendMenuW(menu, MF_STRING, OUVRIR, ouvrir.as_ptr());
+        AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
+        AppendMenuW(menu, MF_STRING, QUITTER, quitter.as_ptr());
+        SetForegroundWindow(window);
+        let choisi = TrackPopupMenu(
+            menu,
+            TPM_RETURNCMD | TPM_RIGHTBUTTON,
+            ou.x,
+            ou.y,
+            0,
+            window,
+            std::ptr::null(),
+        );
+        DestroyMenu(menu);
+        choisi
+    };
+    match choisi as usize {
+        OUVRIR => ouvre(),
+        QUITTER => quit(),
         _ => {}
     }
+}
+
+fn ouvre() {
+    crate::fenetre::montre();
 }
 
 /// Stops everything and leaves.
@@ -216,14 +344,36 @@ fn chosen(app: &AppHandle, event: MenuEvent) {
 /// very thing this icon exists to make impossible. It is asked rather
 /// than stopped through Windows, which would want administrator rights
 /// every single time.
-fn quit(app: &AppHandle) {
+fn quit() {
     crate::journal::note("fermeture demandée depuis la zone de notification");
-    let leaving = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         match crate::desk::stop_service().await {
             Ok(()) => crate::journal::note("service arrêté, fermeture"),
             Err(reason) => crate::journal::note(&format!("service non arrêté : {reason}")),
         }
-        leaving.exit(0);
+        retire();
+        crate::app::quitte();
     });
 }
+
+/// Retire l'icône avant de partir.
+///
+/// Sans ça elle reste dans la barre, fantôme, jusqu'à ce que quelqu'un
+/// passe la souris dessus : le système ne s'aperçoit qu'à ce moment-là
+/// que le programme n'est plus là.
+#[cfg(windows)]
+fn retire() {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::Shell::{NIM_DELETE, Shell_NotifyIconW};
+
+    let sienne = SA_FENETRE.swap(0, Ordering::Relaxed) as HWND;
+    if sienne.is_null() {
+        return;
+    }
+    let depose = deposee(sienne);
+    // SAFETY: un bloc à nous, nommant l'icône déposée au démarrage.
+    unsafe { Shell_NotifyIconW(NIM_DELETE, &depose) };
+}
+
+#[cfg(not(windows))]
+fn retire() {}

@@ -472,7 +472,7 @@ const AGAIN: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 /// Registers what is in the file, and keeps doing it for as long as the
 /// program runs.
 #[cfg(windows)]
-pub fn listen(app: tauri::AppHandle) {
+pub fn listen(app: crate::app::App) {
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 
     std::thread::spawn(move || {
@@ -514,7 +514,7 @@ pub fn listen_again() {
 /// Holds every combination until told to look again, and says whether
 /// there is a reason to come back.
 #[cfg(windows)]
-fn hold_them(app: &tauri::AppHandle) -> bool {
+fn hold_them(app: &crate::app::App) -> bool {
     use std::ptr::null_mut;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         MAPVK_VSC_TO_VK, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN, MapVirtualKeyW,
@@ -600,7 +600,7 @@ fn hold_them(app: &tauri::AppHandle) -> bool {
 }
 
 #[cfg(windows)]
-fn do_it(app: &tauri::AppHandle, doing: Doing) {
+fn do_it(app: &crate::app::App, doing: Doing) {
     match doing {
         Doing::Menu => {
             if let Err(e) = crate::floating::show_the_menu(app) {
@@ -615,9 +615,9 @@ fn do_it(app: &tauri::AppHandle, doing: Doing) {
 /// Asks the session for something, without holding the thread that owns
 /// the combinations: it has to be back waiting for the next one.
 #[cfg(windows)]
-fn on_the_session(app: &tauri::AppHandle, act: crate::floating::Act) {
+fn on_the_session(app: &crate::app::App, act: crate::floating::Act) {
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         if let Err(e) = crate::floating::ask(&app, act).await {
             crate::journal::note(&format!("raccourci sans effet : {e}"));
         }
@@ -625,7 +625,7 @@ fn on_the_session(app: &tauri::AppHandle, act: crate::floating::Act) {
 }
 
 #[cfg(not(windows))]
-pub fn listen(_app: tauri::AppHandle) {}
+pub fn listen(_app: crate::app::App) {}
 
 #[cfg(not(windows))]
 pub fn listen_again() {}

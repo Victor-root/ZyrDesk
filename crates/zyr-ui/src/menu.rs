@@ -23,7 +23,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
-use tauri::AppHandle;
+use crate::app::App;
 
 use crate::design::{self, Couleur, Palette};
 use crate::floating::Act;
@@ -488,7 +488,7 @@ static POUSSE: Mutex<Option<usize>> = Mutex::new(None);
 
 /// Le programme, pour les endroits que le système appelle et à qui la
 /// boîte à outils ne donne rien.
-static PROGRAM: Mutex<Option<AppHandle>> = Mutex::new(None);
+static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
 /// Les combinaisons en place, lues à l'ouverture de la session.
 ///
@@ -878,7 +878,7 @@ impl Curseur {
 /// Bâtie sur le fil qui dessine, comme celle du logo : une fenêtre
 /// appartient au fil qui l'a faite, et une fenêtre faite sur le fil de la
 /// veille n'entendrait jamais une souris.
-pub fn raise(app: &AppHandle, echelle: f32, clair: bool) {
+pub fn raise(app: &App, echelle: f32, clair: bool) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
@@ -913,10 +913,10 @@ pub fn raise(app: &AppHandle, echelle: f32, clair: bool) {
 ///
 /// Un numéro de tour, comme pour les mesures : deux ouvertures rapprochées
 /// ne laissent pas deux veilles derrière la même carte.
-fn relis_les_reglages(app: &AppHandle) {
+fn relis_les_reglages(app: &App) {
     let app = app.clone();
     let tour = TOUR_DES_REGLAGES.fetch_add(1, Ordering::Relaxed) + 1;
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         while TOUR_DES_REGLAGES.load(Ordering::Relaxed) == tour
             && ITS_WINDOW.load(Ordering::Relaxed) != 0
         {
@@ -943,7 +943,7 @@ fn relis_les_reglages(app: &AppHandle) {
 }
 
 /// Referme la carte et rend sa fenêtre avec la session.
-pub fn lower(app: &AppHandle) {
+pub fn lower(app: &App) {
     let window = ITS_WINDOW.swap(0, Ordering::Relaxed);
     if window == 0 {
         return;
@@ -987,7 +987,7 @@ pub fn montre(ouvert: bool) {
     suis_les_mesures(&app, ouvert);
     if ouvert {
         let asked = app.clone();
-        tauri::async_runtime::spawn(async move { relis_les_bascules(&asked).await });
+        crate::app::spawn(async move { relis_les_bascules(&asked).await });
         relis_les_reglages(&app);
     }
     let _ = app.run_on_main_thread(move || {
@@ -2282,7 +2282,7 @@ fn agit(cible: Cible) {
             // qui suit prend le temps qu'il prend, et une carte laissée
             // ouverte par-dessus serait une nappe posée sur l'image.
             montre(false);
-            tauri::async_runtime::spawn(async move {
+            crate::app::spawn(async move {
                 let refus = match fait {
                     Fait::Session(acte) => crate::floating::ask(&app, acte).await,
                     Fait::Ranger => crate::floating::hide(&app),
@@ -2296,7 +2296,7 @@ fn agit(cible: Cible) {
             // qui prend des secondes et met un écran de chargement à sa
             // place, et un menu resté ouvert serait une nappe posée dessus.
             montre(false);
-            tauri::async_runtime::spawn(async move {
+            crate::app::spawn(async move {
                 dit_le_refus(crate::session::apply_session(app).await);
             });
         }
@@ -2323,7 +2323,7 @@ fn agit(cible: Cible) {
             // basculé, et la rouvrir pour la ligne d'à côté ferait deux
             // gestes pour un réglage.
             let passe = bascule.passe;
-            tauri::async_runtime::spawn(async move {
+            crate::app::spawn(async move {
                 match crate::floating::ask(&app, passe).await {
                     // Relu plutôt que supposé : c'est la seule façon de
                     // montrer où l'on en est vraiment, et le son se lit
@@ -2380,13 +2380,13 @@ fn valeur_de(quoi: Reglage, rang: usize) -> Option<String> {
 /// Relu et non supposé : choisir une taille change ce que « client » vaut,
 /// et choisir quoi que ce soit peut faire apparaître la ligne qui relance
 /// l'image. La réponse porte les deux.
-fn choisis(app: &AppHandle, quoi: Reglage, valeur: String) {
+fn choisis(app: &App, quoi: Reglage, valeur: String) {
     note(&format!(
         "menu du bouton flottant : {} mis sur « {valeur} »",
         quoi.nom()
     ));
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         match crate::settings::choose_session(app.clone(), quoi.nom().to_string(), valeur).await {
             Ok(choix) => {
                 if let Some(menu) = REGLAGES.lock().expect("réglages du menu").as_mut() {
@@ -2491,7 +2491,7 @@ fn lache(window: windows_sys::Win32::Foundation::HWND, rang: usize) {
 /// qui les bascule et que le moteur ne dit jamais où il en est ; le son se
 /// demande au mélangeur de Windows, qui le sait et qui est ouvert à tout
 /// le monde.
-async fn relis_les_bascules(app: &AppHandle) {
+async fn relis_les_bascules(app: &App) {
     /// Pose où en est un interrupteur, et dit si ça a bougé.
     fn pose(ou: &AtomicBool, vrai: bool) -> bool {
         ou.swap(vrai, Ordering::Relaxed) != vrai
@@ -2513,7 +2513,7 @@ async fn relis_les_bascules(app: &AppHandle) {
 /// Suit ce que la session coûte tant que la carte est ouverte, et pas une
 /// seconde de plus : des chiffres que personne ne regarde ne valent ni le
 /// fichier ni le réveil.
-fn suis_les_mesures(app: &AppHandle, ouvert: bool) {
+fn suis_les_mesures(app: &App, ouvert: bool) {
     // Le tour change à chaque appel, ce qui arrête celui d'avant : sans
     // ça, ouvrir et refermer vite laisserait deux veilles derrière la
     // même carte.
@@ -2522,7 +2522,7 @@ fn suis_les_mesures(app: &AppHandle, ouvert: bool) {
         return;
     }
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         while TOUR.load(Ordering::Relaxed) == tour {
             let lue = Barre::de(&crate::mesures::session_measures());
             // Le verrou est rendu avant l'attente : un verrou tenu à
@@ -2542,7 +2542,7 @@ fn suis_les_mesures(app: &AppHandle, ouvert: bool) {
 }
 
 /// Redessine la carte depuis un fil qui n'est pas celui qui la dessine.
-fn redessine(app: &AppHandle) {
+fn redessine(app: &App) {
     let _ = app.run_on_main_thread(|| {
         use windows_sys::Win32::Foundation::HWND;
 

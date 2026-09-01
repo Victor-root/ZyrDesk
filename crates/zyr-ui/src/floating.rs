@@ -39,7 +39,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager};
+use crate::app::App;
 
 // What the button did goes into the same journal as everything else: it
 // has nowhere else to say it, standing behind the picture, and a menu
@@ -413,8 +413,8 @@ impl Floating {
     /// Says a close is being asked for, and takes it back when it was
     /// refused: a session still running must be told apart from one this
     /// window brought down.
-    fn closing(app: &AppHandle, asked: bool) {
-        app.state::<Floating>()
+    fn closing(app: &App, asked: bool) {
+        app.floating()
             .closing
             .store(asked, std::sync::atomic::Ordering::Relaxed);
     }
@@ -426,16 +426,16 @@ impl Floating {
     /// away: both look like an engine that lost its stream. Left standing
     /// for `was_closed_on_purpose` to take, since that is what the
     /// opening reads once it is over.
-    pub fn a_close_was_asked_for(app: &AppHandle) -> bool {
-        app.state::<Floating>()
+    pub fn a_close_was_asked_for(app: &App) -> bool {
+        app.floating()
             .closing
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Whether the session that just ended was closed on purpose, and
     /// forgets it either way.
-    pub fn was_closed_on_purpose(app: &AppHandle) -> bool {
-        app.state::<Floating>()
+    pub fn was_closed_on_purpose(app: &App) -> bool {
+        app.floating()
             .closing
             .swap(false, std::sync::atomic::Ordering::Relaxed)
     }
@@ -446,8 +446,8 @@ impl Floating {
 /// Read from what the button hangs on rather than asked of the service:
 /// it is the same answer, it is already kept up to date every second, and
 /// it costs nothing to whoever asks.
-pub fn a_session_is_up(app: &AppHandle) -> bool {
-    app.state::<Floating>()
+pub fn a_session_is_up(app: &App) -> bool {
+    app.floating()
         .watched
         .lock()
         .expect("session suivie")
@@ -456,11 +456,8 @@ pub fn a_session_is_up(app: &AppHandle) -> bool {
 
 /// Says which player this window has just started, before anybody else
 /// knows, and where the session it shows can be ended.
-pub fn expect(app: &AppHandle, process: u32, towards: &str, at: &str) {
-    *app.state::<Floating>()
-        .expected
-        .lock()
-        .expect("session attendue") = Some(Expected {
+pub fn expect(app: &App, process: u32, towards: &str, at: &str) {
+    *app.floating().expected.lock().expect("session attendue") = Some(Expected {
         process,
         towards: towards.to_string(),
         at: at.to_string(),
@@ -468,11 +465,8 @@ pub fn expect(app: &AppHandle, process: u32, towards: &str, at: &str) {
 }
 
 /// Forgets it, the session being over one way or another.
-pub fn expect_nothing(app: &AppHandle) {
-    *app.state::<Floating>()
-        .expected
-        .lock()
-        .expect("session attendue") = None;
+pub fn expect_nothing(app: &App) {
+    *app.floating().expected.lock().expect("session attendue") = None;
 }
 
 /// The player the button belongs to right now.
@@ -482,12 +476,12 @@ pub fn expect_nothing(app: &AppHandle) {
 /// just started, for as long as it has a picture up. That second answer
 /// is what puts the button on screen with the picture rather than
 /// several seconds behind it.
-pub async fn player(app: &AppHandle) -> Option<u32> {
+pub async fn player(app: &App) -> Option<u32> {
     if let Some(session) = crate::session::sessions().await.into_iter().next() {
         return Some(session.process);
     }
     let expected = app
-        .state::<Floating>()
+        .floating()
         .expected
         .lock()
         .expect("session attendue")
@@ -574,8 +568,8 @@ pub fn stop_the_player(_process: u32) -> bool {
 
 /// Follows the sessions for as long as the program runs, and puts the
 /// button up and down with them.
-pub fn watch(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
+pub fn watch(app: App) {
+    crate::app::spawn(async move {
         loop {
             tokio::time::sleep(LOOK).await;
             match player(&app).await {
@@ -590,7 +584,7 @@ pub fn watch(app: AppHandle) {
                         // goes through this window and is counted as it
                         // is sent.
                         let preferred = crate::settings::preferred().await;
-                        let state = app.state::<Floating>();
+                        let state = app.floating();
                         state
                             .game_mouse
                             .store(!preferred.absolute_mouse, Ordering::Relaxed);
@@ -628,8 +622,8 @@ pub fn watch(app: AppHandle) {
 /// two used to be one decision: a window put down in the taskbar was read
 /// as no session at all, so the cross went back to merely putting the
 /// window away and left the session running behind it.
-fn adopt(app: &AppHandle, process: u32) -> bool {
-    let state = app.state::<Floating>();
+fn adopt(app: &App, process: u32) -> bool {
+    let state = app.floating();
     let already = state
         .watched
         .lock()
@@ -660,7 +654,7 @@ fn adopt(app: &AppHandle, process: u32) -> bool {
 // Hors de Windows, le logo et la carte n'existent pas, et rien de ce qui
 // reste ici ne demande le programme.
 #[cfg_attr(not(windows), allow(unused_variables))]
-fn put_the_button_up(app: &AppHandle, process: u32) {
+fn put_the_button_up(app: &App, process: u32) {
     let Some(picture) = picture_of(process) else {
         return;
     };
@@ -712,8 +706,8 @@ fn button_size() -> u32 {
 /// whoever ended it the moment they know: a second of a button hanging
 /// over a picture that has gone is a second too many, and the watch only
 /// comes round once a second.
-pub fn lower(app: &AppHandle) {
-    let state = app.state::<Floating>();
+pub fn lower(app: &App) {
+    let state = app.floating();
     if state
         .watched
         .lock()
@@ -734,7 +728,7 @@ pub fn lower(app: &AppHandle) {
 ///
 /// Les deux fenêtres dont il est fait s'en vont ensemble, le logo et la
 /// carte : l'une laissée debout serait un bouton à moitié rangé.
-pub fn hide(app: &AppHandle) -> Result<(), String> {
+pub fn hide(app: &App) -> Result<(), String> {
     if !a_session_is_up(app) {
         return Err("le bouton flottant n'est plus là".to_string());
     }
@@ -758,12 +752,8 @@ pub fn hide(app: &AppHandle) -> Result<(), String> {
 /// Nothing is asked of the page while this runs, and the menu is left
 /// open if it was: a window that changes size under the mouse gets away
 /// from it.
-pub async fn grabbed(app: &AppHandle) -> bool {
-    let held = *app
-        .state::<Floating>()
-        .watched
-        .lock()
-        .expect("session suivie");
+pub async fn grabbed(app: &App) -> bool {
+    let held = *app.floating().watched.lock().expect("session suivie");
     let Some(process) = held else {
         return true;
     };
@@ -907,7 +897,7 @@ fn held_inside(
 ///
 /// Both ways round, because one combination that only opens leaves the
 /// hand reaching for the mouse to undo what the keyboard just did.
-pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
+pub fn show_the_menu(app: &App) -> Result<(), String> {
     if !a_session_is_up(app) {
         return Err("aucune session en cours".to_string());
     }
@@ -947,17 +937,17 @@ pub fn show_the_menu(app: &AppHandle) -> Result<(), String> {
 }
 
 /// The same, from anywhere in the program rather than from the page.
-pub fn in_game_mouse(app: &AppHandle) -> bool {
-    app.state::<Floating>().game_mouse.load(Ordering::Relaxed)
+pub fn in_game_mouse(app: &App) -> bool {
+    app.floating().game_mouse.load(Ordering::Relaxed)
 }
 
 /// The same, from anywhere in the program rather than from the page.
-pub fn keys_to_the_session(app: &AppHandle) -> bool {
-    app.state::<Floating>().system_keys.load(Ordering::Relaxed)
+pub fn keys_to_the_session(app: &App) -> bool {
+    app.floating().system_keys.load(Ordering::Relaxed)
 }
 
 /// The same, from anywhere in the program rather than from the menu.
-pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
+pub async fn ask(app: &App, act: Act) -> Result<(), String> {
     // Ours to do, both of them, and neither goes through the engine's
     // keyboard. Covering the screen is still a session matter: the
     // shortcut is registered with the system for the whole life of the
@@ -984,20 +974,17 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
     // believes of the two switches follows the keystrokes it sends.
     match act {
         Act::MouseMode => {
-            let _ = app
-                .state::<Floating>()
-                .game_mouse
-                .fetch_xor(true, Ordering::Relaxed);
+            let _ = app.floating().game_mouse.fetch_xor(true, Ordering::Relaxed);
         }
         Act::PointerLock => {
             let _ = app
-                .state::<Floating>()
+                .floating()
                 .pointer_held
                 .fetch_xor(true, Ordering::Relaxed);
         }
         Act::SystemKeys => {
             let theirs = !app
-                .state::<Floating>()
+                .floating()
                 .system_keys
                 .fetch_xor(true, Ordering::Relaxed);
             // Remembered, unlike the mouse: this one is thrown back and
@@ -1032,9 +1019,9 @@ pub async fn ask(app: &AppHandle, act: Act) -> Result<(), String> {
 /// Rien n'est fait pendant que le menu est ouvert : jeter cet
 /// interrupteur donne le clavier à l'image, et une main qui lit le menu
 /// est en train de viser autre chose.
-async fn keep_the_pointer_in_step(app: &AppHandle, process: u32) {
+async fn keep_the_pointer_in_step(app: &App, process: u32) {
     let wanted = crate::picture::on_the_whole_screen();
-    let state = app.state::<Floating>();
+    let state = app.floating();
     #[cfg(windows)]
     if crate::menu::ouvert() {
         return;
@@ -1059,8 +1046,8 @@ async fn keep_the_pointer_in_step(app: &AppHandle, process: u32) {
 ///
 /// What the watch adopted, and never the first session it can find: with
 /// two sessions open, what this window's menu asks for is this window's.
-fn the_player(app: &AppHandle) -> Result<u32, String> {
-    app.state::<Floating>()
+fn the_player(app: &App) -> Result<u32, String> {
+    app.floating()
         .watched
         .lock()
         .expect("session suivie")
@@ -1070,7 +1057,7 @@ fn the_player(app: &AppHandle) -> Result<u32, String> {
 }
 
 /// The same, from anywhere in the program rather than from the page.
-pub async fn hushed(app: &AppHandle) -> Result<bool, String> {
+pub async fn hushed(app: &App) -> Result<bool, String> {
     let process = the_player(app)?;
     aside(move || zyr_sound::muted(process)).await
 }
@@ -1083,7 +1070,7 @@ pub async fn hushed(app: &AppHandle) -> Result<bool, String> {
 /// has a strip in this computer's volume mixer like any other program,
 /// and that is the strip this pulls down, so nothing else playing here
 /// is touched.
-async fn hush_the_session(app: &AppHandle) -> Result<(), String> {
+async fn hush_the_session(app: &App) -> Result<(), String> {
     let process = the_player(app)?;
     let quiet = !aside(move || zyr_sound::muted(process)).await?;
     aside(move || zyr_sound::mute(process, quiet)).await?;
@@ -1102,7 +1089,7 @@ async fn hush_the_session(app: &AppHandle) -> Result<(), String> {
 async fn aside<T: Send + 'static>(
     ask: impl FnOnce() -> Result<T, zyr_sound::Trouble> + Send + 'static,
 ) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(ask)
+    crate::app::spawn_blocking(ask)
         .await
         .map_err(|e| format!("le mélangeur n'a pas répondu : {e}"))?
         .map_err(|e| e.to_string())
@@ -1123,8 +1110,8 @@ async fn aside<T: Send + 'static>(
 /// keyboard is only possible from the thread whose input this program
 /// joined to that program's, and reading back where it went is only
 /// truthful from that same thread.
-async fn type_at_the_picture(app: &AppHandle, act: Act, process: u32) -> Result<(), String> {
-    let (say, mut heard) = tauri::async_runtime::channel(1);
+async fn type_at_the_picture(app: &App, act: Act, process: u32) -> Result<(), String> {
+    let (say, mut heard) = tokio::sync::mpsc::channel(1);
     app.run_on_main_thread(move || {
         // Nothing else sends on it and it holds one: this cannot wait.
         let _ = say.try_send(hand_over_and_type(act, process));
@@ -1187,7 +1174,7 @@ async fn the_player_has_stopped(process: u32) -> bool {
 /// is handled here rather than among the keystrokes: it has no letter and
 /// no place on a keyboard, and never will.
 ///
-async fn press_ctrl_alt_del_over_there(app: &AppHandle) -> Result<(), String> {
+async fn press_ctrl_alt_del_over_there(app: &App) -> Result<(), String> {
     let way = the_way_of_this_session(app).await?;
     crate::service::ask(&zyr_control::Request::SecureAttention { way })
         .await
@@ -1206,7 +1193,7 @@ async fn press_ctrl_alt_del_over_there(app: &AppHandle) -> Result<(), String> {
 /// So it goes round the same way Ctrl+Alt+Suppr does, and for the same
 /// reason: some things a session needs have no letter, no place on a
 /// keyboard, and never will.
-async fn lock_over_there(app: &AppHandle) -> Result<(), String> {
+async fn lock_over_there(app: &App) -> Result<(), String> {
     let way = the_way_of_this_session(app).await?;
     // Timed from here because here is where the picture is watched. The
     // far computer says what its own half cost, and the two together say
@@ -1228,12 +1215,8 @@ async fn lock_over_there(app: &AppHandle) -> Result<(), String> {
 /// this computer, and it is the one the button hangs on that is meant,
 /// never merely the first of the list. With two sessions open, what this
 /// menu asks for must reach the picture this menu belongs to.
-async fn the_way_of_this_session(app: &AppHandle) -> Result<zyr_control::WayId, String> {
-    let watched = *app
-        .state::<Floating>()
-        .watched
-        .lock()
-        .expect("session suivie");
+async fn the_way_of_this_session(app: &App) -> Result<zyr_control::WayId, String> {
+    let watched = *app.floating().watched.lock().expect("session suivie");
 
     let sessions = crate::session::sessions().await;
     let ours = watched
@@ -1266,12 +1249,8 @@ async fn the_way_of_this_session(app: &AppHandle) -> Result<zyr_control::WayId, 
 /// this window wrote down when it started the player, and without that
 /// fallback the cross and the menu answered « aucune session en cours »
 /// over a running picture.
-async fn end_the_session(app: &AppHandle) -> Result<(), String> {
-    let watched = *app
-        .state::<Floating>()
-        .watched
-        .lock()
-        .expect("session suivie");
+async fn end_the_session(app: &App) -> Result<(), String> {
+    let watched = *app.floating().watched.lock().expect("session suivie");
 
     let mut sessions = crate::session::sessions().await;
     let ours = watched
@@ -1289,7 +1268,7 @@ async fn end_the_session(app: &AppHandle) -> Result<(), String> {
         }
         None => {
             let expected = app
-                .state::<Floating>()
+                .floating()
                 .expected
                 .lock()
                 .expect("session attendue")
@@ -1317,8 +1296,8 @@ async fn end_the_session(app: &AppHandle) -> Result<(), String> {
     // session is over on this side one way or the other, and a refusal
     // shown then would be a red line across a home screen about a session
     // the person has already left.
-    tauri::async_runtime::spawn(async move {
-        let answered = tauri::async_runtime::spawn_blocking(move || {
+    crate::app::spawn(async move {
+        let answered = crate::app::spawn_blocking(move || {
             zyr_session::close_on_the_far_computer(&towards, &at)
         })
         .await;
@@ -1438,8 +1417,8 @@ pub fn room_for_the_button() -> Option<(i32, i32)> {
 /// which is what no cage at all looks like, and a third program caging
 /// the pointer for its own reasons looked like ours.
 #[cfg(windows)]
-fn give_the_pointer_back(app: &AppHandle) {
-    let state = app.state::<Floating>();
+fn give_the_pointer_back(app: &App) {
+    let state = app.floating();
     let Some(process) = *state.watched.lock().expect("session suivie") else {
         return;
     };
@@ -1465,7 +1444,7 @@ pub fn room_for_the_button() -> Option<(i32, i32)> {
 }
 
 #[cfg(not(windows))]
-fn give_the_pointer_back(_app: &AppHandle) {}
+fn give_the_pointer_back(_app: &App) {}
 
 /// Whether the primary mouse button is down right now.
 ///

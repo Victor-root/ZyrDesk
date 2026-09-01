@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
-use tauri::AppHandle;
+use crate::app::App;
 use zyr_control::{Answer, Request};
 use zyr_proto::session::{Asked, Codec, FarScreen, Preferred, SessionSettings};
 use zyr_session::{Outcome, Step, Wanted};
@@ -243,7 +243,7 @@ pub fn waiting_to_be_applied(preferred: &Preferred) -> bool {
     }
 }
 
-pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Result<(), String> {
+pub async fn connect(app: App, host: String, fingerprint: String) -> Result<(), String> {
     let peer = fingerprint
         .trim()
         .parse()
@@ -307,7 +307,7 @@ pub async fn connect(app: AppHandle, host: String, fingerprint: String) -> Resul
 /// measurement: what to ask the engine for, and how large the far screen
 /// is asked to draw. Measuring twice would let the two disagree about the
 /// screen they describe.
-fn what_to_ask_for(app: &AppHandle, preferred: Preferred) -> (SessionSettings, u32) {
+fn what_to_ask_for(app: &App, preferred: Preferred) -> (SessionSettings, u32) {
     let screen = crate::picture::the_screen_of_this_computer(app);
     let settings = preferred.settings(screen);
     crate::picture::tell_what_is_asked_for(screen, preferred.asked, &settings);
@@ -323,7 +323,7 @@ fn what_to_ask_for(app: &AppHandle, preferred: Preferred) -> (SessionSettings, u
 /// picture again; everything around it stands, this thread and the
 /// pairing included, and what it costs is the few seconds an opening
 /// takes.
-fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
+fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
     crate::journal::note(&format!("session demandée vers {}", wanted.host));
     loop {
         *SHOWN_AS.lock().expect("réglages de l'image") = Some(told_once(&preferred));
@@ -405,8 +405,8 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
             // picture was already showing, never the ordinary settings:
             // the person asked for one thing to change, not for three
             // others to go back to what the product does by default.
-            preferred = tauri::async_runtime::block_on(crate::settings::what_was_chosen())
-                .unwrap_or(preferred);
+            preferred =
+                crate::app::block_on(crate::settings::what_was_chosen()).unwrap_or(preferred);
             (wanted.settings, wanted.far_magnification) = what_to_ask_for(app, preferred);
             // The way is opened again with the picture, and what the far
             // computer was asked went with the old one: it has to be
@@ -474,7 +474,7 @@ fn drive(app: &AppHandle, mut wanted: Wanted, mut preferred: Preferred) {
 /// Only a session this window is driving: the numbers to open it again
 /// with live on that window's own thread, and a session opened elsewhere
 /// has nobody here to hear this.
-pub async fn apply_session(app: AppHandle) -> Result<(), String> {
+pub async fn apply_session(app: App) -> Result<(), String> {
     if !opening() {
         return Err(
             "cette session n'a pas été ouverte depuis cette fenêtre.\n  \
@@ -503,9 +503,9 @@ pub async fn apply_session(app: AppHandle) -> Result<(), String> {
 /// it.
 ///
 /// The same path the menu takes, and no second one.
-pub fn end_it(app: &AppHandle) {
+pub fn end_it(app: &App) {
     let asked = app.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         crate::journal::note("session terminée par la croix de la fenêtre");
         if let Err(reason) = crate::floating::ask(&asked, crate::floating::Act::End).await {
             crate::journal::note(&format!(
@@ -540,7 +540,7 @@ const WINDOW_STEP: Duration = Duration::from_millis(1);
 /// On a thread of its own and never on the spot: this is called from
 /// inside the opening, and holding it there would hold back everything
 /// the window is waiting to be told.
-fn lay_the_picture_as_soon_as_it_opens(app: AppHandle, process: u32) {
+fn lay_the_picture_as_soon_as_it_opens(app: App, process: u32) {
     std::thread::spawn(move || {
         lay_the_picture_when_it_opens(&app, process);
     });
@@ -551,7 +551,7 @@ fn lay_the_picture_as_soon_as_it_opens(app: AppHandle, process: u32) {
 /// Answers whether the picture ended up in our window. Called from two
 /// places at once and none the worse for it: laying a picture already
 /// laid does nothing, and the lock inside is there for exactly this.
-fn lay_the_picture_when_it_opens(app: &AppHandle, process: u32) -> bool {
+fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
     let until = std::time::Instant::now() + WINDOW_TAKES;
     while std::time::Instant::now() < until {
         if crate::picture::hold(app, process) {
@@ -713,7 +713,7 @@ fn written(step: &Step) -> String {
 /// leave that window exactly as it found it, and « sometimes it ends up
 /// minimised » is the kind of report that cannot be chased without
 /// knowing which of the two sides it was already on.
-fn how_the_window_stands(_app: &AppHandle, when: &str) {
+fn how_the_window_stands(_app: &App, when: &str) {
     if crate::fenetre::sienne() == 0 {
         crate::journal::note(&format!("{when} : plus de fenêtre d'accueil"));
         return;
@@ -728,7 +728,7 @@ fn how_the_window_stands(_app: &AppHandle, when: &str) {
     ));
 }
 
-fn finish(app: &AppHandle, ok: bool, message: String) {
+fn finish(app: &App, ok: bool, message: String) {
     how_the_window_stands(app, "fin de session, avant");
     OPENING.store(false, Ordering::SeqCst);
     // A session that is over asks for nothing, and shows nothing. Both

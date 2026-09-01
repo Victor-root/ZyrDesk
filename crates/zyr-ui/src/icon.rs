@@ -7,21 +7,19 @@
 //! of its own is drawn from that one instead, stretched or squeezed to
 //! whatever the taskbar and the title bar happen to want.
 //!
-//! The toolkit gives every window one, and it builds it from the first
-//! entry of our .ico and nothing else (`tauri-codegen`, `image.rs`:
-//! `let entry = &icon_dir.entries()[0]`). Sorted smallest first, as icon
-//! files are, that is the sixteen pixel drawing, blown up to the
-//! forty-two the taskbar draws at on a magnified screen. Blowing a
-//! drawing up is far worse than shrinking one, which is why this icon was
-//! the only soft one on a bar of sharp ones, and why no amount of care in
-//! the file changed anything: the other twenty sizes were never read.
+//! A toolkit used to give this window one, built from the first entry of
+//! our .ico and nothing else. Sorted smallest first, as icon files are,
+//! that was the sixteen pixel drawing, blown up to the forty-two the
+//! taskbar draws at on a magnified screen. Blowing a drawing up is far
+//! worse than shrinking one, which is why this icon was the only soft one
+//! on a bar of sharp ones, and why no amount of care in the file changed
+//! anything: the other twenty sizes were never read.
 //!
-//! So the window is given its icon here, twice, from the compiled
-//! resource: once at the size Windows draws a big icon and once at the
-//! size it draws a small one. Both come out of the .ico at exactly those
-//! sizes, with nothing stretched at all.
-
-use tauri::AppHandle;
+//! The toolkit is gone and the window is ours, so nothing gives it an
+//! icon unasked. It is given one here, twice, from the compiled resource:
+//! once at the size Windows draws a big icon and once at the size it
+//! draws a small one. Both come out of the .ico at exactly those sizes,
+//! with nothing stretched at all.
 
 /// Puts the right icon on the home window, at the sizes Windows is about
 /// to draw it at.
@@ -30,7 +28,7 @@ use tauri::AppHandle;
 /// in real pixels, and a screen magnified differently asks for different
 /// ones.
 #[cfg(windows)]
-pub fn on_the_window(_app: &AppHandle) {
+pub fn on_the_window() {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
@@ -82,4 +80,4 @@ pub fn on_the_window(_app: &AppHandle) {
 }
 
 #[cfg(not(windows))]
-pub fn on_the_window(_app: &AppHandle) {}
+pub fn on_the_window() {}

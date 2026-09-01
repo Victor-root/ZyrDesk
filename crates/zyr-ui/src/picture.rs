@@ -39,7 +39,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicIsize, Ordering};
 
-use tauri::{AppHandle, Manager};
+use crate::app::App;
 use zyr_proto::session::{DisplayMode, Screen};
 
 /// The engine window this program has taken in hand.
@@ -158,8 +158,8 @@ struct Held {
 /// Answers false for as long as the engine has not opened its window,
 /// which is most of the time a session takes to start. Nothing is
 /// remembered in that case: the next call tries again.
-pub fn hold(app: &AppHandle, process: u32) -> bool {
-    let state = app.state::<Picture>();
+pub fn hold(app: &App, process: u32) -> bool {
+    let state = app.picture();
     // The lock is held from the reading to the writing. Two callers race
     // here every second a session opens, the watch and the opening's own
     // thread; each reading « nothing held », both took the frame away,
@@ -198,13 +198,8 @@ pub fn hold(app: &AppHandle, process: u32) -> bool {
 }
 
 /// Lets go, the session being over.
-pub fn let_go(app: &AppHandle) {
-    let held = app
-        .state::<Picture>()
-        .held
-        .lock()
-        .expect("image tenue")
-        .take();
+pub fn let_go(app: &App) {
+    let held = app.picture().held.lock().expect("image tenue").take();
     if held.is_some() {
         remember_the_shape(0, (0, 0), 0);
         give_the_window_back(app);
@@ -217,7 +212,7 @@ pub fn let_go(app: &AppHandle) {
 /// engine is always started in a window of ordinary size, and how much
 /// of the screen the session takes stopped being its business the day
 /// its window went inside ours.
-pub fn take_the_screen(app: &AppHandle, whole: bool) -> Result<(), String> {
+pub fn take_the_screen(app: &App, whole: bool) -> Result<(), String> {
     if crate::fenetre::sienne() == 0 {
         return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
     }
@@ -252,7 +247,7 @@ pub fn take_the_screen(app: &AppHandle, whole: bool) -> Result<(), String> {
 /// it was. A session ending hands the screen back but leaves the window
 /// the size it is: taking somebody's window down a size after they have
 /// spent an hour in it is not ours to do.
-pub fn take_the_screen_for_a_session(app: &AppHandle, whole: bool) -> Result<(), String> {
+pub fn take_the_screen_for_a_session(app: &App, whole: bool) -> Result<(), String> {
     take_the_screen(app, whole)?;
     if whole {
         return Ok(());
@@ -270,7 +265,7 @@ pub fn take_the_screen_for_a_session(app: &AppHandle, whole: bool) -> Result<(),
 /// applies what was decided before, the other takes the screen back at
 /// the end of a session. So this is the only one that writes anything
 /// down, and what it writes is what the next session opens as.
-pub fn toggle_the_screen(app: &AppHandle) -> Result<(), String> {
+pub fn toggle_the_screen(app: &App) -> Result<(), String> {
     if crate::fenetre::sienne() == 0 {
         return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
     }
@@ -280,7 +275,7 @@ pub fn toggle_the_screen(app: &AppHandle) -> Result<(), String> {
     // Writing it down means asking the service, which is a round trip
     // over a pipe: the picture has already moved, and nothing waits for
     // this.
-    tauri::async_runtime::spawn(async move {
+    crate::app::spawn(async move {
         crate::settings::remember_display(if whole {
             DisplayMode::Fullscreen
         } else {
@@ -318,7 +313,7 @@ const ROUNDING: u32 = 1;
 /// Only the height moves. Both would fight whichever edge is being
 /// dragged, and a window that resists in two directions at once cannot
 /// be resized at all.
-pub fn hold_the_shape(app: &AppHandle) {
+pub fn hold_the_shape(app: &App) {
     if a_gesture_is_running() {
         return;
     }
@@ -349,8 +344,8 @@ pub fn hold_the_shape(app: &AppHandle) {
 }
 
 /// What is held right now, if anything.
-fn taken(app: &AppHandle) -> Option<Held> {
-    *app.state::<Picture>().held.lock().expect("image tenue")
+fn taken(app: &App) -> Option<Held> {
+    *app.picture().held.lock().expect("image tenue")
 }
 
 /* ---- Ce qui appartient à Windows ------------------------------------- */
@@ -359,7 +354,7 @@ fn taken(app: &AppHandle) -> Option<Held> {
 /// carry, hands it to ours, and says which window it was and what shape
 /// the picture in it has.
 #[cfg(windows)]
-fn take_the_frame_away(app: &AppHandle, process: u32) -> Option<(isize, (i32, i32))> {
+fn take_the_frame_away(app: &App, process: u32) -> Option<(isize, (i32, i32))> {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GWL_EXSTYLE, GWL_STYLE, GWLP_HWNDPARENT, GetClientRect, GetWindowLongPtrW,
@@ -454,7 +449,7 @@ fn alive(held: &Held) -> bool {
 /// twice, it would be worked out once too many, and the two would come
 /// apart exactly when the window moves.
 #[cfg(windows)]
-pub fn fit(app: &AppHandle) {
+pub fn fit(app: &App) {
     let Some(held) = taken(app) else {
         return;
     };
@@ -1217,7 +1212,7 @@ fn let_the_corners_go(engine: windows_sys::Win32::Foundation::HWND) {
 /// rarely the same panel, and a hundred and forty-four next to a sixty
 /// is the ordinary case, not the odd one.
 #[cfg(windows)]
-pub fn the_screen_of_this_computer(app: &AppHandle) -> Option<Screen> {
+pub fn the_screen_of_this_computer(app: &App) -> Option<Screen> {
     use windows_sys::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFOEXW, MonitorFromWindow,
     };
@@ -1270,7 +1265,7 @@ fn the_rate_of(name: &[u16; 32]) -> u32 {
 }
 
 #[cfg(not(windows))]
-pub fn the_screen_of_this_computer(_app: &AppHandle) -> Option<Screen> {
+pub fn the_screen_of_this_computer(_app: &App) -> Option<Screen> {
     None
 }
 
@@ -1284,7 +1279,7 @@ pub fn the_screen_of_this_computer(_app: &AppHandle) -> Option<Screen> {
 /// the number Windows has meant by life size since it had a settings
 /// page at all.
 #[cfg(windows)]
-fn the_magnification(app: &AppHandle) -> u32 {
+fn the_magnification(app: &App) -> u32 {
     use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
     use zyr_proto::session::LIFE_SIZE;
 
@@ -1386,7 +1381,7 @@ fn the_frame_is_square(home: windows_sys::Win32::Foundation::HWND) -> bool {
 /// mid-nothing and the toolkit's own handler acts on an activation that
 /// never happened.
 #[cfg(windows)]
-fn give_the_keyboard_to_the_picture(app: &AppHandle) -> bool {
+fn give_the_keyboard_to_the_picture(app: &App) -> bool {
     if let Some(home) = home_window(app) {
         light_the_bar(home);
     }
@@ -1411,7 +1406,7 @@ fn give_the_keyboard_to_the_picture(app: &AppHandle) -> bool {
 /// window the focus is only possible from the thread whose input was
 /// joined to that program's.
 #[cfg(windows)]
-pub fn the_keyboard_back(app: &AppHandle) {
+pub fn the_keyboard_back(app: &App) {
     let asked = app.clone();
     let _ = app.run_on_main_thread(move || {
         give_the_keyboard_to_the_picture(&asked);
@@ -1419,11 +1414,11 @@ pub fn the_keyboard_back(app: &AppHandle) {
 }
 
 #[cfg(not(windows))]
-pub fn the_keyboard_back(_app: &AppHandle) {}
+pub fn the_keyboard_back(_app: &App) {}
 
 /// Puts all of that back the way it was, the session being over.
 #[cfg(windows)]
-fn give_the_window_back(app: &AppHandle) {
+fn give_the_window_back(app: &App) {
     use windows_sys::Win32::UI::Shell::RemoveWindowSubclass;
 
     let asked = app.clone();
@@ -1872,7 +1867,7 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
 /// wanted here is for the system to ask it again, which it only does
 /// when told the frame may have changed.
 #[cfg(windows)]
-fn no_frame_on_the_whole_screen(app: &AppHandle) {
+fn no_frame_on_the_whole_screen(app: &App) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         HWND_TOP, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
         SetWindowPos,
@@ -1907,7 +1902,7 @@ fn no_frame_on_the_whole_screen(app: &AppHandle) {
 static ROUNDS_WANTED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(windows))]
-fn no_frame_on_the_whole_screen(_app: &AppHandle) {}
+fn no_frame_on_the_whole_screen(_app: &App) {}
 
 /// Measures what the window and its inside really came to, against the
 /// screen they are on.
@@ -3606,13 +3601,13 @@ pub(crate) fn the_engines_window() -> Option<windows_sys::Win32::Foundation::HWN
 
 /// Our own window, as the system knows it.
 #[cfg(windows)]
-fn home_window(_app: &AppHandle) -> Option<windows_sys::Win32::Foundation::HWND> {
+fn home_window(_app: &App) -> Option<windows_sys::Win32::Foundation::HWND> {
     let home = crate::fenetre::sienne() as windows_sys::Win32::Foundation::HWND;
     (!home.is_null()).then_some(home)
 }
 
 #[cfg(not(windows))]
-fn take_the_frame_away(_app: &AppHandle, _process: u32) -> Option<(isize, (i32, i32))> {
+fn take_the_frame_away(_app: &App, _process: u32) -> Option<(isize, (i32, i32))> {
     None
 }
 
@@ -3646,7 +3641,7 @@ pub(crate) fn the_keyboard_to_the_picture() -> bool {
 /// session, the other watches it. Handed over rather than done on the
 /// spot.
 #[cfg(windows)]
-fn take_the_window_in_hand(app: &AppHandle) {
+fn take_the_window_in_hand(app: &App) {
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
 
     let asked = app.clone();
@@ -3676,13 +3671,13 @@ fn take_the_window_in_hand(app: &AppHandle) {
 }
 
 #[cfg(not(windows))]
-fn take_the_window_in_hand(_app: &AppHandle) {}
+fn take_the_window_in_hand(_app: &App) {}
 
 #[cfg(not(windows))]
-fn give_the_window_back(_app: &AppHandle) {}
+fn give_the_window_back(_app: &App) {}
 
 #[cfg(not(windows))]
-pub fn fit(_app: &AppHandle) {}
+pub fn fit(_app: &App) {}
 
 #[cfg(test)]
 mod tests {

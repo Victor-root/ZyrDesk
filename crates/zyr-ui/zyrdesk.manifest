@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Ce que Windows doit savoir de ce programme avant de le lancer.
+
+  Les contrôles modernes, parce que les trois champs de saisie du
+  dialogue « Ajouter un ordinateur » sont ceux du système et que leur mot
+  en filigrane n'existe que dans leur version six.
+
+  Les vrais pixels, sur chaque écran : tout ce que ce programme dessine
+  est déjà à la bonne taille, et sans ce mot le système l'agrandirait une
+  seconde fois. Redit à l'ouverture par un appel, ceinture et bretelles.
+
+  Les versions de Windows qu'il connaît : sans cette liste, le système
+  fait croire à un programme qu'il tourne sur un Windows plus ancien, et
+  plusieurs de ses réponses changent avec.
+
+  Et les droits de celui qui le lance, sans plus : une élévation est
+  demandée une seule fois, à la mise en service, et par la porte prévue
+  pour ça.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 et 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+      <!-- Windows 8.1 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}" />
+    </application>
+  </compatibility>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings"
+        >PerMonitorV2</dpiAwareness>
+    </windowsSettings>
+  </application>
+</assembly>

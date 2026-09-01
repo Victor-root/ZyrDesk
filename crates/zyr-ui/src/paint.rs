@@ -507,6 +507,48 @@ impl Toile {
         }
     }
 
+    /// Fait de la toile une icône du système.
+    ///
+    /// Ce qu'il faut pour la zone de notification, qui ne prend pas une
+    /// image mais une icône. Le système en garde une copie, donc la toile
+    /// reste à nous ; ce qui revient est à celui qui le demande, jusqu'à
+    /// ce qu'il le rende.
+    ///
+    /// Le masque est celui d'une icône en quatre octets par pixel : tout
+    /// à zéro, la transparence étant portée par les pixels eux-mêmes.
+    pub fn en_icone(&self) -> Option<windows::Win32::UI::WindowsAndMessaging::HICON> {
+        use windows::Win32::Graphics::Gdi::CreateBitmap;
+        use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
+
+        // Une ligne d'un dessin à un bit par pixel est comptée en mots de
+        // seize bits, ce que la taille ci-dessous arrondit.
+        let par_ligne = ((self.large as usize).div_ceil(16)) * 2;
+        let rien = vec![0u8; par_ligne * self.haute.max(0) as usize];
+        // SAFETY: un dessin fait ici et rendu ici, et une icône que le
+        // système recopie avant de rendre la main.
+        unsafe {
+            let masque = CreateBitmap(
+                self.large,
+                self.haute,
+                1,
+                1,
+                Some(rien.as_ptr().cast::<std::ffi::c_void>()),
+            );
+            if masque.is_invalid() {
+                return None;
+            }
+            let icone = CreateIconIndirect(&ICONINFO {
+                fIcon: true.into(),
+                xHotspot: 0,
+                yHotspot: 0,
+                hbmMask: masque,
+                hbmColor: self.bitmap,
+            });
+            let _ = DeleteObject(masque.into());
+            icone.ok()
+        }
+    }
+
     /// Un rectangle aux coins arrondis, rempli.
     pub fn remplis(&self, cadre: Cadre, rayon: f32, couleur: Couleur) {
         // SAFETY: un pinceau et une cible à nous, entre un début et une

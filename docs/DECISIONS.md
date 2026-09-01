@@ -1921,7 +1921,25 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Le système de design n'a pas bougé.** Il est toujours écrit une seule fois et lu à la compilation. Le fichier garde sa notation, que plus aucun navigateur ne lit : elle écrit deux thèmes côte à côte, et la relire à la compilation est ce qui vérifie que les deux disent bien les mêmes rôles. Recopier quarante valeurs à la main serait exactement ce que tout ce mécanisme existe pour éviter.
 
-**Ce que ça coûte.** La fenêtre nue est derrière la porte « unstable » de la boîte à outils, qui ne range que celle-là : c'est la seule sorte que ce produit emploie désormais, et le verrou du projet épingle la version. Le jour où la boîte à outils ne fournit plus que ça, la fenêtre devient la nôtre et rien d'autre ne bouge.
+**~~Ce que ça coûte~~ réglé le 2026-09-01 par [D111](#d111-la-fenêtre-la-boucle-et-licône-deviennent-les-nôtres-et-il-ne-reste-plus-de-boîte-à-outils-2026-09-01-pendant-m4).** Il était écrit ici que la fenêtre nue vivait derrière la porte « unstable » de la boîte à outils, et que le jour où celle-ci ne fournirait plus que ça, la fenêtre deviendrait la nôtre. Ce jour est le lendemain.
+
+## D111. La fenêtre, la boucle et l'icône deviennent les nôtres, et il ne reste plus de boîte à outils (2026-09-01, pendant M4)
+
+**Demandé par Victor**, à la lecture de ce qui restait : « et tu peux pas aussi migrer ça en natif ? ».
+
+**Ce qui restait** était la fenêtre, sa boucle d'événements et l'icône près de l'horloge. C'est peu de choses en nombre, et c'est la plus importante des trois : **c'est la même fenêtre qui porte l'accueil et l'image d'une session**, et tout ce que `picture` fait de délicat se joue dans les messages qu'elle reçoit. Une couche qui vise autre chose entre nous et ces messages-là est exactement l'endroit où l'on ne veut pas d'intermédiaire.
+
+**La fenêtre.** Bâtie ici, avec sa classe, son cadre, son plancher de taille, son plein écran, son agrandi et son suivi de l'agrandissement d'écran. Ce que `picture` posait devant ses messages continue de s'y poser : un gardien se met devant celle-ci comme il se mettait devant l'autre.
+
+**La boucle.** Le fil principal prend les messages et les rend. Ce qui devait être fait sur ce fil-là passe par une **boîte aux lettres** : une fenêtre qui ne montre rien, dont le seul rôle est de porter du travail. Une fenêtre et non un message au fil lui-même, et ce n'est pas un détail : Windows jette les messages adressés à un fil pendant qu'il déplace une fenêtre, et c'est précisément pendant qu'on la déplace que l'image d'une session doit la suivre.
+
+**L'icône.** Elle est **dessinée**, comme tout le reste du produit, à la taille exacte que la barre demande. Il n'y a donc plus rien à réduire ni à agrandir, et les six images qu'elle embarquait s'en vont : c'est la même marque que celle du bouton flottant et de l'accueil, tracée par le même dessin. Pâlie plutôt que remplacée quand l'ordinateur n'est pas joignable, comme avant.
+
+**Un seul ZyrDesk à la fois** tient maintenant dans un verrou nommé et un message : le second trouve la fenêtre du premier, lui demande de se montrer, et s'arrête.
+
+**Ce que ça enlève.** Trois cent vingt et une caisses dans le verrou du projet, cinq cent soixante-neuf devenues deux cent quarante-huit. Plus aucune dépendance à une couche web, ni au moment de compiler ni au moment de tourner : la CI de Linux n'installe plus rien pour bâtir l'interface. Et le fichier de configuration, les capacités et les schémas que la boîte à outils demandait s'en vont avec elle.
+
+**Ce que ça coûte.** Ce que la boîte à outils faisait dans l'ombre est maintenant écrit et doit être maintenu : la conscience des écrans, dite au démarrage et redite dans le manifeste ; les contrôles modernes du système, sans lesquels le mot en filigrane d'un champ de saisie ne s'affiche pas ; et l'icône du programme, gravée dans la ressource sous le numéro que Windows y cherche. Trois choses, écrites une fois, dans deux fichiers de vingt lignes.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
