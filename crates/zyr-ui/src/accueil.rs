@@ -184,8 +184,10 @@ struct Etat {
     defile_dialogue: f32,
     defile_lignes: (f32, f32),
     /// Ce que chaque chose défilante mesurait la dernière fois qu'elle a
-    /// été dessinée, pour ne jamais défiler au-delà.
-    tenue: [(f32, f32); 3],
+    /// été dessinée, la place qu'elle avait, et la course de son pouce :
+    /// de quoi ne jamais défiler au-delà, et traîner l'ascenseur du même
+    /// pas que celui qui a été dessiné.
+    tenue: [(f32, f32, f32); 3],
     survol: Option<Quoi>,
     pressee: Option<Quoi>,
     /// L'ascenseur tenu par une main, et de combien le curseur était
@@ -225,7 +227,7 @@ impl Etat {
             defile: 0.0,
             defile_dialogue: 0.0,
             defile_lignes: (0.0, 0.0),
-            tenue: [(0.0, 0.0); 3],
+            tenue: [(0.0, 0.0, 0.0); 3],
             survol: None,
             pressee: None,
             tenu: None,
@@ -242,9 +244,9 @@ impl Etat {
         }
     }
 
-    /// Ce qu'une chose défilante mesure et la place qu'elle a : ce qui
-    /// borne son défilement.
-    fn mesure(&self, ou: Ou) -> (f32, f32) {
+    /// Ce qu'une chose défilante mesure, la place qu'elle a et la course
+    /// de son pouce : ce qui borne son défilement et ce qui le traîne.
+    fn mesure(&self, ou: Ou) -> (f32, f32, f32) {
         self.tenue[match ou {
             Ou::Page => 0,
             Ou::Dialogue => 1,
@@ -252,12 +254,12 @@ impl Etat {
         }]
     }
 
-    fn retient(&mut self, ou: Ou, contenu: f32, place: f32) {
+    fn retient(&mut self, ou: Ou, contenu: f32, place: f32, course: f32) {
         self.tenue[match ou {
             Ou::Page => 0,
             Ou::Dialogue => 1,
             Ou::Lignes => 2,
-        }] = (contenu, place);
+        }] = (contenu, place, course);
     }
 
     /// De combien cette chose-là défile en ce moment.
@@ -271,7 +273,7 @@ impl Etat {
 
     /// Fait défiler, sans jamais sortir de ce qu'il y a à voir.
     fn defile_de(&mut self, ou: Ou, de: f32) {
-        let (contenu, place) = self.mesure(ou);
+        let (contenu, place, _) = self.mesure(ou);
         let plus_loin = (contenu - place).max(0.0);
         let ou_maintenant = (self.defile(ou) + de).clamp(0.0, plus_loin);
         match ou {
@@ -1028,7 +1030,7 @@ struct Mise<'a> {
     cliquables: Vec<(Quoi, Cadre)>,
     /// Ce que chaque chose défilante mesure, relevé au passage et rendu
     /// à l'état une fois la marche finie.
-    mesures: Vec<(Ou, f32, f32)>,
+    mesures: Vec<(Ou, f32, f32, f32)>,
     /// Faux quand un dialogue est ouvert : la page derrière ne répond
     /// plus au clic, et ce qui est dessiné dessous ne s'allume plus sous
     /// la souris.
@@ -1411,19 +1413,26 @@ impl Mise<'_> {
 
     /// L'ascenseur d'une chose qui défile, quand il y a plus à voir que
     /// de place.
-    fn ascenseur(&mut self, ou: Ou, place: Cadre, contenu: f32) {
+    ///
+    /// `coin` est l'arrondi de ce qui défile : le pouce s'arrête là où
+    /// le coin commence, faute de quoi il dépasserait de la forme qu'il
+    /// longe.
+    fn ascenseur(&mut self, ou: Ou, place: Cadre, contenu: f32, coin: f32) {
         let voit = place.bas - place.haut;
-        self.mesures.push((ou, contenu, voit));
         if contenu <= voit + 1.0 {
+            self.mesures.push((ou, contenu, voit, 0.0));
             return;
         }
         let large = self.px(tenue::ASCENSEUR);
-        let haut = pouce_de(voit, contenu, plus_petit_pouce(self.echelle));
-        let course = voit - haut;
+        let jeu = self.px(design::PAS_1);
+        let rail = (voit - coin * 2.0).max(0.0);
+        let haut = pouce_de(rail, voit, contenu, self.echelle);
+        let course = rail - haut;
+        self.mesures.push((ou, contenu, voit, course));
         let ou_est = (self.etat.defile(ou) / (contenu - voit)).clamp(0.0, 1.0);
         let pouce = Cadre::pose(
-            place.droite - large,
-            place.haut + course * ou_est,
+            place.droite - large - jeu,
+            place.haut + coin + course * ou_est,
             large,
             haut,
         );
@@ -1438,16 +1447,13 @@ impl Mise<'_> {
     }
 }
 
-/// La hauteur du pouce d'un ascenseur : ce qu'on voit sur ce qu'il y a,
-/// et jamais si petit qu'on ne puisse plus l'attraper.
-fn pouce_de(voit: f32, contenu: f32, mini: f32) -> f32 {
-    (voit * voit / contenu).max(mini).min(voit)
-}
-
-/// Cette taille-là, dite une fois : le dessin et la main qui le traîne
-/// doivent compter le même pouce, sans quoi le contenu glisse à côté.
-fn plus_petit_pouce(echelle: f32) -> f32 {
-    design::PAS_5 * echelle
+/// La hauteur du pouce d'un ascenseur : sur son rail, la part de ce
+/// qu'on voit dans ce qu'il y a, et jamais si petit qu'on ne puisse plus
+/// l'attraper.
+fn pouce_de(rail: f32, voit: f32, contenu: f32, echelle: f32) -> f32 {
+    (rail * voit / contenu)
+        .max(design::PAS_5 * echelle)
+        .min(rail)
 }
 
 /* ---- La page ----------------------------------------------------------- */
@@ -1491,8 +1497,8 @@ fn peins(toile: &Toile, large: f32, haute: f32, couleurs: Palette) -> Vec<(Quoi,
         }
         (mise.cliquables, mise.mesures)
     };
-    for (ou, contenu, place) in mesures {
-        etat.retient(ou, contenu, place);
+    for (ou, contenu, place, course) in mesures {
+        etat.retient(ou, contenu, place, course);
     }
     cliquables
 }
@@ -1526,7 +1532,7 @@ impl Mise<'_> {
             Cadre::pose(x, en_bas, dedans, version),
         );
 
-        self.ascenseur(Ou::Page, Cadre::pose(0.0, 0.0, large, haute), contenu);
+        self.ascenseur(Ou::Page, Cadre::pose(0.0, 0.0, large, haute), contenu, 0.0);
     }
 
     /// La marque, le nom du produit, et les deux commandes rangées à
@@ -2219,17 +2225,23 @@ impl Mise<'_> {
             hauteur,
         );
         self.fond_du_dialogue(ou);
-        self.dedans(
-            Cadre {
-                gauche: ou.gauche + dedans,
-                haut: ou.haut + dedans - self.etat.defile_dialogue,
-                droite: ou.droite - dedans,
-                bas: ou.bas,
-            },
-            false,
-            haute,
-        );
-        self.ascenseur(Ou::Dialogue, ou, contenu);
+        // Serré à sa carte : ce qui a défilé au-dessus du haut du
+        // dialogue, ou sous son bas, se dessinerait sinon par-dessus le
+        // fond noirci.
+        let toile = self.toile;
+        toile.serre(ou, || {
+            self.dedans(
+                Cadre {
+                    gauche: ou.gauche + dedans,
+                    haut: ou.haut + dedans - self.etat.defile_dialogue,
+                    droite: ou.droite - dedans,
+                    bas: ou.bas,
+                },
+                false,
+                haute,
+            );
+        });
+        self.ascenseur(Ou::Dialogue, ou, contenu, self.px(design::RAYON_GRAND));
     }
 
     /// Ce que le dialogue ouvert porte, mesuré quand `muet` et dessiné
@@ -2581,7 +2593,7 @@ impl Mise<'_> {
                 );
             }
         });
-        self.ascenseur(Ou::Lignes, dedans_la_boite, contenu);
+        self.ascenseur(Ou::Lignes, dedans_la_boite, contenu, 0.0);
     }
 
     /// Les réglages, ligne par ligne.
@@ -3040,8 +3052,7 @@ fn bouge(window: windows_sys::Win32::Foundation::HWND, (x, y): (f32, f32)) {
 
     let mut etat = ETAT.lock().expect("accueil");
     if let Some((ou, depuis)) = etat.tenu {
-        let (contenu, voit) = etat.mesure(ou);
-        let course = voit - pouce_de(voit, contenu, plus_petit_pouce(echelle()));
+        let (contenu, voit, course) = etat.mesure(ou);
         if course > 0.0 {
             let de = (y - depuis) * (contenu - voit) / course;
             etat.defile_de(ou, de);
