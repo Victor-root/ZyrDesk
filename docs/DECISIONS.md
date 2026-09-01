@@ -1803,6 +1803,34 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Décision : les explications démenties sortent du code.** Le commentaire qui installait `MARGE` racontait le verre dépoli, celui du grain disait tenir « le liseré que Victor voit », et la ligne de journal des marges annonçait rattraper le défaut. Les trois gestes restent, tous justes, mais pour la raison qui est vraie : une découpe n'a qu'un travail, contenir ce que la page peint et rien de plus, parce que ce qu'elle contient au-delà attrape les clics.
 
+## D102. L'interface sort de la vue web, morceau par morceau, en commençant par le menu du bouton flottant (2026-09-01, pendant M4)
+
+**Demandé par Victor, dans ces termes** : « maintenant qu'on a commencé à faire ça en natif fais moi aussi le menu du fab en natif on va retirer bout par bout le webview ça me fait chier ce webview depuis le début ». Et pour la manière : « pars du principe que tout sera migré en natif donc anticipe si y'a besoin ».
+
+**Pourquoi maintenant et pas plus tard.** L'interface d'aujourd'hui a été faite vite pour qu'il y ait quelque chose à cliquer, et elle sera refaite de toute façon avant la sortie. Un déménagement fait pendant qu'on refait de toute façon coûte le déménagement seul ; fait après, il coûte deux fois l'écran.
+
+**Ce que ça n'est pas.** Ce n'est pas un doute sur la vue web en général : c'est la conclusion de D101, où trois jours ont été passés sur un défaut qui n'appartenait ni au produit ni à Windows mais au navigateur embarqué, et sur une fenêtre où le produit avait besoin de choses qu'un navigateur ne rend pas : la transparence par pixel, un clic qui traverse, une fenêtre qui ne redessine jamais rien qu'on n'ait pas peint.
+
+**Décision : une seule couche de dessin pour tout le produit.** `paint.rs` n'est pas taillée sur le premier écran qui la demande : elle sait remplir, contourner, ombrer, écrire et poser une icône, et le logo n'en emploie que deux gestes. Une couche taillée sur son premier client se rouvre à chaque suivant, et une couche qu'on rouvre est une couche dont personne ne connaît plus les règles.
+
+**Dessinée par le processeur, et c'est voulu.** Victor : « dans ma tête ça résonne par perte de performances ». La carte graphique décode déjà de la vidéo en quatre mille par soixante ; lui ajouter le dessin d'une carte de menu serait mettre un client de plus dans la file la plus longue du produit. Une carte coûte deux ou trois millisecondes de processeur, et seulement quand quelque chose change : à l'ouverture, au passage de la souris d'une ligne à l'autre, à la seconde qui fait bouger les chiffres. Zéro le reste du temps. C'est aussi ce qui évite d'avoir à survivre à la perte d'un appareil graphique, ce qui arrive précisément quand un pilote redémarre, c'est-à-dire au pire moment d'une session.
+
+**Décision : le système de design reste écrit une seule fois, dans `design.css`, et Rust le lit à la compilation.** Deux copies d'une palette, ce sont deux palettes, et la première couleur changée dans l'une est le jour où le produit cesse de se ressembler. La règle s'entretient toute seule : **la palette est exactement ce que le thème clair redit**, et tout ce qu'il ne redit pas devient une constante commune. Le jour où la dernière page s'en va, la source de ces valeurs revient dans Rust et rien d'autre ne bouge.
+
+**Décision : les icônes sont reprises telles quelles, pas redessinées.** Le lecteur de chemins comprend ce dont les icônes du produit se servent et rien de plus : aller à, tracer jusqu'à, à l'horizontale, à la verticale, un arc, refermer. Une lettre inconnue arrête la lecture plutôt que d'être sautée : une icône à moitié dessinée ressemble à un défaut, une icône absente à un oubli, et le second se cherche. Une icône transcrite à la main est une icône qui finit par ne plus être la même.
+
+**Décision : une seule promenade décrit la carte, lue par le dessin et par la souris.** Chaque ligne y reçoit sa place une fois. Une carte dont les lignes sont dessinées à un endroit et cliquées à un autre est une carte qui rend le mauvais menu, et c'est le genre de faute qui n'apparaît qu'à un agrandissement d'écran donné.
+
+**Décision : les combinaisons de touches sont écrites comme elles sont gravées.** Le produit retient la **place** d'une touche et non le signe dessus, parce que la touche à gauche des chiffres porte « ² » en France et « ` » ailleurs. La page refait le chemin en sens inverse en demandant au navigateur ce qu'il sait du clavier ; le menu dessiné le demande à Windows. Écrire `Alt+Backquote` dans un menu serait exact et illisible.
+
+**Ce qui reste dans la vue web à cette étape**, dit dans le journal à chaque ouverture plutôt que masqué : les lignes à interrupteur, le curseur du débit, les deux sous-menus, et la ligne rouge qui porte un refus. Tant qu'elle est là, un refus venu de la carte dessinée ne va qu'au journal : deux endroits pour la même phrase, ce serait deux phrases.
+
+**Et le menu web reste ouvert au clic gauche pendant tout le déménagement**, la carte dessinée s'ouvrant au clic droit. C'est ce qui permet de les comparer côte à côte sur la même machine, ce qui a déjà servi : la carte tombait vingt pixels trop bas et vingt trop à gauche, la fenêtre étant plus grande que la carte de tout ce que l'ombre déborde.
+
+**Deux fautes à écrire, toutes deux du même genre.** Les quatre mesures de la barre ont d'abord été **inventées** au lieu d'être lues dans la page : « Latence, Réseau, Débit, Images » là où le produit dit « Décodage, Encodage, Réseau, Débit ». Et le trait de séparation allait d'un bord à l'autre parce que sa marge latérale n'avait pas été relue : un trait qui traverse coupe la carte en deux au lieu de séparer deux groupes. Les deux fois, la faute est d'avoir écrit de mémoire ce qui était déjà écrit ailleurs.
+
+**Ce que ça dit pour Linux, puisque la question viendra.** La couche de dessin est le seul morceau à réécrire par système : ce qui décrit l'interface, ses lignes, ses icônes, ses couleurs et ses mesures, ne connaît pas Windows. Et tout ce qui entoure ce bouton, la fenêtre qui flotte, les clics qui traversent, la fenêtre du moteur portée dans la nôtre, les raccourcis pris au système, est déjà propre à Windows et l'aurait été avec ou sans navigateur.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

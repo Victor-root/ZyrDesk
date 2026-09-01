@@ -20,8 +20,10 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use tauri::{AppHandle, Manager};
 
 use crate::design::{self, Palette};
+use crate::floating::Act;
 use crate::journal::note;
-use crate::paint::{Cadre, Toile};
+use crate::paint::{Cadre, Icone, Toile};
+use crate::shortcuts::Doing;
 
 /// Une ligne de la carte.
 ///
@@ -34,58 +36,146 @@ enum Ligne {
     Mesures,
     /// Un trait entre deux groupes.
     Separateur,
-    /// Une ligne qu'on clique : un mot, et à droite ce qui la déclenche
-    /// ou ce qu'elle vaut.
-    Acte {
-        mot: &'static str,
-        droite: &'static str,
-        /// Écrite dans la couleur des choses qui ne se défont pas. Une
-        /// seule ligne du menu l'est, et c'est celle qui coupe la
-        /// session.
-        grave: bool,
-    },
+    /// Une ligne qu'on clique, comme la page les appelle.
+    Entree(Entree),
+}
+
+/// Une entrée du menu : une icône, un mot, ce qui est écrit à sa droite,
+/// et ce qu'elle demande.
+struct Entree {
+    icone: &'static Icone,
+    mot: &'static str,
+    droite: Droite,
+    fait: Fait,
+    /// Écrite dans la couleur des choses qui ne se défont pas. Une seule
+    /// ligne du menu l'est, et c'est celle qui coupe la session.
+    grave: bool,
+}
+
+/// Ce qui s'écrit à droite d'une ligne.
+enum Droite {
+    /// Ce que la ligne fait, dit en toutes lettres.
+    Mot(&'static str),
+    /// La combinaison en place pour ça, ou ce mot-ci tant que personne
+    /// ne lui en a donné une.
+    Touche(Doing, &'static str),
+}
+
+/// Ce qu'une ligne demande quand on clique dessus.
+#[derive(Clone, Copy)]
+enum Fait {
+    /// Ce que la session sait faire, dans sa langue.
+    Session(Act),
+    /// Ranger le bouton jusqu'à ce que le raccourci le rappelle.
+    Ranger,
 }
 
 /// Ce que la carte contient, dans l'ordre.
 ///
-/// Les mêmes lignes que la page, dans le même ordre, avec les mêmes mots.
-/// Ce qui manque encore est dit dans le journal à l'ouverture plutôt que
-/// remplacé par du vide qui ressemblerait à un défaut.
+/// Les mêmes lignes que la page, dans le même ordre, avec les mêmes mots,
+/// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
+/// dans le journal à l'ouverture plutôt que remplacé par du vide qui
+/// ressemblerait à un défaut.
 const LIGNES: [Ligne; 9] = [
     Ligne::Mesures,
     Ligne::Separateur,
-    Ligne::Acte {
+    Ligne::Entree(Entree {
+        icone: &icones::PLEIN_ECRAN,
         mot: "Fenêtré ou plein écran",
-        droite: "",
+        droite: Droite::Touche(Doing::Fullscreen, ""),
+        fait: Fait::Session(Act::Fullscreen),
         grave: false,
-    },
-    Ligne::Acte {
+    }),
+    Ligne::Entree(Entree {
+        icone: &icones::STATISTIQUES,
         mot: "Statistiques",
-        droite: "Ctrl+Alt+Maj+S",
+        droite: Droite::Mot("Ctrl+Alt+Maj+S"),
+        fait: Fait::Session(Act::Stats),
         grave: false,
-    },
-    Ligne::Acte {
+    }),
+    Ligne::Entree(Entree {
+        icone: &icones::CAD,
         mot: "Ctrl+Alt+Suppr",
-        droite: "sur l'ordinateur distant",
+        droite: Droite::Mot("sur l'ordinateur distant"),
+        fait: Fait::Session(Act::SecureAttention),
         grave: false,
-    },
-    Ligne::Acte {
+    }),
+    Ligne::Entree(Entree {
+        icone: &icones::VERROU,
         mot: "Verrouiller",
-        droite: "l'ordinateur distant",
+        droite: Droite::Mot("l'ordinateur distant"),
+        fait: Fait::Session(Act::LockScreen),
         grave: false,
-    },
+    }),
     Ligne::Separateur,
-    Ligne::Acte {
+    Ligne::Entree(Entree {
+        icone: &icones::MASQUER,
         mot: "Masquer ce bouton",
-        droite: "",
+        droite: Droite::Touche(Doing::Menu, "jusqu'à la fin"),
+        fait: Fait::Ranger,
         grave: false,
-    },
-    Ligne::Acte {
+    }),
+    Ligne::Entree(Entree {
+        icone: &icones::QUITTER,
         mot: "Terminer la session",
-        droite: "",
+        droite: Droite::Touche(Doing::End, "rend le bureau distant"),
+        fait: Fait::Session(Act::End),
         grave: true,
-    },
+    }),
 ];
+
+/// Les icônes du menu, reprises trait pour trait du dessin de la page.
+///
+/// Recopiées et non redessinées : ce sont les mêmes icônes, et les
+/// redessiner en donnerait d'autres. Le jour où la page du menu s'en va,
+/// c'est ici qu'elles vivront, et il n'y en aura plus qu'un exemplaire.
+///
+/// Une par ligne existante, et pas une de plus : celles des lignes qui
+/// sont encore dans la vue web arriveront avec elles.
+///
+/// Toutes dans un repère de vingt-quatre et d'un trait de un et huit
+/// dixièmes, ce que la feuille de style demande à toutes sans exception.
+mod icones {
+    use crate::paint::{Icone, Trait};
+
+    /// Le repère et le trait communs, écrits une fois.
+    const fn dessin(traits: &'static [Trait]) -> Icone {
+        Icone {
+            repere: 24.0,
+            epaisseur: 1.8,
+            traits,
+        }
+    }
+
+    pub const PLEIN_ECRAN: Icone = dessin(&[
+        Trait::Chemin("M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3"),
+        Trait::Chemin("M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"),
+    ]);
+
+    pub const STATISTIQUES: Icone = dessin(&[Trait::Chemin("M3 20V10M9 20V4M15 20v-7M21 20V8")]);
+
+    pub const CAD: Icone = dessin(&[
+        Trait::Rond(2.5, 6.0, 19.0, 12.0, 2.0),
+        Trait::Chemin("M6 10h1M9.5 10h1M13 10h1M16.5 10h1M6 14h12"),
+    ]);
+
+    pub const VERROU: Icone = dessin(&[
+        Trait::Rond(4.0, 10.5, 16.0, 10.5, 2.0),
+        Trait::Chemin("M8 10.5V7a4 4 0 0 1 8 0v3.5M12 14.5v2.5"),
+    ]);
+
+    pub const MASQUER: Icone = dessin(&[
+        Trait::Chemin(
+            "M10.6 6.2A9.9 9.9 0 0 1 12 6c5 0 9 4.5 10 6a15 15 0 0 1-3 3.6M6.1 8.3C4.4 9.5 3.3 11 3 12c1 1.5 5 6 9 6a9.6 9.6 0 0 0 3.6-.7",
+        ),
+        Trait::Chemin("M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"),
+    ]);
+
+    pub const QUITTER: Icone = dessin(&[
+        Trait::Chemin("M12 3v9"),
+        Trait::Chemin("M18.4 6.6a9 9 0 1 1-12.8 0"),
+    ]);
+}
 
 /// Ce que la feuille de style dit d'une ligne, en pixels de page.
 mod tenue {
@@ -125,12 +215,30 @@ const RIEN: &str = "-";
 /// Vide tant que le moteur n'a rien dit, comme dans la page.
 const FLUX: &str = "";
 
+/// De combien une couleur teinte le fond quand elle sert de survol : ce
+/// que la feuille de style écrit `color-mix(in srgb, ... 12%,
+/// transparent)`.
+const VOILE: f32 = 0.12;
+
 /// La fenêtre de la carte, et ce qu'elle sait d'elle-même.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 static LARGE: AtomicU32 = AtomicU32::new(0);
 static HAUTE: AtomicU32 = AtomicU32::new(0);
 static OUVERT: AtomicBool = AtomicBool::new(false);
 static CLAIR: AtomicBool = AtomicBool::new(false);
+
+/// Ce qu'on désigne quand on ne désigne aucune ligne.
+const HORS: i32 = -1;
+
+/// La ligne sous la souris, celle sur laquelle un clic a commencé, et si
+/// la souris est dans cette fenêtre.
+///
+/// Les trois sont lus et écrits par la réponse de la fenêtre, que le
+/// système appelle, et par le dessin : des entiers partagés plutôt qu'un
+/// verrou, comme partout où le système nous appelle.
+static SURVOL: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(HORS);
+static PRESSEE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(HORS);
+static DEDANS: AtomicBool = AtomicBool::new(false);
 
 /// De combien un pixel de page vaut de vrais pixels, en centièmes : un
 /// nombre à virgule ne se range pas dans un entier partagé, et le
@@ -140,6 +248,15 @@ static ECHELLE: AtomicU32 = AtomicU32::new(100);
 /// Le programme, pour les endroits que le système appelle et à qui la
 /// boîte à outils ne donne rien.
 static PROGRAM: Mutex<Option<AppHandle>> = Mutex::new(None);
+
+/// Les combinaisons en place, lues à l'ouverture de la session.
+///
+/// Lues et non gravées : elles se choisissent dans les réglages. Lues une
+/// fois, parce que la carte prend la largeur de sa plus longue ligne et
+/// que cette largeur est celle de sa fenêtre, laquelle ne change pas de
+/// taille d'une session à l'autre. C'est le moment que la page choisit
+/// elle aussi.
+static TOUCHES: Mutex<Vec<(Doing, String)>> = Mutex::new(Vec::new());
 
 // La toile de cette fenêtre, tenue par le fil qui la possède : une
 // surface de dessin et la fenêtre qu'elle habille appartiennent au fil
@@ -154,6 +271,32 @@ fn echelle() -> f32 {
 
 fn palette() -> Palette {
     design::palette(CLAIR.load(Ordering::Relaxed))
+}
+
+impl Droite {
+    /// Ce qui s'écrit, une fois les raccourcis connus.
+    fn dit(&self) -> String {
+        match self {
+            Droite::Mot(mot) => (*mot).to_string(),
+            Droite::Touche(quoi, sinon) => TOUCHES
+                .lock()
+                .expect("raccourcis du menu")
+                .iter()
+                .find(|(autre, _)| autre == quoi)
+                .map_or_else(|| (*sinon).to_string(), |(_, dit)| dit.clone()),
+        }
+    }
+}
+
+impl Ligne {
+    /// La hauteur que cette ligne prend, en vrais pixels.
+    fn haute(&self, echelle: f32) -> f32 {
+        match self {
+            Ligne::Mesures => hauteur_des_mesures(echelle),
+            Ligne::Separateur => (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle,
+            Ligne::Entree(_) => tenue::LIGNE * echelle,
+        }
+    }
 }
 
 /// Ouvre la fenêtre de la carte, une fois par session.
@@ -171,6 +314,7 @@ pub fn raise(app: &AppHandle, echelle: f32, clair: bool) {
         .map(|handle| handle.0 as isize)
         .unwrap_or(0);
     *PROGRAM.lock().expect("programme du menu") = Some(app.clone());
+    *TOUCHES.lock().expect("raccourcis du menu") = crate::shortcuts::engraved();
     ECHELLE.store((echelle * 100.0).round() as u32, Ordering::Relaxed);
     CLAIR.store(clair, Ordering::Relaxed);
     OUVERT.store(false, Ordering::Relaxed);
@@ -200,6 +344,11 @@ pub fn montre(ouvert: bool) {
     if ITS_WINDOW.load(Ordering::Relaxed) == 0 || OUVERT.swap(ouvert, Ordering::Relaxed) == ouvert {
         return;
     }
+    // Une carte rangée ne garde rien de la main qui la lisait : rouverte,
+    // elle montrerait une ligne allumée sous une souris posée ailleurs.
+    SURVOL.store(HORS, Ordering::Relaxed);
+    PRESSEE.store(HORS, Ordering::Relaxed);
+    DEDANS.store(false, Ordering::Relaxed);
     let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
         return;
     };
@@ -358,7 +507,8 @@ fn build(owner: isize) {
     note(&format!(
         "bouton flottant : menu dessiné par ZyrDesk, {large}x{haute} px ; \
          les lignes à interrupteur, le curseur du débit et les deux \
-         sous-menus sont encore dans la vue web"
+         sous-menus sont encore dans la vue web, et un refus n'est dit \
+         que dans ce journal"
     ));
 }
 
@@ -374,18 +524,18 @@ fn taille(toile: &Toile) -> (i32, i32) {
     let mut haute = bord * 2.0;
 
     for ligne in &LIGNES {
+        haute += ligne.haute(echelle);
         match ligne {
             Ligne::Mesures => {
                 large = large.max(
                     (tenue::MESURE * 4.0 + tenue::ENTRE_MESURES * 3.0 + design::PAS_2 * 2.0)
                         * echelle,
                 );
-                haute += hauteur_des_mesures(echelle);
             }
-            Ligne::Separateur => haute += (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle,
-            Ligne::Acte { mot, droite, .. } => {
-                let mots = toile.largeur(mot, design::CORPS * echelle, false)
-                    + toile.largeur(droite, design::LEGENDE * echelle, false);
+            Ligne::Separateur => {}
+            Ligne::Entree(entree) => {
+                let mots = toile.largeur(entree.mot, design::CORPS * echelle, false)
+                    + toile.largeur(&entree.droite.dit(), design::LEGENDE * echelle, false);
                 large = large.max(
                     mots + (design::PAS_2 * 2.0
                         + tenue::ICONE
@@ -393,7 +543,6 @@ fn taille(toile: &Toile) -> (i32, i32) {
                         + tenue::APRES_LE_MOT)
                         * echelle,
                 );
-                haute += tenue::LIGNE * echelle;
             }
         }
     }
@@ -424,6 +573,51 @@ fn hauteur_des_mesures(echelle: f32) -> f32 {
         * echelle
 }
 
+/// La carte dans sa fenêtre, qui est plus grande qu'elle de tout ce que
+/// l'ombre déborde.
+fn carte(echelle: f32) -> Cadre {
+    let (large, haute) = (
+        LARGE.load(Ordering::Relaxed) as f32,
+        HAUTE.load(Ordering::Relaxed) as f32,
+    );
+    let debord = debord_de_l_ombre(echelle);
+    Cadre::pose(debord, debord, large - debord * 2.0, haute - debord * 2.0)
+}
+
+/// Chaque ligne et la place qu'elle prend, du haut de la carte vers le
+/// bas.
+///
+/// Lue par le dessin et par la souris, une seule fois écrite : une carte
+/// dont les lignes sont dessinées à un endroit et cliquées à un autre est
+/// une carte qui rend le mauvais menu.
+fn parcours(echelle: f32) -> impl Iterator<Item = (&'static Ligne, Cadre)> {
+    let carte = carte(echelle);
+    let bord = design::PAS_2 * echelle;
+    LIGNES.iter().scan(carte.haut + bord, move |haut, ligne| {
+        let haute = ligne.haute(echelle);
+        let ou = Cadre::pose(
+            carte.gauche + bord,
+            *haut,
+            carte.droite - carte.gauche - bord * 2.0,
+            haute,
+        );
+        *haut += haute;
+        Some((ligne, ou))
+    })
+}
+
+/// La ligne sous ce point de la fenêtre, quand c'en est une qu'on clique.
+fn sous(ou: (i32, i32)) -> Option<usize> {
+    let (x, y) = (ou.0 as f32, ou.1 as f32);
+    parcours(echelle()).position(|(ligne, place)| {
+        matches!(ligne, Ligne::Entree(_))
+            && x >= place.gauche
+            && x < place.droite
+            && y >= place.haut
+            && y < place.bas
+    })
+}
+
 /// Dessine la carte et la remet à la fenêtre.
 fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::RECT;
@@ -438,15 +632,9 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     }
     let echelle = echelle();
     let couleurs = palette();
-    let debord = debord_de_l_ombre(echelle);
-    let carte = Cadre::pose(
-        debord,
-        debord,
-        large as f32 - debord * 2.0,
-        haute as f32 - debord * 2.0,
-    );
+    let carte = carte(echelle);
     let rayon = design::RAYON * echelle;
-    let bord = design::PAS_2 * echelle;
+    let survol = SURVOL.load(Ordering::Relaxed);
 
     TOILE.with_borrow_mut(|toile| {
         if toile.is_none() {
@@ -462,35 +650,14 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
 
         let pinceau = Pinceau {
             toile,
-            carte,
             echelle,
             couleurs,
         };
-        let mut y = carte.haut + bord;
-        for ligne in &LIGNES {
+        for (rang, (ligne, ou)) in parcours(echelle).enumerate() {
             match ligne {
-                Ligne::Mesures => {
-                    pinceau.mesures(y);
-                    y += hauteur_des_mesures(echelle);
-                }
-                Ligne::Separateur => {
-                    let milieu = y + design::PAS_2 * echelle;
-                    toile.remplis(
-                        Cadre::pose(
-                            carte.gauche + bord,
-                            milieu,
-                            carte.droite - carte.gauche - bord * 2.0,
-                            tenue::TRAIT * echelle,
-                        ),
-                        0.0,
-                        couleurs.r#trait,
-                    );
-                    y += (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle;
-                }
-                Ligne::Acte { mot, droite, grave } => {
-                    pinceau.acte(y, mot, droite, *grave);
-                    y += tenue::LIGNE * echelle;
-                }
+                Ligne::Mesures => pinceau.mesures(ou),
+                Ligne::Separateur => pinceau.separateur(ou),
+                Ligne::Entree(entree) => pinceau.entree(ou, entree, rang as i32 == survol),
             }
         }
         if !toile.finit() {
@@ -513,80 +680,106 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
 }
 
 /// Ce qui ne change pas pendant qu'une carte se dessine : de quoi
-/// dessiner, où est la carte, de combien un pixel de page compte, et le
-/// thème.
+/// dessiner, de combien un pixel de page compte, et le thème.
 ///
-/// Porté ensemble plutôt que passé quatre fois à chaque ligne. Le menu
-/// n'a pour l'instant que deux sortes de lignes ; il en aura les
+/// Porté ensemble plutôt que passé trois fois à chaque ligne. Le menu
+/// n'a pour l'instant que trois sortes de lignes ; il en aura les
 /// interrupteurs, le curseur et les listes, et chacune voudrait les
-/// mêmes quatre choses.
+/// mêmes trois choses.
 struct Pinceau<'a> {
     toile: &'a Toile,
-    carte: Cadre,
     echelle: f32,
     couleurs: Palette,
 }
 
 impl Pinceau<'_> {
-    /// Une ligne qu'on clique : la place de son icône, son mot, et ce qui
-    /// est écrit à sa droite.
-    fn acte(&self, y: f32, mot: &str, droite: &str, grave: bool) {
-        let (toile, carte, echelle, couleurs) =
-            (self.toile, self.carte, self.echelle, self.couleurs);
+    /// Une entrée : son icône, son mot, ce qui est écrit à sa droite, et
+    /// le fond que le survol lui met.
+    fn entree(&self, ou: Cadre, entree: &Entree, sous_la_main: bool) {
+        let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
         let bord = design::PAS_2 * echelle;
-        let dedans = Cadre::pose(
-            carte.gauche + bord,
-            y,
-            carte.droite - carte.gauche - bord * 2.0,
-            tenue::LIGNE * echelle,
+        let encre = if entree.grave {
+            couleurs.erreur
+        } else {
+            couleurs.texte
+        };
+        if sous_la_main {
+            // La ligne qui coupe la session s'allume de sa propre couleur
+            // plutôt que du gris des autres : ce n'est pas un survol de
+            // plus, c'est celui dont il faut se méfier.
+            let fond = if entree.grave {
+                couleurs.erreur.voile(VOILE)
+            } else {
+                couleurs.surface_3
+            };
+            toile.remplis(ou, design::RAYON_PETIT * echelle, fond);
+        }
+        let cote = tenue::ICONE * echelle;
+        toile.icone(
+            entree.icone,
+            Cadre::pose(
+                ou.gauche + bord,
+                ou.haut + (ou.bas - ou.haut - cote) / 2.0,
+                cote,
+                cote,
+            ),
+            encre,
         );
-        // La place de l'icône est tenue, l'icône elle-même viendra : un mot
-        // qui glisserait de dix-huit pixels le jour où elle arrive serait une
-        // mise en page à refaire deux fois.
-        let apres_icone = dedans.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle;
         toile.ecris(
-            mot,
+            entree.mot,
             design::CORPS * echelle,
             false,
-            if grave {
-                couleurs.erreur
-            } else {
-                couleurs.texte
-            },
+            encre,
             Cadre {
-                gauche: apres_icone,
-                ..dedans
+                gauche: ou.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle,
+                ..ou
             },
             false,
         );
+        let droite = entree.droite.dit();
         if !droite.is_empty() {
             toile.ecris(
-                droite,
+                &droite,
                 design::LEGENDE * echelle,
                 false,
                 couleurs.texte_faible,
                 Cadre {
-                    droite: dedans.droite - design::PAS_2 * echelle,
-                    ..dedans
+                    droite: ou.droite - bord,
+                    ..ou
                 },
                 true,
             );
         }
     }
-}
 
-impl Pinceau<'_> {
+    /// Le trait entre deux groupes, au milieu de la place qu'il prend.
+    ///
+    /// Rentré d'un pas de chaque côté, comme la feuille de style le
+    /// demande : un trait qui va d'un bord à l'autre coupe la carte en
+    /// deux au lieu de séparer deux groupes de lignes.
+    fn separateur(&self, ou: Cadre) {
+        let bord = design::PAS_2 * self.echelle;
+        self.toile.remplis(
+            Cadre::pose(
+                ou.gauche + bord,
+                ou.haut + bord,
+                ou.droite - ou.gauche - bord * 2.0,
+                tenue::TRAIT * self.echelle,
+            ),
+            0.0,
+            self.couleurs.r#trait,
+        );
+    }
+
     /// La barre des quatre mesures : un mot par-dessus un nombre, quatre
     /// fois, et la phrase du flux en dessous.
-    fn mesures(&self, y: f32) {
-        let (toile, carte, echelle, couleurs) =
-            (self.toile, self.carte, self.echelle, self.couleurs);
+    fn mesures(&self, ou: Cadre) {
+        let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
         let bord = design::PAS_2 * echelle;
-        let haut = y + bord;
+        let haut = ou.haut + bord;
         for (rang, mot) in MESURES.iter().enumerate() {
-            let gauche = carte.gauche
-                + bord * 2.0
-                + rang as f32 * (tenue::MESURE + tenue::ENTRE_MESURES) * echelle;
+            let gauche =
+                ou.gauche + bord + rang as f32 * (tenue::MESURE + tenue::ENTRE_MESURES) * echelle;
             let colonne = tenue::MESURE * echelle;
             toile.ecris(
                 mot,
@@ -619,10 +812,10 @@ impl Pinceau<'_> {
                 false,
                 couleurs.texte_faible,
                 Cadre::pose(
-                    carte.gauche + bord * 2.0,
+                    ou.gauche + bord,
                     haut + (design::LEGENDE + tenue::SOUS_LE_MOT + design::CORPS + design::PAS_1)
                         * echelle,
-                    carte.droite - carte.gauche - bord * 4.0,
+                    ou.droite - ou.gauche - bord * 2.0,
                     design::LEGENDE * echelle,
                 ),
                 false,
@@ -641,9 +834,136 @@ unsafe extern "system" fn answer(
     holding: windows_sys::Win32::Foundation::WPARAM,
     with: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
-    // SAFETY: la réponse du système à tout ce à quoi on ne répond pas
-    // encore ici.
-    unsafe {
-        windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(window, message, holding, with)
+    use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        DefWindowProcW, HTCLIENT, IDC_ARROW, IDC_HAND, LoadCursorW, SetCursor, WM_LBUTTONDOWN,
+        WM_LBUTTONUP, WM_MOUSEMOVE, WM_SETCURSOR,
+    };
+
+    match message {
+        WM_MOUSEMOVE => {
+            if !DEDANS.swap(true, Ordering::Relaxed) {
+                // Demandé dès qu'une main arrive : sans ça rien ne dit
+                // jamais qu'elle est repartie, et la dernière ligne
+                // survolée resterait allumée sous une souris qui n'est
+                // plus là.
+                let mut veille = TRACKMOUSEEVENT {
+                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: window,
+                    dwHoverTime: 0,
+                };
+                // SAFETY: une fenêtre à nous, et la demande est à nous.
+                unsafe { TrackMouseEvent(&mut veille) };
+            }
+            survole(window, sous(point(with)));
+            0
+        }
+        WM_MOUSELEAVE => {
+            DEDANS.store(false, Ordering::Relaxed);
+            survole(window, None);
+            0
+        }
+        WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
+            // La ligne est demandée au système plutôt que reprise du
+            // dernier survol : le curseur se décide avant que le
+            // mouvement soit annoncé, et la main serait alors en retard
+            // d'un geste.
+            let forme = if sous_la_souris(window).is_some() {
+                IDC_HAND
+            } else {
+                IDC_ARROW
+            };
+            // SAFETY: un curseur du système, demandé par son nom.
+            unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), forme)) };
+            1
+        }
+        WM_LBUTTONDOWN => {
+            PRESSEE.store(
+                sous(point(with)).map_or(HORS, |rang| rang as i32),
+                Ordering::Relaxed,
+            );
+            0
+        }
+        // Au relâchement, et sur la ligne où l'appui a commencé : c'est
+        // ce qu'un clic veut dire, et c'est ce qui laisse repartir d'un
+        // bouton qu'on n'aurait pas dû viser.
+        WM_LBUTTONUP => {
+            let pressee = PRESSEE.swap(HORS, Ordering::Relaxed);
+            if let Some(rang) = sous(point(with))
+                && rang as i32 == pressee
+            {
+                agit(rang);
+            }
+            0
+        }
+        // SAFETY: la réponse du système à tout ce à quoi on ne répond pas
+        // ici.
+        _ => unsafe { DefWindowProcW(window, message, holding, with) },
     }
+}
+
+/// Où la souris est dans la fenêtre, tel que le système l'écrit dans un
+/// message : deux nombres signés dans les deux moitiés d'un seul.
+fn point(with: windows_sys::Win32::Foundation::LPARAM) -> (i32, i32) {
+    (
+        i32::from((with & 0xFFFF) as i16),
+        i32::from(((with >> 16) & 0xFFFF) as i16),
+    )
+}
+
+/// La ligne sous le pointeur, demandée au système.
+fn sous_la_souris(window: windows_sys::Win32::Foundation::HWND) -> Option<usize> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    let mut ou = POINT { x: 0, y: 0 };
+    // SAFETY: un point à nous, et une fenêtre à nous dans laquelle il est
+    // ramené.
+    let lu = unsafe { GetCursorPos(&mut ou) != 0 && ScreenToClient(window, &mut ou) != 0 };
+    if !lu {
+        return None;
+    }
+    sous((ou.x, ou.y))
+}
+
+/// Allume cette ligne-là, et redessine quand ce n'est plus la même.
+fn survole(window: windows_sys::Win32::Foundation::HWND, rang: Option<usize>) {
+    let rang = rang.map_or(HORS, |rang| rang as i32);
+    if SURVOL.swap(rang, Ordering::Relaxed) != rang {
+        repaint(window);
+    }
+}
+
+/// Fait ce que cette ligne demande, et referme la carte.
+///
+/// Refermée avant que ce soit parti, comme la page le fait : ce qui suit
+/// prend le temps qu'il prend, et une carte laissée ouverte par-dessus
+/// serait une nappe posée sur l'image.
+///
+/// Un refus ne va qu'au journal tant que le menu de la vue web est encore
+/// là : c'est lui qui porte la ligne rouge qui le dit, et en dessiner une
+/// deuxième ici ferait deux endroits à tenir pour la même phrase.
+fn agit(rang: usize) {
+    let Some(Ligne::Entree(entree)) = LIGNES.get(rang) else {
+        return;
+    };
+    let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
+        return;
+    };
+    let fait = entree.fait;
+    montre(false);
+    tauri::async_runtime::spawn(async move {
+        let refus = match fait {
+            Fait::Session(acte) => crate::floating::ask(&app, acte).await,
+            Fait::Ranger => crate::floating::hide(&app),
+        };
+        if let Err(refus) = refus {
+            note(&format!("menu du bouton flottant : {refus}"));
+        }
+    });
 }

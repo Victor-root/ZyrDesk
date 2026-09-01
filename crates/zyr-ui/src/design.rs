@@ -27,6 +27,21 @@ pub struct Couleur {
     pub alpha: f32,
 }
 
+impl Couleur {
+    /// La même, posée en voile.
+    ///
+    /// Ce que la feuille de style écrit `color-mix(in srgb, ... 12%,
+    /// transparent)` : la teinte d'un rôle employée comme fond, là où
+    /// repeindre avec une deuxième couleur donnerait une couleur de plus
+    /// à tenir.
+    pub fn voile(self, part: f32) -> Couleur {
+        Couleur {
+            alpha: self.alpha * part,
+            ..self
+        }
+    }
+}
+
 /// Une ombre portée : de combien elle est décalée, de combien elle est
 /// floue, et de quelle couleur.
 #[derive(Clone, Copy)]

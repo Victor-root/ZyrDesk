@@ -33,12 +33,17 @@
 
 use windows::Win32::Foundation::{HWND, POINT, RECT, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_HOLLOW,
+    D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_ROUNDED_RECT, D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory, ID2D1SolidColorBrush,
+    D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_ROUND,
+    D2D1_DASH_STYLE_SOLID, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_LINE_JOIN_ROUND, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE_SOFTWARE, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+    D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory,
+    ID2D1PathGeometry, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -54,6 +59,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{ULW_ALPHA, UpdateLayeredWindow};
 use windows::core::HSTRING;
+use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::design::{Couleur, Ombre};
 
@@ -66,6 +72,33 @@ use crate::design::{Couleur, Ombre};
 /// seul.
 const FAMILLE: &str = "Segoe UI Variable Text";
 const FAMILLE_AVANT: &str = "Segoe UI";
+
+/// Un morceau d'icône, écrit dans les mêmes mots que le dessin dont il
+/// vient.
+pub enum Trait {
+    /// Un « d » de chemin SVG, repris tel quel.
+    ///
+    /// Repris et non traduit : une icône transcrite à la main est une
+    /// icône qui finit par ne plus être la même, et celles-ci sont déjà
+    /// écrites une fois. Ce qui est compris ici est ce dont elles se
+    /// servent : aller à, tracer jusqu'à, horizontalement, verticalement,
+    /// un arc, et refermer.
+    Chemin(&'static str),
+    /// Un rectangle arrondi : x, y, largeur, hauteur, rayon.
+    Rond(f32, f32, f32, f32, f32),
+}
+
+/// Une icône : ses traits, le repère dans lequel ils sont écrits, et
+/// l'épaisseur de son trait dans ce repère.
+///
+/// Elle porte son repère avec elle, comme le fait un dessin vectoriel :
+/// c'est ce qui permet de la poser dans n'importe quel cadre sans que
+/// personne ait à savoir en quelles unités elle a été dessinée.
+pub struct Icone {
+    pub repere: f32,
+    pub epaisseur: f32,
+    pub traits: &'static [Trait],
+}
 
 /// Un rectangle en vrais pixels, tel que tout ce fichier le compte.
 #[derive(Clone, Copy)]
@@ -136,7 +169,15 @@ pub struct Toile {
     /// graisse : les fabriquer coûte, s'en servir non, et un menu emploie
     /// deux tailles pour quinze lignes.
     polices: std::cell::RefCell<Vec<(u32, bool, IDWriteTextFormat)>>,
-    _fabrique: ID2D1Factory,
+    /// Les chemins déjà lus, une fois chacun : une icône est un texte,
+    /// et le relire à chaque image serait le relire quinze fois par
+    /// dessin pour le même trait.
+    chemins: std::cell::RefCell<Vec<(&'static str, ID2D1PathGeometry)>>,
+    /// Le bout des traits et leurs angles, arrondis : c'est ce que les
+    /// icônes demandent, et le demander une fois vaut mieux que le
+    /// redemander à chaque trait.
+    style: ID2D1StrokeStyle,
+    fabrique: ID2D1Factory,
 }
 
 impl Toile {
@@ -196,6 +237,20 @@ impl Toile {
                 .CreateSolidColorBrush(&D2D1_COLOR_F::default(), None)
                 .ok()?;
             let ecriture: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()?;
+            let style = fabrique
+                .CreateStrokeStyle(
+                    &D2D1_STROKE_STYLE_PROPERTIES {
+                        startCap: D2D1_CAP_STYLE_ROUND,
+                        endCap: D2D1_CAP_STYLE_ROUND,
+                        dashCap: D2D1_CAP_STYLE_ROUND,
+                        lineJoin: D2D1_LINE_JOIN_ROUND,
+                        miterLimit: 10.0,
+                        dashStyle: D2D1_DASH_STYLE_SOLID,
+                        dashOffset: 0.0,
+                    },
+                    None,
+                )
+                .ok()?;
 
             Some(Toile {
                 large,
@@ -207,7 +262,9 @@ impl Toile {
                 pinceau,
                 ecriture,
                 polices: std::cell::RefCell::new(Vec::new()),
-                _fabrique: fabrique,
+                chemins: std::cell::RefCell::new(Vec::new()),
+                style,
+                fabrique,
             })
         }
     }
@@ -478,6 +535,242 @@ fn teinte(couleur: Couleur) -> D2D1_COLOR_F {
         b: couleur.blue,
         a: couleur.alpha,
     }
+}
+
+impl Toile {
+    /// Pose une icône dans ce cadre.
+    ///
+    /// L'icône est dessinée dans son propre repère et le cadre décide de
+    /// sa taille : le trait suit, puisque le dessinateur met tout à
+    /// l'échelle, y compris son épaisseur. C'est ce qui fait qu'une icône
+    /// reste elle-même à cent vingt-cinq comme à cent soixante-quinze pour
+    /// cent, là où une image agrandie s'épaissit et se brouille.
+    pub fn icone(&self, icone: &Icone, cadre: Cadre, couleur: Couleur) {
+        let part = (cadre.droite - cadre.gauche) / icone.repere;
+        // SAFETY: une cible et un pinceau à nous, entre un début et une
+        // fin de dessin. Le repère est remis d'aplomb avant de rendre la
+        // main, sans quoi tout ce qui suivrait serait dessiné dans celui
+        // de l'icône.
+        unsafe {
+            self.cible.SetTransform(&Matrix3x2 {
+                M11: part,
+                M12: 0.0,
+                M21: 0.0,
+                M22: part,
+                M31: cadre.gauche,
+                M32: cadre.haut,
+            });
+            self.pinceau.SetColor(&teinte(couleur));
+            for trait_ in icone.traits {
+                match trait_ {
+                    Trait::Rond(x, y, large, haute, rayon) => self.cible.DrawRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: Cadre::pose(*x, *y, *large, *haute).dit(),
+                            radiusX: *rayon,
+                            radiusY: *rayon,
+                        },
+                        &self.pinceau,
+                        icone.epaisseur,
+                        &self.style,
+                    ),
+                    Trait::Chemin(dit) => {
+                        if let Some(chemin) = self.chemin(dit) {
+                            self.cible.DrawGeometry(
+                                &chemin,
+                                &self.pinceau,
+                                icone.epaisseur,
+                                &self.style,
+                            );
+                        }
+                    }
+                }
+            }
+            self.cible.SetTransform(&Matrix3x2 {
+                M11: 1.0,
+                M12: 0.0,
+                M21: 0.0,
+                M22: 1.0,
+                M31: 0.0,
+                M32: 0.0,
+            });
+        }
+    }
+
+    /// Le chemin de ce dessin, lu une fois.
+    fn chemin(&self, dit: &'static str) -> Option<ID2D1PathGeometry> {
+        if let Some((_, deja)) = self
+            .chemins
+            .borrow()
+            .iter()
+            .find(|(autre, _)| std::ptr::eq(*autre, dit))
+        {
+            return Some(deja.clone());
+        }
+        let neuf = self.lis(dit)?;
+        self.chemins.borrow_mut().push((dit, neuf.clone()));
+        Some(neuf)
+    }
+
+    /// Lit un « d » de chemin SVG et en fait une forme.
+    ///
+    /// Ce qui est compris est ce dont les icônes de ce produit se
+    /// servent, et rien de plus : aller à, tracer jusqu'à, tracer à
+    /// l'horizontale, à la verticale, un arc, et refermer. Une lettre
+    /// inconnue arrête la lecture plutôt que d'être sautée : une icône à
+    /// moitié dessinée ressemble à un défaut, une icône absente à un
+    /// oubli, et le second se cherche.
+    fn lis(&self, dit: &str) -> Option<ID2D1PathGeometry> {
+        // SAFETY: une forme et son embouchure à nous, refermées avant de
+        // sortir.
+        unsafe {
+            let forme = self.fabrique.CreatePathGeometry().ok()?;
+            let bouche = forme.Open().ok()?;
+            let mut mots = Mots::sur(dit);
+            let (mut ou, mut depart) = ((0.0f32, 0.0f32), (0.0f32, 0.0f32));
+            let mut ouverte = false;
+            let mut lettre = ' ';
+            while let Some(prochaine) = mots.lettre_ou_nombre() {
+                if let Some(cette) = prochaine {
+                    lettre = cette;
+                }
+                let relatif = lettre.is_lowercase();
+                let mut nombre = || mots.nombre();
+                match lettre.to_ascii_uppercase() {
+                    'M' => {
+                        let (x, y) = (nombre()?, nombre()?);
+                        ou = if relatif {
+                            (ou.0 + x, ou.1 + y)
+                        } else {
+                            (x, y)
+                        };
+                        if ouverte {
+                            bouche.EndFigure(D2D1_FIGURE_END_OPEN);
+                        }
+                        bouche.BeginFigure(vers(ou), D2D1_FIGURE_BEGIN_HOLLOW);
+                        depart = ou;
+                        ouverte = true;
+                        lettre = if relatif { 'l' } else { 'L' };
+                    }
+                    'L' => {
+                        let (x, y) = (nombre()?, nombre()?);
+                        ou = if relatif {
+                            (ou.0 + x, ou.1 + y)
+                        } else {
+                            (x, y)
+                        };
+                        bouche.AddLine(vers(ou));
+                    }
+                    'H' => {
+                        let x = nombre()?;
+                        ou.0 = if relatif { ou.0 + x } else { x };
+                        bouche.AddLine(vers(ou));
+                    }
+                    'V' => {
+                        let y = nombre()?;
+                        ou.1 = if relatif { ou.1 + y } else { y };
+                        bouche.AddLine(vers(ou));
+                    }
+                    'A' => {
+                        let (rx, ry) = (nombre()?, nombre()?);
+                        let tourne = nombre()?;
+                        let (grand, sens) = (nombre()?, nombre()?);
+                        let (x, y) = (nombre()?, nombre()?);
+                        ou = if relatif {
+                            (ou.0 + x, ou.1 + y)
+                        } else {
+                            (x, y)
+                        };
+                        bouche.AddArc(&D2D1_ARC_SEGMENT {
+                            point: vers(ou),
+                            size: D2D_SIZE_F {
+                                width: rx,
+                                height: ry,
+                            },
+                            rotationAngle: tourne,
+                            sweepDirection: if sens != 0.0 {
+                                D2D1_SWEEP_DIRECTION_CLOCKWISE
+                            } else {
+                                D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
+                            },
+                            arcSize: if grand != 0.0 {
+                                D2D1_ARC_SIZE_LARGE
+                            } else {
+                                D2D1_ARC_SIZE_SMALL
+                            },
+                        });
+                    }
+                    'Z' => {
+                        if ouverte {
+                            bouche.EndFigure(D2D1_FIGURE_END_CLOSED);
+                            ouverte = false;
+                        }
+                        ou = depart;
+                    }
+                    _ => return None,
+                }
+            }
+            if ouverte {
+                bouche.EndFigure(D2D1_FIGURE_END_OPEN);
+            }
+            bouche.Close().ok()?;
+            Some(forme)
+        }
+    }
+}
+
+/// Ce qu'un chemin SVG dit, lettre par lettre et nombre par nombre.
+///
+/// Un signe moins ouvre un nombre, il ne sépare pas : c'est la règle de
+/// ce langage, et c'est ce qui permet d'écrire « a9 9 0 1 1-12.8 0 » sans
+/// espace avant le douze.
+struct Mots<'a> {
+    reste: &'a str,
+}
+
+impl<'a> Mots<'a> {
+    fn sur(dit: &'a str) -> Self {
+        Mots { reste: dit }
+    }
+
+    fn saute(&mut self) {
+        self.reste = self.reste.trim_start_matches([' ', ',', '\t', '\n']);
+    }
+
+    /// La prochaine chose : une lettre, ou rien quand c'est un nombre qui
+    /// vient, ou la fin.
+    fn lettre_ou_nombre(&mut self) -> Option<Option<char>> {
+        self.saute();
+        let premier = self.reste.chars().next()?;
+        if premier.is_ascii_alphabetic() {
+            self.reste = &self.reste[premier.len_utf8()..];
+            return Some(Some(premier));
+        }
+        Some(None)
+    }
+
+    fn nombre(&mut self) -> Option<f32> {
+        self.saute();
+        let mut fin = 0;
+        for (at, quoi) in self.reste.char_indices() {
+            let ouvre = at == 0 && (quoi == '-' || quoi == '+');
+            if quoi.is_ascii_digit() || quoi == '.' || ouvre {
+                fin = at + quoi.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if fin == 0 {
+            return None;
+        }
+        let (lu, reste) = self.reste.split_at(fin);
+        self.reste = reste;
+        lu.parse().ok()
+    }
+}
+
+/// Un point, dans les nombres que le dessinateur attend.
+fn vers(ou: (f32, f32)) -> Vector2 {
+    Vector2 { X: ou.0, Y: ou.1 }
 }
 
 /// Un mot dans les caractères que Windows compte, qui ne sont pas ceux

@@ -48,6 +48,9 @@ windows = { version = "0.61.3", features = [
     "Win32_Graphics_Imaging",
     "Win32_UI_WindowsAndMessaging",
 ] }
+# Les points et les matrices que Direct2D emploie : une caisse à part de
+# la famille, déjà dans le verrou du projet puisque `windows` en dépend.
+windows-numerics = "0.2"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     # Les coins arrondis des fenêtres appartiennent au compositeur, et

@@ -1405,12 +1405,25 @@ pub fn floating_menu(app: AppHandle, open: bool) {
 /// Hides the button until the next session.
 #[tauri::command]
 pub fn floating_hide(app: AppHandle) -> Result<(), String> {
+    hide(&app)
+}
+
+/// The same, from anywhere in the program rather than from the page.
+///
+/// Every window the button is made of goes down together: the logo, the
+/// card ZyrDesk draws, and the view that still carries the rest of the
+/// menu. One of them left standing is a button half hidden, which is a
+/// thing nobody asked for.
+pub fn hide(app: &AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window(WINDOW)
         .ok_or("le bouton flottant n'est plus là")?;
     HIDDEN.store(true, Ordering::Relaxed);
     #[cfg(windows)]
-    crate::logo::shown(&app, false);
+    {
+        crate::menu::montre(false);
+        crate::logo::shown(app, false);
+    }
     window.hide().map_err(|e| e.to_string())
 }
 

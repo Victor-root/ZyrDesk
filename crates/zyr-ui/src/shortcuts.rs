@@ -348,6 +348,79 @@ fn scan_code_of(key: &str) -> Option<u16> {
         .map(|(_, code)| *code)
 }
 
+/// Chaque combinaison en vigueur, écrite comme elle est gravée sur le
+/// clavier branché.
+///
+/// Pour le menu que ZyrDesk dessine, qui les lit à côté de ce qu'elles
+/// font. Le produit retient la place d'une touche et non le signe
+/// dessus ; ceci refait le chemin en sens inverse, exactement comme la
+/// page le fait de son côté avec ce que le navigateur sait du clavier.
+pub fn engraved() -> Vec<(Doing, String)> {
+    let bound = read_or_shipped(&zyr_proto::paths::keyboard_shortcuts());
+    bound
+        .in_force()
+        .into_iter()
+        .map(|(doing, combination)| (doing, spelled(combination)))
+        .collect()
+}
+
+/// Une combinaison telle qu'une personne la lit.
+///
+/// Les touches tenues portent ici le mot du clavier français, quand
+/// `Display` porte celui du fichier : l'un se lit, l'autre se relit, et
+/// les confondre changerait ce qui est écrit sur le disque.
+fn spelled(combination: &Combination) -> String {
+    let mut written = String::new();
+    for (held, name) in [
+        (combination.held.ctrl, "Ctrl"),
+        (combination.held.alt, "Alt"),
+        (combination.held.shift, "Maj"),
+        (combination.held.win, "Win"),
+    ] {
+        if held {
+            written.push_str(name);
+            written.push_str(" + ");
+        }
+    }
+    written.push_str(&engraved_key(&combination.key));
+    written
+}
+
+/// Ce qui est gravé sur cette touche-là, sur le clavier branché.
+///
+/// Faute de réponse, la place est écrite telle quelle : illisible mais
+/// jamais fausse, ce que la page fait déjà.
+#[cfg(windows)]
+fn engraved_key(key: &str) -> String {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        MAPVK_VK_TO_CHAR, MAPVK_VSC_TO_VK_EX, MapVirtualKeyW,
+    };
+
+    let Some(scan) = scan_code_of(key) else {
+        return key.to_string();
+    };
+    // SAFETY: deux questions au système sur le clavier de ce fil, qui ne
+    // touchent à rien qui soit à nous.
+    let engraved = unsafe {
+        match MapVirtualKeyW(u32::from(scan), MAPVK_VSC_TO_VK_EX) {
+            0 => 0,
+            code => MapVirtualKeyW(code, MAPVK_VK_TO_CHAR),
+        }
+    };
+    // Le bit de tête dit une touche morte, dont le signe est le reste.
+    // Les touches sans signe, Entrée ou les touches de fonction, ne
+    // répondent rien : c'est leur nom qui est lisible, pas leur gravure.
+    match char::from_u32(engraved & 0x7FFF_FFFF) {
+        Some(sign) if !sign.is_control() && sign != ' ' => sign.to_uppercase().to_string(),
+        _ => key.to_string(),
+    }
+}
+
+#[cfg(not(windows))]
+fn engraved_key(key: &str) -> String {
+    key.to_string()
+}
+
 /* ---- Ce que la fenêtre demande --------------------------------------- */
 
 /// One line of the settings screen.

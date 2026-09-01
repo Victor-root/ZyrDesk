@@ -62,6 +62,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R46ter** | **Refait, et c'est un défaut que j'avais introduit moi-même en corrigeant R46bis.** « Fluide » n'atteignait jamais la cadence demandée et variait exactement comme « Économe » : relevé à 50 images/s pour 60 demandées, avec 2,35 ms d'encodage et 1 ms de réseau, donc rien n'était à l'étroit. Une image capturée achetait **deux** périodes comptées depuis son arrivée, si bien qu'un écran changeant entre la moitié de la cadence visée et la cadence visée ne déclenchait jamais la moindre répétition : le moteur servait ce que le bureau produisait, c'est-à-dire ce que donne le fait de ne rien demander. Les deux réglages étaient donc identiques sur tout bureau qui change plus de trente fois par seconde. La grille des créneaux est maintenant fixe et une image presque à l'heure prend son propre créneau. **À vérifier après recompilation du moteur hôte** |
 | **R66** | **Nouveau, et c'est la réponse à ce que D97 laissait ouvert.** Le bord du bouton flottant est lisse **et d'épaisseur égale tout autour**, y compris sur un fond blanc. Deux corrections pour un seul défaut : la transparence par pixel était demandée à moitié, il manquait de déclarer la fenêtre *layered* avec une opacité constante de 255 ; et la découpe arrondissait vers l'intérieur d'une fraction différente sur chaque bord, ce qui rognait le contour d'un pixel d'un côté et de deux de l'autre. Elle arrondit maintenant vers le dehors, également sur les quatre bords. La couleur de fond part avec la transparence, les deux s'excluant, et un pixel pas encore peint ne montre plus rien au lieu de montrer du blanc. Le logo garde son grandissement au survol : il a été retiré une journée, parce que le dessin n'est net qu'à sa taille de repos, où il tombe juste sur la grille de l'écran, et remis aussitôt à la demande de Victor |
 | **R67** | **Nouveau, et c'est la fin du liseré blanc du bouton flottant, confirmée.** Le logo n'est plus une image dans une page web : c'est une fenêtre dont ZyrDesk calcule chaque pixel, transparence comprise. Onze essais avaient éteint tout le reste sans le faire céder, et la vue web était la seule couche jamais mise hors de cause : c'était son fond blanc, laissé une image à l'écran chaque fois qu'elle refaisait sa surface. Le menu reste une page web. Plus de découpe sur le logo, plus de fond à effacer, plus de cadre, plus de clics à laisser passer : quatre défauts de naissance de ce bouton ne peuvent plus se produire |
+| **R68** | **Nouveau, et c'est le déménagement demandé par Victor : l'interface sort de la vue web morceau par morceau.** Le menu du bouton flottant est maintenant dessiné par ZyrDesk lui-même, comme le logo l'est depuis R67 : la carte, son ombre, ses icônes, ses mots, ses raccourcis, le fond qui s'allume sous la souris, et les lignes qui agissent quand on clique. Il s'ouvre au **clic droit** sur le logo, le clic gauche gardant le menu de la vue web pour que les deux se comparent côte à côte sur la même machine. Ce qui est encore dans la page à cette étape est dit dans le journal à chaque ouverture : les lignes à interrupteur, le curseur du débit, les deux sous-menus, et la ligne rouge qui porte un refus |
 | **R65** | **Nouveau.** Une ligne **Écran de l'hôte** dans le menu du bouton flottant, qui liste les écrans allumés de la machine d'en face et permet d'en changer. Elle n'apparaît que quand cette machine en a plusieurs. Les écrans éteints n'y sont pas, ni l'écran virtuel du produit. Le moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc changer d'écran le redémarre et la session se rouvre toute seule : l'écran d'ouverture le dit. Une session qui ne choisit rien est servie sur l'**écran principal** d'en face, y compris après une session qui en avait choisi un autre |
 | **R64** | **Nouveau.** Pendant une session, la vignette de ZyrDesk dans Win+Tab et Alt+Tab est de la taille des autres. Elle était nettement plus petite, quelle que soit la taille de la fenêtre, plein écran compris : ZyrDesk disait à Windows de ne pas photographier sa fenêtre et lui fournissait l'image lui-même, ce qui plafonne la vignette à la taille que Windows réclame. C'était nécessaire quand l'image de la session était une fenêtre posée par-dessus la nôtre, ça ne l'est plus depuis qu'elle est portée par notre fenêtre |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
@@ -1567,6 +1568,41 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **La fin de session.** Fermer la session : le logo disparaît avec le menu, et il ne reste rien à l'écran.
 >
 > **Et l'agrandissement de l'écran** : refaire le tour à 125, 150 et 175 %.
+
+> **R68 (le menu du bouton flottant, dessiné par ZyrDesk)**
+>
+> **Les deux menus sont là en même temps, et c'est voulu le temps du déménagement.** Le **clic gauche** sur le logo ouvre celui de la vue web, comme avant. Le **clic droit** ouvre la carte que ZyrDesk dessine. C'est le seul essai du protocole où l'on compare deux choses côte à côte plutôt que d'en vérifier une.
+>
+> **La ligne à relever**, à l'ouverture de chaque session :
+>
+> ```
+> bouton flottant : menu dessiné par ZyrDesk, …x… px ; les lignes à
+> interrupteur, le curseur du débit et les deux sous-menus sont encore
+> dans la vue web, et un refus n'est dit que dans ce journal
+> ```
+>
+> Les deux nombres sont ceux de la **fenêtre** et non ceux de la carte : elle est plus grande que la carte de tout ce que l'ombre déborde. Ils changent avec l'agrandissement de l'écran et avec la longueur des mots écrits dans la carte, donc il n'y a pas de valeur à attendre : ce qui compte est que la ligne soit là.
+>
+> **Ce qu'il faut comparer, les deux menus ouverts l'un après l'autre.** La carte doit être au même endroit, à la même taille, avec les mêmes mots, les mêmes icônes, les mêmes couleurs et la même ombre. Ce qui ne s'y trouve pas encore est la liste dite par le journal ci-dessus : quatre lignes à interrupteur, le curseur du débit, les deux lignes qui ouvrent une liste, et la ligne qui applique.
+>
+> **Le survol.** Passer la souris ligne par ligne : la ligne sous la souris s'allume d'un fond gris, une seule à la fois, et le curseur devient une main. Sortir de la carte : plus rien n'est allumé. **Terminer la session** s'allume en rouge pâle et non en gris, et son mot comme son icône sont rouges.
+>
+> **Les raccourcis écrits à droite.** Ils sont lus dans les réglages à chaque ouverture de session et écrits **comme ils sont gravés sur le clavier** : la combinaison qui ramène le bouton se lit par exemple `Alt + ²` sur un clavier français, jamais `Alt+Backquote`. Une action sans combinaison garde la phrase de la page à sa place : « jusqu'à la fin » pour masquer, « rend le bureau distant » pour terminer. En changer une dans les réglages, rouvrir une session, vérifier que la carte le dit.
+>
+> **Les six lignes, une par une, et chacune doit faire exactement ce que la même ligne du menu web fait.** Refermer la carte est le premier signe que le clic a été pris.
+>
+> 1. **Fenêtré ou plein écran** : la fenêtre de ZyrDesk bascule.
+> 2. **Statistiques** : la mesure du moteur apparaît sur l'image, un second clic la retire.
+> 3. **Ctrl+Alt+Suppr** : l'écran de sécurité de l'ordinateur distant.
+> 4. **Verrouiller** : l'écran de verrouillage de l'ordinateur distant.
+> 5. **Masquer ce bouton** : le logo **et** la carte disparaissent ensemble, et le raccourci les ramène tous les deux.
+> 6. **Terminer la session** : la session se ferme et rend le bureau distant.
+>
+> **Un refus ne se voit pas encore sur cette carte**, c'est écrit dans la ligne de journal ci-dessus. Le cas à essayer est la ligne **Ctrl+Alt+Suppr** vers une machine dont le service ne répond pas : rien ne bouge à l'écran, et `interface.log` porte `menu du bouton flottant : …`. C'est la dernière chose qui manque avant que le menu web puisse partir.
+>
+> **Le clic qui ne compte pas.** Appuyer sur une ligne, garder le bouton enfoncé, glisser hors de cette ligne, relâcher : rien ne doit se produire. C'est ce qui permet de repartir d'un bouton mal visé.
+>
+> **Et l'agrandissement de l'écran** : refaire le tour à 125, 150 et 175 %. La carte est mesurée sur ses propres mots, donc sa largeur change avec l'agrandissement et avec les raccourcis écrits dedans ; ce qui doit rester vrai est que rien n'y est coupé et que le fond du survol tombe exactement sur la ligne.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

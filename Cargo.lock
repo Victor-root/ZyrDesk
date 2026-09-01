@@ -5964,6 +5964,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "windows",
+ "windows-numerics",
  "windows-sys 0.61.2",
  "zyr-control",
  "zyr-proto",
