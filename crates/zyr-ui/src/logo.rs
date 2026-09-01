@@ -35,6 +35,7 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use tauri::{AppHandle, Manager};
 
 use crate::journal::note;
+use crate::paint::Cadre;
 
 /// The drawing, in the units of its own file, which is what makes this
 /// the same logo as everywhere else in the product rather than a second
@@ -505,6 +506,40 @@ fn arrived() -> bool {
     done
 }
 
+/// Pose la marque ZyrDesk dans ce cadre, sur cette toile.
+///
+/// Ici et non recopiée ailleurs : c'est le même dessin sur le bouton
+/// flottant, dans l'en-tête de l'accueil et sur l'écran d'ouverture d'une
+/// session, et deux dessins pour une marque, ce sont deux marques.
+///
+/// Le cadre est carré, comme le repère du dessin : un cadre qui ne l'est
+/// pas laisse simplement du vide en bas, le logo n'occupant pas toute sa
+/// hauteur.
+pub fn marque(toile: &crate::paint::Toile, cadre: Cadre) {
+    let per_unit = (cadre.droite - cadre.gauche) / drawing::SIDE;
+    for shape in &drawing::SHAPES {
+        let place = Cadre::pose(
+            cadre.gauche + (shape.middle.0 - shape.half.0 - drawing::ORIGIN) * per_unit,
+            cadre.haut + (shape.middle.1 - shape.half.1 - drawing::ORIGIN) * per_unit,
+            shape.half.0 * 2.0 * per_unit,
+            shape.half.1 * 2.0 * per_unit,
+        );
+        let radius = shape.radius * per_unit;
+        toile.remplis(place, radius, shape.fill);
+        if shape.outlined {
+            // Sur le bord et non dedans : c'est ce que fait un trait dans
+            // le dessin d'origine, et un contour rentré dedans amincirait
+            // le logo de la moitié de son trait.
+            toile.trace_sur(
+                place,
+                radius,
+                drawing::HALF_STROKE * 2.0 * per_unit,
+                drawing::LINE,
+            );
+        }
+    }
+}
+
 /// Draws the logo as it stands and hands the whole picture to Windows.
 ///
 /// Not a repaint in the ordinary sense: nothing is invalidated, no
@@ -531,14 +566,6 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     } else {
         0.0
     };
-    let per_unit = wide / drawing::SIDE;
-    let at = |x: f32, y: f32| {
-        (
-            left + (x - drawing::ORIGIN) * per_unit,
-            top + (y - drawing::ORIGIN) * per_unit,
-        )
-    };
-
     TOILE.with_borrow_mut(|toile| {
         if toile.is_none() {
             *toile = crate::paint::Toile::neuve(side, side);
@@ -546,29 +573,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         let Some(toile) = toile.as_ref() else {
             return;
         };
-        toile.commence();
-        for shape in &drawing::SHAPES {
-            let (x, y) = at(shape.middle.0 - shape.half.0, shape.middle.1 - shape.half.1);
-            let cadre = crate::paint::Cadre::pose(
-                x,
-                y,
-                shape.half.0 * 2.0 * per_unit,
-                shape.half.1 * 2.0 * per_unit,
-            );
-            let radius = shape.radius * per_unit;
-            toile.remplis(cadre, radius, shape.fill);
-            if shape.outlined {
-                // Sur le bord et non dedans : c'est ce que fait un trait dans
-                // le dessin d'origine, et un contour rentré dedans amincirait
-                // le logo de la moitié de son trait.
-                toile.trace_sur(
-                    cadre,
-                    radius,
-                    drawing::HALF_STROKE * 2.0 * per_unit,
-                    drawing::LINE,
-                );
-            }
-        }
+        toile.commence(crate::design::Couleur::RIEN);
+        marque(toile, Cadre::pose(left, top, wide, wide));
         if !toile.finit() {
             return;
         }

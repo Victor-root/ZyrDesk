@@ -28,6 +28,18 @@ pub struct Couleur {
 }
 
 impl Couleur {
+    /// Rien du tout.
+    ///
+    /// Ce sur quoi une fenêtre à calque commence son dessin : là où la
+    /// toile reste de cette couleur, on voit ce qu'il y a derrière la
+    /// fenêtre, et les clics y passent.
+    pub const RIEN: Couleur = Couleur {
+        red: 0.0,
+        green: 0.0,
+        blue: 0.0,
+        alpha: 0.0,
+    };
+
     /// La même, posée en voile.
     ///
     /// Ce que la feuille de style écrit `color-mix(in srgb, ... 12%,

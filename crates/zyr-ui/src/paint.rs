@@ -1,11 +1,15 @@
 //! Ce qui dessine l'interface de ZyrDesk, sans navigateur.
 //!
-//! Une toile est un rectangle de pixels portant chacun sa transparence,
-//! qu'on remet à Windows tel quel : la fenêtre **est** l'image. Il n'y a
-//! donc ni forme à découper, ni fond à effacer, ni cadre, et les clics
-//! passent d'eux-mêmes partout où l'image est claire. C'est ce qui a
-//! réglé le liseré du logo après douze essais, et c'est pour ça que tout
-//! le reste passera par ici.
+//! Une toile est un rectangle de pixels portant chacun sa transparence.
+//! Remise à une fenêtre à calque, elle **est** la fenêtre : il n'y a ni
+//! forme à découper, ni fond à effacer, ni cadre, et les clics passent
+//! d'eux-mêmes partout où l'image est claire. C'est ce qui a réglé le
+//! liseré du logo après douze essais.
+//!
+//! Une fenêtre ordinaire, elle, est encadrée par le système et opaque :
+//! la toile s'y verse quand le système demande de repeindre. Les deux
+//! dessinent de la même façon et n'en diffèrent qu'à la toute fin, `pose`
+//! d'un côté et `verse` de l'autre.
 //!
 //! **Direct2D et DirectWrite**, fournis par Windows : rien n'est
 //! embarqué, et le texte est rendu par le moteur qui rend celui du
@@ -24,8 +28,8 @@
 //! `echelle` fait le passage, une fois, à l'entrée.
 //!
 //! C'est une couche complète et non ce dont le premier écran a besoin :
-//! le logo n'en emploie aujourd'hui que le remplissage et le contour, le
-//! menu y ajoutera le texte et les ombres, et l'accueil le reste. Une
+//! le logo n'en emploie que le remplissage et le contour, le menu y
+//! ajoute le texte, les icônes et les ombres, l'accueil le reste. Une
 //! couche taillée sur le premier client se rouvre à chaque suivant, et
 //! une couche qu'on rouvre est une couche dont personne ne connaît plus
 //! les règles.
@@ -47,10 +51,11 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
-    DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
-    DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
+    DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_MEASURING_MODE_NATURAL,
+    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
+    DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_TRIMMING,
+    DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP, DWriteCreateFactory,
+    IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
@@ -72,6 +77,12 @@ use crate::design::{Couleur, Ombre};
 /// seul.
 const FAMILLE: &str = "Segoe UI Variable Text";
 const FAMILLE_AVANT: &str = "Segoe UI";
+
+/// La famille à chasse fixe, et celle d'avant, dans le même ordre et pour
+/// la même raison : ce que la feuille de style demande partout où des
+/// signes doivent s'aligner les uns sous les autres.
+const FIXE: &str = "Cascadia Mono";
+const FIXE_AVANT: &str = "Consolas";
 
 /// Un morceau d'icône, écrit dans les mêmes mots que le dessin dont il
 /// vient.
@@ -106,6 +117,102 @@ pub enum Cale {
     Gauche,
     Centre,
     Droite,
+}
+
+/// Ce qu'un mot fait quand il ne tient pas dans son cadre.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Trop {
+    /// Il passe à la ligne, comme un paragraphe.
+    ALaLigne,
+    /// Il s'arrête sur des points de suspension, comme un nom d'ordinateur
+    /// plus long que sa carte.
+    Coupe,
+    /// Il continue, et c'est au cadre de le retenir : une ligne de journal
+    /// ne se replie pas, elle défile.
+    Depasse,
+}
+
+/// Comment un mot s'écrit.
+///
+/// Tout ensemble parce que tout se décide ensemble : une mise en page de
+/// texte se règle une fois pour toutes à sa fabrication, et la régler
+/// après coup sur une police partagée change aussi ce que les **mesures**
+/// emploient. Une plume est donc à la fois ce qu'on demande et la clé de
+/// ce qui a déjà été fabriqué.
+#[derive(Clone, Copy, PartialEq)]
+pub struct Plume {
+    pub taille: f32,
+    pub gras: bool,
+    pub cale: Cale,
+    /// À chasse fixe : ce que la feuille de style demande pour une
+    /// empreinte, un journal, un code et une combinaison de touches, où
+    /// chaque signe doit tenir la place de son voisin.
+    pub fixe: bool,
+    pub trop: Trop,
+}
+
+impl Plume {
+    /// Un mot ordinaire de cette taille, calé à gauche, qui passe à la
+    /// ligne quand il ne tient pas.
+    pub const fn de(taille: f32) -> Self {
+        Plume {
+            taille,
+            gras: false,
+            cale: Cale::Gauche,
+            fixe: false,
+            trop: Trop::ALaLigne,
+        }
+    }
+
+    pub const fn en_gras(self) -> Self {
+        Plume { gras: true, ..self }
+    }
+
+    pub const fn a(self, cale: Cale) -> Self {
+        Plume { cale, ..self }
+    }
+
+    pub const fn a_chasse_fixe(self) -> Self {
+        Plume { fixe: true, ..self }
+    }
+
+    pub const fn coupee(self) -> Self {
+        Plume {
+            trop: Trop::Coupe,
+            ..self
+        }
+    }
+
+    pub const fn qui_depasse(self) -> Self {
+        Plume {
+            trop: Trop::Depasse,
+            ..self
+        }
+    }
+}
+
+/// Une plume telle qu'on la retrouve : sa taille comptée au millième de
+/// pixel, un nombre à virgule ne se comparant pas autrement sans risquer
+/// de refabriquer la même police à chaque ligne.
+#[derive(Clone, Copy, PartialEq)]
+struct Clef {
+    taille: u32,
+    gras: bool,
+    cale: Cale,
+    fixe: bool,
+    trop: Trop,
+}
+
+impl Clef {
+    fn de(plume: Plume) -> Self {
+        Clef {
+            taille: (plume.taille * 1000.0).round() as u32,
+            gras: plume.gras,
+            cale: plume.cale,
+            fixe: plume.fixe,
+            trop: plume.trop,
+        }
+    }
 }
 
 /// Un rectangle en vrais pixels, tel que tout ce fichier le compte.
@@ -173,10 +280,10 @@ pub struct Toile {
     cible: ID2D1DCRenderTarget,
     pinceau: ID2D1SolidColorBrush,
     ecriture: IDWriteFactory,
-    /// Les mises en page de texte déjà demandées, une par taille, par
-    /// graisse et par calage : les fabriquer coûte, s'en servir non, et un
-    /// menu emploie deux tailles pour quinze lignes.
-    polices: std::cell::RefCell<Vec<(u32, bool, Cale, IDWriteTextFormat)>>,
+    /// Les mises en page de texte déjà demandées, une par plume : les
+    /// fabriquer coûte, s'en servir non, et un menu emploie deux tailles
+    /// pour quinze lignes.
+    polices: std::cell::RefCell<Vec<(Clef, IDWriteTextFormat)>>,
     /// Les chemins déjà lus, une fois chacun : une icône est un texte,
     /// et le relire à chaque image serait le relire quinze fois par
     /// dessin pour le même trait. Ceux qui ne se lisent pas sont retenus
@@ -284,8 +391,12 @@ impl Toile {
         (self.large, self.haute)
     }
 
-    /// Ouvre le dessin, la toile entièrement transparente.
-    pub fn commence(&self) {
+    /// Ouvre le dessin, la toile entièrement de cette couleur.
+    ///
+    /// `Couleur::RIEN` pour une fenêtre à calque, où la transparence
+    /// laisse voir ce qu'il y a derrière ; un fond du système de design
+    /// pour une fenêtre ordinaire, qui est opaque et n'a rien derrière.
+    pub fn commence(&self, fond: Couleur) {
         let tout = RECT {
             left: 0,
             top: 0,
@@ -297,7 +408,7 @@ impl Toile {
         unsafe {
             let _ = self.cible.BindDC(self.surface, &tout);
             self.cible.BeginDraw();
-            self.cible.Clear(Some(&D2D1_COLOR_F::default()));
+            self.cible.Clear(Some(&teinte(fond)));
         }
     }
 
@@ -337,6 +448,35 @@ impl Toile {
                 windows::Win32::Foundation::COLORREF(0),
                 Some(&melange),
                 ULW_ALPHA,
+            )
+            .is_ok()
+        }
+    }
+
+    /// Verse la toile dans une surface, à cet endroit.
+    ///
+    /// Ce qu'il faut pour une fenêtre ordinaire, encadrée et opaque, qui
+    /// se repeint quand le système le demande : `pose` remet l'image et
+    /// la place en un seul geste, ce qu'une fenêtre à calque permet et
+    /// qu'une fenêtre ordinaire ne connaît pas. La transparence ne
+    /// voyage pas ici, et n'a rien à y faire : ce qu'on verse a été
+    /// dessiné sur un fond.
+    pub fn verse(&self, vers: HDC, x: i32, y: i32) -> bool {
+        use windows::Win32::Graphics::Gdi::{BitBlt, SRCCOPY};
+
+        // SAFETY: une surface à nous, recopiée telle quelle dans celle que
+        // le système vient de prêter.
+        unsafe {
+            BitBlt(
+                vers,
+                x,
+                y,
+                self.large,
+                self.haute,
+                Some(self.surface),
+                0,
+                0,
+                SRCCOPY,
             )
             .is_ok()
         }
@@ -435,18 +575,13 @@ impl Toile {
         unsafe { self.cible.PopAxisAlignedClip() };
     }
 
-    /// Écrit un mot dans ce cadre, calé de ce côté et centré en hauteur,
-    /// comme une ligne de menu l'attend.
-    pub fn ecris(
-        &self,
-        mot: &str,
-        taille: f32,
-        gras: bool,
-        couleur: Couleur,
-        cadre: Cadre,
-        cale: Cale,
-    ) {
-        let Some(police) = self.police(taille, gras, cale) else {
+    /// Écrit un mot dans ce cadre, calé comme la plume le dit et centré en
+    /// hauteur.
+    ///
+    /// Centré en hauteur, donc un bloc replié veut un cadre de sa propre
+    /// hauteur : `hauteur` la donne.
+    pub fn ecris(&self, mot: &str, plume: Plume, couleur: Couleur, cadre: Cadre) {
+        let Some(police) = self.police(plume) else {
             return;
         };
         // SAFETY: une mise en page à nous, employée le temps d'un dessin.
@@ -465,24 +600,33 @@ impl Toile {
 
     /// Ce qu'un mot prendrait de large, pour les endroits dont la largeur
     /// est celle de leur ligne la plus longue.
-    pub fn largeur(&self, mot: &str, taille: f32, gras: bool) -> f32 {
-        self.mesure(mot, taille, gras)
+    pub fn largeur(&self, mot: &str, plume: Plume) -> f32 {
+        self.mesure(mot, plume, AU_LARGE)
             .map_or(0.0, |mesure| mesure.widthIncludingTrailingWhitespace)
     }
 
-    /// La hauteur d'une ligne de texte de cette taille.
+    /// La hauteur qu'un mot prend, replié à cette largeur.
+    ///
+    /// Ce qu'il faut pour empiler des paragraphes : ce que chacun occupe
+    /// dépend de la place qu'on lui laisse, et personne ne peut le deviner
+    /// sans le mettre en page.
+    pub fn hauteur(&self, mot: &str, plume: Plume, large: f32) -> f32 {
+        self.mesure(mot, plume, large)
+            .map_or(plume.taille, |mesure| mesure.height)
+    }
+
+    /// La hauteur d'une ligne de texte écrite de cette plume.
     ///
     /// Ce n'est pas la taille du caractère : une ligne de douze pixels en
     /// occupe environ seize, l'espace au-dessus et en dessous étant celui
     /// que la police elle-même demande. C'est cette hauteur-là qu'emploie
     /// la mise en page d'une page, et empiler du texte sur sa taille
     /// plutôt que sur sa hauteur serre tout ce qui est empilé.
-    pub fn haute(&self, taille: f32, gras: bool) -> f32 {
+    pub fn haute(&self, plume: Plume) -> f32 {
         // Deux lettres qui vont en haut et en bas : la hauteur d'une ligne
         // ne dépend pas de ce qu'on y écrit, mais une ligne vide n'en a
         // pas.
-        self.mesure("Hg", taille, gras)
-            .map_or(taille, |mesure| mesure.height)
+        self.hauteur("Hg", plume, AU_LARGE)
     }
 
     /// Ce qu'un mot mesure, mis en page hors de tout dessin.
@@ -491,16 +635,13 @@ impl Toile {
     /// démesurée fait perdre au calcul toute sa précision, et la largeur
     /// revient alors à rien du tout. C'est ce qui écrasait les
     /// interrupteurs du menu à la largeur de leur seule marge.
-    fn mesure(&self, mot: &str, taille: f32, gras: bool) -> Option<DWRITE_TEXT_METRICS> {
-        /// Assez large pour qu'aucun mot n'aille à la ligne, et pas plus.
-        const AU_LARGE: f32 = 100_000.0;
-
-        let police = self.police(taille, gras, Cale::Gauche)?;
+    fn mesure(&self, mot: &str, plume: Plume, large: f32) -> Option<DWRITE_TEXT_METRICS> {
+        let police = self.police(plume)?;
         // SAFETY: une mise en page à nous, mesurée et rendue aussitôt.
         unsafe {
             let mise: IDWriteTextLayout = self
                 .ecriture
-                .CreateTextLayout(&lettres(mot), &police, AU_LARGE, AU_LARGE)
+                .CreateTextLayout(&lettres(mot), &police, large, AU_LARGE)
                 .ok()?;
             let mut mesure = DWRITE_TEXT_METRICS::default();
             mise.GetMetrics(&mut mesure).ok()?;
@@ -508,75 +649,102 @@ impl Toile {
         }
     }
 
-    /// La police de cette taille, de cette graisse et de ce calage,
-    /// fabriquée une fois.
+    /// La police de cette plume, fabriquée une fois.
     ///
-    /// Le calage fait partie de la clé, et ce n'est pas un détail : une
-    /// mise en page se règle une fois pour toutes à sa fabrication. Réglée
-    /// après coup sur une police partagée, elle change aussi celle que les
+    /// Toute la plume fait la clé, et ce n'est pas un détail : une mise en
+    /// page se règle une fois pour toutes à sa fabrication. Réglée après
+    /// coup sur une police partagée, elle change aussi celle que les
     /// **mesures** emploient, et une mesure prise dans une boîte alignée à
     /// droite ne vaut plus rien.
-    fn police(&self, taille: f32, gras: bool, cale: Cale) -> Option<IDWriteTextFormat> {
-        // Les tailles se comparent au millième de pixel pour servir de
-        // clé : un nombre à virgule ne se compare pas autrement sans
-        // risquer de refabriquer la même police à chaque ligne.
-        let clef = (taille * 1000.0).round() as u32;
-        if let Some((_, _, _, deja)) =
-            self.polices
-                .borrow()
-                .iter()
-                .find(|(autre, graisse, calage, _)| {
-                    *autre == clef && *graisse == gras && *calage == cale
-                })
+    fn police(&self, plume: Plume) -> Option<IDWriteTextFormat> {
+        let clef = Clef::de(plume);
+        if let Some((_, deja)) = self
+            .polices
+            .borrow()
+            .iter()
+            .find(|(autre, _)| *autre == clef)
         {
             return Some(deja.clone());
         }
-        let graisse = if gras {
+        let neuve = self.fabrique_police(plume)?;
+        self.polices.borrow_mut().push((clef, neuve.clone()));
+        Some(neuve)
+    }
+
+    /// Demande la famille voulue, et celle d'avant si la machine n'a pas
+    /// la première.
+    fn fabrique_police(&self, plume: Plume) -> Option<IDWriteTextFormat> {
+        let graisse = if plume.gras {
             DWRITE_FONT_WEIGHT_SEMI_BOLD
         } else {
             DWRITE_FONT_WEIGHT_NORMAL
         };
-        let neuve = self.fabrique_police(taille, graisse, cale)?;
-        self.polices
-            .borrow_mut()
-            .push((clef, gras, cale, neuve.clone()));
-        Some(neuve)
-    }
-
-    /// Demande la famille du système, et celle d'avant si la machine n'a
-    /// pas la première.
-    fn fabrique_police(
-        &self,
-        taille: f32,
-        graisse: DWRITE_FONT_WEIGHT,
-        cale: Cale,
-    ) -> Option<IDWriteTextFormat> {
+        let familles = if plume.fixe {
+            [FIXE, FIXE_AVANT]
+        } else {
+            [FAMILLE, FAMILLE_AVANT]
+        };
         // SAFETY: une fabrique à nous ; un refus est une réponse et non
         // une faute, d'où le second essai.
         unsafe {
-            for famille in [FAMILLE, FAMILLE_AVANT] {
-                if let Ok(police) = self.ecriture.CreateTextFormat(
+            for famille in familles {
+                let Ok(police) = self.ecriture.CreateTextFormat(
                     &HSTRING::from(famille),
                     None,
                     graisse,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
-                    taille,
+                    plume.taille,
                     &HSTRING::from("fr-FR"),
-                ) {
-                    let _ = police.SetTextAlignment(match cale {
-                        Cale::Gauche => DWRITE_TEXT_ALIGNMENT_LEADING,
-                        Cale::Centre => DWRITE_TEXT_ALIGNMENT_CENTER,
-                        Cale::Droite => DWRITE_TEXT_ALIGNMENT_TRAILING,
-                    });
-                    let _ = police.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                    return Some(police);
-                }
+                ) else {
+                    continue;
+                };
+                let _ = police.SetTextAlignment(match plume.cale {
+                    Cale::Gauche => DWRITE_TEXT_ALIGNMENT_LEADING,
+                    Cale::Centre => DWRITE_TEXT_ALIGNMENT_CENTER,
+                    Cale::Droite => DWRITE_TEXT_ALIGNMENT_TRAILING,
+                });
+                let _ = police.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                self.pose_le_trop(&police, plume.trop);
+                return Some(police);
             }
         }
         None
     }
+
+    /// Règle ce que cette police fait d'un mot trop long.
+    ///
+    /// Les points de suspension sont un dessin, et un dessin se demande à
+    /// la police qui le portera : c'est pour ça que ceci vient après elle
+    /// et non avant.
+    fn pose_le_trop(&self, police: &IDWriteTextFormat, trop: Trop) {
+        if trop == Trop::ALaLigne {
+            return;
+        }
+        // SAFETY: une police à nous, et une marque de coupe demandée à la
+        // fabrique pour cette police-là.
+        unsafe {
+            let _ = police.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+            if trop != Trop::Coupe {
+                return;
+            }
+            let Ok(points) = self.ecriture.CreateEllipsisTrimmingSign(police) else {
+                return;
+            };
+            let _ = police.SetTrimming(
+                &DWRITE_TRIMMING {
+                    granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+                    delimiter: 0,
+                    delimiterCount: 0,
+                },
+                &points,
+            );
+        }
+    }
 }
+
+/// Assez large pour qu'aucun mot n'aille à la ligne, et pas plus.
+const AU_LARGE: f32 = 100_000.0;
 
 impl Drop for Toile {
     fn drop(&mut self) {

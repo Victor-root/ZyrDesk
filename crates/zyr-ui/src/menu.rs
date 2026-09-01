@@ -29,7 +29,7 @@ use crate::design::{self, Couleur, Palette};
 use crate::floating::Act;
 use crate::journal::note;
 use crate::mesures::Mesures;
-use crate::paint::{Cadre, Cale, Icone, Toile};
+use crate::paint::{Cadre, Cale, Icone, Plume, Toile};
 use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
 
@@ -1222,9 +1222,12 @@ fn build(owner: isize) {
     // toutes : tout ce qui est empilé dans cette carte s'appuie dessus.
     range(
         &HAUTE_LEGENDE,
-        mesure.haute(design::LEGENDE * echelle, false),
+        mesure.haute(Plume::de(design::LEGENDE * echelle)),
     );
-    range(&HAUTE_CORPS, mesure.haute(design::CORPS * echelle, false));
+    range(
+        &HAUTE_CORPS,
+        mesure.haute(Plume::de(design::CORPS * echelle)),
+    );
     mesure_la_carte(&mesure, echelle);
     let (large, haute) = taille(&mesure);
     LARGE.store(large as u32, Ordering::Relaxed);
@@ -1323,7 +1326,8 @@ fn mesure_la_carte(toile: &Toile, echelle: f32) {
             }
             Ligne::Separateur => 0.0,
             Ligne::Entree(entree) => {
-                let droite = toile.largeur(&entree.droite.dit(), design::LEGENDE * echelle, false);
+                let droite =
+                    toile.largeur(&entree.droite.dit(), Plume::de(design::LEGENDE * echelle));
                 autour(toile, entree.mot, droite, echelle)
             }
             Ligne::Bascule(bascule) => autour(
@@ -1350,19 +1354,19 @@ fn mesure_la_carte(toile: &Toile, echelle: f32) {
                 let valeur = reglages
                     .as_ref()
                     .map_or_else(String::new, |menu| curseur.quoi.resume(menu));
-                let droite = toile.largeur(&valeur, design::CORPS * echelle, false);
+                let droite = toile.largeur(&valeur, Plume::de(design::CORPS * echelle));
                 autour(toile, curseur.mot, droite, echelle)
             }
             Ligne::Liste(liste) => {
                 let valeur = reglages
                     .as_ref()
                     .map_or_else(String::new, |menu| liste.quoi.resume(menu));
-                let droite = toile.largeur(&valeur, design::LEGENDE * echelle, false)
+                let droite = toile.largeur(&valeur, Plume::de(design::LEGENDE * echelle))
                     + (design::PAS_2 + tenue::MARQUE) * echelle;
                 autour(toile, liste.mot, droite, echelle)
             }
             Ligne::Appliquer => {
-                let droite = toile.largeur(APRES_APPLIQUER, design::LEGENDE * echelle, false);
+                let droite = toile.largeur(APRES_APPLIQUER, Plume::de(design::LEGENDE * echelle));
                 autour(toile, APPLIQUER, droite, echelle)
             }
         });
@@ -1377,7 +1381,7 @@ fn mesure_la_carte(toile: &Toile, echelle: f32) {
 /// La même mesure pour toutes les sortes de lignes, parce que c'est la
 /// même mise en page : ce qui change est ce qu'il y a à droite.
 fn autour(toile: &Toile, mot: &str, droite: f32, echelle: f32) -> f32 {
-    toile.largeur(mot, design::CORPS * echelle, false)
+    toile.largeur(mot, Plume::de(design::CORPS * echelle))
         + droite
         + (design::PAS_2 * 2.0 + tenue::ICONE + design::PAS_3 + tenue::APRES_LE_MOT) * echelle
 }
@@ -1389,7 +1393,7 @@ fn cotes_larges(toile: &Toile, mots: &[String], echelle: f32) -> f32 {
 
 /// Et ce qu'un seul côté prend : son mot et ce qui l'entoure.
 fn cote_large(toile: &Toile, mot: &str, echelle: f32) -> f32 {
-    toile.largeur(mot, design::LEGENDE * echelle, false) + design::PAS_3 * 2.0 * echelle
+    toile.largeur(mot, Plume::de(design::LEGENDE * echelle)) + design::PAS_3 * 2.0 * echelle
 }
 
 /// Où tombent les côtés d'une ligne à choix, poussés au bord droit et
@@ -1463,8 +1467,10 @@ fn largeur_du_panneau(toile: &Toile, menu: &SessionMenu, quoi: Reglage, echelle:
     quoi.valeurs(menu)
         .iter()
         .map(|valeur| {
-            let aparte =
-                toile.largeur(&quoi.aparte(menu, valeur), design::LEGENDE * echelle, false);
+            let aparte = toile.largeur(
+                &quoi.aparte(menu, valeur),
+                Plume::de(design::LEGENDE * echelle),
+            );
             autour(toile, &quoi.dit(menu, valeur), aparte, echelle)
         })
         .fold(0.0, f32::max)
@@ -1741,7 +1747,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         };
 
         let carte = carte(echelle);
-        toile.commence();
+        toile.commence(Couleur::RIEN);
         toile.ombre(carte, rayon, couleurs.ombre_2, echelle);
         toile.remplis(carte, rayon, couleurs.surface_1);
         toile.trace_dedans(carte, rayon, tenue::TRAIT * echelle, couleurs.trait_fort);
@@ -1867,14 +1873,12 @@ impl Pinceau<'_> {
         );
         toile.ecris(
             mot,
-            design::CORPS * echelle,
-            false,
+            Plume::de(design::CORPS * echelle),
             encre,
             Cadre {
                 gauche: ou.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle,
                 ..ou
             },
-            Cale::Gauche,
         );
     }
 
@@ -1894,14 +1898,12 @@ impl Pinceau<'_> {
         }
         self.toile.ecris(
             mot,
-            taille,
-            false,
+            Plume::de(taille).a(Cale::Droite),
             encre,
             Cadre {
                 droite: ou.droite - design::PAS_2 * self.echelle,
                 ..ou
             },
-            Cale::Droite,
         );
     }
 
@@ -2032,11 +2034,9 @@ impl Pinceau<'_> {
             }
             toile.ecris(
                 &mots[rang],
-                design::LEGENDE * echelle,
-                false,
+                Plume::de(design::LEGENDE * echelle).a(Cale::Centre),
                 encre,
                 *place,
-                Cale::Centre,
             );
             if barre {
                 // Ce que la machine d'en face ne sait pas faire garde sa
@@ -2045,7 +2045,7 @@ impl Pinceau<'_> {
                 // c'est la machine regardée qui n'a pas la même carte
                 // graphique. Barré, donc, et non effacé.
                 let milieu = (place.haut + place.bas) / 2.0;
-                let mi_mot = toile.largeur(&mots[rang], design::LEGENDE * echelle, false) / 2.0;
+                let mi_mot = toile.largeur(&mots[rang], Plume::de(design::LEGENDE * echelle)) / 2.0;
                 let au_centre = (place.gauche + place.droite) / 2.0;
                 toile.remplis(
                     Cadre::pose(
@@ -2142,16 +2142,13 @@ impl Pinceau<'_> {
             let colonne = tenue::MESURE * echelle;
             toile.ecris(
                 quoi.mot,
-                design::LEGENDE * echelle,
-                false,
+                Plume::de(design::LEGENDE * echelle),
                 couleurs.texte_faible,
                 Cadre::pose(gauche, haut, colonne, lue(&HAUTE_LEGENDE)),
-                Cale::Gauche,
             );
             toile.ecris(
                 &barre.chiffres[rang],
-                design::CORPS * echelle,
-                false,
+                Plume::de(design::CORPS * echelle),
                 couleurs.texte,
                 Cadre::pose(
                     gauche,
@@ -2159,14 +2156,12 @@ impl Pinceau<'_> {
                     colonne,
                     lue(&HAUTE_CORPS),
                 ),
-                Cale::Gauche,
             );
         }
         if !barre.flux.is_empty() {
             toile.ecris(
                 &barre.flux,
-                design::LEGENDE * echelle,
-                false,
+                Plume::de(design::LEGENDE * echelle),
                 couleurs.texte_faible,
                 Cadre::pose(
                     ou.gauche + bord,
@@ -2177,7 +2172,6 @@ impl Pinceau<'_> {
                     ou.droite - ou.gauche - bord * 2.0,
                     lue(&HAUTE_LEGENDE),
                 ),
-                Cale::Gauche,
             );
         }
     }
@@ -2229,14 +2223,12 @@ impl Pinceau<'_> {
             }
             toile.ecris(
                 &quoi.dit(menu, valeur),
-                design::CORPS * echelle,
-                false,
+                Plume::de(design::CORPS * echelle),
                 couleurs.texte,
                 Cadre {
                     gauche: place.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle,
                     ..*place
                 },
-                Cale::Gauche,
             );
             self.a_droite(
                 *place,
