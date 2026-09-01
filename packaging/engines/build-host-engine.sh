@@ -51,7 +51,7 @@ cmake \
     -DBUILD_DOCS=OFF \
     -DBUILD_TESTS=OFF \
     -DSUNSHINE_ASSETS_DIR=assets \
-    -DSUNSHINE_PRODUCT_NAME="ZyrDesk : le moteur de diffusion" \
+    -DSUNSHINE_PRODUCT_NAME="ZyrDesk : Moteur de diffusion" \
     -DSUNSHINE_ICON_PATH="$(cygpath -m "${brand_dir}/zyrdesk.ico")" \
     -DSUNSHINE_PUBLISHER_NAME=ZyrDesk \
     -DSUNSHINE_PUBLISHER_WEBSITE="https://github.com/Victor-root/ZyrDesk" \

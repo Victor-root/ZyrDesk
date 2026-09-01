@@ -3,7 +3,7 @@ name = "zyr-ui"
 # Ce que le gestionnaire des tâches affiche. Sans accent : le compilateur
 # de ressources de Windows lit ce nom dans le jeu de caractères du
 # système, et une lettre accentuée y arrive coupée.
-description = "ZyrDesk : l'application"
+description = "ZyrDesk : Application"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1951,13 +1951,13 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 | Programme | Ce que la liste affiche |
 |---|---|
-| `ZyrDesk.exe` | ZyrDesk : l'application |
-| `zyrdeskd.exe` | ZyrDesk : le service de connexion distante |
-| `zyrdesk-host-engine.exe` | ZyrDesk : le moteur de diffusion |
-| moteur client | Moteur de session ZyrDesk |
-| `zyr-cli.exe` | ZyrDesk : l'outil en ligne de commande |
+| `ZyrDesk.exe` | ZyrDesk : Application |
+| `zyrdeskd.exe` | ZyrDesk : Service de connexion distante |
+| `zyrdesk-host-engine.exe` | ZyrDesk : Moteur de diffusion |
+| moteur client | ZyrDesk : Moteur d'affichage |
+| `zyr-cli.exe` | ZyrDesk : Outil en ligne de commande |
 
-Tous commencent par le nom du produit, donc la liste les range ensemble et personne n'a à chercher lequel appartient à quoi.
+Tous commencent par le nom du produit, donc la liste les range ensemble et personne n'a à chercher lequel appartient à quoi. Et tous sont écrits sans article : c'est ainsi que se nomment les programmes d'un produit, et l'article n'apprend rien à qui lit la liste.
 
 **Et ce nom est écrit une seule fois par programme**, dans la description de son paquet, d'où la ressource Windows le lit à la compilation. Le nom du moteur hôte est passé par notre script de compilation, le moteur ne portant que ce qu'on lui donne.
 
