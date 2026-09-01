@@ -1769,6 +1769,16 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Et l'instrument reste, réduit à deux essais**, pour que la différence se voie sur la même machine à la suite : le bouton corrigé, puis le bouton retaillé à chaque pas comme avant. Il part quand Victor a vu les deux.
 
+**Et ça n'a rien changé non plus : le liseré est là dans les deux essais.** L'explication était pourtant lisible dans les deux bibliothèques, et elle était fausse quand même. Ce qui reste d'elle est gardé pour ce qu'il vaut tout seul : sans ce mot, Windows envoie un redimensionnement à chaque pas d'un déplacement, et la boîte à outils rend à la vue web ses limites à chaque fois, cent vingt fois par seconde, pour une fenêtre dont la taille n'a pas bougé. C'est du travail que personne n'a demandé. Mais le commentaire qui lui attribuait le blanc est réécrit : **une explication fausse laissée dans le code vaut moins que pas d'explication du tout**, et ce fichier l'a payé cinq fois.
+
+**Sept pistes éteintes, sept fois non.** La découpe refaite à chaque image ; la découpe figée pour toute la session ; le redessin sans effacement ; le redessin sans la vue web ; pas de redessin du tout ; le calque ; le message de redimensionnement. Chacune dans une session à elle, chez Victor, et le blanc à chaque fois.
+
+**Et la page est hors de cause, mesurée et non supposée.** Le dessin rendu dans un navigateur à 125 et 175 %, sur fond noir et sur fond blanc, au repos **et arrêté net à sept endroits de son animation de survol** : le pixel le plus clair des quatre pixels qui entourent le dessin vaut `0,0,0` dans tous les cas. La page ne peint rien autour du logo, jamais, même en plein mouvement. Ce qui ferme aussi l'idée d'un halo blanc que produirait le redimensionnement d'une image à transparence, qui était la piste suivante.
+
+**Décision : il ne reste qu'une chose, et c'est le déplacement.** C'est la seule chose que le produit fait pendant qu'un bouton est cliqué ou traîné et qu'il ne fait pas au repos : la fenêtre est posée cent vingt fois par seconde tant qu'une main la tient. Quatre essais, quatre façons de la déplacer, la dernière étant de ne pas la déplacer du tout.
+
+**Et une capture du défaut, demandée en fichier, vaudrait plus que les quatre.** Quatre explications de suite ont été bâties sur une description et les quatre étaient fausses. Personne n'a encore mesuré un seul pixel de ce liseré : ce qui a été mesuré, c'est tout ce qu'il n'est pas.
+
 **Décision : la ligne du bord droit est corrigée, parce qu'elle comparait deux instants.** Elle tenait le bord peint par la page contre la largeur que la fenêtre **allait** prendre, alors que la page mesure toujours dans la fenêtre telle qu'elle **est**. Elle a donc écrit `1344.00 px de fenêtre que la page n'atteint pas` sur un bouton parfaitement placé. Elle dit maintenant les deux nombres, la fin de la page et la fin de la fenêtre, sans rien en conclure, et elle se dit quand la paire change au lieu de se dire quand la taille change, ce qui est le seul moyen de l'obtenir une fois tout posé. Une ligne de journal fausse coûte plus cher qu'une ligne absente, et c'est la cinquième fois que ce fichier l'écrit.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)

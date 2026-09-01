@@ -1,47 +1,52 @@
-//! Deux façons de poser la fenêtre du bouton, une par session, pour dire
-//! si le blanc est bien parti.
+//! La dernière chose qui bouge quand le blanc paraît : quatre façons de
+//! **déplacer** la fenêtre du bouton, une par session.
 //!
-//! Ce qui a été trouvé, après six essais qui ont tous répondu non.
+//! Ce qui a été éteint, tour à tour, chaque fois dans une session à
+//! elle, et chaque fois le blanc est resté : la découpe, refaite à chaque
+//! image puis figée pour toute la session ; le redessin qu'on demande
+//! après elle, sans effacement, sans la vue web, puis pas demandé du
+//! tout ; le calque ; le fond de la fenêtre ; sa transparence ; et le
+//! message de redimensionnement qu'une pose de fenêtre envoyait pour
+//! rien. Sept pistes, sept fois non.
 //!
-//! Le blanc n'est ni la découpe, ni le redessin qu'on demande après elle,
-//! ni le calque, ni le fond de cette fenêtre, ni un pixel que la page ne
-//! peint pas : chacune de ces cinq pistes a été éteinte tour à tour et le
-//! blanc est resté. Il vient d'ailleurs, et de deux fichiers qu'on peut
-//! lire.
+//! Ce qui a été éteint aussi, mais mesuré ici et non chez Victor : la
+//! page. Le dessin a été rendu dans un navigateur à 125 et 175 %, sur
+//! fond noir et sur fond blanc, au repos **et arrêté net à sept endroits
+//! de son animation**. Le pixel le plus clair des quatre pixels qui
+//! entourent le dessin vaut `0,0,0` dans tous les cas. La page ne peint
+//! rien autour du logo, jamais.
 //!
-//! La boîte à outils redemande à la vue web ses limites **à chaque fois
-//! que la fenêtre reçoit un message de redimensionnement**, et Windows en
-//! envoie un à chaque appel qui pose la fenêtre sans dire que la taille
-//! n'a pas changé. Or la fenêtre du bouton est reposée **cent vingt fois
-//! par seconde** pendant qu'une main la déplace, toujours à la même
-//! taille. Cent vingt fois par seconde, la vue web recrée donc sa surface,
-//! et une vue web qui recrée sa surface montre son fond à elle, qui est
-//! blanc, le temps que son dessin revienne.
+//! Il ne reste donc qu'une chose que le produit fait pendant qu'un
+//! bouton est cliqué ou traîné et qu'il ne fait pas au repos : **la
+//! fenêtre est déplacée**, cent vingt fois par seconde tant qu'une main
+//! la tient. Ces quatre essais sont les quatre façons de le faire
+//! autrement, la dernière étant de ne pas le faire du tout.
 //!
-//! D'où tout le reste : le blanc au clic et au déplacement et nulle part
-//! ailleurs, puisque ce sont les deux seuls moments où cette fenêtre
-//! bouge ou change de taille ; rien au repos, où Windows n'envoie rien du
-//! tout ; et un liseré plutôt qu'une plaque, parce que la découpe collée
-//! au dessin n'en laisse voir que la marge.
-//!
-//! La correction est de dire à Windows ce qui est vrai : la taille n'a pas
-//! changé. Elle est dans le produit, et cet essai remet l'ancien geste
-//! pour que la différence se voie sur la même machine, à la suite.
+//! Un essai par session, dans l'ordre, et le journal dit lequel tourne.
+//! C'est un instrument, pas une fonctionnalité : il part le jour où il a
+//! répondu.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::journal::note;
 
-/// Comment la fenêtre est posée pour un essai.
-#[derive(Clone, Copy)]
-pub struct Trial {
-    /// Redire sa taille à la fenêtre à chaque pas, même quand elle n'a
-    /// pas changé, ce que le produit faisait avant.
-    pub resizes: bool,
+/// Comment la fenêtre est déplacée pour un essai.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Move {
+    /// Ce que fait le produit.
+    AsToday,
+    /// Sans laisser Windows recopier les pixels d'avant à la nouvelle
+    /// place.
+    NoCopy,
+    /// Sans rien redessiner du tout au passage.
+    NoRedraw,
+    /// Pas déplacée. Le bouton ne suit plus la main, ce qui est le prix
+    /// de la question.
+    Still,
 }
 
-/// Les deux, dans l'ordre où ils sont joués.
-const TRIALS: [Trial; 2] = [Trial { resizes: false }, Trial { resizes: true }];
+/// Les quatre, dans l'ordre où ils sont joués.
+const TRIALS: [Move; 4] = [Move::AsToday, Move::NoCopy, Move::NoRedraw, Move::Still];
 
 /// Combien ont été lancés, ce qui est aussi le numéro de celui qui tourne.
 static STARTED: AtomicUsize = AtomicUsize::new(0);
@@ -51,7 +56,7 @@ static STARTED: AtomicUsize = AtomicUsize::new(0);
 /// Appelé là où la fenêtre du bouton est bâtie, ce qui arrive une fois
 /// par session : la fenêtre est fermée à la fin de la session, donc
 /// fermer la session et en ouvrir une autre est ce qui fait avancer.
-pub fn starts() -> Trial {
+pub fn starts() -> Move {
     let which = STARTED.load(Ordering::Relaxed) % TRIALS.len();
     STARTED.store(which + 1, Ordering::Relaxed);
     let trial = TRIALS[which];
@@ -60,10 +65,11 @@ pub fn starts() -> Trial {
          puis ferme la session et rouvre-la pour passer au suivant.",
         which + 1,
         TRIALS.len(),
-        if trial.resizes {
-            "la fenêtre retaillée à chaque pas, comme avant"
-        } else {
-            "le bouton corrigé"
+        match trial {
+            Move::AsToday => "le bouton tel qu'il est",
+            Move::NoCopy => "sans recopier les pixels au déplacement",
+            Move::NoRedraw => "sans redessiner au déplacement",
+            Move::Still => "la fenêtre qui ne se déplace pas (le bouton ne suivra pas la main)",
         }
     ));
     trial
@@ -72,8 +78,8 @@ pub fn starts() -> Trial {
 /// L'essai en cours, là où la fenêtre est posée, ce que seul Windows
 /// fait ici.
 #[cfg(windows)]
-pub fn now() -> Trial {
+pub fn now() -> Move {
     let started = STARTED.load(Ordering::Relaxed);
-    // Rien de lancé, c'est le produit corrigé, qui est le premier essai.
+    // Rien de lancé, c'est le produit tel quel, qui est le premier essai.
     TRIALS[started.saturating_sub(1) % TRIALS.len()]
 }

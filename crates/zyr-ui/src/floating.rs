@@ -2060,9 +2060,10 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
 /// neither is what a window that is being got ready wants.
 #[cfg(windows)]
 fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
+    use crate::trial::Move;
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+        SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOREDRAW, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
     };
 
     let button = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
@@ -2073,22 +2074,23 @@ fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
     // time this is called: a hand dragging the button asks for this a
     // hundred and twenty times a second, always at the same size.
     //
-    // That one word is the whole of the white flash. Windows sends the
-    // window a resize whenever it is placed without being told the size
-    // stands, and the toolkit answers a resize by handing the web view
-    // its bounds again. A web view given its bounds again builds its
-    // surface again, and a surface being built shows the web view's own
-    // ground, which is white, until the page's drawing comes back. That
-    // is why the white is there while the button is dragged and while the
-    // menu opens, and nowhere else: those are the only moments this
-    // window moves or changes size. The cut has nothing to do with it,
-    // which is what six trials had to say before this one was found.
+    // Not what makes the white, though it was put here for that and the
+    // white stayed. It is kept on its own worth: without it Windows sends
+    // the window a resize on every step of a drag, and the toolkit
+    // answers each one by handing the web view its bounds again. A
+    // hundred and twenty of those a second, for a window whose size has
+    // not moved, is work nobody asked for.
     let stands = its_place()
         .is_some_and(|(left, top, right, bottom)| right - left == size.0 && bottom - top == size.1);
-    let same_size = if stands && !crate::trial::now().resizes {
-        SWP_NOSIZE
-    } else {
-        0
+    let same_size = if stands { SWP_NOSIZE } else { 0 };
+    // And the trials, on the last thing this does while a button is held
+    // that it does not do at rest: move.
+    let moving = match crate::trial::now() {
+        Move::AsToday => 0,
+        Move::NoCopy => SWP_NOCOPYBITS,
+        Move::NoRedraw => SWP_NOREDRAW,
+        Move::Still if stands => return,
+        Move::Still => 0,
     };
     // Opening upward, the corner the window hangs by is its bottom right
     // and no longer its top right: the logo stays where the hand left it
@@ -2110,7 +2112,7 @@ fn put_the_button(anchor: (i32, i32), size: (i32, i32), visibility: u32) {
             top,
             size.0,
             size.1,
-            SWP_NOZORDER | SWP_NOACTIVATE | same_size | visibility,
+            SWP_NOZORDER | SWP_NOACTIVATE | same_size | moving | visibility,
         )
     };
 }
