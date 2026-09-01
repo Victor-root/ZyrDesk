@@ -50,10 +50,22 @@ mod drawing {
     pub const SIDE: f32 = 440.0;
     pub const ORIGIN: f32 = 36.0;
 
-    /// The outline, and the two fills.
-    pub const LINE: [f32; 3] = [9.0, 13.0, 22.0];
-    pub const WHITE: [f32; 3] = [255.0, 255.0, 255.0];
-    pub const GOLD: [f32; 3] = [239.0, 181.0, 54.0];
+    use crate::design::Couleur;
+
+    /// The outline, and the two fills, in the numbers everything that
+    /// draws wants.
+    const fn teinte(red: u8, green: u8, blue: u8) -> Couleur {
+        Couleur {
+            red: red as f32 / 255.0,
+            green: green as f32 / 255.0,
+            blue: blue as f32 / 255.0,
+            alpha: 1.0,
+        }
+    }
+
+    pub const LINE: Couleur = teinte(9, 13, 22);
+    pub const WHITE: Couleur = teinte(255, 255, 255);
+    pub const GOLD: Couleur = teinte(239, 181, 54);
 
     /// Half the stroke's width, which is how far it reaches either side
     /// of the path it is drawn on.
@@ -65,7 +77,7 @@ mod drawing {
         pub middle: (f32, f32),
         pub half: (f32, f32),
         pub radius: f32,
-        pub fill: [f32; 3],
+        pub fill: Couleur,
         pub outlined: bool,
     }
 
@@ -166,6 +178,21 @@ static GROWTH: Mutex<Growth> = Mutex::new(Growth {
 /// system, not from the toolkit.
 static PROGRAM: Mutex<Option<AppHandle>> = Mutex::new(None);
 
+// What this window is drawn on, made once and kept: making it is what
+// costs, drawing on it is not. The same one the whole interface will be
+// drawn on the day the last page goes: two ways of drawing is two
+// products that look alike by accident.
+//
+// Held by the thread rather than by the program, and that is not a
+// detail: a drawing surface and the window it dresses belong to the
+// thread that made them, so a repaint asked from anywhere else has to
+// travel to that thread first. Saying so here is what makes it
+// impossible to forget.
+thread_local! {
+    static TOILE: std::cell::RefCell<Option<crate::paint::Toile>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// Opens the logo's window, once per session.
 ///
 /// Built on the thread that draws, which is the only one whose messages
@@ -258,8 +285,12 @@ pub fn lay(anchor: (i32, i32), upward: bool) {
     if window == 0 {
         return;
     }
-    if UPWARD.swap(upward, Ordering::Relaxed) != upward {
-        repaint(window as HWND);
+    if UPWARD.swap(upward, Ordering::Relaxed) != upward
+        && let Some(app) = PROGRAM.lock().expect("programme du logo").clone()
+    {
+        // Redemandé au fil qui possède la fenêtre : c'est lui qui tient
+        // la toile, et ceci court sur celui qui suit la main.
+        let _ = app.run_on_main_thread(move || repaint(window as HWND));
     }
     let side = ITS_BOX.load(Ordering::Relaxed) as i32;
     // Hung by its top right corner, or by its bottom right one when the
@@ -435,165 +466,80 @@ fn arrived() -> bool {
 /// replaced whole. That is what leaves nothing for a compositor to guess
 /// at between two frames.
 fn repaint(window: windows_sys::Win32::Foundation::HWND) {
-    use windows_sys::Win32::Foundation::{POINT, SIZE};
-    use windows_sys::Win32::Graphics::Gdi::{
-        AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
-        CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC,
-        ReleaseDC, SelectObject,
-    };
-    use windows_sys::Win32::UI::WindowsAndMessaging::{ULW_ALPHA, UpdateLayeredWindow};
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
     let side = ITS_BOX.load(Ordering::Relaxed) as i32;
     if side <= 0 {
         return;
     }
     let part = drawn(&GROWTH.lock().expect("croissance du logo"));
-
-    // SAFETY: a bitmap of ours from first to last, drawn into through the
-    // pointer the system hands back, hung on a device of ours, given to
-    // the window, and then taken apart in the order it was built.
-    unsafe {
-        let screen = GetDC(std::ptr::null_mut());
-        let surface = CreateCompatibleDC(screen);
-        let mut about: BITMAPINFO = std::mem::zeroed();
-        about.bmiHeader = BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: side,
-            // Upside down, which is how a bitmap counts its rows unless
-            // it is told otherwise, and the way round the rest of this
-            // file thinks.
-            biHeight: -side,
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB,
-            biSizeImage: 0,
-            biXPelsPerMeter: 0,
-            biYPelsPerMeter: 0,
-            biClrUsed: 0,
-            biClrImportant: 0,
-        };
-        let mut pixels: *mut std::ffi::c_void = std::ptr::null_mut();
-        let bitmap = CreateDIBSection(
-            surface,
-            &about,
-            DIB_RGB_COLORS,
-            &mut pixels,
-            std::ptr::null_mut(),
-            0,
-        );
-        if bitmap.is_null() || pixels.is_null() {
-            DeleteDC(surface);
-            ReleaseDC(std::ptr::null_mut(), screen);
-            return;
-        }
-        let held = SelectObject(surface, bitmap as _);
-        let count = (side * side) as usize;
-        draw(
-            std::slice::from_raw_parts_mut(pixels.cast::<u32>(), count),
-            side,
-            part,
-            UPWARD.load(Ordering::Relaxed),
-        );
-
-        let size = SIZE { cx: side, cy: side };
-        let from = POINT { x: 0, y: 0 };
-        let blend = BLENDFUNCTION {
-            BlendOp: AC_SRC_OVER as u8,
-            BlendFlags: 0,
-            SourceConstantAlpha: 255,
-            AlphaFormat: AC_SRC_ALPHA as u8,
-        };
-        UpdateLayeredWindow(
-            window,
-            screen,
-            std::ptr::null(),
-            &size,
-            surface,
-            &from,
-            0,
-            &blend,
-            ULW_ALPHA,
-        );
-
-        SelectObject(surface, held);
-        DeleteObject(bitmap as _);
-        DeleteDC(surface);
-        ReleaseDC(std::ptr::null_mut(), screen);
-    }
-}
-
-/// Draws the logo into a square of premultiplied pixels.
-///
-/// `side` is the square's, which is the largest the logo ever gets;
-/// `part` is what fraction of that the logo is drawn at, and it keeps the
-/// corner the window hangs by, so growing and shrinking never moves it.
-///
-/// Every pixel is worked out from the drawing's own geometry rather than
-/// from a picture scaled to fit: a rounded rectangle knows exactly how
-/// much of each pixel it covers, and that is what a smooth edge is. The
-/// only thing that ever showed a hard edge on this button was a stencil
-/// with one bit per pixel, and there is none here.
-fn draw(into: &mut [u32], side: i32, part: f32, upward: bool) {
     let wide = side as f32 * part;
     // The drawing hangs by the right edge, and by the top or the bottom
-    // depending on which way the menu opens.
+    // depending on which way the menu opens, so growing and shrinking
+    // never moves the corner the window hangs by.
     let left = side as f32 - wide;
-    let top = if upward { side as f32 - wide } else { 0.0 };
-    // How many pixels one unit of the drawing comes to.
+    let top = if UPWARD.load(Ordering::Relaxed) {
+        side as f32 - wide
+    } else {
+        0.0
+    };
     let per_unit = wide / drawing::SIDE;
+    let at = |x: f32, y: f32| {
+        (
+            left + (x - drawing::ORIGIN) * per_unit,
+            top + (y - drawing::ORIGIN) * per_unit,
+        )
+    };
 
-    for y in 0..side {
-        for x in 0..side {
-            // The middle of this pixel, in the drawing's own units.
-            let unit = (
-                (x as f32 + 0.5 - left) / per_unit + drawing::ORIGIN,
-                (y as f32 + 0.5 - top) / per_unit + drawing::ORIGIN,
-            );
-            let mut colour = [0.0f32; 3];
-            let mut alpha = 0.0f32;
-            for shape in &drawing::SHAPES {
-                let away = how_far(unit, shape.middle, shape.half, shape.radius) * per_unit;
-                let stroke = if shape.outlined {
-                    drawing::HALF_STROKE * per_unit
-                } else {
-                    0.0
-                };
-                // What this shape covers of this pixel, outside edge and
-                // inside edge apart: between the two is the outline, and
-                // inside the second is the fill.
-                let out = (0.5 - (away - stroke)).clamp(0.0, 1.0);
-                let inside = (0.5 - (away + stroke)).clamp(0.0, 1.0);
-                if out <= 0.0 {
-                    continue;
-                }
-                for (band, under) in colour.iter_mut().enumerate() {
-                    let over = drawing::LINE[band] * (out - inside) + shape.fill[band] * inside;
-                    *under = over + *under * (1.0 - out);
-                }
-                alpha = out + alpha * (1.0 - out);
-            }
-            let byte = |value: f32| value.round().clamp(0.0, 255.0) as u32;
-            into[(y * side + x) as usize] = (byte(alpha * 255.0) << 24)
-                | (byte(colour[0]) << 16)
-                | (byte(colour[1]) << 8)
-                | byte(colour[2]);
+    TOILE.with_borrow_mut(|toile| {
+        if toile.is_none() {
+            *toile = crate::paint::Toile::neuve(side, side);
         }
-    }
-}
+        let Some(toile) = toile.as_ref() else {
+            return;
+        };
+        toile.commence();
+        for shape in &drawing::SHAPES {
+            let (x, y) = at(shape.middle.0 - shape.half.0, shape.middle.1 - shape.half.1);
+            let cadre = crate::paint::Cadre::pose(
+                x,
+                y,
+                shape.half.0 * 2.0 * per_unit,
+                shape.half.1 * 2.0 * per_unit,
+            );
+            let radius = shape.radius * per_unit;
+            toile.remplis(cadre, radius, shape.fill);
+            if shape.outlined {
+                // Sur le bord et non dedans : c'est ce que fait un trait dans
+                // le dessin d'origine, et un contour rentré dedans amincirait
+                // le logo de la moitié de son trait.
+                toile.trace_sur(
+                    cadre,
+                    radius,
+                    drawing::HALF_STROKE * 2.0 * per_unit,
+                    drawing::LINE,
+                );
+            }
+        }
+        if !toile.finit() {
+            return;
+        }
 
-/// How far a point is from the edge of a rounded rectangle, in the
-/// drawing's units and negative inside it.
-///
-/// The one measurement the whole picture is made of: a pixel's share of a
-/// shape is what is left of half a pixel once this is taken off it, which
-/// is exact on the straight edges and true to a thousandth on the curves.
-fn how_far(point: (f32, f32), middle: (f32, f32), half: (f32, f32), radius: f32) -> f32 {
-    let out = (
-        (point.0 - middle.0).abs() - (half.0 - radius),
-        (point.1 - middle.1).abs() - (half.1 - radius),
-    );
-    let corner = (out.0.max(0.0).powi(2) + out.1.max(0.0).powi(2)).sqrt();
-    corner + out.0.max(out.1).min(0.0) - radius
+        // Placée en même temps qu'elle est peinte : la fenêtre ne peut
+        // donc pas être vue à son nouvel endroit avec son ancienne image.
+        let mut place = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        // SAFETY: a window of ours, whose rectangle is read into ours.
+        if unsafe { GetWindowRect(window, &mut place) } == 0 {
+            return;
+        }
+        toile.pose(window as isize, place.left, place.top);
+    });
 }
 
 /// What the window answers when the system speaks to it.

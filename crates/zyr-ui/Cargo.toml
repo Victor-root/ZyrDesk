@@ -33,6 +33,21 @@ tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
 # boutons flottants sur la même session. Le produit ne tourne que sous
 # Windows, et la dépendance n'est tirée que là.
 tauri-plugin-single-instance = "2"
+# Le dessin de l'interface : Direct2D et DirectWrite, fournis par Windows
+# lui-même, donc rien n'est embarqué. Ce sont des objets COM, que
+# `windows-sys` ne sait pas décrire et que `windows` décrit : les deux
+# caisses sont de la même famille et celle-ci est déjà dans le verrou du
+# projet, tirée par la boîte à outils.
+windows = { version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
+    "Win32_UI_WindowsAndMessaging",
+] }
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     # Les coins arrondis des fenêtres appartiennent au compositeur, et

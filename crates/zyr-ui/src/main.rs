@@ -19,6 +19,7 @@
 // game away immediately.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod design;
 mod desk;
 mod floating;
 mod folders;
@@ -29,6 +30,11 @@ mod journal;
 // que sous Windows, comme la fenêtre qui le porte.
 #[cfg(windows)]
 mod logo;
+
+// Ce qui dessine l'interface sans navigateur. Windows seulement, comme
+// les fenêtres qu'elle habille.
+#[cfg(windows)]
+mod paint;
 
 mod mesures;
 mod picture;
