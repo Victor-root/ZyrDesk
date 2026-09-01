@@ -1859,6 +1859,38 @@ Cinq captures, dans l'ordre, sur PC-VICTOR à 175 % : **rien du tout aux essais 
 
 **Et la carte reste ouverte quand on bascule**, là où une action la referme. On regarde l'image après avoir basculé, et rouvrir le menu pour la ligne d'à côté ferait deux gestes pour un réglage.
 
+## D106. Une mesure prise dans une boîte démesurée ne vaut rien (2026-09-01, pendant M4)
+
+**Le symptôme, en photo.** Les interrupteurs du menu dessiné étaient écrasés à la largeur de leur seule marge : « Bureau » s'y coupait en « Bur / eau », et la carte était pourtant assez large, avec du vide à gauche d'eux.
+
+**Deux fautes en une, et la même racine.** La première : `ecris` réglait le calage du texte **sur la police partagée**, celle-là même dont les mesures se servent. Une mesure prise juste après un texte aligné à droite était donc prise dans une boîte alignée à droite. La seconde : cette boîte faisait la moitié du plus grand nombre représentable, où un mot de soixante pixels ne pèse plus rien du tout, le calcul ayant perdu à cette échelle-là toute précision.
+
+**Décision : une police par taille, par graisse et **par calage**, réglée à sa fabrication et jamais après.** Ce qui la partage ne la change plus. Et les mesures se prennent dans une boîte large mais finie, assez pour qu'aucun mot n'aille à la ligne et pas plus.
+
+**Et l'écriture d'une ligne se mesure, elle ne se déduit pas.** La barre des mesures était plus tassée que celle de la page : le texte y était empilé sur sa **taille** de caractère quand une page l'empile sur la **hauteur de sa ligne**, laquelle vaut environ quatre tiers de la taille et est décidée par la police. Elle est maintenant demandée à la police, une fois, à l'ouverture.
+
+## D107. La fenêtre suit la carte, ce qu'une vue web ne savait pas faire (2026-09-01, pendant M4)
+
+**Le problème posé par les lignes qui vont et viennent.** Le menu porte trois lignes qui ne sont pas toujours là : l'écran de l'hôte quand la machine d'en face en a plusieurs, la liste des tailles, et « Appliquer » quand ce qui est choisi n'est pas ce qui est à l'écran. La vue web y répondait en bâtissant sa fenêtre à la plus grande taille jamais nécessaire et en ne la réduisant plus jamais, parce que **chaque changement de taille découvrait une bande que la page n'avait pas encore peinte** : c'était le clignotement.
+
+**Décision : la fenêtre est remesurée à chaque dessin et suit ce que la carte demande.** Ça ne peut rien faire clignoter : l'image et la taille sont remises à Windows dans le même geste, donc il n'existe pas d'instant où la fenêtre soit grande sans être peinte. C'est précisément ce qu'une vue web ne sait pas faire, et c'est la deuxième chose que le dessin natif rend possible après la transparence par pixel.
+
+**Elle est accrochée par son bord droit et par celui d'où le menu s'ouvre**, qui sont les deux seuls que personne ne doit voir bouger, et ce sont ceux-là mêmes que la pose calcule : les deux tombent d'accord sans se parler.
+
+**Et les sous-menus s'ouvrent à gauche, dans la même fenêtre.** Pas de deuxième fenêtre : ce qui n'est pas dessiné ne se voit pas et n'attrape aucun clic, donc un panneau fermé ne coûte rien du tout. La fenêtre est mesurée pour le **plus large** des panneaux et non pour celui qui est ouvert, sinon ouvrir une liste déplacerait tout le reste au même instant.
+
+## D108. L'accent du produit est l'or du logo (2026-09-01, pendant M4)
+
+**Demandé par Victor** : « les couleurs y'a du bleu, essaie plutôt de partir sur le thème du logo ZyrDesk, avec ce jaune / blanc / noir ».
+
+**Décision : `--accent` devient l'or de `zyrdesk.svg`, repris au signe près.** Un produit dont la marque dit une couleur et dont l'interface en dit une autre est un produit qui se présente deux fois. Comme tout passe par le système de design, les cinq rôles de la famille changent en un seul endroit et tout le produit suit, l'accueil comme le menu dessiné.
+
+**Le noir du logo est ce qui s'écrit dessus.** Le blanc ne tient pas sur cet or-là. C'est le rôle `--sur-accent` de D104, et il y avait déjà deux endroits qui écrivaient `#ffffff` en dur sur l'accent : ils nomment le rôle maintenant.
+
+**Le thème clair descend l'or jusqu'à se lire sur du blanc.** L'or du logo y est trop clair pour porter du texte, et un accent qu'on ne lit pas n'est plus un accent.
+
+**Et l'attention penche vers l'orange, ce qui n'est pas un détail.** Elle était un jaune ambré, à un cheveu du nouvel accent. Deux jaunes voisins dont l'un appelle le clic et l'autre prévient ne se distinguent plus, et c'est justement celui qui prévient qu'il ne faut pas rater.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -30,20 +30,32 @@
   --texte-faible: #6b7385;
 
   /* La seule couleur d'accent, réservée à l'action principale et à
-     ce qui est vivant. L'employer ailleurs la dévalue. */
-  --accent: #3b82f6;
-  --accent-vif: #60a5fa;
-  --accent-sourd: #1e40af;
-  --accent-voile: rgba(59, 130, 246, 0.14);
+     ce qui est vivant. L'employer ailleurs la dévalue.
+
+     C'est l'or du logo, repris au signe près : un produit dont la marque
+     dit une couleur et dont l'interface en dit une autre est un produit
+     qui se présente deux fois. */
+  --accent: #efb536;
+  --accent-vif: #f8cd6a;
+  --accent-sourd: #6a4a12;
+  --accent-voile: rgba(239, 181, 54, 0.14);
   /* Ce qui s'écrit par-dessus l'accent. Une couleur d'accent n'est pas
      un fond de texte tant qu'on n'a pas dit ce qui se lit dessus : sans
      ce rôle, chaque écran le devine à sa façon, et le côté allumé d'un
-     interrupteur se lisait en clair sur du bleu clair. */
+     interrupteur se lisait en clair sur du clair.
+
+     Le noir du logo, comme dans le logo : c'est ce qui se lit sur cet
+     or-là, et le blanc n'y tient pas. */
   --sur-accent: #0b0d12;
 
-  /* États système. Une palette réduite, jamais décorative. */
+  /* États système. Une palette réduite, jamais décorative.
+
+     L'attention penche vers l'orange depuis que l'accent est doré : deux
+     jaunes voisins, l'un qui appelle le clic et l'autre qui prévient, ne
+     se distinguent plus, et c'est justement celui qui prévient qu'il ne
+     faut pas rater. */
   --en-ligne: #34d399;
-  --attention: #fbbf24;
+  --attention: #f97316;
   --erreur: #f87171;
   --hors-ligne: #4b5563;
 
@@ -98,14 +110,17 @@
   --texte-doux: #4d5566;
   --texte-faible: #798091;
 
-  --accent: #2563eb;
-  --accent-vif: #1d4ed8;
-  --accent-sourd: #bfdbfe;
-  --accent-voile: rgba(37, 99, 235, 0.1);
+  /* Le même or, descendu jusqu'à se lire sur du blanc : l'or du logo y
+     est trop clair pour porter du texte, et un accent qu'on ne lit pas
+     n'est plus un accent. */
+  --accent: #b57e06;
+  --accent-vif: #8a5f00;
+  --accent-sourd: #fbe6b4;
+  --accent-voile: rgba(181, 126, 6, 0.1);
   --sur-accent: #ffffff;
 
   --en-ligne: #059669;
-  --attention: #b45309;
+  --attention: #c2410c;
   --erreur: #dc2626;
   --hors-ligne: #9ca3af;
 
@@ -237,15 +252,16 @@ p {
 
 .bouton.principal {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--sur-accent);
 }
 
 .bouton.principal:hover:not(:disabled) {
   background: var(--accent-vif);
 }
 
-/* Un bleu simplement pâli reste un bleu : il continue d'appeler le clic.
-   Une action indisponible perd sa couleur, elle ne perd pas sa place. */
+/* Un accent simplement pâli reste l'accent : il continue d'appeler le
+   clic. Une action indisponible perd sa couleur, elle ne perd pas sa
+   place. */
 .bouton.principal:disabled {
   background: var(--surface-3);
   color: var(--texte-faible);
@@ -441,7 +457,7 @@ p {
 
 .interrupteur[aria-checked="true"]::after {
   transform: translateX(18px);
-  background: #ffffff;
+  background: var(--sur-accent);
 }
 
 .interrupteur:focus-visible {

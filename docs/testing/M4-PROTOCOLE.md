@@ -64,6 +64,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R67** | **Nouveau, et c'est la fin du liseré blanc du bouton flottant, confirmée.** Le logo n'est plus une image dans une page web : c'est une fenêtre dont ZyrDesk calcule chaque pixel, transparence comprise. Onze essais avaient éteint tout le reste sans le faire céder, et la vue web était la seule couche jamais mise hors de cause : c'était son fond blanc, laissé une image à l'écran chaque fois qu'elle refaisait sa surface. Le menu reste une page web. Plus de découpe sur le logo, plus de fond à effacer, plus de cadre, plus de clics à laisser passer : quatre défauts de naissance de ce bouton ne peuvent plus se produire |
 | **R68** | **Nouveau, et c'est le déménagement demandé par Victor : l'interface sort de la vue web morceau par morceau.** Le menu du bouton flottant est maintenant dessiné par ZyrDesk lui-même, comme le logo l'est depuis R67 : la carte, son ombre, ses icônes, ses mots, ses raccourcis, le fond qui s'allume sous la souris, et les lignes qui agissent quand on clique. Il s'ouvre au **clic droit** sur le logo, le clic gauche gardant le menu de la vue web pour que les deux se comparent côte à côte sur la même machine. Ce qui est encore dans la page à cette étape est dit dans le journal à chaque ouverture : les lignes à interrupteur, le curseur du débit, les deux sous-menus, et la ligne rouge qui porte un refus |
 | **R69** | **Nouveau.** Le menu dessiné prend vie : les quatre chiffres du moteur se remplissent et se renouvellent une fois par seconde tant que la carte est ouverte, la phrase du flux dit de quoi l'image est faite, et les trois interrupteurs **Souris**, **Son** et **Clavier** sont là, chacun relu à l'ouverture plutôt que retenu. Deux réparations avec eux : l'icône « Masquer ce bouton » ne ressemblait à rien parce que le lecteur de dessins ne connaissait pas la courbe de Bézier, la seule du produit, et un chemin illisible se dit maintenant dans le journal au lieu de laisser une icône à moitié dessinée ; et le côté allumé d'un interrupteur s'écrivait avec une couleur qui n'existait pas, `--sur-accent`, employée par la page et définie nulle part |
+| **R70** | **Nouveau, et c'est le menu dessiné au complet.** Il lui manquait le curseur du débit, le codec, « Écran d'en face », « Appliquer les changements » et les deux listes qui s'ouvrent à gauche, résolution et écran de l'hôte : tout y est. Avec eux, deux réparations et un changement de couleur. Les interrupteurs étaient écrasés à la largeur de leur marge, parce qu'une mesure de texte était prise dans une boîte alignée à droite et large comme la moitié du plus grand nombre représentable ; la barre des mesures était tassée, parce que le texte y était empilé sur sa taille de caractère et non sur la hauteur de sa ligne. Et **l'accent du produit est maintenant l'or du logo** au lieu du bleu, dans tout le produit et pas seulement dans ce menu |
 | **R65** | **Nouveau.** Une ligne **Écran de l'hôte** dans le menu du bouton flottant, qui liste les écrans allumés de la machine d'en face et permet d'en changer. Elle n'apparaît que quand cette machine en a plusieurs. Les écrans éteints n'y sont pas, ni l'écran virtuel du produit. Le moteur d'en face ne lit quel écran filmer qu'à son démarrage, donc changer d'écran le redémarre et la session se rouvre toute seule : l'écran d'ouverture le dit. Une session qui ne choisit rien est servie sur l'**écran principal** d'en face, y compris après une session qui en avait choisi un autre |
 | **R64** | **Nouveau.** Pendant une session, la vignette de ZyrDesk dans Win+Tab et Alt+Tab est de la taille des autres. Elle était nettement plus petite, quelle que soit la taille de la fenêtre, plein écran compris : ZyrDesk disait à Windows de ne pas photographier sa fenêtre et lui fournissait l'image lui-même, ce qui plafonne la vignette à la taille que Windows réclame. C'était nécessaire quand l'image de la session était une fenêtre posée par-dessus la nôtre, ça ne l'est plus depuis qu'elle est portée par notre fenêtre |
 | **R62** | **Nouveau.** Un bouton **Journal** sur chaque carte de « Mes ordinateurs », qui ouvre la même fenêtre que le journal local mais rempli de ce que la machine d'en face a écrit chez elle. L'aller-retour physique jusqu'à l'autre PC pour copier son journal était le dernier que le produit imposait. La page est rassemblée par le **service** de la machine lue, donc c'est mot pour mot celle qu'on lirait devant elle. **Vider** marche aussi à distance, parce qu'une panne se cherche en vidant les deux journaux, en refaisant ce qui ne marche pas, puis en lisant les deux. Seul **Ouvrir le dossier** disparaît : ces fichiers ne sont pas ici |
@@ -1633,6 +1634,39 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > **L'icône de « Masquer ce bouton »**, qui ne ressemblait à rien : c'est un oeil barré, le même que dans le menu web. Les comparer côte à côte.
 >
 > **Et le journal ne doit porter aucune ligne `dessin : chemin non lu`.** S'il y en a une, elle nomme le dessin en cause et l'icône correspondante est incomplète.
+
+> **R70 (le menu dessiné au complet, et l'or du logo)**
+>
+> Toujours au **clic droit** sur le logo, le clic gauche gardant le menu de la vue web : c'est l'essai où l'on compare les deux, ligne par ligne, sur la même machine.
+>
+> **La couleur, d'abord, et partout.** L'accent du produit est l'or du logo. Le vérifier sur l'accueil autant que dans le menu : le bouton principal, le côté allumé d'un interrupteur, la coche d'une liste, le pouce du curseur, le contour de ce qui a le focus. Ce qui s'écrit **sur** l'or est le noir du logo en thème sombre et du blanc en thème clair, et ça doit se lire sans effort dans les deux. Vérifier aussi qu'un état « attention » ne se confond plus avec l'accent : il penche vers l'orange.
+>
+> **Les interrupteurs, qui étaient cassés.** « Bureau | Jeu », « Actif | Coupé », « Partagé | Immersif » : chaque mot doit tenir sur une ligne, sans être coupé, et les deux côtés doivent faire la même hauteur qu'à côté dans le menu web.
+>
+> **La barre des mesures.** Comparer l'espace entre le mot et le nombre avec celui du menu web : il doit être le même. C'était le « trop serré ».
+>
+> **Le débit.** Le curseur se prend, se pousse d'un bout à l'autre, et la valeur écrite à droite suit le pouce pendant qu'on le tient. **Rien n'est écrit tant qu'on tient** : le journal ne doit porter qu'une seule ligne `bitrate mis sur …`, au relâchement, et pas quinze. Les deux crans du bout doivent être atteignables.
+>
+> **Le codec.** Les noms côte à côte, celui qui est en place plein. Un codec que la machine d'en face ne sait pas encoder est **barré**, et cliquer dessus ne fait rien du tout.
+>
+> **Écran d'en face.** « Économe | Fluide », comme le menu web.
+>
+> **Appliquer les changements.** La ligne n'existe pas tant que rien n'a changé. Changer un réglage la fait apparaître, et la carte grandit d'une ligne **sans clignoter** : c'est le point à regarder, parce que c'est ce que la vue web ne savait pas faire. Cliquer referme la carte et relance l'image.
+>
+> **Les deux listes.** « Résolution » et « Écran de l'hôte » portent un chevron. Cliquer ouvre une carte **à gauche** de la première, avec son titre en tête, un trait, puis les valeurs, la valeur en place portant une coche dorée et sa taille ou son rapport écrits à droite. Le chevron de la ligne se retourne pendant que la liste est ouverte. Cliquer la même ligne referme. Cliquer le titre de la liste referme aussi. Choisir une valeur referme la liste et coche la nouvelle.
+>
+> **La ligne « Écran de l'hôte » n'existe pas** vers une machine à un seul écran, ni pendant que son moteur démarre.
+>
+> **Et le sens d'ouverture.** Poser le bouton en bas de l'image : le menu s'ouvre vers le haut, et la liste qui s'ouvre à gauche doit être alignée par le **bas** avec lui, pas par le haut.
+>
+> **Ce que le journal doit porter à l'ouverture** :
+>
+> ```
+> bouton flottant : menu dessiné par ZyrDesk, …x… px au départ ; la
+> fenêtre suit ensuite ce que la carte demande
+> ```
+>
+> **Et l'agrandissement de l'écran** : refaire le tour à 125, 150 et 175 %.
 
 > **R65 (choisir lequel des écrans de l'hôte on regarde)**
 >

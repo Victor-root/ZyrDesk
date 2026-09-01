@@ -173,10 +173,10 @@ pub struct Toile {
     cible: ID2D1DCRenderTarget,
     pinceau: ID2D1SolidColorBrush,
     ecriture: IDWriteFactory,
-    /// Les mises en page de texte déjà demandées, une par taille et par
-    /// graisse : les fabriquer coûte, s'en servir non, et un menu emploie
-    /// deux tailles pour quinze lignes.
-    polices: std::cell::RefCell<Vec<(u32, bool, IDWriteTextFormat)>>,
+    /// Les mises en page de texte déjà demandées, une par taille, par
+    /// graisse et par calage : les fabriquer coûte, s'en servir non, et un
+    /// menu emploie deux tailles pour quinze lignes.
+    polices: std::cell::RefCell<Vec<(u32, bool, Cale, IDWriteTextFormat)>>,
     /// Les chemins déjà lus, une fois chacun : une icône est un texte,
     /// et le relire à chaque image serait le relire quinze fois par
     /// dessin pour le même trait. Ceux qui ne se lisent pas sont retenus
@@ -276,6 +276,12 @@ impl Toile {
                 fabrique,
             })
         }
+    }
+
+    /// Ce qu'elle fait de côté, pour qui doit savoir si elle est encore à
+    /// la bonne taille.
+    pub fn taille(&self) -> (i32, i32) {
+        (self.large, self.haute)
     }
 
     /// Ouvre le dessin, la toile entièrement transparente.
@@ -440,17 +446,11 @@ impl Toile {
         cadre: Cadre,
         cale: Cale,
     ) {
-        let Some(police) = self.police(taille, gras) else {
+        let Some(police) = self.police(taille, gras, cale) else {
             return;
         };
         // SAFETY: une mise en page à nous, employée le temps d'un dessin.
         unsafe {
-            let _ = police.SetTextAlignment(match cale {
-                Cale::Gauche => DWRITE_TEXT_ALIGNMENT_LEADING,
-                Cale::Centre => DWRITE_TEXT_ALIGNMENT_CENTER,
-                Cale::Droite => DWRITE_TEXT_ALIGNMENT_TRAILING,
-            });
-            let _ = police.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             self.pinceau.SetColor(&teinte(couleur));
             self.cible.DrawText(
                 &lettres(mot),
@@ -466,39 +466,68 @@ impl Toile {
     /// Ce qu'un mot prendrait de large, pour les endroits dont la largeur
     /// est celle de leur ligne la plus longue.
     pub fn largeur(&self, mot: &str, taille: f32, gras: bool) -> f32 {
-        let Some(police) = self.police(taille, gras) else {
-            return 0.0;
-        };
+        self.mesure(mot, taille, gras)
+            .map_or(0.0, |mesure| mesure.widthIncludingTrailingWhitespace)
+    }
+
+    /// La hauteur d'une ligne de texte de cette taille.
+    ///
+    /// Ce n'est pas la taille du caractère : une ligne de douze pixels en
+    /// occupe environ seize, l'espace au-dessus et en dessous étant celui
+    /// que la police elle-même demande. C'est cette hauteur-là qu'emploie
+    /// la mise en page d'une page, et empiler du texte sur sa taille
+    /// plutôt que sur sa hauteur serre tout ce qui est empilé.
+    pub fn haute(&self, taille: f32, gras: bool) -> f32 {
+        // Deux lettres qui vont en haut et en bas : la hauteur d'une ligne
+        // ne dépend pas de ce qu'on y écrit, mais une ligne vide n'en a
+        // pas.
+        self.mesure("Hg", taille, gras)
+            .map_or(taille, |mesure| mesure.height)
+    }
+
+    /// Ce qu'un mot mesure, mis en page hors de tout dessin.
+    ///
+    /// Dans une boîte large mais **finie** : mesurer dans une boîte
+    /// démesurée fait perdre au calcul toute sa précision, et la largeur
+    /// revient alors à rien du tout. C'est ce qui écrasait les
+    /// interrupteurs du menu à la largeur de leur seule marge.
+    fn mesure(&self, mot: &str, taille: f32, gras: bool) -> Option<DWRITE_TEXT_METRICS> {
+        /// Assez large pour qu'aucun mot n'aille à la ligne, et pas plus.
+        const AU_LARGE: f32 = 100_000.0;
+
+        let police = self.police(taille, gras, Cale::Gauche)?;
         // SAFETY: une mise en page à nous, mesurée et rendue aussitôt.
         unsafe {
-            let Ok(mise) = self.ecriture.CreateTextLayout(
-                &lettres(mot),
-                &police,
-                f32::MAX / 2.0,
-                f32::MAX / 2.0,
-            ) else {
-                return 0.0;
-            };
-            let mise: IDWriteTextLayout = mise;
+            let mise: IDWriteTextLayout = self
+                .ecriture
+                .CreateTextLayout(&lettres(mot), &police, AU_LARGE, AU_LARGE)
+                .ok()?;
             let mut mesure = DWRITE_TEXT_METRICS::default();
-            if mise.GetMetrics(&mut mesure).is_err() {
-                return 0.0;
-            }
-            mesure.widthIncludingTrailingWhitespace
+            mise.GetMetrics(&mut mesure).ok()?;
+            Some(mesure)
         }
     }
 
-    /// La police de cette taille et de cette graisse, fabriquée une fois.
-    fn police(&self, taille: f32, gras: bool) -> Option<IDWriteTextFormat> {
+    /// La police de cette taille, de cette graisse et de ce calage,
+    /// fabriquée une fois.
+    ///
+    /// Le calage fait partie de la clé, et ce n'est pas un détail : une
+    /// mise en page se règle une fois pour toutes à sa fabrication. Réglée
+    /// après coup sur une police partagée, elle change aussi celle que les
+    /// **mesures** emploient, et une mesure prise dans une boîte alignée à
+    /// droite ne vaut plus rien.
+    fn police(&self, taille: f32, gras: bool, cale: Cale) -> Option<IDWriteTextFormat> {
         // Les tailles se comparent au millième de pixel pour servir de
         // clé : un nombre à virgule ne se compare pas autrement sans
         // risquer de refabriquer la même police à chaque ligne.
         let clef = (taille * 1000.0).round() as u32;
-        if let Some((_, _, deja)) = self
-            .polices
-            .borrow()
-            .iter()
-            .find(|(autre, graisse, _)| *autre == clef && *graisse == gras)
+        if let Some((_, _, _, deja)) =
+            self.polices
+                .borrow()
+                .iter()
+                .find(|(autre, graisse, calage, _)| {
+                    *autre == clef && *graisse == gras && *calage == cale
+                })
         {
             return Some(deja.clone());
         }
@@ -507,8 +536,10 @@ impl Toile {
         } else {
             DWRITE_FONT_WEIGHT_NORMAL
         };
-        let neuve = self.fabrique_police(taille, graisse)?;
-        self.polices.borrow_mut().push((clef, gras, neuve.clone()));
+        let neuve = self.fabrique_police(taille, graisse, cale)?;
+        self.polices
+            .borrow_mut()
+            .push((clef, gras, cale, neuve.clone()));
         Some(neuve)
     }
 
@@ -518,6 +549,7 @@ impl Toile {
         &self,
         taille: f32,
         graisse: DWRITE_FONT_WEIGHT,
+        cale: Cale,
     ) -> Option<IDWriteTextFormat> {
         // SAFETY: une fabrique à nous ; un refus est une réponse et non
         // une faute, d'où le second essai.
@@ -532,6 +564,12 @@ impl Toile {
                     taille,
                     &HSTRING::from("fr-FR"),
                 ) {
+                    let _ = police.SetTextAlignment(match cale {
+                        Cale::Gauche => DWRITE_TEXT_ALIGNMENT_LEADING,
+                        Cale::Centre => DWRITE_TEXT_ALIGNMENT_CENTER,
+                        Cale::Droite => DWRITE_TEXT_ALIGNMENT_TRAILING,
+                    });
+                    let _ = police.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
                     return Some(police);
                 }
             }
