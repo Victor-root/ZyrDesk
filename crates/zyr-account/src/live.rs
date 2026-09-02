@@ -22,10 +22,10 @@ use zyr_broker::proof::{Purpose, challenge_message};
 use zyr_broker::rest::{Access, ContactInfo, DeviceInfo, ServerInfo, ShareInfo, paths};
 use zyr_broker::{Code, PROTOCOL, Signed};
 use zyr_transport::Identity;
+use zyr_transport::trust::{Trust, Untrusted, client_config};
 
 use crate::address::host_and_port;
 use crate::link::Link;
-use crate::trust::{Trust, Untrusted, client_config};
 
 /// How long the server gets to open with its challenge, and to welcome.
 const PATIENCE: Duration = Duration::from_secs(10);

@@ -3022,7 +3022,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-tungstenite 0.30.0",
- "webpki-roots 1.0.9",
  "zyr-broker",
  "zyr-proto",
  "zyr-server",
@@ -3172,6 +3171,7 @@ dependencies = [
  "rustls-webpki",
  "sha2",
  "tokio",
+ "webpki-roots 1.0.9",
  "zyr-proto",
 ]
 

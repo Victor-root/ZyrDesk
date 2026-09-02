@@ -42,6 +42,8 @@ enum Command {
     },
     /// L'empreinte à comparer dans l'application.
     Fingerprint,
+    /// Le serveur se joint lui-même, comme un appareil le ferait.
+    Check,
     /// Une copie cohérente de la base, de la configuration et des clés.
     Backup { folder: PathBuf },
 }
@@ -85,6 +87,7 @@ fn main() -> ExitCode {
         Command::User { action } => user(&cli.config, action),
         Command::Invite { action } => invite(&cli.config, action),
         Command::Fingerprint => fingerprint(&cli.config),
+        Command::Check => check(&cli.config),
         Command::Backup { folder } => backup(&cli.config, &folder),
     };
     match outcome {
@@ -147,17 +150,11 @@ fn status(path: &Path) -> Result<(), String> {
         "Serveur        : {} ({})",
         config.name, config.api.public_url
     );
-    let listening = {
-        let mut probe = config.api.listen;
-        if probe.ip().is_unspecified() {
-            probe.set_ip(if probe.is_ipv4() {
-                std::net::Ipv4Addr::LOCALHOST.into()
-            } else {
-                std::net::Ipv6Addr::LOCALHOST.into()
-            });
-        }
-        std::net::TcpStream::connect_timeout(&probe, std::time::Duration::from_secs(1)).is_ok()
-    };
+    let listening = std::net::TcpStream::connect_timeout(
+        &zyr_server::check::where_to_knock(config.api.listen),
+        std::time::Duration::from_secs(1),
+    )
+    .is_ok();
     println!(
         "État           : {}",
         if listening {
@@ -326,6 +323,44 @@ fn fingerprint(path: &Path) -> Result<(), String> {
         ),
     }
     println!("Clé de signature : {}", key.public());
+    Ok(())
+}
+
+/// Knocks on the API as a device would, and says what answered.
+///
+/// What the installation script runs last, and what to run when an
+/// application says the server refuses it: the same trust, the same
+/// question, on the machine itself.
+fn check(path: &Path) -> Result<(), String> {
+    let config = load(path)?;
+    let checked = zyr_server::check::check(&config).map_err(|e| e.to_string())?;
+    println!(
+        "Le serveur répond sur {}{}.",
+        checked.address,
+        if checked.fingerprint.is_some() {
+            ", en TLS"
+        } else {
+            ", en clair derrière le mandataire inverse"
+        }
+    );
+    println!(
+        "  {} (version {}, dialecte {})",
+        checked.info.name, checked.info.version, checked.info.protocol
+    );
+    println!(
+        "  Inscriptions : {}",
+        match checked.info.registration {
+            zyr_broker::rest::Registration::Open => "ouvertes",
+            zyr_broker::rest::Registration::Invitation => "sur invitation",
+            zyr_broker::rest::Registration::Closed => "fermées",
+        }
+    );
+    if let Some(fingerprint) = checked.fingerprint {
+        println!(
+            "  Empreinte du serveur, à comparer dans l'application : {}",
+            grouped(&fingerprint)
+        );
+    }
     Ok(())
 }
 

@@ -10,18 +10,18 @@
 //! Every connection is TLS, and only TLS. A server that a public
 //! authority vouches for is taken as any browser would; a server nobody
 //! vouches for is taken on the fingerprint of its key, once a person has
-//! compared it, and on nothing else afterwards.
+//! compared it, and on nothing else afterwards. That trust lives in the
+//! transport, where the server borrows it to check itself.
 
 pub mod address;
 pub mod attach;
 pub mod link;
 pub mod live;
 pub mod rest;
-pub mod trust;
 
 pub use address::{BadAddress, normalized};
 pub use attach::{AttachError, Credentials, Registering, attach};
 pub use link::Link;
 pub use live::{Event, Live, Snapshot, Start};
 pub use rest::{Failure, Rest};
-pub use trust::{Trust, Untrusted};
+pub use zyr_transport::trust::{Trust, Untrusted};

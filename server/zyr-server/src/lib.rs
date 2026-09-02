@@ -9,6 +9,7 @@
 //! `docs/SERVER.md`.
 
 pub mod api;
+pub mod check;
 pub mod config;
 pub mod journal;
 pub mod keys;

@@ -9,6 +9,10 @@
 //! What this is not: a client that accepts everything. Signatures are
 //! verified as always, only TLS 1.3 is spoken, and a public certificate
 //! goes down the ordinary road.
+//!
+//! Here rather than beside the account link because the server checks
+//! itself with it too: what an installation proves is that a device
+//! knocking with this very trust is let in.
 
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -17,8 +21,8 @@ use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, RootCertStore, SignatureScheme};
-use zyr_transport::Fingerprint;
-use zyr_transport::identity::public_key_fingerprint;
+
+use crate::identity::{Fingerprint, public_key_fingerprint};
 
 /// What the device holds of the server, besides the public roots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

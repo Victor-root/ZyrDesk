@@ -23,8 +23,9 @@ use zyr_broker::rest::{
     Register, Rename, ServerInfo, ShareInfo, ShareRequest, paths,
 };
 
+use zyr_transport::trust::{Trust, Untrusted, Verifier, client_config};
+
 use crate::address::{BadAddress, normalized};
-use crate::trust::{Trust, Untrusted, Verifier, client_config};
 
 /// Why a request did not get its answer.
 #[derive(Debug, Clone, PartialEq, Eq)]

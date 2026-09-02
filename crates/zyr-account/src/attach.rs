@@ -14,10 +14,10 @@ use zyr_broker::proof::{Purpose, challenge_message};
 use zyr_broker::rest::{Login, Register};
 use zyr_broker::{Code, PROTOCOL};
 use zyr_transport::Identity;
+use zyr_transport::trust::{Trust, Untrusted};
 
 use crate::link::Link;
 use crate::rest::{Failure, Rest};
-use crate::trust::{Trust, Untrusted};
 
 /// Creating the account on the way, rather than entering one.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

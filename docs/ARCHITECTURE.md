@@ -130,7 +130,7 @@ ZyrDesk/
 ├─ Cargo.toml                  # workspace Rust
 ├─ crates/
 │  ├─ zyr-proto/               # types partagés : chemins, journal horodaté, empreinte de compilation, réglages de session
-│  ├─ zyr-transport/           # la connexion QUIC (quinn, un seul fichier le nomme), identité et empreintes, contrôleur média, budget MTU ; à venir (M5) : l'aiguilleur, les sondes, la branche de relais
+│  ├─ zyr-transport/           # la connexion QUIC (quinn, un seul fichier le nomme), identité et empreintes, confiance TLS et épinglage, contrôleur média, budget MTU ; à venir (M5) : l'aiguilleur, les sondes, la branche de relais
 │  ├─ zyr-tunnel/              # pompes de ports : TCP<->stream, UDP<->datagramme ; canal ZyrDesk ; loopback 127.77.x.y
 │  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube nommé
 │  ├─ zyr-engine-host/         # superviseur Sunshine : config générée, lancement en session console, API locale, santé
@@ -139,12 +139,12 @@ ZyrDesk/
 │  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
 │  ├─ zyr-screen/              # l'écran virtuel : pilote, réveil, sommeil, arrangement des écrans
 │  ├─ zyr-sound/               # le son de la session, dans le mélangeur de Windows
-│  ├─ zyr-broker/              # à venir (M5) : ce que le service et le serveur se disent, tickets et laissez-passer signés
-│  ├─ zyr-account/             # à venir (M5) : le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous
+│  ├─ zyr-broker/              # ce que le service et le serveur se disent : messages, tickets et laissez-passer signés
+│  ├─ zyr-account/             # le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous
 │  ├─ zyrdeskd/                # binaire service Windows : registre des voies, serveur du tube, tous les tunnels, superviseur du moteur hôte
 │  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, journal, bouton flottant
 │  └─ zyr-cli/                 # doctor, session sans UI, banc de mesure, bundle de diagnostic
-├─ server/                     # à venir (M5) : zyr-server, le serveur facultatif (broker et relais, un binaire, AGPLv3), install.sh, unité systemd
+├─ server/                     # zyr-server, le serveur facultatif (comptes et mise en relation, le relais à venir en M6 ; un binaire, AGPLv3), install.sh, README
 ├─ engines/
 │  ├─ sunshine/                # submodule -> fork, tag upstream épinglé + une pile courte de patchs (patches/MANIFEST.md)
 │  └─ moonlight-qt/            # submodule -> fork, tag upstream épinglé + une pile courte de patchs (patches/MANIFEST.md)
@@ -152,7 +152,7 @@ ZyrDesk/
 ├─ packaging/                  # installateur NSIS, install service, règles pare-feu, désinstallation propre
 ├─ perf/                       # GATES.md (seuils chiffrés), scripts, profils de perte, procédure photon-à-photon
 ├─ docs/                       # ce dossier
-└─ .github/workflows/          # ci, build moteurs, répétition de mise à niveau, smoke contrat moteurs
+└─ .github/workflows/          # ci, build moteurs, serveur (un binaire statique par architecture), répétition de mise à niveau, smoke contrat moteurs
 ```
 
 ## 11. Interfaces entre composants (résumé)

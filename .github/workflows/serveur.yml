@@ -1,0 +1,92 @@
+name: Serveur
+
+# Le serveur est compilé en statique pour Debian : un binaire, avec son
+# empreinte, que le script d'installation télécharge et vérifie. À chaque
+# changement de ce qui le compose, et, sur une étiquette de version, dans
+# une version publiée du dépôt. Une seule architecture, x86_64, celle des
+# conteneurs de Proxmox : les exécuteurs ARM ne sont pas offerts à un
+# dépôt privé, et les autres machines compilent sur place (--from-source).
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - ".github/workflows/serveur.yml"
+      - "server/**"
+      - "crates/zyr-broker/**"
+      - "crates/zyr-proto/**"
+      - "crates/zyr-transport/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+concurrency:
+  group: serveur-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CIBLE: x86_64-unknown-linux-musl
+  NOM: zyrdesk-server-x86_64-linux-musl
+
+jobs:
+  binaire:
+    name: zyrdesk-server (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-unknown-linux-musl
+      # La base de données embarquée et le chiffrement compilent du C :
+      # musl-gcc est le compilateur de la cible statique.
+      - name: Installer la chaîne musl
+        run: sudo apt-get update -q && sudo apt-get install -y -q musl-tools
+      - name: Compiler
+        run: cargo build --release -p zyr-server --target "$CIBLE"
+      - name: Nommer et signer d'une empreinte
+        run: |
+          set -euo pipefail
+          mkdir -p publie
+          cp "target/$CIBLE/release/zyrdesk-server" "publie/$NOM"
+          (cd publie && sha256sum "$NOM" > "$NOM.sha256")
+          "./publie/$NOM" --version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: zyrdesk-server-x86_64
+          path: publie/
+          if-no-files-found: error
+
+  version:
+    name: Version publiée
+    needs: binaire
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: zyrdesk-server-*
+          merge-multiple: true
+          path: publie/
+      - name: Publier
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          etiquette="${GITHUB_REF_NAME}"
+          if gh release view "$etiquette" >/dev/null 2>&1; then
+            gh release upload "$etiquette" publie/* --clobber
+          else
+            gh release create "$etiquette" publie/* \
+              --title "ZyrDesk $etiquette" \
+              --notes "Serveur ZyrDesk $etiquette : un binaire statique, avec son empreinte. Installation : bash <(curl -fsSL https://raw.githubusercontent.com/$GH_REPO/$etiquette/server/install.sh)"
+          fi

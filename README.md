@@ -24,7 +24,9 @@ Mes ordinateurs
 
 ## État du projet
 
-Jalon en cours : **M4, l'interface**. Le produit se pilote entièrement à la souris. Sur un réseau local, deux ZyrDesk se trouvent seuls, s'autorisent seuls et s'appairent seuls : aucune adresse à recopier, aucune empreinte à transporter, aucun code à quatre chiffres à taper d'un écran à l'autre. Le service s'installe depuis la fenêtre, et un journal complet se copie en un clic. Il reste à le vérifier sur deux vraies machines, en suivant [docs/testing/M4-PROTOCOLE.md](docs/testing/M4-PROTOCOLE.md).
+Jalon en cours : **M5, le serveur et les comptes**. La première tranche est livrée : un serveur facultatif, `zyrdesk-server`, qui s'installe sur un Debian en quelques questions ([server/README.md](server/README.md)), tient des comptes et met les ordinateurs d'un même compte en relation sans jamais regarder passer l'image ; dans la fenêtre, une section Compte, et les ordinateurs du compte dans « Mes ordinateurs » avec leur présence. Il reste à le vérifier sur deux vraies machines et un conteneur, en suivant [docs/testing/M5-PROTOCOLE.md](docs/testing/M5-PROTOCOLE.md) ; la traversée d'une box sans rien renvoyer est la tranche suivante.
+
+Le jalon M4, l'interface, a rendu le produit entièrement pilotable à la souris. Sur un réseau local, deux ZyrDesk se trouvent seuls, s'autorisent seuls et s'appairent seuls : aucune adresse à recopier, aucune empreinte à transporter, aucun code à quatre chiffres à taper d'un écran à l'autre. Le service s'installe depuis la fenêtre, et un journal complet se copie en un clic. Son protocole, [docs/testing/M4-PROTOCOLE.md](docs/testing/M4-PROTOCOLE.md), reste à dérouler en entier sur les deux machines.
 
 Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intégration continue) est terminé. Le jalon M1 a produit une première session distante réelle en 1080p ; ses hypothèses restantes sont listées dans [docs/testing/M1-PROTOCOLE.md](docs/testing/M1-PROTOCOLE.md). Le jalon M2 a livré le tunnel chiffré et son banc de mesure : les trois seuils de performance sont tenus sur deux PC en Ethernet gigabit ([perf/baselines/M2-lan-ethernet.md](perf/baselines/M2-lan-ethernet.md)). Le jalon M3 a livré le service Windows, qui rend la machine joignable avant qu'on y ouvre une session. La feuille de route complète est dans [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -33,6 +35,8 @@ Le jalon M0 (ossature Rust, moteurs épinglés, diagnostic, installateur, intég
 Lancer `ZyrDesk.exe` sur les deux ordinateurs. La première fois, un bouton de la fenêtre installe le service, ce qui demande une autorisation Windows ; ensuite il démarre tout seul avec la machine.
 
 Chaque ordinateur apparaît alors dans la fenêtre de l'autre. Un clic sur sa carte ouvre la session. Rien d'autre n'est demandé à personne.
+
+Avec un serveur, ce qui reste facultatif : Réglages, section Compte, « Se connecter à un serveur ». Les ordinateurs du compte apparaissent alors dans « Mes ordinateurs », en ligne ou non, et les appareils du compte se renomment et se révoquent depuis n'importe lequel d'entre eux.
 
 Tout ce qu'une session transporte passe par un seul port, le 47000 en UDP. Le service en écoute un second, le 5353, celui que mDNS réserve pour que deux ordinateurs se trouvent sur un réseau local. Les deux règles de pare-feu correspondantes sont posées par le service au moment où il s'installe, et retirées quand on le retire ; elles ne valent que pour lui.
 
@@ -109,6 +113,9 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 | [docs/testing/M2-PROTOCOLE.md](docs/testing/M2-PROTOCOLE.md) | Mesure du coût du tunnel sur deux PC |
 | [docs/testing/M3-PROTOCOLE.md](docs/testing/M3-PROTOCOLE.md) | Accès distant sans personne devant la machine |
 | [docs/testing/M4-PROTOCOLE.md](docs/testing/M4-PROTOCOLE.md) | Le produit piloté entièrement à la souris, sur deux PC |
+| [docs/testing/M5-PROTOCOLE.md](docs/testing/M5-PROTOCOLE.md) | Le serveur, le compte et « Mes ordinateurs », sur deux PC et un conteneur |
+| [docs/SERVER.md](docs/SERVER.md) | Le serveur facultatif : comptes, mise en relation, relais, TLS, installation |
+| [server/README.md](server/README.md) | Installer, mettre à jour et administrer le serveur sur un Debian |
 | [docs/COMPLIANCE.md](docs/COMPLIANCE.md) | Licences, obligations, marques, brevets codecs |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Décisions actées et décisions ouvertes |
 | [patches/MANIFEST.md](patches/MANIFEST.md) | Versions de moteurs épinglées et adaptations appliquées |
@@ -116,4 +123,4 @@ Construction de l'installateur Windows : voir [packaging/windows/README.md](pack
 
 ## Licences
 
-L'application ZyrDesk est sous GPLv3 (voir [LICENSE](LICENSE)), en cohérence avec les moteurs Sunshine et Moonlight (GPLv3). Les composants serveur (broker, relais) seront publiés sous AGPLv3. Détails et obligations : [docs/COMPLIANCE.md](docs/COMPLIANCE.md).
+L'application ZyrDesk est sous GPLv3 (voir [LICENSE](LICENSE)), en cohérence avec les moteurs Sunshine et Moonlight (GPLv3). Le serveur est sous AGPLv3 (voir [server/LICENSE](server/LICENSE)). Détails et obligations : [docs/COMPLIANCE.md](docs/COMPLIANCE.md).

@@ -9,6 +9,7 @@ pub mod endpoint;
 pub mod identity;
 pub mod mtu;
 pub mod path;
+pub mod trust;
 
 pub use congestion::{MediaController, MediaProfile};
 pub use endpoint::{
