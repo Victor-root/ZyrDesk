@@ -632,6 +632,16 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Ce qui est basculé pendant une session est un choix comme un autre, et il s'écrit à côté des autres : les réglages doivent montrer la même valeur après coup, dans **Avancé, Fenêtre de la session**.
 
+> **S5ter (basculer depuis une fenêtre agrandie, plusieurs fois de suite)**
+>
+> Depuis une session **en fenêtre** (la fenêtre s'y ouvre agrandie, c'est S5) : basculer en plein écran, revenir en fenêtre, recommencer, cinq ou six fois d'affilée sans attendre entre deux.
+>
+> Attendu : **chaque** passage en plein écran prend l'écran entier. Aucun ne doit donner une image sans bordure mais décalée, débordant de quelques pixels à gauche et en haut et s'arrêtant au-dessus de la barre des tâches.
+>
+> Une fenêtre agrandie l'est encore une fois son cadre retiré, et Windows la tient à la place qu'il lui a donnée : elle y revenait au premier recompte de cadre, c'est-à-dire aussitôt, avec les mesures de l'agrandi et sans plus rien pour cacher les quelques pixels que Windows réserve à sa bordure. Elle est maintenant rendue à sa taille avant de prendre l'écran.
+>
+> **Le journal donne la réponse sans avoir à regarder l'écran.** À chaque bascule, une ligne `cadre de la fenêtre : écran 1920x1200 en (0, 0), fenêtre …` : en plein écran, la fenêtre doit être **aux mesures de l'écran et en (0, 0)**, avec `0 px de cadre` dans les deux sens. Une fenêtre plus grande que l'écran et posée en négatif est ce défaut-là.
+
 ### Pendant : l'image
 
 > **S6 (aucune bande noire en plein écran)**

@@ -526,6 +526,22 @@ pub fn agrandis() {
 #[cfg(not(windows))]
 pub fn agrandis() {}
 
+/// La rend à la taille qu'elle avait avant d'être agrandie.
+///
+/// Seulement si elle l'est : autrement l'appel ne ferait que la remettre
+/// au premier plan, pour rien.
+#[cfg(windows)]
+fn rends_sa_taille() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_RESTORE, ShowWindow};
+
+    // Agrandie veut déjà dire qu'elle existe.
+    if est_agrandie() {
+        let elle = sienne() as windows_sys::Win32::Foundation::HWND;
+        // SAFETY: une fenêtre à nous.
+        unsafe { ShowWindow(elle, SW_RESTORE) };
+    }
+}
+
 #[cfg(windows)]
 pub fn est_agrandie() -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::IsZoomed;
@@ -595,7 +611,25 @@ pub fn prend_l_ecran(tout: bool) {
         let garde: [u8; PLACE] = unsafe { std::mem::transmute(place) };
         *avant = Some((style, autres, garde));
 
-        let sans_cadre = style & !((WS_CAPTION | WS_THICKFRAME) as isize);
+        // Une fenêtre agrandie l'est encore une fois son cadre retiré, et
+        // le système la tient à la place qu'il lui a donnée : elle y
+        // revient au premier recompte de cadre qui suit, lequel arrive
+        // aussitôt puisque retirer le cadre consiste à le demander. On
+        // voit alors une fenêtre sans bordure aux mesures de l'agrandi,
+        // débordant de l'écran des quelques pixels que Windows réserve à
+        // la bordure d'une fenêtre agrandie, et amputée en bas de la
+        // hauteur de la barre des tâches. Elle est donc rendue à sa
+        // taille avant de prendre l'écran ; l'agrandi est déjà dans le
+        // relevé qui la lui rendra tout à l'heure.
+        rends_sa_taille();
+
+        // Relu après ça, et non repris de plus haut : l'agrandi se lit
+        // dans le style lui-même, et réécrire celui d'avant redirait au
+        // système qu'elle est agrandie alors qu'elle ne l'est plus.
+        // SAFETY: une fenêtre à nous, dont on relit le style.
+        let style_rendu = unsafe { GetWindowLongPtrW(elle, GWL_STYLE) };
+
+        let sans_cadre = style_rendu & !((WS_CAPTION | WS_THICKFRAME) as isize);
         let sans_bord = autres
             & !((WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE)
                 as isize);
