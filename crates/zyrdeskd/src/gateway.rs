@@ -45,6 +45,10 @@ use zyr_transport::{
 use zyr_tunnel::{Answers, Tunnel};
 
 use crate::machine::{Door, Machine};
+use crate::said::Said;
+
+/// How often a session in progress is looked over.
+const SESSION_WATCH: Duration = Duration::from_secs(2);
 
 /// Every network interface: the computer is reachable from wherever the
 /// other one is.
@@ -1135,6 +1139,7 @@ async fn one_session(
     log: Log,
 ) {
     let from = connection.remote_address();
+    let watched = connection.clone();
     // A computer the server presented speaks to its card: the road it
     // really takes is the junction's to say.
     let road = if is_card(from) {
@@ -1161,9 +1166,12 @@ async fn one_session(
             return;
         }
     };
-    log.write(&format!("session open with {from}{road}"));
+    log.write(&format!(
+        "session open with {from}{road}, {} bytes of room in a packet",
+        watched.carrying().usable_datagram
+    ));
 
-    let outcome = tunnel.wait().await;
+    let outcome = watch_over(&mut tunnel, &watched, &from.to_string(), &log).await;
     let reading = tunnel.reading();
     match outcome {
         Ok(()) => log.write(&format!(
@@ -1174,6 +1182,41 @@ async fn one_session(
     }
     if is_card(from) {
         junction.forget(from);
+    }
+}
+
+/// Waits for the session to end, saying what it throws away while it
+/// lasts.
+///
+/// This computer is the one sending the picture, so it is the one whose
+/// losses are seen at the other end, and until this existed its journal
+/// said nothing of them: a session that froze left its whole
+/// explanation on the machine that was only watching. What is worth
+/// saying is decided in [`crate::said`], the same way as for the ways
+/// this computer opens.
+async fn watch_over(
+    tunnel: &mut Tunnel,
+    connection: &zyr_transport::Connection,
+    named: &str,
+    log: &Log,
+) -> io::Result<()> {
+    let mut said = Said::from(connection.round_trip());
+    let mut watch = tokio::time::interval(SESSION_WATCH);
+    watch.tick().await;
+    loop {
+        tokio::select! {
+            // Both are cancel-safe: waiting on the pumps is waiting on a
+            // set of tasks, and a tick that is not taken is simply the
+            // next one.
+            outcome = tunnel.wait() => return outcome,
+            _ = watch.tick() => {
+                let reading = tunnel.reading();
+                let path = connection.carrying();
+                for line in said.what_changed(named, &reading, &path) {
+                    log.write(&line);
+                }
+            }
+        }
     }
 }
 

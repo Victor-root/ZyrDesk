@@ -110,6 +110,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
 | **S28** | Nouveau. Fermer une session dans les six secondes qui suivent son ouverture, ou une relance de l'image, repartait en appairage : « l'ordinateur distant ne reconnaît plus celui-ci », puis un refus. La surveillance qui guette un ordinateur nous ayant oubliés demande maintenant à la fenêtre si la session est toujours voulue |
 | **S29** | Nouveau. Une voie restait ouverte pour toujours dès qu'une ouverture échouait, et la fenêtre affichait « Sessions ouvertes : 1 » sans session. La voie est maintenant rendue sur toutes les routes de sortie |
+| **R78** | **Nouveau, et c'est un défaut trouvé par Victor.** Windows demandait d'autoriser « Moonlight Game Streaming ». Le manifeste du moteur client portait encore le nom d'en face, et c'est lui que cette boîte affiche ; il porte le nôtre maintenant, et la question ne se pose plus du tout, les deux moteurs recevant une règle de pare-feu qui leur refuse un réseau dont ils n'ont pas besoin. **Les deux moteurs doivent être à jour** |
 | **S25** | Nouveau. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
 
 ### Confirmé
@@ -2342,6 +2343,16 @@ Quand quelque chose ne marche pas, la première question est toujours la même :
 > Regarder l'icône de ZyrDesk dans la barre des tâches et dans l'explorateur, en petite et en grande taille.
 >
 > Attendu : nette dans les deux cas, jamais floue.
+
+> **R78 (Windows ne pose pas la question, et s'il la posait il dirait ZyrDesk)**
+>
+> **Nouveau, et c'est un défaut trouvé par Victor.** Windows demandait d'autoriser « Moonlight Game Streaming », éditeur ZyrDesk. Les métadonnées de l'exécutable portaient bien notre marque ; le manifeste posé à côté d'elles portait encore le nom d'en face, et c'est sa description que cette boîte affiche.
+>
+> Sur les **deux PC**, retirer le service puis le réinstaller depuis la fenêtre, ouvrir une session, et regarder si Windows demande quoi que ce soit.
+>
+> Attendu : aucune boîte « autoriser cette application » à l'ouverture de la session. Le service pose maintenant, pour chacun des deux moteurs, une règle qui leur refuse le réseau, qu'ils n'utilisent pas : une règle, dans un sens ou dans l'autre, veut dire aucune question. Dans `service.log` : `firewall keeps ZyrDesk (moteur client) off the network, as it should be`, et la même pour le moteur hôte.
+>
+> Si une boîte apparaît malgré tout, sur cette machine ou sur une autre : elle doit dire **ZyrDesk : Moteur d'affichage**, éditeur ZyrDesk, et jamais Moonlight. Elle se relit à froid dans `Pare-feu Windows Defender avec fonctions avancées de sécurité`, règles de trafic entrant, en cherchant les règles dont le nom commence par ZyrDesk.
 
 ---
 

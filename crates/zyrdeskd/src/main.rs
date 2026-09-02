@@ -11,6 +11,7 @@ mod known;
 mod machine;
 mod preferences;
 mod restart;
+mod said;
 mod screen;
 mod speakers;
 mod supervisor;

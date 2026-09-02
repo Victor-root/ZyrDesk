@@ -123,11 +123,14 @@ impl From<std::io::Error> for EndpointError {
 
 /// Settings shared by both ends.
 ///
-/// Through a junction, the path under a connection can change without
-/// the transport knowing, and a packet size found on one path is not
-/// worth anything on the next: discovery stays off, and every packet
-/// fits the floor every path is required to carry.
-fn transport(profile: MediaProfile, one_path: bool) -> Arc<TransportConfig> {
+/// Path discovery is left on, junction or no junction. What a session
+/// hands the engine is worked out against the floor every path has to
+/// carry (`guaranteed_usable_datagram`), never against what discovery
+/// found: a path that changes under the junction therefore costs
+/// nothing, and turning discovery off would only mean carrying two
+/// hundred and fifty bytes less in every packet, everywhere, for a
+/// safety that is already had.
+fn transport(profile: MediaProfile) -> Arc<TransportConfig> {
     let mut config = TransportConfig::default();
     config.congestion_controller_factory(Arc::new(profile));
     config.datagram_send_buffer_size(SEND_QUEUE);
@@ -136,9 +139,6 @@ fn transport(profile: MediaProfile, one_path: bool) -> Arc<TransportConfig> {
         MAXIMUM_IDLE.try_into().expect("idle timeout representable"),
     ));
     config.keep_alive_interval(Some(KEEP_ALIVE_INTERVAL));
-    if !one_path {
-        config.mtu_discovery_config(None);
-    }
     Arc::new(config)
 }
 
@@ -151,7 +151,6 @@ fn server_config(
     identity: &Identity,
     allowed: impl Into<AllowedPeers>,
     profile: MediaProfile,
-    one_path: bool,
 ) -> Result<ServerConfig, EndpointError> {
     let mut tls = rustls::ServerConfig::builder_with_provider(provider())
         .with_protocol_versions(&[&rustls::version::TLS13])
@@ -164,7 +163,7 @@ fn server_config(
     let quic =
         QuicServerConfig::try_from(tls).map_err(|e| EndpointError::Configuration(e.to_string()))?;
     let mut config = ServerConfig::with_crypto(Arc::new(quic));
-    config.transport_config(transport(profile, one_path));
+    config.transport_config(transport(profile));
     Ok(config)
 }
 
@@ -173,7 +172,6 @@ fn client_config(
     identity: &Identity,
     peer: Fingerprint,
     profile: MediaProfile,
-    one_path: bool,
 ) -> Result<ClientConfig, EndpointError> {
     let mut tls = rustls::ClientConfig::builder_with_provider(provider())
         .with_protocol_versions(&[&rustls::version::TLS13])
@@ -187,7 +185,7 @@ fn client_config(
     let quic =
         QuicClientConfig::try_from(tls).map_err(|e| EndpointError::Configuration(e.to_string()))?;
     let mut config = ClientConfig::new(Arc::new(quic));
-    config.transport_config(transport(profile, one_path));
+    config.transport_config(transport(profile));
     Ok(config)
 }
 
@@ -261,7 +259,7 @@ impl TunnelEndpoint {
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let config = server_config(identity, allowed, profile, true)?;
+        let config = server_config(identity, allowed, profile)?;
         Ok(Self {
             endpoint: open(listen, Some(config), path)?,
         })
@@ -276,7 +274,7 @@ impl TunnelEndpoint {
         profile: MediaProfile,
         junction: &Junction,
     ) -> Result<Self, EndpointError> {
-        let config = server_config(identity, allowed, profile, false)?;
+        let config = server_config(identity, allowed, profile)?;
         Ok(Self {
             endpoint: open_at(junction, Some(config))?,
         })
@@ -300,7 +298,7 @@ impl TunnelEndpoint {
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let config = client_config(identity, peer, profile, true)?;
+        let config = client_config(identity, peer, profile)?;
         let mut endpoint = open(listen, None, path)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })
@@ -314,7 +312,7 @@ impl TunnelEndpoint {
         profile: MediaProfile,
         junction: &Junction,
     ) -> Result<Self, EndpointError> {
-        let config = client_config(identity, peer, profile, false)?;
+        let config = client_config(identity, peer, profile)?;
         let mut endpoint = open_at(junction, None)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })

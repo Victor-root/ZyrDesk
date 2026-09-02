@@ -417,6 +417,20 @@ const OPENINGS: [(&str, u16); 3] = [
     ("ZyrDesk (voisinage)", zyr_lan::CALLING_PORT),
 ];
 
+/// The engines, shut out of the network they never speak on.
+///
+/// Not for safety, which they already have from being bound to the
+/// loopback: for a question nobody must ever be asked. A program that
+/// opens a socket makes Windows put up « autoriser cette application »,
+/// and the name in that box is the one the program carries in itself.
+/// A rule, whichever way it points, means no question at all; this one
+/// points at « non », which is exactly what an engine needs from the
+/// outside world.
+const SHUT_IN: [(&str, fn() -> std::path::PathBuf); 2] = [
+    ("ZyrDesk (moteur hôte)", paths::host_engine_exe),
+    ("ZyrDesk (moteur client)", paths::client_engine_exe),
+];
+
 /// Lets the outside reach the service, through the Windows firewall.
 ///
 /// Each rule is bound to this program alone, so nothing else on the
@@ -441,6 +455,21 @@ fn lay_the_firewall(program: &std::path::Path, log: Option<&Log>) {
     for (rule, port) in OPENINGS {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
         told(log, rule, port, add_rule(rule, port, program));
+    }
+    for (rule, engine) in SHUT_IN {
+        let engine = engine();
+        let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
+        let closed = shut_rule(rule, &engine);
+        if let Some(log) = log {
+            log.write(&match closed {
+                Ok(true) => format!("firewall keeps {rule} off the network, as it should be"),
+                Ok(false) => format!(
+                    "firewall rule {rule} refused: Windows may ask to allow it, under the name \
+                     the engine carries"
+                ),
+                Err(e) => format!("firewall untouched for {rule}: {e}"),
+            });
+        }
     }
 }
 
@@ -511,6 +540,19 @@ fn add_rule(rule: &str, port: u16, program: &std::path::Path) -> std::io::Result
     ])
 }
 
+/// Shuts one engine out of the network, whatever it tries to open.
+fn shut_rule(rule: &str, engine: &std::path::Path) -> std::io::Result<bool> {
+    netsh(&[
+        "add",
+        "rule",
+        &format!("name={rule}"),
+        "dir=in",
+        "action=block",
+        &format!("program={}", engine.display()),
+        &format!("description={DESCRIPTION}"),
+    ])
+}
+
 /// Writes down what became of one rule, when there is anywhere to write.
 fn told(log: Option<&Log>, rule: &str, port: u16, outcome: std::io::Result<bool>) {
     let Some(log) = log else {
@@ -559,6 +601,9 @@ pub fn uninstall() -> ServiceResult<()> {
     // What was opened is closed again: a rule left behind would point at
     // a program that no longer runs.
     for (rule, _) in OPENINGS {
+        let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
+    }
+    for (rule, _) in SHUT_IN {
         let _ = netsh(&["delete", "rule", &format!("name={rule}")]);
     }
 
