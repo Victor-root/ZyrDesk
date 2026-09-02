@@ -16,9 +16,27 @@ Ni base de données à installer, ni certificat à acheter.
 
 ### 1. Obtenir le programme
 
-Le script télécharge de lui-même la dernière version publiée du dépôt et vérifie son empreinte. Tant qu'aucune version n'est publiée, ou tant que le dépôt est privé, il y a deux autres façons.
+Dans le conteneur, en root, une seule ligne :
 
-**Le binaire compilé par l'intégration continue.** À chaque changement du serveur, le flux de travail « Serveur » du dépôt (onglet Actions sur GitHub) produit un artefact `zyrdesk-server-x86_64`. Le télécharger depuis le PC et le décompresser : deux fichiers, le programme `zyrdesk-server-x86_64-linux-musl` et son empreinte `.sha256`. Les déposer dans le conteneur avec `server/install.sh`, par exemple depuis l'hôte Proxmox :
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/Victor-root/ZyrDesk/develop/server/install.sh)
+```
+
+Le script télécharge le programme de la dernière version publiée du dépôt et vérifie son empreinte, puis pose ses questions. `--version vX.Y.Z` en choisit une autre que la dernière.
+
+**Tant qu'aucune version n'est publiée**, ce téléchargement n'a rien à prendre, et il y a deux façons de lui donner le programme.
+
+**Compiler sur place**, avec la même ligne, une fois un compilateur C et Rust posés dans le conteneur :
+
+```
+apt-get update && apt-get install -y git curl build-essential
+curl -fsSL https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env"
+bash <(curl -fsSL https://raw.githubusercontent.com/Victor-root/ZyrDesk/develop/server/install.sh) --from-source --branch develop
+```
+
+La compilation prend quelques minutes, et rien du reste du produit n'est compilé : seulement le serveur et ce dont il a besoin.
+
+**Le binaire compilé par l'intégration continue**, pour ne rien compiler dans le conteneur. À chaque changement du serveur, le flux de travail « Serveur » du dépôt (onglet Actions sur GitHub) produit un artefact `zyrdesk-server-x86_64`. Le télécharger depuis le PC et le décompresser : deux fichiers, le programme `zyrdesk-server-x86_64-linux-musl` et son empreinte `.sha256`. Les déposer dans le conteneur avec `server/install.sh`, par exemple depuis l'hôte Proxmox :
 
 ```
 pct push <numéro du conteneur> zyrdesk-server-x86_64-linux-musl /root/zyrdesk-server-x86_64-linux-musl
@@ -31,23 +49,6 @@ Puis, dans le conteneur, en root :
 ```
 sha256sum -c zyrdesk-server-x86_64-linux-musl.sha256
 bash install.sh --binary ./zyrdesk-server-x86_64-linux-musl
-```
-
-**Compiler sur place.** Dans le conteneur, il faut git, un compilateur C et Rust, puis le dépôt :
-
-```
-apt-get install -y git curl build-essential
-curl -fsSL https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env"
-git clone --depth 1 --branch develop https://github.com/Victor-root/ZyrDesk.git
-bash ZyrDesk/server/install.sh --from-source --source ZyrDesk
-```
-
-Git demande un nom d'utilisateur et un jeton tant que le dépôt est privé. La compilation prend quelques minutes, et rien du reste du produit n'est compilé : seulement le serveur et ce dont il a besoin.
-
-Une fois une version publiée, une seule ligne suffit, et `--version vX.Y.Z` en choisit une autre que la dernière :
-
-```
-bash <(curl -fsSL https://raw.githubusercontent.com/Victor-root/ZyrDesk/main/server/install.sh)
 ```
 
 ### 2. Répondre aux questions

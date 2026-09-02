@@ -150,7 +150,7 @@ R1 à R4, R6 à R16, R18 à R26, S1, S2bis, S8quater, S8sexies, S9ter, S9quinqui
 
 ### Le programme qui récupère les moteurs, une fois pour toutes
 
-Les moteurs ne se compilent pas sur la machine qui s'en sert : l'un veut MSYS2 et GCC, l'autre Qt et Visual Studio, et chacun prend près d'une heure. La CI les compile une fois, et un script les met en place. Comme le dépôt est privé, ce script passe par le programme GitHub officiel, qui a déjà les accès.
+Les moteurs ne se compilent pas sur la machine qui s'en sert : l'un veut MSYS2 et GCC, l'autre Qt et Visual Studio, et chacun prend près d'une heure. La CI les compile une fois, et un script les met en place. Un artefact de la CI ne se télécharge pas sans s'identifier, même sur un dépôt public : ce script passe donc par le programme GitHub officiel, qui a déjà les accès.
 
 À faire une seule fois, sur **les deux PC** :
 

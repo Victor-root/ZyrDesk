@@ -4,8 +4,8 @@ name: Serveur
 # empreinte, que le script d'installation télécharge et vérifie. À chaque
 # changement de ce qui le compose, et, sur une étiquette de version, dans
 # une version publiée du dépôt. Une seule architecture, x86_64, celle des
-# conteneurs de Proxmox : les exécuteurs ARM ne sont pas offerts à un
-# dépôt privé, et les autres machines compilent sur place (--from-source).
+# conteneurs de Proxmox ; les autres machines compilent sur place
+# (--from-source), ce qui ne coûte que quelques minutes pour ce binaire.
 on:
   workflow_dispatch:
   push:
