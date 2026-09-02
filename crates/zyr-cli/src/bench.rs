@@ -365,6 +365,13 @@ fn report(
             reading.too_large
         );
     }
+    if reading.crowded > 0 {
+        println!(
+            "  {} paquets jetés faute de place dans la file d'envoi : le chemin \
+             ne prend pas les paquets au rythme où le moteur les fait",
+            reading.crowded
+        );
+    }
     if reading.unreadable > 0 {
         println!("  {} datagrammes illisibles", reading.unreadable);
     }

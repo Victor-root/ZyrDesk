@@ -45,7 +45,7 @@ use zyr_transport::{
 use zyr_tunnel::{Answers, Tunnel};
 
 use crate::machine::{Door, Machine};
-use crate::said::Said;
+use crate::said::{self, Said};
 
 /// How often a session in progress is looked over.
 const SESSION_WATCH: Duration = Duration::from_secs(2);
@@ -1172,13 +1172,10 @@ async fn one_session(
     ));
 
     let outcome = watch_over(&mut tunnel, &watched, &from.to_string(), &log).await;
-    let reading = tunnel.reading();
+    let carried = said::carried(&tunnel.reading(), &watched.carrying());
     match outcome {
-        Ok(()) => log.write(&format!(
-            "session ended, {} packets to the engine, {} to the tunnel",
-            reading.to_engine, reading.to_tunnel
-        )),
-        Err(e) => log.write(&format!("session ended: {e}")),
+        Ok(()) => log.write(&format!("session ended, {carried}")),
+        Err(e) => log.write(&format!("session ended: {e}, {carried}")),
     }
     if is_card(from) {
         junction.forget(from);

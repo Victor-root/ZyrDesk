@@ -34,14 +34,6 @@ const MAXIMUM_IDLE: Duration = Duration::from_secs(30);
 /// Keeps the mapping alive in the network equipment along the way.
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Deliberately short send queue.
-///
-/// Under congestion, dropping a stale frame beats keeping it: it would
-/// arrive too late to be shown, and everything behind it would have
-/// fallen behind. The video protocol's error correction exists to fill
-/// those holes.
-const SEND_QUEUE: usize = 128 * 1024;
-
 /// Receive queue, sized to absorb a burst of frames.
 const RECEIVE_QUEUE: usize = 8 * 1024 * 1024;
 
@@ -123,17 +115,17 @@ impl From<std::io::Error> for EndpointError {
 
 /// Settings shared by both ends.
 ///
-/// Path discovery is left on, junction or no junction. What a session
-/// hands the engine is worked out against the floor every path has to
-/// carry (`guaranteed_usable_datagram`), never against what discovery
-/// found: a path that changes under the junction therefore costs
-/// nothing, and turning discovery off would only mean carrying two
-/// hundred and fifty bytes less in every packet, everywhere, for a
-/// safety that is already had.
+/// Path discovery is left on, junction or no junction. It changes
+/// nothing for the video: what a session hands the engine is worked out
+/// against the floor every path has to carry
+/// (`guaranteed_usable_datagram`), never against what discovery found,
+/// so a path that changes under the junction costs nothing. What it
+/// does serve is the reliable streams, which have no such size fixed on
+/// them and fill whatever the path turns out to carry.
 fn transport(profile: MediaProfile) -> Arc<TransportConfig> {
     let mut config = TransportConfig::default();
+    config.datagram_send_buffer_size(profile.send_queue());
     config.congestion_controller_factory(Arc::new(profile));
-    config.datagram_send_buffer_size(SEND_QUEUE);
     config.datagram_receive_buffer_size(Some(RECEIVE_QUEUE));
     config.max_idle_timeout(Some(
         MAXIMUM_IDLE.try_into().expect("idle timeout representable"),
@@ -488,6 +480,16 @@ impl Connection {
             .map_err(|e| EndpointError::Connection(e.to_string()))
     }
 
+    /// Room left in the queue of datagrams waiting to go out.
+    ///
+    /// Handing over more than this makes the transport throw the oldest
+    /// away, which is the right call and still a loss: it is the only
+    /// place where a packet the engine produced disappears without
+    /// anything anywhere saying so.
+    pub fn send_queue_room(&self) -> usize {
+        self.inner.datagram_send_buffer_space()
+    }
+
     /// Hands over a datagram, with no promise of delivery or order.
     ///
     /// When the send queue is full, the transport makes room by dropping
@@ -618,6 +620,39 @@ mod tests {
             pair.client_side.send_datagram(huge),
             Err(DatagramError::TooLarge)
         ));
+    }
+
+    #[tokio::test]
+    async fn a_burst_bigger_than_the_send_queue_leaves_the_connection_alive() {
+        // Une image clé part d'un bloc, et la pompe la pousse plus vite
+        // que le transport ne la met sur le fil : la file d'envoi déborde
+        // à chaque image clé, sur le meilleur des réseaux. Ce qui déborde
+        // se jette, c'est voulu. Ce qui ne doit jamais arriver est que la
+        // connexion elle-même y passe, et c'est ce que fait un transport
+        // dont la comptabilité de file déraille : la session meurt sans
+        // qu'une seule ligne de journal dise pourquoi.
+        let pair = pair().await;
+        let room = pair.client_side.guaranteed_usable_datagram().unwrap() as usize;
+        let packet = Bytes::from(vec![0u8; room]);
+
+        // Aucune attente dans la boucle : rien ne part tant qu'elle
+        // tourne, donc la file déborde plusieurs fois.
+        for _ in 0..(MediaProfile::default().send_queue() / room * 8) {
+            pair.client_side.send_datagram(packet.clone()).unwrap();
+        }
+
+        pair.client_side
+            .send_datagram(Bytes::from_static(b"apres"))
+            .unwrap();
+        let received = tokio::time::timeout(PATIENCE, async {
+            loop {
+                if pair.host_side.read_datagram().await.unwrap() == "apres" {
+                    return;
+                }
+            }
+        })
+        .await;
+        assert!(received.is_ok(), "la connexion n'a pas survécu à la rafale");
     }
 
     #[tokio::test]

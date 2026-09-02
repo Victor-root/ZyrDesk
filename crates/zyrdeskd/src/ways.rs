@@ -38,7 +38,7 @@ use zyr_transport::{
 use zyr_tunnel::{Tunnel, aside};
 
 use crate::account::{self, Rendezvous};
-use crate::said::Said;
+use crate::said::{self, Said};
 
 /// Where the tunnel leaves from: any interface, any port.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
@@ -953,10 +953,16 @@ impl Ways {
             .lock()
             .expect("registre des voies")
             .release(way);
-        if closed.is_some() {
-            self.log.write(&format!("way {way} closed"));
-        }
-        closed.is_some()
+        let Some(open) = closed else {
+            return false;
+        };
+        // Everything the way carried, said once and at the only moment
+        // it can still be read: what it holds goes with it.
+        self.log.write(&format!(
+            "way {way} closed, {}",
+            said::carried(&open.tunnel.reading(), &open.connection.carrying())
+        ));
+        true
     }
 
     pub fn count(&self) -> usize {
@@ -985,7 +991,9 @@ impl Ways {
     pub async fn keep_tidy(self) {
         loop {
             tokio::time::sleep(SWEEP).await;
-            self.say_how_the_ways_are_doing();
+            for way in self.how_the_ways_are_doing() {
+                self.release(way);
+            }
             let finished = self
                 .register
                 .lock()
@@ -999,30 +1007,42 @@ impl Ways {
         }
     }
 
-    /// Says out loud when a way stops carrying what it is handed, or
-    /// when the road it takes changes length. What is worth saying, and
-    /// when, is decided in [`crate::said`], which the door uses too.
+    /// Says out loud when a way stops carrying what it is handed, when
+    /// the road it takes changes length, and when its tunnel has stopped
+    /// altogether. What is worth saying, and when, is decided in
+    /// [`crate::said`], which the door uses too.
+    ///
+    /// Gives back the ways whose tunnel has stopped. Nothing here waits
+    /// on a tunnel, unlike the door: a pump that dies used to leave a
+    /// way that carried nothing and said nothing, and the session died
+    /// several seconds later at the far end, of a silence.
     ///
     /// The lines are worked out under the lock and written outside it:
     /// every other way queues behind that lock, and nothing waiting on
     /// it has any business waiting on a file as well.
-    fn say_how_the_ways_are_doing(&self) {
-        let lines = {
+    fn how_the_ways_are_doing(&self) -> Vec<WayId> {
+        let mut lines = Vec::new();
+        let mut stopped = Vec::new();
+        {
             let mut register = self.register.lock().expect("registre des voies");
-            register
-                .kept
-                .iter_mut()
-                .flat_map(|(way, kept)| {
-                    let named = format!("way {way} towards {}", kept.towards.host);
-                    let reading = kept.thing.tunnel.reading();
-                    let path = kept.thing.connection.carrying();
-                    kept.thing.said.what_changed(&named, &reading, &path)
-                })
-                .collect::<Vec<_>>()
-        };
+            for (way, kept) in register.kept.iter_mut() {
+                let named = format!("way {way} towards {}", kept.towards.host);
+                let reading = kept.thing.tunnel.reading();
+                let path = kept.thing.connection.carrying();
+                lines.extend(kept.thing.said.what_changed(&named, &reading, &path));
+                if let Some(outcome) = kept.thing.tunnel.stopped() {
+                    lines.push(match outcome {
+                        Ok(()) => format!("{named}: the tunnel stopped"),
+                        Err(e) => format!("{named}: the tunnel stopped, {e}"),
+                    });
+                    stopped.push(*way);
+                }
+            }
+        }
         for line in lines {
             self.log.write(&line);
         }
+        stopped
     }
 }
 

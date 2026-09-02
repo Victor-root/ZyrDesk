@@ -43,7 +43,7 @@ const NOTICEABLE: Duration = Duration::from_millis(5);
 #[derive(Debug, Default)]
 pub struct Said {
     too_large: bool,
-    dropped_from_the_queue: bool,
+    crowded: bool,
     round_trip: Duration,
 }
 
@@ -74,12 +74,12 @@ impl Said {
             ));
         }
 
-        let queued = reading.to_tunnel.saturating_sub(path.sent);
-        if queued > 0 && !self.dropped_from_the_queue {
-            self.dropped_from_the_queue = true;
+        if reading.crowded > 0 && !self.crowded {
+            self.crowded = true;
             said.push(format!(
-                "{named}: the path is not taking packets as fast as the engine makes them, \
-                 {queued} sacrificed so far, round trip {} ms",
+                "{named}: the path is not taking packets as fast as the engine makes them, so the \
+                 transport is throwing the oldest away, {} so far, round trip {} ms",
+                reading.crowded,
                 path.round_trip.as_millis()
             ));
         }
@@ -98,6 +98,33 @@ impl Said {
     }
 }
 
+/// Everything one session carried, for the line written when it ends.
+///
+/// A session that ends takes its counters with it, and they are the only
+/// place where a network that lost packets, a tunnel that threw them
+/// away and an engine that never received them read differently. Said
+/// once, at the end, whether it ended well or badly.
+pub fn carried(reading: &Reading, path: &Carrying) -> String {
+    format!(
+        "{} packets into the tunnel, {} of them onto the wire, {} thrown away for want of room, \
+         {} too large; {} handed to the engine, {} with nobody to take them, {} unreadable, {} \
+         refused by the system; {} bytes of room in a packet, {} narrowings, {} lost on the path, \
+         round trip {} ms",
+        reading.to_tunnel,
+        path.sent,
+        reading.crowded,
+        reading.too_large,
+        reading.to_engine,
+        reading.no_recipient,
+        reading.unreadable,
+        reading.refused,
+        path.usable_datagram,
+        path.narrowings,
+        path.lost,
+        path.round_trip.as_millis()
+    )
+}
+
 /// Whether a change in round trip is worth a line in the journal.
 ///
 /// Doubling or halving, and only once the wait is long enough to be
@@ -111,19 +138,19 @@ fn worth_saying(before: Duration, now: Duration) -> bool {
 mod tests {
     use super::*;
 
-    fn path(sent: u64, round_trip: Duration) -> Carrying {
+    fn path(round_trip: Duration) -> Carrying {
         Carrying {
             usable_datagram: 1162,
             narrowings: 0,
-            sent,
+            sent: 0,
             lost: 0,
             round_trip,
         }
     }
 
-    fn reading(to_tunnel: u64, too_large: u64) -> Reading {
+    fn reading(crowded: u64, too_large: u64) -> Reading {
         Reading {
-            to_tunnel,
+            crowded,
             too_large,
             ..Reading::default()
         }
@@ -136,22 +163,22 @@ mod tests {
 
         // Rien à dire tant que rien n'est jeté.
         assert!(
-            said.what_changed("way 1", &reading(100, 0), &path(100, ms(4)))
+            said.what_changed("way 1", &reading(0, 0), &path(ms(4)))
                 .is_empty()
         );
 
         // Ce qui compte est le moment, pas le nombre : la perte est dite
         // une fois, et le compte qui grimpe ne se redit pas.
-        let lines = said.what_changed("way 1", &reading(529, 0), &path(100, ms(4)));
+        let lines = said.what_changed("way 1", &reading(429, 0), &path(ms(4)));
         assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("429 sacrificed"), "{}", lines[0]);
+        assert!(lines[0].contains("429 so far"), "{}", lines[0]);
         assert!(
-            said.what_changed("way 1", &reading(900, 0), &path(100, ms(4)))
+            said.what_changed("way 1", &reading(900, 0), &path(ms(4)))
                 .is_empty()
         );
 
         // L'autre espèce de perte se dit à son tour.
-        let lines = said.what_changed("way 1", &reading(900, 3), &path(100, ms(4)));
+        let lines = said.what_changed("way 1", &reading(900, 3), &path(ms(4)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("no longer carries"), "{}", lines[0]);
     }
@@ -163,13 +190,13 @@ mod tests {
 
         // Le cas qui a valu cette ligne : la session double de longueur
         // en cours de route parce que le chemin passe soudain ailleurs.
-        let lines = said.what_changed("way 1", &reading(0, 0), &path(0, ms(24)));
+        let lines = said.what_changed("way 1", &reading(0, 0), &path(ms(24)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("now 24 ms, it was 11 ms"), "{}", lines[0]);
 
         // Un réseau qui respire n'est pas une nouvelle.
         assert!(
-            said.what_changed("way 1", &reading(0, 0), &path(0, ms(28)))
+            said.what_changed("way 1", &reading(0, 0), &path(ms(28)))
                 .is_empty()
         );
 
@@ -177,7 +204,7 @@ mod tests {
         // double sans que personne ne sente quoi que ce soit.
         let mut said = Said::from(Duration::from_micros(300));
         assert!(
-            said.what_changed("way 1", &reading(0, 0), &path(0, ms(1)))
+            said.what_changed("way 1", &reading(0, 0), &path(ms(1)))
                 .is_empty()
         );
     }

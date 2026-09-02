@@ -9,7 +9,13 @@ repository.workspace = true
 [dependencies]
 bytes = "1.11.1"
 quinn = "0.11.11"
-quinn-proto = "0.11.17"
+# Tenu à cette version : la 0.11.17 soustrait deux fois la taille d'un
+# datagramme jeté de la file d'envoi, dont la comptabilité passe sous
+# zéro dès que la file déborde une fois. Le transport se met alors à
+# émettre depuis une file dont il ne sait plus la taille, puis panique
+# en plein envoi, ce qui tue la session sans un mot. La rafale de
+# zyr-transport le prouve. À relever quand la correction est publiée.
+quinn-proto = "=0.11.16"
 rcgen = "0.14.8"
 ring = "0.17.14"
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std"] }

@@ -97,10 +97,25 @@ impl Tunnel {
     /// to hand back signals the end of the session.
     pub async fn wait(&mut self) -> io::Result<()> {
         match self.tasks.join_next().await {
-            Some(outcome) => outcome.map_err(io::Error::other)?,
+            Some(outcome) => stopped_because(outcome),
             None => Ok(()),
         }
     }
+
+    /// Why the tunnel stopped, when it already has, without waiting for
+    /// it to.
+    ///
+    /// For the side that holds tunnels rather than waiting on them: a
+    /// pump that dies there ends the session all the same, and until
+    /// this existed it did so without a word.
+    pub fn stopped(&mut self) -> Option<io::Result<()>> {
+        self.tasks.try_join_next().map(stopped_because)
+    }
+}
+
+/// What a pump handing back means, a panic in it included.
+fn stopped_because(outcome: Result<io::Result<()>, tokio::task::JoinError>) -> io::Result<()> {
+    outcome.map_err(io::Error::other)?
 }
 
 /// The UDP pumps, identical on both sides.

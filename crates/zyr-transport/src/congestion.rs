@@ -34,6 +34,19 @@ use quinn_proto::RttEstimator;
 /// Floor for the window, whatever the rate and the round trip.
 const MINIMUM_WINDOW: u64 = 64 * 1024;
 
+/// Frames the send queue holds.
+///
+/// A key frame is bigger than the average frame the size is worked out
+/// from, and whatever the encoder produces while that key frame is
+/// going out has to fit behind it.
+const QUEUED_FRAMES: u64 = 6;
+
+/// Floor for the send queue, whatever the rate.
+///
+/// At a low rate the average frame is small and the key frame is not:
+/// the ratio between them widens as the rate drops.
+const MINIMUM_QUEUE: u64 = 256 * 1024;
+
 /// Largest round trip the computation will take into account.
 ///
 /// A wild reading, taken during a stall, would otherwise produce an
@@ -67,13 +80,41 @@ impl MediaProfile {
     /// packets a frame amounts to.
     pub fn window(&self, rtt: Duration) -> u64 {
         let rtt = rtt.min(MAXIMUM_RTT);
-        let bytes_per_second = self.bits_per_second / 8;
-        let in_flight = (bytes_per_second as f64 * rtt.as_secs_f64()) as u64;
-        let frame = bytes_per_second / self.frames_per_second.max(1) as u64;
+        let in_flight = (self.bytes_per_second() as f64 * rtt.as_secs_f64()) as u64;
         in_flight
             .saturating_mul(2)
-            .saturating_add(frame)
+            .saturating_add(self.frame())
             .max(MINIMUM_WINDOW)
+    }
+
+    /// Room the queue of datagrams waiting to go out needs.
+    ///
+    /// A frame leaves the encoder in one block, and the pump pushes it
+    /// into that queue far faster than the transport puts it on the
+    /// wire. A queue too short to hold a whole frame therefore loses
+    /// part of every key frame, on the finest network there is, and that
+    /// loss is not repairable: the video protocol's error correction
+    /// covers a few packets of a frame, not a quarter of it. The picture
+    /// then waits for the next key frame, which is cut short in its
+    /// turn, and never comes up at all.
+    ///
+    /// What this costs is bounded by the same number of frames: on a
+    /// path that genuinely cannot take the rate, the queue fills, the
+    /// transport drops the oldest, and the delay through it never
+    /// exceeds what those frames represent.
+    pub fn send_queue(&self) -> usize {
+        self.frame()
+            .saturating_mul(QUEUED_FRAMES)
+            .max(MINIMUM_QUEUE) as usize
+    }
+
+    fn bytes_per_second(&self) -> u64 {
+        self.bits_per_second / 8
+    }
+
+    /// What one frame weighs on average at this rate.
+    fn frame(&self) -> u64 {
+        self.bytes_per_second() / self.frames_per_second.max(1) as u64
     }
 }
 
@@ -186,6 +227,24 @@ mod tests {
         let slow = profile(10).window(Duration::from_millis(25));
         let fast = profile(80).window(Duration::from_millis(25));
         assert!(fast > slow);
+    }
+
+    #[test]
+    fn the_send_queue_holds_whole_frames() {
+        // La propriété qui compte, et qui manquait : une file plus
+        // courte qu'une image perd des paquets de chaque image clé sur
+        // le meilleur des réseaux, la correction d'erreurs ne rattrape
+        // pas un quart d'image, et le lecteur attend une image clé qui
+        // est coupée à son tour. L'image ne s'établit jamais.
+        for mbps in [5, 20, 40, 80, 150] {
+            let profile = profile(mbps);
+            let frame = profile.bits_per_second / 8 / 60;
+            assert!(
+                profile.send_queue() as u64 >= frame * 2,
+                "{} octets de file pour des images de {frame} à {mbps} Mb/s",
+                profile.send_queue()
+            );
+        }
     }
 
     #[test]

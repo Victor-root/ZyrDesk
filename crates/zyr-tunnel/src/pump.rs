@@ -111,6 +111,7 @@ pub struct Counters {
     to_tunnel: AtomicU64,
     to_engine: AtomicU64,
     too_large: AtomicU64,
+    crowded: AtomicU64,
     no_recipient: AtomicU64,
     unreadable: AtomicU64,
     refused: AtomicU64,
@@ -125,6 +126,10 @@ pub struct Reading {
     /// zero means the packet size asked of the engine is too big for the
     /// path.
     pub too_large: u64,
+    /// Packets handed to a send queue that had no room left for them.
+    /// The transport took each of them by throwing an older one away,
+    /// silently: this is the count of those holes in the picture.
+    pub crowded: u64,
     /// Packets that arrived for a channel the local engine has not yet
     /// spoken on.
     pub no_recipient: u64,
@@ -146,6 +151,7 @@ impl Counters {
             to_tunnel: self.to_tunnel.load(Ordering::Relaxed),
             to_engine: self.to_engine.load(Ordering::Relaxed),
             too_large: self.too_large.load(Ordering::Relaxed),
+            crowded: self.crowded.load(Ordering::Relaxed),
             no_recipient: self.no_recipient.load(Ordering::Relaxed),
             unreadable: self.unreadable.load(Ordering::Relaxed),
             refused: self.refused.load(Ordering::Relaxed),
@@ -326,6 +332,12 @@ pub async fn collect_datagrams(
             }
         };
         let framed = frame::encode(channel, &buffer[..read]);
+        // Asked before handing over rather than deduced afterwards: the
+        // transport makes room by throwing the oldest away and says
+        // nothing, so this is the only moment that loss can be counted.
+        if connection.send_queue_room() < framed.len() {
+            Counters::bump(&counters.crowded);
+        }
         match connection.send_datagram(framed.into()) {
             Ok(()) => Counters::bump(&counters.to_tunnel),
             // The path narrowed since the packet size was asked of the
