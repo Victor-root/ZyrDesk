@@ -746,6 +746,11 @@ pub struct Session {
     pub at: String,
     /// How long the picture has been up.
     pub since: Duration,
+    /// The real address the packets go to right now: the road the
+    /// session takes, as its menu says it.
+    pub via: String,
+    /// How long that road takes to come back, in milliseconds.
+    pub round_trip_ms: u64,
 }
 
 /// What the service answers.
@@ -862,6 +867,8 @@ impl Answer {
                 process: fields.parsed("process")?,
                 at: fields.text("at")?.to_string(),
                 since: Duration::from_secs(fields.parsed("since")?),
+                via: fields.text("via").unwrap_or_default().to_string(),
+                round_trip_ms: fields.parsed("rtt").unwrap_or(0),
             })),
             "settings" => Ok(Answer::Settings(fields.preferred())),
             "showing" => Ok(Answer::Showing {
@@ -966,13 +973,15 @@ impl fmt::Display for Answer {
             }
             Answer::Session(session) => write!(
                 f,
-                "session way={} towards={} peer={} process={} at={} since={}",
+                "session way={} towards={} peer={} process={} at={} since={} via={} rtt={}",
                 session.way,
                 packed(&session.towards),
                 session.peer,
                 session.process,
                 session.at,
-                session.since.as_secs()
+                session.since.as_secs(),
+                session.via,
+                session.round_trip_ms
             ),
             Answer::Settings(preferred) => write!(f, "settings {}", spelled(preferred)),
             Answer::Showing { size } => match size {
@@ -1476,6 +1485,8 @@ mod tests {
                 process: 11248,
                 at: "127.77.0.1:47989".to_string(),
                 since: Duration::from_secs(742),
+                via: "192.168.1.20:47000".to_string(),
+                round_trip_ms: 12,
             }),
             Answer::Settings(preferred()),
             Answer::Settings(Preferred::default()),
@@ -1719,6 +1730,8 @@ mod tests {
                 process: 11248,
                 at: "127.77.0.1:47989".to_string(),
                 since: Duration::from_secs(0),
+                via: String::new(),
+                round_trip_ms: 0,
             })
             .to_string();
             let Ok(Answer::Session(read)) = Answer::parse(&sent) else {

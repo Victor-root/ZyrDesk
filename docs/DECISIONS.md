@@ -2103,6 +2103,14 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Ce que le script ne fait pas.** Il ne configure pas le mandataire inverse, n'ouvre pas la box, n'installe pas de pare-feu (dans un conteneur non privilégié, c'est Proxmox ou la box qui décident, et `nftables.service` y échoue), ne compile pas sauf sur demande : il télécharge le binaire publié par l'intégration continue et vérifie son empreinte. L'unité systemd n'emploie que ce qui survit à un conteneur non privilégié ; le durcissement fondé sur les montages est un complément activé hors conteneur, parce que le profil AppArmor de Proxmox et le systemd 257 de Debian 13 le refusent.
 
+## D124. Les cartes de l'aiguilleur vivent en 240.0.0.0/4, sa prise parle les deux versions d'IP, et le miroir ne signe rien (2026-09-02, M5 tranche 2)
+
+**Ce qui était prévu.** SERVER.md §4.1 donnait à chaque ordinateur d'en face une adresse de carte dans un préfixe IPv6 privé, et §4.2 laissait la réponse du miroir sans signature sans le dire tout à fait.
+
+**Ce qui a été fait, et pourquoi.** La carte est une adresse IPv4 de `240.0.0.0/4`, tirée de l'empreinte de l'ordinateur : le transport refuse une adresse IPv6 sur une prise qui ne parle qu'IPv4, et il y a des machines où IPv6 est coupé. Une carte IPv4 passe partout, y compris sur la prise à double pile que l'aiguilleur ouvre dès que le système l'accepte, où le transport l'écrit lui-même sous sa forme IPv6 mappée ; ce bloc n'est routé nulle part et ne se pose sur aucune carte réseau, si bien qu'une carte ne peut jamais être prise pour un lieu. Les paquets partis vers une carte avant qu'aucun chemin ne réponde, ceux de la poignée de main, sont gardés, huit au plus, et partent d'un coup au premier écho : QUIC les aurait réémis, mais une seconde plus tard. Le miroir répond sans signer : sa réponse n'est qu'une adresse à essayer, et une adresse mensongère est une sonde de plus qui ne reviendra pas ; signer aurait fait porter la clé du serveur à un port que n'importe qui atteint, pour rien. Quand la box a changé le port en sortant, l'hôte nomme aussi son adresse vue sur son propre port 47000, là où mène un port renvoyé à la main.
+
+**Ce qui reste de la tranche.** Le mappage de port chez l'hôte (UPnP, NAT-PMP, PCP) n'est pas fait : la perforation par sondes couvre les box ordinaires, un port renvoyé à la main couvre le reste, et le mappage viendra en complément, avec sa préférence, plutôt que d'alourdir le MVP d'une pile de dépendances avant d'avoir mesuré ce que la perforation laisse passer.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

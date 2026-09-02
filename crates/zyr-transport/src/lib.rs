@@ -7,8 +7,10 @@ pub mod authorized;
 pub mod congestion;
 pub mod endpoint;
 pub mod identity;
+pub mod junction;
 pub mod mtu;
 pub mod path;
+pub mod probe;
 pub mod trust;
 
 pub use congestion::{MediaController, MediaProfile};
@@ -17,5 +19,6 @@ pub use endpoint::{
     TunnelEndpoint,
 };
 pub use identity::{AllowedPeers, Fingerprint, Identity, signed_by};
+pub use junction::{Junction, Road, card_of, is_card};
 pub use mtu::{PacketSize, packet_size};
 pub use path::Path;

@@ -41,6 +41,13 @@ impl Fingerprint {
     }
 }
 
+/// A fingerprint read back from its bytes, as a datagram carries it.
+impl From<[u8; 32]> for Fingerprint {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
 /// Text that is not a fingerprint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidFingerprint;

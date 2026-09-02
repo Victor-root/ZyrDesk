@@ -3170,6 +3170,7 @@ dependencies = [
  "rustls",
  "rustls-webpki",
  "sha2",
+ "socket2",
  "tokio",
  "webpki-roots 1.0.9",
  "zyr-proto",

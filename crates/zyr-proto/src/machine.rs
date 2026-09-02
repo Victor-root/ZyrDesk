@@ -90,6 +90,38 @@ pub fn addresses() -> Vec<Address> {
     answering
 }
 
+/// The IPv6 addresses of this computer that the whole Internet routes.
+///
+/// Apart from the IPv4 ones above because they serve another purpose:
+/// nothing is announced or called on them, they are only worth naming
+/// to a far computer, since two of them reach each other without any
+/// box to go through. Link-local and unique-local addresses are left
+/// out, as are the ones that only stand for an IPv4 address.
+pub fn global_ipv6_addresses() -> Vec<std::net::Ipv6Addr> {
+    let Ok(interfaces) = if_addrs::get_if_addrs() else {
+        return Vec::new();
+    };
+    let mut answering: Vec<std::net::Ipv6Addr> = interfaces
+        .into_iter()
+        .filter(|interface| !interface.is_loopback())
+        .filter_map(|interface| match interface.addr {
+            if_addrs::IfAddr::V6(addr) => Some(addr.ip),
+            if_addrs::IfAddr::V4(_) => None,
+        })
+        .filter(|ip| {
+            !ip.is_unspecified()
+                && !ip.is_loopback()
+                && !ip.is_multicast()
+                && !ip.is_unicast_link_local()
+                && !ip.is_unique_local()
+                && ip.to_ipv4_mapped().is_none()
+        })
+        .collect();
+    answering.sort();
+    answering.dedup();
+    answering
+}
+
 /// Name of this computer, as its owner knows it.
 ///
 /// Falls back to something readable rather than failing: a nameless

@@ -264,6 +264,7 @@ pub fn server_info_of(app: &App) -> ServerInfo {
         // The relay comes with the next milestone; until then no server
         // has one to offer, whatever its configuration says.
         relay: false,
+        udp_port: app.udp_port,
         signing_key: app.key.public(),
     }
 }

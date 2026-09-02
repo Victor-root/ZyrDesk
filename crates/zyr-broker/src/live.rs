@@ -205,6 +205,7 @@ mod tests {
                     protocol: crate::PROTOCOL,
                     registration: Registration::Invitation,
                     relay: true,
+                    udp_port: Some(443),
                     signing_key: key.public(),
                 },
                 me: "d1".into(),

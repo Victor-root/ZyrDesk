@@ -547,6 +547,7 @@ mod tests {
             protocol: PROTOCOL,
             registration: Registration::Invitation,
             relay: false,
+            udp_port: None,
             signing_key: zyr_broker::ServerKey::generate().public(),
         };
         snapshot.apply(&FromServer::Welcome {

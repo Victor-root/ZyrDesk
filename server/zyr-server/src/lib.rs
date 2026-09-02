@@ -15,6 +15,7 @@ pub mod journal;
 pub mod keys;
 pub mod limits;
 pub mod live;
+pub mod mirror;
 pub mod store;
 
 use std::collections::HashMap;
@@ -42,6 +43,8 @@ pub struct State {
     /// The public key of the API's own certificate, when it serves TLS
     /// itself: what a device pins when nobody else vouches for it.
     pub tls_fingerprint: Option<Fingerprint>,
+    /// The UDP port the mirror answers on, when it could be opened.
+    pub udp_port: Option<u16>,
     pub limiter: Limiter,
     pub live: Arc<live::Live>,
     /// Challenges handed out for attaching a device, each with the
@@ -78,6 +81,7 @@ pub struct Running {
     pub app: App,
     handle: Handle<SocketAddr>,
     serving: JoinHandle<std::io::Result<()>>,
+    mirror: Option<mirror::Mirror>,
 }
 
 /// How long the connections in progress get to finish at a stop.
@@ -95,10 +99,23 @@ pub async fn start(config: Config) -> Result<Running, StartError> {
         .transpose()
         .map_err(StartError::Keys)?;
     let listen = config.api.listen;
+    // A mirror that cannot open its port is not the end of the server:
+    // the devices are told there is none, and reach each other without.
+    let mirror = match mirror::Mirror::open(config.relay.listen).await {
+        Ok(mirror) => Some(mirror),
+        Err(e) => {
+            journal::say(format!(
+                "no mirror: UDP {} could not be opened: {e}",
+                config.relay.listen
+            ));
+            None
+        }
+    };
     let app: App = Arc::new(State {
         limiter: Limiter::new(config.limits.login_attempts_per_minute),
         live: Arc::new(live::Live::new(store.clone(), key.clone())),
         tls_fingerprint: tls.as_ref().and_then(Tls::fingerprint),
+        udp_port: mirror.as_ref().map(|mirror| mirror.address().port()),
         challenges: Mutex::new(HashMap::new()),
         config,
         store,
@@ -131,11 +148,15 @@ pub async fn start(config: Config) -> Result<Running, StartError> {
         return Err(StartError::Bind(listen, failure));
     };
     journal::say(format!(
-        "listening on {address}{}",
+        "listening on {address}{}{}",
         if app.tls_fingerprint.is_some() {
             ", TLS"
         } else {
             ", in the clear behind a reverse proxy"
+        },
+        match &mirror {
+            Some(mirror) => format!(", mirror on UDP {}", mirror.address()),
+            None => String::new(),
         }
     ));
     Ok(Running {
@@ -143,6 +164,7 @@ pub async fn start(config: Config) -> Result<Running, StartError> {
         app,
         handle,
         serving,
+        mirror,
     })
 }
 
@@ -151,6 +173,9 @@ impl Running {
     pub async fn stop(self) {
         self.handle.graceful_shutdown(Some(GRACE));
         let _ = self.serving.await;
+        if let Some(mirror) = &self.mirror {
+            mirror.stop();
+        }
         journal::say("stopped");
     }
 }

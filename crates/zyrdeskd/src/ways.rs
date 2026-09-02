@@ -25,16 +25,26 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use tokio::task::JoinHandle;
 use zyr_control::{Reached, Session, WayId};
 use zyr_proto::log::Log;
 use zyr_proto::net::{TUNNEL_PORT, device_loopback_addr};
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
-use zyr_transport::{Connection, Fingerprint, Identity, MediaProfile, TunnelEndpoint, packet_size};
+use zyr_transport::junction::Say;
+use zyr_transport::{
+    Connection, Fingerprint, Identity, Junction, MediaProfile, TunnelEndpoint, packet_size,
+};
 use zyr_tunnel::{Tunnel, aside};
+
+use crate::account::{self, Rendezvous};
 
 /// Where the tunnel leaves from: any interface, any port.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+
+/// How long a computer presented by the server gets to answer through
+/// one of the addresses named, both sides probing all the while.
+const MEETING_PATIENCE: Duration = Duration::from_secs(15);
 
 /// How long a way may stay tied to nothing before it is closed.
 ///
@@ -58,6 +68,50 @@ const SWEEP: Duration = Duration::from_secs(2);
 /// and halves constantly while meaning nothing at all.
 const NOTICEABLE: Duration = Duration::from_millis(5);
 
+/// How to reach a computer.
+pub enum Knock {
+    /// At these addresses, the one to try first at the front.
+    At(Vec<SocketAddr>),
+    /// Through the meeting the server arranged: a junction probes what
+    /// both sides name, and the transport speaks to the card.
+    Through(Rendezvous),
+}
+
+impl Knock {
+    /// The session the server opened, when it did.
+    pub fn session(&self) -> Option<String> {
+        match self {
+            Knock::At(_) => None,
+            Knock::Through(meeting) => Some(meeting.session.clone()),
+        }
+    }
+}
+
+/// A task that ends with what holds it.
+struct Aborting(JoinHandle<()>);
+
+impl Drop for Aborting {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// What a way opened through a meeting stands on: its junction, the
+/// card it speaks to, and what keeps feeding the junction.
+struct Crossing {
+    junction: Junction,
+    card: SocketAddr,
+    _feeding: Aborting,
+    _asking: Aborting,
+}
+
+/// A connection and what it stands on, for one question or for a way.
+struct Word {
+    endpoint: TunnelEndpoint,
+    connection: Connection,
+    crossing: Option<Crossing>,
+}
+
 /// What one way out is made of. Dropping it closes it.
 struct Open {
     tunnel: Tunnel,
@@ -65,6 +119,8 @@ struct Open {
     /// The way itself, kept open to speak to the far ZyrDesk rather than
     /// to its engine: the pairing code travels this way.
     connection: Connection,
+    /// The junction under it, when the server arranged the meeting.
+    crossing: Option<Crossing>,
     /// What the journal has already been told about this way.
     ///
     /// A tunnel that starts throwing packets away throws away all of
@@ -72,6 +128,23 @@ struct Open {
     /// every reading: what is worth a line is the moment something
     /// changes, never the reading itself.
     told: Told,
+}
+
+impl Open {
+    /// The road the way takes right now, and how long it is.
+    fn road(&self) -> (String, u64) {
+        match &self.crossing {
+            Some(crossing) => crossing
+                .junction
+                .road(crossing.card)
+                .map(|road| (road.through.to_string(), road.round_trip.as_millis() as u64))
+                .unwrap_or_default(),
+            None => (
+                self.connection.remote_address().to_string(),
+                self.connection.round_trip().as_millis() as u64,
+            ),
+        }
+    }
 }
 
 /// What has already been said about one way.
@@ -219,18 +292,20 @@ impl<T> Register<T> {
             .collect()
     }
 
-    /// The sessions being served, oldest way first.
+    /// The sessions being served, oldest way first, each with the road
+    /// it takes as `road` reads it.
     ///
     /// A way nobody has claimed yet is left out: it is an attempt under
     /// way, watched by whoever started it, and gone on its own if they
     /// never come back. Announcing it as a session would put a picture
     /// on screen where there is none.
-    fn held(&self, now: Instant) -> Vec<Session> {
+    fn held(&self, now: Instant, road: impl Fn(&T) -> (String, u64)) -> Vec<Session> {
         let mut sessions: Vec<Session> = self
             .kept
             .iter()
             .filter_map(|(way, kept)| {
                 let serving = kept.user.as_ref()?;
+                let (via, round_trip_ms) = road(&kept.thing);
                 Some(Session {
                     way: *way,
                     towards: kept.towards.host.clone(),
@@ -238,6 +313,8 @@ impl<T> Register<T> {
                     process: serving.process,
                     at: kept.towards.at.clone(),
                     since: now.duration_since(serving.since),
+                    via,
+                    round_trip_ms,
                 })
             })
             .collect();
@@ -273,37 +350,22 @@ impl Ways {
     /// Opens a way to a remote computer, and keeps it.
     ///
     /// `host` is the computer as the person named it, kept on the way for
-    /// whoever asks about it later; `candidates` is where to knock, the
-    /// one to try first at the front.
+    /// whoever asks about it later; `knock` is how to reach it.
     pub async fn open(
         &self,
         host: &str,
         peer: Fingerprint,
         media: MediaProfile,
-        candidates: Vec<SocketAddr>,
+        knock: Knock,
     ) -> Result<Reached, String> {
-        if candidates.is_empty() {
-            return Err(format!("aucune adresse où joindre {host}"));
-        }
         // Written down before anything is tried. What the person sees of
         // a failure is a sentence in a window they will have closed by
         // the time anyone looks; the trace is what remains, and it is
         // worth as much as the attempt itself.
-        self.log.write(&match candidates[..] {
-            [only] => format!("opening a way to {host} at {only}, expecting {peer}"),
-            _ => format!(
-                "opening a way to {host} ({peer}), racing {} addresses: {}",
-                candidates.len(),
-                candidates
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        });
+        self.log.write(&self.opening(host, peer, &knock)?);
 
         let identity =
-            Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
+            Arc::new(Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?);
 
         let device = self
             .register
@@ -312,10 +374,7 @@ impl Ways {
             .reserve(peer)
             .ok_or("plus d'adresse locale disponible pour une session de plus")?;
 
-        match self
-            .dig(&candidates, host, peer, media, device, &identity)
-            .await
-        {
+        match self.dig(knock, host, peer, media, device, identity).await {
             Ok(reached) => Ok(reached),
             Err(e) => {
                 self.register
@@ -340,33 +399,26 @@ impl Ways {
     /// is wanted for a single question, so the connection is opened,
     /// asked, and dropped, and the far computer is left as it was found.
     ///
-    /// The endpoint comes back with the connection because it has to
-    /// outlive it: dropped on its own, it takes the socket underneath.
+    /// The word comes back with what it stands on, because that has to
+    /// outlive it: an endpoint dropped on its own takes the socket
+    /// underneath, and a junction dropped takes its paths.
     async fn a_word_with(
         &self,
         host: &str,
         peer: Fingerprint,
-        candidates: &[SocketAddr],
-    ) -> Result<(TunnelEndpoint, Connection), String> {
-        if candidates.is_empty() {
-            return Err(format!("aucune adresse où joindre {host}"));
-        }
+        knock: Knock,
+    ) -> Result<Word, String> {
+        self.log.write(&self.opening(host, peer, &knock)?);
         let identity =
-            Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
-        let endpoint = TunnelEndpoint::client(
-            &identity,
-            peer,
-            MediaProfile::default(),
-            SocketAddr::new(EVERY_INTERFACE, 0),
-        )
-        .map_err(|e| e.to_string())?;
-
-        let (connection, _, through) = race(&endpoint, candidates)
-            .await
-            .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
-        self.log
-            .write(&format!("a word with {through}, for one question"));
-        Ok((endpoint, connection))
+            Arc::new(Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?);
+        let word = self
+            .reach(knock, host, peer, MediaProfile::default(), identity)
+            .await?;
+        self.log.write(&format!(
+            "a word with {}, for one question",
+            word.connection.remote_address()
+        ));
+        Ok(word)
     }
 
     /// Fetches another computer's journal.
@@ -378,10 +430,10 @@ impl Ways {
         &self,
         host: &str,
         peer: Fingerprint,
-        candidates: &[SocketAddr],
+        knock: Knock,
     ) -> Result<String, String> {
-        let (_endpoint, connection) = self.a_word_with(host, peer, candidates).await?;
-        let text = aside::ask_for_the_journal(&connection)
+        let word = self.a_word_with(host, peer, knock).await?;
+        let text = aside::ask_for_the_journal(&word.connection)
             .await
             .map_err(|e| refused_by(host, "n'a pas donné son journal", &e))?;
         self.log.write(&format!(
@@ -401,14 +453,147 @@ impl Ways {
         &self,
         host: &str,
         peer: Fingerprint,
-        candidates: &[SocketAddr],
+        knock: Knock,
     ) -> Result<(), String> {
-        let (_endpoint, connection) = self.a_word_with(host, peer, candidates).await?;
-        aside::ask_to_empty_the_journal(&connection)
+        let word = self.a_word_with(host, peer, knock).await?;
+        aside::ask_to_empty_the_journal(&word.connection)
             .await
             .map_err(|e| refused_by(host, "n'a pas vidé son journal", &e))?;
         self.log.write(&format!("{host} emptied its journal"));
         Ok(())
+    }
+
+    /// The line that opens an attempt in the journal, or the refusal
+    /// when there is nowhere to knock.
+    fn opening(&self, host: &str, peer: Fingerprint, knock: &Knock) -> Result<String, String> {
+        Ok(match knock {
+            Knock::At(candidates) => match candidates[..] {
+                [] => return Err(format!("aucune adresse où joindre {host}")),
+                [only] => format!("opening a way to {host} at {only}, expecting {peer}"),
+                _ => format!(
+                    "opening a way to {host} ({peer}), racing {} addresses: {}",
+                    candidates.len(),
+                    candidates
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            },
+            Knock::Through(meeting) => format!(
+                "opening a way to {host} ({peer}) through session {}, probing what both sides name",
+                meeting.session
+            ),
+        })
+    }
+
+    /// Reaches the computer, one way or the other.
+    async fn reach(
+        &self,
+        knock: Knock,
+        host: &str,
+        peer: Fingerprint,
+        media: MediaProfile,
+        identity: Arc<Identity>,
+    ) -> Result<Word, String> {
+        let meeting = match knock {
+            Knock::Through(meeting) => meeting,
+            Knock::At(candidates) => {
+                let endpoint = TunnelEndpoint::client(
+                    &identity,
+                    peer,
+                    media,
+                    SocketAddr::new(EVERY_INTERFACE, 0),
+                )
+                .map_err(|e| e.to_string())?;
+                let (connection, took, through) = race(&endpoint, &candidates)
+                    .await
+                    .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
+                if candidates.len() > 1 {
+                    self.log
+                        .write(&format!("{through} answered first, after {took} ms"));
+                }
+                return Ok(Word {
+                    endpoint,
+                    connection,
+                    crossing: None,
+                });
+            }
+        };
+
+        // A junction of its own, on a socket of its own: the addresses
+        // the far computer will see this one at belong to that socket,
+        // and no other will carry the tunnel.
+        let say: Say = Arc::new({
+            let log = self.log.clone();
+            move |line: &str| log.write(line)
+        });
+        let junction = Junction::bind(SocketAddr::new(EVERY_INTERFACE, 0), identity.clone(), say)
+            .map_err(|e| e.to_string())?;
+        let card = junction.expect(peer, &meeting.session);
+        junction.add_candidates(card, meeting.known.iter().copied());
+        let port = junction.local_address().map_err(|e| e.to_string())?.port();
+        meeting.say_candidates(account::where_this_computer_answers(port));
+        let Rendezvous {
+            session,
+            candidates: mut named,
+            mirror,
+            account,
+            ..
+        } = meeting;
+        let feeding = Aborting(tokio::spawn({
+            let junction = junction.clone();
+            async move {
+                while let Some(batch) = named.recv().await {
+                    junction.add_candidates(card, batch);
+                }
+            }
+        }));
+        // The mirror is asked from this socket too, and what it answers
+        // is one more address the far computer may try.
+        let asking = Aborting(tokio::spawn({
+            let junction = junction.clone();
+            let session = session.clone();
+            async move {
+                if let Some(mirror) = mirror
+                    && let Some(seen) = junction.ask_the_mirror(mirror).await
+                {
+                    account.say_candidates(&session, vec![seen]);
+                }
+            }
+        }));
+
+        let endpoint = TunnelEndpoint::client_at(&identity, peer, media, &junction)
+            .map_err(|e| e.to_string())?;
+        let started = Instant::now();
+        let connection = tokio::time::timeout(MEETING_PATIENCE, endpoint.connect(card))
+            .await
+            .map_err(|_| {
+                format!(
+                    "{host} n'a répondu par aucune des adresses annoncées en {} secondes",
+                    MEETING_PATIENCE.as_secs()
+                )
+            })?
+            .map_err(|e| format!("{host} ne répond pas : {e}"))?;
+        self.log.write(&match junction.road(card) {
+            Some(road) => format!(
+                "{host} answered through {} after {} ms, round trip {} ms",
+                road.through,
+                started.elapsed().as_millis(),
+                road.round_trip.as_millis()
+            ),
+            None => format!("{host} answered after {} ms", started.elapsed().as_millis()),
+        });
+        Ok(Word {
+            endpoint,
+            connection,
+            crossing: Some(Crossing {
+                junction,
+                card,
+                _feeding: feeding,
+                _asking: asking,
+            }),
+        })
     }
 
     /// Everything between the address being taken and the way being
@@ -416,24 +601,18 @@ impl Ways {
     /// back exactly once.
     async fn dig(
         &self,
-        candidates: &[SocketAddr],
+        knock: Knock,
         host: &str,
         peer: Fingerprint,
         media: MediaProfile,
         device: u16,
-        identity: &Identity,
+        identity: Arc<Identity>,
     ) -> Result<Reached, String> {
-        let endpoint =
-            TunnelEndpoint::client(identity, peer, media, SocketAddr::new(EVERY_INTERFACE, 0))
-                .map_err(|e| e.to_string())?;
-
-        let (connection, took, through) = race(&endpoint, candidates)
-            .await
-            .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
-        if candidates.len() > 1 {
-            self.log
-                .write(&format!("{through} answered first, after {took} ms"));
-        }
+        let Word {
+            endpoint,
+            connection,
+            crossing,
+        } = self.reach(knock, host, peer, media, identity).await?;
 
         // The first real exchange, and the moment authorisation is
         // proven: a connection succeeds before the other computer has
@@ -475,6 +654,7 @@ impl Ways {
                 tunnel,
                 _endpoint: endpoint,
                 connection,
+                crossing,
                 told: Told {
                     too_large: false,
                     dropped_from_the_queue: false,
@@ -820,7 +1000,7 @@ impl Ways {
         self.register
             .lock()
             .expect("registre des voies")
-            .held(Instant::now())
+            .held(Instant::now(), Open::road)
     }
 
     /// Closes the ways with nothing left to serve, for as long as the
@@ -1031,6 +1211,12 @@ mod tests {
         Register::new()
     }
 
+    /// The register knows nothing of roads: what stands on a way is a
+    /// word here.
+    fn no_road(_: &&'static str) -> (String, u64) {
+        (String::new(), 0)
+    }
+
     fn peer() -> Fingerprint {
         "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237"
             .parse()
@@ -1182,16 +1368,16 @@ mod tests {
 
         // Opened, not yet claimed: an attempt under way, not a picture
         // on screen.
-        assert!(register.held(Instant::now()).is_empty());
+        assert!(register.held(Instant::now(), no_road).is_empty());
 
         register.hold(way, 4242);
-        let held = register.held(Instant::now());
+        let held = register.held(Instant::now(), no_road);
         assert_eq!(held.len(), 1);
         assert_eq!(held[0].way, way);
         assert_eq!(held[0].towards, "192.168.1.20");
 
         register.release(way);
-        assert!(register.held(Instant::now()).is_empty());
+        assert!(register.held(Instant::now(), no_road).is_empty());
     }
 
     #[test]
@@ -1204,7 +1390,7 @@ mod tests {
         // not as old as the tunnel.
         register.hold(way, 4242);
 
-        let held = register.held(Instant::now() + Duration::from_secs(600));
+        let held = register.held(Instant::now() + Duration::from_secs(600), no_road);
         assert!(held[0].since >= Duration::from_secs(600), "{:?}", held[0]);
     }
 
@@ -1219,13 +1405,83 @@ mod tests {
         // Ordered by the register itself, since what reads it redraws
         // only when the list actually changed.
         let ways: Vec<WayId> = register
-            .held(Instant::now())
+            .held(Instant::now(), no_road)
             .into_iter()
             .map(|session| session.way)
             .collect();
         let mut sorted = ways.clone();
         sorted.sort();
         assert_eq!(ways, sorted);
+    }
+
+    /// A computer presented by the server is reached through a junction
+    /// of its own, at its card, by probing what was named: here the far
+    /// computer's real address, as the local network would have named
+    /// it, with nothing coming from the server.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_computer_presented_by_the_server_is_reached_through_its_card() {
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdeskd-ways-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        let log = Log::open(&folder.join("service.log")).unwrap();
+        let far_identity = Arc::new(Identity::generate().unwrap());
+        let near_identity = Arc::new(Identity::generate().unwrap());
+        let near = near_identity.fingerprint();
+
+        // The far computer: its door on a junction, expecting this one.
+        let far = Junction::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            far_identity.clone(),
+            Arc::new(|_: &str| {}),
+        )
+        .unwrap();
+        far.expect(near_identity.fingerprint(), "s1");
+        let far_end = TunnelEndpoint::host_at(
+            &far_identity,
+            near_identity.fingerprint(),
+            MediaProfile::default(),
+            &far,
+        )
+        .unwrap();
+        let accepting = tokio::spawn(async move { far_end.accept().await });
+
+        let (_naming, candidates) = tokio::sync::mpsc::unbounded_channel();
+        let meeting = Rendezvous {
+            session: "s1".to_string(),
+            peer: far_identity.fingerprint(),
+            name: "PC".to_string(),
+            candidates,
+            known: vec![far.local_address().unwrap()],
+            mirror: None,
+            account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
+        };
+        let ways = Ways::new(log);
+        let word = ways
+            .reach(
+                Knock::Through(meeting),
+                "PC",
+                far_identity.fingerprint(),
+                MediaProfile::default(),
+                near_identity,
+            )
+            .await
+            .unwrap();
+        let accepted = tokio::time::timeout(Duration::from_secs(5), accepting)
+            .await
+            .expect("le PC n'a jamais vu venir la connexion")
+            .unwrap()
+            .unwrap();
+
+        // Both ends speak to cards, and the junction knows the road.
+        let crossing = word.crossing.as_ref().unwrap();
+        assert_eq!(word.connection.remote_address(), crossing.card);
+        assert_eq!(
+            crossing.junction.road(crossing.card).unwrap().through,
+            far.local_address().unwrap()
+        );
+        assert_eq!(accepted.remote_address(), zyr_transport::card_of(near));
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

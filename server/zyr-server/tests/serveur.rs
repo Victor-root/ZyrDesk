@@ -49,6 +49,9 @@ data_dir = "{}"
 listen = "127.0.0.1:0"
 public_url = "https://essai.invalid"
 
+[relay]
+listen = "127.0.0.1:0"
+
 [registration]
 policy = "{policy}"
 

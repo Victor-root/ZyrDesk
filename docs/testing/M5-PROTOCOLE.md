@@ -4,9 +4,9 @@ Ce document se déroule sur les deux mêmes PC Windows que les jalons précéden
 
 Vocabulaire : **PC hôte** = celui qu'on contrôle. **PC client** = celui depuis lequel on se connecte. **Serveur** = le conteneur. Les deux PC jouent tour à tour les deux rôles : un compte ne distingue pas ses ordinateurs.
 
-**Ce que cette tranche fait.** Un compte sur un serveur à soi ; chaque PC s'y rattache une fois, sous son nom, et prouve sa clé à chaque connexion ; chacun voit les autres dans « Mes ordinateurs », en ligne ou non, prêt ou non ; un appareil se renomme, se révoque ou se détache depuis n'importe lequel des autres ; le serveur présente deux ordinateurs l'un à l'autre par un ticket signé, et l'hôte laisse entrer l'ordinateur présenté sans que le réseau local ait eu à le lui montrer.
+**Ce que ces deux tranches font.** Un compte sur un serveur à soi ; chaque PC s'y rattache une fois, sous son nom, et prouve sa clé à chaque connexion ; chacun voit les autres dans « Mes ordinateurs », en ligne ou non, prêt ou non ; un appareil se renomme, se révoque ou se détache depuis n'importe lequel des autres ; le serveur présente deux ordinateurs l'un à l'autre par un ticket signé, l'hôte laisse entrer l'ordinateur présenté sans que le réseau local ait eu à le lui montrer, et les deux se cherchent à travers Internet : chacun dit à l'autre, par le serveur, ses adresses locales et celle que le miroir du serveur lui a renvoyée, chacun sonde toutes celles de l'autre avec des datagrammes signés, et la première qui répond porte la session, la plus courte ensuite.
 
-**Ce qu'elle ne fait pas encore, et qu'il ne faut donc pas chercher.** Traverser une box : les seules adresses que l'hôte annonce au rendez-vous sont ses adresses locales, si bien que les deux PC doivent pouvoir se joindre par l'une d'elles, réseau local ou VPN ; le miroir, le mappage de port et les sondes sont la tranche 2. Les contacts et le partage d'une machine à quelqu'un d'autre : tranche 3. Le relais : jalon M6. Sur le même réseau local, les deux PC se voyaient déjà sans serveur ; ce que le compte y ajoute se lit sur la carte, et la session prend le même chemin qu'avant.
+**Ce qu'elles ne font pas encore, et qu'il ne faut donc pas chercher.** Demander à la box d'ouvrir un port toute seule (UPnP) : deux box qui changent de port à chaque destination, ce qui est le cas de beaucoup de réseaux mobiles, ne se joignent qu'avec un port renvoyé à la main chez l'hôte, ou par le relais du jalon M6. Les contacts et le partage d'une machine à quelqu'un d'autre : tranche 3. Le relais : jalon M6. Sur le même réseau local, les deux PC se voyaient déjà sans serveur ; ce que le compte y ajoute se lit sur la carte, et la session prend le même chemin qu'avant.
 
 ---
 
@@ -27,6 +27,7 @@ Tout est nouveau : c'est la première livraison du serveur.
 | **C7** à **C11** | La section Compte : le lien, les appareils, la présence qui suit l'accès distant, l'hôte qui s'éteint, le serveur qui redémarre ou s'arrête |
 | **C12** à **C15** | « Mes ordinateurs » : la carte du compte, la session par le rendez-vous, le refus quand l'hôte n'est pas prêt, le journal à distance |
 | **C16** à **C20** | Renommer, révoquer en moins d'une minute, se rattacher de nouveau, se détacher, et la ligne de commande |
+| **I1** à **I4** | **Internet, le vrai test** : le client sur un partage de connexion 4G, l'hôte à la maison, avec puis sans port renvoyé sur la box ; ce que le journal dit du chemin ; la carte qui dit par où passe la session |
 | **V7** à **V9** | Le serveur, la suite : mise à jour, sauvegarde, désinstallation en deux paliers |
 
 ### Confirmé
@@ -55,7 +56,7 @@ taskkill /IM ZyrDesk.exe /F 2>$null; .\target\release\zyrdeskd stop; git pull &&
 
 Sur le conteneur, en suivant [server/README.md](../../server/README.md), avec le binaire du flux de travail « Serveur » (`--binary`) ou en compilant sur place (`--from-source`). Répondre **auto-signé** au chiffrement, pour que l'épinglage soit essayé, et **sur invitation** aux inscriptions. Noter, du panneau vert : l'**adresse à taper**, l'**empreinte du serveur**, le **code d'invitation**.
 
-Rien à ouvrir sur les PC : le port UDP 47000 du tunnel l'est déjà depuis M3, et le compte ne passe que par des connexions sortantes vers le serveur. Rien à renvoyer sur la box tant que les deux PC et le serveur sont sur le même réseau.
+Rien à ouvrir sur les PC : le port UDP 47000 du tunnel l'est déjà depuis M3, et le compte ne passe que par des connexions sortantes vers le serveur. Rien à renvoyer sur la box tant que les deux PC et le serveur sont sur le même réseau ; pour la partie Internet (I1 à I4), le panneau vert dit les deux ports du serveur à renvoyer vers le conteneur, TCP pour l'API et UDP pour le miroir.
 
 ### Lancer l'application
 
@@ -69,7 +70,7 @@ Sur **les deux PC** : double-clic sur `target\release\ZyrDesk.exe`, jamais depui
 
 `bash install.sh` pose ses questions avec des défauts entre crochets, montre un récapitulatif, demande « Lancer l'installation maintenant ? », puis déroule ses étapes, chacune réécrite en `✓`. À la fin, un panneau vert « Serveur ZyrDesk installé » avec l'adresse à taper, l'empreinte en huit groupes de huit caractères, les ports à renvoyer, la configuration, les données, le code d'invitation et la ligne sur les clés.
 
-**Attendu :** aucune étape en `✗`. Si l'une échoue, la sortie de la commande fautive s'affiche sous elle, et c'est elle qu'il faut recopier.
+**Attendu :** aucune étape en `✗`. Si l'une échoue, la sortie de la commande fautive s'affiche sous elle, et c'est elle qu'il faut recopier. Les ports à renvoyer sont deux : TCP pour l'API, UDP pour le miroir, même avec le relais répondu non.
 
 ### V2. `zyrdesk-server status`
 
@@ -87,7 +88,7 @@ zyrdesk-server check
 
 Le serveur se joint lui-même comme un appareil le ferait, avec la même vérification du certificat.
 
-**Attendu :** « Le serveur répond sur … , en TLS. », son nom, sa version et son dialecte, les inscriptions, et l'**empreinte du serveur**, identique à celle du panneau vert et à celle de `zyrdesk-server fingerprint`.
+**Attendu :** « Le serveur répond sur … , en TLS. », son nom, sa version et son dialecte, les inscriptions, l'**empreinte du serveur**, identique à celle du panneau vert et à celle de `zyrdesk-server fingerprint`, et « Miroir : répond sur UDP 443, cette question venait de 127.0.0.1:… ». Un miroir absent est dit tel quel, avec le journal à lire : c'est un port UDP déjà pris par un autre programme.
 
 ### V4. Le clair est refusé
 
@@ -222,11 +223,11 @@ Sur le **PC client**, l'accueil.
 
 ### C13. La session par le rendez-vous
 
-Dans la situation où le réseau local ne montre pas l'hôte (C12, second attendu), et où le PC client peut tout de même joindre une adresse locale de l'hôte, par le VPN : cliquer la carte.
+Dans la situation où le réseau local ne montre pas l'hôte (C12, second attendu) : cliquer la carte. Sur deux sous-réseaux de la maison, ou par un VPN, c'est une adresse locale de l'hôte qui répondra ; depuis Internet, c'est la partie I qui le dit.
 
-**Attendu :** la session s'ouvre, en quelques secondes de plus qu'en réseau local, le temps de demander au serveur. Dans `service.log` du client : `asking the server for a session towards … (…)`, `session … matched with … (…), which answers at …`, puis l'ouverture de la voie vers `account:…`, en course entre les adresses annoncées. Dans `service.log` de l'hôte : `… (…) is presented by the server for session …, and may come in for as long as the ticket lives`. Sur le serveur : `session …: … (…) towards … (…)`. À la fermeture, côté client : `its way closed, the server is told session … is over`.
+**Attendu :** la session s'ouvre, une seconde ou deux de plus qu'en réseau local, le temps de demander au serveur et de sonder. Dans `service.log` du client : `asking the server for a session towards … (…)`, `session … matched with … (…), which will say where it answers`, `opening a way to … through session …, probing what both sides name`, puis `card 240.…: reached through …, … ms` et `… answered through … after … ms`. Dans `service.log` de l'hôte : `… (…) is presented by the server for session …, and may come in for as long as the ticket lives`, puis `card 240.…: reached through …` et `session open with 240.… through …, round trip … ms`. Sur le serveur : `session …: … (…) towards … (…)`. À la fermeture, côté client : `its way closed, the server is told session … is over`.
 
-Si aucune adresse annoncée n'est joignable, l'ouverture échoue au bout de quelques secondes avec la phrase de l'écran d'ouverture, et rien ne reste ouvert : c'est la limite de cette tranche, pas un défaut.
+Si aucune adresse annoncée n'a répondu au bout de quinze secondes, l'ouverture échoue avec « … n'a répondu par aucune des adresses annoncées en 15 secondes », et rien ne reste ouvert.
 
 ### C14. Le refus quand l'hôte n'est pas prêt
 
@@ -242,7 +243,37 @@ Sur la carte de compte du PC hôte, le bouton **Journal**.
 
 ---
 
-## Partie 5 : renommer, révoquer, se détacher
+## Partie 5 : Internet, le vrai test
+
+Le **PC client** quitte la maison : un portable sur le partage de connexion d'un téléphone (4G ou 5G), sans VPN. Le **PC hôte** reste à la maison, derrière la box, et le **serveur** aussi, avec ses deux ports renvoyés vers le conteneur. Les deux PC restent rattachés au même compte.
+
+### I1. L'hôte se voit depuis dehors
+
+Sur le portable, l'accueil et la section Compte.
+
+**Attendu :** le lien dit « relié » par l'adresse publique du serveur ; la carte de l'hôte dit « en ligne · prêt à être contrôlé · compte », en vert. C'est la présence par le serveur, sans aucun chemin direct encore.
+
+### I2. La session avec un port renvoyé chez l'hôte
+
+Sur la box de la maison, renvoyer **UDP 47000** vers le PC hôte, comme au jalon M3 pour l'accès par adresse. Sur le portable, cliquer la carte de l'hôte.
+
+**Attendu :** la session s'ouvre en quelques secondes. Dans `service.log` du portable, `… answered through <adresse publique de la maison>:47000 after … ms, round trip … ms`. Dans `service.log` de l'hôte, `card 240.…: reached through <adresse du téléphone>:…`. Pendant la session, l'aller-retour dans le menu de la session est celui d'un chemin 4G, quelques dizaines de millisecondes. Sur le serveur, `journalctl -u zyrdesk-server -f` ne montre que l'ouverture et la fin de la session : aucun octet de la session n'y passe, et le débit du conteneur reste nul pendant qu'on regarde l'image.
+
+### I3. La session sans rien renvoyer chez l'hôte
+
+Retirer le renvoi de UDP 47000 sur la box, redémarrer le service de l'hôte (`zyrdeskd stop` puis `start`, pour que la box oublie ses traductions), puis cliquer de nouveau la carte depuis le portable.
+
+**Attendu, avec une box ordinaire à la maison :** la session s'ouvre quand même, par la perforation : l'hôte a sondé l'adresse du portable que le serveur lui a passée, la box de la maison a laissé revenir la réponse, et `service.log` du portable dit `… answered through <adresse publique de la maison>:<un port qui n'est pas 47000>`. **Attendu, si ça échoue :** « … n'a répondu par aucune des adresses annoncées en 15 secondes » au bout d'un quart de minute, et `service.log` du portable montre des `card 240.…` sans `reached`. C'est le cas de deux réseaux qui changent de port à chaque destination, fréquent en 4G ; il est écrit comme une limite de la tranche, et c'est le relais du jalon M6 qui le couvrira. Noter lequel des deux s'est produit, avec l'opérateur du téléphone et le modèle de box : c'est la mesure qui décidera de la priorité du mappage de port.
+
+### I4. La carte dit par où passe la session
+
+Pendant une session ouverte (I2 ou I3), sur le portable, l'accueil.
+
+**Attendu :** la carte verte « Session en cours vers … » dit « Ouverte depuis …, par <adresse publique de la maison>:… en … ms. Fermer la fenêtre termine la session. » Sur une session de réseau local, la même ligne dit l'adresse locale et une ou deux millisecondes.
+
+---
+
+## Partie 6 : renommer, révoquer, se détacher
 
 ### C16. Renommer depuis l'autre ordinateur
 
@@ -281,7 +312,7 @@ Sur l'un des PC, dans une fenêtre de commandes ordinaire :
 
 ---
 
-## Partie 6 : le serveur, la suite
+## Partie 7 : le serveur, la suite
 
 ### V7. Mettre à jour
 
@@ -323,5 +354,5 @@ Choisir « Désinstaller ».
 - **« Le service ne répond pas »** dans la section Compte : le service n'est pas démarré sur ce PC. `zyrdeskd start` en administrateur, ou le bouton de la fenêtre.
 - **« injoignable : … »** sous le lien : la raison est écrite après les deux points. Sur le serveur, `zyrdesk-server check` dit si c'est lui ; sinon c'est le chemin entre les deux, adresse, DNS ou box.
 - **L'empreinte du panneau orange n'est pas celle du serveur** : ne pas continuer. Quelqu'un est entre les deux, ou le serveur a été réinstallé sans ses clés (`zyrdesk-server fingerprint` fait foi).
-- **La carte du compte ne s'ouvre pas** alors que l'hôte est « en ligne · prêt » : lire `service.log` du client. `matched with …, which answers at …` suivi d'un échec d'ouverture veut dire qu'aucune des adresses annoncées n'est joignable d'ici : c'est la traversée de box de la tranche 2. Sans `matched` au bout de dix secondes, c'est l'hôte qui n'a pas répondu au serveur : son `service.log` le dit.
+- **La carte du compte ne s'ouvre pas** alors que l'hôte est « en ligne · prêt » : lire `service.log` du client. `matched with …` suivi de « n'a répondu par aucune des adresses annoncées » veut dire que les sondes n'ont trouvé aucun chemin entre les deux box : renvoyer UDP 47000 vers l'hôte sur sa box (I2), et vérifier que le port UDP du serveur est bien renvoyé, sans quoi ni l'un ni l'autre n'apprend son adresse vue de l'extérieur. Sans `matched` au bout de dix secondes, c'est l'hôte qui n'a pas répondu au serveur : son `service.log` le dit.
 - **Les délais à connaître :** la présence change en deux secondes ; un hôte qui disparaît sans prévenir est vu hors ligne en une minute et demie au plus ; une révocation arrive en moins d'une minute ; le lien se rouvre après un serveur redémarré au bout de quelques secondes, puis d'un peu plus à chaque essai manqué, deux minutes au plus.

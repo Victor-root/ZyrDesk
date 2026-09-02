@@ -68,7 +68,7 @@ impl Default for RegistrationConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Relay {
     pub enabled: bool,
     /// Where the relay and the mirror listen, UDP.

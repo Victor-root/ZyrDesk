@@ -313,6 +313,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             .map(|n| n.found())
             .unwrap_or_default(),
         account: Account::at(paths::account(), log.clone()),
+        door: crate::machine::Door::default(),
     };
     // The link to an account, when there is one, held from here on: it
     // proves this computer's key to the server, and keeps its channel
@@ -324,6 +325,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             machine.hosting.clone(),
             machine.remembered.clone(),
             machine.ways.clone(),
+            machine.door.clone(),
         ),
         Err(e) => log.write(&format!("no identity to hold an account link with: {e}")),
     }

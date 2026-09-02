@@ -130,7 +130,7 @@ ZyrDesk/
 ├─ Cargo.toml                  # workspace Rust
 ├─ crates/
 │  ├─ zyr-proto/               # types partagés : chemins, journal horodaté, empreinte de compilation, réglages de session
-│  ├─ zyr-transport/           # la connexion QUIC (quinn, un seul fichier le nomme), identité et empreintes, confiance TLS et épinglage, contrôleur média, budget MTU ; à venir (M5) : l'aiguilleur, les sondes, la branche de relais
+│  ├─ zyr-transport/           # la connexion QUIC (quinn, un seul fichier le nomme), identité et empreintes, confiance TLS et épinglage, l'aiguilleur et ses sondes signées, contrôleur média, budget MTU ; à venir (M6) : la branche de relais
 │  ├─ zyr-tunnel/              # pompes de ports : TCP<->stream, UDP<->datagramme ; canal ZyrDesk ; loopback 127.77.x.y
 │  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube nommé
 │  ├─ zyr-engine-host/         # superviseur Sunshine : config générée, lancement en session console, API locale, santé

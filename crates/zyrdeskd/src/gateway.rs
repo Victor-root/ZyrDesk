@@ -37,12 +37,14 @@ use zyr_proto::log::Log;
 use zyr_proto::net::{EnginePorts, TUNNEL_PORT};
 use zyr_proto::paths;
 use zyr_proto::session::{Serving, WantedScreen};
+use zyr_transport::junction::Say;
 use zyr_transport::{
-    AllowedPeers, EndpointError, Fingerprint, Identity, MediaProfile, TunnelEndpoint, authorized,
+    AllowedPeers, EndpointError, Fingerprint, Identity, Junction, MediaProfile, TunnelEndpoint,
+    authorized, is_card,
 };
 use zyr_tunnel::{Answers, Tunnel};
 
-use crate::machine::Machine;
+use crate::machine::{Door, Machine};
 
 /// Every network interface: the computer is reachable from wherever the
 /// other one is.
@@ -882,10 +884,12 @@ fn press_it(_log: &Log) -> io::Result<()> {
 ///
 /// Dropping it closes everything: the tunnel has no reason to outlive
 /// the engine it serves.
-#[derive(Debug)]
 pub struct Gateway {
     tasks: Vec<JoinHandle<()>>,
     sessions: Arc<Sessions>,
+    /// Where the junction this door stands on is held for the account,
+    /// and taken back when the door closes.
+    door: Door,
 }
 
 /// The sessions this door has taken in, as the rest of the service needs
@@ -952,6 +956,7 @@ impl Drop for Gateway {
         for task in &self.tasks {
             task.abort();
         }
+        self.door.closed();
     }
 }
 
@@ -979,18 +984,36 @@ impl Gateway {
             log.write(&format!("{device} may come in"));
         }
 
-        let endpoint = TunnelEndpoint::host(
+        // The door stands on a junction: what the server presents is
+        // reached through a card, and everything else comes in as it
+        // always did.
+        let identity = Arc::new(identity);
+        let say: Say = Arc::new({
+            let log = log.clone();
+            move |line: &str| log.write(line)
+        });
+        let junction = Junction::bind(
+            SocketAddr::new(EVERY_INTERFACE, TUNNEL_PORT),
+            identity.clone(),
+            say,
+        )
+        .map_err(io::Error::other)?;
+        let endpoint = TunnelEndpoint::host_at(
             &identity,
             allowed.clone(),
             MediaProfile::default(),
-            SocketAddr::new(EVERY_INTERFACE, TUNNEL_PORT),
+            &junction,
         )
         .map_err(io::Error::other)?;
 
         log.write(&format!(
-            "tunnel open on port {TUNNEL_PORT}, fingerprint of this computer {}",
+            "tunnel open on {}, fingerprint of this computer {}",
+            junction
+                .local_address()
+                .map_or_else(|_| format!("port {TUNNEL_PORT}"), |at| at.to_string()),
             identity.fingerprint()
         ));
+        machine.door.opened(junction.clone());
 
         let sessions = Arc::new(Sessions::default());
         let attending: Arc<dyn Answers> = Arc::new(Attending {
@@ -1005,6 +1028,7 @@ impl Gateway {
             fingerprint: identity.fingerprint(),
             log: log.clone(),
         });
+        let door = machine.door.clone();
         Ok(Self {
             tasks: vec![
                 runtime.spawn(keep_the_list_fresh(
@@ -1014,9 +1038,16 @@ impl Gateway {
                     machine,
                     log.clone(),
                 )),
-                runtime.spawn(serve(endpoint, attending, sessions.clone(), log.clone())),
+                runtime.spawn(serve(
+                    endpoint,
+                    junction,
+                    attending,
+                    sessions.clone(),
+                    log.clone(),
+                )),
             ],
             sessions,
+            door,
         })
     }
 
@@ -1066,6 +1097,7 @@ impl Gateway {
 /// Takes in the devices that connect, one session each.
 async fn serve(
     endpoint: TunnelEndpoint,
+    junction: Junction,
     attending: Arc<dyn Answers>,
     counting: Arc<Sessions>,
     log: Log,
@@ -1076,9 +1108,11 @@ async fn serve(
             Ok(connection) => {
                 let log = log.clone();
                 let attending = attending.clone();
+                let junction = junction.clone();
                 let counted = Counted::one(&counting);
-                sessions
-                    .spawn(async move { one_session(connection, attending, counted, log).await });
+                sessions.spawn(async move {
+                    one_session(connection, junction, attending, counted, log).await
+                });
                 while sessions.try_join_next().is_some() {}
             }
             // A refused device is not the end of the door: it must not
@@ -1095,19 +1129,39 @@ async fn serve(
 
 async fn one_session(
     connection: zyr_transport::Connection,
+    junction: Junction,
     attending: Arc<dyn Answers>,
     _counted: Counted,
     log: Log,
 ) {
     let from = connection.remote_address();
+    // A computer the server presented speaks to its card: the road it
+    // really takes is the junction's to say.
+    let road = if is_card(from) {
+        junction.road(from).map_or_else(
+            || " through the junction".to_string(),
+            |road| {
+                format!(
+                    " through {}, round trip {} ms",
+                    road.through,
+                    road.round_trip.as_millis()
+                )
+            },
+        )
+    } else {
+        String::new()
+    };
     let mut tunnel = match Tunnel::host(connection, ENGINE, attending).await {
         Ok(tunnel) => tunnel,
         Err(e) => {
-            log.write(&format!("session from {from} not opened: {e}"));
+            log.write(&format!("session from {from}{road} not opened: {e}"));
+            if is_card(from) {
+                junction.forget(from);
+            }
             return;
         }
     };
-    log.write(&format!("session open with {from}"));
+    log.write(&format!("session open with {from}{road}"));
 
     let outcome = tunnel.wait().await;
     let reading = tunnel.reading();
@@ -1117,6 +1171,9 @@ async fn one_session(
             reading.to_engine, reading.to_tunnel
         )),
         Err(e) => log.write(&format!("session ended: {e}")),
+    }
+    if is_card(from) {
+        junction.forget(from);
     }
 }
 
@@ -1244,6 +1301,7 @@ mod tests {
             remembered: crate::preferences::Remembered::at(folder.join("preferences.conf")),
             neighbours: zyr_lan::Found::new(),
             account: crate::account::Account::at(folder.join("account.conf"), log),
+            door: crate::machine::Door::default(),
         };
         (machine, folder)
     }

@@ -8,7 +8,7 @@ Un seul programme, `zyrdesk-server`, sous [AGPLv3](LICENSE), et un script, `inst
 
 - Un Debian 12 ou 13 avec systemd, dans un conteneur LXC non privilégié de Proxmox ou sur une machine ordinaire. Le binaire publié est en x86_64 ; une autre architecture, un Raspberry Pi par exemple, compile sur place (`--from-source`). Le serveur est léger : un conteneur ordinaire suffit.
 - Le compte root le temps de l'installation.
-- Pour être joint depuis Internet : un nom de domaine ou l'adresse publique de la box, et le port TCP de l'API renvoyé vers le conteneur. Le script ne touche pas à la box et l'écrit dans son résumé, avec les numéros. Une adresse publique en 100.64.0.0/10 (CGNAT) ne se renvoie pas ; le script le dit quand il la voit.
+- Pour être joint depuis Internet : un nom de domaine ou l'adresse publique de la box, et deux ports renvoyés vers le conteneur, le TCP de l'API et l'UDP du miroir, celui qui dit à un ordinateur son adresse vue de l'extérieur et rend le direct possible. Le script ne touche pas à la box et l'écrit dans son résumé, avec les numéros. Une adresse publique en 100.64.0.0/10 (CGNAT) ne se renvoie pas ; le script le dit quand il la voit.
 
 Ni base de données à installer, ni certificat à acheter.
 
@@ -60,7 +60,7 @@ Le script se lance en root, dans un terminal, en français quand la machine l'es
 | Adresse publique | Ce que les appareils tapent : un nom de domaine, ou l'adresse publique de la box, détectée et proposée en défaut |
 | Chiffrement de l'API | 1) un mandataire inverse déjà en place, avec son certificat : le serveur écoute en clair sur la boucle locale (port 8443 en défaut) et le script imprime les lignes exactes pour Caddy et nginx ; 2) un certificat auto-signé, généré par le script, valable dix ans, portant le nom et l'adresse saisis : l'application demandera de comparer son empreinte, une fois par appareil ; 3) des fichiers à vous, certificat (chaîne complète) et clé, vérifiés ensemble puis copiés sous `/etc/zyrdesk-server/tls/` |
 | Port de l'API | TCP 443 en défaut, hors mandataire |
-| Relais | Le relais vient au jalon M6 : la question est posée dès maintenant pour que la configuration soit prête, et la réponse ne fait rien tant qu'il n'existe pas |
+| Port UDP du miroir et du relais | UDP 443 en défaut. Le miroir y répond dès maintenant ; le relais vient au jalon M6, et la question qui suit, l'activer ou non, ne fait rien tant qu'il n'existe pas |
 | Dossier des données | `/var/lib/zyrdesk-server` : la base et les clés du serveur |
 | Inscriptions | Ouvertes ; sur invitation, le défaut, avec un code par compte à créer ; ou fermées, les comptes se créant alors sur le serveur par `user create` |
 | Premier compte | Son nom et son mot de passe, douze caractères au moins, tapé deux fois sans écho |
@@ -158,7 +158,8 @@ Hors conteneur, l'unité reçoit en plus un durcissement fondé sur les montages
 
 ## Si quelque chose ne va pas
 
-- `zyrdesk-server check` dit ce que voit un appareil : le serveur répond ou non, en TLS ou en clair, avec quelle empreinte. C'est la première commande à lancer quand une application dit que le serveur refuse.
+- `zyrdesk-server check` dit ce que voit un appareil : le serveur répond ou non, en TLS ou en clair, avec quelle empreinte, et si son miroir répond sur son port UDP. C'est la première commande à lancer quand une application dit que le serveur refuse.
+- Deux ordinateurs du compte se voient en ligne mais la session ne s'ouvre pas depuis l'extérieur : lire `service.log` de celui qui se connecte. `answered through …` dit par où c'est passé ; sans lui au bout de quinze secondes, aucune adresse annoncée n'a répondu, ce qui arrive avec deux box qui changent de port à chaque destination. Renvoyer UDP 47000 vers l'ordinateur regardé sur sa box règle le cas ; le port UDP du serveur doit lui aussi être renvoyé, sans quoi personne n'apprend son adresse vue de l'extérieur.
 - `systemctl status zyrdesk-server` et `journalctl -u zyrdesk-server -n 50` disent pourquoi il ne démarre pas ; une configuration fautive est expliquée en une phrase.
 - L'application dit que le serveur présente un certificat que personne ne garantit : c'est le mode auto-signé, et c'est attendu une fois par appareil. Comparer l'empreinte avec `zyrdesk-server fingerprint`. Si elle diffère, quelqu'un est entre les deux, ou le serveur a été réinstallé sans ses clés.
 - L'application dit que le serveur a changé de clé : le certificat a été refait sur une autre clé. Se détacher, puis se rattacher en comparant l'empreinte nouvelle.

@@ -28,7 +28,7 @@ use zyr_proto::journal::Journal;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
-use zyr_transport::Fingerprint;
+use zyr_transport::{Fingerprint, Junction};
 
 use crate::account::{self, Account};
 use crate::known::{self, Known};
@@ -75,6 +75,29 @@ impl Default for Hosting {
     }
 }
 
+/// The junction the door stands on, for as long as the door is open.
+///
+/// Held here because the door comes and goes with the engine, and the
+/// account outlives both: when the server presents a computer, it is
+/// the junction of the moment that has to expect it.
+#[derive(Clone, Default)]
+pub struct Door(Arc<Mutex<Option<Junction>>>);
+
+impl Door {
+    pub fn opened(&self, junction: Junction) {
+        *self.0.lock().expect("porte") = Some(junction);
+    }
+
+    pub fn closed(&self) {
+        *self.0.lock().expect("porte") = None;
+    }
+
+    /// The junction of the open door, or nothing while it is closed.
+    pub fn junction(&self) -> Option<Junction> {
+        self.0.lock().expect("porte").clone()
+    }
+}
+
 /// What this computer holds, for as long as the service runs.
 ///
 /// None of it belongs to one engine: reaching another computer, being
@@ -88,6 +111,7 @@ pub struct Machine {
     pub remembered: Remembered,
     pub neighbours: Found,
     pub account: Account,
+    pub door: Door,
 }
 
 impl Machine {
@@ -303,6 +327,7 @@ mod tests {
             remembered: Remembered::at(folder.join("preferences.conf")),
             neighbours: Found::new(),
             account: Account::at(folder.join("account.conf"), log.clone()),
+            door: Door::default(),
         };
         (machine, log, folder)
     }

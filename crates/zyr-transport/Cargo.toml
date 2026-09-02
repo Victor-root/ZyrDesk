@@ -15,6 +15,7 @@ ring = "0.17.14"
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std"] }
 rustls-webpki = { version = "0.103.13", features = ["ring"] }
 sha2 = "0.11.0"
+socket2 = "0.6.5"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "macros", "io-util", "time", "sync"] }
 webpki-roots = "1"
 zyr-proto.workspace = true

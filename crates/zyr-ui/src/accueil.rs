@@ -1925,8 +1925,9 @@ impl Mise<'_> {
         );
         self.ecris(
             &format!(
-                "Ouverte depuis {}. Fermer la fenêtre termine la session.",
-                duree(session.since)
+                "Ouverte depuis {}{}. Fermer la fenêtre termine la session.",
+                duree(session.since),
+                chemin_de(session)
             ),
             self.legende(),
             self.couleurs.texte_doux,
@@ -2319,6 +2320,15 @@ fn mot_de_la_presence(appareil: &Device) -> String {
         ),
         None => "Hors ligne".to_string(),
     }
+}
+
+/// Par où passe une session, et combien la route prend, quand le
+/// service le sait.
+fn chemin_de(session: &Ongoing) -> String {
+    if session.via.is_empty() {
+        return String::new();
+    }
+    format!(", par {} en {} ms", session.via, session.round_trip_ms)
 }
 
 /// Depuis combien de temps une session est ouverte, en mots.

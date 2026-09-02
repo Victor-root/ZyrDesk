@@ -54,6 +54,10 @@ pub struct ServerInfo {
     pub registration: Registration,
     /// Whether it has a relay to offer.
     pub relay: bool,
+    /// The UDP port its mirror answers on, at the same host as the API,
+    /// and its relay when it has one. Absent when nothing listens there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub udp_port: Option<u16>,
     /// The key its tickets are signed with, learned here and pinned.
     pub signing_key: ServerPublicKey,
 }

@@ -44,7 +44,7 @@ use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_transport::{Fingerprint, Identity};
 
-use crate::machine::Hosting;
+use crate::machine::{Door, Hosting};
 use crate::preferences::Remembered;
 use crate::ways::Ways;
 
@@ -53,10 +53,6 @@ const ROAD: &str = "account:";
 
 /// How long the server gets to answer a session asked of it.
 const RENDEZVOUS_PATIENCE: Duration = Duration::from_secs(10);
-
-/// How long the far computer gets to say where it may be reached, once
-/// the session is on.
-const CANDIDATES_PATIENCE: Duration = Duration::from_secs(5);
 
 /// How often what this computer says of itself is compared with what
 /// the server was last told, and the ways opened by a meeting looked
@@ -82,20 +78,47 @@ pub enum Attaching {
     Refused(String),
 }
 
-/// Two computers presented to each other by the server.
-#[derive(Debug)]
+/// Two computers presented to each other by the server: what the one
+/// going knows of the other, and where it keeps learning from.
 pub struct Rendezvous {
     pub session: String,
     pub peer: Fingerprint,
     /// What the far computer is called, for the journal.
     pub name: String,
-    /// Where the far computer says it may be reached.
-    pub candidates: Vec<SocketAddr>,
+    /// Where the far computer says it may be reached, batch by batch,
+    /// as it finds out.
+    pub candidates: mpsc::UnboundedReceiver<Vec<SocketAddr>>,
+    /// Where this computer already knows it: what the local network saw.
+    pub known: Vec<SocketAddr>,
+    /// The server's mirror, to learn this computer's own address as seen
+    /// from outside.
+    pub mirror: Option<SocketAddr>,
+    pub(crate) account: Account,
+}
+
+impl Rendezvous {
+    /// Tells the far computer, through the server, where this one may
+    /// be reached.
+    pub fn say_candidates(&self, candidates: Vec<SocketAddr>) {
+        self.account.say_candidates(&self.session, candidates);
+    }
+}
+
+impl std::fmt::Debug for Rendezvous {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Rendezvous")
+            .field("session", &self.session)
+            .field("peer", &self.peer)
+            .field("name", &self.name)
+            .field("known", &self.known)
+            .field("mirror", &self.mirror)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Where a session waits for its meeting: the other computer, and the
 /// addresses it will name.
-type Meeting = (Start, mpsc::UnboundedReceiver<Vec<SocketAddr>>);
+type Matched = (Start, mpsc::UnboundedReceiver<Vec<SocketAddr>>);
 
 /// The link, as the service holds it.
 #[derive(Clone)]
@@ -116,10 +139,13 @@ struct Inner {
     changed: Notify,
     /// Sessions asked of the server and not yet matched, by the device
     /// gone towards.
-    asked: Mutex<HashMap<String, oneshot::Sender<Result<Meeting, String>>>>,
+    asked: Mutex<HashMap<String, oneshot::Sender<Result<Matched, String>>>>,
     /// Sessions matched, waiting for where the far computer may be
     /// reached.
     expecting: Mutex<HashMap<String, mpsc::UnboundedSender<Vec<SocketAddr>>>>,
+    /// Sessions this computer is gone towards in, and the card the door
+    /// expects the far computer at for each.
+    hosted: Mutex<HashMap<String, SocketAddr>>,
     /// The ways a meeting opened, and the session each stands for: the
     /// server is told when one closes.
     roads: Mutex<Vec<(WayId, String)>>,
@@ -131,6 +157,7 @@ struct Started {
     hosting: Hosting,
     remembered: Remembered,
     ways: Ways,
+    door: Door,
 }
 
 struct Held {
@@ -159,6 +186,7 @@ impl Account {
             changed: Notify::new(),
             asked: Mutex::new(HashMap::new()),
             expecting: Mutex::new(HashMap::new()),
+            hosted: Mutex::new(HashMap::new()),
             roads: Mutex::new(Vec::new()),
         }))
     }
@@ -167,7 +195,8 @@ impl Account {
     ///
     /// What this computer says of itself to the server is read from
     /// `hosting` and `remembered`; the ways opened by a meeting are
-    /// watched in `ways`, so the server learns when one closes.
+    /// watched in `ways`, so the server learns when one closes; and a
+    /// computer the server presents is expected at the `door`.
     pub fn start(
         &self,
         runtime: &Handle,
@@ -175,6 +204,7 @@ impl Account {
         hosting: Hosting,
         remembered: Remembered,
         ways: Ways,
+        door: Door,
     ) {
         let inner = &self.0;
         *inner.started.lock().expect("compte") = Some(Started {
@@ -183,6 +213,7 @@ impl Account {
             hosting,
             remembered,
             ways,
+            door,
         });
         match Link::read(&inner.path) {
             Ok(None) => inner
@@ -440,12 +471,16 @@ impl Account {
     /// ticket.
     pub async fn rendezvous(&self, device: &str) -> Result<Rendezvous, String> {
         let inner = &self.0;
-        let (snapshot, me) = {
+        let (snapshot, me, server) = {
             let held = inner.held.lock().expect("lien de compte");
             let held = held
                 .as_ref()
                 .ok_or("cet ordinateur n'est rattaché à aucun compte")?;
-            (held.live.snapshot(), held.link.device.clone())
+            (
+                held.live.snapshot(),
+                held.link.device.clone(),
+                held.link.server.clone(),
+            )
         };
         if !snapshot.connected {
             return Err(format!(
@@ -496,8 +531,7 @@ impl Account {
             "asking the server for a session towards {} ({device})",
             target.name
         ));
-        let (start, mut candidates) = match tokio::time::timeout(RENDEZVOUS_PATIENCE, waiting).await
-        {
+        let (start, candidates) = match tokio::time::timeout(RENDEZVOUS_PATIENCE, waiting).await {
             Ok(Ok(Ok(meeting))) => meeting,
             Ok(Ok(Err(refused))) => {
                 return Err(format!(
@@ -520,36 +554,39 @@ impl Account {
                 ));
             }
         };
-        let named = match tokio::time::timeout(CANDIDATES_PATIENCE, candidates.recv()).await {
-            Ok(Some(named)) => named,
-            _ => Vec::new(),
-        };
-        inner
-            .expecting
-            .lock()
-            .expect("candidats attendus")
-            .remove(&start.session);
+        let mirror = mirror_of(
+            &server,
+            snapshot.server.as_ref().and_then(|server| server.udp_port),
+        )
+        .await;
         inner.log.write(&format!(
-            "session {} matched with {} ({}), which answers at {}",
-            start.session,
-            start.peer.name,
-            start.peer.fingerprint,
-            if named.is_empty() {
-                "no address it named".to_string()
-            } else {
-                named
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            }
+            "session {} matched with {} ({}), which will say where it answers",
+            start.session, start.peer.name, start.peer.fingerprint
         ));
         Ok(Rendezvous {
             session: start.session,
             peer: start.peer.fingerprint,
             name: start.peer.name,
-            candidates: named,
+            candidates,
+            known: Vec::new(),
+            mirror,
+            account: self.clone(),
         })
+    }
+
+    /// Tells the server where this computer may be reached for that
+    /// session, for the far computer to try.
+    pub(crate) fn say_candidates(&self, session: &str, candidates: Vec<SocketAddr>) {
+        if candidates.is_empty() {
+            return;
+        }
+        let held = self.0.held.lock().expect("lien de compte");
+        if let Some(held) = held.as_ref() {
+            held.live.say(FromDevice::SessionCandidates {
+                session: session.to_string(),
+                candidates,
+            });
+        }
     }
 
     /// Notes that a meeting opened that way: the server is told when it
@@ -592,9 +629,26 @@ impl Account {
                 session,
                 candidates,
             } => {
-                let expecting = inner.expecting.lock().expect("candidats attendus");
-                if let Some(waiting) = expecting.get(&session) {
-                    let _ = waiting.send(candidates);
+                // Gone towards in that session: the door is told where
+                // to probe. Going: whoever is opening the way is told.
+                let hosted = inner
+                    .hosted
+                    .lock()
+                    .expect("sessions accueillies")
+                    .get(&session)
+                    .copied();
+                match hosted {
+                    Some(card) => {
+                        if let Some(junction) = self.junction() {
+                            junction.add_candidates(card, candidates);
+                        }
+                    }
+                    None => {
+                        let expecting = inner.expecting.lock().expect("candidats attendus");
+                        if let Some(waiting) = expecting.get(&session) {
+                            let _ = waiting.send(candidates);
+                        }
+                    }
                 }
             }
             Event::SessionEnd { session } => {
@@ -603,6 +657,16 @@ impl Account {
                     .lock()
                     .expect("candidats attendus")
                     .remove(&session);
+                let hosted = inner
+                    .hosted
+                    .lock()
+                    .expect("sessions accueillies")
+                    .remove(&session);
+                if let Some(card) = hosted
+                    && let Some(junction) = self.junction()
+                {
+                    junction.forget(card);
+                }
                 inner
                     .roads
                     .lock()
@@ -659,13 +723,17 @@ impl Account {
     /// whom to expect.
     fn matched(&self, start: Start) {
         let inner = &self.0;
-        let me = {
+        let started = {
             let started = inner.started.lock().expect("compte");
-            started
-                .as_ref()
-                .map(|started| started.identity.fingerprint())
+            started.as_ref().map(|started| {
+                (
+                    started.identity.fingerprint(),
+                    started.door.clone(),
+                    started.runtime.clone(),
+                )
+            })
         };
-        let Some(me) = me else {
+        let Some((me, door, runtime)) = started else {
             return;
         };
         let held = inner.held.lock().expect("lien de compte");
@@ -684,15 +752,48 @@ impl Account {
                     return;
                 }
                 self.admit(start.peer.fingerprint, ticket.expires);
-                held.live.say(FromDevice::SessionCandidates {
-                    session: start.session.clone(),
-                    candidates: where_this_computer_answers(),
-                });
                 inner.log.write(&format!(
                     "{} ({}) is presented by the server for session {}, and may come in for as \
                      long as the ticket lives",
                     start.peer.name, start.peer.account, start.session
                 ));
+                // The door expects it at a card, and both sides start
+                // saying where they may be reached: this computer's own
+                // addresses now, what the mirror sees of it when it
+                // answers.
+                let Some(junction) = door.junction() else {
+                    inner.log.write(&format!(
+                        "session {}: the door is closed, the far computer will find nowhere to \
+                         knock",
+                        start.session
+                    ));
+                    return;
+                };
+                let card = junction.expect(start.peer.fingerprint, &start.session);
+                inner
+                    .hosted
+                    .lock()
+                    .expect("sessions accueillies")
+                    .insert(start.session.clone(), card);
+                held.live.say(FromDevice::SessionCandidates {
+                    session: start.session.clone(),
+                    candidates: where_this_computer_answers(TUNNEL_PORT),
+                });
+                let server = held.link.server.clone();
+                let udp_port = held
+                    .live
+                    .snapshot()
+                    .server
+                    .and_then(|server| server.udp_port);
+                let account = self.clone();
+                let session = start.session.clone();
+                runtime.spawn(async move {
+                    if let Some(mirror) = mirror_of(&server, udp_port).await
+                        && let Some(seen) = junction.ask_the_mirror(mirror).await
+                    {
+                        account.say_candidates(&session, seen_from_outside(seen, TUNNEL_PORT));
+                    }
+                });
                 return;
             }
             Err(Refusal::NotForMe { .. }) => {}
@@ -737,6 +838,12 @@ impl Account {
                 .log
                 .write(&format!("a ticket from the server is refused: {refusal}")),
         }
+    }
+
+    /// The junction of the door, while the door is open.
+    fn junction(&self) -> Option<zyr_transport::Junction> {
+        let started = self.0.started.lock().expect("compte");
+        started.as_ref().and_then(|started| started.door.junction())
     }
 
     /// Lets that computer in until then, and wakes the door.
@@ -794,6 +901,7 @@ impl Account {
         inner.changed.notify_one();
         inner.asked.lock().expect("sessions demandées").clear();
         inner.expecting.lock().expect("candidats attendus").clear();
+        inner.hosted.lock().expect("sessions accueillies").clear();
         inner.roads.lock().expect("voies du compte").clear();
     }
 }
@@ -826,13 +934,42 @@ fn access_now(hosting: &Hosting, remembered: &Remembered) -> Access {
     }
 }
 
-/// Where this computer may be reached, card by card, for the far one to
-/// try.
-fn where_this_computer_answers() -> Vec<SocketAddr> {
+/// Where this computer may be reached on that port, card by card, for
+/// the far one to try: its IPv4 addresses, and the IPv6 ones the whole
+/// Internet routes, which reach it without any box in the way.
+pub(crate) fn where_this_computer_answers(port: u16) -> Vec<SocketAddr> {
     zyr_proto::machine::addresses()
         .into_iter()
-        .map(|card| SocketAddr::from((card.address, TUNNEL_PORT)))
+        .map(|card| SocketAddr::from((card.address, port)))
+        .chain(
+            zyr_proto::machine::global_ipv6_addresses()
+                .into_iter()
+                .map(|address| SocketAddr::from((address, port))),
+        )
         .collect()
+}
+
+/// What the mirror's answer is worth naming: the address seen, and,
+/// when the box changed the port on the way out, the same address on
+/// this computer's own port, which is where a port forwarded on the box
+/// by hand leads.
+fn seen_from_outside(seen: SocketAddr, port: u16) -> Vec<SocketAddr> {
+    let mut named = vec![seen];
+    if seen.port() != port {
+        named.push(SocketAddr::new(seen.ip(), port));
+    }
+    named
+}
+
+/// The server's mirror: the host the devices type, and the UDP port the
+/// server announced. Nothing when it announced none.
+async fn mirror_of(server: &str, udp_port: Option<u16>) -> Option<SocketAddr> {
+    let port = udp_port?;
+    let (host, _) = zyr_account::address::host_and_port(server).ok()?;
+    tokio::net::lookup_host(format!("{host}:{port}"))
+        .await
+        .ok()?
+        .next()
 }
 
 #[cfg(test)]
@@ -849,6 +986,18 @@ mod tests {
 
     fn fingerprint(seed: u8) -> Fingerprint {
         format!("{seed:02x}").repeat(32).parse().unwrap()
+    }
+
+    #[test]
+    fn what_the_mirror_saw_is_named_with_this_computers_own_port_beside_it() {
+        let seen: SocketAddr = "82.64.12.7:53211".parse().unwrap();
+        assert_eq!(
+            seen_from_outside(seen, TUNNEL_PORT),
+            vec![seen, "82.64.12.7:47000".parse().unwrap()]
+        );
+        // Le port n'a pas bougé en sortant : une seule adresse.
+        let kept: SocketAddr = "82.64.12.7:47000".parse().unwrap();
+        assert_eq!(seen_from_outside(kept, TUNNEL_PORT), vec![kept]);
     }
 
     #[test]
@@ -938,6 +1087,9 @@ tls_cert = "{}"
 tls_key = "{}"
 public_url = "https://essai.invalid"
 
+[relay]
+listen = "127.0.0.1:0"
+
 [registration]
 policy = "open"
 
@@ -968,12 +1120,15 @@ login_attempts_per_minute = 1000
     }
 
     /// One computer of the account, with everything the service would
-    /// hold for it.
+    /// hold for it: its door open on a junction of its own, with the
+    /// transport reading the socket as the real door does.
     struct Computer {
         account: Account,
         identity: Arc<Identity>,
         hosting: Hosting,
         folder: PathBuf,
+        junction: zyr_transport::Junction,
+        _end: zyr_transport::TunnelEndpoint,
     }
 
     impl Computer {
@@ -986,14 +1141,35 @@ login_attempts_per_minute = 1000
             let identity = Arc::new(Identity::generate().unwrap());
             let hosting = Hosting::new();
             let account = Account::at(folder.join("account.conf"), log.clone());
+            let junction = zyr_transport::Junction::bind(
+                "127.0.0.1:0".parse().unwrap(),
+                identity.clone(),
+                Arc::new({
+                    let log = log.clone();
+                    move |line: &str| log.write(line)
+                }),
+            )
+            .unwrap();
+            let end = zyr_transport::TunnelEndpoint::host_at(
+                &identity,
+                zyr_transport::AllowedPeers::default(),
+                zyr_transport::MediaProfile::default(),
+                &junction,
+            )
+            .unwrap();
+            let door = Door::default();
+            door.opened(junction.clone());
             account.start(
                 &Handle::current(),
                 identity.clone(),
                 hosting.clone(),
                 Remembered::at(folder.join("preferences.conf")),
                 Ways::new(log),
+                door,
             );
             Self {
+                junction,
+                _end: end,
                 account,
                 identity,
                 hosting,
@@ -1109,14 +1285,37 @@ login_attempts_per_minute = 1000
             .clone();
 
         // Le rendez-vous : le portable est présenté au PC, qui le laisse
-        // entrer sur la foi du ticket et dit où il répond.
-        let met = portable.account.rendezvous(&pc_device).await.unwrap();
+        // entrer sur la foi du ticket et dit où il répond, d'abord ses
+        // propres adresses, puis celle que le miroir du serveur lui
+        // renvoie, celle de sa prise vue de là.
+        let mut met = portable.account.rendezvous(&pc_device).await.unwrap();
         assert_eq!(met.peer, pc.identity.fingerprint());
         assert_eq!(met.name, "PC de Victor");
+        let mirror = SocketAddr::new(
+            "127.0.0.1".parse().unwrap(),
+            server
+                .running
+                .app
+                .udp_port
+                .expect("le serveur d'essai a un miroir"),
+        );
+        assert_eq!(met.mirror, Some(mirror));
+        let named = tokio::time::timeout(PATIENCE, met.candidates.recv())
+            .await
+            .expect("le PC n'a jamais dit où il répond")
+            .unwrap();
         assert_eq!(
-            met.candidates,
-            where_this_computer_answers(),
+            named,
+            where_this_computer_answers(TUNNEL_PORT),
             "le PC dit où il répond, c'est-à-dire cette machine"
+        );
+        let seen = tokio::time::timeout(PATIENCE, met.candidates.recv())
+            .await
+            .expect("le miroir n'a rien dit au PC")
+            .unwrap();
+        assert_eq!(
+            seen,
+            seen_from_outside(pc.junction.local_address().unwrap(), TUNNEL_PORT)
         );
         pc.until("le PC n'a jamais admis le portable", |account| {
             account.admitted() == vec![portable.identity.fingerprint()]

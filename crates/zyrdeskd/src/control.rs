@@ -26,6 +26,7 @@ use crate::account::{self, Attaching};
 use crate::known;
 use crate::machine::Machine;
 use crate::supervisor::StopOrder;
+use crate::ways::Knock;
 
 /// The desk, open. Dropping it closes the channel.
 pub struct Desk {
@@ -223,13 +224,13 @@ async fn where_to_knock(
     host: &str,
     peer: Fingerprint,
     answering: &Answering,
-) -> Result<(Option<String>, String, Vec<SocketAddr>), String> {
+) -> Result<(String, Knock), String> {
     let also = every_address_of(peer, answering);
     let Some(device) = account::device_of_road(host) else {
         let candidates = crate::ways::where_to_knock(host, &also)?;
-        return Ok((None, host.to_string(), candidates));
+        return Ok((host.to_string(), Knock::At(candidates)));
     };
-    let met = answering.machine.account.rendezvous(device).await?;
+    let mut met = answering.machine.account.rendezvous(device).await?;
     // The fingerprint on the card is what the tunnel will pin, and the
     // server has just named one: two different answers is a computer
     // that changed key, or a server that lies, and neither is knocked on.
@@ -241,14 +242,14 @@ async fn where_to_knock(
             met.name, met.peer
         ));
     }
-    let mut candidates = met.candidates;
-    for address in also {
-        let candidate = SocketAddr::new(address, TUNNEL_PORT);
-        if !candidates.contains(&candidate) {
-            candidates.push(candidate);
-        }
-    }
-    Ok((Some(met.session), met.name, candidates))
+    // What the local network saw of it is worth probing before anything
+    // the server passes on.
+    met.known = also
+        .into_iter()
+        .map(|address| SocketAddr::new(address, TUNNEL_PORT))
+        .collect();
+    let label = met.name.clone();
+    Ok((label, Knock::Through(met)))
 }
 
 /// One question asked of a computer, wherever it is: the meeting it took
@@ -257,10 +258,11 @@ async fn one_question<T>(
     host: &str,
     peer: Fingerprint,
     answering: &Answering,
-    ask: impl AsyncFnOnce(&str, &[SocketAddr]) -> Result<T, String>,
+    ask: impl AsyncFnOnce(&str, Knock) -> Result<T, String>,
 ) -> Result<T, String> {
-    let (meeting, label, candidates) = where_to_knock(host, peer, answering).await?;
-    let answered = ask(&label, &candidates).await;
+    let (label, knock) = where_to_knock(host, peer, answering).await?;
+    let meeting = knock.session();
+    let answered = ask(&label, knock).await;
     if let Some(session) = meeting {
         answering.machine.account.ended(&session);
     }
@@ -285,14 +287,15 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             })
         }
         Request::Reach { host, peer, media } => {
-            let (meeting, label, candidates) = match where_to_knock(&host, peer, answering).await {
+            let (label, knock) = match where_to_knock(&host, peer, answering).await {
                 Ok(found) => found,
                 Err(reason) => return Answer::Refused(reason),
             };
+            let meeting = knock.session();
             match answering
                 .machine
                 .ways
-                .open(&label, peer, media, candidates)
+                .open(&label, peer, media, knock)
                 .await
             {
                 Ok(reached) => {
@@ -523,8 +526,8 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         ),
         Request::FarJournal { host, peer } => {
             let ways = &answering.machine.ways;
-            match one_question(&host, peer, answering, async |label, candidates| {
-                ways.ask_a_computer_for_its_journal(label, peer, candidates)
+            match one_question(&host, peer, answering, async |label, knock| {
+                ways.ask_a_computer_for_its_journal(label, peer, knock)
                     .await
             })
             .await
@@ -535,8 +538,8 @@ async fn one(request: Request, answering: &Answering) -> Answer {
         }
         Request::ClearFarJournal { host, peer } => {
             let ways = &answering.machine.ways;
-            match one_question(&host, peer, answering, async |label, candidates| {
-                ways.ask_a_computer_to_empty_its_journal(label, peer, candidates)
+            match one_question(&host, peer, answering, async |label, knock| {
+                ways.ask_a_computer_to_empty_its_journal(label, peer, knock)
                     .await
             })
             .await
@@ -614,6 +617,7 @@ mod tests {
                 remembered: crate::preferences::Remembered::at(folder.join("preferences.conf")),
                 neighbours: zyr_lan::Found::new(),
                 account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
+                door: crate::machine::Door::default(),
             };
 
             let desk = Desk::open(

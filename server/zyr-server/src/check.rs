@@ -17,6 +17,7 @@ use rustls::pki_types::ServerName;
 use zyr_broker::PROTOCOL;
 use zyr_broker::rest::{ServerInfo, paths};
 use zyr_transport::Fingerprint;
+use zyr_transport::probe::{self, Heard};
 use zyr_transport::trust::{Trust, client_config};
 
 use crate::config::Config;
@@ -33,6 +34,9 @@ pub struct Checked {
     /// The key a device pins, when the API serves TLS itself.
     pub fingerprint: Option<Fingerprint>,
     pub info: ServerInfo,
+    /// Where the mirror said the question came from, when the server
+    /// has a mirror.
+    pub mirror: Option<SocketAddr>,
 }
 
 /// Why the server did not pass.
@@ -47,6 +51,8 @@ pub enum Trouble {
     Protocol(u32),
     /// Another signing key: another server's data answers there.
     OtherServer(SocketAddr),
+    /// The server says it has a mirror, and it does not answer.
+    Mirror(SocketAddr, String),
 }
 
 impl fmt::Display for Trouble {
@@ -69,6 +75,11 @@ impl fmt::Display for Trouble {
                 f,
                 "le serveur qui répond sur {address} signe avec une autre clé que celle de cette \
                  configuration : ce n'est pas celui-ci"
+            ),
+            Trouble::Mirror(address, e) => write!(
+                f,
+                "le miroir sur UDP {address} ne répond pas : {e}\n  Le port est-il pris par un \
+                 autre programme, ou filtré sur la machine elle-même ?"
             ),
         }
     }
@@ -145,11 +156,46 @@ pub fn check(config: &Config) -> Result<Checked, Trouble> {
     if info.signing_key != key.public() {
         return Err(Trouble::OtherServer(address));
     }
+    let mirror = match info.udp_port {
+        Some(port) => Some(knock_on_the_mirror(where_to_knock(SocketAddr::new(
+            config.relay.listen.ip(),
+            port,
+        )))?),
+        None => None,
+    };
     Ok(Checked {
         address,
         fingerprint,
         info,
+        mirror,
     })
+}
+
+/// Asks the mirror where this question comes from, as a device would.
+fn knock_on_the_mirror(mirror: SocketAddr) -> Result<SocketAddr, Trouble> {
+    let trouble = |e: &dyn fmt::Display| Trouble::Mirror(mirror, e.to_string());
+    let anywhere: SocketAddr = if mirror.is_ipv6() {
+        "[::]:0".parse().expect("une adresse écrite en dur")
+    } else {
+        "0.0.0.0:0".parse().expect("une adresse écrite en dur")
+    };
+    let socket = std::net::UdpSocket::bind(anywhere).map_err(|e| trouble(&e))?;
+    socket
+        .set_read_timeout(Some(PATIENCE))
+        .map_err(|e| trouble(&e))?;
+    let nonce: probe::Nonce = rand::random();
+    socket
+        .send_to(&probe::who_am_i(nonce), mirror)
+        .map_err(|e| trouble(&e))?;
+    let mut buf = [0u8; 1500];
+    let (count, _) = socket.recv_from(&mut buf).map_err(|e| trouble(&e))?;
+    match probe::heard(&buf[..count]) {
+        Some(Heard::SeenAs {
+            nonce: answered,
+            seen,
+        }) if answered == nonce => Ok(seen),
+        _ => Err(trouble(&"la réponse n'est pas celle d'un miroir ZyrDesk")),
+    }
 }
 
 /// The host the devices type, out of the public address.
@@ -269,7 +315,7 @@ mod tests {
         };
         let config = Config::parse(&format!(
             "name = \"Essai\"\ndata_dir = \"{}\"\n\n[api]\nlisten = \"127.0.0.1:0\"\n{files}\
-             public_url = \"https://localhost\"\n",
+             public_url = \"https://localhost\"\n\n[relay]\nlisten = \"127.0.0.1:0\"\n",
             folder.display()
         ))
         .unwrap();
@@ -301,9 +347,20 @@ mod tests {
             assert_eq!(checked.fingerprint, fingerprint);
             assert_eq!(checked.info.name, "Essai");
             assert_eq!(checked.info.protocol, PROTOCOL);
+            // Le miroir a répondu, et a vu la question venir d'ici.
+            let seen = checked.mirror.expect("le miroir n'a pas été joint");
+            assert!(seen.ip().is_loopback(), "{seen}");
+            assert_eq!(checked.info.udp_port, running.app.udp_port);
             running.stop().await;
             let _ = std::fs::remove_dir_all(&folder);
         }
+    }
+
+    #[test]
+    fn a_mirror_that_does_not_answer_is_told_apart_from_one_that_does() {
+        let silent = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let refused = knock_on_the_mirror(silent.local_addr().unwrap()).unwrap_err();
+        assert!(matches!(refused, Trouble::Mirror(..)), "{refused}");
     }
 
     #[tokio::test(flavor = "multi_thread")]

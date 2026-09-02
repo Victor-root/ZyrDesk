@@ -14,6 +14,7 @@ use quinn::{ClientConfig, Endpoint, ServerConfig, TransportConfig};
 
 use crate::congestion::MediaProfile;
 use crate::identity::{AllowedPeers, Fingerprint, Identity, PinnedPeer};
+use crate::junction::Junction;
 use crate::path::{DegradedPath, Path};
 
 /// Payload carried around, without a copy when it changes hands.
@@ -121,7 +122,12 @@ impl From<std::io::Error> for EndpointError {
 }
 
 /// Settings shared by both ends.
-fn transport(profile: MediaProfile) -> Arc<TransportConfig> {
+///
+/// Through a junction, the path under a connection can change without
+/// the transport knowing, and a packet size found on one path is not
+/// worth anything on the next: discovery stays off, and every packet
+/// fits the floor every path is required to carry.
+fn transport(profile: MediaProfile, one_path: bool) -> Arc<TransportConfig> {
     let mut config = TransportConfig::default();
     config.congestion_controller_factory(Arc::new(profile));
     config.datagram_send_buffer_size(SEND_QUEUE);
@@ -130,11 +136,59 @@ fn transport(profile: MediaProfile) -> Arc<TransportConfig> {
         MAXIMUM_IDLE.try_into().expect("idle timeout representable"),
     ));
     config.keep_alive_interval(Some(KEEP_ALIVE_INTERVAL));
+    if !one_path {
+        config.mtu_discovery_config(None);
+    }
     Arc::new(config)
 }
 
 fn provider() -> Arc<rustls::crypto::CryptoProvider> {
     Arc::new(rustls::crypto::ring::default_provider())
+}
+
+/// What the end that waits presents, and whom it lets in.
+fn server_config(
+    identity: &Identity,
+    allowed: impl Into<AllowedPeers>,
+    profile: MediaProfile,
+    one_path: bool,
+) -> Result<ServerConfig, EndpointError> {
+    let mut tls = rustls::ServerConfig::builder_with_provider(provider())
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(|e| EndpointError::Configuration(e.to_string()))?
+        .with_client_cert_verifier(Arc::new(PinnedPeer::new(allowed)))
+        .with_single_cert(vec![identity.certificate().clone()], identity.key())
+        .map_err(|e| EndpointError::Configuration(e.to_string()))?;
+    tls.alpn_protocols = vec![PROTOCOL.to_vec()];
+
+    let quic =
+        QuicServerConfig::try_from(tls).map_err(|e| EndpointError::Configuration(e.to_string()))?;
+    let mut config = ServerConfig::with_crypto(Arc::new(quic));
+    config.transport_config(transport(profile, one_path));
+    Ok(config)
+}
+
+/// What the end that goes presents, and whom it expects.
+fn client_config(
+    identity: &Identity,
+    peer: Fingerprint,
+    profile: MediaProfile,
+    one_path: bool,
+) -> Result<ClientConfig, EndpointError> {
+    let mut tls = rustls::ClientConfig::builder_with_provider(provider())
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .map_err(|e| EndpointError::Configuration(e.to_string()))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(PinnedPeer::new(peer)))
+        .with_client_auth_cert(vec![identity.certificate().clone()], identity.key())
+        .map_err(|e| EndpointError::Configuration(e.to_string()))?;
+    tls.alpn_protocols = vec![PROTOCOL.to_vec()];
+
+    let quic =
+        QuicClientConfig::try_from(tls).map_err(|e| EndpointError::Configuration(e.to_string()))?;
+    let mut config = ClientConfig::new(Arc::new(quic));
+    config.transport_config(transport(profile, one_path));
+    Ok(config)
 }
 
 /// Opens the endpoint on the requested path.
@@ -159,6 +213,18 @@ fn open(
         quinn::EndpointConfig::default(),
         server,
         degraded,
+        runtime,
+    )?)
+}
+
+/// Opens the endpoint on a junction's socket.
+fn open_at(junction: &Junction, server: Option<ServerConfig>) -> Result<Endpoint, EndpointError> {
+    let runtime = quinn::default_runtime()
+        .ok_or_else(|| EndpointError::Configuration("no async runtime".to_string()))?;
+    Ok(Endpoint::new_with_abstract_socket(
+        quinn::EndpointConfig::default(),
+        server,
+        Arc::new(junction.clone()),
         runtime,
     )?)
 }
@@ -195,21 +261,24 @@ impl TunnelEndpoint {
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let mut tls = rustls::ServerConfig::builder_with_provider(provider())
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .map_err(|e| EndpointError::Configuration(e.to_string()))?
-            .with_client_cert_verifier(Arc::new(PinnedPeer::new(allowed)))
-            .with_single_cert(vec![identity.certificate().clone()], identity.key())
-            .map_err(|e| EndpointError::Configuration(e.to_string()))?;
-        tls.alpn_protocols = vec![PROTOCOL.to_vec()];
-
-        let quic = QuicServerConfig::try_from(tls)
-            .map_err(|e| EndpointError::Configuration(e.to_string()))?;
-        let mut config = ServerConfig::with_crypto(Arc::new(quic));
-        config.transport_config(transport(profile));
-
+        let config = server_config(identity, allowed, profile, true)?;
         Ok(Self {
             endpoint: open(listen, Some(config), path)?,
+        })
+    }
+
+    /// The end that waits, on a junction: reached through a card by the
+    /// computers the junction expects, and at its real address by the
+    /// others.
+    pub fn host_at(
+        identity: &Identity,
+        allowed: impl Into<AllowedPeers>,
+        profile: MediaProfile,
+        junction: &Junction,
+    ) -> Result<Self, EndpointError> {
+        let config = server_config(identity, allowed, profile, false)?;
+        Ok(Self {
+            endpoint: open_at(junction, Some(config))?,
         })
     }
 
@@ -231,21 +300,22 @@ impl TunnelEndpoint {
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let mut tls = rustls::ClientConfig::builder_with_provider(provider())
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .map_err(|e| EndpointError::Configuration(e.to_string()))?
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(PinnedPeer::new(peer)))
-            .with_client_auth_cert(vec![identity.certificate().clone()], identity.key())
-            .map_err(|e| EndpointError::Configuration(e.to_string()))?;
-        tls.alpn_protocols = vec![PROTOCOL.to_vec()];
-
-        let quic = QuicClientConfig::try_from(tls)
-            .map_err(|e| EndpointError::Configuration(e.to_string()))?;
-        let mut config = ClientConfig::new(Arc::new(quic));
-        config.transport_config(transport(profile));
-
+        let config = client_config(identity, peer, profile, true)?;
         let mut endpoint = open(listen, None, path)?;
+        endpoint.set_default_client_config(config);
+        Ok(Self { endpoint })
+    }
+
+    /// The end that goes, on a junction: what it connects to is the
+    /// card of the computer the junction expects.
+    pub fn client_at(
+        identity: &Identity,
+        peer: Fingerprint,
+        profile: MediaProfile,
+        junction: &Junction,
+    ) -> Result<Self, EndpointError> {
+        let config = client_config(identity, peer, profile, false)?;
+        let mut endpoint = open_at(junction, None)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })
     }
@@ -307,9 +377,15 @@ impl Connection {
         Self { inner }
     }
 
-    /// Where the other end of this connection is.
+    /// Where the other end of this connection is: a place on a network,
+    /// or the card of a computer reached through a junction.
+    ///
+    /// Written the plain way, whatever the socket speaks: on one that
+    /// speaks IPv6, the transport writes an IPv4 address in its mapped
+    /// form, which nobody else does.
     pub fn remote_address(&self) -> SocketAddr {
-        self.inner.remote_address()
+        let remote = self.inner.remote_address();
+        SocketAddr::new(remote.ip().to_canonical(), remote.port())
     }
 
     /// Payload one datagram can carry on the current path.

@@ -388,12 +388,14 @@ pose_les_questions() {
       ;;
   esac
 
+  # Le miroir répond sur ce port quoi qu'il arrive : c'est lui qui dit à
+  # un appareil son adresse vue de l'extérieur, et donc ce qui rend le
+  # direct possible. Le relais, lui, se débraye.
+  demande RELAY_PORT "$(t "Port UDP du miroir et du relais" 'UDP port of the mirror and the relay')" "${RELAY_PORT:-443}"
   if demande_oui "$(t "Activer le relais (secours quand aucun chemin direct n'existe)" 'Enable the relay (fallback when no direct path exists)')" "${RELAY_ENABLED:-oui}"; then
     RELAY_ENABLED=oui
-    demande RELAY_PORT "$(t 'Port UDP du relais et du miroir' 'UDP port of the relay and the mirror')" "${RELAY_PORT:-443}"
   else
     RELAY_ENABLED=non
-    RELAY_PORT=${RELAY_PORT:-443}
   fi
 
   demande DATA_DIR "$(t 'Dossier des données' 'Data folder')" "${DATA_DIR:-$DEFAULT_DATA}"
@@ -455,11 +457,7 @@ recapitule() {
   if [[ $TLS_MODE != 1 ]]; then
     panneau_cle "API" "TCP $API_PORT"
   fi
-  if [[ $RELAY_ENABLED == oui ]]; then
-    panneau_cle "$(t 'Relais et miroir' 'Relay and mirror')" "UDP $RELAY_PORT"
-  else
-    panneau_cle "$(t 'Relais' 'Relay')" "$(t 'désactivé' 'disabled')"
-  fi
+  panneau_cle "$(t 'Miroir et relais' 'Mirror and relay')" "UDP $RELAY_PORT$( [[ $RELAY_ENABLED == non ]] && t ', relais désactivé' ', relay disabled')"
   panneau_cle "$(t 'Données' 'Data')" "$DATA_DIR"
   panneau_cle "$(t 'Inscriptions' 'Registrations')" "$(politique_en_mots "$REGISTRATION")"
   panneau_cle "$(t 'Premier compte' 'First account')" "$ADMIN_USER"
@@ -734,9 +732,9 @@ resume() {
     panneau_ligne "  $(gras "$empreinte")"
   fi
   if [[ $TLS_MODE == 1 ]]; then
-    panneau_cle "$(t 'Ports à renvoyer sur la box' 'Ports to forward on the router')" "$(t "TCP 443 vers le mandataire" 'TCP 443 to the proxy')$( [[ $RELAY_ENABLED == oui ]] && echo ", UDP $RELAY_PORT $(t "vers $IP_LOCALE" "to $IP_LOCALE")")"
+    panneau_cle "$(t 'Ports à renvoyer sur la box' 'Ports to forward on the router')" "$(t "TCP 443 vers le mandataire, UDP $RELAY_PORT vers $IP_LOCALE" "TCP 443 to the proxy, UDP $RELAY_PORT to $IP_LOCALE")"
   else
-    panneau_cle "$(t "Ports à renvoyer sur la box vers $IP_LOCALE" "Ports to forward on the router to $IP_LOCALE")" "TCP $API_PORT$( [[ $RELAY_ENABLED == oui ]] && echo ", UDP $RELAY_PORT")"
+    panneau_cle "$(t "Ports à renvoyer sur la box vers $IP_LOCALE" "Ports to forward on the router to $IP_LOCALE")" "TCP $API_PORT, UDP $RELAY_PORT"
   fi
   panneau_cle "$(t 'Configuration' 'Configuration')" "$CONF"
   panneau_cle "$(t 'Données' 'Data')" "$DATA_DIR   $(t "(sauvegarde : zyrdesk-server backup <dossier>)" '(backup: zyrdesk-server backup <folder>)')"

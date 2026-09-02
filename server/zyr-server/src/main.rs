@@ -361,6 +361,14 @@ fn check(path: &Path) -> Result<(), String> {
             grouped(&fingerprint)
         );
     }
+    match (checked.info.udp_port, checked.mirror) {
+        (Some(port), Some(seen)) => {
+            println!("  Miroir : répond sur UDP {port}, cette question venait de {seen}");
+        }
+        _ => println!(
+            "  Miroir : aucun, le port UDP n'a pas pu être ouvert au démarrage (voir le journal)"
+        ),
+    }
     Ok(())
 }
 

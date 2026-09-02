@@ -40,6 +40,10 @@ pub struct Ongoing {
     pub process: u32,
     /// Where the tunnel puts that computer on this machine.
     pub at: String,
+    /// The real address the packets go to right now, and how long that
+    /// road takes to come back, in milliseconds.
+    pub via: String,
+    pub round_trip_ms: u64,
     /// The way the service holds towards that computer.
     ///
     /// Carried because one thing a session can ask travels on the
@@ -62,6 +66,8 @@ pub async fn sessions() -> Vec<Ongoing> {
             since: session.since.as_secs(),
             process: session.process,
             at: session.at,
+            via: session.via,
+            round_trip_ms: session.round_trip_ms,
             way: session.way.0,
         }),
         _ => None,
