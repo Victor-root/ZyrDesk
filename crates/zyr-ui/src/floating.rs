@@ -1744,6 +1744,7 @@ fn picture_of(_process: u32) -> Option<(i32, i32, i32, i32)> {
 fn shortcut(act: Act, process: u32) -> Result<(), String> {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
+        VK_CONTROL, VK_MENU, VK_SHIFT,
     };
 
     let (Some(letter), Some(key)) = (act.letter(), act.where_it_sits()) else {
@@ -1773,11 +1774,31 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
     const ALT: u16 = 0x38;
     const SHIFT: u16 = 0x2A;
 
-    let keys = [CTRL, ALT, SHIFT, key, key, SHIFT, ALT, CTRL];
+    // A modifier a finger is already holding is neither pressed nor
+    // released here. Releasing it for them leaves the system certain
+    // that finger has gone while it has not, and the next shortcut typed
+    // without lifting it is read as the bare key: it does nothing at
+    // all. This is typed in answer to a shortcut the person has just
+    // typed, so the finger in question is very often still down, and
+    // that is a shortcut which works or not depending on whether they
+    // let go in between. The engine reads the whole combination either
+    // way: what it does not get from us, it already has.
+    let to_press: Vec<u16> = [(CTRL, VK_CONTROL), (ALT, VK_MENU), (SHIFT, VK_SHIFT)]
+        .into_iter()
+        .filter(|(_, named)| !a_finger_holds(*named))
+        .map(|(place, _)| place)
+        .collect();
+
+    // Pressed in order, released in the mirror order: no key is left
+    // down that was not down before.
+    let mut keys: Vec<(u16, bool)> = to_press.iter().map(|place| (*place, false)).collect();
+    keys.push((key, false));
+    keys.push((key, true));
+    keys.extend(to_press.iter().rev().map(|place| (*place, true)));
+
     let events: Vec<INPUT> = keys
         .iter()
-        .enumerate()
-        .map(|(rank, key)| INPUT {
+        .map(|(key, up)| INPUT {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
                 ki: KEYBDINPUT {
@@ -1785,14 +1806,7 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
                     // the far end to work out from its own keyboard.
                     wVk: 0,
                     wScan: *key,
-                    // The first half presses, the second half releases,
-                    // in the mirror order: no key is left down.
-                    dwFlags: KEYEVENTF_SCANCODE
-                        | if rank >= keys.len() / 2 {
-                            KEYEVENTF_KEYUP
-                        } else {
-                            0
-                        },
+                    dwFlags: KEYEVENTF_SCANCODE | if *up { KEYEVENTF_KEYUP } else { 0 },
                     time: 0,
                     dwExtraInfo: 0,
                 },
@@ -1824,6 +1838,19 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         ));
         Err("Windows a refusé la combinaison de touches".to_string())
     }
+}
+
+/// Whether a finger is on that key at this instant.
+///
+/// Asked of the keyboard itself and not of this thread's own reading of
+/// it: this runs nowhere near the window that has the keys, and what
+/// that window has been told is neither here nor now.
+#[cfg(windows)]
+fn a_finger_holds(named: windows_sys::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+
+    // SAFETY: a named key, which is all this call reads.
+    unsafe { GetAsyncKeyState(named as i32) < 0 }
 }
 
 /// Whether Ctrl+Alt+Shift+`letter` is already claimed by something else

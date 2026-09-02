@@ -859,6 +859,12 @@ fn told(step: Step) -> Option<(String, Option<String>)> {
 /// guessing which one has already cost an evening, twice. Written where
 /// the timestamps in this journal cannot answer, since they are cut to
 /// the second and every part of this is smaller than that.
+///
+/// The last part is not a wait for the picture, and calling it one made
+/// this line lie by four seconds. The picture is laid the moment its
+/// window opens, well before; what comes after is this program watching
+/// the player for a while to be sure it does not die on the spot, which
+/// is what a far computer refusing the session looks like.
 struct Opening {
     asked: std::time::Instant,
     reached: Option<std::time::Duration>,
@@ -900,8 +906,9 @@ impl Opening {
                 _ => "non mesuré".to_string(),
             };
         format!(
-            "l'image est là après {} ms : {} pour joindre l'ordinateur distant, {} à lui demander \
-             ce qu'il faut, {} à lancer le lecteur, {} avant sa première image",
+            "session tenue après {} ms : {} pour joindre l'ordinateur distant, {} à lui demander \
+             ce qu'il faut, {} à lancer le lecteur, {} à le regarder tenir. L'image, elle, est \
+             posée dès que sa fenêtre s'ouvre, donc avant cette dernière attente",
             whole.as_millis(),
             since(Some(std::time::Duration::ZERO), self.reached),
             since(self.reached, self.starting),

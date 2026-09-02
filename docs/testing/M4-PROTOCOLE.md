@@ -1903,9 +1903,9 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Rien à faire, juste à lire.** Ouvrir une session, n'importe laquelle, et relever la dernière ligne de l'ouverture dans `interface.log` du **client** :
 >
-> `l'image est là après 5240 ms : 380 ms pour joindre l'ordinateur distant, 1900 ms à lui demander ce qu'il faut, 60 ms à lancer le lecteur, 2900 ms avant sa première image`
+> `session tenue après 5240 ms : 380 ms pour joindre l'ordinateur distant, 1900 ms à lui demander ce qu'il faut, 60 ms à lancer le lecteur, 2900 ms à le regarder tenir. L'image, elle, est posée dès que sa fenêtre s'ouvre, donc avant cette dernière attente`
 >
-> Les quatre morceaux ne se réparent pas au même endroit et un seul est vraiment le nôtre. « Joindre l'ordinateur distant » est le réseau et la course entre les adresses ; « lui demander ce qu'il faut » est ZyrDesk, ce sont les enceintes, la cadence et l'écran, et c'est là que le travail sur les écrans a pu coûter ; « lancer le lecteur » est Windows qui démarre un programme ; « avant sa première image » est le moteur client qui se connecte, s'appaire et décode.
+> Les quatre morceaux ne se réparent pas au même endroit et un seul est vraiment le nôtre. « Joindre l'ordinateur distant » est le réseau et la course entre les adresses ; « lui demander ce qu'il faut » est ZyrDesk, ce sont les enceintes, la cadence et l'écran, et c'est là que le travail sur les écrans a pu coûter ; « lancer le lecteur » est Windows qui démarre un programme ; « le regarder tenir » n'est une attente de personne, c'est ZyrDesk qui surveille le lecteur quelques secondes pour être sûr qu'il ne meurt pas sur place, ce à quoi ressemble un ordinateur distant qui refuse la session. L'image est à l'écran bien avant cette dernière, et la ligne `image du lecteur … posée dans la fenêtre de ZyrDesk` en donne la seconde.
 >
 > **À relever dans les deux sens et sur les trois machines**, parce que le morceau qui coûte n'est pas le même partout : celle qui emprunte son écran virtuel paie une seconde de plus que les autres dans le deuxième morceau.
 
