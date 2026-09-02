@@ -15,6 +15,7 @@ use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
+use zyr_broker::rest::Access;
 use zyr_proto::net::EnginePorts;
 use zyr_proto::session::{Preferred, Serving, WantedScreen};
 use zyr_transport::{Fingerprint, MediaProfile};
@@ -26,7 +27,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 27;
+pub const PROTOCOL: u32 = 28;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -268,6 +269,28 @@ pub enum Request {
     Settings,
     /// Changes it, for this session and all the ones after.
     Choose { preferred: Preferred },
+    /// Whether this computer is attached to an account, and how the
+    /// link stands.
+    Account,
+    /// Attaches this computer to an account, on a server.
+    ///
+    /// The service does the attaching and keeps what comes of it: it is
+    /// the one holding this computer's key, which is what the server
+    /// asks to be proven, and the one that stays up once the window has
+    /// gone. A server nobody vouches for is answered with the key it
+    /// presented rather than taken or refused: the person compares it
+    /// with what the installation showed, and asks again with it pinned.
+    Attach(Attach),
+    /// Takes this computer off its account: the link is forgotten here,
+    /// and the device is revoked at the server.
+    Detach,
+    /// The devices of the account, this computer included.
+    Devices,
+    /// Renames one of them, at the server.
+    RenameDevice { device: String, name: String },
+    /// Revokes one of them: it can no longer speak for the account, and
+    /// its sessions close.
+    RevokeDevice { device: String },
 }
 
 impl Request {
@@ -374,6 +397,27 @@ impl Request {
             "choose" => Ok(Request::Choose {
                 preferred: fields.preferred(),
             }),
+            "account" => Ok(Request::Account),
+            "attach" => Ok(Request::Attach(Attach {
+                server: unpacked(fields.text("server")?),
+                username: unpacked(fields.text("username")?),
+                password: unpacked(fields.text("password")?),
+                register: fields.flag("register", false).then(|| Registering {
+                    email: fields.text("email").ok().map(unpacked),
+                    invitation: fields.text("invitation").ok().map(unpacked),
+                }),
+                name: fields.text("name").ok().map(unpacked).unwrap_or_default(),
+                pin: fields.parsed("pin").ok(),
+            })),
+            "detach" => Ok(Request::Detach),
+            "devices" => Ok(Request::Devices),
+            "rename-device" => Ok(Request::RenameDevice {
+                device: fields.text("device")?.to_string(),
+                name: unpacked(fields.text("name")?),
+            }),
+            "revoke-device" => Ok(Request::RevokeDevice {
+                device: fields.text("device")?.to_string(),
+            }),
             other => Err(Malformed(format!("verbe inconnu « {other} »"))),
         }
     }
@@ -446,6 +490,36 @@ impl fmt::Display for Request {
             }
             Request::Settings => f.write_str("settings"),
             Request::Choose { preferred } => write!(f, "choose {}", spelled(preferred)),
+            Request::Account => f.write_str("account"),
+            Request::Attach(attach) => {
+                write!(
+                    f,
+                    "attach server={} username={} password={} name={}",
+                    packed(&attach.server),
+                    packed(&attach.username),
+                    packed(&attach.password),
+                    packed(&attach.name)
+                )?;
+                if let Some(pin) = attach.pin {
+                    write!(f, " pin={pin}")?;
+                }
+                if let Some(registering) = &attach.register {
+                    f.write_str(" register=yes")?;
+                    if let Some(email) = &registering.email {
+                        write!(f, " email={}", packed(email))?;
+                    }
+                    if let Some(invitation) = &registering.invitation {
+                        write!(f, " invitation={}", packed(invitation))?;
+                    }
+                }
+                Ok(())
+            }
+            Request::Detach => f.write_str("detach"),
+            Request::Devices => f.write_str("devices"),
+            Request::RenameDevice { device, name } => {
+                write!(f, "rename-device device={device} name={}", packed(name))
+            }
+            Request::RevokeDevice { device } => write!(f, "revoke-device device={device}"),
         }
     }
 }
@@ -453,6 +527,30 @@ impl fmt::Display for Request {
 /// How a yes-or-no travels.
 fn said(yes: bool) -> &'static str {
     if yes { "yes" } else { "no" }
+}
+
+/// How whether a computer of the account accepts remote access travels:
+/// the same words the holdup above uses for what stands in the way.
+fn access_spelled(access: Access) -> &'static str {
+    match access {
+        Access::Off => "off",
+        Access::Ready => "ready",
+        Access::Starting => "starting",
+        Access::EngineMissing => "engine-missing",
+        Access::EngineWontStand => "engine-wont-stand",
+    }
+}
+
+/// What a word means, a computer on its way up standing in for anything
+/// this half of the product has never heard of, as for the holdup.
+fn access_read(said: &str) -> Access {
+    match said {
+        "off" => Access::Off,
+        "ready" => Access::Ready,
+        "engine-missing" => Access::EngineMissing,
+        "engine-wont-stand" => Access::EngineWontStand,
+        _ => Access::Starting,
+    }
 }
 
 /// The fields a set of preferences travels as, shared by the question
@@ -546,6 +644,83 @@ pub struct Peer {
     /// Only those can be taken off again: what the network announces
     /// comes back the moment it is removed.
     pub written: bool,
+    /// What the account says of it, when it is one of the account's own
+    /// computers or one a contact shared.
+    ///
+    /// The third place a computer comes from, beside the network and the
+    /// hand. A computer on the network and of the account is one card,
+    /// with the network's address and the account's word on it.
+    pub account: Option<OfAccount>,
+}
+
+/// What the account says of a computer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfAccount {
+    /// Its identifier at the server, which is what a session towards it
+    /// is asked by when the network does not carry it.
+    pub device: String,
+    /// Whether it is connected to the server right now.
+    pub online: bool,
+    /// Whether it accepts remote access, and if not, why.
+    pub access: Access,
+    /// The username of its owner, when it was shared with this account
+    /// rather than being one of its own.
+    pub shared_by: Option<String>,
+}
+
+/// The link of this computer to an account, as it stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Account {
+    /// `https://host:port`.
+    pub server: String,
+    /// What the server calls itself.
+    pub name: String,
+    pub username: String,
+    /// This computer's identifier at the server.
+    pub device: String,
+    /// Whether the live channel to the server is open right now.
+    pub connected: bool,
+    /// Why it is not, while it is not.
+    pub trouble: Option<String>,
+}
+
+/// Creating the account on the way, rather than entering one.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Registering {
+    pub email: Option<String>,
+    pub invitation: Option<String>,
+}
+
+/// What attaching this computer to an account takes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attach {
+    /// The server, as the person typed it.
+    pub server: String,
+    pub username: String,
+    pub password: String,
+    /// Present when the account is to be created first.
+    pub register: Option<Registering>,
+    /// What this computer is called at the server. Empty takes the name
+    /// Windows gives it.
+    pub name: String,
+    /// The key of a server nobody vouches for, confirmed by the person
+    /// against what the installation showed.
+    pub pin: Option<Fingerprint>,
+}
+
+/// One device of the account, as the server lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Device {
+    pub id: String,
+    pub name: String,
+    pub fingerprint: Fingerprint,
+    pub online: bool,
+    pub access: Access,
+    /// Whether it is this computer.
+    pub this: bool,
+    /// When it was last connected, in seconds since the epoch, when it
+    /// is not now.
+    pub last_seen: Option<u64>,
 }
 
 /// A session this computer is holding towards another.
@@ -623,6 +798,18 @@ pub enum Answer {
     /// Not done, and why. The text is meant for the person, not the
     /// program: it is shown as it is.
     Refused(String),
+    /// The link of this computer to an account, or none.
+    Account(Option<Account>),
+    /// The server presented a key nobody vouches for, and nothing was
+    /// pinned: here it is, for the person to compare and confirm.
+    ///
+    /// Neither done nor refused. The attaching is asked again with that
+    /// key pinned once the person has said it is the right one.
+    Unpinned {
+        presented: Fingerprint,
+    },
+    /// One device of the account. The list ends on `Done`.
+    Device(Device),
 }
 
 impl Answer {
@@ -661,6 +848,12 @@ impl Answer {
                 port: fields.parsed("port")?,
                 seen: fields.flag("seen", true),
                 written: fields.flag("written", false),
+                account: fields.text("device").ok().map(|device| OfAccount {
+                    device: device.to_string(),
+                    online: fields.flag("online", false),
+                    access: access_read(fields.text("access").unwrap_or_default()),
+                    shared_by: fields.text("shared").ok().map(unpacked),
+                }),
             })),
             "session" => Ok(Answer::Session(Session {
                 way: WayId(fields.parsed("way")?),
@@ -688,6 +881,33 @@ impl Answer {
             "journal" => Ok(Answer::Journal(unfolded(rest.trim()))),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
+            "account" => Ok(Answer::Account(
+                fields
+                    .flag("linked", false)
+                    .then(|| {
+                        Ok::<Account, Malformed>(Account {
+                            server: unpacked(fields.text("server")?),
+                            name: fields.text("name").ok().map(unpacked).unwrap_or_default(),
+                            username: unpacked(fields.text("username")?),
+                            device: fields.text("device")?.to_string(),
+                            connected: fields.flag("connected", false),
+                            trouble: fields.text("trouble").ok().map(unpacked),
+                        })
+                    })
+                    .transpose()?,
+            )),
+            "unpinned" => Ok(Answer::Unpinned {
+                presented: fields.parsed("presented")?,
+            }),
+            "device" => Ok(Answer::Device(Device {
+                id: fields.text("id")?.to_string(),
+                name: unpacked(fields.text("name")?),
+                fingerprint: fields.parsed("fingerprint")?,
+                online: fields.flag("online", false),
+                access: access_read(fields.text("access").unwrap_or_default()),
+                this: fields.flag("this", false),
+                last_seen: fields.parsed("last-seen").ok(),
+            })),
             other => Err(Malformed(format!("réponse inconnue « {other} »"))),
         }
     }
@@ -719,16 +939,31 @@ impl fmt::Display for Answer {
                 reached.engine.base(),
                 reached.packet
             ),
-            Answer::Peer(peer) => write!(
-                f,
-                "peer name={} fingerprint={} address={} port={} seen={} written={}",
-                packed(&peer.name),
-                peer.fingerprint,
-                packed(&peer.host),
-                peer.port,
-                said(peer.seen),
-                said(peer.written)
-            ),
+            Answer::Peer(peer) => {
+                write!(
+                    f,
+                    "peer name={} fingerprint={} address={} port={} seen={} written={}",
+                    packed(&peer.name),
+                    peer.fingerprint,
+                    packed(&peer.host),
+                    peer.port,
+                    said(peer.seen),
+                    said(peer.written)
+                )?;
+                if let Some(of_account) = &peer.account {
+                    write!(
+                        f,
+                        " device={} online={} access={}",
+                        of_account.device,
+                        said(of_account.online),
+                        access_spelled(of_account.access)
+                    )?;
+                    if let Some(owner) = &of_account.shared_by {
+                        write!(f, " shared={}", packed(owner))?;
+                    }
+                }
+                Ok(())
+            }
             Answer::Session(session) => write!(
                 f,
                 "session way={} towards={} peer={} process={} at={} since={}",
@@ -760,6 +995,39 @@ impl fmt::Display for Answer {
             // The reason travels on one line: a newline would be read as
             // the start of another message.
             Answer::Refused(reason) => write!(f, "no {}", folded(reason)),
+            Answer::Account(None) => f.write_str("account linked=no"),
+            Answer::Account(Some(account)) => {
+                write!(
+                    f,
+                    "account linked=yes server={} name={} username={} device={} connected={}",
+                    packed(&account.server),
+                    packed(&account.name),
+                    packed(&account.username),
+                    account.device,
+                    said(account.connected)
+                )?;
+                if let Some(trouble) = &account.trouble {
+                    write!(f, " trouble={}", packed(trouble))?;
+                }
+                Ok(())
+            }
+            Answer::Unpinned { presented } => write!(f, "unpinned presented={presented}"),
+            Answer::Device(device) => {
+                write!(
+                    f,
+                    "device id={} name={} fingerprint={} online={} access={} this={}",
+                    device.id,
+                    packed(&device.name),
+                    device.fingerprint,
+                    said(device.online),
+                    access_spelled(device.access),
+                    said(device.this)
+                )?;
+                if let Some(seen) = device.last_seen {
+                    write!(f, " last-seen={seen}")?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -1053,6 +1321,46 @@ mod tests {
             Request::Choose {
                 preferred: Preferred::default(),
             },
+            Request::Account,
+            // Un mot de passe porte des espaces, et le nom du serveur est
+            // ce que la personne a tapé : les deux traversent le même
+            // champ que les autres textes.
+            Request::Attach(Attach {
+                server: "zyr.exemple.fr:8443".to_string(),
+                username: "victor".to_string(),
+                password: "douze caractères au moins".to_string(),
+                register: None,
+                name: String::new(),
+                pin: None,
+            }),
+            Request::Attach(Attach {
+                server: "https://192.168.1.40".to_string(),
+                username: "victor".to_string(),
+                password: "un autre".to_string(),
+                register: Some(Registering {
+                    email: Some("victor@exemple.fr".to_string()),
+                    invitation: Some("AB12-CD34".to_string()),
+                }),
+                name: "PC de Victor".to_string(),
+                pin: Some(fingerprint()),
+            }),
+            Request::Attach(Attach {
+                server: "zyr.exemple.fr".to_string(),
+                username: "victor".to_string(),
+                password: "un autre".to_string(),
+                register: Some(Registering::default()),
+                name: "PC".to_string(),
+                pin: None,
+            }),
+            Request::Detach,
+            Request::Devices,
+            Request::RenameDevice {
+                device: "d1".to_string(),
+                name: "PC du salon".to_string(),
+            },
+            Request::RevokeDevice {
+                device: "d1".to_string(),
+            },
         ]
     }
 
@@ -1117,6 +1425,7 @@ mod tests {
                 port: 47000,
                 seen: true,
                 written: false,
+                account: None,
             }),
             Answer::Peer(Peer {
                 name: "PC fixe".to_string(),
@@ -1125,6 +1434,40 @@ mod tests {
                 port: 47000,
                 seen: false,
                 written: true,
+                account: None,
+            }),
+            // Un ordinateur du compte que le réseau ne porte pas : sa
+            // route est son identifiant chez le serveur.
+            Answer::Peer(Peer {
+                name: "Portable".to_string(),
+                fingerprint: fingerprint(),
+                host: "account:d2".to_string(),
+                port: 47000,
+                seen: false,
+                written: false,
+                account: Some(OfAccount {
+                    device: "d2".to_string(),
+                    online: true,
+                    access: Access::Ready,
+                    shared_by: None,
+                }),
+            }),
+            // Et un ordinateur qu'un contact a partagé, vu aussi sur le
+            // réseau local : une seule carte, avec l'adresse du réseau et
+            // le mot du compte.
+            Answer::Peer(Peer {
+                name: "PC de l'atelier".to_string(),
+                fingerprint: fingerprint(),
+                host: "192.168.1.30".to_string(),
+                port: 47000,
+                seen: true,
+                written: false,
+                account: Some(OfAccount {
+                    device: "d9".to_string(),
+                    online: false,
+                    access: Access::EngineMissing,
+                    shared_by: Some("un ami".to_string()),
+                }),
             }),
             Answer::Session(Session {
                 way: WayId(3),
@@ -1159,6 +1502,46 @@ mod tests {
             },
             Answer::Done,
             Answer::Refused("cet ordinateur a refusé l'accès".to_string()),
+            Answer::Account(None),
+            Answer::Account(Some(Account {
+                server: "https://zyr.exemple.fr:443".to_string(),
+                name: "Maison".to_string(),
+                username: "victor".to_string(),
+                device: "d1".to_string(),
+                connected: true,
+                trouble: None,
+            })),
+            // Un ennui s'écrit pour être lu, sur plusieurs lignes au
+            // besoin : il voyage replié comme un refus.
+            Answer::Account(Some(Account {
+                server: "https://192.168.1.40:8443".to_string(),
+                name: String::new(),
+                username: "victor".to_string(),
+                device: "d1".to_string(),
+                connected: false,
+                trouble: Some("192.168.1.40:8443 ne répond pas.\nRéessai dans 40 s".to_string()),
+            })),
+            Answer::Unpinned {
+                presented: fingerprint(),
+            },
+            Answer::Device(Device {
+                id: "d1".to_string(),
+                name: "PC de Victor".to_string(),
+                fingerprint: fingerprint(),
+                online: true,
+                access: Access::Ready,
+                this: true,
+                last_seen: None,
+            }),
+            Answer::Device(Device {
+                id: "d2".to_string(),
+                name: "Portable".to_string(),
+                fingerprint: fingerprint(),
+                online: false,
+                access: Access::Off,
+                this: false,
+                last_seen: Some(1_780_000_000),
+            }),
         ]
     }
 
@@ -1239,6 +1622,33 @@ mod tests {
     }
 
     #[test]
+    fn a_computer_of_the_account_reads_back_with_the_account_s_word_on_it() {
+        // Une fenêtre plus ancienne que le service ne connaît pas le
+        // compte : elle doit lire la carte sans lui, pas la perdre.
+        let line = format!(
+            "peer name=Portable fingerprint={} address=account:d2 port=47000 seen=no written=no",
+            fingerprint()
+        );
+        let Ok(Answer::Peer(read)) = Answer::parse(&line) else {
+            panic!("« {line} » n'est pas relu comme un ordinateur");
+        };
+        assert_eq!(read.account, None);
+
+        // Et un état d'accès que cette moitié n'a jamais entendu se lit
+        // comme un démarrage, qui est vrai le temps de la mettre à jour.
+        assert_eq!(access_read("un-etat-inedit"), Access::Starting);
+        for access in [
+            Access::Off,
+            Access::Ready,
+            Access::Starting,
+            Access::EngineMissing,
+            Access::EngineWontStand,
+        ] {
+            assert_eq!(access_read(access_spelled(access)), access);
+        }
+    }
+
+    #[test]
     fn a_holdup_nobody_understands_reads_as_the_ordinary_case() {
         // Une moitié plus ancienne du produit ne doit pas afficher un
         // empêchement inventé : elle montre « démarrage », qui est vrai
@@ -1294,6 +1704,7 @@ mod tests {
                 port: 47000,
                 seen: true,
                 written: false,
+                account: None,
             })
             .to_string();
             let Ok(Answer::Peer(read)) = Answer::parse(&sent) else {

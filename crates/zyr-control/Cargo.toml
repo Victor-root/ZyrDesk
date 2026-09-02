@@ -10,6 +10,7 @@ repository.workspace = true
 tokio = { version = "1.53.1", features = ["net", "io-util", "rt"] }
 zyr-proto.workspace = true
 zyr-transport.workspace = true
+zyr-broker.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [

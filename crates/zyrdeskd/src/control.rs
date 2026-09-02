@@ -11,15 +11,18 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::io;
+use std::net::SocketAddr;
 
 use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_control::pipe::Heard;
 use zyr_control::{Answer, Door, PROTOCOL, Request, Standing};
 use zyr_proto::log::Log;
+use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_transport::{Fingerprint, authorized};
 
+use crate::account::{self, Attaching};
 use crate::known;
 use crate::machine::Machine;
 use crate::supervisor::StopOrder;
@@ -155,6 +158,15 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
                 .map(Answer::Session)
                 .collect(),
         ),
+        Request::Devices => ended(
+            answering
+                .machine
+                .account
+                .devices()
+                .into_iter()
+                .map(Answer::Device)
+                .collect(),
+        ),
         other => vec![one(other, answering).await],
     }
 }
@@ -173,12 +185,12 @@ fn ended(mut said: Vec<Answer>) -> Vec<Answer> {
 /// A choice honoured but not kept would come back to haunt whoever made
 /// it at the next restart, so it is answered as a failure and not as a
 /// success with a footnote.
-fn kept(written: std::io::Result<()>) -> Result<(), Answer> {
+fn kept(written: std::io::Result<()>) -> Result<(), String> {
     written.map_err(|e| {
-        Answer::Refused(format!(
+        format!(
             "le choix n'a pas pu être enregistré : {e}\n  \
              Il aurait été oublié au prochain démarrage."
-        ))
+        )
     })
 }
 
@@ -199,6 +211,62 @@ fn every_address_of(peer: Fingerprint, answering: &Answering) -> Vec<std::net::I
         .unwrap_or_default()
 }
 
+/// Where to knock to reach that computer, what to call it on the way,
+/// and the meeting it took to know, when it took one.
+///
+/// A computer named by its road at the server is asked of the account:
+/// the server presents the two, the far one lets this one in, and what
+/// comes back is where it says it answers. A computer named by an
+/// address is resolved, and every address it was heard on is tried
+/// beside it, whichever way it was named.
+async fn where_to_knock(
+    host: &str,
+    peer: Fingerprint,
+    answering: &Answering,
+) -> Result<(Option<String>, String, Vec<SocketAddr>), String> {
+    let also = every_address_of(peer, answering);
+    let Some(device) = account::device_of_road(host) else {
+        let candidates = crate::ways::where_to_knock(host, &also)?;
+        return Ok((None, host.to_string(), candidates));
+    };
+    let met = answering.machine.account.rendezvous(device).await?;
+    // The fingerprint on the card is what the tunnel will pin, and the
+    // server has just named one: two different answers is a computer
+    // that changed key, or a server that lies, and neither is knocked on.
+    if met.peer != peer {
+        answering.machine.account.ended(&met.session);
+        return Err(format!(
+            "l'empreinte de {} n'est plus celle attendue.\n  \
+             Le serveur dit {}, cette fenêtre attendait {peer}.",
+            met.name, met.peer
+        ));
+    }
+    let mut candidates = met.candidates;
+    for address in also {
+        let candidate = SocketAddr::new(address, TUNNEL_PORT);
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    Ok((Some(met.session), met.name, candidates))
+}
+
+/// One question asked of a computer, wherever it is: the meeting it took
+/// to reach it is over once the question is answered.
+async fn one_question<T>(
+    host: &str,
+    peer: Fingerprint,
+    answering: &Answering,
+    ask: impl AsyncFnOnce(&str, &[SocketAddr]) -> Result<T, String>,
+) -> Result<T, String> {
+    let (meeting, label, candidates) = where_to_knock(host, peer, answering).await?;
+    let answered = ask(&label, &candidates).await;
+    if let Some(session) = meeting {
+        answering.machine.account.ended(&session);
+    }
+    answered
+}
+
 async fn one(request: Request, answering: &Answering) -> Answer {
     match request {
         Request::Standing => {
@@ -217,10 +285,28 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             })
         }
         Request::Reach { host, peer, media } => {
-            let also = every_address_of(peer, answering);
-            match answering.machine.ways.open(&host, peer, media, &also).await {
-                Ok(reached) => Answer::Reached(reached),
-                Err(reason) => Answer::Refused(reason),
+            let (meeting, label, candidates) = match where_to_knock(&host, peer, answering).await {
+                Ok(found) => found,
+                Err(reason) => return Answer::Refused(reason),
+            };
+            match answering
+                .machine
+                .ways
+                .open(&label, peer, media, candidates)
+                .await
+            {
+                Ok(reached) => {
+                    if let Some(session) = meeting {
+                        answering.machine.account.follow(reached.way, session);
+                    }
+                    Answer::Reached(reached)
+                }
+                Err(reason) => {
+                    if let Some(session) = meeting {
+                        answering.machine.account.ended(&session);
+                    }
+                    Answer::Refused(reason)
+                }
             }
         }
         Request::Pair { way, pin } => {
@@ -314,7 +400,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                     });
                     Answer::Done
                 }
-                Err(refusal) => refusal,
+                Err(reason) => Answer::Refused(reason),
             }
         }
         // The engine reads both of these once, when it starts, so
@@ -331,7 +417,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                     ));
                     Answer::Done
                 }
-                Err(refusal) => refusal,
+                Err(reason) => Answer::Refused(reason),
             }
         }
         Request::SetTrust { on } => {
@@ -344,7 +430,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                     });
                     Answer::Done
                 }
-                Err(refusal) => refusal,
+                Err(reason) => Answer::Refused(reason),
             }
         }
         Request::Authorize { peer, host, name } => {
@@ -436,24 +522,24 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 .journal(answering.fingerprint, &answering.log),
         ),
         Request::FarJournal { host, peer } => {
-            let also = every_address_of(peer, answering);
-            match answering
-                .machine
-                .ways
-                .ask_a_computer_for_its_journal(&host, peer, &also)
-                .await
+            let ways = &answering.machine.ways;
+            match one_question(&host, peer, answering, async |label, candidates| {
+                ways.ask_a_computer_for_its_journal(label, peer, candidates)
+                    .await
+            })
+            .await
             {
                 Ok(text) => Answer::Journal(text),
                 Err(reason) => Answer::Refused(reason),
             }
         }
         Request::ClearFarJournal { host, peer } => {
-            let also = every_address_of(peer, answering);
-            match answering
-                .machine
-                .ways
-                .ask_a_computer_to_empty_its_journal(&host, peer, &also)
-                .await
+            let ways = &answering.machine.ways;
+            match one_question(&host, peer, answering, async |label, candidates| {
+                ways.ask_a_computer_to_empty_its_journal(label, peer, candidates)
+                    .await
+            })
+            .await
             {
                 Ok(()) => Answer::Done,
                 Err(reason) => Answer::Refused(reason),
@@ -466,11 +552,31 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                     answering.log.write("session settings changed");
                     Answer::Done
                 }
-                Err(refusal) => refusal,
+                Err(reason) => Answer::Refused(reason),
             }
         }
+        Request::Account => Answer::Account(answering.machine.account.standing()),
+        Request::Attach(attach) => match answering.machine.account.attach(attach).await {
+            Ok(()) => Answer::Done,
+            Err(Attaching::Unpinned(presented)) => Answer::Unpinned { presented },
+            Err(Attaching::Refused(reason)) => Answer::Refused(reason),
+        },
+        Request::Detach => match answering.machine.account.detach().await {
+            Ok(()) => Answer::Done,
+            Err(reason) => Answer::Refused(reason),
+        },
+        Request::RenameDevice { device, name } => {
+            match answering.machine.account.rename(&device, &name).await {
+                Ok(()) => Answer::Done,
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
+        Request::RevokeDevice { device } => match answering.machine.account.revoke(&device).await {
+            Ok(()) => Answer::Done,
+            Err(reason) => Answer::Refused(reason),
+        },
         // Handled above, where several answers can be given.
-        Request::Peers | Request::Sessions => Answer::Done,
+        Request::Peers | Request::Sessions | Request::Devices => Answer::Done,
     }
 }
 
@@ -507,6 +613,7 @@ mod tests {
                 ways: crate::ways::Ways::new(log.clone()),
                 remembered: crate::preferences::Remembered::at(folder.join("preferences.conf")),
                 neighbours: zyr_lan::Found::new(),
+                account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
             };
 
             let desk = Desk::open(
@@ -667,6 +774,41 @@ mod tests {
                 panic!("attendu un état");
             };
             assert!(standing.wanted);
+        });
+    }
+
+    #[test]
+    fn without_a_link_the_account_is_none_and_asks_nothing_of_anyone() {
+        // Le mode autonome, à l'octet près : pas de lien, pas de serveur,
+        // et les questions sur le compte se répondent sans réseau.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let bench = Bench::set_up(runtime.handle(), "account");
+
+        runtime.block_on(async {
+            let mut caller = bench.caller().await;
+            let answer = caller.ask(&Request::Account).await.unwrap();
+            assert!(matches!(answer, Answer::Account(None)), "{answer}");
+
+            let devices = caller.ask_for_a_list(&Request::Devices).await.unwrap();
+            assert!(devices.is_empty(), "{devices:?}");
+
+            let answer = caller.ask(&Request::Detach).await.unwrap();
+            assert!(matches!(answer, Answer::Refused(_)), "{answer}");
+
+            // Une route de compte sans compte est refusée avant qu'une
+            // seule adresse soit essayée.
+            let answer = caller
+                .ask(&Request::Reach {
+                    host: "account:d2".to_string(),
+                    peer: bench.fingerprint,
+                    media: zyr_transport::MediaProfile::default(),
+                })
+                .await
+                .unwrap();
+            let Answer::Refused(reason) = answer else {
+                panic!("attendu un refus, reçu {answer}");
+            };
+            assert!(reason.contains("aucun compte"), "{reason}");
         });
     }
 

@@ -1,10 +1,10 @@
 //! This computer, as everything answering for it has to see it.
 //!
-//! The service holds four things that outlive any one engine: whether
+//! The service holds five things that outlive any one engine: whether
 //! this computer can be reached, the ways out it has open, what its
-//! owner asked for, and who it sees on the network. The desk answers the
-//! interface from them, the door answers other computers from them, and
-//! neither owns any of it.
+//! owner asked for, who it sees on the network, and the account it is
+//! attached to when it is. The desk answers the interface from them, the
+//! door answers other computers from them, and neither owns any of it.
 //!
 //! It is also where a journal is gathered. That page says two kinds of
 //! thing: what any program on the machine can read for itself, which
@@ -20,14 +20,18 @@
 
 use std::sync::{Arc, Mutex};
 
-use zyr_control::{Holdup, PROTOCOL};
+use zyr_account::Snapshot;
+use zyr_broker::rest::DeviceInfo;
+use zyr_control::{Holdup, OfAccount, PROTOCOL};
 use zyr_lan::Found;
 use zyr_proto::journal::Journal;
 use zyr_proto::log::Log;
+use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
 use zyr_transport::Fingerprint;
 
-use crate::known;
+use crate::account::{self, Account};
+use crate::known::{self, Known};
 use crate::preferences::Remembered;
 use crate::ways::Ways;
 
@@ -74,14 +78,16 @@ impl Default for Hosting {
 /// What this computer holds, for as long as the service runs.
 ///
 /// None of it belongs to one engine: reaching another computer, being
-/// reachable, what its owner asked for and who is on the network all
-/// outlive any number of engines starting and stopping.
+/// reachable, what its owner asked for, who is on the network and the
+/// account it is attached to all outlive any number of engines starting
+/// and stopping.
 #[derive(Clone)]
 pub struct Machine {
     pub hosting: Hosting,
     pub ways: Ways,
     pub remembered: Remembered,
     pub neighbours: Found,
+    pub account: Account,
 }
 
 impl Machine {
@@ -106,9 +112,32 @@ impl Machine {
                 "aucune confiance accordée"
             },
         );
+        journal.says("Compte", &self.account_line());
         journal.says("Sessions ouvertes", &self.ways.count().to_string());
         journal.says("Ordinateurs vus", &self.computers_seen(log));
         journal.gathered()
+    }
+
+    /// The link to an account, as it stands, in one line.
+    ///
+    /// A server that cannot be reached is named with the reason: two
+    /// computers of one account that never see each other is a fault
+    /// whose whole explanation is on this line, on one of the two.
+    fn account_line(&self) -> String {
+        let Some(account) = self.account.standing() else {
+            return "aucun".to_string();
+        };
+        let state = if account.connected {
+            "relié".to_string()
+        } else {
+            format!(
+                "injoignable{}",
+                account
+                    .trouble
+                    .map_or_else(String::new, |why| format!(" : {}", why.replace('\n', " ")))
+            )
+        };
+        format!("{} sur {}, {state}", account.username, account.server)
     }
 
     /// What remote access amounts to right now, in the same words the
@@ -143,11 +172,12 @@ impl Machine {
 
     /// The computers the home screen shows.
     ///
-    /// Those announcing themselves on the local network, and then those
-    /// written down by hand that are not announcing anything. A computer
-    /// on both lists is announced once: what the network says of it is
-    /// fresher than what was written down months ago, its address most
-    /// of all.
+    /// Those announcing themselves on the local network, then those
+    /// written down by hand that are not announcing anything, then those
+    /// the account names that neither carries. A computer on several
+    /// lists is one card: what the network says of it is fresher than
+    /// what was written down months ago, its address most of all, and
+    /// the account's word goes on that card rather than on a second one.
     pub fn on_screen(&self, log: &Log) -> Vec<zyr_control::Peer> {
         let written = match known::read(&paths::known_computers()) {
             Ok(written) => written,
@@ -156,41 +186,105 @@ impl Machine {
                 Vec::new()
             }
         };
-
-        let mut shown: Vec<zyr_control::Peer> = self
-            .neighbours
-            .peers()
-            .into_iter()
-            .map(|peer| zyr_control::Peer {
-                written: written
-                    .iter()
-                    .any(|known| known.fingerprint == peer.fingerprint),
-                name: peer.name,
-                fingerprint: peer.fingerprint,
-                host: peer.address.to_string(),
-                port: peer.port,
-                seen: true,
-            })
-            .collect();
-
-        for computer in written {
-            if shown
-                .iter()
-                .any(|peer| peer.fingerprint == computer.fingerprint)
-            {
-                continue;
-            }
-            shown.push(zyr_control::Peer {
-                name: computer.name,
-                fingerprint: computer.fingerprint,
-                host: computer.host,
-                port: zyr_proto::net::TUNNEL_PORT,
-                seen: false,
-                written: true,
-            });
-        }
-        shown
+        merged(
+            self.neighbours.peers(),
+            written,
+            self.account.snapshot().as_ref(),
+        )
     }
+}
+
+/// The computers of the three lists, as one list.
+fn merged(
+    seen: Vec<zyr_lan::Peer>,
+    written: Vec<Known>,
+    account: Option<&Snapshot>,
+) -> Vec<zyr_control::Peer> {
+    let of_account = |fingerprint: Fingerprint| -> Option<OfAccount> {
+        every_device_of(account?)
+            .find(|(device, _)| device.fingerprint == fingerprint)
+            .map(|(device, shared_by)| OfAccount {
+                device: device.id.clone(),
+                online: device.online,
+                access: device.access,
+                shared_by,
+            })
+    };
+
+    let mut shown: Vec<zyr_control::Peer> = seen
+        .into_iter()
+        .map(|peer| zyr_control::Peer {
+            written: written
+                .iter()
+                .any(|known| known.fingerprint == peer.fingerprint),
+            account: of_account(peer.fingerprint),
+            name: peer.name,
+            fingerprint: peer.fingerprint,
+            host: peer.address.to_string(),
+            port: peer.port,
+            seen: true,
+        })
+        .collect();
+
+    for computer in written {
+        if shown
+            .iter()
+            .any(|peer| peer.fingerprint == computer.fingerprint)
+        {
+            continue;
+        }
+        shown.push(zyr_control::Peer {
+            account: of_account(computer.fingerprint),
+            name: computer.name,
+            fingerprint: computer.fingerprint,
+            host: computer.host,
+            port: TUNNEL_PORT,
+            seen: false,
+            written: true,
+        });
+    }
+
+    // Reached by its road at the server, since nothing here knows an
+    // address for it: the desk asks the account for the meeting.
+    for (device, shared_by) in account.into_iter().flat_map(every_device_of) {
+        if shown
+            .iter()
+            .any(|peer| peer.fingerprint == device.fingerprint)
+        {
+            continue;
+        }
+        shown.push(zyr_control::Peer {
+            name: device.name.clone(),
+            fingerprint: device.fingerprint,
+            host: account::road_to(&device.id),
+            port: TUNNEL_PORT,
+            seen: false,
+            written: false,
+            account: Some(OfAccount {
+                device: device.id.clone(),
+                online: device.online,
+                access: device.access,
+                shared_by,
+            }),
+        });
+    }
+    shown
+}
+
+/// Every computer the account names, this one left out: its own, then
+/// those shared with it, each with the username of its owner.
+fn every_device_of(snapshot: &Snapshot) -> impl Iterator<Item = (&DeviceInfo, Option<String>)> {
+    snapshot
+        .devices
+        .iter()
+        .filter(|device| Some(&device.id) != snapshot.me.as_ref())
+        .map(|device| (device, None))
+        .chain(
+            snapshot
+                .shares
+                .iter()
+                .map(|share| (&share.device, Some(share.owner.clone()))),
+        )
 }
 
 #[cfg(test)]
@@ -208,8 +302,85 @@ mod tests {
             ways: Ways::new(log.clone()),
             remembered: Remembered::at(folder.join("preferences.conf")),
             neighbours: Found::new(),
+            account: Account::at(folder.join("account.conf"), log.clone()),
         };
         (machine, log, folder)
+    }
+
+    fn fingerprint(seed: u8) -> Fingerprint {
+        format!("{seed:02x}").repeat(32).parse().unwrap()
+    }
+
+    fn device(id: &str, seed: u8, name: &str) -> DeviceInfo {
+        DeviceInfo {
+            id: id.to_string(),
+            name: name.to_string(),
+            fingerprint: fingerprint(seed),
+            online: true,
+            access: zyr_broker::rest::Access::Ready,
+            last_seen: None,
+        }
+    }
+
+    #[test]
+    fn the_account_is_the_third_place_a_computer_comes_from() {
+        let address: std::net::IpAddr = "192.168.1.20".parse().unwrap();
+        let seen = vec![zyr_lan::Peer {
+            name: "PC-BUREAU".to_string(),
+            fingerprint: fingerprint(1),
+            address,
+            addresses: vec![address],
+            port: TUNNEL_PORT,
+        }];
+        let snapshot = Snapshot {
+            me: Some("d0".to_string()),
+            devices: vec![
+                device("d0", 9, "Moi"),
+                device("d1", 1, "PC du bureau"),
+                device("d2", 2, "Portable"),
+            ],
+            shares: vec![zyr_broker::rest::ShareInfo {
+                id: "p1".to_string(),
+                device: device("d7", 7, "PC de l'atelier"),
+                owner: "ami".to_string(),
+                with: "victor".to_string(),
+                permissions: zyr_broker::rest::Permission::ALL.to_vec(),
+                expires: None,
+                created: 1,
+            }],
+            ..Snapshot::default()
+        };
+
+        let shown = merged(seen, Vec::new(), Some(&snapshot));
+        // Le PC vu sur le réseau et rattaché au compte est une seule
+        // carte : l'adresse du réseau, et le mot du compte dessus.
+        assert_eq!(shown.len(), 3, "{shown:?}");
+        assert_eq!(shown[0].name, "PC-BUREAU");
+        assert_eq!(shown[0].host, "192.168.1.20");
+        assert_eq!(
+            shown[0].account.as_ref().map(|it| it.device.as_str()),
+            Some("d1")
+        );
+        // Le portable, que rien d'autre ne porte, est joint par sa route
+        // chez le serveur.
+        assert_eq!(shown[1].name, "Portable");
+        assert_eq!(shown[1].host, "account:d2");
+        assert!(!shown[1].seen && !shown[1].written);
+        // Et la machine partagée dit par qui.
+        assert_eq!(
+            shown[2]
+                .account
+                .as_ref()
+                .and_then(|it| it.shared_by.clone()),
+            Some("ami".to_string())
+        );
+        // Cet ordinateur-ci n'est pas une carte : on ne se connecte pas à
+        // soi-même.
+        assert!(shown.iter().all(|peer| peer.name != "Moi"));
+
+        // Sans compte, rien ne change de ce qui existait.
+        let shown = merged(Vec::new(), Vec::new(), None);
+        assert!(shown.is_empty());
     }
 
     #[test]
@@ -246,8 +417,11 @@ mod tests {
         assert!(text.contains(&format!("dialecte {PROTOCOL}")), "{text}");
         assert!(text.contains("Accès distant"), "{text}");
         // Sans voisin, la ligne le dit plutôt que de rester vide : une
-        // liste vide et une liste absente ne se lisent pas pareil.
+        // liste vide et une liste absente ne se lisent pas pareil. Le
+        // compte pareil.
         assert!(text.contains("Ordinateurs vus  : aucun"), "{text}");
+        assert!(text.contains("Compte"), "{text}");
+        assert_eq!(machine.account_line(), "aucun");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }

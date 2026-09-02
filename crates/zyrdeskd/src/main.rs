@@ -4,6 +4,7 @@
 //! reserved argument, it becomes the service. Started by hand, it serves
 //! to install, start, stop or remove it.
 
+mod account;
 mod control;
 mod gateway;
 mod known;

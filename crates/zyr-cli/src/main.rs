@@ -1,3 +1,4 @@
+mod account;
 mod bench;
 mod connect;
 mod cpu;
@@ -48,6 +49,11 @@ enum Command {
         #[command(subcommand)]
         action: bench::Action,
     },
+    /// The account this computer is attached to, through the service
+    Account {
+        #[command(subcommand)]
+        action: account::Action,
+    },
 }
 
 fn main() -> std::process::ExitCode {
@@ -58,6 +64,7 @@ fn main() -> std::process::ExitCode {
         Command::Connect(args) => connect::run(args),
         Command::Identity => identity::run(),
         Command::Bench { action } => bench::run(action),
+        Command::Account { action } => account::run(action),
     }
 }
 

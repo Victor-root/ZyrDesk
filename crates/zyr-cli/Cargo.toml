@@ -17,6 +17,7 @@ zyr-transport.workspace = true
 zyr-tunnel.workspace = true
 zyr-control.workspace = true
 zyr-session.workspace = true
+zyr-broker.workspace = true
 clap.workspace = true
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "macros", "time"] }
 

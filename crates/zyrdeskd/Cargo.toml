@@ -18,8 +18,17 @@ zyr-control.workspace = true
 zyr-lan.workspace = true
 zyr-screen.workspace = true
 zyr-sound.workspace = true
+zyr-broker.workspace = true
+zyr-account.workspace = true
 clap.workspace = true
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
+
+[dev-dependencies]
+# Le lien de compte s'essaie contre un vrai serveur, dans le même
+# processus, avec un certificat que personne ne garantit : la route de
+# tout serveur auto-hébergé.
+zyr-server = { path = "../../server/zyr-server" }
+rcgen = "0.14.8"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1.24"

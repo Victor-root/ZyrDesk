@@ -6,13 +6,15 @@
 //! back onto the local machine, where nothing on the network can reach
 //! it, and what leaves a single rule to write in a firewall.
 //!
-//! Who may come in is decided by fingerprint. Two things put a
-//! fingerprint on that list: it was written down, or its owner announced
-//! itself on this local network while this computer was trusting it.
-//! The list is read again as the service runs, so one more computer
-//! appearing on the network does not mean cutting the session in
-//! progress, and asking a small file every few seconds costs nothing
-//! next to watching the filesystem on every platform.
+//! Who may come in is decided by fingerprint. Three things put a
+//! fingerprint on that list: it was written down, its owner announced
+//! itself on this local network while this computer was trusting it, or
+//! the server of the account presented it with a signed ticket. The list
+//! is read again as the service runs, so one more computer appearing on
+//! the network does not mean cutting the session in progress, and asking
+//! a small file every few seconds costs nothing next to watching the
+//! filesystem on every platform. A ticket wakes the reading at once: the
+//! computer it presents knocks a moment later.
 //!
 //! The door also answers for the engine on ZyrDesk's own channel: the
 //! far computer hands over the code its engine is waiting for, and it is
@@ -1158,7 +1160,10 @@ async fn keep_the_list_fresh(
                 }
             }
         }
-        tokio::time::sleep(AUTHORIZED_REFRESH).await;
+        tokio::select! {
+            _ = tokio::time::sleep(AUTHORIZED_REFRESH) => {}
+            _ = machine.account.admissions_changed() => {}
+        }
     }
 }
 
@@ -1184,22 +1189,25 @@ fn apart(before: &[Fingerprint], now: &[Fingerprint]) -> Vec<String> {
 /// Everyone this computer lets in.
 ///
 /// The devices written down, plus the ZyrDesk announcing themselves on
-/// this local network when it is trusted. That trust is what spares
-/// anyone carrying a fingerprint from one computer to the other, and it
-/// covers exactly what the network already carries: a machine that can
-/// speak on it. Nothing arriving from outside it is ever let in this
-/// way, and the day sessions cross the Internet an account takes over.
+/// this local network when it is trusted, plus the computers the server
+/// of the account presented with a ticket, for as long as the ticket
+/// lives. The trust of the network spares anyone carrying a fingerprint
+/// from one computer to the other, and it covers exactly what the
+/// network already carries: a machine that can speak on it. Nothing
+/// arriving from outside it is let in that way; across the Internet, the
+/// account's ticket is what lets a computer in.
 fn let_in(written: Vec<Fingerprint>, machine: &Machine) -> Vec<Fingerprint> {
-    if !machine.remembered.trust_local_network() {
-        return written;
-    }
-    let seen = machine
-        .neighbours
-        .peers()
-        .into_iter()
-        .map(|peer| peer.fingerprint)
-        .collect();
-    joined(written, seen)
+    let seen = if machine.remembered.trust_local_network() {
+        machine
+            .neighbours
+            .peers()
+            .into_iter()
+            .map(|peer| peer.fingerprint)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    joined(joined(written, seen), machine.account.admitted())
 }
 
 /// Two lists of fingerprints as one, without repeats.
@@ -1232,9 +1240,10 @@ mod tests {
         let log = Log::open(&folder.join("service.log")).expect("un journal");
         let machine = Machine {
             hosting: crate::machine::Hosting::new(),
-            ways: crate::ways::Ways::new(log),
+            ways: crate::ways::Ways::new(log.clone()),
             remembered: crate::preferences::Remembered::at(folder.join("preferences.conf")),
             neighbours: zyr_lan::Found::new(),
+            account: crate::account::Account::at(folder.join("account.conf"), log),
         };
         (machine, folder)
     }
@@ -1285,6 +1294,23 @@ mod tests {
         // le seul effet attendu de cet interrupteur.
         let devices = let_in(vec![fingerprint(1)], &machine);
         assert_eq!(devices, vec![fingerprint(1)]);
+
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_computer_presented_by_a_ticket_is_let_in_whatever_the_network_says() {
+        // C'est ce qui fait entrer un ordinateur du compte à travers
+        // Internet : rien n'est écrit, rien ne s'annonce, le serveur l'a
+        // présenté. Et la confiance au réseau local n'y change rien.
+        let (machine, folder) = machine("ticket");
+        machine.remembered.set_trust_local_network(false).unwrap();
+        machine
+            .account
+            .admit(fingerprint(2), zyr_broker::now() + 60);
+
+        let devices = let_in(vec![fingerprint(1)], &machine);
+        assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
 
         let _ = std::fs::remove_dir_all(&folder);
     }

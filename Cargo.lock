@@ -3050,6 +3050,7 @@ dependencies = [
  "tokio",
  "windows-sys 0.61.2",
  "winresource",
+ "zyr-broker",
  "zyr-control",
  "zyr-engine-client",
  "zyr-engine-host",
@@ -3065,6 +3066,7 @@ version = "0.1.0"
 dependencies = [
  "tokio",
  "windows-sys 0.61.2",
+ "zyr-broker",
  "zyr-proto",
  "zyr-transport",
 ]
@@ -3193,6 +3195,7 @@ dependencies = [
  "windows",
  "windows-numerics",
  "windows-sys 0.61.2",
+ "zyr-broker",
  "zyr-control",
  "zyr-proto",
  "zyr-session",
@@ -3205,15 +3208,19 @@ name = "zyrdeskd"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "rcgen",
  "tokio",
  "windows-service",
  "windows-sys 0.61.2",
  "winresource",
+ "zyr-account",
+ "zyr-broker",
  "zyr-control",
  "zyr-engine-host",
  "zyr-lan",
  "zyr-proto",
  "zyr-screen",
+ "zyr-server",
  "zyr-sound",
  "zyr-transport",
  "zyr-tunnel",

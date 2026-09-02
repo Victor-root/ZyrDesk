@@ -34,6 +34,7 @@ use zyr_engine_host::{Credentials, EngineRuntime, HostEngine, Launcher, Sunshine
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
+use crate::account::Account;
 use crate::control::{Answering, Desk};
 use crate::gateway::{AtHand, Gateway};
 use crate::machine::{Hosting, Machine};
@@ -311,7 +312,21 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             .as_ref()
             .map(|n| n.found())
             .unwrap_or_default(),
+        account: Account::at(paths::account(), log.clone()),
     };
+    // The link to an account, when there is one, held from here on: it
+    // proves this computer's key to the server, and keeps its channel
+    // open on the runtime for as long as the service runs.
+    match zyr_transport::Identity::load_or_create(&paths::identity_dir()) {
+        Ok(identity) => machine.account.start(
+            runtime.handle(),
+            Arc::new(identity),
+            machine.hosting.clone(),
+            machine.remembered.clone(),
+            machine.ways.clone(),
+        ),
+        Err(e) => log.write(&format!("no identity to hold an account link with: {e}")),
+    }
     // Not being able to answer the interface leaves this computer
     // reachable all the same, so it is worth saying loudly and carrying
     // on rather than giving up on remote access entirely.

@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use zyr_control::{Answer, Holdup, Request};
+use zyr_control::{Account, Answer, Attach, Device, Holdup, OfAccount, Request};
 use zyr_proto::paths;
 
 use crate::service;
@@ -31,6 +31,10 @@ pub struct Peer {
     /// Whether somebody wrote it down by hand. Only those can be taken
     /// off again.
     pub written: bool,
+    /// What the account says of it, when it is one of the account's or
+    /// one a contact shared: whether it is there, and whether it accepts
+    /// remote access.
+    pub account: Option<OfAccount>,
 }
 
 /// What the home screen shows about this computer.
@@ -126,11 +130,101 @@ pub async fn peers() -> Vec<Peer> {
             address: peer.host,
             seen: peer.seen,
             written: peer.written,
+            account: peer.account,
         }),
         _ => None,
     })
     .await
     .unwrap_or_default()
+}
+
+/// The link of this computer to an account, or nothing when there is
+/// none.
+///
+/// Told apart from a service that cannot be asked: without a link the
+/// settings offer to make one, and without a service they say so.
+pub async fn account() -> Result<Option<Account>, String> {
+    match service::ask(&Request::Account).await? {
+        Answer::Account(account) => Ok(account),
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// How attaching ended, short of a refusal.
+pub enum Attached {
+    Done,
+    /// The server presented a key nobody vouches for, and nothing was
+    /// pinned: the person is shown it, to compare with what the
+    /// installation showed, and asked again with it pinned.
+    Unpinned(String),
+}
+
+/// Attaches this computer to an account, through the service, which is
+/// what holds this computer's key and keeps the link once the window is
+/// gone.
+pub async fn attach(attach: Attach) -> Result<Attached, String> {
+    let server = attach.server.clone();
+    match service::ask(&Request::Attach(attach)).await? {
+        Answer::Done => {
+            crate::journal::note(&format!("cet ordinateur est rattaché à {server}"));
+            Ok(Attached::Done)
+        }
+        Answer::Unpinned { presented } => {
+            crate::journal::note(&format!(
+                "{server} présente une clé que personne ne garantit ({presented}), à confirmer"
+            ));
+            Ok(Attached::Unpinned(presented.to_string()))
+        }
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// Takes this computer off its account.
+pub async fn detach() -> Result<(), String> {
+    match service::ask(&Request::Detach).await? {
+        Answer::Done => {
+            crate::journal::note("cet ordinateur est détaché de son compte");
+            Ok(())
+        }
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// The devices of the account, this computer among them.
+///
+/// Empty without a link, and empty again while the server has not yet
+/// said: the settings tell the two apart from the link itself.
+pub async fn devices() -> Vec<Device> {
+    service::list(&Request::Devices, |answer| match answer {
+        Answer::Device(device) => Some(device),
+        _ => None,
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Renames a device of the account, at the server.
+pub async fn rename_device(device: String, name: String) -> Result<(), String> {
+    match service::ask(&Request::RenameDevice { device, name }).await? {
+        Answer::Done => Ok(()),
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// Revokes a device of the account: it no longer speaks for the account,
+/// and its sessions close.
+pub async fn revoke_device(device: String) -> Result<(), String> {
+    match service::ask(&Request::RevokeDevice {
+        device: device.clone(),
+    })
+    .await?
+    {
+        Answer::Done => {
+            crate::journal::note(&format!("appareil {device} révoqué"));
+            Ok(())
+        }
+        other => Err(service::unexpected(other)),
+    }
 }
 
 /// Decides whether this computer accepts being controlled.

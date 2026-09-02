@@ -123,6 +123,20 @@ pub enum Access {
     EngineWontStand,
 }
 
+impl Access {
+    /// What it means, for the person, in the words the home screen uses
+    /// of this computer's own remote access.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Access::Off => "accès distant désactivé",
+            Access::Ready => "prêt à être contrôlé",
+            Access::Starting => "démarrage en cours",
+            Access::EngineMissing => "moteur hôte absent",
+            Access::EngineWontStand => "le moteur hôte ne tient pas",
+        }
+    }
+}
+
 /// One device of an account, as the server sees it.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DeviceInfo {

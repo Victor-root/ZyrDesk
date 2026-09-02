@@ -271,23 +271,29 @@ impl Ways {
     }
 
     /// Opens a way to a remote computer, and keeps it.
+    ///
+    /// `host` is the computer as the person named it, kept on the way for
+    /// whoever asks about it later; `candidates` is where to knock, the
+    /// one to try first at the front.
     pub async fn open(
         &self,
         host: &str,
         peer: Fingerprint,
         media: MediaProfile,
-        also: &[IpAddr],
+        candidates: Vec<SocketAddr>,
     ) -> Result<Reached, String> {
-        let asked = resolve(host)?;
-        let candidates = every_way_there(asked, also);
+        if candidates.is_empty() {
+            return Err(format!("aucune adresse où joindre {host}"));
+        }
         // Written down before anything is tried. What the person sees of
         // a failure is a sentence in a window they will have closed by
         // the time anyone looks; the trace is what remains, and it is
         // worth as much as the attempt itself.
-        self.log.write(&match candidates.len() {
-            1 => format!("opening a way to {asked}, expecting {peer}"),
-            count => format!(
-                "opening a way to {peer}, racing {count} addresses: {}",
+        self.log.write(&match candidates[..] {
+            [only] => format!("opening a way to {host} at {only}, expecting {peer}"),
+            _ => format!(
+                "opening a way to {host} ({peer}), racing {} addresses: {}",
+                candidates.len(),
                 candidates
                     .iter()
                     .map(ToString::to_string)
@@ -320,7 +326,7 @@ impl Ways {
                 // l'écran, sur plusieurs lignes, et le journal en compte
                 // une par événement.
                 self.log
-                    .write(&format!("no way to {asked}: {}", e.replace('\n', " ")));
+                    .write(&format!("no way to {host}: {}", e.replace('\n', " ")));
                 Err(e)
             }
         }
@@ -340,10 +346,11 @@ impl Ways {
         &self,
         host: &str,
         peer: Fingerprint,
-        also: &[IpAddr],
+        candidates: &[SocketAddr],
     ) -> Result<(TunnelEndpoint, Connection), String> {
-        let asked = resolve(host)?;
-        let candidates = every_way_there(asked, also);
+        if candidates.is_empty() {
+            return Err(format!("aucune adresse où joindre {host}"));
+        }
         let identity =
             Identity::load_or_create(&paths::identity_dir()).map_err(|e| e.to_string())?;
         let endpoint = TunnelEndpoint::client(
@@ -354,7 +361,7 @@ impl Ways {
         )
         .map_err(|e| e.to_string())?;
 
-        let (connection, _, through) = race(&endpoint, &candidates)
+        let (connection, _, through) = race(&endpoint, candidates)
             .await
             .map_err(|e| format!("{host} ne répond pas sur le port {TUNNEL_PORT} : {e}"))?;
         self.log
@@ -371,9 +378,9 @@ impl Ways {
         &self,
         host: &str,
         peer: Fingerprint,
-        also: &[IpAddr],
+        candidates: &[SocketAddr],
     ) -> Result<String, String> {
-        let (_endpoint, connection) = self.a_word_with(host, peer, also).await?;
+        let (_endpoint, connection) = self.a_word_with(host, peer, candidates).await?;
         let text = aside::ask_for_the_journal(&connection)
             .await
             .map_err(|e| refused_by(host, "n'a pas donné son journal", &e))?;
@@ -394,9 +401,9 @@ impl Ways {
         &self,
         host: &str,
         peer: Fingerprint,
-        also: &[IpAddr],
+        candidates: &[SocketAddr],
     ) -> Result<(), String> {
-        let (_endpoint, connection) = self.a_word_with(host, peer, also).await?;
+        let (_endpoint, connection) = self.a_word_with(host, peer, candidates).await?;
         aside::ask_to_empty_the_journal(&connection)
             .await
             .map_err(|e| refused_by(host, "n'a pas vidé son journal", &e))?;
@@ -799,6 +806,15 @@ impl Ways {
         self.register.lock().expect("registre des voies").count()
     }
 
+    /// Whether that way still stands.
+    pub fn still_open(&self, way: WayId) -> bool {
+        self.register
+            .lock()
+            .expect("registre des voies")
+            .thing(way)
+            .is_some()
+    }
+
     /// The sessions this computer is holding towards others.
     pub fn held(&self) -> Vec<Session> {
         self.register
@@ -949,23 +965,24 @@ fn worth_saying(before: Duration, now: Duration) -> bool {
     now.max(before) >= NOTICEABLE && (now >= before * 2 || before >= now * 2)
 }
 
-/// Where the tunnel has to knock. Only the port is ours to add.
-/// Every way there worth trying, the one that was asked for first.
+/// Where the tunnel has to knock to reach a computer named by its
+/// address: every way there worth trying, the one that was asked for
+/// first.
 ///
 /// First because it is the one somebody named, or the one the product
 /// wrote down, and a race whose entrants all answer should be won by the
 /// expected one. The others come from what that computer answered on: a
 /// machine with two cards answers on both, and only trying tells which
-/// one is the cable and which is a detour.
-fn every_way_there(asked: SocketAddr, also: &[IpAddr]) -> Vec<SocketAddr> {
-    let mut ways = vec![asked];
+/// one is the cable and which is a detour. Only the port is ours to add.
+pub fn where_to_knock(host: &str, also: &[IpAddr]) -> Result<Vec<SocketAddr>, String> {
+    let mut ways = vec![resolve(host)?];
     for address in also {
         let candidate = SocketAddr::new(*address, TUNNEL_PORT);
         if !ways.contains(&candidate) {
             ways.push(candidate);
         }
     }
-    ways
+    Ok(ways)
 }
 
 fn resolve(host: &str) -> Result<SocketAddr, String> {

@@ -17,19 +17,22 @@
 //!
 //! # Ce qui n'est pas dessiné ici
 //!
-//! Les trois champs de saisie. Écrire du texte est le seul endroit où le
+//! Les champs de saisie. Écrire du texte est le seul endroit où le
 //! système fait mieux que nous : le curseur, la sélection, le
 //! presse-papiers, les claviers qui composent leurs signes. Ce sont donc
-//! trois vrais champs de Windows, posés dans le cadre que nous
-//! dessinons, et qui ne vivent que le temps du dialogue qui les porte.
+//! de vrais champs de Windows, posés dans le cadre que nous dessinons,
+//! et qui ne vivent que le temps du dialogue qui les porte.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 
+use zyr_broker::rest::Access;
+use zyr_control::{Account, Attach, Device, Registering};
+
 use crate::app::App;
 
 use crate::design::{self, Couleur, Palette};
-use crate::desk::{Peer, Standing};
+use crate::desk::{Attached, Peer, Standing};
 use crate::folders::Engines;
 use crate::icones;
 use crate::journal::note;
@@ -78,6 +81,9 @@ struct Vu {
     sessions: Vec<Ongoing>,
     moteurs: Option<Engines>,
     reglages: Option<Settings>,
+    /// Le compte, quand le service répond : le lien s'il y en a un, et
+    /// les appareils qui y sont.
+    compte: Option<Compte>,
     /// Les trois raccourcis, écrits comme ils sont gravés sur le clavier
     /// branché, et rien pour ceux qui n'ont pas de touche.
     raccourcis: Vec<(Doing, Option<String>)>,
@@ -104,6 +110,16 @@ impl Vu {
             .find(|voisin| voisin.fingerprint == session.fingerprint)
             .map_or_else(|| session.towards.clone(), |voisin| voisin.name.clone())
     }
+}
+
+/// Le compte de cet ordinateur, tel que le service le tient.
+#[derive(Default, PartialEq)]
+struct Compte {
+    /// Le lien, ou rien : sans lien, le produit ne connaît aucun serveur.
+    lien: Option<Account>,
+    /// Les appareils du compte, cet ordinateur compris, tels que le
+    /// serveur les a dits. Vides tant qu'il n'a rien dit.
+    appareils: Vec<Device>,
 }
 
 /// Ce qu'il reste à faire pour que le produit marche, dit en clair et
@@ -156,6 +172,10 @@ enum Ecran {
     Ajout,
     Journal,
     Reglages,
+    /// Se rattacher à un serveur.
+    Compte,
+    /// Renommer un appareil du compte.
+    Renommage,
 }
 
 /// Ce qui défile, et où en est son défilement.
@@ -213,6 +233,20 @@ struct Etat {
     /// Ce que les réglages ont à redire, qui vit dans leur dialogue.
     souci: Option<String>,
     ouverture: Option<Ouverture>,
+    /// Dans le dialogue de compte : créer le compte plutôt que d'y
+    /// entrer.
+    inscription: bool,
+    /// La clé qu'un serveur que personne ne garantit a présentée, en
+    /// attente que la personne la compare et la confirme.
+    epinglage: Option<String>,
+    /// Un rattachement en cours : le bouton attend la réponse.
+    rattachement: bool,
+    /// Depuis quand « Se détacher » attend sa confirmation.
+    detachement: Option<std::time::Instant>,
+    /// Quel appareil « Révoquer » attend de confirmer, et depuis quand.
+    revocation: Option<(usize, std::time::Instant)>,
+    /// L'appareil en cours de renommage : son identifiant et son nom.
+    renomme: Option<(String, String)>,
 }
 
 impl Etat {
@@ -236,6 +270,12 @@ impl Etat {
             annonce: None,
             souci: None,
             ouverture: None,
+            inscription: false,
+            epinglage: None,
+            rattachement: false,
+            detachement: None,
+            revocation: None,
+            renomme: None,
         }
     }
 
@@ -301,6 +341,8 @@ enum Choisi {
     Codec,
     Affichage,
     Souris,
+    /// Dans le dialogue de compte : y entrer, ou le créer.
+    Inscription,
 }
 
 /// Ce sur quoi on peut cliquer, et ce que ça fait.
@@ -321,6 +363,8 @@ enum Quoi {
     /// Fermer le dialogue ouvert, quel qu'il soit.
     Fermer,
     Connecter,
+    /// Ce que la touche Entrée fait dans le dialogue ouvert.
+    Valider,
     Oublier(usize),
     Vider,
     Actualiser,
@@ -329,6 +373,17 @@ enum Quoi {
     OuvrirLesJournaux,
     Avance,
     Ascenseur(Ou),
+    /// Le compte : ouvrir le dialogue, se rattacher, confirmer la clé
+    /// d'un serveur, se détacher.
+    OuvrirCompte,
+    Rattacher,
+    Epingler,
+    Detacher,
+    /// Un appareil du compte, par son rang : ouvrir son renommage, ou le
+    /// révoquer.
+    OuvrirRenommage(usize),
+    Renommer,
+    Revoquer(usize),
 }
 
 impl Bouton {
@@ -380,6 +435,7 @@ impl Choisi {
             Choisi::Codec => vec!["Auto", "H.264", "HEVC", "AV1"],
             Choisi::Affichage => vec!["Plein écran", "Fenêtre"],
             Choisi::Souris => vec!["Bureau", "Jeu"],
+            Choisi::Inscription => vec!["J'ai un compte", "Créer un compte"],
         }
     }
 
@@ -387,7 +443,7 @@ impl Choisi {
     /// qu'elle s'écrit dans les réglages.
     fn valeurs(self) -> Vec<&'static str> {
         match self {
-            Choisi::Theme => Vec::new(),
+            Choisi::Theme | Choisi::Inscription => Vec::new(),
             Choisi::Capture => vec!["ddx", "wgc"],
             Choisi::Codec => vec!["auto", "H.264", "HEVC", "AV1"],
             Choisi::Affichage => vec!["fullscreen", "windowed"],
@@ -395,14 +451,16 @@ impl Choisi {
         }
     }
 
-    /// Lequel est choisi, d'après ce que le produit dit.
-    fn ou(self, vu: &Vu) -> Option<usize> {
+    /// Lequel est choisi, d'après ce que le produit dit, ou d'après ce
+    /// que la fenêtre tient elle-même pour les deux qui ne voyagent pas.
+    fn ou(self, vu: &Vu, etat: &Etat) -> Option<usize> {
         let dit = match self {
             Choisi::Theme => {
                 return Choix::ALL
                     .iter()
                     .position(|choix| *choix == crate::theme::chosen());
             }
+            Choisi::Inscription => return Some(usize::from(etat.inscription)),
             Choisi::Capture => vu.machine.as_ref()?.capture.clone(),
             Choisi::Codec => vu.reglages.as_ref()?.codec.clone(),
             Choisi::Affichage => vu.reglages.as_ref()?.display.clone(),
@@ -417,7 +475,7 @@ impl Choisi {
     /// Si on peut en changer.
     fn vivant(self, vu: &Vu) -> bool {
         match self {
-            Choisi::Theme => true,
+            Choisi::Theme | Choisi::Inscription => true,
             Choisi::Capture => vu
                 .machine
                 .as_ref()
@@ -455,6 +513,9 @@ enum Element {
     /// Le repli du jargon : ce qui suit ne se montre qu'ouvert.
     Repli,
     Reglage(Reglage),
+    /// Le compte : le lien tel qu'il est, et les appareils qui y sont.
+    /// Dessiné à part, parce qu'il n'a pas la forme d'une ligne.
+    Compte,
 }
 
 /// L'écran des réglages, ligne par ligne.
@@ -508,6 +569,12 @@ const REGLAGES: &[Element] = &[
                   tant que vous n'avez pas ouvert ZyrDesk.",
         commande: Commande::Interrupteur(Bouton::AuDemarrage),
     }),
+    Element::Section(
+        "Compte",
+        "Un serveur ZyrDesk retrouve vos ordinateurs où qu'ils soient et les présente l'un à \
+         l'autre. Facultatif : sans compte, tout marche comme avant sur le réseau local.",
+    ),
+    Element::Compte,
     Element::Section(
         "Raccourcis clavier",
         "Ils marchent pendant une session, par-dessus l'image. Cliquez sur une combinaison pour \
@@ -919,7 +986,7 @@ unsafe extern "system" fn answer(
                     fait(
                         &app,
                         if holding == 1 {
-                            Quoi::Connecter
+                            Quoi::Valider
                         } else {
                             Quoi::Fermer
                         },
@@ -978,6 +1045,10 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     if surface.is_null() {
         return;
     }
+    // Chaque image redit où vont les champs : un champ que l'image ne
+    // pose plus, parce que le dialogue a changé de forme, n'a plus de
+    // place et se range.
+    *PLACES.lock().expect("accueil") = [None; Champ::COMBIEN];
     TOILE.with_borrow_mut(|toile| {
         if toile
             .as_ref()
@@ -1311,7 +1382,7 @@ impl Mise<'_> {
         self.remplis(ou, rayon, self.couleurs.surface_2.voile(voile));
         self.trace(ou, rayon, self.couleurs.r#trait.voile(voile));
 
-        let choisi = quoi.ou(self.vu);
+        let choisi = quoi.ou(self.vu, self.etat);
         let mut x = ou.gauche + autour;
         for (rang, mot) in quoi.mots().iter().enumerate() {
             let cote = Cadre::pose(
@@ -1789,7 +1860,27 @@ impl Mise<'_> {
         if self.vu.voisins.is_empty() && !self.vu.occupe(self.etat) {
             return pris + self.aucun_ordinateur(x, y + pris, large, haute - y - pris);
         }
-        pris + self.grille(x, y + pris, large)
+        // Ce qu'un contact a partagé se range à part : ce n'est pas un
+        // ordinateur à soi, et le dire sur chaque carte ne suffit pas à
+        // les distinguer d'un coup d'oeil.
+        let (miens, partages): (Vec<usize>, Vec<usize>) =
+            (0..self.vu.voisins.len()).partition(|rang| {
+                self.vu.voisins[*rang]
+                    .account
+                    .as_ref()
+                    .is_none_or(|compte| compte.shared_by.is_none())
+            });
+        pris += self.grille(x, y + pris, large, &miens, true);
+        if !partages.is_empty() {
+            pris += self.px(design::PAS_5);
+            self.section(
+                Cadre::pose(x, y + pris, large, etiquette),
+                "Partagés avec moi",
+            );
+            pris += etiquette + self.px(design::PAS_3);
+            pris += self.grille(x, y + pris, large, &partages, false);
+        }
+        pris
     }
 
     /// Le bandeau d'une session en cours.
@@ -1849,8 +1940,9 @@ impl Mise<'_> {
         ou.bas - ou.haut
     }
 
-    /// La grille des ordinateurs, et la tuile qui en ajoute un.
-    fn grille(&mut self, x: f32, y: f32, large: f32) -> f32 {
+    /// La grille de ces ordinateurs-là, par leur rang, et la tuile qui en
+    /// ajoute un quand elle a sa place ici.
+    fn grille(&mut self, x: f32, y: f32, large: f32, rangs: &[usize], avec_ajout: bool) -> f32 {
         let ecart = self.px(design::PAS_3);
         let mini = self.px(tenue::CARTE);
         let colonnes = (((large + ecart) / (mini + ecart)).floor() as usize).max(1);
@@ -1864,22 +1956,37 @@ impl Mise<'_> {
             + self.px(design::PAS_2)
             + self.px(tenue::APPEL);
 
-        let combien = self.vu.voisins.len() + 1;
-        for rang in 0..combien {
+        let combien = rangs.len() + usize::from(avec_ajout);
+        for place in 0..combien {
             let ou = Cadre::pose(
-                x + (rang % colonnes) as f32 * (colonne + ecart),
-                y + (rang / colonnes) as f32 * (hauteur + ecart),
+                x + (place % colonnes) as f32 * (colonne + ecart),
+                y + (place / colonnes) as f32 * (hauteur + ecart),
                 colonne,
                 hauteur,
             );
-            if rang < self.vu.voisins.len() {
-                self.carte_d_ordinateur(ou, rang, dedans, nom, adresse);
-            } else {
-                self.tuile_d_ajout(ou);
+            match rangs.get(place) {
+                Some(rang) => self.carte_d_ordinateur(ou, *rang, dedans, nom, adresse),
+                None => self.tuile_d_ajout(ou),
             }
         }
         let lignes = combien.div_ceil(colonnes) as f32;
         lignes * hauteur + (lignes - 1.0) * ecart
+    }
+
+    /// La pastille d'un ordinateur : verte quand il répond ou que le
+    /// compte le dit prêt, orange quand le compte le dit en ligne sans
+    /// accès distant, grise sinon. Le mot sous le nom dit pourquoi.
+    fn presence_de(&self, voisin: &Peer) -> (Couleur, bool) {
+        if voisin.seen {
+            return (self.couleurs.en_ligne, true);
+        }
+        match &voisin.account {
+            Some(compte) if compte.online && compte.access == Access::Ready => {
+                (self.couleurs.en_ligne, true)
+            }
+            Some(compte) if compte.online => (self.couleurs.attention, false),
+            _ => (self.couleurs.hors_ligne, false),
+        }
     }
 
     /// Une carte d'ordinateur : cliquer n'importe où s'y connecte, et le
@@ -1928,6 +2035,7 @@ impl Mise<'_> {
         // qu'on veut lire ce que la machine d'en face a écrit.
         let voile = if occupe && !sienne { 0.5 } else { 1.0 };
         let pastille = self.px(tenue::PASTILLE);
+        let (encre, vivante) = self.presence_de(voisin);
         self.pastille(
             Cadre::pose(
                 ou.gauche + dedans,
@@ -1935,12 +2043,8 @@ impl Mise<'_> {
                 pastille,
                 pastille,
             ),
-            if voisin.seen {
-                self.couleurs.en_ligne.voile(voile)
-            } else {
-                self.couleurs.hors_ligne.voile(voile)
-            },
-            voisin.seen,
+            encre.voile(voile),
+            vivante,
         );
         let depuis = ou.gauche + dedans + pastille + self.px(design::PAS_2);
         self.ecris(
@@ -1960,11 +2064,7 @@ impl Mise<'_> {
         // est écrit à côté.
         let sous_le_nom = ou.haut + dedans + nom + self.px(design::PAS_2);
         self.ecris(
-            &if voisin.seen {
-                voisin.address.clone()
-            } else {
-                format!("{} · ajouté à la main", voisin.address)
-            },
+            &sous_le_nom_de(voisin),
             self.legende().coupee(),
             self.couleurs.texte_doux.voile(voile),
             Cadre::pose(
@@ -2064,7 +2164,8 @@ impl Mise<'_> {
         let pour_le_mot = large.min(self.px(420.0)) - self.px(design::PAS_5) * 2.0;
         let mot = "Les ZyrDesk allumés sur ce réseau apparaissent ici tout seuls, sans rien à \
                    recopier. Si le réseau ne laisse pas passer les annonces, ajoutez l'autre \
-                   ordinateur à la main, sur les deux machines.";
+                   ordinateur à la main, sur les deux machines. Avec un compte, dans les \
+                   réglages, vos ordinateurs apparaissent où qu'ils soient.";
         let explication = self.hauteur(mot, self.legende(), pour_le_mot);
         let bouton = self.px(tenue::GRAND_BOUTON);
         let ecart = self.px(design::PAS_3);
@@ -2174,6 +2275,52 @@ fn couleur_de_l_etat(dit: &Standing, couleurs: Palette) -> Couleur {
     }
 }
 
+/// Ce qui s'écrit sous le nom d'un ordinateur : ce qu'on en sait, et
+/// d'où il vient quand ce n'est pas du réseau.
+///
+/// Un ordinateur qui s'annonce montre son adresse. Un ordinateur que
+/// seul le compte porte montre ce que le compte en dit : en ligne et
+/// prêt, en ligne sans accès distant et pourquoi, ou hors ligne.
+fn sous_le_nom_de(voisin: &Peer) -> String {
+    let provenance = match &voisin.account {
+        Some(compte) => match &compte.shared_by {
+            Some(par) => format!("partagé par {par}"),
+            None => "compte".to_string(),
+        },
+        None if voisin.written => "ajouté à la main".to_string(),
+        None => String::new(),
+    };
+    let etat = match &voisin.account {
+        Some(compte) if !voisin.seen => {
+            if compte.online {
+                format!("en ligne · {}", compte.access.explanation())
+            } else {
+                "hors ligne".to_string()
+            }
+        }
+        _ => voisin.address.clone(),
+    };
+    if provenance.is_empty() {
+        etat
+    } else {
+        format!("{etat} · {provenance}")
+    }
+}
+
+/// Où en est un appareil du compte, en mots.
+fn mot_de_la_presence(appareil: &Device) -> String {
+    if appareil.online {
+        return format!("En ligne · {}", appareil.access.explanation());
+    }
+    match appareil.last_seen {
+        Some(vu) => format!(
+            "Hors ligne · vu il y a {}",
+            duree(zyr_broker::now().saturating_sub(vu))
+        ),
+        None => "Hors ligne".to_string(),
+    }
+}
+
 /// Depuis combien de temps une session est ouverte, en mots.
 fn duree(secondes: u64) -> String {
     if secondes < MINUTE {
@@ -2202,7 +2349,7 @@ impl Mise<'_> {
     /// premier mot qui se replie.
     fn dialogue(&mut self, large: f32, haute: f32) {
         let veut = self.px(match self.etat.ecran {
-            Ecran::Ajout => tenue::DIALOGUE,
+            Ecran::Ajout | Ecran::Compte | Ecran::Renommage => tenue::DIALOGUE,
             Ecran::Journal => tenue::DIALOGUE_JOURNAL,
             Ecran::Reglages | Ecran::Accueil => tenue::DIALOGUE_REGLAGES,
         });
@@ -2251,6 +2398,8 @@ impl Mise<'_> {
             Ecran::Ajout => self.dans_l_ajout(ou),
             Ecran::Journal => self.dans_le_journal(ou, haute),
             Ecran::Reglages => self.dans_les_reglages(ou),
+            Ecran::Compte => self.dans_le_compte(ou),
+            Ecran::Renommage => self.dans_le_renommage(ou),
             // Il n'y a alors aucun dialogue, et rien ne l'appelle : dit
             // plutôt que rangé sous un autre écran, qu'il ne serait pas.
             Ecran::Accueil => 0.0,
@@ -2347,7 +2496,7 @@ impl Mise<'_> {
         );
         y += ecart;
 
-        for champ in Champ::ALL {
+        for champ in Champ::AJOUT {
             y += self.champ(ou.gauche, y, large, champ);
             y += ecart;
         }
@@ -2657,6 +2806,10 @@ impl Mise<'_> {
                     self.separateur(ou.gauche, y, large);
                     y += self.ligne_de_reglage(ou.gauche, y, large, reglage);
                 }
+                Element::Compte => {
+                    self.separateur(ou.gauche, y, large);
+                    y += self.compte(ou.gauche, y, large);
+                }
             }
         }
 
@@ -2664,6 +2817,442 @@ impl Mise<'_> {
             y += self.px(design::PAS_4);
             y += self.bandeau(ou.gauche, y, large, &souci, true, None);
         }
+        y - ou.haut
+    }
+
+    /// Le compte : le lien tel qu'il est, de quoi en faire un ou le
+    /// défaire, et les appareils qui y sont.
+    fn compte(&mut self, x: f32, y: f32, large: f32) -> f32 {
+        let dedans = self.px(design::PAS_3);
+        let bouton = self.px(tenue::BOUTON);
+        let mut pris = dedans;
+        let Some(compte) = self.vu.compte.as_ref() else {
+            pris += self.bloc(
+                x,
+                y + pris,
+                large,
+                "Le service ne répond pas : le compte se lit quand il tourne.",
+                self.legende(),
+                self.couleurs.texte_doux,
+            );
+            return pris + dedans;
+        };
+        let Some(lien) = compte.lien.as_ref() else {
+            let mot = self.haute(self.corps());
+            let large_du_bouton = self.large_du_bouton("Se connecter à un serveur", false);
+            self.ecris(
+                "Aucun compte",
+                self.corps(),
+                self.couleurs.texte,
+                Cadre::pose(
+                    x,
+                    y + pris + (bouton - mot) / 2.0,
+                    (large - large_du_bouton - self.px(design::PAS_4)).max(0.0),
+                    mot,
+                ),
+            );
+            self.bouton(
+                Cadre::pose(
+                    x + large - large_du_bouton,
+                    y + pris,
+                    large_du_bouton,
+                    bouton,
+                ),
+                "Se connecter à un serveur",
+                Sorte::Principal,
+                Quoi::OuvrirCompte,
+                true,
+            );
+            return pris + bouton + dedans;
+        };
+
+        // Le lien : qui, où, et si le serveur répond.
+        let (mot, legende) = (self.haute(self.corps()), self.haute(self.legende()));
+        let ecart = self.px(design::PAS_1);
+        let arme = self
+            .etat
+            .detachement
+            .is_some_and(|depuis| depuis.elapsed() < TEMPS_CONFIRMATION);
+        let detacher = if arme { "Confirmer" } else { "Se détacher" };
+        let large_du_bouton = self.large_du_bouton(detacher, false);
+        let pour_le_mot = (large - large_du_bouton - self.px(design::PAS_4)).max(0.0);
+        let haut = y + pris;
+        self.ecris(
+            &format!(
+                "{} sur {}",
+                lien.username,
+                if lien.name.is_empty() {
+                    &lien.server
+                } else {
+                    &lien.name
+                }
+            ),
+            self.corps().coupee(),
+            self.couleurs.texte,
+            Cadre::pose(x, haut, pour_le_mot, mot),
+        );
+        let (etat_du_lien, encre) = if lien.connected {
+            ("relié".to_string(), self.couleurs.en_ligne)
+        } else {
+            (
+                format!(
+                    "injoignable{}",
+                    lien.trouble
+                        .as_ref()
+                        .map_or_else(String::new, |why| format!(" : {}", why.replace('\n', " ")))
+                ),
+                self.couleurs.attention,
+            )
+        };
+        let pastille = self.px(tenue::PASTILLE);
+        let sous = haut + mot + ecart;
+        self.pastille(
+            Cadre::pose(x, sous + (legende - pastille) / 2.0, pastille, pastille),
+            encre,
+            lien.connected,
+        );
+        self.ecris(
+            &format!("{} · {etat_du_lien}", lien.server),
+            self.legende().coupee(),
+            self.couleurs.texte_doux,
+            Cadre::pose(
+                x + pastille + self.px(design::PAS_2),
+                sous,
+                (pour_le_mot - pastille - self.px(design::PAS_2)).max(0.0),
+                legende,
+            ),
+        );
+        let haute = (mot + ecart + legende).max(bouton);
+        self.bouton(
+            Cadre::pose(
+                x + large - large_du_bouton,
+                haut + (haute - bouton) / 2.0,
+                large_du_bouton,
+                bouton,
+            ),
+            detacher,
+            if arme {
+                Sorte::Attention
+            } else {
+                Sorte::Discret
+            },
+            Quoi::Detacher,
+            true,
+        );
+        pris += haute + self.px(design::PAS_4);
+
+        // Les appareils, cet ordinateur compris.
+        let etiquette = self.haute(self.legende().en_gras());
+        self.section(
+            Cadre::pose(x, y + pris, large, etiquette),
+            "Appareils du compte",
+        );
+        pris += etiquette + self.px(design::PAS_2);
+        if compte.appareils.is_empty() {
+            pris += self.bloc(
+                x,
+                y + pris,
+                large,
+                if lien.connected {
+                    "Aucun appareil pour l'instant."
+                } else {
+                    "La liste arrivera quand le serveur répondra."
+                },
+                self.legende(),
+                self.couleurs.texte_doux,
+            );
+        }
+        for rang in 0..compte.appareils.len() {
+            pris += self.ligne_d_appareil(x, y + pris, large, rang);
+        }
+        pris + dedans
+    }
+
+    /// Un appareil du compte : son nom, où il en est, et de quoi le
+    /// renommer ou le révoquer.
+    ///
+    /// Cet ordinateur-ci ne se révoque pas d'ici : « Se détacher », juste
+    /// au-dessus, fait exactement cela et le dit avec le bon mot.
+    fn ligne_d_appareil(&mut self, x: f32, y: f32, large: f32, rang: usize) -> f32 {
+        let Some(appareil) = self
+            .vu
+            .compte
+            .as_ref()
+            .and_then(|compte| compte.appareils.get(rang))
+        else {
+            return 0.0;
+        };
+        let (mot, legende) = (self.haute(self.corps()), self.haute(self.legende()));
+        let ecart = self.px(design::PAS_1);
+        let bouton = self.px(tenue::BOUTON);
+        let arme = self.etat.revocation.is_some_and(|(lequel, depuis)| {
+            lequel == rang && depuis.elapsed() < TEMPS_CONFIRMATION
+        });
+        let revoquer = if arme { "Confirmer" } else { "Révoquer" };
+        let large_renommer = self.large_du_bouton("Renommer", false);
+        let large_revoquer = if appareil.this {
+            0.0
+        } else {
+            self.large_du_bouton(revoquer, false) + self.px(design::PAS_2)
+        };
+        let pour_le_mot =
+            (large - large_renommer - large_revoquer - self.px(design::PAS_4)).max(0.0);
+        let hauteur = (mot + ecart + legende).max(bouton) + self.px(design::PAS_2) * 2.0;
+        let milieu = y + hauteur / 2.0;
+        let haut = milieu - (mot + ecart + legende) / 2.0;
+
+        let pastille = self.px(tenue::PASTILLE);
+        let pret = appareil.online && appareil.access == Access::Ready;
+        self.pastille(
+            Cadre::pose(x, haut + (mot - pastille) / 2.0, pastille, pastille),
+            if pret {
+                self.couleurs.en_ligne
+            } else if appareil.online {
+                self.couleurs.attention
+            } else {
+                self.couleurs.hors_ligne
+            },
+            pret,
+        );
+        let depuis = x + pastille + self.px(design::PAS_2);
+        self.ecris(
+            &format!(
+                "{}{}",
+                appareil.name,
+                if appareil.this {
+                    " · cet ordinateur"
+                } else {
+                    ""
+                }
+            ),
+            self.corps().coupee(),
+            self.couleurs.texte,
+            Cadre::pose(
+                depuis,
+                haut,
+                (pour_le_mot - pastille - self.px(design::PAS_2)).max(0.0),
+                mot,
+            ),
+        );
+        self.ecris(
+            &mot_de_la_presence(appareil),
+            self.legende().coupee(),
+            self.couleurs.texte_doux,
+            Cadre::pose(
+                depuis,
+                haut + mot + ecart,
+                (pour_le_mot - pastille - self.px(design::PAS_2)).max(0.0),
+                legende,
+            ),
+        );
+
+        let this = appareil.this;
+        self.bouton(
+            Cadre::pose(
+                x + large - large_renommer,
+                milieu - bouton / 2.0,
+                large_renommer,
+                bouton,
+            ),
+            "Renommer",
+            Sorte::Discret,
+            Quoi::OuvrirRenommage(rang),
+            true,
+        );
+        if !this {
+            let large_du_bouton = large_revoquer - self.px(design::PAS_2);
+            self.bouton(
+                Cadre::pose(
+                    x + large - large_renommer - large_revoquer,
+                    milieu - bouton / 2.0,
+                    large_du_bouton,
+                    bouton,
+                ),
+                revoquer,
+                if arme {
+                    Sorte::Attention
+                } else {
+                    Sorte::Discret
+                },
+                Quoi::Revoquer(rang),
+                true,
+            );
+        }
+        hauteur
+    }
+
+    /// Se rattacher à un serveur : le serveur, le compte, et le nom de
+    /// cet ordinateur ; puis, quand le serveur n'est garanti par
+    /// personne, sa clé à comparer.
+    fn dans_le_compte(&mut self, ou: Cadre) -> f32 {
+        let large = ou.droite - ou.gauche;
+        let mut y = ou.haut;
+        let ecart = self.px(design::PAS_4);
+
+        let titre = self.haute(self.sous_titre());
+        self.ecris(
+            "Se connecter à un serveur ZyrDesk",
+            self.sous_titre(),
+            self.couleurs.texte,
+            Cadre::pose(ou.gauche, y, large, titre),
+        );
+        y += titre + self.px(design::PAS_2);
+        y += self.bloc(
+            ou.gauche,
+            y,
+            large,
+            "Indiquez le serveur de votre installation, puis votre compte. Cet ordinateur y sera \
+             rattaché sous son nom, et vos autres ordinateurs apparaîtront sur l'accueil.",
+            self.legende(),
+            self.couleurs.texte_doux,
+        );
+        y += ecart;
+
+        let hauteur = self.px(tenue::SEGMENT) + self.px(tenue::AUTOUR) * 2.0;
+        self.segments(
+            ou.gauche + self.large_des_segments(Choisi::Inscription),
+            y + hauteur / 2.0,
+            Choisi::Inscription,
+        );
+        y += hauteur + ecart;
+
+        let inscription = self.etat.inscription;
+        for champ in Champ::COMPTE {
+            if champ.pour_l_inscription() && !inscription {
+                continue;
+            }
+            y += self.champ(ou.gauche, y, large, champ);
+            y += ecart;
+        }
+
+        if let Some(empreinte) = self.etat.epinglage.clone() {
+            y += self.epinglage(ou.gauche, y, large, &empreinte);
+            y += ecart;
+        }
+
+        let rempli = [Champ::Serveur, Champ::Utilisateur, Champ::MotDePasse]
+            .iter()
+            .all(|champ| !texte_du_champ(*champ).trim().is_empty());
+        let en_cours = self.etat.rattachement;
+        let (mot, quoi) = if self.etat.epinglage.is_some() {
+            ("C'est bien lui, continuer", Quoi::Epingler)
+        } else if inscription {
+            ("Créer le compte", Quoi::Rattacher)
+        } else {
+            ("Se connecter", Quoi::Rattacher)
+        };
+        y += self.px(design::PAS_1);
+        y += self.actions(
+            ou,
+            y,
+            &[
+                ("Annuler".to_string(), Sorte::Discret, Quoi::Fermer, true),
+                (
+                    if en_cours { "Connexion…" } else { mot }.to_string(),
+                    Sorte::Principal,
+                    quoi,
+                    rempli && !en_cours,
+                ),
+            ],
+        );
+        if let Some(souci) = self.etat.souci.clone() {
+            y += self.px(design::PAS_4);
+            y += self.bandeau(ou.gauche, y, large, &souci, true, None);
+        }
+        y - ou.haut
+    }
+
+    /// La clé d'un serveur que personne ne garantit, à comparer avec ce
+    /// que son installation a affiché avant de la croire.
+    fn epinglage(&mut self, x: f32, y: f32, large: f32, empreinte: &str) -> f32 {
+        let dedans = self.px(design::PAS_4);
+        let pour_le_mot = large - dedans * 2.0;
+        let mot = "Ce serveur présente un certificat que personne ne garantit. Comparez cette \
+                   empreinte avec celle que son installation a affichée. Si c'est bien la même, \
+                   continuez : elle sera retenue, et un serveur qui en présenterait une autre \
+                   serait refusé.";
+        let plume_empreinte = self.legende().a_chasse_fixe().ecartee(0.02);
+        let texte = self.hauteur(mot, self.legende(), pour_le_mot);
+        let cle = self.hauteur(empreinte, plume_empreinte, pour_le_mot);
+        let ecart = self.px(design::PAS_2);
+        let ou = Cadre::pose(
+            x,
+            y,
+            large,
+            texte + ecart + cle + self.px(design::PAS_3) * 2.0,
+        );
+        let rayon = self.px(design::RAYON);
+        self.remplis(
+            ou,
+            rayon,
+            self.couleurs.attention.melee(self.couleurs.surface_2, 0.08),
+        );
+        self.trace(
+            ou,
+            rayon,
+            self.couleurs.attention.melee(self.couleurs.r#trait, 0.4),
+        );
+        let haut = ou.haut + self.px(design::PAS_3);
+        self.bloc(
+            ou.gauche + dedans,
+            haut,
+            pour_le_mot,
+            mot,
+            self.legende(),
+            self.couleurs.texte_doux,
+        );
+        self.ecris(
+            empreinte,
+            plume_empreinte,
+            self.couleurs.texte,
+            Cadre::pose(ou.gauche + dedans, haut + texte + ecart, pour_le_mot, cle),
+        );
+        ou.bas - ou.haut
+    }
+
+    /// Renommer un appareil du compte.
+    fn dans_le_renommage(&mut self, ou: Cadre) -> f32 {
+        let Some((_, nom)) = self.etat.renomme.clone() else {
+            return 0.0;
+        };
+        let large = ou.droite - ou.gauche;
+        let mut y = ou.haut;
+        let ecart = self.px(design::PAS_4);
+
+        let titre = self.haute(self.sous_titre());
+        self.ecris(
+            &format!("Renommer « {nom} »"),
+            self.sous_titre().coupee(),
+            self.couleurs.texte,
+            Cadre::pose(ou.gauche, y, large, titre),
+        );
+        y += titre + self.px(design::PAS_2);
+        y += self.bloc(
+            ou.gauche,
+            y,
+            large,
+            "Le nom que le compte montre de cet appareil, sur tous les autres.",
+            self.legende(),
+            self.couleurs.texte_doux,
+        );
+        y += ecart;
+        y += self.champ(ou.gauche, y, large, Champ::NouveauNom);
+        y += ecart + self.px(design::PAS_1);
+
+        let nouveau = texte_du_champ(Champ::NouveauNom).trim().to_string();
+        y += self.actions(
+            ou,
+            y,
+            &[
+                ("Annuler".to_string(), Sorte::Discret, Quoi::Fermer, true),
+                (
+                    "Renommer".to_string(),
+                    Sorte::Principal,
+                    Quoi::Renommer,
+                    !nouveau.is_empty() && nouveau != nom,
+                ),
+            ],
+        );
         y - ou.haut
     }
 
@@ -3162,8 +3751,8 @@ fn touche(
             fait(&app, Quoi::Fermer);
             true
         }
-        VK_RETURN if ecran == Ecran::Ajout => {
-            fait(&app, Quoi::Connecter);
+        VK_RETURN if matches!(ecran, Ecran::Ajout | Ecran::Compte | Ecran::Renommage) => {
+            fait(&app, Quoi::Valider);
             true
         }
         VK_BACK | VK_DELETE => false,
@@ -3247,24 +3836,53 @@ fn pose_la_combinaison(app: &App, doing: Doing, combination: Option<Combination>
     redraw(app);
 }
 
-/* ---- Les trois champs de saisie ----------------------------------------- */
+/* ---- Les champs de saisie ------------------------------------------------ */
 
-/// Un champ du dialogue d'ajout, dans l'ordre où on les remplit.
+/// Un champ de saisie, chacun à sa place, ouvert le temps du dialogue
+/// qui le porte.
 #[derive(Clone, Copy, PartialEq)]
 enum Champ {
     Empreinte,
     Adresse,
     Nom,
+    Serveur,
+    Utilisateur,
+    MotDePasse,
+    NomAppareil,
+    Courriel,
+    Invitation,
+    NouveauNom,
 }
 
 impl Champ {
-    const ALL: [Champ; 3] = [Champ::Empreinte, Champ::Adresse, Champ::Nom];
+    /// Combien il y en a en tout : chacun a sa place, ouvert ou non.
+    const COMBIEN: usize = 10;
+    /// Ceux du dialogue d'ajout, dans l'ordre où on les remplit.
+    const AJOUT: [Champ; 3] = [Champ::Empreinte, Champ::Adresse, Champ::Nom];
+    /// Ceux du dialogue de compte, les deux derniers pour une inscription.
+    const COMPTE: [Champ; 6] = [
+        Champ::Serveur,
+        Champ::Utilisateur,
+        Champ::MotDePasse,
+        Champ::NomAppareil,
+        Champ::Courriel,
+        Champ::Invitation,
+    ];
+    /// Celui du renommage d'un appareil.
+    const RENOMMAGE: [Champ; 1] = [Champ::NouveauNom];
 
     fn rang(self) -> usize {
         match self {
             Champ::Empreinte => 0,
             Champ::Adresse => 1,
             Champ::Nom => 2,
+            Champ::Serveur => 3,
+            Champ::Utilisateur => 4,
+            Champ::MotDePasse => 5,
+            Champ::NomAppareil => 6,
+            Champ::Courriel => 7,
+            Champ::Invitation => 8,
+            Champ::NouveauNom => 9,
         }
     }
 
@@ -3273,6 +3891,13 @@ impl Champ {
             Champ::Empreinte => "Empreinte",
             Champ::Adresse => "Adresse",
             Champ::Nom => "Nom (facultatif)",
+            Champ::Serveur => "Serveur",
+            Champ::Utilisateur => "Nom d'utilisateur",
+            Champ::MotDePasse => "Mot de passe",
+            Champ::NomAppareil => "Nom de cet ordinateur",
+            Champ::Courriel => "Adresse e-mail (facultatif)",
+            Champ::Invitation => "Code d'invitation (si le serveur en demande un)",
+            Champ::NouveauNom => "Nouveau nom",
         }
     }
 
@@ -3282,7 +3907,24 @@ impl Champ {
             Champ::Empreinte => "0829cc7ecb9e9ba5…",
             Champ::Adresse => "192.168.1.20",
             Champ::Nom => "PC du bureau",
+            Champ::Serveur => "zyr.exemple.fr ou 192.168.1.40:8443",
+            Champ::Utilisateur => "victor",
+            Champ::MotDePasse => "",
+            Champ::NomAppareil => "PC du bureau",
+            Champ::Courriel => "victor@exemple.fr",
+            Champ::Invitation => "AB12-CD34",
+            Champ::NouveauNom => "PC du salon",
         }
+    }
+
+    /// Ce qui s'y tape ne se lit pas par-dessus l'épaule.
+    fn secret(self) -> bool {
+        self == Champ::MotDePasse
+    }
+
+    /// Ceux qui ne se montrent qu'en créant un compte.
+    fn pour_l_inscription(self) -> bool {
+        matches!(self, Champ::Courriel | Champ::Invitation)
     }
 
     /// Ce que le champ a à redire, ou à expliquer, sous lui.
@@ -3299,14 +3941,18 @@ impl Champ {
             Champ::Adresse => "Seulement si vous voulez contrôler cet ordinateur depuis ici. Il \
                                restera alors sur l'accueil, et il n'y aura plus rien à ressaisir."
                 .to_string(),
-            Champ::Nom => String::new(),
+            Champ::Serveur => "Comme l'installation du serveur l'a affiché, avec le port s'il \
+                               n'est pas 443. Toujours chiffré : une adresse en http:// est \
+                               refusée."
+                .to_string(),
+            _ => String::new(),
         }
     }
 }
 
-/// Les trois champs, et la place que la dernière image leur a donnée.
-static CHAMPS: Mutex<[isize; 3]> = Mutex::new([0; 3]);
-static PLACES: Mutex<[Option<Cadre>; 3]> = Mutex::new([None; 3]);
+/// Les champs, et la place que la dernière image leur a donnée.
+static CHAMPS: Mutex<[isize; Champ::COMBIEN]> = Mutex::new([0; Champ::COMBIEN]);
+static PLACES: Mutex<[Option<Cadre>; Champ::COMBIEN]> = Mutex::new([None; Champ::COMBIEN]);
 /// La police des champs, faite une fois pour la taille de l'écran.
 static POLICE: Mutex<isize> = Mutex::new(0);
 
@@ -3366,14 +4012,14 @@ fn habille_les_champs() {
 /// que le système la connaisse.
 const FAMILLE_DES_CHAMPS: &str = "Segoe UI Variable Text";
 
-/// Ouvre les trois vrais champs de Windows, vides.
-fn ouvre_les_champs() {
+/// Ouvre ces vrais champs de Windows, vides.
+fn ouvre_les_champs(lesquels: &[Champ]) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Controls::EM_SETCUEBANNER;
     use windows_sys::Win32::UI::Shell::SetWindowSubclass;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, ES_AUTOHSCROLL, SendMessageW, WS_CHILD, WS_VISIBLE,
+        CreateWindowExW, ES_AUTOHSCROLL, ES_PASSWORD, SendMessageW, WS_CHILD, WS_VISIBLE,
     };
 
     let toile = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
@@ -3382,7 +4028,12 @@ fn ouvre_les_champs() {
     }
     let classe = wide("EDIT");
     let mut champs = CHAMPS.lock().expect("accueil");
-    for champ in Champ::ALL {
+    for champ in lesquels.iter().copied() {
+        let secret = if champ.secret() {
+            ES_PASSWORD as u32
+        } else {
+            0
+        };
         // SAFETY: une fenêtre du système, fille de la nôtre, sur le fil
         // qui possède les deux.
         let edit = unsafe {
@@ -3390,7 +4041,7 @@ fn ouvre_les_champs() {
                 0,
                 classe.as_ptr(),
                 std::ptr::null(),
-                WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL as u32,
+                WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL as u32 | secret,
                 0,
                 0,
                 0,
@@ -3458,13 +4109,21 @@ unsafe extern "system" fn dans_un_champ(
                 // SAFETY: une question au système sur le clavier de ce
                 // fil, puis le clavier donné à un champ à nous.
                 let arriere = unsafe { GetKeyState(i32::from(VK_SHIFT)) } < 0;
-                let combien = Champ::ALL.len();
-                let suivant = if arriere {
-                    (rang + combien - 1) % combien
-                } else {
-                    (rang + 1) % combien
-                };
                 let champs = *CHAMPS.lock().expect("accueil");
+                // Le suivant de ceux qui sont ouverts, en tournant : les
+                // places des autres dialogues sont vides.
+                let combien = champs.len();
+                let mut suivant = rang;
+                for _ in 0..combien {
+                    suivant = if arriere {
+                        (suivant + combien - 1) % combien
+                    } else {
+                        (suivant + 1) % combien
+                    };
+                    if champs[suivant] != 0 {
+                        break;
+                    }
+                }
                 if champs[suivant] != 0 {
                     // SAFETY: une fenêtre faite par nous, sur son fil.
                     unsafe { SetFocus(champs[suivant] as HWND) };
@@ -3488,7 +4147,7 @@ unsafe extern "system" fn dans_un_champ(
     unsafe { DefSubclassProc(window, message, holding, with) }
 }
 
-/// Referme les trois champs et rend leur place.
+/// Referme les champs ouverts et rend leur place.
 fn ferme_les_champs() {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::Graphics::Gdi::DeleteObject;
@@ -3502,7 +4161,7 @@ fn ferme_les_champs() {
             *edit = 0;
         }
     }
-    *PLACES.lock().expect("accueil") = [None; 3];
+    *PLACES.lock().expect("accueil") = [None; Champ::COMBIEN];
     let mut police = POLICE.lock().expect("accueil");
     if *police != 0 {
         // SAFETY: une police faite par nous, rendue une fois.
@@ -3529,8 +4188,19 @@ fn range_les_champs() {
     // demande : le vrai champ est posé dedans, jamais sur son trait.
     let dedans = design::PAS_3 * echelle();
     for (edit, place) in champs.iter().zip(places.iter()) {
-        let (Some(place), true) = (place, *edit != 0) else {
+        if *edit == 0 {
             continue;
+        }
+        // Un champ ouvert que l'image n'a pas posé se range : réduit à
+        // rien plutôt que laissé où la dernière image l'avait mis.
+        let (x, y, large, haute) = match place {
+            Some(place) => (
+                (place.gauche + dedans).round() as i32,
+                (place.haut + dedans / 2.0).round() as i32,
+                (place.droite - place.gauche - dedans * 2.0).round() as i32,
+                (place.bas - place.haut - dedans).round() as i32,
+            ),
+            None => (0, 0, 0, 0),
         };
         // SAFETY: une fenêtre faite par nous, déplacée sur le fil qui la
         // possède.
@@ -3538,14 +4208,33 @@ fn range_les_champs() {
             SetWindowPos(
                 *edit as HWND,
                 std::ptr::null_mut(),
-                (place.gauche + dedans).round() as i32,
-                (place.haut + dedans / 2.0).round() as i32,
-                (place.droite - place.gauche - dedans * 2.0).round() as i32,
-                (place.bas - place.haut - dedans).round() as i32,
+                x,
+                y,
+                large,
+                haute,
                 SWP_NOACTIVATE | SWP_NOZORDER,
             )
         };
     }
+}
+
+/// Écrit ce texte dans un champ, à la place de ce qu'il portait.
+///
+/// Pour ce qu'un dialogue sait déjà : le nom de cette machine, le nom
+/// d'un appareil à renommer. Un champ vide où il faudrait retaper ce que
+/// la fenêtre affiche à côté serait une copie de plus.
+fn ecris_dans_le_champ(champ: Champ, texte: &str) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetWindowTextW;
+
+    let edit = CHAMPS.lock().expect("accueil")[champ.rang()];
+    if edit == 0 {
+        return;
+    }
+    let mots = wide(texte);
+    // SAFETY: une fenêtre faite par nous, et un texte qui survit à
+    // l'appel.
+    unsafe { SetWindowTextW(edit as HWND, mots.as_ptr()) };
 }
 
 /// Ce qui est écrit dans un champ.
@@ -3670,7 +4359,7 @@ fn fait(app: &App, quoi: Quoi) {
             // précédente, ils laisseraient ajouter deux fois le même
             // ordinateur d'un simple double clic.
             ferme_les_champs();
-            ouvre_les_champs();
+            ouvre_les_champs(&Champ::AJOUT);
             redraw(app);
         }
         Quoi::Fermer => {
@@ -3681,11 +4370,37 @@ fn fait(app: &App, quoi: Quoi) {
             // ferme aussi, et laissait la confirmation de vidage armée
             // derrière un dialogue clos.
             etat.vidage = None;
+            etat.epinglage = None;
+            etat.renomme = None;
             drop(etat);
             ferme_les_champs();
             redraw(app);
         }
         Quoi::Connecter => connecte(app),
+        // La touche Entrée fait ce que le bouton principal du dialogue
+        // ouvert ferait.
+        Quoi::Valider => {
+            let ecran = ETAT.lock().expect("accueil").ecran;
+            match ecran {
+                Ecran::Ajout => connecte(app),
+                Ecran::Compte => {
+                    let epinglage = ETAT.lock().expect("accueil").epinglage.clone();
+                    rattache(app, epinglage);
+                }
+                Ecran::Renommage => renomme(app),
+                Ecran::Accueil | Ecran::Journal | Ecran::Reglages => {}
+            }
+        }
+        Quoi::OuvrirCompte => ouvre_le_compte(app),
+        Quoi::Rattacher => rattache(app, None),
+        Quoi::Epingler => {
+            let epinglage = ETAT.lock().expect("accueil").epinglage.clone();
+            rattache(app, epinglage);
+        }
+        Quoi::Detacher => detache(app),
+        Quoi::OuvrirRenommage(rang) => ouvre_le_renommage(app, rang),
+        Quoi::Renommer => renomme(app),
+        Quoi::Revoquer(rang) => revoque(app, rang),
         Quoi::Oublier(rang) => {
             let voisin = VU
                 .lock()
@@ -3818,6 +4533,13 @@ fn choisis(app: &App, quoi: Choisi, rang: usize) {
             crate::theme::choose(*choix);
             redraw(app);
         }
+        return;
+    }
+    // Celui-ci ne voyage nulle part : il change la forme du dialogue de
+    // compte, et rien d'autre.
+    if quoi == Choisi::Inscription {
+        ETAT.lock().expect("accueil").inscription = rang == 1;
+        redraw(app);
         return;
     }
     let Some(valeur) = quoi.valeurs().get(rang).copied() else {
@@ -3959,6 +4681,209 @@ fn lance(app: &App, adresse: &str, empreinte: &str, nom: &str) {
         if let Err(raison) = crate::session::connect(app.clone(), adresse, empreinte).await {
             echoue(&app, &raison);
         }
+    });
+}
+
+/* ---- Le compte ------------------------------------------------------------ */
+
+/// Ouvre le dialogue de compte, avec le nom de cette machine déjà écrit.
+fn ouvre_le_compte(app: &App) {
+    {
+        let mut etat = ETAT.lock().expect("accueil");
+        etat.ecran = Ecran::Compte;
+        etat.defile_dialogue = 0.0;
+        etat.inscription = false;
+        etat.epinglage = None;
+        etat.rattachement = false;
+        etat.souci = None;
+    }
+    ferme_les_champs();
+    ouvre_les_champs(&Champ::COMPTE);
+    ecris_dans_le_champ(Champ::NomAppareil, &zyr_proto::machine::name());
+    redraw(app);
+}
+
+/// Rattache cet ordinateur au compte écrit dans les champs.
+///
+/// `epinglage` est la clé d'un serveur que personne ne garantit, une
+/// fois que la personne l'a comparée : sans elle, un tel serveur répond
+/// par sa clé et le dialogue la montre, avec de quoi la confirmer.
+fn rattache(app: &App, epinglage: Option<String>) {
+    let serveur = texte_du_champ(Champ::Serveur).trim().to_string();
+    let utilisateur = texte_du_champ(Champ::Utilisateur).trim().to_string();
+    let mot_de_passe = texte_du_champ(Champ::MotDePasse);
+    if serveur.is_empty() || utilisateur.is_empty() || mot_de_passe.is_empty() {
+        return;
+    }
+    let inscription = ETAT.lock().expect("accueil").inscription;
+    let vide_ou = |champ: Champ| {
+        let texte = texte_du_champ(champ).trim().to_string();
+        (!texte.is_empty()).then_some(texte)
+    };
+    let demande = Attach {
+        server: serveur,
+        username: utilisateur,
+        password: mot_de_passe,
+        register: inscription.then(|| Registering {
+            email: vide_ou(Champ::Courriel),
+            invitation: vide_ou(Champ::Invitation),
+        }),
+        name: texte_du_champ(Champ::NomAppareil).trim().to_string(),
+        pin: epinglage.and_then(|empreinte| empreinte.parse().ok()),
+    };
+    {
+        let mut etat = ETAT.lock().expect("accueil");
+        etat.rattachement = true;
+        etat.souci = None;
+    }
+    redraw(app);
+
+    let app = app.clone();
+    crate::app::spawn(async move {
+        let fait_ainsi = crate::desk::attach(demande).await;
+        // Ce que l'état retient de la réponse, écrit sous son verrou et
+        // rendu avant d'attendre quoi que ce soit d'autre.
+        let rattache = {
+            let mut etat = ETAT.lock().expect("accueil");
+            etat.rattachement = false;
+            match fait_ainsi {
+                Ok(Attached::Done) => true,
+                Ok(Attached::Unpinned(presentee)) => {
+                    etat.epinglage = Some(presentee);
+                    false
+                }
+                Err(raison) => {
+                    etat.souci = Some(raison);
+                    false
+                }
+            }
+        };
+        if !rattache {
+            redraw(&app);
+            return;
+        }
+        // Le dialogue se referme sur le fil qui possède ses champs : ce
+        // sont des fenêtres du système, et détruire une fenêtre depuis
+        // un autre fil ne détruit rien.
+        let sien = app.clone();
+        let _ = app.run_on_main_thread(move || fait(&sien, Quoi::Fermer));
+        relis(&app).await;
+        annonce(&app, "Cet ordinateur est rattaché au compte.", false);
+    });
+}
+
+/// Détache cet ordinateur de son compte. Un deuxième clic est demandé,
+/// et l'attente retombe d'elle-même.
+fn detache(app: &App) {
+    {
+        let mut etat = ETAT.lock().expect("accueil");
+        let arme = etat
+            .detachement
+            .is_some_and(|depuis| depuis.elapsed() < TEMPS_CONFIRMATION);
+        if !arme {
+            etat.detachement = Some(std::time::Instant::now());
+            drop(etat);
+            redraw(app);
+            return;
+        }
+        etat.detachement = None;
+        etat.souci = None;
+    }
+    redraw(app);
+
+    let app = app.clone();
+    crate::app::spawn(async move {
+        if let Err(raison) = crate::desk::detach().await {
+            dit_le_souci(&app, &raison);
+        }
+        relis(&app).await;
+        redraw(&app);
+    });
+}
+
+/// L'appareil du compte à ce rang, s'il y est encore.
+fn appareil_du_compte(rang: usize) -> Option<Device> {
+    VU.lock()
+        .expect("accueil")
+        .as_ref()
+        .and_then(|vu| vu.compte.as_ref())
+        .and_then(|compte| compte.appareils.get(rang).cloned())
+}
+
+/// Ouvre le renommage d'un appareil, son nom déjà écrit.
+fn ouvre_le_renommage(app: &App, rang: usize) {
+    let Some(appareil) = appareil_du_compte(rang) else {
+        return;
+    };
+    {
+        let mut etat = ETAT.lock().expect("accueil");
+        etat.ecran = Ecran::Renommage;
+        etat.defile_dialogue = 0.0;
+        etat.renomme = Some((appareil.id, appareil.name.clone()));
+        etat.souci = None;
+    }
+    ferme_les_champs();
+    ouvre_les_champs(&Champ::RENOMMAGE);
+    ecris_dans_le_champ(Champ::NouveauNom, &appareil.name);
+    redraw(app);
+}
+
+/// Renomme l'appareil en cours de renommage avec ce qui est écrit.
+fn renomme(app: &App) {
+    let nouveau = texte_du_champ(Champ::NouveauNom).trim().to_string();
+    let Some((appareil, avant)) = ETAT.lock().expect("accueil").renomme.clone() else {
+        return;
+    };
+    if nouveau.is_empty() || nouveau == avant {
+        return;
+    }
+    fait(app, Quoi::Fermer);
+    {
+        let mut etat = ETAT.lock().expect("accueil");
+        etat.ecran = Ecran::Reglages;
+        etat.defile_dialogue = 0.0;
+    }
+    redraw(app);
+
+    let app = app.clone();
+    crate::app::spawn(async move {
+        if let Err(raison) = crate::desk::rename_device(appareil, nouveau).await {
+            dit_le_souci(&app, &raison);
+        }
+        relis(&app).await;
+        redraw(&app);
+    });
+}
+
+/// Révoque un appareil du compte. Un deuxième clic est demandé, sur le
+/// même appareil, et l'attente retombe d'elle-même.
+fn revoque(app: &App, rang: usize) {
+    {
+        let mut etat = ETAT.lock().expect("accueil");
+        let arme = etat.revocation.is_some_and(|(lequel, depuis)| {
+            lequel == rang && depuis.elapsed() < TEMPS_CONFIRMATION
+        });
+        if !arme {
+            etat.revocation = Some((rang, std::time::Instant::now()));
+            drop(etat);
+            redraw(app);
+            return;
+        }
+        etat.revocation = None;
+        etat.souci = None;
+    }
+    let Some(appareil) = appareil_du_compte(rang) else {
+        return;
+    };
+    redraw(app);
+
+    let app = app.clone();
+    crate::app::spawn(async move {
+        if let Err(raison) = crate::desk::revoke_device(appareil.id).await {
+            dit_le_souci(&app, &raison);
+        }
+        relis(&app).await;
+        redraw(&app);
     });
 }
 
@@ -4222,6 +5147,19 @@ async fn relis(app: &App) -> bool {
     let sessions = crate::session::sessions().await;
     let moteurs = crate::folders::engines();
     let reglages = crate::settings::settings(app.clone()).await;
+    // Le compte, et ses appareils quand il y a un lien : sans lien il n'y
+    // a rien à demander, et sans service rien à montrer.
+    let compte = match crate::desk::account().await {
+        Ok(lien) => Some(Compte {
+            appareils: if lien.is_some() {
+                crate::desk::devices().await
+            } else {
+                Vec::new()
+            },
+            lien,
+        }),
+        Err(_) => None,
+    };
 
     let mut vu = VU.lock().expect("accueil");
     let neuf = vu.get_or_insert_with(Vu::default);
@@ -4231,6 +5169,7 @@ async fn relis(app: &App) -> bool {
         sessions: std::mem::replace(&mut neuf.sessions, sessions),
         moteurs: neuf.moteurs.replace(moteurs),
         reglages: neuf.reglages.replace(reglages),
+        compte: std::mem::replace(&mut neuf.compte, compte),
         raccourcis: neuf.raccourcis.clone(),
         version: neuf.version.clone(),
         dossier: neuf.dossier.clone(),
