@@ -25,6 +25,15 @@ readonly SERVICE_USER="zyrdesk"
 readonly DEFAULT_DATA="/var/lib/zyrdesk-server"
 readonly SHORTEST_PASSWORD=12
 
+# Tout ce que ce script écrit en passant : le journal de chaque étape, ce
+# qu'elle rend, et le clone avec sa compilation quand la source est
+# demandée. Un seul dossier, retiré à la sortie quelle qu'elle soit,
+# plutôt que plusieurs gigaoctets de restes dans /tmp après chaque
+# installation. Les sous-shells des étapes n'héritent pas de ce piège,
+# donc aucun d'eux ne l'emporte en finissant.
+TRAVAIL=$(mktemp -d)
+trap 'rm -rf "$TRAVAIL"' EXIT
+
 # ---- La langue -------------------------------------------------------------
 
 LANGUE="en"
@@ -114,17 +123,31 @@ LOGO
 
 # ---- Les questions ---------------------------------------------------------
 
+# L'invite d'une question, à donner à la lecture en ligne et à elle seule.
+#
+# Les couleurs y sont encadrées des deux marques dont la lecture en ligne
+# a besoin pour savoir que ça ne s'affiche pas. Sans elles, elle compte
+# les codes de couleur comme des caractères, se croit bien plus loin sur
+# la ligne qu'elle n'y est, et la question suivante s'écrit par-dessus
+# celle qu'on vient de répondre : trois questions sur une ligne et un
+# écran illisible. Ces marques ne valent que pour la lecture en ligne :
+# affichées telles quelles elles laisseraient deux octets de contrôle à
+# l'écran.
+invite() {
+  local teinte=$1 libelle=$2 entre=${3:-} texte
+  local avant=$'\001' apres=$'\002'
+  texte="$avant$teinte$apres?$avant$C_RESET$apres $libelle"
+  [[ -n $entre ]] && texte+=" $avant$C_DOUX$apres$entre$avant$C_RESET$apres"
+  printf '%s : ' "$texte"
+}
+
 # Une question, son défaut entre crochets, et ce qui est répondu ou le
 # défaut quand rien ne l'est.
 demande() {
   local __variable=$1 libelle=$2 defaut=${3:-} reponse
   while true; do
-    if [[ -n $defaut ]]; then
-      printf '%s?%s %s %s[%s]%s : ' "$C_VIF" "$C_RESET" "$libelle" "$C_DOUX" "$defaut" "$C_RESET"
-    else
-      printf '%s?%s %s : ' "$C_VIF" "$C_RESET" "$libelle"
-    fi
-    IFS= read -r -e reponse || { echo; exit 1; }
+    IFS= read -r -e -p "$(invite "$C_VIF" "$libelle" "${defaut:+[$defaut]}")" reponse ||
+      { echo; exit 1; }
     reponse=${reponse:-$defaut}
     if [[ -n $reponse ]]; then
       printf -v "$__variable" '%s' "$reponse"
@@ -165,8 +188,8 @@ demande_oui() {
     indication=$(t '[oui / Entrée=non]' '[yes / Enter=no]')
   fi
   while true; do
-    printf '%s?%s %s %s%s%s : ' "$C_VIF" "$C_RESET" "$libelle" "$C_DOUX" "$indication" "$C_RESET"
-    IFS= read -r -e reponse || { echo; exit 1; }
+    IFS= read -r -e -p "$(invite "$C_VIF" "$libelle" "$indication")" reponse ||
+      { echo; exit 1; }
     case "${reponse,,}" in
       "") [[ $defaut == oui ]] && return 0 || return 1 ;;
       o|oui|y|yes) return 0 ;;
@@ -187,8 +210,8 @@ demande_choix() {
     rang=$((rang + 1))
   done
   while true; do
-    printf '%s?%s %s %s[%s]%s : ' "$C_VIF" "$C_RESET" "$(t 'Votre choix' 'Your choice')" "$C_DOUX" "$defaut" "$C_RESET"
-    IFS= read -r -e reponse || { echo; exit 1; }
+    IFS= read -r -e -p "$(invite "$C_VIF" "$(t 'Votre choix' 'Your choice')" "[$defaut]")" reponse ||
+      { echo; exit 1; }
     reponse=${reponse:-$defaut}
     if [[ $reponse =~ ^[0-9]+$ ]] && (( reponse >= 1 && reponse <= $# )); then
       printf -v "$__variable" '%s' "$reponse"
@@ -202,40 +225,64 @@ demande_choix() {
 confirme_en_toutes_lettres() {
   local mot reponse
   mot=$(t 'oui' 'yes')
-  printf '%s?%s %s %s[%s]%s : ' "$C_ATTENTION" "$C_RESET" "$(t "Tapez « $mot » pour continuer" "Type \"$mot\" to continue")" "$C_DOUX" "$(t 'autre chose annule' 'anything else cancels')" "$C_RESET"
-  IFS= read -r -e reponse || { echo; exit 1; }
+  IFS= read -r -e -p "$(invite "$C_ATTENTION" \
+    "$(t "Tapez « $mot » pour continuer" "Type \"$mot\" to continue")" \
+    "[$(t 'autre chose annule' 'anything else cancels')]")" reponse || { echo; exit 1; }
   [[ $reponse == "$mot" ]]
 }
 
 # ---- Les étapes ------------------------------------------------------------
+
+# Ce qu'une étape a appris et que la suite doit savoir.
+#
+# Une étape tourne dans un sous-shell : sa sortie est mise de côté, et
+# surtout la première chose qui rate l'arrête au lieu de la laisser
+# continuer sur un demi-échec. Ses variables meurent donc avec elle.
+# Celles dont la suite a besoin s'écrivent ici, et l'étape réussie les
+# rend au script. Sans ça, l'installation posait le binaire qu'elle
+# venait de compiler depuis un chemin vide.
+RETOUR=""
+
+retiens() {
+  local nom
+  for nom in "$@"; do
+    printf '%s=%q\n' "$nom" "${!nom:-}" >>"$RETOUR"
+  done
+}
 
 # Une étape derrière une roue, réécrite en ✓ ou ✗ ; la sortie de ce
 # qu'elle a fait n'est montrée qu'en cas d'échec.
 etape() {
   local libelle=$1 journal statut=0
   shift
-  journal=$(mktemp)
+  journal=$(mktemp -p "$TRAVAIL")
+  RETOUR=$(mktemp -p "$TRAVAIL")
+  # Lancée en tâche de fond, sur un terminal ou non : c'est ce qui fait
+  # que la première chose qui rate dans l'étape l'arrête là. Attendue
+  # par un « || », elle irait au bout de son demi-échec et se dirait
+  # réussie, un téléchargement manqué compris.
+  ( "$@" ) >"$journal" 2>&1 &
+  local travaille=$!
   if [[ $INTERACTIF -eq 1 ]]; then
-    ( "$@" ) >"$journal" 2>&1 &
-    local pid=$! roue='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' i=0
-    while kill -0 "$pid" 2>/dev/null; do
+    local roue='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' i=0
+    while kill -0 "$travaille" 2>/dev/null; do
       printf '\r%s%s%s %s' "$C_VIF" "${roue:i%10:1}" "$C_RESET" "$libelle"
       i=$((i + 1))
       sleep 0.1
     done
-    wait "$pid" || statut=$?
+  fi
+  wait "$travaille" || statut=$?
+  if [[ $INTERACTIF -eq 1 ]]; then
     printf '\r\033[K'
-  else
-    ( "$@" ) >"$journal" 2>&1 || statut=$?
   fi
   if [[ $statut -eq 0 ]]; then
+    # shellcheck source=/dev/null
+    source "$RETOUR"
     ok "$libelle"
-    rm -f "$journal"
     return 0
   fi
   fail "$libelle"
   sed 's/^/    /' "$journal" >&2
-  rm -f "$journal"
   exit 1
 }
 
@@ -526,19 +573,18 @@ obtient_le_binaire() {
     [[ -f $BINAIRE_FOURNI ]] || { echo "$BINAIRE_FOURNI : introuvable"; return 1; }
     BINAIRE_TEMPORAIRE=$BINAIRE_FOURNI
     VERSION_INSTALLEE=$("$BINAIRE_FOURNI" --version 2>/dev/null | awk '{print $2}')
-    return 0
-  fi
-  if [[ $DEPUIS_LA_SOURCE -eq 1 ]]; then
+  elif [[ $DEPUIS_LA_SOURCE -eq 1 ]]; then
     compile_depuis_la_source
-    return
+  else
+    telecharge_le_binaire
   fi
-  telecharge_le_binaire
+  retiens BINAIRE_TEMPORAIRE VERSION_INSTALLEE
 }
 
 telecharge_le_binaire() {
   local nom dossier tag base
   nom=$(nom_du_binaire)
-  dossier=$(mktemp -d)
+  dossier=$(mktemp -d -p "$TRAVAIL")
   if [[ -n $VERSION_VOULUE ]]; then
     tag=$VERSION_VOULUE
   else
@@ -559,7 +605,7 @@ compile_depuis_la_source() {
   if [[ -n $SOURCE_FOURNIE ]]; then
     source=$SOURCE_FOURNIE
   else
-    source=$(mktemp -d)
+    source=$(mktemp -d -p "$TRAVAIL")
     git clone --depth 1 --branch "${BRANCHE_SOURCE:-main}" "https://github.com/$REPO" "$source"
   fi
   (cd "$source" && cargo build --release -p zyr-server)
@@ -619,7 +665,7 @@ genere_les_cles() {
 # dix ans, portant le nom et les adresses de cette machine.
 genere_le_certificat() {
   local cnf noms=() rang=1
-  cnf=$(mktemp)
+  cnf=$(mktemp -p "$TRAVAIL")
   if est_une_ip "$PUBLIC_HOST"; then
     noms+=("IP.$rang = $PUBLIC_HOST"); rang=$((rang + 1))
   else
@@ -741,6 +787,7 @@ cree_le_premier_compte() {
   fi
   if [[ $REGISTRATION == invitation ]]; then
     CODE_D_INVITATION=$(runuser -u "$SERVICE_USER" -- "$BIN" --config "$CONF" invite new)
+    retiens CODE_D_INVITATION
   fi
 }
 
