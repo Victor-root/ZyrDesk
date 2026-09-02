@@ -61,6 +61,10 @@ pub enum FromServer {
         devices: Vec<DeviceInfo>,
         contacts: Vec<ContactInfo>,
         shares: Vec<ShareInfo>,
+        /// A fresh token, when the one presented is about to run out:
+        /// the device keeps it in place of the old one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token: Option<String>,
     },
     /// A device of the account, or one shared, came or went.
     Presence {
@@ -221,6 +225,7 @@ mod tests {
                     expires: None,
                     created: 1,
                 }],
+                token: Some("jeton".into()),
             },
             FromServer::Presence {
                 device: "d2".into(),

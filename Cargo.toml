@@ -15,6 +15,7 @@ members = [
     "crates/zyr-cli",
     "crates/zyr-ui",
     "crates/zyrdeskd",
+    "server/zyr-server",
 ]
 
 [workspace.package]

@@ -240,6 +240,74 @@ impl Identity {
 /// The other half of `Identity::sign`, for whoever holds only the
 /// certificate: a server checking that the device attaching itself holds
 /// the key of the certificate it sends.
+/// The fingerprint of the public key inside that certificate.
+///
+/// What a server's certificate is pinned by when nobody else vouches for
+/// it: a certificate gets renewed, a key can stay, and a pin on the key
+/// survives the renewal. The key is read straight out of the DER, which
+/// is a fixed walk down the certificate's structure and nothing more.
+pub fn public_key_fingerprint(certificate: &CertificateDer<'_>) -> Option<Fingerprint> {
+    let key = der::subject_public_key_info(certificate.as_ref())?;
+    Some(Fingerprint(Sha256::digest(key).into()))
+}
+
+/// Just enough DER to find the public key of a certificate.
+mod der {
+    const SEQUENCE: u8 = 0x30;
+    /// The explicit `[0]` that carries the version, when there is one.
+    const VERSION: u8 = 0xa0;
+
+    /// One element: its tag, its contents, and what follows it.
+    fn element(bytes: &[u8]) -> Option<(u8, &[u8], &[u8])> {
+        let (&tag, after_tag) = bytes.split_first()?;
+        let (&first, after_first) = after_tag.split_first()?;
+        let (length, contents_on) = if first & 0x80 == 0 {
+            (usize::from(first), after_first)
+        } else {
+            let count = usize::from(first & 0x7f);
+            if count == 0 || count > 4 || after_first.len() < count {
+                return None;
+            }
+            let length = after_first[..count]
+                .iter()
+                .fold(0usize, |length, &byte| (length << 8) | usize::from(byte));
+            (length, &after_first[count..])
+        };
+        if contents_on.len() < length {
+            return None;
+        }
+        let (contents, rest) = contents_on.split_at(length);
+        Some((tag, contents, rest))
+    }
+
+    /// The `SubjectPublicKeyInfo`, tag and length included.
+    pub fn subject_public_key_info(certificate: &[u8]) -> Option<&[u8]> {
+        let (tag, whole, _) = element(certificate)?;
+        if tag != SEQUENCE {
+            return None;
+        }
+        let (tag, mut fields, _) = element(whole)?;
+        if tag != SEQUENCE {
+            return None;
+        }
+        let (tag, _, rest) = element(fields)?;
+        if tag == VERSION {
+            fields = rest;
+        }
+        // Serial number, signature algorithm, issuer, validity, subject:
+        // the key comes right after.
+        for _ in 0..5 {
+            let (_, _, rest) = element(fields)?;
+            fields = rest;
+        }
+        let (tag, _, rest) = element(fields)?;
+        if tag != SEQUENCE {
+            return None;
+        }
+        Some(&fields[..fields.len() - rest.len()])
+    }
+}
+
 pub fn signed_by(certificate: &CertificateDer<'_>, message: &[u8], signature: &[u8]) -> bool {
     webpki::EndEntityCert::try_from(certificate)
         .and_then(|cert| cert.verify_signature(webpki::ring::ECDSA_P256_SHA256, message, signature))
@@ -436,6 +504,34 @@ mod tests {
             "un défi".as_bytes(),
             b"pas une signature"
         ));
+    }
+
+    #[test]
+    fn the_public_key_is_found_in_the_certificate_and_outlives_its_renewal() {
+        // Deux certificats sur la même clé ont la même empreinte de clé :
+        // c'est ce qui permet de renouveler le premier sans réépingler.
+        let key = rcgen::KeyPair::generate().unwrap();
+        let first = rcgen::CertificateParams::new(vec!["zyr.exemple.fr".to_string()])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let second = rcgen::CertificateParams::new(vec!["autre.exemple.fr".to_string()])
+            .unwrap()
+            .self_signed(&key)
+            .unwrap();
+        let of_first = public_key_fingerprint(first.der()).unwrap();
+        assert_eq!(public_key_fingerprint(second.der()).unwrap(), of_first);
+        assert_ne!(Fingerprint::of_certificate(first.der()), of_first);
+
+        let other = Identity::generate().unwrap();
+        assert_ne!(
+            public_key_fingerprint(other.certificate()).unwrap(),
+            of_first
+        );
+        assert_eq!(
+            public_key_fingerprint(&CertificateDer::from(b"pas un certificat".to_vec())),
+            None
+        );
     }
 
     #[test]
