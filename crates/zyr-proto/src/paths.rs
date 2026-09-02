@@ -179,6 +179,17 @@ pub fn session_wanted() -> PathBuf {
     data_dir().join("session-wanted.txt")
 }
 
+/// The link of this device to an account, when there is one: the
+/// server, what it was called there, the token it presents, and what
+/// it pinned of the server.
+///
+/// Beside the identity, and under the same limit as its key: the token
+/// is what lets this device speak for the account, and it is held by
+/// the service alone.
+pub fn account() -> PathBuf {
+    data_dir().join("account.conf")
+}
+
 /// Key combinations the window answers to during a session.
 ///
 /// Apart from the preferences because nobody else needs them: they say
@@ -229,6 +240,7 @@ mod tests {
             hushed_speakers(),
             session_stats(),
             session_wanted(),
+            account(),
             keyboard_shortcuts(),
             floating_button(),
             chosen_theme(),
