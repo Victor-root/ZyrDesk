@@ -10,14 +10,14 @@ Chaque brique, le choix retenu, la raison, et les alternatives sérieusement con
 | Interface | Dessinée par le produit, en Direct2D et DirectWrite, dans une fenêtre Win32 à lui | Rien n'est embarqué, le texte est rendu par le moteur du système ; zéro processus de navigateur ; le système de design reste écrit une seule fois. Aucune boîte à outils d'interface : 321 caisses de moins dans le verrou du projet |
 | Moteur hôte | Sunshine officiel en processus enfant | Zéro modification visée : pilotage complet par config/CLI/REST vérifié sur le code |
 | Moteur client | moonlight-qt officiel en processus enfant | Pipeline décodage D3D11VA + présentation D3D11 + frame pacing : des années de réglages Windows qu'on ne réécrit pas |
-| Transport | iroh (plan B quinn) derrière un trait `ZyrTransport` | Traversée NAT + relais + migration de chemin intégrés et en production ; décision verrouillée par le banc M2 |
+| Transport | quinn, et sous QUIC une couche de chemins à nous : aiguilleur, sondes signées, branche de relais | Contrôleur média mesuré au banc M2 (D13) ; la migration relais vers direct se fait sans que QUIC le sache, donc sans changer de transport ; examen d'iroh clos par D119 |
 | IPC local | Named pipes (tokio) + RPC typé maison | Natif Windows, simple, contrôle d'accès par identité de l'appelant |
-| Secrets | DPAPI (profil SYSTEM) côté service ; gestionnaire d'identifiants côté interface | Standard Windows, zéro dépendance exotique |
-| Broker | axum + WebSocket + SQLite (Postgres possible ensuite) | Un binaire auto-hébergeable dès le premier jour ; SQLite suffit largement au début |
-| Relais | Relais iroh auto-hébergé (plan B : forwarder quinn maison) | Ne voit que du chiffré, CPU minimal |
+| Secrets | DPAPI (profil SYSTEM) côté service, lien de compte compris ; la fenêtre ne tient aucun secret | Standard Windows, zéro dépendance exotique |
+| Serveur (broker et relais) | Un binaire Rust, `zyrdesk-server` : axum + WebSocket + SQLite (rusqlite, WAL, migrations numérotées), quinn pour le relais, AGPLv3 | Auto-hébergeable dès le premier jour sur un Debian, en quelques questions ; SQLite suffit largement ; Postgres possible ensuite ([SERVER.md](SERVER.md)) |
+| Relais | Le nôtre, dans le même binaire : datagrammes QUIC, paquets opaques entre les deux empreintes qu'un laissez-passer nomme | Ne voit que du chiffré, CPU minimal ; pas de blocage en tête de ligne, contrairement aux relais sur TCP (DERP, iroh) |
 | Découverte LAN | mdns-sd | Éprouvé, sans runtime imposé |
 | Mappage de ports | portmapper (UPnP + NAT-PMP + PCP) | Crate maintenue et utilisée en production par iroh |
-| Comptes | Argon2id, jetons courts, TOTP | Standard moderne |
+| Comptes | Argon2id (paramètres OWASP), jetons opaques hachés, appareil prouvé par sa clé, TOTP après le MVP | Standard moderne |
 | Installateur | NSIS, script à nous + étapes personnalisées (service, pare-feu) | Un seul format, scriptable, sans dépendance d'outillage |
 
 ## Justifications détaillées et alternatives rejetées
@@ -48,8 +48,9 @@ Moteur client : processus moonlight-qt plutôt qu'un lecteur natif maison sur mo
 - Mais le decodeur/présentateur/frame pacing de moonlight-qt représente des années de cas particuliers Windows réglés (choix DXGI, tearing, pacing sur vsync réel, GPU hybrides). Le réécrire d'emblée = des mois pour retrouver la parité, avec régressions probables, en contradiction avec « ne pas réécrire les moteurs éprouvés ».
 - La frontière processus + superviseur construite en v1 est exactement la couture qui permettra de remplacer le lecteur plus tard sans toucher au reste, avec le banc de performance pour prouver la parité.
 
-Transport : iroh d'abord, quinn en plan B, et pas...
+Transport : quinn, une couche de chemins à nous, et pas...
 
+- iroh : examiné deux fois, à M2 (D13) et à la conception du serveur (D119, [SERVER.md](SERVER.md) §4.8). Solide en 2026 (multichemin QUIC, perforation, relais éprouvé), mais il repose sur noq, son fork de quinn, et sur un relais TCP ; l'adopter changerait de transport pour obtenir une migration que l'aiguilleur donne sans en changer. Reste l'endroit par lequel il pourrait entrer un jour.
 - webrtc-rs : lourd, architecture asynchrone contraignante, pas taillé pour notre cas.
 - str0m (WebRTC sans E/S) : crédible côté serveur SFU, mais notre chemin principal (pair à pair) y est le moins éprouvé.
 - boringtun (WireGuard) : en restructuration annoncée par son propre README ; et WireGuard seul n'apporte ni traversée NAT ni multiplexage fiable/non fiable.

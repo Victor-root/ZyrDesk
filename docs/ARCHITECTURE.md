@@ -52,6 +52,8 @@ Idées initiales abandonnées après étude :
 
 En fonctionnement normal, le flux média circule directement entre les deux PC. Le broker ne voit jamais un octet de média ; le relais, quand il sert, ne transporte que des paquets chiffrés qu'il ne peut pas déchiffrer.
 
+Le serveur est facultatif. Sans lui, ZyrDesk se joint sur le réseau local, par un VPN ou par une adresse publique avec un port ouvert, sans compte ; avec lui, un compte, la présence, les contacts, les partages et la connexion en un clic d'où qu'on soit. Les deux façons cohabitent dans le même produit, et un service sans lien de compte ne contient aucun code qui parle au serveur. La conception entière est dans [SERVER.md](SERVER.md).
+
 ## 3. Les quatre processus (un seul produit visible)
 
 | Processus | Rôle | Compte | Durée de vie |
@@ -78,13 +80,13 @@ Moonlight est lancé par session avec un dossier d'état isolé par appareil dis
 1. L'utilisateur active « Autoriser l'accès distant » dans l'interface.
 2. L'interface le demande au service par le pipe local (action réservée aux administrateurs de la machine).
 3. Le service génère la configuration Sunshine, lance le moteur dans la session console et surveille sa santé (sonde locale sur son endpoint `/serverinfo`).
-4. Le service annonce l'appareil « disponible » au broker (connexion sortante persistante).
+4. S'il a un lien de compte, le service annonce l'appareil « disponible » au broker (connexion sortante persistante).
 5. Au démarrage de Windows, si l'option est active, le service refait les étapes 3 et 4 sans aucune intervention : le PC est joignable depuis l'écran de connexion.
 
 ## 6. Flux : se connecter (appairage invisible)
 
 1. Clic sur « Se connecter » : l'interface demande la session au service.
-2. Le service client demande un ticket au broker ; le broker vérifie que les deux appareils appartiennent au même compte et remet aux deux extrémités un ticket signé de courte durée + les informations de chemin (candidats réseau, relais).
+2. Le service client demande un ticket au broker ; le broker vérifie que les deux appareils appartiennent au même compte, ou qu'un partage les lie, et remet aux deux extrémités un ticket signé de courte durée, puis leur fait passer leurs candidats de chemin et, s'il en a un, l'adresse du relais.
 3. Les deux services établissent le tunnel QUIC avec authentification mutuelle par clés d'appareil (voir [SECURITY.md](SECURITY.md)) : chemin relais d'abord si nécessaire, promotion vers le direct en parallèle (voir [NETWORK.md](NETWORK.md)).
 4. Première connexion entre ces deux appareils seulement : le lecteur est lancé en attente d'un code, le service client tire ce code au sort et l'envoie au service hôte PAR LE TUNNEL authentifié (jamais via le broker), le service hôte le soumet à l'API locale de Sunshine, et les deux moteurs s'appairent. Invisible pour l'utilisateur, et conforme au protocole d'appairage officiel des moteurs. L'ordre est le mécanisme et non un détail d'écriture : le moteur hôte refuse un code tant que personne ne lui en demande un, si bien que le lecteur part le premier et que le résultat n'est attendu qu'après le voyage du code. Le service hôte réessaie quelques secondes, les deux moitiés arrivant dans un ordre que rien ne garantit, et l'attente côté client est bornée, le moteur n'y mettant lui-même aucune limite.
 5. Le service client expose des ports locaux factices (adresse loopback stable 127.77.x.y par appareil distant) et rend cette adresse à l'appelant, qui lance `zyrdesk-session.exe` vers elle. Pour Moonlight, l'hôte est « local » ; en réalité chaque paquet traverse le tunnel.
@@ -114,7 +116,7 @@ Règle : jamais un écran noir sans explication. Le service détecte et l'interf
 ## 9. Intégration Windows
 
 - IPC local : named pipe `\\.\pipe\zyrdesk`, RPC typé + événements poussés (état de session, statistiques, présence). Chaque message est autorisé selon l'identité Windows de l'appelant (SID) : l'activation de l'hôte exige un administrateur.
-- Secrets : clé privée de l'appareil et identifiants de l'interface web Sunshine protégés par DPAPI dans le profil SYSTEM (pas DPAPI « machine », déchiffrable par tout utilisateur local), fichiers ACLés SYSTEM + Administrateurs. Côté interface, les jetons de compte vont dans le gestionnaire d'identifiants Windows de l'utilisateur.
+- Secrets : clé privée de l'appareil et identifiants de l'interface web Sunshine protégés par DPAPI dans le profil SYSTEM (pas DPAPI « machine », déchiffrable par tout utilisateur local), fichiers ACLés SYSTEM + Administrateurs. Le lien de compte et son jeton d'appareil sont au service, sous la même protection que la clé ; la fenêtre ne tient aucun jeton.
 - Pare-feu : une seule règle UDP entrante, pour `zyrdeskd` uniquement. Les moteurs, liés au loopback, n'en ont besoin d'aucune. Règles nommées, supprimées à la désinstallation.
 - Journaux : tous les composants écrivent dans le sous-dossier `logs` des données du produit (rotation), en temps universel et sous la même forme, le service et la fenêtre partageant le même écrivain. Chaque binaire porte l'empreinte du code dont il a été compilé, gravée par un script de compilation, et l'écrit en tête de sa trace : une panne se lit toujours contre la version qui l'a produite. La fenêtre rassemble les quatre traces sur un écran, sous cet entête, avec un bouton qui copie l'ensemble. `zyr-cli doctor` vérifie : encodeurs disponibles, GPU hybride, règle pare-feu, service actif, broker joignable, type de NAT, latence relais.
 - Mises à jour : canal unique ; l'interface télécharge et vérifie le paquet, refuse d'appliquer pendant une session active, puis arrête le service, remplace les binaires (moteurs compris) et redémarre. Poignée de main de version entre interface, service et broker : les décalages de versions sont détectés proprement.
@@ -127,22 +129,25 @@ Règle : jamais un écran noir sans explication. Le service détecte et l'interf
 ZyrDesk/
 ├─ Cargo.toml                  # workspace Rust
 ├─ crates/
-│  ├─ zyr-proto/               # types partagés : chemins, journal horodaté, empreinte de compilation, versions
-│  ├─ zyr-transport/           # trait ZyrTransport ; implémentations iroh ET quinn ; contrôleur média ; budget MTU
+│  ├─ zyr-proto/               # types partagés : chemins, journal horodaté, empreinte de compilation, réglages de session
+│  ├─ zyr-transport/           # la connexion QUIC (quinn, un seul fichier le nomme), identité et empreintes, contrôleur média, budget MTU ; à venir (M5) : l'aiguilleur, les sondes, la branche de relais
 │  ├─ zyr-tunnel/              # pompes de ports : TCP<->stream, UDP<->datagramme ; canal ZyrDesk ; loopback 127.77.x.y
-│  ├─ zyr-engine-host/         # superviseur Sunshine : config générée, lancement en session console, /api/pin, santé
-│  ├─ zyr-engine-client/       # superviseur Moonlight : dossiers d'état par appareil, CLI, parsing stats, codes de sortie
+│  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube nommé
+│  ├─ zyr-engine-host/         # superviseur Sunshine : config générée, lancement en session console, API locale, santé
+│  ├─ zyr-engine-client/       # superviseur Moonlight : dossiers d'état par appareil, ligne de commande, statistiques, fichier suivi, codes de sortie
 │  ├─ zyr-session/             # ouverture d'une session de bout en bout, partagée par l'interface et la ligne de commande
-│  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur et découverte des autres
-│  ├─ zyr-device/              # identité Ed25519, secrets DPAPI (profil SYSTEM), enrôlement
-│  ├─ zyr-broker-client/       # client WSS présence/signalisation, tickets
-│  ├─ zyrdeskd/                # binaire service Windows : registre de sessions, serveur pipe, tous les tunnels
+│  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
+│  ├─ zyr-screen/              # l'écran virtuel : pilote, réveil, sommeil, arrangement des écrans
+│  ├─ zyr-sound/               # le son de la session, dans le mélangeur de Windows
+│  ├─ zyr-broker/              # à venir (M5) : ce que le service et le serveur se disent, tickets et laissez-passer signés
+│  ├─ zyr-account/             # à venir (M5) : le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous
+│  ├─ zyrdeskd/                # binaire service Windows : registre des voies, serveur du tube, tous les tunnels, superviseur du moteur hôte
 │  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, journal, bouton flottant
 │  └─ zyr-cli/                 # doctor, session sans UI, banc de mesure, bundle de diagnostic
-├─ broker/zyr-broker/          # binaire unique axum + WSS + SQLite (AGPLv3) ; deploy/ (Docker, auto-hébergement)
+├─ server/                     # à venir (M5) : zyr-server, le serveur facultatif (broker et relais, un binaire, AGPLv3), install.sh, unité systemd
 ├─ engines/
-│  ├─ sunshine/                # submodule -> fork, tag upstream épinglé + 0 à 2 commits
-│  └─ moonlight-qt/            # submodule -> fork, tag upstream épinglé + 9 commits maximum
+│  ├─ sunshine/                # submodule -> fork, tag upstream épinglé + une pile courte de patchs (patches/MANIFEST.md)
+│  └─ moonlight-qt/            # submodule -> fork, tag upstream épinglé + une pile courte de patchs (patches/MANIFEST.md)
 ├─ patches/                    # miroirs .patch exportés par la CI + MANIFEST.md
 ├─ packaging/                  # installateur NSIS, install service, règles pare-feu, désinstallation propre
 ├─ perf/                       # GATES.md (seuils chiffrés), scripts, profils de perte, procédure photon-à-photon
@@ -153,7 +158,7 @@ ZyrDesk/
 ## 11. Interfaces entre composants (résumé)
 
 - Interface <-> service (tube nommé `\\.\pipe\ZyrDesk`) : un message par ligne, un verbe puis des champs `clé=valeur`, lisible à l'oeil pour le diagnostic. Posé au jalon M4 avec `standing` (empreinte de la machine, compilation du service, accès distant actif et ce qui l'empêche, confiance au réseau local, voies ouvertes), `reach` (ouvrir une voie vers un ordinateur), `pair` (remettre à l'ordinateur d'en face le code que son moteur attend), `hold` (dire quel processus la voie sert), `release`, `peers` (les ZyrDesk vus sur le réseau local), `sessions` (celles que le service tient, avec la machine visée et depuis quand), `hosting` (activer ou couper l'accès distant), `trusting` (accorder ou retirer la confiance au réseau local), `settings` et `choose` (ce à quoi ressemble une session ouverte d'ici). Une liste voyage en un message par élément, terminée par `done` : le canal garde sa forme et une liste vide se distingue d'un service qui s'est tu. Les champs inconnus sont ignorés, ceux ajoutés après coup se lisent avec un défaut plutôt qu'en refusant le message, et un verbe inconnu se nomme : une moitié du produit plus ancienne que l'autre perd ce qu'elle ne connaît pas, pas la conversation. La liste d'accès du tube donne le contrôle au compte système et aux administrateurs, la lecture et l'écriture à la personne connectée à la machine : sans elle, l'interface ne pourrait pas écrire un seul message. Restent à ajouter : comptes, enrôlement, liste des appareils, presse-papiers, diagnostic, mises à jour, et les événements poussés.
-- Service <-> broker (WSS + un peu de REST) : création de compte, connexion, enrôlement et révocation d'appareils, présence, demande/remise de tickets de session, jetons de relais, synchronisation de la liste d'appareils, révocations poussées.
+- Service <-> serveur (HTTPS et WSS, JSON, seulement quand un lien de compte existe) : création de compte, connexion, rattachement et révocation d'appareils prouvés par leur clé, présence, contacts et partages, tickets de session et rendez-vous, laissez-passer de relais, révocations poussées. Détails : [SERVER.md](SERVER.md) §6.
 - Service <-> Sunshine : processus + configuration générée + REST loopback (`/serverinfo` santé, `POST /api/pin` appairage).
 - Superviseur <-> Moonlight : processus + ligne de commande + parsing des journaux/statistiques + codes de sortie.
 - Tunnel (une connexion QUIC par session) : canal ZyrDesk = le produit qui se parle à lui-même (carte des ports du moteur d'en face, code d'appairage, et plus tard presse-papiers, statistiques, sonde de débit), une question par stream, un message de texte dans chaque sens ouvert par le numéro de version du dialecte ; les autres streams portent les flux TCP GameStream (HTTP, HTTPS, RTSP) ; les datagrammes portent la vidéo, le contrôle temps réel et l'audio, précédés d'un octet de canal. Détails : [NETWORK.md](NETWORK.md).

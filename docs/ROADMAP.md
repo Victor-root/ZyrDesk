@@ -73,17 +73,17 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 - Résultat observable : deux PC, tout en interface, zéro ligne de commande. Ne restent en ligne de commande que récupérer les changements et lancer l'application.
 - Critères de sortie : parcours complet à la souris ; tuer l'interface en pleine session -> le flux survit et l'interface se rattache au relancement ; aucune trace visible de Sunshine/Moonlight (fenêtres, titres, icônes, processus au nom trompeur) ; G-start LAN tenu. **Contenu du jalon terminé** ; le jalon sera atteint quand [docs/testing/M4-PROTOCOLE.md](testing/M4-PROTOCOLE.md) aura été déroulé en entier sur les deux machines.
 
-## M5 : Broker, comptes, Internet en direct
+## M5 : Le serveur, les comptes, Internet en direct
 
-- Objectif : « Mes ordinateurs » à travers Internet.
-- Contenu : broker v1 (comptes Argon2id, enrôlement d'appareils Ed25519, présence WSS, tickets de session, synchronisation de liste), intégration service (identité, lien broker), candidats directs (mappage de ports, adresses observées), perforation NAT, PIN par tunnel, adresses loopback 127.77.x.y par appareil.
+- Objectif : « Mes ordinateurs » à travers Internet, sans que le serveur soit jamais obligatoire. Conception : [SERVER.md](SERVER.md).
+- Contenu, en trois tranches livrables l'une après l'autre : (1) le serveur `zyrdesk-server` (comptes Argon2id, rattachement d'appareils prouvé par leur clé, jetons, canal vivant, présence, TLS strict et épinglage de l'auto-signé, `install.sh` pour un Debian en conteneur LXC) et, côté appareil, le lien de compte et « Mes ordinateurs » ; (2) le rendez-vous et le direct : candidats, miroir, mappage de port, sondes signées, aiguilleur en double pile ; (3) contacts et partages d'une machine, avec expiration.
 - Résultat observable : client sur partage de connexion 4G, hôte sur le réseau domestique : connexion en un clic.
-- Critères de sortie : G-start WAN tenu ; 30 min de session stable 1080p60 ; compteurs broker : zéro octet de média ; révocation d'appareil effective en moins d'une minute.
+- Critères de sortie : G-start Internet tenu ; 30 min de session stable 1080p60 ; compteurs du serveur : zéro octet de session ; révocation d'appareil effective en moins d'une minute ; un partage retiré ferme la session en cours.
 
 ## M6 : Relais et bascule automatique
 
 - Objectif : ça marche depuis les réseaux hostiles, et ça s'améliore tout seul.
-- Contenu : relais déployé (auto-hébergeable), jetons de relais, démarrage « relais d'abord, direct en parallèle », migration vers le direct sans coupure (iroh) ou reconnexion ~2 s (plan B), indicateur de chemin dans l'interface, plafond de débit en mode relais.
+- Contenu : le relais dans le même binaire que le broker, débrayable ; laissez-passer signés ; branche de relais en datagrammes QUIC sur UDP 443 ; migration dans les deux sens sous le tunnel, par l'aiguilleur (D119), sans reconnexion ; chemin affiché dans le menu de la session ; plafond de débit et de sessions relayées ; banc de mesure relayé.
 - Résultat observable : UDP direct bloqué au pare-feu entre les deux PC -> la session s'établit quand même ; on débloque -> passage en direct sans interruption perceptible.
 - Critères de sortie : session via relais avec surcoût de latence <= 1 aller-retour supplémentaire vers le relais ; promotion automatique vérifiée ; l'utilisateur voit toujours le chemin actif.
 

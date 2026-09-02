@@ -90,13 +90,13 @@ Les deux estimations du tableau se resserreront une fois la taille réelle des e
 
 ## 5. Établissement de session et chemins
 
-Modèle « relais d'abord, direct en parallèle » (zéro attente perçue, leçon Tailscale ; Valve montre même qu'un bon relais bat parfois le chemin direct) :
+Au-delà du réseau local, la conception complète est dans [SERVER.md](SERVER.md) §4 ; en résumé, « relais d'abord, direct en parallèle » (zéro attente perçue, leçon Tailscale), sous une couche à nous qui choisit le chemin sans que QUIC le sache :
 
-1. Le broker remet aux deux services le ticket de session + les candidats : adresses locales (LAN), IPv6 globale, IPv4 publique observée, mappages UPnP/NAT-PMP/PCP (crate portmapper), relais assigné.
-2. La connexion démarre immédiatement par le meilleur chemin disponible (souvent le relais, parfois le LAN découvert par mDNS).
-3. En parallèle : perforation NAT (hole punching) sur les candidats directs. Dès qu'un chemin direct fonctionne, la connexion MIGRE dessus sans interruption (iroh) ou se rétablit en ~2 s (plan B).
-4. En LAN pur, le direct est établi d'emblée (mDNS + adresses locales) ; le relais n'est même pas contacté.
-5. L'interface affiche toujours le chemin actif (Direct ou Relais) et la latence.
+1. Le broker remet aux deux services un ticket de session signé, et leur fait passer leurs candidats au fur et à mesure : adresses locales, IPv6 globale, IPv4 publique vue par le miroir du serveur, mappage UPnP/NAT-PMP/PCP (crate portmapper), adresse écrite à la main ; et, s'il en a un, l'adresse du relais avec un laissez-passer.
+2. La connexion QUIC démarre tout de suite vers une adresse de carte, fictive et stable, que l'aiguilleur du transport traduit vers le chemin élu du moment : le premier chemin direct validé par une sonde signée, sinon le relais dès qu'il est prêt.
+3. La perforation se fait des deux côtés en même temps, par les sondes ; dès qu'un chemin direct répond, l'aiguilleur bascule dessus, et la connexion QUIC ne voit rien changer : mêmes clés, même fenêtre de congestion, aucune reconnexion. Un direct qui meurt revient au relais, gardé chaud toute la session.
+4. En réseau local, le direct est établi d'emblée (mDNS et adresses locales) ; le serveur n'est même pas consulté.
+5. L'interface affiche toujours le chemin actif (direct ou relais) et l'aller-retour.
 
 Découverte LAN sans compte : mDNS (crate mdns-sd) annonce et découvre les appareils ZyrDesk du réseau local, chaque annonce portant le nom de la machine et son empreinte. Depuis le jalon M4, le service hôte admet les empreintes ainsi annoncées, sous un interrupteur activé par défaut, et le code d'appairage des moteurs voyage dans le tunnel : sur un réseau local, il n'y a donc rien à recopier ni à taper d'un ordinateur à l'autre (D17, [SECURITY.md](SECURITY.md) §1.1). Aucun broker n'est impliqué.
 
@@ -111,23 +111,24 @@ Quand le réseau ne laisse rien passer, une empreinte saisie à la main dans la 
 ## 6. Relais
 
 - Rôle : transporter des paquets chiffrés, rien d'autre. Pas de GPU, pas de décodage, pas d'accès aux clés (le chiffrement est de bout en bout entre les deux appareils ; voir [SECURITY.md](SECURITY.md)). CPU très léger, débit réseau dimensionnant.
-- Accès contrôlé par jetons émis par le broker (session autorisée), avec quotas par compte et plafond de débit en mode relais (protection contre l'abus du service hébergé).
-- Auto-hébergeable dès le premier jour (même binaire ou conteneur, documentation fournie) : un utilisateur peut pointer son ZyrDesk vers son propre broker + relais.
-- Écoute UDP sur 443 (les réseaux d'entreprise laissent passer QUIC/HTTP3 plus souvent que des ports exotiques). Repli TCP/TLS : hors périmètre v1, documenté comme limite connue.
+- Une connexion QUIC extérieure par session et par appareil, en datagrammes, vers le relais ; chaque datagramme porte un paquet entier du tunnel, que le relais remet tel quel à l'autre bout de la même session. Ni blocage en tête de ligne ni retransmission : une perte vers le relais est une perte, comme sur un chemin direct ([SERVER.md](SERVER.md) §4.5).
+- Accès contrôlé par un laissez-passer signé par le broker, qui nomme les deux empreintes d'une session : le relais ne transmet qu'entre elles. Plafond de débit par session relayée, plafond de sessions, compte des octets pour les quotas.
+- Auto-hébergeable dès le premier jour, dans le même binaire que le broker (`zyrdesk-server`), débrayable.
+- Écoute UDP sur 443 (les réseaux d'entreprise laissent passer QUIC/HTTP3 plus souvent que des ports exotiques). Le même port répond au miroir, qui dit à un appareil son adresse vue de l'extérieur. Repli TCP/TLS : hors périmètre v1, documenté comme limite connue.
 
 ## 7. Débit et qualité (pas de bitrate adaptatif dans GameStream)
 
 Le protocole fixe le débit vidéo au lancement de la session ; il ne s'adapte pas en cours de route (certaines solutions commerciales concurrentes le font). Stratégie v1, honnête et simple :
 
 - Sonde de débit de 2 secondes à travers le tunnel avant la session : choisit le préréglage de départ (débit, résolution) avec une marge prudente.
-- Changement de qualité en un clic pendant la session = redémarrage rapide du flux (~2 à 3 s), en conservant fenêtre et tunnel.
+- Changement de débit, de taille ou de codec pendant la session sans rien relancer (D117) : le débit est demandé au moteur d'en face là où il est, la taille et le codec font refaire son flux au lecteur dans sa propre fenêtre.
 - Plafond de débit automatique en mode relais.
 - Les statistiques (pertes, jitter, latence) restent visibles ; si le lien se dégrade nettement, l'interface propose de baisser la qualité.
 - Plus tard : renégociation plus fine, voire boucle de retour entre les métriques tunnel et l'encodeur (transport et encodeur gagnent à dialoguer directement plutôt qu'en couches strictement séparées).
 
 ## 8. Ports en clair
 
-- Hôte : UN port UDP entrant pour le tunnel (mappé automatiquement si possible ; sinon relais). C'est tout.
-- Broker : WSS sortant sur 443 depuis chaque appareil.
-- Relais : UDP 443 sortant depuis les deux appareils.
+- Hôte : UN port UDP entrant pour le tunnel, le 47000, qui porte aussi les sondes et la question au miroir (mappé automatiquement si la box l'accorde ; sinon perforation, sinon relais). C'est tout. S'y ajoutent les deux ports du réseau local, 5353 et 47001, qui n'en sortent jamais.
+- Broker : HTTPS et WSS sortants sur 443 depuis chaque appareil rattaché à un compte ; rien du tout sans lien de compte.
+- Relais et miroir : UDP 443 sortant depuis les deux appareils, depuis une prise éphémère pour la branche de relais, depuis la prise du tunnel pour le miroir.
 - Moteurs : loopback uniquement (base 42000 à 42999, offsets GameStream standard), invisibles du réseau.
