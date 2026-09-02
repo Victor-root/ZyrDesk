@@ -124,12 +124,42 @@ fn remember_the_shape(engine: isize, shape: (i32, i32), process: u32) {
     DRAGGED.store(false, Ordering::Relaxed);
     CARRIED.store(0, Ordering::Relaxed);
     FOCUS_TOLD.store(0, Ordering::Relaxed);
+    note_the_shape(shape);
+    PLAYER.store(process, Ordering::Relaxed);
+    ENGINE.store(engine, Ordering::Relaxed);
+}
+
+/// The shape alone, where the handler reads it.
+fn note_the_shape(shape: (i32, i32)) {
     SHAPE.store(
         (i64::from(shape.0) << 32) | i64::from(shape.1) & 0xFFFF_FFFF,
         Ordering::Relaxed,
     );
-    PLAYER.store(process, Ordering::Relaxed);
-    ENGINE.store(engine, Ordering::Relaxed);
+}
+
+/// Gives the picture in hand another shape, its stream having been made
+/// over at another size under it.
+///
+/// The engine's window is not read again for it: sized by ours, it would
+/// only tell us our own size back. What is known is what the far computer
+/// said it would be showing, which is what the stream is made of from now
+/// on, and the window is held to it as it was held to the first shape.
+pub fn reshape(app: &App, shape: (i32, i32)) {
+    let process = {
+        let mut held = app.picture().held.lock().expect("image tenue");
+        let Some(held) = held.as_mut() else {
+            return;
+        };
+        held.shape = shape;
+        held.process
+    };
+    crate::journal::note(&format!(
+        "l'image du lecteur {process} prend la forme {}x{}",
+        shape.0, shape.1
+    ));
+    note_the_shape(shape);
+    hold_the_shape(app);
+    fit(app);
 }
 
 /// A window taken in hand, and what is known of it.

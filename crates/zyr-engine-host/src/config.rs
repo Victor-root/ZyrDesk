@@ -84,6 +84,17 @@ pub struct SunshineConfig {
 /// session », whatever screen it turns out to be shown on.
 const DESKTOP_MINIMUM_FPS: u32 = zyr_proto::session::FASTEST_RATE;
 
+/// What the engine is told to keep up on a still screen, on and off.
+///
+/// The ceiling when it is on, for the reason just above, and nought when
+/// it is off, which is the engine's own answer of half the rate a session
+/// asks for. Said here once and read twice: written into the file the
+/// engine starts on, and asked of the engine that runs when a session
+/// changes its mind.
+pub fn minimum_fps_target(steady_rate: bool) -> u32 {
+    if steady_rate { DESKTOP_MINIMUM_FPS } else { 0 }
+}
+
 impl SunshineConfig {
     /// `logs_dir` is the log folder shared by every component: the
     /// engine writes its own there instead of hiding it inside its
@@ -256,10 +267,14 @@ impl SunshineConfig {
         ]);
         // Left out entirely rather than turned down, when it is off: the
         // engine's own answer is half the rate that was asked for, and
-        // half is what « off » means here. Writing a number would be
-        // choosing a third thing nobody asked for.
+        // half is what « off » means here. Writing a number other than
+        // the key's own default would be choosing a third thing nobody
+        // asked for.
         if self.serving.steady_rate {
-            lines.push(format!("minimum_fps_target = {DESKTOP_MINIMUM_FPS}"));
+            lines.push(format!(
+                "minimum_fps_target = {}",
+                minimum_fps_target(self.serving.steady_rate)
+            ));
         }
         if let Some(output) = &self.output_name {
             lines.push(format!("output_name = {output}"));
@@ -477,6 +492,21 @@ mod tests {
             })
             .render_conf();
         assert!(!rendered.contains("minimum_fps_target"), "{rendered}");
+    }
+
+    #[test]
+    fn the_floor_asked_of_a_running_engine_is_the_one_its_file_carries() {
+        // Le même nombre par les deux chemins : le fichier que le moteur
+        // lit à son démarrage, et la porte par laquelle on le lui demande
+        // pendant qu'il tourne. Zéro quand c'est éteint, qui est la
+        // valeur propre de cette clé chez le moteur : la moitié de la
+        // cadence demandée.
+        assert_eq!(minimum_fps_target(true), zyr_proto::session::FASTEST_RATE);
+        assert_eq!(minimum_fps_target(false), 0);
+        assert!(test_config().render_conf().contains(&format!(
+            "minimum_fps_target = {}",
+            minimum_fps_target(true)
+        )));
     }
 
     #[test]

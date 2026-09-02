@@ -250,6 +250,12 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
+        Request::BitrateFar { way, kbps } => {
+            match answering.machine.ways.ask_to_serve_at(way, kbps).await {
+                Ok(()) => Answer::Done,
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
         Request::FarScreen { way, wanted } => {
             match answering.machine.ways.ask_for_a_screen(way, wanted).await {
                 Ok(size) => Answer::Showing { size },

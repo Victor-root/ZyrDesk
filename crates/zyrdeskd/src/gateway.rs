@@ -29,11 +29,12 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_engine_host::Credentials;
-use zyr_engine_host::api::EngineApi;
+use zyr_engine_host::api::{Asked, EngineApi};
+use zyr_engine_host::config::minimum_fps_target;
 use zyr_proto::log::Log;
 use zyr_proto::net::{EnginePorts, TUNNEL_PORT};
 use zyr_proto::paths;
-use zyr_proto::session::WantedScreen;
+use zyr_proto::session::{Serving, WantedScreen};
 use zyr_transport::{
     AllowedPeers, EndpointError, Fingerprint, Identity, MediaProfile, TunnelEndpoint, authorized,
 };
@@ -73,6 +74,15 @@ const PAIRING_RETRY: Duration = Duration::from_millis(200);
 /// never does.
 pub type Filming = Arc<Mutex<Option<String>>>;
 
+/// How the engine is serving right now.
+///
+/// Shared for the same reason as the screen above, and between the same
+/// two: the door moves the rate a still screen is served at while the
+/// engine runs, and the watch that holds the engine starts it over when
+/// how it serves is not how it should. The way the screen is captured is
+/// in here too, and that one nothing moves in a running engine.
+pub type ServingNow = Arc<Mutex<Serving>>;
+
 /// The local engine, as the tunnel has to see it.
 pub struct AtHand {
     pub ports: EnginePorts,
@@ -102,12 +112,12 @@ pub struct AtHand {
     /// not there yet. Shared, because asking the engine to film another
     /// screen moves it without anything starting over.
     pub filming: Filming,
-    /// Whether the engine was started resending a still screen at full
-    /// rate.
+    /// How the engine is serving, starting with how it was started.
     ///
-    /// Carried for the same reason as the screen above, and answered the
-    /// same way: it is read at the engine's start and never again.
-    pub serves_steady: bool,
+    /// Carried for the same reason as the screen above, and shared for
+    /// the same reason: asking the engine to serve a still screen
+    /// otherwise moves it without anything starting over.
+    pub serving: ServingNow,
 }
 
 /// The local engine, and the one thing a far computer may ask of it.
@@ -121,8 +131,8 @@ struct Attending {
     engine_log: PathBuf,
     /// Which screen the engine is filming.
     filming: Filming,
-    /// Whether it was started resending a still screen at full rate.
-    serves_steady: bool,
+    /// How it is serving right now.
+    serving: ServingNow,
     /// The sessions coming through this door, so what one of them asks
     /// of this computer outlives the asking.
     sessions: Arc<Sessions>,
@@ -404,22 +414,25 @@ impl Answers for Attending {
     }
 
     /// Sets whether this computer resends a still screen at full rate,
-    /// because a session opening towards it asked.
+    /// because a session asked.
     ///
-    /// Written down, and the writing is all this does. What acts on it is
-    /// the watch that holds the engine: it sees the setting move and
-    /// starts the engine over, which is the only way an engine learns
-    /// this.
+    /// Written down first, because the note is what the next engine will
+    /// read, and then asked of the engine that is running: it changes the
+    /// floor it keeps up where it stands, which costs it a new encoder and
+    /// costs the session watching it nothing at all. How the running
+    /// engine serves is moved with it, so the watch that holds that engine
+    /// sees nothing to start over for.
     ///
-    /// Which is why the answer says which of the two happened, exactly as
-    /// the screen to film below does. Starting that engine over takes the
+    /// One road still ends in a restart, and the answer says so: an engine
+    /// that cannot be asked, which is one of an older build or one that
+    /// has stopped answering. The note then differs from how the engine
+    /// serves, the watch starts it over, and starting over takes this very
     /// tunnel with it, so the session that asked is told to wait and come
-    /// back rather than left to open its picture through a way about to
-    /// break under it.
+    /// back rather than left to find out from a way that broke under it.
     ///
-    /// Writing nothing at all when the note already says what was asked,
-    /// which is the ordinary case: every session asks, and almost none of
-    /// them changes anything.
+    /// Doing nothing at all when it already serves that way, which is the
+    /// ordinary case: every session asks, and almost none of them changes
+    /// anything.
     fn serve_steady(&self, rate: bool) -> Result<zyr_tunnel::Settled, String> {
         let mut serving = self.machine.remembered.serving();
         if serving.steady_rate != rate {
@@ -431,20 +444,73 @@ impl Answers for Attending {
                 ));
                 refused
             })?;
-            self.log.write(&format!(
-                "a session asked this computer to {} resending a still screen",
-                if rate { "start" } else { "stop" }
-            ));
         }
-        // Weighed against the rate the engine was **started** at and
-        // never against the note that may have just been written: the
-        // note is what the next engine will read, and answering from it
-        // would tell a session it has what it asked for while the engine
-        // that is running still serves the other way.
-        if rate == self.serves_steady {
+        // Weighed against how the engine serves **now**, and never against
+        // the note that may have just been written: the note is what the
+        // next engine will read, and answering from it would tell a session
+        // it has what it asked for while the engine that is running still
+        // serves the other way. Read and let go of before anything is
+        // asked of the engine, like the screen below and for the same
+        // reason.
+        let served = *self.serving.lock().expect("façon de servir");
+        if served.steady_rate == rate {
             return Ok(zyr_tunnel::Settled::Already);
         }
-        Ok(zyr_tunnel::Settled::StartingOver)
+        let asked = Asked {
+            minimum_fps_target: Some(minimum_fps_target(rate)),
+            ..Asked::default()
+        };
+        match self.api.serve_as_asked(&asked) {
+            Ok(()) => {
+                self.serving.lock().expect("façon de servir").steady_rate = rate;
+                self.log.write(&format!(
+                    "a session asked this computer to {} resending a still screen, and its engine \
+                     is changing floor where it stands",
+                    if rate { "start" } else { "stop" }
+                ));
+                Ok(zyr_tunnel::Settled::Already)
+            }
+            Err(refused) => {
+                self.log.write(&format!(
+                    "a session asked this computer to {} resending a still screen, and its engine \
+                     could not be asked to change floor ({refused}), so it starts over instead",
+                    if rate { "start" } else { "stop" }
+                ));
+                Ok(zyr_tunnel::Settled::StartingOver)
+            }
+        }
+    }
+
+    /// Serves the session's picture at that rate from now on.
+    ///
+    /// Asked of the engine that runs, which costs it a new encoder and
+    /// costs the session nothing: the rate was negotiated when the stream
+    /// started, and that being the one road the engines had, a change of
+    /// it used to be the picture stopped and started. Nothing is written
+    /// down, because there is nothing to write: a rate is asked of the
+    /// stream that runs, and the next one announces its own.
+    ///
+    /// A refusal is an engine that cannot be asked, and it is said rather
+    /// than swallowed: the far end then opens its picture again, which is
+    /// what every change of rate cost before this existed.
+    fn serve_at(&self, kbps: u32) -> Result<(), String> {
+        let asked = Asked {
+            bitrate_kbps: Some(kbps),
+            ..Asked::default()
+        };
+        self.api.serve_as_asked(&asked).map_err(|e| {
+            let refused = e.to_string();
+            self.log.write(&format!(
+                "a session asked to be served at {kbps} kbps, and this computer's engine could \
+                 not be asked ({refused})"
+            ));
+            refused
+        })?;
+        self.log.write(&format!(
+            "a session asked to be served at {kbps} kbps, and this computer's engine is changing \
+             rate where it stands"
+        ));
+        Ok(())
     }
 
     /// Hands this computer's journal over, whole.
@@ -592,7 +658,11 @@ impl Answers for Attending {
         }
         let named = id.as_deref().unwrap_or("this computer's main screen");
         if let Some(screen) = should_be.clone() {
-            match self.api.film_this_display(&screen) {
+            let asked = Asked {
+                display: Some(screen),
+                ..Asked::default()
+            };
+            match self.api.serve_as_asked(&asked) {
                 Ok(()) => {
                     *self.filming.lock().expect("écran filmé") = should_be;
                     self.log.write(&format!(
@@ -927,7 +997,7 @@ impl Gateway {
             films_the_grown_screen: engine.films_the_grown_screen,
             engine_log: engine.engine_log,
             filming: engine.filming,
-            serves_steady: engine.serves_steady,
+            serving: engine.serving,
             sessions: sessions.clone(),
             machine: machine.clone(),
             fingerprint: identity.fingerprint(),

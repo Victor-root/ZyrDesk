@@ -7,6 +7,7 @@
 //! `patches/MANIFEST.md`.
 
 pub mod command;
+pub mod follow;
 pub mod process;
 pub mod state;
 

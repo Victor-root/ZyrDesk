@@ -169,6 +169,16 @@ pub fn session_stats() -> PathBuf {
     data_dir().join("session-stats.txt")
 }
 
+/// Where the client engine reads what the session should be, a few times
+/// a second, and makes its stream over when it changes.
+///
+/// The other half of the file above, and beside it for the same reason:
+/// what is written there is what the session asks for right now, which is
+/// worth nothing once it is over.
+pub fn session_wanted() -> PathBuf {
+    data_dir().join("session-wanted.txt")
+}
+
 /// Key combinations the window answers to during a session.
 ///
 /// Apart from the preferences because nobody else needs them: they say
@@ -217,6 +227,8 @@ mod tests {
             known_computers(),
             preferences(),
             hushed_speakers(),
+            session_stats(),
+            session_wanted(),
             keyboard_shortcuts(),
             floating_button(),
             chosen_theme(),

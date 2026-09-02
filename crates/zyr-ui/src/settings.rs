@@ -27,6 +27,7 @@ use zyr_proto::session::{
 };
 
 use crate::service;
+use crate::session::Changed;
 
 /// What the settings screen shows.
 #[derive(PartialEq)]
@@ -146,12 +147,6 @@ pub struct SessionChoice {
     /// screen of one particular computer, so it lasts as long as the
     /// session and no longer.
     pub screen: String,
-    /// Whether what is chosen is not what the picture on screen shows.
-    ///
-    /// The one thing the window cannot work out for itself: a choice is
-    /// written down the moment it is made, so what is chosen and what is
-    /// being shown are the same numbers read from two different places.
-    pub to_apply: bool,
 }
 
 impl SessionChoice {
@@ -165,7 +160,6 @@ impl SessionChoice {
             screen: crate::session::the_far_screen_named(),
             width,
             height,
-            to_apply: crate::session::waiting_to_be_applied(&preferred),
         }
     }
 }
@@ -315,15 +309,15 @@ async fn beyond_the_far_computer() -> Vec<String> {
 }
 
 /// Sets one line of the session menu to one of the values it offers,
-/// writes the result down, and hands back where the three lines stand.
+/// writes the result down, gives it to the session in progress where it
+/// stands, and hands back where the lines stand.
 ///
-/// Written down and nothing more: what a session asks for is settled when
-/// its engine is started, and it is told once. So the picture on screen
-/// goes on showing what it was opened with, and the menu offers to open
-/// it again as soon as the two differ, which is what `apply_session`
-/// does. Opening it again at every click would stop and start the session
-/// on each one, which is not what a menu line should do unasked, and is
-/// the whole reason several changes can be made before applying them.
+/// Written down first, so the next session opens with it whatever becomes
+/// of this one; then taken by the session on screen, which is what
+/// `take_where_it_stands` does: the far engine changes rate or cadence
+/// where it is, the player makes its stream over in its own window for a
+/// size or a codec, and nothing is reopened. Every click acts, and none
+/// of them costs the picture.
 ///
 /// A value the product does not offer is refused rather than written
 /// down. These come from a list the product handed over itself, so a
@@ -335,13 +329,14 @@ pub async fn choose_session(
     value: String,
 ) -> Result<SessionChoice, String> {
     let mut preferred = preferred().await;
-    match which.as_str() {
+    let changed = match which.as_str() {
         "asked" => {
             let asked = value.parse::<Asked>()?;
             if !SIZES_OFFERED.contains(&asked) {
                 return Err(format!("taille non proposée : {value}"));
             }
             preferred.asked = asked;
+            Changed::Size
         }
         "bitrate" => {
             let rate = value
@@ -351,6 +346,7 @@ pub async fn choose_session(
                 return Err(format!("débit non proposé : {value}"));
             }
             preferred.bitrate_kbps = rate;
+            Changed::Rate
         }
         "codec" => {
             let codec = value.parse::<Codec>()?;
@@ -358,6 +354,7 @@ pub async fn choose_session(
                 return Err(format!("codec non proposé : {value}"));
             }
             preferred.codec = codec;
+            Changed::Codec
         }
         // Written down in no settings file, so it never reaches the
         // service that keeps them: which of the far computer's screens is
@@ -387,14 +384,18 @@ pub async fn choose_session(
         }
         // Two words and not a list: it is a switch, and the two sides are
         // named in the window like the ones beside them.
-        "steady" => match value.as_str() {
-            "on" => preferred.steady_far_rate = true,
-            "off" => preferred.steady_far_rate = false,
-            other => return Err(format!("cadence non proposée : {other}")),
-        },
+        "steady" => {
+            match value.as_str() {
+                "on" => preferred.steady_far_rate = true,
+                "off" => preferred.steady_far_rate = false,
+                other => return Err(format!("cadence non proposée : {other}")),
+            }
+            Changed::SteadyFarRate
+        }
         other => return Err(format!("réglage inconnu : {other}")),
-    }
+    };
     write_down(preferred).await?;
+    crate::session::take_where_it_stands(app.clone(), changed, preferred).await?;
     Ok(SessionChoice::of(
         preferred,
         crate::picture::the_screen_of_this_computer(&app),

@@ -55,12 +55,6 @@ enum Ligne {
     Curseur(Curseur),
     /// Une ligne qui ouvre une liste à elle.
     Liste(Liste),
-    /// Relancer l'image avec ce qui vient d'être choisi.
-    ///
-    /// Elle n'est là que quand ce qui est choisi n'est pas ce qui est à
-    /// l'écran, ce qui permet d'en changer plusieurs et de ne relancer
-    /// qu'une fois.
-    Appliquer,
 }
 
 /// Une ligne qui porte quelques valeurs sans ordre entre elles.
@@ -172,7 +166,7 @@ enum Reglage {
 /// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
 /// dans le journal à l'ouverture plutôt que remplacé par du vide qui
 /// ressemblerait à un défaut.
-const LIGNES: [Ligne; 19] = [
+const LIGNES: [Ligne; 18] = [
     Ligne::Mesures,
     Ligne::Separateur,
     Ligne::Entree(Entree {
@@ -250,7 +244,6 @@ const LIGNES: [Ligne; 19] = [
         mot: "Écran d'en face",
         quoi: Reglage::Cadence,
     }),
-    Ligne::Appliquer,
     Ligne::Separateur,
     Ligne::Entree(Entree {
         icone: &icones::MASQUER,
@@ -299,11 +292,6 @@ mod tenue {
     /// ligne, parce que ce sont des marques et non des dessins.
     pub const MARQUE: f32 = 16.0;
 }
-
-/// Les deux mots de la ligne « Appliquer », qui n'est pas un réglage et
-/// n'en porte donc pas le nom.
-const APPLIQUER: &str = "Appliquer les changements";
-const APRES_APPLIQUER: &str = "relance l'image";
 
 /// Un des quatre chiffres de la barre : ce qu'il coûte, comment il se
 /// lit, et où il se prend dans ce que le moteur écrit.
@@ -691,16 +679,6 @@ impl Reglage {
         }
     }
 
-    /// Si ce réglage change l'image sur-le-champ, plutôt que d'attendre
-    /// qu'on relance.
-    ///
-    /// Un seul le fait : l'écran de l'hôte, dont le moteur d'en face
-    /// change là où il est. Les autres sont dits au moteur à son
-    /// démarrage, donc ils attendent « Appliquer les changements ».
-    fn tout_de_suite(self) -> bool {
-        self == Reglage::Ecran
-    }
-
     /// Ce que la machine d'en face a dit ne pas savoir faire.
     ///
     /// Rien du tout veut dire qu'elle n'a rien dit, jamais qu'elle ne sait
@@ -781,24 +759,18 @@ impl Ligne {
 
     /// Si cette ligne a lieu d'être en ce moment.
     ///
-    /// Trois ne sont pas toujours là. Une machine d'en face qui n'a qu'un
-    /// écran, ou dont le moteur n'a pas encore dit lesquels, ne laisse
-    /// rien à choisir : la ligne s'efface plutôt que d'ouvrir une liste
-    /// vide. Et « Appliquer » n'apparaît que quand ce qui est choisi n'est
-    /// pas ce qui est à l'écran.
+    /// Une machine d'en face qui n'a qu'un écran, ou dont le moteur n'a
+    /// pas encore dit lesquels, ne laisse rien à choisir : la ligne
+    /// s'efface plutôt que d'ouvrir une liste vide.
     fn se_voit(&self, menu: Option<&SessionMenu>) -> bool {
         let Some(menu) = menu else {
             // Sans réponse, la carte se réduit à ce qui ne dépend pas de
             // la session : mieux vaut une carte courte qu'une carte de
             // lignes vides.
-            return !matches!(
-                self,
-                Ligne::Choix(_) | Ligne::Curseur(_) | Ligne::Liste(_) | Ligne::Appliquer
-            );
+            return !matches!(self, Ligne::Choix(_) | Ligne::Curseur(_) | Ligne::Liste(_));
         };
         match self {
             Ligne::Liste(liste) => !liste.quoi.valeurs(menu).is_empty(),
-            Ligne::Appliquer => menu.now.to_apply,
             _ => true,
         }
     }
@@ -1275,10 +1247,6 @@ fn mesure_la_carte(toile: &Toile, echelle: f32) {
                     + (design::PAS_2 + tenue::MARQUE) * echelle;
                 autour(toile, liste.mot, droite, echelle)
             }
-            Ligne::Appliquer => {
-                let droite = toile.largeur(APRES_APPLIQUER, Plume::de(design::LEGENDE * echelle));
-                autour(toile, APPLIQUER, droite, echelle)
-            }
         });
     }
     drop(reglages);
@@ -1597,7 +1565,7 @@ fn sous(ou: (i32, i32)) -> Option<Cible> {
         .into_iter()
         .find(|(_, _, place)| dedans(place))?;
     match ligne {
-        Ligne::Entree(_) | Ligne::Appliquer | Ligne::Liste(_) => Some(Cible::Ligne(rang)),
+        Ligne::Entree(_) | Ligne::Liste(_) => Some(Cible::Ligne(rang)),
         Ligne::Bascule(bascule) => TOILE.with_borrow(|toile| {
             cotes_de(toile.as_ref()?, place, &bascule.mots(), echelle)
                 .iter()
@@ -1715,7 +1683,6 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
                 }
                 Ligne::Curseur(curseur) => pinceau.curseur(ou, curseur),
                 Ligne::Liste(liste) => pinceau.liste(ou, liste, sous_la_main.is_some()),
-                Ligne::Appliquer => pinceau.appliquer(ou, sous_la_main.is_some()),
             }
         }
 
@@ -1858,19 +1825,6 @@ impl Pinceau<'_> {
         );
     }
 
-    /// La ligne qui relance l'image avec ce qui vient d'être choisi.
-    fn appliquer(&self, ou: Cadre, sous_la_main: bool) {
-        let couleurs = self.couleurs;
-        self.survol(ou, sous_la_main.then(|| couleurs.accent_vif.voile(VOILE)));
-        self.tete(ou, &icones::APPLIQUER, APPLIQUER, couleurs.accent_vif);
-        self.a_droite(
-            ou,
-            APRES_APPLIQUER,
-            design::LEGENDE * self.echelle,
-            couleurs.texte_faible,
-        );
-    }
-
     /// Une ligne qui ouvre une liste : sa valeur en place, puis le chevron
     /// qui dit qu'elle mène ailleurs.
     fn liste(&self, ou: Cadre, liste: &Liste, sous_la_main: bool) {
@@ -1919,8 +1873,8 @@ impl Pinceau<'_> {
     ///
     /// Les deux se dessinent ici parce qu'ils se dessinent pareil. Ce qui
     /// les sépare est ce qu'ils font, pas ce qu'ils montrent : l'un
-    /// bascule la session tout de suite, l'autre range un choix que le
-    /// moteur ne lira qu'à son prochain démarrage.
+    /// bascule la session tout de suite, l'autre écrit un choix que la
+    /// session prend là où elle est.
     fn cotes(&self, ou: Cadre, quoi: &Cotes, sous_la_main: Option<usize>) {
         let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
         let mots = quoi.mots;
@@ -2320,16 +2274,6 @@ fn agit(cible: Cible) {
                 dit_le_refus(refus);
             });
         }
-        (Cible::Ligne(_), Some(Ligne::Appliquer)) => {
-            dit_le_clic(APPLIQUER);
-            // Refermée avant de partir : l'image s'en va et revient, ce
-            // qui prend des secondes et met un écran de chargement à sa
-            // place, et un menu resté ouvert serait une nappe posée dessus.
-            montre(false);
-            crate::app::spawn(async move {
-                dit_le_refus(crate::session::apply_session(app).await);
-            });
-        }
         (Cible::Ligne(_), Some(Ligne::Liste(liste))) => {
             // La même ligne ouvre et referme : une liste ouverte à côté du
             // menu se referme là où on l'a ouverte, et pas seulement par
@@ -2390,12 +2334,11 @@ fn agit(cible: Cible) {
             // La liste se referme sur le choix : rester dedans après avoir
             // choisi laisserait croire qu'il reste quelque chose à y faire.
             *PANNEAU.lock().expect("panneau du menu") = None;
-            // Et la carte avec elle quand ce choix se voit tout de suite :
-            // ce qu'on veut regarder alors est l'image, et une carte
-            // laissée par-dessus serait une nappe posée dessus.
-            if quoi.tout_de_suite() {
-                montre(false);
-            }
+            // Et la carte avec elle : ce qui est choisi dans une liste se
+            // voit tout de suite, ce qu'on veut regarder alors est
+            // l'image, et une carte laissée par-dessus serait une nappe
+            // posée dessus.
+            montre(false);
             choisis(&app, quoi, valeur);
         }
         _ => {}
@@ -2411,11 +2354,11 @@ fn valeur_de(quoi: Reglage, rang: usize) -> Option<String> {
         .and_then(|menu| quoi.valeurs(menu).get(rang).cloned())
 }
 
-/// Écrit ce choix, et relit ce que la session en dit.
+/// Écrit ce choix, le donne à la session là où elle est, et relit ce que
+/// la session en dit.
 ///
 /// Relu et non supposé : choisir une taille change ce que « client » vaut,
-/// et choisir quoi que ce soit peut faire apparaître la ligne qui relance
-/// l'image. La réponse porte les deux.
+/// et c'est la réponse qui le porte.
 fn choisis(app: &App, quoi: Reglage, valeur: String) {
     note(&format!(
         "menu du bouton flottant : {} mis sur « {valeur} »",

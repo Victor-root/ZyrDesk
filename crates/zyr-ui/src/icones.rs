@@ -89,12 +89,6 @@ pub const ECRAN_EN_FACE: Icone = dessin(&[
     Trait::Chemin("M9 21h6M12 17v4M7 10.5h3l1.5-3 2 6 1.5-3h2"),
 ]);
 
-pub const APPLIQUER: Icone = dessin(&[
-    Trait::Chemin("M20 11A8 8 0 0 0 6.3 6.3L3 9.5"),
-    Trait::Chemin("M4 13a8 8 0 0 0 13.7 4.7L21 14.5"),
-    Trait::Chemin("M3 4.5v5h5M21 19.5v-5h-5"),
-]);
-
 pub const CHEVRON: Icone = dessin(&[Trait::Chemin("M9 5l7 7-7 7")]);
 
 pub const RETOUR: Icone = dessin(&[Trait::Chemin("M15 5l-7 7 7 7")]);

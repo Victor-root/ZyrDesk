@@ -260,6 +260,9 @@ pub enum Error {
     Closing(EngineError),
     /// The device's own state could not be reset.
     State(io::Error),
+    /// What the player is to follow while it streams could not be written
+    /// down for it.
+    Following(io::Error),
     /// The person closed the window on the opening before there was a
     /// picture, so it was let go of.
     ///
@@ -281,6 +284,10 @@ impl fmt::Display for Error {
             Error::Engine(e) => write!(f, "démarrage de la session : {e}"),
             Error::Closing(e) => write!(f, "fermeture sur l'ordinateur distant : {e}"),
             Error::State(e) => write!(f, "réinitialisation de l'appairage : {e}"),
+            Error::Following(e) => write!(
+                f,
+                "ce que la session demande n'a pas pu être écrit pour le lecteur : {e}"
+            ),
             Error::Abandoned => f.write_str("ouverture abandonnée avant l'image"),
         }
     }
@@ -303,6 +310,9 @@ pub struct Running {
     _driving: Option<Driving>,
     /// Where everything the engine says was collected.
     log: PathBuf,
+    /// What the player was started with, once the far computer had said
+    /// what it would be showing.
+    settings: SessionSettings,
 }
 
 impl Running {
@@ -315,12 +325,36 @@ impl Running {
         &self.log
     }
 
+    /// What the player was started with.
+    ///
+    /// Not what was asked for: the far computer answers what it will be
+    /// showing, and that is what the player was told. It is what every
+    /// change made while the picture runs starts from, since the player
+    /// is told the whole line each time and nothing else remembers it.
+    pub fn settings(&self) -> SessionSettings {
+        self.settings
+    }
+
     /// Waits for the session to end.
     ///
     /// The way goes back on its own a line later, when this is dropped.
     pub fn wait(mut self) -> io::Result<SessionOutcome> {
         self.session.wait()
     }
+}
+
+/// Tells the player what to become, through the file it follows, and
+/// hands back the line it was told.
+///
+/// What a change made in the middle of a session comes down to on this
+/// side: the player reads the line a few times a second and makes its
+/// stream over in its own window when it differs from what the stream is.
+/// The line carries the whole of what the player was started with, so
+/// whoever calls this hands over what it was started with, one thing
+/// changed.
+pub fn tell_the_player(settings: &SessionSettings) -> Result<String, Error> {
+    zyr_engine_client::follow::write(settings).map_err(Error::Following)?;
+    Ok(zyr_engine_client::follow::line(settings))
 }
 
 /// Tells the far computer to close what it was showing.
@@ -586,6 +620,12 @@ pub fn open(
         told(Step::Paired);
     }
 
+    // What the player is to follow while it streams, written before it is
+    // started so that its first reading is what it was started with: from
+    // then on a session changes size or codec through this file, the
+    // player making its stream over where it stands.
+    tell_the_player(&settings)?;
+
     carry_on(still_wanted)?;
     told(Step::Starting);
     let mut session = engine
@@ -638,6 +678,7 @@ pub fn open(
         session,
         _driving: driving,
         log,
+        settings,
     })
 }
 

@@ -20,8 +20,9 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 
 | Essai | Ce qui a changé |
 |---|---|
+| **R77** | **Nouveau, et c'est la demande de Victor : tout se règle en direct, comme chez Parsec.** La ligne **Appliquer les changements** n'existe plus. Le débit et la cadence d'en face sont pris par le moteur d'en face là où il est, sans que l'image s'arrête ; la résolution et le codec font refaire son flux au lecteur dans sa propre fenêtre, une seconde environ, sans écran d'ouverture ; l'écran de l'hôte l'était déjà. **Les deux ordinateurs et les deux moteurs doivent être à jour** |
+| **R34**, **R46**, **R46quater**, **R51**, **R70** | Touchés par R77 : partout où ces essais disaient « appliquer », il n'y a plus rien à appliquer. R34 est retiré, remplacé par R77 |
 | **R17**, **R17bis** | La qualité disparaît. La taille, le débit et le codec se règlent dans le menu de la session, un cran par clic, et survivent à la fermeture |
-| **R34** | Une ligne **Appliquer les changements** apparaît dans le menu de la session dès que ce qui est choisi n'est plus ce qui est à l'écran. Elle relance l'image sans fermer la session, et on peut changer plusieurs valeurs avant de la cliquer |
 | **S18**, **S18ter** | La croix ramène **toujours** à l'accueil, en trois secondes au plus, y compris quand la session a lâché et que l'ordinateur d'en face ne répond plus |
 | **S9bis**, **S19**, **S21** | Touchés par le retrait de l'ancienne voie des touches système : ZyrDesk n'en prend plus aucune, c'est le moteur qui les prend. Le comportement attendu ne change pas, le chemin oui |
 | **S9sexies** | **La voie qui restait est la seule.** Celle que ZyrDesk portait a été retirée en entier, réglage compris : elle ne pouvait pas marcher, un crochet du système étant servi du plus récent au plus ancien et le nôtre n'étant posé qu'une fois par session. Tout est expliqué dans [../CLAVIER.md](../CLAVIER.md), à lire avant de retoucher à ça |
@@ -46,7 +47,6 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R35** | Nouveau. Dans la barre du menu de la session, **Réseau** et la cadence sortaient vides depuis toujours, les deux autres chiffres étant justes. Le moteur ne les accumule pas comme les autres, il ne les pose qu'en fondant deux mesures ensemble, ce que sa propre surcouche fait et ce que nous ne faisions pas. Les quatre doivent maintenant porter un nombre |
 | **R36** | **Refait, et c'est le sujet du lot.** La frappe partait bien et l'ordinateur d'en face répondait oui, sans que rien n'apparaisse à l'écran : elle était confiée à un aller simple lancé dans la session de l'écran, qui n'est ni un service ni un programme à manifeste, donc aucun des deux cas que Windows accepte. C'est le service lui-même qui presse maintenant. Le journal du service hôte écrit la stratégie réellement en place, sa propre session et celle de l'écran : c'est la ligne à lire si ça ne marche toujours pas |
 | **R37** | Nouveau. Un interrupteur **Son** dans le menu de la session, Actif ou Coupé. Il coupe le son **de cette machine-ci**, sur la tranche du lecteur dans le mélangeur de Windows, et rien d'autre de ce qui joue ici |
-| **R34** | **Refait.** « Appliquer les changements » relançait souvent l'image sans rien appliquer : la relance partait avant que le choix qu'on venait de faire soit écrit, et repartait donc sur les anciens réglages. Elle attend maintenant. À refaire sur les trois réglages, en cliquant **tout de suite** après avoir lâché le curseur |
 | **R17** | Touché. Le codec n'est plus un curseur mais des boutons, comme la souris. Les autres restent des curseurs |
 | **R40** | Nouveau. Le menu du bouton flottant était coupé quand le bouton était posé en bas de l'image. Il s'ouvre maintenant vers le haut quand il n'y a plus de place en dessous |
 | **R41** | Nouveau. Le curseur passait au sens interdit pendant le déplacement du bouton flottant, là où c'est une main qui agrippe qu'il faut voir |
@@ -55,7 +55,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R44** | Nouveau. Une entrée **Verrouiller** dans le menu de la session, qui verrouille l'ordinateur distant. C'est la réponse à Windows+L, qui ne peut pas voyager : la demande prend le canal du produit comme Ctrl+Alt+Suppr, et le service d'en face lève l'écran |
 | **R45** | Nouveau. Le pointeur reste dans l'image quand elle occupe tout l'écran. Le moteur savait le faire et ne le faisait jamais : il posait la question à sa propre fenêtre, qui n'est jamais un écran entier chez nous. Sur une machine à deux écrans le pointeur s'en allait |
 | **R43** | Complété. Le bouton flottant additionnait l'écart depuis le début du geste : une main qui sortait de l'image laissait chaque pixel refusé dans la somme, et revenir ne bougeait rien tant qu'ils n'étaient pas tous rendus |
-| **R46** | Nouveau. Une ligne **Écran d'en face : Fluide ou Économe** dans le menu de la session. C'est le réglage de cadence de la machine regardée, demandé depuis celle qui regarde, et il part avec **Appliquer les changements** |
+| **R46** | Nouveau. Une ligne **Écran d'en face : Fluide ou Économe** dans le menu de la session. C'est le réglage de cadence de la machine regardée, demandé depuis celle qui regarde, et il agit tout de suite (R77) |
 | **R46bis** | **Refait, et c'est un défaut du moteur hôte.** « Fluide » ne faisait rien : la cadence plancher était passée à l'attente d'une image, donc ajoutée à l'encodage au lieu de le couvrir, et la période devenait attente plus encodage. Le calcul se vérifie sur trois relevés du client. À revérifier après recompilation du **moteur hôte** |
 | **R47** | Nouveau. La session demande la cadence de l'écran sur lequel elle va s'afficher, mesurée comme l'est déjà sa taille. Elle demandait soixante images par seconde à tout le monde, ce qui est juste sur un écran à soixante et faux sur tous les autres |
 | **R47bis** | Nouveau, et c'est un second défaut du **moteur hôte**. Il partait plus d'images que la session n'en demandait : la répétition d'un écran immobile avançait sur une grille de même pas que la capture, et les deux finissaient par se toucher. À vérifier après recompilation du moteur hôte |
@@ -108,7 +108,7 @@ Ce que le dernier lot a changé, et rien d'autre. C'est la liste du jour.
 | **R39** | Nouveau. Le thème ne suivait pas Windows quand on basculait clair/sombre, fenêtre ouverte. La vue web se voit imposer une réponse figée à la construction de la fenêtre, et le seul mécanisme qui la rafraîchissait était éteint par notre propre façon d'accorder la barre de titre. C'est le coeur qui écoute Windows maintenant |
 | **R38** | **Refait, et il change de côté.** Le réglage était sur la machine regardée, ce qui obligeait à aller physiquement dessus pour couper le son de sa pièce. Il est maintenant dans les réglages de la session, sur l'ordinateur qui regarde, et la demande part avec la session. Rien à régler en face |
 | **R33** | Touché. La dépendance à Steam était active par omission : sans ligne de son écrite, le moteur cherchait sa carte son, l'installait s'il en trouvait les fichiers, et y faisait passer le son de la machine à chaque session. Deux lignes ferment ça |
-| **S28** | Nouveau. Fermer une session dans les six secondes qui suivent son ouverture, ou une relance par **Appliquer les changements**, repartait en appairage : « l'ordinateur distant ne reconnaît plus celui-ci », puis un refus. La surveillance qui guette un ordinateur nous ayant oubliés demande maintenant à la fenêtre si la session est toujours voulue |
+| **S28** | Nouveau. Fermer une session dans les six secondes qui suivent son ouverture, ou une relance de l'image, repartait en appairage : « l'ordinateur distant ne reconnaît plus celui-ci », puis un refus. La surveillance qui guette un ordinateur nous ayant oubliés demande maintenant à la fenêtre si la session est toujours voulue |
 | **S29** | Nouveau. Une voie restait ouverte pour toujours dès qu'une ouverture échouait, et la fenêtre affichait « Sessions ouvertes : 1 » sans session. La voie est maintenant rendue sur toutes les routes de sortie |
 | **S25** | Nouveau. Un ordinateur sans écran virtuel voit toujours sa définition suivre la session, c'est voulu et ça reste. Ce qui change est le retour : si le moteur n'arrive pas à remettre l'écran, le service le lit dans le journal du moteur et le redémarre, ce qui lui redonne trois occasions de le faire. À provoquer en prenant la main avec un autre bureau à distance juste après avoir quitté la session, et à lire dans `service.log` de l'hôte |
 
@@ -1137,7 +1137,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Pendant une session, ouvrir le menu du bouton flottant. Trois réglages : **Taille**, **Débit**, **Codec**, chacun avec sa valeur écrite à droite de son nom et une barre à curseur en dessous.
 >
-> Attendu : pousser un curseur fait **suivre le mot au-dessus, cran par cran**, pendant qu'on tient le pouce. Le choix ne part qu'une fois lâché. Les icônes des trois réglages restent dans la même colonne que celles du reste du menu. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. **Rien ne bouge dans l'image en cours** : le choix est retenu, et c'est R34 qui le pose à l'écran.
+> Attendu : pousser un curseur fait **suivre le mot au-dessus, cran par cran**, pendant qu'on tient le pouce. Le choix ne part qu'une fois lâché. Les icônes des trois réglages restent dans la même colonne que celles du reste du menu. La taille dit à quoi « Écran » revient sur ce PC-là (`Écran, 3840 x 2160`), sinon on ne saurait pas ce qu'on demande. **L'image suit** : le choix part au relâchement et l'image le prend là où elle est, ce que R77 décrit.
 >
 > **Trois choses à regarder en poussant les trois curseurs de bout en bout :**
 >
@@ -1146,8 +1146,6 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > 3. **La fenêtre ne change pas de taille en boucle.** Les valeurs n'ont pas toutes la même longueur (`Écran, 3840 x 2160` contre `1280 x 720`), donc le menu peut s'élargir d'un cran à l'autre, et c'est normal. Ce qui ne l'est pas serait une ligne de redimensionnement par cran traversé.
 >
 > Le journal en garde la trace, une ligne par changement de taille : `bouton flottant : 1630x1614 demandés, 91x91 avant, 1630x1614 après ; 2 morceaux dessinés jusqu'à 1098x1272`. « après » doit valoir « demandés », sinon c'est Windows qui a refusé la taille ; et « dessinés jusqu'à » doit rester en dessous, sinon la page dessine plus grand que sa fenêtre.
->
-> Une ligne de plus est normale la première fois qu'on change un réglage : c'est **Appliquer les changements** qui apparaît et allonge le menu. Une seule fois par session.
 >
 > **Trois choses de plus à regarder dans ce menu.** Les lignes doivent toutes partir du **même bord gauche** que les chiffres du haut et que les traits de séparation : aucune ne doit être rentrée vers la droite. Le curseur de la **taille** doit aller de la plus petite à gauche à la plus grande à droite. Et un clic **dans l'image**, menu ouvert, doit le refermer, sans avoir à recliquer le logo.
 >
@@ -1167,21 +1165,32 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : plus de boutons Fluide / Équilibré / Qualité. À la place, une ligne **Ce qu'une session demande** qui rappelle la taille, la cadence et le débit du moment. Elle doit suivre ce qui vient d'être réglé dans le menu de la session.
 
-> **R34 (appliquer les changements sans fermer la session)**
+> **R77 (tout se règle en direct, sans « Appliquer »)**
 >
-> Pendant une session, ouvrir le menu du bouton flottant. Tant qu'on n'a rien changé, **aucune ligne « Appliquer »** ne doit s'y trouver.
+> **C'est la demande de Victor** : « exactement comme Parsec, tout peut être modifié en direct de la session sans avoir besoin de recharger la session ». Cet essai remplace R34, qui décrivait la ligne « Appliquer les changements ».
 >
-> Changer la **taille**. Une ligne **Appliquer les changements** apparaît, en bleu, sous les trois réglages. Ne pas la cliquer : changer aussi le **débit** et le **codec**. La ligne reste, une seule fois. C'est tout l'intérêt : on règle ce qu'on veut, et l'image ne se relance qu'une fois.
+> **À faire d'abord** : mettre à jour les deux ordinateurs **et récupérer les deux moteurs recompilés** (`fetch-engines.ps1` après que la compilation des moteurs soit verte). Les deux moteurs changent ici, et un lecteur pas à jour refuse de démarrer sur une option qu'il ne connaît pas.
 >
-> Cliquer **Appliquer les changements**.
+> Pendant une session, ouvrir le menu du bouton flottant. Il n'y a **plus de ligne « Appliquer les changements »**, et il n'y en aura plus, quoi qu'on change.
 >
-> Attendu : le menu se referme, l'image disparaît quelques secondes, l'écran d'ouverture revient avec **Nouveaux réglages, l'image se relance…**, puis l'image revient **avec les nouvelles valeurs**. La fenêtre garde sa taille et son plein écran ; la session n'est pas fermée et on ne revient pas à l'accueil.
+> **Le débit.** Pousser le curseur et le lâcher : l'image continue sans le moindre arrêt, et dans les deux secondes le chiffre **Débit** de la barre du menu (ou des statistiques, Ctrl+Alt+Maj+S) suit le nouveau réglage, pour peu que quelque chose bouge dans l'image. Le pousser de 5 à 80 Mb/s en dix crans d'affilée : jamais d'écran d'ouverture, jamais de reconnexion, jamais d'image qui s'arrête.
 >
-> Rouvrir le menu : la ligne **Appliquer** a disparu, puisque ce qui est choisi est de nouveau ce qui est à l'écran. Les trois lignes montrent bien les valeurs demandées.
+> **Écran d'en face.** Basculer Économe / Fluide : l'image continue, et la cadence lue dans les statistiques change dans les deux secondes (R46ter dit ce qu'on doit lire). **Plus de redémarrage du moteur d'en face**, plus d'écran d'ouverture.
 >
-> **Pourquoi ça relance l'image.** Le moteur apprend la taille, le débit et le codec **à son démarrage et jamais après** : il n'existe aucune façon de les lui changer en marche. Le reste du menu, lui, se demande au moteur en marche et prend effet tout de suite. C'est pour ça que ces trois-là seulement ont un bouton, et que les autres n'en ont pas.
+> **Le codec.** Choisir un autre codec : l'image se fige environ une seconde, puis revient, **dans la même fenêtre, sans écran d'ouverture**, et la phrase du flux dans le menu dit le nouveau codec. C'est le lecteur qui refait son flux sur place.
 >
-> Le journal du client raconte la relance : `réglages appliqués : le lecteur N est relancé`, `lecteur N arrêté`, `image relancée avec ce qui est choisi maintenant`, puis les lignes d'une ouverture ordinaire.
+> **La résolution.** Choisir une autre taille dans la liste : la carte se referme, l'image se fige une seconde environ, puis revient à la nouvelle taille, et la fenêtre reprend la forme de l'image, bandes noires comprises si le rapport change en mode fenêtré. Faire l'aller-retour client / hôte / 1280x720 : à chaque fois le bureau de l'hôte prend la taille demandée (R51, R59) et l'image suit. **Le pointeur doit tomber juste après chaque changement** : promener la souris dans les quatre coins et cliquer.
+>
+> **Ce qui doit rester vrai** : la session n'est jamais fermée, on ne revient jamais à l'accueil, la fenêtre garde sa place et son plein écran, et **fermer puis rouvrir une session** repart avec les dernières valeurs choisies.
+>
+> **Le cas de l'ancien moteur**, à essayer une fois si un hôte n'a pas encore son moteur à jour : le débit et la cadence d'en face font alors relancer l'image, comme avant, et le journal de la fenêtre le dit (`l'image est relancée`). Rien ne casse, c'est seulement plus long.
+>
+> **Les journaux, à relever ensemble :**
+>
+> - la fenêtre d'ici (`interface.log`) : `débit : l'ordinateur distant sert à N Mb/s sans rien relancer`, `écran d'en face : cadence changée sans rien relancer`, et `le lecteur suit maintenant « width=… height=… fps=… bitrate=… codec=… »` à chaque changement ;
+> - le service d'en face (`service.log`) : `a session asked to be served at N kbps, and this computer's engine is changing rate where it stands`, `… its engine is changing floor where it stands`, et **jamais** `starts over` ;
+> - le moteur d'en face (`engine-console.log`) : `zyr: asked to encode at N kbps … from now on`, puis `zyr: encoding at M kbps, as asked while the stream ran`. M est plus petit que N, c'est normal : le moteur retire la part de la correction d'erreurs et du son, exactement comme il le fait à l'ouverture ;
+> - le moteur d'ici (`session.log`) : `zyr: the stream is asked to be WxH at F fps in codec C, and is made over in place` à chaque changement de taille ou de codec.
 
 > **R35 (les quatre chiffres du menu sont tous remplis)**
 >
@@ -1226,7 +1235,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu : retour à l'accueil, sans un mot. **Aucune** ligne « l'ordinateur distant ne reconnaît plus celui-ci », **aucun** écran de chargement qui revient, **aucun** refus d'appairage.
 >
-> À refaire dans le cas qui l'avait révélé : pendant une session, ouvrir le menu du bouton flottant, changer la taille, cliquer **Appliquer les changements**, laisser l'image revenir, puis fermer aussitôt.
+> À refaire dans le cas qui l'avait révélé : pendant une session, ouvrir le menu du bouton flottant, changer la taille, laisser l'image revenir (elle se refait sur place, R77), puis fermer aussitôt.
 >
 > **Pourquoi c'est un piège.** L'ouverture ne s'arrête pas quand l'image apparaît : elle surveille le lecteur six secondes de plus, parce qu'un ordinateur qui nous a oubliés refuse la session en moins d'une seconde et qu'il faut alors se représenter. Or fermer une session arrête le lecteur exactement de la même façon. Seule la fenêtre sait qu'on a cliqué, et c'est elle qu'on interroge maintenant.
 
@@ -1310,7 +1319,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Le troisième sens est dans R74** : posé vers le milieu, où il n'y a la place ni dessous ni dessus, le menu s'ouvre à gauche du bouton.
 >
-> **À vérifier de près, c'est le piège de cette reprise.** Ouvrir le menu en bas, puis changer la **taille** : la ligne **Appliquer les changements** apparaît, ce qui rend le menu plus haut. La fenêtre doit grandir **vers le haut**, et le menu rester entier et bien découpé, sans liseré ni morceau fantôme au-dessus.
+> **À vérifier de près, c'est le piège de cette reprise.** Ouvrir le menu en bas, vers une machine à deux écrans, avant que son moteur ait fini de démarrer : la ligne **Écran de l'hôte** apparaît quand il a répondu, ce qui rend le menu plus haut. La fenêtre doit grandir **vers le haut**, et le menu rester entier et bien découpé, sans liseré ni morceau fantôme au-dessus.
 >
 > Le journal donne la mesure : `bouton flottant : LxH demandés, ... ; N morceaux dessinés jusqu'à LxH`. Les deux hauteurs doivent se suivre.
 
@@ -1388,11 +1397,11 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Cliquer dessus : le menu laisse la place à la liste. En haut un retour, puis **Résolution du client**, **Résolution de l'hôte**, chacune avec une phrase qui dit ce qu'elle fait, puis les quinze tailles avec leur rapport à droite (16:9, 21:9, 16:10, 4:3, 5:4). Celle qui est en place porte une coche.
 >
-> Choisir une taille referme la liste et revient au menu, la ligne dit la nouvelle valeur, et **Appliquer les changements** apparaît. Le retour en haut ramène au menu sans rien changer.
+> Choisir une taille referme la liste et la carte, et l'image prend la taille sur place (R77) ; rouvrir le menu : la ligne dit la nouvelle valeur. Le retour en haut ramène au menu sans rien changer.
 >
 > **Résolution du client** : ce qu'on avait déjà. L'ordinateur d'en face est mis à la taille de cet écran-ci, un pixel envoyé pour un pixel affiché. Le journal de la fenêtre dit `l'écran est demandé entier`.
 >
-> **Résolution de l'hôte**, à vérifier avec soin, c'est le nouveau. Choisir, appliquer, et regarder **l'écran physique de l'ordinateur d'en face** : sa résolution ne doit **pas** changer, et **aucun écran virtuel ne doit apparaître**. Le journal du service d'ici dit `way N asked the far computer to keep its own screen` puis `way N: the far computer is showing 1920x1080`, et celui de la fenêtre `l'ordinateur distant affiche 1920x1080, c'est ce qui est demandé au lecteur`.
+> **Résolution de l'hôte**, à vérifier avec soin, c'est le nouveau. Choisir, et regarder **l'écran physique de l'ordinateur d'en face** : sa résolution ne doit **pas** changer, et **aucun écran virtuel ne doit apparaître**. Le journal du service d'ici dit `way N asked the far computer to keep its own screen` puis `way N: the far computer is showing 1920x1080`, et celui de la fenêtre `l'ordinateur distant affiche 1920x1080, c'est ce qui est demandé au lecteur`.
 >
 > **Le cas qui prouve que ça marche vraiment** : depuis un écran 4K, prendre la main sur une machine 1080p en **Résolution de l'hôte**. L'image doit arriver en 1080p et être agrandie ici, pas rognée et pas déformée. En **Résolution du client**, la même session doit passer l'écran principal de la machine d'en face en 4K, s'il en est capable, et le lui rendre en 1080p à la fin (R59).
 
@@ -1463,7 +1472,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 
 > **R46ter (« Fluide » tient enfin la cadence demandée)**
 >
-> **L'essai le plus simple de la série** : ouvrir une session, mettre **Écran d'en face : Fluide**, appliquer, puis ouvrir les statistiques (Ctrl+Alt+Maj+S) et lire la cadence.
+> **L'essai le plus simple de la série** : ouvrir une session, mettre **Écran d'en face : Fluide**, puis ouvrir les statistiques (Ctrl+Alt+Maj+S) et lire la cadence.
 >
 > Attendu : **la cadence demandée**, soixante si la session est ouverte à soixante, et stable. Ce qu'on voyait avant : cinquante, ou quarante-huit, variant sans arrêt, exactement comme en **Économe**.
 >
@@ -1662,8 +1671,6 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **Écran d'en face.** « Économe | Fluide », comme le menu web.
 >
-> **Appliquer les changements.** La ligne n'existe pas tant que rien n'a changé. Changer un réglage la fait apparaître, et la carte grandit d'une ligne **sans clignoter** : c'est le point à regarder, parce que c'est ce que la vue web ne savait pas faire. Cliquer referme la carte et relance l'image.
->
 > **Les deux listes.** « Résolution » et « Écran de l'hôte » portent un chevron. Cliquer ouvre une carte **à gauche** de la première, avec son titre en tête, un trait, puis les valeurs, la valeur en place portant une coche dorée et sa taille ou son rapport écrits à droite. Le chevron de la ligne se retourne pendant que la liste est ouverte. Cliquer la même ligne referme. Cliquer le titre de la liste referme aussi. Choisir une valeur referme la liste et coche la nouvelle.
 >
 > **La ligne « Écran de l'hôte » n'existe pas** vers une machine à un seul écran, ni pendant que son moteur démarre.
@@ -1688,7 +1695,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > 1. Tout de suite, pendant « Tunnel établi ».
 > 2. Pendant « Démarrage de l'image… ».
 > 3. Pendant « L'image arrive… », qui est le plus long des trois.
-> 4. Et si l'occasion se présente, pendant « L'ordinateur distant change d'écran, il redémarre… » : basculer l'écran de l'hôte, appliquer, et cliquer la croix pendant le redémarrage.
+> 4. Et si l'occasion se présente, pendant « L'ordinateur distant change d'écran, il redémarre… », qui ne se voit plus qu'avec un moteur d'en face trop ancien pour être réglé sur place : cliquer la croix pendant ce redémarrage.
 >
 > Attendu à chaque fois : **retour immédiat à l'accueil**, en une seconde ou deux, **sans message rouge**. Une annulation n'est pas un échec, et personne n'a besoin qu'on lui explique ce qu'il vient de demander.
 >
@@ -1706,7 +1713,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Session ouverte vers la machine à deux écrans. Menu du bouton flottant, ligne **Écran de l'hôte**, choisir l'autre écran.
 >
-> Attendu : la carte se referme, l'image se fige un instant, et **c'est l'autre écran**. Pas d'écran d'ouverture, pas de reconnexion, pas de ligne **Appliquer les changements** : ce réglage-là n'attend plus rien. Compter : ça doit être **bien en dessous de la seconde**.
+> Attendu : la carte se referme, l'image se fige un instant, et **c'est l'autre écran**. Pas d'écran d'ouverture, pas de reconnexion : ce réglage-là n'attend rien. Compter : ça doit être **bien en dessous de la seconde**.
 >
 > **Faire l'aller-retour dix fois de suite**, sans attendre entre deux. Rien ne doit se dégrader : ni la session, ni l'image, ni le pointeur.
 >
@@ -1722,7 +1729,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 > - le service d'en face (`service.log`) : `a session asked to be served from {…}, and this computer's engine is changing screen where it stands`, et **jamais** `so it starts over` ;
 > - le moteur d'en face (`engine-console.log`) : `zyr: asked to film display [{…}] from now on`, puis `Capture reinitialized after Nms`. C'est ce nombre-là qui dit combien de temps l'image s'est arrêtée.
 >
-> **Ce qui doit encore relancer l'image**, pour être sûr que rien n'a été perdu : la résolution, le débit, le codec et l'écran d'en face gardent leur **Appliquer les changements**. Seul l'écran de l'hôte l'a quitté.
+> **Et les autres réglages ne relancent plus rien non plus** depuis R77 : la résolution, le débit, le codec et l'écran d'en face agissent tout de suite eux aussi, chacun à sa façon.
 >
 > **Et le retour à la normale** : terminer la session, en rouvrir une sans rien choisir. Elle doit être servie sur l'**écran principal** de l'hôte, comme avant, et cette bascule-là ne doit rien redémarrer non plus.
 
@@ -1800,7 +1807,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Attendu dans la liste : **les deux écrans allumés, et eux seuls**. La télé éteinte n'y est pas, l'écran virtuel du produit non plus. Le principal est marqué « (principal) », sa taille est écrite à droite de chaque ligne, et c'est lui qui est coché tant que personne n'a choisi.
 >
-> Choisir le second écran : l'image y passe **tout de suite**, sans « Appliquer les changements » et sans que rien ne redémarre. C'est R76, qui remplace ce qui suivait ici : le moteur d'en face changeait d'écran en redémarrant, et la session tombait le temps qu'il revienne.
+> Choisir le second écran : l'image y passe **tout de suite**, sans que rien ne redémarre. C'est R76, qui remplace ce qui suivait ici : le moteur d'en face changeait d'écran en redémarrant, et la session tombait le temps qu'il revienne.
 >
 > **La ligne du service de l'hôte, à relever** : `a session asked to be served from {…}, and this computer's engine is changing screen where it stands`. Elle dit `so this computer's engine starts over` quand le moteur d'en face est d'une compilation antérieure, et tout se passe alors comme avant : l'écran d'ouverture annonce le redémarrage et la session se rouvre.
 >
@@ -2202,13 +2209,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > Pendant une session, ouvrir le menu et regarder la ligne **Écran d'en face**. Deux mots : **Économe** et **Fluide**.
 >
-> Mettre **Fluide**, puis **Appliquer les changements**. L'image se relance, **et le moteur de la machine d'en face redémarre au passage** : c'est plus long qu'une relance ordinaire, c'est normal, son moteur ne lit ce réglage qu'à son démarrage.
+> Mettre **Fluide**. L'image continue sans s'arrêter : le moteur de la machine d'en face change de cadence là où il est (R77).
 >
-> Attendu, une fois revenu : sur un bureau où rien ne bouge, **le pointeur glisse au lieu d'avancer par à-coups**. C'est le seul endroit où ça se voit.
+> Attendu, dans les deux secondes : sur un bureau où rien ne bouge, **le pointeur glisse au lieu d'avancer par à-coups**. C'est le seul endroit où ça se voit.
 >
-> Repasser en **Économe** et appliquer : le pointeur redevient saccadé sur un bureau immobile, et la machine d'en face cesse d'encoder pour rien. C'est le bon réglage pour une machine qui n'arrive pas à suivre.
+> Repasser en **Économe** : le pointeur redevient saccadé sur un bureau immobile, et la machine d'en face cesse d'encoder pour rien. C'est le bon réglage pour une machine qui n'arrive pas à suivre.
 >
-> Le journal du service **d'en face** dit `a session asked this computer to start resending a still screen`, puis `how this computer serves was changed, the engine starts over with it`. Celui d'ici dit `way N asked the far computer to start resending a still screen, and it is starting its engine over, so this way is about to go`, puis une voie neuve quelques secondes plus tard.
+> Le journal du service **d'en face** dit `a session asked this computer to start resending a still screen, and its engine is changing floor where it stands`. Celui d'ici dit `way N asked the far computer to start resending a still screen, and it serves that way where it stands`.
 >
 > **Et ça se retient.** Terminer la session, en rouvrir une : la ligne est restée où on l'a laissée, et la machine d'en face est demandée pareil.
 >
@@ -2220,15 +2227,13 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > **C'est le défaut relevé par Victor** : mettre **Économe** pendant une session, appliquer, et la session tombait avec « L'ordinateur distant a refusé l'appairage ». Se reconnecter marchait, et le réglage était bien pris.
 >
-> Pendant une session, basculer **Écran d'en face** d'un côté à l'autre, puis **Appliquer les changements**. À refaire **dans les deux sens**, deux fois chacun.
+> Pendant une session, basculer **Écran d'en face** d'un côté à l'autre. À refaire **dans les deux sens**, deux fois chacun.
 >
-> Attendu : l'écran d'ouverture affiche **« L'ordinateur distant change sa façon d'envoyer un écran immobile, il redémarre… »**, puis l'image revient toute seule. C'est plus long qu'une relance ordinaire, une dizaine de secondes, et c'est le redémarrage du moteur d'en face. **Aucune session ne doit tomber, et aucune ligne d'appairage refusé ne doit apparaître.**
+> Attendu, depuis R77 : **l'image ne s'arrête pas**, aucune session ne tombe, et aucune ligne d'appairage refusé n'apparaît. Le moteur d'en face change de cadence là où il est.
 >
-> **Appliquer une seconde fois sans rien changer** doit être une relance ordinaire et rapide : le moteur d'en face est déjà comme on le demande, il ne redémarre pas, et l'écran d'ouverture ne dit donc rien de lui.
+> **Avec un moteur d'en face trop ancien** pour être réglé sur place, c'est l'ancien chemin qui reste, et c'est lui que cet essai couvrait : l'écran d'ouverture affiche **« L'ordinateur distant change sa façon d'envoyer un écran immobile, il redémarre… »**, puis l'image revient toute seule, une dizaine de secondes plus tard. Là encore, **aucune session ne doit tomber, et aucune ligne d'appairage refusé ne doit apparaître.**
 >
-> **Et les deux ensemble**, qui est le cas le plus long : changer **Écran de l'hôte** et **Écran d'en face** avant d'appliquer une seule fois. Le moteur d'en face redémarre une fois pour l'un, une fois pour l'autre, les deux messages passent à l'écran, et l'image revient.
->
-> Le journal de la fenêtre en garde la trace : `l'ordinateur distant change sa cadence d'écran immobile, son moteur redémarre et la voie sera rouverte`.
+> Le journal de la fenêtre en garde la trace dans ce cas-là : `l'ordinateur distant change sa cadence d'écran immobile, son moteur redémarre et la voie sera rouverte`.
 
 > **R47 (la session demande la cadence de ton écran)**
 >

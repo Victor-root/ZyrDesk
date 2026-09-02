@@ -228,9 +228,12 @@ enum Life {
     /// learned from the engine itself, which only says it as it starts.
     /// It was stopped on purpose so the next one is told to capture it.
     VirtualScreenLearned,
-    /// How this computer serves was changed while it was running. The
-    /// engine reads that once, at its own start, so it was stopped on
-    /// purpose and the next one is told the new answer.
+    /// How this computer serves was changed while it was running, and the
+    /// engine could not be asked to serve that way where it stood: the way
+    /// the screen is captured, which nothing changes in a running engine,
+    /// or a floor an engine of an older build does not know how to be
+    /// asked. It was stopped on purpose and the next one is told the new
+    /// answer.
     ServingChanged,
     /// Which screen this computer is filmed on changed while the engine
     /// ran, its own having refused a size a session asked for. It reads
@@ -757,13 +760,18 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
     // another screen, and the watch below reads it to know whether the
     // engine is where it should be.
     let filming: crate::gateway::Filming = Arc::new(std::sync::Mutex::new(aiming_at.clone()));
+    // And how the engine serves, from how it was started, held and shared
+    // the same way: the door moves the floor a still screen is served at
+    // where the engine stands, and the watch below reads it to know
+    // whether the engine serves the way it should.
+    let serving_now: crate::gateway::ServingNow = Arc::new(std::sync::Mutex::new(serving));
     let at_hand = AtHand {
         ports,
         credentials,
         films_the_grown_screen,
         engine_log: engine_log.clone(),
         filming: filming.clone(),
-        serves_steady: serving.steady_rate,
+        serving: serving_now.clone(),
     };
     let gateway = match Gateway::open(runtime, at_hand, (*machine).clone(), log) {
         Ok(gateway) => gateway,
@@ -791,7 +799,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         wait_for_the_engine_to_stop(
             &mut watched,
             session,
-            serving,
+            serving_now,
             Aimed {
                 grown: films_the_grown_screen,
                 at: filming,
@@ -853,7 +861,7 @@ struct Watched<'a> {
 fn wait_for_the_engine_to_stop(
     watched: &mut Watched<'_>,
     session: u32,
-    serving: zyr_proto::session::Serving,
+    serving: crate::gateway::ServingNow,
     aimed: Aimed,
     remembered: &Remembered,
     order: &StopOrder,
@@ -877,7 +885,14 @@ fn wait_for_the_engine_to_stop(
             return Life::NoLongerWanted;
         }
 
-        if remembered.serving() != serving {
+        // Weighed against how the engine serves **now** and not against
+        // how it was started: the door moves the floor a still screen is
+        // served at where the engine stands, and moves this with it, so
+        // the two agree and nothing starts over. What is left here is an
+        // engine that could not be asked, and the way the screen is
+        // captured, which nothing changes in a running engine.
+        let served = *serving.lock().expect("façon de servir");
+        if remembered.serving() != served {
             log.write("how this computer serves was changed, the engine starts over with it");
             stop_and_say_how(watched.engine, log);
             return Life::ServingChanged;

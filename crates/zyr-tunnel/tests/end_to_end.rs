@@ -96,13 +96,17 @@ impl Answers for FakeEngine {
         Ok(())
     }
 
-    /// Comme une vraie machine : son moteur lit la cadence à son
-    /// démarrage, donc en changer le fait repartir.
+    /// Comme une machine dont le moteur ne peut pas être prié : il lit la
+    /// cadence à son démarrage, donc en changer le fait repartir.
     fn serve_steady(&self, rate: bool) -> Result<zyr_tunnel::Settled, String> {
         if self.steady.swap(rate, Ordering::Relaxed) == rate {
             return Ok(zyr_tunnel::Settled::Already);
         }
         Ok(zyr_tunnel::Settled::StartingOver)
+    }
+
+    fn serve_at(&self, _kbps: u32) -> Result<(), String> {
+        Err("ce moteur-là ne se règle pas en marche".to_string())
     }
 
     fn screen_for_a_session(

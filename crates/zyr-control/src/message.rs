@@ -26,7 +26,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 26;
+pub const PROTOCOL: u32 = 27;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -136,9 +136,19 @@ pub enum Request {
     ///
     /// The same reasoning as the hush: what it costs is paid over there,
     /// and the only person who can tell whether the picture feels smooth
-    /// is the one looking at it. Its engine reads this when it starts, so
-    /// it is asked at the opening of a session and never inside one.
+    /// is the one looking at it. Asked at the opening of a session and
+    /// again whenever the person changes their mind: its engine takes it
+    /// where it stands, and the answer says it is starting over only when
+    /// that engine cannot be asked.
     SteadyFar { way: WayId, rate: bool },
+    /// Asks the far computer to serve this session's picture at that
+    /// rate, in kilobits a second, from now on.
+    ///
+    /// Asked in the middle of a session and nowhere else: at its opening
+    /// the rate travels with the stream, negotiated between the two
+    /// engines. Its engine takes this where it stands, which is the one
+    /// road that changes the rate without the picture stopping.
+    BitrateFar { way: WayId, kbps: u32 },
     /// Asks the far computer to wake its virtual screen for a picture
     /// like that one, or, with nothing asked for, to put it back to sleep.
     ///
@@ -292,6 +302,10 @@ impl Request {
                 way: WayId(fields.parsed("way")?),
                 rate: fields.text("rate")? == "yes",
             }),
+            "bitrate" => Ok(Request::BitrateFar {
+                way: WayId(fields.parsed("way")?),
+                kbps: fields.parsed("kbps")?,
+            }),
             "farscreen" => Ok(Request::FarScreen {
                 way: WayId(fields.parsed("way")?),
                 wanted: match fields.text("screen")? {
@@ -382,6 +396,7 @@ impl fmt::Display for Request {
             Request::SteadyFar { way, rate } => {
                 write!(f, "steady way={way} rate={}", said(*rate))
             }
+            Request::BitrateFar { way, kbps } => write!(f, "bitrate way={way} kbps={kbps}"),
             Request::FarScreen { way, wanted } => match wanted {
                 Some(screen) => write!(f, "farscreen way={way} screen={screen}"),
                 None => write!(f, "farscreen way={way} screen=none"),
@@ -934,6 +949,12 @@ mod tests {
             Request::SteadyFar {
                 way: WayId(3),
                 rate: false,
+            },
+            // Le débit se demande au milieu d'une session, en kilobits
+            // par seconde, comme le moteur d'en face le lit.
+            Request::BitrateFar {
+                way: WayId(3),
+                kbps: 20_000,
             },
             Request::Hush {
                 way: WayId(3),

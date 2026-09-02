@@ -84,6 +84,15 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         args.push("--report-stats".to_string());
         args.push(path.to_string());
     }
+    // And where the engine reads what the session should be, a few times
+    // a second, which is what lets a setting act while the picture runs:
+    // the engine makes its stream over where it stands instead of being
+    // started over. Asked for always, like the line above and for the
+    // same reason.
+    if let Some(path) = paths::session_wanted().to_str() {
+        args.push("--follow-settings".to_string());
+        args.push(path.to_string());
+    }
     // The keys this computer keeps for itself, Alt+Tab and the Windows key
     // first, taken by the engine and by nothing else. The mode is ours
     // (patch P-M10): the engine takes them from the focus of its own
@@ -170,6 +179,16 @@ mod tests {
         let args = session_arguments("host", &SessionSettings::default());
         let path = value_of(&args, "--report-stats").expect("un chemin pour les mesures");
         assert!(path.ends_with("session-stats.txt"));
+    }
+
+    #[test]
+    fn the_engine_follows_what_the_session_should_be() {
+        // C'est par ce fichier qu'un réglage agit pendant que l'image
+        // tourne : sans lui, chaque changement de taille ou de codec
+        // serait un lecteur à relancer.
+        let args = session_arguments("host", &SessionSettings::default());
+        let path = value_of(&args, "--follow-settings").expect("un chemin à suivre");
+        assert!(path.ends_with("session-wanted.txt"));
     }
 
     #[test]

@@ -560,15 +560,41 @@ impl Ways {
         Ok(())
     }
 
+    /// Asks the far computer to serve this session's picture at that rate
+    /// from now on.
+    ///
+    /// The same shape as the ones above, and for the same reason: the
+    /// connection comes out from under the lock before anything waits on
+    /// the network. Asked in the middle of a session and nowhere else,
+    /// the rate having travelled with the stream at its opening.
+    pub async fn ask_to_serve_at(&self, way: WayId, kbps: u32) -> Result<(), String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+
+        aside::ask_to_serve_at(&connection, kbps)
+            .await
+            .map_err(|e| format!("l'ordinateur distant n'a pas changé de débit : {e}"))?;
+        self.log.write(&format!(
+            "way {way} asked the far computer to serve at {kbps} kbps, and it does so where it stands"
+        ));
+        Ok(())
+    }
+
     /// Asks the far computer to resend a still screen at full rate, or
     /// to stop doing it.
     ///
-    /// Asked at the opening of every session, and almost never changing
-    /// anything: the far computer does nothing at all when it is already
-    /// serving the way it was asked to. When it does change something,
-    /// its engine reads this at its start and nowhere else, so it starts
-    /// over and takes this very way with it: the answer says which of the
-    /// two happened, like the screen to film below.
+    /// Asked at the opening of every session and whenever the person
+    /// changes their mind, and almost never changing anything: the far
+    /// computer does nothing at all when it is already serving the way it
+    /// was asked to. When it does change something, its engine takes it
+    /// where it stands; an engine that cannot be asked starts over and
+    /// takes this very way with it, and the answer says which of the two
+    /// happened, like the screen to film below.
     pub async fn ask_to_serve_steady(&self, way: WayId, rate: bool) -> Result<bool, String> {
         let connection = {
             let register = self.register.lock().expect("registre des voies");
@@ -588,7 +614,7 @@ impl Ways {
             if starting_over {
                 "is starting its engine over, so this way is about to go"
             } else {
-                "was already serving that way"
+                "serves that way where it stands"
             }
         ));
         Ok(starting_over)

@@ -49,8 +49,11 @@ use crate::pump;
 /// cadence of a still screen answered like the screen to film, « already
 /// » or « starting over »: it is read once by the far engine too, and a
 /// session that asked for it and then opened its picture through the way
-/// that was about to go fell over on its first picture.
-pub const VERSION: u32 = 13;
+/// that was about to go fell over on its first picture. Version 14 asks
+/// for a rate while the picture runs, which the far engine takes where it
+/// stands, and has the cadence of a still screen taken the same way: what
+/// used to start an engine over is asked of the one that runs.
+pub const VERSION: u32 = 14;
 
 /// Longest question this channel takes.
 ///
@@ -130,12 +133,27 @@ pub trait Answers: Send + Sync + 'static {
     /// here, so the ask is a request and not an order: an answer of no is
     /// an answer.
     ///
-    /// The engine reads it when it starts, so a change of it starts that
-    /// engine over, and starting over takes the tunnel with it: the
-    /// answer says which of the two happened, exactly as the screen to
-    /// film below does, rather than leaving the far end to find out from
-    /// a way that broke underneath it.
+    /// Asked of the engine that runs, which takes it where it stands. An
+    /// engine that cannot be asked, one of an older build or one that has
+    /// stopped answering, is started over instead, and starting over
+    /// takes the tunnel with it: the answer says which of the two
+    /// happened, exactly as the screen to film below does, rather than
+    /// leaving the far end to find out from a way that broke underneath
+    /// it.
     fn serve_steady(&self, rate: bool) -> Result<Settled, String>;
+
+    /// Serves the session's picture at that rate from now on.
+    ///
+    /// Asked of the engine that runs, which costs it a new encoder and
+    /// costs the session watching it nothing at all. The rate is the one
+    /// thing here that is not written down: it was negotiated when the
+    /// stream started, it is asked of the stream that runs, and the next
+    /// stream announces its own.
+    ///
+    /// A no is an engine that cannot be asked, and the far end then opens
+    /// its picture again, which is what every change of rate cost before
+    /// this existed.
+    fn serve_at(&self, kbps: u32) -> Result<(), String>;
 
     /// Wakes this computer's virtual screen for a session that wants a
     /// picture like that one, or puts it back to sleep.
@@ -239,15 +257,17 @@ pub trait Answers: Send + Sync + 'static {
     fn film_this_screen(&self, id: Option<String>) -> Result<Settled, String>;
 }
 
-/// What a computer answers when it is told something its engine only
-/// reads when it starts.
+/// What a computer answers when it is told something its engine takes
+/// where it stands when it can, and starts over for when it cannot.
 ///
 /// Two of them: which of its screens to film, and whether it resends a
-/// still screen at full rate. Both are read once, so both have the same
-/// two answers, and the second of them takes the tunnel with it.
+/// still screen at full rate. Both are asked of the engine that runs, and
+/// an engine that cannot be asked is started over, which takes the tunnel
+/// with it: so both have the same two answers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Settled {
-    /// It is that way already, and the session may go on.
+    /// It is that way already, or is being made that way where it stands,
+    /// and the session may go on.
     Already,
     /// Its engine has to start over, which takes this tunnel with it. The
     /// far end waits and comes back.
@@ -270,6 +290,8 @@ pub enum Question {
     Lock,
     /// Resend a still screen at full rate, or stop doing it.
     Steady { rate: bool },
+    /// Serve the picture at this rate, in kilobits a second, from now on.
+    Bitrate { kbps: u32 },
     /// Wake your virtual screen for a picture like this one, or, with
     /// nothing asked for, put it back to sleep.
     Screen { wanted: Option<WantedScreen> },
@@ -298,6 +320,8 @@ pub enum Told {
     Hushed,
     /// The far computer's screen is being locked.
     Locked,
+    /// The far computer's engine is serving at the rate it was asked.
+    Rated,
     /// The far computer's virtual screen is where it was asked to be,
     /// and it is showing this size. Absent when that computer could not
     /// measure itself, which leaves the asking end on what it guessed.
@@ -346,6 +370,7 @@ impl fmt::Display for Question {
             Question::Steady { rate } => {
                 write!(f, "{VERSION} steady {}", if *rate { "on" } else { "off" })
             }
+            Question::Bitrate { kbps } => write!(f, "{VERSION} bitrate {kbps}"),
             Question::Screen { wanted } => match wanted {
                 Some(screen) => write!(f, "{VERSION} screen {screen}"),
                 None => write!(f, "{VERSION} screen none"),
@@ -381,6 +406,7 @@ impl fmt::Display for Told {
             Told::Attended => write!(f, "{VERSION} attended"),
             Told::Hushed => write!(f, "{VERSION} hushed"),
             Told::Locked => write!(f, "{VERSION} locked"),
+            Told::Rated => write!(f, "{VERSION} rated"),
             Told::Screen { size } => match size {
                 Some((wide, high)) => write!(f, "{VERSION} screen {wide}x{high}"),
                 None => write!(f, "{VERSION} screen none"),
@@ -420,6 +446,10 @@ impl Question {
                 "off" => Ok(Question::Steady { rate: false }),
                 other => Err(format!("« {other} » ne dit ni oui ni non")),
             },
+            "bitrate" => rest
+                .parse()
+                .map(|kbps| Question::Bitrate { kbps })
+                .map_err(|_| format!("« {rest} » n'est pas un débit")),
             "screen" => match rest {
                 "none" => Ok(Question::Screen { wanted: None }),
                 asked => asked.parse().map(|screen| Question::Screen {
@@ -473,6 +503,7 @@ impl Told {
             "attended" => Ok(Ok(Told::Attended)),
             "hushed" => Ok(Ok(Told::Hushed)),
             "locked" => Ok(Ok(Told::Locked)),
+            "rated" => Ok(Ok(Told::Rated)),
             "screen" => Ok(Ok(Told::Screen {
                 size: match rest {
                     "none" | "" => None,
@@ -634,15 +665,31 @@ pub async fn ask_to_lock(connection: &Connection) -> io::Result<()> {
 /// Asks the far ZyrDesk to resend a still screen at full rate, or to
 /// stop doing it.
 ///
-/// Asked at the opening of every session and never in the middle of one:
-/// the far engine reads this when it starts, so a change of it starts
-/// that engine over, and an engine starting over in the middle of a
-/// session is that session going. The answer says which of the two
-/// happened, exactly as the screen to film does, and the caller waits
-/// and comes back when it is the second.
+/// Asked at the opening of every session, and again whenever the person
+/// changes their mind in the middle of one: the far engine takes it where
+/// it stands. An engine that cannot be asked is started over instead, and
+/// an engine starting over in the middle of a session is that session
+/// going: the answer says which of the two happened, exactly as the
+/// screen to film does, and the caller waits and comes back when it is
+/// the second.
 pub async fn ask_to_serve_steady(connection: &Connection, rate: bool) -> io::Result<Settled> {
     match ask(connection, &Question::Steady { rate }).await? {
         Told::Settled { how } => Ok(how),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
+/// Asks the far ZyrDesk to serve the picture at that rate from now on.
+///
+/// Asked in the middle of a session and nowhere else: at its opening the
+/// rate travels with the stream, negotiated between the two engines, and
+/// this is the one road to change it afterwards without stopping the
+/// picture. A no is an engine over there that cannot be asked, and the
+/// caller opens its picture again, which is what every change of rate
+/// cost before this existed.
+pub async fn ask_to_serve_at(connection: &Connection, kbps: u32) -> io::Result<()> {
+    match ask(connection, &Question::Bitrate { kbps }).await? {
+        Told::Rated => Ok(()),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
 }
@@ -794,14 +841,19 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             .await
             .map_err(|e| format!("le verrouillage n'a pas pu être mené : {e}"))?
             .map(|()| Told::Locked),
-        // Off the thread as well: saying yes writes a file and starts an
-        // engine over.
+        // Off the thread as well: saying yes writes a file and asks an
+        // engine over a socket.
         Question::Steady { rate } => {
             tokio::task::spawn_blocking(move || answering.serve_steady(rate))
                 .await
                 .map_err(|e| format!("la cadence n'a pas pu être réglée : {e}"))?
                 .map(|how| Told::Settled { how })
         }
+        // Off it too: the engine is asked over a socket, and waited for.
+        Question::Bitrate { kbps } => tokio::task::spawn_blocking(move || answering.serve_at(kbps))
+            .await
+            .map_err(|e| format!("le débit n'a pas pu être réglé : {e}"))?
+            .map(|()| Told::Rated),
         // Off it too, and this one takes the longest of them all: waking
         // a screen is Windows starting a device, and the answer is not
         // sent until it has, because the computer asking opens its
@@ -884,6 +936,9 @@ mod tests {
             Question::Lock,
             Question::Steady { rate: true },
             Question::Steady { rate: false },
+            // Le débit se demande au milieu d'une session, en kilobits
+            // par seconde, comme le moteur d'en face le lit.
+            Question::Bitrate { kbps: 20_000 },
             // L'agrandissement voyage collé à la taille : un écran à la
             // bonne taille sans lui, c'est le bureau de quelqu'un
             // d'autre à la bonne résolution.
@@ -928,6 +983,7 @@ mod tests {
             Told::Attended,
             Told::Hushed,
             Told::Locked,
+            Told::Rated,
             Told::Screen {
                 size: Some((1920, 1200)),
             },
@@ -1002,6 +1058,16 @@ mod tests {
     fn a_pairing_without_a_code_is_refused() {
         assert!(Question::parse(&format!("{VERSION} pair")).is_err());
         assert!(Question::parse(&format!("{VERSION} pair 0429")).is_err());
+    }
+
+    #[test]
+    fn a_rate_that_is_not_a_number_is_refused() {
+        // Un débit illisible ne doit pas devenir zéro, qui voudrait dire
+        // « celui que le flux a négocié » : il est refusé, et dit pourquoi.
+        for said in ["bitrate", "bitrate beaucoup", "bitrate -5"] {
+            let refusal = Question::parse(&format!("{VERSION} {said}")).unwrap_err();
+            assert!(refusal.contains("débit"), "sur « {said} » : {refusal}");
+        }
     }
 
     #[test]

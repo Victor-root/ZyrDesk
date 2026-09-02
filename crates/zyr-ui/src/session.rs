@@ -21,8 +21,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use crate::app::App;
-use zyr_control::{Answer, Request};
-use zyr_proto::session::{Asked, Codec, FarScreen, Preferred, SessionSettings};
+use zyr_control::{Answer, Request, WayId};
+use zyr_proto::session::{FarScreen, Preferred, SessionSettings, WantedScreen};
 use zyr_session::{Outcome, Step, Wanted};
 
 use crate::service;
@@ -112,14 +112,27 @@ pub fn opening() -> bool {
 /// reopen the picture it was written for.
 static OPEN_AGAIN: AtomicU32 = AtomicU32::new(0);
 
-/// What the picture on screen was opened with.
+/// What the player is showing right now: what it was started with, and
+/// what it has since been told to become.
 ///
-/// Kept because it cannot be read back from anywhere. What a session asks
-/// for is settled when its engine starts and told to it once, so anything
-/// chosen afterwards is written down and nothing more until the picture
-/// is opened again. This is what lets the session's own menu say which of
-/// the two it is showing.
-static SHOWN_AS: Mutex<Option<ToldOnce>> = Mutex::new(None);
+/// Kept because it cannot be read back from anywhere, and it is what every
+/// change made in the middle of a session starts from. A session changes
+/// one thing at a time, and the player is told the whole line each time:
+/// told the rate alone, it would read the size as a size it has never
+/// been given. Written back into as the player is told, so the next
+/// change starts from what it was told last.
+///
+/// Which of the far computer's screens is watched is not in here, nor is
+/// the rate that computer resends a still screen at: both are that
+/// computer's and not the player's.
+static SHOWN: Mutex<Option<SessionSettings>> = Mutex::new(None);
+
+/// What a session this window is not driving is told.
+///
+/// The numbers to change it with live on this window's own thread, and a
+/// session opened elsewhere has nobody here to hear this.
+const NOT_FROM_HERE: &str = "cette session n'a pas été ouverte depuis cette fenêtre.\n  \
+                             Les réglages s'appliqueront à la prochaine.";
 
 /// Which of the far computer's screens this session is served from.
 ///
@@ -139,41 +152,6 @@ static FAR_SCREEN: Mutex<Option<String>> = Mutex::new(None);
 /// can say which screen is being watched without asking again at every
 /// draw.
 static FAR_SCREENS: Mutex<Vec<FarScreen>> = Mutex::new(Vec::new());
-
-/// What the engine is told once, at its start, and never again.
-///
-/// The rest of what a person chooses is either asked of the engine while
-/// it runs, by the keystrokes it answers to, or belongs to this side of
-/// the picture entirely. Only these are worth opening the picture again
-/// for, and only these are compared to know whether they are still what
-/// is on screen.
-///
-/// The last one is told to the far computer's engine rather than to this
-/// one's, and it is here for the same reason as the first three: its
-/// engine reads it when it starts, so changing it means opening the
-/// picture again, which is what asks that computer and starts its engine
-/// over on the way.
-///
-/// Which of that computer's screens is being watched is **not** here, and
-/// that is the whole point of it: its engine changes screen where it
-/// stands, so the ask goes out the moment it is made and the picture
-/// follows within the second. Nothing to apply, nothing to reopen.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ToldOnce {
-    asked: Asked,
-    bitrate_kbps: u32,
-    codec: Codec,
-    steady_far_rate: bool,
-}
-
-fn told_once(preferred: &Preferred) -> ToldOnce {
-    ToldOnce {
-        asked: preferred.asked,
-        bitrate_kbps: preferred.bitrate_kbps,
-        codec: preferred.codec,
-        steady_far_rate: preferred.steady_far_rate,
-    }
-}
 
 /// Which of the far computer's screens the session is to be served from.
 ///
@@ -320,15 +298,160 @@ pub fn remember_the_far_screens(screens: &[FarScreen]) {
     *FAR_SCREENS.lock().expect("écrans d'en face") = screens.to_vec();
 }
 
-/// Whether what is chosen now is not what the picture on screen shows.
+/// One of the settings a session takes where it stands, once it has been
+/// written down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Changed {
+    /// How much picture is asked for.
+    Size,
+    /// How much rate carries it.
+    Rate,
+    Codec,
+    /// Whether the far computer resends a still screen at full rate.
+    SteadyFarRate,
+}
+
+/// Gives the session in progress what was just chosen, where it stands.
 ///
-/// False when nothing is on screen: there is then nothing to apply it to,
-/// and the next session opens with it anyway.
-pub fn waiting_to_be_applied(preferred: &Preferred) -> bool {
-    match SHOWN_AS.lock().expect("réglages de l'image").as_ref() {
-        Some(shown) => *shown != told_once(preferred),
-        None => false,
+/// Nothing at all when no session is on screen: the next one opens with
+/// what was written down, and that is the whole of what a choice made
+/// outside a session means.
+///
+/// Four settings, three roads. The rate and the still screen's cadence
+/// are the far engine's, asked of it through the way and taken where it
+/// stands. The codec is the player's, told through the file it follows,
+/// on which it makes its stream over in the same window. The size is
+/// both: the far computer is asked for a screen of that size, or for its
+/// own, exactly as at the opening, and what it answers it will be showing
+/// is what the player is told to become.
+///
+/// What cannot be taken where it stands is opened again, which is what
+/// every one of these cost before: a far engine that cannot be asked, one
+/// of an older build or one that has stopped answering, says so, and the
+/// picture goes away and comes back with the new settings.
+pub async fn take_where_it_stands(
+    app: App,
+    changed: Changed,
+    preferred: Preferred,
+) -> Result<(), String> {
+    let Some(way) = the_way_in_use().await else {
+        return Ok(());
+    };
+    let Some(shown) = *SHOWN.lock().expect("réglages de l'image") else {
+        return Err(NOT_FROM_HERE.to_string());
+    };
+    match changed {
+        Changed::Rate => serve_at(app, way, shown, preferred.bitrate_kbps).await,
+        Changed::Codec => tell_the_player(SessionSettings {
+            codec: preferred.codec,
+            ..shown
+        }),
+        Changed::Size => become_that_size(app, way, shown, preferred).await,
+        Changed::SteadyFarRate => serve_steady(app, way, preferred.steady_far_rate).await,
     }
+}
+
+/// Tells the player what to become, through the file it follows, and
+/// keeps it as what is shown.
+fn tell_the_player(settings: SessionSettings) -> Result<(), String> {
+    let told = zyr_session::tell_the_player(&settings).map_err(|e| e.to_string())?;
+    *SHOWN.lock().expect("réglages de l'image") = Some(settings);
+    crate::journal::note(&format!("le lecteur suit maintenant « {told} »"));
+    Ok(())
+}
+
+/// Asks the far computer to serve at that rate, where its engine stands.
+///
+/// The player is told too, though nothing changes for it on the spot:
+/// what it holds is what the next stream it makes over announces, and
+/// that has to be the rate the person last chose.
+async fn serve_at(app: App, way: WayId, shown: SessionSettings, kbps: u32) -> Result<(), String> {
+    match crate::service::ask(&Request::BitrateFar { way, kbps }).await? {
+        Answer::Done => {}
+        // An engine over there that cannot be asked: the picture is opened
+        // again, which negotiates the rate the way every change of rate
+        // did before.
+        Answer::Refused(reason) => {
+            crate::journal::note(&format!(
+                "débit : l'ordinateur distant n'a pas pu être réglé où il est ({reason}), \
+                 l'image est relancée"
+            ));
+            return apply_session(app).await;
+        }
+        other => return Err(crate::service::unexpected(other)),
+    }
+    crate::journal::note(&format!(
+        "débit : l'ordinateur distant sert à {} Mb/s sans rien relancer",
+        kbps / 1000
+    ));
+    tell_the_player(SessionSettings {
+        bitrate_kbps: kbps,
+        ..shown
+    })
+}
+
+/// Asks the far computer to resend a still screen at full rate, or to
+/// stop, where its engine stands.
+async fn serve_steady(app: App, way: WayId, rate: bool) -> Result<(), String> {
+    let starting_over = match crate::service::ask(&Request::SteadyFar { way, rate }).await? {
+        Answer::Settled { starting_over } => starting_over,
+        Answer::Refused(reason) => return Err(reason),
+        other => return Err(crate::service::unexpected(other)),
+    };
+    crate::journal::note(&format!(
+        "écran d'en face : {}",
+        if starting_over {
+            "son moteur redémarre pour changer de cadence, l'image est relancée"
+        } else {
+            "cadence changée sans rien relancer"
+        }
+    ));
+    if starting_over {
+        return apply_session(app).await;
+    }
+    Ok(())
+}
+
+/// Gives the session the size chosen now: the far computer's screen
+/// first, then the player, then our own window.
+async fn become_that_size(
+    app: App,
+    way: WayId,
+    shown: SessionSettings,
+    preferred: Preferred,
+) -> Result<(), String> {
+    let (guessed, magnification) = what_to_ask_for(&app, preferred);
+    let wanted = preferred
+        .asked
+        .wants_a_screen_over_there()
+        .then_some(WantedScreen {
+            wide: guessed.width,
+            high: guessed.height,
+            scale: magnification,
+        });
+    // What that computer says it will be showing wins over what this end
+    // guessed, exactly as at the opening. A refusal costs the sharpness of
+    // the picture and nothing else, and the session goes on.
+    let (width, height) = match crate::service::ask(&Request::FarScreen { way, wanted }).await? {
+        Answer::Showing {
+            size: Some((wide, high)),
+        } => (wide, high),
+        Answer::Showing { size: None } => (guessed.width, guessed.height),
+        Answer::Refused(reason) => {
+            crate::journal::note(&format!(
+                "l'ordinateur distant n'a pas préparé son écran : {reason}"
+            ));
+            (guessed.width, guessed.height)
+        }
+        other => return Err(crate::service::unexpected(other)),
+    };
+    tell_the_player(SessionSettings {
+        width,
+        height,
+        ..shown
+    })?;
+    crate::picture::reshape(&app, (width as i32, height as i32));
+    Ok(())
 }
 
 pub async fn connect(app: App, host: String, fingerprint: String) -> Result<(), String> {
@@ -411,17 +534,14 @@ fn what_to_ask_for(app: &App, preferred: Preferred) -> (SessionSettings, u32) {
 /// Opens the session and holds it, from the first tunnel to the last
 /// picture.
 ///
-/// It opens more than once when the person changes what the session asks
-/// for and applies it. The engine is told a size, a rate and a codec when
-/// it starts and never again, so the only way to change one is to open the
-/// picture again; everything around it stands, this thread and the
-/// pairing included, and what it costs is the few seconds an opening
-/// takes.
+/// It opens more than once when what the person chose could not be taken
+/// where the session stood, which is a far engine that cannot be asked:
+/// the picture is opened again, everything around it stands, this thread
+/// and the pairing included, and what it costs is the few seconds an
+/// opening takes.
 fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
     crate::journal::note(&format!("session demandée vers {}", wanted.host));
     loop {
-        *SHOWN_AS.lock().expect("réglages de l'image") = Some(told_once(&preferred));
-
         let towards = wanted.host.clone();
         let mut opening = Opening::begins();
         let running = match zyr_session::open(
@@ -469,6 +589,9 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
 
         let process = running.process_id();
         crate::journal::note(&format!("session en cours, lecteur {process}"));
+        // What the player was started with, which is what every change
+        // made while it runs starts from.
+        *SHOWN.lock().expect("réglages de l'image") = Some(running.settings());
 
         // Waited for here, and this is the whole of what the opening
         // screen is for: it covers the seconds between somebody asking
@@ -573,21 +696,18 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
 
 /// Opens the picture again with what is chosen now, the session standing.
 ///
-/// The one thing the session's own menu cannot do by asking the engine:
-/// a size, a rate and a codec are handed to it when it starts and never
-/// again. So the player is stopped and started, which the person sees as
-/// the picture going away and coming back, and everything else stands.
+/// The road left for what cannot be taken where it stands, which is a far
+/// engine that cannot be asked: one of an older build, or one that has
+/// stopped answering. The player is stopped and started, which the person
+/// sees as the picture going away and coming back, and everything else
+/// stands.
 ///
 /// Only a session this window is driving: the numbers to open it again
 /// with live on that window's own thread, and a session opened elsewhere
 /// has nobody here to hear this.
 pub async fn apply_session(app: App) -> Result<(), String> {
     if !opening() {
-        return Err(
-            "cette session n'a pas été ouverte depuis cette fenêtre.\n  \
-                    Les réglages s'appliqueront à la prochaine."
-                .to_string(),
-        );
+        return Err(NOT_FROM_HERE.to_string());
     }
     let process = crate::floating::player(&app)
         .await
@@ -856,10 +976,9 @@ fn finish(app: &App, ok: bool, message: String) {
     // A session that is over asks for nothing, and shows nothing. Both
     // are put down here rather than left standing: an « open it again »
     // that outlived its session has nothing left to name, and a picture
-    // nobody is showing would have the session menu offering to apply
-    // changes to it.
+    // nobody is showing would be told what to become by the next choice.
     OPEN_AGAIN.store(0, Ordering::SeqCst);
-    *SHOWN_AS.lock().expect("réglages de l'image") = None;
+    *SHOWN.lock().expect("réglages de l'image") = None;
     crate::floating::expect_nothing(app);
     // Taken down here rather than left to the watch. The watch comes
     // round once a second and asks the service what it holds, and until
@@ -887,7 +1006,6 @@ fn finish(app: &App, ok: bool, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zyr_proto::session::DisplayMode;
 
     fn far_screen(id: &str, main: bool) -> FarScreen {
         FarScreen {
@@ -923,61 +1041,5 @@ mod tests {
         // qui n'est pas une panne : la touche est simplement muette.
         assert!(the_one_after(&screens[..1], "un").is_none());
         assert!(the_one_after(&[], "").is_none());
-    }
-
-    #[test]
-    fn only_what_the_engine_is_told_once_asks_for_the_picture_to_be_reopened() {
-        // Relancer l'image coûte les quelques secondes d'une ouverture :
-        // ça ne se fait que pour ce que le moteur apprend au démarrage et
-        // jamais après. Le reste se demande au moteur en marche, ou ne le
-        // regarde pas du tout, et le proposer serait faire payer ça pour
-        // rien.
-        let shown = Preferred::default();
-        for other in [
-            Preferred {
-                display_mode: DisplayMode::Fullscreen,
-                ..shown
-            },
-            Preferred {
-                absolute_mouse: !shown.absolute_mouse,
-                ..shown
-            },
-            Preferred {
-                stats_overlay: !shown.stats_overlay,
-                ..shown
-            },
-        ] {
-            assert_eq!(told_once(&other), told_once(&shown));
-        }
-
-        // Les trois autres, elles, ne peuvent pas se changer autrement.
-        for other in [
-            Preferred {
-                asked: Asked::Fixed(1280, 720),
-                ..shown
-            },
-            Preferred {
-                bitrate_kbps: shown.bitrate_kbps + 5_000,
-                ..shown
-            },
-            Preferred {
-                codec: Codec::H264,
-                ..shown
-            },
-        ] {
-            assert_ne!(told_once(&other), told_once(&shown));
-        }
-    }
-
-    #[test]
-    fn nothing_is_waiting_to_be_applied_when_nothing_is_on_screen() {
-        // Hors session il n'y a pas d'image à relancer : la prochaine
-        // s'ouvrira avec ce qui est choisi, sans que personne ait à le
-        // demander.
-        assert!(!waiting_to_be_applied(&Preferred::default()));
-        assert!(!waiting_to_be_applied(&Preferred {
-            asked: Asked::Fixed(1280, 720),
-            ..Preferred::default()
-        }));
     }
 }
