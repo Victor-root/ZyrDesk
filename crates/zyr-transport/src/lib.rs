@@ -15,6 +15,6 @@ pub use endpoint::{
     Bytes, Carrying, Connection, DatagramError, EndpointError, RecvStream, SendStream,
     TunnelEndpoint,
 };
-pub use identity::{AllowedPeers, Fingerprint, Identity};
+pub use identity::{AllowedPeers, Fingerprint, Identity, signed_by};
 pub use mtu::{PacketSize, packet_size};
 pub use path::Path;

@@ -89,6 +89,9 @@ pub enum IdentityError {
     /// One of the two files is missing: making a new identity would
     /// change the machine's fingerprint and break all of its pairings.
     Incomplete(PathBuf),
+    /// The key could not sign, which is a key file that is not what the
+    /// certificate was made with.
+    Signing(String),
 }
 
 impl std::fmt::Display for IdentityError {
@@ -96,6 +99,9 @@ impl std::fmt::Display for IdentityError {
         match self {
             IdentityError::Generation(e) => write!(f, "génération d'identité impossible : {e}"),
             IdentityError::File(path, e) => write!(f, "{} : {e}", path.display()),
+            IdentityError::Signing(e) => {
+                write!(f, "signature avec la clé de l'appareil impossible : {e}")
+            }
             IdentityError::Incomplete(folder) => write!(
                 f,
                 "identité incomplète dans {} : effacer le dossier pour en refaire une, \
@@ -205,6 +211,39 @@ impl Identity {
     pub fn key(&self) -> PrivateKeyDer<'static> {
         self.key.clone_key()
     }
+
+    /// Signs that message with this device's key.
+    ///
+    /// ECDSA over P-256 and SHA-256, in the ASN.1 form, which is what the
+    /// certificate's key was made for and what `signed_by` verifies
+    /// against the certificate this device presents everywhere else.
+    /// What gets signed is a challenge a server hands out: the key is
+    /// proven without ever leaving this machine.
+    pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>, IdentityError> {
+        let rng = ring::rand::SystemRandom::new();
+        let key = ring::signature::EcdsaKeyPair::from_pkcs8(
+            &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING,
+            self.key.secret_der(),
+            &rng,
+        )
+        .map_err(|e| IdentityError::Signing(e.to_string()))?;
+        let signature = key
+            .sign(&rng, message)
+            .map_err(|e| IdentityError::Signing(e.to_string()))?;
+        Ok(signature.as_ref().to_vec())
+    }
+}
+
+/// Whether the key of that certificate produced that signature over that
+/// message.
+///
+/// The other half of `Identity::sign`, for whoever holds only the
+/// certificate: a server checking that the device attaching itself holds
+/// the key of the certificate it sends.
+pub fn signed_by(certificate: &CertificateDer<'_>, message: &[u8], signature: &[u8]) -> bool {
+    webpki::EndEntityCert::try_from(certificate)
+        .and_then(|cert| cert.verify_signature(webpki::ring::ECDSA_P256_SHA256, message, signature))
+        .is_ok()
 }
 
 /// Devices whose fingerprint this machine accepts.
@@ -368,6 +407,35 @@ mod tests {
         let text = fingerprint.to_string();
         assert_eq!(text.len(), 64);
         assert!(text.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn a_device_signs_and_its_certificate_vouches_for_it() {
+        // C'est ainsi qu'un appareil prouve sa clé à un serveur sans la
+        // lui montrer : le serveur n'a que le certificat, et il suffit.
+        let device = Identity::generate().unwrap();
+        let signature = device.sign("un défi".as_bytes()).unwrap();
+        assert!(signed_by(
+            device.certificate(),
+            "un défi".as_bytes(),
+            &signature
+        ));
+        assert!(!signed_by(
+            device.certificate(),
+            "un autre défi".as_bytes(),
+            &signature
+        ));
+        let other = Identity::generate().unwrap();
+        assert!(!signed_by(
+            other.certificate(),
+            "un défi".as_bytes(),
+            &signature
+        ));
+        assert!(!signed_by(
+            device.certificate(),
+            "un défi".as_bytes(),
+            b"pas une signature"
+        ));
     }
 
     #[test]

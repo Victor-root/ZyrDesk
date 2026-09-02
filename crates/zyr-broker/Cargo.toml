@@ -1,0 +1,16 @@
+[package]
+name = "zyr-broker"
+description = "Ce que le service et le serveur ZyrDesk se disent : messages, tickets et laissez-passer signés"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+ed25519-dalek = "3.0.0"
+rand = "0.10.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+zyr-proto.workspace = true
+zyr-transport.workspace = true
