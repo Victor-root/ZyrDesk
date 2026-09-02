@@ -84,6 +84,6 @@ Asymétrie du protocole, à ne pas confondre avec une faille : le client présen
 ## 8. Hygiène de base
 
 - Version plancher de Sunshine : v2026.516.143833 (corrige un contournement critique de la validation des certificats clients, CVSS 9.8). Aucune version antérieure, jamais.
-- Dépendances épinglées, mise à jour régulière outillée (la répétition mensuelle de mise à niveau couvre aussi les correctifs de sécurité moteurs).
+- Dépendances épinglées, mise à jour régulière outillée (la répétition mensuelle de mise à niveau couvre aussi les correctifs de sécurité moteurs). Le transport suit les correctifs de quinn : la version 0.11.17 de `quinn-proto` (2026-08-17), qui ferme trois épuisements de mémoire déclenchables à distance, est celle que le produit exige.
 - Journaux sans secrets (les bundles de diagnostic sont expurgés : pas de jetons, pas de clés, pas d'adresses complètes si non nécessaires).
 - Passe de sécurité dédiée avant bêta (jalon M10) : ACL du pipe, permissions des fichiers, quotas relais, revue des surfaces.
