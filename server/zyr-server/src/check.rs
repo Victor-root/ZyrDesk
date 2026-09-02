@@ -304,7 +304,7 @@ mod tests {
             std::fs::write(&key, generated.signing_key.serialize_pem()).unwrap();
             (
                 format!(
-                    "tls_cert = \"{}\"\ntls_key = \"{}\"\n",
+                    "tls_cert = '{}'\ntls_key = '{}'\n",
                     certificate.display(),
                     key.display()
                 ),
@@ -314,7 +314,7 @@ mod tests {
             (String::new(), None)
         };
         let config = Config::parse(&format!(
-            "name = \"Essai\"\ndata_dir = \"{}\"\n\n[api]\nlisten = \"127.0.0.1:0\"\n{files}\
+            "name = \"Essai\"\ndata_dir = '{}'\n\n[api]\nlisten = \"127.0.0.1:0\"\n{files}\
              public_url = \"https://localhost\"\n\n[relay]\nlisten = \"127.0.0.1:0\"\n",
             folder.display()
         ))

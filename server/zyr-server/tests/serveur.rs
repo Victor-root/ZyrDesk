@@ -43,7 +43,7 @@ impl Server {
         let config = Config::parse(&format!(
             r#"
 name = "Essai"
-data_dir = "{}"
+data_dir = '{}'
 
 [api]
 listen = "127.0.0.1:0"

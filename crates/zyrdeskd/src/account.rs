@@ -1079,12 +1079,12 @@ mod tests {
             let config = Config::parse(&format!(
                 r#"
 name = "Essai"
-data_dir = "{}"
+data_dir = '{}'
 
 [api]
 listen = "127.0.0.1:0"
-tls_cert = "{}"
-tls_key = "{}"
+tls_cert = '{}'
+tls_key = '{}'
 public_url = "https://essai.invalid"
 
 [relay]
