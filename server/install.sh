@@ -288,6 +288,18 @@ nom_du_binaire() {
 
 # ---- Les vérifications -----------------------------------------------------
 
+# Les outils qu'il faut, selon la façon d'obtenir le programme. Compiler
+# sur place demande un compilateur C, la base de données embarquée et le
+# chiffrement en contenant, et git quand le dépôt reste à cloner.
+outils_necessaires() {
+  echo curl
+  echo openssl
+  if [[ $DEPUIS_LA_SOURCE -eq 1 ]]; then
+    echo build-essential
+    [[ -n $SOURCE_FOURNIE ]] || echo git
+  fi
+}
+
 verifie_les_prealables() {
   local manques=0
   if [[ $EUID -ne 0 ]]; then
@@ -306,15 +318,32 @@ verifie_les_prealables() {
     warn "$(t "Aucun binaire n'est publié pour $ARCH : il faudra --from-source." "No binary is published for $ARCH: --from-source is needed.")"
     [[ $DEPUIS_LA_SOURCE -eq 1 ]] || exit 1
   fi
-  for outil in curl openssl; do
+  for paquet in $(outils_necessaires); do
+    # build-essential est un paquet, pas une commande : ce qu'il apporte
+    # et qui manquerait ici est le compilateur.
+    outil=$paquet
+    [[ $paquet == build-essential ]] && outil=cc
     if ! command -v "$outil" >/dev/null 2>&1; then
-      info "$(t "$outil manque : il sera installé (apt-get install $outil)." "$outil is missing: it will be installed (apt-get install $outil).")"
+      info "$(t "$outil manque : il sera installé (apt-get install $paquet)." "$outil is missing: it will be installed (apt-get install $paquet).")"
       manques=1
     fi
   done
   if [[ $manques -eq 1 ]] && ! command -v apt-get >/dev/null 2>&1; then
-    fail "$(t 'apt-get est introuvable : installez curl et openssl, puis relancez.' 'apt-get is missing: install curl and openssl, then run again.')"
+    fail "$(t 'apt-get est introuvable : installez ce qui manque, puis relancez.' 'apt-get is missing: install what is missing, then run again.')"
     exit 1
+  fi
+  # Rust posé par rustup vit là, et n'est dans le chemin qu'une fois la
+  # session rouverte : le script va l'y chercher plutôt que de demander
+  # de tout recommencer.
+  if [[ $DEPUIS_LA_SOURCE -eq 1 ]]; then
+    if ! command -v cargo >/dev/null 2>&1 && [[ -x ${HOME:-/root}/.cargo/bin/cargo ]]; then
+      PATH="${HOME:-/root}/.cargo/bin:$PATH"
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+      fail "$(t 'Compiler sur place demande Rust, et cargo est introuvable.' 'Building here needs Rust, and cargo is missing.')"
+      info "curl -fsSL https://sh.rustup.rs | sh -s -- -y && . \"\$HOME/.cargo/env\""
+      exit 1
+    fi
   fi
 }
 
@@ -468,8 +497,10 @@ recapitule() {
 
 installe_les_paquets() {
   local manquants=()
-  for outil in curl openssl; do
-    command -v "$outil" >/dev/null 2>&1 || manquants+=("$outil")
+  for paquet in $(outils_necessaires); do
+    outil=$paquet
+    [[ $paquet == build-essential ]] && outil=cc
+    command -v "$outil" >/dev/null 2>&1 || manquants+=("$paquet")
   done
   [[ -d /etc/ssl/certs ]] || manquants+=("ca-certificates")
   if (( ${#manquants[@]} > 0 )); then
@@ -530,10 +561,6 @@ compile_depuis_la_source() {
   else
     source=$(mktemp -d)
     git clone --depth 1 --branch "${BRANCHE_SOURCE:-main}" "https://github.com/$REPO" "$source"
-  fi
-  if ! command -v cargo >/dev/null 2>&1; then
-    echo "cargo est introuvable : installez Rust (https://rustup.rs), puis relancez"
-    return 1
   fi
   (cd "$source" && cargo build --release -p zyr-server)
   BINAIRE_TEMPORAIRE="$source/target/release/zyrdesk-server"

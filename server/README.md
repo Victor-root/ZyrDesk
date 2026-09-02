@@ -16,17 +16,7 @@ Ni base de données à installer, ni certificat à acheter.
 
 ### 1. Obtenir le programme
 
-Dans le conteneur, en root, une seule ligne :
-
-```
-bash <(curl -fsSL https://raw.githubusercontent.com/Victor-root/ZyrDesk/develop/server/install.sh)
-```
-
-Le script télécharge le programme de la dernière version publiée du dépôt et vérifie son empreinte, puis pose ses questions. `--version vX.Y.Z` en choisit une autre que la dernière.
-
-**Tant qu'aucune version n'est publiée**, ce téléchargement n'a rien à prendre, et il y a deux façons de lui donner le programme.
-
-**Compiler sur place**, avec la même ligne, une fois un compilateur C et Rust posés dans le conteneur :
+**Depuis une branche du dépôt**, ce qui ne demande rien d'autre que le conteneur. Dans celui-ci, en root, une fois Rust et un compilateur C posés :
 
 ```
 apt-get update && apt-get install -y git curl build-essential
@@ -34,9 +24,17 @@ curl -fsSL https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env"
 bash <(curl -fsSL https://raw.githubusercontent.com/Victor-root/ZyrDesk/develop/server/install.sh) --from-source --branch develop
 ```
 
-La compilation prend quelques minutes, et rien du reste du produit n'est compilé : seulement le serveur et ce dont il a besoin.
+La dernière ligne fait tout : elle prend le script sur la branche, clone le dépôt, compile le serveur et pose ses questions. La compilation prend quelques minutes, et rien du reste du produit n'est compilé : seulement le serveur et ce dont il a besoin. Relancer la même ligne plus tard reprend la branche et met à jour.
 
-**Le binaire compilé par l'intégration continue**, pour ne rien compiler dans le conteneur. À chaque changement du serveur, le flux de travail « Serveur » du dépôt (onglet Actions sur GitHub) produit un artefact `zyrdesk-server-x86_64`. Le télécharger depuis le PC et le décompresser : deux fichiers, le programme `zyrdesk-server-x86_64-linux-musl` et son empreinte `.sha256`. Les déposer dans le conteneur avec `server/install.sh`, par exemple depuis l'hôte Proxmox :
+**Depuis une version publiée**, quand il y en a une, sans rien compiler ni installer :
+
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/Victor-root/ZyrDesk/develop/server/install.sh)
+```
+
+Le script prend alors le programme de la dernière version publiée du dépôt et vérifie son empreinte. `--version vX.Y.Z` en choisit une autre que la dernière.
+
+**Depuis le binaire de l'intégration continue**, pour ne rien compiler sans attendre une version publiée. À chaque changement du serveur, le flux de travail « Serveur » du dépôt (onglet Actions sur GitHub) produit un artefact `zyrdesk-server-x86_64`. Le télécharger depuis le PC et le décompresser : deux fichiers, le programme `zyrdesk-server-x86_64-linux-musl` et son empreinte `.sha256`. Les déposer dans le conteneur avec `server/install.sh`, par exemple depuis l'hôte Proxmox :
 
 ```
 pct push <numéro du conteneur> zyrdesk-server-x86_64-linux-musl /root/zyrdesk-server-x86_64-linux-musl
@@ -110,7 +108,7 @@ Le journal est celui de systemd : `journalctl -u zyrdesk-server -f`. Une ligne p
 
 ### Mettre à jour, reconfigurer, retirer
 
-Relancer `bash install.sh` là où le serveur est installé ouvre un menu : mettre à jour (le programme nouveau, que `--binary` et `--from-source` désignent ici aussi ; la base migre au démarrage suivant), reconfigurer (les mêmes questions, avec les réponses d'avant), afficher l'état, désinstaller. La désinstallation a deux paliers : le service et le programme d'abord ; puis, sur un « oui » tapé en entier, les données, les clés et la configuration, après quoi les appareils rattachés perdent leur compte.
+Relancer la ligne d'installation là où le serveur est déjà installé ouvre un menu : mettre à jour (le programme nouveau, pris de la même façon que la première fois : `--from-source --branch develop` recompile la branche telle qu'elle est ; la base migre au démarrage suivant), reconfigurer (les mêmes questions, avec les réponses d'avant), afficher l'état, désinstaller. La désinstallation a deux paliers : le service et le programme d'abord ; puis, sur un « oui » tapé en entier, les données, les clés et la configuration, après quoi les appareils rattachés perdent leur compte.
 
 ### Sauvegarder
 
