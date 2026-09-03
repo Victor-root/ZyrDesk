@@ -17,7 +17,7 @@ pub mod trust;
 
 pub use congestion::{MediaController, MediaProfile};
 pub use endpoint::{
-    Bytes, Carrying, Connection, DatagramError, EndpointError, RecvStream, SendStream,
+    Bytes, Carrying, Connection, DatagramError, EndpointError, Knocking, RecvStream, SendStream,
     TunnelEndpoint,
 };
 pub use identity::{AllowedPeers, Fingerprint, Identity, signed_by};

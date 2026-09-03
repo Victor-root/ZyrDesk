@@ -31,7 +31,7 @@ use zyr_broker::ticket::Pass;
 use zyr_broker::{Verifier, now};
 use zyr_transport::relay::{Doorway, PASS_PATIENCE, Presenting};
 use zyr_transport::{
-    Bytes, Connection, EndpointError, Fingerprint, Identity, MediaProfile, TunnelEndpoint,
+    Bytes, Connection, EndpointError, Fingerprint, Identity, Knocking, MediaProfile, TunnelEndpoint,
 };
 
 use crate::config;
@@ -379,9 +379,14 @@ impl Carrying {
 }
 
 /// Takes in the devices that knock, one task each.
+///
+/// The handshake is not awaited here: a knock that goes quiet halfway
+/// through would hold up every other one for as long as a connection
+/// takes to give up, and this is the one door of the server anybody can
+/// reach without an account.
 async fn serve(endpoint: TunnelEndpoint, carrying: Arc<Carrying>) {
     loop {
-        let knocking = endpoint.accept_if(|from| {
+        let knocking = endpoint.accept_knock(|from| {
             let allowed = carrying.knocks.allows(from.ip());
             if !allowed {
                 journal::say(format!("relay: {} knocks too often", from.ip()));
@@ -389,20 +394,26 @@ async fn serve(endpoint: TunnelEndpoint, carrying: Arc<Carrying>) {
             allowed
         });
         match knocking.await {
-            Ok(connection) => {
-                tokio::spawn(attend(connection, carrying.clone()));
+            Ok(knocking) => {
+                tokio::spawn(attend(knocking, carrying.clone()));
             }
             Err(EndpointError::Closed) => return,
-            // One device turned away is not the end of the relay: it
-            // must go on taking the next one in.
             Err(e) => journal::say(format!("relay: {e}")),
         }
     }
 }
 
-/// Serves one device from its pass to its last packet.
-async fn attend(connection: Connection, carrying: Arc<Carrying>) {
-    let from = connection.remote_address();
+/// Serves one device from its handshake to its last packet.
+async fn attend(knocking: Knocking, carrying: Arc<Carrying>) {
+    let from = knocking.from();
+    let connection = match knocking.taken().await {
+        Ok(connection) => connection,
+        // One device turned away is not the end of the relay.
+        Err(e) => {
+            journal::say(format!("relay: {e}"));
+            return;
+        }
+    };
     let presenting = match tokio::time::timeout(PASS_PATIENCE, Presenting::heard(&connection)).await
     {
         Ok(Ok(presenting)) => presenting,

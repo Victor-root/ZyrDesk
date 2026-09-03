@@ -471,37 +471,32 @@ impl TunnelEndpoint {
         Ok(Connection::new(connection))
     }
 
-    /// Waits for the remote device to connect.
-    ///
-    /// A refusal names where it came from. The address is read before the
-    /// handshake is awaited, since nothing of it survives a failure, and
-    /// without it « somebody was turned away » reads exactly like
-    /// « nobody came », which are the two halves of every fault here.
+    /// Waits for the remote device to connect, handshake included.
     pub async fn accept(&self) -> Result<Connection, EndpointError> {
-        self.accept_if(|_| true).await
+        self.accept_knock(|_| true).await?.taken().await
     }
 
-    /// The same, turning away whoever the caller will not have.
+    /// Waits for the next knock, turning away whoever the caller will
+    /// not have, and hands it over before the handshake.
     ///
-    /// Decided on the address alone and before the handshake, which is
-    /// what makes it worth having: a relay is the one door on the
-    /// Internet anybody may knock on, and refusing after the handshake
-    /// would already have cost it a signature per knock.
-    pub async fn accept_if(
+    /// Two reasons, and both belong to a door anybody on the Internet
+    /// may knock on. Refusing on the address alone costs nothing, where
+    /// refusing after the handshake would already have cost a signature
+    /// per knock. And handing the knock over unfinished lets the caller
+    /// take the next one at once: a knock that goes quiet halfway
+    /// through would otherwise hold up every other for as long as a
+    /// connection takes to give up.
+    pub async fn accept_knock(
         &self,
         allowed: impl Fn(SocketAddr) -> bool,
-    ) -> Result<Connection, EndpointError> {
+    ) -> Result<Knocking, EndpointError> {
         loop {
             let incoming = self.endpoint.accept().await.ok_or(EndpointError::Closed)?;
-            let from = incoming.remote_address();
-            if !allowed(from) {
+            if !allowed(incoming.remote_address()) {
                 incoming.refuse();
                 continue;
             }
-            let connection = incoming
-                .await
-                .map_err(|e| EndpointError::Connection(format!("{from} : {e}")))?;
-            return Ok(Connection::new(connection));
+            return Ok(Knocking(incoming));
         }
     }
 
@@ -509,6 +504,30 @@ impl TunnelEndpoint {
     pub async fn close(&self) {
         self.endpoint.close(0u32.into(), b"end of session");
         self.endpoint.wait_idle().await;
+    }
+}
+
+/// A device that has knocked and is still shaking hands.
+pub struct Knocking(quinn::Incoming);
+
+impl Knocking {
+    /// Where it knocked from, known before anything is agreed.
+    pub fn from(&self) -> SocketAddr {
+        self.0.remote_address()
+    }
+
+    /// Waits for the handshake to finish.
+    ///
+    /// A refusal names where it came from: nothing of it survives the
+    /// failure, and without the address « somebody was turned away »
+    /// reads exactly like « nobody came ».
+    pub async fn taken(self) -> Result<Connection, EndpointError> {
+        let from = self.from();
+        let connection = self
+            .0
+            .await
+            .map_err(|e| EndpointError::Connection(format!("{from} : {e}")))?;
+        Ok(Connection::new(connection))
     }
 }
 
