@@ -866,11 +866,15 @@ installe() {
   etape "$(t 'Obtention de zyrdesk-server' 'Getting zyrdesk-server')" obtient_le_binaire
   etape "$(t "Installation de zyrdesk-server ${VERSION_INSTALLEE:-}" "Installing zyrdesk-server ${VERSION_INSTALLEE:-}")" pose_le_binaire
   etape "$(t 'Configuration écrite' 'Configuration written')" ecrit_la_configuration
-  etape "$(t 'Clés du serveur' 'Server keys')" genere_les_cles
+  # Le certificat avant les clés, et pas après : ce qui crée la clé de
+  # signature du serveur est de lui demander son empreinte, et cette
+  # question-là lit le certificat au passage. Dans l'autre ordre, elle
+  # échoue sur un certificat qui n'existe pas encore.
   case "$TLS_MODE" in
     2) etape "$(t 'Certificat auto-signé' 'Self-signed certificate')" genere_le_certificat ;;
     3) etape "$(t 'Certificat copié' 'Certificate copied')" copie_le_certificat ;;
   esac
+  etape "$(t 'Clés du serveur' 'Server keys')" genere_les_cles
   etape "$(t 'Service systemd installé et démarré' 'systemd service installed and started')" ecrit_l_unite
   etape "$(t 'Démarrage' 'Starting')" demarre_le_service
   etape "$(t 'Le serveur répond' 'The server answers')" attend_le_serveur
@@ -1007,7 +1011,14 @@ if [[ $INTERACTIF -eq 0 ]]; then
 fi
 releve_la_machine
 verifie_les_prealables
-if [[ -x $BIN || -f $CONF ]]; then
+# Une installation en place, et non une installation commencée : l'unité
+# systemd et le relevé des réponses ne s'écrivent qu'une fois le reste
+# posé. Le programme et la configuration seuls, eux, sont ce qu'une
+# installation interrompue laisse derrière elle, et proposer alors « mettre
+# à jour » ou « reconfigurer » est proposer de réparer ce qui n'existe pas
+# encore : c'est une installation qu'il faut, et la reprendre depuis le
+# début ne coûte que les questions.
+if [[ -f $STATE || -f $UNIT ]]; then
   menu_d_une_installation_en_place
 else
   installe
