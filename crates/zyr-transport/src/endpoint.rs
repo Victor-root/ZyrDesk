@@ -51,6 +51,12 @@ pub enum EndpointError {
     Configuration(String),
     Network(std::io::Error),
     Connection(String),
+    /// The far end hung up, which is how a session ends when somebody
+    /// closes it. Told apart from the rest because it is not a fault:
+    /// read as one, every ordinary end of every session was written down
+    /// as « connexion impossible », and a journal that calls the normal
+    /// case a failure is a journal nobody can read a real failure out of.
+    Ended,
     Closed,
 }
 
@@ -60,8 +66,26 @@ impl std::fmt::Display for EndpointError {
             EndpointError::Configuration(e) => write!(f, "configuration du transport : {e}"),
             EndpointError::Network(e) => write!(f, "erreur réseau : {e}"),
             EndpointError::Connection(e) => write!(f, "connexion impossible : {e}"),
+            EndpointError::Ended => write!(f, "l'ordinateur d'en face a raccroché"),
             EndpointError::Closed => write!(f, "le point de connexion est fermé"),
         }
+    }
+}
+
+/// What the end of a live connection means.
+///
+/// A peer that closes with no code and nothing to say is a session being
+/// closed, and nothing else here can tell that from a session that
+/// broke: both arrive as the same kind of error, at the same three
+/// places, once the connection has been standing.
+fn how_it_ended(e: quinn::ConnectionError) -> EndpointError {
+    match &e {
+        quinn::ConnectionError::ApplicationClosed(close)
+            if close.error_code == quinn::VarInt::from_u32(0) && close.reason.is_empty() =>
+        {
+            EndpointError::Ended
+        }
+        _ => EndpointError::Connection(e.to_string()),
     }
 }
 
@@ -472,18 +496,12 @@ impl Connection {
 
     /// Opens a reliable stream towards the peer.
     pub async fn open_stream(&self) -> Result<(SendStream, RecvStream), EndpointError> {
-        self.inner
-            .open_bi()
-            .await
-            .map_err(|e| EndpointError::Connection(e.to_string()))
+        self.inner.open_bi().await.map_err(how_it_ended)
     }
 
     /// Waits for a reliable stream the peer opens.
     pub async fn accept_stream(&self) -> Result<(SendStream, RecvStream), EndpointError> {
-        self.inner
-            .accept_bi()
-            .await
-            .map_err(|e| EndpointError::Connection(e.to_string()))
+        self.inner.accept_bi().await.map_err(how_it_ended)
     }
 
     /// Room left in the queue of datagrams waiting to go out.
@@ -509,10 +527,7 @@ impl Connection {
 
     /// Waits for a datagram from the peer.
     pub async fn read_datagram(&self) -> Result<Bytes, EndpointError> {
-        self.inner
-            .read_datagram()
-            .await
-            .map_err(|e| EndpointError::Connection(e.to_string()))
+        self.inner.read_datagram().await.map_err(how_it_ended)
     }
 
     /// Waits for the connection to break.
@@ -616,6 +631,19 @@ mod tests {
             .unwrap();
         let received = pair.host_side.read_datagram().await.unwrap();
         assert_eq!(&received[..], b"frame");
+    }
+
+    #[tokio::test]
+    async fn a_session_the_far_end_closes_reads_as_an_end_and_not_as_a_fault() {
+        // Ce que voit l'ordinateur regardé quand la personne ferme sa
+        // session : l'autre bout raccroche, sans code et sans un mot. Lu
+        // comme une panne, chaque fin de session ordinaire s'écrivait
+        // « connexion impossible » dans son journal, et une vraie panne
+        // ne s'y distinguait plus de rien.
+        let pair = pair().await;
+        drop(pair.client_side);
+        let ended = tokio::time::timeout(PATIENCE, pair.host_side.read_datagram()).await;
+        assert!(matches!(ended, Ok(Err(EndpointError::Ended))), "{ended:?}");
     }
 
     #[tokio::test]

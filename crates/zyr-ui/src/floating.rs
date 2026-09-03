@@ -278,6 +278,9 @@ struct Expected {
     process: u32,
     /// The far computer, as the person named it.
     towards: String,
+    /// And as it recognised itself, which is what its engine state is
+    /// filed under: a name changes with the road taken to it.
+    peer: Option<String>,
     /// Where the tunnel puts it on this machine.
     at: String,
 }
@@ -506,10 +509,17 @@ pub fn a_session_is_up(app: &App) -> bool {
 
 /// Says which player this window has just started, before anybody else
 /// knows, and where the session it shows can be ended.
-pub fn expect(app: &App, process: u32, towards: &str, at: &str) {
+pub fn expect(
+    app: &App,
+    process: u32,
+    towards: &str,
+    peer: Option<&zyr_transport::Fingerprint>,
+    at: &str,
+) {
     *app.floating().expected.lock().expect("session attendue") = Some(Expected {
         process,
         towards: towards.to_string(),
+        peer: peer.map(|peer| peer.to_string()),
         at: at.to_string(),
     });
 }
@@ -1322,10 +1332,15 @@ async fn end_the_session(app: &App) -> Result<(), String> {
         })
         .or_else(|| (!sessions.is_empty()).then_some(0));
 
-    let (process, towards, at) = match ours {
+    let (process, towards, peer, at) = match ours {
         Some(place) => {
             let session = sessions.swap_remove(place);
-            (session.process, session.towards, session.at)
+            (
+                session.process,
+                session.towards,
+                Some(session.fingerprint),
+                session.at,
+            )
         }
         None => {
             let expected = app
@@ -1338,6 +1353,7 @@ async fn end_the_session(app: &App) -> Result<(), String> {
                     (
                         expected.process,
                         expected.towards.clone(),
+                        expected.peer.clone(),
                         expected.at.clone(),
                     )
                 });
@@ -1366,7 +1382,7 @@ async fn end_the_session(app: &App) -> Result<(), String> {
     // the person has already left.
     crate::app::spawn(async move {
         let answered = crate::app::spawn_blocking(move || {
-            zyr_session::close_on_the_far_computer(&towards, &at)
+            zyr_session::close_on_the_far_computer(peer.as_deref(), &towards, &at)
         })
         .await;
         note(&match answered {

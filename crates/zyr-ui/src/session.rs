@@ -560,7 +560,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
                 // does; the way travels with it, so the session can be ended
                 // during the seconds the service does not believe in it yet.
                 if let Step::Showing { process, at } = &step {
-                    crate::floating::expect(app, *process, &towards, at);
+                    crate::floating::expect(app, *process, &towards, wanted.peer.as_ref(), at);
                     lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
                 }
                 if let Some((detail, code)) = told(step) {

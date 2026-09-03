@@ -16,12 +16,14 @@ use std::path::{Path, PathBuf};
 
 const PORTABLE_MARKER: &str = "portable.dat";
 
-/// Folder identifier derived from a host address.
+/// Folder identifier drawn from whatever names a far computer.
 ///
-/// While there is neither an account nor a device registry, the address
-/// stands in for an identity. It is reduced to characters that are safe
-/// in a folder name on every platform.
-pub fn identifier_from_address(host: &str) -> String {
+/// Reduced to characters that are safe in a folder name on every
+/// platform. What is handed in is that computer's fingerprint wherever
+/// one is known, being its identity and the one thing that does not
+/// change with the road taken to it; an address stands in only where
+/// there is no fingerprint at all, which is the diagnostic path.
+pub fn folder_identifier(host: &str) -> String {
     let cleaned: String = host
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
@@ -264,18 +266,22 @@ mod tests {
     }
 
     #[test]
-    fn addresses_become_safe_folder_names() {
-        assert_eq!(identifier_from_address("192.168.1.10"), "192-168-1-10");
-        assert_eq!(identifier_from_address("Desk-PC"), "desk-pc");
-        assert_eq!(identifier_from_address("fe80::1%eth0"), "fe80--1-eth0");
-        assert_eq!(identifier_from_address("..."), "device");
-        assert_eq!(identifier_from_address(""), "device");
+    fn what_names_a_computer_becomes_a_safe_folder_name() {
+        assert_eq!(folder_identifier("192.168.1.10"), "192-168-1-10");
+        assert_eq!(folder_identifier("Desk-PC"), "desk-pc");
+        assert_eq!(folder_identifier("fe80::1%eth0"), "fe80--1-eth0");
+        assert_eq!(folder_identifier("..."), "device");
+        assert_eq!(folder_identifier(""), "device");
+        // Le cas ordinaire depuis que c'est l'empreinte qui nomme : elle
+        // passe telle quelle, n'étant déjà que des chiffres hexadécimaux.
+        let empreinte = "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237";
+        assert_eq!(folder_identifier(empreinte), empreinte);
     }
 
     #[test]
     fn the_identifiers_hold_no_path_character() {
         for written in ["../escape", "a/b\\c", "C:\\Windows", "strange hôte"] {
-            let id = identifier_from_address(written);
+            let id = folder_identifier(written);
             assert!(
                 id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
                 "{written} gives {id}"

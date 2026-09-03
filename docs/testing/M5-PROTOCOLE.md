@@ -229,6 +229,14 @@ Dans la situation où le réseau local ne montre pas l'hôte (C12, second attend
 
 Si aucune adresse annoncée n'a répondu au bout de quinze secondes, l'ouverture échoue avec « … n'a répondu par aucune des adresses annoncées en 15 secondes », et rien ne reste ouvert.
 
+### C13bis. La fin d'une session ouverte par le compte
+
+À la fin de C13, terminer la session par **Terminer la session** du menu flottant, ou par la croix de la fenêtre.
+
+**Attendu :** `bureau distant rendu` dans `interface.log` du client, et jamais `bureau distant non rendu : … n'a pas été couplé`. Chez l'hôte, la session finit sur une ligne qui ne se lit pas comme une panne, et son moteur ne passe pas les secondes suivantes à écrire `Couldn't receive data from udp socket`.
+
+C'est l'essai qui a trouvé un défaut que le réseau local ne pouvait pas montrer. L'état du moteur client, dont son appairage, était rangé sous le nom par lequel l'ordinateur d'en face avait été demandé. Sur le réseau local, la session et sa fermeture le nomment pareil, par son adresse. Par le compte, la session le demande par son appareil (`account:…`) et la fermeture le nomme par son nom affiché : deux dossiers différents, et la fermeture cherchait un appairage là où rien n'avait jamais été écrit. Elle est rangée sous l'empreinte maintenant, qui ne change pas avec la route prise.
+
 ### C14. Le refus quand l'hôte n'est pas prêt
 
 Accès distant **éteint** sur le PC hôte ; sur le PC client, cliquer sa carte de compte (carte du second attendu de C12).

@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use zyr_control::{Answer, Request, Service, WayId};
-use zyr_engine_client::state::identifier_from_address;
+use zyr_engine_client::state::folder_identifier;
 use zyr_engine_client::{ClientEngine, DeviceState, EngineError, Session, SessionOutcome};
 use zyr_proto::paths;
 use zyr_proto::random;
@@ -364,20 +364,39 @@ pub fn tell_the_player(settings: &SessionSettings) -> Result<String, Error> {
 /// waiting, so coming back takes no time at all; closing hands it back,
 /// which is what to do when one is done for the day.
 ///
-/// `host` is the computer as the person named it, which is what its
-/// stored pairing is filed under. `at` is where the tunnel puts it on
-/// this machine, which is the only address the engine can reach it at,
-/// and it only exists while that tunnel stands.
-pub fn close_on_the_far_computer(host: &str, at: &str) -> Result<(), Error> {
+/// `peer` and `host` name the computer whose stored pairing is to be
+/// used, exactly as the session that is being closed named it; see
+/// [`state_of`]. `at` is where the tunnel puts it on this machine, which
+/// is the only address the engine can reach it at, and it only exists
+/// while that tunnel stands.
+pub fn close_on_the_far_computer(peer: Option<&str>, host: &str, at: &str) -> Result<(), Error> {
     let exe = paths::client_engine_exe();
     if !exe.is_file() {
         return Err(Error::EngineMissing(exe));
     }
-    let state = DeviceState::for_device(&identifier_from_address(host));
+    let state = state_of(peer, host);
     ClientEngine::new(&exe, state)
         .with_log(paths::logs_dir().join("session.log"))
         .quit(at)
         .map_err(Error::Closing)
+}
+
+/// Where one far computer's engine state lives.
+///
+/// Filed under its fingerprint, which is what it is rather than what it
+/// was called: the same computer is named by its address when the local
+/// network shows it and by its device when the account does, and a name
+/// is not unique either. Filed under the name, opening a session and
+/// closing it looked in two different folders as soon as the two were
+/// not named the same way, which is exactly what an account session
+/// does. The closing then found no pairing where nothing had ever been
+/// written, the far computer refused it, and its engine spent seconds
+/// talking to a player that had already gone.
+///
+/// The address stands in only where there is no fingerprint at all, on
+/// the diagnostic path that points the engine straight at a computer.
+fn state_of(peer: Option<&str>, host: &str) -> DeviceState {
+    DeviceState::for_device(&folder_identifier(peer.unwrap_or(host)))
 }
 
 /// How many times the far computer is given to come back after starting
@@ -599,7 +618,8 @@ pub fn open(
     // window during them is not to be handed a session now.
     carry_on(still_wanted)?;
 
-    let state = DeviceState::for_device(&identifier_from_address(&wanted.host));
+    let recognised = wanted.peer.map(|peer| peer.to_string());
+    let state = state_of(recognised.as_deref(), &wanted.host);
     if wanted.pair_again {
         state.forget().map_err(Error::State)?;
     }
