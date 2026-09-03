@@ -261,18 +261,32 @@ impl Expected {
         }
     }
 
-    fn add_candidate(&mut self, address: SocketAddr) {
-        self.add_road(Through::Direct(address));
+    /// Notes a road worth trying, and says whether it is a new one.
+    fn add_candidate(&mut self, address: SocketAddr) -> bool {
+        self.add_road(Through::Direct(address))
     }
 
-    fn add_road(&mut self, through: Through) {
+    fn add_road(&mut self, through: Through) -> bool {
         if self.candidates.iter().any(|known| known.through == through) {
-            return;
+            return false;
         }
         self.candidates.push(Candidate {
             through,
             probed: None,
         });
+        true
+    }
+
+    /// Notes that this road has just been probed, so the next look-over
+    /// waits its turn rather than probing it again.
+    fn probed(&mut self, through: Through, now: Instant) {
+        if let Some(candidate) = self
+            .candidates
+            .iter_mut()
+            .find(|known| known.through == through)
+        {
+            candidate.probed = Some(now);
+        }
     }
 
     /// How that road reads in the journal.
@@ -597,27 +611,41 @@ impl Junction {
             card,
             branch.clone(),
         ));
-        let mut table = self.inner.table.lock().expect("aiguilleur");
-        let Some(expected) = table.expected.get_mut(&card) else {
-            reading.abort();
-            return;
-        };
-        expected.relay = Some(Relaying { branch, reading });
-        expected.add_road(Through::Relay(card));
+        {
+            let mut table = self.inner.table.lock().expect("aiguilleur");
+            let Some(expected) = table.expected.get_mut(&card) else {
+                reading.abort();
+                return;
+            };
+            expected.relay = Some(Relaying { branch, reading });
+            expected.add_road(Through::Relay(card));
+        }
+        self.inner.probe_now(card, &[Through::Relay(card)]);
     }
 
     /// Addresses that might reach the computer behind that card.
+    ///
+    /// Each new one is probed on the spot: an address is named at the
+    /// opening of a session, or as the far computer finds one, and
+    /// waiting for the next look-over would cost up to a tenth of a
+    /// second at exactly the moment a tenth of a second is felt.
     pub fn add_candidates(
         &self,
         card: SocketAddr,
         candidates: impl IntoIterator<Item = SocketAddr>,
     ) {
-        let mut table = self.inner.table.lock().expect("aiguilleur");
-        if let Some(expected) = table.expected.get_mut(&card) {
-            for candidate in candidates {
-                expected.add_candidate(candidate);
-            }
-        }
+        let fresh: Vec<Through> = {
+            let mut table = self.inner.table.lock().expect("aiguilleur");
+            let Some(expected) = table.expected.get_mut(&card) else {
+                return;
+            };
+            candidates
+                .into_iter()
+                .filter(|candidate| expected.add_candidate(*candidate))
+                .map(Through::Direct)
+                .collect()
+        };
+        self.inner.probe_now(card, &fresh);
     }
 
     /// The computer behind that card is not expected any more.
@@ -720,6 +748,37 @@ impl Inner {
                 if let Some(branch) = branch {
                     branch.send(contents);
                 }
+            }
+        }
+    }
+
+    /// Probes those roads at once, rather than at the next look-over.
+    fn probe_now(&self, card: SocketAddr, roads: &[Through]) {
+        let mut probes = Vec::new();
+        {
+            let mut table = self.table.lock().expect("aiguilleur");
+            let Some(expected) = table.expected.get_mut(&card) else {
+                return;
+            };
+            let now = Instant::now();
+            for road in roads {
+                expected.probed(*road, now);
+                let number = expected.number(now);
+                probes.push((
+                    *road,
+                    Probe {
+                        session: expected.session.clone(),
+                        from: self.me,
+                        to: expected.peer,
+                        number,
+                        sent: self.now_ms(),
+                    },
+                ));
+            }
+        }
+        for (road, probe) in probes {
+            if let Ok(bytes) = probe::seal_probe(&self.identity, &probe) {
+                self.send_by(road, &bytes);
             }
         }
     }
@@ -1629,6 +1688,38 @@ mod tests {
             }
         }
         assert!(expected.paths.is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_address_named_is_probed_at_once_and_not_again_at_the_look_over() {
+        // Une adresse est nommée à l'ouverture d'une session, ou au fur
+        // et à mesure que l'autre en trouve : attendre le tour d'horloge
+        // suivant coûterait un dixième de seconde là où il se sent, et
+        // laisserait au relais le début de chaque session.
+        let identity = Arc::new(Identity::generate().unwrap());
+        let junction = junction(&identity);
+        let card = junction.expect(Identity::generate().unwrap().fingerprint(), "s1");
+        junction.add_candidates(card, ["10.0.0.1:47000".parse().unwrap()]);
+
+        let table = junction.inner.table.lock().expect("aiguilleur");
+        let expected = table.expected.get(&card).expect("l'attente a disparu");
+        assert_eq!(expected.in_flight.len(), 1, "aucune sonde n'est partie");
+        assert!(expected.candidates[0].probed.is_some());
+    }
+
+    #[test]
+    fn a_road_probed_on_the_spot_waits_its_turn_at_the_next_look_over() {
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let a = direct("10.0.0.1:47000");
+        let Through::Direct(address) = a else {
+            unreachable!()
+        };
+        assert!(expected.add_candidate(address));
+        assert!(!expected.add_candidate(address), "deux fois la même");
+        expected.probed(a, start);
+        assert!(expected.due(start).is_empty());
+        assert_eq!(expected.due(start + EAGER_EVERY), vec![a]);
     }
 
     #[test]
