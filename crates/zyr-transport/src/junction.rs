@@ -105,7 +105,17 @@ const HELD: usize = 8;
 /// A probe unanswered for this long is forgotten.
 const PROBE_LIFE: Duration = Duration::from_secs(5);
 
-/// An expected computer that never answered is forgotten after this.
+/// A computer that has not answered by any road for this long is
+/// forgotten, and every packet the transport hands over for it is
+/// dropped from then on.
+///
+/// Counted from the last road that answered, and not from the moment
+/// the computer was expected. A session lives for hours; its roads can
+/// all die for six seconds, which is what a relay hiccup or a box
+/// dropping its translation looks like, and it must be alive when they
+/// come back. Counted from the start, every session older than two
+/// minutes was thrown away the instant its last road died, and nothing
+/// could bring it back.
 const EXPECTATION_LIFE: Duration = Duration::from_secs(120);
 
 /// How long the mirror gets to answer, each time it is asked.
@@ -231,6 +241,9 @@ struct Expected {
     peer: Fingerprint,
     session: String,
     since: Instant,
+    /// The last moment a road answered, or the start when none ever
+    /// has: what the patience below is counted from.
+    answered_at: Instant,
     candidates: Vec<Candidate>,
     paths: Vec<Path>,
     elected: Option<Through>,
@@ -250,6 +263,7 @@ impl Expected {
             peer,
             session: session.to_string(),
             since: now,
+            answered_at: now,
             candidates: Vec::new(),
             paths: Vec::new(),
             elected: None,
@@ -300,10 +314,21 @@ impl Expected {
         }
     }
 
-    /// How often a candidate that has not answered is tried, at this
-    /// point of the session.
+    /// How often a road that is not answering is tried, at this point.
+    ///
+    /// Quick at first, then less and less: the first seconds are what
+    /// open the boxes on both sides, and a road that has said nothing
+    /// for a minute is not about to. A session that has lost every road
+    /// starts that clock again, because the seconds after the last road
+    /// dies are worth exactly what the seconds after a session opens are
+    /// worth: the far computer is there, and nothing reaches it.
     fn every(&self, now: Instant) -> Duration {
-        let age = now.duration_since(self.since);
+        let from = if self.paths.is_empty() {
+            self.answered_at
+        } else {
+            self.since
+        };
+        let age = now.duration_since(from);
         if age < EAGER {
             EAGER_EVERY
         } else if age < PATIENT {
@@ -385,6 +410,7 @@ impl Expected {
             return false;
         };
         self.in_flight.swap_remove(at);
+        self.answered_at = now;
         match self.paths.iter_mut().find(|path| path.through == through) {
             Some(path) => {
                 // Smoothed the way a transport does, so one slow echo
@@ -793,7 +819,7 @@ impl Inner {
             let mut gone = Vec::new();
             for (card, expected) in table.expected.iter_mut() {
                 if expected.paths.is_empty()
-                    && now.duration_since(expected.since) > EXPECTATION_LIFE
+                    && now.duration_since(expected.answered_at) > EXPECTATION_LIFE
                 {
                     gone.push(*card);
                     continue;
@@ -1067,9 +1093,20 @@ fn packets(contents: &[u8], segment_size: Option<usize>) -> impl Iterator<Item =
 }
 
 /// Reads one relay branch for as long as the junction expects it.
+///
+/// The task is dropped with the expectation, so reaching the end of it
+/// means the branch itself broke, and that is worth a line: a road that
+/// stops carrying without a word is the shape every silent failure of
+/// this product has taken.
 async fn read_the_relay(junction: Weak<Inner>, card: SocketAddr, branch: Branch) {
     loop {
         let Some(packet) = branch.arrived().await else {
+            if let Some(inner) = junction.upgrade() {
+                (inner.say)(&format!(
+                    "card {card}: the branch to the relay at {} is gone",
+                    branch.address()
+                ));
+            }
             return;
         };
         let Some(inner) = junction.upgrade() else {
@@ -1664,6 +1701,45 @@ mod tests {
         assert!(
             expected.paths.iter().any(|path| path.through == relay),
             "le relais a été jeté"
+        );
+    }
+
+    #[test]
+    fn a_session_that_loses_every_road_is_kept_and_probed_as_at_its_opening() {
+        // Une session vit des heures ; ses chemins peuvent tous mourir
+        // six secondes, ce qu'un hoquet de relais ou une box qui lâche sa
+        // traduction donnent, et elle doit être encore là quand ils
+        // reviennent. La patience se compte donc du dernier chemin qui a
+        // répondu, et le rythme des sondes repart de zéro avec elle.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let a = direct("10.0.0.1:47000");
+        let number = expected.number(start);
+        assert!(expected.answered(a, number, Duration::from_millis(5), start));
+
+        // Une heure de session : le chemin a répondu tout du long, la
+        // dernière fois à l'instant, et les candidats qui se taisent ne
+        // sont plus sondés que de loin en loin.
+        let late = start + Duration::from_secs(3600);
+        let number = expected.number(late);
+        assert!(expected.answered(a, number, Duration::from_millis(5), late));
+        assert_eq!(expected.every(late), LATE_EVERY);
+
+        // Puis il meurt.
+        expected.paths.clear();
+        assert_eq!(
+            expected.every(late),
+            EAGER_EVERY,
+            "un chemin qui meurt doit être cherché comme à l'ouverture"
+        );
+        assert!(
+            late.duration_since(expected.answered_at) < EXPECTATION_LIFE,
+            "la session a été jetée dès la mort de son chemin"
+        );
+        // Et deux minutes sans que rien ne réponde, alors oui.
+        assert!(
+            (late + EXPECTATION_LIFE + Duration::from_secs(1)).duration_since(expected.answered_at)
+                > EXPECTATION_LIFE
         );
     }
 

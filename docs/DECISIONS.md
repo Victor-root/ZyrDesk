@@ -2155,6 +2155,16 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Ce que ça coûte.** Un aller-retour vers le serveur avant de frapper, une dizaine de millisecondes chez soi, contre un chemin qui se répare et un relais en secours. Et si le serveur ne répond pas, le comportement d'avant revient tel quel : c'est la même règle qui gouverne les deux, « une rencontre quand elle est possible, l'adresse quand elle ne l'est pas », et pas deux cas écrits séparément.
 
+## D130. La patience d'un aiguilleur se compte du dernier chemin qui a répondu (2026-09-03, pendant M6)
+
+**Le relevé.** Première session tenue de bout en bout par le relais : onze minutes de 1080p60 entre deux lignes différentes, image irréprochable (0,00 % d'images perdues par le réseau, 0,02 % par la gigue, 1 ms de latence réseau moyenne). Puis, à onze minutes, tout s'arrête d'un coup. Les deux côtés écrivent la même ligne à la même seconde : `card 240.…:47000: nobody answered, forgotten`.
+
+**La cause, et elle n'a rien à voir avec le relais.** L'aiguilleur oubliait un ordinateur attendu quand il n'avait plus aucun chemin **et** que l'attente avait plus de deux minutes, ces deux minutes étant comptées depuis l'ouverture de la session. Autrement dit : passé deux minutes, la première seconde où tous les chemins meurent, la session était jetée. La carte disparaissait, et tout ce que le transport confiait ensuite pour cet ordinateur partait à la poubelle en silence, sans retour possible même si le chemin revenait. Ces deux minutes voulaient dire « personne n'a jamais répondu, on arrête d'appeler » ; elles disaient en fait « toute session de plus de deux minutes meurt au premier hoquet ».
+
+**Ce qui est fait.** La patience se compte du dernier chemin qui a répondu. Une session dont tous les chemins meurent est gardée deux minutes de plus, ce qui laisse largement le temps à un relais qui hoquette ou à une box qui lâche sa traduction de revenir. Et le rythme des sondes repart de zéro avec elle : les secondes qui suivent la mort du dernier chemin valent exactement les secondes qui suivent l'ouverture d'une session, donc une sonde toutes les 200 ms pendant cinq secondes, et non une toutes les quinze secondes.
+
+**Et le silence, encore.** Une branche de relais qui casse ne le disait nulle part : la tâche qui la lisait se terminait sans un mot, et l'ordinateur d'en face mourait plusieurs secondes plus tard d'une absence. Elle écrit maintenant qu'elle est partie. C'est la même règle que [D86](#d86-une-taille-quon-ne-peut-plus-changer-se-prend-sur-le-plancher-pas-sur-le-plafond-2026-08-28-pendant-m4) et [D125](#d125-la-file-denvoi-tient-une-image-entière-et-le-transport-est-tenu-à-la-version-dont-la-comptabilité-est-juste-2026-09-02-pendant-m5) posaient déjà, appliquée à la route qui restait muette.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
