@@ -216,6 +216,10 @@ struct Held {
 struct Relaying {
     branch: Branch,
     reading: tokio::task::JoinHandle<()>,
+    /// Whether the journal has already said this branch is refusing
+    /// packets. A branch that refuses does not start again on its own,
+    /// so the moment is the news and the count is not.
+    said_crowded: bool,
 }
 
 impl Drop for Relaying {
@@ -254,6 +258,15 @@ struct Expected {
     held: VecDeque<Held>,
     next_number: u32,
     in_flight: Vec<InFlight>,
+}
+
+/// What one look-over of a card's roads found.
+struct LookedOver {
+    /// Roads to probe now: candidates whose turn it is, and the roads
+    /// that answered and are due their next measurement.
+    probe: Vec<Through>,
+    /// Roads that were probed and said nothing, too many times running.
+    given_up: Vec<Through>,
 }
 
 impl Expected {
@@ -338,11 +351,17 @@ impl Expected {
         }
     }
 
-    /// The roads to probe now: candidates whose turn it is, and the
-    /// roads to keep, the ones gone quiet for too long being dropped.
-    fn due(&mut self, now: Instant) -> Vec<Through> {
+    /// Looks the roads over: which are due a probe, and which have gone
+    /// quiet long enough to be given up.
+    ///
+    /// A road given up is never the road in use afterwards. Handing
+    /// packets to a road that has stopped answering loses every one of
+    /// them without a word, where letting the election fall empty keeps
+    /// the last few and sends them whole the moment a road answers.
+    fn look_over(&mut self, now: Instant) -> LookedOver {
         let every = self.every(now);
         let mut due = Vec::new();
+        let mut given_up = Vec::new();
         for candidate in &mut self.candidates {
             let answered = self
                 .paths
@@ -375,15 +394,25 @@ impl Expected {
                 path.misses = 0;
             }
             if path.misses >= MISSES_TO_DIE {
+                given_up.push(path.through);
                 return false;
             }
             path.probed = now;
             due.push(path.through);
             true
         });
+        if self
+            .elected
+            .is_some_and(|through| given_up.contains(&through))
+        {
+            self.elected = None;
+        }
         self.in_flight
             .retain(|probe| now.duration_since(probe.at) < PROBE_LIFE);
-        due
+        LookedOver {
+            probe: due,
+            given_up,
+        }
     }
 
     fn number(&mut self, now: Instant) -> u32 {
@@ -643,7 +672,11 @@ impl Junction {
                 reading.abort();
                 return;
             };
-            expected.relay = Some(Relaying { branch, reading });
+            expected.relay = Some(Relaying {
+                branch,
+                reading,
+                said_crowded: false,
+            });
             expected.add_road(Through::Relay(card));
         }
         self.inner.probe_now(card, &[Through::Relay(card)]);
@@ -824,7 +857,14 @@ impl Inner {
                     gone.push(*card);
                     continue;
                 }
-                for road in expected.due(now) {
+                let looked = expected.look_over(now);
+                for road in looked.given_up {
+                    said.push(format!(
+                        "card {card}: {} stopped answering and is given up",
+                        expected.named(road)
+                    ));
+                }
+                for road in looked.probe {
                     let number = expected.number(now);
                     probes.push((
                         road,
@@ -836,6 +876,20 @@ impl Inner {
                             sent: self.now_ms(),
                         },
                     ));
+                }
+                if let Some(relaying) = expected.relay.as_mut() {
+                    let carried = relaying.branch.carried();
+                    if carried.crowded > 0 && !relaying.said_crowded {
+                        relaying.said_crowded = true;
+                        said.push(format!(
+                            "card {card}: the branch to the relay at {} is not taking packets as \
+                             fast as the transport hands them over, so the oldest are thrown \
+                             away, {} of {} so far",
+                            relaying.branch.address(),
+                            carried.crowded,
+                            carried.sent + carried.crowded
+                        ));
+                    }
                 }
                 if let Some(taken) = expected.elect(now) {
                     said.push(said_elected(expected, taken));
@@ -1756,14 +1810,21 @@ mod tests {
         let mut now = start;
         for probe in 1..=MISSES_TO_DIE + 1 {
             now += KEEP_EVERY;
-            let due = expected.due(now);
+            let looked = expected.look_over(now);
             if probe <= MISSES_TO_DIE {
-                assert_eq!(due, vec![a], "relance {probe}");
+                assert_eq!(looked.probe, vec![a], "relance {probe}");
+                assert!(looked.given_up.is_empty(), "abandonné à la relance {probe}");
             } else {
-                assert!(due.is_empty(), "le chemin mort a encore été sondé");
+                assert!(looked.probe.is_empty(), "le chemin mort a encore été sondé");
+                assert_eq!(looked.given_up, vec![a], "l'abandon n'est dit nulle part");
             }
         }
         assert!(expected.paths.is_empty());
+        // Et la route abandonnée n'est plus celle qu'on emprunte. Sans
+        // ça, tout ce que le transport confie ensuite part dans un
+        // chemin mort, sans un mot et sans retour possible ; là, c'est
+        // gardé pour la première route qui répond.
+        assert_eq!(expected.elected, None);
     }
 
     #[tokio::test]
@@ -1794,8 +1855,8 @@ mod tests {
         assert!(expected.add_candidate(address));
         assert!(!expected.add_candidate(address), "deux fois la même");
         expected.probed(a, start);
-        assert!(expected.due(start).is_empty());
-        assert_eq!(expected.due(start + EAGER_EVERY), vec![a]);
+        assert!(expected.look_over(start).probe.is_empty());
+        assert_eq!(expected.look_over(start + EAGER_EVERY).probe, vec![a]);
     }
 
     #[test]
@@ -1809,14 +1870,27 @@ mod tests {
         expected.add_candidate(address);
         expected.add_candidate(address);
         assert_eq!(expected.candidates.len(), 1);
-        assert_eq!(expected.due(start), vec![a]);
-        assert!(expected.due(start + Duration::from_millis(100)).is_empty());
-        assert_eq!(expected.due(start + Duration::from_millis(200)), vec![a]);
+        assert_eq!(expected.look_over(start).probe, vec![a]);
+        assert!(
+            expected
+                .look_over(start + Duration::from_millis(100))
+                .probe
+                .is_empty()
+        );
+        assert_eq!(
+            expected.look_over(start + Duration::from_millis(200)).probe,
+            vec![a]
+        );
         // Après les premières secondes, toutes les deux secondes.
         let later = start + EAGER + Duration::from_millis(500);
-        assert_eq!(expected.due(later), vec![a]);
-        assert!(expected.due(later + Duration::from_millis(500)).is_empty());
-        assert_eq!(expected.due(later + PATIENT_EVERY), vec![a]);
+        assert_eq!(expected.look_over(later).probe, vec![a]);
+        assert!(
+            expected
+                .look_over(later + Duration::from_millis(500))
+                .probe
+                .is_empty()
+        );
+        assert_eq!(expected.look_over(later + PATIENT_EVERY).probe, vec![a]);
     }
 
     #[test]

@@ -2175,6 +2175,20 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Et un essai qui demandait une promesse que personne ne fait.** Le même relevé portait un second échec, sous Windows seulement. L'essai de la rafale de [D125](#d125-la-file-denvoi-tient-une-image-entière-et-le-transport-est-tenu-à-la-version-dont-la-comptabilité-est-juste-2026-09-02-pendant-m5) envoyait un datagramme après avoir fait déborder toutes les files exprès, et attendait qu'il arrive. Or un datagramme a le droit de se perdre, c'est toute la différence avec un flux fiable, et une rafale faite pour tout faire déborder est le meilleur moyen de le perdre. Ce que cet essai doit prouver est que la connexion survit, pas que ce paquet-là arrive : il le demande maintenant à un flux fiable, qui est renvoyé jusqu'à ce qu'il passe.
 
+## D132. Une route qui meurt le dit, et cesse d'être empruntée (2026-09-03, pendant M6)
+
+**Le relevé.** Session relayée entre deux fibres, trente-trois secondes. Image nette, route à sept millisecondes, puis tout s'arrête. À la même seconde, les deux ordinateurs écrivent la même chose : leur file d'envoi déborde, puis plus rien n'arrive de l'autre bout. Le lecteur note `Frames dropped by your network connection: 0.00%` et meurt sur `Control stream received unexpected disconnect event`. Le relais du serveur n'a rien à redire : il a porté 17 Mo et personne n'a approché son quota, qui est à 60 Mb/s. Et les deux aiguilleurs n'écrivent pas une seule ligne pendant toute la panne.
+
+**Trois silences, trouvés en lisant le code et non les journaux, ce qui est bien le problème.**
+
+Le premier : l'aiguilleur abandonne une route après trois sondes sans écho, soit six secondes, et ne le dit nulle part. La seule ligne qu'il écrive jamais à ce sujet arrive deux minutes plus tard, quand il oublie l'ordinateur tout entier. Or le moment où la route meurt est précisément la nouvelle.
+
+Le deuxième, et c'est un vrai défaut : la route élue n'était jamais rendue. L'élection ne choisit rien quand il ne reste aucun chemin, et laissait donc la route morte en place. Tout ce que le transport confiait ensuite partait dans un chemin abandonné, sans un mot et sans retour possible, alors que le mécanisme qui garde les derniers paquets en attendant qu'une route réponde existe déjà et ne servait qu'à l'ouverture d'une session. La route élue est maintenant rendue quand elle est abandonnée : ce qui suit est gardé, et repart entier dès qu'une route répond.
+
+Le troisième : la branche vers le relais répond « porté » ou « pas porté » à chaque paquet, et cette réponse était jetée. Une route relayée est deux routes à la suite, chacune avec sa file, et rien ne disait ce que la première refusait. La branche compte maintenant ce qu'elle porte et ce pour quoi elle n'avait pas de place, en demandant la place avant de confier le paquet, exactement comme la pompe le fait depuis [D125](#d125-la-file-denvoi-tient-une-image-entière-et-le-transport-est-tenu-à-la-version-dont-la-comptabilité-est-juste-2026-09-02-pendant-m5).
+
+**Ce que ça ne fait pas.** Ça ne dit pas pourquoi cette session-là est morte. Ça fait que la prochaine le dira : soit la branche écrit qu'elle n'avait plus de place, et la saturation est du côté de l'ordinateur qui envoie ; soit elle ne dit rien, la route élue est abandonnée avec sa ligne, et la perte est sur le fil. Les deux se ressemblaient trait pour trait, et c'est pour ça qu'on ne tranchait pas.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

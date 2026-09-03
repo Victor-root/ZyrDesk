@@ -23,6 +23,7 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -109,6 +110,21 @@ struct Held {
     _endpoint: TunnelEndpoint,
     connection: Connection,
     address: SocketAddr,
+    sent: AtomicU64,
+    crowded: AtomicU64,
+}
+
+/// What a branch has carried since it opened.
+///
+/// A relayed road is two roads in a row, and only the first of them is
+/// this computer's business. Without these, a road saturated here and a
+/// far computer gone silent read exactly the same in the journal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Carried {
+    pub sent: u64,
+    /// Packets the branch had no room for. The transport makes room by
+    /// throwing the oldest away, which is the frame on its way out.
+    pub crowded: u64,
 }
 
 impl std::fmt::Debug for Branch {
@@ -169,6 +185,8 @@ impl Branch {
                 _endpoint: endpoint,
                 connection,
                 address: wanted.address,
+                sent: AtomicU64::new(0),
+                crowded: AtomicU64::new(0),
             }),
         })
     }
@@ -191,10 +209,29 @@ impl Branch {
     /// a packet lost on the way, and losses are what the engines' error
     /// correction exists for.
     pub fn send(&self, packet: &[u8]) -> bool {
-        self.inner
+        // Asked before handing over rather than deduced afterwards: the
+        // transport makes room by throwing the oldest away and says
+        // nothing, so this is the only moment that loss can be counted.
+        if self.inner.connection.send_queue_room() < packet.len() {
+            self.inner.crowded.fetch_add(1, Ordering::Relaxed);
+        }
+        let gone = self
+            .inner
             .connection
             .send_datagram(Bytes::copy_from_slice(packet))
-            .is_ok()
+            .is_ok();
+        if gone {
+            self.inner.sent.fetch_add(1, Ordering::Relaxed);
+        }
+        gone
+    }
+
+    /// What this branch has carried, and what it had no room for.
+    pub fn carried(&self) -> Carried {
+        Carried {
+            sent: self.inner.sent.load(Ordering::Relaxed),
+            crowded: self.inner.crowded.load(Ordering::Relaxed),
+        }
     }
 
     /// Waits for the next packet the relay hands over, or nothing once
@@ -492,6 +529,39 @@ mod tests {
             .expect("rien n'est arrivé par le relais")
             .unwrap();
         assert_eq!(&arrived[..], &packet[..]);
+    }
+
+    #[tokio::test]
+    async fn what_the_branch_had_no_room_for_is_counted() {
+        // Une route relayée est deux routes à la suite, et la première
+        // a sa propre file. Quand elle déborde, le transport y jette le
+        // plus ancien sans un mot : ce compteur est le seul endroit d'où
+        // une route saturée ici se distingue d'un ordinateur d'en face
+        // devenu muet, et les deux tuent la session de la même façon.
+        let relay = Bare::open();
+        let profile = MediaProfile::default();
+        let branch = Branch::open(
+            &relay.wanted(b"laissez-passer"),
+            &Identity::generate().unwrap(),
+            profile,
+        )
+        .await
+        .unwrap();
+
+        // Aucune attente dans la boucle : rien ne part tant qu'elle
+        // tourne, donc la file déborde.
+        let packet = vec![7u8; usize::from(GUARANTEED_MTU)];
+        for _ in 0..(profile.send_queue() / packet.len() * 4) {
+            branch.send(&packet);
+        }
+
+        let carried = branch.carried();
+        assert!(carried.sent > 0, "rien n'a été confié à la branche");
+        assert!(
+            carried.crowded > 0,
+            "{} paquets confiés et aucun manque de place compté",
+            carried.sent
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
