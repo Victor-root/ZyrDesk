@@ -187,11 +187,14 @@ relay: 0829cc7e… is in for session AbCd…, from 82.64.12.7:53211
 relay: f145a3b2… is in for session AbCd…, from 176.153.4.9:41022
 ```
 
-et, à la fin de la session :
+et, à la fin de la session, l'une de ces deux :
 
 ```
-session AbCd…: relayed, 48213 kB carried
+session AbCd…: relayed, 48213 kB carried, 0 still on the relay
+session AbCd…: the relay held a road and carried nothing, 0 still on the relay
 ```
+
+La seconde est le cas ordinaire : le relais était prêt, le direct a répondu le premier, et rien n'est passé par là.
 
 **Ce que le serveur n'écrit jamais** : le contenu d'un paquet, une adresse de candidat, ou quoi que ce soit du flux. Il compte des octets, c'est tout.
 
@@ -204,6 +207,8 @@ zyrdesk-server status
 ```
 
 **Attendu.** La ligne `Relais` compte **0 session relayée** si aucune session n'est jamais passée par le relais. C'est le critère du jalon M5 qui tient toujours : en direct, le serveur ne porte rien.
+
+Une précision qui compte pour lire ce chiffre : les deux ordinateurs ouvrent leur branche de relais **à chaque session**, direct compris, et le journal du serveur écrit donc `relay: … is in for session …` même quand la session finit en direct. Ce que le relais porte alors, ce sont les sondes qui mesurent le chemin relayé, et elles ne comptent pas comme du trafic. La ligne de fin le dit en toutes lettres : `the relay held a road and carried nothing`.
 
 Après une session **relayée** (R4), la même commande compte une session de plus et les mégaoctets portés. Une session qui a commencé par le relais puis est passée en direct compte les octets du début, et c'est juste : ils sont bien passés par là.
 

@@ -43,6 +43,17 @@ use crate::store::Store;
 const CERTIFICATE_FILE: &str = "relay.crt";
 const KEY_FILE: &str = "relay.key";
 
+/// What a session's own upkeep is allowed, as a share of its rate.
+///
+/// The signed probes two devices exchange beside their tunnel cross a
+/// relay like everything else, and they are what measures the relayed
+/// road and keeps it alive. They must not be dropped because the picture
+/// is at its ceiling, which would kill the very road it is riding on;
+/// and they must not be a channel with no ceiling at all. A hundredth of
+/// the session's rate is a hundred times what they need, and nothing
+/// anybody could do anything with.
+const UPKEEP_SHARE: f64 = 0.01;
+
 /// What a device is told about the relay, so it can reach it.
 #[derive(Debug, Clone)]
 pub struct Offer {
@@ -115,7 +126,7 @@ impl Relay {
 
     /// How many sessions it is carrying right now.
     pub fn sessions(&self) -> usize {
-        self.carrying.open.lock().expect("sessions relayées").len()
+        self.carrying.how_many()
     }
 
     pub fn stop(&self) {
@@ -140,11 +151,24 @@ struct Relayed {
 struct Flow {
     /// Where each of the two is, when it is there.
     ends: [Option<Connection>; 2],
-    /// Bytes this session may still send at this instant, a bucket that
+    /// Bytes the session may still send at this instant, a bucket that
     /// refills at the rate allowed.
     allowance: f64,
+    /// The same, for what the two devices exchange beside their tunnel.
+    upkeep: f64,
     counted: Instant,
     carried: u64,
+}
+
+impl Flow {
+    /// Puts back what the time since the last packet is worth.
+    fn refill(&mut self, bytes_per_second: f64, now: Instant) {
+        let since = now.duration_since(self.counted).as_secs_f64();
+        self.allowance = (self.allowance + since * bytes_per_second).min(bytes_per_second);
+        let upkeep = bytes_per_second * UPKEEP_SHARE;
+        self.upkeep = (self.upkeep + since * upkeep).min(upkeep);
+        self.counted = now;
+    }
 }
 
 impl Relayed {
@@ -154,6 +178,7 @@ impl Relayed {
             flow: Mutex::new(Flow {
                 ends: [None, None],
                 allowance: bytes_per_second,
+                upkeep: bytes_per_second * UPKEEP_SHARE,
                 counted: now,
                 carried: 0,
             }),
@@ -187,20 +212,33 @@ impl Relayed {
 
     /// Hands one packet to the other end, if there is one and if the
     /// session is within its rate.
+    ///
+    /// Two kinds of packet cross, and only the first four bytes tell
+    /// them apart: what the two devices exchange beside their tunnel,
+    /// which carries a mark of its own, and the tunnel itself, which is
+    /// ciphertext from end to end and stays unread here. The first has
+    /// its own small allowance and is not counted; the second is the
+    /// session, and is both capped and counted.
     fn carry(&self, from: usize, packet: Bytes, bytes_per_second: f64, now: Instant) {
+        let upkeep = zyr_transport::probe::is_ours(&packet);
         let other = {
             let mut flow = self.flow.lock().expect("session relayée");
-            let refill = now.duration_since(flow.counted).as_secs_f64() * bytes_per_second;
-            flow.allowance = (flow.allowance + refill).min(bytes_per_second);
-            flow.counted = now;
+            flow.refill(bytes_per_second, now);
             let size = packet.len() as f64;
-            // Past the rate this session is allowed, a packet is
-            // dropped, which is what a network does too.
-            if flow.allowance < size {
+            let allowance = if upkeep {
+                &mut flow.upkeep
+            } else {
+                &mut flow.allowance
+            };
+            // Past what it is allowed, a packet is dropped, which is
+            // what a network does too.
+            if *allowance < size {
                 return;
             }
-            flow.allowance -= size;
-            flow.carried += packet.len() as u64;
+            *allowance -= size;
+            if !upkeep {
+                flow.carried += packet.len() as u64;
+            }
             match flow.ends[1 - from].clone() {
                 Some(other) => other,
                 // The other end is not here yet, or not any more: a
@@ -259,6 +297,11 @@ struct LetIn {
 }
 
 impl Carrying {
+    /// How many sessions the relay is carrying right now.
+    fn how_many(&self) -> usize {
+        self.open.lock().expect("sessions relayées").len()
+    }
+
     /// Reads the pass and puts the device on its side of the session.
     fn let_in(&self, presented: &[u8], device: Fingerprint) -> Result<LetIn, Turned> {
         let signed = Signed::from_bytes(presented).ok_or(Turned::Unreadable)?;
@@ -297,6 +340,11 @@ impl Carrying {
     /// The bytes it carried are written down at that moment and never
     /// again: it is the one thing of a relayed session a server keeps,
     /// and it is a number, not a trace of anything that was said.
+    ///
+    /// Nothing carried, nothing written, and that is the ordinary case:
+    /// both devices open a branch here, a direct road answers first, and
+    /// the relay holds a road nothing ever rode. Writing it down would
+    /// call every session relayed.
     async fn shown_out(&self, held: &LetIn, on: &Connection) {
         if !held.relayed.leaves(held.side, on) {
             return;
@@ -313,10 +361,17 @@ impl Carrying {
         }
         let carried = held.relayed.carried();
         journal::say(format!(
-            "session {}: relayed, {} kB carried",
+            "session {}: {}, {} still on the relay",
             held.session,
-            carried / 1_000
+            match carried {
+                0 => "the relay held a road and carried nothing".to_string(),
+                carried => format!("relayed, {} kB carried", carried / 1_000),
+            },
+            self.how_many()
         ));
+        if carried == 0 {
+            return;
+        }
         let session = held.session.clone();
         let store = self.store.clone();
         let _ = tokio::task::spawn_blocking(move || store.session_relayed(&session, carried)).await;
@@ -367,24 +422,26 @@ async fn attend(connection: Connection, carrying: Arc<Carrying>) {
             return;
         }
     };
-    if presenting.taken().await.is_err() {
-        return;
+    if presenting.taken().await.is_ok() {
+        // A device whose connection to the relay broke comes back with
+        // the same pass: the one before it is shown out rather than left
+        // holding a side nobody is at.
+        if let Some(before) = held.relayed.takes_its_place(held.side, connection.clone()) {
+            before.close();
+        }
+        journal::say(format!(
+            "relay: {device} is in for session {}, from {from}, {} session(s) carried",
+            held.session,
+            carrying.how_many()
+        ));
+        while let Ok(packet) = connection.read_datagram().await {
+            held.relayed
+                .carry(held.side, packet, carrying.bytes_per_second, Instant::now());
+        }
     }
-    // A device whose connection to the relay broke comes back with the
-    // same pass: the one before it is shown out rather than left holding
-    // a side nobody is at.
-    if let Some(before) = held.relayed.takes_its_place(held.side, connection.clone()) {
-        before.close();
-    }
-    journal::say(format!(
-        "relay: {device} is in for session {}, from {from}",
-        held.session
-    ));
-
-    while let Ok(packet) = connection.read_datagram().await {
-        held.relayed
-            .carry(held.side, packet, carrying.bytes_per_second, Instant::now());
-    }
+    // On every road out, including a device that never got its answer:
+    // a session left in the table would count against the next one for
+    // as long as the server runs.
     carrying.shown_out(&held, &connection).await;
 }
 
@@ -458,6 +515,19 @@ mod tests {
                 pass: self.key.seal(&pass).unwrap().to_bytes(),
             }
         }
+    }
+
+    /// A session between two devices, with nobody at either end: what
+    /// the rate is decided on, without a network.
+    fn measured(per_second: f64, now: Instant) -> Relayed {
+        Relayed::new(
+            [
+                Identity::generate().unwrap().fingerprint(),
+                Identity::generate().unwrap().fingerprint(),
+            ],
+            per_second,
+            now,
+        )
     }
 
     fn limits() -> config::Relay {
@@ -604,12 +674,8 @@ mod tests {
         // passe jusqu'à la seconde qu'il porte, le reste tombe, et une
         // seconde plus tard tout est revenu.
         let start = Instant::now();
-        let (mine, theirs) = (
-            Identity::generate().unwrap().fingerprint(),
-            Identity::generate().unwrap().fingerprint(),
-        );
         let per_second = 12_000.0;
-        let relayed = Relayed::new([mine, theirs], per_second, start);
+        let relayed = measured(per_second, start);
         let packet = Bytes::from(vec![0u8; 1_200]);
         for _ in 0..20 {
             relayed.carry(0, packet.clone(), per_second, start);
@@ -622,6 +688,42 @@ mod tests {
             start + Duration::from_secs(1),
         );
         assert_eq!(relayed.carried(), 13_200);
+    }
+
+    #[test]
+    fn what_two_computers_exchange_beside_their_tunnel_is_not_the_session() {
+        // Les sondes de l'aiguilleur passent par le relais : ce sont
+        // elles qui mesurent le chemin relayé et le tiennent vivant.
+        // Elles ne comptent pas comme du trafic de session, et elles
+        // passent encore quand l'image est à son plafond, faute de quoi
+        // le chemin qu'elles mesurent mourrait sous elles.
+        let start = Instant::now();
+        let per_second = 12_000.0;
+        let relayed = measured(per_second, start);
+        let mut sonde = zyr_transport::probe::MAGIC.to_vec();
+        sonde.resize(60, 0);
+        let sonde = Bytes::from(sonde);
+        assert!(zyr_transport::probe::is_ours(&sonde));
+
+        let packet = Bytes::from(vec![0u8; 1_200]);
+        for _ in 0..20 {
+            relayed.carry(0, packet.clone(), per_second, start);
+        }
+        assert_eq!(relayed.carried(), 12_000, "le plafond de la session");
+
+        // La session est à son plafond, et une sonde passe quand même,
+        // sur son seau à elle, sans rien ajouter au compte.
+        let upkeep = per_second * UPKEEP_SHARE;
+        relayed.carry(0, sonde.clone(), per_second, start);
+        assert_eq!(relayed.carried(), 12_000, "une sonde n'est pas la session");
+        assert_eq!(relayed.flow.lock().unwrap().upkeep, upkeep - 60.0);
+
+        // Et ce seau-là est borné lui aussi : un centième du débit de
+        // la session, cent fois ce qu'il faut aux sondes et rien de plus.
+        for _ in 0..3 {
+            relayed.carry(0, sonde.clone(), per_second, start);
+        }
+        assert_eq!(relayed.flow.lock().unwrap().upkeep, 0.0);
     }
 
     #[test]
