@@ -286,6 +286,9 @@ struct LookedOver {
     probe: Vec<Through>,
     /// Roads that were probed and said nothing, too many times running.
     given_up: Vec<Through>,
+    /// Roads that have just missed their first echo: the moment trouble
+    /// starts, which is six seconds before it is certain.
+    missed: Vec<Through>,
 }
 
 impl Expected {
@@ -335,6 +338,17 @@ impl Expected {
         }
     }
 
+    /// What the transport knows of the branch, when that road is the
+    /// relay and there is one, for a journal line that names trouble.
+    fn how_the_branch_stands(&self, through: Through) -> String {
+        match (through, &self.relay) {
+            (Through::Relay(_), Some(relaying)) => {
+                format!(" ({})", relaying.branch.how_it_stands())
+            }
+            _ => String::new(),
+        }
+    }
+
     /// How that road reads in the journal.
     fn named(&self, through: Through) -> String {
         match through {
@@ -381,6 +395,7 @@ impl Expected {
         let every = self.every(now);
         let mut due = Vec::new();
         let mut given_up = Vec::new();
+        let mut missed = Vec::new();
         for candidate in &mut self.candidates {
             let answered = self
                 .paths
@@ -409,6 +424,9 @@ impl Expected {
             }
             if path.echoed < path.probed {
                 path.misses += 1;
+                if path.misses == 1 {
+                    missed.push(path.through);
+                }
             } else {
                 path.misses = 0;
             }
@@ -431,6 +449,7 @@ impl Expected {
         LookedOver {
             probe: due,
             given_up,
+            missed,
         }
     }
 
@@ -892,10 +911,18 @@ impl Inner {
                     continue;
                 }
                 let looked = expected.look_over(now);
+                for road in looked.missed {
+                    said.push(format!(
+                        "card {card}: {} did not answer a probe{}",
+                        expected.named(road),
+                        expected.how_the_branch_stands(road)
+                    ));
+                }
                 for road in looked.given_up {
                     said.push(format!(
-                        "card {card}: {} stopped answering and is given up",
-                        expected.named(road)
+                        "card {card}: {} stopped answering and is given up{}",
+                        expected.named(road),
+                        expected.how_the_branch_stands(road)
                     ));
                 }
                 for road in looked.probe {

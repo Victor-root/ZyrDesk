@@ -226,6 +226,27 @@ impl Branch {
         gone
     }
 
+    /// Everything the transport knows of this branch at this instant,
+    /// for the journal at the moment a road starts going wrong.
+    ///
+    /// Its round trip is measured on the transport's own exchanges,
+    /// which never wait behind the packets of a session: a branch can
+    /// answer in seven milliseconds while what it carries is minutes
+    /// late. Only the two together say where the wait is.
+    pub fn how_it_stands(&self) -> String {
+        let path = self.inner.connection.carrying();
+        let carried = self.carried();
+        format!(
+            "{} ms to the relay, {} bytes may be out unanswered at once, {} bytes of room left in              its queue, {} packets handed over, {} with no room for them, {} lost on the way",
+            path.round_trip.as_millis(),
+            path.window,
+            self.inner.connection.send_queue_room(),
+            carried.sent,
+            carried.crowded,
+            path.lost
+        )
+    }
+
     /// What this branch has carried, and what it had no room for.
     pub fn carried(&self) -> Carried {
         Carried {
