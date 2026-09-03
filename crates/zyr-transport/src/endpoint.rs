@@ -759,6 +759,27 @@ mod tests {
         }
     }
 
+    impl Pair {
+        /// Sends a word on a reliable stream and reads it at the far end.
+        ///
+        /// What tells a connection still carries: a stream is answered
+        /// for and sent again until it arrives, where a datagram is
+        /// allowed to vanish on the way.
+        async fn word_across(&self, word: &'static [u8]) -> Vec<u8> {
+            let receiver = self.host_side.clone();
+            let waiting = tokio::spawn(async move {
+                let (_, mut reading) = receiver.accept_stream().await.unwrap();
+                reading.read_to_end(64).await.unwrap()
+            });
+
+            let (mut writing, _) = self.client_side.open_stream().await.unwrap();
+            writing.write_all(word).await.unwrap();
+            writing.finish().unwrap();
+
+            waiting.await.unwrap()
+        }
+    }
+
     #[tokio::test]
     async fn two_devices_that_know_each_other_connect() {
         let pair = pair().await;
@@ -848,34 +869,22 @@ mod tests {
             pair.client_side.send_datagram(packet.clone()).unwrap();
         }
 
-        pair.client_side
-            .send_datagram(Bytes::from_static(b"apres"))
-            .unwrap();
-        let received = tokio::time::timeout(PATIENCE, async {
-            loop {
-                if pair.host_side.read_datagram().await.unwrap() == "apres" {
-                    return;
-                }
-            }
-        })
-        .await;
-        assert!(received.is_ok(), "la connexion n'a pas survécu à la rafale");
+        // Ce qui doit survivre est la connexion, pas les paquets. Un
+        // datagramme envoyé après une rafale faite pour tout faire
+        // déborder a toutes les raisons de se perdre, et le demander
+        // serait demander au transport une promesse qu'il ne fait pas :
+        // c'est un flux fiable qui dit si la connexion est encore là.
+        let said = tokio::time::timeout(PATIENCE, pair.word_across(b"apres")).await;
+        assert_eq!(
+            said.expect("la connexion n'a pas survécu à la rafale"),
+            b"apres"
+        );
     }
 
     #[tokio::test]
     async fn a_reliable_stream_crosses_the_tunnel() {
         let pair = pair().await;
-        let receiver = pair.host_side.clone();
-        let waiting = tokio::spawn(async move {
-            let (_, mut reading) = receiver.accept_stream().await.unwrap();
-            reading.read_to_end(64).await.unwrap()
-        });
-
-        let (mut writing, _) = pair.client_side.open_stream().await.unwrap();
-        writing.write_all(b"negotiation").await.unwrap();
-        writing.finish().unwrap();
-
-        assert_eq!(waiting.await.unwrap(), b"negotiation");
+        assert_eq!(pair.word_across(b"negotiation").await, b"negotiation");
     }
 
     #[tokio::test]

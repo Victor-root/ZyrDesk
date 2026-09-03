@@ -1025,6 +1025,15 @@ async fn mirror_of(server: &str, udp_port: Option<u16>) -> Option<SocketAddr> {
 /// by whichever road answers first. In the ordinary case a direct road
 /// is validated before this is even connected, and the relay carries
 /// nothing at all; where no direct road exists, this is the session.
+///
+/// A name leads to as many addresses as the relay published, and the
+/// first of them is not always one this computer can take: a machine
+/// whose IPv6 is configured and broken is handed the IPv6 address of
+/// every name it resolves, and reaches nothing behind it. So they are
+/// all tried at once and the first branch open wins, the others being
+/// dropped where they stand. Taking them in turn would cost the whole
+/// patience of the transport for every address that leads nowhere, and
+/// that wait falls on the very sessions the relay exists for.
 pub(crate) async fn hold_a_relay_branch(
     relay: Relay,
     identity: Arc<Identity>,
@@ -1033,33 +1042,44 @@ pub(crate) async fn hold_a_relay_branch(
     media: MediaProfile,
     log: Log,
 ) {
-    let Ok(mut leads) = tokio::net::lookup_host(&relay.address).await else {
+    let Ok(leads) = tokio::net::lookup_host(&relay.address).await else {
         log.write(&format!(
             "no relay: {} is not an address this computer can resolve",
             relay.address
         ));
         return;
     };
-    let Some(address) = leads.next() else {
+    let started = std::time::Instant::now();
+    let mut trying = tokio::task::JoinSet::new();
+    for address in leads {
+        let wanted = Wanted {
+            address,
+            fingerprint: relay.fingerprint,
+            pass: relay.pass.to_bytes(),
+        };
+        let identity = identity.clone();
+        trying.spawn(async move { (address, Branch::open(&wanted, &identity, media).await) });
+    }
+    if trying.is_empty() {
         log.write(&format!("no relay: {} leads nowhere", relay.address));
         return;
-    };
-    let wanted = Wanted {
-        address,
-        fingerprint: relay.fingerprint,
-        pass: relay.pass.to_bytes(),
-    };
-    let started = std::time::Instant::now();
-    match Branch::open(&wanted, &identity, media).await {
-        Ok(branch) => {
-            log.write(&format!(
-                "the relay at {address} took the pass after {} ms, {} ms to it",
-                started.elapsed().as_millis(),
-                branch.round_trip().as_millis()
-            ));
-            junction.relay_through(card, branch);
+    }
+    while let Some(tried) = trying.join_next().await {
+        let Ok((address, opened)) = tried else {
+            continue;
+        };
+        match opened {
+            Ok(branch) => {
+                log.write(&format!(
+                    "the relay at {address} took the pass after {} ms, {} ms to it",
+                    started.elapsed().as_millis(),
+                    branch.round_trip().as_millis()
+                ));
+                junction.relay_through(card, branch);
+                return;
+            }
+            Err(e) => log.write(&format!("no relay branch through {address}: {e}")),
         }
-        Err(e) => log.write(&format!("no relay branch through {address}: {e}")),
     }
 }
 
