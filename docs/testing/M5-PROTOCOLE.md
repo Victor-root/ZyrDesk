@@ -18,16 +18,14 @@ Ce tableau de bord est la seule chose à lire pour savoir quoi essayer. Le reste
 
 ### À vérifier maintenant
 
-Tout est nouveau : c'est la première livraison du serveur.
-
 | Essai | Ce qu'il vérifie |
 |---|---|
-| **V1** à **V6** | Le serveur : l'installation jusqu'au panneau vert, `status`, `check`, le refus du clair, le journal, le menu du script relancé |
-| **C1** à **C6** | Le rattachement des deux PC, avec l'empreinte à comparer, les refus qui parlent, et un compte créé depuis la fenêtre |
-| **C7** à **C11** | La section Compte : le lien, les appareils, la présence qui suit l'accès distant, l'hôte qui s'éteint, le serveur qui redémarre ou s'arrête |
-| **C12** à **C15** | « Mes ordinateurs » : la carte du compte, la session par le rendez-vous, le refus quand l'hôte n'est pas prêt, le journal à distance |
+| **V2** à **V6** | Le serveur : `status`, `check`, le refus du clair, le journal, le menu du script relancé |
+| **C1** à **C3**, **C6** | La fenêtre de rattachement elle-même : ce qu'elle montre sans lien, ses champs, ses refus qui parlent, et un compte créé depuis elle |
+| **C8** à **C11** | La section Compte : la présence qui suit l'accès distant, l'hôte qui s'éteint, le serveur qui redémarre ou s'arrête |
+| **C12**, **C13bis**, **C14**, **C15** | La carte du compte, la fin d'une session ouverte par lui, le refus quand l'hôte n'est pas prêt, le journal à distance |
 | **C16** à **C20** | Renommer, révoquer en moins d'une minute, se rattacher de nouveau, se détacher, et la ligne de commande |
-| **I1** à **I4** | **Internet, le vrai test** : le client sur un partage de connexion 4G, l'hôte à la maison, avec puis sans port renvoyé sur la box ; ce que le journal dit du chemin ; la carte qui dit par où passe la session |
+| **I1**, **I4**, et **I3 en 4G** | **Internet, le cas dur** : le client sur un partage de connexion d'un téléphone, sans VPN, l'hôte à la maison. Entre deux fibres, la perforation a suffi ; en 4G, c'est là que les box qui changent de port à chaque destination se voient, et c'est cette mesure qui décide si le mappage de port passe avant le relais |
 | **V7** à **V9** | Le serveur, la suite : mise à jour, sauvegarde, désinstallation en deux paliers |
 
 ### Confirmé
@@ -36,7 +34,11 @@ Ce qui a été essayé sur les vraies machines et dit tel quel. La colonne de dr
 
 | Essai | Ce qui a été dit |
 |---|---|
-| | |
+| **V1** (l'installation va jusqu'au panneau vert) | Faite sur un conteneur Debian 13 non privilégié, en compilant sur place depuis la branche, certificat auto-signé, API en TCP 8443 et miroir en UDP 8443 (443 étant pris par un mandataire inverse déjà en place sur une autre machine). Le journal du serveur dit `listening on 0.0.0.0:8443, TLS, mirror on UDP 0.0.0.0:8443` |
+| **C4**, **C5** (les deux PC rattachés) | `device attached: PC-SAV …` puis `device attached: PC-VICTOR …`, chacun suivi de `is online, build …`, sur le compte `admin` |
+| **C7** (le lien et les appareils) | Les deux PC disent `Compte : admin sur https://zyrdesk.vroot.fr:8443, relié`, et chacun voit l'autre sous `account:…` dans « Ordinateurs vus » |
+| **C13** (la session par le rendez-vous) | Entre deux fibres différentes, le client au travail et l'hôte à la maison. `session … matched with …`, puis `PC-VICTOR answered through <adresse publique de la maison>:47000 after 352 ms, round trip 9 ms`. Session tenue, image posée, 40920 paquets portés par le tunnel sans un seul jeté ni perdu |
+| **I2**, **I3** (Internet, sans rien renvoyer sur la box) | **Aucun port renvoyé chez l'hôte**, et l'adresse publique répond sur 47000 : cette box laisse sortir en gardant le numéro de port et laisse revenir la réponse, donc la perforation seule suffit. Le journal du serveur ne montre que les lignes de mise en relation pendant toute la session : aucun octet de l'image n'y passe. **Reste à faire : le même essai depuis un partage de connexion 4G**, qui est le cas dur et celui pour lequel le relais existe |
 
 ---
 
