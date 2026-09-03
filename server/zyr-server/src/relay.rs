@@ -64,6 +64,14 @@ const UPKEEP_SHARE: f64 = 0.01;
 /// on the devices themselves read exactly the same.
 const QUIET: Duration = Duration::from_secs(3);
 
+/// Round trip to a device past which its packets are waiting in a queue
+/// rather than travelling.
+///
+/// A quarter of a second to a machine three milliseconds away is not
+/// distance, it is a buffer filling up, and the same measurement taken
+/// at both ends says which of the two it is filling at.
+const QUEUED: Duration = Duration::from_millis(250);
+
 /// What a device is told about the relay, so it can reach it.
 #[derive(Debug, Clone)]
 pub struct Offer {
@@ -176,6 +184,9 @@ struct Flow {
     heard_at: [Option<Instant>; 2],
     /// Packets the relay could not hand to each of the two.
     crowded_to: [u64; 2],
+    /// Whether the journal has already said the road to each of the two
+    /// is queueing rather than travelling.
+    said_slow: [bool; 2],
 }
 
 /// What one side of a session did, as the relay saw it.
@@ -214,6 +225,7 @@ impl Relayed {
                 carried_by: [0; 2],
                 heard_at: [None; 2],
                 crowded_to: [0; 2],
+                said_slow: [false; 2],
             }),
         }
     }
@@ -312,6 +324,26 @@ impl Relayed {
 
     fn carried(&self) -> u64 {
         self.flow.lock().expect("session relayée").carried
+    }
+
+    /// Watches the road towards the other end, and says when it starts
+    /// or stops queueing.
+    ///
+    /// The relay is the only place both legs can be measured from the
+    /// outside. A device whose own transport is stuck sees a road that
+    /// looks as short as ever, because a stuck transport sends nothing
+    /// to measure with; the relay keeps measuring throughout, and its
+    /// answer says which of the two ends the queue is at.
+    fn watch_the_road(&self, from: usize) -> Option<(Fingerprint, Duration)> {
+        let to = 1 - from;
+        let mut flow = self.flow.lock().expect("session relayée");
+        let round_trip = flow.ends[to].as_ref()?.round_trip();
+        let slow = round_trip > QUEUED;
+        if slow == flow.said_slow[to] {
+            return None;
+        }
+        flow.said_slow[to] = slow;
+        Some((self.between[to], round_trip))
     }
 
     /// What each of the two did, which is what tells the two legs of a
@@ -544,6 +576,13 @@ async fn attend(knocking: Knocking, carrying: Arc<Carrying>) {
                      again",
                     silence.as_millis(),
                     held.session
+                ));
+            }
+            if let Some((other, round_trip)) = held.relayed.watch_the_road(held.side) {
+                journal::say(format!(
+                    "relay: the road to {other} in session {} takes {} ms",
+                    held.session,
+                    round_trip.as_millis()
                 ));
             }
         }
