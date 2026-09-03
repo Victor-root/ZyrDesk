@@ -35,6 +35,15 @@ use zyr_tunnel::Reading;
 /// and halves constantly while meaning nothing at all.
 const NOTICEABLE: Duration = Duration::from_millis(5);
 
+/// Readings in a row with nothing arriving before it is worth saying.
+///
+/// One is a hiccup and says nothing; three of them is several seconds
+/// during which the far computer sent not one packet, which is not
+/// something a live session does. Kept below the wait the engines
+/// themselves give up after, so that the journal names the silence
+/// before the session dies of it rather than after.
+const QUIET_READINGS: u32 = 3;
+
 /// What has already been told about one session.
 ///
 /// Losses start and do not stop, so the moment is the news and the count
@@ -45,6 +54,10 @@ pub struct Said {
     too_large: bool,
     crowded: bool,
     round_trip: Duration,
+    /// What had arrived at the previous reading, and how many readings
+    /// in a row have added nothing to it.
+    arrived: u64,
+    quiet: u32,
 }
 
 impl Said {
@@ -78,10 +91,38 @@ impl Said {
             self.crowded = true;
             said.push(format!(
                 "{named}: the path is not taking packets as fast as the engine makes them, so the \
-                 transport is throwing the oldest away, {} so far, round trip {} ms",
+                 transport is throwing the oldest away, {} so far, round trip {} ms, {} bytes may \
+                 be out unanswered at once",
                 reading.crowded,
-                path.round_trip.as_millis()
+                path.round_trip.as_millis(),
+                path.window
             ));
+        }
+
+        // A session that has stopped arriving, which nothing else says.
+        // The tunnel holds, the connection holds, the road is as short
+        // as ever, and not one packet comes: from this end that is a
+        // session in perfect health showing nothing at all, and it is
+        // the shape every failure at the far end takes here. Counted
+        // only once something has arrived: the first seconds of a
+        // session are silent by construction and are not a fault.
+        if reading.to_engine > 0 {
+            if reading.to_engine == self.arrived {
+                self.quiet += 1;
+                if self.quiet == QUIET_READINGS {
+                    said.push(format!(
+                        "{named}: nothing has come from the far computer for several seconds, \
+                         though the way is open and {} packets came before that",
+                        reading.to_engine
+                    ));
+                }
+            } else {
+                if self.quiet >= QUIET_READINGS {
+                    said.push(format!("{named}: the far computer is sending again"));
+                }
+                self.quiet = 0;
+                self.arrived = reading.to_engine;
+            }
         }
 
         if worth_saying(self.round_trip, path.round_trip) {
@@ -109,7 +150,7 @@ pub fn carried(reading: &Reading, path: &Carrying) -> String {
         "{} packets into the tunnel, {} of them onto the wire, {} thrown away for want of room, \
          {} too large; {} handed to the engine, {} with nobody to take them, {} unreadable, {} \
          refused by the system; {} bytes of room in a packet, {} narrowings, {} lost on the path, \
-         round trip {} ms",
+         {} bytes out unanswered at once, round trip {} ms",
         reading.to_tunnel,
         path.sent,
         reading.crowded,
@@ -121,6 +162,7 @@ pub fn carried(reading: &Reading, path: &Carrying) -> String {
         path.usable_datagram,
         path.narrowings,
         path.lost,
+        path.window,
         path.round_trip.as_millis()
     )
 }
@@ -144,6 +186,7 @@ mod tests {
             narrowings: 0,
             sent: 0,
             lost: 0,
+            window: 256 * 1024,
             round_trip,
         }
     }
@@ -154,6 +197,46 @@ mod tests {
             too_large,
             ..Reading::default()
         }
+    }
+
+    fn arriving(to_engine: u64) -> Reading {
+        Reading {
+            to_engine,
+            ..Reading::default()
+        }
+    }
+
+    #[test]
+    fn a_session_that_stops_arriving_is_said_once_and_says_when_it_comes_back() {
+        let ms = Duration::from_millis;
+        let mut said = Said::from(ms(4));
+
+        // Le silence du début n'en est pas un : rien n'est encore parti
+        // d'en face, et une session qui s'ouvre ne se signale pas.
+        for _ in 0..5 {
+            assert!(
+                said.what_changed("way 1", &arriving(0), &path(ms(4)))
+                    .is_empty()
+            );
+        }
+
+        // Puis ça arrive, et ça s'arrête.
+        assert!(
+            said.what_changed("way 1", &arriving(1_000), &path(ms(4)))
+                .is_empty()
+        );
+        let mut lines = Vec::new();
+        for _ in 0..5 {
+            lines.extend(said.what_changed("way 1", &arriving(1_000), &path(ms(4))));
+        }
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].contains("nothing has come"), "{}", lines[0]);
+
+        // Et le retour se dit, sans quoi le journal laisse croire que la
+        // session est morte là où elle a seulement toussé.
+        let lines = said.what_changed("way 1", &arriving(1_200), &path(ms(4)));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].contains("sending again"), "{}", lines[0]);
     }
 
     #[test]

@@ -83,6 +83,11 @@ pub struct Carrying {
     pub sent: u64,
     /// Packets the transport itself saw lost on the path.
     pub lost: u64,
+    /// What may be out on the wire unanswered at once. Nothing goes out
+    /// beyond it, so a session losing packets with a full window is a
+    /// session whose far end has stopped answering, and one losing them
+    /// with room to spare is a path that really cannot take them.
+    pub window: u64,
     pub round_trip: Duration,
 }
 
@@ -444,6 +449,7 @@ impl Connection {
             narrowings: stats.path.black_holes_detected,
             sent: stats.frame_tx.datagram,
             lost: stats.path.lost_packets,
+            window: stats.path.cwnd,
             round_trip: stats.path.rtt,
         }
     }

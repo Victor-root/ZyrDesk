@@ -417,6 +417,10 @@ const OPENINGS: [(&str, u16); 3] = [
     ("ZyrDesk (voisinage)", zyr_lan::CALLING_PORT),
 ];
 
+/// One rule keeping a program off the network: its name, and where that
+/// program sits.
+type ShutOut = (&'static str, fn() -> std::path::PathBuf);
+
 /// The engines, shut out of the network they never speak on.
 ///
 /// Not for safety, which they already have from being bound to the
@@ -426,7 +430,7 @@ const OPENINGS: [(&str, u16); 3] = [
 /// A rule, whichever way it points, means no question at all; this one
 /// points at « non », which is exactly what an engine needs from the
 /// outside world.
-const SHUT_IN: [(&str, fn() -> std::path::PathBuf); 2] = [
+const SHUT_IN: [ShutOut; 2] = [
     ("ZyrDesk (moteur hôte)", paths::host_engine_exe),
     ("ZyrDesk (moteur client)", paths::client_engine_exe),
 ];

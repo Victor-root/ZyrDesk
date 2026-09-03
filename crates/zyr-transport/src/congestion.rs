@@ -34,6 +34,25 @@ use quinn_proto::RttEstimator;
 /// Floor for the window, whatever the rate and the round trip.
 const MINIMUM_WINDOW: u64 = 64 * 1024;
 
+/// Longest silence from the far computer the picture should survive.
+///
+/// The window holds what has gone out and not yet been answered for, and
+/// nothing goes out beyond it. A far computer busy with something else
+/// for a moment stops answering for that moment, and everything the
+/// encoder makes meanwhile has to fit in the window, then in the queue
+/// behind it. Past both, the transport throws packets away, and what it
+/// throws away is the oldest, which is the frame on its way out: that
+/// frame arrives in pieces, cannot be rebuilt from them, and the picture
+/// waits for a key frame that is cut short in its turn.
+///
+/// Sized on time rather than on a fixed number of bytes, because what
+/// has to fit is a length of stream and not a length of anything else:
+/// sixty-four kibibytes, which is what this was, is a tenth of a second
+/// at five megabits and a hundred and fiftieth of one at eighty. And it
+/// costs nothing while the path is healthy: what is in flight is on the
+/// wire, not waiting anywhere, and the rate stays the encoder's own.
+const LONGEST_STALL: Duration = Duration::from_millis(500);
+
 /// Frames the send queue holds.
 ///
 /// A key frame is bigger than the average frame the size is worked out
@@ -77,14 +96,22 @@ impl MediaProfile {
     ///
     /// Twice the bandwidth-delay product, plus one whole frame: the
     /// first term covers what is in flight, the second the burst of
-    /// packets a frame amounts to.
+    /// packets a frame amounts to. Never less than what the encoder
+    /// makes while the far computer is not answering (`LONGEST_STALL`),
+    /// which on a short road is far more than the other two.
     pub fn window(&self, rtt: Duration) -> u64 {
         let rtt = rtt.min(MAXIMUM_RTT);
         let in_flight = (self.bytes_per_second() as f64 * rtt.as_secs_f64()) as u64;
         in_flight
             .saturating_mul(2)
             .saturating_add(self.frame())
+            .max(self.made_while_silent())
             .max(MINIMUM_WINDOW)
+    }
+
+    /// What the encoder makes while nothing is being answered.
+    fn made_while_silent(&self) -> u64 {
+        (self.bytes_per_second() as f64 * LONGEST_STALL.as_secs_f64()) as u64
     }
 
     /// Room the queue of datagrams waiting to go out needs.
@@ -220,13 +247,40 @@ mod tests {
 
     #[test]
     fn the_window_follows_the_rate_and_the_round_trip() {
-        let short = profile(40).window(Duration::from_millis(5));
-        let long = profile(40).window(Duration::from_millis(50));
+        // La route ne compte qu'une fois qu'elle coûte plus que le
+        // plancher, qui est déjà une demi-seconde de flux : sur un
+        // réseau local, deux routes de longueurs différentes donnent la
+        // même fenêtre, et c'est voulu.
+        let short = profile(40).window(Duration::from_millis(250));
+        let long = profile(40).window(Duration::from_millis(500));
         assert!(long > short);
 
         let slow = profile(10).window(Duration::from_millis(25));
         let fast = profile(80).window(Duration::from_millis(25));
         assert!(fast > slow);
+    }
+
+    #[test]
+    fn the_window_holds_what_the_encoder_makes_while_nothing_answers() {
+        // Le relevé qui a valu cette règle : l'ordinateur regardé a jeté
+        // huit cent trente-cinq paquets vidéo d'un coup, sur un réseau
+        // local à sept millisecondes, pendant que celui qui regardait
+        // était occupé ailleurs. Une fenêtre qui ne tient qu'un
+        // trentième de seconde de flux s'épuise au premier hoquet, et
+        // tout ce que l'encodeur fait pendant ce temps finit à la
+        // poubelle.
+        for mbps in [5, 20, 40, 80, 150] {
+            let profile = profile(mbps);
+            let half_a_second = profile.bits_per_second / 8 / 2;
+            for rtt in [Duration::from_micros(300), Duration::from_millis(25)] {
+                assert!(
+                    profile.window(rtt) >= half_a_second,
+                    "{} octets de fenêtre à {mbps} Mb/s sur {rtt:?}, pour {half_a_second} \
+                     octets de flux en une demi-seconde",
+                    profile.window(rtt)
+                );
+            }
+        }
     }
 
     #[test]
