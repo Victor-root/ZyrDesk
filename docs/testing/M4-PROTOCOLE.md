@@ -1776,7 +1776,7 @@ Trois choses s'y jouent qui ne se jouent nulle part ailleurs. Une seule fenêtre
 >
 > C'est **toute la fenêtre** qui change de main, donc le tour est complet. Rien ici n'est nouveau comme fonction : ce qui est demandé est que **tout ce qui marchait marche encore**, à l'identique.
 >
-> **La fenêtre elle-même.** Elle s'ouvre déjà peinte, jamais vide même un battement. Elle se redimensionne sans que le dessin traîne derrière le cadre. Sa barre de titre suit le thème. La croix la range ; l'icône près de l'horloge la ramène. En dessous de 880 x 600 elle ne descend pas.
+> **La fenêtre elle-même.** Elle s'ouvre déjà peinte, jamais vide même un battement. Elle se redimensionne sans que le dessin traîne derrière le cadre. **Y compris en rétrécissant** : agrandir la fenêtre, puis la remettre au niveau inférieur, et la page doit s'y remettre entière et centrée. Elle restait posée pour la taille d'avant, décalée à droite et coupée ; le système ne redemande une image que pour ce qui vient d'apparaître, et rien du tout quand la fenêtre rétrécit, à moins qu'on le lui demande. Le même essai en ouvrant directement au niveau inférieur ne montrait rien, faute de changement de taille. Sa barre de titre suit le thème. La croix la range ; l'icône près de l'horloge la ramène. En dessous de 880 x 600 elle ne descend pas.
 >
 > **Cet ordinateur.** Le nom, l'état et sa pastille, l'interrupteur d'accès distant, l'empreinte et « Copier ». Coupez le service : l'interrupteur reste où il est et devient inactionnable, un bandeau propose de le démarrer, et le bouton demande les droits administrateur comme avant.
 >

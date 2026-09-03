@@ -807,8 +807,8 @@ fn build(dehors: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, GetClientRect, IDC_ARROW, LoadCursorW, RegisterClassW, WNDCLASSW,
-        WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_VISIBLE,
+        CS_HREDRAW, CS_VREDRAW, CreateWindowExW, GetClientRect, IDC_ARROW, LoadCursorW,
+        RegisterClassW, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_VISIBLE,
     };
 
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
@@ -834,7 +834,15 @@ fn build(dehors: windows_sys::Win32::Foundation::HWND) {
     let window = unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = WNDCLASSW {
-            style: 0,
+            // Redessinée en entier dès que sa taille change, comme les
+            // deux autres surfaces que ce programme peint lui-même. Sans
+            // ça, le système ne redemande une image que pour la bande
+            // qui vient d'apparaître, et rien du tout quand la fenêtre
+            // rétrécit : la page restait posée pour la taille d'avant,
+            // centrée sur une largeur qui n'existait plus, donc décalée
+            // à droite et coupée. Visible en revenant d'une fenêtre
+            // agrandie, invisible en l'ouvrant à cette taille-là.
+            style: CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(answer),
             cbClsExtra: 0,
             cbWndExtra: 0,
