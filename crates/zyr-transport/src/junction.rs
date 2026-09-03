@@ -57,6 +57,13 @@ const CARD_BLOCK: u8 = 240;
 /// How often the junction looks over its paths.
 const TICK: Duration = Duration::from_millis(100);
 
+/// A look-over this late means the computer itself stopped running.
+///
+/// Ten turns of the clock: a machine busy elsewhere misses a turn or two
+/// and nobody is the wiser, and a whole second of not running is not
+/// something a computer carrying a session does.
+const LATE: Duration = Duration::from_secs(1);
+
 /// The first seconds of a session: probes to every candidate, quickly,
 /// which is what opens the boxes on both sides.
 const EAGER: Duration = Duration::from_secs(5);
@@ -1274,15 +1281,32 @@ impl AsyncUdpSocket for Junction {
 }
 
 /// Looks after the paths for as long as the junction exists.
+///
+/// And says when it was not run on time. A computer that stops running
+/// for a few seconds sends nothing at all meanwhile, roads and probes
+/// included, and from the far end that is indistinguishable from a
+/// network that stopped carrying: both leave a session that goes quiet
+/// and dies of it. Only this end can tell them apart, and only if it
+/// looks at its own clock.
 async fn look_after(junction: Weak<Inner>) {
     let mut tick = tokio::time::interval(TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut before = Instant::now();
     loop {
         tick.tick().await;
+        let now = Instant::now();
         let Some(inner) = junction.upgrade() else {
             return;
         };
-        inner.tick(Instant::now());
+        let since = now.duration_since(before);
+        before = now;
+        if since > LATE {
+            (inner.say)(&format!(
+                "this computer did not run for {} ms, and sent nothing at all meanwhile",
+                since.as_millis()
+            ));
+        }
+        inner.tick(now);
     }
 }
 
