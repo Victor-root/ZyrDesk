@@ -57,6 +57,15 @@ const CARD_BLOCK: u8 = 240;
 /// How often the junction looks over its paths.
 const TICK: Duration = Duration::from_millis(100);
 
+/// Round trip to a relay past which the packets are waiting in a queue
+/// rather than travelling.
+///
+/// A relay is one hop of ordinary Internet away, a few dozen
+/// milliseconds at worst. A quarter of a second to it is not distance,
+/// it is a buffer filling up, and the equipment holding it is on the
+/// line of whichever computer measures it.
+const QUEUED: Duration = Duration::from_millis(250);
+
 /// A look-over this late means the computer itself stopped running.
 ///
 /// Ten turns of the clock: a machine busy elsewhere misses a turn or two
@@ -227,6 +236,9 @@ struct Relaying {
     /// packets. A branch that refuses does not start again on its own,
     /// so the moment is the news and the count is not.
     said_crowded: bool,
+    /// Whether it has already said the branch is queueing on the way
+    /// out. This one comes and goes, so both are worth a line.
+    said_slow: bool,
 }
 
 impl Drop for Relaying {
@@ -683,6 +695,7 @@ impl Junction {
                 branch,
                 reading,
                 said_crowded: false,
+                said_slow: false,
             });
             expected.add_road(Through::Relay(card));
         }
@@ -909,6 +922,26 @@ impl Inner {
                             relaying.branch.address(),
                             carried.crowded,
                             carried.sent + carried.crowded
+                        ));
+                    }
+                    // What the transport measures on its own, and what
+                    // the junction's own probes cannot: a branch whose
+                    // window is full sends nothing at all, probes
+                    // included, so the road looks as short as ever right
+                    // up to the moment it is given up for dead. This
+                    // number keeps moving where that one stops.
+                    let slow = relaying.branch.round_trip() > QUEUED;
+                    if slow != relaying.said_slow {
+                        relaying.said_slow = slow;
+                        said.push(format!(
+                            "card {card}: the branch to the relay at {} {}, {} ms to it",
+                            relaying.branch.address(),
+                            if slow {
+                                "is waiting in a queue somewhere on the way out"
+                            } else {
+                                "is answering promptly again"
+                            },
+                            relaying.branch.round_trip().as_millis()
                         ));
                     }
                 }
