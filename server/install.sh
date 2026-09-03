@@ -647,6 +647,7 @@ enabled = $relais
 listen = "0.0.0.0:$RELAY_PORT"
 max_sessions = 10
 max_kbps_per_session = 60000
+connections_per_minute = 60
 
 [limits]
 login_attempts_per_minute = 10

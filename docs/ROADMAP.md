@@ -86,8 +86,9 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 
 - Objectif : ça marche depuis les réseaux hostiles, et ça s'améliore tout seul.
 - Contenu : le relais dans le même binaire que le broker, débrayable ; laissez-passer signés ; branche de relais en datagrammes QUIC sur UDP 443 ; migration dans les deux sens sous le tunnel, par l'aiguilleur (D119), sans reconnexion ; chemin affiché dans le menu de la session ; plafond de débit et de sessions relayées ; banc de mesure relayé.
+- Fait : le relais. Il vit dans le binaire du serveur, sur le port UDP du miroir, sous un nom de protocole à lui ; il présente un certificat qu'il se fait au premier démarrage et dont l'empreinte voyage avec le laissez-passer ; il ne porte qu'entre les deux empreintes que ce laissez-passer nomme, plafonne les connexions par adresse, le nombre de sessions et le débit de chacune, et écrit dans la base les octets qu'il a portés. Côté appareil, la branche s'ouvre des deux côtés dès que le serveur présente les deux ordinateurs, en parallèle du direct et sans le faire attendre ; l'aiguilleur en fait une route comme une autre, sondée et mesurée comme les autres, qu'un chemin direct validé déloge tout de suite et récupère tout de suite s'il meurt. L'accueil dit « par le relais 82.64.12.7:443 en 38 ms », et le journal écrit chaque bascule avec le temps que la route précédente a porté. Reste de la tranche : le banc de mesure relayé.
 - Résultat observable : UDP direct bloqué au pare-feu entre les deux PC -> la session s'établit quand même ; on débloque -> passage en direct sans interruption perceptible.
-- Critères de sortie : session via relais avec surcoût de latence <= 1 aller-retour supplémentaire vers le relais ; promotion automatique vérifiée ; l'utilisateur voit toujours le chemin actif.
+- Critères de sortie : session via relais avec surcoût de latence <= 1 aller-retour supplémentaire vers le relais ; promotion automatique vérifiée ; l'utilisateur voit toujours le chemin actif. À vérifier sur deux PC et un conteneur en suivant [docs/testing/M6-PROTOCOLE.md](testing/M6-PROTOCOLE.md).
 
 ## M7 : Résilience
 

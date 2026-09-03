@@ -130,7 +130,7 @@ ZyrDesk/
 ├─ Cargo.toml                  # workspace Rust
 ├─ crates/
 │  ├─ zyr-proto/               # types partagés : chemins, journal horodaté, empreinte de compilation, réglages de session
-│  ├─ zyr-transport/           # la connexion QUIC (quinn, un seul fichier le nomme), identité et empreintes, confiance TLS et épinglage, l'aiguilleur et ses sondes signées, contrôleur média, budget MTU ; à venir (M6) : la branche de relais
+│  ├─ zyr-transport/           # la connexion QUIC (quinn n'est nommé que dans ce crate), identité et empreintes, confiance TLS et épinglage, l'aiguilleur et ses sondes signées, la branche de relais et la porte sur laquelle un serveur pose le sien, contrôleur média, budget MTU
 │  ├─ zyr-tunnel/              # pompes de ports : TCP<->stream, UDP<->datagramme ; canal ZyrDesk ; loopback 127.77.x.y
 │  ├─ zyr-control/             # le dialecte entre la fenêtre et le service, sur le tube nommé
 │  ├─ zyr-engine-host/         # superviseur Sunshine : config générée, lancement en session console, API locale, santé
@@ -144,7 +144,7 @@ ZyrDesk/
 │  ├─ zyrdeskd/                # binaire service Windows : registre des voies, serveur du tube, tous les tunnels, superviseur du moteur hôte
 │  ├─ zyr-ui/                  # l'application : cœur Rust, écrans dessinés par le produit, journal, bouton flottant
 │  └─ zyr-cli/                 # doctor, session sans UI, banc de mesure, bundle de diagnostic
-├─ server/                     # zyr-server, le serveur facultatif (comptes et mise en relation, le relais à venir en M6 ; un binaire, AGPLv3), install.sh, README
+├─ server/                     # zyr-server, le serveur facultatif (comptes, mise en relation et relais ; un binaire, AGPLv3), install.sh, README
 ├─ engines/
 │  ├─ sunshine/                # submodule -> fork, tag upstream épinglé + une pile courte de patchs (patches/MANIFEST.md)
 │  └─ moonlight-qt/            # submodule -> fork, tag upstream épinglé + une pile courte de patchs (patches/MANIFEST.md)

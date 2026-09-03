@@ -1,6 +1,6 @@
 # Le serveur ZyrDesk
 
-Le serveur est facultatif. Sans lui, ZyrDesk se joint sur un réseau local, par un VPN ou par une adresse publique dont le port UDP 47000 est renvoyé, sans compte et sans rien d'autre. Avec lui, une personne a un compte, y rattache ses ordinateurs, les voit en ligne ou non depuis chacun d'eux, et s'y connecte en un clic. Il met en relation et ne regarde jamais passer l'image : en fonctionnement normal, rien d'une session ne passe par lui, et il ne connaît aucune clé de session. Le relais de secours, qui transportera des paquets chiffrés sans les ouvrir quand aucun chemin direct n'existe, vient au jalon M6. La conception complète est dans [docs/SERVER.md](../docs/SERVER.md).
+Le serveur est facultatif. Sans lui, ZyrDesk se joint sur un réseau local, par un VPN ou par une adresse publique dont le port UDP 47000 est renvoyé, sans compte et sans rien d'autre. Avec lui, une personne a un compte, y rattache ses ordinateurs, les voit en ligne ou non depuis chacun d'eux, et s'y connecte en un clic. Il met en relation et ne regarde jamais passer l'image : en fonctionnement normal, rien d'une session ne passe par lui, et il ne connaît aucune clé de session. Quand aucun chemin direct n'existe entre deux ordinateurs, son relais porte leurs paquets chiffrés sans pouvoir les ouvrir, et la session repasse en direct toute seule dès qu'un chemin direct apparaît. La conception complète est dans [docs/SERVER.md](../docs/SERVER.md).
 
 Un seul programme, `zyrdesk-server`, sous [AGPLv3](LICENSE), et un script, `install.sh`, qui l'installe, le met à jour, le reconfigure ou le retire.
 
@@ -59,7 +59,7 @@ Le script se lance en root, dans un terminal, en français quand la machine l'es
 | Adresse publique | Ce que les appareils tapent : un nom de domaine, ou l'adresse publique de la box, détectée et proposée en défaut |
 | Chiffrement de l'API | 1) un mandataire inverse déjà en place, avec son certificat : le serveur écoute en clair sur la boucle locale (port 8443 en défaut) et le script imprime les lignes exactes pour Caddy et nginx ; 2) un certificat auto-signé, généré par le script, valable dix ans, portant le nom et l'adresse saisis : l'application demandera de comparer son empreinte, une fois par appareil ; 3) des fichiers à vous, certificat (chaîne complète) et clé, vérifiés ensemble puis copiés sous `/etc/zyrdesk-server/tls/` |
 | Port de l'API | TCP 443 en défaut, hors mandataire |
-| Port UDP du miroir et du relais | UDP 443 en défaut. Le miroir y répond dès maintenant ; le relais vient au jalon M6, et la question qui suit, l'activer ou non, ne fait rien tant qu'il n'existe pas |
+| Port UDP du miroir et du relais | UDP 443 en défaut. Les deux répondent sur ce port : le miroir dit à un appareil son adresse vue de l'extérieur, le relais porte les sessions qui n'ont pas de chemin direct. C'est le port à renvoyer sur la box, en UDP |
 | Dossier des données | `/var/lib/zyrdesk-server` : la base et les clés du serveur |
 | Inscriptions | Ouvertes ; sur invitation, le défaut, avec un code par compte à créer ; ou fermées, les comptes se créant alors sur le serveur par `user create` |
 | Premier compte | Son nom et son mot de passe, douze caractères au moins, tapé deux fois sans écho |

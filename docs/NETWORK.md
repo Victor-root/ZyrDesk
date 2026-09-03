@@ -115,6 +115,8 @@ Quand le réseau ne laisse rien passer, une empreinte saisie à la main dans la 
 - Accès contrôlé par un laissez-passer signé par le broker, qui nomme les deux empreintes d'une session : le relais ne transmet qu'entre elles. Plafond de débit par session relayée, plafond de sessions, compte des octets pour les quotas.
 - Auto-hébergeable dès le premier jour, dans le même binaire que le broker (`zyrdesk-server`), débrayable.
 - Écoute UDP sur 443 (les réseaux d'entreprise laissent passer QUIC/HTTP3 plus souvent que des ports exotiques). Le même port répond au miroir, qui dit à un appareil son adresse vue de l'extérieur. Repli TCP/TLS : hors périmètre v1, documenté comme limite connue.
+- Une branche de relais est une route de l'aiguilleur comme une autre : elle est sondée et mesurée par les mêmes sondes signées, et un chemin direct validé la déloge dès qu'il répond, quel que soit l'aller-retour qu'elle mesure. Elle reste chaude toute la session, pour que le retour au relais, si le direct meurt, ne coûte pas une reconnexion ([SERVER.md](SERVER.md) §4.6).
+- La branche a besoin de porter 1200 octets par datagramme, plus son enveloppe : elle part donc du plancher d'IPv6, 1280 octets, et découvre au-dessus. C'est vrai de tout Internet ordinaire ; un chemin qui n'y arrive pas rend le relais inutilisable, et le service le dit plutôt que de tenter (D127).
 
 ## 7. Débit et qualité (pas de bitrate adaptatif dans GameStream)
 

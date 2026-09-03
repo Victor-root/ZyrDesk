@@ -2133,10 +2133,22 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Confirmation d'hier, au passage.** Le journal de la machine regardée porte, deux fois, `session ended: task ... panicked with message "datagrams.outgoing.payload_bytes desynchronized"`. C'est mot pour mot la panique de quinn-proto 0.11.17 décrite en D125, prise sur le fait sur une troisième machine.
 
+## D127. Sur un aiguilleur, le paquet ne change plus de taille (2026-09-03, M6)
+
+**Le problème naît le jour où il y a deux routes.** QUIC cherche la plus grosse taille de paquet que le chemin porte, en sondant vers le haut ; quand ces gros paquets se mettent à disparaître, il décide que le chemin s'est bouché et retombe au plancher. C'est ce que [D86](#d86-une-taille-quon-ne-peut-plus-changer-se-prend-sur-le-plancher-pas-sur-le-plafond-2026-08-28-pendant-m4) racontait déjà pour la vidéo. Sous un aiguilleur, ce mécanisme devient franchement dangereux : la découverte trouve ce que porte la route du moment, l'aiguilleur bascule sur une autre, et cette autre reçoit des paquets qu'elle ne prend pas. Le transport voit alors des paquets s'évanouir, croit à un chemin bouché, et retombe — en silence, au milieu d'une session, et pour une raison qui n'a rien à voir avec le chemin. Avec le relais, le cas cesse d'être théorique : sa branche porte 1200 octets et pas un de plus.
+
+**Ce qui est fait.** Un point d'accès posé sur un aiguilleur fige sa taille de paquet à 1200 octets, le plancher que QUIC exige de tout chemin, et coupe la découverte. Toute route porte donc tout paquet, par définition, la route relayée comprise. Ça coûte quelques dizaines d'octets par paquet sur les flux fiables, qui ne portent rien de gros ; la vidéo, elle, était déjà taillée sur ce plancher et ne perd rien. La branche vers le relais fait l'inverse et le doit : elle part de 1280 octets, le plancher d'IPv6, et découvre au-dessus, parce qu'il lui faut porter ces 1200 octets plus son enveloppe. Un chemin qui n'y arrive pas rend le relais inutilisable, et le service le dit plutôt que d'essayer.
+
+## D128. Un laissez-passer de relais vaut tant qu'il vit, un ticket vaut une fois (2026-09-03, M6)
+
+**Deux choses signées, deux règles.** Un ticket de session est consommé au premier usage : rejoué, il est refusé, et c'est ce qui empêche de rouvrir une session avec un ticket ramassé au passage. Un laissez-passer de relais ne l'est pas, et ses cinq minutes de validité disaient déjà pourquoi ([SERVER.md](SERVER.md) §3.7, « le temps d'atteindre le relais, avec de la place pour un essai ») : un appareil dont la connexion au relais a lâché — une box qui change de port, un réseau qui hoquette — revient avec le même papier. Le consommer aurait fait de la moindre coupure une session perdue.
+
+**Ce qui protège le laissez-passer n'est pas une mémoire, c'est un certificat.** Il nomme son porteur par empreinte, et le relais ne le lit qu'après avoir vérifié que l'appareil en face présente ce certificat-là : TLS a déjà prouvé qu'il en détient la clé. Un laissez-passer volé sur le canal vivant ne sert donc à personne d'autre. Au passage, le relais n'a plus rien à retenir de qui est passé, ce qui est exactement ce qu'on lui demande.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
 - ~~O2 (avant M5). Modèle de confiance.~~ Clos le 2026-09-02 par D122 : appareils du même compte sans approbation, partages explicites par machine, approbation à la session plus tard ; activation de l'hôte réservée aux administrateurs et TOTP obligatoire à la bêta, inchangés.
-- O3 (avant M6). Politique du relais hébergé : défaut = auto-hébergement documenté dès le premier jour, dans le même binaire que le broker (D120) ; un serveur officiel, s'il vient, sera une instance de ce binaire avec des quotas par compte, et son hébergement (un petit serveur) le seul coût d'infrastructure du projet.
+- ~~O3 (avant M6). Politique du relais hébergé.~~ Close le 2026-09-03 par le relais lui-même : il vit dans le binaire du serveur (D120), s'auto-héberge, se débraye par `[relay] enabled`, et porte ses quotas par session. Un serveur officiel, s'il vient, sera une instance de ce même binaire avec des quotas par compte, et son hébergement le seul coût d'infrastructure du projet.
 - O4 (avant M4). Posture de crédit : défaut = moteurs invisibles dans l'expérience, crédités clairement dans « À propos » et la documentation.
 - ~~O5 (avant M2). Choix final iroh contre quinn.~~ Clos le 2026-08-07 par D13.

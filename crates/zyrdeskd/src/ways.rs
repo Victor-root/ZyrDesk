@@ -150,6 +150,27 @@ fn named(road: &zyr_transport::Road) -> String {
     road.through.to_string()
 }
 
+/// Nobody answered in time, said with what was even tried.
+///
+/// The two cases read very differently to whoever is stuck: a server
+/// with a relay that did not carry is a network problem worth looking
+/// at, and a server without one is a server that cannot serve this
+/// network at all.
+fn nobody_answered(host: &str, offered_a_relay: bool) -> String {
+    let waited = MEETING_PATIENCE.as_secs();
+    if offered_a_relay {
+        return format!(
+            "{host} n'a répondu ni en direct ni par le relais en {waited} secondes.\n  \
+             Voyez le journal : il dit ce que chaque chemin a donné."
+        );
+    }
+    format!(
+        "aucun chemin direct vers {host} en {waited} secondes, et ce serveur n'a pas de relais.\n  \
+         Il en faut un pour ces deux réseaux : activez-le sur le serveur, ou renvoyez le port \
+         UDP 47000\n  vers l'un des deux ordinateurs sur sa box."
+    )
+}
+
 /// The computer a way leads to.
 ///
 /// Kept because the service is the only thing that outlives everything:
@@ -572,22 +593,19 @@ impl Ways {
             )))
         });
 
+        let offered_a_relay = relaying.is_some();
         let endpoint = TunnelEndpoint::client_at(&identity, peer, media, &junction)
             .map_err(|e| e.to_string())?;
         let started = Instant::now();
         let connection = tokio::time::timeout(MEETING_PATIENCE, endpoint.connect(card))
             .await
-            .map_err(|_| {
-                format!(
-                    "{host} n'a répondu par aucune des adresses annoncées en {} secondes",
-                    MEETING_PATIENCE.as_secs()
-                )
-            })?
+            .map_err(|_| nobody_answered(host, offered_a_relay))?
             .map_err(|e| format!("{host} ne répond pas : {e}"))?;
         self.log.write(&match junction.road(card) {
             Some(road) => format!(
-                "{host} answered through {} after {} ms, round trip {} ms",
+                "{host} answered through {}{} after {} ms, round trip {} ms",
                 road.through,
+                if road.relayed { " (the relay)" } else { "" },
                 started.elapsed().as_millis(),
                 road.round_trip.as_millis()
             ),
