@@ -174,6 +174,20 @@ struct Flow {
     /// When each of the two was last heard, once it has been heard at
     /// all.
     heard_at: [Option<Instant>; 2],
+    /// Packets the relay could not hand to each of the two.
+    crowded_to: [u64; 2],
+}
+
+/// What one side of a session did, as the relay saw it.
+struct Seen {
+    device: Fingerprint,
+    sent: u64,
+    /// How long ago that side was last heard from, when it was heard at
+    /// all.
+    last_heard: Option<Duration>,
+    /// Packets that could not be handed to it: its queue was full, or
+    /// its connection was already gone.
+    crowded: u64,
 }
 
 impl Flow {
@@ -199,6 +213,7 @@ impl Relayed {
                 carried: 0,
                 carried_by: [0; 2],
                 heard_at: [None; 2],
+                crowded_to: [0; 2],
             }),
         }
     }
@@ -283,7 +298,15 @@ impl Relayed {
                 None => return broken,
             }
         };
-        let _ = other.send_datagram(packet);
+        // Asked before handing over rather than deduced afterwards: the
+        // transport makes room by throwing the oldest away and says
+        // nothing. This is the only place a leg that cannot take the
+        // rate can be told from one that stopped answering.
+        let crowded = other.send_queue_room() < packet.len();
+        let handed = other.send_datagram(packet).is_ok();
+        if crowded || !handed {
+            self.flow.lock().expect("session relayée").crowded_to[1 - from] += 1;
+        }
         broken
     }
 
@@ -291,10 +314,16 @@ impl Relayed {
         self.flow.lock().expect("session relayée").carried
     }
 
-    /// What each of the two sent, which says at a glance whether a
-    /// session was carried both ways or only one.
-    fn carried_by(&self) -> [u64; 2] {
-        self.flow.lock().expect("session relayée").carried_by
+    /// What each of the two did, which is what tells the two legs of a
+    /// relayed road apart.
+    fn seen(&self, now: Instant) -> [Seen; 2] {
+        let flow = self.flow.lock().expect("session relayée");
+        std::array::from_fn(|side| Seen {
+            device: self.between[side],
+            sent: flow.carried_by[side],
+            last_heard: flow.heard_at[side].map(|at| now.duration_since(at)),
+            crowded: flow.crowded_to[side],
+        })
     }
 }
 
@@ -404,25 +433,33 @@ impl Carrying {
             };
         }
         let carried = held.relayed.carried();
-        let by = held.relayed.carried_by();
         journal::say(format!(
             "session {}: {}, {} still on the relay",
             held.session,
             match carried {
                 0 => "the relay held a road and carried nothing".to_string(),
-                carried => format!(
-                    "relayed, {} kB carried, {} kB from {} and {} kB from {}",
-                    carried / 1_000,
-                    by[0] / 1_000,
-                    held.relayed.between[0],
-                    by[1] / 1_000,
-                    held.relayed.between[1]
-                ),
+                carried => format!("relayed, {} kB carried", carried / 1_000),
             },
             self.how_many()
         ));
         if carried == 0 {
             return;
+        }
+        // One line each, because the whole point is to tell the two legs
+        // apart: which of the two stopped speaking, when, and whether
+        // the relay was still able to hand it anything.
+        for side in held.relayed.seen(Instant::now()) {
+            journal::say(format!(
+                "session {}: {} sent {} kB, last heard {}, {} packet(s) could not be handed to it",
+                held.session,
+                side.device,
+                side.sent / 1_000,
+                match side.last_heard {
+                    Some(since) => format!("{} ms ago", since.as_millis()),
+                    None => "never".to_string(),
+                },
+                side.crowded
+            ));
         }
         let session = held.session.clone();
         let store = self.store.clone();
@@ -763,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    fn a_side_that_goes_quiet_and_comes_back_says_how_long_it_was_gone() {
+    fn chaque_moitie_de_la_route_est_nommee_datee_et_comptee() {
         // Le relais est le seul endroit qui voit les deux moitiés d'une
         // route relayée. Sans lui, une moitié qui lâche et une session
         // qui s'arrête s'écrivent exactement pareil sur les deux
@@ -775,6 +812,7 @@ mod tests {
 
         // Le premier paquet d'un côté ne rompt aucun silence.
         assert_eq!(relayed.carry(0, packet.clone(), per_second, start), None);
+        assert_eq!(relayed.carry(1, packet.clone(), per_second, start), None);
         assert_eq!(
             relayed.carry(0, packet.clone(), per_second, start + QUIET),
             None,
@@ -782,15 +820,20 @@ mod tests {
         );
         let gone = QUIET + Duration::from_secs(3);
         assert_eq!(
-            relayed.carry(0, packet.clone(), per_second, start + QUIET + gone),
+            relayed.carry(0, packet, per_second, start + QUIET + gone),
             Some(gone)
         );
-        // Et l'autre moitié se compte à part : c'est toute la question.
-        assert_eq!(
-            relayed.carry(1, packet, per_second, start + QUIET + gone),
-            None
-        );
-        assert_eq!(relayed.carried_by(), [300, 100]);
+
+        // Et à la fin, chacun est nommé avec ce qu'il a envoyé et le
+        // moment où on l'a entendu pour la dernière fois : un côté qui
+        // parle encore et un côté muet depuis dix secondes, c'est
+        // précisément ce qu'aucun des deux ordinateurs ne peut voir.
+        let end = start + QUIET + gone + Duration::from_secs(1);
+        let seen = relayed.seen(end);
+        assert_eq!(seen[0].sent, 300);
+        assert_eq!(seen[0].last_heard, Some(Duration::from_secs(1)));
+        assert_eq!(seen[1].sent, 100);
+        assert_eq!(seen[1].last_heard, Some(end.duration_since(start)));
     }
 
     #[test]
