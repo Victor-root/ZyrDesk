@@ -11,6 +11,8 @@ pub mod junction;
 pub mod mtu;
 pub mod path;
 pub mod probe;
+pub mod relay;
+mod sifting;
 pub mod trust;
 
 pub use congestion::{MediaController, MediaProfile};
@@ -22,3 +24,4 @@ pub use identity::{AllowedPeers, Fingerprint, Identity, signed_by};
 pub use junction::{Junction, Road, card_of, is_card};
 pub use mtu::{PacketSize, packet_size};
 pub use path::Path;
+pub use relay::{Branch, Doorway, RelayError, Wanted};

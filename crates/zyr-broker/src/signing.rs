@@ -159,6 +159,18 @@ impl Signed {
     pub fn open<T: DeserializeOwned>(&self, key: &ServerPublicKey) -> Result<T, Forged> {
         serde_json::from_slice(&self.verified(key)?).map_err(|e| Forged::Body(e.to_string()))
     }
+
+    /// Written out whole, for the one place a signed thing travels
+    /// outside this dialect: the pass a device presents to a relay, on
+    /// a stream that carries bytes and nothing else.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).unwrap_or_default()
+    }
+
+    /// Read back from those bytes, or nothing when they are not one.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        serde_json::from_slice(bytes).ok()
+    }
 }
 
 /// Why a signed thing was not believed.

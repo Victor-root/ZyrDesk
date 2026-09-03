@@ -216,6 +216,13 @@ pub struct Counts {
     pub shares: u64,
 }
 
+/// What the relay carried, over the sessions the base still keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Relayed {
+    pub sessions: u64,
+    pub bytes: u64,
+}
+
 /// A token as handed out, once: only its hash stays.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token {
@@ -1142,18 +1149,28 @@ impl Store {
         })
     }
 
-    pub fn session_ended(
-        &self,
-        id: &str,
-        now: u64,
-        road: Option<&str>,
-        relayed_bytes: u64,
-    ) -> Result<(), Fault> {
+    pub fn session_ended(&self, id: &str, now: u64) -> Result<(), Fault> {
         self.with(|conn| {
             conn.execute(
-                "UPDATE sessions SET ended = ?1, road = ?2, relayed_bytes = ?3 \
-                 WHERE id = ?4 AND ended IS NULL",
-                params![now as i64, road, relayed_bytes as i64, id],
+                "UPDATE sessions SET ended = ?1 WHERE id = ?2 AND ended IS NULL",
+                params![now as i64, id],
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Writes down what the relay carried for that session.
+    ///
+    /// Written by the relay alone, and added to rather than replaced: a
+    /// device that came back to the relay after a break has two turns to
+    /// its name. A session with nothing written here went direct, which
+    /// is what the milestone's own criterion reads.
+    pub fn session_relayed(&self, id: &str, bytes: u64) -> Result<(), Fault> {
+        self.with(|conn| {
+            conn.execute(
+                "UPDATE sessions SET road = 'relais', relayed_bytes = relayed_bytes + ?1 \
+                 WHERE id = ?2",
+                params![bytes as i64, id],
             )?;
             Ok(())
         })
@@ -1168,6 +1185,23 @@ impl Store {
                 contacts: count("SELECT COUNT(*) FROM contacts WHERE status = 'accepted'")? as u64,
                 shares: count("SELECT COUNT(*) FROM shares WHERE revoked IS NULL")? as u64,
             })
+        })
+    }
+
+    /// What the relay carried over the sessions still written down.
+    pub fn relayed(&self) -> Result<Relayed, Fault> {
+        self.with(|conn| {
+            Ok(conn.query_row(
+                "SELECT COUNT(*), COALESCE(SUM(relayed_bytes), 0) FROM sessions \
+                 WHERE road = 'relais'",
+                [],
+                |row| {
+                    Ok(Relayed {
+                        sessions: row.get::<_, i64>(0)? as u64,
+                        bytes: row.get::<_, i64>(1)? as u64,
+                    })
+                },
+            )?)
         })
     }
 
@@ -1678,7 +1712,7 @@ mod tests {
         store
             .session_started("s1", "d1", "d2", &Grant::Owner, 1_000)
             .unwrap();
-        store.session_ended("s1", 1_500, Some("direct"), 0).unwrap();
+        store.session_ended("s1", 1_500).unwrap();
         let far_later = 1_000 + SESSIONS_KEPT + 1;
         store
             .session_started("s2", "d1", "d2", &Grant::Owner, far_later)
@@ -1687,6 +1721,32 @@ mod tests {
             .with(|conn| Ok(conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))?))
             .unwrap();
         assert_eq!(kept, 1);
+    }
+
+    #[test]
+    fn what_the_relay_carried_is_counted_and_a_direct_session_counts_nothing() {
+        // Le critère du jalon se lit ici : en direct, le compteur du
+        // serveur reste à zéro, et il n'y a même pas de ligne relayée.
+        let store = store();
+        for session in ["direct", "relayee"] {
+            store
+                .session_started(session, "d1", "d2", &Grant::Owner, 1_000)
+                .unwrap();
+        }
+        store.session_relayed("relayee", 1_200).unwrap();
+        // Un appareil revenu au relais après une coupure a deux tours à
+        // son nom : ce qu'il a porté s'ajoute.
+        store.session_relayed("relayee", 800).unwrap();
+        for session in ["direct", "relayee"] {
+            store.session_ended(session, 1_500).unwrap();
+        }
+        assert_eq!(
+            store.relayed().unwrap(),
+            Relayed {
+                sessions: 1,
+                bytes: 2_000
+            }
+        );
     }
 
     #[test]

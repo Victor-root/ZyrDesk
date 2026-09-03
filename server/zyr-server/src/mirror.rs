@@ -6,9 +6,10 @@
 //! came from. That is all: nothing is kept, nothing is signed, and a
 //! wrong answer is only a candidate no probe will ever confirm.
 //!
-//! The relay, when it comes, listens on this same port; a server
-//! without a relay keeps the mirror, because it is what makes a direct
-//! path possible at all.
+//! A server with a relay answers it on the relay's own port, where the
+//! same words are said by the doorway the relay stands on. This is the
+//! other case, and the one that keeps a server without a relay useful:
+//! the mirror is what makes a direct path possible at all.
 
 use std::io;
 use std::net::SocketAddr;
@@ -16,7 +17,8 @@ use std::sync::Arc;
 
 use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;
-use zyr_transport::probe::{self, Heard};
+use zyr_transport::junction::bind_socket;
+use zyr_transport::probe;
 
 use crate::journal;
 
@@ -28,8 +30,11 @@ pub struct Mirror {
 
 impl Mirror {
     /// Binds the port and starts answering.
-    pub async fn open(listen: SocketAddr) -> io::Result<Self> {
-        let socket = Arc::new(UdpSocket::bind(listen).await?);
+    ///
+    /// To be called from inside the runtime, which the socket registers
+    /// with as it is taken over.
+    pub fn open(listen: SocketAddr) -> io::Result<Self> {
+        let socket = Arc::new(UdpSocket::from_std(bind_socket(listen)?)?);
         let address = socket.local_addr()?;
         let answering = tokio::spawn(answer(socket));
         Ok(Self { address, answering })
@@ -67,8 +72,8 @@ async fn answer(socket: Arc<UdpSocket>) {
                 return;
             }
         };
-        if let Some(Heard::WhoAmI(nonce)) = probe::heard(&buf[..count]) {
-            let _ = socket.send_to(&probe::seen_as(nonce, from), from).await;
+        if let Some(said) = probe::what_the_mirror_answers(&buf[..count], from) {
+            let _ = socket.send_to(&said, from).await;
         }
     }
 }
@@ -80,7 +85,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_mirror_says_where_a_question_came_from() {
-        let mirror = Mirror::open("127.0.0.1:0".parse().unwrap()).await.unwrap();
+        let mirror = Mirror::open("127.0.0.1:0".parse().unwrap()).unwrap();
         let asking = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let nonce = [9, 8, 7, 6, 5, 4, 3, 2];
         asking
@@ -94,7 +99,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(from, mirror.address());
-        let Some(Heard::SeenAs {
+        let Some(probe::Heard::SeenAs {
             nonce: answered,
             seen,
         }) = probe::heard(&buf[..count])

@@ -35,14 +35,14 @@ use zyr_account::{
     AttachError, Credentials, Event, Link, Live, Registering, Rest, Snapshot, Start, Trust,
     Untrusted,
 };
-use zyr_broker::live::FromDevice;
+use zyr_broker::live::{FromDevice, Relay};
 use zyr_broker::rest::Access;
 use zyr_broker::ticket::CLOCK_SKEW;
 use zyr_broker::{Refusal, Verifier, now};
 use zyr_control::{Holdup, WayId};
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
-use zyr_transport::{Fingerprint, Identity};
+use zyr_transport::{Branch, Fingerprint, Identity, Junction, MediaProfile, Wanted};
 
 use crate::machine::{Door, Hosting};
 use crate::preferences::Remembered;
@@ -93,6 +93,9 @@ pub struct Rendezvous {
     /// The server's mirror, to learn this computer's own address as seen
     /// from outside.
     pub mirror: Option<SocketAddr>,
+    /// The server's relay and the pass into it, when it has one: the
+    /// road that carries the session while no direct one answers.
+    pub relay: Option<Relay>,
     pub(crate) account: Account,
 }
 
@@ -570,6 +573,7 @@ impl Account {
             candidates,
             known: Vec::new(),
             mirror,
+            relay: start.relay,
             account: self.clone(),
         })
     }
@@ -727,15 +731,16 @@ impl Account {
             let started = inner.started.lock().expect("compte");
             started.as_ref().map(|started| {
                 (
-                    started.identity.fingerprint(),
+                    started.identity.clone(),
                     started.door.clone(),
                     started.runtime.clone(),
                 )
             })
         };
-        let Some((me, door, runtime)) = started else {
+        let Some((identity, door, runtime)) = started else {
             return;
         };
+        let me = identity.fingerprint();
         let held = inner.held.lock().expect("lien de compte");
         let Some(held) = held.as_ref() else {
             return;
@@ -779,6 +784,19 @@ impl Account {
                     session: start.session.clone(),
                     candidates: where_this_computer_answers(TUNNEL_PORT),
                 });
+                // The branch of relay opens in parallel, and never in
+                // the way: whichever road answers first carries the
+                // session, and the far computer is the one knocking.
+                if let Some(relay) = start.relay.clone() {
+                    runtime.spawn(hold_a_relay_branch(
+                        relay,
+                        identity.clone(),
+                        junction.clone(),
+                        card,
+                        MediaProfile::default(),
+                        inner.log.clone(),
+                    ));
+                }
                 let server = held.link.server.clone();
                 let udp_port = held
                     .live
@@ -972,6 +990,51 @@ async fn mirror_of(server: &str, udp_port: Option<u16>) -> Option<SocketAddr> {
         .next()
 }
 
+/// Opens the branch of relay the server named and hands it to the
+/// junction, as one more road towards that card.
+///
+/// Meant to be spawned and never waited on: the session leaves at once,
+/// by whichever road answers first. In the ordinary case a direct road
+/// is validated before this is even connected, and the relay carries
+/// nothing at all; where no direct road exists, this is the session.
+pub(crate) async fn hold_a_relay_branch(
+    relay: Relay,
+    identity: Arc<Identity>,
+    junction: Junction,
+    card: SocketAddr,
+    media: MediaProfile,
+    log: Log,
+) {
+    let Ok(mut leads) = tokio::net::lookup_host(&relay.address).await else {
+        log.write(&format!(
+            "no relay: {} is not an address this computer can resolve",
+            relay.address
+        ));
+        return;
+    };
+    let Some(address) = leads.next() else {
+        log.write(&format!("no relay: {} leads nowhere", relay.address));
+        return;
+    };
+    let wanted = Wanted {
+        address,
+        fingerprint: relay.fingerprint,
+        pass: relay.pass.to_bytes(),
+    };
+    let started = std::time::Instant::now();
+    match Branch::open(&wanted, &identity, media).await {
+        Ok(branch) => {
+            log.write(&format!(
+                "the relay at {address} took the pass after {} ms, {} ms to it",
+                started.elapsed().as_millis(),
+                branch.round_trip().as_millis()
+            ));
+            junction.relay_through(card, branch);
+        }
+        Err(e) => log.write(&format!("no relay branch through {address}: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1085,7 +1148,7 @@ data_dir = '{}'
 listen = "127.0.0.1:0"
 tls_cert = '{}'
 tls_key = '{}'
-public_url = "https://essai.invalid"
+public_url = "https://localhost"
 
 [relay]
 listen = "127.0.0.1:0"
@@ -1199,6 +1262,23 @@ login_attempts_per_minute = 1000
                     tokio::time::Instant::now() < deadline,
                     "{why} : {:?}",
                     self.account.standing()
+                );
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+
+        /// Waits until this computer's journal carries that sentence.
+        async fn until_it_says(&self, said: &str) {
+            let journal = self.folder.join("service.log");
+            let deadline = tokio::time::Instant::now() + PATIENCE;
+            loop {
+                let written = std::fs::read_to_string(&journal).unwrap_or_default();
+                if written.contains(said) {
+                    return;
+                }
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "le journal ne dit jamais « {said} » :\n{written}"
                 );
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
@@ -1321,6 +1401,11 @@ login_attempts_per_minute = 1000
             account.admitted() == vec![portable.identity.fingerprint()]
         })
         .await;
+        // Et il ouvre sa branche de relais en parallèle, sans que rien
+        // ne l'attende : le serveur lui a donné son laissez-passer avec
+        // le ticket, et le relais l'a pris.
+        assert!(met.relay.is_some(), "le portable n'a pas eu de relais");
+        pc.until_it_says("took the pass").await;
         portable.account.ended(&met.session);
 
         // Un appareil qui n'est pas prêt est refusé ici même, avec la

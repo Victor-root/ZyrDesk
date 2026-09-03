@@ -37,6 +37,20 @@ pub struct Checked {
     /// Where the mirror said the question came from, when the server
     /// has a mirror.
     pub mirror: Option<SocketAddr>,
+    /// The relay as the devices are told of it, when there is one.
+    pub relay: Option<Announced>,
+}
+
+/// The relay as a device reads it, and whether that name leads anywhere.
+///
+/// The one thing about a relay nothing else can catch: it is joined at
+/// the public address of this server, and a public address that is right
+/// for the API and wrong for UDP is a relay no device ever reaches.
+#[derive(Debug)]
+pub struct Announced {
+    pub address: String,
+    /// Where that name leads from this machine, when it leads anywhere.
+    pub resolved: Option<SocketAddr>,
 }
 
 /// Why the server did not pass.
@@ -113,7 +127,7 @@ pub fn check(config: &Config) -> Result<Checked, Trouble> {
         .map_err(|e| Trouble::Keys(e.to_string()))?;
     let fingerprint = tls.as_ref().and_then(Tls::fingerprint);
     let address = where_to_knock(config.api.listen);
-    let host = host_of(&config.api.public_url);
+    let host = config.public_host();
 
     let stream = TcpStream::connect_timeout(&address, PATIENCE)
         .map_err(|e| Trouble::Unreachable(address, e))?;
@@ -163,11 +177,19 @@ pub fn check(config: &Config) -> Result<Checked, Trouble> {
         )))?),
         None => None,
     };
+    let relay = info.relay.then(|| {
+        let address = crate::relay::address_of(&host, info.udp_port.unwrap_or_default());
+        let resolved = std::net::ToSocketAddrs::to_socket_addrs(&address)
+            .ok()
+            .and_then(|mut leads| leads.next());
+        Announced { address, resolved }
+    });
     Ok(Checked {
         address,
         fingerprint,
         info,
         mirror,
+        relay,
     })
 }
 
@@ -195,25 +217,6 @@ fn knock_on_the_mirror(mirror: SocketAddr) -> Result<SocketAddr, Trouble> {
             seen,
         }) if answered == nonce => Ok(seen),
         _ => Err(trouble(&"la réponse n'est pas celle d'un miroir ZyrDesk")),
-    }
-}
-
-/// The host the devices type, out of the public address.
-fn host_of(public_url: &str) -> String {
-    let text = public_url
-        .strip_prefix("https://")
-        .unwrap_or(public_url)
-        .split('/')
-        .next()
-        .unwrap_or_default();
-    if let Some(rest) = text.strip_prefix('[') {
-        return rest.split(']').next().unwrap_or_default().to_string();
-    }
-    match text.rsplit_once(':') {
-        Some((host, port)) if !host.contains(':') && port.parse::<u16>().is_ok() => {
-            host.to_string()
-        }
-        _ => text.to_string(),
     }
 }
 
@@ -401,11 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn the_host_the_devices_type_is_read_out_of_the_public_address() {
-        assert_eq!(host_of("https://zyr.exemple.fr"), "zyr.exemple.fr");
-        assert_eq!(host_of("https://zyr.exemple.fr:8443/"), "zyr.exemple.fr");
-        assert_eq!(host_of("https://192.168.1.40:8443"), "192.168.1.40");
-        assert_eq!(host_of("https://[fd00::1]:8443"), "fd00::1");
+    fn a_server_listening_everywhere_is_knocked_on_at_home() {
         assert_eq!(
             where_to_knock("0.0.0.0:443".parse().unwrap()),
             "127.0.0.1:443".parse().unwrap()

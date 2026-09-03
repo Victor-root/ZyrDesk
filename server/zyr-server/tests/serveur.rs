@@ -481,12 +481,11 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
     assert_eq!(peer.device, pc.device.id);
     assert_eq!(peer.fingerprint, pc_identity.fingerprint());
     assert_eq!(peer.account, "victor");
-    assert!(relay.is_none());
     let FromServer::SessionStart {
         session: same,
         ticket: same_ticket,
         peer: opener,
-        ..
+        relay: pc_relay,
     } = next(&mut pc_channel).await
     else {
         panic!("le PC devait recevoir le début de session");
@@ -494,6 +493,29 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
     assert_eq!(same, session);
     assert_eq!(same_ticket, ticket);
     assert_eq!(opener.device, other.device.id);
+
+    // Chacun reçoit son propre laissez-passer, qui ne le laisse joindre
+    // que l'autre, au relais que le serveur nomme.
+    assert!(info.relay);
+    let relay = relay.expect("le portable n'a pas eu de laissez-passer");
+    let pc_relay = pc_relay.expect("le PC n'a pas eu de laissez-passer");
+    assert_eq!(relay.address, pc_relay.address);
+    assert_eq!(relay.fingerprint, pc_relay.fingerprint);
+    assert_eq!(
+        relay.address,
+        format!("essai.invalid:{}", info.udp_port.unwrap())
+    );
+    let read = |signed: &zyr_broker::Signed, bearer| {
+        Verifier::new(info.signing_key)
+            .pass(signed, bearer, now())
+            .unwrap()
+    };
+    let mine = read(&relay.pass, other_identity.fingerprint());
+    assert_eq!(mine.session, session);
+    assert_eq!(mine.peer, pc_identity.fingerprint());
+    let theirs = read(&pc_relay.pass, pc_identity.fingerprint());
+    assert_eq!(theirs.session, session);
+    assert_eq!(theirs.peer, other_identity.fingerprint());
     let read_by_host = Verifier::new(info.signing_key)
         .ticket_for_host(&ticket, pc_identity.fingerprint(), now())
         .unwrap();

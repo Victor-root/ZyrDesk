@@ -67,8 +67,10 @@ pub enum Knock {
     /// At these addresses, the one to try first at the front.
     At(Vec<SocketAddr>),
     /// Through the meeting the server arranged: a junction probes what
-    /// both sides name, and the transport speaks to the card.
-    Through(Rendezvous),
+    /// both sides name, and the transport speaks to the card. Boxed
+    /// because a meeting carries everything a session was given, where
+    /// the other kind carries a list of addresses.
+    Through(Box<Rendezvous>),
 }
 
 impl Knock {
@@ -97,6 +99,9 @@ struct Crossing {
     card: SocketAddr,
     _feeding: Aborting,
     _asking: Aborting,
+    /// The branch of relay being opened, until it is: an attempt given
+    /// up must not leave one opening behind it.
+    _relaying: Option<Aborting>,
 }
 
 /// A connection and what it stands on, for one question or for a way.
@@ -120,13 +125,14 @@ struct Open {
 }
 
 impl Open {
-    /// The road the way takes right now, and how long it is.
+    /// The road the way takes right now, and how long it is, as the
+    /// person reads them: « par le relais 82.64.12.7:443 en 38 ms ».
     fn road(&self) -> (String, u64) {
         match &self.crossing {
             Some(crossing) => crossing
                 .junction
                 .road(crossing.card)
-                .map(|road| (road.through.to_string(), road.round_trip.as_millis() as u64))
+                .map(|road| (named(&road), road.round_trip.as_millis() as u64))
                 .unwrap_or_default(),
             None => (
                 self.connection.remote_address().to_string(),
@@ -134,6 +140,14 @@ impl Open {
             ),
         }
     }
+}
+
+/// A road, in the words the interface shows.
+fn named(road: &zyr_transport::Road) -> String {
+    if road.relayed {
+        return format!("le relais {}", road.through);
+    }
+    road.through.to_string()
 }
 
 /// The computer a way leads to.
@@ -478,7 +492,7 @@ impl Ways {
         identity: Arc<Identity>,
     ) -> Result<Word, String> {
         let meeting = match knock {
-            Knock::Through(meeting) => meeting,
+            Knock::Through(meeting) => *meeting,
             Knock::At(candidates) => {
                 let endpoint = TunnelEndpoint::client(
                     &identity,
@@ -519,6 +533,7 @@ impl Ways {
             session,
             candidates: mut named,
             mirror,
+            relay,
             account,
             ..
         } = meeting;
@@ -543,6 +558,19 @@ impl Ways {
                 }
             }
         }));
+        // The branch of relay opens beside them, and the connection
+        // below does not wait for it: whichever road answers first
+        // carries the session.
+        let relaying = relay.map(|relay| {
+            Aborting(tokio::spawn(account::hold_a_relay_branch(
+                relay,
+                identity.clone(),
+                junction.clone(),
+                card,
+                media,
+                self.log.clone(),
+            )))
+        });
 
         let endpoint = TunnelEndpoint::client_at(&identity, peer, media, &junction)
             .map_err(|e| e.to_string())?;
@@ -573,6 +601,7 @@ impl Ways {
                 card,
                 _feeding: feeding,
                 _asking: asking,
+                _relaying: relaying,
             }),
         })
     }
@@ -1393,12 +1422,13 @@ mod tests {
             candidates,
             known: vec![far.local_address().unwrap()],
             mirror: None,
+            relay: None,
             account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
         };
         let ways = Ways::new(log);
         let word = ways
             .reach(
-                Knock::Through(meeting),
+                Knock::Through(Box::new(meeting)),
                 "PC",
                 far_identity.fingerprint(),
                 MediaProfile::default(),

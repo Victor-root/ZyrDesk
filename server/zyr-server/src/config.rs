@@ -75,6 +75,10 @@ pub struct Relay {
     pub listen: SocketAddr,
     pub max_sessions: u32,
     pub max_kbps_per_session: u32,
+    /// Connections one address may open to the relay in a minute. It is
+    /// the only port of this server anybody can reach without an
+    /// account, so it is the only one that needs this.
+    pub connections_per_minute: u32,
 }
 
 impl Default for Relay {
@@ -84,12 +88,13 @@ impl Default for Relay {
             listen: "0.0.0.0:443".parse().expect("une adresse écrite en dur"),
             max_sessions: 10,
             max_kbps_per_session: 60_000,
+            connections_per_minute: 60,
         }
     }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct Limits {
     /// Login attempts one address may make in a minute before it waits.
     pub login_attempts_per_minute: u32,
@@ -182,6 +187,31 @@ impl Config {
     pub fn keys_dir(&self) -> PathBuf {
         self.data_dir.join("keys")
     }
+
+    /// The host the devices type, out of the public address.
+    ///
+    /// The name of this server as the outside world knows it: what a
+    /// certificate is checked against, and what a device is told to
+    /// reach the relay at.
+    pub fn public_host(&self) -> String {
+        let text = self
+            .api
+            .public_url
+            .strip_prefix("https://")
+            .unwrap_or(&self.api.public_url)
+            .split('/')
+            .next()
+            .unwrap_or_default();
+        if let Some(rest) = text.strip_prefix('[') {
+            return rest.split(']').next().unwrap_or_default().to_string();
+        }
+        match text.rsplit_once(':') {
+            Some((host, port)) if !host.contains(':') && port.parse::<u16>().is_ok() => {
+                host.to_string()
+            }
+            _ => text.to_string(),
+        }
+    }
 }
 
 fn is_loopback(ip: IpAddr) -> bool {
@@ -267,6 +297,7 @@ enabled = false
 listen = "0.0.0.0:4443"
 max_sessions = 3
 max_kbps_per_session = 20000
+connections_per_minute = 30
 
 [limits]
 login_attempts_per_minute = 3
@@ -276,7 +307,21 @@ login_attempts_per_minute = 3
         assert_eq!(config.registration.policy, Registration::Open);
         assert!(!config.relay.enabled);
         assert_eq!(config.relay.max_sessions, 3);
+        assert_eq!(config.relay.connections_per_minute, 30);
         assert_eq!(config.limits.login_attempts_per_minute, 3);
+    }
+
+    #[test]
+    fn the_host_the_devices_type_is_read_out_of_the_public_address() {
+        let at = |public: &str| {
+            Config::parse(&BEHIND_A_PROXY.replace("https://zyr.exemple.fr", public))
+                .unwrap()
+                .public_host()
+        };
+        assert_eq!(at("https://zyr.exemple.fr"), "zyr.exemple.fr");
+        assert_eq!(at("https://zyr.exemple.fr:8443/"), "zyr.exemple.fr");
+        assert_eq!(at("https://192.168.1.40:8443"), "192.168.1.40");
+        assert_eq!(at("https://[fd00::1]:8443"), "fd00::1");
     }
 
     #[test]

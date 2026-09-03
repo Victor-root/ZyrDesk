@@ -137,6 +137,19 @@ pub fn seen_as(nonce: Nonce, seen: SocketAddr) -> Vec<u8> {
     bytes
 }
 
+/// What a mirror answers that datagram, or nothing when it is not a
+/// question for one.
+///
+/// The whole of what a mirror does, written once: a server answers with
+/// it on the port its relay listens on, and a server without a relay
+/// answers with it on that port alone.
+pub fn what_the_mirror_answers(datagram: &[u8], from: SocketAddr) -> Option<Vec<u8>> {
+    match heard(datagram)? {
+        Heard::WhoAmI(nonce) => Some(seen_as(nonce, from)),
+        _ => None,
+    }
+}
+
 /// Reads one of our datagrams back, or nothing when it is not one, or
 /// not whole.
 pub fn heard(datagram: &[u8]) -> Option<Heard> {
@@ -352,6 +365,20 @@ mod tests {
             panic!("pas lu comme une question au miroir");
         };
         assert_eq!(read, nonce);
+
+        // Et c'est tout ce que fait un miroir : il répond à la question,
+        // et à rien d'autre.
+        let asking: SocketAddr = "82.64.12.7:53211".parse().unwrap();
+        let answered = what_the_mirror_answers(&who_am_i(nonce), asking).unwrap();
+        assert_eq!(
+            heard(&answered)
+                .map(|read| matches!(read, Heard::SeenAs { seen, .. } if seen == asking)),
+            Some(true)
+        );
+        assert!(what_the_mirror_answers(b"bonjour", asking).is_none());
+        let sender = Identity::generate().unwrap();
+        let sonde = seal_probe(&sender, &probe(&sender, &sender)).unwrap();
+        assert!(what_the_mirror_answers(&sonde, asking).is_none());
 
         let seen: SocketAddr = "82.64.12.7:47000".parse().unwrap();
         let Some(Heard::SeenAs {

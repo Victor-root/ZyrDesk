@@ -1,19 +1,20 @@
 //! Setting up the encrypted connection between two devices.
 //!
-//! This module is the only place in the product that names the transport
-//! library. Everything else knows nothing but `Connection` and the two
-//! stream types below. Changing transport, should the relay work
-//! justify it, therefore touches this file and nothing more.
+//! Where the shape of a connection is decided: what each end presents,
+//! whom it accepts, and what the path under it is allowed to do. Every
+//! other module of the product knows nothing but `Connection` and the
+//! two stream types below.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
-use quinn::{ClientConfig, Endpoint, ServerConfig, TransportConfig};
+use quinn::{AsyncUdpSocket, ClientConfig, Endpoint, ServerConfig, TransportConfig};
+use rustls::pki_types::CertificateDer;
 
 use crate::congestion::MediaProfile;
-use crate::identity::{AllowedPeers, Fingerprint, Identity, PinnedPeer};
+use crate::identity::{AllowedPeers, AnyPeer, Fingerprint, Identity, PinnedPeer};
 use crate::junction::Junction;
 use crate::path::{DegradedPath, Path};
 
@@ -27,6 +28,10 @@ pub type RecvStream = quinn::RecvStream;
 
 /// Protocol announced during the handshake, so we answer nothing else.
 const PROTOCOL: &[u8] = b"zyrdesk/1";
+
+/// The same, for the connection a device holds towards a relay: another
+/// conversation entirely, and never to be mistaken for a tunnel.
+const RELAY_PROTOCOL: &[u8] = b"zyrdesk-relay/1";
 
 /// Past this, the session counts as lost.
 const MAXIMUM_IDLE: Duration = Duration::from_secs(30);
@@ -44,7 +49,18 @@ const RECEIVE_QUEUE: usize = 8 * 1024 * 1024;
 /// back to the moment it decides the path has stopped carrying anything
 /// bigger. Whatever else happens to a path while a session runs, this
 /// much of it holds.
-const GUARANTEED_MTU: u16 = 1200;
+pub const GUARANTEED_MTU: u16 = 1200;
+
+/// Smallest packet the branch towards a relay is built on.
+///
+/// A relayed packet is a whole packet of the tunnel, `GUARANTEED_MTU`
+/// bytes, inside a datagram of the outer connection: that outer path has
+/// to carry those bytes plus its own envelope, some forty of them. The
+/// floor of IPv6, which is what every ordinary network carries, leaves
+/// exactly the room for it. A path that cannot even do that makes the
+/// relay useless, and the branch says so rather than opening onto
+/// packets that would all be refused.
+const RELAY_MTU: u16 = 1280;
 
 #[derive(Debug)]
 pub enum EndpointError {
@@ -143,15 +159,7 @@ impl From<std::io::Error> for EndpointError {
 }
 
 /// Settings shared by both ends.
-///
-/// Path discovery is left on, junction or no junction. It changes
-/// nothing for the video: what a session hands the engine is worked out
-/// against the floor every path has to carry
-/// (`guaranteed_usable_datagram`), never against what discovery found,
-/// so a path that changes under the junction costs nothing. What it
-/// does serve is the reliable streams, which have no such size fixed on
-/// them and fill whatever the path turns out to carry.
-fn transport(profile: MediaProfile) -> Arc<TransportConfig> {
+fn transport(profile: MediaProfile) -> TransportConfig {
     let mut config = TransportConfig::default();
     config.datagram_send_buffer_size(profile.send_queue());
     config.congestion_controller_factory(Arc::new(profile));
@@ -160,6 +168,42 @@ fn transport(profile: MediaProfile) -> Arc<TransportConfig> {
         MAXIMUM_IDLE.try_into().expect("idle timeout representable"),
     ));
     config.keep_alive_interval(Some(KEEP_ALIVE_INTERVAL));
+    config
+}
+
+/// The same, on a path of its own: packet discovery finds what it
+/// carries, which is the ordinary case of a tunnel opened at an address.
+fn transport_discovering(profile: MediaProfile) -> Arc<TransportConfig> {
+    Arc::new(transport(profile))
+}
+
+/// The same, on a junction: one packet size, and it never moves.
+///
+/// A junction changes the road under a connection without the connection
+/// knowing, and two roads do not carry the same packet. Discovery would
+/// find what the road of the moment carries, and the next road would
+/// then be handed packets it cannot take: the transport would see them
+/// vanish, decide the path had gone black, and fall back, all of it
+/// invisibly and in the middle of a session. So every packet is the
+/// smallest QUIC requires of any path at all, which is what every road
+/// carries by definition, the relay's included.
+///
+/// It costs a few dozen bytes a packet on the reliable streams, which
+/// carry nothing large. The video was already sized on this floor
+/// (`guaranteed_usable_datagram`) and loses nothing.
+fn transport_on_a_junction(profile: MediaProfile) -> Arc<TransportConfig> {
+    let mut config = transport(profile);
+    config.mtu_discovery_config(None);
+    config.initial_mtu(GUARANTEED_MTU);
+    Arc::new(config)
+}
+
+/// The same, towards a relay: a floor high enough for a whole packet of
+/// the tunnel, and discovery above it.
+fn transport_towards_a_relay(profile: MediaProfile) -> Arc<TransportConfig> {
+    let mut config = transport(profile);
+    config.min_mtu(RELAY_MTU);
+    config.initial_mtu(RELAY_MTU);
     Arc::new(config)
 }
 
@@ -170,21 +214,22 @@ fn provider() -> Arc<rustls::crypto::CryptoProvider> {
 /// What the end that waits presents, and whom it lets in.
 fn server_config(
     identity: &Identity,
-    allowed: impl Into<AllowedPeers>,
-    profile: MediaProfile,
+    verifier: Arc<dyn rustls::server::danger::ClientCertVerifier>,
+    alpn: &[u8],
+    transport: Arc<TransportConfig>,
 ) -> Result<ServerConfig, EndpointError> {
     let mut tls = rustls::ServerConfig::builder_with_provider(provider())
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(|e| EndpointError::Configuration(e.to_string()))?
-        .with_client_cert_verifier(Arc::new(PinnedPeer::new(allowed)))
+        .with_client_cert_verifier(verifier)
         .with_single_cert(vec![identity.certificate().clone()], identity.key())
         .map_err(|e| EndpointError::Configuration(e.to_string()))?;
-    tls.alpn_protocols = vec![PROTOCOL.to_vec()];
+    tls.alpn_protocols = vec![alpn.to_vec()];
 
     let quic =
         QuicServerConfig::try_from(tls).map_err(|e| EndpointError::Configuration(e.to_string()))?;
     let mut config = ServerConfig::with_crypto(Arc::new(quic));
-    config.transport_config(transport(profile));
+    config.transport_config(transport);
     Ok(config)
 }
 
@@ -192,7 +237,8 @@ fn server_config(
 fn client_config(
     identity: &Identity,
     peer: Fingerprint,
-    profile: MediaProfile,
+    alpn: &[u8],
+    transport: Arc<TransportConfig>,
 ) -> Result<ClientConfig, EndpointError> {
     let mut tls = rustls::ClientConfig::builder_with_provider(provider())
         .with_protocol_versions(&[&rustls::version::TLS13])
@@ -201,13 +247,28 @@ fn client_config(
         .with_custom_certificate_verifier(Arc::new(PinnedPeer::new(peer)))
         .with_client_auth_cert(vec![identity.certificate().clone()], identity.key())
         .map_err(|e| EndpointError::Configuration(e.to_string()))?;
-    tls.alpn_protocols = vec![PROTOCOL.to_vec()];
+    tls.alpn_protocols = vec![alpn.to_vec()];
 
     let quic =
         QuicClientConfig::try_from(tls).map_err(|e| EndpointError::Configuration(e.to_string()))?;
     let mut config = ClientConfig::new(Arc::new(quic));
-    config.transport_config(transport(profile));
+    config.transport_config(transport);
     Ok(config)
+}
+
+/// What a tunnel's waiting end presents, and the fingerprints it lets
+/// in.
+fn pinned_host(
+    identity: &Identity,
+    allowed: impl Into<AllowedPeers>,
+    transport: Arc<TransportConfig>,
+) -> Result<ServerConfig, EndpointError> {
+    server_config(
+        identity,
+        Arc::new(PinnedPeer::new(allowed)),
+        PROTOCOL,
+        transport,
+    )
 }
 
 /// Opens the endpoint on the requested path.
@@ -236,14 +297,18 @@ fn open(
     )?)
 }
 
-/// Opens the endpoint on a junction's socket.
-fn open_at(junction: &Junction, server: Option<ServerConfig>) -> Result<Endpoint, EndpointError> {
+/// Opens the endpoint on a socket somebody else holds: a junction, or
+/// the doorway a server puts its relay on.
+fn open_on(
+    socket: Arc<dyn AsyncUdpSocket>,
+    server: Option<ServerConfig>,
+) -> Result<Endpoint, EndpointError> {
     let runtime = quinn::default_runtime()
         .ok_or_else(|| EndpointError::Configuration("no async runtime".to_string()))?;
     Ok(Endpoint::new_with_abstract_socket(
         quinn::EndpointConfig::default(),
         server,
-        Arc::new(junction.clone()),
+        socket,
         runtime,
     )?)
 }
@@ -280,7 +345,7 @@ impl TunnelEndpoint {
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let config = server_config(identity, allowed, profile)?;
+        let config = pinned_host(identity, allowed, transport_discovering(profile))?;
         Ok(Self {
             endpoint: open(listen, Some(config), path)?,
         })
@@ -295,9 +360,30 @@ impl TunnelEndpoint {
         profile: MediaProfile,
         junction: &Junction,
     ) -> Result<Self, EndpointError> {
-        let config = server_config(identity, allowed, profile)?;
+        let config = pinned_host(identity, allowed, transport_on_a_junction(profile))?;
         Ok(Self {
-            endpoint: open_at(junction, Some(config))?,
+            endpoint: open_on(Arc::new(junction.clone()), Some(config))?,
+        })
+    }
+
+    /// The end a relay waits on: every device is let in, and what
+    /// decides is the pass each of them presents afterwards.
+    ///
+    /// The socket is the doorway the mirror answers on, so one UDP port
+    /// serves both.
+    pub fn relay_on(
+        identity: &Identity,
+        profile: MediaProfile,
+        socket: Arc<dyn AsyncUdpSocket>,
+    ) -> Result<Self, EndpointError> {
+        let config = server_config(
+            identity,
+            Arc::new(AnyPeer::default()),
+            RELAY_PROTOCOL,
+            transport_towards_a_relay(profile),
+        )?;
+        Ok(Self {
+            endpoint: open_on(socket, Some(config))?,
         })
     }
 
@@ -319,7 +405,7 @@ impl TunnelEndpoint {
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let config = client_config(identity, peer, profile)?;
+        let config = client_config(identity, peer, PROTOCOL, transport_discovering(profile))?;
         let mut endpoint = open(listen, None, path)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })
@@ -333,8 +419,30 @@ impl TunnelEndpoint {
         profile: MediaProfile,
         junction: &Junction,
     ) -> Result<Self, EndpointError> {
-        let config = client_config(identity, peer, profile)?;
-        let mut endpoint = open_at(junction, None)?;
+        let config = client_config(identity, peer, PROTOCOL, transport_on_a_junction(profile))?;
+        let mut endpoint = open_on(Arc::new(junction.clone()), None)?;
+        endpoint.set_default_client_config(config);
+        Ok(Self { endpoint })
+    }
+
+    /// The end that goes towards a relay.
+    ///
+    /// The same machinery as a tunnel, under a protocol name of its own
+    /// and on a packet floor of its own: what travels here is a whole
+    /// packet of a tunnel, and it has to fit in one piece.
+    pub fn towards_the_relay(
+        identity: &Identity,
+        relay: Fingerprint,
+        profile: MediaProfile,
+        listen: SocketAddr,
+    ) -> Result<Self, EndpointError> {
+        let config = client_config(
+            identity,
+            relay,
+            RELAY_PROTOCOL,
+            transport_towards_a_relay(profile),
+        )?;
+        let mut endpoint = open(listen, None, Path::Direct)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })
     }
@@ -370,12 +478,31 @@ impl TunnelEndpoint {
     /// without it « somebody was turned away » reads exactly like
     /// « nobody came », which are the two halves of every fault here.
     pub async fn accept(&self) -> Result<Connection, EndpointError> {
-        let incoming = self.endpoint.accept().await.ok_or(EndpointError::Closed)?;
-        let from = incoming.remote_address();
-        let connection = incoming
-            .await
-            .map_err(|e| EndpointError::Connection(format!("{from} : {e}")))?;
-        Ok(Connection::new(connection))
+        self.accept_if(|_| true).await
+    }
+
+    /// The same, turning away whoever the caller will not have.
+    ///
+    /// Decided on the address alone and before the handshake, which is
+    /// what makes it worth having: a relay is the one door on the
+    /// Internet anybody may knock on, and refusing after the handshake
+    /// would already have cost it a signature per knock.
+    pub async fn accept_if(
+        &self,
+        allowed: impl Fn(SocketAddr) -> bool,
+    ) -> Result<Connection, EndpointError> {
+        loop {
+            let incoming = self.endpoint.accept().await.ok_or(EndpointError::Closed)?;
+            let from = incoming.remote_address();
+            if !allowed(from) {
+                incoming.refuse();
+                continue;
+            }
+            let connection = incoming
+                .await
+                .map_err(|e| EndpointError::Connection(format!("{from} : {e}")))?;
+            return Ok(Connection::new(connection));
+        }
     }
 
     /// Waits for the connections in progress to end.
@@ -405,6 +532,18 @@ impl Connection {
     pub fn remote_address(&self) -> SocketAddr {
         let remote = self.inner.remote_address();
         SocketAddr::new(remote.ip().to_canonical(), remote.port())
+    }
+
+    /// The fingerprint of the certificate the other end presented.
+    ///
+    /// Known to both ends of a tunnel in advance, and to nobody in
+    /// advance at a relay, which is the one place this is read: a device
+    /// arrives unannounced, and its certificate is what says whose pass
+    /// it may present. TLS has already proven it holds that key.
+    pub fn peer_fingerprint(&self) -> Option<Fingerprint> {
+        let presented = self.inner.peer_identity()?;
+        let chain = presented.downcast::<Vec<CertificateDer<'static>>>().ok()?;
+        Some(Fingerprint::of_certificate(chain.first()?))
     }
 
     /// Payload one datagram can carry on the current path.
@@ -533,6 +672,21 @@ impl Connection {
     /// Waits for the connection to break.
     pub async fn closed(&self) {
         self.inner.closed().await;
+    }
+
+    /// Shows the far end out, saying nothing.
+    ///
+    /// The ordinary end of a session, and the one the far end reads back
+    /// as [`EndpointError::Ended`] rather than as a fault.
+    pub fn close(&self) {
+        self.inner.close(0u32.into(), b"");
+    }
+
+    /// A number that tells this connection from another, for as long as
+    /// it lives: two connections of one device, one replacing the other,
+    /// are otherwise indistinguishable.
+    pub fn stable_id(&self) -> usize {
+        self.inner.stable_id()
     }
 }
 

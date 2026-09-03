@@ -244,12 +244,18 @@ impl Verifier {
 
     /// The pass, seen from the relay, presented by the device whose
     /// certificate carries that fingerprint.
+    ///
+    /// Honoured as many times as it is presented, unlike a ticket, and
+    /// the five minutes it lives are exactly there for that: a device
+    /// whose connection to the relay broke comes back with the same
+    /// pass. What keeps somebody else from using one is not a nonce
+    /// remembered here but the certificate: the pass names its bearer,
+    /// and presenting that fingerprint means holding that key.
     pub fn pass(&self, signed: &Signed, bearer: Fingerprint, now: u64) -> Result<Pass, Refusal> {
         let pass: Pass = self.open(signed, Kind::Relay, now)?;
         if pass.bearer != bearer {
             return Err(Refusal::NotForMe { named: pass.bearer });
         }
-        self.first_time(&pass.nonce, pass.expires, now)?;
         Ok(pass)
     }
 
@@ -472,6 +478,9 @@ mod tests {
         );
         assert_eq!(verifier.pass(&signed, client, 1_000).unwrap(), pass);
         assert_eq!(pass.expires - pass.issued, PASS_LIFE.as_secs());
+        // Et il vaut aussi longtemps qu'il vit : un appareil dont la
+        // connexion au relais a lâché revient avec le même.
+        assert_eq!(verifier.pass(&signed, client, 1_060).unwrap(), pass);
 
         let ticket = key
             .seal(&Ticket::new("s1", client, host, Grant::Owner, 1_000))

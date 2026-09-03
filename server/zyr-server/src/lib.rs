@@ -3,10 +3,10 @@
 //!
 //! One binary, two roles. The broker keeps accounts, devices, contacts
 //! and shares, says who is online, and presents two devices to each
-//! other with a signed ticket; the relay, when it comes, carries packets
-//! it cannot read. Nothing of a session passes through here in ordinary
-//! use, and no key of a session is ever known here. Conception:
-//! `docs/SERVER.md`.
+//! other with a signed ticket; the relay carries packets it cannot read
+//! between two devices no direct road joins. Nothing of a session passes
+//! through here in ordinary use, and no key of a session is ever known
+//! here. Conception: `docs/SERVER.md`.
 
 pub mod api;
 pub mod check;
@@ -16,6 +16,7 @@ pub mod keys;
 pub mod limits;
 pub mod live;
 pub mod mirror;
+pub mod relay;
 pub mod store;
 
 use std::collections::HashMap;
@@ -81,7 +82,44 @@ pub struct Running {
     pub app: App,
     handle: Handle<SocketAddr>,
     serving: JoinHandle<std::io::Result<()>>,
-    mirror: Option<mirror::Mirror>,
+    udp: Option<Udp>,
+}
+
+/// What answers on the server's UDP port: the mirror alone, or the
+/// relay, which answers the mirror on the same port.
+enum Udp {
+    Mirror(mirror::Mirror),
+    Relay(relay::Relay),
+}
+
+impl Udp {
+    fn address(&self) -> SocketAddr {
+        match self {
+            Udp::Mirror(mirror) => mirror.address(),
+            Udp::Relay(relay) => relay.address(),
+        }
+    }
+
+    fn offer(&self) -> Option<relay::Offer> {
+        match self {
+            Udp::Mirror(_) => None,
+            Udp::Relay(relay) => Some(relay.offer()),
+        }
+    }
+
+    fn stop(&self) {
+        match self {
+            Udp::Mirror(mirror) => mirror.stop(),
+            Udp::Relay(relay) => relay.stop(),
+        }
+    }
+
+    fn said(&self) -> String {
+        match self {
+            Udp::Mirror(mirror) => format!(", mirror on UDP {}", mirror.address()),
+            Udp::Relay(relay) => format!(", mirror and relay on UDP {}", relay.address()),
+        }
+    }
 }
 
 /// How long the connections in progress get to finish at a stop.
@@ -99,23 +137,19 @@ pub async fn start(config: Config) -> Result<Running, StartError> {
         .transpose()
         .map_err(StartError::Keys)?;
     let listen = config.api.listen;
-    // A mirror that cannot open its port is not the end of the server:
-    // the devices are told there is none, and reach each other without.
-    let mirror = match mirror::Mirror::open(config.relay.listen).await {
-        Ok(mirror) => Some(mirror),
-        Err(e) => {
-            journal::say(format!(
-                "no mirror: UDP {} could not be opened: {e}",
-                config.relay.listen
-            ));
-            None
-        }
-    };
+    // A UDP port that cannot be opened is not the end of the server: the
+    // devices are told there is neither mirror nor relay, and reach each
+    // other without.
+    let udp = open_the_udp_port(&config, &key, &store);
     let app: App = Arc::new(State {
         limiter: Limiter::new(config.limits.login_attempts_per_minute),
-        live: Arc::new(live::Live::new(store.clone(), key.clone())),
+        live: Arc::new(live::Live::new(
+            store.clone(),
+            key.clone(),
+            udp.as_ref().and_then(Udp::offer),
+        )),
         tls_fingerprint: tls.as_ref().and_then(Tls::fingerprint),
-        udp_port: mirror.as_ref().map(|mirror| mirror.address().port()),
+        udp_port: udp.as_ref().map(|udp| udp.address().port()),
         challenges: Mutex::new(HashMap::new()),
         config,
         store,
@@ -154,18 +188,60 @@ pub async fn start(config: Config) -> Result<Running, StartError> {
         } else {
             ", in the clear behind a reverse proxy"
         },
-        match &mirror {
-            Some(mirror) => format!(", mirror on UDP {}", mirror.address()),
-            None => String::new(),
-        }
+        udp.as_ref().map(Udp::said).unwrap_or_default()
     ));
     Ok(Running {
         address,
         app,
         handle,
         serving,
-        mirror,
+        udp,
     })
+}
+
+/// Opens the UDP port: the relay when the configuration wants one, the
+/// mirror alone otherwise.
+///
+/// A relay whose certificate cannot be made falls back to the mirror
+/// rather than taking the server down with it: the mirror is what makes
+/// a direct road possible at all, and it is worth keeping whatever else
+/// went wrong.
+fn open_the_udp_port(config: &Config, key: &Arc<ServerKey>, store: &Arc<Store>) -> Option<Udp> {
+    let listen = config.relay.listen;
+    if !config.relay.enabled {
+        return match mirror::Mirror::open(listen) {
+            Ok(mirror) => Some(Udp::Mirror(mirror)),
+            Err(e) => {
+                journal::say(format!("no mirror: UDP {listen} could not be opened: {e}"));
+                None
+            }
+        };
+    }
+    let doorway = match zyr_transport::Doorway::bind(listen) {
+        Ok(doorway) => doorway,
+        Err(e) => {
+            journal::say(format!(
+                "no mirror and no relay: UDP {listen} could not be opened: {e}"
+            ));
+            return None;
+        }
+    };
+    let address = relay::address_of(&config.public_host(), doorway.local_address().ok()?.port());
+    match relay::Relay::open(
+        &doorway,
+        &config.keys_dir(),
+        address,
+        &config.relay,
+        key.public(),
+        store.clone(),
+    ) {
+        Ok(relay) => Some(Udp::Relay(relay)),
+        Err(e) => {
+            journal::say(format!("no relay: {e}"));
+            drop(doorway);
+            mirror::Mirror::open(listen).ok().map(Udp::Mirror)
+        }
+    }
 }
 
 impl Running {
@@ -173,8 +249,8 @@ impl Running {
     pub async fn stop(self) {
         self.handle.graceful_shutdown(Some(GRACE));
         let _ = self.serving.await;
-        if let Some(mirror) = &self.mirror {
-            mirror.stop();
+        if let Some(udp) = &self.udp {
+            udp.stop();
         }
         journal::say("stopped");
     }

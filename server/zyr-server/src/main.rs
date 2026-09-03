@@ -167,6 +167,22 @@ fn status(path: &Path) -> Result<(), String> {
     println!("Appareils      : {}", counts.devices);
     println!("Contacts       : {}", counts.contacts);
     println!("Partages       : {}", counts.shares);
+    let relayed = store.relayed().map_err(|e| e.to_string())?;
+    println!(
+        "Relais         : {}",
+        if config.relay.enabled {
+            format!(
+                "UDP {}, {} session{} relayée{} et {} Mo portés en 30 jours",
+                config.relay.listen,
+                relayed.sessions,
+                if relayed.sessions == 1 { "" } else { "s" },
+                if relayed.sessions == 1 { "" } else { "s" },
+                relayed.bytes / 1_000_000
+            )
+        } else {
+            format!("désactivé, miroir seul sur UDP {}", config.relay.listen)
+        }
+    );
     println!(
         "Inscriptions   : {}",
         match config.registration.policy {
@@ -368,6 +384,22 @@ fn check(path: &Path) -> Result<(), String> {
         _ => println!(
             "  Miroir : aucun, le port UDP n'a pas pu être ouvert au démarrage (voir le journal)"
         ),
+    }
+    match &checked.relay {
+        Some(relais) => {
+            println!(
+                "  Relais : les appareils y sont envoyés sur {}",
+                relais.address
+            );
+            if relais.resolved.is_none() {
+                println!(
+                    "           mais ce nom ne mène nulle part depuis cette machine, donc pas \
+                     davantage depuis les appareils.\n           \
+                     C'est api.public_url qui le donne : corrigez-le et relancez le service."
+                );
+            }
+        }
+        None => println!("  Relais : aucun, les sessions sans chemin direct n'aboutiront pas"),
     }
     Ok(())
 }

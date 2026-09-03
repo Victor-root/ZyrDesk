@@ -249,7 +249,7 @@ async fn where_to_knock(
         .map(|address| SocketAddr::new(address, TUNNEL_PORT))
         .collect();
     let label = met.name.clone();
-    Ok((label, Knock::Through(met)))
+    Ok((label, Knock::Through(Box::new(met))))
 }
 
 /// One question asked of a computer, wherever it is: the meeting it took

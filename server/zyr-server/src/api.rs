@@ -261,9 +261,10 @@ pub fn server_info_of(app: &App) -> ServerInfo {
         version: zyr_proto::PRODUCT_VERSION.to_string(),
         protocol: PROTOCOL,
         registration: app.config.registration.policy,
-        // The relay comes with the next milestone; until then no server
-        // has one to offer, whatever its configuration says.
-        relay: false,
+        // What it really has, and not what its configuration asked for:
+        // a relay whose port could not be opened is a relay a device
+        // must not be sent to.
+        relay: app.live.has_a_relay(),
         udp_port: app.udp_port,
         signing_key: app.key.public(),
     }

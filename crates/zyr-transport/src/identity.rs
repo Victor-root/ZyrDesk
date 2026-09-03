@@ -175,13 +175,20 @@ impl Identity {
     /// machine its owner administers. The Windows service will put it
     /// under the system's protection, out of reach of other accounts.
     pub fn load_or_create(folder: &Path) -> Result<Self, IdentityError> {
-        let certificate = folder.join(CERTIFICATE_FILE);
-        let key = folder.join(KEY_FILE);
+        Self::load_or_create_at(&folder.join(CERTIFICATE_FILE), &folder.join(KEY_FILE))
+    }
 
+    /// The same, at two files named by the caller.
+    ///
+    /// For whoever keeps more than one: a server holds its relay's
+    /// certificate beside its signing key, under its own name.
+    pub fn load_or_create_at(certificate: &Path, key: &Path) -> Result<Self, IdentityError> {
         match (certificate.is_file(), key.is_file()) {
-            (true, true) => Self::load(&certificate, &key),
-            (false, false) => Self::create(folder, &certificate, &key),
-            _ => Err(IdentityError::Incomplete(folder.to_path_buf())),
+            (true, true) => Self::load(certificate, key),
+            (false, false) => Self::create(certificate, key),
+            _ => Err(IdentityError::Incomplete(
+                certificate.parent().unwrap_or(certificate).to_path_buf(),
+            )),
         }
     }
 
@@ -198,10 +205,12 @@ impl Identity {
         })
     }
 
-    fn create(folder: &Path, certificate: &Path, key: &Path) -> Result<Self, IdentityError> {
+    fn create(certificate: &Path, key: &Path) -> Result<Self, IdentityError> {
         let identity = Self::generate()?;
-        std::fs::create_dir_all(folder)
-            .map_err(|e| IdentityError::File(folder.to_path_buf(), e))?;
+        if let Some(folder) = certificate.parent() {
+            std::fs::create_dir_all(folder)
+                .map_err(|e| IdentityError::File(folder.to_path_buf(), e))?;
+        }
         write(certificate, identity.certificate.as_ref())?;
         write(key, identity.key.secret_der())?;
         Ok(identity)
@@ -434,6 +443,64 @@ impl ClientCertVerifier for PinnedPeer {
         _now: UnixTime,
     ) -> Result<ClientCertVerified, rustls::Error> {
         self.check_fingerprint(end_entity)?;
+        Ok(ClientCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.algorithms)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.algorithms)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.algorithms.supported_schemes()
+    }
+}
+
+/// Takes every certificate, and judges none.
+///
+/// One place needs it, and needs it to be exactly this: a relay, which
+/// serves devices it has never heard of and decides on the pass they
+/// present, not on the certificate they carry. The certificate is still
+/// read, and its fingerprint is what the pass has to name: presenting
+/// somebody else's fingerprint would mean holding their key, which is
+/// what TLS proves here and what nothing else could.
+#[derive(Debug)]
+pub struct AnyPeer {
+    algorithms: WebPkiSupportedAlgorithms,
+}
+
+impl Default for AnyPeer {
+    fn default() -> Self {
+        Self {
+            algorithms: rustls::crypto::ring::default_provider().signature_verification_algorithms,
+        }
+    }
+}
+
+impl ClientCertVerifier for AnyPeer {
+    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+        &[]
+    }
+
+    fn verify_client_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _now: UnixTime,
+    ) -> Result<ClientCertVerified, rustls::Error> {
         Ok(ClientCertVerified::assertion())
     }
 

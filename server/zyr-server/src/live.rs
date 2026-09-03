@@ -15,14 +15,15 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::HeaderMap;
 use axum::response::Response;
 use tokio::sync::mpsc;
-use zyr_broker::live::{FromDevice, FromServer, Peer};
+use zyr_broker::live::{FromDevice, FromServer, Peer, Relay};
 use zyr_broker::proof::{Purpose, challenge_message};
 use zyr_broker::rest::{Access, DeviceInfo, ShareInfo};
-use zyr_broker::ticket::{Grant, Ticket};
+use zyr_broker::ticket::{Grant, Pass, Ticket};
 use zyr_broker::{Code, PROTOCOL, ServerKey, now};
-use zyr_transport::signed_by;
+use zyr_transport::{Fingerprint, signed_by};
 
 use crate::api::{self, Refusal, blocking, contact_info, device_info, share_info};
+use crate::relay::Offer;
 use crate::store::{Bearer, Device, Share, Store};
 use crate::{App, journal};
 
@@ -53,20 +54,56 @@ struct Session {
 pub struct Live {
     store: Arc<Store>,
     key: Arc<ServerKey>,
+    /// The relay this server offers, when it has one.
+    relay: Option<Offer>,
     online: Mutex<HashMap<String, Online>>,
     sessions: Mutex<HashMap<String, Session>>,
     openings: std::sync::atomic::AtomicU64,
 }
 
 impl Live {
-    pub fn new(store: Arc<Store>, key: Arc<ServerKey>) -> Self {
+    pub fn new(store: Arc<Store>, key: Arc<ServerKey>, relay: Option<Offer>) -> Self {
         Self {
             store,
             key,
+            relay,
             online: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
             openings: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    /// Whether this server has a relay to offer.
+    pub fn has_a_relay(&self) -> bool {
+        self.relay.is_some()
+    }
+
+    /// The pass one device needs to reach the other through the relay,
+    /// with where to present it.
+    ///
+    /// One pass each, and each names only its bearer and the one other
+    /// device its packets may reach: the relay carries between those two
+    /// fingerprints and no others.
+    fn relay_for(
+        &self,
+        session: &str,
+        bearer: Fingerprint,
+        peer: Fingerprint,
+        at: u64,
+    ) -> Option<Relay> {
+        let offer = self.relay.as_ref()?;
+        let pass = match self.key.seal(&Pass::new(session, bearer, peer, at)) {
+            Ok(sealed) => sealed,
+            Err(e) => {
+                journal::say(format!("relay pass could not be sealed: {e}"));
+                return None;
+            }
+        };
+        Some(Relay {
+            address: offer.address.clone(),
+            fingerprint: offer.fingerprint,
+            pass,
+        })
     }
 
     /// Whether that device is connected, and what it accepts.
@@ -255,10 +292,7 @@ impl Live {
         }
         let ended = id.to_string();
         let at = now();
-        let _ = blocking(&self.store, move |store| {
-            store.session_ended(&ended, at, None, 0)
-        })
-        .await;
+        let _ = blocking(&self.store, move |store| store.session_ended(&ended, at)).await;
     }
 
     async fn welcome(&self, app: &App, bearer: &Bearer) -> Result<FromServer, Refusal> {
@@ -390,12 +424,13 @@ impl Live {
                     name: target.name.clone(),
                     account: owner,
                 },
-                relay: None,
+                relay: self.relay_for(&session, bearer.device.fingerprint, target.fingerprint, at),
             },
         );
         self.notify_device(
             &target.id,
             FromServer::SessionStart {
+                relay: self.relay_for(&session, target.fingerprint, bearer.device.fingerprint, at),
                 session,
                 ticket: sealed,
                 peer: Peer {
@@ -404,7 +439,6 @@ impl Live {
                     name: bearer.device.name.clone(),
                     account: bearer.account.username.clone(),
                 },
-                relay: None,
             },
         );
     }
