@@ -111,7 +111,7 @@ zyrdesk-server status
 
 ## R3. Le client en 4G ou en 5G, l'hôte à la maison
 
-**C'est l'essai principal du jalon.** Le PC client en partage de connexion depuis un téléphone, **VPN coupé** ; le PC hôte chez Victor, sur sa fibre. Ouvrir la session depuis « Mes ordinateurs », sur la **carte du compte** (celle qui porte le nom de l'ordinateur distant), et non sur une carte d'« Ordinateurs vus ».
+**C'est l'essai principal du jalon.** Le PC client en partage de connexion depuis un téléphone, **VPN coupé** ; le PC hôte chez Victor, sur sa fibre. Ouvrir la session depuis « Mes ordinateurs », sur la carte de l'ordinateur distant.
 
 **Attendu.** La session s'ouvre. Deux issues sont bonnes, et il faut noter laquelle :
 
@@ -134,7 +134,7 @@ New-NetFirewallRule -DisplayName "ZyrDesk direct coupe" -Direction Outbound -Pro
 
 Cette règle coupe tout ce qui va vers le port du tunnel de l'autre ordinateur, dans les deux sens de fait, et ne touche ni le serveur ni le relais, qui vivent sur un autre port.
 
-Ouvrir la session depuis « Mes ordinateurs », sur la **carte du compte**.
+Ouvrir la session depuis « Mes ordinateurs ». Il n'y a qu'une carte par ordinateur, même quand il est à la fois vu sur le réseau local et rattaché au compte : tant que le serveur répond et que l'autre est prêt, c'est par une rencontre qu'on va le joindre, et le réseau local n'est plus qu'une des adresses que la rencontre fait essayer.
 
 **Attendu.** La session s'ouvre, et le menu de la session dit « par le relais <adresse>:8443 ». L'aller-retour affiché est celui du chemin relayé, donc plus grand que le direct de la veille.
 

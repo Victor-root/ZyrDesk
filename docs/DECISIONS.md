@@ -2145,6 +2145,16 @@ Tous commencent par le nom du produit, donc la liste les range ensemble et perso
 
 **Ce qui protège le laissez-passer n'est pas une mémoire, c'est un certificat.** Il nomme son porteur par empreinte, et le relais ne le lit qu'après avoir vérifié que l'appareil en face présente ce certificat-là : TLS a déjà prouvé qu'il en détient la clé. Un laissez-passer volé sur le canal vivant ne sert donc à personne d'autre. Au passage, le relais n'a plus rien à retenir de qui est passé, ce qui est exactement ce qu'on lui demande.
 
+## D129. Un ordinateur du compte se joint par une rencontre, même quand on le voit sur le réseau local (2026-09-03, pendant M6)
+
+**Le relevé.** Le premier essai du relais entre deux PC côte à côte a échoué là où personne ne regardait. Le direct coupé au pare-feu, la session ne s'est pas ouverte du tout : `racing 3 addresses: 192.168.2.5:47000, 192.168.1.5:47000, 192.168.56.1:47000`, puis trois fois « timed out ». Pas une ligne sur le relais, et pour cause : il n'y en avait pas.
+
+**La cause.** Une carte par ordinateur, et son adresse était celle du réseau local, parce que l'annonce locale l'avait vu. Un ordinateur nommé par une adresse est joint à cette adresse : pas de rencontre, pas d'aiguilleur, pas de relais. Le compte ne servait qu'à colorer la carte. Sur le réseau local ça marchait, et c'était ce qu'on voulait au jalon M5 ; mais une adresse est un chemin unique, sans moyen d'en changer et sans retour possible quand elle cesse de porter, et ça n'est pas resté vrai une fois qu'il y avait mieux à offrir.
+
+**Ce qui est fait.** Un ordinateur du compte se joint par une rencontre dès qu'une rencontre peut être obtenue : le serveur répond, l'autre est en ligne et prêt. La rencontre ne retire rien et ajoute tout : elle donne à l'aiguilleur les adresses que cette machine connaissait déjà de lui, sondées les premières et donc élues les premières sur un réseau local, plus celles que l'autre nomme, plus le relais. Ce qui reste au knock à l'adresse est ce qui n'a pas mieux : un ordinateur d'aucun compte, un serveur injoignable, un ordinateur pas prêt. Le serveur ne porte toujours rien d'une session locale, ce que son compteur dit tout seul.
+
+**Ce que ça coûte.** Un aller-retour vers le serveur avant de frapper, une dizaine de millisecondes chez soi, contre un chemin qui se répare et un relais en secours. Et si le serveur ne répond pas, le comportement d'avant revient tel quel : c'est la même règle qui gouverne les deux, « une rencontre quand elle est possible, l'adresse quand elle ne l'est pas », et pas deux cas écrits séparément.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

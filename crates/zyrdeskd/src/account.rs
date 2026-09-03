@@ -12,10 +12,13 @@
 //! other in on the strength of it, and each says where it may be
 //! reached.
 //!
-//! A computer of the account is reached under a road of its own,
-//! `account:` and its identifier at the server, wherever the network
-//! does not carry it: the desk reads that road and asks here for the
-//! meeting before any tunnel is opened.
+//! A computer of the account is met through the server whenever a
+//! meeting can be had, on the same network or across the world: the
+//! meeting hands the junction every address this machine already knew
+//! of it, every one the far computer names, and a relay, where an
+//! address alone gives one road and no way back. Only a computer of no
+//! account, or one whose server cannot be reached, is knocked on at its
+//! address.
 
 // Outside Windows nothing calls this module: the service does not exist
 // there. Its logic has nothing platform-specific about it and stays
@@ -305,6 +308,31 @@ impl Account {
                 last_seen: device.last_seen,
             })
             .collect()
+    }
+
+    /// The device of the account that computer is, when the server can
+    /// present it this instant.
+    ///
+    /// What decides is not « does this computer have an account » but
+    /// « can a meeting be had right now ». A meeting is worth having
+    /// even for a computer this machine already sees on its own network:
+    /// it hands the junction those very addresses to probe first, plus
+    /// the ones the far computer names, plus a relay, where the
+    /// addresses alone give one road, no way to change it, and no way
+    /// back when it stops carrying. Without a meeting to be had, those
+    /// addresses are the only road, and they are the road it takes.
+    pub fn met_through_the_server(&self, peer: Fingerprint) -> Option<String> {
+        let held = self.0.held.lock().expect("lien de compte");
+        let snapshot = held.as_ref()?.live.snapshot();
+        if !snapshot.connected {
+            return None;
+        }
+        let device = snapshot
+            .devices
+            .iter()
+            .chain(snapshot.shares.iter().map(|share| &share.device))
+            .find(|known| known.fingerprint == peer)?;
+        (device.online && device.access == Access::Ready).then(|| device.id.clone())
     }
 
     /// The computers a ticket let in, and still lets in.
@@ -1364,6 +1392,21 @@ login_attempts_per_minute = 1000
             .id
             .clone();
 
+        // Le PC est prêt et le serveur est là : c'est par une rencontre
+        // qu'on ira le joindre, même si le réseau local le montre déjà.
+        assert_eq!(
+            portable
+                .account
+                .met_through_the_server(pc.identity.fingerprint()),
+            Some(pc_device.clone())
+        );
+        // Un ordinateur qui n'est d'aucun compte se joint à son adresse
+        // et pas autrement.
+        assert_eq!(
+            portable.account.met_through_the_server(fingerprint(9)),
+            None
+        );
+
         // Le rendez-vous : le portable est présenté au PC, qui le laisse
         // entrer sur la foi du ticket et dit où il répond, d'abord ses
         // propres adresses, puis celle que le miroir du serveur lui
@@ -1421,6 +1464,15 @@ login_attempts_per_minute = 1000
             .await;
         let refused = portable.account.rendezvous(&pc_device).await.unwrap_err();
         assert!(refused.contains("moteur hôte absent"), "{refused}");
+        // Et il ne sert plus à rien de passer par le serveur pour le
+        // joindre : ce qu'on sait de lui par ailleurs est tout ce qu'il
+        // reste.
+        assert_eq!(
+            portable
+                .account
+                .met_through_the_server(pc.identity.fingerprint()),
+            None
+        );
 
         // Renommé depuis le portable, le PC se voit sous son nouveau nom.
         portable

@@ -215,22 +215,28 @@ fn every_address_of(peer: Fingerprint, answering: &Answering) -> Vec<std::net::I
 /// Where to knock to reach that computer, what to call it on the way,
 /// and the meeting it took to know, when it took one.
 ///
-/// A computer named by its road at the server is asked of the account:
-/// the server presents the two, the far one lets this one in, and what
-/// comes back is where it says it answers. A computer named by an
-/// address is resolved, and every address it was heard on is tried
-/// beside it, whichever way it was named.
+/// A meeting whenever one can be had, and the addresses only when it
+/// cannot. The server presents the two, the far one lets this one in,
+/// and what comes back is a junction that probes every address this
+/// machine already knew of it, every one the far computer names, and a
+/// relay if the server has one. Knocking at an address is the same
+/// journey with one road, no way to change it, and no way back when it
+/// stops carrying: it is what is left when there is no account, no
+/// server to be reached, or nobody ready at the other end.
 async fn where_to_knock(
     host: &str,
     peer: Fingerprint,
     answering: &Answering,
 ) -> Result<(String, Knock), String> {
     let also = every_address_of(peer, answering);
-    let Some(device) = account::device_of_road(host) else {
+    let device = account::device_of_road(host)
+        .map(str::to_string)
+        .or_else(|| answering.machine.account.met_through_the_server(peer));
+    let Some(device) = device else {
         let candidates = crate::ways::where_to_knock(host, &also)?;
         return Ok((host.to_string(), Knock::At(candidates)));
     };
-    let mut met = answering.machine.account.rendezvous(device).await?;
+    let mut met = answering.machine.account.rendezvous(&device).await?;
     // The fingerprint on the card is what the tunnel will pin, and the
     // server has just named one: two different answers is a computer
     // that changed key, or a server that lies, and neither is knocked on.

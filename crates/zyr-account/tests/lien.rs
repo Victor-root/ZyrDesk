@@ -50,6 +50,9 @@ tls_cert = '{}'
 tls_key = '{}'
 public_url = "https://essai.invalid"
 
+[relay]
+listen = "127.0.0.1:0"
+
 [registration]
 policy = "open"
 
@@ -275,7 +278,6 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
         panic!("le portable devait voir la session commencer");
     };
     assert_eq!(seen_by_portable.peer.device, pc_link.device);
-    assert!(seen_by_portable.relay.is_none());
     let Event::SessionStart(seen_by_pc) = expect(&mut pc_events).await else {
         panic!("le PC devait voir la session commencer");
     };
@@ -286,6 +288,24 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
         .ticket_for_host(&seen_by_pc.ticket, pc_identity.fingerprint(), now())
         .unwrap();
     assert_eq!(read.grant, Grant::Owner);
+
+    // Chacun reçoit son propre laissez-passer pour le relais du serveur,
+    // qui ne le laisse joindre que l'autre, et pour cette session-là.
+    let relay = seen_by_portable
+        .relay
+        .as_ref()
+        .expect("le portable n'a pas eu de laissez-passer");
+    let mine = Verifier::new(pc_link.signing_key)
+        .pass(&relay.pass, portable_identity.fingerprint(), now())
+        .unwrap();
+    assert_eq!(mine.session, session);
+    assert_eq!(mine.peer, pc_identity.fingerprint());
+    let theirs = seen_by_pc
+        .relay
+        .as_ref()
+        .expect("le PC n'a pas eu de laissez-passer");
+    assert_eq!(theirs.address, relay.address);
+    assert_eq!(theirs.fingerprint, relay.fingerprint);
 
     let candidates = vec!["10.0.0.2:47000".parse().unwrap()];
     pc.say(FromDevice::SessionCandidates {
