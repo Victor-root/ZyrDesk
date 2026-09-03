@@ -697,7 +697,7 @@ impl Account {
                 if let Some(card) = hosted
                     && let Some(junction) = self.junction()
                 {
-                    junction.forget(card);
+                    junction.forget(card, &session);
                 }
                 inner
                     .roads

@@ -1160,9 +1160,6 @@ async fn one_session(
         Ok(tunnel) => tunnel,
         Err(e) => {
             log.write(&format!("session from {from}{road} not opened: {e}"));
-            if is_card(from) {
-                junction.forget(from);
-            }
             return;
         }
     };
@@ -1177,9 +1174,10 @@ async fn one_session(
         Ok(()) => log.write(&format!("session ended, {carried}")),
         Err(e) => log.write(&format!("session ended: {e}, {carried}")),
     }
-    if is_card(from) {
-        junction.forget(from);
-    }
+    // The card is the account's to give back, and it does so when the
+    // server says the session is over. A tunnel gives up half a minute
+    // after the last packet, which is long after another session may
+    // have taken the same card.
 }
 
 /// Waits for the session to end, saying what it throws away while it

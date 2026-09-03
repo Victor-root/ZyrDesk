@@ -707,10 +707,24 @@ impl Junction {
         self.inner.probe_now(card, &fresh);
     }
 
-    /// The computer behind that card is not expected any more.
-    pub fn forget(&self, card: SocketAddr) {
+    /// The computer behind that card is not expected any more, for that
+    /// session.
+    ///
+    /// One card stands for one computer, so two sessions in a row
+    /// towards the same computer share it, and the second takes it from
+    /// the first. A session ending late would otherwise take the card
+    /// out from under the session that replaced it: everything the
+    /// transport hands over goes nowhere from then on, in silence, and
+    /// the far computer dies of an absence half a minute later. Only
+    /// the session the card is held for can give it back.
+    pub fn forget(&self, card: SocketAddr, session: &str) {
         let mut table = self.inner.table.lock().expect("aiguilleur");
-        if table.expected.remove(&card).is_some() {
+        if table
+            .expected
+            .get(&card)
+            .is_some_and(|held| held.session == session)
+        {
+            table.expected.remove(&card);
             table.by_real.retain(|_, known| *known != card);
         }
     }
@@ -1825,6 +1839,35 @@ mod tests {
         // chemin mort, sans un mot et sans retour possible ; là, c'est
         // gardé pour la première route qui répond.
         assert_eq!(expected.elected, None);
+    }
+
+    #[tokio::test]
+    async fn a_session_that_ends_late_does_not_take_the_card_of_the_one_after_it() {
+        // Une carte vaut pour un ordinateur, donc deux sessions de suite
+        // vers le même ordinateur la partagent et la seconde la prend à
+        // la première. La fin de la première emportait la carte de la
+        // seconde : à partir de là tout ce que le transport confiait
+        // partait à la poubelle sans un mot, et l'ordinateur d'en face
+        // mourait d'une absence trente secondes plus tard.
+        let identity = Arc::new(Identity::generate().unwrap());
+        let junction = junction(&identity);
+        let peer = Identity::generate().unwrap().fingerprint();
+        let card = junction.expect(peer, "s1");
+        assert_eq!(
+            junction.expect(peer, "s2"),
+            card,
+            "une carte par ordinateur"
+        );
+
+        junction.forget(card, "s1");
+        let session_of = |card| {
+            let table = junction.inner.table.lock().expect("aiguilleur");
+            table.expected.get(&card).map(|held| held.session.clone())
+        };
+        assert_eq!(session_of(card).as_deref(), Some("s2"));
+
+        junction.forget(card, "s2");
+        assert_eq!(session_of(card), None);
     }
 
     #[tokio::test]

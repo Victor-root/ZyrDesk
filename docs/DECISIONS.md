@@ -2193,6 +2193,24 @@ Le troisième : la branche vers le relais répond « porté » ou « pas porté 
 
 **Et un quatrième silence, au milieu.** Le relais est le seul endroit qui voit les deux moitiés d'une route relayée, et il ne disait rien de ce qu'il voyait : sur les deux ordinateurs, une moitié de route qui lâche et une session qui s'arrête s'écrivent exactement pareil. Il écrit maintenant, quand un côté se remet à parler, combien de temps il s'était tu, et il dit en fin de session ce que chacun des deux a envoyé. C'est ce qui manque pour savoir laquelle des deux lignes cède, et il n'y avait aucun autre endroit d'où le savoir.
 
+## D133. Une carte se rend à la session qui la tient, et à aucune autre (2026-09-03, pendant M6)
+
+**Le relevé, et c'est le relais qui l'a donné.** Quatre sessions mortes dans la soirée, à trente-trois secondes, deux minutes trente, trente-six secondes et vingt-trois secondes, toutes de la même façon : plus rien ne traverse, les deux files débordent, les moteurs renoncent. Les lignes ajoutées le même soir ont tranché en une fois :
+
+```
+session h6XMjvdgxgqnS0jc: relayed, 17731 kB carried
+  0829cc… (PC-VICTOR) sent 1165 kB,  last heard 587 ms ago,   0 packet(s) could not be handed to it
+  1aed56… (PC-SAV)     sent 16566 kB, last heard 10359 ms ago, 0 packet(s) could not be handed to it
+```
+
+L'ordinateur regardé n'avait plus rien envoyé au relais depuis dix secondes et demie, pendant que l'autre parlait encore. Le relais n'a rien refusé, rien perdu, et les compteurs du système sur le serveur (`/proc/net/snmp`, `ip -s link`) ne bougent pas d'un paquet sur toute la durée de l'essai. La panne était donc entièrement chez l'ordinateur regardé, qui avait cessé d'émettre, sondes de l'aiguilleur comprises, sans que son propre journal en dise un mot.
+
+**La cause.** Une carte vaut pour un ordinateur, pas pour une session : elle est tirée de l'empreinte, donc deux sessions de suite vers la même machine la partagent. Or l'interface ouvre une vraie session pour chaque question qu'elle pose au loin, ne serait-ce que pour lire un journal, et le tunnel de ces sessions-là ne se referme pas tout de suite : il tient trente secondes avant de renoncer, faute de nouvelles. Le déroulé était donc immanquable. Une session de question s'ouvre et prend la carte. La vraie session s'ouvre dix secondes plus tard et prend la même carte. Trente secondes après la première, son tunnel abandonne, et la porte rendait alors la carte, celle de la session en cours. À partir de cet instant l'aiguilleur ne connaît plus personne derrière cette carte : les sondes ne partent plus, tout ce que le transport confie est jeté en silence, et l'ordinateur d'en face meurt d'une absence.
+
+**Ce qui est fait.** Rendre une carte se fait au nom d'une session, et n'a d'effet que si c'est bien cette session-là qui la tient. Et la porte ne rend plus rien du tout : la carte appartient au compte, qui l'a prise quand le serveur a présenté la session et qui la rend quand le serveur dit qu'elle est finie. Un tunnel qui renonce une demi-minute après son dernier paquet n'est pas ce qui décide de la fin d'une session, et n'avait aucune raison de disposer de quoi que ce soit.
+
+**La leçon, la même que d'habitude.** Trois soirées à chercher dans le réseau ce qui était dans une table en mémoire, parce que la seule chose que faisait le défaut, c'était de se taire. Ce sont les lignes du relais, écrites deux heures plus tôt pour une tout autre hypothèse, qui ont montré du doigt la bonne machine en une seule lecture.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
