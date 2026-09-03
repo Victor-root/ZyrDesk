@@ -2189,6 +2189,10 @@ Le troisième : la branche vers le relais répond « porté » ou « pas porté 
 
 **Ce que ça ne fait pas.** Ça ne dit pas pourquoi cette session-là est morte. Ça fait que la prochaine le dira : soit la branche écrit qu'elle n'avait plus de place, et la saturation est du côté de l'ordinateur qui envoie ; soit elle ne dit rien, la route élue est abandonnée avec sa ligne, et la perte est sur le fil. Les deux se ressemblaient trait pour trait, et c'est pour ça qu'on ne tranchait pas.
 
+**L'essai suivant, le soir même, a répondu à moitié.** Deux minutes et demie de session relayée, puis la route s'arrête de porter pendant six secondes : la ligne existe maintenant, `the relay at … stopped answering and is given up`, suivie une seconde plus tard de la même route reprise à sept millisecondes. Aucune ligne de branche saturée, donc les paquets sont bien partis des deux ordinateurs et la perte est sur le fil. L'aiguilleur et le tunnel ont tous les deux survécu à la coupure ; ce sont les moteurs qui ont renoncé, le canal de contrôle du lecteur ayant déclaré l'autre bout mort au bout de huit secondes de silence.
+
+**Et un quatrième silence, au milieu.** Le relais est le seul endroit qui voit les deux moitiés d'une route relayée, et il ne disait rien de ce qu'il voyait : sur les deux ordinateurs, une moitié de route qui lâche et une session qui s'arrête s'écrivent exactement pareil. Il écrit maintenant, quand un côté se remet à parler, combien de temps il s'était tu, et il dit en fin de session ce que chacun des deux a envoyé. C'est ce qui manque pour savoir laquelle des deux lignes cède, et il n'y avait aucun autre endroit d'où le savoir.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

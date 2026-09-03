@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::task::JoinHandle;
 use zyr_broker::signing::{ServerPublicKey, Signed};
@@ -53,6 +53,16 @@ const KEY_FILE: &str = "relay.key";
 /// the session's rate is a hundred times what they need, and nothing
 /// anybody could do anything with.
 const UPKEEP_SHARE: f64 = 0.01;
+
+/// Silence from one side of a session worth writing down.
+///
+/// A tunnel that stands says something several times a second, and the
+/// junction under it probes its road every two seconds: one side of a
+/// live session is never quiet this long. And the relay is the only
+/// place that sees both legs of a relayed road, so it is the only place
+/// where a leg that died can be told from a session that stopped, which
+/// on the devices themselves read exactly the same.
+const QUIET: Duration = Duration::from_secs(3);
 
 /// What a device is told about the relay, so it can reach it.
 #[derive(Debug, Clone)]
@@ -158,6 +168,12 @@ struct Flow {
     upkeep: f64,
     counted: Instant,
     carried: u64,
+    /// What each of the two sent, which says at a glance whether a
+    /// session was carried both ways or only one.
+    carried_by: [u64; 2],
+    /// When each of the two was last heard, once it has been heard at
+    /// all.
+    heard_at: [Option<Instant>; 2],
 }
 
 impl Flow {
@@ -181,6 +197,8 @@ impl Relayed {
                 upkeep: bytes_per_second * UPKEEP_SHARE,
                 counted: now,
                 carried: 0,
+                carried_by: [0; 2],
+                heard_at: [None; 2],
             }),
         }
     }
@@ -219,11 +237,29 @@ impl Relayed {
     /// ciphertext from end to end and stays unread here. The first has
     /// its own small allowance and is not counted; the second is the
     /// session, and is both capped and counted.
-    fn carry(&self, from: usize, packet: Bytes, bytes_per_second: f64, now: Instant) {
+    ///
+    /// Hands back the silence this packet just broke, when that side had
+    /// said nothing for longer than a live session ever does.
+    fn carry(
+        &self,
+        from: usize,
+        packet: Bytes,
+        bytes_per_second: f64,
+        now: Instant,
+    ) -> Option<Duration> {
         let upkeep = zyr_transport::probe::is_ours(&packet);
+        let mut broken = None;
         let other = {
             let mut flow = self.flow.lock().expect("session relayée");
             flow.refill(bytes_per_second, now);
+            // Every packet counts here, the upkeep of the road included:
+            // what is watched is the leg being alive, not what rides on
+            // it.
+            if let Some(before) = flow.heard_at[from].replace(now)
+                && now.duration_since(before) > QUIET
+            {
+                broken = Some(now.duration_since(before));
+            }
             let size = packet.len() as f64;
             let allowance = if upkeep {
                 &mut flow.upkeep
@@ -233,24 +269,32 @@ impl Relayed {
             // Past what it is allowed, a packet is dropped, which is
             // what a network does too.
             if *allowance < size {
-                return;
+                return broken;
             }
             *allowance -= size;
             if !upkeep {
                 flow.carried += packet.len() as u64;
+                flow.carried_by[from] += packet.len() as u64;
             }
             match flow.ends[1 - from].clone() {
                 Some(other) => other,
                 // The other end is not here yet, or not any more: a
                 // packet on a road nobody is at the end of.
-                None => return,
+                None => return broken,
             }
         };
         let _ = other.send_datagram(packet);
+        broken
     }
 
     fn carried(&self) -> u64 {
         self.flow.lock().expect("session relayée").carried
+    }
+
+    /// What each of the two sent, which says at a glance whether a
+    /// session was carried both ways or only one.
+    fn carried_by(&self) -> [u64; 2] {
+        self.flow.lock().expect("session relayée").carried_by
     }
 }
 
@@ -360,12 +404,20 @@ impl Carrying {
             };
         }
         let carried = held.relayed.carried();
+        let by = held.relayed.carried_by();
         journal::say(format!(
             "session {}: {}, {} still on the relay",
             held.session,
             match carried {
                 0 => "the relay held a road and carried nothing".to_string(),
-                carried => format!("relayed, {} kB carried", carried / 1_000),
+                carried => format!(
+                    "relayed, {} kB carried, {} kB from {} and {} kB from {}",
+                    carried / 1_000,
+                    by[0] / 1_000,
+                    held.relayed.between[0],
+                    by[1] / 1_000,
+                    held.relayed.between[1]
+                ),
             },
             self.how_many()
         ));
@@ -446,8 +498,17 @@ async fn attend(knocking: Knocking, carrying: Arc<Carrying>) {
             carrying.how_many()
         ));
         while let Ok(packet) = connection.read_datagram().await {
-            held.relayed
-                .carry(held.side, packet, carrying.bytes_per_second, Instant::now());
+            if let Some(silence) =
+                held.relayed
+                    .carry(held.side, packet, carrying.bytes_per_second, Instant::now())
+            {
+                journal::say(format!(
+                    "relay: nothing came from {device} for {} ms in session {}, and it is heard \
+                     again",
+                    silence.as_millis(),
+                    held.session
+                ));
+            }
         }
     }
     // On every road out, including a device that never got its answer:
@@ -699,6 +760,37 @@ mod tests {
             start + Duration::from_secs(1),
         );
         assert_eq!(relayed.carried(), 13_200);
+    }
+
+    #[test]
+    fn a_side_that_goes_quiet_and_comes_back_says_how_long_it_was_gone() {
+        // Le relais est le seul endroit qui voit les deux moitiés d'une
+        // route relayée. Sans lui, une moitié qui lâche et une session
+        // qui s'arrête s'écrivent exactement pareil sur les deux
+        // ordinateurs, et rien ne dit laquelle des deux lignes a cédé.
+        let start = Instant::now();
+        let per_second = 12_000.0;
+        let relayed = measured(per_second, start);
+        let packet = Bytes::from(vec![0u8; 100]);
+
+        // Le premier paquet d'un côté ne rompt aucun silence.
+        assert_eq!(relayed.carry(0, packet.clone(), per_second, start), None);
+        assert_eq!(
+            relayed.carry(0, packet.clone(), per_second, start + QUIET),
+            None,
+            "un silence tout juste à la limite n'en est pas un"
+        );
+        let gone = QUIET + Duration::from_secs(3);
+        assert_eq!(
+            relayed.carry(0, packet.clone(), per_second, start + QUIET + gone),
+            Some(gone)
+        );
+        // Et l'autre moitié se compte à part : c'est toute la question.
+        assert_eq!(
+            relayed.carry(1, packet, per_second, start + QUIET + gone),
+            None
+        );
+        assert_eq!(relayed.carried_by(), [300, 100]);
     }
 
     #[test]
