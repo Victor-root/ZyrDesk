@@ -2342,6 +2342,25 @@ T+6    le direct est abandonné             -> la session repasse au relais
 
 **Ce que ça ne prétend toujours pas être.** Le silence lui-même reste hors du produit : trois liaisons Internet différentes, trois pannes identiques, et le réseau local jamais. Ce qui est à nous est de le traverser, et c'est [D138](#d138-la-patience-dune-session-est-un-seul-nombre-et-les-moteurs-ne-décident-plus-seuls-2026-09-04-pendant-m6) plus celle-ci : une demi-minute de patience, et pas une seconde perdue à balancer entre deux routes mortes.
 
+## D140. La quatrième patience, celle que personne n'avait vue (2026-09-04, pendant M6)
+
+**Le relevé.** Première séance avec les trente secondes de [D138](#d138-la-patience-dune-session-est-un-seul-nombre-et-les-moteurs-ne-décident-plus-seuls-2026-09-04-pendant-m6) et l'élection de [D139](#d139-quand-plus-rien-ne-répond-la-session-reste-sur-la-route-qui-la-porte-2026-09-04-pendant-m6) des deux côtés. Huit minutes de flux propre, puis :
+
+```text
+22:29:46   le réseau se tait, des deux côtés
+22:29:51   le moteur hôte : « CLIENT DISCONNECTED »
+22:29:55   les deux routes répondent de nouveau, direct et relais
+22:30:16   le moteur client rend la session, trente secondes après le silence
+```
+
+Les trente secondes ont donc tenu, et l'élection n'a plus fait de va-et-vient. Mais la route est revenue neuf secondes après le silence, et la session est morte quand même : le moteur hôte avait raccroché **cinq secondes** après le début du silence, et le moteur client a mis les vingt-cinq secondes restantes à s'apercevoir qu'il parlait à un mort.
+
+**La cause.** Une session porte quatre patiences, pas trois. Le tunnel, le moteur hôte par sa clé `ping_timeout`, le canal de contrôle du moteur client par [P-M12](../patches/MANIFEST.md), et le pair du même canal **côté hôte**, qui n'a jamais été touché. Sunshine n'appelle nulle part `enet_peer_timeout` : ce pair garde les valeurs d'origine de sa bibliothèque, cinq secondes, et `ping_timeout` ne le concerne pas, cette clé ne gouvernant que les gardes de plus haut niveau du moteur. Cinq secondes étant la plus courte des quatre, c'était la seule qui décidait jamais quoi que ce soit, y compris pendant tous les relevés d'avant.
+
+**Ce qui est fait.** [P-S7](../patches/MANIFEST.md) : à la connexion du pair, le moteur hôte lui donne `ping_timeout` pour patience, ce que ZyrDesk met déjà à `UNHEARD_LIMIT`. Aucun nombre de ZyrDesk n'entre dans le moteur, comme pour P-M12 : ce canal lit le réglage que le moteur porte déjà pour toutes ses autres attentes, au lieu de garder seul un nombre que personne n'a choisi pour ce produit.
+
+**Ce qu'on sait maintenant du silence lui-même.** Il dure neuf secondes et la route revient. C'est la première fois qu'on peut l'affirmer, parce que c'est la première fois qu'un des quatre compteurs a laissé le temps de le voir.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
