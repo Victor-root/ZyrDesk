@@ -67,6 +67,17 @@ const TICK: Duration = Duration::from_millis(100);
 /// line of whichever computer measures it.
 const QUEUED: Duration = Duration::from_millis(250);
 
+/// What the socket is asked to hold of what arrives while nothing is
+/// reading it.
+///
+/// The system's own default is a few dozen kilobytes, which at the rate
+/// a picture travels is about ten milliseconds: any moment this program
+/// is not given the processor costs packets, and they are lost before
+/// anything here can even count them. It is the one queue of the whole
+/// road that nobody but the system holds, and it was left at whatever
+/// the system felt like.
+const ARRIVING_ROOM: usize = 8 * 1024 * 1024;
+
 /// Silence on the socket worth writing down, while a session is open.
 ///
 /// A tunnel that stands is answered several times a second: a whole
@@ -675,6 +686,14 @@ impl Junction {
             .ok_or_else(|| io::Error::other("aucun exécuteur asynchrone"))?;
         let socket = bind_socket(listen)?;
         let ipv6 = socket.local_addr()?.is_ipv6();
+        let room = arriving_room(&socket);
+        if room < ARRIVING_ROOM {
+            say(&format!(
+                "the system holds {room} bytes of what arrives on this socket, not the {ARRIVING_ROOM} \
+                 asked for: what comes in faster than this program is given the processor is lost \
+                 before anything can count it"
+            ));
+        }
         let socket = runtime.wrap_udp_socket(socket)?;
         let me = identity.fingerprint();
         let inner = Arc::new(Inner {
@@ -1445,11 +1464,29 @@ pub fn bind_socket(listen: SocketAddr) -> io::Result<std::net::UdpSocket> {
     if listen.ip() == IpAddr::V4(Ipv4Addr::UNSPECIFIED)
         && let Ok(socket) = bind_both(listen.port())
     {
+        make_room(&socket);
         return Ok(socket);
     }
     let socket = std::net::UdpSocket::bind(listen)?;
     socket.set_nonblocking(true)?;
+    make_room(&socket);
     Ok(socket)
+}
+
+/// Asks the system to hold that much of what arrives before anything
+/// reads it.
+///
+/// Best effort on purpose: a system that grants less is not a reason to
+/// refuse a session, and what it really granted is read back and said.
+fn make_room(socket: &std::net::UdpSocket) {
+    let _ = socket2::SockRef::from(socket).set_recv_buffer_size(ARRIVING_ROOM);
+}
+
+/// What the system really holds for that socket.
+pub fn arriving_room(socket: &std::net::UdpSocket) -> usize {
+    socket2::SockRef::from(socket)
+        .recv_buffer_size()
+        .unwrap_or(0)
 }
 
 fn bind_both(port: u16) -> io::Result<std::net::UdpSocket> {
