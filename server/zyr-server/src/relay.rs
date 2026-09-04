@@ -56,12 +56,11 @@ const UPKEEP_SHARE: f64 = 0.01;
 
 /// Silence from one side of a session worth writing down.
 ///
-/// A tunnel that stands says something several times a second, and the
-/// junction under it probes its road every two seconds: one side of a
-/// live session is never quiet this long. And the relay is the only
-/// place that sees both legs of a relayed road, so it is the only place
-/// where a leg that died can be told from a session that stopped, which
-/// on the devices themselves read exactly the same.
+/// A tunnel carried here says something several times a second, so a
+/// side of a session on this road is never quiet this long. And the
+/// relay is the only place that sees both legs of a relayed road, so it
+/// is the only place where a leg that died can be told from a session
+/// that stopped, which on the devices themselves read exactly the same.
 const QUIET: Duration = Duration::from_secs(3);
 
 /// Round trip to a device past which its packets are waiting in a queue
@@ -279,10 +278,13 @@ impl Relayed {
         let other = {
             let mut flow = self.flow.lock().expect("session relayée");
             flow.refill(bytes_per_second, now);
-            // Every packet counts here, the upkeep of the road included:
-            // what is watched is the leg being alive, not what rides on
-            // it.
-            if let Some(before) = flow.heard_at[from].replace(now)
+            // The session only, and not the upkeep of the road: a
+            // session the relay merely holds while a direct road
+            // carries it sends nothing but a probe every few seconds,
+            // and calling each of those gaps a silence would bury the
+            // one that matters under hundreds that do not.
+            if !upkeep
+                && let Some(before) = flow.heard_at[from].replace(now)
                 && now.duration_since(before) > QUIET
             {
                 broken = Some(now.duration_since(before));
