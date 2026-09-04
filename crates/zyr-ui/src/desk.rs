@@ -54,6 +54,10 @@ pub struct Standing {
     /// Whether the ZyrDesk of this network are let in without anyone
     /// recognising them one by one.
     pub trusting: bool,
+    /// Whether the tunnel's packets carry their congestion mark.
+    pub ecn: bool,
+    /// Whether the door listens on the product's own port.
+    pub fixed_port: bool,
     /// Whether this computer keeps sending a still screen at the full
     /// rate when somebody is watching it.
     pub steady_rate: bool,
@@ -82,6 +86,8 @@ impl Standing {
             holdup: named(Holdup::Starting),
             wanted: false,
             trusting: false,
+            ecn: true,
+            fixed_port: true,
             steady_rate: zyr_proto::session::Serving::default().steady_rate,
             capture: zyr_proto::session::Serving::default().capture.to_string(),
             at_boot: false,
@@ -241,6 +247,26 @@ pub async fn set_hosting(on: bool) -> Result<(), String> {
 /// Decides whether the ZyrDesk of this network are let in on sight.
 pub async fn set_trust(on: bool) -> Result<(), String> {
     match service::ask(&Request::SetTrust { on }).await? {
+        Answer::Done => Ok(()),
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// Decides whether the tunnel's packets carry their congestion mark.
+///
+/// The door is reopened on it, which ends a session opened towards this
+/// computer, like the way it serves.
+pub async fn set_ecn(on: bool) -> Result<(), String> {
+    match service::ask(&Request::SetEcn { on }).await? {
+        Answer::Done => Ok(()),
+        other => Err(service::unexpected(other)),
+    }
+}
+
+/// Decides whether the door listens on the product's own port. Reopens
+/// the door as well.
+pub async fn set_fixed_port(on: bool) -> Result<(), String> {
+    match service::ask(&Request::SetFixedPort { on }).await? {
         Answer::Done => Ok(()),
         other => Err(service::unexpected(other)),
     }
@@ -427,6 +453,8 @@ async fn asked() -> Result<Standing, String> {
             holdup: named(standing.holdup),
             wanted: standing.wanted,
             trusting: standing.trusting,
+            ecn: standing.ecn,
+            fixed_port: standing.fixed_port,
             steady_rate: standing.serving.steady_rate,
             capture: standing.serving.capture.to_string(),
             at_boot: standing.at_boot,

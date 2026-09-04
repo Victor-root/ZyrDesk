@@ -771,7 +771,7 @@ impl Account {
                     started.identity.clone(),
                     started.door.clone(),
                     started.runtime.clone(),
-                    started.remembered.marking(),
+                    started.remembered.wire().marking,
                 )
             })
         };

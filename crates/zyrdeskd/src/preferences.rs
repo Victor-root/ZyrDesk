@@ -92,6 +92,17 @@ impl Default for Preferences {
     }
 }
 
+/// How this computer speaks on the wire, as the two switches say.
+///
+/// Read when a door or a way opens, and compared to what the door was
+/// opened on: a switch moved from the window reopens the door, where a
+/// line changed by hand waits for the service to start again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Wire {
+    pub marking: Marking,
+    pub fixed_port: bool,
+}
+
 /// The preferences, and the only place they are written from.
 ///
 /// Two settings sharing one file means neither may be saved alone: a
@@ -154,18 +165,23 @@ impl Remembered {
         self.change(|preferences| preferences.serving = serving)
     }
 
-    /// What the tunnel's packets carry on the wire.
-    pub fn marking(&self) -> Marking {
-        if self.read().ecn {
-            Marking::Ecn
-        } else {
-            Marking::None
+    /// How this computer speaks on the wire: the two switches of the
+    /// network comparison, read together because the door is opened on
+    /// both at once.
+    pub fn wire(&self) -> Wire {
+        let now = self.read();
+        Wire {
+            marking: if now.ecn { Marking::Ecn } else { Marking::None },
+            fixed_port: now.fixed_port,
         }
     }
 
-    /// Whether the door listens on the product's own port.
-    pub fn fixed_port(&self) -> bool {
-        self.read().fixed_port
+    pub fn set_ecn(&self, on: bool) -> io::Result<()> {
+        self.change(|preferences| preferences.ecn = on)
+    }
+
+    pub fn set_fixed_port(&self, on: bool) -> io::Result<()> {
+        self.change(|preferences| preferences.fixed_port = on)
     }
 
     /// Writes the decision down before honouring it: a computer that
@@ -249,8 +265,9 @@ fn rendered(preferences: Preferences) -> String {
          # machines et ne les voit pas.\n\
          {CAPTURE} = {}\n\
          \n\
-         # Essais réseau, à changer sur les DEUX ordinateurs, puis à\n\
-         # redémarrer le service : le fichier n'est lu qu'au démarrage.\n\
+         # Essais réseau, à changer sur les DEUX ordinateurs, depuis la\n\
+         # fenêtre (Réglages). Changés ici à la main, ils ne sont relus\n\
+         # qu'au démarrage du service.\n\
          # Marquer les paquets du tunnel du bit ECN, comme QUIC le fait\n\
          # partout. Certains équipements traitent les paquets marqués à\n\
          # part : à comparer avec no si les sessions se coupent.\n\
@@ -518,8 +535,24 @@ mod tests {
         // Ce sont des interrupteurs de comparaison : le produit se
         // comporte comme QUIC partout tant que personne n'a écrit non.
         let remembered = Remembered::at(temporary_file("essais"));
-        assert_eq!(remembered.marking(), Marking::Ecn);
-        assert!(remembered.fixed_port());
+        assert_eq!(
+            remembered.wire(),
+            Wire {
+                marking: Marking::Ecn,
+                fixed_port: true
+            }
+        );
+
+        // Moved from the window, they are written down like the rest.
+        remembered.set_ecn(false).unwrap();
+        remembered.set_fixed_port(false).unwrap();
+        assert_eq!(
+            Remembered::at(remembered.path.as_ref().clone()).wire(),
+            Wire {
+                marking: Marking::None,
+                fixed_port: false
+            }
+        );
 
         let mangled = parsed("ecn = peut-être\nfixed_port = 47000\n");
         assert!(mangled.ecn);

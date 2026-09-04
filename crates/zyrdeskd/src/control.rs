@@ -287,6 +287,8 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 holdup: held.unwrap_or_default(),
                 wanted: answering.machine.remembered.remote_access(),
                 trusting: answering.machine.remembered.trust_local_network(),
+                ecn: answering.machine.remembered.read().ecn,
+                fixed_port: answering.machine.remembered.read().fixed_port,
                 at_boot: at_boot(),
                 serving: answering.machine.remembered.serving(),
                 ways: answering.machine.ways.count(),
@@ -436,6 +438,30 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                         "the local network is trusted again"
                     } else {
                         "the local network is no longer trusted"
+                    });
+                    Answer::Done
+                }
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
+        Request::SetEcn { on } => match kept(answering.machine.remembered.set_ecn(on)) {
+            Ok(()) => {
+                answering.log.write(if on {
+                    "the tunnel's packets carry their congestion mark again"
+                } else {
+                    "the tunnel's packets leave without their congestion mark"
+                });
+                Answer::Done
+            }
+            Err(reason) => Answer::Refused(reason),
+        },
+        Request::SetFixedPort { on } => {
+            match kept(answering.machine.remembered.set_fixed_port(on)) {
+                Ok(()) => {
+                    answering.log.write(if on {
+                        "the door listens on the product's own port again"
+                    } else {
+                        "the door listens on a port the system picks"
                     });
                     Answer::Done
                 }

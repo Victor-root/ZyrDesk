@@ -246,6 +246,10 @@ enum Life {
     ScreenNotPutBack,
     /// Remote access was turned off while it ran.
     NoLongerWanted,
+    /// How this computer speaks on the wire was changed while it ran.
+    /// The door is opened on that once, so it was stopped on purpose
+    /// and the next one opens its door the new way.
+    WireChanged,
 }
 
 /// Why the supervisor handed back.
@@ -471,7 +475,10 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
             // was wanted of it, and nothing on the machine moved.
             if matches!(
                 life,
-                Life::VirtualScreenLearned | Life::ServingChanged | Life::ScreenToFilmChanged
+                Life::VirtualScreenLearned
+                    | Life::ServingChanged
+                    | Life::ScreenToFilmChanged
+                    | Life::WireChanged
             ) {
                 continue;
             }
@@ -792,6 +799,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
         filming: filming.clone(),
         serving: serving_now.clone(),
     };
+    let wire = machine.remembered.wire();
     let gateway = match Gateway::open(runtime, at_hand, (*machine).clone(), log) {
         Ok(gateway) => gateway,
         Err(e) => {
@@ -808,6 +816,7 @@ fn one_engine_life(session: u32, around: &Around<'_>) -> Result<Life, String> {
             engine: &mut engine,
             api: &api,
             gateway: &gateway,
+            wire,
             // From here and not from the top of the file: what the engine
             // said about the screens at its own start is about the run
             // before this one, and that one has already been answered for.
@@ -862,6 +871,9 @@ struct Watched<'a> {
     engine: &'a mut HostEngine,
     api: &'a EngineApi,
     gateway: &'a Gateway,
+    /// What the door was opened on, kept to notice a switch moving under
+    /// it: the door reads the wire once, as it opens.
+    wire: crate::preferences::Wire,
     screens: crate::screen::Watching,
     /// Whether the engine has said it could not put the screens back.
     ///
@@ -902,6 +914,15 @@ fn wait_for_the_engine_to_stop(
             log.write("remote access turned off, the engine is being stopped");
             stop_and_say_how(watched.engine, log);
             return Life::NoLongerWanted;
+        }
+
+        // The door was opened on the wire as it was then, and cannot be
+        // moved under a running session: it is reopened, engine and all,
+        // which is what a session opened towards this computer costs.
+        if remembered.wire() != watched.wire {
+            log.write("how this computer speaks on the wire was changed, the door reopens with it");
+            stop_and_say_how(watched.engine, log);
+            return Life::WireChanged;
         }
 
         // Weighed against how the engine serves **now** and not against

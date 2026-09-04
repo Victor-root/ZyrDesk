@@ -330,6 +330,10 @@ enum Bouton {
     Cadence,
     Son,
     Stats,
+    /// Les deux interrupteurs d'essai réseau : marquer les paquets, et
+    /// écouter sur le port du produit.
+    Marquage,
+    PortFixe,
 }
 
 /// Un choix segmenté : plusieurs possibilités qui s'excluent, montrées
@@ -398,6 +402,8 @@ impl Bouton {
             Bouton::Confiance => vu.machine.as_ref().is_some_and(|dit| dit.trusting),
             Bouton::AuDemarrage => vu.machine.as_ref().is_some_and(|dit| dit.at_boot),
             Bouton::Cadence => vu.machine.as_ref().is_some_and(|dit| dit.steady_rate),
+            Bouton::Marquage => vu.machine.as_ref().is_some_and(|dit| dit.ecn),
+            Bouton::PortFixe => vu.machine.as_ref().is_some_and(|dit| dit.fixed_port),
             Bouton::Son => vu
                 .reglages
                 .as_ref()
@@ -568,6 +574,26 @@ const REGLAGES: &[Element] = &[
                   dessus, et ZyrDesk revient tout seul avec l'icône. Sans cela, rien ne tourne \
                   tant que vous n'avez pas ouvert ZyrDesk.",
         commande: Commande::Interrupteur(Bouton::AuDemarrage),
+    }),
+    Element::Section(
+        "Essais réseau",
+        "Deux façons de parler sur le fil, à comparer quand les sessions se coupent : changez \
+         un seul interrupteur à la fois, sur les deux ordinateurs. Chaque changement rouvre la \
+         porte de cet ordinateur, donc coupe une session ouverte vers lui.",
+    ),
+    Element::Reglage(Reglage {
+        mot: "Marquer les paquets (ECN)",
+        legende: "Le tunnel pose sur chaque paquet le marquage de congestion que QUIC pose \
+                  partout. Certains équipements traitent ces paquets à part : à couper pour \
+                  voir si les coupures cessent.",
+        commande: Commande::Interrupteur(Bouton::Marquage),
+    }),
+    Element::Reglage(Reglage {
+        mot: "Écouter sur le port 47000",
+        legende: "Coupé, cet ordinateur écoute sur un port que Windows choisit à chaque \
+                  démarrage. Une session par le compte le trouve ; une session en réseau local \
+                  ou un renvoi de port fait sur la box, non.",
+        commande: Commande::Interrupteur(Bouton::PortFixe),
     }),
     Element::Section(
         "Compte",
@@ -4520,6 +4546,8 @@ fn pousse(app: &App, bouton: Bouton) {
             Bouton::Acces => crate::desk::set_hosting(veut).await,
             Bouton::Confiance => crate::desk::set_trust(veut).await,
             Bouton::AuDemarrage => crate::desk::set_at_boot(veut).await,
+            Bouton::Marquage => crate::desk::set_ecn(veut).await,
+            Bouton::PortFixe => crate::desk::set_fixed_port(veut).await,
             Bouton::Cadence => servir().await,
             Bouton::Son | Bouton::Stats => {
                 ecrit_les_reglages(|chosen| {

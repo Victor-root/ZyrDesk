@@ -550,7 +550,7 @@ impl Ways {
             let log = self.log.clone();
             move |line: &str| log.write(line)
         });
-        let marking = self.remembered.marking();
+        let marking = self.remembered.wire().marking;
         let junction = Junction::bind(
             SocketAddr::new(EVERY_INTERFACE, 0),
             identity.clone(),

@@ -1031,16 +1031,13 @@ impl Gateway {
         // On the product's own port unless asked otherwise: a port the
         // system picks is only reachable through a meeting the server
         // arranges, which names it, and that is what the switch is for.
-        let port = if machine.remembered.fixed_port() {
-            TUNNEL_PORT
-        } else {
-            0
-        };
+        let wire = machine.remembered.wire();
+        let port = if wire.fixed_port { TUNNEL_PORT } else { 0 };
         let junction = Junction::bind(
             SocketAddr::new(EVERY_INTERFACE, port),
             identity.clone(),
             say,
-            machine.remembered.marking(),
+            wire.marking,
         )
         .map_err(io::Error::other)?;
         let endpoint =

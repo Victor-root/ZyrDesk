@@ -205,6 +205,15 @@ pub enum Request {
     /// Decides whether the ZyrDesk of the local network are let in
     /// without anyone having to recognise them one by one.
     SetTrust { on: bool },
+    /// Decides whether the tunnel's packets carry their congestion mark.
+    ///
+    /// One of the two switches of a network comparison, and no more:
+    /// the door is reopened on it, which ends a session opened towards
+    /// this computer.
+    SetEcn { on: bool },
+    /// Decides whether the door listens on the product's own port or on
+    /// one the system picks. The other switch of the same comparison.
+    SetFixedPort { on: bool },
     /// Changes how this computer makes the pictures it serves.
     ///
     /// A host setting and not a session one: it changes nothing about a
@@ -364,6 +373,12 @@ impl Request {
             "trusting" => Ok(Request::SetTrust {
                 on: fields.text("on")? == "yes",
             }),
+            "ecn" => Ok(Request::SetEcn {
+                on: fields.text("on")? == "yes",
+            }),
+            "fixed-port" => Ok(Request::SetFixedPort {
+                on: fields.text("on")? == "yes",
+            }),
             "serving" => Ok(Request::ServeLike {
                 serving: Serving {
                     steady_rate: fields.text("steady")? == "yes",
@@ -462,6 +477,8 @@ impl fmt::Display for Request {
             Request::Sessions => f.write_str("sessions"),
             Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
+            Request::SetEcn { on } => write!(f, "ecn on={}", said(*on)),
+            Request::SetFixedPort { on } => write!(f, "fixed-port on={}", said(*on)),
             Request::ServeLike { serving } => write!(
                 f,
                 "serving steady={} capture={}",
@@ -598,6 +615,10 @@ pub struct Standing {
     /// Whether the ZyrDesk of the local network are let in without
     /// anyone recognising them one by one.
     pub trusting: bool,
+    /// Whether the tunnel's packets carry their congestion mark.
+    pub ecn: bool,
+    /// Whether the door listens on the product's own port.
+    pub fixed_port: bool,
     /// Whether Windows starts the service on its own, so that this
     /// computer answers before anybody has signed in.
     pub at_boot: bool,
@@ -830,6 +851,8 @@ impl Answer {
                 holdup: Holdup::read(fields.text("holdup").unwrap_or_default()),
                 wanted: fields.text("wanted")? == "yes",
                 trusting: fields.flag("trusting", false),
+                ecn: fields.flag("ecn", true),
+                fixed_port: fields.flag("fixed-port", true),
                 at_boot: fields.flag("at-boot", true),
                 serving: Serving {
                     steady_rate: fields.flag("steady", Serving::default().steady_rate),
@@ -925,7 +948,7 @@ impl fmt::Display for Answer {
         match self {
             Answer::Standing(standing) => write!(
                 f,
-                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} at-boot={} steady={} capture={} ways={}",
+                "standing protocol={} build={} fingerprint={} hosting={} holdup={} wanted={} trusting={} ecn={} fixed-port={} at-boot={} steady={} capture={} ways={}",
                 standing.protocol,
                 packed(&standing.build),
                 standing.fingerprint,
@@ -933,6 +956,8 @@ impl fmt::Display for Answer {
                 standing.holdup.spelled(),
                 said(standing.wanted),
                 said(standing.trusting),
+                said(standing.ecn),
+                said(standing.fixed_port),
                 said(standing.at_boot),
                 said(standing.serving.steady_rate),
                 standing.serving.capture,
@@ -1272,6 +1297,8 @@ mod tests {
             Request::SetHosting { on: false },
             Request::SetTrust { on: true },
             Request::SetTrust { on: false },
+            Request::SetEcn { on: false },
+            Request::SetFixedPort { on: false },
             // Les trois réglages d'hôte voyagent ensemble dans un seul
             // message : un champ qui ne fait pas l'aller-retour remet
             // silencieusement les deux autres à ce qu'ils étaient.
@@ -1400,6 +1427,8 @@ mod tests {
                 holdup: Holdup::Starting,
                 wanted: true,
                 trusting: true,
+                ecn: true,
+                fixed_port: true,
                 at_boot: true,
                 serving: Serving::default(),
                 ways: 2,
@@ -1412,6 +1441,8 @@ mod tests {
                 holdup: Holdup::EngineMissing,
                 wanted: true,
                 trusting: false,
+                ecn: false,
+                fixed_port: false,
                 at_boot: false,
                 serving: Serving {
                     steady_rate: false,
@@ -1628,6 +1659,10 @@ mod tests {
         assert_eq!(standing.protocol, 6);
         assert!(standing.build.is_empty());
         assert!(!standing.trusting);
+        // Les deux interrupteurs d'essai manquent d'un service plus
+        // ancien : ils sont alors sur leur position ordinaire.
+        assert!(standing.ecn);
+        assert!(standing.fixed_port);
         assert_eq!(standing.holdup, Holdup::Starting);
         assert!(standing.hosting);
     }
