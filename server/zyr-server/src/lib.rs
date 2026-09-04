@@ -85,6 +85,20 @@ pub struct Running {
     udp: Option<Udp>,
 }
 
+impl Running {
+    /// How many sessions the relay is carrying right now, and nought
+    /// without a relay.
+    ///
+    /// For whoever tests a device against a whole server: a branch that
+    /// outlives its session is only visible from here.
+    pub fn sessions_relayed(&self) -> usize {
+        match &self.udp {
+            Some(Udp::Relay(relay)) => relay.sessions(),
+            _ => 0,
+        }
+    }
+}
+
 /// What answers on the server's UDP port: the mirror alone, or the
 /// relay, which answers the mirror on the same port.
 enum Udp {

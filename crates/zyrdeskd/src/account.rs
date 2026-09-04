@@ -1089,15 +1089,31 @@ pub(crate) async fn hold_a_relay_branch(held: Holding, log: Log) {
                 held.junction.relay_through(held.card, branch.clone());
                 // Held rather than read: reading it is the junction's
                 // work, and two readers of one connection would take
-                // each other's packets.
-                branch.broken().await;
-                log.write(&format!(
-                    "the branch to the relay at {} is gone, and this session still wants one",
-                    branch.address()
-                ));
+                // each other's packets. And let go of when the session
+                // is: the junction gives its own copy back the moment it
+                // stops expecting the card, and this one would otherwise
+                // keep the connection, and the relay's place with it, for
+                // as long as the service runs. A relay carries a fixed
+                // number of sessions, and on the fourth of September it
+                // was turning everybody away at the tenth, every one of
+                // them a session long over.
+                tokio::select! {
+                    () = branch.broken() => log.write(&format!(
+                        "the branch to the relay at {} is gone, and this session still wants one",
+                        branch.address()
+                    )),
+                    () = no_longer_expected(&held) => return,
+                }
             }
             None => tokio::time::sleep(BRANCH_RETRY).await,
         }
+    }
+}
+
+/// Waits until the junction no longer holds the card for this session.
+async fn no_longer_expected(held: &Holding) {
+    while held.junction.still_expects(held.card, &held.session) {
+        tokio::time::sleep(BRANCH_RETRY).await;
     }
 }
 
@@ -1568,7 +1584,22 @@ login_attempts_per_minute = 1000
         // le ticket, et le relais l'a pris.
         assert!(met.relay.is_some(), "le portable n'a pas eu de relais");
         pc.until_it_says("took the pass").await;
+        assert_eq!(server.running.sessions_relayed(), 1);
         portable.account.ended(&met.session);
+
+        // Et sa branche se referme avec la session, au lieu de garder sa
+        // place sur le relais tant que le service tourne : le relais en
+        // porte un nombre fini, et le 4 septembre il refusait tout le
+        // monde à la dixième, chacune d'elles une session finie depuis
+        // longtemps.
+        let freed = async {
+            while server.running.sessions_relayed() > 0 {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        };
+        tokio::time::timeout(PATIENCE, freed)
+            .await
+            .expect("la branche du PC tient sa place sur le relais après la session");
 
         // Un appareil qui n'est pas prêt est refusé ici même, avec la
         // raison, sans déranger le serveur.
