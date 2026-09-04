@@ -2324,6 +2324,24 @@ Séance A : T = 18:42:32, mort à 18:42:42. Séance B : T = 19:14:15, mort à 19
 
 **Ce que ça ne prétend pas être.** Ce n'est pas la cause du silence, qui est hors du produit et reste à trouver du côté des deux box. C'est ce qui fait qu'un silence de moins d'une demi-minute redevient une image figée qui repart, au lieu d'une session fermée.
 
+## D139. Quand plus rien ne répond, la session reste sur la route qui la porte (2026-09-04, pendant M6)
+
+**Le relevé.** Vingt et une minutes et demie entre un portable en 5G et PC-VICTOR, en direct par IPv6, à 5 Mb/s. Le flux n'a pas faibli : 0,01 % d'images perdues sur le réseau, 38 ms d'aller-retour, 60 images par seconde jusqu'au bout. Puis les deux ordinateurs cessent d'entendre à deux secondes d'intervalle, sur la route directe et à travers le relais en même temps, et le moteur client rend la session dix secondes plus tard. Le troisième chemin réseau, après les deux fibres de [D138](#d138-la-patience-dune-session-est-un-seul-nombre-et-les-moteurs-ne-décident-plus-seuls-2026-09-04-pendant-m6), à donner exactement la même panne ; le réseau local, lui, tient une heure trente-quatre sans un accroc.
+
+**Le défaut trouvé dedans, et il est à nous.** Pendant ces dix secondes, l'aiguilleur a fait l'aller-retour :
+
+```text
+T+2    le direct rate une sonde            -> la session passe au relais
+T+4    le relais en rate une à son tour    -> la session revient au direct
+T+6    le direct est abandonné             -> la session repasse au relais
+```
+
+`best` cherche d'abord une route qui répond ; quand aucune ne répond, elle retombe sur les autres, et là un chemin direct l'emporte sur le relais quel que soit son état. Une seule sonde ratée par le relais suffisait donc à rendre la session à la route qui venait d'être déclarée mourante. Quatre secondes de va-et-vient sur les dix que le moteur accordait alors, sans qu'aucune des deux routes ne porte quoi que ce soit.
+
+**Ce qui est fait.** L'élection garde la route en place tant qu'aucune autre ne répond. Les deux règles d'avant sont intactes : un chemin direct validé prend la session au relais dès qu'il répond, et un chemin direct qui meurt la rend au relais dès qu'un autre répond. Ce qui disparaît est le choix entre deux routes également muettes, qui n'est pas un choix.
+
+**Ce que ça ne prétend toujours pas être.** Le silence lui-même reste hors du produit : trois liaisons Internet différentes, trois pannes identiques, et le réseau local jamais. Ce qui est à nous est de le traverser, et c'est [D138](#d138-la-patience-dune-session-est-un-seul-nombre-et-les-moteurs-ne-décident-plus-seuls-2026-09-04-pendant-m6) plus celle-ci : une demi-minute de patience, et pas une seconde perdue à balancer entre deux routes mortes.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

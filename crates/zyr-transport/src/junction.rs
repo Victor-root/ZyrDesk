@@ -600,12 +600,24 @@ impl Expected {
     /// margin, in either direction: a direct road that answers takes the
     /// session at once, and a direct road that dies gives it back at
     /// once.
+    ///
+    /// And nothing at all while no road answers. When every road has
+    /// missed its probe, `best` falls back to the roads that are dying,
+    /// where a direct one outranks the relay however sick it is; the
+    /// session then leaves the relay it had just taken, comes back to
+    /// the road it had just left, and spends the blackout swinging
+    /// between the two instead of waiting it out on one. Both ends of a
+    /// road going quiet at once is what a link that comes and goes looks
+    /// like, and it lasts seconds, not minutes: the road carrying the
+    /// session keeps it until another road actually answers.
     fn elect(&mut self, now: Instant) -> Option<Elected> {
         let best = self.best()?;
         let current = self
             .elected
             .and_then(|through| self.paths.iter().find(|path| path.through == through));
         let chosen = match current {
+            // Nothing answers anywhere, `best` included.
+            Some(current) if best.misses > 0 => current.through,
             // The margin is there so a session does not swing between
             // two equals; it is not there to keep a road that has
             // stopped answering, which is not the equal of anything.
@@ -2127,6 +2139,47 @@ mod tests {
         // là tout du long.
         expected.paths.retain(|path| path.through != a);
         assert_eq!(moved(expected.elect(now)), Some((Some(a), relay)));
+    }
+
+    #[test]
+    fn no_road_answering_leaves_the_session_where_it_is() {
+        // Le 4 septembre, une session de vingt et une minutes en 5G : les
+        // deux ordinateurs cessent d'entendre en même temps, le direct
+        // rate une sonde, la session passe au relais, le relais en rate
+        // une à son tour, et elle repart aussitôt sur le direct qu'elle
+        // venait de quitter. Le va-et-vient a mangé quatre des dix
+        // secondes que le moteur accordait alors, sans qu'aucune des
+        // deux routes ne porte quoi que ce soit.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let relay = Through::Relay(expected.card);
+        let road = direct("10.0.0.1:47000");
+
+        let number = expected.number(start);
+        assert!(expected.answered(relay, number, Duration::from_millis(30), start));
+        let number = expected.number(start);
+        assert!(expected.answered(road, number, Duration::from_millis(40), start));
+        assert_eq!(moved(expected.elect(start)), Some((None, road)));
+
+        // Une passe pour que les deux routes soient sondées, et le relais
+        // seul répond.
+        let mut now = start + WARM_EVERY;
+        expected.look_over(now);
+        let number = expected.number(now);
+        assert!(expected.answered(relay, number, Duration::from_millis(30), now));
+
+        // Le direct a raté sa sonde, le relais a répondu : la session
+        // passe au relais, ce qui est bien la règle.
+        now += WARM_EVERY;
+        expected.look_over(now);
+        assert_eq!(moved(expected.elect(now)), Some((Some(road), relay)));
+
+        // Le relais rate la sienne et le direct se tait toujours. Plus
+        // rien ne répond nulle part : la session reste où elle est.
+        now += WARM_EVERY;
+        expected.look_over(now);
+        assert!(expected.elect(now).is_none());
+        assert_eq!(expected.elected, Some(relay));
     }
 
     #[test]
