@@ -718,6 +718,17 @@ struct Inner {
     /// all: everything else here measures what leaves.
     arrived: AtomicU64,
     ours: AtomicU64,
+    /// Packets of ours the socket would not take, and probes that had
+    /// no road to leave by.
+    ///
+    /// Sending one is best effort: a probe that does not go out is one
+    /// that will be sent again. But a probe that never left this
+    /// computer and a probe nobody answered read exactly the same from
+    /// here, and it is always the second the journal has said: « stopped
+    /// answering and is given up ». On a session that goes quiet, those
+    /// two are the whole question, and this counter is the only thing
+    /// that tells them apart.
+    refused: AtomicU64,
     /// Turns of `poll_recv`, so the socket keeps one in `RELAY_TURNS`.
     turns: AtomicU64,
     /// Whether the socket speaks IPv6, in which case every IPv4 address
@@ -779,6 +790,7 @@ impl Junction {
             socket,
             arrived: AtomicU64::new(0),
             ours: AtomicU64::new(0),
+            refused: AtomicU64::new(0),
             turns: AtomicU64::new(0),
             ipv6,
             identity,
@@ -977,13 +989,16 @@ impl Inner {
     /// Sends one datagram of ours, best effort: a probe that does not go
     /// out is a probe that will be sent again.
     fn send_to(&self, destination: SocketAddr, contents: &[u8]) {
-        let _ = self.socket.try_send(&Transmit {
+        let went = self.socket.try_send(&Transmit {
             destination: self.outward(destination),
             ecn: None,
             contents,
             segment_size: None,
             src_ip: None,
         });
+        if went.is_err() {
+            self.refused.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Sends one datagram of ours by that road, whichever it is.
@@ -999,8 +1014,15 @@ impl Inner {
                     .get(&card)
                     .and_then(|expected| expected.relay.as_ref())
                     .map(|relaying| relaying.branch.clone());
-                if let Some(branch) = branch {
-                    branch.send(contents);
+                match branch {
+                    // A branch with no room for it is a packet that did
+                    // not leave either, and so is a road whose branch
+                    // has gone: both are counted where the journal can
+                    // say them.
+                    Some(branch) if branch.send(contents) => {}
+                    _ => {
+                        self.refused.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
         }
@@ -1184,6 +1206,24 @@ impl Inner {
             "not one packet has been given to the socket for {} ms, though a session is open:              {arrived} arrived before that, {} of them ours",
             quiet.as_millis(),
             self.ours.load(Ordering::Relaxed)
+        ))
+    }
+
+    /// Whether the socket is taking what this junction hands it.
+    ///
+    /// Said as it happens and never again for the same packets: what is
+    /// worth reading is the moment this computer stopped being able to
+    /// speak, next to the moment it stopped being spoken to.
+    fn still_sending(&self, said: &mut u64) -> Option<String> {
+        let refused = self.refused.load(Ordering::Relaxed);
+        if refused == *said {
+            return None;
+        }
+        let since = refused - *said;
+        *said = refused;
+        Some(format!(
+            "{since} packet(s) of this computer's own did not leave it, {refused} in all: a road \
+             given up after this was given up on a probe that never went out"
         ))
     }
 
@@ -1561,6 +1601,7 @@ async fn look_after(junction: Weak<Inner>) {
     let mut before = Instant::now();
     let mut last_arrival = (0u64, Instant::now());
     let mut said_deaf = false;
+    let mut said_refused = 0u64;
     loop {
         tick.tick().await;
         let now = Instant::now();
@@ -1576,6 +1617,9 @@ async fn look_after(junction: Weak<Inner>) {
             ));
         }
         if let Some(line) = inner.still_hearing(&mut last_arrival, &mut said_deaf, now) {
+            (inner.say)(&line);
+        }
+        if let Some(line) = inner.still_sending(&mut said_refused) {
             (inner.say)(&line);
         }
         inner.tick(now);

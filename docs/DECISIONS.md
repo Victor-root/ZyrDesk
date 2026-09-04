@@ -2381,6 +2381,26 @@ Et le serveur, pour cette seule session, enregistre une trentaine d'entrées au 
 
 **Ce que ça ne change pas.** Le silence de neuf secondes est ailleurs, et cette séance ne l'éclaire pas : elle a été menée sur un binaire d'avant [D140](#d140-la-quatrième-patience-celle-que-personne-navait-vue-2026-09-04-pendant-m6), et son moteur hôte a raccroché cinq secondes après le silence, comme avant P-S7. Le relevé de D140 reste donc à faire.
 
+## D142. Une sonde qui n'est jamais partie ne se lit plus comme une sonde sans réponse (2026-09-04, pendant M6)
+
+**Le relevé, et c'est une objection.** Neuf secondes de silence, à la seconde près, sur un VPN entre deux maisons, sur deux fibres jointes en direct par leurs adresses publiques, sur une liaison 5G, et jamais sur le réseau local. Une panne de réseau ne dure pas neuf secondes à chaque fois : neuf secondes toujours, c'est un compteur, et un compteur vit dans du code.
+
+**Ce que le produit ne pouvait pas répondre.** Toute la conclusion « le silence est hors du produit » repose sur une seule observation, répétée à chaque séance : les sondes de l'aiguilleur partent et rien ne revient. Or l'aiguilleur les envoie ainsi :
+
+```rust
+fn send_to(&self, destination: SocketAddr, contents: &[u8]) {
+    let _ = self.socket.try_send(&Transmit { ... });
+}
+```
+
+Toute erreur du système est jetée sans un mot. Une sonde que la prise a refusée et une sonde que personne n'a renvoyée produisent donc exactement la même suite de lignes, et c'est toujours la seconde qui est écrite : « stopped answering and is given up ». Le chemin du relais avait le même trou, `send_by` ignorant ce que `Branch::send` rend, et une branche disparue n'y écrivant rien du tout.
+
+Autrement dit, il n'existait aucun endroit dans le produit capable de distinguer « le fil s'est tu » de « cette machine a cessé de parler ». Les deux relevés se lisaient pareil, et un seul des deux était nommé.
+
+**Ce qui est fait.** Ce qui ne part pas est compté et dit : les paquets que la prise refuse, ceux qu'une branche de relais n'a pas la place de prendre, et ceux qui n'avaient plus de branche pour partir. La ligne est écrite au moment où ça arrive, à côté de celle qui dit que plus rien n'arrive, et elle nomme ce que le journal ne savait pas nommer.
+
+**Ce que ça permet, et c'est le seul point.** À la prochaine séance qui se tait, une des deux lignes sera là et pas l'autre. Si la prise refusait, la panne est chez nous et le compteur de neuf secondes est le nôtre. Si elle ne refusait rien, alors nos paquets sont bien partis, et le silence est vraiment sur le fil. Cette question est ouverte depuis cinq séances et rien dans le produit ne pouvait la trancher.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
