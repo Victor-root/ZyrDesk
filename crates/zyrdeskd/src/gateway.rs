@@ -39,8 +39,8 @@ use zyr_proto::paths;
 use zyr_proto::session::{Serving, WantedScreen};
 use zyr_transport::junction::Say;
 use zyr_transport::{
-    AllowedPeers, EndpointError, Fingerprint, Identity, Junction, MediaProfile, TunnelEndpoint,
-    authorized, is_card,
+    AllowedPeers, EndpointError, Fingerprint, Identity, Junction, Media, MediaProfile,
+    TunnelEndpoint, authorized, is_card,
 };
 use zyr_tunnel::{Answers, Tunnel};
 
@@ -155,6 +155,22 @@ struct Attending {
 impl Answers for Attending {
     fn engine(&self) -> EnginePorts {
         self.ports
+    }
+
+    /// What an opening session will be served, told to the tunnel.
+    ///
+    /// Nothing is asked of the engine here: the two engines settle the
+    /// rate between themselves a moment later. What changes is the window
+    /// this computer holds open, which the line about what was carried
+    /// then reports for the whole of the session.
+    fn a_session_is_opening(&self, serving: MediaProfile) {
+        self.machine.door.media().serving(serving);
+        self.log.write(&format!(
+            "a session opening here asks to be served at {} kbps, {} images a second, and this \
+             computer's tunnel is held open for that",
+            serving.bits_per_second / 1_000,
+            serving.frames_per_second
+        ));
     }
 
     /// Offers the far computer's code to the engine, and keeps offering
@@ -501,7 +517,15 @@ impl Answers for Attending {
     /// A refusal is an engine that cannot be asked, and it is said rather
     /// than swallowed: the far end then opens its picture again, which is
     /// what every change of rate cost before this existed.
+    ///
+    /// The tunnel is told first, and whatever the engine then answers: a
+    /// window sized for the old rate would strangle the new one, and one
+    /// left wide by an engine that refused costs nothing at all.
     fn serve_at(&self, kbps: u32) -> Result<(), String> {
+        self.machine
+            .door
+            .media()
+            .serving_at(u64::from(kbps) * 1_000);
         let asked = Asked {
             bitrate_kbps: Some(kbps),
             ..Asked::default()
@@ -934,23 +958,31 @@ struct Sessions {
 /// for as long as the engine lives, and nothing would ever notice. It is
 /// handed to the session's own body and named there, so that it lasts
 /// exactly as long as the session and not a moment less.
-struct Counted(Arc<Sessions>);
+struct Counted {
+    sessions: Arc<Sessions>,
+    media: Media,
+}
 
 impl Counted {
-    fn one(sessions: &Arc<Sessions>) -> Self {
+    fn one(sessions: &Arc<Sessions>, media: &Media) -> Self {
         sessions.open.fetch_add(1, Ordering::Relaxed);
         sessions.ever.store(true, Ordering::Relaxed);
-        Self(sessions.clone())
+        Self {
+            sessions: sessions.clone(),
+            media: media.clone(),
+        }
     }
 }
 
 impl Drop for Counted {
     fn drop(&mut self) {
-        // What the last session asked of this computer's speakers goes
-        // with it. A session that follows and asks nothing must not
-        // inherit the silence of the one before.
-        if self.0.open.fetch_sub(1, Ordering::Relaxed) == 1 {
-            self.0.hushing.store(false, Ordering::Relaxed);
+        // What the last session asked of this computer goes with it. A
+        // session that follows and asks nothing must not inherit the
+        // silence of the one before, nor the window of a rate nobody is
+        // asking for any more.
+        if self.sessions.open.fetch_sub(1, Ordering::Relaxed) == 1 {
+            self.sessions.hushing.store(false, Ordering::Relaxed);
+            self.media.serving_nobody();
         }
     }
 }
@@ -1002,13 +1034,9 @@ impl Gateway {
             say,
         )
         .map_err(io::Error::other)?;
-        let endpoint = TunnelEndpoint::host_at(
-            &identity,
-            allowed.clone(),
-            MediaProfile::default(),
-            &junction,
-        )
-        .map_err(io::Error::other)?;
+        let endpoint =
+            TunnelEndpoint::host_at(&identity, allowed.clone(), machine.door.media(), &junction)
+                .map_err(io::Error::other)?;
 
         log.write(&format!(
             "tunnel open on {}, fingerprint of this computer {}",
@@ -1047,6 +1075,7 @@ impl Gateway {
                     junction,
                     attending,
                     sessions.clone(),
+                    door.media(),
                     log.clone(),
                 )),
             ],
@@ -1104,6 +1133,7 @@ async fn serve(
     junction: Junction,
     attending: Arc<dyn Answers>,
     counting: Arc<Sessions>,
+    media: Media,
     log: Log,
 ) {
     let mut sessions = JoinSet::new();
@@ -1113,7 +1143,7 @@ async fn serve(
                 let log = log.clone();
                 let attending = attending.clone();
                 let junction = junction.clone();
-                let counted = Counted::one(&counting);
+                let counted = Counted::one(&counting, &media);
                 sessions.spawn(async move {
                     one_session(connection, junction, attending, counted, log).await
                 });

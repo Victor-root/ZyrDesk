@@ -30,7 +30,7 @@ use std::time::Duration;
 use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
 
-use crate::congestion::MediaProfile;
+use crate::congestion::Media;
 use crate::endpoint::{Bytes, Connection, EndpointError, GUARANTEED_MTU, TunnelEndpoint};
 use crate::identity::{Fingerprint, Identity};
 use crate::junction::bind_socket;
@@ -145,12 +145,12 @@ impl Branch {
     pub async fn open(
         wanted: &Wanted,
         identity: &Identity,
-        profile: MediaProfile,
+        media: impl Into<Media>,
     ) -> Result<Self, RelayError> {
         let endpoint = TunnelEndpoint::towards_the_relay(
             identity,
             wanted.fingerprint,
-            profile,
+            media,
             anywhere(wanted.address),
         )?;
         let connection = endpoint.connect(wanted.address).await?;
@@ -476,8 +476,7 @@ impl Bare {
         let doorway = Doorway::bind("127.0.0.1:0".parse().unwrap()).unwrap();
         let address = doorway.local_address().unwrap();
         let endpoint =
-            TunnelEndpoint::relay_on(&identity, MediaProfile::default(), Arc::new(doorway))
-                .unwrap();
+            TunnelEndpoint::relay_on(&identity, Media::default(), Arc::new(doorway)).unwrap();
         let serving = tokio::spawn(async move {
             let both = Arc::new(tokio::sync::Mutex::new(Vec::<Connection>::new()));
             while let Ok(connection) = endpoint.accept().await {
@@ -522,6 +521,7 @@ impl Bare {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::congestion::MediaProfile;
 
     /// Past this, something that should have happened has not.
     const PATIENCE: Duration = Duration::from_secs(5);
@@ -572,7 +572,7 @@ mod tests {
         // Aucune attente dans la boucle : rien ne part tant qu'elle
         // tourne, donc la file déborde.
         let packet = vec![7u8; usize::from(GUARANTEED_MTU)];
-        for _ in 0..(profile.send_queue() / packet.len() * 4) {
+        for _ in 0..(crate::congestion::FASTEST.send_queue() / packet.len() * 4) {
             branch.send(&packet);
         }
 
@@ -620,8 +620,7 @@ mod tests {
         // Sans point d'accès dessus, personne ne lit la prise : c'est le
         // relais qui la fait tourner, miroir compris.
         let _relay =
-            TunnelEndpoint::relay_on(&identity, MediaProfile::default(), Arc::new(doorway))
-                .unwrap();
+            TunnelEndpoint::relay_on(&identity, Media::default(), Arc::new(doorway)).unwrap();
 
         let asking = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let nonce = [4, 3, 2, 1, 4, 3, 2, 1];

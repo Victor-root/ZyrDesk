@@ -26,10 +26,12 @@
 
 use std::any::Any;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use quinn::congestion::{Controller, ControllerFactory};
 use quinn_proto::RttEstimator;
+use zyr_proto::session::RATES_OFFERED;
 
 /// Floor for the window, whatever the rate and the round trip.
 const MINIMUM_WINDOW: u64 = 64 * 1024;
@@ -60,12 +62,6 @@ const LONGEST_STALL: Duration = Duration::from_millis(500);
 /// going out has to fit behind it.
 const QUEUED_FRAMES: u64 = 6;
 
-/// Floor for the send queue, whatever the rate.
-///
-/// At a low rate the average frame is small and the key frame is not:
-/// the ratio between them widens as the rate drops.
-const MINIMUM_QUEUE: u64 = 256 * 1024;
-
 /// Largest round trip the computation will take into account.
 ///
 /// A wild reading, taken during a stall, would otherwise produce an
@@ -81,6 +77,26 @@ pub struct MediaProfile {
     pub bits_per_second: u64,
     pub frames_per_second: u32,
 }
+
+/// The fastest stream a session may ask for.
+///
+/// Read from the one place the rates offered are written down, so that
+/// widening what the person may ask for widens what the tunnel is built
+/// to carry, and the two can never drift apart.
+///
+/// This is what the send queue is sized on, and it is the one thing here
+/// that cannot follow the session: the queue is settled when a
+/// connection is made and never moves again, while the rate does. The
+/// computer being watched opens its tunnel once, when the service
+/// starts, long before anybody asks it for a picture; sizing that queue
+/// on the rate of the moment sized it on a rate nobody had asked for,
+/// and a queue too short to hold a whole frame chops every key frame it
+/// carries. Too long only costs a megabyte and some staleness after a
+/// stall the session would otherwise not have survived at all.
+pub const FASTEST: MediaProfile = MediaProfile {
+    bits_per_second: RATES_OFFERED[RATES_OFFERED.len() - 1] as u64 * 1_000,
+    frames_per_second: 60,
+};
 
 impl Default for MediaProfile {
     fn default() -> Self {
@@ -125,14 +141,15 @@ impl MediaProfile {
     /// then waits for the next key frame, which is cut short in its
     /// turn, and never comes up at all.
     ///
-    /// What this costs is bounded by the same number of frames: on a
+    /// Asked of `FASTEST` and of nothing else, since a queue is settled
+    /// when a connection is made and the rate is not. What it costs a
+    /// slower session is a tenth of a second of the fastest stream held
+    /// behind a window that is already half a second of its own: on a
     /// path that genuinely cannot take the rate, the queue fills, the
-    /// transport drops the oldest, and the delay through it never
-    /// exceeds what those frames represent.
+    /// transport drops the oldest, and neither of the two grows without
+    /// end.
     pub fn send_queue(&self) -> usize {
-        self.frame()
-            .saturating_mul(QUEUED_FRAMES)
-            .max(MINIMUM_QUEUE) as usize
+        self.frame().saturating_mul(QUEUED_FRAMES) as usize
     }
 
     fn bytes_per_second(&self) -> u64 {
@@ -145,17 +162,96 @@ impl MediaProfile {
     }
 }
 
+/// The shape of the stream to carry, as it stands right now.
+///
+/// A window is worked out from a rate, and the rate is not settled when
+/// a connection is made. The computer being watched opens its tunnel
+/// once, when the service starts, and only learns what it is serving
+/// when a session says so; the person then moves the rate under it while
+/// the session runs. A profile frozen at the connection was therefore
+/// the nominal one on the whole of the watched side, whatever the
+/// session actually asked for: at eighty megabits it held an eighth of a
+/// second of stream where it was meant to hold half of one, and every
+/// hiccup longer than that cost the picture a key frame.
+///
+/// Cloned by the handful and shared: the door hands one to its tunnel
+/// and one to every branch of relay carrying its sessions, and keeps one
+/// to tell them all at once what this computer is being asked for.
+#[derive(Debug, Clone)]
+pub struct Media(Arc<Live>);
+
+#[derive(Debug)]
+struct Live {
+    bits_per_second: AtomicU64,
+    frames_per_second: AtomicU32,
+    /// What it was built with, and what it goes back to once nothing is
+    /// being served through it any more.
+    built: MediaProfile,
+}
+
+impl From<MediaProfile> for Media {
+    fn from(profile: MediaProfile) -> Self {
+        Self(Arc::new(Live {
+            bits_per_second: AtomicU64::new(profile.bits_per_second),
+            frames_per_second: AtomicU32::new(profile.frames_per_second),
+            built: profile,
+        }))
+    }
+}
+
+impl Default for Media {
+    fn default() -> Self {
+        MediaProfile::default().into()
+    }
+}
+
+impl Media {
+    /// What the tunnel is being asked to carry right now.
+    pub fn now(&self) -> MediaProfile {
+        MediaProfile {
+            bits_per_second: self.0.bits_per_second.load(Ordering::Relaxed),
+            frames_per_second: self.0.frames_per_second.load(Ordering::Relaxed),
+        }
+    }
+
+    /// A session is opening, and this is what it asked to be served.
+    pub fn serving(&self, profile: MediaProfile) {
+        self.0
+            .bits_per_second
+            .store(profile.bits_per_second, Ordering::Relaxed);
+        self.0
+            .frames_per_second
+            .store(profile.frames_per_second, Ordering::Relaxed);
+    }
+
+    /// The rate changed under a session already running.
+    ///
+    /// Its cadence does not: what the person moves in the middle of a
+    /// session is the rate, and the picture goes on being made at the
+    /// rhythm of the screen it lands on.
+    pub fn serving_at(&self, bits_per_second: u64) {
+        self.0
+            .bits_per_second
+            .store(bits_per_second, Ordering::Relaxed);
+    }
+
+    /// Nothing is being served through it any more.
+    pub fn serving_nobody(&self) {
+        self.serving(self.0.built);
+    }
+}
+
 /// Controller holding the window the stream needs.
 #[derive(Debug, Clone)]
 pub struct MediaController {
-    profile: MediaProfile,
+    media: Media,
     rtt: Duration,
 }
 
 impl MediaController {
-    pub fn new(profile: MediaProfile) -> Self {
+    pub fn new(media: impl Into<Media>) -> Self {
         Self {
-            profile,
+            media: media.into(),
             rtt: INITIAL_RTT,
         }
     }
@@ -190,15 +286,18 @@ impl Controller for MediaController {
     fn on_mtu_update(&mut self, _new_mtu: u16) {}
 
     fn window(&self) -> u64 {
-        self.profile.window(self.rtt)
+        self.media.now().window(self.rtt)
     }
 
+    /// The copy shares what the original reads: the transport clones its
+    /// controller where it pleases, and a copy holding a rate of its own
+    /// would stop following the session the moment it was made.
     fn clone_box(&self) -> Box<dyn Controller> {
         Box::new(self.clone())
     }
 
     fn initial_window(&self) -> u64 {
-        self.profile.window(INITIAL_RTT)
+        self.media.now().window(INITIAL_RTT)
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn Any> {
@@ -206,9 +305,9 @@ impl Controller for MediaController {
     }
 }
 
-impl ControllerFactory for MediaProfile {
+impl ControllerFactory for Media {
     fn build(self: Arc<Self>, _now: Instant, _current_mtu: u16) -> Box<dyn Controller> {
-        Box::new(MediaController::new(*self))
+        Box::new(MediaController::new(Media::clone(&self)))
     }
 }
 
@@ -290,15 +389,49 @@ mod tests {
         // le meilleur des réseaux, la correction d'erreurs ne rattrape
         // pas un quart d'image, et le lecteur attend une image clé qui
         // est coupée à son tour. L'image ne s'établit jamais.
-        for mbps in [5, 20, 40, 80, 150] {
-            let profile = profile(mbps);
-            let frame = profile.bits_per_second / 8 / 60;
+        //
+        // Vérifié sur la file réellement construite, celle du flux le
+        // plus rapide, et pour chaque débit offert : c'est la seule
+        // qu'une connexion aura jamais, quel que soit le débit demandé
+        // après coup.
+        for kbps in RATES_OFFERED {
+            let frame = u64::from(kbps) * 1_000 / 8 / 60;
             assert!(
-                profile.send_queue() as u64 >= frame * 2,
-                "{} octets de file pour des images de {frame} à {mbps} Mb/s",
-                profile.send_queue()
+                FASTEST.send_queue() as u64 >= frame * 2,
+                "{} octets de file pour des images de {frame} à {kbps} kb/s",
+                FASTEST.send_queue()
             );
         }
+    }
+
+    #[test]
+    fn the_window_follows_the_session_that_is_being_served() {
+        // Le défaut que ceci répare : l'ordinateur regardé ouvre son
+        // tunnel au démarrage du service, bien avant qu'une session lui
+        // demande quoi que ce soit, et gardait donc la fenêtre du profil
+        // nominal pendant qu'il servait à quatre-vingts mégabits.
+        let media = Media::from(profile(20));
+        let controller = MediaController::new(media.clone());
+        let nominal = controller.window();
+
+        media.serving(profile(80));
+        assert!(
+            controller.window() > nominal,
+            "la fenêtre est restée à {nominal} octets pendant que la session passait à 80 Mb/s"
+        );
+        assert_eq!(controller.window(), profile(80).window(INITIAL_RTT));
+
+        // Et la copie que le transport se fait de son contrôleur suit la
+        // même session : sans cela, la fenêtre se figerait au premier
+        // clonage.
+        let copy = controller.clone_box();
+        media.serving_at(profile(40).bits_per_second);
+        assert_eq!(copy.window(), controller.window());
+
+        // Plus personne à servir : elle revient à ce avec quoi la porte
+        // a été construite, et n'hérite pas de la session précédente.
+        media.serving_nobody();
+        assert_eq!(controller.window(), nominal);
     }
 
     #[test]

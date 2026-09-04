@@ -33,7 +33,7 @@ use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 use zyr_transport::junction::Say;
 use zyr_transport::{
-    Connection, Fingerprint, Identity, Junction, MediaProfile, TunnelEndpoint, packet_size,
+    Connection, Fingerprint, Identity, Junction, Media, MediaProfile, TunnelEndpoint, packet_size,
 };
 use zyr_tunnel::{Tunnel, aside};
 
@@ -579,6 +579,9 @@ impl Ways {
                 }
             }
         }));
+        // One live shape for this way: the tunnel and the branch of
+        // relay carry the same session, and are sized on the same thing.
+        let carried: Media = media.into();
         // The branch of relay opens beside them, and the connection
         // below does not wait for it: whichever road answers first
         // carries the session.
@@ -588,13 +591,13 @@ impl Ways {
                 identity.clone(),
                 junction.clone(),
                 card,
-                media,
+                carried.clone(),
                 self.log.clone(),
             )))
         });
 
         let offered_a_relay = relaying.is_some();
-        let endpoint = TunnelEndpoint::client_at(&identity, peer, media, &junction)
+        let endpoint = TunnelEndpoint::client_at(&identity, peer, carried, &junction)
             .map_err(|e| e.to_string())?;
         let started = Instant::now();
         let connection = tokio::time::timeout(MEETING_PATIENCE, endpoint.connect(card))
@@ -646,13 +649,15 @@ impl Ways {
         // proven: a connection succeeds before the other computer has
         // judged our certificate, so nothing may be announced as
         // established until this answers.
-        let engine = aside::ask_the_ports(&connection).await.map_err(|e| {
-            format!(
-                "{host} a refusé cet ordinateur, ou son empreinte a changé.\n  \
-                 Sur {host}, vérifiez que l'accès distant est actif et que\n  \
-                 la confiance au réseau local l'est aussi.\n  Détail : {e}"
-            )
-        })?;
+        let engine = aside::ask_the_ports(&connection, media)
+            .await
+            .map_err(|e| {
+                format!(
+                    "{host} a refusé cet ordinateur, ou son empreinte a changé.\n  \
+                     Sur {host}, vérifiez que l'accès distant est actif et que\n  \
+                     la confiance au réseau local l'est aussi.\n  Détail : {e}"
+                )
+            })?;
 
         let usable = connection
             .guaranteed_usable_datagram()

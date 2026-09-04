@@ -26,7 +26,7 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use zyr_proto::net::{BasePortOutOfRange, EnginePorts};
 use zyr_proto::session::WantedScreen;
-use zyr_transport::{Connection, RecvStream, SendStream};
+use zyr_transport::{Connection, MediaProfile, RecvStream, SendStream};
 
 use crate::channel::StreamChannel;
 use crate::pump;
@@ -52,8 +52,12 @@ use crate::pump;
 /// that was about to go fell over on its first picture. Version 14 asks
 /// for a rate while the picture runs, which the far engine takes where it
 /// stands, and has the cadence of a still screen taken the same way: what
-/// used to start an engine over is asked of the one that runs.
-pub const VERSION: u32 = 14;
+/// used to start an engine over is asked of the one that runs. Version 15
+/// has a session say what it will be served, in its very first word: the
+/// computer being watched opens its tunnel when its service starts, long
+/// before anybody asks it for a picture, and held a window worked out
+/// from a nominal rate whatever the session actually ran at.
+pub const VERSION: u32 = 15;
 
 /// Longest question this channel takes.
 ///
@@ -81,6 +85,20 @@ const LONGEST_ANSWER: usize = 4 * 1024 * 1024;
 pub trait Answers: Send + Sync + 'static {
     /// Ports the local engine listens on.
     fn engine(&self) -> EnginePorts;
+
+    /// A session is opening on this computer, and that is what it asked
+    /// to be served.
+    ///
+    /// Told to the transport and to nothing else: the two engines settle
+    /// the rate between themselves a moment later, and this end has no
+    /// business asking its own for anything yet. What it changes is the
+    /// window the tunnel holds open, which until this was worked out from
+    /// a rate nobody had asked for.
+    ///
+    /// It comes with the ports because that question is the first word of
+    /// a session and there is no earlier one: a window is wanted before
+    /// the first picture, not after it.
+    fn a_session_is_opening(&self, serving: MediaProfile);
 
     /// Hands a pairing code to the local engine.
     ///
@@ -277,8 +295,13 @@ pub enum Settled {
 /// What one ZyrDesk asks the other.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Question {
-    /// Which ports your engine listens on.
-    Ports,
+    /// Which ports your engine listens on, for a session that will be
+    /// served like that.
+    ///
+    /// The shape of the picture travels with the question because the
+    /// window the far computer holds open is worked out from it, and this
+    /// is the first word of every session.
+    Ports { serving: MediaProfile },
     /// Take this code and hand it to your engine. The name is what the
     /// far computer will file this one under.
     Pair { pin: String, name: String },
@@ -364,7 +387,14 @@ impl fmt::Display for Question {
             // The name comes last and takes the whole of what is left,
             // spaces and all: no escaping, and nothing to get wrong.
             Question::Pair { pin, name } => write!(f, "{VERSION} pair {pin} {name}"),
-            Question::Ports => write!(f, "{VERSION} ports"),
+            // In the words the rest of the product uses for them:
+            // kilobits a second, and pictures a second.
+            Question::Ports { serving } => write!(
+                f,
+                "{VERSION} ports {} {}",
+                serving.bits_per_second / 1_000,
+                serving.frames_per_second
+            ),
             Question::SecureAttention => write!(f, "{VERSION} sas"),
             Question::Lock => write!(f, "{VERSION} lock"),
             Question::Steady { rate } => {
@@ -438,7 +468,7 @@ impl Question {
         let said = after_the_version(message)?;
         let (verb, rest) = split_first(said);
         match verb {
-            "ports" => Ok(Question::Ports),
+            "ports" => served(rest).map(|serving| Question::Ports { serving }),
             "sas" => Ok(Question::SecureAttention),
             "lock" => Ok(Question::Lock),
             "steady" => match rest {
@@ -550,6 +580,19 @@ fn after_the_version(message: &str) -> Result<&str, String> {
     }
 }
 
+/// What a session says it will be served, as it travels: a rate in
+/// kilobits a second and a cadence in pictures a second.
+fn served(said: &str) -> Result<MediaProfile, String> {
+    let (kbps, fps) = split_first(said);
+    match (kbps.parse::<u32>(), fps.parse()) {
+        (Ok(kbps), Ok(frames_per_second)) => Ok(MediaProfile {
+            bits_per_second: u64::from(kbps) * 1_000,
+            frames_per_second,
+        }),
+        _ => Err(format!("« {said} » ne dit pas ce qu'une session demande")),
+    }
+}
+
 /// First word, and everything after it, whitespace and all.
 fn split_first(said: &str) -> (&str, &str) {
     match said.trim_start().split_once(char::is_whitespace) {
@@ -607,8 +650,14 @@ pub async fn ask(connection: &Connection, question: &Question) -> io::Result<Tol
 }
 
 /// Asks for the far engine's ports, and refuses anything else.
-pub async fn ask_the_ports(connection: &Connection) -> io::Result<EnginePorts> {
-    match ask(connection, &Question::Ports).await? {
+///
+/// What this session will be served goes with it: it is the first word
+/// of a session, and the far computer sizes its tunnel on it.
+pub async fn ask_the_ports(
+    connection: &Connection,
+    serving: MediaProfile,
+) -> io::Result<EnginePorts> {
+    match ask(connection, &Question::Ports { serving }).await? {
         Told::Ports(engine) => Ok(engine),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
@@ -809,7 +858,10 @@ pub async fn answer(
 /// every session this computer is serving.
 async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Told, String> {
     match question {
-        Question::Ports => Ok(Told::Ports(answering.engine())),
+        Question::Ports { serving } => {
+            answering.a_session_is_opening(serving);
+            Ok(Told::Ports(answering.engine()))
+        }
         Question::Pair { pin, name } => {
             tokio::task::spawn_blocking(move || answering.hand_over_the_code(&pin, &name))
                 .await
@@ -922,7 +974,14 @@ mod tests {
     #[test]
     fn every_question_survives_the_round_trip() {
         for question in [
-            Question::Ports,
+            // Ce qu'une session dit d'elle-même en ouvrant : c'est de
+            // là que l'ordinateur regardé tient la taille de sa fenêtre.
+            Question::Ports {
+                serving: MediaProfile {
+                    bits_per_second: 80_000_000,
+                    frames_per_second: 144,
+                },
+            },
             Question::Pair {
                 pin: "0429".to_string(),
                 // Un nom d'ordinateur porte des espaces plus souvent

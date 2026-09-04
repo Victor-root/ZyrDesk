@@ -31,7 +31,7 @@ use zyr_broker::ticket::Pass;
 use zyr_broker::{Verifier, now};
 use zyr_transport::relay::{Doorway, PASS_PATIENCE, Presenting};
 use zyr_transport::{
-    Bytes, Connection, EndpointError, Fingerprint, Identity, Knocking, MediaProfile, TunnelEndpoint,
+    Bytes, Connection, EndpointError, Fingerprint, Identity, Knocking, TunnelEndpoint,
 };
 
 use crate::config;
@@ -109,12 +109,14 @@ impl Relay {
             address,
             fingerprint: identity.fingerprint(),
         };
-        let endpoint = TunnelEndpoint::relay_on(
-            &identity,
-            MediaProfile::default(),
-            Arc::new(doorway.clone()),
-        )
-        .map_err(io::Error::other)?;
+        // Sized on the fastest stream there is, and not on a nominal
+        // one: a relay carries whatever the two computers hand it, has
+        // no session of its own to be told about, and holds one and the
+        // same tunnel for all of them. What it may carry for each of
+        // them is bounded by the token bucket below, not by a window.
+        let endpoint =
+            TunnelEndpoint::relay_on(&identity, zyr_transport::FASTEST, Arc::new(doorway.clone()))
+                .map_err(io::Error::other)?;
         let carrying = Arc::new(Carrying {
             most_sessions: limits.max_sessions as usize,
             bytes_per_second: f64::from(limits.max_kbps_per_session) * 1_000.0 / 8.0,
@@ -608,6 +610,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use zyr_broker::ServerKey;
+    use zyr_transport::MediaProfile;
     use zyr_transport::relay::{Branch, Wanted};
 
     /// Past this, something that should have happened has not.

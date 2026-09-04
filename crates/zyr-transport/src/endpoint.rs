@@ -13,7 +13,7 @@ use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{AsyncUdpSocket, ClientConfig, Endpoint, ServerConfig, TransportConfig};
 use rustls::pki_types::CertificateDer;
 
-use crate::congestion::MediaProfile;
+use crate::congestion::{FASTEST, Media};
 use crate::identity::{AllowedPeers, AnyPeer, Fingerprint, Identity, PinnedPeer};
 use crate::junction::Junction;
 use crate::path::{DegradedPath, Path};
@@ -159,10 +159,15 @@ impl From<std::io::Error> for EndpointError {
 }
 
 /// Settings shared by both ends.
-fn transport(profile: MediaProfile) -> TransportConfig {
+///
+/// The window follows the session, since the controller works it out
+/// afresh at every ask; the queue cannot, being settled here once and
+/// for all, so it is sized on the fastest stream there is. `FASTEST`
+/// says why.
+fn transport(media: Media) -> TransportConfig {
     let mut config = TransportConfig::default();
-    config.datagram_send_buffer_size(profile.send_queue());
-    config.congestion_controller_factory(Arc::new(profile));
+    config.datagram_send_buffer_size(FASTEST.send_queue());
+    config.congestion_controller_factory(Arc::new(media));
     config.datagram_receive_buffer_size(Some(RECEIVE_QUEUE));
     config.max_idle_timeout(Some(
         MAXIMUM_IDLE.try_into().expect("idle timeout representable"),
@@ -173,8 +178,8 @@ fn transport(profile: MediaProfile) -> TransportConfig {
 
 /// The same, on a path of its own: packet discovery finds what it
 /// carries, which is the ordinary case of a tunnel opened at an address.
-fn transport_discovering(profile: MediaProfile) -> Arc<TransportConfig> {
-    Arc::new(transport(profile))
+fn transport_discovering(media: Media) -> Arc<TransportConfig> {
+    Arc::new(transport(media))
 }
 
 /// The same, on a junction: one packet size, and it never moves.
@@ -191,8 +196,8 @@ fn transport_discovering(profile: MediaProfile) -> Arc<TransportConfig> {
 /// It costs a few dozen bytes a packet on the reliable streams, which
 /// carry nothing large. The video was already sized on this floor
 /// (`guaranteed_usable_datagram`) and loses nothing.
-fn transport_on_a_junction(profile: MediaProfile) -> Arc<TransportConfig> {
-    let mut config = transport(profile);
+fn transport_on_a_junction(media: Media) -> Arc<TransportConfig> {
+    let mut config = transport(media);
     config.mtu_discovery_config(None);
     config.initial_mtu(GUARANTEED_MTU);
     Arc::new(config)
@@ -200,8 +205,8 @@ fn transport_on_a_junction(profile: MediaProfile) -> Arc<TransportConfig> {
 
 /// The same, towards a relay: a floor high enough for a whole packet of
 /// the tunnel, and discovery above it.
-fn transport_towards_a_relay(profile: MediaProfile) -> Arc<TransportConfig> {
-    let mut config = transport(profile);
+fn transport_towards_a_relay(media: Media) -> Arc<TransportConfig> {
+    let mut config = transport(media);
     config.min_mtu(RELAY_MTU);
     config.initial_mtu(RELAY_MTU);
     Arc::new(config)
@@ -328,10 +333,10 @@ impl TunnelEndpoint {
     pub fn host(
         identity: &Identity,
         allowed: impl Into<AllowedPeers>,
-        profile: MediaProfile,
+        media: impl Into<Media>,
         listen: SocketAddr,
     ) -> Result<Self, EndpointError> {
-        Self::host_on_path(identity, allowed, profile, listen, Path::Direct)
+        Self::host_on_path(identity, allowed, media, listen, Path::Direct)
     }
 
     /// The same, on a path whose quality is imposed.
@@ -341,11 +346,11 @@ impl TunnelEndpoint {
     pub fn host_on_path(
         identity: &Identity,
         allowed: impl Into<AllowedPeers>,
-        profile: MediaProfile,
+        media: impl Into<Media>,
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let config = pinned_host(identity, allowed, transport_discovering(profile))?;
+        let config = pinned_host(identity, allowed, transport_discovering(media.into()))?;
         Ok(Self {
             endpoint: open(listen, Some(config), path)?,
         })
@@ -357,10 +362,10 @@ impl TunnelEndpoint {
     pub fn host_at(
         identity: &Identity,
         allowed: impl Into<AllowedPeers>,
-        profile: MediaProfile,
+        media: impl Into<Media>,
         junction: &Junction,
     ) -> Result<Self, EndpointError> {
-        let config = pinned_host(identity, allowed, transport_on_a_junction(profile))?;
+        let config = pinned_host(identity, allowed, transport_on_a_junction(media.into()))?;
         Ok(Self {
             endpoint: open_on(Arc::new(junction.clone()), Some(config))?,
         })
@@ -373,14 +378,14 @@ impl TunnelEndpoint {
     /// serves both.
     pub fn relay_on(
         identity: &Identity,
-        profile: MediaProfile,
+        media: impl Into<Media>,
         socket: Arc<dyn AsyncUdpSocket>,
     ) -> Result<Self, EndpointError> {
         let config = server_config(
             identity,
             Arc::new(AnyPeer::default()),
             RELAY_PROTOCOL,
-            transport_towards_a_relay(profile),
+            transport_towards_a_relay(media.into()),
         )?;
         Ok(Self {
             endpoint: open_on(socket, Some(config))?,
@@ -391,21 +396,26 @@ impl TunnelEndpoint {
     pub fn client(
         identity: &Identity,
         peer: Fingerprint,
-        profile: MediaProfile,
+        media: impl Into<Media>,
         listen: SocketAddr,
     ) -> Result<Self, EndpointError> {
-        Self::client_on_path(identity, peer, profile, listen, Path::Direct)
+        Self::client_on_path(identity, peer, media, listen, Path::Direct)
     }
 
     /// The same, on a path whose quality is imposed.
     pub fn client_on_path(
         identity: &Identity,
         peer: Fingerprint,
-        profile: MediaProfile,
+        media: impl Into<Media>,
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let config = client_config(identity, peer, PROTOCOL, transport_discovering(profile))?;
+        let config = client_config(
+            identity,
+            peer,
+            PROTOCOL,
+            transport_discovering(media.into()),
+        )?;
         let mut endpoint = open(listen, None, path)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })
@@ -416,10 +426,15 @@ impl TunnelEndpoint {
     pub fn client_at(
         identity: &Identity,
         peer: Fingerprint,
-        profile: MediaProfile,
+        media: impl Into<Media>,
         junction: &Junction,
     ) -> Result<Self, EndpointError> {
-        let config = client_config(identity, peer, PROTOCOL, transport_on_a_junction(profile))?;
+        let config = client_config(
+            identity,
+            peer,
+            PROTOCOL,
+            transport_on_a_junction(media.into()),
+        )?;
         let mut endpoint = open_on(Arc::new(junction.clone()), None)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })
@@ -433,14 +448,14 @@ impl TunnelEndpoint {
     pub fn towards_the_relay(
         identity: &Identity,
         relay: Fingerprint,
-        profile: MediaProfile,
+        media: impl Into<Media>,
         listen: SocketAddr,
     ) -> Result<Self, EndpointError> {
         let config = client_config(
             identity,
             relay,
             RELAY_PROTOCOL,
-            transport_towards_a_relay(profile),
+            transport_towards_a_relay(media.into()),
         )?;
         let mut endpoint = open(listen, None, Path::Direct)?;
         endpoint.set_default_client_config(config);
@@ -712,6 +727,7 @@ impl Connection {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::congestion::MediaProfile;
 
     /// Past this, a connection that should have broken has not.
     const PATIENCE: Duration = Duration::from_secs(5);
@@ -865,7 +881,7 @@ mod tests {
 
         // Aucune attente dans la boucle : rien ne part tant qu'elle
         // tourne, donc la file déborde plusieurs fois.
-        for _ in 0..(MediaProfile::default().send_queue() / room * 8) {
+        for _ in 0..(FASTEST.send_queue() / room * 8) {
             pair.client_side.send_datagram(packet.clone()).unwrap();
         }
 

@@ -28,7 +28,7 @@ use zyr_proto::journal::Journal;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
-use zyr_transport::{Fingerprint, Junction};
+use zyr_transport::{Fingerprint, Junction, Media};
 
 use crate::account::{self, Account};
 use crate::known::{self, Known};
@@ -75,26 +75,38 @@ impl Default for Hosting {
     }
 }
 
-/// The junction the door stands on, for as long as the door is open.
+/// The junction the door stands on, for as long as the door is open,
+/// and what the sessions coming through it ask to be served.
 ///
 /// Held here because the door comes and goes with the engine, and the
 /// account outlives both: when the server presents a computer, it is
-/// the junction of the moment that has to expect it.
+/// the junction of the moment that has to expect it, and the branch of
+/// relay opened for that computer carries the same session as the
+/// tunnel, so it is sized on the same thing.
 #[derive(Clone, Default)]
-pub struct Door(Arc<Mutex<Option<Junction>>>);
+pub struct Door {
+    junction: Arc<Mutex<Option<Junction>>>,
+    media: Media,
+}
 
 impl Door {
     pub fn opened(&self, junction: Junction) {
-        *self.0.lock().expect("porte") = Some(junction);
+        *self.junction.lock().expect("porte") = Some(junction);
     }
 
     pub fn closed(&self) {
-        *self.0.lock().expect("porte") = None;
+        *self.junction.lock().expect("porte") = None;
     }
 
     /// The junction of the open door, or nothing while it is closed.
     pub fn junction(&self) -> Option<Junction> {
-        self.0.lock().expect("porte").clone()
+        self.junction.lock().expect("porte").clone()
+    }
+
+    /// What the tunnel and its branches of relay are being asked to
+    /// carry. Handed out to be told, and to be read by the transport.
+    pub fn media(&self) -> Media {
+        self.media.clone()
     }
 }
 

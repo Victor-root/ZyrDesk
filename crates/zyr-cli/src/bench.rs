@@ -20,7 +20,7 @@ use std::time::Duration;
 use clap::{Args, Subcommand};
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
 use zyr_proto::paths;
-use zyr_transport::{Fingerprint, Identity, MediaProfile, Path, TunnelEndpoint};
+use zyr_transport::{Fingerprint, Identity, Media, MediaProfile, Path, TunnelEndpoint};
 use zyr_tunnel::pump::open_socket;
 use zyr_tunnel::{Answers, Tunnel};
 
@@ -46,11 +46,20 @@ const ENGINE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 /// there is nobody here to hand a pairing code to.
 struct NoEngine {
     ports: EnginePorts,
+    /// What the tunnel of this measurement is being asked to carry.
+    media: Media,
 }
 
 impl Answers for NoEngine {
     fn engine(&self) -> EnginePorts {
         self.ports
+    }
+
+    /// The bench sizes its tunnel on the session that opens on it, like
+    /// the service does: measuring a window worked out from anything
+    /// else would be measuring something the product never runs.
+    fn a_session_is_opening(&self, serving: MediaProfile) {
+        self.media.serving(serving);
     }
 
     fn hand_over_the_code(&self, _pin: &str, _name: &str) -> Result<(), String> {
@@ -200,10 +209,11 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
         let _ = probe::echo(engine).await;
     });
 
+    let media = Media::from(profile(args.rate, 60));
     let endpoint = TunnelEndpoint::host(
         &identity,
         args.pair,
-        profile(args.rate, 60),
+        media.clone(),
         SocketAddr::new(EVERY_INTERFACE, TUNNEL_PORT),
     )?;
 
@@ -223,12 +233,13 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
         };
 
         println!("Mesure en cours...");
+        let media = media.clone();
         // Each measurement gets its own task: the bench has to stay ready
         // to accept the next one, or the connection after it times out
         // while waiting.
         tokio::spawn(async move {
             let observed = connection.clone();
-            match Tunnel::host(connection, ENGINE, Arc::new(NoEngine { ports })).await {
+            match Tunnel::host(connection, ENGINE, Arc::new(NoEngine { ports, media })).await {
                 Ok(mut tunnel) => {
                     let (without, with) = serve_and_measure(&mut tunnel).await;
                     // The return trip is only visible from here: the

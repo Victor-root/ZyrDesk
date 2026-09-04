@@ -63,11 +63,17 @@ struct FakeEngine {
     /// Which of its screens it was last asked to be served from, `None`
     /// standing for its main one, which is what it films to begin with.
     filming: Arc<std::sync::Mutex<Option<String>>>,
+    /// What the session opening on it said it would be served.
+    opening: Arc<std::sync::Mutex<Option<MediaProfile>>>,
 }
 
 impl Answers for FakeEngine {
     fn engine(&self) -> EnginePorts {
         self.ports
+    }
+
+    fn a_session_is_opening(&self, serving: MediaProfile) {
+        *self.opening.lock().unwrap() = Some(serving);
     }
 
     fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String> {
@@ -207,6 +213,8 @@ struct Bench {
     steady: Arc<AtomicBool>,
     /// The screen its virtual one was last asked to be.
     screen: Arc<std::sync::Mutex<Option<WantedScreen>>>,
+    /// What the session opening on it said it would be served.
+    opening: Arc<std::sync::Mutex<Option<MediaProfile>>>,
     /// Whether its journal was emptied.
     emptied: Arc<AtomicBool>,
     /// Which of its screens it was last asked to be served from.
@@ -253,6 +261,8 @@ impl Bench {
             Arc::new(std::sync::Mutex::new(None));
         let emptied = Arc::new(AtomicBool::new(false));
         let filming: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
+        let opening: Arc<std::sync::Mutex<Option<MediaProfile>>> =
+            Arc::new(std::sync::Mutex::new(None));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -266,6 +276,7 @@ impl Bench {
                 screen: screen.clone(),
                 emptied: emptied.clone(),
                 filming: filming.clone(),
+                opening: opening.clone(),
             }),
         )
         .await
@@ -275,7 +286,9 @@ impl Bench {
         // host's engine ports before opening the local ones that stand
         // in for them. Nothing here is allowed to know them in advance.
         let client_connection = client_connection.unwrap();
-        let engine = aside::ask_the_ports(&client_connection).await.unwrap();
+        let engine = aside::ask_the_ports(&client_connection, profile)
+            .await
+            .unwrap();
         let client = Tunnel::client(client_connection.clone(), client_side, engine)
             .await
             .unwrap();
@@ -295,6 +308,7 @@ impl Bench {
             screen,
             emptied,
             filming,
+            opening,
         }
     }
 
@@ -343,6 +357,20 @@ async fn the_client_learns_the_host_engine_ports_from_the_host() {
     // it.
     let bench = Bench::bring_up(42700, 5).await;
     assert_eq!(bench.ports.base(), 42700);
+}
+
+#[tokio::test]
+async fn l_ordinateur_regarde_apprend_ce_qu_on_lui_demande_de_servir() {
+    // Le défaut que ceci répare : la machine regardée ouvre son tunnel
+    // au démarrage de son service, bien avant qu'une session existe, et
+    // tenait donc une fenêtre calculée sur un débit nominal quel que
+    // soit le débit réellement demandé. Le premier mot d'une session le
+    // lui dit désormais.
+    let bench = Bench::bring_up(42750, 6).await;
+    assert_eq!(
+        *bench.opening.lock().unwrap(),
+        Some(MediaProfile::default())
+    );
 }
 
 #[tokio::test]
@@ -471,9 +499,12 @@ async fn an_engine_that_refuses_the_code_says_so_rather_than_going_quiet() {
 
     // Et la voie tient toujours : un appairage raté n'emporte pas la
     // session avec lui.
-    let ports = before_the_end(aside::ask_the_ports(&bench.connection))
-        .await
-        .unwrap();
+    let ports = before_the_end(aside::ask_the_ports(
+        &bench.connection,
+        MediaProfile::default(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(ports.base(), 42900);
 }
 

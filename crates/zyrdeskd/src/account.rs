@@ -45,7 +45,7 @@ use zyr_broker::{Refusal, Verifier, now};
 use zyr_control::{Holdup, WayId};
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
-use zyr_transport::{Branch, Fingerprint, Identity, Junction, MediaProfile, Wanted};
+use zyr_transport::{Branch, Fingerprint, Identity, Junction, Media, Wanted};
 
 use crate::machine::{Door, Hosting};
 use crate::preferences::Remembered;
@@ -821,7 +821,7 @@ impl Account {
                         identity.clone(),
                         junction.clone(),
                         card,
-                        MediaProfile::default(),
+                        door.media(),
                         inner.log.clone(),
                     ));
                 }
@@ -1039,7 +1039,7 @@ pub(crate) async fn hold_a_relay_branch(
     identity: Arc<Identity>,
     junction: Junction,
     card: SocketAddr,
-    media: MediaProfile,
+    media: Media,
     log: Log,
 ) {
     let Ok(leads) = tokio::net::lookup_host(&relay.address).await else {
@@ -1058,6 +1058,7 @@ pub(crate) async fn hold_a_relay_branch(
             pass: relay.pass.to_bytes(),
         };
         let identity = identity.clone();
+        let media = media.clone();
         trying.spawn(async move { (address, Branch::open(&wanted, &identity, media).await) });
     }
     if trying.is_empty() {

@@ -2211,6 +2211,26 @@ L'ordinateur regardé n'avait plus rien envoyé au relais depuis dix secondes et
 
 **La leçon, la même que d'habitude.** Trois soirées à chercher dans le réseau ce qui était dans une table en mémoire, parce que la seule chose que faisait le défaut, c'était de se taire. Ce sont les lignes du relais, écrites deux heures plus tôt pour une tout autre hypothèse, qui ont montré du doigt la bonne machine en une seule lecture.
 
+## D134. Le tunnel de l'ordinateur regardé suit le débit de la session, et pas un débit nominal (2026-09-04, pendant M6)
+
+**Le relevé.** Deux journaux de la même session, à quatre-vingts mégabits, la même seconde :
+
+```
+PC-SAV     (celui qui regarde) : 5000000 bytes may be out unanswered at once
+PC-VICTOR  (celui qu'on regarde) : 1250000 bytes may be out unanswered at once
+             1575571 packets into the tunnel, 20729 thrown away for want of room
+```
+
+Les deux ordinateurs portaient la même session et ne tenaient pas la même fenêtre. Cinq millions d'octets, c'est une demi-seconde de flux à quatre-vingts mégabits, ce que le contrôleur de congestion est écrit pour tenir. Un million deux cent cinquante mille, c'est une demi-seconde à vingt : le profil par défaut. L'ordinateur qui envoie toute la vidéo tenait donc un huitième de seconde là où il devait en tenir une demie, et jetait vingt mille paquets faute de place.
+
+**La cause.** Le côté client construit son tunnel au moment où la session s'ouvre, et connaît son débit : `Reach` le lui apporte. Le côté hôte n'a pas ce moment-là. Sa porte s'ouvre au démarrage du service, une fois pour toutes, bien avant qu'une session existe, et rien ne la lui décrivait ensuite. Elle prenait donc le profil nominal, quelle que soit la session, et le changement de débit en cours de route ne l'atteignait pas davantage.
+
+**Ce qui est fait.** La forme du flux devient vivante. Le contrôleur ne garde plus un profil figé à la construction de la connexion : il lit, à chaque calcul de fenêtre, ce que la porte est en train de servir. La porte l'apprend de deux endroits, et ce sont les deux seuls qui le savent : le premier mot d'une session, la question des ports, qui porte désormais le débit et la cadence demandés ; et la demande de changement de débit en cours de session, qui existait déjà pour le moteur et prévient maintenant le tunnel avant lui. Quand plus aucune session n'est ouverte, la porte revient à ce avec quoi elle a été construite, pour qu'une session n'hérite jamais de la précédente. La branche de relais de l'ordinateur regardé partage la même forme vivante : c'est elle qui porte la vidéo quand la route est relayée, et elle était fausse pour la même raison.
+
+**La file d'envoi, elle, ne peut pas suivre.** Le transport la fixe à la création de la connexion et ne la rouvre jamais. Elle est donc taillée sur le flux le plus rapide que le produit propose, lu là où la liste des débits est écrite, et sur rien d'autre : trop courte, elle coupe chaque image clé et l'image ne s'établit jamais ; trop longue, elle coûte un mégaoctet et un peu de retard après un arrêt que la session n'aurait pas passé du tout. Le relais du serveur est taillé de la même façon, pour la même raison en plus forte : il porte ce qu'on lui donne et n'a aucune session à lui.
+
+**Ce que ça ne prétend pas être.** Ce n'est pas l'explication du silence d'une seconde qui revient sur l'une des deux machines. C'est ce qui fait que le tunnel tient ce silence-là au lieu de céder au premier hoquet de plus de cent vingt-cinq millisecondes, comme il le faisait depuis le début du côté regardé.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
