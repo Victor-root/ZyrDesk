@@ -29,6 +29,7 @@ use std::fmt;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
@@ -65,6 +66,13 @@ const TICK: Duration = Duration::from_millis(100);
 /// it is a buffer filling up, and the equipment holding it is on the
 /// line of whichever computer measures it.
 const QUEUED: Duration = Duration::from_millis(250);
+
+/// Silence on the socket worth writing down, while a session is open.
+///
+/// A tunnel that stands is answered several times a second: a whole
+/// second with nothing at all handed over by the system is not a far
+/// computer taking its time, it is a computer that has gone deaf.
+const DEAF: Duration = Duration::from_secs(1);
 
 /// A look-over this late means the computer itself stopped running.
 ///
@@ -624,6 +632,12 @@ impl Table {
 
 struct Inner {
     socket: Arc<dyn AsyncUdpSocket>,
+    /// Datagrams the socket has handed over, ours and the transport's
+    /// alike, and how many of those were ours. The only place that says
+    /// whether a computer gone deaf is still being given anything at
+    /// all: everything else here measures what leaves.
+    arrived: AtomicU64,
+    ours: AtomicU64,
     /// Whether the socket speaks IPv6, in which case every IPv4 address
     /// is handed to it in its mapped form, as the transport does.
     ipv6: bool,
@@ -665,6 +679,8 @@ impl Junction {
         let me = identity.fingerprint();
         let inner = Arc::new(Inner {
             socket,
+            arrived: AtomicU64::new(0),
+            ours: AtomicU64::new(0),
             ipv6,
             identity,
             me,
@@ -998,6 +1014,45 @@ impl Inner {
         }
     }
 
+    /// Whether anything at all is still arriving on the socket, while a
+    /// computer is expected behind a card.
+    ///
+    /// Every other measurement here is of what leaves: what was handed
+    /// over, what went out, how long the road took to answer. None of
+    /// them can tell a far computer that stopped speaking from a socket
+    /// that stopped being given anything, and the two are the same
+    /// silence seen from here. This one counts what comes in, before it
+    /// is looked at or sorted.
+    fn still_hearing(
+        &self,
+        last: &mut (u64, Instant),
+        said: &mut bool,
+        now: Instant,
+    ) -> Option<String> {
+        let arrived = self.arrived.load(Ordering::Relaxed);
+        if arrived != last.0 {
+            *last = (arrived, now);
+            if !*said {
+                return None;
+            }
+            *said = false;
+            return Some(format!(
+                "the socket is being given packets again, {arrived} in all, {} of them ours",
+                self.ours.load(Ordering::Relaxed)
+            ));
+        }
+        let quiet = now.duration_since(last.1);
+        if *said || quiet < DEAF || self.table.lock().expect("aiguilleur").expected.is_empty() {
+            return None;
+        }
+        *said = true;
+        Some(format!(
+            "not one packet has been given to the socket for {} ms, though a session is open:              {arrived} arrived before that, {} of them ours",
+            quiet.as_millis(),
+            self.ours.load(Ordering::Relaxed)
+        ))
+    }
+
     fn send_held(&self, road: Through, held: &Held) {
         match road {
             Through::Direct(through) => {
@@ -1135,6 +1190,9 @@ impl Inner {
                 Some(self.outward(card))
             },
         );
+        self.arrived.fetch_add(count as u64, Ordering::Relaxed);
+        self.ours
+            .fetch_add((count - kept) as u64, Ordering::Relaxed);
         for (road, bytes) in answers {
             self.send_by(road, &bytes);
         }
@@ -1145,7 +1203,9 @@ impl Inner {
     /// card: answered here when it is ours, and queued for the transport
     /// otherwise.
     fn arrived_by_relay(&self, card: SocketAddr, packet: Bytes) {
+        self.arrived.fetch_add(1, Ordering::Relaxed);
         if probe::is_ours(&packet) {
+            self.ours.fetch_add(1, Ordering::Relaxed);
             if let Some((road, answer)) = self.heard(Through::Relay(card), &packet) {
                 self.send_by(road, &answer);
             }
@@ -1352,6 +1412,8 @@ async fn look_after(junction: Weak<Inner>) {
     let mut tick = tokio::time::interval(TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut before = Instant::now();
+    let mut last_arrival = (0u64, Instant::now());
+    let mut said_deaf = false;
     loop {
         tick.tick().await;
         let now = Instant::now();
@@ -1365,6 +1427,9 @@ async fn look_after(junction: Weak<Inner>) {
                 "this computer did not run for {} ms, and sent nothing at all meanwhile",
                 since.as_millis()
             ));
+        }
+        if let Some(line) = inner.still_hearing(&mut last_arrival, &mut said_deaf, now) {
+            (inner.say)(&line);
         }
         inner.tick(now);
     }
