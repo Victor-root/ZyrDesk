@@ -3,6 +3,7 @@
 
 use std::fmt;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 /// Range the host engine's base port is drawn from. Chosen so it never
 /// collides with a standard Sunshine install, whose base port is 47989.
@@ -15,6 +16,24 @@ pub const ENGINE_BASE_PORT_MAX: u16 = 42999;
 /// ports are multiplexed inside a single encrypted connection. That is
 /// what makes one firewall rule enough.
 pub const TUNNEL_PORT: u16 = 47000;
+
+/// How long a computer may go completely unheard before the session it
+/// carries is given up.
+///
+/// Written once, here, because three programs hold that patience and
+/// the shortest of them decides for all: the tunnel, which gives a
+/// connection up after it; the engine being watched, which gives up
+/// after its own `ping_timeout`; and the engine watching, whose control
+/// channel gives up after its own. They stood at thirty seconds, ten
+/// and ten, so every hiccup of more than ten seconds ended a session the
+/// tunnel would have carried through, and the two engines decided
+/// alone, each with a number nobody had chosen (D138).
+///
+/// Half a minute is what a road between two homes takes to come back
+/// from a box dropping its translations, and it is not a wait anybody
+/// sits through by accident: a session that is really over is closed
+/// from the window, and the picture says it is frozen long before.
+pub const UNHEARD_LIMIT: Duration = Duration::from_secs(30);
 
 /// Ports of one host engine instance, derived from the base port by the
 /// fixed offsets of the GameStream protocol that Sunshine implements.

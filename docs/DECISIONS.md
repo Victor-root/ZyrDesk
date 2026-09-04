@@ -2300,6 +2300,30 @@ Trois. Une fenêtre pleine, chez ce transport, ne laisse plus partir que ses pro
 
 **Ce qui est fait.** Deux interrupteurs dans la fenêtre, sous « Essais réseau », écrits dans `preferences.conf` comme les autres réglages ; basculer l'un d'eux rouvre la porte de l'ordinateur, comme un changement de façon de servir, parce que la porte lit ces deux choix une fois en s'ouvrant. `ecn` : QUIC pose un marquage ECN sur chaque paquet et le lit dans les accusés ; le produit ne se sert pas de la réponse, et certains équipements traitent un paquet marqué à part. Avec `no`, la marque est retirée sous le transport, sur la prise de l'aiguilleur et sur celle de chaque branche de relais ; le transport constate que le chemin ne la porte pas et cesse de la demander, ce qui est sa route ordinaire sur un chemin sans ECN. `fixed_port` : avec `no`, la porte écoute sur un port que le système choisit, que la rencontre par le serveur nomme telle quelle, à la place du 47000 qu'une box renvoie à la main. Ni l'un ni l'autre n'est un réglage : ce sont deux séances à comparer, sur les deux ordinateurs à la fois.
 
+## D138. La patience d'une session est un seul nombre, et les moteurs ne décident plus seuls (2026-09-04, pendant M6)
+
+**Le relevé, et il clôt deux pistes.** Deux séances de plus, le VPN coupé, les deux ordinateurs joints en direct par leurs adresses publiques, chacune avec un des deux interrupteurs de [D137](#d137-deux-interrupteurs-dessai-sur-le-fil--le-marquage-ecn-et-le-port-fixe-2026-09-04-pendant-m6) sur l'autre position : marquage ECN coupé et port 47000 pour la première, marquage rendu et port choisi par le système pour la seconde. Même panne les deux fois. Ni la marque des paquets ni le port fixe n'y sont pour quoi que ce soit, et le débit non plus, le plus bas donnant déjà la même chose la veille.
+
+**Ce que les deux séances ont d'identique, à la seconde près.**
+
+```text
+T      le réseau se tait, dans les deux sens, route directe et relais ensemble
+T+1    l'ordinateur qui regarde reçoit de nouveau ; celui qu'on regarde, non
+T+6    l'ordinateur regardé reçoit de nouveau
+T+7    la route directe répond de nouveau aux sondes des deux côtés
+T+10   le moteur client : « Control stream received unexpected disconnect event »
+```
+
+Séance A : T = 18:42:32, mort à 18:42:42. Séance B : T = 19:14:15, mort à 19:14:25. Le tunnel, lui, n'a rien jeté ni perdu : 95 091 paquets confiés et 95 068 sur le fil pour l'une, 150 200 et 150 200 pour l'autre, la fenêtre de [D136](#d136-le-transport-ne-retient-plus-rien-tant-que-la-connexion-vit-2026-09-04-pendant-m6) ne s'étant jamais approchée de son bord. La route est revenue trois secondes avant la mort.
+
+**La cause, et c'est un nombre.** Trois programmes portent une session et chacun tient sa propre patience : le tunnel trente secondes, le moteur hôte dix (`ping_timeout`), le canal de contrôle du moteur client dix (`enet_peer_timeout(peer, 2, 10000, 10000)`). C'est le plus court qui décide, donc toute coupure de plus de dix secondes finit une session que le tunnel aurait portée, et les deux nombres qui décident sont des nombres que personne n'a choisis pour ce produit. Le concurrent qui traverse le même réseau sans un accroc ne fait rien de plus malin : il pardonne plus longtemps.
+
+**Ce qui est fait.** La patience devient un seul nombre, écrit une fois dans `zyr-proto`, `UNHEARD_LIMIT`, trente secondes : la durée qu'une route entre deux maisons met à revenir quand une box lâche ses traductions, et pas une attente que quelqu'un subit par accident, une session vraiment finie se fermant depuis la fenêtre. Le transport le lit à la place de sa constante. La configuration du moteur hôte le porte, ce qui ne coûte pas un patch, ce moteur ayant déjà la clé. Ce que ça coûte par ailleurs, et c'est assumé : une session dont le premier paquet vidéo n'arrive jamais échoue en trente secondes au lieu de dix.
+
+**Ce qui reste, et pourquoi ce n'est pas fait ici.** Le moteur client garde ses dix secondes, et son nombre est en dur dans `moonlight-common-c`, que notre fork prend chez son projet d'origine : c'est le patch P-M12, et il demande un fork de plus, à créer, et le sous-module à faire pointer dessus.
+
+**Ce que la prochaine coupure dira, et c'est la raison d'écrire cette moitié seule.** Les deux moteurs renoncent à la même seconde, donc rien dans les journaux ne dit lequel des deux a coupé. Avec le moteur hôte à trente secondes, une session qui meurt encore à la dixième désigne le moteur client sans discussion, et une session qui survit désigne le moteur hôte. La correction est aussi la mesure.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

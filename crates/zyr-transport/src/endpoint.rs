@@ -36,10 +36,12 @@ const RELAY_PROTOCOL: &[u8] = b"zyrdesk-relay/1";
 
 /// Past this, the session counts as lost.
 ///
-/// Read by the congestion controller too: it is the longest a packet can
-/// go unanswered on a connection that is still alive, and its window is
+/// The patience of the whole product, held in one place so the engines
+/// and the tunnel cannot drift apart (`UNHEARD_LIMIT`). Read by the
+/// congestion controller too: it is the longest a packet can go
+/// unanswered on a connection that is still alive, and its window is
 /// sized never to fill in that time.
-pub(crate) const MAXIMUM_IDLE: Duration = Duration::from_secs(30);
+pub(crate) const MAXIMUM_IDLE: Duration = zyr_proto::net::UNHEARD_LIMIT;
 
 /// Keeps the mapping alive in the network equipment along the way.
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);

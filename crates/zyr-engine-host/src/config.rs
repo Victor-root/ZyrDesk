@@ -264,6 +264,16 @@ impl SunshineConfig {
             // good at, which is filming what is in front of it.
             format!("log_path = {}", shown(&self.log_path())),
             "min_log_level = info".to_string(),
+            // The engine gives a session up after this long without one
+            // packet from the computer watching, and its own answer is
+            // ten seconds, which is shorter than the tunnel carrying it.
+            // A road between two homes that goes quiet for a dozen
+            // seconds and comes back is a road the tunnel rides through,
+            // and the engine was ending the session under it (D138).
+            format!(
+                "ping_timeout = {}",
+                zyr_proto::net::UNHEARD_LIMIT.as_millis()
+            ),
         ]);
         // Left out entirely rather than turned down, when it is off: the
         // engine's own answer is half the rate that was asked for, and
@@ -345,6 +355,23 @@ mod tests {
         assert!(rendered.contains("capture = ddx"));
         assert!(rendered.contains("upnp = disabled"));
         assert!(rendered.contains("lan_encryption_mode = 0"));
+    }
+
+    #[test]
+    fn the_engine_waits_as_long_as_the_tunnel_before_giving_a_session_up() {
+        // Le 4 septembre, deux sessions sont mortes à la dixième seconde
+        // d'un silence du réseau, deux fois : le tunnel en porte trente,
+        // le moteur en portait dix, et c'est le plus court qui décide.
+        // La patience est écrite une fois pour tout le produit, et le
+        // moteur en est informé.
+        let rendered = test_config().render_conf();
+        assert!(
+            rendered.contains(&format!(
+                "ping_timeout = {}",
+                zyr_proto::net::UNHEARD_LIMIT.as_millis()
+            )),
+            "{rendered}"
+        );
     }
 
     #[test]
