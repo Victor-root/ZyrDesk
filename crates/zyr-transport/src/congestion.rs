@@ -93,10 +93,55 @@ pub struct MediaProfile {
 /// and a queue too short to hold a whole frame chops every key frame it
 /// carries. Too long only costs a megabyte and some staleness after a
 /// stall the session would otherwise not have survived at all.
+///
+/// Of the computer being watched, and of it alone: `Sending` says why.
 pub const FASTEST: MediaProfile = MediaProfile {
     bits_per_second: RATES_OFFERED[RATES_OFFERED.len() - 1] as u64 * 1_000,
     frames_per_second: 60,
 };
+
+/// Room the queue of datagrams waiting to go out needs on the computer
+/// that is watching.
+///
+/// What leaves that one is the keyboard, the mouse and the engine's
+/// control channel: a few dozen bytes at a time, and never a picture.
+/// Sized on the stream it receives instead, its queue held a megabyte of
+/// them, which is thousands of packets and tens of seconds of staleness.
+///
+/// And staleness there is not what it is on the other side. The channel
+/// carrying the inputs is a reliable one: it numbers its packets and
+/// sends again what is not answered for. A queue deeper than that
+/// channel's patience therefore turns one lost input into two, then
+/// four: the transport quietly drops the oldest, the engine hears
+/// nothing back, sends it again, and the new copy queues behind the
+/// copies before it. What was a road gone briefly bad becomes a machine
+/// talking to itself. Short enough that the engine loses an input once
+/// and moves on, wide enough to take the burst a hand on a mouse makes.
+pub const WATCHING_QUEUE: usize = 32 * 1024;
+
+/// What one end of a tunnel sends, which is what its queue is sized on.
+///
+/// The two ends of a session are not alike and never were: one sends a
+/// picture and the other sends a hand. One queue for both was a queue
+/// right for whichever end it was written for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sending {
+    /// The picture. The computer being watched, and the relay branch
+    /// that carries what it sends.
+    Pictures,
+    /// The keyboard and the mouse. The computer watching.
+    Inputs,
+}
+
+impl Sending {
+    /// Room its queue of datagrams needs.
+    pub fn queue(self) -> usize {
+        match self {
+            Sending::Pictures => FASTEST.send_queue(),
+            Sending::Inputs => WATCHING_QUEUE,
+        }
+    }
+}
 
 impl Default for MediaProfile {
     fn default() -> Self {
@@ -402,6 +447,32 @@ mod tests {
                 FASTEST.send_queue()
             );
         }
+    }
+
+    #[test]
+    fn the_side_that_sends_no_picture_gets_a_queue_its_own_size() {
+        // Le 4 septembre, le client a jeté 23805 des 38565 paquets qu'il
+        // a confiés au tunnel, soit 62 %, alors qu'il n'envoyait que du
+        // clavier-souris. Sa file était celle du flux le plus rapide,
+        // taillée pour ne pas couper une image clé chez celui qui
+        // encode : un mégaoctet de paquets de cinquante octets, ce sont
+        // des milliers de paquets et des dizaines de secondes de retard.
+        // Et le canal qui les porte est fiable : tout ce que la file
+        // jetait en silence était renvoyé, et le renvoi tombait dans la
+        // même file pleine.
+        assert!(
+            Sending::Inputs.queue() * 8 < Sending::Pictures.queue(),
+            "les deux côtés ont presque la même file : {} contre {}",
+            Sending::Inputs.queue(),
+            Sending::Pictures.queue()
+        );
+        // Assez large tout de même pour la rafale que fait une main sur
+        // une souris, sans quoi on aurait échangé une panne contre une
+        // autre.
+        assert!(Sending::Inputs.queue() >= 16 * 1024);
+        // Et celle de l'ordinateur regardé ne bouge pas : elle tient six
+        // images du flux le plus rapide, ce que le test au-dessus vérifie.
+        assert_eq!(Sending::Pictures.queue(), FASTEST.send_queue());
     }
 
     #[test]

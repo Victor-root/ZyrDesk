@@ -30,7 +30,7 @@ use std::time::Duration;
 use quinn::udp::{RecvMeta, Transmit};
 use quinn::{AsyncUdpSocket, UdpPoller};
 
-use crate::congestion::Media;
+use crate::congestion::{Media, Sending};
 use crate::endpoint::{Bytes, Connection, EndpointError, GUARANTEED_MTU, TunnelEndpoint};
 use crate::identity::{Fingerprint, Identity};
 use crate::junction::bind_socket;
@@ -142,15 +142,22 @@ impl Branch {
     /// the handshake, and never before: a branch announced ready ahead
     /// of that would be elected while the relay is still deciding, and
     /// the packets sent meanwhile would go nowhere.
+    ///
+    /// What it sends is what the tunnel it carries sends, and its queue
+    /// is sized on that: a branch holding a megabyte of somebody else's
+    /// traffic is a megabyte of staleness in series with the tunnel's
+    /// own.
     pub async fn open(
         wanted: &Wanted,
         identity: &Identity,
+        sending: Sending,
         media: impl Into<Media>,
     ) -> Result<Self, RelayError> {
         let endpoint = TunnelEndpoint::towards_the_relay(
             identity,
             wanted.fingerprint,
             media,
+            sending,
             anywhere(wanted.address),
         )?;
         let connection = endpoint.connect(wanted.address).await?;
@@ -259,6 +266,18 @@ impl Branch {
     /// the branch is gone.
     pub async fn arrived(&self) -> Option<Bytes> {
         self.inner.connection.read_datagram().await.ok()
+    }
+
+    /// Waits until this branch carries nothing any more.
+    ///
+    /// For whoever holds the branch rather than reads it: reading it is
+    /// already somebody's work, and two readers of the same connection
+    /// would take each other's packets. A relay that restarts, a server
+    /// that is updated, a box that drops its translation: all of them end
+    /// a branch under a session that is still running, and the session
+    /// keeps its only fallback exactly as long as somebody opens another.
+    pub async fn broken(&self) {
+        self.inner.connection.closed().await;
     }
 }
 
@@ -533,12 +552,22 @@ mod tests {
         let there = Identity::generate().unwrap();
         let profile = MediaProfile::default();
 
-        let first = Branch::open(&relay.wanted(b"laissez-passer"), &here, profile)
-            .await
-            .unwrap();
-        let second = Branch::open(&relay.wanted(b"laissez-passer"), &there, profile)
-            .await
-            .unwrap();
+        let first = Branch::open(
+            &relay.wanted(b"laissez-passer"),
+            &here,
+            Sending::Pictures,
+            profile,
+        )
+        .await
+        .unwrap();
+        let second = Branch::open(
+            &relay.wanted(b"laissez-passer"),
+            &there,
+            Sending::Pictures,
+            profile,
+        )
+        .await
+        .unwrap();
         assert_eq!(first.address(), relay.address);
 
         // Un paquet entier du tunnel, la seule taille qui compte : c'est
@@ -564,6 +593,7 @@ mod tests {
         let branch = Branch::open(
             &relay.wanted(b"laissez-passer"),
             &Identity::generate().unwrap(),
+            Sending::Pictures,
             profile,
         )
         .await
@@ -589,9 +619,14 @@ mod tests {
     async fn a_pass_the_relay_refuses_says_why_rather_than_hanging() {
         let relay = Bare::open();
         let device = Identity::generate().unwrap();
-        let refused = Branch::open(&relay.wanted(&[0]), &device, MediaProfile::default())
-            .await
-            .unwrap_err();
+        let refused = Branch::open(
+            &relay.wanted(&[0]),
+            &device,
+            Sending::Pictures,
+            MediaProfile::default(),
+        )
+        .await
+        .unwrap_err();
         assert!(
             matches!(&refused, RelayError::Refused(why) if why.contains("laissez-passer")),
             "{refused:?}"
@@ -606,7 +641,7 @@ mod tests {
         let device = Identity::generate().unwrap();
         let mut wanted = relay.wanted(b"laissez-passer");
         wanted.fingerprint = Identity::generate().unwrap().fingerprint();
-        let refused = Branch::open(&wanted, &device, MediaProfile::default())
+        let refused = Branch::open(&wanted, &device, Sending::Pictures, MediaProfile::default())
             .await
             .unwrap_err();
         assert!(matches!(refused, RelayError::Endpoint(_)), "{refused:?}");

@@ -15,7 +15,7 @@ pub mod relay;
 mod sifting;
 pub mod trust;
 
-pub use congestion::{FASTEST, Media, MediaController, MediaProfile};
+pub use congestion::{FASTEST, Media, MediaController, MediaProfile, Sending};
 pub use endpoint::{
     Bytes, Carrying, Connection, DatagramError, EndpointError, Knocking, RecvStream, SendStream,
     TunnelEndpoint,

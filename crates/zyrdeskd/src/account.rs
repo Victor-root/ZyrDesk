@@ -45,7 +45,7 @@ use zyr_broker::{Refusal, Verifier, now};
 use zyr_control::{Holdup, WayId};
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
-use zyr_transport::{Branch, Fingerprint, Identity, Junction, Media, Wanted};
+use zyr_transport::{Branch, Fingerprint, Identity, Junction, Media, Sending, Wanted};
 
 use crate::machine::{Door, Hosting};
 use crate::preferences::Remembered;
@@ -61,6 +61,15 @@ const RENDEZVOUS_PATIENCE: Duration = Duration::from_secs(10);
 /// the server was last told, and the ways opened by a meeting looked
 /// over.
 const TICK: Duration = Duration::from_secs(1);
+
+/// Pause before opening a branch of relay again, once one could not be
+/// opened.
+///
+/// A relay being restarted is back in a second or two, and a session
+/// wants its fallback back the moment it is there. Short enough for
+/// that, long enough that a relay that has gone for good is not asked
+/// hundreds of times a minute for the length of a session.
+const BRANCH_RETRY: Duration = Duration::from_secs(2);
 
 /// The road to that device of the account, as a card carries it.
 pub fn road_to(device: &str) -> String {
@@ -817,11 +826,17 @@ impl Account {
                 // session, and the far computer is the one knocking.
                 if let Some(relay) = start.relay.clone() {
                     runtime.spawn(hold_a_relay_branch(
-                        relay,
-                        identity.clone(),
-                        junction.clone(),
-                        card,
-                        door.media(),
+                        Holding {
+                            relay,
+                            identity: identity.clone(),
+                            junction: junction.clone(),
+                            card,
+                            session: start.session.clone(),
+                            // This computer is the one being watched,
+                            // and what its branch carries is a picture.
+                            sending: Sending::Pictures,
+                            media: door.media(),
+                        },
                         inner.log.clone(),
                     ));
                 }
@@ -1018,13 +1033,66 @@ async fn mirror_of(server: &str, udp_port: Option<u16>) -> Option<SocketAddr> {
         .next()
 }
 
-/// Opens the branch of relay the server named and hands it to the
-/// junction, as one more road towards that card.
+/// What one session needs to keep a branch of relay open.
+pub(crate) struct Holding {
+    pub relay: Relay,
+    pub identity: Arc<Identity>,
+    pub junction: Junction,
+    /// The card the far computer is expected behind, and the session it
+    /// is held for: together they say when this may stop.
+    pub card: SocketAddr,
+    pub session: String,
+    /// What this computer sends, which is what the branch's own queue is
+    /// sized on.
+    pub sending: Sending,
+    pub media: Media,
+}
+
+/// Keeps a branch of relay open towards that card, and hands each one
+/// to the junction as one more road.
 ///
 /// Meant to be spawned and never waited on: the session leaves at once,
 /// by whichever road answers first. In the ordinary case a direct road
-/// is validated before this is even connected, and the relay carries
-/// nothing at all; where no direct road exists, this is the session.
+/// is validated before the first branch is even connected, and the relay
+/// carries nothing at all; where no direct road exists, this is the
+/// session.
+///
+/// Held for as long as the session wants it, and not merely opened once.
+/// A relay that restarts, a server that is updated, a box that drops its
+/// translation: all of them end a branch under a session still running,
+/// and what was written down as « the relay is kept warm all session, so
+/// a direct road that dies comes back to it » was true only until the
+/// first of those. It ends when the junction no longer holds the card
+/// for this session, which is what the far side of a finished session
+/// looks like from here.
+///
+/// One limit is known and not answered here: the pass a session was
+/// handed lives five minutes, so a branch reopened long after that is
+/// refused however healthy the relay is. The journal says so when it
+/// happens. Asking the server for another pass mid-session is a word
+/// this dialect does not have.
+pub(crate) async fn hold_a_relay_branch(held: Holding, log: Log) {
+    let mut opened = 0u32;
+    while held.junction.still_expects(held.card, &held.session) {
+        match open_a_branch(&held, &log, opened).await {
+            Some(branch) => {
+                opened += 1;
+                held.junction.relay_through(held.card, branch.clone());
+                // Held rather than read: reading it is the junction's
+                // work, and two readers of one connection would take
+                // each other's packets.
+                branch.broken().await;
+                log.write(&format!(
+                    "the branch to the relay at {} is gone, and this session still wants one",
+                    branch.address()
+                ));
+            }
+            None => tokio::time::sleep(BRANCH_RETRY).await,
+        }
+    }
+}
+
+/// Opens one branch, racing every address the relay's name leads to.
 ///
 /// A name leads to as many addresses as the relay published, and the
 /// first of them is not always one this computer can take: a machine
@@ -1034,20 +1102,21 @@ async fn mirror_of(server: &str, udp_port: Option<u16>) -> Option<SocketAddr> {
 /// dropped where they stand. Taking them in turn would cost the whole
 /// patience of the transport for every address that leads nowhere, and
 /// that wait falls on the very sessions the relay exists for.
-pub(crate) async fn hold_a_relay_branch(
-    relay: Relay,
-    identity: Arc<Identity>,
-    junction: Junction,
-    card: SocketAddr,
-    media: Media,
-    log: Log,
-) {
+async fn open_a_branch(held: &Holding, log: &Log, opened: u32) -> Option<Branch> {
+    let Holding {
+        relay,
+        identity,
+        card,
+        sending,
+        media,
+        ..
+    } = held;
     let Ok(leads) = tokio::net::lookup_host(&relay.address).await else {
         log.write(&format!(
             "no relay: {} is not an address this computer can resolve",
             relay.address
         ));
-        return;
+        return None;
     };
     let started = std::time::Instant::now();
     let mut trying = tokio::task::JoinSet::new();
@@ -1059,29 +1128,42 @@ pub(crate) async fn hold_a_relay_branch(
         };
         let identity = identity.clone();
         let media = media.clone();
-        trying.spawn(async move { (address, Branch::open(&wanted, &identity, media).await) });
+        let sending = *sending;
+        trying.spawn(async move {
+            (
+                address,
+                Branch::open(&wanted, &identity, sending, media).await,
+            )
+        });
     }
     if trying.is_empty() {
         log.write(&format!("no relay: {} leads nowhere", relay.address));
-        return;
+        return None;
     }
     while let Some(tried) = trying.join_next().await {
-        let Ok((address, opened)) = tried else {
+        let Ok((address, opening)) = tried else {
             continue;
         };
-        match opened {
+        match opening {
             Ok(branch) => {
                 log.write(&format!(
-                    "the relay at {address} took the pass after {} ms, {} ms to it",
+                    "card {card}: the relay at {address} took the pass after {} ms, {} ms to it",
                     started.elapsed().as_millis(),
                     branch.round_trip().as_millis()
                 ));
-                junction.relay_through(card, branch);
-                return;
+                return Some(branch);
             }
-            Err(e) => log.write(&format!("no relay branch through {address}: {e}")),
+            // The pass a session was handed lives five minutes, and a
+            // branch reopened after that is refused however healthy the
+            // relay is: that is what this line will say, and there is
+            // nothing here that can ask for another one.
+            Err(e) => log.write(&format!(
+                "no relay branch through {address}{}: {e}",
+                if opened > 0 { ", reopening" } else { "" }
+            )),
         }
     }
+    None
 }
 
 #[cfg(test)]

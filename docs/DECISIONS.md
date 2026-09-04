@@ -2231,6 +2231,33 @@ Les deux ordinateurs portaient la même session et ne tenaient pas la même fen�
 
 **Ce que ça ne prétend pas être.** Ce n'est pas l'explication du silence d'une seconde qui revient sur l'une des deux machines. C'est ce qui fait que le tunnel tient ce silence-là au lieu de céder au premier hoquet de plus de cent vingt-cinq millisecondes, comme il le faisait depuis le début du côté regardé.
 
+## D135. Une session ne se retrouve jamais sans route, et les deux bouts n'ont pas la même file (2026-09-04, pendant M6)
+
+**Le relevé.** Session à 15 Mb/s, les deux ordinateurs sur la même version. La fenêtre vaut 937 500 octets des deux côtés, soit une demi-seconde à 15 Mb/s : le correctif D134 tient et n'est plus en cause. Ce qui suit l'est.
+
+```
+PC-VICTOR (qui regarde) : 38565 packets into the tunnel, 12978 onto the wire,
+                          23805 thrown away for want of room
+PC-SAV    (qu'on regarde): 55041 packets into the tunnel, 53376 onto the wire,
+                          758 thrown away for want of room
+```
+
+Soixante-deux pour cent de rejet du côté qui n'envoie que du clavier et de la souris, un et demi du côté qui envoie toute la vidéo. La machine qui n'a rien à envoyer est celle qui étouffe.
+
+**Trois défauts, et le troisième est de la veille.**
+
+**Un.** La file d'envoi est taillée sur le flux le plus rapide que le produit propose, et cette taille était donnée aux deux bouts. Elle est juste pour l'ordinateur regardé : une image part d'un bloc et une file plus courte qu'une image coupe chaque image clé. Elle est fausse pour l'ordinateur qui regarde, qui n'encode rien. Un mégaoctet de paquets de cinquante octets, ce sont des milliers de paquets retenus et des dizaines de secondes de péremption. Et le canal qui les porte est le canal de contrôle du moteur, qui est **fiable** : il numérote et renvoie ce qui n'est pas accusé. Une file qui jette le plus vieux en silence transforme donc chaque perte en renvoi, et le renvoi retombe dans la même file pleine. Une main sur une souris finissait par produire quatre cent paquets par seconde. Les deux bouts d'une session ne sont pas semblables et ne l'ont jamais été : l'un envoie une image, l'autre envoie une main. `Sending` le dit maintenant, et chaque bout est taillé sur ce qu'il envoie, la branche de relais comprise.
+
+**Deux.** L'aiguilleur abandonnait sa dernière route. Le raisonnement écrit était défendable : envoyer sur une route morte perd tout sans un mot, alors que laisser l'élection se vider garde les paquets et les envoie entiers dès qu'une route répond. Il garde huit paquets, soit un centième de seconde d'image, et avale tout le reste en disant au transport que c'est parti. Le 4 septembre, la route est revenue deux secondes après avoir été abandonnée ; entre les deux, l'ordinateur d'en face n'a rien reçu du tout, ni image, ni accusé de réception, et il est mort d'une absence. Une route qui a raté trois sondes n'est pas une route prouvée morte, seulement une qui a cessé de dire qu'elle est vivante. La dernière ne se rend donc plus. En contrepartie l'élection préfère désormais une route qui répond à une route plus courte qui se tait, faute de quoi la route qu'on garde ferait de l'ombre à la route qui va bien.
+
+**Trois.** Le relais ne revenait jamais. `docs/NETWORK.md` promettait « gardé chaud toute la session, un direct qui meurt y revient » ; le code ouvrait une branche, la confiait à l'aiguilleur et rendait la main. Quand elle mourait, la tâche de lecture écrivait une ligne et s'arrêtait, et le laissez-passer était perdu avec la pile de la fonction qui l'avait construit : personne n'aurait pu rouvrir, même en le voulant. C'est ce qui s'est passé le 4 septembre à 10:35:14, un redémarrage du serveur ayant emporté la branche ; quarante secondes plus tard le direct lâchait, et il n'y avait plus rien derrière. La fonction est devenue un gardien : elle tient son laissez-passer, rouvre quand la branche casse, et s'arrête quand l'aiguilleur n'attend plus la carte pour cette session. **Sa limite est connue et n'est pas corrigée ici** : un laissez-passer vit cinq minutes, plus autant de tolérance d'horloge, donc au-delà d'une dizaine de minutes de session la réouverture se fait refuser et le journal l'écrit. Demander un nouveau laissez-passer en cours de session veut dire un message de plus dans le dialecte du serveur, et c'est une tranche à part.
+
+**Et une famine que personne n'avait vue.** La lecture de la prise servait d'abord ce qu'un relais avait apporté, à tous les tours, et ne lisait la vraie prise que lorsque cette file était vide. Sous Windows le transport ne demande qu'un paquet par tour : un relais qui livre régulièrement tenait donc la prise directe fermée, et les sondes qui trouvent une route directe n'étaient jamais lues. Le relais garde son tour de faveur, sauf un sur huit.
+
+**Ce que ça ne dit toujours pas.** Pourquoi les deux prises ont cessé de recevoir en même temps, à 10:35:44 et 10:35:46, sur l'interface VROOT. L'abandon de la route est postérieur de six secondes : c'est une conséquence, pas la cause. La famine de lecture est écartée par les mesures elles-mêmes, un aller-retour de dix millisecondes étant relevé au milieu du silence. Ce qui est corrigé ici, c'est tout ce qui a fait qu'un incident de deux secondes est devenu une session morte.
+
+**La leçon, la même que D133 d'un cran plus bas.** L'endroit le plus grave du transport, celui où un paquet disparaît pendant que le transport le croit parti, était le seul qui n'écrivait rien. Il compte et il le dit, maintenant.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

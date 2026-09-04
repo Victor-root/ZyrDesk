@@ -13,7 +13,7 @@ use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{AsyncUdpSocket, ClientConfig, Endpoint, ServerConfig, TransportConfig};
 use rustls::pki_types::CertificateDer;
 
-use crate::congestion::{FASTEST, Media};
+use crate::congestion::{Media, Sending};
 use crate::identity::{AllowedPeers, AnyPeer, Fingerprint, Identity, PinnedPeer};
 use crate::junction::Junction;
 use crate::path::{DegradedPath, Path};
@@ -162,11 +162,11 @@ impl From<std::io::Error> for EndpointError {
 ///
 /// The window follows the session, since the controller works it out
 /// afresh at every ask; the queue cannot, being settled here once and
-/// for all, so it is sized on the fastest stream there is. `FASTEST`
-/// says why.
-fn transport(media: Media) -> TransportConfig {
+/// for all, so it is sized on what this end sends and never moves.
+/// `Sending` says why the two ends do not get the same one.
+fn transport(media: Media, sending: Sending) -> TransportConfig {
     let mut config = TransportConfig::default();
-    config.datagram_send_buffer_size(FASTEST.send_queue());
+    config.datagram_send_buffer_size(sending.queue());
     config.congestion_controller_factory(Arc::new(media));
     config.datagram_receive_buffer_size(Some(RECEIVE_QUEUE));
     config.max_idle_timeout(Some(
@@ -178,8 +178,8 @@ fn transport(media: Media) -> TransportConfig {
 
 /// The same, on a path of its own: packet discovery finds what it
 /// carries, which is the ordinary case of a tunnel opened at an address.
-fn transport_discovering(media: Media) -> Arc<TransportConfig> {
-    Arc::new(transport(media))
+fn transport_discovering(media: Media, sending: Sending) -> Arc<TransportConfig> {
+    Arc::new(transport(media, sending))
 }
 
 /// The same, on a junction: one packet size, and it never moves.
@@ -196,8 +196,8 @@ fn transport_discovering(media: Media) -> Arc<TransportConfig> {
 /// It costs a few dozen bytes a packet on the reliable streams, which
 /// carry nothing large. The video was already sized on this floor
 /// (`guaranteed_usable_datagram`) and loses nothing.
-fn transport_on_a_junction(media: Media) -> Arc<TransportConfig> {
-    let mut config = transport(media);
+fn transport_on_a_junction(media: Media, sending: Sending) -> Arc<TransportConfig> {
+    let mut config = transport(media, sending);
     config.mtu_discovery_config(None);
     config.initial_mtu(GUARANTEED_MTU);
     Arc::new(config)
@@ -205,8 +205,8 @@ fn transport_on_a_junction(media: Media) -> Arc<TransportConfig> {
 
 /// The same, towards a relay: a floor high enough for a whole packet of
 /// the tunnel, and discovery above it.
-fn transport_towards_a_relay(media: Media) -> Arc<TransportConfig> {
-    let mut config = transport(media);
+fn transport_towards_a_relay(media: Media, sending: Sending) -> Arc<TransportConfig> {
+    let mut config = transport(media, sending);
     config.min_mtu(RELAY_MTU);
     config.initial_mtu(RELAY_MTU);
     Arc::new(config)
@@ -350,7 +350,11 @@ impl TunnelEndpoint {
         listen: SocketAddr,
         path: Path,
     ) -> Result<Self, EndpointError> {
-        let config = pinned_host(identity, allowed, transport_discovering(media.into()))?;
+        let config = pinned_host(
+            identity,
+            allowed,
+            transport_discovering(media.into(), Sending::Pictures),
+        )?;
         Ok(Self {
             endpoint: open(listen, Some(config), path)?,
         })
@@ -365,7 +369,11 @@ impl TunnelEndpoint {
         media: impl Into<Media>,
         junction: &Junction,
     ) -> Result<Self, EndpointError> {
-        let config = pinned_host(identity, allowed, transport_on_a_junction(media.into()))?;
+        let config = pinned_host(
+            identity,
+            allowed,
+            transport_on_a_junction(media.into(), Sending::Pictures),
+        )?;
         Ok(Self {
             endpoint: open_on(Arc::new(junction.clone()), Some(config))?,
         })
@@ -385,7 +393,7 @@ impl TunnelEndpoint {
             identity,
             Arc::new(AnyPeer::default()),
             RELAY_PROTOCOL,
-            transport_towards_a_relay(media.into()),
+            transport_towards_a_relay(media.into(), Sending::Pictures),
         )?;
         Ok(Self {
             endpoint: open_on(socket, Some(config))?,
@@ -414,7 +422,7 @@ impl TunnelEndpoint {
             identity,
             peer,
             PROTOCOL,
-            transport_discovering(media.into()),
+            transport_discovering(media.into(), Sending::Inputs),
         )?;
         let mut endpoint = open(listen, None, path)?;
         endpoint.set_default_client_config(config);
@@ -433,7 +441,7 @@ impl TunnelEndpoint {
             identity,
             peer,
             PROTOCOL,
-            transport_on_a_junction(media.into()),
+            transport_on_a_junction(media.into(), Sending::Inputs),
         )?;
         let mut endpoint = open_on(Arc::new(junction.clone()), None)?;
         endpoint.set_default_client_config(config);
@@ -449,13 +457,14 @@ impl TunnelEndpoint {
         identity: &Identity,
         relay: Fingerprint,
         media: impl Into<Media>,
+        sending: Sending,
         listen: SocketAddr,
     ) -> Result<Self, EndpointError> {
         let config = client_config(
             identity,
             relay,
             RELAY_PROTOCOL,
-            transport_towards_a_relay(media.into()),
+            transport_towards_a_relay(media.into(), sending),
         )?;
         let mut endpoint = open(listen, None, Path::Direct)?;
         endpoint.set_default_client_config(config);
@@ -881,7 +890,7 @@ mod tests {
 
         // Aucune attente dans la boucle : rien ne part tant qu'elle
         // tourne, donc la file déborde plusieurs fois.
-        for _ in 0..(FASTEST.send_queue() / room * 8) {
+        for _ in 0..(Sending::Pictures.queue() / room * 8) {
             pair.client_side.send_datagram(packet.clone()).unwrap();
         }
 

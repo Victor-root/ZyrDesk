@@ -33,7 +33,8 @@ use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
 use zyr_transport::junction::Say;
 use zyr_transport::{
-    Connection, Fingerprint, Identity, Junction, Media, MediaProfile, TunnelEndpoint, packet_size,
+    Connection, Fingerprint, Identity, Junction, Media, MediaProfile, Sending, TunnelEndpoint,
+    packet_size,
 };
 use zyr_tunnel::{Tunnel, aside};
 
@@ -587,11 +588,17 @@ impl Ways {
         // carries the session.
         let relaying = relay.map(|relay| {
             Aborting(tokio::spawn(account::hold_a_relay_branch(
-                relay,
-                identity.clone(),
-                junction.clone(),
-                card,
-                carried.clone(),
+                account::Holding {
+                    relay,
+                    identity: identity.clone(),
+                    junction: junction.clone(),
+                    card,
+                    session: session.clone(),
+                    // This computer is the one watching, and what its
+                    // branch carries is a hand on a keyboard.
+                    sending: Sending::Inputs,
+                    media: carried.clone(),
+                },
                 self.log.clone(),
             )))
         });

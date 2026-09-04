@@ -123,6 +123,17 @@ const WARM_PATHS: usize = 2;
 /// A direct road has to be this much shorter to replace another.
 const HYSTERESIS: Duration = Duration::from_millis(3);
 
+/// Turns the packets a relay brought may win in a row before the socket
+/// is read.
+///
+/// What a relay brought is already sorted and named, so it goes first;
+/// but « first » applied to every turn is « only ». The transport asks
+/// for one packet a turn on Windows, so a relay delivering steadily
+/// would hold the direct socket shut, and the probes that would find a
+/// direct road would never be read. One turn in eight is enough to keep
+/// that door open and costs the relayed road nothing that can be felt.
+const RELAY_TURNS: u64 = 8;
+
 /// Packets a relay brought, waiting to be handed to the transport.
 ///
 /// Small on purpose: what the transport has not taken by then is already
@@ -294,6 +305,20 @@ struct Expected {
     elected_at: Instant,
     relay: Option<Relaying>,
     held: VecDeque<Held>,
+    /// Buffers the transport handed over while no road was elected, and
+    /// which were therefore swallowed rather than sent.
+    ///
+    /// The junction tells the transport a buffer left even when it had
+    /// nowhere to put it, because saying otherwise would spin: the
+    /// poller under it watches a socket that is always writable. Since
+    /// nothing else can notice, this counts, and the journal says every
+    /// one of them. The gravest thing this file does was the one thing
+    /// it did in silence.
+    swallowed: u64,
+    /// How many of them the journal has already accounted for. A count
+    /// and not a flag: a second black hole, later in the same session,
+    /// was silent because the first had used up the one line allowed.
+    said_swallowed: u64,
     next_number: u32,
     in_flight: Vec<InFlight>,
 }
@@ -324,6 +349,8 @@ impl Expected {
             elected_at: now,
             relay: None,
             held: VecDeque::new(),
+            swallowed: 0,
+            said_swallowed: 0,
             next_number: 1,
             in_flight: Vec::new(),
         }
@@ -406,10 +433,21 @@ impl Expected {
     /// Looks the roads over: which are due a probe, and which have gone
     /// quiet long enough to be given up.
     ///
-    /// A road given up is never the road in use afterwards. Handing
-    /// packets to a road that has stopped answering loses every one of
-    /// them without a word, where letting the election fall empty keeps
-    /// the last few and sends them whole the moment a road answers.
+    /// A road given up is never the road in use afterwards, as long as
+    /// there is another: handing packets to a road that has stopped
+    /// answering loses every one of them, where the election moving to a
+    /// road that answers loses none.
+    ///
+    /// The last road is never given up, and that is the whole of the
+    /// difference. Letting the election fall empty was meant to keep the
+    /// packets and send them whole the moment a road answered; what it
+    /// keeps is eight of them, a hundredth of a second of picture, and
+    /// everything else is swallowed while the far computer is told
+    /// nothing at all, probes and answers included. A road that has
+    /// missed three probes is not a road proven dead, only one that has
+    /// stopped saying it is alive: sending on it costs nothing, since the
+    /// alternative sends nowhere, and it is what the far computer needs
+    /// to hear to stop counting the silence.
     fn look_over(&mut self, now: Instant) -> LookedOver {
         let every = self.every(now);
         let mut due = Vec::new();
@@ -432,6 +470,10 @@ impl Expected {
             }
         }
         let elected = self.elected;
+        // What giving up may not take away: a road to send on. Counted
+        // before, because a road removed is one road fewer for the road
+        // after it in the same pass.
+        let mut left = self.paths.len();
         self.paths.retain_mut(|path| {
             let keep_every = if Some(path.through) == elected {
                 KEEP_EVERY
@@ -449,7 +491,8 @@ impl Expected {
             } else {
                 path.misses = 0;
             }
-            if path.misses >= MISSES_TO_DIE {
+            if path.misses >= MISSES_TO_DIE && left > 1 {
+                left -= 1;
                 given_up.push(path.through);
                 return false;
             }
@@ -457,12 +500,6 @@ impl Expected {
             due.push(path.through);
             true
         });
-        if self
-            .elected
-            .is_some_and(|through| given_up.contains(&through))
-        {
-            self.elected = None;
-        }
         self.in_flight
             .retain(|probe| now.duration_since(probe.at) < PROBE_LIFE);
         LookedOver {
@@ -532,12 +569,26 @@ impl Expected {
 
     /// The road worth taking: the shortest direct one, and the relay
     /// only while no direct one answers.
+    ///
+    /// Among the roads that are still answering first, and among the
+    /// others only when none is. A road keeps its last good measurement
+    /// right up to the moment it is given up, so the sickest road in the
+    /// list is often the shortest one in it, and choosing on length alone
+    /// hands the session to the road that is dying. What makes a road
+    /// worth taking is that something comes back on it.
     fn best(&self) -> Option<&Path> {
+        self.best_among(|path| path.misses == 0)
+            .or_else(|| self.best_among(|_| true))
+    }
+
+    /// The same rule, read over the roads worth considering.
+    fn best_among(&self, worth: impl Fn(&Path) -> bool) -> Option<&Path> {
         self.paths
             .iter()
+            .filter(|path| worth(path))
             .filter(|path| !path.through.relayed())
             .min_by_key(|path| path.round_trip)
-            .or_else(|| self.paths.first())
+            .or_else(|| self.paths.iter().find(|path| worth(path)))
     }
 
     /// Chooses the road in use. Says what changed, if anything did.
@@ -554,8 +605,12 @@ impl Expected {
             .elected
             .and_then(|through| self.paths.iter().find(|path| path.through == through));
         let chosen = match current {
+            // The margin is there so a session does not swing between
+            // two equals; it is not there to keep a road that has
+            // stopped answering, which is not the equal of anything.
             Some(current)
-                if current.through.relayed() == best.through.relayed()
+                if current.misses == 0
+                    && current.through.relayed() == best.through.relayed()
                     && current.round_trip <= best.round_trip + HYSTERESIS =>
             {
                 current.through
@@ -584,6 +639,7 @@ impl Expected {
 
     fn hold(&mut self, transmit: &Transmit<'_>) {
         if self.held.len() >= HELD {
+            self.swallowed += 1;
             self.held.pop_front();
         }
         self.held.push_back(Held {
@@ -649,6 +705,8 @@ struct Inner {
     /// all: everything else here measures what leaves.
     arrived: AtomicU64,
     ours: AtomicU64,
+    /// Turns of `poll_recv`, so the socket keeps one in `RELAY_TURNS`.
+    turns: AtomicU64,
     /// Whether the socket speaks IPv6, in which case every IPv4 address
     /// is handed to it in its mapped form, as the transport does.
     ipv6: bool,
@@ -700,6 +758,7 @@ impl Junction {
             socket,
             arrived: AtomicU64::new(0),
             ours: AtomicU64::new(0),
+            turns: AtomicU64::new(0),
             ipv6,
             identity,
             me,
@@ -803,6 +862,24 @@ impl Junction {
         }
     }
 
+    /// Whether that card is still held for that session.
+    ///
+    /// For whoever keeps something alive alongside a session and has to
+    /// know when to stop: a branch of relay held open, and nothing else
+    /// so far. Told of the session and not of the card alone, for the
+    /// reason D133 was written: a card outlives the session that took it,
+    /// and answering « yes » for the one that follows would keep a branch
+    /// open on a pass that belongs to nobody.
+    pub fn still_expects(&self, card: SocketAddr, session: &str) -> bool {
+        self.inner
+            .table
+            .lock()
+            .expect("aiguilleur")
+            .expected
+            .get(&card)
+            .is_some_and(|held| held.session == session)
+    }
+
     /// What carries the session towards that card right now.
     pub fn road(&self, card: SocketAddr) -> Option<Road> {
         let table = self.inner.table.lock().expect("aiguilleur");
@@ -858,6 +935,15 @@ impl Junction {
 }
 
 impl Inner {
+    /// Whether what a relay brought is served before the socket, this
+    /// turn.
+    fn relay_goes_first(&self) -> bool {
+        !self
+            .turns
+            .fetch_add(1, Ordering::Relaxed)
+            .is_multiple_of(RELAY_TURNS)
+    }
+
     fn now_ms(&self) -> u64 {
         self.started.elapsed().as_millis() as u64
     }
@@ -1006,6 +1092,14 @@ impl Inner {
                             relaying.branch.round_trip().as_millis()
                         ));
                     }
+                }
+                if expected.swallowed > expected.said_swallowed {
+                    said.push(format!(
+                        "card {card}: no road is elected, so {} packet(s) the transport handed \
+                         over went nowhere and it was told they had left",
+                        expected.swallowed - expected.said_swallowed
+                    ));
+                    expected.said_swallowed = expected.swallowed;
                 }
                 if let Some(taken) = expected.elect(now) {
                     said.push(said_elected(expected, taken));
@@ -1385,14 +1479,27 @@ impl AsyncUdpSocket for Junction {
         meta: &mut [RecvMeta],
     ) -> Poll<io::Result<usize>> {
         loop {
-            // What a relay brought is already sorted and named: it goes
-            // first, and nothing on the socket waits behind it.
-            let taken = self.inner.take_relayed(cx, bufs, meta);
-            if taken > 0 {
-                return Poll::Ready(Ok(taken));
+            // What a relay brought is already sorted and named, so it
+            // goes first: nearly every turn, and not every one.
+            // `RELAY_TURNS` says why the socket keeps a turn of its own.
+            if self.inner.relay_goes_first() {
+                let taken = self.inner.take_relayed(cx, bufs, meta);
+                if taken > 0 {
+                    return Poll::Ready(Ok(taken));
+                }
             }
             let count = match self.inner.socket.poll_recv(cx, bufs, meta) {
                 Poll::Ready(Ok(count)) => count,
+                // Nothing on the socket, and its waker is registered:
+                // what a relay brought is the other half of the answer,
+                // and asking for it registers the other waker.
+                Poll::Pending => {
+                    let taken = self.inner.take_relayed(cx, bufs, meta);
+                    if taken > 0 {
+                        return Poll::Ready(Ok(taken));
+                    }
+                    return Poll::Pending;
+                }
                 other => return other,
             };
             let kept = self.inner.sift(bufs, meta, count);
@@ -1691,6 +1798,7 @@ mod tests {
             let branch = crate::relay::Branch::open(
                 &relay.wanted(b"laissez-passer"),
                 identity,
+                crate::congestion::Sending::Pictures,
                 MediaProfile::default(),
             )
             .await
@@ -1914,6 +2022,78 @@ mod tests {
         assert!(!expected.answered(a, 999, Duration::from_millis(1), now));
     }
 
+    /// Fait taire la route élue jusqu'à ce que l'aiguilleur en tire les
+    /// conséquences, et rend ce qu'il a décidé.
+    fn goes_quiet(expected: &mut Expected, from: Instant) -> Instant {
+        let mut now = from;
+        for _ in 0..=MISSES_TO_DIE {
+            now += KEEP_EVERY;
+            expected.look_over(now);
+        }
+        now
+    }
+
+    #[test]
+    fn the_last_road_is_kept_rather_than_leaving_the_session_nowhere_to_send() {
+        // Le 4 septembre : la branche de relais était partie depuis une
+        // demi-minute, il ne restait qu'une route directe, elle s'est tue
+        // huit secondes, elle a été abandonnée, et deux secondes plus
+        // tard elle répondait de nouveau. Entre les deux, plus aucune
+        // route élue : tout ce que le transport confiait disparaissait,
+        // sondes et accusés de réception compris, et l'ordinateur d'en
+        // face mourait d'une absence. Une route qui a raté trois sondes
+        // n'est pas une route prouvée morte ; y envoyer ne coûte rien,
+        // puisque l'autre choix n'envoie nulle part.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let only = direct("10.0.0.1:47000");
+        let number = expected.number(start);
+        assert!(expected.answered(only, number, Duration::from_millis(5), start));
+        assert_eq!(moved(expected.elect(start)), Some((None, only)));
+
+        let now = goes_quiet(&mut expected, start);
+        assert_eq!(
+            expected.elected,
+            Some(only),
+            "la session s'est retrouvée sans aucune route où envoyer"
+        );
+        // Et elle est toujours sondée, sans quoi son retour passerait
+        // inaperçu.
+        assert!(expected.look_over(now + KEEP_EVERY).probe.contains(&only));
+    }
+
+    #[test]
+    fn a_road_that_answers_takes_the_session_from_one_that_has_stopped() {
+        // Le pendant du précédent : garder la dernière route ne doit pas
+        // la laisser faire de l'ombre à une route saine. Une route garde
+        // sa dernière bonne mesure jusqu'au bout, donc la plus malade de
+        // la liste est souvent la plus courte, et choisir sur la seule
+        // longueur donne la session à celle qui meurt.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let dying = direct("10.0.0.1:47000");
+        let sound = direct("10.0.0.2:47000");
+        let number = expected.number(start);
+        assert!(expected.answered(dying, number, Duration::from_millis(5), start));
+        assert_eq!(moved(expected.elect(start)), Some((None, dying)));
+
+        // La seconde route répond, bien plus longue : la marge la laisse
+        // à sa place tant que la première va bien.
+        let number = expected.number(start);
+        assert!(expected.answered(sound, number, Duration::from_millis(80), start));
+        assert_eq!(moved(expected.elect(start)), None);
+
+        // La première se tait. La session passe sur la seconde, et c'est
+        // seulement là que l'abandon a un sens : il en reste une.
+        let now = goes_quiet(&mut expected, start);
+        assert_eq!(moved(expected.elect(now)), Some((Some(dying), sound)));
+        assert_eq!(expected.elected, Some(sound));
+        assert!(
+            !expected.paths.iter().any(|path| path.through == dying),
+            "une route abandonnée alors qu'il en restait une autre doit disparaître"
+        );
+    }
+
     #[test]
     fn a_direct_road_beats_the_relay_however_long_it_is() {
         // La règle du produit : le relais n'est qu'un secours. Un chemin
@@ -2002,8 +2182,14 @@ mod tests {
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
+        // Une seconde route, bien plus longue, pour que l'abandon soit
+        // seulement permis : la dernière ne se rend jamais, et c'est le
+        // test au-dessus qui le dit.
+        let b = direct("10.0.0.2:47000");
         let number = expected.number(start);
         expected.answered(a, number, Duration::from_millis(5), start);
+        let number = expected.number(start);
+        expected.answered(b, number, Duration::from_millis(90), start);
         expected.elect(start);
         // Une sonde toutes les deux secondes, dont trois sans écho :
         // c'est à la quatrième qu'on sait que le chemin est mort.
@@ -2012,19 +2198,23 @@ mod tests {
             now += KEEP_EVERY;
             let looked = expected.look_over(now);
             if probe <= MISSES_TO_DIE {
-                assert_eq!(looked.probe, vec![a], "relance {probe}");
+                assert!(looked.probe.contains(&a), "relance {probe}");
                 assert!(looked.given_up.is_empty(), "abandonné à la relance {probe}");
             } else {
-                assert!(looked.probe.is_empty(), "le chemin mort a encore été sondé");
+                assert!(
+                    !looked.probe.contains(&a),
+                    "le chemin mort a encore été sondé"
+                );
                 assert_eq!(looked.given_up, vec![a], "l'abandon n'est dit nulle part");
             }
         }
-        assert!(expected.paths.is_empty());
-        // Et la route abandonnée n'est plus celle qu'on emprunte. Sans
-        // ça, tout ce que le transport confie ensuite part dans un
-        // chemin mort, sans un mot et sans retour possible ; là, c'est
-        // gardé pour la première route qui répond.
-        assert_eq!(expected.elected, None);
+        assert!(!expected.paths.iter().any(|path| path.through == a));
+        // Et l'élection qui suit dans la même passe rend la session à la
+        // route qui reste. Sans ça, tout ce que le transport confie
+        // ensuite part dans un chemin mort, sans un mot et sans retour
+        // possible. Elle dit aussi ce qu'on perd, ce qu'une élection
+        // vidée d'abord ne pouvait plus nommer.
+        assert_eq!(moved(expected.elect(now)), Some((Some(a), b)));
     }
 
     #[tokio::test]

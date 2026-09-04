@@ -610,8 +610,8 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use zyr_broker::ServerKey;
-    use zyr_transport::MediaProfile;
     use zyr_transport::relay::{Branch, Wanted};
+    use zyr_transport::{MediaProfile, Sending};
 
     /// Past this, something that should have happened has not.
     const PATIENCE: Duration = Duration::from_secs(5);
@@ -707,6 +707,7 @@ mod tests {
         let first = Branch::open(
             &standing.wanted("s1", here.fingerprint(), there.fingerprint()),
             &here,
+            Sending::Pictures,
             profile,
         )
         .await
@@ -714,6 +715,7 @@ mod tests {
         let second = Branch::open(
             &standing.wanted("s1", there.fingerprint(), here.fingerprint()),
             &there,
+            Sending::Pictures,
             profile,
         )
         .await
@@ -767,6 +769,7 @@ mod tests {
         let _first = Branch::open(
             &standing.wanted("s1", here.fingerprint(), there.fingerprint()),
             &here,
+            Sending::Pictures,
             profile,
         )
         .await
@@ -774,6 +777,7 @@ mod tests {
         let refused = Branch::open(
             &standing.wanted("s1", stranger.fingerprint(), here.fingerprint()),
             &stranger,
+            Sending::Pictures,
             profile,
         )
         .await
@@ -788,7 +792,9 @@ mod tests {
             fingerprint: standing.relay.offer().fingerprint,
             pass: impostor.seal(&pass).unwrap().to_bytes(),
         };
-        let refused = Branch::open(&forged, &stranger, profile).await.unwrap_err();
+        let refused = Branch::open(&forged, &stranger, Sending::Pictures, profile)
+            .await
+            .unwrap_err();
         assert!(refused.to_string().contains("contrefait"), "{refused}");
     }
 
@@ -804,6 +810,7 @@ mod tests {
         let _first = Branch::open(
             &standing.wanted("s1", here.fingerprint(), there.fingerprint()),
             &here,
+            Sending::Pictures,
             profile,
         )
         .await
@@ -811,6 +818,7 @@ mod tests {
         let refused = Branch::open(
             &standing.wanted("s2", there.fingerprint(), here.fingerprint()),
             &there,
+            Sending::Pictures,
             profile,
         )
         .await
