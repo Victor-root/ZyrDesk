@@ -611,7 +611,7 @@ mod tests {
     use std::time::Duration;
     use zyr_broker::ServerKey;
     use zyr_transport::relay::{Branch, Wanted};
-    use zyr_transport::{MediaProfile, Sending};
+    use zyr_transport::{Marking, MediaProfile, Sending};
 
     /// Past this, something that should have happened has not.
     const PATIENCE: Duration = Duration::from_secs(5);
@@ -709,6 +709,7 @@ mod tests {
             &here,
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap();
@@ -717,6 +718,7 @@ mod tests {
             &there,
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap();
@@ -771,6 +773,7 @@ mod tests {
             &here,
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap();
@@ -779,6 +782,7 @@ mod tests {
             &stranger,
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap_err();
@@ -792,7 +796,7 @@ mod tests {
             fingerprint: standing.relay.offer().fingerprint,
             pass: impostor.seal(&pass).unwrap().to_bytes(),
         };
-        let refused = Branch::open(&forged, &stranger, Sending::Pictures, profile)
+        let refused = Branch::open(&forged, &stranger, Sending::Pictures, profile, Marking::Ecn)
             .await
             .unwrap_err();
         assert!(refused.to_string().contains("contrefait"), "{refused}");
@@ -812,6 +816,7 @@ mod tests {
             &here,
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap();
@@ -820,6 +825,7 @@ mod tests {
             &there,
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap_err();

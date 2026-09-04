@@ -16,6 +16,7 @@ use rustls::pki_types::CertificateDer;
 use crate::congestion::{Media, MediaController, Sending};
 use crate::identity::{AllowedPeers, AnyPeer, Fingerprint, Identity, PinnedPeer};
 use crate::junction::Junction;
+use crate::marking::Marking;
 use crate::path::{DegradedPath, Path};
 
 /// Payload carried around, without a copy when it changes hands.
@@ -306,6 +307,21 @@ fn open(
     )?)
 }
 
+/// Opens a going endpoint on a socket of its own, marked or not.
+///
+/// The transport binds its own socket when the mark is left on, which
+/// is its ordinary road; taking the mark off means standing between the
+/// two, so the socket is bound here and handed over wrapped.
+fn open_marked(listen: SocketAddr, marking: Marking) -> Result<Endpoint, EndpointError> {
+    let Marking::None = marking else {
+        return Ok(Endpoint::client(listen)?);
+    };
+    let runtime = quinn::default_runtime()
+        .ok_or_else(|| EndpointError::Configuration("no async runtime".to_string()))?;
+    let socket = runtime.wrap_udp_socket(std::net::UdpSocket::bind(listen)?)?;
+    open_on(marking.applied(socket), None)
+}
+
 /// Opens the endpoint on a socket somebody else holds: a junction, or
 /// the doorway a server puts its relay on.
 fn open_on(
@@ -462,6 +478,7 @@ impl TunnelEndpoint {
         relay: Fingerprint,
         media: impl Into<Media>,
         sending: Sending,
+        marking: Marking,
         listen: SocketAddr,
     ) -> Result<Self, EndpointError> {
         let config = client_config(
@@ -470,7 +487,7 @@ impl TunnelEndpoint {
             RELAY_PROTOCOL,
             transport_towards_a_relay(media.into(), sending),
         )?;
-        let mut endpoint = open(listen, None, Path::Direct)?;
+        let mut endpoint = open_marked(listen, marking)?;
         endpoint.set_default_client_config(config);
         Ok(Self { endpoint })
     }

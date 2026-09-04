@@ -302,12 +302,14 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     // as one engine: reaching another computer has nothing to do with
     // this one being reachable, and neither has anything to do with the
     // engine of the moment.
+    //
+    // What was asked for last time, honoured before anyone has said
+    // anything this time.
+    let remembered = Remembered::at(paths::preferences());
     let machine = Machine {
         hosting: Hosting::new(),
-        ways: Ways::new(log.clone()),
-        // What was asked for last time, honoured before anyone has said
-        // anything this time.
-        remembered: Remembered::at(paths::preferences()),
+        ways: Ways::new(log.clone(), remembered.clone()),
+        remembered,
         neighbours: neighbourhood
             .as_ref()
             .map(|n| n.found())

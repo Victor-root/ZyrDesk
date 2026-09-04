@@ -1028,10 +1028,19 @@ impl Gateway {
             let log = log.clone();
             move |line: &str| log.write(line)
         });
+        // On the product's own port unless asked otherwise: a port the
+        // system picks is only reachable through a meeting the server
+        // arranges, which names it, and that is what the switch is for.
+        let port = if machine.remembered.fixed_port() {
+            TUNNEL_PORT
+        } else {
+            0
+        };
         let junction = Junction::bind(
-            SocketAddr::new(EVERY_INTERFACE, TUNNEL_PORT),
+            SocketAddr::new(EVERY_INTERFACE, port),
             identity.clone(),
             say,
+            machine.remembered.marking(),
         )
         .map_err(io::Error::other)?;
         let endpoint =
@@ -1363,10 +1372,11 @@ mod tests {
             zyr_proto::random::alphanumeric_string(8)
         ));
         let log = Log::open(&folder.join("service.log")).expect("un journal");
+        let remembered = crate::preferences::Remembered::at(folder.join("preferences.conf"));
         let machine = Machine {
             hosting: crate::machine::Hosting::new(),
-            ways: crate::ways::Ways::new(log.clone()),
-            remembered: crate::preferences::Remembered::at(folder.join("preferences.conf")),
+            ways: crate::ways::Ways::new(log.clone(), remembered.clone()),
+            remembered,
             neighbours: zyr_lan::Found::new(),
             account: crate::account::Account::at(folder.join("account.conf"), log),
             door: crate::machine::Door::default(),

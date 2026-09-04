@@ -41,6 +41,7 @@ use tokio::sync::{Notify, oneshot};
 
 use crate::endpoint::Bytes;
 use crate::identity::{Fingerprint, Identity};
+use crate::marking::Marking;
 use crate::probe::{self, Echo, Heard, Nonce, Probe};
 use crate::relay::Branch;
 use crate::sifting;
@@ -739,7 +740,15 @@ impl Junction {
     ///
     /// To be called from inside the runtime: the transport registers
     /// its socket with it, and the probing runs on it.
-    pub fn bind(listen: SocketAddr, identity: Arc<Identity>, say: Say) -> io::Result<Self> {
+    ///
+    /// `marking` says whether the packets leave with the transport's
+    /// congestion mark on them; probes and echoes carry none either way.
+    pub fn bind(
+        listen: SocketAddr,
+        identity: Arc<Identity>,
+        say: Say,
+        marking: Marking,
+    ) -> io::Result<Self> {
         let runtime = quinn::default_runtime()
             .ok_or_else(|| io::Error::other("aucun exécuteur asynchrone"))?;
         let socket = bind_socket(listen)?;
@@ -752,7 +761,7 @@ impl Junction {
                  before anything can count it"
             ));
         }
-        let socket = runtime.wrap_udp_socket(socket)?;
+        let socket = marking.applied(runtime.wrap_udp_socket(socket)?);
         let me = identity.fingerprint();
         let inner = Arc::new(Inner {
             socket,
@@ -1623,7 +1632,7 @@ mod tests {
     }
 
     fn junction(identity: &Arc<Identity>) -> Junction {
-        Junction::bind(local(), identity.clone(), quiet()).unwrap()
+        Junction::bind(local(), identity.clone(), quiet(), Marking::Ecn).unwrap()
     }
 
     /// Two computers, each expecting the other, and the transport on
@@ -1800,6 +1809,7 @@ mod tests {
                 identity,
                 crate::congestion::Sending::Pictures,
                 MediaProfile::default(),
+                Marking::Ecn,
             )
             .await
             .unwrap();

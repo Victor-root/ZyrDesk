@@ -333,10 +333,11 @@ mod tests {
             zyr_proto::random::alphanumeric_string(8)
         ));
         let log = Log::open(&folder.join("service.log")).unwrap();
+        let remembered = Remembered::at(folder.join("preferences.conf"));
         let machine = Machine {
             hosting: Hosting::new(),
-            ways: Ways::new(log.clone()),
-            remembered: Remembered::at(folder.join("preferences.conf")),
+            ways: Ways::new(log.clone(), remembered.clone()),
+            remembered,
             neighbours: Found::new(),
             account: Account::at(folder.join("account.conf"), log.clone()),
             door: Door::default(),

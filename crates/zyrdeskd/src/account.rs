@@ -45,7 +45,7 @@ use zyr_broker::{Refusal, Verifier, now};
 use zyr_control::{Holdup, WayId};
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
-use zyr_transport::{Branch, Fingerprint, Identity, Junction, Media, Sending, Wanted};
+use zyr_transport::{Branch, Fingerprint, Identity, Junction, Marking, Media, Sending, Wanted};
 
 use crate::machine::{Door, Hosting};
 use crate::preferences::Remembered;
@@ -771,10 +771,11 @@ impl Account {
                     started.identity.clone(),
                     started.door.clone(),
                     started.runtime.clone(),
+                    started.remembered.marking(),
                 )
             })
         };
-        let Some((identity, door, runtime)) = started else {
+        let Some((identity, door, runtime, marking)) = started else {
             return;
         };
         let me = identity.fingerprint();
@@ -812,6 +813,11 @@ impl Account {
                     return;
                 };
                 let card = junction.expect(start.peer.fingerprint, &start.session);
+                // Named from the door itself rather than from the product's
+                // port: the door may have been opened on any port at all.
+                let port = junction
+                    .local_address()
+                    .map_or(TUNNEL_PORT, |address| address.port());
                 inner
                     .hosted
                     .lock()
@@ -819,7 +825,7 @@ impl Account {
                     .insert(start.session.clone(), card);
                 held.live.say(FromDevice::SessionCandidates {
                     session: start.session.clone(),
-                    candidates: where_this_computer_answers(TUNNEL_PORT),
+                    candidates: where_this_computer_answers(port),
                 });
                 // The branch of relay opens in parallel, and never in
                 // the way: whichever road answers first carries the
@@ -836,6 +842,7 @@ impl Account {
                             // and what its branch carries is a picture.
                             sending: Sending::Pictures,
                             media: door.media(),
+                            marking,
                         },
                         inner.log.clone(),
                     ));
@@ -852,7 +859,7 @@ impl Account {
                     if let Some(mirror) = mirror_of(&server, udp_port).await
                         && let Some(seen) = junction.ask_the_mirror(mirror).await
                     {
-                        account.say_candidates(&session, seen_from_outside(seen, TUNNEL_PORT));
+                        account.say_candidates(&session, seen_from_outside(seen, port));
                     }
                 });
                 return;
@@ -1046,6 +1053,8 @@ pub(crate) struct Holding {
     /// sized on.
     pub sending: Sending,
     pub media: Media,
+    /// Whether the branch's packets leave with their congestion mark.
+    pub marking: Marking,
 }
 
 /// Keeps a branch of relay open towards that card, and hands each one
@@ -1109,6 +1118,7 @@ async fn open_a_branch(held: &Holding, log: &Log, opened: u32) -> Option<Branch>
         card,
         sending,
         media,
+        marking,
         ..
     } = held;
     let Ok(leads) = tokio::net::lookup_host(&relay.address).await else {
@@ -1129,10 +1139,11 @@ async fn open_a_branch(held: &Holding, log: &Log, opened: u32) -> Option<Branch>
         let identity = identity.clone();
         let media = media.clone();
         let sending = *sending;
+        let marking = *marking;
         trying.spawn(async move {
             (
                 address,
-                Branch::open(&wanted, &identity, sending, media).await,
+                Branch::open(&wanted, &identity, sending, media, marking).await,
             )
         });
     }
@@ -1335,6 +1346,7 @@ login_attempts_per_minute = 1000
             let identity = Arc::new(Identity::generate().unwrap());
             let hosting = Hosting::new();
             let account = Account::at(folder.join("account.conf"), log.clone());
+            let remembered = Remembered::at(folder.join("preferences.conf"));
             let junction = zyr_transport::Junction::bind(
                 "127.0.0.1:0".parse().unwrap(),
                 identity.clone(),
@@ -1342,6 +1354,7 @@ login_attempts_per_minute = 1000
                     let log = log.clone();
                     move |line: &str| log.write(line)
                 }),
+                Marking::Ecn,
             )
             .unwrap();
             let end = zyr_transport::TunnelEndpoint::host_at(
@@ -1357,8 +1370,8 @@ login_attempts_per_minute = 1000
                 &Handle::current(),
                 identity.clone(),
                 hosting.clone(),
-                Remembered::at(folder.join("preferences.conf")),
-                Ways::new(log),
+                remembered.clone(),
+                Ways::new(log, remembered),
                 door,
             );
             Self {
@@ -1530,9 +1543,12 @@ login_attempts_per_minute = 1000
             .await
             .expect("le PC n'a jamais dit où il répond")
             .unwrap();
+        // Sur le port de sa porte, qui est celui du produit en usage
+        // ordinaire et celui que le système a donné dans cet essai.
+        let port = pc.junction.local_address().unwrap().port();
         assert_eq!(
             named,
-            where_this_computer_answers(TUNNEL_PORT),
+            where_this_computer_answers(port),
             "le PC dit où il répond, c'est-à-dire cette machine"
         );
         let seen = tokio::time::timeout(PATIENCE, met.candidates.recv())
@@ -1541,7 +1557,7 @@ login_attempts_per_minute = 1000
             .unwrap();
         assert_eq!(
             seen,
-            seen_from_outside(pc.junction.local_address().unwrap(), TUNNEL_PORT)
+            seen_from_outside(pc.junction.local_address().unwrap(), port)
         );
         pc.until("le PC n'a jamais admis le portable", |account| {
             account.admitted() == vec![portable.identity.fingerprint()]

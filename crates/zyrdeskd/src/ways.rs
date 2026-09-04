@@ -39,6 +39,7 @@ use zyr_transport::{
 use zyr_tunnel::{Tunnel, aside};
 
 use crate::account::{self, Rendezvous};
+use crate::preferences::Remembered;
 use crate::said::{self, Said};
 
 /// Where the tunnel leaves from: any interface, any port.
@@ -352,14 +353,18 @@ impl<T> Register<T> {
 pub struct Ways {
     register: Arc<Mutex<Register<Open>>>,
     alive: fn(u32) -> bool,
+    /// What the person asked of this computer, for the two network
+    /// switches a way opens under.
+    remembered: Remembered,
     log: Log,
 }
 
 impl Ways {
-    pub fn new(log: Log) -> Self {
+    pub fn new(log: Log, remembered: Remembered) -> Self {
         Self {
             register: Arc::new(Mutex::new(Register::new())),
             alive: still_running,
+            remembered,
             log,
         }
     }
@@ -545,8 +550,14 @@ impl Ways {
             let log = self.log.clone();
             move |line: &str| log.write(line)
         });
-        let junction = Junction::bind(SocketAddr::new(EVERY_INTERFACE, 0), identity.clone(), say)
-            .map_err(|e| e.to_string())?;
+        let marking = self.remembered.marking();
+        let junction = Junction::bind(
+            SocketAddr::new(EVERY_INTERFACE, 0),
+            identity.clone(),
+            say,
+            marking,
+        )
+        .map_err(|e| e.to_string())?;
         let card = junction.expect(peer, &meeting.session);
         junction.add_candidates(card, meeting.known.iter().copied());
         let port = junction.local_address().map_err(|e| e.to_string())?.port();
@@ -598,6 +609,7 @@ impl Ways {
                     // branch carries is a hand on a keyboard.
                     sending: Sending::Inputs,
                     media: carried.clone(),
+                    marking,
                 },
                 self.log.clone(),
             )))
@@ -1221,6 +1233,8 @@ fn still_running(_process: u32) -> bool {
 mod tests {
     use super::*;
 
+    use zyr_transport::Marking;
+
     fn register() -> Register<&'static str> {
         Register::new()
     }
@@ -1432,6 +1446,7 @@ mod tests {
             "127.0.0.1:0".parse().unwrap(),
             far_identity.clone(),
             Arc::new(|_: &str| {}),
+            Marking::Ecn,
         )
         .unwrap();
         far.expect(near_identity.fingerprint(), "s1");
@@ -1455,7 +1470,7 @@ mod tests {
             relay: None,
             account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
         };
-        let ways = Ways::new(log);
+        let ways = Ways::new(log, Remembered::at(folder.join("preferences.conf")));
         let word = ways
             .reach(
                 Knock::Through(Box::new(meeting)),

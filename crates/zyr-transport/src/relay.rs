@@ -34,6 +34,7 @@ use crate::congestion::{Media, Sending};
 use crate::endpoint::{Bytes, Connection, EndpointError, GUARANTEED_MTU, TunnelEndpoint};
 use crate::identity::{Fingerprint, Identity};
 use crate::junction::bind_socket;
+use crate::marking::Marking;
 use crate::probe;
 use crate::sifting;
 
@@ -152,12 +153,14 @@ impl Branch {
         identity: &Identity,
         sending: Sending,
         media: impl Into<Media>,
+        marking: Marking,
     ) -> Result<Self, RelayError> {
         let endpoint = TunnelEndpoint::towards_the_relay(
             identity,
             wanted.fingerprint,
             media,
             sending,
+            marking,
             anywhere(wanted.address),
         )?;
         let connection = endpoint.connect(wanted.address).await?;
@@ -557,6 +560,7 @@ mod tests {
             &here,
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap();
@@ -565,6 +569,7 @@ mod tests {
             &there,
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap();
@@ -595,6 +600,7 @@ mod tests {
             &Identity::generate().unwrap(),
             Sending::Pictures,
             profile,
+            Marking::Ecn,
         )
         .await
         .unwrap();
@@ -624,6 +630,7 @@ mod tests {
             &device,
             Sending::Pictures,
             MediaProfile::default(),
+            Marking::Ecn,
         )
         .await
         .unwrap_err();
@@ -641,9 +648,15 @@ mod tests {
         let device = Identity::generate().unwrap();
         let mut wanted = relay.wanted(b"laissez-passer");
         wanted.fingerprint = Identity::generate().unwrap().fingerprint();
-        let refused = Branch::open(&wanted, &device, Sending::Pictures, MediaProfile::default())
-            .await
-            .unwrap_err();
+        let refused = Branch::open(
+            &wanted,
+            &device,
+            Sending::Pictures,
+            MediaProfile::default(),
+            Marking::Ecn,
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(refused, RelayError::Endpoint(_)), "{refused:?}");
     }
 

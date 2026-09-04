@@ -617,10 +617,11 @@ mod tests {
             let log = Log::open(&folder.join("service.log")).unwrap();
             let channel = format!("zyrdeskd-test-{}-{what}", std::process::id());
             let fingerprint = zyr_transport::Identity::generate().unwrap().fingerprint();
+            let remembered = crate::preferences::Remembered::at(folder.join("preferences.conf"));
             let machine = Machine {
                 hosting: Hosting::new(),
-                ways: crate::ways::Ways::new(log.clone()),
-                remembered: crate::preferences::Remembered::at(folder.join("preferences.conf")),
+                ways: crate::ways::Ways::new(log.clone(), remembered.clone()),
+                remembered,
                 neighbours: zyr_lan::Found::new(),
                 account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
                 door: crate::machine::Door::default(),

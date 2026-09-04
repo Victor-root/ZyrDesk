@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use zyr_proto::session::{Preferred, Serving};
+use zyr_transport::Marking;
 
 /// Keys, in the order they are written.
 const REMOTE_ACCESS: &str = "remote_access";
@@ -38,6 +39,8 @@ const CAPTURE: &str = "capture";
 const MUTE_FAR_SPEAKERS: &str = "mute_far_speakers";
 const SYSTEM_KEYS: &str = "system_keys";
 const STEADY_FAR_RATE: &str = "steady_far_rate";
+const ECN: &str = "ecn";
+const FIXED_PORT: &str = "fixed_port";
 
 /// What the file says, when it says anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +54,19 @@ pub struct Preferences {
     pub preferred: Preferred,
     /// How this computer makes the pictures it serves to others.
     pub serving: Serving,
+    /// Whether the tunnel's packets leave with their congestion mark.
+    ///
+    /// A switch for comparing two runs and nothing else: sessions between
+    /// two homes die of silences that another product crossing the same
+    /// equipment never sees, and the mark is one of the few things that
+    /// tell our packets from its own.
+    pub ecn: bool,
+    /// Whether this computer's door listens on the product's own port,
+    /// 47000, or on a port the system picks at each start.
+    ///
+    /// The other switch of the same comparison: a port forwarded on a
+    /// box by hand is a different road from one punched through it.
+    pub fixed_port: bool,
 }
 
 impl Default for Preferences {
@@ -70,6 +86,8 @@ impl Default for Preferences {
             trust_local_network: true,
             preferred: Preferred::default(),
             serving: Serving::default(),
+            ecn: true,
+            fixed_port: true,
         }
     }
 }
@@ -134,6 +152,20 @@ impl Remembered {
 
     pub fn set_serving(&self, serving: Serving) -> io::Result<()> {
         self.change(|preferences| preferences.serving = serving)
+    }
+
+    /// What the tunnel's packets carry on the wire.
+    pub fn marking(&self) -> Marking {
+        if self.read().ecn {
+            Marking::Ecn
+        } else {
+            Marking::None
+        }
+    }
+
+    /// Whether the door listens on the product's own port.
+    pub fn fixed_port(&self) -> bool {
+        self.read().fixed_port
     }
 
     /// Writes the decision down before honouring it: a computer that
@@ -215,7 +247,18 @@ fn rendered(preferences: Preferences) -> String {
          # Façon de capturer l'écran : ddx voit les invites administrateur\n\
          # et l'écran de connexion, wgc est plus rapide sur certaines\n\
          # machines et ne les voit pas.\n\
-         {CAPTURE} = {}\n",
+         {CAPTURE} = {}\n\
+         \n\
+         # Essais réseau, à changer sur les DEUX ordinateurs, puis à\n\
+         # redémarrer le service : le fichier n'est lu qu'au démarrage.\n\
+         # Marquer les paquets du tunnel du bit ECN, comme QUIC le fait\n\
+         # partout. Certains équipements traitent les paquets marqués à\n\
+         # part : à comparer avec no si les sessions se coupent.\n\
+         {ECN} = {}\n\
+         # Écouter sur le port 47000 du produit. Avec no, le port change à\n\
+         # chaque démarrage : la session par un compte le trouve, une\n\
+         # session en réseau local ou un renvoi de port sur la box non.\n\
+         {FIXED_PORT} = {}\n",
         yes_no(preferences.remote_access),
         yes_no(preferences.trust_local_network),
         preferred.asked,
@@ -229,6 +272,8 @@ fn rendered(preferences: Preferences) -> String {
         yes_no(preferred.steady_far_rate),
         yes_no(preferences.serving.steady_rate),
         preferences.serving.capture,
+        yes_no(preferences.ecn),
+        yes_no(preferences.fixed_port),
     )
 }
 
@@ -302,6 +347,8 @@ fn parsed(text: &str) -> Preferences {
             STEADY_FAR_RATE => {
                 preferred.steady_far_rate = told(value, preferred.steady_far_rate);
             }
+            ECN => preferences.ecn = told(value, preferences.ecn),
+            FIXED_PORT => preferences.fixed_port = told(value, preferences.fixed_port),
             _ => {}
         }
     }
@@ -342,6 +389,8 @@ mod tests {
                 steady_rate: false,
                 capture: Capture::Windows,
             },
+            ecn: true,
+            fixed_port: true,
         }
     }
 
@@ -462,6 +511,30 @@ mod tests {
         assert!(rendered.contains("capture = wgc"), "{rendered}");
         assert!(rendered.contains("mute_far_speakers = yes"), "{rendered}");
         assert_eq!(parsed(&rendered), chosen());
+    }
+
+    #[test]
+    fn the_network_switches_are_on_unless_a_plain_no_turns_them_off() {
+        // Ce sont des interrupteurs de comparaison : le produit se
+        // comporte comme QUIC partout tant que personne n'a écrit non.
+        let remembered = Remembered::at(temporary_file("essais"));
+        assert_eq!(remembered.marking(), Marking::Ecn);
+        assert!(remembered.fixed_port());
+
+        let mangled = parsed("ecn = peut-être\nfixed_port = 47000\n");
+        assert!(mangled.ecn);
+        assert!(mangled.fixed_port);
+
+        let off = parsed("ecn = no\nfixed_port = non\n");
+        assert!(!off.ecn);
+        assert!(!off.fixed_port);
+
+        // Turned off by hand, they are written back off: the product
+        // rewrites the file at every change of the other settings.
+        let rendered = rendered(off);
+        assert!(rendered.contains("ecn = no"), "{rendered}");
+        assert!(rendered.contains("fixed_port = no"), "{rendered}");
+        assert_eq!(parsed(&rendered), off);
     }
 
     #[test]

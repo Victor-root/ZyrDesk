@@ -8,6 +8,7 @@ pub mod congestion;
 pub mod endpoint;
 pub mod identity;
 pub mod junction;
+pub mod marking;
 pub mod mtu;
 pub mod path;
 pub mod probe;
@@ -22,6 +23,7 @@ pub use endpoint::{
 };
 pub use identity::{AllowedPeers, Fingerprint, Identity, signed_by};
 pub use junction::{Junction, Road, card_of, is_card};
+pub use marking::Marking;
 pub use mtu::{PacketSize, packet_size};
 pub use path::Path;
 pub use relay::{Branch, Doorway, RelayError, Wanted};
