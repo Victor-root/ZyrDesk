@@ -2361,6 +2361,26 @@ Les trente secondes ont donc tenu, et l'élection n'a plus fait de va-et-vient. 
 
 **Ce qu'on sait maintenant du silence lui-même.** Il dure neuf secondes et la route revient. C'est la première fois qu'on peut l'affirmer, parce que c'est la première fois qu'un des quatre compteurs a laissé le temps de le voir.
 
+## D141. Une branche de relais qui ne tient pas n'est pas redemandée trente fois par seconde (2026-09-04, pendant M6)
+
+**Le relevé.** Une séance depuis un portable dont les paquets sortent tour à tour par deux adresses publiques, `92.184.103.192` et `92.184.103.56`. Aucune branche de relais ne survit à sa propre poignée de main : la connexion change d'adresse source sous elle et meurt. Le journal du portable, sur deux secondes :
+
+```
+22:21:58  the relay ... took the pass after 63 ms
+22:21:58  the branch to the relay ... is gone, and this session still wants one
+22:21:58  the relay ... took the pass after 89 ms
+22:21:58  the branch to the relay ... is gone, and this session still wants one
+          ... une trentaine de fois
+```
+
+Et le serveur, pour cette seule session, enregistre une trentaine d'entrées au relais, plusieurs `aborted by peer during the handshake`, et un `presented no pass`.
+
+**La cause, et elle est dans le gardien de [D135](#d135-une-session-ne-se-retrouve-jamais-sans-route-et-les-deux-bouts-nont-pas-la-même-file-2026-09-04-pendant-m6).** La pause de deux secondes ne couvrait que le cas où la branche ne s'ouvre pas. Une branche qui s'ouvre puis meurt aussitôt renvoyait la boucle en tête sans une pause, et rien ne bornait le nombre d'essais. Le gardien qui devait garder le secours chaud le brûlait : un relais porte un nombre fixe de sessions, et chaque essai en prenait une place.
+
+**Ce qui est fait.** La pause vaut pour tous les cas et grandit avec les échecs : chaque branche qui meurt jeune attend deux fois plus que la précédente, jusqu'à une demi-minute, et une branche qui a tenu remet la pause à deux secondes. La ligne du journal dit maintenant combien de temps la branche a tenu et quand la suivante sera demandée, ce qui distingue en une lecture un relais redémarré d'un chemin qui ne portera jamais de branche.
+
+**Ce que ça ne change pas.** Le silence de neuf secondes est ailleurs, et cette séance ne l'éclaire pas : elle a été menée sur un binaire d'avant [D140](#d140-la-quatrième-patience-celle-que-personne-navait-vue-2026-09-04-pendant-m6), et son moteur hôte a raccroché cinq secondes après le silence, comme avant P-S7. Le relevé de D140 reste donc à faire.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

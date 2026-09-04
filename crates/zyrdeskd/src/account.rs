@@ -62,14 +62,25 @@ const RENDEZVOUS_PATIENCE: Duration = Duration::from_secs(10);
 /// over.
 const TICK: Duration = Duration::from_secs(1);
 
-/// Pause before opening a branch of relay again, once one could not be
-/// opened.
+/// Pause before opening a branch of relay again.
 ///
 /// A relay being restarted is back in a second or two, and a session
 /// wants its fallback back the moment it is there. Short enough for
 /// that, long enough that a relay that has gone for good is not asked
 /// hundreds of times a minute for the length of a session.
 const BRANCH_RETRY: Duration = Duration::from_secs(2);
+
+/// Longest that pause grows to, for a branch that will not hold.
+///
+/// A branch that dies the instant it opens will not hold because it was
+/// asked again at once: whatever killed it is still there. On the fourth
+/// of September a computer whose packets left by two public addresses in
+/// turn could not keep one for a whole second, and the guardian reopened
+/// it thirty times in two: thirty connections at the relay for one
+/// session, on a relay that carries a fixed number of them. Each attempt
+/// that dies young therefore waits twice as long as the one before, up
+/// to this, and a branch that held goes back to the short pause.
+const BRANCH_PATIENCE: Duration = Duration::from_secs(30);
 
 /// The road to that device of the account, as a card carries it.
 pub fn road_to(device: &str) -> String {
@@ -1082,10 +1093,12 @@ pub(crate) struct Holding {
 /// this dialect does not have.
 pub(crate) async fn hold_a_relay_branch(held: Holding, log: Log) {
     let mut opened = 0u32;
+    let mut wait = BRANCH_RETRY;
     while held.junction.still_expects(held.card, &held.session) {
         match open_a_branch(&held, &log, opened).await {
             Some(branch) => {
                 opened += 1;
+                let held_since = std::time::Instant::now();
                 held.junction.relay_through(held.card, branch.clone());
                 // Held rather than read: reading it is the junction's
                 // work, and two readers of one connection would take
@@ -1098,15 +1111,29 @@ pub(crate) async fn hold_a_relay_branch(held: Holding, log: Log) {
                 // was turning everybody away at the tenth, every one of
                 // them a session long over.
                 tokio::select! {
-                    () = branch.broken() => log.write(&format!(
-                        "the branch to the relay at {} is gone, and this session still wants one",
-                        branch.address()
-                    )),
+                    () = branch.broken() => {}
                     () = no_longer_expected(&held) => return,
                 }
+                // One that held is a road that works and was cut; one
+                // that died young is a road that cannot carry a branch
+                // yet, and asking it again at once is what turned two
+                // seconds into thirty connections.
+                wait = if held_since.elapsed() >= BRANCH_PATIENCE {
+                    BRANCH_RETRY
+                } else {
+                    (wait * 2).min(BRANCH_PATIENCE)
+                };
+                log.write(&format!(
+                    "the branch to the relay at {} is gone after {} ms, and this session still \
+                     wants one: another in {} ms",
+                    branch.address(),
+                    held_since.elapsed().as_millis(),
+                    wait.as_millis()
+                ));
             }
-            None => tokio::time::sleep(BRANCH_RETRY).await,
+            None => wait = (wait * 2).min(BRANCH_PATIENCE),
         }
+        tokio::time::sleep(wait).await;
     }
 }
 
