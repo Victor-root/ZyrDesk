@@ -2320,9 +2320,9 @@ Séance A : T = 18:42:32, mort à 18:42:42. Séance B : T = 19:14:15, mort à 19
 
 **Ce qui est fait.** La patience devient un seul nombre, écrit une fois dans `zyr-proto`, `UNHEARD_LIMIT`, trente secondes : la durée qu'une route entre deux maisons met à revenir quand une box lâche ses traductions, et pas une attente que quelqu'un subit par accident, une session vraiment finie se fermant depuis la fenêtre. Le transport le lit à la place de sa constante. La configuration du moteur hôte le porte, ce qui ne coûte pas un patch, ce moteur ayant déjà la clé. Ce que ça coûte par ailleurs, et c'est assumé : une session dont le premier paquet vidéo n'arrive jamais échoue en trente secondes au lieu de dix.
 
-**Ce qui reste, et pourquoi ce n'est pas fait ici.** Le moteur client garde ses dix secondes, et son nombre est en dur dans `moonlight-common-c`, que notre fork prend chez son projet d'origine : c'est le patch P-M12, et il demande un fork de plus, à créer, et le sous-module à faire pointer dessus.
+**Et le moteur client, le même jour.** Son nombre est en dur dans `moonlight-common-c`, une bibliothèque séparée que Moonlight enveloppe et que notre fork prenait chez son projet d'origine : c'est le patch P-M12, et il a demandé un troisième fork. La durée entre dans la configuration du flux, en millisecondes, zéro gardant les dix secondes de toujours pour qui ne dit rien ; le moteur client la reçoit sur une option `--control-timeout`, et ZyrDesk y met `UNHEARD_LIMIT`. Aucun nombre de ZyrDesk n'entre dans un moteur : ce qui y entre est le droit de le choisir.
 
-**Ce que la prochaine coupure dira, et c'est la raison d'écrire cette moitié seule.** Les deux moteurs renoncent à la même seconde, donc rien dans les journaux ne dit lequel des deux a coupé. Avec le moteur hôte à trente secondes, une session qui meurt encore à la dixième désigne le moteur client sans discussion, et une session qui survit désigne le moteur hôte. La correction est aussi la mesure.
+**Ce que ça ne prétend pas être.** Ce n'est pas la cause du silence, qui est hors du produit et reste à trouver du côté des deux box. C'est ce qui fait qu'un silence de moins d'une demi-minute redevient une image figée qui repart, au lieu d'une session fermée.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

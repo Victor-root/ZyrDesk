@@ -120,6 +120,14 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         }
         .to_string(),
     );
+    // How long its control channel waits for an acknowledgement before
+    // giving the session up. Its own answer was ten seconds, shorter than
+    // the tunnel carrying it, so every road that went quiet for a dozen
+    // seconds and came back ended a session the tunnel had held
+    // ([D138](../../docs/DECISIONS.md), patch P-M12). The product holds
+    // one patience and every part of it is told the same.
+    args.push("--control-timeout".to_string());
+    args.push(zyr_proto::net::UNHEARD_LIMIT.as_millis().to_string());
     if settings.absolute_mouse {
         args.push("--absolute-mouse".to_string());
     }
@@ -189,6 +197,24 @@ mod tests {
         let args = session_arguments("host", &SessionSettings::default());
         let path = value_of(&args, "--follow-settings").expect("un chemin à suivre");
         assert!(path.ends_with("session-wanted.txt"));
+    }
+
+    #[test]
+    fn the_engine_waits_as_long_as_the_tunnel_before_giving_a_session_up() {
+        // Le 4 septembre, deux sessions sont mortes à la dixième seconde
+        // d'un silence du réseau, la route étant revenue à la septième et
+        // le tunnel en tenant trente : c'est la patience la plus courte
+        // qui décide, et celle du moteur était la sienne.
+        let args = session_arguments("host", &SessionSettings::default());
+        assert_eq!(
+            value_of(&args, "--control-timeout"),
+            Some(
+                zyr_proto::net::UNHEARD_LIMIT
+                    .as_millis()
+                    .to_string()
+                    .as_str()
+            )
+        );
     }
 
     #[test]

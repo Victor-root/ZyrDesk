@@ -44,6 +44,11 @@ Write-Host "Moteur client : source $Source"
 # compiler with nothing readable, so it is worth making sure first.
 Push-Location $Source
 try {
+    # Synchronised first: the address of a submodule can move, and a
+    # checkout made before it moved keeps the old one. The update would
+    # then look for a commit that lives nowhere it knows.
+    git submodule sync --recursive
+    Assert-Ran "la mise à jour des adresses des sous-modules du moteur"
     git submodule update --init --recursive
     Assert-Ran "la récupération des sous-modules du moteur"
 } finally {
