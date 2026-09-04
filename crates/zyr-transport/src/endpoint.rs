@@ -13,7 +13,7 @@ use quinn::crypto::rustls::{QuicClientConfig, QuicServerConfig};
 use quinn::{AsyncUdpSocket, ClientConfig, Endpoint, ServerConfig, TransportConfig};
 use rustls::pki_types::CertificateDer;
 
-use crate::congestion::{Media, Sending};
+use crate::congestion::{Media, MediaController, Sending};
 use crate::identity::{AllowedPeers, AnyPeer, Fingerprint, Identity, PinnedPeer};
 use crate::junction::Junction;
 use crate::path::{DegradedPath, Path};
@@ -34,7 +34,11 @@ const PROTOCOL: &[u8] = b"zyrdesk/1";
 const RELAY_PROTOCOL: &[u8] = b"zyrdesk-relay/1";
 
 /// Past this, the session counts as lost.
-const MAXIMUM_IDLE: Duration = Duration::from_secs(30);
+///
+/// Read by the congestion controller too: it is the longest a packet can
+/// go unanswered on a connection that is still alive, and its window is
+/// sized never to fill in that time.
+pub(crate) const MAXIMUM_IDLE: Duration = Duration::from_secs(30);
 
 /// Keeps the mapping alive in the network equipment along the way.
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
@@ -124,9 +128,9 @@ pub struct Carrying {
     /// Packets the transport itself saw lost on the path.
     pub lost: u64,
     /// What may be out on the wire unanswered at once. Nothing goes out
-    /// beyond it, so a session losing packets with a full window is a
-    /// session whose far end has stopped answering, and one losing them
-    /// with room to spare is a path that really cannot take them.
+    /// beyond it, and it is sized so that nothing reaches it for as long
+    /// as the connection lives: a journal line showing it full is a
+    /// fault of the transport, not of the road.
     pub window: u64,
     pub round_trip: Duration,
 }
@@ -167,7 +171,7 @@ impl From<std::io::Error> for EndpointError {
 fn transport(media: Media, sending: Sending) -> TransportConfig {
     let mut config = TransportConfig::default();
     config.datagram_send_buffer_size(sending.queue());
-    config.congestion_controller_factory(Arc::new(media));
+    config.congestion_controller_factory(Arc::new(MediaController::new(media, sending)));
     config.datagram_receive_buffer_size(Some(RECEIVE_QUEUE));
     config.max_idle_timeout(Some(
         MAXIMUM_IDLE.try_into().expect("idle timeout representable"),

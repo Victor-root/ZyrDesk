@@ -8,16 +8,28 @@
 //! asks for forty. The stream is either strangled or its queue swells
 //! into seconds of latency.
 //!
-//! This controller instead holds a window sized on what the session
-//! genuinely needs to keep in flight: the rate times the round trip,
-//! doubled for margin, plus enough room for a whole frame sent at once.
+//! This controller instead holds a window nothing fills for as long as
+//! the connection lives. Ignoring losses would be unreasonable for a
+//! stream able to saturate a link. This one cannot: the rate is set by
+//! the encoder and never goes past its target. The window is therefore
+//! not there to send more, only never to hold back what the encoder
+//! already produces. Losses stay the business of the video protocol's
+//! error correction, which exists for exactly that.
 //!
-//! Ignoring losses would be unreasonable for a stream able to saturate a
-//! link. This one cannot: the rate is set by the encoder and never goes
-//! past its target. The window is therefore not there to send more, only
-//! to avoid blocking what the encoder already produces. Losses stay the
-//! business of the video protocol's error correction, which exists for
-//! exactly that.
+//! It used to hold half a second of the stream, on the reasoning that a
+//! far computer busy elsewhere stops answering for about that long, and
+//! what went out meanwhile had to fit. What that missed is what a full
+//! window does once the road has been silent longer than that: nothing
+//! but the transport's own probes leaves, and the transport spaces those
+//! further and further apart, doubling each time. Seven seconds into a
+//! silence the next probe is five seconds away, and the road coming back
+//! changes nothing until that probe has gone out and been answered. On
+//! the fourth of September the road came back seven seconds into a
+//! silence and the computer watching stayed mute for three more, which
+//! is exactly what the client engine's control channel does not survive:
+//! it gives up after ten. The window is now what the connection could
+//! possibly have out before it dies of the same silence, and no hiccup
+//! ever fills it.
 //!
 //! Wanted side effect: a wide window also defuses send pacing. Each
 //! frame leaves as a burst of several dozen packets; a pacer would
@@ -27,33 +39,22 @@
 use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use quinn::congestion::{Controller, ControllerFactory};
 use quinn_proto::RttEstimator;
 use zyr_proto::session::RATES_OFFERED;
 
-/// Floor for the window, whatever the rate and the round trip.
+use crate::endpoint::MAXIMUM_IDLE;
+
+/// Floor for the window, whatever the rate.
 const MINIMUM_WINDOW: u64 = 64 * 1024;
 
-/// Longest silence from the far computer the picture should survive.
-///
-/// The window holds what has gone out and not yet been answered for, and
-/// nothing goes out beyond it. A far computer busy with something else
-/// for a moment stops answering for that moment, and everything the
-/// encoder makes meanwhile has to fit in the window, then in the queue
-/// behind it. Past both, the transport throws packets away, and what it
-/// throws away is the oldest, which is the frame on its way out: that
-/// frame arrives in pieces, cannot be rebuilt from them, and the picture
-/// waits for a key frame that is cut short in its turn.
-///
-/// Sized on time rather than on a fixed number of bytes, because what
-/// has to fit is a length of stream and not a length of anything else:
-/// sixty-four kibibytes, which is what this was, is a tenth of a second
-/// at five megabits and a hundred and fiftieth of one at eighty. And it
-/// costs nothing while the path is healthy: what is in flight is on the
-/// wire, not waiting anywhere, and the rate stays the encoder's own.
-const LONGEST_STALL: Duration = Duration::from_millis(500);
+/// What travels beside the picture and is not counted in its rate: the
+/// repair the engine adds to every frame, the sound, the headers of each
+/// packet, and the key frames that overshoot. Twice the rate covers all
+/// of it with room to spare.
+const BESIDE_THE_PICTURE: u64 = 2;
 
 /// Frames the send queue holds.
 ///
@@ -61,15 +62,6 @@ const LONGEST_STALL: Duration = Duration::from_millis(500);
 /// from, and whatever the encoder produces while that key frame is
 /// going out has to fit behind it.
 const QUEUED_FRAMES: u64 = 6;
-
-/// Largest round trip the computation will take into account.
-///
-/// A wild reading, taken during a stall, would otherwise produce an
-/// absurd window that takes a long time to come back down.
-const MAXIMUM_RTT: Duration = Duration::from_millis(500);
-
-/// Round trip assumed before the first measurement.
-const INITIAL_RTT: Duration = Duration::from_millis(25);
 
 /// Shape of the stream to carry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,7 +86,9 @@ pub struct MediaProfile {
 /// carries. Too long only costs a megabyte and some staleness after a
 /// stall the session would otherwise not have survived at all.
 ///
-/// Of the computer being watched, and of it alone: `Sending` says why.
+/// The queue of the computer being watched, and of it alone; and the
+/// window of the computer watching, whose own stream is no stream at
+/// all. `Sending` says why.
 pub const FASTEST: MediaProfile = MediaProfile {
     bits_per_second: RATES_OFFERED[RATES_OFFERED.len() - 1] as u64 * 1_000,
     frames_per_second: 60,
@@ -119,7 +113,8 @@ pub const FASTEST: MediaProfile = MediaProfile {
 /// and moves on, wide enough to take the burst a hand on a mouse makes.
 pub const WATCHING_QUEUE: usize = 32 * 1024;
 
-/// What one end of a tunnel sends, which is what its queue is sized on.
+/// What one end of a tunnel sends, which is what its queue and its window
+/// are sized on.
 ///
 /// The two ends of a session are not alike and never were: one sends a
 /// picture and the other sends a hand. One queue for both was a queue
@@ -153,26 +148,24 @@ impl Default for MediaProfile {
 }
 
 impl MediaProfile {
-    /// Window this profile needs at the given round trip.
+    /// Window this profile needs: twice what the stream makes for as long
+    /// as the connection can go unanswered.
     ///
-    /// Twice the bandwidth-delay product, plus one whole frame: the
-    /// first term covers what is in flight, the second the burst of
-    /// packets a frame amounts to. Never less than what the encoder
-    /// makes while the far computer is not answering (`LONGEST_STALL`),
-    /// which on a short road is far more than the other two.
-    pub fn window(&self, rtt: Duration) -> u64 {
-        let rtt = rtt.min(MAXIMUM_RTT);
-        let in_flight = (self.bytes_per_second() as f64 * rtt.as_secs_f64()) as u64;
-        in_flight
-            .saturating_mul(2)
-            .saturating_add(self.frame())
-            .max(self.made_while_silent())
+    /// What is in flight is what has gone out and not been answered for,
+    /// and nothing goes out beyond the window. The far computer may stop
+    /// answering for the whole of the transport's idle limit before the
+    /// connection dies of it, everything sent meanwhile is in flight, and
+    /// all of it has to fit: past the window the transport sends nothing
+    /// but its probes, spaced out for seconds, and a silence the
+    /// connection would have survived becomes one the engines do not. It
+    /// costs nothing while the road is healthy: what is in flight is on
+    /// the wire, not waiting anywhere, and the rate stays the encoder's
+    /// own.
+    pub fn window(&self) -> u64 {
+        self.bytes_per_second()
+            .saturating_mul(MAXIMUM_IDLE.as_secs())
+            .saturating_mul(BESIDE_THE_PICTURE)
             .max(MINIMUM_WINDOW)
-    }
-
-    /// What the encoder makes while nothing is being answered.
-    fn made_while_silent(&self) -> u64 {
-        (self.bytes_per_second() as f64 * LONGEST_STALL.as_secs_f64()) as u64
     }
 
     /// Room the queue of datagrams waiting to go out needs.
@@ -286,32 +279,34 @@ impl Media {
     }
 }
 
-/// Controller holding the window the stream needs.
+/// Controller holding the window this end needs.
 #[derive(Debug, Clone)]
 pub struct MediaController {
     media: Media,
-    rtt: Duration,
+    sending: Sending,
 }
 
 impl MediaController {
-    pub fn new(media: impl Into<Media>) -> Self {
+    pub fn new(media: impl Into<Media>, sending: Sending) -> Self {
         Self {
             media: media.into(),
-            rtt: INITIAL_RTT,
+            sending,
         }
     }
 }
 
 impl Controller for MediaController {
+    /// Nothing is read from an acknowledgement: the window is sized on
+    /// the stream and on the idle limit, and the length of the road is
+    /// no part of it.
     fn on_ack(
         &mut self,
         _now: Instant,
         _sent: Instant,
         _bytes: u64,
         _app_limited: bool,
-        rtt: &RttEstimator,
+        _rtt: &RttEstimator,
     ) {
-        self.rtt = rtt.get();
     }
 
     /// Losses do not shrink the window.
@@ -330,8 +325,18 @@ impl Controller for MediaController {
 
     fn on_mtu_update(&mut self, _new_mtu: u16) {}
 
+    /// The session's stream for the end that sends the picture, and the
+    /// fastest stream there is for the end that sends a hand.
+    ///
+    /// What that end sends never comes near it, and that is the point:
+    /// its window is not there to hold anything back, not even the
+    /// engine's control channel sending everything again at every turn
+    /// of its clock while the road is silent, which is what it does.
     fn window(&self) -> u64 {
-        self.media.now().window(self.rtt)
+        match self.sending {
+            Sending::Pictures => self.media.now().window(),
+            Sending::Inputs => FASTEST.window(),
+        }
     }
 
     /// The copy shares what the original reads: the transport clones its
@@ -342,7 +347,7 @@ impl Controller for MediaController {
     }
 
     fn initial_window(&self) -> u64 {
-        self.media.now().window(INITIAL_RTT)
+        self.window()
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn Any> {
@@ -350,9 +355,9 @@ impl Controller for MediaController {
     }
 }
 
-impl ControllerFactory for Media {
+impl ControllerFactory for MediaController {
     fn build(self: Arc<Self>, _now: Instant, _current_mtu: u16) -> Box<dyn Controller> {
-        Box::new(MediaController::new(Media::clone(&self)))
+        Box::new((*self).clone())
     }
 }
 
@@ -371,60 +376,53 @@ mod tests {
     }
 
     #[test]
-    fn the_window_covers_what_is_in_flight() {
-        // At 40 Mb/s and 25 ms there are 125 000 bytes in flight at any
-        // moment: a shorter window would block the encoder.
-        let window = profile(40).window(Duration::from_millis(25));
-        assert!(
-            window >= 250_000,
-            "{window} bytes, less than twice the flight"
-        );
-    }
-
-    #[test]
-    fn the_window_absorbs_a_whole_frame() {
-        // Even at a negligible round trip, a frame leaves in one go.
-        let profile = profile(40);
-        let frame = profile.bits_per_second / 8 / 60;
-        assert!(profile.window(Duration::ZERO) >= frame);
-    }
-
-    #[test]
-    fn the_window_follows_the_rate_and_the_round_trip() {
-        // La route ne compte qu'une fois qu'elle coûte plus que le
-        // plancher, qui est déjà une demi-seconde de flux : sur un
-        // réseau local, deux routes de longueurs différentes donnent la
-        // même fenêtre, et c'est voulu.
-        let short = profile(40).window(Duration::from_millis(250));
-        let long = profile(40).window(Duration::from_millis(500));
-        assert!(long > short);
-
-        let slow = profile(10).window(Duration::from_millis(25));
-        let fast = profile(80).window(Duration::from_millis(25));
+    fn the_window_follows_the_rate() {
+        let slow = profile(10).window();
+        let fast = profile(80).window();
         assert!(fast > slow);
     }
 
     #[test]
-    fn the_window_holds_what_the_encoder_makes_while_nothing_answers() {
-        // Le relevé qui a valu cette règle : l'ordinateur regardé a jeté
-        // huit cent trente-cinq paquets vidéo d'un coup, sur un réseau
-        // local à sept millisecondes, pendant que celui qui regardait
-        // était occupé ailleurs. Une fenêtre qui ne tient qu'un
-        // trentième de seconde de flux s'épuise au premier hoquet, et
-        // tout ce que l'encodeur fait pendant ce temps finit à la
-        // poubelle.
+    fn the_window_holds_everything_the_stream_makes_while_the_connection_lives() {
+        // Le relevé qui a valu cette règle : le 4 septembre, la route est
+        // revenue sept secondes après s'être tue, et l'ordinateur qui
+        // regardait est resté muet trois secondes de plus, sa fenêtre
+        // étant pleine et le transport n'envoyant plus que ses sondes,
+        // espacées de plusieurs secondes. Le moteur client renonce à dix
+        // secondes de silence : la session est morte d'une coupure que
+        // le tunnel, lui, avait passée. La fenêtre tient donc tout ce
+        // que le flux fait pendant le silence le plus long qu'une
+        // connexion survive, la limite d'inactivité du transport, avec
+        // de la marge pour ce qui voyage à côté de l'image.
         for mbps in [5, 20, 40, 80, 150] {
             let profile = profile(mbps);
-            let half_a_second = profile.bits_per_second / 8 / 2;
-            for rtt in [Duration::from_micros(300), Duration::from_millis(25)] {
-                assert!(
-                    profile.window(rtt) >= half_a_second,
-                    "{} octets de fenêtre à {mbps} Mb/s sur {rtt:?}, pour {half_a_second} \
-                     octets de flux en une demi-seconde",
-                    profile.window(rtt)
-                );
-            }
+            let over_the_silence = profile.bits_per_second / 8 * MAXIMUM_IDLE.as_secs();
+            assert!(
+                profile.window() >= over_the_silence * 2,
+                "{} octets de fenêtre à {mbps} Mb/s, pour {over_the_silence} octets de flux \
+                 pendant la limite d'inactivité",
+                profile.window()
+            );
         }
+    }
+
+    #[test]
+    fn the_side_that_sends_no_picture_holds_the_fastest_streams_window() {
+        // Ce que cet ordinateur envoie ne s'approche jamais de cette
+        // fenêtre, et c'est le but : pendant que la route se tait, le
+        // canal de contrôle du moteur renvoie tout ce qui n'est pas
+        // accusé à chaque tour de son horloge, et une fenêtre taillée
+        // sur le débit demandé se remplissait de ces renvois en
+        // quelques secondes.
+        let media = Media::from(profile(5));
+        let watching = MediaController::new(media.clone(), Sending::Inputs);
+        assert_eq!(watching.window(), FASTEST.window());
+        assert!(watching.window() > profile(5).window());
+
+        // Et le débit de la session n'y change rien : ce n'est pas son
+        // flux.
+        media.serving(profile(80));
+        assert_eq!(watching.window(), FASTEST.window());
     }
 
     #[test]
@@ -482,7 +480,7 @@ mod tests {
         // demande quoi que ce soit, et gardait donc la fenêtre du profil
         // nominal pendant qu'il servait à quatre-vingts mégabits.
         let media = Media::from(profile(20));
-        let controller = MediaController::new(media.clone());
+        let controller = MediaController::new(media.clone(), Sending::Pictures);
         let nominal = controller.window();
 
         media.serving(profile(80));
@@ -490,7 +488,7 @@ mod tests {
             controller.window() > nominal,
             "la fenêtre est restée à {nominal} octets pendant que la session passait à 80 Mb/s"
         );
-        assert_eq!(controller.window(), profile(80).window(INITIAL_RTT));
+        assert_eq!(controller.window(), profile(80).window());
 
         // Et la copie que le transport se fait de son contrôleur suit la
         // même session : sans cela, la fenêtre se figerait au premier
@@ -506,24 +504,17 @@ mod tests {
     }
 
     #[test]
-    fn a_wild_round_trip_does_not_blow_the_window_up() {
-        let profile = profile(40);
-        let capped = profile.window(MAXIMUM_RTT);
-        assert_eq!(profile.window(Duration::from_secs(30)), capped);
-    }
-
-    #[test]
     fn a_degenerate_profile_stays_usable() {
         let profile = MediaProfile {
             bits_per_second: 0,
             frames_per_second: 0,
         };
-        assert_eq!(profile.window(Duration::from_millis(25)), MINIMUM_WINDOW);
+        assert_eq!(profile.window(), MINIMUM_WINDOW);
     }
 
     #[test]
     fn losses_do_not_shrink_the_window() {
-        let mut controller = MediaController::new(profile(40));
+        let mut controller = MediaController::new(profile(40), Sending::Pictures);
         let before = controller.window();
         let now = Instant::now();
         for _ in 0..100 {
@@ -534,7 +525,7 @@ mod tests {
 
     #[test]
     fn the_initial_window_is_already_usable() {
-        let controller = MediaController::new(profile(40));
+        let controller = MediaController::new(profile(40), Sending::Pictures);
         assert_eq!(controller.initial_window(), controller.window());
         assert!(controller.initial_window() >= MINIMUM_WINDOW);
     }
@@ -545,13 +536,12 @@ mod tests {
         // the decision to tunnel everything rests on. It is checked here
         // against the transport's own default controller.
         let profile = profile(40);
-        let rtt = Duration::from_millis(25);
         let needed = profile.bits_per_second / 8 * 25 / 1000;
 
         let now = Instant::now();
         let mut ordinary =
             Arc::new(quinn::congestion::CubicConfig::default()).build(now, PACKET_SIZE);
-        let mut ours = MediaController::new(profile);
+        let mut ours = MediaController::new(profile, Sending::Pictures);
 
         // Thirty-odd losses, roughly what 1% loss produces over a few
         // seconds of video.
@@ -570,6 +560,6 @@ mod tests {
             "{} bytes only, {needed} are needed to hold 40 Mb/s at 25 ms",
             ours.window()
         );
-        assert_eq!(ours.window(), profile.window(rtt));
+        assert_eq!(ours.window(), profile.window());
     }
 }

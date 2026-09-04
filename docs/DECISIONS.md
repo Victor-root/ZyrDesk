@@ -2258,6 +2258,40 @@ Soixante-deux pour cent de rejet du côté qui n'envoie que du clavier et de la 
 
 **La leçon, la même que D133 d'un cran plus bas.** L'endroit le plus grave du transport, celui où un paquet disparaît pendant que le transport le croit parti, était le seul qui n'écrivait rien. Il compte et il le dit, maintenant.
 
+## D136. Le transport ne retient plus rien tant que la connexion vit (2026-09-04, pendant M6)
+
+**Le relevé, et il vient de l'usage.** Une session de vingt-neuf minutes à 80 Mb/s, PC-VICTOR regardant PC-SAV par la route directe de l'interface VROOT, à sept millisecondes. Les deux journaux remis sur une même horloge, celle de PC-SAV avançant de deux secondes : l'écho d'une sonde que PC-VICTOR reçoit à 11:45:57 est le paquet que PC-SAV écrit avoir reçu « à 11:45:59 ».
+
+```
+11:45:50  plus rien n'arrive sur la prise, des deux côtés ; les sondes des deux
+          aiguilleurs restent sans écho, par la route directe comme par le relais
+11:45:53  l'image de PC-SAV arrive de nouveau chez PC-VICTOR, à soixante par
+          seconde ; PC-SAV, lui, ne reçoit toujours rien
+11:45:56  PC-VICTOR : the path is not taking packets as fast as the engine makes
+          them, so the transport is throwing the oldest away, 560 so far,
+          937500 bytes may be out unanswered at once
+11:45:57  la route directe répond de nouveau à PC-VICTOR, et PC-SAV reçoit ses
+          premiers paquets depuis sept secondes
+11:46:00  moteur client : Control stream received unexpected disconnect event,
+          connexion interrompue, code -1 ; la voie ferme
+```
+
+Entre 11:45:53 et 11:46:00, le moteur client demandait quarante fois par seconde l'invalidation des images de référence perdues pendant les trois secondes de silence (`Invalidate reference frame request sent (104974 to 105290)`), et pas une de ces demandes n'est arrivée. Côté regardé, rien n'a été jeté : 3 409 387 paquets confiés au tunnel, autant sur le fil.
+
+**Le silence lui-même n'est pas dans le produit.** Il touche les deux directions à la même seconde, la route directe et la route relayée ensemble ; les sondes de l'aiguilleur, qui partent sur la prise sans passer par le transport, ne reviennent pas davantage ; et aucune des deux machines n'écrit « this computer did not run », donc les deux services ont tourné. Rien dans le produit n'agit à trente minutes de session : le ticket vit une minute, le laissez-passer cinq, le jeton de compte une heure et il ne porte pas la session. C'est le relevé que [D135](#d135-une-session-ne-se-retrouve-jamais-sans-route-et-les-deux-bouts-nont-pas-la-même-file-2026-09-04-pendant-m6) faisait déjà à 10:35:44 sur la même interface, et il est cette fois asymétrique : ce que PC-SAV envoie revient chez PC-VICTOR après trois secondes, ce que PC-VICTOR envoie n'atteint PC-SAV qu'après sept. Ce qui se tait est entre les deux sites, sur le chemin qui entre chez PC-SAV. Le produit ne peut pas dire lequel de ses maillons, et ce n'est pas lui qui le dira.
+
+**Ce que le produit a fait de ce silence, et qui l'a tué.** Trois choses, qui se tiennent.
+
+Un. Le canal de contrôle du moteur client renonce à dix secondes sans accusé de réception : c'est écrit dans le moteur (`enet_peer_timeout(peer, 2, 10000, 10000)`), hors d'atteinte. Le tunnel, lui, tient trente secondes. Toute coupure de plus de dix secondes finit donc la session quoi que fasse le tunnel ; celle-ci en durait sept, et devait être passée.
+
+Deux. Pendant le silence, ce canal renvoie tout ce qui n'est pas accusé à chaque tour de son horloge, toutes les trente millisecondes environ, et le moteur y ajoute une demande d'invalidation par image reçue dès que l'image revient. Ce sont des centaines de paquets par seconde, dont chacun devient un paquet du transport, compté en vol tant que rien ne l'accuse. La fenêtre de l'ordinateur qui regarde valait une demi-seconde du débit demandé, 937 500 octets à 15 Mb/s ([D126](#d126-la-fenêtre-denvoi-se-mesure-en-temps-de-flux-pas-en-kilo-octets-2026-09-03-pendant-m5)) : elle était pleine à 11:45:56.
+
+Trois. Une fenêtre pleine, chez ce transport, ne laisse plus partir que ses propres sondes, dont il double l'espacement à chaque silence : à sept secondes, la suivante est à cinq. Tant qu'une sonde n'est pas partie et revenue, rien de ce qui est en vol n'est déclaré perdu, donc la fenêtre reste pleine, donc rien ne part, accusés de réception de l'image compris. La route est revenue à 11:45:57 ; l'ordinateur qui regarde est resté muet trois secondes de plus, sa file de 32 Kio jetant les renvois du moteur, 1371 en tout, et le moteur a renoncé à 11:46:00, à la dixième seconde exactement.
+
+**Ce qui est fait.** La fenêtre devient ce qu'une connexion peut avoir en vol avant de mourir du même silence : deux fois ce que le flux produit pendant la limite d'inactivité du transport, trente secondes, le facteur deux couvrant ce qui voyage à côté de l'image et n'est pas compté dans son débit. Elle ne se remplit donc jamais tant que la connexion vit, et le transport envoie tout ce qu'on lui confie, sur une route morte comme sur une route vivante : ce qui part sur une route morte est perdu au même titre que ce qui aurait été jeté de la file, et ce qui part sur une route revenue arrive tout de suite. L'ordinateur qui regarde, dont le flux n'en est pas un, prend la fenêtre du flux le plus rapide que le produit propose et non celle du débit demandé, qu'une main sur une souris et un canal qui se renvoie remplissaient en six secondes. La règle de D126 reste vraie et change d'échelle : ce qui a à tenir est une durée de flux, et la durée est celle de la vie d'une connexion, pas celle d'un hoquet.
+
+**Ce que ça ne fait pas.** Une coupure de dix secondes tue encore la session, par les moteurs : le canal de contrôle du moteur client à dix secondes sans accusé, le moteur hôte à dix secondes sans nouvelles du client (`ping_timeout`, un réglage de sa configuration). Reculer ces deux limites est une décision à part, la première demandant un patch au moteur client. Et la cause du silence reste à trouver hors du produit : le journal des événements Windows des deux machines à l'heure de la coupure, carte réseau et adaptateur VROOT compris, les journaux de la box de chaque site, et un ping continu et daté pendant une session, vers l'adresse VROOT d'en face et vers le serveur, diront lequel des maillons se tait.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
