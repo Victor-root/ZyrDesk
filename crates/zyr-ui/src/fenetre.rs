@@ -526,62 +526,6 @@ pub fn agrandis() {
 #[cfg(not(windows))]
 pub fn agrandis() {}
 
-/// La rend à la taille qu'elle avait avant d'être agrandie.
-///
-/// Seulement si elle l'est : autrement l'appel ne ferait que la remettre
-/// au premier plan, pour rien.
-///
-/// Et sans que le système le joue, parce que ce n'est pas un état où
-/// l'on s'arrête : la fenêtre prend l'écran dans la foulée, et cette
-/// taille-là n'est qu'un passage. Or le compositeur joue les changements
-/// d'état à son rythme et non au nôtre. ShowWindow rend la main tout de
-/// suite, l'animation continue derrière, et la fenêtre a déjà pris
-/// l'écran pendant qu'il la rapetisse encore. Le bureau distant, qui est
-/// une fenêtre portée par celle-ci et donc dessinée dans sa composition,
-/// s'en va avec elle : c'est l'agrandissement bizarre à l'intérieur du
-/// flux, au premier plein écran d'une session.
-///
-/// Rendu juste après : « agrandir » depuis la barre de titre est un
-/// geste où l'animation du système est voulue, et où tout un pan de
-/// picture.rs compte dessus.
-#[cfg(windows)]
-fn rends_sa_taille() {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_RESTORE, ShowWindow};
-
-    // Agrandie veut déjà dire qu'elle existe.
-    if est_agrandie() {
-        let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-        joue_les_changements(elle, false);
-        // SAFETY: une fenêtre à nous.
-        unsafe { ShowWindow(elle, SW_RESTORE) };
-        joue_les_changements(elle, true);
-    }
-}
-
-/// Demande au compositeur de jouer, ou de ne pas jouer, ce que cette
-/// fenêtre change d'état.
-///
-/// Un refus est la réponse d'un Windows qui n'a pas ce réglage, et ne
-/// coûte que l'animation qu'on voulait éviter.
-#[cfg(windows)]
-fn joue_les_changements(elle: windows_sys::Win32::Foundation::HWND, oui: bool) {
-    use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_TRANSITIONS_FORCEDISABLED, DwmSetWindowAttribute,
-    };
-
-    let coupe: i32 = i32::from(!oui);
-    // SAFETY: une fenêtre à nous, et quatre octets à nous dont la taille
-    // est dite.
-    unsafe {
-        DwmSetWindowAttribute(
-            elle,
-            DWMWA_TRANSITIONS_FORCEDISABLED as u32,
-            (&raw const coupe).cast(),
-            std::mem::size_of::<i32>() as u32,
-        )
-    };
-}
-
 #[cfg(windows)]
 pub fn est_agrandie() -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::IsZoomed;
@@ -616,7 +560,7 @@ pub fn prend_l_ecran(tout: bool) {
         GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, GetWindowPlacement, HWND_TOP, SWP_FRAMECHANGED,
         SWP_NOACTIVATE, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos, WINDOWPLACEMENT,
         WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_STATICEDGE, WS_EX_WINDOWEDGE,
-        WS_THICKFRAME,
+        WS_MAXIMIZE, WS_THICKFRAME,
     };
 
     let elle = sienne() as windows_sys::Win32::Foundation::HWND;
@@ -658,18 +602,20 @@ pub fn prend_l_ecran(tout: bool) {
         // voit alors une fenêtre sans bordure aux mesures de l'agrandi,
         // débordant de l'écran des quelques pixels que Windows réserve à
         // la bordure d'une fenêtre agrandie, et amputée en bas de la
-        // hauteur de la barre des tâches. Elle est donc rendue à sa
-        // taille avant de prendre l'écran ; l'agrandi est déjà dans le
-        // relevé qui la lui rendra tout à l'heure.
-        rends_sa_taille();
-
-        // Relu après ça, et non repris de plus haut : l'agrandi se lit
-        // dans le style lui-même, et réécrire celui d'avant redirait au
-        // système qu'elle est agrandie alors qu'elle ne l'est plus.
-        // SAFETY: une fenêtre à nous, dont on relit le style.
-        let style_rendu = unsafe { GetWindowLongPtrW(elle, GWL_STYLE) };
-
-        let sans_cadre = style_rendu & !((WS_CAPTION | WS_THICKFRAME) as isize);
+        // hauteur de la barre des tâches.
+        //
+        // L'agrandi s'enlève donc du style, et non par un geste. Il s'y
+        // lit, il s'y écrit, et c'est déjà par là que le retour du plein
+        // écran le lui rendra tout à l'heure. Le geste, lui, désagrandit
+        // pour de bon : la fenêtre prend la taille qu'elle avait avant,
+        // puis l'écran entier aussitôt après, et ce passage-là se voit
+        // deux fois. Le système le joue, à son rythme et non au nôtre,
+        // ce qui donne un agrandissement bizarre ; et le bureau distant,
+        // posé dans cette fenêtre, est recollé à cette taille de passage
+        // avant de l'être à celle de l'écran, ce qui donne un flash. Il
+        // n'y a plus de taille de passage : un seul mouvement, celui qui
+        // prend l'écran.
+        let sans_cadre = style & !((WS_CAPTION | WS_THICKFRAME | WS_MAXIMIZE) as isize);
         let sans_bord = autres
             & !((WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE)
                 as isize);
