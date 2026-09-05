@@ -2424,6 +2424,25 @@ La sonde restée sans réponse était la sonde jamais partie. Quatre des treize 
 
 **Ce que ça ne dit toujours pas.** L'autre famille de silences reste entière : ceux où la prise ne refuse rien et où plus rien n'arrive pendant une seconde, sur les deux machines à la fois. Ceux-là sont dehors, et cette séance les a tous traversés sans dommage. Il reste à savoir pourquoi ils existent, et cette question n'a plus d'urgence : elle ne coûte plus une session.
 
+## D144. Ce que l'ordinateur atteint dehors est mesuré par le produit, et plus à la main (2026-09-05, pendant M6)
+
+**Le relevé, et il a fallu deux fenêtres de commande pour l'avoir.** Une séance de six minutes entre un portable en Wi-Fi et PC-SAV, avec un `ping 8.8.8.8` lancé à la main de chaque côté. Le portable perd deux pings d'affilée, noyés à la ligne 260 de 416 ; PC-SAV n'en perd aucun sur 254. Et le service écrit, au même moment, des deux côtés :
+
+```
+02:47:34  [portable] plus un paquet reçu depuis 1049 ms
+02:47:35  [PC-SAV]   plus un paquet reçu depuis 1000 ms
+```
+
+Une seule coupure dans la séance, deux pings perdus sur une seule des deux machines, même durée. Le portable a perdu Internet deux secondes ; PC-SAV allait bien et a simplement cessé d'entendre quelqu'un qui n'était plus là. C'est la première fois qu'une des questions ouvertes depuis six séances se ferme, et c'est une mesure prise hors du produit qui l'a fermée.
+
+**Pourquoi le produit ne pouvait pas la prendre.** Un silence a trois causes qui s'écrivent pareil : l'ordinateur d'en face s'est tu, la route entre les deux ne porte plus, ou la liaison de cet ordinateur-ci s'est absentée. Le produit dit beaucoup des deux premières. De la troisième il ne peut rien dire, et pas faute de compteurs : toutes ses mesures voyagent par le lien en question, donc un lien absent emporte la mesure avec lui. [D142](#d142-une-sonde-qui-nest-jamais-partie-ne-se-lit-plus-comme-une-sonde-sans-réponse-2026-09-04-pendant-m6) avait ouvert la moitié de la question, celle des paquets que la prise refuse ; l'autre moitié demande un témoin qui ne dépende de rien de nous.
+
+**Ce qui est fait.** Une mesure de plus, à côté de la session, sur une prise à elle, vers un ordinateur qui n'a rien à voir avec ZyrDesk : une question au résolveur public `8.8.8.8`, une fois par seconde, dont la réponse ou l'absence de réponse est écrite dans `logs/reach.log`. Tenue seulement pendant qu'une session est ouverte, des deux côtés, puisque hors session il n'y a rien à expliquer. Une question et pas un écho, parce qu'un écho demande une prise brute et le droit de l'ouvrir, là où celle-ci ne demande rien et répond à la même chose.
+
+Et le journal du service, lui, ne reçoit que les deux moments qui comptent : celui où cet ordinateur cesse d'atteindre Internet, et celui où il y revient. C'est la ligne qui manquait, et elle dira désormais d'elle-même ce qu'il a fallu deux fenêtres de commande et une lecture de quatre cents lignes pour établir.
+
+**Ce que ça coûte.** Trente-six octets par seconde et un fichier qui se coupe tout seul, comme les autres journaux du produit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

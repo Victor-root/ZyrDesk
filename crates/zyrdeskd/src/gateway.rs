@@ -961,15 +961,19 @@ struct Sessions {
 struct Counted {
     sessions: Arc<Sessions>,
     media: Media,
+    /// What this computer reaches outside itself, written down for as
+    /// long as the session lasts and dropped with it.
+    _outside: crate::outside::Watching,
 }
 
 impl Counted {
-    fn one(sessions: &Arc<Sessions>, media: &Media) -> Self {
+    fn one(sessions: &Arc<Sessions>, media: &Media, log: &Log) -> Self {
         sessions.open.fetch_add(1, Ordering::Relaxed);
         sessions.ever.store(true, Ordering::Relaxed);
         Self {
             sessions: sessions.clone(),
             media: media.clone(),
+            _outside: crate::outside::watch(log),
         }
     }
 }
@@ -1149,7 +1153,7 @@ async fn serve(
                 let log = log.clone();
                 let attending = attending.clone();
                 let junction = junction.clone();
-                let counted = Counted::one(&counting, &media);
+                let counted = Counted::one(&counting, &media, &log);
                 sessions.spawn(async move {
                     one_session(connection, junction, attending, counted, log).await
                 });

@@ -124,6 +124,9 @@ struct Open {
     crossing: Option<Crossing>,
     /// What the journal has already been told about this way.
     said: Said,
+    /// What this computer reaches outside itself, written down for as
+    /// long as the way lasts and dropped with it.
+    _outside: crate::outside::Watching,
 }
 
 impl Open {
@@ -708,6 +711,7 @@ impl Ways {
                 connection,
                 crossing,
                 said: Said::from(opened_at),
+                _outside: crate::outside::watch(&self.log),
             },
         );
         self.log.write(&format!(

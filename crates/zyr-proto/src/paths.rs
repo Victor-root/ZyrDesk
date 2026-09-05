@@ -130,6 +130,15 @@ pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
 }
 
+/// What this computer could reach outside itself while a session ran.
+///
+/// Its own file, and not a few lines in the service's journal: it holds
+/// one measurement a second, which would drown everything else, and it
+/// is read next to the journal rather than inside it.
+pub fn reach_log() -> PathBuf {
+    logs_dir().join("reach.log")
+}
+
 /// Fingerprints of the devices allowed to reach this computer.
 pub fn authorized_devices() -> PathBuf {
     data_dir().join("authorized-devices.conf")
