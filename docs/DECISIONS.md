@@ -2445,6 +2445,26 @@ Et le journal du service, lui, ne reçoit que les deux moments qui comptent : ce
 
 **Et il se vide avec les autres.** Vider le journal depuis la fenêtre, ou le demander à l'ordinateur d'en face, vide aussi ce relevé : la table de ce qui est vidé cesse d'être la table de ce qui est copié, parce que ce fichier a besoin d'être dans la première et n'a rien à faire dans la seconde. Sans quoi on relirait trois semaines de relevé en face d'une séance de cinq minutes, ce que vider le journal avant un essai existe précisément pour éviter.
 
+## D145. Le silence était le Wi-Fi du portable, et le produit le dit maintenant tout seul (2026-09-05, pendant M6)
+
+**Le relevé, et c'est le dernier de cette série.** Six heures et vingt et une minutes entre un portable en Wi-Fi et PC-SAV. Elle ne s'est pas arrêtée : elle a été fermée depuis le menu flottant. Cent trois millions de paquets confiés au tunnel côté regardé, autant sur le fil, **zéro jeté**, et quatre cent trente-six mille dans l'autre sens, zéro jeté aussi.
+
+**La mesure de [D144](#d144-ce-que-lordinateur-atteint-dehors-est-mesuré-par-le-produit-et-plus-à-la-main-2026-09-05-pendant-m6) a répondu à la première séance.** Neuf fois, le portable a cessé de recevoir. Neuf fois sur neuf, il avait cessé d'atteindre Internet à la même seconde :
+
+```
+07:49:31  plus un paquet reçu depuis 1059 ms
+07:49:32  cet ordinateur n'atteint plus 8.8.8.8:53
+07:49:36  cet ordinateur atteint de nouveau 8.8.8.8:53
+```
+
+Et ainsi à 08:28, 08:30, 08:40, 08:55, 09:04, 09:22, 09:24 et 09:37. Deux pertes de plus, à 08:50:49 et 08:51:18, ont été si brèves qu'aucun silence de session ne les a suivies.
+
+**Le journal de PC-SAV, lui, ne porte pas une seule de ces lignes.** Cette machine n'a jamais perdu Internet de toute la séance. Ses propres silences arrivent chaque fois une à deux secondes après ceux du portable : elle cessait d'entendre quelqu'un qui n'était plus sur les ondes.
+
+**Ce que ça clôt.** [D136](#d136-le-transport-ne-retient-plus-rien-tant-que-la-connexion-vit-2026-09-04-pendant-m6) à [D143](#d143-une-sonde-jamais-partie-ne-compte-plus-contre-la-route-2026-09-05-pendant-m6) ont toutes fini sur la même réserve : « le silence reste hors du produit et reste à trouver ». Il est trouvé, et il n'y avait rien à trouver dans le code : une liaison Wi-Fi qui s'absente quelques secondes toutes les cinq à quinze minutes, ce qu'une carte Wi-Fi fait en cherchant ses canaux ou en changeant de borne. Le produit ne pouvait pas le dire, faute d'un témoin indépendant de lui ; il en a un depuis hier soir, et la première séance a suffi.
+
+**Ce que ça ne clôt pas, et c'est le vrai résultat.** Rien de tout cela n'a coûté la session. Neuf coupures traversées, six heures vingt, et c'est la personne qui a décidé de la fin. Une semaine plus tôt, la première de ces neuf coupures aurait suffi.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
