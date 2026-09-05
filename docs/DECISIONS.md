@@ -2401,6 +2401,29 @@ Autrement dit, il n'existait aucun endroit dans le produit capable de distinguer
 
 **Ce que ça permet, et c'est le seul point.** À la prochaine séance qui se tait, une des deux lignes sera là et pas l'autre. Si la prise refusait, la panne est chez nous et le compteur de neuf secondes est le nôtre. Si elle ne refusait rien, alors nos paquets sont bien partis, et le silence est vraiment sur le fil. Cette question est ouverte depuis cinq séances et rien dans le produit ne pouvait la trancher.
 
+## D143. Une sonde jamais partie ne compte plus contre la route (2026-09-05, pendant M6)
+
+**Le relevé, et c'est le premier bon.** Trois heures et treize minutes entre un portable et PC-SAV, en direct par les adresses publiques. Elle ne s'est pas arrêtée : elle a été fermée depuis le menu flottant. Sur toute sa durée, cinquante millions de paquets confiés au tunnel côté regardé, autant sur le fil, **zéro jeté faute de place**, et deux cent vingt-sept mille dans l'autre sens, zéro jeté aussi. Une dizaine de silences d'environ une seconde l'ont traversée sans que rien ne cède : la route passe au relais, revient, et la session continue. Ce que [D136](#d136-le-transport-ne-retient-plus-rien-tant-que-la-connexion-vit-2026-09-04-pendant-m6) à [D141](#d141-une-branche-de-relais-qui-ne-tient-pas-nest-pas-redemandée-trente-fois-par-seconde-2026-09-04-pendant-m6) visaient est atteint.
+
+**Et le compteur de [D142](#d142-une-sonde-qui-nest-jamais-partie-ne-se-lit-plus-comme-une-sonde-sans-réponse-2026-09-04-pendant-m6) a répondu à la question qu'il existait pour poser.** Vingt-trois fois en trois heures, la prise de PC-SAV a refusé un paquet à nous. Et chacune de ces lignes est suivie, deux secondes plus tard, de la même autre :
+
+```
+00:57:57  1 packet(s) of this computer's own did not leave it, 12 in all
+00:57:59  card ...: 90.112.28.241:65371 did not answer a probe
+01:02:44  1 packet(s) of this computer's own did not leave it, 14 in all
+01:02:46  card ...: 90.112.28.241:65371 did not answer a probe
+01:38:24  1 packet(s) of this computer's own did not leave it, 17 in all
+01:38:26  card ...: 90.112.28.241:65371 did not answer a probe
+02:00:31  1 packet(s) of this computer's own did not leave it, 21 in all
+02:00:33  card ...: 90.112.28.241:65371 did not answer a probe
+```
+
+La sonde restée sans réponse était la sonde jamais partie. Quatre des treize changements de route de cette séance viennent de là, et le journal les nommait tous « la route a cessé de répondre ». Le doute était fondé : une part du silence était bien la nôtre.
+
+**Ce qui est fait.** Une route porte maintenant, à côté de sa dernière sonde, si cette sonde a quitté la machine. Le tour de surveillance ne compte un manque que sur une sonde réellement partie ; celle que la prise a refusée n'est ni un manque ni une réponse, et la route est resondée au tour suivant comme si de rien n'était. La reprise est écrite là où le prochain tour la lit, après l'envoi et hors du verrou.
+
+**Ce que ça ne dit toujours pas.** L'autre famille de silences reste entière : ceux où la prise ne refuse rien et où plus rien n'arrive pendant une seconde, sur les deux machines à la fois. Ceux-là sont dehors, et cette séance les a tous traversés sans dommage. Il reste à savoir pourquoi ils existent, et cette question n'a plus d'urgence : elle ne coûte plus une session.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -242,6 +242,14 @@ struct Path {
     echoed: Instant,
     probed: Instant,
     misses: u8,
+    /// Whether the last probe on this road actually left the machine.
+    ///
+    /// A probe the socket refused and a probe nobody answered leave the
+    /// same trace here: neither is echoed. Only the second says anything
+    /// about the road. Counting the first as a miss is how a road that
+    /// was working got given up on this computer's own hiccup, three
+    /// times an hour on the fifth of September.
+    asked: bool,
 }
 
 #[derive(Debug)]
@@ -484,7 +492,11 @@ impl Expected {
             if now.duration_since(path.probed) < keep_every {
                 return true;
             }
-            if path.echoed < path.probed {
+            if !path.asked {
+                // The last probe never left this computer. Its silence
+                // is ours, and holding it against the road would give up
+                // one that was carrying the session.
+            } else if path.echoed < path.probed {
                 path.misses += 1;
                 if path.misses == 1 {
                     missed.push(path.through);
@@ -498,6 +510,7 @@ impl Expected {
                 return false;
             }
             path.probed = now;
+            path.asked = true;
             due.push(path.through);
             true
         });
@@ -550,6 +563,7 @@ impl Expected {
                     echoed: now,
                     probed: now,
                     misses: 0,
+                    asked: true,
                 });
                 self.paths.sort_by_key(|path| path.round_trip);
                 let elected = self.elected;
@@ -988,7 +1002,7 @@ impl Inner {
 
     /// Sends one datagram of ours, best effort: a probe that does not go
     /// out is a probe that will be sent again.
-    fn send_to(&self, destination: SocketAddr, contents: &[u8]) {
+    fn send_to(&self, destination: SocketAddr, contents: &[u8]) -> bool {
         let went = self.socket.try_send(&Transmit {
             destination: self.outward(destination),
             ecn: None,
@@ -999,10 +1013,12 @@ impl Inner {
         if went.is_err() {
             self.refused.fetch_add(1, Ordering::Relaxed);
         }
+        went.is_ok()
     }
 
-    /// Sends one datagram of ours by that road, whichever it is.
-    fn send_by(&self, road: Through, contents: &[u8]) {
+    /// Sends one datagram of ours by that road, whichever it is. Says
+    /// whether it left this computer.
+    fn send_by(&self, road: Through, contents: &[u8]) -> bool {
         match road {
             Through::Direct(address) => self.send_to(address, contents),
             Through::Relay(card) => {
@@ -1019,9 +1035,10 @@ impl Inner {
                     // not leave either, and so is a road whose branch
                     // has gone: both are counted where the journal can
                     // say them.
-                    Some(branch) if branch.send(contents) => {}
+                    Some(branch) if branch.send(contents) => true,
                     _ => {
                         self.refused.fetch_add(1, Ordering::Relaxed);
+                        false
                     }
                 }
             }
@@ -1061,7 +1078,7 @@ impl Inner {
 
     /// The probes due now, decided under the lock and sent outside it.
     fn tick(&self, now: Instant) {
-        let mut probes: Vec<(Through, Probe)> = Vec::new();
+        let mut probes: Vec<(SocketAddr, Through, Probe)> = Vec::new();
         let mut flushed: Vec<(Through, Held)> = Vec::new();
         let mut said = Vec::new();
         {
@@ -1092,6 +1109,7 @@ impl Inner {
                 for road in looked.probe {
                     let number = expected.number(now);
                     probes.push((
+                        *card,
                         road,
                         Probe {
                             session: expected.session.clone(),
@@ -1160,13 +1178,34 @@ impl Inner {
         for line in said {
             (self.say)(&line);
         }
-        for (road, probe) in probes {
-            if let Ok(bytes) = probe::seal_probe(&self.identity, &probe) {
-                self.send_by(road, &bytes);
+        let mut never_left = Vec::new();
+        for (card, road, probe) in probes {
+            match probe::seal_probe(&self.identity, &probe) {
+                Ok(bytes) if self.send_by(road, &bytes) => {}
+                _ => never_left.push((card, road)),
             }
         }
+        self.not_asked_after_all(&never_left);
         for (road, held) in flushed {
             self.send_held(road, &held);
+        }
+    }
+
+    /// Takes back the probes that were decided and never left.
+    ///
+    /// Written down where the next look-over reads it, so a road is
+    /// never given up on a silence this computer caused itself.
+    fn not_asked_after_all(&self, never_left: &[(SocketAddr, Through)]) {
+        if never_left.is_empty() {
+            return;
+        }
+        let mut table = self.table.lock().expect("aiguilleur");
+        for (card, road) in never_left {
+            if let Some(expected) = table.expected.get_mut(card)
+                && let Some(path) = expected.paths.iter_mut().find(|path| path.through == *road)
+            {
+                path.asked = false;
+            }
         }
     }
 
@@ -2281,6 +2320,40 @@ mod tests {
         assert!(
             (late + EXPECTATION_LIFE + Duration::from_secs(1)).duration_since(expected.answered_at)
                 > EXPECTATION_LIFE
+        );
+    }
+
+    #[test]
+    fn a_probe_that_never_left_is_not_a_road_that_went_quiet() {
+        // Le 5 septembre, PC-SAV a écrit vingt-trois fois qu'un paquet à
+        // lui n'était pas parti, et deux secondes après chacune de ces
+        // lignes, la route « ne répondait pas à une sonde ». La sonde
+        // sans réponse était la sonde jamais partie : le silence était
+        // le nôtre et la route le payait.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let only = direct("10.0.0.1:47000");
+        let number = expected.number(start);
+        assert!(expected.answered(only, number, Duration::from_millis(5), start));
+
+        let mut now = start;
+        for _ in 0..=MISSES_TO_DIE {
+            now += KEEP_EVERY;
+            expected.look_over(now);
+            // Ce que fait l'aiguilleur quand la prise a refusé la sonde
+            // qu'il venait de décider.
+            for path in &mut expected.paths {
+                path.asked = false;
+            }
+        }
+        let path = expected
+            .paths
+            .iter()
+            .find(|path| path.through == only)
+            .expect("la route a été abandonnée sur nos propres refus");
+        assert_eq!(
+            path.misses, 0,
+            "des sondes jamais parties ont été comptées contre la route"
         );
     }
 
