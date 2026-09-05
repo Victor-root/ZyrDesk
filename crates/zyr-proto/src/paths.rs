@@ -188,6 +188,19 @@ pub fn session_wanted() -> PathBuf {
     data_dir().join("session-wanted.txt")
 }
 
+/// Where the client engine reads the shape the pointer is to take, and
+/// gives its own pointer that shape.
+///
+/// Apart from the file above, and deliberately: what is written there is
+/// what the stream is to be, and a line that differs from the stream
+/// makes the engine build it again. The shape changes whenever a hand
+/// crosses a text field, which is many times a second and must cost
+/// nothing at all. One word on its own line, so that reading it can
+/// never be read as asking for a new stream.
+pub fn session_pointer() -> PathBuf {
+    data_dir().join("session-pointer.txt")
+}
+
 /// The link of this device to an account, when there is one: the
 /// server, what it was called there, the token it presents, and what
 /// it pinned of the server.

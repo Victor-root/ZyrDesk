@@ -20,7 +20,7 @@ use std::io;
 use std::path::Path;
 
 use zyr_proto::paths;
-use zyr_proto::session::SessionSettings;
+use zyr_proto::session::{Pointer, SessionSettings};
 
 /// The line, as the engine reads it.
 ///
@@ -47,8 +47,45 @@ pub fn write(settings: &SessionSettings) -> io::Result<()> {
 /// on half a description. Written beside and moved over, which the system
 /// does in one go.
 fn write_at(path: &Path, settings: &SessionSettings) -> io::Result<()> {
+    replaced(path, &line(settings))
+}
+
+/// Tells the engine what shape to give its own pointer.
+///
+/// Its own file and not the line above, which is what the stream is to
+/// be: a line that differs from the stream makes the engine build it
+/// again, and this changes every time a hand crosses a text field. One
+/// word, replaced the same way, read by the engine as often as it likes
+/// and costing nothing when it has not moved.
+///
+/// Answers whether anything was written, so that a shape unchanged since
+/// the last one costs no disk at all: this is asked several times a
+/// second for the length of a session.
+pub fn point_like(shape: Pointer) -> io::Result<bool> {
+    point_like_at(&paths::session_pointer(), shape)
+}
+
+fn point_like_at(path: &Path, shape: Pointer) -> io::Result<bool> {
+    if fs::read_to_string(path).is_ok_and(|written| written.trim() == shape.word()) {
+        return Ok(false);
+    }
+    replaced(path, shape.word())?;
+    Ok(true)
+}
+
+/// Forgets the shape, the session being over.
+///
+/// The next one starts on the ordinary pointer rather than on the last
+/// shape the last session happened to end on, which would be an
+/// hourglass over a machine that is not busy.
+pub fn point_like_nothing() {
+    let _ = fs::remove_file(paths::session_pointer());
+}
+
+/// One line, put in place whole.
+fn replaced(path: &Path, line: &str) -> io::Result<()> {
     let beside = path.with_extension("new");
-    fs::write(&beside, format!("{}\n", line(settings)))?;
+    fs::write(&beside, format!("{line}\n"))?;
     fs::rename(&beside, path)
 }
 
@@ -114,6 +151,29 @@ mod tests {
             fs::read_to_string(&path).unwrap(),
             format!("{}\n", line(&second))
         );
+        assert!(!path.with_extension("new").exists());
+
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn la_forme_du_curseur_ne_s_ecrit_que_lorsqu_elle_change() {
+        // Elle est demandée plusieurs fois par seconde pendant toute une
+        // session : réécrire le fichier à chaque fois userait le disque
+        // pour un mot identique, et ferait relire le moteur pour rien.
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdesk-pointer-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("session-pointer.txt");
+
+        assert!(point_like_at(&path, Pointer::Text).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "text\n");
+        assert!(!point_like_at(&path, Pointer::Text).unwrap());
+        assert!(point_like_at(&path, Pointer::Wait).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "wait\n");
+        // Et rien à côté : le moteur lit entre deux écritures.
         assert!(!path.with_extension("new").exists());
 
         let _ = fs::remove_dir_all(&folder);

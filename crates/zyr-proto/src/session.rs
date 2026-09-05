@@ -811,9 +811,149 @@ pub fn parse_resolution(value: &str) -> Result<(u32, u32), InvalidResolution> {
     Ok((width, height))
 }
 
+/// The shape the pointer takes on the computer being watched.
+///
+/// A desktop says what it is about to do through this and almost nothing
+/// else: an upright bar means the click lands in text, a hand means a
+/// link, arrows mean an edge that can be dragged, and a ring means wait.
+/// A remote desktop that always shows a plain arrow has taken that away.
+///
+/// It is a name and never a picture, on purpose. The far computer's
+/// pointer is drawn into the stream by its engine and nothing carries a
+/// shape beside it, so what travels here is the one word that says which
+/// shape it is; the computer watching already owns every one of them,
+/// drawn by its own system at its own size and its own magnification.
+/// A picture would arrive at the far machine's size and be wrong on a
+/// screen that magnifies differently.
+///
+/// The list is the one every system agrees on, which is what makes a
+/// word enough. Anything outside it, a program that draws a pointer of
+/// its own, comes back as the arrow: it is the shape a system falls back
+/// to itself, and a session that showed nothing at all there would be
+/// worse than one that shows the ordinary pointer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Pointer {
+    /// The ordinary pointer, and what anything unknown comes back as.
+    #[default]
+    Arrow,
+    /// Over text: the click lands between two letters.
+    Text,
+    /// Over something that can be followed.
+    Hand,
+    /// The far computer is busy and is not taking anything right now.
+    Wait,
+    /// It is busy and is still taking clicks.
+    WaitingArrow,
+    /// Precision, over something that is drawn on rather than clicked.
+    Cross,
+    /// An edge that drags, left and right.
+    SizeAcross,
+    /// An edge that drags, up and down.
+    SizeDown,
+    /// A corner that drags, from top left to bottom right.
+    SizeFalling,
+    /// A corner that drags, from bottom left to top right.
+    SizeRising,
+    /// The whole thing moves.
+    SizeAll,
+    /// What is under the pointer will not take it.
+    Refused,
+}
+
+impl Pointer {
+    /// The word that travels, and the one the engine reads.
+    ///
+    /// Short and lowercase, like every other word on that line, and
+    /// unchanged once written: it is read by a build of the engine that
+    /// may be older or newer than the one writing it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Pointer::Arrow => "arrow",
+            Pointer::Text => "text",
+            Pointer::Hand => "hand",
+            Pointer::Wait => "wait",
+            Pointer::WaitingArrow => "waitarrow",
+            Pointer::Cross => "cross",
+            Pointer::SizeAcross => "sizewe",
+            Pointer::SizeDown => "sizens",
+            Pointer::SizeFalling => "sizenwse",
+            Pointer::SizeRising => "sizenesw",
+            Pointer::SizeAll => "sizeall",
+            Pointer::Refused => "no",
+        }
+    }
+
+    /// Every one of them, so a table can be walked rather than repeated.
+    pub const ALL: [Pointer; 12] = [
+        Pointer::Arrow,
+        Pointer::Text,
+        Pointer::Hand,
+        Pointer::Wait,
+        Pointer::WaitingArrow,
+        Pointer::Cross,
+        Pointer::SizeAcross,
+        Pointer::SizeDown,
+        Pointer::SizeFalling,
+        Pointer::SizeRising,
+        Pointer::SizeAll,
+        Pointer::Refused,
+    ];
+}
+
+impl fmt::Display for Pointer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.word())
+    }
+}
+
+/// A word nobody here knows is the ordinary pointer and never a failure.
+///
+/// The two halves of the product are installed at different times, and a
+/// far computer of a later build can name a shape this one has never
+/// heard of. Refusing it would take the pointer away over a word.
+impl std::str::FromStr for Pointer {
+    type Err = std::convert::Infallible;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Ok(Pointer::ALL
+            .into_iter()
+            .find(|shape| shape.word() == text.trim().to_ascii_lowercase())
+            .unwrap_or(Pointer::Arrow))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chaque_forme_de_curseur_a_son_mot_et_un_seul() {
+        // Le mot est lu par un moteur qui peut être d'une autre
+        // compilation que celle qui l'écrit : deux formes qui
+        // partageraient un mot en donneraient une pour l'autre, et une
+        // forme sans mot ne partirait jamais.
+        let mut mots: Vec<&str> = Pointer::ALL.iter().map(|forme| forme.word()).collect();
+        mots.sort_unstable();
+        let combien = mots.len();
+        mots.dedup();
+        assert_eq!(mots.len(), combien, "deux formes partagent un mot");
+        for forme in Pointer::ALL {
+            assert!(!forme.word().is_empty());
+            assert_eq!(forme.word().parse::<Pointer>().unwrap(), forme);
+        }
+    }
+
+    #[test]
+    fn un_mot_inconnu_rend_la_fleche_ordinaire() {
+        // Les deux moitiés du produit s'installent à des jours
+        // différents : une machine d'en face plus récente peut nommer
+        // une forme que celle-ci n'a jamais entendue. Lui refuser la
+        // ligne entière retirerait le curseur pour un mot.
+        assert_eq!("".parse::<Pointer>().unwrap(), Pointer::Arrow);
+        assert_eq!("licorne".parse::<Pointer>().unwrap(), Pointer::Arrow);
+        // Et la casse ne décide de rien.
+        assert_eq!("TEXT".parse::<Pointer>().unwrap(), Pointer::Text);
+    }
 
     /// Un écran ordinaire de cette taille, pour les essais qui ne parlent
     /// que de taille.
