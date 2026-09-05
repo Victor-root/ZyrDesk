@@ -242,6 +242,25 @@ fn only_on_this_network(
     crate::ways::where_to_knock(host, &also)
 }
 
+/// A local attempt that came back with nothing, said in full.
+///
+/// The addresses tried were the ones this network announced a moment
+/// ago, so the far computer is there and answering; a timeout on every
+/// one of them is not a computer that is off, and reading it as one
+/// costs an evening. What did not answer is the tunnel's port, and from
+/// this end the three things that do that cannot be told apart. So all
+/// three are named, and the far machine's own journal settles it on its
+/// « Tunnel » line, which is one click away on this very card.
+fn nothing_answered_here(reason: &str) -> String {
+    format!(
+        "{reason}\n  \
+         Cet ordinateur s'annonce pourtant sur ce réseau : ce qui n'a pas répondu est le port \
+         du tunnel, pas la machine.\n  \
+         Sur elle, dans l'ordre : l'accès distant est-il activé, « Écouter sur le port \
+         {TUNNEL_PORT} » est-il allumé, et son journal dit-il « Tunnel : port {TUNNEL_PORT} » ?"
+    )
+}
+
 /// Where to knock to reach that computer, what to call it on the way,
 /// and the meeting it took to know, when it took one.
 ///
@@ -374,7 +393,11 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                     if let Some(session) = meeting {
                         answering.machine.account.ended(&session);
                     }
-                    Answer::Refused(reason)
+                    Answer::Refused(if only_here {
+                        nothing_answered_here(&reason)
+                    } else {
+                        reason
+                    })
                 }
             }
         }
@@ -927,6 +950,21 @@ mod tests {
                 "{reason}"
             );
         });
+    }
+
+    #[test]
+    fn a_silence_on_this_network_names_what_makes_it_rather_than_the_network() {
+        let said = nothing_answered_here("192.168.1.20 ne répond pas : timed out");
+        // La raison d'origine reste entière : c'est elle qui dit quelles
+        // adresses ont été essayées.
+        assert!(said.contains("timed out"), "{said}");
+        // Et ce qui la suit envoie sur la seule machine qui sache, à la
+        // seule ligne qui réponde.
+        assert!(
+            said.contains(&format!("Écouter sur le port {TUNNEL_PORT}")),
+            "{said}"
+        );
+        assert!(said.contains("Tunnel : port"), "{said}");
     }
 
     #[test]

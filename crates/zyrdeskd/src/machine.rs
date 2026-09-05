@@ -140,6 +140,7 @@ impl Machine {
         );
         journal.says("Empreinte", &fingerprint.to_string());
         journal.says("Accès distant", &self.remote_access());
+        journal.says("Tunnel", &self.tunnel_line());
         journal.says(
             "Réseau local",
             if self.remembered.trust_local_network() {
@@ -152,6 +153,38 @@ impl Machine {
         journal.says("Sessions ouvertes", &self.ways.count().to_string());
         journal.says("Ordinateurs vus", &self.computers_seen(log));
         journal.gathered()
+    }
+
+    /// Where this computer really listens.
+    ///
+    /// The one thing a journal never said, and the first thing an
+    /// unreachable machine turns on. The port is not always the
+    /// product's: a switch in the settings hands the choice to Windows,
+    /// and a computer listening on a port Windows picked is reachable
+    /// through a meeting the server arranges and by nothing else. From
+    /// the other machine that looks exactly like a network dropping the
+    /// packets, and the only line that ever said otherwise was written
+    /// at startup, which emptying the journal before a test destroys.
+    ///
+    /// Read from the socket and not from what was asked for: what a
+    /// session knocks on is the port that is really open, and a journal
+    /// that reported the intention would be wrong exactly when it
+    /// matters.
+    fn tunnel_line(&self) -> String {
+        let Some(junction) = self.door.junction() else {
+            return "fermé, cet ordinateur n'écoute nulle part".to_string();
+        };
+        let Ok(at) = junction.local_address() else {
+            return "ouvert, mais le système ne dit pas sur quel port".to_string();
+        };
+        if at.port() == TUNNEL_PORT {
+            return format!("port {TUNNEL_PORT}");
+        }
+        format!(
+            "port {}, choisi par Windows : « Écouter sur le port {TUNNEL_PORT} » est coupé dans \
+             les réglages, donc seule une session par le compte peut aboutir ici",
+            at.port()
+        )
     }
 
     /// The link to an account, as it stands, in one line.
@@ -461,6 +494,50 @@ mod tests {
         assert!(text.contains("Compte"), "{text}");
         assert_eq!(machine.account_line(), "aucun");
 
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_journal_says_on_which_port_this_computer_is_really_waiting() {
+        let (machine, _, folder) = machine("tunnel");
+
+        // Porte fermée : rien n'écoute, et c'est autre chose qu'un port
+        // dont on ne saurait rien.
+        assert!(machine.tunnel_line().contains("n'écoute nulle part"));
+
+        // Ouverte sur un port que le système a choisi, c'est-à-dire
+        // l'interrupteur coupé : la ligne nomme l'interrupteur, parce
+        // que d'en face cet ordinateur est indiscernable d'un réseau qui
+        // jette les paquets.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _guard = runtime.enter();
+        let identity =
+            std::sync::Arc::new(zyr_transport::Identity::load_or_create(&folder).unwrap());
+        let say: zyr_transport::junction::Say = std::sync::Arc::new(|_: &str| {});
+        let junction = Junction::bind(
+            "0.0.0.0:0".parse().unwrap(),
+            identity,
+            say,
+            zyr_transport::Marking::default(),
+        )
+        .unwrap();
+        let port = junction.local_address().unwrap().port();
+        machine.door.opened(junction);
+
+        let line = machine.tunnel_line();
+        assert_ne!(port, TUNNEL_PORT, "le système a rendu le port du produit");
+        assert!(line.contains(&format!("port {port}")), "{line}");
+        assert!(
+            line.contains(&format!("Écouter sur le port {TUNNEL_PORT}")),
+            "{line}"
+        );
+
+        // Rendue pendant que son exécuteur tient encore : la porte
+        // survivrait sinon à ce qui la fait tourner.
+        machine.door.closed();
         std::fs::remove_dir_all(&folder).unwrap();
     }
 }

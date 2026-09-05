@@ -2517,6 +2517,20 @@ Le choix voyage jusqu'au service dans la demande elle-même, comme un champ ajou
 
 **Ce que ça ne fait pas.** Elle ne juge pas les adresses. Elles viennent de ce que ce réseau a annoncé ou de ce que quelqu'un a écrit ; inventer ici une règle sur celles qui seraient assez proches serait une seconde promesse que personne n'a demandée. La promesse tenue est celle qui compte : rien hors de cette machine n'est consulté pour savoir où frapper.
 
+## D149. Le journal dit sur quel port cet ordinateur attend vraiment (2026-09-05, pendant M6)
+
+**Ce qu'une panne a montré.** Une session par la maison de [D148](#d148-une-carte-porte-une-seconde-porte-qui-ne-connaît-que-ce-réseau) échoue : trois adresses essayées, trente secondes, « ne répond pas sur le port 47000 ». En face, rien du tout dans le journal : pas un refus, pas une trace, comme si personne n'avait frappé. Et pourtant les deux machines se voient sur le réseau, s'annoncent, se lisent le journal l'une l'autre par le serveur. La question qui décide est simple, et aucun des deux journaux ne peut y répondre : cet ordinateur écoute-t-il sur 47000 ?
+
+Il peut ne pas y écouter. `fixed_port = no` ([NETWORK.md](NETWORK.md) §8) fait prendre à la porte un port que le système choisit à chaque démarrage, que seule une rencontre par le serveur sait nommer. D'en face, c'est exactement ce qu'on voit : le compte marche, le relais marche, le réseau local ne répond pas. Indiscernable d'un réseau qui jette les paquets, et rien nulle part ne tranche.
+
+**Pourquoi la ligne existait et ne servait à rien.** Le service écrivait bien « tunnel open on ... » au démarrage. Une seule fois. Or le protocole d'essai demande de vider les deux journaux avant chaque essai, ce qui est la bonne méthode et détruit précisément cette ligne-là : au moment où on lit, le journal a perdu ce qu'il fallait pour être lu. Une information écrite une fois au démarrage n'est pas une information disponible.
+
+**Ce qui est fait.** L'en-tête du journal, lui, est relevé à l'instant où on le demande : il porte maintenant une ligne **Tunnel**, à côté de l'accès distant qui dit l'intention. Elle dit le port réellement ouvert, et quand ce n'est pas le nôtre elle nomme l'interrupteur qui en est la cause et ce qu'il coûte. Relevée sur la prise et non sur le réglage : ce qu'une session vient frapper est le port qui est ouvert, et un journal qui rapporterait l'intention se tromperait exactement quand ça compte. Porte fermée se dit aussi, et autrement qu'un port inconnu.
+
+Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adresses essayées venaient de ce que ce réseau annonçait à l'instant : la machine est donc là et répond. Ce qui n'a pas répondu est le port du tunnel, et d'ici les trois causes possibles sont indiscernables ; elles sont donc nommées toutes les trois, dans l'ordre, et la dernière renvoie à la ligne Tunnel d'en face, qui est à un clic sur la carte même où l'on vient d'échouer.
+
+**Ce que ça ne fait pas.** L'annonce du réseau local continue de dire 47000 et non le port réel, et la voie locale continue d'y frapper. C'est voulu : cet interrupteur est un interrupteur d'essai, dont tout l'objet est de fermer le port connu pour vérifier que la rencontre par le serveur tient seule (D137). Le faire annoncer son vrai port le viderait de son sens. Ce qui manquait n'était pas de contourner l'interrupteur, c'était de le voir.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
