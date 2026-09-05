@@ -519,10 +519,68 @@ fn lay_it_out(
     if unsafe { IsIconic(home) } != 0 || unsafe { IsWindowVisible(home) } == 0 {
         return;
     }
+    // On its way to the whole screen, which it goes to in two steps: it
+    // is given back the size it had before being maximised, since a
+    // window still maximised is held there by the system, and only then
+    // is it spread over the screen. The size it wears in between is
+    // nobody's. Laid on it, the picture is put to that size and then to
+    // the screen's, and the first of the two costs a picture the player
+    // has drawn nothing at yet: that is the far computer's desktop going
+    // away and coming back, which is what a flash is.
+    //
+    // The right size is not missed by stepping over this. The step that
+    // does spread the window is announced before it happens, and the
+    // picture is laid then, at the size the window is about to have.
+    if crate::fenetre::tient_l_ecran() && !covers_its_screen(home) {
+        return;
+    }
     let Some((corner, width, height)) = the_inside_of(home) else {
         return;
     };
     lay_on(home, engine, corner, width, height);
+}
+
+/// Whether our window really covers the screen it is on.
+///
+/// Asked because « it holds the screen » is written down the moment
+/// somebody decides it and the window takes a step or two to get there,
+/// so the two answers part company for exactly as long as the move
+/// lasts. Answered on the window itself and not on what was decided.
+#[cfg(windows)]
+fn covers_its_screen(home: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let mut where_it_is = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: le bloc du système, dont la taille est écrite dedans comme
+    // l'appel le demande.
+    let mut about: MONITORINFO = unsafe { std::mem::zeroed() };
+    about.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+    // SAFETY: notre propre fenêtre, et deux blocs à nous que les appels
+    // remplissent.
+    let read = unsafe {
+        GetWindowRect(home, &mut where_it_is) != 0
+            && GetMonitorInfoW(
+                MonitorFromWindow(home, MONITOR_DEFAULTTONEAREST),
+                &mut about,
+            ) != 0
+    };
+    if !read {
+        return false;
+    }
+    let screen = about.rcMonitor;
+    where_it_is.left <= screen.left
+        && where_it_is.top <= screen.top
+        && where_it_is.right >= screen.right
+        && where_it_is.bottom >= screen.bottom
 }
 
 /// Where our window's inside is on the screen, and how big it is.
