@@ -360,6 +360,9 @@ enum Quoi {
     /// Une carte d'ordinateur, et le journal de cet ordinateur-là.
     Voisin(usize),
     JournalDe(usize),
+    /// La même carte, mais par ce réseau-ci et rien d'autre : aucun
+    /// serveur consulté, aucune sortie de la maison.
+    EnLocal(usize),
     Ajouter,
     Interrupteur(Bouton),
     Segment(Choisi, usize),
@@ -2024,11 +2027,16 @@ impl Mise<'_> {
         }
     }
 
-    /// Une carte d'ordinateur : cliquer n'importe où s'y connecte, et le
-    /// bouton de son journal se pose dans un coin.
+    /// Une carte d'ordinateur : cliquer n'importe où s'y connecte, et les
+    /// boutons de son journal et de sa voie locale se posent dans un coin.
     fn carte_d_ordinateur(&mut self, ou: Cadre, rang: usize, dedans: f32, nom: f32, adresse: f32) {
         let voisin = &self.vu.voisins[rang];
         let occupe = self.vu.occupe(self.etat);
+        // La voie locale ne s'offre que pour un ordinateur que ce réseau
+        // annonce : c'est la seule chose qu'elle sait joindre, puisque
+        // c'est la seule adresse qui vienne d'ici.
+        let ici = voisin.seen;
+        let en_local = ici && !occupe && self.sous_la_main(&Quoi::EnLocal(rang));
         let sienne = self
             .vu
             .sessions
@@ -2082,16 +2090,19 @@ impl Mise<'_> {
             vivante,
         );
         let depuis = ou.gauche + dedans + pastille + self.px(design::PAS_2);
+        let bouton = self.px(tenue::BOUTON);
+        // La place des boutons du coin est réservée : sans elle, un nom
+        // un peu long passerait dessous, et il y en a un de plus quand
+        // cet ordinateur est joignable d'ici.
+        let boutons = self.px(design::PAS_6) + if ici { bouton } else { 0.0 };
         self.ecris(
             &voisin.name,
             self.sous_titre().coupee(),
             self.couleurs.texte.voile(voile),
-            // La place du bouton du journal est réservée : sans elle, un
-            // nom un peu long passerait dessous.
             Cadre::pose(
                 depuis,
                 ou.haut + dedans,
-                (ou.droite - self.px(design::PAS_6) - depuis).max(0.0),
+                (ou.droite - boutons - depuis).max(0.0),
                 nom,
             ),
         );
@@ -2110,14 +2121,16 @@ impl Mise<'_> {
             ),
         );
         // Ce qui n'apparaît qu'au survol ne fait pas bouger la carte : sa
-        // place est réservée d'avance.
+        // place est réservée d'avance. Le mot dit laquelle des deux voies
+        // la main est en train de choisir : sans lui, la maison du coin
+        // serait un dessin sans nom.
         let appel = self.px(tenue::APPEL);
-        if sienne || dessus {
+        if sienne || dessus || en_local {
             self.ecris(
-                if sienne {
-                    "Session en cours"
-                } else {
-                    "Se connecter"
+                match (sienne, en_local) {
+                    (true, _) => "Session en cours",
+                    (false, true) => "Se connecter en local",
+                    (false, false) => "Se connecter",
                 },
                 self.legende(),
                 if sienne {
@@ -2140,7 +2153,6 @@ impl Mise<'_> {
         // Toujours là et jamais au premier plan : il attend d'être
         // cherché, et il ne s'efface pas quand une session occupe la
         // fenêtre.
-        let bouton = self.px(tenue::BOUTON);
         let coin = self.px(design::PAS_3);
         self.bouton_icone(
             Cadre::pose(ou.droite - coin - bouton, ou.haut + coin, bouton, bouton),
@@ -2148,6 +2160,22 @@ impl Mise<'_> {
             Quoi::JournalDe(rang),
             !dessus,
         );
+        // La maison, à côté : par ce réseau et rien d'autre. Elle suit la
+        // carte plutôt que le journal, puisqu'elle ouvre une session et
+        // qu'une session de plus ne s'ouvre pas.
+        if ici && !occupe {
+            self.bouton_icone(
+                Cadre::pose(
+                    ou.droite - coin - bouton * 2.0,
+                    ou.haut + coin,
+                    bouton,
+                    bouton,
+                ),
+                &icones::RESEAU_LOCAL,
+                Quoi::EnLocal(rang),
+                !dessus,
+            );
+        }
     }
 
     /// La tuile qui ajoute un ordinateur : elle suit le rythme des autres
@@ -4383,16 +4411,8 @@ fn fait(app: &App, quoi: Quoi) {
             copie(app, &tout, Quoi::CopierJournal);
         }
         Quoi::ARegler(rang) => remedie(app, rang),
-        Quoi::Voisin(rang) => {
-            let vise = VU
-                .lock()
-                .expect("accueil")
-                .as_ref()
-                .and_then(|vu| vu.voisins.get(rang).cloned());
-            if let Some(voisin) = vise {
-                lance(app, &voisin.address, &voisin.fingerprint, &voisin.name);
-            }
-        }
+        Quoi::Voisin(rang) => lance_le_voisin(app, rang, false),
+        Quoi::EnLocal(rang) => lance_le_voisin(app, rang, true),
         Quoi::Ajouter => {
             {
                 let mut etat = ETAT.lock().expect("accueil");
@@ -4681,7 +4701,10 @@ fn connecte(app: &App) {
                     .map(|voisin| voisin.name.clone())
             })
             .unwrap_or_else(|| adresse.clone());
-        lance(&app, &adresse, &empreinte, &vu_le_nom);
+        // Un ordinateur qu'on vient d'écrire à la main se joint par la
+        // meilleure voie : se priver du serveur se demande sur une carte,
+        // pour une machine que ce réseau annonce déjà.
+        lance(&app, &adresse, &empreinte, &vu_le_nom, false);
     });
 }
 
@@ -4699,8 +4722,30 @@ fn oublie(app: &App, empreinte: String) {
     });
 }
 
+/// Ouvre une session vers l'ordinateur de cette carte, par la meilleure
+/// voie ou par ce réseau-ci et rien d'autre.
+fn lance_le_voisin(app: &App, rang: usize, en_local: bool) {
+    let vise = VU
+        .lock()
+        .expect("accueil")
+        .as_ref()
+        .and_then(|vu| vu.voisins.get(rang).cloned());
+    if let Some(voisin) = vise {
+        lance(
+            app,
+            &voisin.address,
+            &voisin.fingerprint,
+            &voisin.name,
+            en_local,
+        );
+    }
+}
+
 /// Ouvre une session vers cet ordinateur.
-fn lance(app: &App, adresse: &str, empreinte: &str, nom: &str) {
+///
+/// `en_local` la tient sur ce réseau : l'adresse d'ici et rien d'autre,
+/// sans qu'aucun serveur soit consulté.
+fn lance(app: &App, adresse: &str, empreinte: &str, nom: &str, en_local: bool) {
     {
         let vu = VU.lock().expect("accueil");
         let etat = ETAT.lock().expect("accueil");
@@ -4724,7 +4769,9 @@ fn lance(app: &App, adresse: &str, empreinte: &str, nom: &str) {
 
     let (app, adresse, empreinte) = (app.clone(), adresse.to_string(), empreinte.to_string());
     crate::app::spawn(async move {
-        if let Err(raison) = crate::session::connect(app.clone(), adresse, empreinte).await {
+        if let Err(raison) =
+            crate::session::connect(app.clone(), adresse, empreinte, en_local).await
+        {
             echoue(&app, &raison);
         }
     });

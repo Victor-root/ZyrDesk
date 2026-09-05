@@ -212,6 +212,36 @@ fn every_address_of(peer: Fingerprint, answering: &Answering) -> Vec<std::net::I
         .unwrap_or_default()
 }
 
+/// The addresses of a computer this network announces, and nothing else.
+///
+/// The very list `where_to_knock` falls back on, asked for on purpose:
+/// what this machine has heard that computer answer at, and the address
+/// it was named by. No meeting, no relay, and the account not so much as
+/// consulted, so a session opened on this stands or falls with this
+/// network alone.
+///
+/// What it does not do is judge the addresses. They come from what this
+/// network announced or from what somebody wrote down, and a rule
+/// invented here about which of them count as near enough would be a
+/// second promise nobody asked for. The promise made is the one that
+/// matters: nothing outside this machine is asked where to knock.
+///
+/// A computer of the account that this network does not announce is
+/// named by its road at the server rather than by an address, and there
+/// is nothing here to reach it at: saying so plainly is worth more than
+/// letting that road fail to resolve.
+fn only_on_this_network(
+    host: &str,
+    also: Vec<std::net::IpAddr>,
+) -> Result<Vec<SocketAddr>, String> {
+    if account::device_of_road(host).is_some() {
+        return Err("cet ordinateur ne s'annonce pas sur ce réseau.\n  \
+                    Une session en local demande une adresse d'ici, et le compte n'en donne pas."
+            .to_string());
+    }
+    crate::ways::where_to_knock(host, &also)
+}
+
 /// Where to knock to reach that computer, what to call it on the way,
 /// and the meeting it took to know, when it took one.
 ///
@@ -223,12 +253,32 @@ fn every_address_of(peer: Fingerprint, answering: &Answering) -> Vec<std::net::I
 /// journey with one road, no way to change it, and no way back when it
 /// stops carrying: it is what is left when there is no account, no
 /// server to be reached, or nobody ready at the other end.
+///
+/// `only_here` asks for that second journey on purpose, for a computer
+/// this network announces, and it is the one case where the account is
+/// not so much as consulted: a session opened this way owes nothing to a
+/// line leaving the house, and answers of itself the question a session
+/// crossing the Internet cannot, which is whether a silence was ours.
 async fn where_to_knock(
     host: &str,
     peer: Fingerprint,
+    only_here: bool,
     answering: &Answering,
 ) -> Result<(String, Knock), String> {
     let also = every_address_of(peer, answering);
+    if only_here {
+        // Écrit avant la ligne qui dit par où on frappe, et seulement
+        // quand c'est un choix : sans elle, une séance tenue sur ce
+        // réseau se lirait dans le journal comme une séance dont le
+        // serveur n'a pas voulu, ce qui est tout autre chose.
+        answering.log.write(&format!(
+            "{host} was asked for on this network alone: no account, no meeting, no relay"
+        ));
+        return Ok((
+            host.to_string(),
+            Knock::At(only_on_this_network(host, also)?),
+        ));
+    }
     let device = account::device_of_road(host)
         .map(str::to_string)
         .or_else(|| answering.machine.account.met_through_the_server(peer));
@@ -266,7 +316,10 @@ async fn one_question<T>(
     answering: &Answering,
     ask: impl AsyncFnOnce(&str, Knock) -> Result<T, String>,
 ) -> Result<T, String> {
-    let (label, knock) = where_to_knock(host, peer, answering).await?;
+    // Une question se pose par la meilleure voie disponible : c'est une
+    // session que l'on choisit de tenir sur ce réseau, jamais un aller
+    // et retour de deux mots.
+    let (label, knock) = where_to_knock(host, peer, false, answering).await?;
     let meeting = knock.session();
     let answered = ask(&label, knock).await;
     if let Some(session) = meeting {
@@ -294,8 +347,13 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 ways: answering.machine.ways.count(),
             })
         }
-        Request::Reach { host, peer, media } => {
-            let (label, knock) = match where_to_knock(&host, peer, answering).await {
+        Request::Reach {
+            host,
+            peer,
+            media,
+            only_here,
+        } => {
+            let (label, knock) = match where_to_knock(&host, peer, only_here, answering).await {
                 Ok(found) => found,
                 Err(reason) => return Answer::Refused(reason),
             };
@@ -839,6 +897,7 @@ mod tests {
                     host: "account:d2".to_string(),
                     peer: bench.fingerprint,
                     media: zyr_transport::MediaProfile::default(),
+                    only_here: false,
                 })
                 .await
                 .unwrap();
@@ -846,6 +905,27 @@ mod tests {
                 panic!("attendu un refus, reçu {answer}");
             };
             assert!(reason.contains("aucun compte"), "{reason}");
+
+            // Et la même route demandée en local est refusée pour ce
+            // qu'elle est : une route du serveur n'est pas une adresse
+            // d'ici, et la laisser échouer à la résolution dirait tout
+            // autre chose.
+            let answer = caller
+                .ask(&Request::Reach {
+                    host: "account:d2".to_string(),
+                    peer: bench.fingerprint,
+                    media: zyr_transport::MediaProfile::default(),
+                    only_here: true,
+                })
+                .await
+                .unwrap();
+            let Answer::Refused(reason) = answer else {
+                panic!("attendu un refus, reçu {answer}");
+            };
+            assert!(
+                reason.contains("ne s'annonce pas sur ce réseau"),
+                "{reason}"
+            );
         });
     }
 

@@ -2505,6 +2505,18 @@ PC-VICTOR  10:33:06    10:33:10
 
 **Ce qui reste, et c'est le vrai travail.** Le produit ne peut pas empêcher ces coupures : il doit les traverser. C'est ce qu'il fait depuis [D143](#d143-une-sonde-jamais-partie-ne-compte-plus-contre-la-route-2026-09-05-pendant-m6), trois heures treize avec une dizaine de silences, puis six heures vingt et une avec neuf, sans qu'aucune séance ne cède. La série des neuf secondes appartient au passé du produit, pas à son présent.
 
+## D148. Une carte porte une seconde porte, qui ne connaît que ce réseau (2026-09-05, pendant M6)
+
+**Ce que [D147](#d147-les-coupures-sont-sur-laccès-partagé-en-amont-des-deux-machines-2026-09-05-clôture-de-la-réserve-ouverte-depuis-d136) laisse sur la table.** Les coupures sont dehors, la séance locale les traverse sans les voir, et pourtant ouvrir cette séance locale demande quelque chose au serveur. `where_to_knock` cherche un rendez-vous dès que l'ordinateur visé est un appareil du compte, même annoncé sur ce réseau, même à deux mètres. La raison est bonne : un rendez-vous apporte plus de routes qu'une adresse, et l'aiguilleur sonde les adresses locales en premier, si bien que la séance reste locale. Mais son ouverture, elle, sort de la maison, et [NETWORK.md](NETWORK.md) §5 écrivait le contraire depuis le premier jour : « en réseau local, le serveur n'est même pas consulté ». C'était vrai quand il n'y avait pas de compte, et faux depuis qu'il y en a un.
+
+**Ce qui est fait.** La carte d'un ordinateur que ce réseau annonce porte une maison à côté de l'icône du journal. Elle ouvre la même séance par une seule voie : les adresses d'ici, une route, aucun relais, et le compte pas même interrogé. Le mot qui apparaît au survol dit laquelle des deux voies la main est en train de choisir, à la place qui lui était déjà réservée sur la carte.
+
+Le choix voyage jusqu'au service dans la demande elle-même, comme un champ ajouté après coup se lit dans ce dialecte : absent, il vaut « la meilleure voie », ce que demandait toute fenêtre d'avant. Une voie locale demandée pour un ordinateur que ce réseau n'annonce pas est refusée en toutes lettres, plutôt que de laisser une route du serveur échouer à se résoudre et raconter autre chose.
+
+**Ce que ça garantit, et c'est le seul point.** Une séance ouverte par cette porte ne peut pas être expliquée par le serveur, par le relais, par le compte, ni par ce qu'il y a après la box. Ce qu'elle fait, elle le fait avec ce réseau et rien d'autre. C'est la mesure que [D146](#d146--rien-nest-revenu--couvrait-quatre-pannes-dont-deux-qui-ne-sont-pas-internet-2026-09-05-pendant-m6) réclamait, rendue disponible d'un clic au lieu de dépendre d'un compte détaché ou d'un serveur injoignable.
+
+**Ce que ça ne fait pas.** Elle ne juge pas les adresses. Elles viennent de ce que ce réseau a annoncé ou de ce que quelqu'un a écrit ; inventer ici une règle sur celles qui seraient assez proches serait une seconde promesse que personne n'a demandée. La promesse tenue est celle qui compte : rien hors de cette machine n'est consulté pour savoir où frapper.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

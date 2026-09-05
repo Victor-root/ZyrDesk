@@ -107,6 +107,16 @@ pub const JOURNAL: Icone = dessin(&[
     Trait::Chemin("M9 9h6M9 13h6M9 17h4"),
 ]);
 
+/// Une maison : joindre un ordinateur sans sortir d'ici.
+///
+/// Le dessin dit le lieu et non le fil, parce que c'est le lieu qui fait
+/// la différence : la session ne quitte pas la maison, et rien de ce qui
+/// est dehors ne peut la faire tomber.
+pub const RESEAU_LOCAL: Icone = dessin(&[
+    Trait::Chemin("M3 10.5 12 3.5l9 7V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"),
+    Trait::Chemin("M9.5 21v-6h5v6"),
+]);
+
 pub const REGLAGES: Icone = dessin(&[
     Trait::Chemin("M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3"),
     Trait::Chemin("M14 2v4M8 10v4M16 18v4"),

@@ -460,7 +460,17 @@ async fn become_that_size(
     Ok(())
 }
 
-pub async fn connect(app: App, host: String, fingerprint: String) -> Result<(), String> {
+/// Opens a session towards that computer.
+///
+/// `only_here` keeps it on this local network: the address and nothing
+/// else, with nothing asked of any server. Decided on the home screen,
+/// where the two ways of reaching a computer are two things to click.
+pub async fn connect(
+    app: App,
+    host: String,
+    fingerprint: String,
+    only_here: bool,
+) -> Result<(), String> {
     let peer = fingerprint
         .trim()
         .parse()
@@ -506,6 +516,7 @@ pub async fn connect(app: App, host: String, fingerprint: String) -> Result<(), 
         wants_a_screen_over_there: preferred.asked.wants_a_screen_over_there(),
         far_magnification,
         far_screen: None,
+        only_here,
     };
 
     // On a thread of its own, and not one of the interface's: the

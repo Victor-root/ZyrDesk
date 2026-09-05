@@ -106,6 +106,16 @@ pub struct Wanted {
     /// again, so this is settled before the session opens, and changing
     /// it starts that engine over.
     pub far_screen: Option<String>,
+    /// Whether the session may only be opened on this local network,
+    /// with nothing asked of any server.
+    ///
+    /// Two computers of one account are ordinarily put in touch by the
+    /// server, even two on the same network, because a meeting brings
+    /// more roads than an address does. This asks for one road and one
+    /// only: the address this network announced. Chosen by whoever opens
+    /// the session, because they are the one who knows that the machine
+    /// they want is in the next room.
+    pub only_here: bool,
 }
 
 /// What is happening, as it happens.
@@ -449,7 +459,7 @@ fn the_way_and_what_its_engine_reads_once(
         // seconds when the far computer's engine is starting over, and
         // it is exactly where somebody gives up on it.
         carry_on(still_wanted)?;
-        let mut driving = match Driving::towards(&wanted.host, peer, settings) {
+        let mut driving = match Driving::towards(&wanted.host, peer, settings, wanted.only_here) {
             Ok(driving) => driving,
             // A computer that cannot be reached is ordinarily the end of
             // the opening. While its engine is starting over, which is a
@@ -811,7 +821,12 @@ struct Driving {
 
 impl Driving {
     /// Asks the service for a way to that computer.
-    fn towards(host: &str, peer: Fingerprint, settings: &SessionSettings) -> Result<Self, String> {
+    fn towards(
+        host: &str,
+        peer: Fingerprint,
+        settings: &SessionSettings,
+        only_here: bool,
+    ) -> Result<Self, String> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -829,6 +844,7 @@ impl Driving {
                 bits_per_second: u64::from(settings.bitrate_kbps) * 1000,
                 frames_per_second: settings.fps,
             },
+            only_here,
         };
 
         let reached = match runtime
@@ -1012,6 +1028,7 @@ mod tests {
             wants_a_screen_over_there: true,
             far_magnification: 0,
             far_screen: None,
+            only_here: false,
         }
     }
 

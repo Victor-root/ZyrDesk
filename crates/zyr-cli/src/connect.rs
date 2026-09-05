@@ -98,6 +98,11 @@ pub fn run(args: Args) -> ExitCode {
         // Choisir entre plusieurs écrans se fait en les regardant, donc
         // dans la fenêtre, et jamais ici.
         far_screen: None,
+        // La ligne de commande joint l'ordinateur nommé par la meilleure
+        // voie disponible. Se priver du serveur est un choix qui se fait
+        // en voyant que la machine voulue est dans la pièce d'à côté,
+        // donc sur sa carte, dans la fenêtre.
+        only_here: false,
     };
 
     // Nothing here can close a session while it is opening: the command

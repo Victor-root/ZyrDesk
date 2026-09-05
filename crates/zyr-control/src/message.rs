@@ -98,6 +98,19 @@ pub enum Request {
         host: String,
         peer: Fingerprint,
         media: MediaProfile,
+        /// Whether the way may only be opened where this computer
+        /// stands: at the addresses this local network announced, with
+        /// nothing asked of any server.
+        ///
+        /// Ordinarily a computer of the account is reached through a
+        /// meeting the server arranges, even one on this very network,
+        /// because a meeting brings more roads than an address does. This
+        /// asks for the opposite and asks for it plainly: one network,
+        /// one road, no account, no meeting, no relay. It is what lets a
+        /// session between two computers in the same room owe nothing to
+        /// a line that leaves the house, and what lets anyone tell the
+        /// two apart when a session goes quiet.
+        only_here: bool,
     },
     /// Hands the far computer, through an open way, the code its engine
     /// is waiting for.
@@ -315,6 +328,10 @@ impl Request {
                     bits_per_second: u64::from(fields.parsed::<u32>("bitrate")?) * 1000,
                     frames_per_second: fields.parsed("fps")?,
                 },
+                // Absent from an older half of the product, which knew
+                // only the one way of reaching a computer: the one this
+                // says no to.
+                only_here: fields.flag("here", false),
             }),
             "pair" => Ok(Request::Pair {
                 way: WayId(fields.parsed("way")?),
@@ -442,12 +459,18 @@ impl fmt::Display for Request {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Request::Standing => f.write_str("standing"),
-            Request::Reach { host, peer, media } => write!(
+            Request::Reach {
+                host,
+                peer,
+                media,
+                only_here,
+            } => write!(
                 f,
-                "reach host={} peer={peer} bitrate={} fps={}",
+                "reach host={} peer={peer} bitrate={} fps={} here={}",
                 packed(host),
                 media.bits_per_second / 1000,
-                media.frames_per_second
+                media.frames_per_second,
+                said(*only_here)
             ),
             Request::Pair { way, pin } => write!(f, "pair way={way} pin={pin}"),
             Request::SecureAttention { way } => write!(f, "sas way={way}"),
@@ -1222,6 +1245,18 @@ mod tests {
                     bits_per_second: 20_000_000,
                     frames_per_second: 60,
                 },
+                only_here: false,
+            },
+            Request::Reach {
+                // La même, mais qui ne veut rien savoir d'ailleurs que
+                // de ce réseau.
+                host: "192.168.1.20".to_string(),
+                peer: fingerprint(),
+                media: MediaProfile {
+                    bits_per_second: 20_000_000,
+                    frames_per_second: 60,
+                },
+                only_here: true,
             },
             Request::Reach {
                 // Une adresse écrite à la main peut porter une espace :
@@ -1232,6 +1267,7 @@ mod tests {
                     bits_per_second: 20_000_000,
                     frames_per_second: 60,
                 },
+                only_here: false,
             },
             Request::Pair {
                 way: WayId(3),
@@ -1641,7 +1677,16 @@ mod tests {
     #[test]
     fn a_field_added_later_does_not_upset_an_older_reader() {
         let line = "reach host=192.168.1.20 peer=0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 bitrate=20000 fps=60 codec=av1";
-        assert!(matches!(Request::parse(line), Ok(Request::Reach { .. })));
+        // Et une fenêtre d'avant, qui ne connaissait qu'une façon de
+        // joindre un ordinateur, demande bien celle-là : la voie qui ne
+        // veut rien savoir d'ailleurs se demande, elle ne se suppose pas.
+        assert!(matches!(
+            Request::parse(line),
+            Ok(Request::Reach {
+                only_here: false,
+                ..
+            })
+        ));
     }
 
     #[test]
