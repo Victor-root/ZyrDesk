@@ -2465,6 +2465,20 @@ Et ainsi à 08:28, 08:30, 08:40, 08:55, 09:04, 09:22, 09:24 et 09:37. Deux perte
 
 **Ce que ça ne clôt pas, et c'est le vrai résultat.** Rien de tout cela n'a coûté la session. Neuf coupures traversées, six heures vingt, et c'est la personne qui a décidé de la fin. Une semaine plus tôt, la première de ces neuf coupures aurait suffi.
 
+## D146. « Rien n'est revenu » couvrait quatre pannes, dont deux qui ne sont pas Internet (2026-09-05, pendant M6)
+
+**L'objection, et elle est juste.** [D145](#d145-le-silence-était-le-wi-fi-du-portable-et-le-produit-le-dit-maintenant-tout-seul-2026-09-05-pendant-m6) a nommé le Wi-Fi du portable. C'est faux : la session locale passe par la même carte, la même box, et n'a jamais vu une seule de ces coupures, avec l'aiguilleur et ses sondes en marche puisqu'une session entre deux ordinateurs du compte passe toujours par le serveur, même sur le même réseau. Si la radio s'absentait, le local s'absenterait avec elle.
+
+Et la charge n'y est pour rien non plus : le même relevé au débit le plus bas donne les mêmes silences (D138), et la séance en 5G à 5 Mb/s aussi (D139). Trois accès Internet, trois liens physiques, tous les débits : la panne est là. Le réseau local : jamais.
+
+**Le défaut trouvé, et il est dans la mesure elle-même.** `ask_once` rendait « rien » pour quatre pannes qui n'ont rien à voir : la prise que le système refuse d'ouvrir, la table de routage sans issue, la prise qui refuse le paquet, et la question partie sans réponse. Les quatre s'écrivaient « rien n'est revenu », et le journal en concluait « la liaison de cet ordinateur est partie ». Les deux premières ne sont pas Internet du tout : ce sont cet ordinateur-ci, et les nommer ainsi est exactement l'erreur que [D142](#d142-une-sonde-qui-nest-jamais-partie-ne-se-lit-plus-comme-une-sonde-sans-réponse-2026-09-04-pendant-m6) existe pour empêcher, un étage plus haut.
+
+Une mesure censée départager « le fil s'est tu » de « cette machine a cessé de parler » les confondait donc dans son propre compte rendu, et la conclusion de D145 s'appuie dessus.
+
+**Ce qui est fait.** Trois réponses au lieu de deux : elle est revenue, elle est partie sans revenir, ou elle n'est jamais partie et le système dit pourquoi. Le journal du service nomme la troisième pour ce qu'elle est.
+
+**Ce qu'il reste à mesurer, et personne ne l'a fait.** Ce relevé a un jour ; toutes les séances locales lui sont antérieures. On ne sait donc pas si cet ordinateur perd Internet pendant une séance locale. S'il le perd sans que la séance en souffre, les coupures sont un bruit de fond permanent et le local y est simplement insensible : c'est dehors, et D145 avait raison sur le fond en se trompant de coupable. S'il ne le perd pas, alors ouvrir une session à travers Internet fait perdre Internet à la machine, et il faudra chercher chez nous.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

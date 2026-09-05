@@ -100,9 +100,8 @@ async fn keep_asking(log: Log) {
             continue;
         }
         let asked = Instant::now();
-        let answer = ask_once().await;
-        match answer {
-            Some(took) => {
+        match ask_once().await {
+            Answered::In(took) => {
                 trace.write(&format!("{OUTSIDE} answered in {} ms", took.as_millis()));
                 if !answering {
                     answering = true;
@@ -112,7 +111,7 @@ async fn keep_asking(log: Log) {
                     ));
                 }
             }
-            None => {
+            Answered::Nothing => {
                 trace.write(&format!(
                     "{OUTSIDE} said nothing in {} ms",
                     PATIENCE.as_millis()
@@ -120,8 +119,19 @@ async fn keep_asking(log: Log) {
                 if answering {
                     answering = false;
                     log.write(&format!(
-                        "this computer no longer reaches {OUTSIDE}: its own connection is gone, \
-                         and a session going quiet now says nothing about the far computer"
+                        "this computer no longer reaches {OUTSIDE}: the question went out and \
+                         nothing came back, so a session going quiet now says nothing about the \
+                         far computer"
+                    ));
+                }
+            }
+            Answered::NotAsked(why) => {
+                trace.write(&format!("{OUTSIDE} was not even asked: {why}"));
+                if answering {
+                    answering = false;
+                    log.write(&format!(
+                        "this computer could not even ask {OUTSIDE}: {why}. That is this \
+                         computer and not the Internet, and not the far computer either"
                     ));
                 }
             }
@@ -133,31 +143,63 @@ async fn keep_asking(log: Log) {
     }
 }
 
-/// One question, and how long the answer took. Nothing when none came.
+/// What one question gave.
+///
+/// Three answers and not two, because « nothing came back » covered
+/// three faults that have nothing to do with one another, and the whole
+/// point of this file is to tell such things apart. A question that went
+/// out and was not answered is the Internet being away. A question this
+/// computer could not even ask is this computer, and saying « its own
+/// connection is gone » of that would be the same mistake, one floor up,
+/// that D142 was written to stop making.
+enum Answered {
+    /// It came back, and this is how long it took.
+    In(Duration),
+    /// It went out and nothing came back in time.
+    Nothing,
+    /// It never went out, and this is what the system said.
+    NotAsked(String),
+}
+
+/// One question, and what became of it.
 ///
 /// A socket of its own each time, and never one kept open: a computer
 /// that changes network keeps a socket bound to the address it no longer
 /// has, and would report a silence that is only its own staleness.
-async fn ask_once() -> Option<Duration> {
-    let socket = UdpSocket::bind("0.0.0.0:0").await.ok()?;
-    socket.connect(OUTSIDE).await.ok()?;
+async fn ask_once() -> Answered {
+    let socket = match UdpSocket::bind("0.0.0.0:0").await {
+        Ok(socket) => socket,
+        Err(e) => return Answered::NotAsked(format!("no socket to ask with: {e}")),
+    };
+    if let Err(e) = socket.connect(OUTSIDE).await {
+        return Answered::NotAsked(format!("nowhere to send it: {e}"));
+    }
     // Numbered from the port the system just gave, so two questions in
     // flight are never confused, and an old answer is never taken for a
     // new one.
-    let asked = socket.local_addr().ok()?.port();
-    socket.send(&question(asked)).await.ok()?;
+    let asked = match socket.local_addr() {
+        Ok(address) => address.port(),
+        Err(e) => return Answered::NotAsked(format!("the socket has no address: {e}")),
+    };
+    if let Err(e) = socket.send(&question(asked)).await {
+        return Answered::NotAsked(format!("the socket would not take it: {e}"));
+    }
     let started = Instant::now();
     let mut answer = [0u8; 512];
     loop {
-        let read = tokio::time::timeout(
+        let read = match tokio::time::timeout(
             PATIENCE.saturating_sub(started.elapsed()),
             socket.recv(&mut answer),
         )
         .await
-        .ok()?
-        .ok()?;
+        {
+            Ok(Ok(read)) => read,
+            // Nothing in time, or the system gave up on the answer
+            // rather than on the question: either way it went out.
+            _ => return Answered::Nothing,
+        };
         if answers(&answer[..read], asked) {
-            return Some(started.elapsed());
+            return Answered::In(started.elapsed());
         }
     }
 }
