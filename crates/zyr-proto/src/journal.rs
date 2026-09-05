@@ -42,6 +42,15 @@ const FILES: [(&str, &str); 4] = [
     ("interface.log", "La fenêtre"),
 ];
 
+/// The files emptied with the others and never gathered.
+///
+/// One measurement a second is exactly what makes this one worth keeping
+/// and exactly what would drown a paste meant to be read in one go. It
+/// is emptied all the same: whoever clears the journal before a test
+/// wants a clean slate, and would otherwise read three weeks of reach
+/// against a session of five minutes.
+const ALSO_EMPTIED: [(&str, &str); 1] = [("reach.log", "Ce que cet ordinateur atteint")];
+
 /// A journal being written.
 ///
 /// Opened on what this computer is, filled with what the one gathering
@@ -99,7 +108,7 @@ impl Journal {
 /// Answers what could not be emptied, said in words meant to be read.
 pub fn emptied() -> Vec<String> {
     let mut refused = Vec::new();
-    for (file, what) in FILES {
+    for (file, what) in FILES.iter().chain(ALSO_EMPTIED.iter()) {
         if let Err(e) = empty(&paths::logs_dir().join(file)) {
             refused.push(format!("{what} ({file}) : {e}"));
         }
@@ -362,6 +371,25 @@ mod tests {
         assert!(build_from("").is_empty());
         assert!(build_from("n'importe quoi").is_empty());
         assert!(build_from("# run = 1\n").is_empty());
+    }
+
+    #[test]
+    fn what_is_emptied_covers_more_than_what_is_gathered() {
+        // Le relevé de ce que l'ordinateur atteint tient une mesure par
+        // seconde : il noierait la copie qu'on relit d'un trait, donc il
+        // n'y est pas. Mais vider le journal avant un essai doit le
+        // vider aussi, sans quoi on lit trois semaines de relevé en face
+        // d'une séance de cinq minutes.
+        let gathered: Vec<&str> = FILES.iter().map(|(file, _)| *file).collect();
+        let also: Vec<&str> = ALSO_EMPTIED.iter().map(|(file, _)| *file).collect();
+        assert!(also.contains(&"reach.log"));
+        assert!(
+            !gathered.contains(&"reach.log"),
+            "le relevé noierait la copie qu'on relit"
+        );
+        for file in &also {
+            assert!(!gathered.contains(file), "{file} serait vidé deux fois");
+        }
     }
 
     #[test]

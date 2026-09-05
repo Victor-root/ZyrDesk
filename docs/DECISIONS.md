@@ -2443,6 +2443,8 @@ Et le journal du service, lui, ne reçoit que les deux moments qui comptent : ce
 
 **Ce que ça coûte.** Trente-six octets par seconde et un fichier qui se coupe tout seul, comme les autres journaux du produit.
 
+**Et il se vide avec les autres.** Vider le journal depuis la fenêtre, ou le demander à l'ordinateur d'en face, vide aussi ce relevé : la table de ce qui est vidé cesse d'être la table de ce qui est copié, parce que ce fichier a besoin d'être dans la première et n'a rien à faire dans la seconde. Sans quoi on relirait trois semaines de relevé en face d'une séance de cinq minutes, ce que vider le journal avant un essai existe précisément pour éviter.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
