@@ -83,6 +83,7 @@ Pile de patchs prévue (le manifeste `patches/MANIFEST.md` fait foi) :
 | P-M6 | Le moteur ne s'annonce plus (présence Discord) et ne joint plus le site du projet d'origine (compatibilité, correspondances de manettes) | ~15 lignes, que du retrait | Appliqué |
 | P-M7 | Fermeture de l'application sur l'hôte en ligne de commande, sans fenêtre, avec un code de sortie propre | ~40 lignes | Appliqué |
 | P-M8 | L'appairage réussi est écrit sur le disque avant que le moteur ne s'arrête | ~15 lignes | Appliqué |
+| P-M13 | Le moteur suit la forme du curseur d'en face et la donne au sien | ~180 lignes | Appliqué, dans le mécanisme de P-M11 |
 | P-M3 | Ligne de statistiques périodique lisible par machine sur stdout | ~60 lignes | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Interrupteur pour ne pas demander le chiffrement vidéo interne (Moonlight le demande par défaut sur CPU avec accélération AES) | ~10 lignes | Contingence : seulement si la vérification M1 montre que Sunshine chiffre quand même en mode 0 sur loopback (double chiffrement inutile) |
 

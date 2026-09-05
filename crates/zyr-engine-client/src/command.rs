@@ -93,6 +93,17 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
         args.push("--follow-settings".to_string());
         args.push(path.to_string());
     }
+    // And where it reads the shape to give the pointer it draws, which is
+    // the pointer a hand follows in desktop mouse mode: this end draws it
+    // so that it answers with no network in between, and nothing in what
+    // the engines speak carries the shape the far computer's pointer has.
+    // A second file and never a field of the line above: that line says
+    // what the stream is to be and a difference makes it over, while this
+    // changes every time a hand crosses a text field.
+    if let Some(path) = paths::session_pointer().to_str() {
+        args.push("--follow-pointer".to_string());
+        args.push(path.to_string());
+    }
     // The keys this computer keeps for itself, Alt+Tab and the Windows key
     // first, taken by the engine and by nothing else. The mode is ours
     // (patch P-M10): the engine takes them from the focus of its own
@@ -197,6 +208,19 @@ mod tests {
         let args = session_arguments("host", &SessionSettings::default());
         let path = value_of(&args, "--follow-settings").expect("un chemin à suivre");
         assert!(path.ends_with("session-wanted.txt"));
+    }
+
+    #[test]
+    fn le_moteur_suit_aussi_la_forme_du_curseur() {
+        // Et par un second fichier : le premier dit ce que le flux doit
+        // être, et une ligne qui en diffère le fait reconstruire. Une
+        // forme change chaque fois qu'une main traverse un champ de
+        // texte, ce qui reconstruirait l'image plusieurs fois par
+        // seconde s'ils n'étaient qu'un.
+        let args = session_arguments("host", &SessionSettings::default());
+        let path = value_of(&args, "--follow-pointer").expect("un chemin à suivre");
+        assert!(path.ends_with("session-pointer.txt"));
+        assert_ne!(path, value_of(&args, "--follow-settings").unwrap());
     }
 
     #[test]

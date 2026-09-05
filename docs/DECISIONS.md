@@ -2545,6 +2545,24 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Le point fragile, nommé.** L'interrupteur de l'hôte est global à son moteur, qui vit aussi longtemps que son service, et il ne se lit pas : il se bascule à l'aveugle. Il est donc rendu avant la fin de session, à travers le lecteur tant qu'il en existe un. Une session qui meurt sans passer par là, machine qui plante ou réseau qui tombe, laisse ce moteur sans curseur jusqu'à ce que son service le relance. Ce que ça coûte se voit tout de suite, deux curseurs ou aucun sur une session suivante vers une autre machine, et se répare par l'interrupteur. C'est le meilleur atteignable avec une bascule qui ne se lit pas, et c'est écrit ici pour que ça ne se redécouvre pas.
 
+## D151. La forme du curseur voyage à côté de l'image (2026-09-05, pendant M6)
+
+**Le relevé.** « Ça, ça ne me convient pas, il ne faut pas que ça change le comportement. Tous les logiciels n'ont pas ce problème, donc tu te débrouilles, même s'il faut patcher les moteurs, mais je veux que ça fonctionne nickel. » Puis, pour lever toute ambiguïté : « Je ne veux pas voir le curseur distant, je veux que ce soit le curseur local mais qui réagisse à tout, genre rond de chargement, texte. »
+
+**Ce que [D150](#d150-en-mode-bureau-le-curseur-est-dessiné-ici-2026-09-05-pendant-m6) avait laissé sur la table.** Le curseur suivait enfin la main sans réseau au milieu, et il était devenu une flèche quoi qu'il survole. Or un bureau dit ce qu'un clic va faire par la forme du curseur et par presque rien d'autre : champ de texte, lien, bord de fenêtre, machine occupée se ressemblaient tous. Pour un produit de prise en main à distance, ce n'était pas un détail d'apparence.
+
+**Pourquoi ce n'était pas un interrupteur oublié.** Le protocole que parlent les moteurs ne transporte aucune forme de curseur, nulle part : celle de l'hôte n'existe que dessinée dans l'image par son moteur. Il n'y avait donc rien à allumer, il fallait la faire voyager. C'est exactement ce qui distingue les logiciels de prise en main : ils ont chacun leur canal pour ça. ZyrDesk en a un aussi, entre les deux services, et il porte déjà le journal, les écrans et le débit.
+
+**La route écartée, et pourquoi.** La route juste au sens du protocole serait un message de plus dans le canal de contrôle des moteurs : événementiel, sans interrogation répétée, et capable de porter une image pour un curseur qu'un programme a dessiné lui-même. Elle exige de patcher `moonlight-common-c`, qui est un submodule imbriqué pointant sur l'amont : il faudrait un troisième fork. Ce n'est pas une décision de code mais de dépôt, et elle n'a pas été prise à la place de Victor.
+
+**La route retenue, en quatre pièces.** L'hôte lit son curseur ; la forme voyage sur le canal de ZyrDesk, version 16 du dialecte ; le client l'écrit dans un fichier ; le moteur client la pose sur son propre curseur. Un seul patch moteur, [P-M13](../patches/MANIFEST.md), et dans le mécanisme qu'un patch existant avait déjà ouvert : la pile ne grandit pas d'une idée, seulement d'un fichier suivi.
+
+**Où l'hôte lit, et pourquoi c'est là toute la difficulté.** Un service siège dans une session sans écran, sans clavier et sans souris : l'y interroger répond sur un bureau que personne ne regarde. La réponse vit sur le bureau qui a l'entrée, lequel change quand la machine se verrouille ou demande un mot de passe. Un fil se tient donc dessus et le suit, et il ne s'y tient que pendant qu'on lui demande quelque chose : une machine que personne ne regarde ne lit rien.
+
+**Un mot et jamais une image.** L'ordinateur qui regarde possède déjà les douze formes, dessinées par son propre système, à sa taille et à son agrandissement. Une image arriverait aux mesures de la machine d'en face et serait fausse sur un écran qui grossit autrement. Le prix est nommé : un curseur qu'un programme dessine lui-même ne ressemble à aucune des douze et rend la flèche, ce que le système fait aussi de son côté.
+
+**Et c'est instrumenté aux deux bouts, exprès.** Cinq endroits et deux machines : chaque côté écrit une ligne en fin de session qui répond aux deux seules questions qu'un curseur resté en flèche pose, à savoir si quoi que ce soit a été lu ou reçu, et si autre chose qu'une flèche est passé. Une ligne par forme en ferait vingt par seconde et ne répondrait à ni l'une ni l'autre.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
