@@ -721,6 +721,12 @@ pub fn watch(app: App) {
                     put_the_button_up(&app, process);
                     keep_the_pointer_in_step(&app, process).await;
                     keep_the_pointer_local_in_step(&app, process).await;
+                    // Et la forme que ce curseur prend, qui vient de
+                    // l'ordinateur d'en face et se demande bien plus
+                    // souvent que cette veille ne tourne : elle a sa
+                    // propre boucle, relancée ici quand la précédente
+                    // s'est arrêtée.
+                    crate::pointeur::follow(&app);
                     // Et le clavier appartient à l'image, toujours. Le
                     // menu ne le lui prend plus : la carte que ce
                     // programme dessine n'est jamais activée et ne porte

@@ -147,6 +147,10 @@ impl Answers for FakeEngine {
         Ok(HOST_SCREENS.to_string())
     }
 
+    fn pointer(&self) -> Result<zyr_proto::session::Pointer, String> {
+        Ok(HOST_POINTER)
+    }
+
     /// Ce que ferait une vraie machine : elle filme son écran principal
     /// et il faut redémarrer son moteur pour en filmer un autre.
     fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
@@ -166,6 +170,11 @@ const HOST_CODECS: &str = "H.264 HEVC";
 /// Deux écrans allumés sur la machine d'en face, le principal d'abord :
 /// c'est le cas qui a valu la question.
 const HOST_SCREENS: &str = "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M";
+
+/// La forme du curseur d'en face : autre chose que la flèche, sans quoi
+/// le tour ne prouverait rien, une flèche étant aussi ce que rend un mot
+/// que personne ne reconnaît.
+const HOST_POINTER: zyr_proto::session::Pointer = zyr_proto::session::Pointer::Text;
 
 /// Ce que la machine d'en face répond quand la session lui demande de
 /// garder son écran tel quel.
@@ -747,6 +756,17 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
     let read = zyr_proto::session::far_screens_read(&listed);
     assert_eq!(read.len(), 2);
     assert!(read[0].main);
+
+    // Et la forme que son curseur a en ce moment, qui est ce que le
+    // curseur dessiné ici va prendre. Un aller-retour de plus, sur un
+    // canal déjà ouvert, pour un mot : c'est demandé plusieurs fois par
+    // seconde tant qu'une main bouge.
+    assert_eq!(
+        before_the_end(aside::ask_for_the_pointer(&bench.connection))
+            .await
+            .unwrap(),
+        HOST_POINTER
+    );
 
     // L'écran principal est celui qu'elle filme déjà : toute session le
     // demande, et presque aucune ne change quoi que ce soit.

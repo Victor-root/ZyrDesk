@@ -10,6 +10,7 @@ mod gateway;
 mod known;
 mod machine;
 mod outside;
+mod pointer;
 mod preferences;
 mod restart;
 mod said;

@@ -923,6 +923,30 @@ impl Ways {
         Ok(named)
     }
 
+    /// Asks the far computer what shape its pointer has right now.
+    ///
+    /// The one question of this whole file asked several times a second,
+    /// and the only one whose answer is written down nowhere: a shape is
+    /// worth nothing a moment after it was read, and a journal carrying
+    /// it would carry nothing else. A way that has gone answers a plain
+    /// refusal, which whoever asked reads as « stop asking » rather than
+    /// as a fault.
+    pub async fn ask_what_shape_its_pointer_has(
+        &self,
+        way: WayId,
+    ) -> Result<zyr_proto::session::Pointer, String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+        aside::ask_for_the_pointer(&connection)
+            .await
+            .map_err(|e| format!("l'ordinateur distant n'a pas dit la forme de son curseur : {e}"))
+    }
+
     /// Asks the far computer which screens it is showing on.
     ///
     /// The same shape again. A machine with two screens plugged in serves

@@ -56,8 +56,13 @@ use crate::pump;
 /// has a session say what it will be served, in its very first word: the
 /// computer being watched opens its tunnel when its service starts, long
 /// before anybody asks it for a picture, and held a window worked out
-/// from a nominal rate whatever the session actually ran at.
-pub const VERSION: u32 = 15;
+/// from a nominal rate whatever the session actually ran at. Version 16
+/// asks what shape the far pointer has, which is the first thing here
+/// asked several times a second: a desktop says what a click is about to
+/// do through that shape and nothing else, the engines carry none of
+/// them, and the pointer drawn where the hand actually is had until now
+/// no way of being anything but an arrow.
+pub const VERSION: u32 = 16;
 
 /// Longest question this channel takes.
 ///
@@ -247,6 +252,27 @@ pub trait Answers: Send + Sync + 'static {
     /// that answer would be about the reading and not about the machine.
     fn codecs(&self) -> Result<String, String>;
 
+    /// What shape the pointer has on this computer right now.
+    ///
+    /// A desktop says what it is about to do through this and almost
+    /// nothing else: an upright bar means the click lands in text, a hand
+    /// means a link, a ring means wait. That shape is drawn into the
+    /// picture by the engine here, so the computer watching sees it a
+    /// network away from where its own hand is; drawing its own pointer
+    /// instead buys back the whole of that delay and loses every shape,
+    /// since nothing in what the engines speak carries one.
+    ///
+    /// So it travels here instead, as the one word that names it. Asked
+    /// often, several times a second while a hand is moving, so the
+    /// answer is a reading and never an errand: nothing is started, moved
+    /// or written to answer it.
+    ///
+    /// Read on the desktop that owns the screen and the keyboard rather
+    /// than on the one this service happens to sit on, which has no
+    /// pointer at all. That desktop changes under a machine being locked
+    /// or asking for a password, and the answer follows it.
+    fn pointer(&self) -> Result<zyr_proto::session::Pointer, String>;
+
     /// Which screens this computer is showing on, one to a line.
     ///
     /// Only the ones it is actually showing on: a screen that is switched
@@ -324,6 +350,8 @@ pub enum Question {
     EmptyTheJournal,
     /// Which pictures your engine can actually make.
     Codecs,
+    /// What shape your pointer has right now.
+    Pointer,
     /// Which screens you are showing on.
     Screens,
     /// Serve your picture from that screen, or, with nothing named, from
@@ -363,6 +391,10 @@ pub enum Told {
     /// not be watched at all.
     Codecs {
         named: String,
+    },
+    /// The shape this computer's pointer has right now.
+    Pointer {
+        shape: zyr_proto::session::Pointer,
     },
     /// The screens the far computer is showing on, one to a line. Empty
     /// is « it has not said », which is a computer whose engine has not
@@ -408,6 +440,7 @@ impl fmt::Display for Question {
             Question::Journal => write!(f, "{VERSION} journal"),
             Question::EmptyTheJournal => write!(f, "{VERSION} empty-journal"),
             Question::Codecs => write!(f, "{VERSION} codecs"),
+            Question::Pointer => write!(f, "{VERSION} pointer"),
             Question::Screens => write!(f, "{VERSION} screens"),
             // « main » rather than nothing at all, so a question that
             // names no screen still reads as a question: the identifiers
@@ -447,6 +480,7 @@ impl fmt::Display for Told {
             Told::Journal { text } => write!(f, "{VERSION} journal {text}"),
             Told::Emptied => write!(f, "{VERSION} emptied"),
             Told::Codecs { named } => write!(f, "{VERSION} codecs {named}"),
+            Told::Pointer { shape } => write!(f, "{VERSION} pointer {shape}"),
             // One screen to a line, whole, for the reason the journal
             // above travels whole: this channel ends a message by closing
             // the stream.
@@ -489,6 +523,7 @@ impl Question {
             "journal" => Ok(Question::Journal),
             "empty-journal" => Ok(Question::EmptyTheJournal),
             "codecs" => Ok(Question::Codecs),
+            "pointer" => Ok(Question::Pointer),
             "screens" => Ok(Question::Screens),
             "film" => Ok(Question::FilmThisScreen {
                 id: match rest {
@@ -549,6 +584,12 @@ impl Told {
             "emptied" => Ok(Ok(Told::Emptied)),
             "codecs" => Ok(Ok(Told::Codecs {
                 named: rest.to_string(),
+            })),
+            // Une forme que cette compilation ne connaît pas est la
+            // flèche ordinaire et jamais un refus : la lecture ne peut
+            // pas échouer, et c'est voulu.
+            "pointer" => Ok(Ok(Told::Pointer {
+                shape: rest.parse().unwrap_or_default(),
             })),
             "screens" => Ok(Ok(Told::Screens {
                 listed: rest.to_string(),
@@ -776,6 +817,25 @@ pub async fn ask_for_the_journal(connection: &Connection) -> io::Result<String> 
     }
 }
 
+/// Asks the far ZyrDesk what shape its pointer has right now.
+///
+/// Asked while a session is open and only then: what it is for is to
+/// give the pointer drawn on this computer the shape the one over there
+/// has, and there is no pointer over there to speak of otherwise.
+///
+/// Asked often, and that is the whole design of it. The answer is worth
+/// nothing a moment later, so nothing is cached and nothing is pushed:
+/// one small question on a channel that is already open, whose answer is
+/// a single word.
+pub async fn ask_for_the_pointer(
+    connection: &Connection,
+) -> io::Result<zyr_proto::session::Pointer> {
+    match ask(connection, &Question::Pointer).await? {
+        Told::Pointer { shape } => Ok(shape),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Asks the far ZyrDesk to empty its journal.
 ///
 /// The other half of reading one. A fault is found by emptying both
@@ -930,6 +990,11 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .map_err(|e| format!("le journal n'a pas pu être vidé : {e}"))?
                 .map(|()| Told::Emptied)
         }
+        // On the thread, alone of all of these: it is a reading of what
+        // the system already holds, it is asked several times a second
+        // for the length of a session, and handing each one to another
+        // thread would cost more than the answer.
+        Question::Pointer => answering.pointer().map(|shape| Told::Pointer { shape }),
         // And off it as well: the answer is read from what the engine
         // wrote down when it started, which is a file on a disk.
         Question::Codecs => tokio::task::spawn_blocking(move || answering.codecs())

@@ -182,6 +182,15 @@ pub enum Request {
     /// cannot make has no business being offered. Nothing said back is
     /// « it has not said », never « none ».
     FarCodecs { way: WayId },
+    /// Asks the far computer what shape its pointer has right now.
+    ///
+    /// Asked through an open way, so during a session, and asked several
+    /// times a second while a hand is moving: the pointer is drawn on
+    /// this computer so that it follows the hand with no network in
+    /// between, and this is the only thing that says what shape to draw.
+    /// Nothing is remembered of it at either end; a shape is worth
+    /// nothing a moment after it was read.
+    FarPointer { way: WayId },
     /// Asks the far computer which screens it is showing on.
     ///
     /// Asked through an open way, so during a session: a machine with two
@@ -362,6 +371,9 @@ impl Request {
                     asked => Some(asked.parse().map_err(Malformed)?),
                 },
             }),
+            "farpointer" => Ok(Request::FarPointer {
+                way: WayId(fields.parsed("way")?),
+            }),
             "farcodecs" => Ok(Request::FarCodecs {
                 way: WayId(fields.parsed("way")?),
             }),
@@ -485,6 +497,7 @@ impl fmt::Display for Request {
             },
             Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
             Request::FarCodecs { way } => write!(f, "farcodecs way={way}"),
+            Request::FarPointer { way } => write!(f, "farpointer way={way}"),
             Request::FarScreens { way } => write!(f, "farscreens way={way}"),
             // « main » rather than nothing at all: a field with no value
             // is a field nobody wrote, and the identifiers themselves are
@@ -820,6 +833,8 @@ pub enum Answer {
     /// What the far computer's engine can encode, in the product's own
     /// spelling, one name after another. Empty is « it has not said ».
     Codecs(String),
+    /// The shape the far computer's pointer has right now.
+    Pointer(zyr_proto::session::Pointer),
     /// The screens the far computer is showing on, one to a line.
     ///
     /// Folded onto one line to travel, like the journal below and for the
@@ -927,6 +942,9 @@ impl Answer {
                 },
             }),
             "codecs" => Ok(Answer::Codecs(rest.trim().to_string())),
+            // Une forme inconnue de cette compilation est la flèche
+            // ordinaire : la lecture ne peut pas échouer.
+            "pointer" => Ok(Answer::Pointer(rest.trim().parse().unwrap_or_default())),
             "screens" => Ok(Answer::Screens(unfolded(rest.trim()))),
             "settled" => Ok(Answer::Settled {
                 starting_over: rest.trim() == "starting-over",
@@ -1037,6 +1055,7 @@ impl fmt::Display for Answer {
                 None => f.write_str("showing size=none"),
             },
             Answer::Codecs(named) => write!(f, "codecs {named}"),
+            Answer::Pointer(shape) => write!(f, "pointer {shape}"),
             Answer::Screens(listed) => write!(f, "screens {}", folded(listed)),
             Answer::Settled { starting_over } => write!(
                 f,
@@ -1367,6 +1386,7 @@ mod tests {
             // Une adresse écrite à la main peut porter une espace, ici
             // comme partout ailleurs.
             Request::FarCodecs { way: WayId(7) },
+            Request::FarPointer { way: WayId(7) },
             Request::FarScreens { way: WayId(7) },
             // Rien de nommé veut dire l'écran principal, et c'est ce que
             // demande toute session tant que personne n'a dit autre chose.

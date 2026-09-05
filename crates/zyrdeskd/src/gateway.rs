@@ -605,6 +605,16 @@ impl Answers for Attending {
         Ok(named)
     }
 
+    /// Says what shape this computer's pointer has right now.
+    ///
+    /// Nothing is written down about it, here or anywhere: it is asked
+    /// several times a second while a hand is moving over there, it is
+    /// worth nothing a moment later, and a journal carrying it would
+    /// carry nothing else.
+    fn pointer(&self) -> Result<zyr_proto::session::Pointer, String> {
+        Ok(crate::pointer::shape(&self.log))
+    }
+
     /// Says which screens this computer is showing on.
     ///
     /// Read from what the engine wrote down when it started, like the

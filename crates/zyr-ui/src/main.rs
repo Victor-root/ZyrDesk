@@ -75,6 +75,7 @@ mod accueil {
 
 mod mesures;
 mod picture;
+mod pointeur;
 mod service;
 mod session;
 mod settings;

@@ -456,6 +456,29 @@ pub fn tell_the_player(settings: &SessionSettings) -> Result<String, Error> {
     Ok(zyr_engine_client::follow::line(settings))
 }
 
+/// Tells the player what shape to give the pointer it draws.
+///
+/// Its own file beside the line above, and never that line: what is
+/// written there is what the stream is to be, and a line that differs
+/// from the stream makes the player build it again. A shape changes
+/// every time a hand crosses a text field.
+///
+/// Answers whether anything was written, so a shape that has not moved
+/// costs no disk: this is asked many times a second for the length of a
+/// session.
+pub fn point_like(shape: zyr_proto::session::Pointer) -> Result<bool, Error> {
+    zyr_engine_client::follow::point_like(shape).map_err(Error::Following)
+}
+
+/// Forgets it, the session being over.
+///
+/// The next session starts on the ordinary pointer rather than on
+/// whatever shape the last one happened to end under, which would be an
+/// hourglass over a machine that is not busy.
+pub fn point_like_nothing() {
+    zyr_engine_client::follow::point_like_nothing();
+}
+
 /// Tells the far computer to close what it was showing.
 ///
 /// Leaving a session and closing it are two different things, and both
