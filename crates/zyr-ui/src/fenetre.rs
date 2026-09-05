@@ -530,6 +530,20 @@ pub fn agrandis() {}
 ///
 /// Seulement si elle l'est : autrement l'appel ne ferait que la remettre
 /// au premier plan, pour rien.
+///
+/// Et sans que le système le joue, parce que ce n'est pas un état où
+/// l'on s'arrête : la fenêtre prend l'écran dans la foulée, et cette
+/// taille-là n'est qu'un passage. Or le compositeur joue les changements
+/// d'état à son rythme et non au nôtre. ShowWindow rend la main tout de
+/// suite, l'animation continue derrière, et la fenêtre a déjà pris
+/// l'écran pendant qu'il la rapetisse encore. Le bureau distant, qui est
+/// une fenêtre portée par celle-ci et donc dessinée dans sa composition,
+/// s'en va avec elle : c'est l'agrandissement bizarre à l'intérieur du
+/// flux, au premier plein écran d'une session.
+///
+/// Rendu juste après : « agrandir » depuis la barre de titre est un
+/// geste où l'animation du système est voulue, et où tout un pan de
+/// picture.rs compte dessus.
 #[cfg(windows)]
 fn rends_sa_taille() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_RESTORE, ShowWindow};
@@ -537,9 +551,35 @@ fn rends_sa_taille() {
     // Agrandie veut déjà dire qu'elle existe.
     if est_agrandie() {
         let elle = sienne() as windows_sys::Win32::Foundation::HWND;
+        joue_les_changements(elle, false);
         // SAFETY: une fenêtre à nous.
         unsafe { ShowWindow(elle, SW_RESTORE) };
+        joue_les_changements(elle, true);
     }
+}
+
+/// Demande au compositeur de jouer, ou de ne pas jouer, ce que cette
+/// fenêtre change d'état.
+///
+/// Un refus est la réponse d'un Windows qui n'a pas ce réglage, et ne
+/// coûte que l'animation qu'on voulait éviter.
+#[cfg(windows)]
+fn joue_les_changements(elle: windows_sys::Win32::Foundation::HWND, oui: bool) {
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWMWA_TRANSITIONS_FORCEDISABLED, DwmSetWindowAttribute,
+    };
+
+    let coupe: i32 = i32::from(!oui);
+    // SAFETY: une fenêtre à nous, et quatre octets à nous dont la taille
+    // est dite.
+    unsafe {
+        DwmSetWindowAttribute(
+            elle,
+            DWMWA_TRANSITIONS_FORCEDISABLED as u32,
+            (&raw const coupe).cast(),
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
 }
 
 #[cfg(windows)]
