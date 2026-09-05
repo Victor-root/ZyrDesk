@@ -142,6 +142,20 @@ pub enum Act {
     SystemKeys,
     /// Whether the pointer is kept inside the picture.
     PointerLock,
+    /// Whether this computer draws its own pointer over the picture.
+    ///
+    /// The engine hides it as soon as the pointer is over the picture, so
+    /// that the only pointer on screen is the far computer's, drawn into
+    /// the stream. That one is the far computer's answer to a movement
+    /// that has crossed the network twice, which is the whole of the lag
+    /// a hand feels on a desktop.
+    LocalPointer,
+    /// Whether the far computer draws its own pointer into what it sends.
+    ///
+    /// The other half of the same idea, and it is thrown over there: the
+    /// pointer is drawn into the picture by the far engine, not sent
+    /// beside it, so nothing here can take it out afterwards.
+    FarPointer,
     End,
 }
 
@@ -164,6 +178,13 @@ impl Act {
             Act::MouseMode => Some(b'M'),
             Act::SystemKeys => Some(b'K'),
             Act::PointerLock => Some(b'L'),
+            Act::LocalPointer => Some(b'C'),
+            // The one keystroke of the whole list that is not for our own
+            // engine: this letter is none of the combinations it keeps,
+            // so it travels on to the far computer, whose engine takes it
+            // and stops drawing its pointer. Both ends are asked by the
+            // same means because both offer the same one.
+            Act::FarPointer => Some(b'N'),
             Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
                 None
             }
@@ -185,6 +206,8 @@ impl Act {
             Act::MouseMode => Some(0x32),
             Act::SystemKeys => Some(0x25),
             Act::PointerLock => Some(0x26),
+            Act::LocalPointer => Some(0x2E),
+            Act::FarPointer => Some(0x31),
             Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
                 None
             }
@@ -203,6 +226,8 @@ impl std::fmt::Display for Act {
             Act::Sound => "son de la session",
             Act::SystemKeys => "touches système",
             Act::PointerLock => "pointeur tenu dans l'image",
+            Act::LocalPointer => "curseur dessiné ici",
+            Act::FarPointer => "curseur dessiné par l'ordinateur distant",
             Act::End => "fin de la session",
         })
     }
@@ -270,6 +295,40 @@ pub struct Floating {
     /// stands, so this program counts its own switches. The session
     /// starts on the side its settings asked for.
     system_keys: AtomicBool,
+    /// Whether this computer is drawing its own pointer over the picture.
+    ///
+    /// Counted like the three above, and put down whenever a player is
+    /// adopted: this is the engine's own switch, it lives in that
+    /// player, and a player started again starts it where the engine
+    /// leaves it, which is off.
+    local_pointer: AtomicBool,
+    /// Whether the far computer has been asked to stop drawing its
+    /// pointer into what it sends.
+    ///
+    /// The one switch of the set that does not belong to a player. It
+    /// lives in the far computer's engine, which is started with that
+    /// computer's service and outlives every session towards it, so it
+    /// is never put down with a player: opening the picture again in the
+    /// middle of a session hands us a new player and changes nothing
+    /// over there, and a belief put down with the player would throw
+    /// that switch a second time and give the pointer back under a
+    /// session still watching a desktop.
+    ///
+    /// What puts it down is giving the pointer back, which really does
+    /// put it back where it was found. That is why nothing puts it down
+    /// when a session opens either: a session that closed properly left
+    /// this false and the far computer drawing, and one that did not is
+    /// better served by a belief that still matches what was left over
+    /// there than by a fresh one that does not.
+    ///
+    /// It cannot be read back, and that is the whole of what is fragile
+    /// here: a session ending without passing through the closing below,
+    /// which is a machine that crashes or a network that goes, leaves
+    /// that computer's engine drawing nothing until its service restarts
+    /// it. What that costs is two pointers, or none, on a later session
+    /// towards a different computer; it is seen at once and is one
+    /// switch away, and nothing about it is silent.
+    far_pointer_hidden: AtomicBool,
 }
 
 /// What this window knows of a session it started, before the service
@@ -652,9 +711,16 @@ pub fn watch(app: App) {
                             .system_keys
                             .store(preferred.system_keys, Ordering::Relaxed);
                         state.pointer_held.store(false, Ordering::Relaxed);
+                        // The engine's own switch, in the player that has
+                        // just started: off, which is where the engine
+                        // leaves it. Its neighbour is not put down here,
+                        // living as it does in the far computer, which
+                        // this new player has not changed.
+                        state.local_pointer.store(false, Ordering::Relaxed);
                     }
                     put_the_button_up(&app, process);
                     keep_the_pointer_in_step(&app, process).await;
+                    keep_the_pointer_local_in_step(&app, process).await;
                     // Et le clavier appartient à l'image, toujours. Le
                     // menu ne le lui prend plus : la carte que ce
                     // programme dessine n'est jamais activée et ne porte
@@ -1103,6 +1169,101 @@ async fn keep_the_pointer_in_step(app: &App, process: u32) {
     }
 }
 
+/// Puts the pointer a desktop is driven with on this side of the network,
+/// and gives it back to the far computer for a game.
+///
+/// A pointer drawn by the far computer is that computer's answer to a
+/// movement that has crossed the network twice and been encoded on the
+/// way: it arrives after the hand has already moved on, and no amount of
+/// bitrate shortens it. A desktop is aimed at, so that is felt on every
+/// click. This computer knows where the hand is with no network at all,
+/// and drawing the pointer here is what every remote desktop product
+/// does.
+///
+/// Two switches for one idea, one at each end, because the pointer is two
+/// things: the engine here hides ours the moment it is over the picture,
+/// and the engine over there draws its own into the stream. Throwing only
+/// the first would leave two pointers on screen, one under the hand and
+/// one behind it.
+///
+/// A game is the other way round and is left alone. What a game reads is
+/// movement and not a place, the pointer belongs to the game and is drawn
+/// by it, and a second one drawn here would sit in the middle of the
+/// picture doing nothing. Ours is asked of an engine that refuses it
+/// outright in that mode, so the two ends agree even if this program is
+/// ever wrong.
+///
+/// Nothing is done while the menu is open, for the reason the pointer
+/// above is not: throwing one of these gives the keyboard to the picture,
+/// and a hand reading the menu is aiming at something else.
+async fn keep_the_pointer_local_in_step(app: &App, process: u32) {
+    let wanted = !in_game_mouse(app);
+    let state = app.floating();
+    #[cfg(windows)]
+    if crate::menu::ouvert() {
+        return;
+    }
+    // Asked one at a time and written down one at a time: the two live in
+    // two different engines, and a session that opens its picture again
+    // gets a new player and the same far computer. Counted together, the
+    // far one would be thrown a second time for a change that never
+    // reached it.
+    if wanted != state.local_pointer.load(Ordering::Relaxed) {
+        match type_at_the_picture(app, Act::LocalPointer, process).await {
+            Ok(()) => {
+                state.local_pointer.store(wanted, Ordering::Relaxed);
+                note(if wanted {
+                    "curseur dessiné ici, sans passer par le réseau"
+                } else {
+                    "curseur rendu à l'ordinateur distant, le mode jeu le dessine lui-même"
+                });
+            }
+            Err(reason) => note(&format!("curseur d'ici non réglé : {reason}")),
+        }
+    }
+    if wanted == state.far_pointer_hidden.load(Ordering::Relaxed) {
+        return;
+    }
+    match type_at_the_picture(app, Act::FarPointer, process).await {
+        Ok(()) => {
+            state.far_pointer_hidden.store(wanted, Ordering::Relaxed);
+            note(if wanted {
+                "l'ordinateur distant ne dessine plus son curseur dans l'image"
+            } else {
+                "l'ordinateur distant dessine à nouveau son curseur dans l'image"
+            });
+        }
+        Err(reason) => note(&format!("curseur d'en face non réglé : {reason}")),
+    }
+}
+
+/// Gives the far computer its pointer back, the session being over.
+///
+/// Said before the player is stopped, which is the last moment anything
+/// can be said to that computer at all: the switch lives in its engine,
+/// that engine is started with its service and outlives every session,
+/// and the only way to it is a keystroke through a session's own stream.
+///
+/// Only when this window is the one that took it away. A session that
+/// never hid it has nothing to give back, and throwing the switch on the
+/// strength of a belief this window does not hold would take the pointer
+/// away from whoever is watching next.
+async fn give_the_far_pointer_back(app: &App, process: u32) {
+    let state = app.floating();
+    if !state.far_pointer_hidden.load(Ordering::Relaxed) {
+        return;
+    }
+    match type_at_the_picture(app, Act::FarPointer, process).await {
+        Ok(()) => {
+            state.far_pointer_hidden.store(false, Ordering::Relaxed);
+            note("curseur rendu à l'ordinateur distant avant la fin de la session");
+        }
+        Err(reason) => note(&format!(
+            "curseur non rendu à l'ordinateur distant : {reason}"
+        )),
+    }
+}
+
 /// The player the button is hanging on right now.
 ///
 /// What the watch adopted, and never the first session it can find: with
@@ -1368,6 +1529,10 @@ async fn end_the_session(app: &App) -> Result<(), String> {
         }
     };
     note(&format!("fermeture demandée sur {towards} à travers {at}"));
+    // Before anything else is asked, and through the player while there
+    // still is one: the far computer's pointer is given back over its own
+    // session's stream, and in a moment there will be no stream.
+    give_the_far_pointer_back(app, process).await;
     // Said before the asking, and never taken back. The engine can lose
     // its stream and stop before the far computer has finished answering,
     // and a session reported as broken to whoever just closed it would be
@@ -1930,10 +2095,31 @@ mod tests {
         // Et les places sont celles d'un clavier, indépendantes de ce
         // qui est gravé dessus : c'est par là que le moteur reconnaît
         // une touche en premier.
-        for (act, letter, place) in [(Act::Stats, b'S', 0x1Fu16), (Act::MouseMode, b'M', 0x32)] {
+        for (act, letter, place) in [
+            (Act::Stats, b'S', 0x1Fu16),
+            (Act::MouseMode, b'M', 0x32),
+            (Act::SystemKeys, b'K', 0x25),
+            (Act::PointerLock, b'L', 0x26),
+            (Act::LocalPointer, b'C', 0x2E),
+            (Act::FarPointer, b'N', 0x31),
+        ] {
             assert_eq!(act.letter(), Some(letter), "sur « {act} »");
             assert_eq!(act.where_it_sits(), Some(place), "sur « {act} »");
         }
+        // Et celle du curseur d'en face n'est aucune de celles que le
+        // moteur d'ici garde pour lui : c'est ce qui la laisse traverser
+        // jusqu'à l'ordinateur distant, dont le moteur la prend. Une
+        // lettre choisie dans cette liste-là serait mangée au passage et
+        // ne ferait rien du tout de l'autre côté.
+        let gardees = [b'Q', b'Z', b'X', b'S', b'M', b'C', b'D', b'V', b'L', b'K'];
+        assert!(
+            !gardees.contains(&Act::FarPointer.letter().expect("une lettre")),
+            "le moteur d'ici garderait la touche du curseur d'en face"
+        );
+        assert!(
+            gardees.contains(&Act::LocalPointer.letter().expect("une lettre")),
+            "le moteur d'ici doit prendre la touche du curseur d'ici"
+        );
         // Quatre ne passent pas par le clavier du lecteur : terminer se
         // demande à l'ordinateur d'en face à travers le tunnel, couvrir
         // l'écran se fait à notre propre fenêtre, celle du moteur étant

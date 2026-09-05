@@ -2531,6 +2531,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne fait pas.** L'annonce du réseau local continue de dire 47000 et non le port réel, et la voie locale continue d'y frapper. C'est voulu : cet interrupteur est un interrupteur d'essai, dont tout l'objet est de fermer le port connu pour vérifier que la rencontre par le serveur tient seule (D137). Le faire annoncer son vrai port le viderait de son sens. Ce qui manquait n'était pas de contourner l'interrupteur, c'était de le voir.
 
+## D150. En mode bureau, le curseur est dessiné ici (2026-09-05, pendant M6)
+
+**Le relevé.** « La souris en mode bureau, y'a quand même une latence, en fonction du réseau bien sûr. Y'aurait pas moyen que ce soit le curseur local, comme ça pas de latence du tout même si le réseau est éclaté ? Un peu comme font les logiciels de prise en main à distance. Mais fais attention, touche uniquement au mode bureau, surtout pas au mode jeu. »
+
+**Pourquoi la latence était structurelle.** Le curseur qu'on voyait était celui de l'ordinateur distant, gravé dans l'image par son moteur. Ce n'est pas un curseur en retard : c'est la réponse de la machine d'en face à un mouvement qui a traversé le réseau deux fois et s'est fait encoder au passage. Aucun débit ne raccourcit ça. Sur un bureau, où l'on vise avant de cliquer, ça se paie à chaque geste.
+
+**Ce qui a été vérifié dans les deux moteurs, et non supposé.** Les deux interrupteurs nécessaires existent déjà et sont officiels, donc aucun patch et le plafond de la pile Moonlight reste où il est. Côté client, `Ctrl+Alt+Maj+C` montre le curseur de cet ordinateur-ci sur l'image ; il est éteint par défaut, ce qui est très exactement la panne décrite. Côté hôte, `Ctrl+Alt+Maj+N` arrête de graver le curseur dans le flux, et la documentation de Sunshine recommande elle-même ce raccourci pour le bureau à distance. La lettre N n'est aucune de celles que le moteur client garde pour lui, donc elle traverse jusqu'à l'hôte : les deux bouts se demandent par le même moyen.
+
+**Le mode jeu est protégé par le moteur, pas seulement par nous.** Le moteur client refuse net le curseur local hors du mode bureau et écrit son refus. Un jeu lit du mouvement et non une place, dessine son propre curseur, et un second dessiné ici resterait planté au milieu de l'image. Les deux bouts sont donc rendus en repassant en mode jeu, par le même suiveur qui les a posés.
+
+**Ce qui a été choisi, et ce que ça coûte.** Le curseur d'en face est caché plutôt que gardé : un seul curseur à l'écran, le sien, sans latence. Le prix est réel et assumé : le protocole ne transporte aucune forme de curseur, elle n'existe que dessinée dans l'image. On garde donc la flèche simple partout, sans barre verticale sur un champ de texte, sans flèches de redimensionnement sur un bord, sans sablier quand la machine d'en face réfléchit.
+
+**Le point fragile, nommé.** L'interrupteur de l'hôte est global à son moteur, qui vit aussi longtemps que son service, et il ne se lit pas : il se bascule à l'aveugle. Il est donc rendu avant la fin de session, à travers le lecteur tant qu'il en existe un. Une session qui meurt sans passer par là, machine qui plante ou réseau qui tombe, laisse ce moteur sans curseur jusqu'à ce que son service le relance. Ce que ça coûte se voit tout de suite, deux curseurs ou aucun sur une session suivante vers une autre machine, et se répare par l'interrupteur. C'est le meilleur atteignable avec une bascule qui ne se lit pas, et c'est écrit ici pour que ça ne se redécouvre pas.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

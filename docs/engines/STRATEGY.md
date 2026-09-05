@@ -43,6 +43,7 @@ Alternatives rejetées :
 | Écran virtuel | la même série `dd_*`, avec `dd_configuration_option = ensure_only_display` et `output_name` visant l'écran que ZyrDesk fait pousser sur l'hôte. Sunshine n'a aucun écran virtuel à lui, mais prévoit explicitement de piloter celui d'un tiers ; le nôtre est posé par `crates/zyr-screen/`, voir [ECRAN-VIRTUEL.md](../ECRAN-VIRTUEL.md) |
 | Nom de l'écran à capturer | lu dans le journal du moteur, qui écrit sa liste complète d'écrans à chaque démarrage. Le moteur reste seul à savoir comment il nomme un écran : recalculer ce nom chez nous serait recopier une recette qui, fausse d'un octet, donne un nom qui ne désigne rien et sur lequel il retombe silencieusement sur l'écran principal |
 | Aucune carte son de personne | `install_steam_audio_drivers = disabled` et `virtual_sink = aucune-carte-son-virtuelle`. Sans ces deux lignes, le moteur cherche la carte son virtuelle de Steam sur la machine, l'installe s'il en trouve les fichiers, et y bascule la sortie de l'ordinateur le temps de chaque session. C'est sa façon de vider une pièce en gardant le son dans le flux ; ZyrDesk le fait lui-même sur la vraie carte, sans rien installer ([D61](../DECISIONS.md)). Le second champ ne peut pas rester vide : vide veut dire « celle de Steam » pour le moteur, pas « aucune » |
+| Curseur non gravé dans le flux | raccourci `Ctrl+Alt+Maj+N` reçu du client, que Sunshine documente lui-même pour le bureau à distance. Le protocole ne transporte aucune forme de curseur : celui de l'hôte n'existe que dessiné dans l'image, donc il ne peut se retirer que là-bas. C'est la moitié hôte du curseur local ([D150](../DECISIONS.md)) |
 | Santé | `GET /serverinfo` sur son port HTTP local |
 | Appairage automatisé | `POST /api/pin` avec `{"pin": "...", "name": "..."}` sur son port web local (authentification Basic ; l'exemption CSRF pour les clients sans en-tête Origin est un comportement documenté) |
 | Surcharges ponctuelles | tout paramètre peut aussi être passé en ligne de commande `nom=valeur` |
@@ -69,6 +70,7 @@ Mécanismes officiels utilisés :
 | Autoriser l'hôte à changer la définition de son bureau | `--game-optimization` : nom hérité des jeux, mais face au moteur hôte c'est le seul et unique sens qu'il a gardé. Sans lui, les options `dd_*` de l'hôte restent lettre morte et il grave des bandes noires dans le flux |
 | Appairage sans interaction | commande `pair <hôte> --pin NNNN` |
 | Statistiques | overlay de performances + journaux (débit d'images réseau/décodage/rendu, latence hôte, pertes, jitter, temps de décodage, délai de file, temps de rendu) |
+| Curseur dessiné ici plutôt qu'attendu du réseau | raccourci `Ctrl+Alt+Maj+C`, que le moteur refuse net hors du mode bureau et journalise en le refusant. Le mode jeu est donc protégé par le moteur lui-même et pas seulement par nous ([D150](../DECISIONS.md)) |
 | Réglages fins non exposés en CLI | clés du fichier INI portable (écrites avant lancement, jamais pendant une session) |
 
 Pile de patchs prévue (le manifeste `patches/MANIFEST.md` fait foi) :
