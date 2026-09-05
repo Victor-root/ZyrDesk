@@ -2479,6 +2479,32 @@ Une mesure censée départager « le fil s'est tu » de « cette machine a cess�
 
 **Ce qu'il reste à mesurer, et personne ne l'a fait.** Ce relevé a un jour ; toutes les séances locales lui sont antérieures. On ne sait donc pas si cet ordinateur perd Internet pendant une séance locale. S'il le perd sans que la séance en souffre, les coupures sont un bruit de fond permanent et le local y est simplement insensible : c'est dehors, et D145 avait raison sur le fond en se trompant de coupable. S'il ne le perd pas, alors ouvrir une session à travers Internet fait perdre Internet à la machine, et il faudra chercher chez nous.
 
+## D147. Les coupures sont sur l'accès partagé, en amont des deux machines (2026-09-05, clôture de la réserve ouverte depuis D136)
+
+**Le relevé, et c'est exactement celui que [D146](#d146--rien-nest-revenu--couvrait-quatre-pannes-dont-deux-qui-ne-sont-pas-internet-2026-09-05-pendant-m6) réclamait.** Vingt-huit minutes entre le portable en Wi-Fi et PC-VICTOR **en Ethernet**, sur le même réseau local, par le serveur et l'aiguilleur comme toute séance entre deux ordinateurs du compte. Elle ne s'est pas arrêtée : elle a été fermée depuis le menu flottant.
+
+**Les deux machines ont perdu Internet, aux mêmes secondes, trois fois.**
+
+```
+           perdu       revenu
+portable   10:13:17    10:13:22
+PC-VICTOR  10:13:17    10:13:22
+portable   10:19:45    10:19:50
+PC-VICTOR  10:19:45    10:19:50
+portable   10:33:07    10:33:11
+PC-VICTOR  10:33:06    10:33:10
+```
+
+**Et la séance n'en a rien vu.** 31 371 paquets confiés au tunnel, 31 371 sur le fil, zéro jeté faute de place, zéro trop gros ; 8 148 607 remis au moteur, zéro perdu en chemin ; aller-retour 2 ms ; et le moteur client dit `Frames dropped by your network connection: 0.00%`. Aucun silence, aucun changement de route, rien.
+
+**Ce que ça tranche.** Des deux branches que D146 laissait ouvertes, c'est la première : les coupures sont un bruit de fond permanent de l'accès à Internet, toutes les six à quinze minutes, présent que ZyrDesk traverse Internet ou non. Le réseau local y est insensible parce qu'il ne passe pas par le morceau qui tombe. Ouvrir une session ne fait rien perdre à personne.
+
+**Et ça corrige D145 sur le coupable.** PC-VICTOR est branché par câble et perd l'accès à la même seconde que le portable en radio. Ce n'est donc ni une carte Wi-Fi, ni une machine : c'est ce que les deux partagent en amont, la box et ce qu'il y a derrière. L'objection de Victor était juste sur le raisonnement comme sur la conclusion.
+
+**Ce que ça clôt.** [D136](#d136-le-transport-ne-retient-plus-rien-tant-que-la-connexion-vit-2026-09-04-pendant-m6) à D146 finissent toutes sur la même réserve : « le silence reste hors du produit et reste à trouver ». Il est trouvé et il est situé, hors de portée du code. Quatorze séances y auront été passées, et pas une ligne n'était à corriger de ce côté-là.
+
+**Ce qui reste, et c'est le vrai travail.** Le produit ne peut pas empêcher ces coupures : il doit les traverser. C'est ce qu'il fait depuis [D143](#d143-une-sonde-jamais-partie-ne-compte-plus-contre-la-route-2026-09-05-pendant-m6), trois heures treize avec une dizaine de silences, puis six heures vingt et une avec neuf, sans qu'aucune séance ne cède. La série des neuf secondes appartient au passé du produit, pas à son présent.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
