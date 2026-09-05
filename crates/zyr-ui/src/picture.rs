@@ -698,6 +698,27 @@ fn lay_on(
             LAID_WHILE_CARRIED.fetch_add(1, Ordering::Relaxed);
         }
         let laid = started.elapsed();
+        // What it cost, on the one move of a session that changes the
+        // picture's size with nobody's hand on the window. A drag counts
+        // itself and says so at its end; taking the screen happens once
+        // and said nothing anywhere, which left the only number that can
+        // settle what a person sees unreadable.
+        //
+        // What they see is the picture emptied until the player has
+        // drawn at its new size, and two very different waits can hold
+        // that open. Resizing another program's window is answered by
+        // that program's own thread, so the call below waits on the
+        // player before this window may even finish moving; and the
+        // player, once it answers, still has to build its picture again
+        // at the new size before there is anything to show. Only the
+        // first of the two is ours, and only this tells them apart.
+        if !same_size && !a_gesture_is_running() {
+            crate::journal::note(&format!(
+                "image posée en {width}x{height} sans main sur la fenêtre : le lecteur a rendu \
+                 la main en {} µs",
+                laid.as_micros()
+            ));
+        }
         // The player throws away the size it is given while it is still
         // clearing its queue at start-up, and it is told again on the
         // first laying it answers quickly to; see `say_the_size_again`.
