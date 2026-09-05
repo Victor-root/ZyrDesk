@@ -253,6 +253,95 @@ fn carry_on(still_wanted: &dyn Fn() -> bool) -> Result<(), Error> {
 /// that the wait is not a spin.
 const WATCH_STEP: Duration = Duration::from_millis(100);
 
+/// Why an ask of the service came back with no answer.
+///
+/// Two very different things, and the whole point is telling them apart.
+/// Nearly every ask below is one a session survives: the far computer
+/// would not silence its speakers, would not change screen, and the
+/// picture is worth having anyway, so the refusal is written down as a
+/// `Step` and stepped over. Somebody closing the window is not one of
+/// those, and reported as a refusal it was read as one: the opening
+/// wrote « les enceintes restent allumées » and carried on towards a
+/// picture nobody was waiting for any more.
+enum GaveUp {
+    /// The service, or the far computer through it, said no.
+    Said(String),
+    /// The person let go of the opening while this was waiting.
+    Abandoned,
+}
+
+impl GaveUp {
+    /// What was refused, the abandonment travelling on out instead.
+    ///
+    /// For the asks a session survives. The refusal is theirs to write
+    /// down; the `?` is what keeps the other one from being written down
+    /// as though it were one.
+    fn refusal(self) -> Result<String, Error> {
+        match self {
+            GaveUp::Said(reason) => Ok(reason),
+            GaveUp::Abandoned => Err(Error::Abandoned),
+        }
+    }
+
+    /// The same for the asks a session does not survive: the refusal
+    /// under the name that says which ask it was.
+    fn or(self, said: impl FnOnce(String) -> Error) -> Error {
+        match self {
+            GaveUp::Said(reason) => said(reason),
+            GaveUp::Abandoned => Error::Abandoned,
+        }
+    }
+}
+
+/// The service answering something else entirely, said the one way.
+fn unexpected(answer: Answer) -> GaveUp {
+    GaveUp::Said(format!("réponse inattendue du service : {answer}"))
+}
+
+/// Waits for the service to answer, and lets go the moment the person
+/// does.
+///
+/// Every ask of the service made while a session is opening goes through
+/// here, and one of them is why it exists: opening a way races addresses
+/// for half a minute, or waits on a meeting the server arranges, and
+/// that is where an opening spends nearly all its time. `carry_on`
+/// guards the ground between the asks, which was enough for exactly as
+/// long as the asks themselves were quick; towards a computer that never
+/// answers, the cross was read half a minute after it was clicked, and a
+/// cross that does nothing is a cross nobody believes twice.
+///
+/// The answer is driven in short spells rather than waited for whole, so
+/// the question can be put between two of them. What the person leaves
+/// behind is a channel with an answer still coming on it; the only thing
+/// ever said on it afterwards is the way going back, which `Drop` says
+/// and whose answer it does not read. A way let go of before it was so
+/// much as named here belongs to nobody at all, and the service's own
+/// sweep of the ways nobody claimed is what closes it.
+fn answered(
+    runtime: &tokio::runtime::Runtime,
+    service: &mut Service,
+    request: &Request,
+    still_wanted: &dyn Fn() -> bool,
+) -> Result<Answer, GaveUp> {
+    let mut asking = std::pin::pin!(service.ask(request));
+    loop {
+        // The spell is counted inside the runtime and not around it: a
+        // timer made where no runtime is running has nothing to wake it,
+        // and says so by taking the whole program down with it.
+        let spell = async { tokio::time::timeout(WATCH_STEP, asking.as_mut()).await };
+        match runtime.block_on(spell) {
+            Ok(answered) => return answered.map_err(|e| GaveUp::Said(e.to_string())),
+            // Still coming. The one thing worth doing with the pause is
+            // looking up.
+            Err(_) => {
+                if !still_wanted() {
+                    return Err(GaveUp::Abandoned);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Error {
     /// The engine is not on this machine.
@@ -459,25 +548,29 @@ fn the_way_and_what_its_engine_reads_once(
         // seconds when the far computer's engine is starting over, and
         // it is exactly where somebody gives up on it.
         carry_on(still_wanted)?;
-        let mut driving = match Driving::towards(&wanted.host, peer, settings, wanted.only_here) {
-            Ok(driving) => driving,
-            // A computer that cannot be reached is ordinarily the end of
-            // the opening. While its engine is starting over, which is a
-            // thing this session asked it to do, it is a moment to wait
-            // through and nothing more.
-            Err(reason) if asked_already => {
-                last = reason;
-                continue;
-            }
-            Err(reason) => return Err(Error::Service(reason)),
-        };
+        let mut driving =
+            match Driving::towards(&wanted.host, peer, settings, wanted.only_here, still_wanted) {
+                Ok(driving) => driving,
+                // Never one of the rounds below: nobody waits out a far
+                // computer's engine for a session that has been let go of.
+                Err(GaveUp::Abandoned) => return Err(Error::Abandoned),
+                // A computer that cannot be reached is ordinarily the end of
+                // the opening. While its engine is starting over, which is a
+                // thing this session asked it to do, it is a moment to wait
+                // through and nothing more.
+                Err(GaveUp::Said(reason)) if asked_already => {
+                    last = reason;
+                    continue;
+                }
+                Err(GaveUp::Said(reason)) => return Err(Error::Service(reason)),
+            };
         told(Step::Reached {
             packet: driving.packet,
         });
         // The screen first: it is the one of the two a session is opened
         // on, and a far computer that refuses it still has a picture to
         // give.
-        match driving.film_this_far_screen(wanted.far_screen.clone()) {
+        match driving.film_this_far_screen(wanted.far_screen.clone(), still_wanted) {
             Ok(false) => {}
             Ok(true) => {
                 told(Step::FarScreenChanging);
@@ -490,14 +583,16 @@ fn the_way_and_what_its_engine_reads_once(
             // Never fatal. A far computer that will not change screen
             // serves the one it is on, which is what every session was
             // served before this was offered.
-            Err(refused) => told(Step::FarScreenLeftAlone { refused }),
+            Err(gone) => told(Step::FarScreenLeftAlone {
+                refused: gone.refusal()?,
+            }),
         }
         // And the rate, on the same way and in the same round: it starts
         // that engine over exactly as the screen does, and a session that
         // asked for it and then opened its picture through the way that
         // was about to go is a session that fell over on the first
         // picture.
-        match driving.serve_steady_over_there(wanted.steady_far_rate) {
+        match driving.serve_steady_over_there(wanted.steady_far_rate, still_wanted) {
             Ok(false) => return Ok(driving),
             Ok(true) => {
                 told(Step::FarRateChanging);
@@ -508,8 +603,10 @@ fn the_way_and_what_its_engine_reads_once(
             // of a pointer over a desktop where nothing else is moving,
             // which is a session slightly less pleasant and not a session
             // missing.
-            Err(refused) => {
-                told(Step::RateLeftAlone { refused });
+            Err(gone) => {
+                told(Step::RateLeftAlone {
+                    refused: gone.refusal()?,
+                });
                 return Ok(driving);
             }
         }
@@ -583,9 +680,11 @@ pub fn open(
     // or because Windows would not have it, is a far computer that still
     // has a perfectly good session to give.
     if let Some(driving) = &mut driving
-        && let Err(refused) = driving.hush_the_far_speakers(wanted.hush_the_far_speakers)
+        && let Err(gone) = driving.hush_the_far_speakers(wanted.hush_the_far_speakers, still_wanted)
     {
-        told(Step::SpeakersLeftAlone { refused });
+        told(Step::SpeakersLeftAlone {
+            refused: gone.refusal()?,
+        });
     }
 
     // And the virtual screen over there, asked for the size this session
@@ -605,7 +704,7 @@ pub fn open(
             high: settings.height,
             scale: wanted.far_magnification,
         });
-        match driving.far_screen(asked_for) {
+        match driving.far_screen(asked_for, still_wanted) {
             // What that computer says it will be showing wins over what
             // this end guessed. It is the only one that knows: a session
             // asking it to keep its own screen has no way to work that
@@ -619,7 +718,9 @@ pub fn open(
                 }
             }
             Ok(None) => {}
-            Err(refused) => told(Step::ScreenLeftAlone { refused }),
+            Err(gone) => told(Step::ScreenLeftAlone {
+                refused: gone.refusal()?,
+            }),
         }
     }
 
@@ -748,7 +849,9 @@ fn introduce(
 
     told(Step::Pairing { again });
     let pairing = engine.start_pairing(target, &pin).map_err(Error::Pairing)?;
-    driving.hand_over_the_code(&pin).map_err(Error::Handover)?;
+    driving
+        .hand_over_the_code(&pin, still_wanted)
+        .map_err(|gone| gone.or(Error::Handover))?;
     met(pairing.settled(PAIRING_PATIENCE, still_wanted))
 }
 
@@ -826,15 +929,16 @@ impl Driving {
         peer: Fingerprint,
         settings: &SessionSettings,
         only_here: bool,
-    ) -> Result<Self, String> {
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<Self, GaveUp> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| GaveUp::Said(e.to_string()))?;
 
         let mut service = runtime
             .block_on(Service::join())
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| GaveUp::Said(e.to_string()))?;
         // The window the transport keeps open follows the session that
         // was actually asked for, not a nominal one.
         let request = Request::Reach {
@@ -847,13 +951,10 @@ impl Driving {
             only_here,
         };
 
-        let reached = match runtime
-            .block_on(service.ask(&request))
-            .map_err(|e| e.to_string())?
-        {
+        let reached = match answered(&runtime, &mut service, &request, still_wanted)? {
             Answer::Reached(reached) => reached,
-            Answer::Refused(reason) => return Err(reason),
-            other => return Err(format!("réponse inattendue du service : {other}")),
+            Answer::Refused(reason) => return Err(GaveUp::Said(reason)),
+            other => return Err(unexpected(other)),
         };
 
         Ok(Self {
@@ -872,18 +973,16 @@ impl Driving {
     /// Answers the size that computer will be showing, which is the one
     /// ask of the three that comes back with something: a session told to
     /// leave that machine as it is cannot know what that is until it asks.
-    fn far_screen(&mut self, wanted: Option<WantedScreen>) -> Result<Option<(u32, u32)>, String> {
-        match self
-            .runtime
-            .block_on(self.service.ask(&Request::FarScreen {
-                way: self.way,
-                wanted,
-            }))
-            .map_err(|e| e.to_string())?
-        {
+    fn far_screen(
+        &mut self,
+        wanted: Option<WantedScreen>,
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<Option<(u32, u32)>, GaveUp> {
+        let way = self.way;
+        match self.ask(&Request::FarScreen { way, wanted }, still_wanted)? {
             Answer::Showing { size } => Ok(size),
-            Answer::Refused(reason) => Err(reason),
-            other => Err(format!("réponse inattendue du service : {other}")),
+            Answer::Refused(reason) => Err(GaveUp::Said(reason)),
+            other => Err(unexpected(other)),
         }
     }
 
@@ -892,8 +991,13 @@ impl Driving {
     ///
     /// Starting over takes this very way with it, so the answer is worth
     /// carrying whole rather than being reduced to done or not done.
-    fn film_this_far_screen(&mut self, id: Option<String>) -> Result<bool, String> {
-        self.settled(&Request::FilmFarScreen { way: self.way, id })
+    fn film_this_far_screen(
+        &mut self,
+        id: Option<String>,
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<bool, GaveUp> {
+        let way = self.way;
+        self.settled(&Request::FilmFarScreen { way, id }, still_wanted)
     }
 
     /// Asks the far computer to resend a still screen at full rate, or
@@ -902,68 +1006,77 @@ impl Driving {
     ///
     /// The same answer as the screen above, for the same reason: its
     /// engine reads this at its start and never again.
-    fn serve_steady_over_there(&mut self, rate: bool) -> Result<bool, String> {
-        self.settled(&Request::SteadyFar {
-            way: self.way,
-            rate,
-        })
+    fn serve_steady_over_there(
+        &mut self,
+        rate: bool,
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<bool, GaveUp> {
+        let way = self.way;
+        self.settled(&Request::SteadyFar { way, rate }, still_wanted)
     }
 
     /// Asks one of the two things the far engine only reads when it
     /// starts, and says whether it is starting over to honour it.
-    fn settled(&mut self, request: &Request) -> Result<bool, String> {
-        match self
-            .runtime
-            .block_on(self.service.ask(request))
-            .map_err(|e| e.to_string())?
-        {
+    fn settled(
+        &mut self,
+        request: &Request,
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<bool, GaveUp> {
+        match self.ask(request, still_wanted)? {
             Answer::Settled { starting_over } => Ok(starting_over),
-            Answer::Refused(reason) => Err(reason),
-            other => Err(format!("réponse inattendue du service : {other}")),
+            Answer::Refused(reason) => Err(GaveUp::Said(reason)),
+            other => Err(unexpected(other)),
         }
     }
 
     /// Asks the far computer to silence its speakers, or to let them
     /// play again.
-    fn hush_the_far_speakers(&mut self, quiet: bool) -> Result<(), String> {
-        self.asked(&Request::Hush {
-            way: self.way,
-            quiet,
-        })
+    fn hush_the_far_speakers(
+        &mut self,
+        quiet: bool,
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<(), GaveUp> {
+        let way = self.way;
+        self.asked(&Request::Hush { way, quiet }, still_wanted)
     }
 
     /// One ask of the service that is either done or refused, and nothing
     /// else. Three of them have exactly this shape.
-    fn asked(&mut self, request: &Request) -> Result<(), String> {
-        match self
-            .runtime
-            .block_on(self.service.ask(request))
-            .map_err(|e| e.to_string())?
-        {
+    fn asked(&mut self, request: &Request, still_wanted: &dyn Fn() -> bool) -> Result<(), GaveUp> {
+        match self.ask(request, still_wanted)? {
             Answer::Done => Ok(()),
-            Answer::Refused(reason) => Err(reason),
-            other => Err(format!("réponse inattendue du service : {other}")),
+            Answer::Refused(reason) => Err(GaveUp::Said(reason)),
+            other => Err(unexpected(other)),
         }
+    }
+
+    /// One ask of the service, waited for without losing sight of the
+    /// person watching it happen.
+    fn ask(
+        &mut self,
+        request: &Request,
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<Answer, GaveUp> {
+        answered(&self.runtime, &mut self.service, request, still_wanted)
     }
 
     /// Hands the far computer the code its engine is waiting for.
     ///
     /// The service does the sending: it is the one holding the way, and
     /// the way is the only thing that already knows both computers.
-    fn hand_over_the_code(&mut self, pin: &str) -> Result<(), String> {
-        let request = Request::Pair {
-            way: self.way,
-            pin: pin.to_string(),
-        };
-        match self
-            .runtime
-            .block_on(self.service.ask(&request))
-            .map_err(|e| e.to_string())?
-        {
-            Answer::Done => Ok(()),
-            Answer::Refused(reason) => Err(reason),
-            other => Err(format!("réponse inattendue du service : {other}")),
-        }
+    fn hand_over_the_code(
+        &mut self,
+        pin: &str,
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<(), GaveUp> {
+        let way = self.way;
+        self.asked(
+            &Request::Pair {
+                way,
+                pin: pin.to_string(),
+            },
+            still_wanted,
+        )
     }
 
     /// Tells the service which process the way now serves, so it closes
@@ -1089,6 +1202,92 @@ mod tests {
                 "sur {arret:?}"
             );
         }
+    }
+
+    #[test]
+    fn une_ouverture_lachee_n_attend_pas_la_reponse_du_service() {
+        // Un service qui prend l'appel et ne répond jamais : vu d'ici,
+        // c'est exactement un ordinateur que l'on court après pendant
+        // trente secondes, et c'est là que passait tout le temps d'une
+        // ouverture. Rien dans cette attente ne regardait la croix.
+        let channel = format!("zyr-session-test-{}-lachee", std::process::id());
+        let listening = channel.clone();
+        let (opened, when_open) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("exécuteur du service d'essai");
+            runtime.block_on(async move {
+                let mut door = zyr_control::Door::open(&listening).expect("canal d'essai");
+                opened.send(()).expect("canal d'essai annoncé");
+                // Tenue ouverte : une conversation qui se ferme est une
+                // toute autre panne, et se verrait sans rien de ceci.
+                let _taken = door.accept().await;
+                std::future::pending::<()>().await;
+            });
+        });
+        when_open.recv().expect("canal d'essai ouvert");
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut service = runtime
+            .block_on(Service::join_on(&channel))
+            .expect("joindre le service d'essai");
+
+        // Lâchée au troisième coup d'œil, ce qui demande qu'il y en ait
+        // eu trois : la question se pose pendant l'attente, et non une
+        // fois avant puis une fois après, qui est ce qui existait déjà.
+        let looks = std::sync::atomic::AtomicUsize::new(0);
+        let began = Instant::now();
+        let outcome = answered(&runtime, &mut service, &Request::Standing, &|| {
+            looks.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 2
+        });
+
+        assert!(matches!(outcome, Err(GaveUp::Abandoned)));
+        assert!(
+            looks.load(std::sync::atomic::Ordering::Relaxed) >= 3,
+            "{looks:?}"
+        );
+        // Et rendue à peu près tout de suite, ce qui est le fond de
+        // l'affaire : sans cela on sortait d'ici une demi-minute après
+        // le clic, quand le service avait fini de courir.
+        assert!(
+            began.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            began.elapsed()
+        );
+    }
+
+    #[test]
+    fn un_abandon_ne_se_lit_jamais_comme_un_refus() {
+        // La moitié de ces demandes sont faites pour pouvoir échouer :
+        // l'ordinateur d'en face refuse de se taire, de changer d'écran,
+        // et l'image vaut la peine quand même. L'abandon emprunte le
+        // même chemin de retour et n'est pas de ceux-là ; rendu comme un
+        // refus, il s'écrivait « les enceintes restent allumées » et
+        // l'ouverture continuait vers une image que plus personne
+        // n'attendait.
+        assert!(matches!(GaveUp::Abandoned.refusal(), Err(Error::Abandoned)));
+        assert!(matches!(
+            GaveUp::Abandoned.or(Error::Handover),
+            Error::Abandoned
+        ));
+
+        // Un vrai refus, lui, passe entier : c'est ce qui s'écrit dans
+        // le journal et sur l'écran d'ouverture.
+        assert_eq!(
+            GaveUp::Said("son moteur est trop ancien".to_string())
+                .refusal()
+                .unwrap(),
+            "son moteur est trop ancien"
+        );
+        assert!(matches!(
+            GaveUp::Said("refusé".to_string()).or(Error::Handover),
+            Error::Handover(reason) if reason == "refusé"
+        ));
     }
 
     #[test]
