@@ -1092,6 +1092,22 @@ fn round_the_bottom(
         return;
     }
     if square {
+        // A cut that is not there has no size: only a frame turning from
+        // round to square takes one off, and a window changing size under
+        // a frame that was already square takes off nothing twice. The
+        // only hand that ever puts one on is the road below.
+        //
+        // Taking it off anyway was not free, and it was paid at the worst
+        // moment of the whole gesture. Shaping a window is answered by
+        // the thread that owns it, which is the player's, and this is
+        // asked of it in the breath after its picture has been taken away
+        // to be resized: the one instant in the move where what that
+        // thread has to do is draw. Windowed and full screen are both
+        // square frames, so every toggle between them came through here
+        // for a cut that had been off since the picture was laid.
+        if same_frame {
+            return;
+        }
         // SAFETY: a window this program took in hand; no shape means the
         // whole rectangle, which is what a window is without one.
         let taken = unsafe { SetWindowRgn(engine, std::ptr::null_mut(), 0) };
