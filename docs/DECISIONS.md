@@ -2639,6 +2639,8 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça retire, et c'est le vrai gain.** Deux combinaisons de touches disparaissent du produit, avec l'état que cette fenêtre gardait pour deviner où en étaient les interrupteurs d'en face. Il ne reste rien à désynchroniser.
 
+**Corrigé le jour même : une valeur qu'on énonce se redit.** Le mode jeu s'est retrouvé sans curseur du tout, parce que la fenêtre ne parlait à l'ordinateur d'en face que lorsque sa propre idée changeait. Or elle n'a pas d'idée juste au départ : ce que ce moteur-là a été laissé en train de faire par la session d'avant ne se lit pas d'ici. Une session qui s'ouvrait déjà en mode jeu était d'accord avec sa propre croyance, ne disait rien, et regardait un moteur qui avait cessé de dessiner. C'est très exactement le défaut que la valeur énoncée devait tuer, et la moitié de la correction manquait : elle est maintenant dite à chaque tour de la veille, une fois par seconde, et le journal des deux bouts ne l'écrit que lorsqu'elle change.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

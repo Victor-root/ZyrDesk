@@ -24,7 +24,7 @@
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -149,6 +149,13 @@ struct Attending {
     machine: Machine,
     /// This computer's fingerprint, which its journal opens on.
     fingerprint: Fingerprint,
+    /// Whether the engine was last asked to draw this computer's own
+    /// pointer, as one, or nought, or two for « nobody has said yet ».
+    ///
+    /// It decides what the journal says and never what the engine is
+    /// asked: a session says this at every turn of its watch, on
+    /// purpose, and the engine is told every time.
+    pointer_drawn: AtomicU8,
     /// Which handing over of a pairing code is the one in hand.
     ///
     /// A code goes on being offered for a while after it has been taken,
@@ -596,23 +603,33 @@ impl Answers for Attending {
     /// to be. A session that opens says what it wants, and gets it,
     /// whatever became of the one before.
     fn draw_the_pointer(&self, drawn: bool) -> Result<(), String> {
+        // Asked of the engine every time, and written down only when it
+        // is news. The session says this at every turn of its watch, so
+        // that a far engine left another way by whoever watched it
+        // before is put right within the second; a line each time would
+        // be one a second, and would drown every other line of every
+        // session.
+        let news = self.pointer_drawn.swap(u8::from(drawn), Ordering::Relaxed) != u8::from(drawn);
         let asked = Asked {
             draw_the_pointer: Some(drawn),
             ..Asked::default()
         };
+        let said = if drawn { "to draw" } else { "not to draw" };
         self.api.serve_as_asked(&asked).map_err(|e| {
             let refused = e.to_string();
-            self.log.write(&format!(
-                "a session asked this computer {} its own pointer into the picture, and its \
-                 engine could not be asked ({refused})",
-                if drawn { "to draw" } else { "not to draw" }
-            ));
+            if news {
+                self.log.write(&format!(
+                    "a session asked this computer {said} its own pointer into the picture, and \
+                     its engine could not be asked ({refused})"
+                ));
+            }
             refused
         })?;
-        self.log.write(&format!(
-            "a session asked this computer {} its own pointer into the picture",
-            if drawn { "to draw" } else { "not to draw" }
-        ));
+        if news {
+            self.log.write(&format!(
+                "a session asked this computer {said} its own pointer into the picture"
+            ));
+        }
         Ok(())
     }
 
@@ -1149,6 +1166,7 @@ impl Gateway {
             sessions: sessions.clone(),
             machine: machine.clone(),
             fingerprint: identity.fingerprint(),
+            pointer_drawn: AtomicU8::new(2),
             offering: Arc::new(AtomicU64::new(0)),
             log: log.clone(),
         });

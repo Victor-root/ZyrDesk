@@ -1215,29 +1215,40 @@ async fn keep_the_pointer_in_step(app: &App, process: u32) {
 /// second one drawn here would sit in the middle of the picture doing
 /// nothing. So the far computer draws its own again there.
 ///
-/// The switch on this side is only ever asked for and never asked off. A
-/// game mode hides that pointer by itself, the mode doing it, and the
-/// engine takes this switch in desktop mouse mode alone: asked in a game
-/// it refuses outright and says so in its own journal. Thrown there it
-/// changed nothing on screen and left this window believing the opposite
-/// of the truth, so that coming back to the desktop turned the pointer
-/// off instead of on and left the session with none at all.
+/// The switch on this side needs nothing said to it: the engine draws
+/// that pointer because it was asked to follow the file of shapes, and
+/// hides it by itself in game mouse mode, the mode doing it.
+///
+/// Said at every turn of the watch and not only when it changes. It is a
+/// value the far engine is told and not a switch flipped, so saying it
+/// twice says it once and costs that engine one comparison. And what it
+/// was left doing by whoever watched that computer before is not
+/// something this window can know: speaking only on a change means
+/// speaking from a belief, and a session that opened in game mouse mode
+/// agreed with its own belief, said nothing, and watched an engine that
+/// had stopped drawing. No pointer at all, again.
 async fn keep_the_far_pointer_in_step(app: &App) {
-    let wanted = !in_game_mouse(app);
+    let drawn = in_game_mouse(app);
     let state = app.floating();
-    if !the_far_pointer_moves(wanted, state.far_pointer_hidden.load(Ordering::Relaxed)) {
-        return;
-    }
-    match say_whether_the_far_pointer_is_drawn(app, !wanted).await {
+    // What was last asked for, and nothing else: it decides what the
+    // journal says, never what is said to the far computer. One line a
+    // second would drown every other line of a session.
+    let news = state.far_pointer_hidden.swap(!drawn, Ordering::Relaxed) == drawn;
+    match say_whether_the_far_pointer_is_drawn(app, drawn).await {
         Ok(()) => {
-            state.far_pointer_hidden.store(wanted, Ordering::Relaxed);
-            note(if wanted {
-                "l'ordinateur distant ne dessine plus son curseur dans l'image"
-            } else {
-                "l'ordinateur distant dessine à nouveau son curseur dans l'image"
-            });
+            if news {
+                note(if drawn {
+                    "l'ordinateur distant dessine à nouveau son curseur dans l'image"
+                } else {
+                    "l'ordinateur distant ne dessine plus son curseur dans l'image"
+                });
+            }
         }
-        Err(reason) => note(&format!("curseur d'en face non réglé : {reason}")),
+        Err(reason) => {
+            if news {
+                note(&format!("curseur d'en face non réglé : {reason}"));
+            }
+        }
     }
 }
 
@@ -1257,19 +1268,6 @@ async fn say_whether_the_far_pointer_is_drawn(app: &App, drawn: bool) -> Result<
         .map(|_| ())
 }
 
-/// Whether the far computer has yet to be told what this session wants of
-/// its pointer.
-///
-/// Apart so it can be read on its own, and so short only because the
-/// switch it guards is said rather than flipped. It used to be a rule
-/// about order: this window threw two keystrokes, either of which could
-/// be swallowed by another program on this computer, and taking the far
-/// pointer away after failing to draw one here left a session with none
-/// at all. Neither keystroke is thrown any more.
-fn the_far_pointer_moves(wanted: bool, far_hidden: bool) -> bool {
-    wanted != far_hidden
-}
-
 /// Gives the far computer its pointer back, the session being over.
 ///
 /// Said before the way is closed, which is the last moment anything can
@@ -1279,12 +1277,11 @@ fn the_far_pointer_moves(wanted: bool, far_hidden: bool) -> bool {
 /// It is politeness and no longer a duty. A session that opens says what
 /// it wants of that pointer and gets it, whatever the one before left
 /// behind; this only spares the machine being watched a pointer missing
-/// from its own pictures until somebody watches it again.
+/// from its own pictures until somebody watches it again. Said whatever
+/// this window last asked for, for the same reason as above: what that
+/// engine is doing is not something this window knows.
 async fn give_the_far_pointer_back(app: &App) {
     let state = app.floating();
-    if !state.far_pointer_hidden.load(Ordering::Relaxed) {
-        return;
-    }
     match say_whether_the_far_pointer_is_drawn(app, true).await {
         Ok(()) => {
             state.far_pointer_hidden.store(false, Ordering::Relaxed);
@@ -2118,16 +2115,6 @@ fn shortcut(_act: Act, _process: u32) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn l_ordinateur_d_en_face_n_est_prevenu_que_lorsque_ca_change() {
-        // Mode bureau : il éteint son curseur, et on ne le redit plus.
-        assert!(the_far_pointer_moves(true, false));
-        assert!(!the_far_pointer_moves(true, true));
-        // Mode jeu : il le rallume, et on ne le redit plus.
-        assert!(the_far_pointer_moves(false, true));
-        assert!(!the_far_pointer_moves(false, false));
-    }
 
     #[test]
     fn every_menu_entry_names_a_shortcut_the_engine_answers_to() {
