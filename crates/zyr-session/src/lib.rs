@@ -470,11 +470,14 @@ pub fn point_like(shape: zyr_proto::session::Pointer) -> Result<bool, Error> {
     zyr_engine_client::follow::point_like(shape).map_err(Error::Following)
 }
 
-/// Forgets it, the session being over.
+/// Names the ordinary pointer, there being no far one to follow any
+/// more.
 ///
-/// The next session starts on the ordinary pointer rather than on
-/// whatever shape the last one happened to end under, which would be an
-/// hourglass over a machine that is not busy.
+/// Said to the player and not merely forgotten: it may well still be
+/// running, and it would stay under whatever shape the last answer left
+/// it with. That is an hourglass over a machine that is not busy, or no
+/// pointer at all where the last answer was that the far computer was
+/// drawing its own.
 pub fn point_like_nothing() {
     zyr_engine_client::follow::point_like_nothing();
 }

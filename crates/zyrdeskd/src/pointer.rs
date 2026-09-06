@@ -7,6 +7,10 @@
 //! it answers the hand with no network in between; without this it would
 //! answer with an arrow and nothing else, whatever is under it.
 //!
+//! One moment answers no shape at all, and it is the one moment this
+//! computer draws its pointer into the picture itself: a window being
+//! dragged. See `a_window_is_being_dragged`.
+//!
 //! Nothing here is done to the machine. It is a reading, and the whole
 //! module exists because of where the reading has to happen. A service
 //! sits in a session with no screen, no keyboard and no pointer, on a
@@ -190,6 +194,9 @@ pub fn follow_the_pointer_here() {}
 fn read_the_pointer() -> Pointer {
     use windows_sys::Win32::UI::WindowsAndMessaging::{CURSOR_SHOWING, CURSORINFO, GetCursorInfo};
 
+    if a_window_is_being_dragged() {
+        return Pointer::Theirs;
+    }
     let mut about = CURSORINFO {
         cbSize: std::mem::size_of::<CURSORINFO>() as u32,
         ..Default::default()
@@ -207,6 +214,44 @@ fn read_the_pointer() -> Pointer {
         return Pointer::Arrow;
     }
     named_shape(about.hCursor)
+}
+
+/// Whether a window on this desktop is being dragged or resized right
+/// now.
+///
+/// It is asked for one reason, and the answer is not a shape but the
+/// absence of one. While that lasts, Windows stops letting the graphics
+/// card carry the pointer and composes it with the window instead, so
+/// that the two move together and neither is a frame behind the other.
+/// The picture this computer sends is filmed after that composing, so
+/// the pointer is already in it, and the switch that keeps the engine
+/// from drawing one has nothing left to switch off. The session watching
+/// would show two: its own, where the hand is, and this one, a round
+/// trip behind, dragging the window.
+///
+/// So it is told to draw none for as long as this lasts, and what it
+/// shows is the one Windows drew, moving with the window it drags.
+///
+/// The system says it plainly: a window being dragged or resized puts
+/// the thread that owns it in a loop of its own, and that is what is
+/// read here.
+#[cfg(windows)]
+fn a_window_is_being_dragged() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GUI_INMOVESIZE, GUITHREADINFO, GetGUIThreadInfo,
+    };
+
+    let mut about = GUITHREADINFO {
+        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: the block is ours with its own size written in it as the
+    // call requires. Naming no thread means the one in front, which is
+    // the only one that can be dragging anything.
+    if unsafe { GetGUIThreadInfo(0, &mut about) } == 0 {
+        return false;
+    }
+    about.flags & GUI_INMOVESIZE != 0
 }
 
 /// Which of the shapes this computer knows that pointer is.

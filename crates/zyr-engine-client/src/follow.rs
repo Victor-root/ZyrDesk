@@ -73,13 +73,18 @@ fn point_like_at(path: &Path, shape: Pointer) -> io::Result<bool> {
     Ok(true)
 }
 
-/// Forgets the shape, the session being over.
+/// Names the ordinary pointer, there being no far one to follow any
+/// more.
 ///
-/// The next one starts on the ordinary pointer rather than on the last
-/// shape the last session happened to end on, which would be an
-/// hourglass over a machine that is not busy.
+/// Written and not erased, and the difference matters: erasing says
+/// nothing to an engine that is still running, and it stays under
+/// whatever shape the last answer left it with. That is an hourglass
+/// over a machine that is not busy, and, since the far computer can
+/// answer that it is drawing its own pointer, it is also a session with
+/// no pointer at all. Naming the arrow says it to both: the engine
+/// still up, and the next one to read the file.
 pub fn point_like_nothing() {
-    let _ = fs::remove_file(paths::session_pointer());
+    let _ = point_like_at(&paths::session_pointer(), Pointer::default());
 }
 
 /// One line, put in place whole.
@@ -175,6 +180,28 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "wait\n");
         // Et rien à côté : le moteur lit entre deux écritures.
         assert!(!path.with_extension("new").exists());
+
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn ne_plus_suivre_le_curseur_rend_la_fleche_ordinaire() {
+        // C'est ce que fait `point_like_nothing`, et il écrit au lieu
+        // d'effacer : un moteur encore en marche ne lit pas une absence,
+        // il resterait sous la dernière forme reçue. Un sablier sur une
+        // machine qui ne fait rien, ou, quand l'ordinateur d'en face
+        // venait de répondre qu'il dessinait son propre curseur, pas de
+        // curseur du tout.
+        let folder = std::env::temp_dir().join(format!(
+            "zyrdesk-pointer-{}",
+            zyr_proto::random::alphanumeric_string(8)
+        ));
+        fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("session-pointer.txt");
+
+        assert!(point_like_at(&path, Pointer::Theirs).unwrap());
+        assert!(point_like_at(&path, Pointer::default()).unwrap());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "arrow\n");
 
         let _ = fs::remove_dir_all(&folder);
     }

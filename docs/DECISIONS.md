@@ -2563,6 +2563,22 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et c'est instrumenté aux deux bouts, exprès.** Cinq endroits et deux machines : chaque côté écrit une ligne en fin de session qui répond aux deux seules questions qu'un curseur resté en flèche pose, à savoir si quoi que ce soit a été lu ou reçu, et si autre chose qu'une flèche est passé. Une ligne par forme en ferait vingt par seconde et ne répondrait à ni l'une ni l'autre.
 
+## D152. Le curseur d'en face réapparaissait pendant qu'on déplace une fenêtre, et c'est Windows qui le dessine (2026-09-06, pendant M6)
+
+**Le relevé.** « Ça marche ! Y'a juste un petit bug : quand je drag and drop une fenêtre sur l'hôte, j'ai du coup le curseur distant qui apparaît pendant le déplacement. »
+
+**Ce que Windows fait, et qui n'est pas une panne.** Pendant qu'une fenêtre est déplacée ou redimensionnée, Windows arrête de laisser la carte graphique porter le curseur et le compose lui-même avec la fenêtre, pour que les deux bougent ensemble et qu'aucun ne soit une image en retard sur l'autre. C'est une optimisation volontaire du gestionnaire de fenêtres, documentée comme telle.
+
+**Pourquoi aucun réglage ne pouvait le retirer.** L'interface de capture de Windows le dit noir sur blanc : ou bien le curseur est déjà dessiné dans l'image du bureau, ou bien il est fourni à part. Quand il est dessiné dedans, elle répond qu'il n'y a pas de curseur séparé, et il est dans les pixels avant que le moteur ne les reçoive. L'interrupteur de [D150](#d150-en-mode-bureau-le-curseur-est-dessiné-ici-2026-09-05-pendant-m6) n'avait donc plus rien à éteindre : il empêche le moteur d'en ajouter un, il ne peut pas en enlever un déjà là. Ce n'est pas non plus une affaire de méthode de capture : l'autre méthode que sait faire le moteur hôte ne filme pas les demandes d'autorisation de Windows, ce qui coûterait bien plus cher que ce que ça réparerait.
+
+**La route écartée, et pourquoi.** Éteindre le curseur de l'hôte à la source, en remplaçant ses curseurs système par des transparents le temps de la session, marcherait quelle que soit la façon dont Windows compose. C'est un changement global sur la machine d'en face, à remettre en état après coup et même après une coupure de courant, qui écraserait au passage le jeu de curseurs personnalisé de qui en a un, et qui laisserait quand même passer les curseurs qu'un programme dessine pour lui-même. Beaucoup de machinerie et de risque pour couvrir un cas de plus.
+
+**La route retenue.** Quand Windows dessine le curseur lui-même, l'hôte le dit, et l'ordinateur qui regarde range le sien. Un mot de plus dans le vocabulaire des formes, `theirs`, qui n'est pas une forme mais l'absence de forme, et le moteur client donne alors à son curseur une apparence vide. Il y a donc toujours exactement un curseur à l'écran : celui d'ici la plupart du temps, celui d'en face pendant qu'une fenêtre est déplacée, lequel bouge de toute façon avec la fenêtre qu'il traîne. Une forme vide et non un masquage : montrer ou non le curseur appartient au mode de souris du moteur, et y toucher depuis le suiveur laisserait les deux en désaccord au premier changement.
+
+**Le prix, nommé.** Pendant le déplacement d'une fenêtre, la latence du curseur revient, puisque c'est celui d'en face qu'on voit. La bascule coûte à peu près un aller-retour à chaque bout du déplacement, donc sur un réseau mauvais il reste un bref instant à deux curseurs au début et à la fin. Et un programme qui dessine son propre curseur en dehors de ce cas n'est toujours pas couvert : ni la capture ni la lecture ne savent le nommer.
+
+**Un effet de bord réparé au passage.** Cesser de suivre le curseur effaçait le fichier, ce qui ne dit rien à un moteur encore en marche : il restait sous la dernière forme reçue. C'était un sablier sur une machine qui ne fait rien ; avec le nouveau mot, ç'aurait été un écran sans curseur du tout. La flèche ordinaire est maintenant écrite au lieu d'effacer.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -831,6 +831,9 @@ pub fn parse_resolution(value: &str) -> Result<(u32, u32), InvalidResolution> {
 /// its own, comes back as the arrow: it is the shape a system falls back
 /// to itself, and a session that showed nothing at all there would be
 /// worse than one that shows the ordinary pointer.
+///
+/// One word out of the list is not a shape but an answer of another
+/// kind, and it is the last one: see [`Pointer::Theirs`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Pointer {
     /// The ordinary pointer, and what anything unknown comes back as.
@@ -858,6 +861,22 @@ pub enum Pointer {
     SizeAll,
     /// What is under the pointer will not take it.
     Refused,
+    /// Not a shape at all: the far computer is drawing its own pointer
+    /// into the picture right now, and the computer watching is to draw
+    /// none.
+    ///
+    /// Windows does this to itself while a window is being dragged or
+    /// resized. It stops letting the graphics card carry the pointer and
+    /// composes it with the window instead, so that the two move
+    /// together and neither is a frame behind the other. A pointer
+    /// composed that way is part of the picture before anything films
+    /// it, and no setting of any engine takes it back out.
+    ///
+    /// So the answer for that moment is this word, and the computer
+    /// watching puts its own pointer away. One pointer moving with the
+    /// window it drags is what a hand expects; two, one of them a round
+    /// trip behind, is what it got.
+    Theirs,
 }
 
 impl Pointer {
@@ -880,11 +899,12 @@ impl Pointer {
             Pointer::SizeRising => "sizenesw",
             Pointer::SizeAll => "sizeall",
             Pointer::Refused => "no",
+            Pointer::Theirs => "theirs",
         }
     }
 
     /// Every one of them, so a table can be walked rather than repeated.
-    pub const ALL: [Pointer; 12] = [
+    pub const ALL: [Pointer; 13] = [
         Pointer::Arrow,
         Pointer::Text,
         Pointer::Hand,
@@ -897,6 +917,7 @@ impl Pointer {
         Pointer::SizeRising,
         Pointer::SizeAll,
         Pointer::Refused,
+        Pointer::Theirs,
     ];
 }
 
