@@ -1073,6 +1073,14 @@ pub fn show_the_menu(app: &App) -> Result<(), String> {
     #[cfg(windows)]
     {
         crate::logo::shown(app, true);
+        // And the pointer is put on the button, the cage having just been
+        // opened. A game hides the pointer over the picture and only over
+        // it, so one freed in the middle of the picture has to cross it
+        // unseen to reach this button: aiming blind, on the one thing a
+        // session cannot be left without.
+        if in_game_mouse(app) {
+            crate::picture::put_the_pointer_on(crate::logo::its_window());
+        }
         crate::menu::montre(true);
     }
     Ok(())

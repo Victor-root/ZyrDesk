@@ -3815,6 +3815,32 @@ pub(crate) fn shut_the_pointer_in(held: bool) {
     }
 }
 
+/// Puts this computer's pointer on a window of ours, the cage having
+/// just been opened for it.
+///
+/// A game hides the pointer of this computer, and the engine does that by
+/// answering « no shape at all » every time the system asks what to draw
+/// over the picture. Over a window of ours the system asks us instead and
+/// gets an arrow, so the pointer is seen there and nowhere else: freed in
+/// the middle of the picture, it has to cross the picture invisible to
+/// reach anything, which is aiming blind. Put on the window that was
+/// asked for, it is under the hand and visible from the first moment.
+#[cfg(windows)]
+pub(crate) fn put_the_pointer_on(window: isize) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+    let window = window as windows_sys::Win32::Foundation::HWND;
+    if window.is_null() {
+        return;
+    }
+    let Some((left, top, right, bottom)) = where_it_stands(window) else {
+        return;
+    };
+    // SAFETY: a place on this desk, and this program is the one at the
+    // front, which is what the call asks of its caller.
+    unsafe { SetCursorPos((left + right) / 2, (top + bottom) / 2) };
+}
+
 /// Whether the pointer is shut in right now, so the journal says it once
 /// and not once a second.
 #[cfg(windows)]
