@@ -265,6 +265,9 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     assert_eq!(info.name, "Essai");
     assert_eq!(info.registration, Registration::Open);
     assert_eq!(info.protocol, PROTOCOL);
+    // Le serveur d'essai est ce binaire-là : son empreinte de
+    // compilation est donc la nôtre.
+    assert_eq!(info.build, zyr_proto::BUILD);
 
     // Un compte, un mot de passe faux, un vrai.
     let victor = server.register("victor");

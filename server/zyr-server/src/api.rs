@@ -259,6 +259,7 @@ pub fn server_info_of(app: &App) -> ServerInfo {
     ServerInfo {
         name: app.config.name.clone(),
         version: zyr_proto::PRODUCT_VERSION.to_string(),
+        build: zyr_proto::BUILD.to_string(),
         protocol: PROTOCOL,
         registration: app.config.registration.policy,
         // What it really has, and not what its configuration asked for:

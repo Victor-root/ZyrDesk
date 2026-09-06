@@ -544,6 +544,7 @@ mod tests {
         let server = ServerInfo {
             name: "Maison".into(),
             version: "0.1.0".into(),
+            build: "abc1234 2026-01-01".into(),
             protocol: PROTOCOL,
             registration: Registration::Invitation,
             relay: false,

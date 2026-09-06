@@ -334,7 +334,7 @@ Tout ce que le service dit au serveur est **JSON**, versionné dans le chemin (`
 
 | Méthode et chemin | Qui | Ce que c'est |
 |---|---|---|
-| `GET /v1/server` | tout le monde | Nom du serveur, version, politique d'inscription, présence d'un relais, clé publique de signature. Lu au rattachement |
+| `GET /v1/server` | tout le monde | Nom du serveur, version et commit de compilation, politique d'inscription, présence d'un relais, clé publique de signature. Lu au rattachement |
 | `POST /v1/accounts` | tout le monde, selon la politique | Créer un compte (nom, mot de passe, e-mail facultatif, code d'invitation) |
 | `POST /v1/login` | tout le monde | Nom et mot de passe, rend un jeton de compte d'une heure |
 | `POST /v1/devices/challenge` | tout le monde | Rend un défi de 60 s |

@@ -50,6 +50,15 @@ pub struct ServerInfo {
     /// What the application shows for it.
     pub name: String,
     pub version: String,
+    /// The commit and date this server was built from, the same reading
+    /// the application shows for itself: what tells two servers apart
+    /// that share the same `version` but were built from different
+    /// commits.
+    ///
+    /// Absent, rather than refused, from a server too old to send it:
+    /// the version alone is still worth reading.
+    #[serde(default)]
+    pub build: String,
     pub protocol: u32,
     pub registration: Registration,
     /// Whether it has a relay to offer.
