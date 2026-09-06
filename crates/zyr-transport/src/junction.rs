@@ -404,6 +404,72 @@ impl Expected {
         }
     }
 
+    /// Every road of this card and where each one stands, on one line.
+    ///
+    /// What every other line here says is an outcome: a road taken, a
+    /// road given up, a session that would not open. None of them says
+    /// what the choice was made from, and a connection that fails once
+    /// in two is a choice made from something this journal never wrote
+    /// down. This is that something: each road, whether its last probe
+    /// left this computer at all, whether it was answered, how long it
+    /// took, how many probes it has missed, and which of them is
+    /// carrying the session.
+    ///
+    /// Written when it changes and never on a clock. The look-over runs
+    /// ten times a second and would fill a journal in twelve seconds;
+    /// what is worth reading is the moment a road moved, and between two
+    /// movements there is nothing to say.
+    ///
+    /// `timed` is what tells the two uses apart, and it is the whole of
+    /// why this is one function. The line a journal keeps carries how
+    /// long each road takes; the line held to know whether anything
+    /// moved must not, because a round trip changes at every probe and a
+    /// session would then write this out once a second for as long as it
+    /// lasts, which is the journal with nothing else left in it.
+    fn how_the_roads_stand(&self, timed: bool) -> String {
+        let mut said = String::new();
+        for path in &self.paths {
+            if !said.is_empty() {
+                said.push_str(" ; ");
+            }
+            said.push_str(&self.named(path.through));
+            if Some(path.through) == self.elected {
+                said.push_str(" [en service]");
+            }
+            if timed {
+                said.push_str(&format!(" {} ms", path.round_trip.as_millis()));
+            }
+            if path.misses > 0 {
+                said.push_str(&format!(", {} sondes sans réponse", path.misses));
+            }
+            if !path.asked {
+                said.push_str(", dernière sonde jamais partie d'ici");
+            }
+        }
+        for candidate in &self.candidates {
+            if self
+                .paths
+                .iter()
+                .any(|path| path.through == candidate.through)
+            {
+                continue;
+            }
+            if !said.is_empty() {
+                said.push_str(" ; ");
+            }
+            said.push_str(&self.named(candidate.through));
+            said.push_str(if candidate.probed.is_some() {
+                " sondée, sans réponse"
+            } else {
+                " jamais sondée"
+            });
+        }
+        if said.is_empty() {
+            said.push_str("aucune route connue");
+        }
+        said
+    }
+
     /// How that road reads in the journal.
     fn named(&self, through: Through) -> String {
         match through {
@@ -1257,6 +1323,34 @@ impl Inner {
         ))
     }
 
+    /// Where every road of every card stands, for the cards where that
+    /// has moved since the last look.
+    ///
+    /// The whole state and not the change: a line saying « this road
+    /// missed one » is read next to nothing, where a line naming all of
+    /// them says at once whether there was anything else to take. It
+    /// costs one string per card per look-over, built and thrown away
+    /// when it matches the last.
+    fn roads_that_moved(&self, said: &mut HashMap<SocketAddr, String>) -> Vec<String> {
+        let table = self.table.lock().expect("aiguilleur");
+        let mut lines = Vec::new();
+        for (card, expected) in &table.expected {
+            let moved = expected.how_the_roads_stand(false);
+            if said.get(card).is_some_and(|before| *before == moved) {
+                continue;
+            }
+            lines.push(format!(
+                "card {card}: {}",
+                expected.how_the_roads_stand(true)
+            ));
+            said.insert(*card, moved);
+        }
+        // A card nobody expects any more is a session that ended, and
+        // the next one towards the same computer starts from nothing.
+        said.retain(|card, _| table.expected.contains_key(card));
+        lines
+    }
+
     /// Whether the socket is taking what this junction hands it.
     ///
     /// Said as it happens and never again for the same packets: what is
@@ -1650,6 +1744,7 @@ async fn look_after(junction: Weak<Inner>) {
     let mut last_arrival = (0u64, Instant::now());
     let mut said_deaf = false;
     let mut said_refused = 0u64;
+    let mut said_roads: HashMap<SocketAddr, String> = HashMap::new();
     loop {
         tick.tick().await;
         let now = Instant::now();
@@ -1671,6 +1766,12 @@ async fn look_after(junction: Weak<Inner>) {
             (inner.say)(&line);
         }
         inner.tick(now);
+        // After the look-over and not before: what is worth reading is
+        // where the roads stand once this turn has probed, answered and
+        // elected, not where they stood a tenth of a second ago.
+        for line in inner.roads_that_moved(&mut said_roads) {
+            (inner.say)(&line);
+        }
     }
 }
 
