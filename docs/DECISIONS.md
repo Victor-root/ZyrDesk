@@ -2579,6 +2579,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Un effet de bord réparé au passage.** Cesser de suivre le curseur effaçait le fichier, ce qui ne dit rien à un moteur encore en marche : il restait sous la dernière forme reçue. C'était un sablier sur une machine qui ne fait rien ; avec le nouveau mot, ç'aurait été un écran sans curseur du tout. La flèche ordinaire est maintenant écrite au lieu d'effacer.
 
+## D153. Les trois interrupteurs du curseur sont un seul changement (2026-09-06, pendant M6)
+
+**Le relevé.** « La souris en mode jeu, il n'y a plus de curseur. »
+
+**Le trou, mesuré dans le journal.** À 09:07:13 le menu met « Souris » sur « Jeu » et jette `Ctrl+Alt+Maj+M` ; la paire qui va avec, celle des deux curseurs, n'est partie qu'à 09:07:32. Dix-neuf secondes. Entre les deux, le moteur d'ici avait déjà cessé de dessiner son curseur, le mode jeu le cachant lui-même, et l'ordinateur d'en face ne dessinait toujours pas le sien : aucun curseur nulle part. La veille qui pose ces deux interrupteurs s'abstient tant que le menu est ouvert, et c'est du menu qu'on change de mode.
+
+**Le second défaut, dans le même échange.** Le moteur client ne prend l'interrupteur du curseur d'ici qu'en mode bureau, et le refuse en mode jeu en le disant dans son propre journal : « Cursor can only be shown in remote desktop mouse mode ». ZyrDesk le jetait quand même en passant en jeu et l'écrivait comme fait. Au retour au bureau il l'aurait jeté une seconde fois, accepté cette fois, et aurait donc éteint le curseur au lieu de l'allumer : plus de curseur en mode bureau non plus.
+
+**Ce qui a été fait.** Les trois touches sont un seul changement d'état et partent ensemble, au moment où le mode change, et non à la prochaine ronde de la veille. Et l'interrupteur d'ici ne se demande plus que dans un sens : on l'allume, on ne l'éteint jamais. Le mode jeu cache ce curseur tout seul et le moteur remet les choses en place au retour ; le demander là-bas ne changeait rien à l'écran et faisait seulement croire à cette fenêtre le contraire de la vérité.
+
+**Et la garde du menu est remontée là où elle sert.** Elle existe pour la veille, qui tourne toute seule pendant qu'une main lit le menu : jeter un de ces interrupteurs donnerait le clavier à l'image. Elle n'a rien à faire dans un changement demandé exprès, qui jette déjà une touche à l'image de toute façon.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

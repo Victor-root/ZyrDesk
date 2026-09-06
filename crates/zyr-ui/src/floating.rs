@@ -719,8 +719,17 @@ pub fn watch(app: App) {
                         state.local_pointer.store(false, Ordering::Relaxed);
                     }
                     put_the_button_up(&app, process);
-                    keep_the_pointer_in_step(&app, process).await;
-                    keep_the_pointer_local_in_step(&app, process).await;
+                    // Rien de tout cela pendant que le menu est ouvert :
+                    // jeter un de ces interrupteurs donne le clavier à
+                    // l'image, et une main qui lit le menu vise autre
+                    // chose. Le changement de mode de souris, lui, les
+                    // jette avec lui : le clavier vient de partir de
+                    // toute façon, et attendre la fermeture du menu
+                    // laissait un moment sans aucun curseur.
+                    if !the_menu_is_open() {
+                        keep_the_pointer_in_step(&app, process).await;
+                        keep_the_pointer_local_in_step(&app, process).await;
+                    }
                     // Et la forme que ce curseur prend, qui vient de
                     // l'ordinateur d'en face et se demande bien plus
                     // souvent que cette veille ne tourne : elle a sa
@@ -1108,6 +1117,14 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
     match act {
         Act::MouseMode => {
             let _ = app.floating().game_mouse.fetch_xor(true, Ordering::Relaxed);
+            // The two pointer switches belong to this change and are
+            // thrown with it rather than left to the watch. The moment
+            // the mode reaches the engine it stops drawing the pointer
+            // this window asked it for, and the far computer's is still
+            // hidden: between the two there is no pointer at all. Asked
+            // from the menu, that hole lasted as long as the menu stayed
+            // open, the watch holding off for it.
+            keep_the_pointer_local_in_step(app, process).await;
         }
         Act::PointerLock => {
             let _ = app
@@ -1130,6 +1147,22 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether the menu of the floating button is open right now.
+///
+/// What holds the two switches below off while a hand is in it: throwing
+/// either of them gives the keyboard to the picture, and a hand reading
+/// the menu is aiming at something else.
+fn the_menu_is_open() -> bool {
+    #[cfg(windows)]
+    {
+        crate::menu::ouvert()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 /// Keeps the pointer inside the picture for as long as the picture is
 /// the whole screen, and lets it go the moment it is not.
 ///
@@ -1148,17 +1181,9 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
 /// Windowed, the pointer must be free to leave: the other windows of this
 /// computer are around the picture and reaching them is the whole reason
 /// somebody is not in full screen.
-///
-/// Rien n'est fait pendant que le menu est ouvert : jeter cet
-/// interrupteur donne le clavier à l'image, et une main qui lit le menu
-/// est en train de viser autre chose.
 async fn keep_the_pointer_in_step(app: &App, process: u32) {
     let wanted = crate::picture::on_the_whole_screen();
     let state = app.floating();
-    #[cfg(windows)]
-    if crate::menu::ouvert() {
-        return;
-    }
     if wanted == state.pointer_held.load(Ordering::Relaxed) {
         return;
     }
@@ -1192,37 +1217,31 @@ async fn keep_the_pointer_in_step(app: &App, process: u32) {
 /// the first would leave two pointers on screen, one under the hand and
 /// one behind it.
 ///
-/// A game is the other way round and is left alone. What a game reads is
-/// movement and not a place, the pointer belongs to the game and is drawn
-/// by it, and a second one drawn here would sit in the middle of the
-/// picture doing nothing. Ours is asked of an engine that refuses it
-/// outright in that mode, so the two ends agree even if this program is
-/// ever wrong.
+/// A game is the other way round. What a game reads is movement and not a
+/// place, the pointer belongs to the game and is drawn by it, and a
+/// second one drawn here would sit in the middle of the picture doing
+/// nothing. So the far computer draws its own again there.
 ///
-/// Nothing is done while the menu is open, for the reason the pointer
-/// above is not: throwing one of these gives the keyboard to the picture,
-/// and a hand reading the menu is aiming at something else.
+/// The switch on this side is only ever asked for and never asked off. A
+/// game mode hides that pointer by itself, the mode doing it, and the
+/// engine takes this switch in desktop mouse mode alone: asked in a game
+/// it refuses outright and says so in its own journal. Thrown there it
+/// changed nothing on screen and left this window believing the opposite
+/// of the truth, so that coming back to the desktop turned the pointer
+/// off instead of on and left the session with none at all.
 async fn keep_the_pointer_local_in_step(app: &App, process: u32) {
     let wanted = !in_game_mouse(app);
     let state = app.floating();
-    #[cfg(windows)]
-    if crate::menu::ouvert() {
-        return;
-    }
     // Asked one at a time and written down one at a time: the two live in
     // two different engines, and a session that opens its picture again
     // gets a new player and the same far computer. Counted together, the
     // far one would be thrown a second time for a change that never
     // reached it.
-    if wanted != state.local_pointer.load(Ordering::Relaxed) {
+    if wanted && !state.local_pointer.load(Ordering::Relaxed) {
         match type_at_the_picture(app, Act::LocalPointer, process).await {
             Ok(()) => {
-                state.local_pointer.store(wanted, Ordering::Relaxed);
-                note(if wanted {
-                    "curseur dessiné ici, sans passer par le réseau"
-                } else {
-                    "curseur rendu à l'ordinateur distant, le mode jeu le dessine lui-même"
-                });
+                state.local_pointer.store(true, Ordering::Relaxed);
+                note("curseur dessiné ici, sans passer par le réseau");
             }
             Err(reason) => note(&format!("curseur d'ici non réglé : {reason}")),
         }
