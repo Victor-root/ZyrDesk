@@ -125,6 +125,21 @@ pub const DESK_BACK_ARGUMENT: &str = "--give-the-desk-back";
 /// that. One cannot wait for the other inside a single errand.
 pub const DESK_GROWN_ARGUMENT: &str = "--take-the-grown-screen";
 
+/// And a sixth, for the shape of this computer's pointer; see
+/// `crate::pointer`.
+///
+/// The same blindness once more, and the plainest case of it: a pointer
+/// belongs to a desktop, the desktop that owns the input belongs to the
+/// session on screen, and the service's window station carries no
+/// desktop at all. Asked from there, this computer has no pointer, which
+/// is exactly what it answered a session that asked for the shape of it.
+///
+/// This one differs from the five above in one way: it does not do a
+/// thing and come back, it reads for a while. It ends by itself after a
+/// short life so that nothing has to end it, and the service starts
+/// another for as long as somebody is asking.
+pub const POINTER_ARGUMENT: &str = "--follow-the-pointer";
+
 /// What the first of those carries when a session wants the desk noted
 /// and nothing moved, which is what « keep your own screen » asks for.
 ///
@@ -533,6 +548,60 @@ pub fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<Errand> {
         &[DESK_GROWN_ARGUMENT.to_string(), wanted.to_string()],
         "this computer's desktop could not be moved onto the screen it grew for itself",
     )
+}
+
+/// Starts a helper in the session that owns the screen, to read the
+/// shape of this computer's pointer.
+///
+/// Started and never waited for, which is what sets it apart from every
+/// other errand here: those do one thing and hand back an answer, this
+/// one reads for as long as it lives and says what it read through a
+/// file. Nothing here holds on to it either; it ends by itself.
+pub fn start_reading_the_pointer() -> io::Result<()> {
+    let session =
+        session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
+    let ourselves = std::env::current_exe()?;
+    let token = service_token_for(session)?;
+    let environment = environment_of(&token)?;
+
+    let mut line = command_line(&ourselves, &[POINTER_ARGUMENT.to_string()]);
+    let mut desktop: Vec<u16> = wide(DESKTOP);
+
+    let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
+    startup.cb = size_of::<STARTUPINFOW>() as u32;
+    startup.lpDesktop = desktop.as_mut_ptr();
+
+    let mut started: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+    // Safe: every buffer lives until the call returns, and both handles
+    // it hands back are taken in charge straight away.
+    let obtained = unsafe {
+        CreateProcessAsUserW(
+            token.0,
+            std::ptr::null(),
+            line.as_mut_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            CREATE_UNICODE_ENVIRONMENT | DETACHED_PROCESS,
+            environment.0,
+            std::ptr::null(),
+            &startup,
+            &mut started,
+        )
+    };
+    if obtained == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // Both handles are let go of at once: this program is not waited for
+    // and not ended by anybody, so there is nothing to hold.
+    drop(Handle(started.hProcess));
+    drop(Handle(started.hThread));
+    Ok(())
+}
+
+/// Whether this program was started to read the pointer.
+pub fn asked_to_follow_the_pointer() -> bool {
+    std::env::args().any(|argument| argument == POINTER_ARGUMENT)
 }
 
 /// Puts the desk back the way it was noted, from the session that owns

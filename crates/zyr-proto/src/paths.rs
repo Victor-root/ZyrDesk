@@ -201,6 +201,19 @@ pub fn session_pointer() -> PathBuf {
     data_dir().join("session-pointer.txt")
 }
 
+/// Where the computer being watched writes the shape its own pointer has
+/// right now, on the session that owns its screen.
+///
+/// Beside the file above and never the same one: that one is written on
+/// the computer doing the watching, for its engine to read; this one is
+/// written on the computer being watched, for its own service to read
+/// and hand over. The two never live on the same machine at the same
+/// moment, and naming them alike would make a session towards oneself
+/// read its own answer.
+pub fn pointer_here() -> PathBuf {
+    data_dir().join("pointer-here.txt")
+}
+
 /// The link of this device to an account, when there is one: the
 /// server, what it was called there, the token it presents, and what
 /// it pinned of the server.

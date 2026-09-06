@@ -68,10 +68,7 @@ pub fn follow(app: &App) {
 /// La boucle elle-même, et ce qu'elle a vu passer.
 async fn keep_it_in_step(app: &App) -> Seen {
     let mut seen = Seen::default();
-    let Some(way) = crate::session::the_way_in_use().await else {
-        seen.why = "aucune voie vers l'ordinateur distant";
-        return seen;
-    };
+    let mut way = None;
     let mut talking = None;
     let mut refused = 0;
     loop {
@@ -80,6 +77,21 @@ async fn keep_it_in_step(app: &App) -> Seen {
             seen.why = "la session est terminée";
             return seen;
         }
+        // La voie est cherchée à chaque tour tant qu'elle manque, et non
+        // une fois au départ. Le service ne connaît une session qu'une
+        // fois le lecteur confié : cette boucle démarre bien avant, et
+        // renoncer là revenait à ne rien demander pendant les six
+        // secondes que met une session à être crue.
+        let asking = match way {
+            Some(known) => known,
+            None => match crate::session::the_way_in_use().await {
+                Some(found) => {
+                    way = Some(found);
+                    found
+                }
+                None => continue,
+            },
+        };
         // En mode jeu, le jeu dessine son propre curseur et celui d'ici
         // est caché : demander une forme que personne ne montrera serait
         // vingt allers-retours par seconde pour rien. La boucle reste en
@@ -87,7 +99,7 @@ async fn keep_it_in_step(app: &App) -> Seen {
         if crate::floating::in_game_mouse(app) {
             continue;
         }
-        match asked(&mut talking, way).await {
+        match asked(&mut talking, asking).await {
             Ok(shape) => {
                 refused = 0;
                 seen.saw(shape);
@@ -98,9 +110,11 @@ async fn keep_it_in_step(app: &App) -> Seen {
                 }
             }
             Err(reason) => {
-                // La connexion est jetée : un refus vient souvent d'un
-                // service qui a redémarré, et la suivante repart neuve.
+                // La connexion est jetée, et la voie oubliée : un refus
+                // vient souvent d'un service qui a redémarré ou d'une
+                // image relancée, et la voie est alors une autre.
                 talking = None;
+                way = None;
                 refused += 1;
                 seen.first_refusal.get_or_insert(reason);
                 if refused >= REFUSALS_BEFORE_GIVING_UP {

@@ -686,8 +686,10 @@ fn read_wide(from: &[u16]) -> String {
 /// several answers into one slot.
 fn multi_string(bytes: &[u8]) -> Vec<String> {
     let letters: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|pair| u16::from_ne_bytes([pair[0], pair[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_ne_bytes(*pair))
         .collect();
     letters
         .split(|&c| c == 0)

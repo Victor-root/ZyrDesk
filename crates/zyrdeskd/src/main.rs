@@ -122,6 +122,16 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // And a sixth, for the shape of this computer's pointer. The same
+    // blindness in its plainest form: a pointer belongs to a desktop, and
+    // the service's window station carries none. This one reads for a
+    // while instead of doing one thing, and ends by itself.
+    #[cfg(windows)]
+    if session::asked_to_follow_the_pointer() {
+        pointer::follow_the_pointer_here();
+        return ExitCode::SUCCESS;
+    }
+
     match Cli::parse().command {
         Some(command) => run(command),
         None => {

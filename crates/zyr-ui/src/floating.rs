@@ -2117,7 +2117,7 @@ mod tests {
         // jusqu'à l'ordinateur distant, dont le moteur la prend. Une
         // lettre choisie dans cette liste-là serait mangée au passage et
         // ne ferait rien du tout de l'autre côté.
-        let gardees = [b'Q', b'Z', b'X', b'S', b'M', b'C', b'D', b'V', b'L', b'K'];
+        let gardees = *b"QZXSMCDVLK";
         assert!(
             !gardees.contains(&Act::FarPointer.letter().expect("une lettre")),
             "le moteur d'ici garderait la touche du curseur d'en face"
