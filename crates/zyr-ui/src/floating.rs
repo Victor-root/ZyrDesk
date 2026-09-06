@@ -387,6 +387,13 @@ impl Sens {
 /// et le logo comme elle ont besoin de la réponse.
 static SENS: AtomicU8 = AtomicU8::new(0);
 
+/// Si la fenêtre s'ouvre collée par son bord gauche plutôt que par son
+/// bord droit, décidé au même instant que `SENS` et pour la même
+/// raison : un bouton posé près du bord gauche de l'image ne laisse pas
+/// à la carte la place de partir de son bord droit comme elle le fait
+/// d'habitude.
+static A_DROITE: AtomicBool = AtomicBool::new(false);
+
 /// The logo alone, in real pixels, which is not the size of the window
 /// holding it.
 ///
@@ -448,11 +455,48 @@ fn ou_s_ouvre(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) ->
     if above > below { Sens::Haut } else { Sens::Bas }
 }
 
+/// D'où une fenêtre de cette largeur a la place de partir, pour un
+/// bouton pendu là : collée à son bord droit comme d'habitude, tant que
+/// ça tient à sa gauche ; à son bord gauche sinon, tant que ça tient à
+/// sa droite.
+///
+/// Une image trop étroite pour elle des deux côtés la garde du côté où
+/// il reste le plus de place, pour la même raison que `ou_s_ouvre`.
+fn ou_s_ouvre_a_droite(picture: (i32, i32, i32, i32), anchor: (i32, i32), width: i32) -> bool {
+    let a_gauche = anchor.0 - picture.0;
+    if width <= a_gauche {
+        return false;
+    }
+    let a_droite = picture.2 - (anchor.0 - logo().0);
+    if width <= a_droite {
+        return true;
+    }
+    a_droite > a_gauche
+}
+
+/// Ce que la fenêtre du menu prend de large en tout pour ce sens
+/// vertical-là, qui décide de quel côté elle a la place de s'ouvrir.
+///
+/// À côté, elle compte aussi le bouton et l'espace qui l'en sépare :
+/// c'est sa fenêtre entière qui se pose à côté de lui, jamais sa seule
+/// carte.
+#[cfg(windows)]
+fn menu_width(sens: Sens) -> i32 {
+    crate::menu::large(sens, logo().0)
+}
+
+#[cfg(not(windows))]
+fn menu_width(_sens: Sens) -> i32 {
+    0
+}
+
 /// Works the direction out again for a window about to be that tall, and
 /// remembers it.
 fn decide_the_direction(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) {
-    SENS.store(
-        ou_s_ouvre(picture, anchor, height).range(),
+    let sens = ou_s_ouvre(picture, anchor, height);
+    SENS.store(sens.range(), Ordering::Relaxed);
+    A_DROITE.store(
+        ou_s_ouvre_a_droite(picture, anchor, menu_width(sens)),
         Ordering::Relaxed,
     );
 }
@@ -1705,10 +1749,11 @@ fn menu_height() -> i32 {
 #[cfg(windows)]
 fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
     let sens = Sens::lu(SENS.load(Ordering::Relaxed));
+    let a_droite = A_DROITE.load(Ordering::Relaxed);
     // Le logo ne connaît que deux coins : à côté, la carte ne part plus
     // de lui, et il garde donc le coin qu'il a quand elle est dessous.
     crate::logo::lay(anchor, sens == Sens::Haut);
-    crate::menu::lay(anchor, sens, crate::logo::box_side(), picture);
+    crate::menu::lay(anchor, sens, a_droite, crate::logo::box_side(), picture);
 
     // Le système remonte une fenêtre possédée avec celle qui la possède,
     // ce qui est juste pour un bouton qui n'est en bas que parce que la
@@ -2238,6 +2283,25 @@ mod tests {
         let courte = (0, 0, 1_920, 600);
         assert_eq!(ou_s_ouvre(courte, (1_904, 300), haute), Sens::Haut);
         assert_eq!(ou_s_ouvre(courte, (1_904, 100), haute), Sens::Bas);
+    }
+
+    #[test]
+    fn a_menu_with_no_room_on_the_left_opens_on_the_right_of_the_button() {
+        let image = (0, 0, 1_920, 1_080);
+        ITS_LOGO.store(91, Ordering::Relaxed);
+        let large = 320;
+        // Le bouton près du bord droit de l'image : la carte tient à sa
+        // gauche, où elle s'ouvre d'habitude.
+        assert!(!ou_s_ouvre_a_droite(image, (1_904, 16), large));
+        // Près du bord gauche : elle n'y tient plus, et tient à sa
+        // droite.
+        assert!(ou_s_ouvre_a_droite(image, (16, 16), large));
+        // Une image trop étroite pour elle des deux côtés : elle garde
+        // le côté où il reste le plus de place, pour la même raison que
+        // le sens vertical.
+        let etroite = (0, 0, 200, 1_080);
+        assert!(!ou_s_ouvre_a_droite(etroite, (150, 16), large));
+        assert!(ou_s_ouvre_a_droite(etroite, (50, 16), large));
     }
 
     #[test]

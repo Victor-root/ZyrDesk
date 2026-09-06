@@ -82,7 +82,7 @@ struct Curseur {
     quoi: Reglage,
 }
 
-/// Une ligne qui ouvre une liste à elle, à gauche de la carte.
+/// Une ligne qui ouvre une liste à elle, à côté de la carte.
 ///
 /// Une liste plutôt qu'une barre pour deux raisons : ses premières
 /// entrées ne sont pas des nombres mais disent lequel des deux
@@ -449,6 +449,11 @@ static HAUTE_CORPS: AtomicU32 = AtomicU32::new(0);
 /// Vers où le menu s'ouvre, donc à quel bord de sa fenêtre la carte est
 /// collée.
 static VERS_LE_HAUT: AtomicBool = AtomicBool::new(false);
+
+/// Si la carte est collée au bord gauche de sa fenêtre plutôt qu'au
+/// droit, et le panneau à sa droite plutôt qu'à sa gauche : décidé par
+/// le bouton quand son bord droit n'a pas la place de porter la carte.
+static VERS_LA_DROITE: AtomicBool = AtomicBool::new(false);
 
 /// Ce que la carte prend de large, mesuré sur toutes ses lignes.
 static LARGE_CARTE: AtomicU32 = AtomicU32::new(0);
@@ -1004,13 +1009,34 @@ pub fn haute() -> i32 {
     HAUTE.load(Ordering::Relaxed) as i32
 }
 
-/// Pose la carte sous le logo, au-dessus, ou à sa gauche, selon le sens
-/// que le bouton a décidé.
+/// Ce que sa fenêtre prend de large en tout, pour ce sens vertical-là.
+///
+/// À côté, elle compte aussi le bouton et l'espace qui l'en sépare :
+/// c'est sa fenêtre entière qui se pose à côté de lui, jamais sa seule
+/// carte, voir `lay`. Pour le bouton, qui s'en sert à décider de quel
+/// bord il y a la place de la faire partir.
+pub fn large(sens: Sens, logo: i32) -> i32 {
+    let large = LARGE.load(Ordering::Relaxed) as i32;
+    match sens {
+        Sens::Cote => logo + (design::PAS_2 * echelle()).round() as i32 + large,
+        _ => large,
+    }
+}
+
+/// Pose la carte sous le logo, au-dessus, ou à côté, selon le sens que
+/// le bouton a décidé ; et son bord droit ou son bord gauche, selon
+/// celui qu'il a décidé avoir la place de porter la carte.
 ///
 /// La même ancre que le logo, dans le même geste : les deux fenêtres ne
 /// peuvent donc pas être en désaccord sur l'endroit où se trouve le
 /// bouton.
-pub fn lay(anchor: (i32, i32), sens: Sens, logo: i32, picture: (i32, i32, i32, i32)) {
+pub fn lay(
+    anchor: (i32, i32),
+    sens: Sens,
+    a_droite: bool,
+    logo: i32,
+    picture: (i32, i32, i32, i32),
+) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
@@ -1031,23 +1057,32 @@ pub fn lay(anchor: (i32, i32), sens: Sens, logo: i32, picture: (i32, i32, i32, i
     // voit au premier coup d'oeil à côté de l'ancien menu.
     let echelle = echelle();
     VERS_LE_HAUT.store(sens == Sens::Haut, Ordering::Relaxed);
+    VERS_LA_DROITE.store(a_droite, Ordering::Relaxed);
     let debord = debord_de_l_ombre(echelle).round() as i32;
     let carte_haute = haute - debord * 2;
-    // Collée au même bord droit que le logo, et séparée de lui de
-    // l'espace que la feuille de style met entre les deux.
+    // Collée au même bord que le logo, et séparée de lui de l'espace
+    // que la feuille de style met entre les deux : son bord droit
+    // d'habitude, son bord gauche quand le premier n'a pas la place, ce
+    // que le bouton a déjà décidé.
     let entre = (design::PAS_2 * echelle).round() as i32;
+    let horizontal = if a_droite {
+        anchor.0 - logo
+    } else {
+        anchor.0 - large
+    };
     let (gauche, haut) = match sens {
-        Sens::Bas => (anchor.0 - large, anchor.1 + logo + entre - debord),
-        Sens::Haut => (
-            anchor.0 - large,
-            anchor.1 - logo - entre - carte_haute - debord,
-        ),
+        Sens::Bas => (horizontal, anchor.1 + logo + entre - debord),
+        Sens::Haut => (horizontal, anchor.1 - logo - entre - carte_haute - debord),
         // À côté, la carte part du haut du bouton et glisse de ce qu'il
         // faut pour tenir dans l'image : c'est toute sa raison d'être là
         // plutôt que dessous. Sa fenêtre entière et non sa seule carte,
         // le panneau d'une liste s'ouvrant dedans.
         Sens::Cote => (
-            anchor.0 - logo - entre - large,
+            if a_droite {
+                anchor.0 + entre
+            } else {
+                anchor.0 - logo - entre - large
+            },
             (anchor.1 - debord).clamp(picture.1, (picture.3 - haute).max(picture.1)),
         ),
     };
@@ -1378,7 +1413,9 @@ fn hauteur_du_panneau(menu: &SessionMenu, quoi: Reglage, echelle: f32) -> f32 {
     (design::PAS_2 * 2.0 + tenue::LIGNE * combien as f32) * echelle
 }
 
-/// Le panneau ouvert dans sa fenêtre, à gauche de la carte.
+/// Le panneau ouvert dans sa fenêtre, du côté de la carte d'où elle
+/// n'est pas partie : à sa gauche d'habitude, à sa droite quand elle
+/// est elle-même collée au bord gauche de la fenêtre.
 fn panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> Option<Cadre> {
     // La carte et la ligne d'abord, le verrou des réglages ensuite : les
     // mesurer demande ce même verrou, et un verrou repris pendant qu'on
@@ -1400,8 +1437,13 @@ fn panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> Option<Cadre> {
     let bord = design::PAS_2 * echelle;
     let dedans = debord_de_l_ombre(echelle);
     let bas = (HAUTE.load(Ordering::Relaxed) as f32 - dedans - haute).max(dedans);
+    let gauche = if VERS_LA_DROITE.load(Ordering::Relaxed) {
+        carte.droite + bord
+    } else {
+        carte.gauche - bord - large
+    };
     Some(Cadre::pose(
-        carte.gauche - bord - large,
+        gauche,
         (ligne.haut - bord).clamp(dedans, bas),
         large,
         haute,
@@ -1484,12 +1526,12 @@ fn carte(echelle: f32) -> Cadre {
     } else {
         debord
     };
-    Cadre::pose(
-        large - debord - largeur_de_la_carte(echelle),
-        haut,
-        largeur_de_la_carte(echelle),
-        montre,
-    )
+    let gauche = if VERS_LA_DROITE.load(Ordering::Relaxed) {
+        debord
+    } else {
+        large - debord - largeur_de_la_carte(echelle)
+    };
+    Cadre::pose(gauche, haut, largeur_de_la_carte(echelle), montre)
 }
 
 /// La hauteur de ce que la carte montre en ce moment.
@@ -1704,11 +1746,16 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         if unsafe { GetWindowRect(window, &mut place) } == 0 {
             return;
         }
-        // Accrochée par le bord droit, et par celui d'où le menu s'ouvre :
-        // ce sont les deux seuls que personne ne doit voir bouger quand la
-        // fenêtre change de taille. Ce sont aussi ceux que `lay` calcule,
-        // donc les deux tombent d'accord d'eux-mêmes.
-        let x = place.right - large;
+        // Accrochée par le bord d'où le menu s'ouvre, et par celui d'où
+        // il part verticalement : ce sont les deux seuls que personne ne
+        // doit voir bouger quand la fenêtre change de taille. Ce sont
+        // aussi ceux que `lay` calcule, donc les deux tombent d'accord
+        // d'eux-mêmes.
+        let x = if VERS_LA_DROITE.load(Ordering::Relaxed) {
+            place.left
+        } else {
+            place.right - large
+        };
         let y = if VERS_LE_HAUT.load(Ordering::Relaxed) {
             place.bottom - haute
         } else {
@@ -1837,9 +1884,12 @@ impl Pinceau<'_> {
         let ouverte = *PANNEAU.lock().expect("panneau du menu") == Some(liste.quoi);
         toile.icone(
             // Le chevron dit dans quel sens la liste s'ouvre, donc il se
-            // retourne quand elle est ouverte : elle paraît à gauche, il
-            // pointe vers elle.
-            if ouverte {
+            // retourne quand elle est ouverte : elle paraît à gauche
+            // d'habitude, il pointe vers elle ; à droite quand la carte
+            // est elle-même collée au bord gauche de la fenêtre, il
+            // pointe vers elle en pointant tout simplement où il pointait
+            // déjà, fermée.
+            if ouverte && !VERS_LA_DROITE.load(Ordering::Relaxed) {
                 &icones::RETOUR
             } else {
                 &icones::CHEVRON
@@ -2050,8 +2100,8 @@ impl Pinceau<'_> {
         }
     }
 
-    /// Le panneau d'un réglage, à gauche de la carte : ses valeurs, dont
-    /// une porte la marque.
+    /// Le panneau d'un réglage, du côté de la carte d'où elle n'est pas
+    /// partie : ses valeurs, dont une porte la marque.
     ///
     /// Sans titre. On sait où l'on est : la ligne qui l'a ouvert est en
     /// face, son chevron s'est retourné vers lui, et la cliquer à nouveau

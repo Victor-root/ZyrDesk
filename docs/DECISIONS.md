@@ -2687,6 +2687,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Le délai passe de trente secondes à une.** Rien de neuf n'a été inventé entre les deux ordinateurs : c'est la même mécanique locale que la fermeture volontaire, prise un instant plus tôt par la veille plutôt que par une main sur la croix.
 
+## D161. Le menu du bouton flottant ne connaissait qu'un seul bord de l'écran (2026-09-06, pendant M6)
+
+**Le relevé.** « Quand on met le fab à gauche de la fenêtre et qu'on l'ouvre, ça l'ouvre hors de l'écran au lieu de s'adapter à droite. »
+
+**Ce qui manquait, lu dans le dessin de la carte.** Le bouton peut être glissé n'importe où sur l'image, mais son menu ne l'a jamais su que pour le sens vertical : au-dessus ou en dessous du bouton selon la place, avec un troisième recours à côté quand ni l'un ni l'autre ne tient. Horizontalement, la carte, son panneau de réglages et jusqu'à la fenêtre elle-même se collaient toujours au même bord, le droit : celui du bouton d'où ils partent d'habitude, posé une fois pour toutes dans le code plutôt que décidé. Un bouton assez proche du bord gauche de l'image envoyait donc la carte hors de l'écran, aussi loin que ce bord était proche.
+
+**Corrigé du même geste que le sens vertical, en plus de lui plutôt qu'à sa place.** Une seconde question, indépendante de la première : la fenêtre a-t-elle la place de partir de son bord droit comme d'habitude, ou lui faut-il partir de son bord gauche à la place ? Décidée par le bouton, au même instant et pour la même raison que le sens vertical, et redécidée à chaque tour de la veille et à chaque pas d'un geste qui le déplace : le menu suit donc la question sans qu'il faille jamais le refermer pour la lui reposer.
+
+**Trois choses en dépendaient, et pas seulement la carte.** Son panneau de réglages, qui s'ouvre maintenant du côté où la carte n'est pas partie plutôt que toujours à sa gauche, sans quoi il se serait retrouvé coincé entre le bouton et une carte déjà collée à l'écran. Le chevron d'une ligne qui ouvre un panneau, qui pointe désormais vers l'endroit où ce panneau ouvre réellement plutôt que toujours vers la gauche. Et le réancrage de la fenêtre quand son contenu change de hauteur, qui gardait jusque-là son bord droit immobile quel que soit le bord d'où elle était réellement partie.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
