@@ -35,6 +35,31 @@ const SEEN_AS: u8 = 4;
 /// The longest session name a probe carries.
 const LONGEST_SESSION: usize = 64;
 
+/// The size every probe and every echo is padded to.
+///
+/// Not a detail of the wire but the reason there is one. A junction
+/// changes the road under a connection without the connection knowing,
+/// so nothing above it ever measures the new road: these datagrams are
+/// the only thing that says a road works at all. Smaller than the
+/// packets that follow them, they said only that small things get
+/// through, and a road that carried them while dropping the rest took a
+/// session, gave it nothing, and went on answering every probe it was
+/// sent for as long as that session lasted.
+///
+/// So they are the size of what follows them: the smallest packet QUIC
+/// requires of any path, which is also the size of every packet this
+/// transport puts on a road.
+const AS_BIG_AS_A_PACKET: usize = crate::endpoint::GUARANTEED_MTU as usize;
+
+/// The most the signature at the end can take.
+///
+/// ECDSA over P-256 in the ASN.1 form, which is seventy to seventy-two
+/// bytes depending on the two numbers it holds, and that is known only
+/// once it is made. The padding is counted on the largest of them, so a
+/// datagram never goes above what a road is promised to carry; at worst
+/// it lands a byte or two under.
+const LONGEST_SIGNATURE: usize = 72;
+
 /// The nonce a question to the mirror travels with.
 pub type Nonce = [u8; 8];
 
@@ -209,9 +234,20 @@ fn write_address(bytes: &mut Vec<u8>, address: SocketAddr) {
     bytes.extend_from_slice(&address.port().to_be_bytes());
 }
 
-/// Appends the certificate and the signature over everything before it.
+/// Appends the padding, the certificate, and the signature over
+/// everything before it.
+///
+/// The padding is inside what is signed, so nobody on the way can make
+/// this computer's datagrams any bigger or any smaller than it meant
+/// them to be.
 fn seal(identity: &Identity, mut bytes: Vec<u8>) -> Result<Vec<u8>, IdentityError> {
     let certificate = identity.certificate().as_ref();
+    // What is still to be written once the padding is: its own length,
+    // the certificate with its length, and the signature with its own.
+    let after = 2 + 2 + certificate.len() + 1 + LONGEST_SIGNATURE;
+    let padding = AS_BIG_AS_A_PACKET.saturating_sub(bytes.len() + after);
+    bytes.extend_from_slice(&(padding as u16).to_be_bytes());
+    bytes.resize(bytes.len() + padding, 0);
     bytes.extend_from_slice(&(certificate.len() as u16).to_be_bytes());
     bytes.extend_from_slice(certificate);
     let signature = identity.sign(&bytes)?;
@@ -246,8 +282,11 @@ fn read_address(reader: &mut Reader<'_>) -> Option<SocketAddr> {
     Some(SocketAddr::new(ip, port))
 }
 
-/// The certificate and the signature at the end, and what they cover.
+/// The padding, the certificate and the signature at the end, and what
+/// they cover.
 fn read_seal<T>(datagram: &[u8], mut reader: Reader<'_>, inner: T) -> Option<Sealed<T>> {
+    let padding = usize::from(u16::from_be_bytes(reader.take(2)?.try_into().ok()?));
+    reader.take(padding)?;
     let length = usize::from(u16::from_be_bytes(reader.take(2)?.try_into().ok()?));
     let certificate = reader.take(length)?.to_vec();
     let signed = datagram[..datagram.len() - reader.0.len()].to_vec();
@@ -314,7 +353,14 @@ mod tests {
         // Le premier octet ne peut pas être celui d'un paquet QUIC, dont
         // le bit fixe est toujours levé.
         assert_eq!(bytes[0] & 0x40, 0);
-        assert!(bytes.len() < 1200, "{} octets", bytes.len());
+        // Aussi grosse qu'un paquet de session, et jamais plus : c'est
+        // tout ce qu'une sonde prouve, et une route se juge là-dessus.
+        assert!(bytes.len() <= AS_BIG_AS_A_PACKET, "{} octets", bytes.len());
+        assert!(
+            bytes.len() >= AS_BIG_AS_A_PACKET - 2,
+            "{} octets",
+            bytes.len()
+        );
 
         let Some(Heard::Probe(sealed)) = heard(&bytes) else {
             panic!("pas lu comme une sonde");

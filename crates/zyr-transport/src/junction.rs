@@ -779,7 +779,9 @@ impl Junction {
     /// its socket with it, and the probing runs on it.
     ///
     /// `marking` says whether the packets leave with the transport's
-    /// congestion mark on them; probes and echoes carry none either way.
+    /// congestion mark on them, probes and echoes included: they are
+    /// there to prove a road for the packets that follow, and a road is
+    /// not proved by something plainer than those.
     pub fn bind(
         listen: SocketAddr,
         identity: Arc<Identity>,
@@ -1005,7 +1007,14 @@ impl Inner {
     fn send_to(&self, destination: SocketAddr, contents: &[u8]) -> bool {
         let went = self.socket.try_send(&Transmit {
             destination: self.outward(destination),
-            ecn: None,
+            // Marked as the transport marks its own, and taken off again
+            // by the same socket when this computer was told not to
+            // mark: a road is proved by the packet a session will put on
+            // it, and a mark some middle box throws packets away for is
+            // part of that packet. Unmarked, these went through a road
+            // that dropped every packet of the session it had just been
+            // given.
+            ecn: Some(EcnCodepoint::Ect0),
             contents,
             segment_size: None,
             src_ip: None,

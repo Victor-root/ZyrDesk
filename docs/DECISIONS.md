@@ -2591,6 +2591,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et la garde du menu est remontée là où elle sert.** Elle existe pour la veille, qui tourne toute seule pendant qu'une main lit le menu : jeter un de ces interrupteurs donnerait le clavier à l'image. Elle n'a rien à faire dans un changement demandé exprès, qui jette déjà une touche à l'image de toute façon.
 
+## D154. Une sonde a la forme du paquet qu'elle promet (2026-09-06, pendant M6)
+
+**Le relevé.** « La connexion ne marche pas » entre PC-VICTOR et PC-SAV, par le compte. Le tunnel s'ouvre, les premières questions passent, puis plus rien : cinquante-six secondes de noir et « Unreachable ».
+
+**Ce que les deux journaux disent ensemble.** Les deux machines quittent le relais pour une route directe en IPv4 dans la première seconde. Après ça, PC-SAV répond à la question de l'écran et envoie son journal de dix-sept mille caractères ; rien de tout ça n'arrive à PC-VICTOR, qui attend trente secondes. Et pendant ces trente secondes, PC-VICTOR reçoit cinquante-sept paquets, dont cinquante-quatre sont ses propres sondes. La route directe n'a donc jamais manqué une sonde, et n'a rien porté d'autre.
+
+**Le défaut, et il est structurel.** L'aiguilleur change la route sous une connexion sans que la connexion le sache : c'est tout l'intérêt, la session ne se rétablit pas quand la route change. Le prix est que plus rien au-dessus ne mesure la nouvelle route, et que la sonde est la seule chose qui dise qu'elle marche. Or la sonde n'avait pas la forme de ce qui allait la suivre : plus petite que les paquets du tunnel, et sans la marque de congestion que ceux-ci portent. Elle prouvait qu'un petit paquet nu passe. Une route qui laisse passer ça et jette le reste, parce qu'elle rétrécit plus bas que le plancher de QUIC ou parce qu'une boîte du chemin jette les paquets marqués, prenait donc la session et ne lui portait rien, en répondant à toutes les sondes qu'on lui envoyait.
+
+**Ce qui a été fait.** Une sonde et son écho sont maintenant de la taille du plancher de QUIC, qui est la taille de tous les paquets de ce transport, et ils portent la même marque que le trafic, ôtée avec lui quand l'interrupteur d'essai le demande. Le remplissage est à l'intérieur de ce qui est signé, pour que personne sur le chemin ne puisse grossir ni maigrir nos datagrammes. Le reste existait déjà et n'a pas bougé : une route qui cesse de répondre rend la session au relais tout de suite.
+
+**Ce que ça change au fil.** La sonde n'a plus la même forme qu'avant : deux ordinateurs dont l'un est resté sur une version antérieure ne se reconnaîtront plus. Le produit se met à jour des deux côtés à la fois, c'est ainsi qu'il est essayé, et l'empreinte de version est écrite dans chaque fenêtre pour que ça se voie.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
