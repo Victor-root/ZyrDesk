@@ -71,6 +71,7 @@ async fn keep_it_in_step(app: &App) -> Seen {
     let mut way = None;
     let mut talking = None;
     let mut refused = 0;
+    let mut in_a_game = false;
     loop {
         tokio::time::sleep(ASK_EVERY).await;
         if !crate::floating::a_session_is_up(app) {
@@ -96,9 +97,21 @@ async fn keep_it_in_step(app: &App) -> Seen {
         // est caché : demander une forme que personne ne montrera serait
         // vingt allers-retours par seconde pour rien. La boucle reste en
         // vie, parce qu'on peut revenir au bureau sans fermer.
+        //
+        // La flèche ordinaire est posée en partant, et jamais la dernière
+        // forme reçue. Le lecteur garde celle qu'on lui laisse, et l'une
+        // des treize n'en est pas une : « theirs » est une forme vide,
+        // pour les instants où l'ordinateur d'en face dessine lui-même le
+        // sien. Laissée là, elle rend invisible tout curseur que ce
+        // lecteur montrerait ensuite.
         if crate::floating::in_game_mouse(app) {
+            if !in_a_game {
+                in_a_game = true;
+                zyr_session::point_like_nothing();
+            }
             continue;
         }
+        in_a_game = false;
         match asked(&mut talking, asking).await {
             Ok(shape) => {
                 refused = 0;
