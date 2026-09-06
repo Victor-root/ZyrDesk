@@ -142,18 +142,6 @@ pub enum Act {
     SystemKeys,
     /// Whether the pointer is kept inside the picture.
     PointerLock,
-    /// Whether this computer draws its own pointer over the picture.
-    ///
-    /// The engine hides it as soon as the pointer is over the picture, so
-    /// that the only pointer on screen is the far computer's, drawn into
-    /// the stream. That one is the far computer's answer to a movement
-    /// that has crossed the network twice, which is the whole of the lag
-    /// a hand feels on a desktop.
-    /// Whether the far computer draws its own pointer into what it sends.
-    ///
-    /// The other half of the same idea, and it is thrown over there: the
-    /// pointer is drawn into the picture by the far engine, not sent
-    /// beside it, so nothing here can take it out afterwards.
     End,
 }
 
@@ -176,11 +164,6 @@ impl Act {
             Act::MouseMode => Some(b'M'),
             Act::SystemKeys => Some(b'K'),
             Act::PointerLock => Some(b'L'),
-            // The one keystroke of the whole list that is not for our own
-            // engine: this letter is none of the combinations it keeps,
-            // so it travels on to the far computer, whose engine takes it
-            // and stops drawing its pointer. Both ends are asked by the
-            // same means because both offer the same one.
             Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
                 None
             }
