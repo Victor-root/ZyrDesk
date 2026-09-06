@@ -707,6 +707,14 @@ pub fn watch(app: App) {
                         keep_the_pointer_in_step(&app, process).await;
                         keep_the_far_pointer_in_step(&app).await;
                     }
+                    // Et le pointeur de cet ordinateur-ci reste dans
+                    // l'image tant que la souris est celle d'un jeu :
+                    // caché et libre, il s'en va derrière la main qui
+                    // joue. Ici et non chez le moteur, qui ne peut pas ;
+                    // voir `picture::shut_the_pointer_in`. Le menu ouvert
+                    // le rend, comme tout le reste : une main qui lit le
+                    // menu vise autre chose.
+                    crate::picture::shut_the_pointer_in(in_game_mouse(&app) && !the_menu_is_open());
                     // Et la forme que ce curseur prend, qui vient de
                     // l'ordinateur d'en face et se demande bien plus
                     // souvent que cette veille ne tourne : elle a sa
@@ -724,6 +732,10 @@ pub fn watch(app: App) {
                     crate::picture::the_keyboard_back(&app);
                 }
                 None => {
+                    // Le pointeur d'abord : sans session il n'y a plus
+                    // d'image où l'enfermer, et une cage laissée derrière
+                    // une session tient tout le bureau.
+                    crate::picture::shut_the_pointer_in(false);
                     crate::picture::let_go(&app);
                     lower(&app);
                 }

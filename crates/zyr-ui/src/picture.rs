@@ -3741,6 +3741,92 @@ fn alive(_held: &Held) -> bool {
     false
 }
 
+/// Shuts this computer's pointer on a point in the middle of the picture,
+/// for as long as the mouse belongs to a game.
+///
+/// A game is played with movement and not with a place: the pointer of
+/// this computer has nothing to point at, it is hidden, and if it is left
+/// free it walks off the picture behind the hand that is playing. What it
+/// walks onto takes the clicks, and on a desk with a second screen it
+/// simply leaves. Shut on one point it cannot walk anywhere, while the
+/// movement the hand makes goes on being read from the device itself.
+///
+/// Asked here and not of the engine, though the engine has this and is
+/// asked for it elsewhere. The system lets one program shut the pointer
+/// in and it is the one at the front; the picture is carried inside our
+/// window, so it is never that one and never can be, and its engine's
+/// answer to being asked is to do nothing at all. This program is the one
+/// at the front, for the whole of a session.
+///
+/// Said at every turn of the watch rather than at the change: it is a
+/// shared thing of the whole desk, anything may open it, and reasserting
+/// a cage that is already the right one costs one reading.
+#[cfg(windows)]
+pub(crate) fn shut_the_pointer_in(held: bool) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClipCursor};
+
+    if !held {
+        CAGE_REFUSED.store(false, Ordering::Relaxed);
+        if !SHUT_IN.swap(false, Ordering::Relaxed) {
+            return;
+        }
+        // SAFETY: nought gives the pointer the whole desk back.
+        unsafe { ClipCursor(std::ptr::null()) };
+        crate::journal::note("pointeur rendu au bureau, la souris n'est plus celle d'un jeu");
+        return;
+    }
+    let Some((left, top, right, bottom)) = the_engines_window().and_then(where_it_stands) else {
+        return;
+    };
+    let (middle_x, middle_y) = ((left + right) / 2, (top + bottom) / 2);
+    let one = RECT {
+        left: middle_x,
+        top: middle_y,
+        right: middle_x + 1,
+        bottom: middle_y + 1,
+    };
+    let mut now = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: the rectangle is ours.
+    if unsafe { GetClipCursor(&mut now) } != 0
+        && (now.left, now.top, now.right, now.bottom) == (one.left, one.top, one.right, one.bottom)
+    {
+        return;
+    }
+    // SAFETY: a rectangle of this desk, given to a call that reads it.
+    if unsafe { ClipCursor(&one) } == 0 {
+        // Said once for a run of refusals and not once a second, and said
+        // at all: a cage nobody can see is refused exactly as silently as
+        // it is granted, and what it costs is a pointer walking out of a
+        // game with nothing to say why.
+        if !CAGE_REFUSED.swap(true, Ordering::Relaxed) {
+            crate::journal::note("pointeur non enfermé dans l'image : Windows a refusé la cage");
+        }
+        return;
+    }
+    CAGE_REFUSED.store(false, Ordering::Relaxed);
+    if !SHUT_IN.swap(true, Ordering::Relaxed) {
+        crate::journal::note("pointeur enfermé dans l'image, la souris étant celle d'un jeu");
+    }
+}
+
+/// Whether the pointer is shut in right now, so the journal says it once
+/// and not once a second.
+#[cfg(windows)]
+static SHUT_IN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The same for a cage the system will not grant.
+#[cfg(windows)]
+static CAGE_REFUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(not(windows))]
+pub(crate) fn shut_the_pointer_in(_held: bool) {}
+
 #[cfg(not(windows))]
 pub(crate) fn the_front_in_words() -> String {
     "hors de Windows, où il n'y a pas de session".to_string()

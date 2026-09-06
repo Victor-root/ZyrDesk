@@ -71,6 +71,7 @@ Mécanismes officiels utilisés :
 | Appairage sans interaction | commande `pair <hôte> --pin NNNN` |
 | Statistiques | overlay de performances + journaux (débit d'images réseau/décodage/rendu, latence hôte, pertes, jitter, temps de décodage, délai de file, temps de rendu) |
 | Curseur dessiné ici plutôt qu'attendu du réseau | montré du seul fait qu'on demande au moteur de suivre le fichier de formes ([P-M13](../../patches/MANIFEST.md)). Le raccourci `Ctrl+Alt+Maj+C` existe toujours et fait la même chose, mais n'est plus le chemin de ZyrDesk : n'importe quel programme de la machine peut réserver cette combinaison pour lui et l'avaler avant qu'elle n'arrive, sans que rien ne le dise ([D157](../DECISIONS.md)). Le mode jeu reste protégé par le moteur lui-même, qui cache ce curseur avec le mode ([D150](../DECISIONS.md)) |
+| Mouvement de la souris en mode jeu | lu du système par le moteur, au seul endroit où les messages de sa fenêtre passent avant sa bibliothèque d'affichage ([P-M14](../../patches/MANIFEST.md)). Cette bibliothèque jette le mouvement brut destiné à une fenêtre dont elle croit qu'elle n'a pas le clavier, ce qu'elle décide du premier plan, qu'une fenêtre portée dans la nôtre ne peut jamais tenir : le mode jeu n'a jamais rien envoyé du tout ([D158](../DECISIONS.md)). Même cause que les touches système ([D43](../DECISIONS.md)). La cage du pointeur qui va avec ce mode reste à ZyrDesk : le système ne laisse enfermer le pointeur qu'au programme du premier plan |
 | Réglages fins non exposés en CLI | clés du fichier INI portable (écrites avant lancement, jamais pendant une session) |
 
 Pile de patchs prévue (le manifeste `patches/MANIFEST.md` fait foi) :
@@ -84,10 +85,11 @@ Pile de patchs prévue (le manifeste `patches/MANIFEST.md` fait foi) :
 | P-M7 | Fermeture de l'application sur l'hôte en ligne de commande, sans fenêtre, avec un code de sortie propre | ~40 lignes | Appliqué |
 | P-M8 | L'appairage réussi est écrit sur le disque avant que le moteur ne s'arrête | ~15 lignes | Appliqué |
 | P-M13 | Le moteur suit la forme du curseur d'en face et la donne au sien | ~228 lignes | Appliqué, dans le mécanisme de P-M11 |
+| P-M14 | Le mouvement d'un jeu est lu du système, et non de la bibliothèque d'affichage | ~170 lignes | Appliqué, dans le mécanisme de P-M10 |
 | P-M3 | Ligne de statistiques périodique lisible par machine sur stdout | ~60 lignes | Seulement si les journaux existants ne suffisent pas au banc de mesure |
 | P-M4 | Interrupteur pour ne pas demander le chiffrement vidéo interne (Moonlight le demande par défaut sur CPU avec accélération AES) | ~10 lignes | Contingence : seulement si la vérification M1 montre que Sunshine chiffre quand même en mode 0 sur loopback (double chiffrement inutile) |
 
-Le plafond de six est atteint. Le prochain besoin qui semble demander un patch se traite en amont ou par une interface officielle, pas en empilant un septième : c'est exactement le signal que ce plafond existe pour donner.
+Le plafond est atteint, et le chiffre est celui du manifeste, qui fait foi. Le prochain besoin qui semble demander un patch se traite en amont ou par une interface officielle, pas en empilant un de plus : c'est exactement le signal que ce plafond existe pour donner.
 
 ## 5. Schéma d'adressage loopback côté client
 
