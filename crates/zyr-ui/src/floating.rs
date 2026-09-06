@@ -236,6 +236,16 @@ pub struct Floating {
     /// cross and the menu both answered « aucune session en cours » over
     /// a running picture until the service caught up.
     expected: Mutex<Option<Expected>>,
+    /// Whether the service named this player among its sessions, the
+    /// last time it was asked.
+    ///
+    /// Compared against itself from one watch to the next: a way not yet
+    /// registered, in the first seconds of a session, and one the service
+    /// has stopped naming after really holding it, look exactly alike
+    /// from a single answer alone. Only the second is a session ended
+    /// from outside this window, kicked or otherwise, and it is what
+    /// tells the two apart.
+    confirmed: AtomicBool,
     /// Whether the session's mouse is in game mode right now.
     ///
     /// Kept by this program because this program is what sets it: the
@@ -568,16 +578,21 @@ pub fn expect_nothing(app: &App) {
     *app.floating().expected.lock().expect("session attendue") = None;
 }
 
-/// The player the button belongs to right now.
+/// The player the button belongs to right now, and whether the service
+/// itself is the one naming it.
 ///
 /// The service first: it knows every session on this computer, including
 /// those another window opened. Failing that, the one this window has
 /// just started, for as long as it has a picture up. That second answer
 /// is what puts the button on screen with the picture rather than
-/// several seconds behind it.
-pub async fn player(app: &App) -> Option<u32> {
+/// several seconds behind it, and it is also what a session the service
+/// has stopped naming looks like the moment it does, before its own
+/// engine has any way to know: nothing in a single answer tells the two
+/// apart, which is why the watch keeps its own memory of which one it
+/// was last time.
+async fn seen(app: &App) -> Option<(u32, bool)> {
     if let Some(session) = crate::session::sessions().await.into_iter().next() {
-        return Some(session.process);
+        return Some((session.process, true));
     }
     let expected = app
         .floating()
@@ -593,7 +608,14 @@ pub async fn player(app: &App) -> Option<u32> {
     // session that was still running, and the cross went back to merely
     // putting the window away. The session is the player, so the player
     // is what is asked about.
-    expected.filter(|process| still_running(*process))
+    expected
+        .filter(|process| still_running(*process))
+        .map(|process| (process, false))
+}
+
+/// The player the button belongs to right now.
+pub async fn player(app: &App) -> Option<u32> {
+    seen(app).await.map(|(process, _)| process)
 }
 
 /// Whether that player is still running.
@@ -671,13 +693,36 @@ pub fn watch(app: App) {
     crate::app::spawn(async move {
         loop {
             tokio::time::sleep(LOOK).await;
-            match player(&app).await {
-                Some(process) => {
+            match seen(&app).await {
+                Some((process, in_service)) => {
                     // The picture first: the button hangs from the corner
                     // of it, and a corner read before the picture has
                     // been laid in our window is the wrong corner.
                     crate::picture::hold(&app, process);
-                    if adopt(&app, process) {
+                    let fresh = adopt(&app, process);
+                    let was_confirmed =
+                        app.floating().confirmed.swap(in_service, Ordering::Relaxed);
+                    if !fresh && was_confirmed && !in_service {
+                        // Le service ne nomme plus cette voie, alors qu'il
+                        // la nommait à l'instant d'avant, et le lecteur
+                        // croit toujours tourner : une session finie
+                        // d'ailleurs (éjection, réglage qui ferme les
+                        // sessions en cours), que son moteur ne
+                        // remarquerait de lui-même qu'à son silence,
+                        // jusqu'à trente secondes plus tard. Arrêtée ici et
+                        // tenue pour volontaire, le même chemin que la
+                        // croix de la fenêtre prend.
+                        note(&format!(
+                            "le service ne connaît plus la voie du lecteur {process}, arrêté ici"
+                        ));
+                        Floating::closing(&app, true);
+                        stop_the_player(process);
+                        crate::picture::shut_the_pointer_in(false);
+                        crate::picture::let_go(&app);
+                        lower(&app);
+                        continue;
+                    }
+                    if fresh {
                         // A session just adopted starts on the two sides
                         // its settings asked for; every toggle after that
                         // goes through this window and is counted as it
