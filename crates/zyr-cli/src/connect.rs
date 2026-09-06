@@ -167,6 +167,9 @@ fn tell(step: Step, host: &str) {
         Step::SpeakersLeftAlone { refused } => {
             println!("  Les enceintes de {host} restent allumées : {refused}");
         }
+        Step::FarPointerLeftAlone { refused } => {
+            println!("  Le curseur de {host} n'a pas été réglé : {refused}");
+        }
         Step::RateLeftAlone { refused } => {
             println!("  {host} garde sa cadence d'écran immobile : {refused}");
         }

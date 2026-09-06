@@ -320,6 +320,12 @@ pub struct Floating {
     /// towards a different computer; it is seen at once and is one
     /// switch away, and nothing about it is silent.
     far_pointer_hidden: AtomicBool,
+    /// Whether the last thing said about it was refused.
+    ///
+    /// So that a run of refusals is one line and not one a second, and
+    /// so that the run ending is one line too: what has to be read here
+    /// is when it started and when it stopped.
+    far_pointer_refused: AtomicBool,
 }
 
 /// What this window knows of a session it started, before the service
@@ -1230,13 +1236,14 @@ async fn keep_the_pointer_in_step(app: &App, process: u32) {
 async fn keep_the_far_pointer_in_step(app: &App) {
     let drawn = in_game_mouse(app);
     let state = app.floating();
-    // What was last asked for, and nothing else: it decides what the
-    // journal says, never what is said to the far computer. One line a
-    // second would drown every other line of a session.
-    let news = state.far_pointer_hidden.swap(!drawn, Ordering::Relaxed) == drawn;
+    // What was last said and got through, and nothing else: it decides
+    // what the journal says, never what is said to the far computer. One
+    // line a second would drown every other line of a session.
     match say_whether_the_far_pointer_is_drawn(app, drawn).await {
         Ok(()) => {
-            if news {
+            let was_refused = state.far_pointer_refused.swap(false, Ordering::Relaxed);
+            let moved = state.far_pointer_hidden.swap(!drawn, Ordering::Relaxed) == drawn;
+            if moved || was_refused {
                 note(if drawn {
                     "l'ordinateur distant dessine à nouveau son curseur dans l'image"
                 } else {
@@ -1244,8 +1251,13 @@ async fn keep_the_far_pointer_in_step(app: &App) {
                 });
             }
         }
+        // Said once for a run of them and again when it stops, never at
+        // every turn. A refusal repeated every second is a page of the
+        // same line, and one said only the first time is a session that
+        // went wrong in silence for as long as it lasted: both hide
+        // exactly what has to be read here.
         Err(reason) => {
-            if news {
+            if !state.far_pointer_refused.swap(true, Ordering::Relaxed) {
                 note(&format!("curseur d'en face non réglé : {reason}"));
             }
         }

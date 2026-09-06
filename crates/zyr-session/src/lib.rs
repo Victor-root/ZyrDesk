@@ -150,6 +150,15 @@ pub enum Step {
     /// service believes the session, whoever asked is the only one who
     /// can end it, and ending is asked at that address.
     Showing { process: u32, at: String },
+    /// The far computer would not settle what it does with its own
+    /// pointer, and the session goes on regardless.
+    ///
+    /// What that costs is two pointers on a desktop, or one that lags,
+    /// which is a session slightly less pleasant and not a session
+    /// missing. The watch that follows the picture says it again every
+    /// second, so a far computer that was merely busy is put right at
+    /// the next turn.
+    FarPointerLeftAlone { refused: String },
     /// The far computer would not silence its own speakers, and the
     /// session goes on regardless.
     ///
@@ -713,6 +722,23 @@ pub fn open(
         });
     }
 
+    // And its pointer, in the same breath and for the same reason: a
+    // desktop is driven by the pointer this computer draws, so the far
+    // one is not to be in the picture at all; a game is the other way
+    // round and it is the only pointer there is. Said here rather than
+    // left to the watch that follows the picture, which cannot name the
+    // way until the service believes in the session, several seconds
+    // later. A refusal is written down and never fatal: two pointers, or
+    // one that lags, is a session slightly less pleasant and not a
+    // session missing.
+    if let Some(driving) = &mut driving
+        && let Err(gone) = driving.draw_the_far_pointer(!settings.absolute_mouse, still_wanted)
+    {
+        told(Step::FarPointerLeftAlone {
+            refused: gone.refusal()?,
+        });
+    }
+
     // And the virtual screen over there, asked for the size this session
     // is about to ask its engine for. Before that engine is started,
     // because it can only capture a screen that is already there, and
@@ -1053,6 +1079,24 @@ impl Driving {
             Answer::Refused(reason) => Err(GaveUp::Said(reason)),
             other => Err(unexpected(other)),
         }
+    }
+
+    /// Asks the far computer whether its engine draws its own pointer
+    /// into the picture.
+    ///
+    /// Said as soon as the way stands and before the player is started,
+    /// because that is the moment the way exists and the window does not
+    /// yet know it: for the first seconds of a session the service does
+    /// not believe in it, so the window had nothing to name and could
+    /// say nothing. A session opened on a desktop then showed two
+    /// pointers, its own and the far one, until those seconds were up.
+    fn draw_the_far_pointer(
+        &mut self,
+        drawn: bool,
+        still_wanted: &dyn Fn() -> bool,
+    ) -> Result<(), GaveUp> {
+        let way = self.way;
+        self.asked(&Request::FarPointerDrawn { way, drawn }, still_wanted)
     }
 
     /// Asks the far computer to silence its speakers, or to let them

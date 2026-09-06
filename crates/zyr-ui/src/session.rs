@@ -855,6 +855,7 @@ fn told(step: Step) -> Option<(String, Option<String>)> {
             None,
         ),
         Step::SpeakersLeftAlone { .. }
+        | Step::FarPointerLeftAlone { .. }
         | Step::RateLeftAlone { .. }
         | Step::ScreenLeftAlone { .. }
         | Step::FarScreenLeftAlone { .. }
@@ -950,6 +951,11 @@ fn written(step: &Step) -> String {
         Step::Showing { process, .. } => format!("lecteur en marche, processus {process}"),
         Step::SpeakersLeftAlone { refused } => {
             format!("les enceintes de l'ordinateur distant restent allumées : {refused}")
+        }
+        Step::FarPointerLeftAlone { refused } => {
+            format!(
+                "le curseur de l'ordinateur distant n'a pas été réglé à l'ouverture : {refused}"
+            )
         }
         Step::RateLeftAlone { refused } => {
             format!("l'ordinateur distant garde sa cadence d'écran immobile : {refused}")
