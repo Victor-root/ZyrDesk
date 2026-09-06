@@ -61,8 +61,13 @@ use crate::pump;
 /// asked several times a second: a desktop says what a click is about to
 /// do through that shape and nothing else, the engines carry none of
 /// them, and the pointer drawn where the hand actually is had until now
-/// no way of being anything but an arrow.
-pub const VERSION: u32 = 16;
+/// no way of being anything but an arrow. Version 17 says whether the far
+/// engine draws that pointer into the picture, instead of throwing the
+/// key combination that toggles it: a toggle nobody can read, living in
+/// an engine that outlives every session and is shared by all of them,
+/// left a session turning it the wrong way while believing the opposite,
+/// and a screen with two pointers or none.
+pub const VERSION: u32 = 17;
 
 /// Longest question this channel takes.
 ///
@@ -177,6 +182,17 @@ pub trait Answers: Send + Sync + 'static {
     /// its picture again, which is what every change of rate cost before
     /// this existed.
     fn serve_at(&self, kbps: u32) -> Result<(), String>;
+
+    /// Draws this computer's own pointer into the picture it sends, or
+    /// stops drawing it.
+    ///
+    /// Said by whoever is watching, and said again at every turn of
+    /// their watch rather than flipped when it changes. The switch lives
+    /// in the engine, which was started with the service and outlives
+    /// every session: a session that ended without putting it back left
+    /// the next one to guess, and a guess is what put two pointers on a
+    /// screen, or none.
+    fn draw_the_pointer(&self, drawn: bool) -> Result<(), String>;
 
     /// Wakes this computer's virtual screen for a session that wants a
     /// picture like that one, or puts it back to sleep.
@@ -352,6 +368,13 @@ pub enum Question {
     Codecs,
     /// What shape your pointer has right now.
     Pointer,
+    /// Draw your own pointer into the picture from now on, or stop.
+    ///
+    /// Said and never toggled. The switch it reaches is a key
+    /// combination away, and that road has neither of the two things
+    /// this one has: nobody can read where a toggle stands, and the one
+    /// in an engine outlives every session and is shared by all of them.
+    DrawYourPointer { drawn: bool },
     /// Which screens you are showing on.
     Screens,
     /// Serve your picture from that screen, or, with nothing named, from
@@ -373,6 +396,9 @@ pub enum Told {
     Locked,
     /// The far computer's engine is serving at the rate it was asked.
     Rated,
+    /// The far computer's engine draws its pointer, or does not, exactly
+    /// as it was told.
+    PointerDrawn,
     /// The far computer's virtual screen is where it was asked to be,
     /// and it is showing this size. Absent when that computer could not
     /// measure itself, which leaves the asking end on what it guessed.
@@ -457,6 +483,13 @@ impl fmt::Display for Question {
                     if *quiet { "quiet" } else { "play" }
                 )
             }
+            Question::DrawYourPointer { drawn } => {
+                write!(
+                    f,
+                    "{VERSION} drawpointer {}",
+                    if *drawn { "yes" } else { "no" }
+                )
+            }
         }
     }
 }
@@ -470,6 +503,7 @@ impl fmt::Display for Told {
             Told::Hushed => write!(f, "{VERSION} hushed"),
             Told::Locked => write!(f, "{VERSION} locked"),
             Told::Rated => write!(f, "{VERSION} rated"),
+            Told::PointerDrawn => write!(f, "{VERSION} pointerdrawn"),
             Told::Screen { size } => match size {
                 Some((wide, high)) => write!(f, "{VERSION} screen {wide}x{high}"),
                 None => write!(f, "{VERSION} screen none"),
@@ -536,6 +570,13 @@ impl Question {
                 "play" => Ok(Question::Hush { quiet: false }),
                 other => Err(format!("« {other} » ne dit ni de se taire ni de jouer")),
             },
+            "drawpointer" => match rest {
+                "yes" => Ok(Question::DrawYourPointer { drawn: true }),
+                "no" => Ok(Question::DrawYourPointer { drawn: false }),
+                other => Err(format!(
+                    "« {other} » ne dit ni de dessiner le curseur ni de s'en abstenir"
+                )),
+            },
             "pair" => {
                 let (pin, name) = split_first(rest);
                 if pin.is_empty() || name.is_empty() {
@@ -569,6 +610,7 @@ impl Told {
             "hushed" => Ok(Ok(Told::Hushed)),
             "locked" => Ok(Ok(Told::Locked)),
             "rated" => Ok(Ok(Told::Rated)),
+            "pointerdrawn" => Ok(Ok(Told::PointerDrawn)),
             "screen" => Ok(Ok(Told::Screen {
                 size: match rest {
                     "none" | "" => None,
@@ -734,6 +776,24 @@ pub async fn ask_for_the_secure_attention(connection: &Connection) -> io::Result
 pub async fn ask_to_hush(connection: &Connection, quiet: bool) -> io::Result<()> {
     match ask(connection, &Question::Hush { quiet }).await? {
         Told::Hushed => Ok(()),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
+/// Asks the far ZyrDesk's engine to draw its own pointer into the
+/// picture, or to stop drawing it.
+///
+/// Said and never toggled, which is the whole reason it travels here
+/// rather than as the key combination the engine also answers to. A
+/// toggle cannot be read: the one in that engine outlives every session
+/// and is shared by all of them, so a session that ended without putting
+/// it back left the next one turning it the wrong way while believing
+/// the opposite. Said, asking twice for the same thing asks for nothing,
+/// and a session that opens by saying what it wants is right whatever
+/// the one before it did.
+pub async fn ask_to_draw_the_pointer(connection: &Connection, drawn: bool) -> io::Result<()> {
+    match ask(connection, &Question::DrawYourPointer { drawn }).await? {
+        Told::PointerDrawn => Ok(()),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
 }
@@ -966,6 +1026,15 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             .await
             .map_err(|e| format!("le débit n'a pas pu être réglé : {e}"))?
             .map(|()| Told::Rated),
+        // Off the thread as well: it is one call to the engine over the
+        // loopback, short but not instant, and this channel answers
+        // every other question of a session on the same threads.
+        Question::DrawYourPointer { drawn } => {
+            tokio::task::spawn_blocking(move || answering.draw_the_pointer(drawn))
+                .await
+                .map_err(|e| format!("le curseur n'a pas pu être réglé : {e}"))?
+                .map(|()| Told::PointerDrawn)
+        }
         // Off it too, and this one takes the longest of them all: waking
         // a screen is Windows starting a device, and the answer is not
         // sent until it has, because the computer asking opens its
@@ -1057,6 +1126,8 @@ mod tests {
             Question::SecureAttention,
             Question::Hush { quiet: true },
             Question::Hush { quiet: false },
+            Question::DrawYourPointer { drawn: true },
+            Question::DrawYourPointer { drawn: false },
             Question::Lock,
             Question::Steady { rate: true },
             Question::Steady { rate: false },
@@ -1106,6 +1177,7 @@ mod tests {
             Told::Paired,
             Told::Attended,
             Told::Hushed,
+            Told::PointerDrawn,
             Told::Locked,
             Told::Rated,
             Told::Screen {

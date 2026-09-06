@@ -86,6 +86,10 @@ impl Answers for NoEngine {
         Err("le banc de mesure n'a pas de moteur à régler".to_string())
     }
 
+    fn draw_the_pointer(&self, _drawn: bool) -> Result<(), String> {
+        Err("le banc de mesure n'a pas de moteur à régler".to_string())
+    }
+
     fn screen_for_a_session(
         &self,
         _wanted: Option<zyr_proto::session::WantedScreen>,

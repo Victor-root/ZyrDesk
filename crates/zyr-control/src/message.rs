@@ -191,6 +191,16 @@ pub enum Request {
     /// Nothing is remembered of it at either end; a shape is worth
     /// nothing a moment after it was read.
     FarPointer { way: WayId },
+    /// Tells the far computer to draw its own pointer into the picture,
+    /// or to stop drawing it.
+    ///
+    /// Asked through an open way, and said rather than toggled: the
+    /// switch it reaches lives in that computer's engine, which was
+    /// started with its service and outlives every session. A toggle
+    /// there cannot be read from here, so a session that ended without
+    /// putting it back left the next one turning it the wrong way while
+    /// believing the opposite, and a screen with two pointers or none.
+    FarPointerDrawn { way: WayId, drawn: bool },
     /// Asks the far computer which screens it is showing on.
     ///
     /// Asked through an open way, so during a session: a machine with two
@@ -374,6 +384,10 @@ impl Request {
             "farpointer" => Ok(Request::FarPointer {
                 way: WayId(fields.parsed("way")?),
             }),
+            "farpointerdrawn" => Ok(Request::FarPointerDrawn {
+                way: WayId(fields.parsed("way")?),
+                drawn: fields.text("drawn")? == "yes",
+            }),
             "farcodecs" => Ok(Request::FarCodecs {
                 way: WayId(fields.parsed("way")?),
             }),
@@ -498,6 +512,11 @@ impl fmt::Display for Request {
             Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
             Request::FarCodecs { way } => write!(f, "farcodecs way={way}"),
             Request::FarPointer { way } => write!(f, "farpointer way={way}"),
+            Request::FarPointerDrawn { way, drawn } => write!(
+                f,
+                "farpointerdrawn way={way} drawn={}",
+                if *drawn { "yes" } else { "no" }
+            ),
             Request::FarScreens { way } => write!(f, "farscreens way={way}"),
             // « main » rather than nothing at all: a field with no value
             // is a field nobody wrote, and the identifiers themselves are
@@ -1387,6 +1406,14 @@ mod tests {
             // comme partout ailleurs.
             Request::FarCodecs { way: WayId(7) },
             Request::FarPointer { way: WayId(7) },
+            Request::FarPointerDrawn {
+                way: WayId(7),
+                drawn: true,
+            },
+            Request::FarPointerDrawn {
+                way: WayId(7),
+                drawn: false,
+            },
             Request::FarScreens { way: WayId(7) },
             // Rien de nommé veut dire l'écran principal, et c'est ce que
             // demande toute session tant que personne n'a dit autre chose.

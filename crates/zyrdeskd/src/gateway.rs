@@ -584,6 +584,38 @@ impl Answers for Attending {
         Ok(())
     }
 
+    /// Draws this computer's own pointer into the picture, or stops.
+    ///
+    /// Said by the session at every turn of its watch and not only when
+    /// it changes, so nothing here has to be remembered: the engine is
+    /// told what is wanted, and what it was doing before does not come
+    /// into it. Asking for what is already the case costs the engine one
+    /// comparison, which is why it is safe to say it over and over.
+    ///
+    /// Nothing is put back at the end of a session, and nothing needs
+    /// to be. A session that opens says what it wants, and gets it,
+    /// whatever became of the one before.
+    fn draw_the_pointer(&self, drawn: bool) -> Result<(), String> {
+        let asked = Asked {
+            draw_the_pointer: Some(drawn),
+            ..Asked::default()
+        };
+        self.api.serve_as_asked(&asked).map_err(|e| {
+            let refused = e.to_string();
+            self.log.write(&format!(
+                "a session asked this computer {} its own pointer into the picture, and its \
+                 engine could not be asked ({refused})",
+                if drawn { "to draw" } else { "not to draw" }
+            ));
+            refused
+        })?;
+        self.log.write(&format!(
+            "a session asked this computer {} its own pointer into the picture",
+            if drawn { "to draw" } else { "not to draw" }
+        ));
+        Ok(())
+    }
+
     /// Hands this computer's journal over, whole.
     ///
     /// The same page the person sitting here would read, gathered the

@@ -115,6 +115,10 @@ impl Answers for FakeEngine {
         Err("ce moteur-là ne se règle pas en marche".to_string())
     }
 
+    fn draw_the_pointer(&self, _drawn: bool) -> Result<(), String> {
+        Err("ce moteur-là ne se règle pas en marche".to_string())
+    }
+
     fn screen_for_a_session(
         &self,
         wanted: Option<WantedScreen>,

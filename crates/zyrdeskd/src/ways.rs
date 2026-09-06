@@ -947,6 +947,26 @@ impl Ways {
             .map_err(|e| format!("l'ordinateur distant n'a pas dit la forme de son curseur : {e}"))
     }
 
+    /// Tells the far computer to draw its own pointer into the picture,
+    /// or not to.
+    ///
+    /// Said and never toggled, which is why it travels here rather than
+    /// as the keystroke that engine also answers to: a toggle cannot be
+    /// read, and the one in that engine outlives every session and is
+    /// shared by all of them.
+    pub async fn tell_it_to_draw_its_pointer(&self, way: WayId, drawn: bool) -> Result<(), String> {
+        let connection = {
+            let register = self.register.lock().expect("registre des voies");
+            register.thing(way).map(|open| open.connection.clone())
+        };
+        let Some(connection) = connection else {
+            return Err(format!("la voie {way} n'existe plus"));
+        };
+        aside::ask_to_draw_the_pointer(&connection, drawn)
+            .await
+            .map_err(|e| format!("l'ordinateur distant n'a pas réglé son curseur : {e}"))
+    }
+
     /// Asks the far computer which screens it is showing on.
     ///
     /// The same shape again. A machine with two screens plugged in serves

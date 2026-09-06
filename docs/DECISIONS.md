@@ -2627,6 +2627,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce qui reste à faire, et qui est la vraie sortie.** Tant que le curseur local dépend d'une combinaison qu'un autre programme peut voler, il manquera de temps en temps sur une machine ou une autre. Le moteur client suit déjà un fichier pour la forme du curseur ([D151](#d151-la-forme-du-curseur-voyage-à-côté-de-limage-2026-09-05-pendant-m6)) : lui faire montrer ce curseur du seul fait qu'on lui demande de suivre ce fichier retirerait la touche du chemin. Un patch moteur de plus, à faire quand il sera décidé.
 
+## D157. Le curseur des deux bouts cesse de passer par des touches (2026-09-06, pendant M6)
+
+**Le relevé.** « En mode souris bureau je veux que ce soit le curseur local et que le curseur distant soit masqué, c'est tout. Hier ça marchait, donc je ne sais pas. Si il faut patcher les moteurs ce n'est pas un problème, mais je veux que ça marche. »
+
+**Trois pannes, une seule racine.** En une matinée : le curseur d'ici refusé parce qu'un autre programme de la machine tenait `Ctrl+Alt+Maj+C` et avalait la frappe sans que rien ne le dise ([D156](#d156-un-curseur-à-lécran-à-chaque-instant-et-jamais-zéro-2026-09-06-pendant-m6)) ; un trou de dix-neuf secondes sans curseur au passage en mode jeu, la paire de frappes étant partie bien après le changement ([D153](#d153-les-trois-interrupteurs-du-curseur-sont-un-seul-changement-2026-09-06-pendant-m6)) ; et un curseur en retard, donc celui de l'hôte, l'interrupteur d'en face ayant été basculé dans le mauvais sens. Les trois viennent du même endroit : les deux interrupteurs du curseur étaient pilotés par des combinaisons de touches injectées dans l'image. N'importe quel programme peut en réserver une pour lui, et une bascule ne se lit jamais, donc on ne sait pas où elle en est.
+
+**Ce qui a été fait, des deux côtés.** Le curseur d'ici est montré du seul fait qu'on demande au moteur client de suivre le fichier de formes : c'est ce fichier qui existe pour ce curseur, et personne ne peut le voler. Le curseur d'en face devient une valeur qu'on énonce, `draw_the_pointer`, dans la porte que le moteur hôte offre déjà à une session en marche. Énoncée : redemander ce qui est déjà le cas ne demande rien, et une session qui s'ouvre en disant ce qu'elle veut a raison quoi qu'ait laissé la précédente. Plus rien à remettre en état à la fin d'une session, donc plus rien à oublier.
+
+**Deux patchs moteurs, et ils sont dans les clous.** Celui du moteur hôte est très exactement la deuxième des trois portes qu'ouvre la règle des patchs, « exposer un interrupteur » : l'interrupteur existait, seul le chemin vers lui manquait, et la demande est déjà ouverte chez eux. Le plafond de Sunshine passe donc de six à sept. Celui du moteur client s'ajoute dans le mécanisme que P-M11 avait ouvert et ne fait pas bouger son plafond.
+
+**Ce que ça retire, et c'est le vrai gain.** Deux combinaisons de touches disparaissent du produit, avec l'état que cette fenêtre gardait pour deviner où en étaient les interrupteurs d'en face. Il ne reste rien à désynchroniser.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -84,6 +84,16 @@ pub struct Asked {
     /// What the engine keeps up on a still screen, read as the key of
     /// that name in its configuration is, nought included.
     pub minimum_fps_target: Option<u32>,
+    /// Whether the engine draws this computer's pointer into the picture
+    /// it sends.
+    ///
+    /// Said and never toggled, which is the whole point of asking it
+    /// here. The switch is otherwise reachable only by a key combination
+    /// the watching computer types into the stream: nobody can read
+    /// where it stands, it outlives every session and is shared by all
+    /// of them, so a session that ended without giving it back left the
+    /// next one turning it the wrong way while believing the opposite.
+    pub draw_the_pointer: Option<bool>,
 }
 
 /// A request posted to the engine, built without side effects so it can
@@ -127,6 +137,9 @@ pub fn serve_request(ports: EnginePorts, credentials: &Credentials, asked: &Aske
     }
     if let Some(floor) = asked.minimum_fps_target {
         body.insert("minimum_fps_target".to_string(), floor.into());
+    }
+    if let Some(drawn) = asked.draw_the_pointer {
+        body.insert("draw_the_pointer".to_string(), drawn.into());
     }
     Posted {
         url: serve_url(ports),
@@ -318,8 +331,9 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&request.body).unwrap();
         assert_eq!(value, serde_json::json!({ "bitrate_kbps": 20000 }));
 
-        // Et les trois ensemble, chacun dans sa forme : un nom, deux
-        // nombres, jamais des nombres entre guillemets.
+        // Et les quatre ensemble, chacun dans sa forme : un nom, deux
+        // nombres, un oui ou non, jamais rien entre guillemets qui n'en
+        // demande.
         let request = serve_request(
             ports(),
             &credentials(),
@@ -327,6 +341,7 @@ mod tests {
                 display: Some("{aed131a5-3850-5dc6-89be-4967cca4ef04}".to_string()),
                 bitrate_kbps: Some(30_000),
                 minimum_fps_target: Some(0),
+                draw_the_pointer: Some(false),
             },
         );
         let value: serde_json::Value = serde_json::from_str(&request.body).unwrap();
@@ -335,9 +350,23 @@ mod tests {
             serde_json::json!({
                 "display": "{aed131a5-3850-5dc6-89be-4967cca4ef04}",
                 "bitrate_kbps": 30000,
-                "minimum_fps_target": 0
+                "minimum_fps_target": 0,
+                "draw_the_pointer": false
             })
         );
+
+        // Et le curseur seul, qui est la façon dont une session le dit à
+        // chaque tour de sa veille : rien d'autre ne doit partir avec.
+        let request = serve_request(
+            ports(),
+            &credentials(),
+            &Asked {
+                draw_the_pointer: Some(true),
+                ..Asked::default()
+            },
+        );
+        let value: serde_json::Value = serde_json::from_str(&request.body).unwrap();
+        assert_eq!(value, serde_json::json!({ "draw_the_pointer": true }));
     }
 
     #[test]

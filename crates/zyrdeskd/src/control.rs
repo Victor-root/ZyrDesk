@@ -463,6 +463,17 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
+        Request::FarPointerDrawn { way, drawn } => {
+            match answering
+                .machine
+                .ways
+                .tell_it_to_draw_its_pointer(way, drawn)
+                .await
+            {
+                Ok(()) => Answer::Done,
+                Err(reason) => Answer::Refused(reason),
+            }
+        }
         Request::FarScreens { way } => {
             match answering.machine.ways.ask_what_screens_it_has(way).await {
                 Ok(listed) => Answer::Screens(listed),
