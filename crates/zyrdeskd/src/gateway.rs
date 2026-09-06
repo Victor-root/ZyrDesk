@@ -24,7 +24,7 @@
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -149,6 +149,18 @@ struct Attending {
     machine: Machine,
     /// This computer's fingerprint, which its journal opens on.
     fingerprint: Fingerprint,
+    /// Which handing over of a pairing code is the one in hand.
+    ///
+    /// A code goes on being offered for a while after it has been taken,
+    /// because the engine only takes one while somebody is asking for
+    /// one and this computer cannot see when that starts. That insisting
+    /// has to stop the moment another code is handed over: the engine
+    /// takes whichever code arrives while a pairing waits for one, so an
+    /// offer left over from an attempt already given up is taken for the
+    /// new attempt's, and that attempt then fails on a code it never
+    /// chose. Which is a pairing that goes wrong once in a while, works
+    /// on the next try, and leaves nothing behind saying why.
+    offering: Arc<AtomicU64>,
     log: Log,
 }
 
@@ -186,13 +198,31 @@ impl Answers for Attending {
     /// goes on quietly for the rest of the patience: offering a code
     /// nobody is waiting for does nothing, which is exactly why it is
     /// safe to insist.
+    ///
+    /// Safe, that is, for as long as this code is the one wanted. The
+    /// engine takes whichever code arrives while a pairing waits for
+    /// one, and it never says which: an offer left over from an attempt
+    /// that has been given up would be taken for the next attempt's, and
+    /// that attempt would then fail on a code it never chose. So a new
+    /// handing over stops the one before it, here and in the thread that
+    /// insists, and the journal says so: only the last code offered is
+    /// ever offered again.
     fn hand_over_the_code(&self, pin: &str, name: &str) -> Result<(), String> {
-        let deadline = Instant::now() + PAIRING_PATIENCE;
+        let mine = self.offering.fetch_add(1, Ordering::SeqCst) + 1;
+        let overtaken = || self.offering.load(Ordering::SeqCst) != mine;
+        let asked = Instant::now();
+        let deadline = asked + PAIRING_PATIENCE;
         loop {
             let refused = match self.api.submit_pin(pin, name) {
                 Ok(()) => break,
                 Err(e) => e.to_string(),
             };
+            if overtaken() {
+                let overtaken = "another pairing started while this code was being offered";
+                self.log
+                    .write(&format!("pairing given up for {name}: {overtaken}"));
+                return Err(overtaken.to_string());
+            }
             if Instant::now() >= deadline {
                 self.log
                     .write(&format!("pairing refused to {name}: {refused}"));
@@ -200,15 +230,24 @@ impl Answers for Attending {
             }
             std::thread::sleep(PAIRING_RETRY);
         }
-        self.log
-            .write(&format!("pairing code offered to the engine for {name}"));
+        // How long it took is the whole difference between an engine
+        // that was not asking yet and one that never asked at all, and
+        // it cannot be told apart afterwards without this.
+        self.log.write(&format!(
+            "pairing code offered to the engine for {name}, taken after {} ms",
+            asked.elapsed().as_millis()
+        ));
 
         let api = self.api.clone();
+        let offering = self.offering.clone();
         let pin = pin.to_string();
         let name = name.to_string();
         std::thread::spawn(move || {
             while Instant::now() < deadline {
                 std::thread::sleep(PAIRING_RETRY);
+                if offering.load(Ordering::SeqCst) != mine {
+                    return;
+                }
                 let _ = api.submit_pin(&pin, &name);
             }
         });
@@ -1078,6 +1117,7 @@ impl Gateway {
             sessions: sessions.clone(),
             machine: machine.clone(),
             fingerprint: identity.fingerprint(),
+            offering: Arc::new(AtomicU64::new(0)),
             log: log.clone(),
         });
         let door = machine.door.clone();

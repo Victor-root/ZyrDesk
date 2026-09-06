@@ -2603,6 +2603,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça change au fil.** La sonde n'a plus la même forme qu'avant : deux ordinateurs dont l'un est resté sur une version antérieure ne se reconnaîtront plus. Le produit se met à jour des deux côtés à la fois, c'est ainsi qu'il est essayé, et l'empreinte de version est écrite dans chaque fenêtre pour que ça se voie.
 
+## D155. Un code d'appairage cesse d'être proposé dès qu'un autre le remplace (2026-09-06, pendant M6)
+
+**Le relevé.** « Ça marche, mais il a échoué la première fois, et honnêtement ça m'arrive régulièrement ce genre de bug. »
+
+**Ce que le journal de la fenêtre dit en une ligne.** « session non ouverte : appairage refusé : Incorrect PIN ». Ce n'était pas le réseau : le tunnel était ouvert, les questions étaient passées, l'écran d'en face avait répondu. C'est le code d'appairage qui n'a pas correspondu, et la tentative suivante, deux secondes plus tard, a marché du premier coup.
+
+**Le défaut, et pourquoi il est intermittent.** Le moteur hôte ne prend un code que pendant qu'un client en attend un, et il ne dit pas lequel il a pris. Comme les deux bouts démarrent à peu près en même temps et dans un ordre qui n'est garanti par rien, le code est proposé en boucle pendant dix secondes, ce qui couvre l'attente. Mais cette insistance ne s'arrêtait pas quand la tentative était abandonnée : une session ratée laissait son code se proposer tout seul pendant dix secondes, et la tentative suivante, qui commence dans la seconde, se voyait servir l'ancien code. Elle échouait alors sur un code qu'elle n'avait pas choisi. Une fois de temps en temps, sans rien laisser derrière qui le dise. C'est la troisième panne de cette famille sur ces deux machines, après [D62](#d62-fermer-une-session-pendant-quelle-souvre-ne-relance-aucun-appairage-2026-08-27-pendant-m4) et [D78](#d78-un-appairage-abandonné-bloquait-tous-les-suivants-2026-08-27-pendant-m4), et elles ont toutes la même racine : une tentative abandonnée qui laisse quelque chose derrière elle.
+
+**Ce qui a été fait.** Un code remis annule celui d'avant, dans la boucle comme dans le fil qui insiste : seul le dernier code proposé est encore proposé. Et le journal dit maintenant au bout de combien de temps le moteur l'a pris, ce qui sépare « il n'écoutait pas encore » de « il n'a jamais écouté », deux pannes qu'on ne distinguait pas après coup.
+
+**Ce qui reste ouvert, et qui est nommé ici pour ne pas être oublié.** Dans la même trace, les routes changent sans arrêt : la directe manque une sonde, on passe en IPv6, l'IPv6 en manque une, on passe au relais, le relais en manque une, et tout ça pendant que la session, elle, passe très bien. Une sonde fait maintenant la taille d'un vrai paquet ([D154](#d154-une-sonde-a-la-forme-du-paquet-quelle-promet-2026-09-06-pendant-m6)) et se perd donc comme un vrai paquet quand le lien est chargé, alors qu'une seule sonde manquée suffit à changer de route. Rien n'est touché là-dessus avant d'avoir mesuré : le choix de route est la pièce la plus dangereuse du produit, et la corriger sur une intuition serait pire que le défaut.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
