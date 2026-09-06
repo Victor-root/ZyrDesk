@@ -2661,6 +2661,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça dit sur la suite.** L'interrupteur « pointeur tenu dans l'image » que la veille jette au moteur en plein écran est atteint par le même mal et n'a donc jamais rien tenu non plus : il est demandé à un moteur qui ne peut pas répondre. Il n'a pas été touché ici, le mode bureau marchant et n'ayant pas à bouger dans la même fournée, mais il est du ressort de ZyrDesk pour la même raison et par le même moyen.
 
+## D159. Le service oubliait qui le contrôlait, à l'instant même où il le lisait (2026-09-06, pendant M6)
+
+**Le relevé.** En regardant, depuis l'ordinateur qui contrôle, l'écran d'accueil de l'ordinateur contrôlé : cet ordinateur-là apparaît bien dans « Mes ordinateurs », mais rien ne dit que c'est lui, en ce moment, qui tient la main. « Je devrais pouvoir l'éjecter directement depuis la liste des ordinateurs, comme sur Parsec. »
+
+**Ce qui manquait n'était pas un bouton, mais une mémoire.** Le service compte bien les sessions qui entrent (`Gateway::Sessions`, un compteur nu) et sait très précisément qui se connecte, puisque c'est une empreinte de certificat qui l'a fait entrer : mais cette empreinte n'était lue qu'à l'instant de la poignée de main, pour décider d'accepter ou de refuser, et jetée aussitôt après. Rien, nulle part dans le service, ne retenait ensuite qui était derrière ce compteur. Impossible d'y répondre depuis l'écran : ce que l'écran demande, le service ne le savait déjà plus.
+
+**Réglé sur le même principe que l'autre sens.** Le service tient déjà, pour les sessions qu'il ouvre lui-même vers d'autres ordinateurs, un registre partagé qui garde leur identité tant qu'elles durent (`crates/zyrdeskd/src/ways.rs`). Un second registre du même genre, à l'envers, retient maintenant qui se connecte à celui-ci : son empreinte, son adresse, depuis quand, et la connexion elle-même, seulement pour pouvoir la fermer (`crates/zyrdeskd/src/incoming.rs`). Écrit à l'instant même où la connexion est acceptée, là où l'empreinte se lisait déjà et se jetait, et effacé de lui-même quand la session se termine, quelle qu'en soit la raison.
+
+**Éjecter n'est rien de plus que fermer.** Rien n'est demandé à l'ordinateur d'en face, et rien ne pourrait l'être : couper la parole à un canal ne se prévient pas dessus. C'est la porte qui referme sa propre connexion, exactement comme le fait déjà, sans le vouloir, un changement du marquage ECN ou du port fixe — sauf que ceux-là ferment tout ce qui est ouvert, et celui-ci vise un seul ordinateur sans toucher aux autres.
+
+**Sur l'écran, l'inverse de la carte « Session en cours ».** Une vignette dont l'empreinte correspond à un ordinateur connecté porte désormais un mot en permanence, « Vous contrôle actuellement », et un bouton pour couper, sans confirmation demandée : un aller-retour de plus n'aurait protégé personne d'autre qu'un clic déjà volontaire. Ce qui manque encore, et qui n'était pas demandé : un ordinateur qui se connecte sans être déjà connu (par un code d'appairage ou un partage, jamais vu ni sur ce réseau ni sur ce compte) n'a pas de vignette à porter ce mot, et reste donc invisible à cet écran-là comme il l'était avant.
+
+**Rien de nouveau entre les deux ordinateurs.** Tout ceci vit entre cette fenêtre et son propre service, sur la même machine : c'est le dialecte local qui monte de vingt-huit à vingt-neuf, pas celui du tunnel entre les deux ordinateurs. Aucune version ne doit correspondre à l'autre bout d'une session pour que ça marche.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

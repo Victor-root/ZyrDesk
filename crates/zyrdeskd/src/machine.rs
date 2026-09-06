@@ -31,6 +31,7 @@ use zyr_proto::paths;
 use zyr_transport::{Fingerprint, Junction, Media};
 
 use crate::account::{self, Account};
+use crate::incoming::Incoming;
 use crate::known::{self, Known};
 use crate::preferences::Remembered;
 use crate::ways::Ways;
@@ -120,6 +121,9 @@ impl Door {
 pub struct Machine {
     pub hosting: Hosting,
     pub ways: Ways,
+    /// Who is connected to this computer right now: the reverse of
+    /// `ways`, and the same shape.
+    pub incoming: Incoming,
     pub remembered: Remembered,
     pub neighbours: Found,
     pub account: Account,
@@ -370,6 +374,7 @@ mod tests {
         let machine = Machine {
             hosting: Hosting::new(),
             ways: Ways::new(log.clone(), remembered.clone()),
+            incoming: Incoming::default(),
             remembered,
             neighbours: Found::new(),
             account: Account::at(folder.join("account.conf"), log.clone()),

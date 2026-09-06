@@ -1171,6 +1171,7 @@ impl Gateway {
             log: log.clone(),
         });
         let door = machine.door.clone();
+        let incoming = machine.incoming.clone();
         Ok(Self {
             tasks: vec![
                 runtime.spawn(keep_the_list_fresh(
@@ -1185,6 +1186,7 @@ impl Gateway {
                     junction,
                     attending,
                     sessions.clone(),
+                    incoming,
                     door.media(),
                     log.clone(),
                 )),
@@ -1243,6 +1245,7 @@ async fn serve(
     junction: Junction,
     attending: Arc<dyn Answers>,
     counting: Arc<Sessions>,
+    incoming: crate::incoming::Incoming,
     media: Media,
     log: Log,
 ) {
@@ -1254,8 +1257,16 @@ async fn serve(
                 let attending = attending.clone();
                 let junction = junction.clone();
                 let counted = Counted::one(&counting, &media, &log);
+                // Absent only when the certificate presented could not
+                // be read back into a fingerprint, which authorisation
+                // itself already requires: this never actually misses,
+                // and is not worth refusing a session over if it ever
+                // did.
+                let held = connection.peer_fingerprint().map(|peer| {
+                    incoming.arrived(peer, connection.remote_address(), connection.clone())
+                });
                 sessions.spawn(async move {
-                    one_session(connection, junction, attending, counted, log).await
+                    one_session(connection, junction, attending, counted, held, log).await
                 });
                 while sessions.try_join_next().is_some() {}
             }
@@ -1276,6 +1287,7 @@ async fn one_session(
     junction: Junction,
     attending: Arc<dyn Answers>,
     _counted: Counted,
+    _held: Option<crate::incoming::Held>,
     log: Log,
 ) {
     let from = connection.remote_address();
@@ -1477,6 +1489,7 @@ mod tests {
         let machine = Machine {
             hosting: crate::machine::Hosting::new(),
             ways: crate::ways::Ways::new(log.clone(), remembered.clone()),
+            incoming: crate::incoming::Incoming::default(),
             remembered,
             neighbours: zyr_lan::Found::new(),
             account: crate::account::Account::at(folder.join("account.conf"), log),

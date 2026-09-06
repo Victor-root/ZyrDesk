@@ -32,7 +32,7 @@ use zyr_control::{Account, Attach, Device, Registering};
 use crate::app::App;
 
 use crate::design::{self, Couleur, Palette};
-use crate::desk::{Attached, Peer, Standing};
+use crate::desk::{Attached, Peer, Standing, Watcher};
 use crate::folders::Engines;
 use crate::icones;
 use crate::journal::note;
@@ -79,6 +79,9 @@ struct Vu {
     machine: Option<Standing>,
     voisins: Vec<Peer>,
     sessions: Vec<Ongoing>,
+    /// Les ordinateurs connectés à celui-ci en ce moment, et qui le
+    /// contrôlent : l'inverse de `sessions`.
+    watching: Vec<Watcher>,
     moteurs: Option<Engines>,
     reglages: Option<Settings>,
     /// Le compte, quand le service répond : le lien s'il y en a un, et
@@ -363,6 +366,9 @@ enum Quoi {
     /// La même carte, mais par ce réseau-ci et rien d'autre : aucun
     /// serveur consulté, aucune sortie de la maison.
     EnLocal(usize),
+    /// Déconnecte l'ordinateur qui contrôle celui-ci en ce moment, sur
+    /// cette carte.
+    Deconnecter(usize),
     Ajouter,
     Interrupteur(Bouton),
     Segment(Choisi, usize),
@@ -2042,6 +2048,13 @@ impl Mise<'_> {
             .sessions
             .iter()
             .any(|session| session.fingerprint == voisin.fingerprint);
+        // L'inverse de « sienne » : non pas un ordinateur que cette
+        // fenêtre a joint, mais celui qui la contrôle en ce moment.
+        let controle = self
+            .vu
+            .watching
+            .iter()
+            .any(|watching| watching.fingerprint == voisin.fingerprint);
         let quoi = Quoi::Voisin(rang);
         let dessus = !occupe && self.sous_la_main(&quoi);
         // Enfoncée sous le doigt : un pixel vers le bas, ce que la
@@ -2066,6 +2079,8 @@ impl Mise<'_> {
         );
         let bord = if sienne {
             self.couleurs.en_ligne.melee(self.couleurs.r#trait, 0.4)
+        } else if controle {
+            self.couleurs.attention.melee(self.couleurs.r#trait, 0.4)
         } else if dessus {
             self.couleurs.accent
         } else {
@@ -2075,8 +2090,14 @@ impl Mise<'_> {
 
         // Une carte occupée s'efface par ses mots, pour que le bouton de
         // son journal reste allumé : c'est justement pendant une session
-        // qu'on veut lire ce que la machine d'en face a écrit.
-        let voile = if occupe && !sienne { 0.5 } else { 1.0 };
+        // qu'on veut lire ce que la machine d'en face a écrit. Celle qui
+        // contrôle cet ordinateur ne s'efface pas non plus : c'est
+        // justement elle qu'on veut voir.
+        let voile = if occupe && !sienne && !controle {
+            0.5
+        } else {
+            1.0
+        };
         let pastille = self.px(tenue::PASTILLE);
         let (encre, vivante) = self.presence_de(voisin);
         self.pastille(
@@ -2093,8 +2114,11 @@ impl Mise<'_> {
         let bouton = self.px(tenue::BOUTON);
         // La place des boutons du coin est réservée : sans elle, un nom
         // un peu long passerait dessous, et il y en a un de plus quand
-        // cet ordinateur est joignable d'ici.
-        let boutons = self.px(design::PAS_6) + if ici { bouton } else { 0.0 };
+        // cet ordinateur est joignable d'ici, et encore un quand il
+        // contrôle celui-ci.
+        let boutons = self.px(design::PAS_6)
+            + if ici { bouton } else { 0.0 }
+            + if controle { bouton } else { 0.0 };
         self.ecris(
             &voisin.name,
             self.sous_titre().coupee(),
@@ -2125,16 +2149,19 @@ impl Mise<'_> {
         // la main est en train de choisir : sans lui, la maison du coin
         // serait un dessin sans nom.
         let appel = self.px(tenue::APPEL);
-        if sienne || dessus || en_local {
+        if sienne || dessus || en_local || controle {
             self.ecris(
-                match (sienne, en_local) {
-                    (true, _) => "Session en cours",
-                    (false, true) => "Se connecter en local",
-                    (false, false) => "Se connecter",
+                match (sienne, en_local, controle) {
+                    (true, _, _) => "Session en cours",
+                    (false, true, _) => "Se connecter en local",
+                    (false, false, true) => "Vous contrôle actuellement",
+                    (false, false, false) => "Se connecter",
                 },
                 self.legende(),
                 if sienne {
                     self.couleurs.en_ligne
+                } else if controle {
+                    self.couleurs.attention
                 } else {
                     self.couleurs.accent
                 },
@@ -2173,6 +2200,25 @@ impl Mise<'_> {
                 ),
                 &icones::RESEAU_LOCAL,
                 Quoi::EnLocal(rang),
+                !dessus,
+            );
+        }
+        // Toujours là quand cet ordinateur contrôle celui-ci, occupé ou
+        // non : c'est justement là qu'on veut pouvoir le rendre. Prend
+        // la place réservée après le journal et, s'il y en a une, la
+        // maison locale, exactement comme le calcul de largeur plus haut
+        // les a comptées.
+        if controle {
+            let place = if ici { 3.0 } else { 2.0 };
+            self.bouton_icone(
+                Cadre::pose(
+                    ou.droite - coin - bouton * place,
+                    ou.haut + coin,
+                    bouton,
+                    bouton,
+                ),
+                &icones::CROIX,
+                Quoi::Deconnecter(rang),
                 !dessus,
             );
         }
@@ -4413,6 +4459,16 @@ fn fait(app: &App, quoi: Quoi) {
         Quoi::ARegler(rang) => remedie(app, rang),
         Quoi::Voisin(rang) => lance_le_voisin(app, rang, false),
         Quoi::EnLocal(rang) => lance_le_voisin(app, rang, true),
+        Quoi::Deconnecter(rang) => {
+            let empreinte = VU.lock().expect("accueil").as_ref().and_then(|vu| {
+                vu.voisins
+                    .get(rang)
+                    .map(|voisin| voisin.fingerprint.clone())
+            });
+            if let Some(empreinte) = empreinte {
+                deconnecte(app, empreinte);
+            }
+        }
         Quoi::Ajouter => {
             {
                 let mut etat = ETAT.lock().expect("accueil");
@@ -4714,6 +4770,19 @@ fn oublie(app: &App, empreinte: String) {
     crate::app::spawn(async move {
         if let Err(raison) = crate::desk::forget(empreinte).await {
             fait(&app, Quoi::Fermer);
+            annonce(&app, &raison, true);
+            return;
+        }
+        relis(&app).await;
+        redraw(&app);
+    });
+}
+
+/// Déconnecte l'ordinateur qui contrôle celui-ci en ce moment.
+fn deconnecte(app: &App, empreinte: String) {
+    let app = app.clone();
+    crate::app::spawn(async move {
+        if let Err(raison) = crate::desk::kick(empreinte).await {
             annonce(&app, &raison, true);
             return;
         }
@@ -5238,6 +5307,7 @@ async fn relis(app: &App) -> bool {
     let machine = crate::desk::standing().await;
     let voisins = crate::desk::peers().await;
     let sessions = crate::session::sessions().await;
+    let watching = crate::desk::watching().await;
     let moteurs = crate::folders::engines();
     let reglages = crate::settings::settings(app.clone()).await;
     // Le compte, et ses appareils quand il y a un lien : sans lien il n'y
@@ -5260,6 +5330,7 @@ async fn relis(app: &App) -> bool {
         machine: neuf.machine.replace(machine),
         voisins: std::mem::replace(&mut neuf.voisins, voisins),
         sessions: std::mem::replace(&mut neuf.sessions, sessions),
+        watching: std::mem::replace(&mut neuf.watching, watching),
         moteurs: neuf.moteurs.replace(moteurs),
         reglages: neuf.reglages.replace(reglages),
         compte: std::mem::replace(&mut neuf.compte, compte),

@@ -313,6 +313,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     let machine = Machine {
         hosting: Hosting::new(),
         ways: Ways::new(log.clone(), remembered.clone()),
+        incoming: crate::incoming::Incoming::default(),
         remembered,
         neighbours: neighbourhood
             .as_ref()

@@ -144,6 +144,53 @@ pub async fn peers() -> Vec<Peer> {
     .unwrap_or_default()
 }
 
+/// A computer connected to this one right now, controlling it.
+#[derive(Clone, PartialEq)]
+pub struct Watcher {
+    pub fingerprint: String,
+    pub address: String,
+    pub since: u64,
+}
+
+/// Every computer connected to this one right now.
+///
+/// An empty list is the ordinary answer: most of the time nobody is
+/// watching. What matches an entry here to a tile on the home screen is
+/// the fingerprint, exactly as it is for this computer's own outgoing
+/// sessions.
+pub async fn watching() -> Vec<Watcher> {
+    service::list(&Request::Watching, |answer| match answer {
+        Answer::Watching(watching) => Some(Watcher {
+            fingerprint: watching.peer.to_string(),
+            address: watching.address,
+            since: watching.since.as_secs(),
+        }),
+        _ => None,
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Disconnects a computer currently connected to this one.
+///
+/// Closes the connection outright, the same way turning hosting off
+/// does today, except aimed at the one computer rather than at whoever
+/// happens to be connected. Nothing is asked of the far computer first:
+/// there is no channel to ask it anything on before its session exists.
+pub async fn kick(fingerprint: String) -> Result<(), String> {
+    let peer = fingerprint
+        .trim()
+        .parse()
+        .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
+    match service::ask(&Request::Kick { peer }).await? {
+        Answer::Done => {
+            crate::journal::note(&format!("{peer} déconnecté"));
+            Ok(())
+        }
+        other => Err(service::unexpected(other)),
+    }
+}
+
 /// The link of this computer to an account, or nothing when there is
 /// none.
 ///

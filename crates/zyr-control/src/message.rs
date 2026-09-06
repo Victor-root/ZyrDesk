@@ -27,7 +27,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 28;
+pub const PROTOCOL: u32 = 29;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -228,6 +228,13 @@ pub enum Request {
     /// What lets a window that was closed, updated or killed find the
     /// session again instead of opening on an empty home screen.
     Sessions,
+    /// The computers connected to this one right now, controlling it.
+    ///
+    /// The reverse of `Sessions`, and asked for the same reason: a
+    /// window showing this computer's own screen has no way of knowing
+    /// who else is looking at it, and the interface it is drawn from
+    /// needs an identity to put a name to, and to disconnect.
+    Watching,
     /// Decides whether this computer accepts being controlled.
     ///
     /// A decision and not a state: it survives a restart, since a
@@ -270,6 +277,14 @@ pub enum Request {
     /// Takes a computer written down off both lists: it no longer shows,
     /// and it no longer comes in.
     Forget { peer: Fingerprint },
+    /// Closes the connection a computer is watching this one through,
+    /// right now.
+    ///
+    /// Nothing asked of the far computer, and nothing said to it either:
+    /// this is the door closing on its own connection, the same way
+    /// turning hosting off does, except that this one is aimed and does
+    /// not touch anybody else's.
+    Kick { peer: Fingerprint },
     /// Decides whether this computer is reachable from the moment it
     /// powers on, before anybody has signed in.
     ///
@@ -410,6 +425,7 @@ impl Request {
             }),
             "peers" => Ok(Request::Peers),
             "sessions" => Ok(Request::Sessions),
+            "watching" => Ok(Request::Watching),
             "hosting" => Ok(Request::SetHosting {
                 on: fields.text("on")? == "yes",
             }),
@@ -436,6 +452,9 @@ impl Request {
                 name: fields.text("name").ok().map(unpacked),
             }),
             "forget" => Ok(Request::Forget {
+                peer: fields.parsed("peer")?,
+            }),
+            "kick" => Ok(Request::Kick {
                 peer: fields.parsed("peer")?,
             }),
             "at-boot" => Ok(Request::SetAtBoot {
@@ -530,6 +549,7 @@ impl fmt::Display for Request {
             Request::Release { way } => write!(f, "release way={way}"),
             Request::Peers => f.write_str("peers"),
             Request::Sessions => f.write_str("sessions"),
+            Request::Watching => f.write_str("watching"),
             Request::SetHosting { on } => write!(f, "hosting on={}", said(*on)),
             Request::SetTrust { on } => write!(f, "trusting on={}", said(*on)),
             Request::SetEcn { on } => write!(f, "ecn on={}", said(*on)),
@@ -551,6 +571,7 @@ impl fmt::Display for Request {
                 Ok(())
             }
             Request::Forget { peer } => write!(f, "forget peer={peer}"),
+            Request::Kick { peer } => write!(f, "kick peer={peer}"),
             Request::SetAtBoot { on } => write!(f, "at-boot on={}", said(*on)),
             Request::Stop => f.write_str("stop"),
             Request::Journal => f.write_str("journal"),
@@ -829,6 +850,23 @@ pub struct Session {
     pub round_trip_ms: u64,
 }
 
+/// A computer connected to this one right now, as the service holds it.
+///
+/// The reverse of [`Session`]: that one is a way this computer opened
+/// towards somewhere else, this one is a way somewhere else opened
+/// towards this computer. Described the same way, and for the same
+/// reason: an interface has to put a name to it, and to close it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Watching {
+    /// Fingerprint it was recognised by. What matches it to a computer
+    /// on screen, and what closing this one connection is asked by.
+    pub peer: Fingerprint,
+    /// The address this connection really comes from.
+    pub address: String,
+    /// How long it has been connected.
+    pub since: Duration,
+}
+
 /// What the service answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
@@ -838,6 +876,9 @@ pub enum Answer {
     Peer(Peer),
     /// One session of a list. The list ends on `Done`.
     Session(Session),
+    /// One computer connected to this one of a list. The list ends on
+    /// `Done`.
+    Watching(Watching),
     /// What a session opened from this computer is set to.
     Settings(Preferred),
     /// The size the far computer is going to be showing.
@@ -949,6 +990,11 @@ impl Answer {
                 since: Duration::from_secs(fields.parsed("since")?),
                 via: fields.text("via").unwrap_or_default().to_string(),
                 round_trip_ms: fields.parsed("rtt").unwrap_or(0),
+            })),
+            "watching" => Ok(Answer::Watching(Watching {
+                peer: fields.parsed("peer")?,
+                address: fields.text("address")?.to_string(),
+                since: Duration::from_secs(fields.parsed("since")?),
             })),
             "settings" => Ok(Answer::Settings(fields.preferred())),
             "showing" => Ok(Answer::Showing {
@@ -1067,6 +1113,13 @@ impl fmt::Display for Answer {
                 session.since.as_secs(),
                 session.via,
                 session.round_trip_ms
+            ),
+            Answer::Watching(watching) => write!(
+                f,
+                "watching peer={} address={} since={}",
+                watching.peer,
+                watching.address,
+                watching.since.as_secs()
             ),
             Answer::Settings(preferred) => write!(f, "settings {}", spelled(preferred)),
             Answer::Showing { size } => match size {
@@ -1367,6 +1420,7 @@ mod tests {
             },
             Request::Peers,
             Request::Sessions,
+            Request::Watching,
             Request::SetHosting { on: true },
             Request::SetHosting { on: false },
             Request::SetTrust { on: true },
@@ -1396,6 +1450,9 @@ mod tests {
                 name: Some("PC de Victor".to_string()),
             },
             Request::Forget {
+                peer: fingerprint(),
+            },
+            Request::Kick {
                 peer: fingerprint(),
             },
             Request::SetAtBoot { on: true },
@@ -1601,6 +1658,11 @@ mod tests {
                 since: Duration::from_secs(742),
                 via: "192.168.1.20:47000".to_string(),
                 round_trip_ms: 12,
+            }),
+            Answer::Watching(Watching {
+                peer: fingerprint(),
+                address: "192.168.1.20:58620".to_string(),
+                since: Duration::from_secs(742),
             }),
             Answer::Settings(preferred()),
             Answer::Settings(Preferred::default()),

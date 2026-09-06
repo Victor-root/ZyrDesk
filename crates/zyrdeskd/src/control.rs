@@ -159,6 +159,15 @@ async fn answer(request: Request, answering: &Answering) -> Vec<Answer> {
                 .map(Answer::Session)
                 .collect(),
         ),
+        Request::Watching => ended(
+            answering
+                .machine
+                .incoming
+                .watching()
+                .into_iter()
+                .map(Answer::Watching)
+                .collect(),
+        ),
         Request::Devices => ended(
             answering
                 .machine
@@ -636,6 +645,14 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 )),
             }
         }
+        Request::Kick { peer } => {
+            if answering.machine.incoming.kick(peer) {
+                answering.log.write(&format!("{peer} disconnected"));
+                Answer::Done
+            } else {
+                Answer::Refused("cet ordinateur n'est plus connecté.".to_string())
+            }
+        }
         Request::SetAtBoot { on } => match set_at_boot(on) {
             Ok(()) => {
                 answering.log.write(if on {
@@ -714,7 +731,7 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             Err(reason) => Answer::Refused(reason),
         },
         // Handled above, where several answers can be given.
-        Request::Peers | Request::Sessions | Request::Devices => Answer::Done,
+        Request::Peers | Request::Sessions | Request::Watching | Request::Devices => Answer::Done,
     }
 }
 
@@ -750,6 +767,7 @@ mod tests {
             let machine = Machine {
                 hosting: Hosting::new(),
                 ways: crate::ways::Ways::new(log.clone(), remembered.clone()),
+                incoming: crate::incoming::Incoming::default(),
                 remembered,
                 neighbours: zyr_lan::Found::new(),
                 account: crate::account::Account::at(folder.join("account.conf"), log.clone()),
@@ -835,7 +853,7 @@ mod tests {
 
         runtime.block_on(async {
             let mut caller = bench.caller().await;
-            for request in [Request::Peers, Request::Sessions] {
+            for request in [Request::Peers, Request::Sessions, Request::Watching] {
                 let found = caller.ask_for_a_list(&request).await.unwrap();
                 assert!(found.is_empty(), "sur « {request} » : {found:?}");
             }
