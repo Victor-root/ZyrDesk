@@ -1217,6 +1217,11 @@ async fn keep_the_pointer_in_step(app: &App, process: u32) {
 /// the first would leave two pointers on screen, one under the hand and
 /// one behind it.
 ///
+/// They are thrown in the order that keeps one pointer on screen at every
+/// moment, and never nought: the far one is only taken away once this one
+/// is drawn, and given back before this one goes. Each is thrown on its
+/// own and either can be refused, so the order is all there is.
+///
 /// A game is the other way round. What a game reads is movement and not a
 /// place, the pointer belongs to the game and is drawn by it, and a
 /// second one drawn here would sit in the middle of the picture doing
@@ -1246,7 +1251,11 @@ async fn keep_the_pointer_local_in_step(app: &App, process: u32) {
             Err(reason) => note(&format!("curseur d'ici non réglé : {reason}")),
         }
     }
-    if wanted == state.far_pointer_hidden.load(Ordering::Relaxed) {
+    if !the_far_pointer_moves(
+        wanted,
+        state.local_pointer.load(Ordering::Relaxed),
+        state.far_pointer_hidden.load(Ordering::Relaxed),
+    ) {
         return;
     }
     match type_at_the_picture(app, Act::FarPointer, process).await {
@@ -1260,6 +1269,27 @@ async fn keep_the_pointer_local_in_step(app: &App, process: u32) {
         }
         Err(reason) => note(&format!("curseur d'en face non réglé : {reason}")),
     }
+}
+
+/// Whether the far computer's pointer is to be moved, the two switches
+/// being where they are.
+///
+/// The rule the order rests on, apart so it can be read on its own: there
+/// is one pointer on screen at every moment, and never nought. The far
+/// one is only taken away once this one is drawn, and it is given back
+/// whether or not this one was.
+///
+/// It is not a belt for a state that cannot happen. Each switch is thrown
+/// on its own, as a keystroke through the session's own stream, and
+/// either can be refused: a combination another program on this computer
+/// has claimed for itself is swallowed before it ever reaches the engine.
+/// Taking the far pointer away after that left a session with no pointer
+/// at all, which is worse than the one it was replacing.
+fn the_far_pointer_moves(wanted: bool, drawn_here: bool, far_hidden: bool) -> bool {
+    if wanted && !drawn_here {
+        return false;
+    }
+    wanted != far_hidden
 }
 
 /// Gives the far computer its pointer back, the session being over.
@@ -2111,6 +2141,28 @@ fn shortcut(_act: Act, _process: u32) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn il_y_a_toujours_un_curseur_a_l_ecran_et_jamais_zero() {
+        // Le 6 septembre, un autre programme tenait Ctrl+Alt+Maj+C sur
+        // cette machine : le curseur d'ici n'a jamais été allumé, celui
+        // d'en face a été éteint quand même, et la session s'est
+        // retrouvée sans aucun curseur. Les deux interrupteurs se jettent
+        // un par un et l'un des deux peut être refusé : l'ordre est tout
+        // ce qui tient la règle.
+        assert!(
+            !the_far_pointer_moves(true, false, false),
+            "celui d'en face ne s'éteint pas tant que celui d'ici n'est pas allumé"
+        );
+        // Allumé ici : celui d'en face s'éteint, puis ne rebouge plus.
+        assert!(the_far_pointer_moves(true, true, false));
+        assert!(!the_far_pointer_moves(true, true, true));
+        // Mode jeu : celui d'en face se rend, que celui d'ici ait été
+        // allumé ou non, sans quoi le jeu resterait sans curseur.
+        assert!(the_far_pointer_moves(false, false, true));
+        assert!(the_far_pointer_moves(false, true, true));
+        assert!(!the_far_pointer_moves(false, false, false));
+    }
 
     #[test]
     fn every_menu_entry_names_a_shortcut_the_engine_answers_to() {

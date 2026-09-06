@@ -2615,6 +2615,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce qui reste ouvert, et qui est nommé ici pour ne pas être oublié.** Dans la même trace, les routes changent sans arrêt : la directe manque une sonde, on passe en IPv6, l'IPv6 en manque une, on passe au relais, le relais en manque une, et tout ça pendant que la session, elle, passe très bien. Une sonde fait maintenant la taille d'un vrai paquet ([D154](#d154-une-sonde-a-la-forme-du-paquet-quelle-promet-2026-09-06-pendant-m6)) et se perd donc comme un vrai paquet quand le lien est chargé, alors qu'une seule sonde manquée suffit à changer de route. Rien n'est touché là-dessus avant d'avoir mesuré : le choix de route est la pièce la plus dangereuse du produit, et la corriger sur une intuition serait pire que le défaut.
 
+## D156. Un curseur à l'écran à chaque instant, et jamais zéro (2026-09-06, pendant M6)
+
+**Le relevé.** « Je suis en mode souris bureau et je n'ai plus du tout de curseur sur la session ; il apparaît sur le bouton flottant et dans son menu, mais pas dans l'image. »
+
+**Les deux lignes du journal, à la même seconde.** « curseur dessiné ici refusé : Ctrl+Alt+Maj+C est déjà pris par un autre programme », puis « l'ordinateur distant ne dessine plus son curseur dans l'image ». Le premier interrupteur a été refusé, le second est parti quand même : celui d'ici n'a jamais été allumé et celui d'en face a été éteint. Le bouton flottant, lui, est une fenêtre de ZyrDesk et Windows y dessine le curseur comme partout ailleurs, ce qui est exactement ce que le relevé décrit.
+
+**Pourquoi le refus est légitime.** Les deux interrupteurs vivent dans les moteurs et le seul chemin vers eux est une combinaison de touches injectée dans l'image. Une combinaison qu'un autre programme de cette machine a réservée pour lui est avalée avant d'atteindre le moteur, et rien de cela ne remonte comme une erreur : ZyrDesk la réclame lui-même une fraction de seconde pour savoir si elle est libre, et refuse de taper dans le vide. Ce refus est juste. Ce qui ne l'était pas, c'est ce qui venait après.
+
+**La règle, écrite une fois pour toutes.** Il y a un curseur à l'écran à chaque instant, et jamais zéro. Celui d'en face n'est retiré qu'une fois celui d'ici réellement dessiné, et il est rendu que celui d'ici l'ait été ou non. C'est de l'ordre et rien d'autre, parce que chaque interrupteur part seul et peut être refusé. La règle est isolée dans une fonction que rien n'empêche de relire, et un essai la fige.
+
+**Ce qui reste à faire, et qui est la vraie sortie.** Tant que le curseur local dépend d'une combinaison qu'un autre programme peut voler, il manquera de temps en temps sur une machine ou une autre. Le moteur client suit déjà un fichier pour la forme du curseur ([D151](#d151-la-forme-du-curseur-voyage-à-côté-de-limage-2026-09-05-pendant-m6)) : lui faire montrer ce curseur du seul fait qu'on lui demande de suivre ce fichier retirerait la touche du chemin. Un patch moteur de plus, à faire quand il sera décidé.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
