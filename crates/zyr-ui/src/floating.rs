@@ -1052,13 +1052,24 @@ pub fn show_the_menu(app: &App) -> Result<(), String> {
     }
     // Asked for by name, which takes back the choice of hiding it.
     HIDDEN.store(false, Ordering::Relaxed);
-    // In game mouse mode the pointer belongs entirely to the far
-    // computer: it is held inside the picture and warped back to the
-    // middle of it at every movement, so it cannot be brought to this
-    // button at all. Asking for the menu is asking to do something, so
-    // the pointer comes back first. The entry that gives it away again is
-    // in that very menu.
-    give_the_pointer_back(app);
+    // In game mouse mode the pointer is shut on a point in the middle of
+    // the picture, so it cannot be brought to this button at all. Asking
+    // for the menu is asking to do something with the pointer, so the
+    // cage is opened here rather than at the next turn of the watch: a
+    // menu that takes a second to become usable reads as a menu that
+    // does not work.
+    //
+    // The mouse mode itself is left exactly where it is. Opening this
+    // menu used to throw the session out of game mouse mode, by typing
+    // the engine's own combination into the picture, which meant handing
+    // the picture the keyboard first: it was refused four times running
+    // on the very session that asked for this, and the menu stayed
+    // unusable. It also changed a mode nobody asked to change. The
+    // engine now reads the movement of a game only while the pointer
+    // stands on the picture, so an open cage is the whole of what this
+    // needs.
+    #[cfg(windows)]
+    crate::picture::shut_the_pointer_in(false);
     #[cfg(windows)]
     {
         crate::logo::shown(app, true);
@@ -1690,48 +1701,10 @@ pub fn room_for_the_button() -> Option<(i32, i32)> {
     Some((wide + margin, high + margin))
 }
 
-/// Hands the pointer back when the far computer is holding it.
-///
-/// In game mouse mode the engine keeps the cursor inside the picture and
-/// puts it back in the middle at every movement, so nothing on screen can
-/// be pointed at any more, this button included. Asked of the engine in
-/// its own language.
-///
-/// Whether the mouse is in that mode is read from what this window has
-/// sent, never from the system. It was read from the pointer's cage
-/// once, and that lied both ways: a session covering the only screen
-/// cages the pointer to a rectangle exactly the size of the screen,
-/// which is what no cage at all looks like, and a third program caging
-/// the pointer for its own reasons looked like ours.
-#[cfg(windows)]
-fn give_the_pointer_back(app: &App) {
-    let state = app.floating();
-    let Some(process) = *state.watched.lock().expect("session suivie") else {
-        return;
-    };
-    if !state.game_mouse.load(std::sync::atomic::Ordering::Relaxed) {
-        return;
-    }
-    note("le pointeur est tenu par la session : rendu avant d'ouvrir le menu");
-    // Already on the thread that draws, this being a menu opening, so
-    // the whole thing is done on the spot rather than sent round.
-    match hand_over_and_type(Act::MouseMode, process) {
-        Ok(()) => {
-            state
-                .game_mouse
-                .store(false, std::sync::atomic::Ordering::Relaxed);
-        }
-        Err(reason) => note(&format!("pointeur non rendu : {reason}")),
-    }
-}
-
 #[cfg(not(windows))]
 pub fn room_for_the_button() -> Option<(i32, i32)> {
     None
 }
-
-#[cfg(not(windows))]
-fn give_the_pointer_back(_app: &App) {}
 
 /// Whether the primary mouse button is down right now.
 ///
