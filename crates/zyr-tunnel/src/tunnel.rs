@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+use zyr_proto::log::Log;
 use zyr_proto::net::EnginePorts;
 use zyr_transport::{Connection, RecvStream, SendStream};
 
@@ -34,10 +35,16 @@ impl Tunnel {
     ///
     /// `answering` is the local engine seen from the tunnel: its ports,
     /// and what it can be asked on ZyrDesk's own channel.
+    ///
+    /// `log` says what it did while it did it, for a stream that goes
+    /// quiet without a word: the ordinary end of a session already says
+    /// why elsewhere, and this is for the one that never says anything
+    /// at all. `None` where nobody is watching, a benchmark or a test.
     pub async fn host(
         connection: Connection,
         engine: IpAddr,
         answering: Arc<dyn Answers>,
+        log: Option<Log>,
     ) -> io::Result<Self> {
         let ports = answering.engine();
         let datagrams = Arc::new(DatagramPorts::towards_engine(engine, ports)?);
@@ -45,16 +52,20 @@ impl Tunnel {
         let mut tasks = datagram_pumps(&connection, &datagrams, &counters);
 
         let towards_engine = connection.clone();
-        tasks.spawn(async move { serve_the_streams(&towards_engine, engine, answering).await });
+        tasks
+            .spawn(async move { serve_the_streams(&towards_engine, engine, answering, log).await });
 
         Ok(Self { tasks, counters })
     }
 
     /// Client side: what the local engine sends goes into the tunnel.
+    ///
+    /// See `host` for what `log` is.
     pub async fn client(
         connection: Connection,
         listen: IpAddr,
         ports: EnginePorts,
+        log: Option<Log>,
     ) -> io::Result<Self> {
         // The listeners are open before we hand back: the engine may
         // show up the instant the session is announced to it.
@@ -73,7 +84,9 @@ impl Tunnel {
 
         for (channel, bound) in listeners {
             let towards_tunnel = connection.clone();
-            tasks.spawn(async move { carry_the_streams(channel, bound, towards_tunnel).await });
+            let log = log.clone();
+            tasks
+                .spawn(async move { carry_the_streams(channel, bound, towards_tunnel, log).await });
         }
 
         Ok(Self { tasks, counters })
@@ -152,6 +165,7 @@ async fn serve_the_streams(
     connection: &Connection,
     engine: IpAddr,
     answering: Arc<dyn Answers>,
+    log: Option<Log>,
 ) -> io::Result<()> {
     let mut sessions = JoinSet::new();
     loop {
@@ -160,8 +174,9 @@ async fn serve_the_streams(
         // One stream's failure stays on that stream: a botched pairing
         // must not take the running session with it.
         let answering = answering.clone();
+        let log = log.clone();
         sessions.spawn(async move {
-            let _ = hand_to_the_engine(sending, receiving, engine, answering).await;
+            let _ = hand_to_the_engine(sending, receiving, engine, answering, log).await;
         });
         while sessions.try_join_next().is_some() {}
     }
@@ -172,17 +187,50 @@ async fn hand_to_the_engine(
     mut receiving: RecvStream,
     engine: IpAddr,
     answering: Arc<dyn Answers>,
+    log: Option<Log>,
 ) -> io::Result<()> {
-    let channel = pump::read_announcement(&mut receiving).await?;
+    let channel = match pump::read_announcement(&mut receiving).await {
+        Ok(channel) => channel,
+        Err(e) => {
+            if let Some(log) = &log {
+                log.write(&format!("a stream from the tunnel never named itself: {e}"));
+            }
+            return Err(e);
+        }
+    };
     let Some(port) = channel.port(answering.engine()) else {
         // ZyrDesk's own channel goes to no engine: it is the tunnel
         // talking to the tunnel, and this is where it answers.
         return aside::answer(sending, receiving, answering).await;
     };
 
-    let local = TcpStream::connect(SocketAddr::new(engine, port)).await?;
+    if let Some(log) = &log {
+        log.write(&format!(
+            "{channel:?}: reaching this computer's own engine at {engine}:{port}"
+        ));
+    }
+    let local = match TcpStream::connect(SocketAddr::new(engine, port)).await {
+        Ok(local) => local,
+        Err(e) => {
+            if let Some(log) = &log {
+                log.write(&format!(
+                    "{channel:?}: the engine at {engine}:{port} would not take it: {e}"
+                ));
+            }
+            return Err(e);
+        }
+    };
     local.set_nodelay(true)?;
-    pump::relay_stream(local, sending, receiving).await
+    if let Some(log) = &log {
+        log.write(&format!(
+            "{channel:?}: connected, carrying it to and from the engine"
+        ));
+    }
+    let outcome = pump::relay_stream(local, sending, receiving).await;
+    if let Some(log) = &log {
+        log.write(&format!("{channel:?}: {}", said(&outcome)));
+    }
+    outcome
 }
 
 /// Carries into the tunnel the connections the local engine opens.
@@ -190,6 +238,7 @@ async fn carry_the_streams(
     channel: StreamChannel,
     listener: TcpListener,
     connection: Connection,
+    log: Option<Log>,
 ) -> io::Result<()> {
     let mut sessions = JoinSet::new();
     loop {
@@ -197,8 +246,9 @@ async fn carry_the_streams(
         local.set_nodelay(true)?;
 
         let connection = connection.clone();
+        let log = log.clone();
         sessions.spawn(async move {
-            let _ = carry_to_the_tunnel(channel, local, connection).await;
+            let _ = carry_to_the_tunnel(channel, local, connection, log).await;
         });
         while sessions.try_join_next().is_some() {}
     }
@@ -208,8 +258,41 @@ async fn carry_to_the_tunnel(
     channel: StreamChannel,
     local: TcpStream,
     connection: Connection,
+    log: Option<Log>,
 ) -> io::Result<()> {
-    let (mut sending, receiving) = connection.open_stream().await.map_err(io::Error::other)?;
+    if let Some(log) = &log {
+        log.write(&format!(
+            "{channel:?}: the local engine reached it, opening the tunnel's own stream"
+        ));
+    }
+    let (mut sending, receiving) = match connection.open_stream().await {
+        Ok(stream) => stream,
+        Err(e) => {
+            if let Some(log) = &log {
+                log.write(&format!(
+                    "{channel:?}: the tunnel would not open a stream: {e}"
+                ));
+            }
+            return Err(io::Error::other(e));
+        }
+    };
     pump::announce(&mut sending, channel).await?;
-    pump::relay_stream(local, sending, receiving).await
+    if let Some(log) = &log {
+        log.write(&format!(
+            "{channel:?}: named to the far computer, carrying it to and from the engine"
+        ));
+    }
+    let outcome = pump::relay_stream(local, sending, receiving).await;
+    if let Some(log) = &log {
+        log.write(&format!("{channel:?}: {}", said(&outcome)));
+    }
+    outcome
+}
+
+/// What a stream's relay coming back says, for the journal.
+fn said(outcome: &io::Result<()>) -> String {
+    match outcome {
+        Ok(()) => "both ends are done".to_string(),
+        Err(e) => format!("stopped: {e}"),
+    }
 }

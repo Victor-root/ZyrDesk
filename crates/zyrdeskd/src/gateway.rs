@@ -1308,7 +1308,7 @@ async fn one_session(
     } else {
         String::new()
     };
-    let mut tunnel = match Tunnel::host(connection, ENGINE, attending).await {
+    let mut tunnel = match Tunnel::host(connection, ENGINE, attending, Some(log.clone())).await {
         Ok(tunnel) => tunnel,
         Err(e) => {
             log.write(&format!("session from {from}{road} not opened: {e}"));

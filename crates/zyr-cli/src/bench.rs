@@ -247,7 +247,14 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
         // while waiting.
         tokio::spawn(async move {
             let observed = connection.clone();
-            match Tunnel::host(connection, ENGINE, Arc::new(NoEngine { ports, media })).await {
+            match Tunnel::host(
+                connection,
+                ENGINE,
+                Arc::new(NoEngine { ports, media }),
+                None,
+            )
+            .await
+            {
                 Ok(mut tunnel) => {
                     let (without, with) = serve_and_measure(&mut tunnel).await;
                     // The return trip is only visible from here: the
@@ -329,7 +336,7 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     let direct_load = direct_computation.and_then(|s| s.load());
 
     println!("Mesure à travers le tunnel...");
-    let tunnel = Tunnel::client(connection.clone(), listen, ports).await?;
+    let tunnel = Tunnel::client(connection.clone(), listen, ports, None).await?;
     let tunnel_computation = Stopwatch::start();
     let through_tunnel = probe::probe(
         open_socket(SocketAddr::new(listen, 0))?,

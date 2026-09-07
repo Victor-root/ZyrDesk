@@ -689,7 +689,7 @@ impl Ways {
         let address = IpAddr::V4(
             device_loopback_addr(device).ok_or("aucune adresse locale pour cet appareil")?,
         );
-        let tunnel = Tunnel::client(connection.clone(), address, engine)
+        let tunnel = Tunnel::client(connection.clone(), address, engine, Some(self.log.clone()))
             .await
             .map_err(|e| format!("les ports locaux n'ont pas pu être ouverts : {e}"))?;
 

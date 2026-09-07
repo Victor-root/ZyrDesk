@@ -2707,6 +2707,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et le logo, qui ne disait jamais de quel côté il regardait.** Sa propre fenêtre suit déjà le sens vertical du menu par le coin qu'elle garde, mais son dessin restait toujours le même dessin, où que le menu s'ouvre. Il porte maintenant le même bord que la carte : retourné de gauche à droite quand elle part de la gauche, à l'endroit sinon, dessiné par la même marque qu'ailleurs dans le produit à qui il suffit de le lui demander.
 
+## D163. Le tunnel tient, mais son tout premier mot au moteur ne disait jamais s'il était entendu (2026-09-07, pendant M6)
+
+**Le relevé.** Les deux journaux d'une même session ratée, envoyés ensemble pour la première fois : côté client, « connexion impossible : timed out » après une trentaine de secondes ; côté hôte, le même silence. Entre les deux, pourtant, le tunnel s'était ouvert, avait choisi sa route, et avait déjà fait passer plusieurs réglages avec succès : rétablir un écran figé, faire rejouer les enceintes, dire au bureau distant de garder son propre écran, et même répondre à une question sur la forme du curseur sept secondes après l'ouverture.
+
+**Ce que ça écarte, avec certitude cette fois.** Le tunnel lui-même n'est pas en cause : l'authentification des deux ordinateurs tient, ses échanges de contrôle marchent, et le changement de route qu'on voit dans le journal ne le perturbe en rien, c'est un mécanisme conçu exprès pour rester invisible à l'étage du transport, qui présente toujours à quinn la même adresse stable quelle que soit la vraie route choisie derrière. Un chiffre qui semblait énorme dans le journal (« 375 000 000 octets en attente ») n'en est pas un non plus : c'est un plafond calculé d'avance sur le débit demandé, identique dès la première milliseconde d'une session, pas une mesure de ce qui s'est réellement passé.
+
+**Ce qui reste, précisément.** Un seul échange ne passe jamais : la toute première question du lecteur au moteur distant (« quel jeu peux-tu me proposer », en langage GameStream), qui voyage sur le même tunnel et par le même mécanisme que les réglages qui, eux, réussissent. Ni le tunnel ni le journal ne disaient jusqu'ici où, entre les deux ordinateurs, ce mot précis se perdait.
+
+**Corrigé, mais seulement d'un journal qui manquait.** Chaque question de ce genre dit maintenant d'elle-même ce qu'elle traverse : qu'elle est reçue, vers quel port local elle cherche à joindre le moteur, si ce moteur répond ou refuse, et comment le passage s'est terminé. Ce n'est pas un correctif : personne ne sait encore ce qu'il faudrait corriger. C'est ce qui manquait pour le savoir la prochaine fois que ça arrive.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

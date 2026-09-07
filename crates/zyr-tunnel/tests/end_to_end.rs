@@ -291,6 +291,7 @@ impl Bench {
                 filming: filming.clone(),
                 opening: opening.clone(),
             }),
+            None,
         )
         .await
         .unwrap();
@@ -302,7 +303,7 @@ impl Bench {
         let engine = aside::ask_the_ports(&client_connection, profile)
             .await
             .unwrap();
-        let client = Tunnel::client(client_connection.clone(), client_side, engine)
+        let client = Tunnel::client(client_connection.clone(), client_side, engine, None)
             .await
             .unwrap();
 
