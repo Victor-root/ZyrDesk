@@ -2761,6 +2761,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Les autres mécanismes, bien plus anciens, restent seuls responsables d'abandonner une route qui rate trois sondes d'affilée ou de préférer une route déjà prouvée à une inconnue : rien de tout cela n'a changé. Une session qui n'a jamais réussi à faire passer le moindre octet réel, comme celle qui a motivé D165, reste repérée exactement pareil.
 
+## D169. Une poignée de main qui traîne bloquait la porte à tout le monde (2026-09-07, pendant M6)
+
+**Le relevé.** « Et bah maintenant je n'ai carrément plus accès. » Après le crash de [D168](#d168-la-preuve-dune-route-ne-survivait-pas-à-sa-propre-disparition-2026-09-07-pendant-m6), chaque nouvelle tentative de connexion échouait au bout de quinze secondes, alors que la route elle-même se réglait en moins d'une seconde à chaque fois : le souci n'était donc plus dans l'aiguilleur. Le journal de PC-SAV, demandé à distance pendant que la session complète refusait toujours de s'ouvrir, a montré la vraie cause : « connection refused: connexion impossible : [...]:47000 : timed out », plusieurs fois de suite, sur des tentatives pourtant toutes neuves.
+
+**Une porte qui n'écoutait plus qu'un coup à la fois.** La boucle qui accueille les ordinateurs qui se présentent (`crates/zyrdeskd/src/gateway.rs`) attendait la poignée de main en entier avant de revenir écouter le prochain coup à la porte, alors que le code du transport a été écrit exprès pour permettre le contraire (`accept_knock`, dans `crates/zyr-transport/src/endpoint.rs`, dont le commentaire dit déjà : « a knock that goes quiet halfway through would otherwise hold up every other for as long as a connection takes to give up »). Une poignée de main qui traîne, pour n'importe quelle raison, tenait donc la porte fermée à toute autre tentative pendant tout ce temps-là, jusqu'à trente secondes ; répétée, elle a tenu PC-SAV injoignable un quart d'heure durant.
+
+**Corrigé en séparant le coup à la porte de la poignée de main qui suit.** La boucle ne retient plus que le premier, instantané par nature ; la seconde, qui peut traîner, se déroule maintenant à part, sans jamais empêcher le coup suivant d'être entendu tout de suite. Une session qui se comptait déjà seulement une fois la connexion établie (`Counted::one`) continue de ne se compter qu'à ce moment-là.
+
+**Ce que ça n'explique pas encore.** Une seconde piste, distincte, a été creusée en même temps : une session déjà ouverte peut rester silencieuse vingt-cinq à trente secondes après une coupure réseau de quelques secondes seulement, alors que la route elle-même s'est déjà rétablie. Elle tient à quinn lui-même : une rafale de pertes pendant la coupure fait grimper son délai de nouvel essai de façon exponentielle, et rien ne le raccourcit quand la route redevient bonne, puisque le changement de route est justement invisible pour lui par construction. Comprise, non corrigée : c'est un changement plus profond, qui reste à décider séparément.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

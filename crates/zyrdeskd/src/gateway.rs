@@ -39,7 +39,7 @@ use zyr_proto::paths;
 use zyr_proto::session::{Serving, WantedScreen};
 use zyr_transport::junction::Say;
 use zyr_transport::{
-    AllowedPeers, EndpointError, Fingerprint, Identity, Junction, Media, MediaProfile,
+    AllowedPeers, EndpointError, Fingerprint, Identity, Junction, Knocking, Media, MediaProfile,
     TunnelEndpoint, authorized, is_card,
 };
 use zyr_tunnel::{Answers, Tunnel};
@@ -1240,6 +1240,15 @@ impl Gateway {
 }
 
 /// Takes in the devices that connect, one session each.
+///
+/// Only the knock itself is waited for here: a connection is handed over
+/// before its handshake finishes, on purpose, since waiting for one to
+/// finish is waiting for it to fail as often as it is waiting for it to
+/// succeed. Doing that in this loop would hold up every other computer
+/// waiting to knock for as long as the slowest one takes to give up,
+/// which is a denial of service anyone could trigger by simply being
+/// slow, and no different from the one the comment below already
+/// guards against.
 async fn serve(
     endpoint: TunnelEndpoint,
     junction: Junction,
@@ -1251,22 +1260,19 @@ async fn serve(
 ) {
     let mut sessions = JoinSet::new();
     loop {
-        match endpoint.accept().await {
-            Ok(connection) => {
+        match endpoint.accept_knock(|_| true).await {
+            Ok(knocking) => {
                 let log = log.clone();
                 let attending = attending.clone();
                 let junction = junction.clone();
-                let counted = Counted::one(&counting, &media, &log);
-                // Absent only when the certificate presented could not
-                // be read back into a fingerprint, which authorisation
-                // itself already requires: this never actually misses,
-                // and is not worth refusing a session over if it ever
-                // did.
-                let held = connection.peer_fingerprint().map(|peer| {
-                    incoming.arrived(peer, connection.remote_address(), connection.clone())
-                });
+                let counting = counting.clone();
+                let incoming = incoming.clone();
+                let media = media.clone();
                 sessions.spawn(async move {
-                    one_session(connection, junction, attending, counted, held, log).await
+                    take_the_knock(
+                        knocking, junction, attending, counting, incoming, media, log,
+                    )
+                    .await
                 });
                 while sessions.try_join_next().is_some() {}
             }
@@ -1277,9 +1283,45 @@ async fn serve(
                 log.write("the tunnel is closed, no longer taking anyone in");
                 return;
             }
+            // `accept_knock` only ever fails this way in practice; kept
+            // for the variants the type allows but this call cannot
+            // produce, read the same as a handshake failing below.
             Err(e) => log.write(&format!("connection refused: {e}")),
         }
     }
+}
+
+/// Waits out one knock's handshake and, once it stands, serves the
+/// session it opens.
+///
+/// Spawned rather than awaited in [`serve`]'s own loop: a handshake that
+/// goes quiet halfway through takes as long to give up as any connection
+/// does, and that must not hold up the next computer's turn to knock.
+async fn take_the_knock(
+    knocking: Knocking,
+    junction: Junction,
+    attending: Arc<dyn Answers>,
+    counting: Arc<Sessions>,
+    incoming: crate::incoming::Incoming,
+    media: Media,
+    log: Log,
+) {
+    let connection = match knocking.taken().await {
+        Ok(connection) => connection,
+        Err(e) => {
+            log.write(&format!("connection refused: {e}"));
+            return;
+        }
+    };
+    let counted = Counted::one(&counting, &media, &log);
+    // Absent only when the certificate presented could not be read back
+    // into a fingerprint, which authorisation itself already requires:
+    // this never actually misses, and is not worth refusing a session
+    // over if it ever did.
+    let held = connection
+        .peer_fingerprint()
+        .map(|peer| incoming.arrived(peer, connection.remote_address(), connection.clone()));
+    one_session(connection, junction, attending, counted, held, log).await
 }
 
 async fn one_session(
