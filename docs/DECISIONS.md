@@ -2751,6 +2751,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Corrigé en alignant la marge sur la règle qu'elle était censée suivre.** La route en service garde sa marge (hystérésis ou preuve) tant qu'elle n'a pas atteint les trois sondes ratées qui la feraient de toute façon abandonner ailleurs dans ce fichier, et non plus dès la première.
 
+## D168. La preuve d'une route ne survivait pas à sa propre disparition (2026-09-07, pendant M6)
+
+**Le relevé.** « Et aller retour la session qui crash. » Une session ouverte depuis plus de quatre minutes, du vrai trafic qui passait sans souci, puis une vraie coupure d'internet de six secondes du côté du client (« this computer no longer reaches 8.8.8.8:53 »), suivie d'un rétablissement confirmé une poignée de secondes plus tard. Le lecteur vidéo montre les signes classiques d'une reprise après un trou de réseau, une resynchronisation d'image en cours. Puis, 20093 ms pile après la route revenue, l'aiguilleur en change encore une fois pour une route jamais essayée, et la session s'écroule pour de bon une dizaine de secondes plus tard.
+
+**Ce que 20093 ms voulait dire.** Le nombre est celui de `PROVEN_WITHIN` à la seconde près : le mécanisme de [D165](#d165-laiguilleur-choisissait-une-route-sans-jamais-savoir-si-elle-portait-quoi-que-ce-soit-2026-09-07-pendant-m6) a bien fait ce qu'il devait faire, seulement il ne devait pas le faire ici. La route qui a fini par disparaître avait pourtant transporté du vrai trafic pendant plus de quatre minutes ; mais la coupure lui a valu trois sondes ratées d'affilée, et une route qu'on abandonne perd tout ce qu'elle avait prouvé avec elle. Celle qui a répondu à la même adresse quelques instants plus tard, une fois internet revenu, est une route toute neuve pour ce fichier, avec une preuve remise à zéro. Vingt secondes sans que cette route neuve n'ait encore rien porté de réel, alors que la session peinait justement à reprendre pied après la coupure, et le mécanisme l'a sanctionnée comme s'il s'agissait d'une route qui n'avait jamais rien prouvé depuis le début.
+
+**Ce que la preuve doit retenir, et ce qu'elle ne doit pas oublier.** Une route qui disparaît et revient à la même adresse n'a plus rien à voir, pour ce fichier, avec celle d'avant ; mais les deux ordinateurs, eux, avaient déjà montré qu'ils savent se parler, et cela ne s'efface pas avec une route. Ce que `PROVEN_WITHIN` devait repérer n'a jamais été « cette route précise n'a rien prouvé depuis vingt secondes », mais « ces deux ordinateurs n'ont jamais rien prouvé du tout » : la carte tient maintenant cette mémoire-là séparément, et le mécanisme ne s'applique plus qu'à une carte qui n'a jamais, de toute sa vie, laissé passer le moindre octet réel.
+
+**Ce que ça ne change pas.** Les autres mécanismes, bien plus anciens, restent seuls responsables d'abandonner une route qui rate trois sondes d'affilée ou de préférer une route déjà prouvée à une inconnue : rien de tout cela n'a changé. Une session qui n'a jamais réussi à faire passer le moindre octet réel, comme celle qui a motivé D165, reste repérée exactement pareil.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
