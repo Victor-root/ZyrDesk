@@ -3720,7 +3720,7 @@ impl Mise<'_> {
 
     fn marque(&self, ou: Cadre) {
         if !self.muet {
-            crate::logo::marque(self.toile, ou, 1.0);
+            crate::logo::marque(self.toile, ou, 1.0, false);
         }
     }
 }

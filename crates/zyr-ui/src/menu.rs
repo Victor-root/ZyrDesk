@@ -1056,8 +1056,21 @@ pub fn lay(
     // tombait vingt pixels trop bas et vingt trop à gauche, ce qui se
     // voit au premier coup d'oeil à côté de l'ancien menu.
     let echelle = echelle();
-    VERS_LE_HAUT.store(sens == Sens::Haut, Ordering::Relaxed);
-    VERS_LA_DROITE.store(a_droite, Ordering::Relaxed);
+    // La toile porte la carte dessinée pour le bord d'où elle est
+    // partie, et rien ne la redessine d'elle-même : sans ceci, un bord
+    // qui vient de changer déplaçait la fenêtre tout de suite, sur une
+    // image encore posée pour l'ancien, ce qui se voyait le temps d'un
+    // reflet avant le prochain dessin.
+    let vertical_change =
+        VERS_LE_HAUT.swap(sens == Sens::Haut, Ordering::Relaxed) != (sens == Sens::Haut);
+    let horizontal_change = VERS_LA_DROITE.swap(a_droite, Ordering::Relaxed) != a_droite;
+    if (vertical_change || horizontal_change)
+        && let Some(app) = PROGRAM.lock().expect("programme du menu").clone()
+    {
+        // Redemandé au fil qui possède la fenêtre : c'est lui qui tient
+        // la toile, et ceci court sur celui qui suit la main.
+        let _ = app.run_on_main_thread(move || repaint(window as HWND));
+    }
     let debord = debord_de_l_ombre(echelle).round() as i32;
     let carte_haute = haute - debord * 2;
     // Collée au même bord que le logo, et séparée de lui de l'espace

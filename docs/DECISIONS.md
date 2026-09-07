@@ -2697,6 +2697,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Trois choses en dépendaient, et pas seulement la carte.** Son panneau de réglages, qui s'ouvre maintenant du côté où la carte n'est pas partie plutôt que toujours à sa gauche, sans quoi il se serait retrouvé coincé entre le bouton et une carte déjà collée à l'écran. Le chevron d'une ligne qui ouvre un panneau, qui pointe désormais vers l'endroit où ce panneau ouvre réellement plutôt que toujours vers la gauche. Et le réancrage de la fenêtre quand son contenu change de hauteur, qui gardait jusque-là son bord droit immobile quel que soit le bord d'où elle était réellement partie.
 
+## D162. Le menu qui change de bord se dessinait pour l'ancien, un instant (2026-09-07, pendant M6)
+
+**Le relevé.** « Quand il commence à s'inverser de sens, il clignote, genre il se téléporte et revient en un flash. » Et, au passage : « fais en sorte que quand on le passe à gauche de l'écran que le logo du fab s'oriente vers la droite, comme en vue miroir. »
+
+**Le clignotement, lu à côté d'un mal déjà guéri ailleurs.** La fenêtre du menu se déplace depuis le fil qui suit la main, cent fois par seconde sous un geste, sans jamais attendre le fil qui la dessine : lui demander ça à chaque pas coûterait le retard même que ce détour évite. Ce qu'elle oubliait de faire, en changeant de bord, c'est de redemander à ce fil-là de redessiner sa toile : la fenêtre sautait tout de suite à sa nouvelle place, avec l'image de l'ancienne encore collée dessus, le temps qu'un dessin arrive d'ailleurs pour la corriger. Le logo du bouton connaît déjà ce mal et le traite depuis toujours pour son propre sens vertical : il redemande un dessin au fil qui possède sa fenêtre, mais seulement quand ce sens change, et jamais à chaque pas. Le menu ne le faisait pour aucun des deux bords, vertical ou horizontal, et c'est le second qui se voit : une carte entière glissant de tout son travers plutôt que d'une marge.
+
+**Corrigé du même geste pour les deux bords.** La pose de la fenêtre compare maintenant ce qu'elle vient de décider à ce qu'elle tenait avant, pour le sens vertical et pour celui-ci ; et un changement de l'un ou de l'autre redemande un dessin, porté au fil qui le doit.
+
+**Et le logo, qui ne disait jamais de quel côté il regardait.** Sa propre fenêtre suit déjà le sens vertical du menu par le coin qu'elle garde, mais son dessin restait toujours le même dessin, où que le menu s'ouvre. Il porte maintenant le même bord que la carte : retourné de gauche à droite quand elle part de la gauche, à l'endroit sinon, dessiné par la même marque qu'ailleurs dans le produit à qui il suffit de le lui demander.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

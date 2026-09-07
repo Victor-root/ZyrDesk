@@ -898,7 +898,8 @@ fn put_the_button_up(app: &App, process: u32) {
     {
         let anchor = hung_from(picture, nudge(), (size, size), margin());
         let sens = Sens::lu(SENS.load(Ordering::Relaxed));
-        crate::logo::raise(app, size as u32, sens == Sens::Haut, anchor);
+        let a_droite = A_DROITE.load(Ordering::Relaxed);
+        crate::logo::raise(app, size as u32, sens == Sens::Haut, a_droite, anchor);
         // La carte se mesure sur ce que ses lignes demandent, donc elle a
         // besoin de savoir de combien un pixel de page compte ici et quel
         // thème la fenêtre porte.
@@ -1750,9 +1751,11 @@ fn menu_height() -> i32 {
 fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
     let sens = Sens::lu(SENS.load(Ordering::Relaxed));
     let a_droite = A_DROITE.load(Ordering::Relaxed);
-    // Le logo ne connaît que deux coins : à côté, la carte ne part plus
-    // de lui, et il garde donc le coin qu'il a quand elle est dessous.
-    crate::logo::lay(anchor, sens == Sens::Haut);
+    // Le logo ne bouge que de deux coins, à côté la carte ne partant
+    // plus de lui : il garde le coin qu'il a quand elle est dessous. Son
+    // dessin, lui, se retourne avec le bord d'où la carte part, pour
+    // faire face au menu plutôt que de lui tourner le dos.
+    crate::logo::lay(anchor, sens == Sens::Haut, a_droite);
     crate::menu::lay(anchor, sens, a_droite, crate::logo::box_side(), picture);
 
     // Le système remonte une fenêtre possédée avec celle qui la possède,

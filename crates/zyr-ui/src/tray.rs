@@ -253,6 +253,7 @@ fn dessinee(en_retrait: bool) -> windows_sys::Win32::UI::WindowsAndMessaging::HI
         &toile,
         crate::paint::Cadre::pose(0.0, 0.0, cote as f32, cote as f32),
         if en_retrait { EN_RETRAIT } else { 1.0 },
+        false,
     );
     if !toile.finit() {
         return std::ptr::null_mut();

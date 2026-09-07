@@ -163,6 +163,11 @@ static MOVING: AtomicBool = AtomicBool::new(false);
 /// Which way the menu opens, which is the corner the logo is drawn in.
 static UPWARD: AtomicBool = AtomicBool::new(false);
 
+/// Whether the drawing itself is mirrored left to right, which the
+/// button asks for when the menu opens to its right instead of its
+/// left: the logo then faces the way its own menu does.
+static MIRRORED: AtomicBool = AtomicBool::new(false);
+
 /// Where the growth is: what it left, what it is heading for, and when
 /// it set off.
 ///
@@ -206,7 +211,7 @@ thread_local! {
 /// Built on the thread that draws, which is the only one whose messages
 /// are ever pumped: a window belongs to the thread that made it, and one
 /// made on the watch's thread would never hear a mouse.
-pub fn raise(app: &App, side: u32, upward: bool, anchor: (i32, i32)) {
+pub fn raise(app: &App, side: u32, upward: bool, mirrored: bool, anchor: (i32, i32)) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
@@ -214,6 +219,7 @@ pub fn raise(app: &App, side: u32, upward: bool, anchor: (i32, i32)) {
     *PROGRAM.lock().expect("programme du logo") = Some(app.clone());
     ITS_BOX.store(box_of(side), Ordering::Relaxed);
     UPWARD.store(upward, Ordering::Relaxed);
+    MIRRORED.store(mirrored, Ordering::Relaxed);
     *GROWTH.lock().expect("croissance du logo") = Growth {
         from: STANDING,
         to: STANDING,
@@ -334,7 +340,7 @@ pub fn shown(app: &App, visible: bool) {
 /// the picture as moved by whatever dragging has moved it. Called from
 /// wherever the button is placed, which is a hundred and twenty times a
 /// second under a hand, so nothing here waits for anything.
-pub fn lay(anchor: (i32, i32), upward: bool) {
+pub fn lay(anchor: (i32, i32), upward: bool, mirrored: bool) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
@@ -344,7 +350,9 @@ pub fn lay(anchor: (i32, i32), upward: bool) {
     if window == 0 {
         return;
     }
-    if UPWARD.swap(upward, Ordering::Relaxed) != upward
+    let upward_change = UPWARD.swap(upward, Ordering::Relaxed) != upward;
+    let mirrored_change = MIRRORED.swap(mirrored, Ordering::Relaxed) != mirrored;
+    if (upward_change || mirrored_change)
         && let Some(app) = PROGRAM.lock().expect("programme du logo").clone()
     {
         // Redemandé au fil qui possède la fenêtre : c'est lui qui tient
@@ -528,11 +536,21 @@ fn arrived() -> bool {
 /// une marque en retrait. C'est ce que l'icône près de l'horloge emploie
 /// pour dire que cet ordinateur n'est pas joignable, en restant la même
 /// marque plutôt qu'en devenant un second dessin.
-pub fn marque(toile: &crate::paint::Toile, cadre: Cadre, part: f32) {
+///
+/// `mirrored` la retourne de gauche à droite, à l'endroit près : c'est
+/// ce que demande le bouton flottant quand son menu s'ouvre à sa droite
+/// plutôt qu'à sa gauche, pour que le logo fasse face au menu plutôt que
+/// de lui tourner le dos.
+pub fn marque(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored: bool) {
     let per_unit = (cadre.droite - cadre.gauche) / drawing::SIDE;
     for shape in &drawing::SHAPES {
+        let gauche = if mirrored {
+            cadre.droite - (shape.middle.0 + shape.half.0 - drawing::ORIGIN) * per_unit
+        } else {
+            cadre.gauche + (shape.middle.0 - shape.half.0 - drawing::ORIGIN) * per_unit
+        };
         let place = Cadre::pose(
-            cadre.gauche + (shape.middle.0 - shape.half.0 - drawing::ORIGIN) * per_unit,
+            gauche,
             cadre.haut + (shape.middle.1 - shape.half.1 - drawing::ORIGIN) * per_unit,
             shape.half.0 * 2.0 * per_unit,
             shape.half.1 * 2.0 * per_unit,
@@ -587,7 +605,12 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             return;
         };
         toile.commence(crate::design::Couleur::RIEN);
-        marque(toile, Cadre::pose(left, top, wide, wide), 1.0);
+        marque(
+            toile,
+            Cadre::pose(left, top, wide, wide),
+            1.0,
+            MIRRORED.load(Ordering::Relaxed),
+        );
         if !toile.finit() {
             return;
         }
