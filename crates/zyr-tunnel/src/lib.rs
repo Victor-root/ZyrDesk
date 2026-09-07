@@ -8,5 +8,5 @@ pub mod tunnel;
 
 pub use aside::{Answers, Question, Settled, Told};
 pub use channel::{DatagramChannel, StreamChannel};
-pub use pump::{Counters, Reading};
+pub use pump::{Counters, Reading, nudge};
 pub use tunnel::Tunnel;

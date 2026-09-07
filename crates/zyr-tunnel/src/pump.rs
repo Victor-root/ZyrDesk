@@ -349,6 +349,21 @@ pub async fn collect_datagrams(
     }
 }
 
+/// Sends a datagram carrying nothing, only to have it acknowledged.
+///
+/// A road the junction switches to is invisible to the connection above
+/// it, by design: quinn goes on believing it is still waiting on
+/// whatever it last sent, however long ago that was, and only a packet
+/// it gets acknowledged tells it otherwise. A nudge is that packet,
+/// worth sending the moment a road is seen to work again rather than
+/// waiting for the connection's own doubling retries to get there on
+/// their own.
+pub fn nudge(connection: &Connection) -> io::Result<()> {
+    connection
+        .send_datagram(frame::encode_nudge().into())
+        .map_err(io::Error::other)
+}
+
 /// Hands the engines the datagrams that come out of the tunnel.
 ///
 /// One reader for the three channels: a connection's datagrams arrive
@@ -361,9 +376,14 @@ pub async fn distribute_datagrams(
     let mut failures = 0;
     loop {
         let received = connection.read_datagram().await.map_err(io::Error::other)?;
-        let Ok((channel, payload)) = frame::decode(&received) else {
-            Counters::bump(&counters.unreadable);
-            continue;
+        let (channel, payload) = match frame::decode(&received) {
+            Ok(frame::Landed::Channel(channel, payload)) => (channel, payload),
+            // Asked for nothing, and its arrival was the whole point.
+            Ok(frame::Landed::Nudge) => continue,
+            Err(_) => {
+                Counters::bump(&counters.unreadable);
+                continue;
+            }
         };
         // The engine opens its media ports late: the first packets of a
         // session are handed to nobody, and on some systems that is

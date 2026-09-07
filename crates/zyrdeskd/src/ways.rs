@@ -36,7 +36,7 @@ use zyr_transport::{
     Connection, Fingerprint, Identity, Junction, Media, MediaProfile, Sending, TunnelEndpoint,
     packet_size,
 };
-use zyr_tunnel::{Tunnel, aside};
+use zyr_tunnel::{Tunnel, aside, nudge};
 
 use crate::account::{self, Rendezvous};
 use crate::preferences::Remembered;
@@ -1149,6 +1149,20 @@ impl Ways {
                 let reading = kept.thing.tunnel.reading();
                 let path = kept.thing.connection.carrying();
                 lines.extend(kept.thing.said.what_changed(&named, &reading, &path));
+                if let Some(crossing) = &kept.thing.crossing
+                    && crossing.junction.recovered(crossing.card)
+                {
+                    match nudge(&kept.thing.connection) {
+                        Ok(()) => lines.push(format!(
+                            "{named}: the road came back after being quiet, nudging the \
+                             connection so it does not wait out its own retry timer"
+                        )),
+                        Err(e) => lines.push(format!(
+                            "{named}: the road came back after being quiet, but the connection \
+                             could not be nudged: {e}"
+                        )),
+                    }
+                }
                 if let Some(outcome) = kept.thing.tunnel.stopped() {
                     lines.push(match outcome {
                         Ok(()) => format!("{named}: the tunnel stopped"),

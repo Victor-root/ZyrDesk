@@ -42,7 +42,7 @@ use zyr_transport::{
     AllowedPeers, EndpointError, Fingerprint, Identity, Junction, Knocking, Media, MediaProfile,
     TunnelEndpoint, authorized, is_card,
 };
-use zyr_tunnel::{Answers, Tunnel};
+use zyr_tunnel::{Answers, Tunnel, nudge};
 
 use crate::machine::{Door, Machine};
 use crate::said::{self, Said};
@@ -1362,7 +1362,7 @@ async fn one_session(
         watched.carrying().usable_datagram
     ));
 
-    let outcome = watch_over(&mut tunnel, &watched, &from.to_string(), &log).await;
+    let outcome = watch_over(&mut tunnel, &watched, &junction, &from.to_string(), &log).await;
     let carried = said::carried(&tunnel.reading(), &watched.carrying());
     match outcome {
         Ok(()) => log.write(&format!("session ended, {carried}")),
@@ -1386,6 +1386,7 @@ async fn one_session(
 async fn watch_over(
     tunnel: &mut Tunnel,
     connection: &zyr_transport::Connection,
+    junction: &Junction,
     named: &str,
     log: &Log,
 ) -> io::Result<()> {
@@ -1404,8 +1405,35 @@ async fn watch_over(
                 for line in said.what_changed(named, &reading, &path) {
                     log.write(&line);
                 }
+                nudge_if_recovering(junction, connection, named, log);
             }
         }
+    }
+}
+
+/// Nudges the connection awake the moment its road answers again after
+/// going quiet: the road can recover long before the connection above it
+/// would notice on its own, having no reason to expect anything back
+/// before its own doubling retries say to.
+fn nudge_if_recovering(
+    junction: &Junction,
+    connection: &zyr_transport::Connection,
+    named: &str,
+    log: &Log,
+) {
+    let from = connection.remote_address();
+    if !is_card(from) || !junction.recovered(from) {
+        return;
+    }
+    match nudge(connection) {
+        Ok(()) => log.write(&format!(
+            "{named}: the road came back after being quiet, nudging the connection so it does \
+             not wait out its own retry timer"
+        )),
+        Err(e) => log.write(&format!(
+            "{named}: the road came back after being quiet, but the connection could not be \
+             nudged: {e}"
+        )),
     }
 }
 

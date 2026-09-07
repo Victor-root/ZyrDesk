@@ -363,6 +363,16 @@ struct Expected {
     /// shown they can talk at all. A card that has is not the card
     /// `PROVEN_WITHIN` was written for.
     ever_proven: bool,
+    /// Whether the elected road has answered again since this was last
+    /// asked, having gone quiet for at least one missed probe, or for
+    /// long enough to be given up outright and reappear as a fresh one.
+    ///
+    /// Taken and cleared by the asking. A connection speaking to this
+    /// card has no way of knowing its own retries have gone stale, a
+    /// road switching under it being exactly what this transport is
+    /// for; this is the one sign, short of that connection's own
+    /// packets, that is worth telling it about.
+    recovered: bool,
 }
 
 /// What one look-over of a card's roads found.
@@ -396,6 +406,7 @@ impl Expected {
             next_number: 1,
             in_flight: Vec::new(),
             ever_proven: false,
+            recovered: false,
         }
     }
 
@@ -652,6 +663,18 @@ impl Expected {
         };
         self.in_flight.swap_remove(at);
         self.answered_at = now;
+        // The road quinn's own traffic actually rides, answering after
+        // a gap: what the connection above this card has no other way
+        // of learning, since the whole point of a card is that a road
+        // can be given up and taken up again without it ever knowing.
+        if Some(through) == self.elected {
+            let was_quiet = self
+                .paths
+                .iter()
+                .find(|path| path.through == through)
+                .is_none_or(|path| path.misses > 0);
+            self.recovered |= was_quiet;
+        }
         match self.paths.iter_mut().find(|path| path.through == through) {
             Some(path) => {
                 // Smoothed the way a transport does, so one slow echo
@@ -694,6 +717,11 @@ impl Expected {
             path.proven_at = Some(now);
         }
         self.ever_proven = true;
+    }
+
+    /// Whether the elected road has come back since this was last asked.
+    fn take_recovery(&mut self) -> bool {
+        std::mem::take(&mut self.recovered)
     }
 
     /// The road worth taking: the shortest direct one, and the relay
@@ -1111,6 +1139,22 @@ impl Junction {
                 round_trip,
             },
         })
+    }
+
+    /// Whether the road to that card has just come back after going
+    /// quiet, since this was last asked.
+    ///
+    /// Probing keeps going whether or not the tunnel has anything to
+    /// send, so it notices a road working again before any traffic on
+    /// it would: a connection speaking to this card has no other way of
+    /// knowing its own retries have gone stale, a road switching under
+    /// it being exactly what this transport is for.
+    pub fn recovered(&self, card: SocketAddr) -> bool {
+        let mut table = self.inner.table.lock().expect("aiguilleur");
+        table
+            .expected
+            .get_mut(&card)
+            .is_some_and(Expected::take_recovery)
     }
 
     /// This socket as it was seen from elsewhere: by the mirror, and by
@@ -2524,6 +2568,145 @@ mod tests {
             moved(expected.elect(now)),
             None,
             "une seule sonde manquée a coûté sa place à la route la plus rapide"
+        );
+    }
+
+    #[test]
+    fn a_road_that_misses_once_then_answers_signals_a_recovery() {
+        // Le signal qu'une connexion au-dessus de cette carte attend
+        // pour ne pas patienter jusqu'au bout de ses propres délais :
+        // la route élue s'est tue le temps d'une sonde, puis a répondu
+        // de nouveau.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let a = direct("10.0.0.1:47000");
+        let b = direct("10.0.0.2:47000");
+        let first = expected.number(start);
+        assert!(expected.answered(a, first, Duration::from_millis(5), start));
+        assert_eq!(moved(expected.elect(start)), Some((None, a)));
+        assert!(!expected.take_recovery(), "rien à récupérer à l'élection");
+
+        let second = expected.number(start);
+        assert!(expected.answered(b, second, Duration::from_millis(80), start));
+        assert!(!expected.take_recovery(), "b n'est pas la route élue");
+
+        // Un tour de sonde manqué sur a, comme dans le test au-dessus.
+        expected.look_over(start + KEEP_EVERY);
+        let now = start + KEEP_EVERY * 2;
+        expected.look_over(now);
+        assert_eq!(
+            expected
+                .paths
+                .iter()
+                .find(|path| path.through == a)
+                .unwrap()
+                .misses,
+            1
+        );
+
+        // a répond de nouveau : la route élue revient après un silence.
+        let third = expected.number(now);
+        assert!(expected.answered(a, third, Duration::from_millis(5), now));
+        assert!(
+            expected.take_recovery(),
+            "le retour de la route élue n'a pas été vu"
+        );
+        // Pris une fois, effacé : redemander sans rien de neuf dit non.
+        assert!(!expected.take_recovery());
+    }
+
+    #[test]
+    fn a_road_that_never_missed_signals_no_recovery() {
+        // Le cas ordinaire, plusieurs fois par seconde : rien à répéter
+        // à une connexion qui n'a jamais rien à apprendre.
+        let now = Instant::now();
+        let mut expected = expecting(now);
+        let a = direct("10.0.0.1:47000");
+        let first = expected.number(now);
+        assert!(expected.answered(a, first, Duration::from_millis(5), now));
+        assert_eq!(moved(expected.elect(now)), Some((None, a)));
+        expected.take_recovery();
+
+        let second = expected.number(now);
+        assert!(expected.answered(a, second, Duration::from_millis(5), now));
+        assert!(
+            !expected.take_recovery(),
+            "un écho ordinaire a été pris pour un retour"
+        );
+    }
+
+    #[test]
+    fn a_candidate_recovering_signals_nothing_while_it_is_not_elected() {
+        // Seule la route qui porte vraiment la connexion importe : une
+        // autre qui flanche et revient en arrière-plan n'apprend rien à
+        // personne.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let a = direct("10.0.0.1:47000");
+        let b = direct("10.0.0.2:47000");
+        let first = expected.number(start);
+        assert!(expected.answered(a, first, Duration::from_millis(5), start));
+        assert_eq!(moved(expected.elect(start)), Some((None, a)));
+        let second = expected.number(start);
+        assert!(expected.answered(b, second, Duration::from_millis(80), start));
+        expected.take_recovery();
+
+        // b, non élue, rate un tour de sonde à son propre rythme.
+        expected.look_over(start + WARM_EVERY);
+        let now = start + WARM_EVERY * 2;
+        expected.look_over(now);
+        assert_eq!(
+            expected
+                .paths
+                .iter()
+                .find(|path| path.through == b)
+                .unwrap()
+                .misses,
+            1
+        );
+
+        let third = expected.number(now);
+        assert!(expected.answered(b, third, Duration::from_millis(80), now));
+        assert!(
+            !expected.take_recovery(),
+            "le retour d'une route qui ne porte pas la connexion a été signalé"
+        );
+    }
+
+    #[test]
+    fn an_elected_road_given_up_and_taken_up_again_signals_a_recovery() {
+        // Le cas du 7 septembre (`a_card_that_has_ever_carried_anything_
+        // stops_being_second_guessed` ci-dessus) : la route élue est
+        // abandonnée pour de bon puis répond à la même adresse, neuve
+        // pour l'aiguilleur. Le silence a été plus long qu'un simple
+        // tour de sonde manqué, et le signal doit porter tout autant.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let a = direct("10.0.0.1:47000");
+        let b = direct("10.0.0.2:47000");
+        let first = expected.number(start);
+        assert!(expected.answered(a, first, Duration::from_millis(5), start));
+        assert_eq!(moved(expected.elect(start)), Some((None, a)));
+        let second = expected.number(start);
+        assert!(expected.answered(b, second, Duration::from_millis(80), start));
+        expected.take_recovery();
+
+        let now = goes_quiet(&mut expected, start);
+        assert!(
+            expected.paths.iter().all(|path| path.through != a),
+            "a aurait dû être abandonnée, b restant pour recevoir"
+        );
+        assert_eq!(
+            expected.elected,
+            Some(a),
+            "toujours élue jusqu'au prochain elect()"
+        );
+
+        let third = expected.number(now);
+        assert!(expected.answered(a, third, Duration::from_millis(5), now));
+        assert!(
+            expected.take_recovery(),
+            "le retour d'une route élue abandonnée puis reprise n'a pas été vu"
         );
     }
 

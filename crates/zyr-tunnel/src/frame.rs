@@ -23,6 +23,19 @@ impl std::fmt::Display for FrameError {
 
 impl std::error::Error for FrameError {}
 
+/// What a datagram off the tunnel turns out to carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Landed<'a> {
+    /// Real traffic for one of the engine's channels.
+    Channel(DatagramChannel, &'a [u8]),
+    /// Nothing: a datagram sent only to be acknowledged.
+    Nudge,
+}
+
+/// Leading byte of a nudge. No engine channel is ever numbered this way,
+/// `DatagramChannel` starting at 1, so it can never collide with one.
+const NUDGE: u8 = 0;
+
 /// Puts the channel in front of the payload.
 pub fn encode(channel: DatagramChannel, payload: &[u8]) -> Vec<u8> {
     let mut frame = Vec::with_capacity(1 + payload.len());
@@ -31,11 +44,20 @@ pub fn encode(channel: DatagramChannel, payload: &[u8]) -> Vec<u8> {
     frame
 }
 
-/// Splits the channel from the payload.
-pub fn decode(frame: &[u8]) -> Result<(DatagramChannel, &[u8]), FrameError> {
+/// A datagram carrying nothing, asked for nothing and answered the same
+/// way: it exists only to be sent and acknowledged.
+pub fn encode_nudge() -> Vec<u8> {
+    vec![NUDGE]
+}
+
+/// Splits the channel from the payload, or recognises a nudge.
+pub fn decode(frame: &[u8]) -> Result<Landed<'_>, FrameError> {
     let (head, payload) = frame.split_first().ok_or(FrameError::Empty)?;
+    if *head == NUDGE {
+        return Ok(Landed::Nudge);
+    }
     let channel = DatagramChannel::from_identifier(*head).map_err(FrameError::Channel)?;
-    Ok((channel, payload))
+    Ok(Landed::Channel(channel, payload))
 }
 
 #[cfg(test)]
@@ -47,9 +69,7 @@ mod tests {
         for channel in DatagramChannel::ALL {
             let payload = b"some video packet or other";
             let frame = encode(channel, payload);
-            let (read_back, contents) = decode(&frame).unwrap();
-            assert_eq!(read_back, channel);
-            assert_eq!(contents, payload);
+            assert_eq!(decode(&frame).unwrap(), Landed::Channel(channel, payload));
         }
     }
 
@@ -66,15 +86,21 @@ mod tests {
     #[test]
     fn an_empty_payload_stays_carriable() {
         let frame = encode(DatagramChannel::Control, &[]);
-        let (channel, contents) = decode(&frame).unwrap();
-        assert_eq!(channel, DatagramChannel::Control);
-        assert!(contents.is_empty());
+        assert_eq!(
+            decode(&frame).unwrap(),
+            Landed::Channel(DatagramChannel::Control, [].as_slice())
+        );
+    }
+
+    #[test]
+    fn a_nudge_is_told_apart_from_every_channel() {
+        assert_eq!(decode(&encode_nudge()).unwrap(), Landed::Nudge);
     }
 
     #[test]
     fn malformed_frames_are_refused() {
         assert_eq!(decode(&[]), Err(FrameError::Empty));
-        assert!(matches!(decode(&[0, 1, 2]), Err(FrameError::Channel(_))));
+        assert!(matches!(decode(&[4, 1, 2]), Err(FrameError::Channel(_))));
         assert!(matches!(decode(&[99]), Err(FrameError::Channel(_))));
     }
 }
