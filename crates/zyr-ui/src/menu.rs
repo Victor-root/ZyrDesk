@@ -1078,8 +1078,17 @@ pub fn lay(
     // d'habitude, son bord gauche quand le premier n'a pas la place, ce
     // que le bouton a déjà décidé.
     let entre = (design::PAS_2 * echelle).round() as i32;
+    // Le coin que `SetWindowPos` reçoit plus bas prend encore un debord
+    // de plus, pour une raison qui reste au-dessus de cette fonction :
+    // posée telle quelle, la carte tombait vingt pixels trop à gauche.
+    // Quand c'est la carte qui est collée à ce bord-là plutôt que
+    // laissée au bord droit, elle porte elle-même un second debord (son
+    // ombre à elle, `carte` la posant à `debord` et non à zéro), et les
+    // deux s'ajoutent sans se répondre : sans le retirer ici deux fois,
+    // le bord de la carte serait tombé deux debords après le bouton
+    // plutôt qu'au même endroit que lui.
     let horizontal = if a_droite {
-        anchor.0 - logo
+        anchor.0 - logo - debord * 2
     } else {
         anchor.0 - large
     };
@@ -1092,7 +1101,7 @@ pub fn lay(
         // le panneau d'une liste s'ouvrant dedans.
         Sens::Cote => (
             if a_droite {
-                anchor.0 + entre
+                anchor.0 + entre - debord * 2
             } else {
                 anchor.0 - logo - entre - large
             },

@@ -2717,6 +2717,14 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Corrigé, mais seulement d'un journal qui manquait.** Chaque question de ce genre dit maintenant d'elle-même ce qu'elle traverse : qu'elle est reçue, vers quel port local elle cherche à joindre le moteur, si ce moteur répond ou refuse, et comment le passage s'est terminé. Ce n'est pas un correctif : personne ne sait encore ce qu'il faudrait corriger. C'est ce qui manquait pour le savoir la prochaine fois que ça arrive.
 
+## D164. Le menu collé à gauche tombait un peu plus loin que son bouton (2026-09-07, pendant M6)
+
+**Le relevé.** « Quand je le colle à gauche de l'écran, la modale du menu du fab ne se colle pas à l'écran à gauche, alors que si je le mets collé à droite ça fonctionne. »
+
+**Un debord compté une fois de trop.** La fenêtre du menu est plus grande que la carte qu'elle montre, de l'ombre qui déborde tout autour, et le coin que Windows reçoit pour la poser porte pour cette raison un debord de plus qu'un calcul nu n'en donnerait, connu depuis toujours pour le bord droit. [D161](#d161-le-menu-du-bouton-flottant-ne-connaissait-quun-seul-bord-de-lécran-2026-09-06-pendant-m6) a repris ce même debord tel quel pour le nouveau bord gauche, sans voir qu'il s'ajoutait alors à un second : celui que la carte porte elle-même du côté où elle est collée à sa propre fenêtre, quand elle part de la gauche plutôt que de la droite. Les deux ne se répondaient pas, et la carte tombait deux fois cette marge plus loin que le bouton au lieu de zéro fois, ce qui, à l'œil, ressemble à un menu qui refuse de se coller à l'écran comme le fait déjà le bouton.
+
+**Corrigé en retirant ce second debord là où il ne l'était pas.** Rien ne change au bord droit, qui n'a jamais porté ce problème.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
