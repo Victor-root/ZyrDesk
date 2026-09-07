@@ -124,6 +124,19 @@ const WARM_PATHS: usize = 2;
 /// A direct road has to be this much shorter to replace another.
 const HYSTERESIS: Duration = Duration::from_millis(3);
 
+/// How long a newly elected road is trusted on its probes alone.
+///
+/// An echo proves a road carries a light, regular datagram both ways; it
+/// cannot prove a box further along lets through the heavier, far less
+/// regular traffic of a real connection, or that the connection at the
+/// other end has even reached the point of trying yet. Past this, still
+/// nothing real, the road has had the time a working one needs to answer
+/// several times over, and it loses the benefit of the doubt an echo
+/// alone bought it: another road gets to try, rather than a fast-
+/// answering one that has never, even once, actually carried the
+/// session it was elected for.
+const PROVEN_WITHIN: Duration = Duration::from_secs(4);
+
 /// Turns the packets a relay brought may win in a row before the socket
 /// is read.
 ///
@@ -250,6 +263,10 @@ struct Path {
     /// was working got given up on this computer's own hiccup, three
     /// times an hour on the fifth of September.
     asked: bool,
+    /// The last moment real traffic, not a probe of ours, was seen to
+    /// come by this road: what an echo alone can never prove, since a
+    /// road can answer every probe sent its way and carry nothing else.
+    proven_at: Option<Instant>,
 }
 
 #[derive(Debug)]
@@ -412,8 +429,9 @@ impl Expected {
     /// in two is a choice made from something this journal never wrote
     /// down. This is that something: each road, whether its last probe
     /// left this computer at all, whether it was answered, how long it
-    /// took, how many probes it has missed, and which of them is
-    /// carrying the session.
+    /// took, how many probes it has missed, which of them is carrying
+    /// the session, and whether real traffic has ever crossed the one
+    /// that is.
     ///
     /// Written when it changes and never on a clock. The look-over runs
     /// ten times a second and would fill a journal in twelve seconds;
@@ -435,6 +453,9 @@ impl Expected {
             said.push_str(&self.named(path.through));
             if Some(path.through) == self.elected {
                 said.push_str(" [en service]");
+                if path.proven_at.is_none() {
+                    said.push_str(", jamais traversée par du trafic réel");
+                }
             }
             if timed {
                 said.push_str(&format!(" {} ms", path.round_trip.as_millis()));
@@ -630,6 +651,7 @@ impl Expected {
                     probed: now,
                     misses: 0,
                     asked: true,
+                    proven_at: None,
                 });
                 self.paths.sort_by_key(|path| path.round_trip);
                 let elected = self.elected;
@@ -646,6 +668,14 @@ impl Expected {
             }
         }
         true
+    }
+
+    /// Real traffic, not a probe of ours, was just seen to come by that
+    /// road: the one proof an echo cannot forge on its own.
+    fn proven(&mut self, through: Through, now: Instant) {
+        if let Some(path) = self.paths.iter_mut().find(|path| path.through == through) {
+            path.proven_at = Some(now);
+        }
     }
 
     /// The road worth taking: the shortest direct one, and the relay
@@ -672,6 +702,14 @@ impl Expected {
             .or_else(|| self.paths.iter().find(|path| worth(path)))
     }
 
+    /// The same rule again, a road set aside: the best of every other
+    /// one, for a road that has already had its turn and is not to be
+    /// its own replacement.
+    fn best_other_than(&self, exclude: Through) -> Option<&Path> {
+        self.best_among(|path| path.misses == 0 && path.through != exclude)
+            .or_else(|| self.best_among(|path| path.through != exclude))
+    }
+
     /// Chooses the road in use. Says what changed, if anything did.
     ///
     /// Between two direct roads, the shorter, but not for a difference
@@ -690,21 +728,46 @@ impl Expected {
     /// road going quiet at once is what a link that comes and goes looks
     /// like, and it lasts seconds, not minutes: the road carrying the
     /// session keeps it until another road actually answers.
+    ///
+    /// Neither margin above is a road's forever: an echo proves a road
+    /// answers, not that it carries anything, and a road held past
+    /// `PROVEN_WITHIN` on that proof alone gives up its shelter to the
+    /// best of the others, exactly as a road that stopped answering
+    /// does. The other side of the same coin is a road real traffic has
+    /// already crossed: it keeps its shelter against a challenger of its
+    /// own kind that has not done the same, whatever the challenger
+    /// measures, because a probe is the one thing that can make a dead
+    /// road look exactly like a live one.
     fn elect(&mut self, now: Instant) -> Option<Elected> {
-        let best = self.best()?;
         let current = self
             .elected
             .and_then(|through| self.paths.iter().find(|path| path.through == through));
+        let overdue = current.is_some_and(|current| {
+            current.proven_at.is_none() && now.duration_since(self.elected_at) >= PROVEN_WITHIN
+        });
+        let best = match current {
+            Some(current) if overdue => self
+                .best_other_than(current.through)
+                .or_else(|| self.best()),
+            _ => self.best(),
+        }?;
         let chosen = match current {
             // Nothing answers anywhere, `best` included.
             Some(current) if best.misses > 0 => current.through,
             // The margin is there so a session does not swing between
             // two equals; it is not there to keep a road that has
-            // stopped answering, which is not the equal of anything.
+            // stopped answering, which is not the equal of anything, nor
+            // one that has had `PROVEN_WITHIN` to carry something real
+            // and has not. A road real traffic has already crossed gets
+            // the same margin against a challenger that has not,
+            // whatever it measures: proof outranks a guess, however good
+            // the guess.
             Some(current)
-                if current.misses == 0
+                if !overdue
+                    && current.misses == 0
                     && current.through.relayed() == best.through.relayed()
-                    && current.round_trip <= best.round_trip + HYSTERESIS =>
+                    && (current.round_trip <= best.round_trip + HYSTERESIS
+                        || (current.proven_at.is_some() && best.proven_at.is_none())) =>
             {
                 current.through
             }
@@ -1502,7 +1565,15 @@ impl Inner {
             count,
             |from, datagram| self.heard(Through::Direct(from), datagram),
             |from| {
-                let card = *self.table.lock().expect("aiguilleur").by_real.get(&from)?;
+                // Reached here only for what is not a probe of ours: real
+                // traffic, on its way to the transport. Its mere arrival
+                // is what an echo alone cannot prove of the road it just
+                // came by.
+                let mut table = self.table.lock().expect("aiguilleur");
+                let card = *table.by_real.get(&from)?;
+                if let Some(expected) = table.expected.get_mut(&card) {
+                    expected.proven(Through::Direct(from), Instant::now());
+                }
                 Some(self.outward(card))
             },
         );
@@ -1529,6 +1600,9 @@ impl Inner {
         }
         let waiting = {
             let mut table = self.table.lock().expect("aiguilleur");
+            if let Some(expected) = table.expected.get_mut(&card) {
+                expected.proven(Through::Relay(card), Instant::now());
+            }
             if table.relayed.len() >= RELAYED_WAITING {
                 table.relayed.pop_front();
             }
@@ -1938,6 +2012,23 @@ mod tests {
             .unwrap();
         assert_eq!(&received[..], b"frame");
 
+        // Ce vrai trafic a prouvé la route côté hôte, qui l'a reçu : une
+        // sonde seule ne l'aurait jamais fait.
+        {
+            let table = pair.host.inner.table.lock().expect("aiguilleur");
+            let expected = table.expected.get(&pair.client_card).unwrap();
+            let elected = expected.elected.unwrap();
+            let path = expected
+                .paths
+                .iter()
+                .find(|path| path.through == elected)
+                .unwrap();
+            assert!(
+                path.proven_at.is_some(),
+                "le trafic réel reçu n'a pas prouvé la route"
+            );
+        }
+
         // Chacun a été vu par l'autre, à son adresse réelle.
         assert!(
             pair.client
@@ -2042,8 +2133,25 @@ mod tests {
             .unwrap();
         assert_eq!(&received[..], b"par le relais");
 
+        // Le relais est prouvé côté hôte, qui a reçu ce trafic réel.
+        {
+            let table = host.inner.table.lock().expect("aiguilleur");
+            let expected = table.expected.get(&client_card).unwrap();
+            let path = expected
+                .paths
+                .iter()
+                .find(|path| path.through == Through::Relay(client_card))
+                .unwrap();
+            assert!(
+                path.proven_at.is_some(),
+                "le relais prouvé n'a pas été noté"
+            );
+        }
+
         // Le direct devient possible : la bascule est immédiate, et la
-        // même connexion continue, sur la même carte.
+        // même connexion continue, sur la même carte. Une route prouvée
+        // ne protège que face à une inconnue de son espèce ; le direct
+        // reste sans égard pour ce que le relais vient de prouver.
         client.add_candidates(host_card, [host.local_address().unwrap()]);
         host.add_candidates(client_card, [client.local_address().unwrap()]);
         let direct = tokio::time::timeout(PATIENCE, async {
@@ -2235,6 +2343,71 @@ mod tests {
         assert_eq!(moved(expected.elect(now)), Some((Some(a), b)));
         // Un écho à un numéro inconnu ne compte pas.
         assert!(!expected.answered(a, 999, Duration::from_millis(1), now));
+    }
+
+    #[test]
+    fn a_road_real_traffic_has_crossed_is_not_dropped_for_an_unproven_stranger() {
+        // Une sonde ne prouve que la sonde : une inconnue qui répond
+        // nettement plus vite, hors de toute marge ordinaire, ne doit
+        // pas prendre la place d'une route que du vrai trafic a déjà
+        // traversée, tant qu'elle n'a elle-même rien prouvé.
+        let now = Instant::now();
+        let mut expected = expecting(now);
+        let a = direct("10.0.0.1:47000");
+        let b = direct("10.0.0.2:47000");
+        let first = expected.number(now);
+        assert!(expected.answered(a, first, Duration::from_millis(20), now));
+        assert_eq!(moved(expected.elect(now)), Some((None, a)));
+        expected.proven(a, now);
+
+        let second = expected.number(now);
+        assert!(expected.answered(b, second, Duration::from_millis(1), now));
+        assert_eq!(
+            moved(expected.elect(now)),
+            None,
+            "une route prouvée a cédé la place à une inconnue plus rapide mais non prouvée"
+        );
+
+        // Elle fait ses preuves à son tour : la règle ordinaire reprend
+        // la main entre deux routes désormais à égalité de preuve.
+        expected.proven(b, now);
+        assert_eq!(moved(expected.elect(now)), Some((Some(a), b)));
+    }
+
+    #[test]
+    fn a_road_that_never_carries_anything_gives_way_once_overdue() {
+        // Une route répond à chaque sonde, toujours la meilleure
+        // mesurée, et pourtant rien de réel n'est jamais parti dessus.
+        // Passé PROVEN_WITHIN, une autre route qui répond doit pouvoir
+        // essayer à sa place.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let a = direct("10.0.0.1:47000");
+        let b = direct("10.0.0.2:47000");
+        let first = expected.number(start);
+        assert!(expected.answered(a, first, Duration::from_millis(5), start));
+        assert_eq!(moved(expected.elect(start)), Some((None, a)));
+
+        // b répond aussi, nettement plus lentement : la marge ordinaire
+        // laisse la session sur a, qui n'a pourtant jamais rien porté.
+        let second = expected.number(start);
+        assert!(expected.answered(b, second, Duration::from_millis(80), start));
+        assert_eq!(moved(expected.elect(start)), None);
+
+        // Le temps passe : a répond toujours aux sondes, plus vite que
+        // b, mais n'a jamais laissé passer le moindre octet réel. b a
+        // droit à son tour malgré sa mesure plus mauvaise.
+        let later = start + PROVEN_WITHIN;
+        assert_eq!(
+            moved(expected.elect(later)),
+            Some((Some(a), b)),
+            "une route jamais prouvée a gardé la main indéfiniment"
+        );
+
+        // b fait ses preuves : la marge ordinaire s'applique de nouveau,
+        // cette fois en sa faveur, même si a mesure toujours plus court.
+        expected.proven(b, later);
+        assert_eq!(moved(expected.elect(later)), None);
     }
 
     /// Fait taire la route élue jusqu'à ce que l'aiguilleur en tire les
