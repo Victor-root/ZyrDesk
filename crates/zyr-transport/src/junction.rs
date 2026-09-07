@@ -767,9 +767,16 @@ impl Expected {
             // the same margin against a challenger that has not,
             // whatever it measures: proof outranks a guess, however good
             // the guess.
+            //
+            // `misses < MISSES_TO_DIE` and not `== 0`: a road one probe
+            // has failed to answer is not a road that stopped
+            // answering, everywhere else in this file, and losing the
+            // margin at the first miss is how a link that drops one
+            // packet in twenty swings between two roads on every one of
+            // them.
             Some(current)
                 if !overdue
-                    && current.misses == 0
+                    && current.misses < MISSES_TO_DIE
                     && current.through.relayed() == best.through.relayed()
                     && (current.round_trip <= best.round_trip + HYSTERESIS
                         || (current.proven_at.is_some() && best.proven_at.is_none())) =>
@@ -2413,6 +2420,46 @@ mod tests {
         // cette fois en sa faveur, même si a mesure toujours plus court.
         expected.proven(b, later);
         assert_eq!(moved(expected.elect(later)), None);
+    }
+
+    #[test]
+    fn a_single_missed_probe_does_not_cost_a_road_its_seat() {
+        // Une route qui a raté une seule sonde n'a pas cessé de
+        // répondre : il en faut trois d'affilée pour ça, comme partout
+        // ailleurs dans ce fichier. Céder la place dès la première
+        // ferait basculer la session à chaque paquet perdu sur un lien
+        // qui en perd de temps en temps.
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let a = direct("10.0.0.1:47000");
+        let b = direct("10.0.0.2:47000");
+        let first = expected.number(start);
+        assert!(expected.answered(a, first, Duration::from_millis(5), start));
+        assert_eq!(moved(expected.elect(start)), Some((None, a)));
+
+        let second = expected.number(start);
+        assert!(expected.answered(b, second, Duration::from_millis(80), start));
+        assert_eq!(moved(expected.elect(start)), None);
+
+        // Un premier tour relance la sonde ; faute d'écho d'ici le
+        // second, faute d'un troisième, elle compte pour manquée.
+        expected.look_over(start + KEEP_EVERY);
+        let now = start + KEEP_EVERY * 2;
+        expected.look_over(now);
+        let path = expected
+            .paths
+            .iter()
+            .find(|path| path.through == a)
+            .unwrap();
+        assert_eq!(path.misses, 1);
+
+        // b, bien plus lente, ne doit pas prendre la place de a pour
+        // cette seule sonde manquée.
+        assert_eq!(
+            moved(expected.elect(now)),
+            None,
+            "une seule sonde manquée a coûté sa place à la route la plus rapide"
+        );
     }
 
     /// Fait taire la route élue jusqu'à ce que l'aiguilleur en tire les

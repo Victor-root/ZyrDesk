@@ -2743,6 +2743,14 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Corrigé en ne coupant jamais la course qu'une connexion mène déjà toute seule.** Ouvrir une session tente ses routes pendant quinze secondes avant d'abandonner, ailleurs dans ce produit : un délai plus court que cette patience-là entre nécessairement en collision avec elle, une fois sur une route à peine élue. Porté à vingt secondes, le mécanisme ne peut plus se déclencher avant que cette course ait de toute façon fini, gagnée ou perdue ; il ne reste actif que là où D165 en avait besoin, une session déjà ouverte depuis longtemps et dont la route en service ne porte plus rien.
 
+## D167. Une seule sonde perdue suffisait à faire changer de route (2026-09-07, pendant M6)
+
+**Le relevé.** Dans le journal de [D166](#d166-le-délai-de-la-preuve-coupait-des-connexions-qui-auraient-fini-par-réussir-2026-09-07-pendant-m6), la première tentative de connexion échouait encore, sans que ce soit cette fois le nouveau délai en cause : chaque bascule de route y suivait une ligne « did not answer a probe » ou « stopped answering and is given up », des mécanismes bien plus anciens que la session en cours. « Oui mais peu importe qu'elle date d'avant, faut régler le problème. »
+
+**Une règle qui ne se répondait pas à elle-même.** Ce fichier tient depuis toujours qu'une route qui rate une sonde n'est pas une route morte : il en faut trois d'affilée, une constante nommée en toutes lettres (`MISSES_TO_DIE`), avant qu'une route ne soit abandonnée. Mais la marge qui garde la route en service face à une autre, un peu plus rapide ou pas encore prouvée, ne demandait pas ce même compte : elle exigeait zéro sonde ratée, pas moins de trois. La première sonde perdue, même sur la route la plus rapide et déjà éprouvée, lui faisait donc perdre sa place aussitôt, avant même que la règle des trois n'ait eu son mot à dire. Sur un lien qui perd un paquet de temps en temps, ce qui décrit un réseau ordinaire bien plus qu'un réseau en panne, la session changeait alors de route à chaque perte.
+
+**Corrigé en alignant la marge sur la règle qu'elle était censée suivre.** La route en service garde sa marge (hystérésis ou preuve) tant qu'elle n'a pas atteint les trois sondes ratées qui la feraient de toute façon abandonner ailleurs dans ce fichier, et non plus dès la première.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
