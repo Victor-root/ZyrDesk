@@ -124,18 +124,23 @@ const WARM_PATHS: usize = 2;
 /// A direct road has to be this much shorter to replace another.
 const HYSTERESIS: Duration = Duration::from_millis(3);
 
-/// How long a newly elected road is trusted on its probes alone.
+/// How long a road already elected is trusted on its probes alone,
+/// with nothing real proven yet.
 ///
-/// An echo proves a road carries a light, regular datagram both ways; it
-/// cannot prove a box further along lets through the heavier, far less
-/// regular traffic of a real connection, or that the connection at the
-/// other end has even reached the point of trying yet. Past this, still
-/// nothing real, the road has had the time a working one needs to answer
-/// several times over, and it loses the benefit of the doubt an echo
-/// alone bought it: another road gets to try, rather than a fast-
-/// answering one that has never, even once, actually carried the
-/// session it was elected for.
-const PROVEN_WITHIN: Duration = Duration::from_secs(4);
+/// An echo proves a road carries a light, regular datagram both ways;
+/// it proves nothing of the heavier, far less regular traffic of a
+/// real connection, and least of all while that connection is still
+/// finding its way at all. A first connection races its candidate
+/// roads under a patience of its own, fifteen seconds elsewhere in
+/// this product: cutting a road out from under a handshake that only
+/// needed a little longer trades a slow success for a certain
+/// failure, since whatever replaces it starts that same race over
+/// with nothing measured yet, and can be cut short in its turn before
+/// it too has had the time to answer. Kept safely past that patience,
+/// a road still unproven can only mean what this was written for: a
+/// connection already open, answering every probe, and carrying
+/// nothing real for far longer than establishing one ever should.
+const PROVEN_WITHIN: Duration = Duration::from_secs(20);
 
 /// Turns the packets a relay brought may win in a row before the socket
 /// is read.
