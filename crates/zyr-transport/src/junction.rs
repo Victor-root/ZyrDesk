@@ -352,17 +352,19 @@ struct Expected {
     said_swallowed: u64,
     next_number: u32,
     in_flight: Vec<InFlight>,
-    /// Whether real traffic has ever crossed any road of this card, for
+    /// The last moment real traffic crossed any road of this card, for
     /// as long as it has been expected.
     ///
     /// A road that is given up loses everything it had proven with it:
     /// a fresh one at the same address starts again with nothing
     /// measured. This is the one memory that survives that, because
-    /// what it answers, once and for all, is not whether this
-    /// particular road works but whether the two computers have ever
-    /// shown they can talk at all. A card that has is not the card
-    /// `PROVEN_WITHIN` was written for.
-    ever_proven: bool,
+    /// what it answers is not whether this particular road works but
+    /// whether the two computers can still talk at all, and how long
+    /// ago they last showed it. A card proven within `PROVEN_WITHIN`
+    /// is not the card that constant was written for; one gone quiet
+    /// for that long on every road it has tried since is exactly it,
+    /// however far in its past the first proof was.
+    proven_since: Option<Instant>,
     /// Whether the elected road has answered again since this was last
     /// asked, having gone quiet for at least one missed probe, or for
     /// long enough to be given up outright and reappear as a fresh one.
@@ -405,7 +407,7 @@ impl Expected {
             said_swallowed: 0,
             next_number: 1,
             in_flight: Vec::new(),
-            ever_proven: false,
+            proven_since: None,
             recovered: false,
         }
     }
@@ -716,7 +718,7 @@ impl Expected {
         if let Some(path) = self.paths.iter_mut().find(|path| path.through == through) {
             path.proven_at = Some(now);
         }
-        self.ever_proven = true;
+        self.proven_since = Some(now);
     }
 
     /// Whether the elected road has come back since this was last asked.
@@ -785,19 +787,32 @@ impl Expected {
     /// measures, because a probe is the one thing that can make a dead
     /// road look exactly like a live one.
     ///
-    /// That patience runs out only while the card itself has never once
-    /// carried anything real. A road given up for a burst of missed
-    /// probes, a real outage of a few seconds among them, takes its
-    /// shelter with it: the one answering in its place at the same
-    /// address a moment later is a fresh road as far as this file
-    /// knows, proof and all. Ending its own patience over that would
-    /// punish the very moment a session is recovering from a blackout
-    /// for a card that has already shown it works.
+    /// That patience is longer, not gone, for a card that has already
+    /// shown it works. A road given up for a burst of missed probes, a
+    /// real outage of a few seconds among them, takes its shelter with
+    /// it: the one answering in its place at the same address a moment
+    /// later is a fresh road as far as this file knows, proof and all.
+    /// Judging it from the instant it reappears would punish the very
+    /// moment a session is recovering from a blackout for a card that
+    /// has already shown it works, so it is judged instead from the
+    /// last moment anything real crossed this card at all, on whatever
+    /// road carried it: a card silent for less than `PROVEN_WITHIN`
+    /// since then is still within the outage it is recovering from,
+    /// however long its unproven road has been sitting elected. What
+    /// this must not become is the shelter D168 wrote against, kept
+    /// forever on the strength of a proof this old: a card that has
+    /// carried nothing real for a whole `PROVEN_WITHIN` of its own,
+    /// on every road it has tried in that time, has stopped
+    /// recovering from anything and become the card this constant was
+    /// written for, whatever it once proved.
     fn elect(&mut self, now: Instant) -> Option<Elected> {
         let current = self
             .elected
             .and_then(|through| self.paths.iter().find(|path| path.through == through));
-        let overdue = !self.ever_proven
+        let established = self
+            .proven_since
+            .is_some_and(|proven| now.duration_since(proven) < PROVEN_WITHIN);
+        let overdue = !established
             && current.is_some_and(|current| {
                 current.proven_at.is_none() && now.duration_since(self.elected_at) >= PROVEN_WITHIN
             });
@@ -2490,15 +2505,15 @@ mod tests {
     }
 
     #[test]
-    fn a_card_that_has_ever_carried_anything_stops_being_second_guessed() {
-        // Le 7 septembre : une route déjà prouvée depuis plusieurs
-        // minutes est donnée pour morte lors d'une vraie coupure
-        // réseau de quelques secondes, et une route à la même adresse
-        // répond aussitôt après, neuve pour l'aiguilleur puisque
-        // celle qui portait la preuve a disparu avec l'ancienne.
-        // Vingt secondes plus tard, PROVEN_WITHIN l'a sanctionnée pour
-        // une route jamais essayée, alors que la carte elle-même avait
-        // déjà montré qu'elle porte du vrai trafic.
+    fn a_card_recovering_from_a_real_outage_gets_its_road_a_fair_chance() {
+        // Le 7 septembre (D168) : une route déjà prouvée depuis
+        // plusieurs minutes est donnée pour morte lors d'une vraie
+        // coupure réseau de quelques secondes (trois sondes ratées,
+        // six secondes), et une route à la même adresse répond
+        // aussitôt après, neuve pour l'aiguilleur puisque celle qui
+        // portait la preuve a disparu avec l'ancienne. Elle doit
+        // avoir, elle aussi, ses vingt secondes pour faire ses
+        // preuves, sans être jugée sur l'instant.
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
@@ -2508,26 +2523,85 @@ mod tests {
         assert_eq!(moved(expected.elect(start)), Some((None, a)));
         expected.proven(a, start);
 
-        // a est donnée pour morte ; b, jamais essayée, prend sa place.
+        // La coupure : a donnée pour morte, b prend la main un
+        // instant, le temps qu'elle dure.
+        let outage = start + Duration::from_secs(6);
         expected.paths.retain(|path| path.through != a);
-        let number = expected.number(start);
-        assert!(expected.answered(b, number, Duration::from_millis(80), start));
-        assert_eq!(moved(expected.elect(start)), Some((Some(a), b)));
+        let number = expected.number(outage);
+        assert!(expected.answered(b, number, Duration::from_millis(5), outage));
+        assert_eq!(moved(expected.elect(outage)), Some((Some(a), b)));
 
-        // a répond de nouveau : une route toute neuve pour
-        // l'aiguilleur, qui n'a encore rien prouvé par elle-même.
+        // a répond de nouveau, un instant plus tard : une route
+        // toute neuve pour l'aiguilleur, qui n'a encore rien prouvé
+        // par elle-même.
+        let reborn = outage + Duration::from_millis(500);
+        let number = expected.number(reborn);
+        assert!(expected.answered(a, number, Duration::from_millis(1), reborn));
+        assert_eq!(moved(expected.elect(reborn)), Some((Some(b), a)));
+
+        // Juste avant ses vingt secondes à elle, toujours rien
+        // prouvé sur cette route neuve : elle ne doit pourtant pas
+        // être sanctionnée, la carte étant encore dans la coupure
+        // dont elle se remet.
+        let still_fresh = reborn + PROVEN_WITHIN - Duration::from_millis(1);
+        assert_eq!(
+            moved(expected.elect(still_fresh)),
+            None,
+            "une route qui venait de reprendre après une vraie coupure a perdu sa place trop tôt"
+        );
+    }
+
+    #[test]
+    fn a_card_long_proven_still_gives_way_once_its_own_road_stays_silent() {
+        // Le 8 septembre : une carte qui portait du vrai trafic
+        // depuis dix-neuf minutes perd sa route, en essaie une
+        // autre le temps d'une coupure de quelques secondes, puis
+        // s'installe sur une troisième qui répond à chaque sonde
+        // sans jamais plus rien porter de réel. Rien ne remettait
+        // plus jamais cette route en cause, la carte ayant déjà
+        // fait ses preuves, et la session est morte trente secondes
+        // plus tard faute d'avoir jamais rien reçu (D173).
+        let start = Instant::now();
+        let mut expected = expecting(start);
+        let a = direct("10.0.0.1:47000");
+        let b = direct("10.0.0.2:47000");
+        let c = direct("10.0.0.3:47000");
         let number = expected.number(start);
         assert!(expected.answered(a, number, Duration::from_millis(5), start));
-        assert_eq!(moved(expected.elect(start)), Some((Some(b), a)));
+        assert_eq!(moved(expected.elect(start)), Some((None, a)));
+        expected.proven(a, start);
 
-        // Vingt secondes plus tard, toujours rien prouvé sur cette
-        // route neuve : elle ne doit pourtant pas être sanctionnée,
-        // cette carte ayant déjà montré qu'elle porte du vrai trafic.
-        let later = start + PROVEN_WITHIN;
+        // La coupure : a donnée pour morte, b prend la main un
+        // instant.
+        let outage = start + Duration::from_secs(6);
+        expected.paths.retain(|path| path.through != a);
+        let number = expected.number(outage);
+        assert!(expected.answered(b, number, Duration::from_millis(5), outage));
+        assert_eq!(moved(expected.elect(outage)), Some((Some(a), b)));
+
+        // c répond à son tour, un peu plus vite, et prend la place
+        // de b : la route qui portera la carte jusqu'au bout, sans
+        // jamais rien y laisser passer de réel.
+        let settled = outage + Duration::from_millis(500);
+        let number = expected.number(settled);
+        assert!(expected.answered(c, number, Duration::from_millis(1), settled));
+        assert_eq!(moved(expected.elect(settled)), Some((Some(b), c)));
+
+        // Moins de vingt secondes après la dernière preuve réelle,
+        // c ne doit pas être remise en cause : la carte est encore
+        // dans sa coupure.
+        let still_recovering = start + PROVEN_WITHIN - Duration::from_millis(1);
+        assert_eq!(moved(expected.elect(still_recovering)), None);
+
+        // Bien après vingt secondes depuis la dernière preuve
+        // réelle, et depuis que c est en service : une autre route
+        // qui répond doit pouvoir essayer à sa place, comme pour
+        // une carte qui n'aurait jamais rien prouvé de sa vie.
+        let long_after = settled + PROVEN_WITHIN + Duration::from_secs(1);
         assert_eq!(
-            moved(expected.elect(later)),
-            None,
-            "une carte qui avait déjà prouvé du trafic réel a quand même perdu sa route"
+            moved(expected.elect(long_after)),
+            Some((Some(c), b)),
+            "une route restée muette longtemps sur une carte pourtant éprouvée a gardé la main indéfiniment"
         );
     }
 
