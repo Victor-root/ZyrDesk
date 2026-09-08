@@ -2783,6 +2783,14 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Ni l'élection elle-même ni la limite d'inactivité de trente secondes n'ont bougé : cette dernière reste le filet de sécurité pour une coupure trop longue pour que quoi que ce soit la rattrape à temps.
 
+## D171. Une première tentative qui échoue laissait la personne recliquer elle-même (2026-09-08, pendant M6)
+
+**Le relevé.** Plusieurs tentatives de connexion vers le même ordinateur, le même soir, échouant chacune de la même façon : le journal montre des trous de silence sur la prise réseau d'un peu plus d'une seconde, revenant sans arrêt pendant les quinze secondes de patience, sur toutes les routes essayées à la fois, direct comme relais. « Bon ben encore des problèmes pour me connecter... et à chaque fois que ça merde c'est après avoir fait la maj. » Un test de ping indépendant, lancé en parallèle d'une tentative qui échouait, n'a montré aucune perte ni aucun délai : la connexion à internet elle-même n'était pas en cause. Et un motif s'est répété toute la soirée, sans exception : une deuxième tentative, juste après une première qui a échoué, réussissait presque toujours du premier coup. « C'est quasiment tout le temps comme ça, la première foire et la deuxième en général fonctionne. »
+
+**Ce que ça isole, et ce que ça n'explique pas.** Le ping resté propre pendant un échec écarte une connexion internet générale en cause ; que toutes les routes se taisent en même temps, direct et relais confondus, pointe plutôt vers quelque chose de propre à cet ordinateur-là au moment de l'essai plutôt que vers le chemin entre les deux. Rien de tout cela n'a pu être confirmé : ni la gestion d'énergie de la carte réseau, ni le pare-feu, ni l'antivirus, désactivés l'un après l'autre sans effet. Le silence dure juste assez longtemps, et revient juste assez souvent, pour user les quinze secondes de patience d'une tentative sans jamais les user deux fois de suite. La vraie cause de ce silence répété reste ouverte.
+
+**Corrigé en ne laissant plus la personne recliquer elle-même.** Une tentative qui échoue en relance maintenant une seconde, tout de suite, avant de dire que ça n'a pas marché : une nouvelle réunion demandée au serveur s'il en fallait une, une nouvelle route sondée depuis rien. Ça ne répare pas ce qui cause le premier échec, seulement le fait de devoir s'y reprendre à la main pour obtenir ce que la deuxième tentative aurait de toute façon donné. Une machine réellement injoignable attend maintenant deux fois quinze secondes avant de le dire, plutôt qu'une seule : le prix pour ne plus jamais avoir à reprendre soi-même une tentative qui aurait fini par marcher.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use tokio::runtime::Handle;
 use tokio::task::{JoinHandle, JoinSet};
 use zyr_control::pipe::Heard;
-use zyr_control::{Answer, Door, PROTOCOL, Request, Standing};
+use zyr_control::{Answer, Door, PROTOCOL, Reached, Request, Standing};
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
@@ -356,6 +356,41 @@ async fn one_question<T>(
     answered
 }
 
+/// One attempt at reaching a computer for a session: a fresh meeting
+/// through the account, if the road runs through it, and the way opened
+/// on the back of it. What the meeting was for is over the moment this
+/// answers, one way or the other: followed by the account on success,
+/// ended on it on failure.
+async fn one_reach(
+    host: &str,
+    peer: Fingerprint,
+    media: zyr_transport::MediaProfile,
+    only_here: bool,
+    answering: &Answering,
+) -> Result<Reached, String> {
+    let (label, knock) = where_to_knock(host, peer, only_here, answering).await?;
+    let meeting = knock.session();
+    match answering
+        .machine
+        .ways
+        .open(&label, peer, media, knock)
+        .await
+    {
+        Ok(reached) => {
+            if let Some(session) = meeting {
+                answering.machine.account.follow(reached.way, session);
+            }
+            Ok(reached)
+        }
+        Err(reason) => {
+            if let Some(session) = meeting {
+                answering.machine.account.ended(&session);
+            }
+            Err(reason)
+        }
+    }
+}
+
 async fn one(request: Request, answering: &Answering) -> Answer {
     match request {
         Request::Standing => {
@@ -381,33 +416,24 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             media,
             only_here,
         } => {
-            let (label, knock) = match where_to_knock(&host, peer, only_here, answering).await {
-                Ok(found) => found,
-                Err(reason) => return Answer::Refused(reason),
-            };
-            let meeting = knock.session();
-            match answering
-                .machine
-                .ways
-                .open(&label, peer, media, knock)
-                .await
-            {
-                Ok(reached) => {
-                    if let Some(session) = meeting {
-                        answering.machine.account.follow(reached.way, session);
-                    }
-                    Answer::Reached(reached)
-                }
-                Err(reason) => {
-                    if let Some(session) = meeting {
-                        answering.machine.account.ended(&session);
-                    }
-                    Answer::Refused(if only_here {
-                        nothing_answered_here(&reason)
-                    } else {
-                        reason
-                    })
-                }
+            // Asked once more before giving up: a road that missed this
+            // second's worth of probes is common enough, and the account
+            // a meeting goes through costs nothing next to the person who
+            // would otherwise have to ask again themselves for the very
+            // same computer.
+            if let Ok(reached) = one_reach(&host, peer, media, only_here, answering).await {
+                return Answer::Reached(reached);
+            }
+            answering.log.write(&format!(
+                "{host}: first attempt did not reach it, trying once more"
+            ));
+            match one_reach(&host, peer, media, only_here, answering).await {
+                Ok(reached) => Answer::Reached(reached),
+                Err(reason) => Answer::Refused(if only_here {
+                    nothing_answered_here(&reason)
+                } else {
+                    reason
+                }),
             }
         }
         Request::Pair { way, pin } => {
