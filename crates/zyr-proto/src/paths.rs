@@ -139,6 +139,16 @@ pub fn reach_log() -> PathBuf {
     logs_dir().join("reach.log")
 }
 
+/// What a far computer last handed over of its own `reach_log`, fetched
+/// alongside its journal.
+///
+/// Read next to this computer's own, for the same reason the two
+/// journals are read side by side: a fault is diagnosed on both or on
+/// neither.
+pub fn reach_distant_log() -> PathBuf {
+    logs_dir().join("reach-distant.log")
+}
+
 /// Fingerprints of the devices allowed to reach this computer.
 pub fn authorized_devices() -> PathBuf {
     data_dir().join("authorized-devices.conf")

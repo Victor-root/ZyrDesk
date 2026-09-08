@@ -400,7 +400,7 @@ async fn one_reach(
 /// walk to the other machine. Best-effort, like the fetch it follows:
 /// a page fetched but not written down is still a page fetched.
 fn save_the_far_reach_log(text: &str, answering: &Answering) {
-    let path = paths::logs_dir().join("reach-distant.log");
+    let path = paths::reach_distant_log();
     if let Err(e) = std::fs::write(&path, text) {
         answering.log.write(&format!(
             "ce qu'un ordinateur distant atteint n'a pas pu être écrit dans {} : {e}",

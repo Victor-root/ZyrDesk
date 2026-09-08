@@ -44,12 +44,21 @@ const FILES: [(&str, &str); 4] = [
 
 /// The files emptied with the others and never gathered.
 ///
-/// One measurement a second is exactly what makes this one worth keeping
-/// and exactly what would drown a paste meant to be read in one go. It
-/// is emptied all the same: whoever clears the journal before a test
-/// wants a clean slate, and would otherwise read three weeks of reach
-/// against a session of five minutes.
-const ALSO_EMPTIED: [(&str, &str); 1] = [("reach.log", "Ce que cet ordinateur atteint")];
+/// `reach.log` holds one measurement a second, which is exactly what
+/// makes it worth keeping and exactly what would drown a paste meant to
+/// be read in one go. `reach-distant.log` is the last such measurement
+/// fetched from a far computer, and a clean slate must not leave it
+/// sitting there from whatever test came before this one. Both are
+/// emptied all the same: whoever clears the journal before a test wants
+/// a clean slate, and would otherwise read stale minutes against a
+/// session that has not even started yet.
+const ALSO_EMPTIED: [(&str, &str); 2] = [
+    ("reach.log", "Ce que cet ordinateur atteint"),
+    (
+        "reach-distant.log",
+        "Ce qu'un ordinateur distant atteignait",
+    ),
+];
 
 /// A journal being written.
 ///
@@ -383,6 +392,7 @@ mod tests {
         let gathered: Vec<&str> = FILES.iter().map(|(file, _)| *file).collect();
         let also: Vec<&str> = ALSO_EMPTIED.iter().map(|(file, _)| *file).collect();
         assert!(also.contains(&"reach.log"));
+        assert!(also.contains(&"reach-distant.log"));
         assert!(
             !gathered.contains(&"reach.log"),
             "le relevé noierait la copie qu'on relit"
