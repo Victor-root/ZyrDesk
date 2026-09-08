@@ -101,6 +101,10 @@ impl Answers for NoEngine {
         Err("le banc de mesure ne tient pas de journal".to_string())
     }
 
+    fn reach_log(&self) -> Result<String, String> {
+        Err("le banc de mesure ne mesure pas ce qu'il atteint".to_string())
+    }
+
     fn empty_the_journal(&self) -> Result<(), String> {
         Err("le banc de mesure ne tient pas de journal".to_string())
     }

@@ -2791,6 +2791,14 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Corrigé en ne laissant plus la personne recliquer elle-même.** Une tentative qui échoue en relance maintenant une seconde, tout de suite, avant de dire que ça n'a pas marché : une nouvelle réunion demandée au serveur s'il en fallait une, une nouvelle route sondée depuis rien. Ça ne répare pas ce qui cause le premier échec, seulement le fait de devoir s'y reprendre à la main pour obtenir ce que la deuxième tentative aurait de toute façon donné. Une machine réellement injoignable attend maintenant deux fois quinze secondes avant de le dire, plutôt qu'une seule : le prix pour ne plus jamais avoir à reprendre soi-même une tentative qui aurait fini par marcher.
 
+## D172. Ce qu'un ordinateur distant atteint coûtait une marche jusqu'à lui (2026-09-08, pendant M6)
+
+**Le relevé.** Diagnostiquer les coupures de ce soir a mené jusqu'à `reach.log`, un fichier déjà tenu par chaque ordinateur, à part du journal, qui mesure une fois par seconde si celui-ci atteint encore l'Internet. Comparer les deux relevés, celui de PC-SAV et celui de PC-VICTOR, pour la même minute, demandait jusque-là de marcher jusqu'à l'ordinateur distant pour aller chercher le sien. « Fais en sorte que je puisse aussi le récupérer facilement du PC distant, pour le mettre au même endroit sur le PC local, pour me faciliter les copier-coller. »
+
+**Corrigé en demandant ce relevé par le même chemin que le journal.** Le dialecte du tunnel (version 18) sait désormais demander à un ordinateur ce qu'il a mesuré de son propre accès à Internet, séparément du journal : replié dedans, il noierait la page qu'on relit d'un trait sous une mesure par seconde, ce que le journal évite déjà exprès pour ce même fichier. La question voyage sur la connexion déjà ouverte pour demander le journal, et non sur une nouvelle tentative : sur un réseau qui n'atterrit pas toujours, mieux vaut poser deux questions à un ordinateur déjà joint qu'ouvrir une deuxième fois la voie jusqu'à lui. Ce qui revient s'écrit dans `data\logs\reach-distant.log`, à côté du relevé de cet ordinateur-ci, sans rien demander de plus que ce que demander le journal demandait déjà.
+
+**Ce que ça ne change pas.** La récupération du relevé distant est du mieux possible : un ordinateur qui ne répond qu'au journal, pour une raison ou une autre, rend quand même son journal, et le relevé manque simplement à l'écrit.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

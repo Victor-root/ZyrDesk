@@ -138,6 +138,10 @@ impl Answers for FakeEngine {
         Ok(host_journal())
     }
 
+    fn reach_log(&self) -> Result<String, String> {
+        Ok(host_reach_log())
+    }
+
     fn empty_the_journal(&self) -> Result<(), String> {
         self.emptied.store(true, Ordering::Relaxed);
         Ok(())
@@ -195,6 +199,17 @@ fn host_journal() -> String {
     for line in 0..480 {
         page.push_str(&format!(
             "\n2026-08-30T12:00:{:02}Z  ligne {line} du journal de la machine d'en face",
+            line % 60
+        ));
+    }
+    page
+}
+
+fn host_reach_log() -> String {
+    let mut page = String::from("2026-08-30 12:00:00 8.8.8.8:53 answered in 8 ms");
+    for line in 1..480 {
+        page.push_str(&format!(
+            "\n2026-08-30 12:00:{:02} 8.8.8.8:53 answered in 8 ms",
             line % 60
         ));
     }
@@ -793,4 +808,18 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
         zyr_tunnel::Settled::StartingOver
     );
     assert_eq!(*bench.filming.lock().unwrap(), Some(read[1].id.clone()));
+}
+
+#[tokio::test]
+async fn ce_que_la_machine_d_en_face_atteint_arrive_entier() {
+    // Le pendant du journal, sur le même canal et pour la même raison :
+    // lu depuis ici plutôt qu'en marchant jusqu'à l'autre machine, et
+    // entier, une mesure par seconde comprise.
+    let bench = Bench::bring_up(42790, 17).await;
+
+    let page = before_the_end(aside::ask_for_the_reach_log(&bench.connection))
+        .await
+        .unwrap();
+    assert_eq!(page, host_reach_log());
+    assert!(page.len() > 10_000, "{} octets", page.len());
 }

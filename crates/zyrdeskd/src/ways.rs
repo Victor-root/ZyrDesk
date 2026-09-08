@@ -446,17 +446,26 @@ impl Ways {
         Ok(word)
     }
 
-    /// Fetches another computer's journal.
+    /// Fetches another computer's journal, and what it has measured of
+    /// its own access to the Internet, both over the one connection
+    /// this costs: two questions asked of a computer already reached,
+    /// rather than two attempts at reaching it, on a road where an
+    /// attempt does not always land.
     ///
     /// Asked of a computer nobody is watching, most of the time, which is
     /// exactly when it is wanted: what is being looked for is usually the
-    /// reason nobody can watch it.
+    /// reason nobody can watch it. What it reaches answers a question the
+    /// journal alone cannot: whether that machine, and not the road to
+    /// it, is the one that went quiet. Best-effort, and never the reason
+    /// the journal itself is refused: a computer old enough to answer
+    /// the first question and not the second still hands over what it
+    /// can.
     pub async fn ask_a_computer_for_its_journal(
         &self,
         host: &str,
         peer: Fingerprint,
         knock: Knock,
-    ) -> Result<String, String> {
+    ) -> Result<(String, Option<String>), String> {
         let word = self.a_word_with(host, peer, knock).await?;
         let text = aside::ask_for_the_journal(&word.connection)
             .await
@@ -465,7 +474,21 @@ impl Ways {
             "{host} handed its journal over, {} characters",
             text.len()
         ));
-        Ok(text)
+        let reach = match aside::ask_for_the_reach_log(&word.connection).await {
+            Ok(reach) => {
+                self.log.write(&format!(
+                    "{host} handed over what it reaches, {} characters",
+                    reach.len()
+                ));
+                Some(reach)
+            }
+            Err(e) => {
+                self.log
+                    .write(&format!("{host} did not hand over what it reaches: {e}"));
+                None
+            }
+        };
+        Ok((text, reach))
     }
 
     /// Asks another computer to empty its journal.

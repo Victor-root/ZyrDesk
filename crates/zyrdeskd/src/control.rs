@@ -391,6 +391,24 @@ async fn one_reach(
     }
 }
 
+/// Writes down what a far computer just handed over about what it
+/// reaches, replacing whatever an earlier such fetch left there.
+///
+/// Landed next to this computer's own file of the same name, in the
+/// same folder every journal already points to: the whole point is
+/// sparing a copy and a paste of something that would otherwise cost a
+/// walk to the other machine. Best-effort, like the fetch it follows:
+/// a page fetched but not written down is still a page fetched.
+fn save_the_far_reach_log(text: &str, answering: &Answering) {
+    let path = paths::logs_dir().join("reach-distant.log");
+    if let Err(e) = std::fs::write(&path, text) {
+        answering.log.write(&format!(
+            "ce qu'un ordinateur distant atteint n'a pas pu être écrit dans {} : {e}",
+            path.display()
+        ));
+    }
+}
+
 async fn one(request: Request, answering: &Answering) -> Answer {
     match request {
         Request::Standing => {
@@ -710,7 +728,12 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             })
             .await
             {
-                Ok(text) => Answer::Journal(text),
+                Ok((text, reach)) => {
+                    if let Some(reach) = reach {
+                        save_the_far_reach_log(&reach, answering);
+                    }
+                    Answer::Journal(text)
+                }
                 Err(reason) => Answer::Refused(reason),
             }
         }

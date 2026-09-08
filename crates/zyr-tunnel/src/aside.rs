@@ -66,8 +66,13 @@ use crate::pump;
 /// key combination that toggles it: a toggle nobody can read, living in
 /// an engine that outlives every session and is shared by all of them,
 /// left a session turning it the wrong way while believing the opposite,
-/// and a screen with two pointers or none.
-pub const VERSION: u32 = 17;
+/// and a screen with two pointers or none. Version 18 asks for what a
+/// computer has measured of its own access to the Internet, the one
+/// question here worth asking of a computer nobody can even open a
+/// session with: it is a second, independent trace, kept apart from the
+/// journal, and reading it from the far end is the same errand a remote
+/// desktop already exists to spare.
+pub const VERSION: u32 = 18;
 
 /// Longest question this channel takes.
 ///
@@ -240,6 +245,18 @@ pub trait Answers: Send + Sync + 'static {
     /// machine. A page of what it has written down is less than that.
     fn journal(&self) -> Result<String, String>;
 
+    /// What this computer has measured of its own access to the
+    /// Internet, gathered and handed over whole.
+    ///
+    /// Kept apart from the journal on purpose: it holds one measurement
+    /// a second, and folded into the journal it would drown the very
+    /// thing that page exists to be read in one sitting. Asked for the
+    /// same reason the journal is: the walk to the other machine is the
+    /// errand a remote desktop exists to spare, and a session too
+    /// unwell to open is exactly the moment nobody can make that walk
+    /// through it.
+    fn reach_log(&self) -> Result<String, String>;
+
     /// Empties this computer's journal.
     ///
     /// The other half of reading one, and useless without it. A fault is
@@ -362,6 +379,9 @@ pub enum Question {
     Screen { wanted: Option<WantedScreen> },
     /// Hand over your journal, so it can be read from here.
     Journal,
+    /// Hand over what you have measured of your own access to the
+    /// Internet, so it can be read from here.
+    ReachLog,
     /// Empty your journal, so what comes after is only what comes after.
     EmptyTheJournal,
     /// Which pictures your engine can actually make.
@@ -407,6 +427,11 @@ pub enum Told {
     },
     /// The far computer's journal, whole.
     Journal {
+        text: String,
+    },
+    /// What the far computer has measured of its own access to the
+    /// Internet, whole.
+    ReachLog {
         text: String,
     },
     /// The far computer's journal is empty.
@@ -464,6 +489,7 @@ impl fmt::Display for Question {
                 None => write!(f, "{VERSION} screen none"),
             },
             Question::Journal => write!(f, "{VERSION} journal"),
+            Question::ReachLog => write!(f, "{VERSION} reach"),
             Question::EmptyTheJournal => write!(f, "{VERSION} empty-journal"),
             Question::Codecs => write!(f, "{VERSION} codecs"),
             Question::Pointer => write!(f, "{VERSION} pointer"),
@@ -512,6 +538,8 @@ impl fmt::Display for Told {
             // closing the stream, so nothing here has to be folded onto
             // one line the way the control channel folds a refusal.
             Told::Journal { text } => write!(f, "{VERSION} journal {text}"),
+            // Whole as well, and for the same reason.
+            Told::ReachLog { text } => write!(f, "{VERSION} reach {text}"),
             Told::Emptied => write!(f, "{VERSION} emptied"),
             Told::Codecs { named } => write!(f, "{VERSION} codecs {named}"),
             Told::Pointer { shape } => write!(f, "{VERSION} pointer {shape}"),
@@ -555,6 +583,7 @@ impl Question {
                 }),
             },
             "journal" => Ok(Question::Journal),
+            "reach" => Ok(Question::ReachLog),
             "empty-journal" => Ok(Question::EmptyTheJournal),
             "codecs" => Ok(Question::Codecs),
             "pointer" => Ok(Question::Pointer),
@@ -621,6 +650,9 @@ impl Told {
                 },
             })),
             "journal" => Ok(Ok(Told::Journal {
+                text: rest.to_string(),
+            })),
+            "reach" => Ok(Ok(Told::ReachLog {
                 text: rest.to_string(),
             })),
             "emptied" => Ok(Ok(Told::Emptied)),
@@ -877,6 +909,19 @@ pub async fn ask_for_the_journal(connection: &Connection) -> io::Result<String> 
     }
 }
 
+/// Asks the far ZyrDesk for what it has measured of its own access to
+/// the Internet.
+///
+/// Asked outside any session, like the journal above and for the same
+/// reason: a computer nobody can reach is exactly the one this is worth
+/// asking of.
+pub async fn ask_for_the_reach_log(connection: &Connection) -> io::Result<String> {
+    match ask(connection, &Question::ReachLog).await? {
+        Told::ReachLog { text } => Ok(text),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Asks the far ZyrDesk what shape its pointer has right now.
 ///
 /// Asked while a session is open and only then: what it is for is to
@@ -1052,6 +1097,12 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
             .await
             .map_err(|e| format!("le journal n'a pas pu être rassemblé : {e}"))?
             .map(|text| Told::Journal { text }),
+        // Off the thread as well, and for the same reason: it is a file
+        // read from a disk.
+        Question::ReachLog => tokio::task::spawn_blocking(move || answering.reach_log())
+            .await
+            .map_err(|e| format!("le relevé n'a pas pu être lu : {e}"))?
+            .map(|text| Told::ReachLog { text }),
         // Off it too: emptying is four files opened and cut on a disk.
         Question::EmptyTheJournal => {
             tokio::task::spawn_blocking(move || answering.empty_the_journal())
@@ -1155,6 +1206,7 @@ mod tests {
             },
             Question::Screen { wanted: None },
             Question::Journal,
+            Question::ReachLog,
             Question::EmptyTheJournal,
             Question::Codecs,
             Question::Screens,
@@ -1191,6 +1243,11 @@ mod tests {
                 text: "ZyrDesk 0.1.0\nOrdinateur       : PC de Victor\n\n--- Le service ---\nune \
                        ligne\nune autre"
                     .to_string(),
+            },
+            // Le relevé voyage entier, lignes comprises, pour la même
+            // raison que le journal juste au-dessus.
+            Told::ReachLog {
+                text: "8.8.8.8:53 answered in 8 ms\n8.8.8.8:53 said nothing in 1000 ms".to_string(),
             },
             Told::Emptied,
             Told::Codecs {

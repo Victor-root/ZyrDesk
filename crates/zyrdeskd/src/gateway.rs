@@ -649,6 +649,25 @@ impl Answers for Attending {
         Ok(self.machine.journal(self.fingerprint, &self.log))
     }
 
+    /// Hands over what this computer has measured of its own access to
+    /// the Internet, whole.
+    ///
+    /// Read from disk and not gathered like the journal above: it holds
+    /// one measurement a second, kept apart for exactly that reason, and
+    /// asking for it from here is what spares the walk to this machine
+    /// that a remote desktop already exists to spare.
+    fn reach_log(&self) -> Result<String, String> {
+        self.log
+            .write("a computer asked this one for what it reaches, and it was handed over");
+        match std::fs::read_to_string(paths::reach_log()) {
+            Ok(text) => Ok(text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Ok("(rien de mesuré pour l'instant)".to_string())
+            }
+            Err(e) => Err(format!("le relevé n'a pas pu être lu : {e}")),
+        }
+    }
+
     /// Empties this computer's journal, because a far one asked.
     ///
     /// The line saying so is written after the emptying and not before,
