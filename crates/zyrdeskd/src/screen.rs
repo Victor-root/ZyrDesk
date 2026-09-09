@@ -319,12 +319,17 @@ pub fn hold_the_desk_for(wanted: Option<(u32, u32, u32)>) -> Vec<String> {
                 "{} cannot draw {wide}x{high}, so it keeps its own size and its own magnification",
                 main.adapter
             ));
-            // Written down, because it decides something the service can
-            // only decide before the engine starts: which screen it films.
-            // A screen that has once refused a desktop larger than itself
-            // refuses every one after it, so the next engine on this
-            // computer is aimed at the screen it grows for itself instead,
-            // and a session can then borrow that one.
+            // Written down, because it decides which screen the engine
+            // films. A screen that has once refused a desktop larger than
+            // itself refuses every one after it, so the next engine on
+            // this computer is aimed at the screen it grows for itself
+            // instead, and a session can then borrow that one.
+            //
+            // Read by the session being opened as well, and not only by
+            // the next engine start: this is written before that session
+            // asks for its screen, so the one that discovers the limit is
+            // served through the grown screen too rather than being the
+            // one that pays for the discovery.
             said.extend(remember_it_is_stuck(&main));
         }
     }
@@ -752,7 +757,11 @@ pub fn main_remembered() -> Option<String> {
 
 /// The screen a session asked this computer to be served from, if one
 /// asked at all.
-fn wanted_by_a_session() -> Option<String> {
+///
+/// Read from outside for one thing only: putting this note back exactly
+/// as it was when what it was written for did not go through. Forgetting
+/// it instead would throw away the screen somebody picked from the menu.
+pub fn wanted_by_a_session() -> Option<String> {
     read_name(&wanted_path())
 }
 

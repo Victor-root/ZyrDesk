@@ -2827,6 +2827,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Ni la patience de trente secondes, ni l'élection des routes, ni rien de ce que D165 à D173 ont corrigé : tout cela reste ce qui évite d'avoir à reprendre l'image. Ce qui change est ce qu'il en coûte quand ça n'a pas suffi.
 
+## D175. La résolution du client ne passait pas sur l'hôte dont la dalle est plus petite (2026-09-09, pendant M6)
+
+**Le relevé.** « T'as une idée de pourquoi vers PC-SAV je me suis mis en résolution client mais ça ne fonctionne pas, alors que vers PC-VICTOR ça marche ? » Le portable est en 1920x1200, un format 16:10. Le journal de PC-SAV répond en trois lignes : `\\.\DISPLAY1 offered no 1920x1200 of its own (1920x1080, 1680x1050, ...)`, puis `\\.\DISPLAY1 cannot draw 1920x1200, so it keeps its own size`, puis `this computer is showing 1920x1080`. L'écran de PC-VICTOR est un 4K, où un bureau de 1920x1200 tient largement ; celui de PC-SAV est une dalle 1920x1080, et sa carte graphique refuse de dessiner un bureau plus grand qu'elle.
+
+**Ce que le produit avait déjà pour ça, et pourquoi il ne s'en servait pas.** Un ordinateur dont les écrans ne dessinent rien de plus grand qu'eux-mêmes est filmé sur l'écran que ZyrDesk lui fait pousser, qui prend n'importe quelle taille. PC-SAV le savait déjà : c'est écrit sur son disque depuis une session précédente. Mais le moteur lit quel écran il filme **à son démarrage et jamais ensuite**, et on ne peut le redémarrer que quand personne ne regarde, puisque son redémarrage emporte le tunnel et toutes les sessions avec. La session de ce soir est arrivée deux secondes après une précédente mal terminée, avant que PC-SAV ait eu son moment de calme : elle est donc tombée sur la vraie dalle. Une fois finie, à 19:50:51, le journal montre la bascule qui aurait dû avoir lieu avant : `the engine starts over to film the screen it grew instead`. La première session payait pour le timing, la suivante était correcte, et rien dans l'affichage ne disait pourquoi.
+
+**Corrigé en demandant au moteur qui tourne, au lieu d'attendre le prochain.** Ce moteur a une porte pour changer l'écran qu'il filme là où il est, ouverte par P-S6 et déjà utilisée par le menu pour changer d'écran distant en pleine session. Quand la dalle refuse la taille demandée et que cet ordinateur est connu pour ça, la session réveille l'écran poussé à la taille voulue, y déplace le bureau, et demande au moteur de filmer celui-là où il est. Rien ne redémarre, le tunnel ne bouge pas.
+
+**Trois pas, chacun défait si le suivant ne passe pas.** Le moteur est demandé en dernier, parce qu'il est le seul des trois à pouvoir refuser pour une raison qu'on ne peut pas réparer ici, et parce que son refus est le moins cher à annuler : le bureau revient d'où il vient, l'écran poussé se rendort, et la session est servie à la taille que la dalle sait dessiner, exactement comme avant. Et la note qui dit de quel écran cet ordinateur est servi est écrite avant qu'on demande quoi que ce soit au moteur, puis remise exactement comme elle était en cas de refus : la veille qui tient le moteur compare cette note à ce qu'il filme, et les trouver en désaccord est précisément ce qui la fait redémarrer le moteur, donc couper la session qu'on est en train d'ouvrir.
+
+**Ce que ça change aussi.** La toute première session sur un ordinateur qui n'a jamais rencontré la limite en profite : elle la découvre, l'écrit, et la lit dans la foulée, parce que la note est posée avant que cette session demande son écran. Personne ne paie plus la découverte.
+
+**Ce que ça ne change pas.** Un ordinateur dont le moteur est déjà pointé sur l'écran poussé garde son chemin d'avant, et un ordinateur sans aucun écran branché aussi. Une session qui demande l'écran de l'hôte, et non une taille à elle, ne passe par rien de tout ceci.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

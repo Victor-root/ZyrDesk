@@ -465,6 +465,24 @@ impl Answers for Attending {
                 self.wake_the_one_it_grew(screen)
                     .and_then(|()| self.move_the_desktop_onto_it(screen))
             }
+            // The same computer, its engine not aimed there. Which screen
+            // an engine films is settled when it starts and never again,
+            // and the restart that would settle it right may only happen
+            // while nobody is watching: a session arriving in the seconds
+            // before that restart was served the size its own panel can
+            // draw and never the size it asked for, and only the session
+            // after it came out right. A 16:10 laptop asking a host whose
+            // panel is 1920x1080 is exactly that, and it was a coin toss
+            // on the timing. The engine has a door for being told to film
+            // another screen where it stands, the very one the menu uses
+            // to change screens mid-session, so this session asks through
+            // it rather than paying for the second it arrived in.
+            Some(screen)
+                if showing != Some((screen.wide, screen.high))
+                    && crate::screen::the_main_screen_is_stuck() =>
+            {
+                self.grow_one_for_this_session(screen)
+            }
             _ => None,
         };
         // What this computer ends up showing, read from what the session
@@ -859,6 +877,90 @@ impl Attending {
                     "the screen this computer grew stayed as it was: {refused}"
                 ));
                 None
+            }
+        }
+    }
+
+    /// Moves this session onto the screen this computer grew, its engine
+    /// having been started aimed at one of its own.
+    ///
+    /// Three steps, and each undone when the next will not go: the screen
+    /// is woken at the size asked for, the desktop is moved onto it, and
+    /// the engine is asked to film it. The engine last, because it is the
+    /// only one of the three that can refuse for a reason nothing here
+    /// can mend, and because what it refuses is cheap to undo where the
+    /// two before it are not.
+    ///
+    /// Nothing at all when this computer has never named the screen it
+    /// grows, which is a computer whose engine has never finished a
+    /// start: there is no screen to ask for by name yet, and the session
+    /// is served the size this computer's own screen can draw, exactly as
+    /// before.
+    fn grow_one_for_this_session(&self, screen: WantedScreen) -> Option<(u32, u32)> {
+        let grown = crate::screen::remembered()?;
+        self.log.write(
+            "this computer's own screen will not draw the size this session asks for, so the one \
+             it grew is woken and the engine is asked to film that one where it stands",
+        );
+        self.wake_the_one_it_grew(screen)?;
+        let Some(showing) = self.move_the_desktop_onto_it(screen) else {
+            self.put_the_grown_screen_away();
+            return None;
+        };
+        if !self.film_the_one_it_grew(&grown) {
+            // In this order, and it is the order everything else in this
+            // file puts them back in: the desk first, so Windows is not
+            // left to decide where the desktop lands, and the grown
+            // screen after it, with nothing on it.
+            match give_the_desk_back() {
+                Ok(took) => self.log.write(&format!(
+                    "the desk was put back from the session on screen ({took})"
+                )),
+                Err(e) => self
+                    .log
+                    .write(&format!("this computer's desk was left as it was: {e}")),
+            }
+            self.put_the_grown_screen_away();
+            return None;
+        }
+        Some(showing)
+    }
+
+    /// Asks the engine that is running to film the screen this computer
+    /// grew, and writes that down where the watch reads it.
+    ///
+    /// Both or neither, and the note first. The watch that holds the
+    /// engine compares that note against what the engine is filming, and
+    /// finding the two apart is exactly what makes it start the engine
+    /// over, which would take the tunnel and this very session with it.
+    /// Written first so that window never exists, and put back exactly as
+    /// it was when the engine turns the ask down.
+    fn film_the_one_it_grew(&self, grown: &str) -> bool {
+        let before = crate::screen::wanted_by_a_session();
+        if let Err(refused) = crate::screen::film_this_screen(Some(grown)) {
+            self.log.write(&format!(
+                "the screen this computer is served from could not be written down: {refused}"
+            ));
+            return false;
+        }
+        let asked = Asked {
+            display: Some(grown.to_string()),
+            ..Asked::default()
+        };
+        match self.api.serve_as_asked(&asked) {
+            Ok(()) => {
+                *self.filming.lock().expect("écran filmé") = Some(grown.to_string());
+                self.log
+                    .write("this computer's engine films the screen it grew, where it stands");
+                true
+            }
+            Err(refused) => {
+                self.log.write(&format!(
+                    "this computer's engine could not be asked to film the screen it grew \
+                     ({refused}), so this session is served the size its own screen draws"
+                ));
+                let _ = crate::screen::film_this_screen(before.as_deref());
+                false
             }
         }
     }
