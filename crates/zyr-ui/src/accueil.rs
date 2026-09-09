@@ -5086,6 +5086,35 @@ pub fn relance(app: &App) {
     redraw(app);
 }
 
+/// La session est tombée toute seule et l'image revient.
+///
+/// Le même écran que l'ouverture, pour la raison qu'il dit la même chose :
+/// il n'y a rien à regarder et quelque chose est en train de se faire.
+/// Le numéro d'essai n'apparaît qu'à partir du deuxième : le premier est
+/// le cas ordinaire et se compte tout seul, alors qu'un troisième dit
+/// quelque chose que la barre qui va et vient ne dira jamais, c'est que
+/// ça ne se passe pas bien.
+pub fn reprise(app: &App, essai: u32) {
+    {
+        let mut etat = ETAT.lock().expect("accueil");
+        let vers = etat
+            .ouverture
+            .as_ref()
+            .map_or_else(String::new, |deja| deja.vers.clone());
+        etat.ouverture = Some(Ouverture {
+            vers,
+            detail: if essai > 1 {
+                format!("Connexion perdue, reprise en cours… ({essai}ᵉ essai)")
+            } else {
+                "Connexion perdue, reprise en cours…".to_string()
+            },
+            code: None,
+            depuis: std::time::Instant::now(),
+        });
+    }
+    redraw(app);
+}
+
 /// La fenêtre n'a plus rien à raconter : ce qui se passe maintenant se
 /// lit dans ce que tient le service.
 pub fn range_l_ouverture(app: &App) {

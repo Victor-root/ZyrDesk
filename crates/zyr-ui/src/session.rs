@@ -16,6 +16,7 @@
 // session elle-même.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use std::io;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
@@ -548,16 +549,219 @@ fn what_to_ask_for(app: &App, preferred: Preferred) -> (SessionSettings, u32) {
     (settings, preferred.asked.magnification(screen))
 }
 
+/// How many times in a row the picture is brought back before the person
+/// is told instead.
+///
+/// A session that falls over, comes back and falls over again within the
+/// minute is not a network that hiccups: it is one that cannot carry a
+/// session at all just now, and bringing the picture back forever would
+/// hide that behind a screen that never settles.
+const COMES_BACK_IN_A_ROW: u32 = 5;
+
+/// How many of those may fail to open at all, one after the other.
+///
+/// Its own count, and a much shorter one, because the two failures cost
+/// wildly different amounts of time. A picture that came back and fell
+/// over again was answered in seconds; an opening that finds nobody
+/// takes fifteen seconds twice over, the service asking a second time on
+/// its own (D171). The far computer being off is exactly what this looks
+/// like, and telling the person that after a minute is honest where
+/// telling them after three would be a product that hangs.
+const OPENINGS_MISSED_IN_A_ROW: u32 = 2;
+
+/// A session that stood this long before falling over is a fresh
+/// accident and not the same one over again, so the count starts over.
+const HELD_LONG_ENOUGH: Duration = Duration::from_secs(60);
+
+/// The pause before the picture is asked for again.
+///
+/// The far computer has its own tidying to do once its client vanishes:
+/// it puts the desk back the way it found it, and starts its engine over
+/// when it was filming a screen it grew for the session. It also learns
+/// that the client is gone by its own patience running out, which can
+/// leave it half a minute behind this end. Waiting a moment costs the
+/// person nothing they can feel and spares one try landing on a computer
+/// that is still holding the session that just fell over.
+const BEFORE_COMING_BACK: Duration = Duration::from_secs(3);
+
+/// How often the pause looks up to see whether it is still wanted.
+const WHILE_WAITING: Duration = Duration::from_millis(50);
+
+/// The picture brought back after a session fell over on its own.
+///
+/// A road between two homes goes quiet for a few seconds now and then,
+/// and thirty seconds of it end a session by design (D138). What that
+/// cost until now was the whole session: the engine gone, the picture
+/// gone, the person back on the home screen with something to click and
+/// a far computer to wait for again. Every fix written for this so far
+/// has tried to make that half-minute unlosable, which is a race that
+/// cannot be won: it takes one outage a little too long, or one
+/// unlucky cascade, and the session is over.
+///
+/// This is the other answer, and it is the one the products people
+/// compare this to give: falling over stops costing the session. The
+/// picture comes back by the road the person walked by hand all evening,
+/// and it comes back on its own.
+struct ComingBack {
+    /// How many times in a row, with nothing between them long enough to
+    /// call the next one a fresh accident.
+    in_a_row: u32,
+    /// How many of those did not manage to open, in a row.
+    missed: u32,
+}
+
+impl ComingBack {
+    fn none() -> Self {
+        Self {
+            in_a_row: 0,
+            missed: 0,
+        }
+    }
+
+    /// The picture is up again: whatever it took to get here is spent,
+    /// and the next opening that fails is the first of its own row.
+    fn opened(&mut self) {
+        self.missed = 0;
+    }
+
+    /// Which try the person is being shown, counting both roads: a
+    /// picture that fell over again and an opening that found nobody are
+    /// one wait as they see it.
+    fn try_number(&self) -> u32 {
+        self.in_a_row + self.missed
+    }
+
+    /// Whether the picture is worth bringing back, the player having
+    /// stopped without anybody asking for it.
+    ///
+    /// Only what a session falling over looks like: the player saying its
+    /// stream failed, or going without a word. A player that ended
+    /// cleanly is the far computer hanging up, which is its decision and
+    /// not an accident to undo; one that never reached that computer has
+    /// already answered the question a new try would ask again.
+    fn after(&mut self, ended: &io::Result<Outcome>, held: Duration) -> bool {
+        if !matches!(ended, Ok(Outcome::Failed) | Ok(Outcome::Unknown { .. })) {
+            return false;
+        }
+        if held >= HELD_LONG_ENOUGH {
+            self.in_a_row = 0;
+        }
+        self.once_more()
+    }
+
+    /// The same, an opening having failed rather than a picture having
+    /// fallen over.
+    ///
+    /// Only while the picture was already coming back: a session that
+    /// never opened in the first place is the person's own try, answered
+    /// where they can see it, and the service has already asked twice by
+    /// then (D171).
+    fn again(&mut self) -> bool {
+        if !self.tried() || self.missed >= OPENINGS_MISSED_IN_A_ROW {
+            return false;
+        }
+        self.missed += 1;
+        true
+    }
+
+    fn once_more(&mut self) -> bool {
+        if self.in_a_row >= COMES_BACK_IN_A_ROW {
+            return false;
+        }
+        self.in_a_row += 1;
+        true
+    }
+
+    /// Whether the picture has been brought back at all.
+    fn tried(&self) -> bool {
+        self.in_a_row > 0
+    }
+
+    fn how_it_went(&self) -> String {
+        format!(
+            "l'image a été reprise {} fois de suite sans que la session tienne",
+            self.in_a_row
+        )
+    }
+}
+
+/// Puts down what belonged to the player that is gone, says what is
+/// happening, and waits out the moment the far computer needs.
+///
+/// Answers whether to go on: a person who closes the window during the
+/// pause is heard at once, and there is nothing left to come back to.
+///
+/// What is deliberately not put down here is the screen and the window.
+/// It is one session as the person sees it, and handing the screen back
+/// to take it again a second later is exactly the flicker this road
+/// exists to spare them.
+fn hold_on_before_coming_back(app: &App, coming_back: &ComingBack) -> bool {
+    crate::accueil::reprise(app, coming_back.try_number());
+    crate::floating::expect_nothing(app);
+    crate::floating::lower(app);
+    crate::picture::let_go(app);
+    waited_out(app, BEFORE_COMING_BACK)
+}
+
+/// Waits that long, unless the person closes the window meanwhile.
+///
+/// Answers whether the wait ran its course. Looked up from rather than
+/// slept through: a cross pressed during it would otherwise be answered
+/// three seconds later, by a picture coming back that nobody wants.
+fn waited_out(app: &App, how_long: Duration) -> bool {
+    let until = std::time::Instant::now() + how_long;
+    while std::time::Instant::now() < until {
+        if crate::floating::Floating::a_close_was_asked_for(app) {
+            return false;
+        }
+        std::thread::sleep(WHILE_WAITING);
+    }
+    true
+}
+
+/// What the far computer is asked for when the way is opened again.
+///
+/// Everything it was told went with the old way, so all of it is asked
+/// afresh, and with what is chosen now rather than what was chosen when
+/// the session opened. Shared by the two roads that open a way again: the
+/// settings a session could not take where it stood, and a picture
+/// brought back after the session fell over.
+fn asked_afresh(app: &App, wanted: &mut Wanted, preferred: &mut Preferred) {
+    // What is kept when the service cannot be asked is what the picture
+    // was already showing, never the ordinary settings: the person asked
+    // for one thing to change, not for three others to go back to what
+    // the product does by default.
+    *preferred = crate::app::block_on(crate::settings::what_was_chosen()).unwrap_or(*preferred);
+    (wanted.settings, wanted.far_magnification) = what_to_ask_for(app, *preferred);
+    wanted.hush_the_far_speakers = preferred.mute_far_speakers;
+    wanted.steady_far_rate = preferred.steady_far_rate;
+    // And whether that computer is to grow a screen for this session at
+    // all, which is the one thing the resolution decides over there. Left
+    // as the first opening set it, a session moved to « the host's own
+    // resolution » went on waking a virtual screen on the far machine and
+    // asking it for a size, which is exactly what that choice exists not
+    // to do.
+    wanted.wants_a_screen_over_there = preferred.asked.wants_a_screen_over_there();
+    // And which of that computer's screens to be served from, which is
+    // the whole reason a person opens the picture again on a machine with
+    // two of them, and what a picture coming back has to land on again.
+    wanted.far_screen = the_far_screen();
+}
+
 /// Opens the session and holds it, from the first tunnel to the last
 /// picture.
 ///
-/// It opens more than once when what the person chose could not be taken
-/// where the session stood, which is a far engine that cannot be asked:
-/// the picture is opened again, everything around it stands, this thread
-/// and the pairing included, and what it costs is the few seconds an
-/// opening takes.
+/// It opens more than once for two reasons. What the person chose could
+/// not be taken where the session stood, which is a far engine that
+/// cannot be asked: the picture is opened again, everything around it
+/// stands, this thread and the pairing included, and what it costs is the
+/// few seconds an opening takes. Or the session fell over on its own,
+/// which is what a road that goes quiet for too long comes to: the
+/// picture is brought back the same way, and `ComingBack` says how long
+/// that is worth trying.
 fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
     crate::journal::note(&format!("session demandée vers {}", wanted.host));
+    let mut coming_back = ComingBack::none();
     loop {
         let towards = wanted.host.clone();
         let mut opening = Opening::begins();
@@ -600,11 +804,41 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
                     "session non ouverte : {}",
                     e.to_string().replace('\n', " ")
                 ));
+                // A picture on its way back that did not open is one of
+                // its tries and not the end of them: the far computer can
+                // still be holding the session that just fell over, which
+                // it learns of by its own patience running out.
+                if coming_back.again() {
+                    if !hold_on_before_coming_back(app, &coming_back) {
+                        return closed_during_the_pause(app);
+                    }
+                    asked_afresh(app, &mut wanted, &mut preferred);
+                    continue;
+                }
+                if coming_back.tried() {
+                    return finish(
+                        app,
+                        false,
+                        format!("{}\n  {}", e, coming_back.how_it_went()),
+                    );
+                }
                 return finish(app, false, e.to_string());
             }
         };
 
+        let showing_since = std::time::Instant::now();
         let process = running.process_id();
+        if coming_back.tried() {
+            // Worth its own line, and worth reading tomorrow: this is
+            // the whole of what a session that used to die looks like
+            // now, and the journal is where anybody finds out whether it
+            // held.
+            crate::journal::note(&format!(
+                "l'image est revenue après {} reprise(s), la session continue",
+                coming_back.try_number()
+            ));
+        }
+        coming_back.opened();
         crate::journal::note(&format!("session en cours, lecteur {process}"));
         // What the player was started with, which is what every change
         // made while it runs starts from.
@@ -648,30 +882,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
                 "image relancée avec ce qui est choisi maintenant (le lecteur a dit {ended:?})"
             ));
             crate::accueil::relance(app);
-            // What is kept when the service cannot be asked is what the
-            // picture was already showing, never the ordinary settings:
-            // the person asked for one thing to change, not for three
-            // others to go back to what the product does by default.
-            preferred =
-                crate::app::block_on(crate::settings::what_was_chosen()).unwrap_or(preferred);
-            (wanted.settings, wanted.far_magnification) = what_to_ask_for(app, preferred);
-            // The way is opened again with the picture, and what the far
-            // computer was asked went with the old one: it has to be
-            // asked afresh, and with what is chosen now.
-            wanted.hush_the_far_speakers = preferred.mute_far_speakers;
-            wanted.steady_far_rate = preferred.steady_far_rate;
-            // And whether that computer is to grow a screen for this
-            // session at all, which is the one thing the resolution
-            // decides over there. Left as the first opening set it, a
-            // session moved to « the host's own resolution » went on
-            // waking a virtual screen on the far machine and asking it
-            // for a size, which is exactly what that choice exists not
-            // to do.
-            wanted.wants_a_screen_over_there = preferred.asked.wants_a_screen_over_there();
-            // And which of that computer's screens to be served from,
-            // which is the whole reason a person opens the picture again
-            // on a machine with two of them.
-            wanted.far_screen = the_far_screen();
+            asked_afresh(app, &mut wanted, &mut preferred);
             continue;
         }
 
@@ -691,8 +902,33 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             return finish(app, true, String::new());
         }
 
+        // Nobody asked for this one, so the picture comes back rather
+        // than the session ending under the person. The window keeps the
+        // screen and this thread keeps everything it knows, so what they
+        // see is a picture that freezes and returns.
+        if coming_back.after(&ended, showing_since.elapsed()) {
+            crate::journal::note(&format!(
+                "la session est tombée toute seule, l'image est reprise ({} sur {})",
+                coming_back.in_a_row, COMES_BACK_IN_A_ROW
+            ));
+            if !hold_on_before_coming_back(app, &coming_back) {
+                return closed_during_the_pause(app);
+            }
+            asked_afresh(app, &mut wanted, &mut preferred);
+            continue;
+        }
+
         return match ended {
             Ok(Outcome::Ended) => finish(app, true, String::new()),
+            _ if coming_back.tried() => finish(
+                app,
+                false,
+                format!(
+                    "La session n'a pas tenu : {}.\n  \
+                     Le réseau entre les deux ordinateurs ne la porte pas en ce moment.",
+                    coming_back.how_it_went()
+                ),
+            ),
             Ok(Outcome::Failed) => finish(
                 app,
                 false,
@@ -1000,6 +1236,16 @@ fn how_the_window_stands(_app: &App, when: &str) {
     ));
 }
 
+/// The person closed the window while the picture was on its way back.
+///
+/// The flag is taken here rather than left standing, since no session
+/// will end to take it: nothing was running when they pressed the cross.
+fn closed_during_the_pause(app: &App) {
+    crate::floating::Floating::was_closed_on_purpose(app);
+    crate::journal::note("reprise abandonnée : la session a été fermée pendant l'attente");
+    finish(app, true, String::new());
+}
+
 fn finish(app: &App, ok: bool, message: String) {
     how_the_window_stands(app, "fin de session, avant");
     OPENING.store(false, Ordering::SeqCst);
@@ -1036,6 +1282,81 @@ fn finish(app: &App, ok: bool, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A session that fell over the instant it opened.
+    fn fell_over() -> io::Result<Outcome> {
+        Ok(Outcome::Failed)
+    }
+
+    #[test]
+    fn a_picture_that_falls_over_comes_back_a_bounded_number_of_times() {
+        let mut coming_back = ComingBack::none();
+        assert!(!coming_back.tried());
+        // Elle revient, tant que la session ne tient pas assez longtemps
+        // entre deux pour que ce soit un nouvel accident.
+        for essai in 1..=COMES_BACK_IN_A_ROW {
+            assert!(
+                coming_back.after(&fell_over(), Duration::from_secs(2)),
+                "reprise {essai}"
+            );
+            assert_eq!(coming_back.in_a_row, essai);
+        }
+        // Passé ce compte, la personne est prévenue plutôt que de
+        // regarder un écran qui ne se pose jamais.
+        assert!(!coming_back.after(&fell_over(), Duration::from_secs(2)));
+        assert!(coming_back.tried());
+    }
+
+    #[test]
+    fn a_session_that_stood_long_enough_starts_the_count_over() {
+        let mut coming_back = ComingBack::none();
+        for _ in 0..COMES_BACK_IN_A_ROW {
+            assert!(coming_back.after(&fell_over(), Duration::from_secs(2)));
+        }
+        assert!(!coming_back.after(&fell_over(), Duration::from_secs(2)));
+        // Une session qui a tenu une minute puis tombe est une panne
+        // neuve, et non la même qui recommence.
+        assert!(coming_back.after(&fell_over(), HELD_LONG_ENOUGH));
+        assert_eq!(coming_back.in_a_row, 1);
+    }
+
+    #[test]
+    fn a_session_the_far_computer_ended_is_not_brought_back() {
+        let mut coming_back = ComingBack::none();
+        // Raccrocher est une décision de l'ordinateur d'en face, pas un
+        // accident à défaire.
+        assert!(!coming_back.after(&Ok(Outcome::Ended), Duration::from_secs(2)));
+        // Et un ordinateur jamais joint a déjà répondu à la question
+        // qu'une reprise reposerait.
+        assert!(!coming_back.after(&Ok(Outcome::Unreachable), Duration::from_secs(2)));
+        assert!(!coming_back.tried());
+        // Un lecteur qui s'en va sans rien dire, si : de la place de la
+        // personne c'est la même chose qu'une session qui tombe.
+        assert!(coming_back.after(
+            &Ok(Outcome::Unknown { code: Some(1) }),
+            Duration::from_secs(2)
+        ));
+    }
+
+    #[test]
+    fn an_opening_that_finds_nobody_is_only_retried_while_coming_back() {
+        let mut coming_back = ComingBack::none();
+        // La première tentative est celle de la personne : elle a cliqué,
+        // et l'échec se dit là où elle le voit.
+        assert!(!coming_back.again());
+
+        assert!(coming_back.after(&fell_over(), Duration::from_secs(2)));
+        // Une reprise qui ne s'ouvre pas est un de ses essais, et ils sont
+        // comptés à part parce qu'ils coûtent une demi-minute chacun.
+        for essai in 1..=OPENINGS_MISSED_IN_A_ROW {
+            assert!(coming_back.again(), "essai manqué {essai}");
+        }
+        assert!(!coming_back.again());
+
+        // L'image revenue, ce qu'il a fallu pour y arriver est dépensé.
+        coming_back.opened();
+        assert!(coming_back.again());
+    }
 
     fn far_screen(id: &str, main: bool) -> FarScreen {
         FarScreen {

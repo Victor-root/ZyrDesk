@@ -69,6 +69,7 @@ mod accueil {
 
     pub fn etape(_app: &App, _detail: &str, _code: Option<String>) {}
     pub fn relance(_app: &App) {}
+    pub fn reprise(_app: &App, _essai: u32) {}
     pub fn range_l_ouverture(_app: &App) {}
     pub fn echoue(_app: &App, _texte: &str) {}
 }
