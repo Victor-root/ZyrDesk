@@ -57,6 +57,9 @@ windows = { version = "0.61.3", features = [
 windows-numerics = "0.2"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    # Le lecteur de rapports HID du système, qui sait lire ce qu'un pavé
+    # tactile raconte sans qu'on ait à comprendre son descripteur.
+    "Win32_Devices_HumanInterfaceDevice",
     # Les coins arrondis des fenêtres appartiennent au compositeur, et
     # c'est à lui qu'on demande de ne pas les arrondir le temps d'une
     # session.
@@ -90,6 +93,10 @@ windows-sys = { version = "0.61.2", features = [
     # logo : windows-sys le range avec les contrôles.
     "Win32_UI_Controls",
     "Win32_UI_HiDpi",
+    # Les rapports bruts d'un appareil, seul chemin par lequel un pavé
+    # tactile de précision se laisse lire : ce que Windows en fait pour
+    # lui-même ne passe par aucun programme.
+    "Win32_UI_Input",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",

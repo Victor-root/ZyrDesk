@@ -83,6 +83,10 @@ mod settings;
 mod shortcuts;
 mod startup;
 mod theme;
+// Le pavé tactile de cet ordinateur, lu par ce programme lui-même. Ce qui
+// reconnaît un geste est de l'arithmétique et se compile partout ; ce qui
+// lit le pavé est de Windows, comme la session.
+mod touchpad;
 mod tray;
 
 #[cfg(windows)]

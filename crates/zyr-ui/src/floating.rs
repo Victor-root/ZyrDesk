@@ -140,6 +140,8 @@ pub enum Act {
     /// Which of the two computers Alt+Tab, Échap and the Windows key
     /// belong to.
     SystemKeys,
+    /// Which of the two the touchpad's own gestures belong to.
+    Touchpad,
     /// Whether the pointer is kept inside the picture.
     PointerLock,
     End,
@@ -164,9 +166,12 @@ impl Act {
             Act::MouseMode => Some(b'M'),
             Act::SystemKeys => Some(b'K'),
             Act::PointerLock => Some(b'L'),
-            Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
-                None
-            }
+            Act::Fullscreen
+            | Act::SecureAttention
+            | Act::LockScreen
+            | Act::Sound
+            | Act::Touchpad
+            | Act::End => None,
         }
     }
 
@@ -185,9 +190,12 @@ impl Act {
             Act::MouseMode => Some(0x32),
             Act::SystemKeys => Some(0x25),
             Act::PointerLock => Some(0x26),
-            Act::Fullscreen | Act::SecureAttention | Act::LockScreen | Act::Sound | Act::End => {
-                None
-            }
+            Act::Fullscreen
+            | Act::SecureAttention
+            | Act::LockScreen
+            | Act::Sound
+            | Act::Touchpad
+            | Act::End => None,
         }
     }
 }
@@ -202,6 +210,7 @@ impl std::fmt::Display for Act {
             Act::LockScreen => "verrouillage de l'ordinateur distant",
             Act::Sound => "son de la session",
             Act::SystemKeys => "touches système",
+            Act::Touchpad => "gestes du pavé tactile",
             Act::PointerLock => "pointeur tenu dans l'image",
             Act::End => "fin de la session",
         })
@@ -280,6 +289,14 @@ pub struct Floating {
     /// stands, so this program counts its own switches. The session
     /// starts on the side its settings asked for.
     system_keys: AtomicBool,
+    /// Whether the touchpad's own gestures are going to the session
+    /// right now rather than to this computer.
+    ///
+    /// Kept here like the switch above it, and for a plainer reason: it
+    /// is this program that reads the pad, so it is this program that
+    /// knows. Nothing else on this computer, and no engine, is even aware
+    /// there is a pad being read.
+    touchpad: AtomicBool,
     /// Whether this computer is drawing its own pointer over the picture.
     ///
     /// Counted like the three above, and put down whenever a player is
@@ -761,6 +778,7 @@ pub fn watch(app: App) {
                         ));
                         Floating::closing(&app, true);
                         stop_the_player(process);
+                        crate::touchpad::read_the_pad(false);
                         crate::picture::shut_the_pointer_in(false);
                         crate::picture::let_go(&app);
                         lower(&app);
@@ -779,12 +797,29 @@ pub fn watch(app: App) {
                         state
                             .system_keys
                             .store(preferred.system_keys, Ordering::Relaxed);
+                        // The pad is only read while Windows has really
+                        // let go of it, whatever the settings remember:
+                        // both at once would have every gesture happen
+                        // twice, once at each end.
+                        state.touchpad.store(
+                            preferred.touchpad_gestures
+                                && crate::touchpad::what_windows_still_holds()
+                                    .is_some_and(|held| !held.any()),
+                            Ordering::Relaxed,
+                        );
                         state.pointer_held.store(false, Ordering::Relaxed);
                         // What the far computer draws is not put down
                         // here: it lives over there, in an engine this
                         // new player has not touched.
                     }
                     put_the_button_up(&app, process);
+                    // The pad is read for exactly as long as a session is
+                    // showing and the switch is on. Said at every turn
+                    // rather than only when it moves: asking again for
+                    // what is already the case costs nothing, and it is
+                    // what puts the reading back after a session that
+                    // ended badly.
+                    crate::touchpad::read_the_pad(gestures_to_the_session(&app));
                     // Rien de tout cela pendant que le menu est ouvert :
                     // jeter un de ces interrupteurs donne le clavier à
                     // l'image, et une main qui lit le menu vise autre
@@ -825,6 +860,10 @@ pub fn watch(app: App) {
                     // d'image où l'enfermer, et une cage laissée derrière
                     // une session tient tout le bureau.
                     crate::picture::shut_the_pointer_in(false);
+                    // Et le pavé n'est plus lu : sans image, un geste à
+                    // trois doigts n'a plus où aller, et la main qui le
+                    // fait s'adresse à cet ordinateur-ci.
+                    crate::touchpad::read_the_pad(false);
                     crate::picture::let_go(&app);
                     lower(&app);
                 }
@@ -1186,9 +1225,100 @@ pub fn keys_to_the_session(app: &App) -> bool {
     app.floating().system_keys.load(Ordering::Relaxed)
 }
 
+/// The same, for the touchpad's own gestures.
+pub fn gestures_to_the_session(app: &App) -> bool {
+    app.floating().touchpad.load(Ordering::Relaxed)
+}
+
+/// Throws the switch that decides which of the two computers the
+/// touchpad's own gestures belong to.
+///
+/// Ours to do, like the five above it, and for a plainer reason than any
+/// of them: the pad is read by this program and by nothing else. No
+/// engine is aware there is one, and nothing in what they speak carries a
+/// hand with several fingers on it.
+///
+/// Turning it on is refused while Windows still answers those gestures
+/// itself, and that refusal is the whole honesty of this switch. Windows
+/// only lets go of them from a page of its own settings, and no call
+/// changes it: the values behind that page are read once, deep in the
+/// system's own input, and a program writing them changes what the page
+/// shows and nothing about what the pad does. Left to happen anyway, the
+/// switch would be on and every gesture would act twice, once at each
+/// end, which is worse than not having it at all. So the page is opened
+/// where the person has to act, and nothing is said to have been done.
+async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
+    let state = app.floating();
+    if state.touchpad.load(Ordering::Relaxed) {
+        state.touchpad.store(false, Ordering::Relaxed);
+        crate::touchpad::read_the_pad(false);
+        crate::settings::remember_touchpad_gestures(false).await;
+        return Ok(());
+    }
+    let Some(held) = crate::touchpad::what_windows_still_holds() else {
+        return Err("cet ordinateur n'a pas de pavé tactile de précision.".to_string());
+    };
+    if held.any() {
+        let what_to_do = held.what_to_do();
+        note(&format!("gestes du pavé tactile : {what_to_do}"));
+        crate::touchpad::open_the_windows_page();
+        return Err(what_to_do);
+    }
+    if !crate::touchpad::read_the_pad(true) {
+        return Err("Windows n'a pas donné le pavé tactile à ZyrDesk.".to_string());
+    }
+    state.touchpad.store(true, Ordering::Relaxed);
+    // Remembered like the keyboard beside it: this is thrown in the
+    // middle of a session, and the side it is left on is the side the
+    // next session should open on.
+    crate::settings::remember_touchpad_gestures(true).await;
+    // The slide travels as an Alt+Tab typed by hand, so it travels by the
+    // same road and under the same condition. Said rather than refused:
+    // the tap is a click and crosses whatever the keyboard is doing, so
+    // half of what was asked for works from this moment.
+    if !keys_to_the_session(app) {
+        note(
+            "gestes du pavé tactile : le glissement à trois doigts change de fenêtre \
+             sur l'ordinateur d'en face seulement quand le clavier lui appartient \
+             (ligne « Clavier », côté « Immersif »)",
+        );
+    }
+    Ok(())
+}
+
+/// Ce qu'un geste du pavé fait de la session.
+///
+/// Appelé depuis le fil qui lit le pavé, et rien ici n'attend quoi que ce
+/// soit : un geste est un clic ou une frappe, que le système prend et
+/// rend aussitôt.
+///
+/// Aucun n'est envoyé « à la session » : ils sont faits sur cet
+/// ordinateur-ci, exactement comme une main les ferait, et c'est le
+/// moteur qui les porte de l'autre côté. Un clic va là où le pointeur est
+/// posé, donc dans l'image quand la main y est ; Alt+Tab et la touche
+/// lecture/pause sont reprises à Windows par le moteur, qui les donne à
+/// l'ordinateur d'en face, ce qui est le chemin d'un Alt+Tab tapé au
+/// clavier.
+pub fn the_pad_said(gesture: crate::touchpad::Gesture) {
+    use crate::touchpad::Gesture;
+
+    let done = match gesture {
+        Gesture::ThreeTap => a_middle_click(),
+        Gesture::FourTap => play_or_pause(),
+        // Vers la droite la fenêtre suivante, vers la gauche la
+        // précédente : c'est le sens que Windows donne aux mêmes gestes,
+        // et une main n'apprend pas deux sens pour un seul geste.
+        Gesture::Rightwards => the_window_after(false),
+        Gesture::Leftwards => the_window_after(true),
+    };
+    if !done {
+        note(&format!("{gesture} : Windows a refusé de le transmettre"));
+    }
+}
+
 /// The same, from anywhere in the program rather than from the menu.
 pub async fn ask(app: &App, act: Act) -> Result<(), String> {
-    // Ours to do, both of them, and neither goes through the engine's
+    // Ours to do, all of them, and none goes through the engine's
     // keyboard. Covering the screen is still a session matter: the
     // shortcut is registered with the system for the whole life of the
     // program, and without a session it would fullscreen the empty home
@@ -1204,6 +1334,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
         Act::SecureAttention => return press_ctrl_alt_del_over_there(app).await,
         Act::LockScreen => return lock_over_there(app).await,
         Act::Sound => return hush_the_session(app).await,
+        Act::Touchpad => return the_pad_to_the_session(app).await,
         _ => {}
     }
 
@@ -2033,10 +2164,7 @@ fn picture_of(_process: u32) -> Option<(i32, i32, i32, i32)> {
 /// there one call earlier, on this same thread.
 #[cfg(windows)]
 fn shortcut(act: Act, process: u32) -> Result<(), String> {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
-        VK_CONTROL, VK_MENU, VK_SHIFT,
-    };
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_CONTROL, VK_MENU, VK_SHIFT};
 
     let (Some(letter), Some(key)) = (act.letter(), act.where_it_sits()) else {
         return Ok(());
@@ -2059,12 +2187,6 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         ));
     }
 
-    // Where the modifiers sit, in the same numbering: the left-hand ones,
-    // which is what a person would press.
-    const CTRL: u16 = 0x1D;
-    const ALT: u16 = 0x38;
-    const SHIFT: u16 = 0x2A;
-
     // A modifier a finger is already holding is neither pressed nor
     // released here. Releasing it for them leaves the system certain
     // that finger has gone while it has not, and the next shortcut typed
@@ -2074,47 +2196,24 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
     // that is a shortcut which works or not depending on whether they
     // let go in between. The engine reads the whole combination either
     // way: what it does not get from us, it already has.
-    let to_press: Vec<u16> = [(CTRL, VK_CONTROL), (ALT, VK_MENU), (SHIFT, VK_SHIFT)]
-        .into_iter()
-        .filter(|(_, named)| !a_finger_holds(*named))
-        .map(|(place, _)| place)
-        .collect();
+    let to_press: Vec<Key> = [
+        (place::CTRL, VK_CONTROL),
+        (place::ALT, VK_MENU),
+        (place::SHIFT, VK_SHIFT),
+    ]
+    .into_iter()
+    .filter(|(_, named)| !a_finger_holds(*named))
+    .map(|(place, _)| Key::Place(place))
+    .collect();
 
     // Pressed in order, released in the mirror order: no key is left
     // down that was not down before.
-    let mut keys: Vec<(u16, bool)> = to_press.iter().map(|place| (*place, false)).collect();
-    keys.push((key, false));
-    keys.push((key, true));
+    let mut keys: Vec<(Key, bool)> = to_press.iter().map(|place| (*place, false)).collect();
+    keys.push((Key::Place(key), false));
+    keys.push((Key::Place(key), true));
     keys.extend(to_press.iter().rev().map(|place| (*place, true)));
 
-    let events: Vec<INPUT> = keys
-        .iter()
-        .map(|(key, up)| INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    // The place is what is sent, and the name is left for
-                    // the far end to work out from its own keyboard.
-                    wVk: 0,
-                    wScan: *key,
-                    dwFlags: KEYEVENTF_SCANCODE | if *up { KEYEVENTF_KEYUP } else { 0 },
-                    time: 0,
-                    dwExtraInfo: 0,
-                },
-            },
-        })
-        .collect();
-
-    // SAFETY: the events are ours and well formed, and their size is the
-    // one the call is told to expect.
-    let sent = unsafe {
-        SendInput(
-            events.len() as u32,
-            events.as_ptr(),
-            std::mem::size_of::<INPUT>() as i32,
-        )
-    };
-    if sent as usize == events.len() {
+    if typed(&keys) {
         // Said out loud because nothing else can say it: if the picture
         // does not react, this line is what tells a keystroke that never
         // left from one the engine chose to ignore.
@@ -2129,6 +2228,187 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         ));
         Err("Windows a refusé la combinaison de touches".to_string())
     }
+}
+
+/// Where the keys this program types sit, in the numbering of places
+/// rather than of names.
+///
+/// The place is what is sent and the name is left for the far end to work
+/// out from its own keyboard: the key engraved A in France is the key
+/// engraved Q elsewhere, and a name sent instead leaves the place to
+/// whatever the far system thinks the keyboard is.
+#[cfg(windows)]
+mod place {
+    pub const CTRL: u16 = 0x1D;
+    pub const ALT: u16 = 0x38;
+    pub const SHIFT: u16 = 0x2A;
+    pub const TAB: u16 = 0x0F;
+}
+
+/// A key as it is typed: by its place, or by its name.
+///
+/// Almost everything goes by its place, for the reason above. A key that
+/// has no engraving anywhere, like the one that plays and pauses, is the
+/// exception: it means the same thing on every keyboard in the world, its
+/// place moves from one laptop to the next, and its name is the only
+/// thing about it that is fixed.
+#[derive(Clone, Copy)]
+enum Key {
+    Place(u16),
+    Named(u16),
+}
+
+/// Types those keys, in that order, and says whether the system took them
+/// all.
+///
+/// Each pair is a key and whether it is going up. Shared by everything
+/// this program types: what it hands the system is the same either way,
+/// and two copies of it would be two chances to send a keystroke slightly
+/// differently.
+#[cfg(windows)]
+fn typed(keys: &[(Key, bool)]) -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
+    };
+
+    let events: Vec<INPUT> = keys
+        .iter()
+        .map(|(key, up)| {
+            let (name, place, how) = match key {
+                Key::Place(place) => (0, *place, KEYEVENTF_SCANCODE),
+                Key::Named(name) => (*name, 0, 0),
+            };
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: name,
+                        wScan: place,
+                        dwFlags: how | if *up { KEYEVENTF_KEYUP } else { 0 },
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            }
+        })
+        .collect();
+
+    // SAFETY: the events are ours and well formed, and their size is the
+    // one the call is told to expect.
+    let sent = unsafe {
+        SendInput(
+            events.len() as u32,
+            events.as_ptr(),
+            std::mem::size_of::<INPUT>() as i32,
+        )
+    };
+    sent as usize == events.len()
+}
+
+#[cfg(not(windows))]
+fn typed(_keys: &[(Key, bool)]) -> bool {
+    false
+}
+
+/// Presses the key that plays and pauses.
+///
+/// It travels the same road as Alt+Tab and for the same reason: Windows
+/// keeps it for itself here, handing it to whatever is playing on this
+/// computer, and the engine's own hook is the one thing that ever takes
+/// it back for the session. So this needs what that needs, the keyboard
+/// belonging to the picture.
+#[cfg(windows)]
+fn play_or_pause() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_MEDIA_PLAY_PAUSE;
+
+    let key = Key::Named(VK_MEDIA_PLAY_PAUSE);
+    typed(&[(key, false), (key, true)])
+}
+
+#[cfg(not(windows))]
+fn play_or_pause() -> bool {
+    false
+}
+
+/// Types Alt+Tab, or Alt+Maj+Tab to go the other way.
+///
+/// Typed here rather than sent anywhere, and that is the whole of how it
+/// crosses: Windows keeps Alt+Tab for itself on this computer, and the
+/// one thing that ever takes it back is the engine's own hook, which
+/// steps in front of every keystroke of the machine while the picture has
+/// the keyboard. What it takes, it hands to the far computer. So this is
+/// the same road a hand's own Alt+Tab takes, and it needs the same thing
+/// of the session: the keyboard has to belong to it.
+#[cfg(windows)]
+fn the_window_after(back: bool) -> bool {
+    let (alt, shift, tab) = (
+        Key::Place(place::ALT),
+        Key::Place(place::SHIFT),
+        Key::Place(place::TAB),
+    );
+    let mut keys = vec![(alt, false)];
+    if back {
+        keys.push((shift, false));
+    }
+    keys.push((tab, false));
+    keys.push((tab, true));
+    if back {
+        keys.push((shift, true));
+    }
+    keys.push((alt, true));
+    typed(&keys)
+}
+
+#[cfg(not(windows))]
+fn the_window_after(_back: bool) -> bool {
+    false
+}
+
+/// Clicks the middle button where the pointer stands.
+///
+/// Nothing about the session is asked here, on purpose. A middle click is
+/// a click: it lands on whatever window the pointer is over, which is the
+/// picture when the hand is on it and one of this computer's own windows
+/// when it is not. That is what the same click made by a mouse does, and
+/// a gesture that behaved differently would be a gesture nobody could
+/// aim.
+#[cfg(windows)]
+fn a_middle_click() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEINPUT,
+        SendInput,
+    };
+
+    let click = |what| INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                // Where the pointer already is: nothing here moves it.
+                dx: 0,
+                dy: 0,
+                mouseData: 0,
+                dwFlags: what,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    let events = [click(MOUSEEVENTF_MIDDLEDOWN), click(MOUSEEVENTF_MIDDLEUP)];
+    // SAFETY: the events are ours and well formed, and their size is the
+    // one the call is told to expect.
+    let sent = unsafe {
+        SendInput(
+            events.len() as u32,
+            events.as_ptr(),
+            std::mem::size_of::<INPUT>() as i32,
+        )
+    };
+    sent as usize == events.len()
+}
+
+#[cfg(not(windows))]
+fn a_middle_click() -> bool {
+    false
 }
 
 /// Whether a finger is on that key at this instant.
@@ -2214,20 +2494,23 @@ mod tests {
             assert_eq!(act.letter(), Some(letter), "sur « {act} »");
             assert_eq!(act.where_it_sits(), Some(place), "sur « {act} »");
         }
-        // Quatre ne passent pas par le clavier du lecteur : terminer se
-        // demande à l'ordinateur d'en face à travers le tunnel, couvrir
-        // l'écran se fait à notre propre fenêtre, celle du moteur étant
-        // posée dedans, Ctrl+Alt+Suppr est la combinaison que Windows
-        // garde pour lui aux deux bouts, et le son se coupe dans le
-        // mélangeur de cet ordinateur-ci.
+        // Les autres ne passent pas par le clavier du lecteur : terminer
+        // se demande à l'ordinateur d'en face à travers le tunnel,
+        // couvrir l'écran se fait à notre propre fenêtre, celle du moteur
+        // étant posée dedans, Ctrl+Alt+Suppr est la combinaison que
+        // Windows garde pour lui aux deux bouts, le son se coupe dans le
+        // mélangeur de cet ordinateur-ci, et le pavé tactile est lu par
+        // ce programme, aucun moteur ne sachant qu'il en existe un.
         for act in [
             Act::End,
             Act::Fullscreen,
             Act::SecureAttention,
             Act::LockScreen,
             Act::Sound,
+            Act::Touchpad,
         ] {
             assert_eq!(act.letter(), None, "sur « {act} »");
+            assert_eq!(act.where_it_sits(), None, "sur « {act} »");
         }
     }
 

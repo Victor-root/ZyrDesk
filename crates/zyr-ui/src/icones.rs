@@ -45,6 +45,14 @@ pub const CLAVIER: Icone = dessin(&[
     Trait::Chemin("M6 9h1M9.5 9h1M13 9h1M16.5 9h1M6 13h1M9.5 13h5M17 13h1"),
 ]);
 
+/// Le pavé tactile : son cadre, le trait qui sépare ses deux boutons, et
+/// les trois doigts qui font le geste.
+pub const PAVE: Icone = dessin(&[
+    Trait::Rond(2.0, 5.0, 20.0, 14.0, 2.0),
+    Trait::Chemin("M12 15v4"),
+    Trait::Chemin("M8 8v4M12 8v4M16 8v4"),
+]);
+
 pub const CAD: Icone = dessin(&[
     Trait::Rond(2.5, 6.0, 19.0, 12.0, 2.0),
     Trait::Chemin("M6 10h1M9.5 10h1M13 10h1M16.5 10h1M6 14h12"),

@@ -650,7 +650,8 @@ fn access_read(said: &str) -> Access {
 /// and the answer so the two can never drift apart.
 fn spelled(preferred: &Preferred) -> String {
     format!(
-        "asked={} bitrate={} codec={} display={} mouse={} stats={} hush={} keys={} steady={}",
+        "asked={} bitrate={} codec={} display={} mouse={} stats={} hush={} keys={} touchpad={} \
+         steady={}",
         preferred.asked,
         preferred.bitrate_kbps,
         preferred.codec,
@@ -663,6 +664,7 @@ fn spelled(preferred: &Preferred) -> String {
         said(preferred.stats_overlay),
         said(preferred.mute_far_speakers),
         said(preferred.system_keys),
+        said(preferred.touchpad_gestures),
         said(preferred.steady_far_rate)
     )
 }
@@ -1310,6 +1312,7 @@ impl<'a> Fields<'a> {
             stats_overlay: self.flag("stats", fallback.stats_overlay),
             mute_far_speakers: self.flag("hush", fallback.mute_far_speakers),
             system_keys: self.flag("keys", fallback.system_keys),
+            touchpad_gestures: self.flag("touchpad", fallback.touchpad_gestures),
             steady_far_rate: self.flag("steady", fallback.steady_far_rate),
         }
     }
@@ -1551,6 +1554,7 @@ mod tests {
             stats_overlay: true,
             mute_far_speakers: true,
             system_keys: false,
+            touchpad_gestures: true,
             steady_far_rate: false,
         }
     }

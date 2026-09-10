@@ -166,7 +166,7 @@ enum Reglage {
 /// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
 /// dans le journal à l'ouverture plutôt que remplacé par du vide qui
 /// ressemblerait à un défaut.
-const LIGNES: [Ligne; 18] = [
+const LIGNES: [Ligne; 19] = [
     Ligne::Mesures,
     Ligne::Separateur,
     Ligne::Entree(Entree {
@@ -203,6 +203,13 @@ const LIGNES: [Ligne; 18] = [
         cotes: ["Partagé", "Immersif"],
         passe: Act::SystemKeys,
         ou: &IMMERSIF,
+    }),
+    Ligne::Bascule(Bascule {
+        icone: &icones::PAVE,
+        mot: "Pavé tactile",
+        cotes: ["Cet ordinateur", "La session"],
+        passe: Act::Touchpad,
+        ou: &AU_PAVE,
     }),
     Ligne::Entree(Entree {
         icone: &icones::CAD,
@@ -418,7 +425,7 @@ static BARRE: Mutex<Barre> = Mutex::new(Barre::vide());
 /// veilles derrière la même carte.
 static TOUR: AtomicU32 = AtomicU32::new(0);
 
-/// Où en est chacun des trois interrupteurs.
+/// Où en est chacun des quatre interrupteurs.
 ///
 /// Relus à chaque ouverture de la carte plutôt que retenus : le raccourci
 /// du produit bascule la souris, et le mélangeur de Windows est ouvert à
@@ -427,6 +434,7 @@ static TOUR: AtomicU32 = AtomicU32::new(0);
 static EN_JEU: AtomicBool = AtomicBool::new(false);
 static COUPE: AtomicBool = AtomicBool::new(false);
 static IMMERSIF: AtomicBool = AtomicBool::new(false);
+static AU_PAVE: AtomicBool = AtomicBool::new(false);
 
 /// De combien un pixel de page vaut de vrais pixels.
 static ECHELLE: AtomicU32 = AtomicU32::new(100);
@@ -2536,9 +2544,9 @@ fn lache(window: windows_sys::Win32::Foundation::HWND, rang: usize) {
     choisis(&app, curseur.quoi, valeur);
 }
 
-/// Relit où en sont les trois interrupteurs, et redessine si ça a bougé.
+/// Relit où en sont les quatre interrupteurs, et redessine si ça a bougé.
 ///
-/// Les deux premiers sont ce que ce programme croit, parce que c'est lui
+/// Trois d'entre eux sont ce que ce programme croit, parce que c'est lui
 /// qui les bascule et que le moteur ne dit jamais où il en est ; le son se
 /// demande au mélangeur de Windows, qui le sait et qui est ouvert à tout
 /// le monde.
@@ -2550,6 +2558,7 @@ async fn relis_les_bascules(app: &App) {
 
     let mut change = pose(&EN_JEU, crate::floating::in_game_mouse(app));
     change |= pose(&IMMERSIF, crate::floating::keys_to_the_session(app));
+    change |= pose(&AU_PAVE, crate::floating::gestures_to_the_session(app));
     // Sans session le mélangeur n'a rien à dire, et la carte ne s'ouvre
     // pas sans session : un refus se laisse donc tel quel plutôt que
     // d'éteindre l'interrupteur.

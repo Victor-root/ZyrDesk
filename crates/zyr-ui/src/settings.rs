@@ -472,6 +472,27 @@ pub async fn remember_system_keys(theirs: bool) {
     .await;
 }
 
+/// Writes down which side of the switch the touchpad's gestures are on.
+pub async fn remember_touchpad_gestures(theirs: bool) {
+    remember(
+        "where the touchpad's gestures go",
+        format!(
+            "the touchpad's own gestures will go to {} from now on",
+            if theirs {
+                "the session"
+            } else {
+                "this computer"
+            }
+        ),
+        |preferred| {
+            let moved = preferred.touchpad_gestures != theirs;
+            preferred.touchpad_gestures = theirs;
+            moved
+        },
+    )
+    .await;
+}
+
 /// What the service has been told a session should look like.
 ///
 /// The ordinary settings when it cannot be asked: a session is about to
