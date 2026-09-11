@@ -243,7 +243,16 @@ fn keep_a_helper(_log: Log) {
 pub fn carry_the_clipboard_here() {
     let until = Instant::now() + HELPER_LIVES;
     let mut counted: Option<u32> = None;
-    let mut written: Option<Stamp> = None;
+    // What is already written down, and not nothing. A helper takes over
+    // from another every few seconds for the whole of a session: one that
+    // started from nothing would write the same clipboard down again, and
+    // say so again, every time one of them started.
+    let mut written = written_clip(&paths::clipboard_here()).map(|clip| clip.stamp());
+    // Whether this is the first thing this helper has looked at. A
+    // clipboard found the way it was left is not news, and saying it is
+    // would fill a journal with one line per helper rather than one line
+    // per thing somebody copied.
+    let mut taking_over = true;
     // What went wrong last, so that a clipboard held by another program,
     // or a picture this machine's imaging will not take, is one line and
     // not five a second for as long as the session lasts.
@@ -284,6 +293,7 @@ pub fn carry_the_clipboard_here() {
             continue;
         }
         counted = Some(counter);
+        let news = !std::mem::take(&mut taking_over);
         match zyr_clipboard::what_it_holds() {
             Ok(Some(clip)) if written != Some(clip.stamp()) => {
                 match write_the_pair(&paths::clipboard_here(), &clip) {
@@ -295,10 +305,12 @@ pub fn carry_the_clipboard_here() {
                         // Without it, a picture that never crossed and a
                         // clipboard nobody touched leave exactly the same
                         // trace, which is none.
-                        said(&format!(
-                            "clipboard: this computer now holds {}",
-                            clip.in_words()
-                        ));
+                        if news {
+                            said(&format!(
+                                "clipboard: this computer now holds {}",
+                                clip.in_words()
+                            ));
+                        }
                     }
                     Err(e) => say_once(
                         &mut complained,
@@ -311,21 +323,21 @@ pub fn carry_the_clipboard_here() {
             // tells « nobody copied anything » from « somebody copied
             // something this product does not take », and the two look
             // identical from everywhere else.
-            Ok(None) => say_once(
+            Ok(None) if news => say_once(
                 &mut complained,
                 &format!(
                     "clipboard: nothing on it that crosses ; it holds {}",
                     zyr_clipboard::what_is_offered()
                 ),
             ),
-            Ok(Some(_)) => {}
-            Err(e) => say_once(
+            Err(e) if news => say_once(
                 &mut complained,
                 &format!(
                     "clipboard: it would not be read: {e} ; it holds {}",
                     zyr_clipboard::what_is_offered()
                 ),
             ),
+            _ => {}
         }
         std::thread::sleep(LOOK_EVERY);
     }
