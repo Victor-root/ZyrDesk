@@ -240,7 +240,7 @@ pub fn watch(app: &crate::app::App) {
     let app = app.clone();
     crate::app::spawn(async move {
         keep_up(&app).await;
-        show(&app, Shown::default());
+        show(&app, Shown::default(), false);
         WATCHING.store(false, Ordering::SeqCst);
     });
 }
@@ -264,7 +264,14 @@ async fn keep_up(app: &crate::app::App) {
         if !crate::floating::a_session_is_up(app) {
             return;
         }
+        let held = crate::floating::the_voyants_are_held_up(app);
         let Some(mesures) = fresh(started) else {
+            // Tenues à l'écran, elles sont là avant même que le moteur
+            // d'en face ait écrit une seule lecture : ce qu'on regarde
+            // alors est les pastilles elles-mêmes, et une session dont
+            // les lectures n'ont pas commencé est précisément le moment
+            // où quelqu'un les regarde.
+            show(app, Shown::default(), held);
             continue;
         };
         let reads = read(&mesures);
@@ -280,7 +287,7 @@ async fn keep_up(app: &crate::app::App) {
         // l'occasion de changer d'avis. Ce qui est dit deux fois ne coûte
         // rien : la fenêtre garde ce qu'elle montre et ne se redessine
         // que sur une vraie différence.
-        show(app, shown);
+        show(app, shown, held);
     }
 }
 
@@ -366,6 +373,12 @@ mod bit {
     pub const FAR: u8 = 2;
     pub const HERE: u8 = 4;
     pub const PICTURE: u8 = FAR | HERE;
+    /// Les deux pastilles tenues à l'écran, allumées ou non.
+    ///
+    /// Rangé avec les autres et non à côté, parce que c'est la même
+    /// question : ce nombre dit ce que la fenêtre montre, et ce qui est
+    /// montré n'est plus seulement ce qui est allumé.
+    pub const HELD: u8 = 8;
 }
 
 #[cfg(windows)]
@@ -479,7 +492,7 @@ fn window_corner(anchor: (i32, i32)) -> (i32, i32) {
 /// se voit pas, mais elle reste une fenêtre que le compositeur mêle à
 /// chaque image de la session.
 #[cfg(windows)]
-fn show(app: &crate::app::App, shown: Shown) {
+fn show(app: &crate::app::App, shown: Shown, held: bool) {
     use std::sync::atomic::Ordering;
 
     let window = ITS_WINDOW.load(Ordering::Relaxed);
@@ -491,6 +504,7 @@ fn show(app: &crate::app::App, shown: Shown) {
         (shown.link, bit::LINK),
         (shown.far, bit::FAR),
         (shown.here, bit::HERE),
+        (held, bit::HELD),
     ] {
         if on {
             lit |= bit;
@@ -499,7 +513,7 @@ fn show(app: &crate::app::App, shown: Shown) {
     if LIT.swap(lit, Ordering::Relaxed) == lit {
         return;
     }
-    let anything = !shown.nothing();
+    let anything = !shown.nothing() || held;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNOACTIVATE, ShowWindow};
@@ -515,7 +529,7 @@ fn show(app: &crate::app::App, shown: Shown) {
 }
 
 #[cfg(not(windows))]
-fn show(_app: &crate::app::App, _shown: Shown) {}
+fn show(_app: &crate::app::App, _shown: Shown, _held: bool) {}
 
 /// Bâtit la fenêtre, cachée : elle ne se montre qu'au premier voyant.
 #[cfg(windows)]
@@ -606,6 +620,11 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use crate::paint::Cadre;
 
     let lit = LIT.load(Ordering::Relaxed);
+    // Tenues à l'écran, elles sont dessinées toutes les deux et chacune
+    // dit quand même ce qu'elle lit : c'est où elles sont dessinées que
+    // cela change et jamais ce qu'elles disent. Deux pastilles toujours
+    // allumées ne montreraient rien de leur travail.
+    let held = lit & bit::HELD != 0;
     let scale = crate::fenetre::echelle();
     let (wide_px, high) = its_size();
     TOILE.with_borrow_mut(|toile| {
@@ -632,7 +651,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             .into_iter()
             .enumerate()
         {
-            if !on {
+            if !on && !held {
                 continue;
             }
             let left = (ROOM + rank as f32 * (BADGE + BETWEEN)) * scale;
@@ -647,7 +666,12 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             toile.trace_dedans(pastille, rayon, scale, SOMBRE.trait_fort);
             let dessin = pastille.elargi(-INSET * scale);
             if rank == 0 {
-                toile.icone(&crate::icones::LIEN, dessin, SOMBRE.attention);
+                let couleur = if on {
+                    SOMBRE.attention
+                } else {
+                    SOMBRE.texte_faible
+                };
+                toile.icone(&crate::icones::LIEN, dessin, couleur);
                 continue;
             }
             // La pastille de l'image porte les deux ordinateurs, celui

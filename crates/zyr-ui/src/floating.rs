@@ -144,6 +144,9 @@ pub enum Act {
     Touchpad,
     /// Whether the two computers share one clipboard.
     Clipboard,
+    /// Whether the two badges in the corner of the picture are drawn at
+    /// all times rather than only when they have something to say.
+    Voyants,
     /// Whether the pointer is kept inside the picture.
     PointerLock,
     End,
@@ -174,6 +177,7 @@ impl Act {
             | Act::Sound
             | Act::Touchpad
             | Act::Clipboard
+            | Act::Voyants
             | Act::End => None,
         }
     }
@@ -199,6 +203,7 @@ impl Act {
             | Act::Sound
             | Act::Touchpad
             | Act::Clipboard
+            | Act::Voyants
             | Act::End => None,
         }
     }
@@ -216,6 +221,7 @@ impl std::fmt::Display for Act {
             Act::SystemKeys => "touches système",
             Act::Touchpad => "gestes du pavé tactile",
             Act::Clipboard => "presse-papiers partagé",
+            Act::Voyants => "voyants montrés en permanence",
             Act::PointerLock => "pointeur tenu dans l'image",
             Act::End => "fin de la session",
         })
@@ -310,6 +316,19 @@ pub struct Floating {
     /// part in it is to say which way the switch is and to write that
     /// down.
     clipboard: AtomicBool,
+    /// Whether the two badges in the corner of the picture are drawn at
+    /// all times.
+    ///
+    /// The one switch here that is not about what a session does. The
+    /// badges show themselves when something is wrong and hide when
+    /// nothing is, which is what they are for and also what makes them
+    /// hard to look at: they are almost never there. This holds them on
+    /// screen, lit or dim, so they can be watched working.
+    ///
+    /// Not remembered anywhere, and that is the point: a switch that only
+    /// exists to look at something must not be left on by a session
+    /// nobody was looking at.
+    voyants: AtomicBool,
     /// Whether this computer is drawing its own pointer over the picture.
     ///
     /// Counted like the three above, and put down whenever a player is
@@ -823,6 +842,9 @@ pub fn watch(app: App) {
                         state
                             .clipboard
                             .store(preferred.shared_clipboard, Ordering::Relaxed);
+                        // Off at every session, whatever the last one
+                        // was left on: see the field itself.
+                        state.voyants.store(false, Ordering::Relaxed);
                         state.pointer_held.store(false, Ordering::Relaxed);
                         // What the far computer draws is not put down
                         // here: it lives over there, in an engine this
@@ -1270,6 +1292,35 @@ pub fn the_clipboard_is_shared(app: &App) -> bool {
     app.floating().clipboard.load(Ordering::Relaxed)
 }
 
+/// Whether the badges in the corner of the picture are being held on
+/// screen rather than left to show themselves.
+pub fn the_voyants_are_held_up(app: &App) -> bool {
+    app.floating().voyants.load(Ordering::Relaxed)
+}
+
+/// Holds the two badges on screen, or lets them go back to showing
+/// themselves.
+///
+/// Held up, each is still lit or dim by what it reads: it is where they
+/// are drawn that this changes and never what they say. A switch that
+/// lit them as well would show two badges that are always wrong, which
+/// is no use to anybody looking at how they behave.
+///
+/// The watch reads this at its own turn, eighty milliseconds away, so
+/// nothing has to be told: they are there, or gone, before the hand has
+/// left the menu.
+fn always_show_the_voyants(app: &App) -> Result<(), String> {
+    let state = app.floating();
+    let held = !state.voyants.load(Ordering::Relaxed);
+    state.voyants.store(held, Ordering::Relaxed);
+    note(if held {
+        "voyants : tenus à l'écran, allumés ou éteints selon ce qu'ils lisent"
+    } else {
+        "voyants : rendus à eux-mêmes, ils ne se montrent qu'en cas de besoin"
+    });
+    Ok(())
+}
+
 /// Throws the switch that decides whether the two computers share one
 /// clipboard.
 ///
@@ -1393,6 +1444,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
         Act::Sound => return hush_the_session(app).await,
         Act::Touchpad => return the_pad_to_the_session(app).await,
         Act::Clipboard => return share_the_clipboard(app).await,
+        Act::Voyants => return always_show_the_voyants(app),
         _ => {}
     }
 

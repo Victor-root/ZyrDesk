@@ -166,7 +166,7 @@ enum Reglage {
 /// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
 /// dans le journal à l'ouverture plutôt que remplacé par du vide qui
 /// ressemblerait à un défaut.
-const LIGNES: [Ligne; 20] = [
+const LIGNES: [Ligne; 21] = [
     Ligne::Mesures,
     Ligne::Separateur,
     Ligne::Entree(Entree {
@@ -182,6 +182,13 @@ const LIGNES: [Ligne; 20] = [
         droite: Droite::Mot("Ctrl+Alt+Maj+S"),
         fait: Fait::Session(Act::Stats),
         grave: false,
+    }),
+    Ligne::Bascule(Bascule {
+        icone: &icones::LIEN,
+        mot: "Voyants",
+        cotes: ["Au besoin", "Tenus"],
+        passe: Act::Voyants,
+        ou: &TENUS,
     }),
     Ligne::Bascule(Bascule {
         icone: &icones::SOURIS,
@@ -432,7 +439,7 @@ static BARRE: Mutex<Barre> = Mutex::new(Barre::vide());
 /// veilles derrière la même carte.
 static TOUR: AtomicU32 = AtomicU32::new(0);
 
-/// Où en est chacun des cinq interrupteurs.
+/// Où en est chacun des six interrupteurs.
 ///
 /// Relus à chaque ouverture de la carte plutôt que retenus : le raccourci
 /// du produit bascule la souris, et le mélangeur de Windows est ouvert à
@@ -443,6 +450,7 @@ static COUPE: AtomicBool = AtomicBool::new(false);
 static IMMERSIF: AtomicBool = AtomicBool::new(false);
 static AU_PAVE: AtomicBool = AtomicBool::new(false);
 static PARTAGE: AtomicBool = AtomicBool::new(false);
+static TENUS: AtomicBool = AtomicBool::new(false);
 
 /// De combien un pixel de page vaut de vrais pixels.
 static ECHELLE: AtomicU32 = AtomicU32::new(100);
@@ -2568,6 +2576,7 @@ async fn relis_les_bascules(app: &App) {
     change |= pose(&IMMERSIF, crate::floating::keys_to_the_session(app));
     change |= pose(&AU_PAVE, crate::floating::gestures_to_the_session(app));
     change |= pose(&PARTAGE, crate::floating::the_clipboard_is_shared(app));
+    change |= pose(&TENUS, crate::floating::the_voyants_are_held_up(app));
     // Sans session le mélangeur n'a rien à dire, et la carte ne s'ouvre
     // pas sans session : un refus se laisse donc tel quel plutôt que
     // d'éteindre l'interrupteur.
