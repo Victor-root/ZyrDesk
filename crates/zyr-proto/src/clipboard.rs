@@ -1,9 +1,15 @@
 //! What one clipboard hands to the other.
 //!
-//! A clipboard holds one thing at a time, and the product carries two
-//! kinds of it: what somebody selected in a text, and what somebody
-//! copied of a picture. Nothing else crosses. Files are a transfer and
-//! not a clipboard, and they will be their own thing when they come.
+//! A clipboard holds one thing at a time, and the product carries three
+//! kinds of it: what somebody selected in a text, what somebody copied of
+//! a picture, and files.
+//!
+//! Files are not like the other two, and the difference is the whole of
+//! how they work. Copying a file has never put the file on a clipboard,
+//! on any Windows that ever shipped: it puts the names of files that live
+//! on that machine's disks. So what crosses here is those names and how
+//! heavy each one is, which weighs nothing at all however many gigabytes
+//! they stand for. The bytes follow later, and only if somebody pastes.
 //!
 //! Both computers are Windows, so a picture travels as the one shape
 //! every program there already agrees on: PNG. It is what a browser and
@@ -45,6 +51,15 @@ pub enum Kind {
     Text,
     /// A picture, as PNG.
     Picture,
+    /// Files, as the list of them and not one byte of what is in them.
+    ///
+    /// The one kind whose clip is not the thing itself. Copying a file
+    /// never put the file on a clipboard, on any Windows that ever
+    /// shipped: it puts the names of files that live on that machine's
+    /// own disks. What crosses here is those names and how heavy each
+    /// one is, which weighs nothing however many gigabytes they stand
+    /// for; the bytes follow later, and only if somebody pastes.
+    Files,
 }
 
 impl Kind {
@@ -52,6 +67,7 @@ impl Kind {
         match self {
             Kind::Text => "text",
             Kind::Picture => "picture",
+            Kind::Files => "files",
         }
     }
 }
@@ -69,6 +85,7 @@ impl FromStr for Kind {
         match said.trim() {
             "text" => Ok(Kind::Text),
             "picture" => Ok(Kind::Picture),
+            "files" => Ok(Kind::Files),
             _ => Err(Unreadable),
         }
     }
@@ -162,6 +179,11 @@ impl Clip {
         Self::new(Kind::Picture, png)
     }
 
+    /// A clip that names files without carrying any of them.
+    pub fn files(listed: &Listing) -> Self {
+        Self::new(Kind::Files, listed.written().into_bytes())
+    }
+
     pub fn kind(&self) -> Kind {
         self.kind
     }
@@ -178,7 +200,15 @@ impl Clip {
     pub fn said(&self) -> Option<&str> {
         match self.kind {
             Kind::Text => std::str::from_utf8(&self.bytes).ok(),
-            Kind::Picture => None,
+            Kind::Picture | Kind::Files => None,
+        }
+    }
+
+    /// The files it names, when it names any.
+    pub fn listing(&self) -> Option<Listing> {
+        match self.kind {
+            Kind::Files => Listing::read(std::str::from_utf8(&self.bytes).ok()?).ok(),
+            Kind::Text | Kind::Picture => None,
         }
     }
 
@@ -192,6 +222,13 @@ impl Clip {
         match self.kind {
             Kind::Text => format!("{} bytes of text", self.bytes.len()),
             Kind::Picture => format!("a picture of {} bytes", self.bytes.len()),
+            // What the names stand for and never what they weigh: a list
+            // of a hundred gigabytes is a few hundred bytes here, and
+            // saying those bytes would say nothing anybody wants.
+            Kind::Files => match self.listing() {
+                Some(listed) => listed.in_words(),
+                None => "a list of files that says nothing".to_string(),
+            },
         }
     }
 
@@ -231,6 +268,145 @@ impl Clip {
         let clip = Self::new(kind, bytes);
         (clip.stamp == stamp).then_some(clip).ok_or(Unreadable)
     }
+}
+
+/// One file of a listing: where it goes, and how heavy it is.
+///
+/// The path is relative and never the one it had on the machine it was
+/// copied from: `D:\\Photos\\2026\\lac.jpg` copied with its folder
+/// travels as `2026/lac.jpg`, and the other computer decides for itself
+/// where that lands. An absolute path would name a disk that may not
+/// exist over there, and a path climbing out of its folder would name a
+/// place nobody asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listed {
+    path: String,
+    bytes: u64,
+}
+
+impl Listed {
+    /// A file of a listing, or nothing when its path is not one this
+    /// product will write.
+    ///
+    /// Refused rather than mended: a path that climbs out of its folder,
+    /// or names a disk, is either a mistake or an attempt, and the two
+    /// are answered the same way. It is the far computer that hands this
+    /// over, and the far computer is where a name is chosen.
+    pub fn new(path: &str, bytes: u64) -> Option<Self> {
+        let path = path.replace('\\', "/");
+        let clean = !path.is_empty()
+            && !path.starts_with('/')
+            && !path.contains(':')
+            && !path.split('/').any(|piece| {
+                piece.is_empty() || piece == "." || piece == ".." || piece.ends_with(' ')
+            });
+        clean.then_some(Self { path, bytes })
+    }
+
+    /// Where it goes, under whatever folder the far computer chose, with
+    /// `/` between its pieces.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// Its name alone, without the folders above it.
+    pub fn name(&self) -> &str {
+        self.path.rsplit('/').next().unwrap_or(&self.path)
+    }
+
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+}
+
+/// The files a clipboard names, in the order they were copied.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Listing(Vec<Listed>);
+
+impl Listing {
+    pub fn of(files: Vec<Listed>) -> Self {
+        Self(files)
+    }
+
+    pub fn files(&self) -> &[Listed] {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// What the whole of it weighs.
+    pub fn whole(&self) -> u64 {
+        self.0.iter().map(|file| file.bytes).sum()
+    }
+
+    /// One file by its rank in the list, which is how the two computers
+    /// name a file to each other.
+    ///
+    /// By rank and never by path: a rank is a number that cannot be made
+    /// to mean another file, where a path handed back by the far computer
+    /// would be a path this one then has to check all over again.
+    pub fn at(&self, rank: usize) -> Option<&Listed> {
+        self.0.get(rank)
+    }
+
+    /// The listing as it travels and as it is written down: one file to a
+    /// line, its weight first because that is the fixed-width half, then
+    /// the path, which takes the whole of what is left and may hold
+    /// spaces.
+    pub fn written(&self) -> String {
+        let mut out = String::new();
+        for file in &self.0 {
+            out.push_str(&format!("{} {}\n", file.bytes, file.path));
+        }
+        out
+    }
+
+    /// Reads what the line above wrote.
+    ///
+    /// A line that does not say what it is supposed to costs the whole
+    /// listing and not just that line: half a folder pasted as though it
+    /// were the whole of it is worse than nothing pasted at all.
+    pub fn read(said: &str) -> Result<Self, Unreadable> {
+        let mut files = Vec::new();
+        for line in said.lines().filter(|line| !line.trim().is_empty()) {
+            let (weight, path) = line.split_once(' ').ok_or(Unreadable)?;
+            let bytes = weight.parse().map_err(|_| Unreadable)?;
+            files.push(Listed::new(path, bytes).ok_or(Unreadable)?);
+        }
+        Ok(Self(files))
+    }
+
+    /// What it is, in the words the service writes its journal in.
+    pub fn in_words(&self) -> String {
+        format!(
+            "{} file{}, {}",
+            self.0.len(),
+            if self.0.len() == 1 { "" } else { "s" },
+            weighed(self.whole())
+        )
+    }
+}
+
+/// A weight in the largest unit that leaves it above one, which is how a
+/// person reads one.
+///
+/// In the units Windows itself shows, powers of a thousand and not of
+/// 1024: a product that says a file is smaller than the Explorer says it
+/// is has an argument with the Explorer that it cannot win.
+pub fn weighed(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["o", "ko", "Mo", "Go", "To"];
+    let mut left = bytes as f64;
+    let mut unit = 0;
+    while left >= 1000.0 && unit + 1 < UNITS.len() {
+        left /= 1000.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        return format!("{bytes} o");
+    }
+    format!("{left:.1} {}", UNITS[unit])
 }
 
 /// What names a clip: its kind and its stamp, with nothing of it.
@@ -355,6 +531,80 @@ mod tests {
     fn le_plafond_se_lit_sur_le_clip() {
         assert!(!Clip::picture(vec![0; LARGEST]).too_large());
         assert!(Clip::picture(vec![0; LARGEST + 1]).too_large());
+    }
+
+    fn listee(path: &str, bytes: u64) -> Listed {
+        Listed::new(path, bytes).unwrap()
+    }
+
+    #[test]
+    fn une_liste_de_fichiers_fait_l_aller_retour() {
+        let listing = Listing::of(vec![
+            listee("lac.jpg", 2_400_000),
+            listee("2026/été au bord de l'eau.png", 940),
+            listee("un dossier/un fichier avec des espaces.txt", 0),
+        ]);
+        let clip = Clip::files(&listing);
+        assert_eq!(clip.kind(), Kind::Files);
+        assert_eq!(clip.listing().unwrap(), listing);
+        // Et il traverse le tunnel comme les deux autres espèces.
+        assert_eq!(Clip::from_the_wire(&clip.on_the_wire()).unwrap(), clip);
+    }
+
+    #[test]
+    fn une_liste_pese_ce_que_ses_fichiers_pesent_et_non_ce_qu_elle_pese() {
+        // C'est tout l'intérêt : cent gigaoctets nommés tiennent en
+        // quelques centaines d'octets, et rien ne bouge tant que
+        // personne ne colle.
+        let listing = Listing::of(vec![
+            listee("gros.iso", 80_000_000_000),
+            listee("encore.iso", 20_000_000_000),
+        ]);
+        assert_eq!(listing.whole(), 100_000_000_000);
+        assert!(Clip::files(&listing).bytes().len() < 100);
+        assert_eq!(listing.in_words(), "2 files, 100.0 Go");
+        assert_eq!(
+            Listing::of(vec![listee("seul.txt", 3)]).in_words(),
+            "1 file, 3 o"
+        );
+    }
+
+    #[test]
+    fn un_chemin_qui_sort_de_son_dossier_est_refuse() {
+        // C'est la machine d'en face qui remet ces noms, et un nom est
+        // une chose qu'on choisit : sans ça, coller un dossier pourrait
+        // écrire n'importe où sur ce disque-ci.
+        assert!(Listed::new("../ailleurs.txt", 1).is_none());
+        assert!(Listed::new("dossier/../../ailleurs.txt", 1).is_none());
+        assert!(Listed::new("/racine.txt", 1).is_none());
+        assert!(Listed::new("C:/Windows/System32/rien.dll", 1).is_none());
+        assert!(Listed::new("", 1).is_none());
+        assert!(Listed::new("dossier//vide.txt", 1).is_none());
+        // Et une liste entière tombe avec une seule de ses lignes : une
+        // moitié de dossier collée comme si c'était le tout est pire que
+        // rien du tout.
+        assert!(Listing::read("3 ../ailleurs.txt").is_err());
+        assert!(Listing::read("pas-un-nombre fichier.txt").is_err());
+        assert!(Listing::read("3").is_err());
+    }
+
+    #[test]
+    fn un_chemin_arrive_avec_des_barres_obliques_dans_un_seul_sens() {
+        // Windows écrit ses chemins avec l'autre barre, et les deux
+        // ordinateurs doivent nommer le même fichier pareil.
+        let file = listee(r"2026\lac.jpg", 12);
+        assert_eq!(file.path(), "2026/lac.jpg");
+        assert_eq!(file.name(), "lac.jpg");
+    }
+
+    #[test]
+    fn un_poids_se_lit_dans_l_unite_ou_il_veut_dire_quelque_chose() {
+        assert_eq!(weighed(0), "0 o");
+        assert_eq!(weighed(999), "999 o");
+        assert_eq!(weighed(1_000), "1.0 ko");
+        assert_eq!(weighed(94_000), "94.0 ko");
+        assert_eq!(weighed(1_500_000), "1.5 Mo");
+        assert_eq!(weighed(4_700_000_000), "4.7 Go");
     }
 
     #[test]

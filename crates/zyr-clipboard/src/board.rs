@@ -140,6 +140,16 @@ pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
             }
             both
         }
+        // Putting files on a clipboard is not putting anything on it: it
+        // is standing in for files that live on the other computer, and
+        // answering Windows when somebody pastes them. That is a thing
+        // this crate holds rather than a thing it hands over, and it
+        // lives next door.
+        Kind::Files => {
+            return Err(Trouble::of(
+                "des fichiers ne se posent pas ainsi : ils se tiennent",
+            ));
+        }
     };
 
     let _open = Open::now()?;
