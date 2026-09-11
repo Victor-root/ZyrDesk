@@ -37,6 +37,13 @@ pub struct Mesures {
     /// What never arrived, and what arrived too late to be shown.
     pub dropped_network_pct: Option<f64>,
     pub dropped_jitter_pct: Option<f64>,
+    /// How long the picture has been standing still, in milliseconds.
+    ///
+    /// The one number of the line that is not an average over the second
+    /// that has just passed, and the only one that can say a session has
+    /// stopped moving at the moment it stops: the rest is a window, and a
+    /// window is always a second late.
+    pub since_frame_ms: Option<u64>,
 }
 
 /// The last reading, or an empty one when there is no session, no engine
@@ -80,6 +87,7 @@ fn read(said: &str) -> Mesures {
             "height" => mesures.height = value.parse().ok(),
             "dropped_network_pct" => mesures.dropped_network_pct = value.parse().ok(),
             "dropped_jitter_pct" => mesures.dropped_jitter_pct = value.parse().ok(),
+            "since_frame_ms" => mesures.since_frame_ms = value.parse().ok(),
             _ => {}
         }
     }
@@ -103,6 +111,15 @@ mod tests {
         assert_eq!(mesures.host_ms, Some(2.30));
         assert_eq!(mesures.bitrate_mbps, Some(0.93));
         assert_eq!(mesures.dropped_jitter_pct, Some(0.14));
+    }
+
+    #[test]
+    fn the_one_number_that_is_not_a_window_is_read_too() {
+        // Celui-ci arrive cinq fois par seconde et les autres une : c'est
+        // lui qui allume le voyant du lien, et le lire comme un mot
+        // inconnu laisserait ce voyant éteint sur une image figée.
+        let mesures = read("codec=HEVC since_frame_ms=1840 fps=0.0");
+        assert_eq!(mesures.since_frame_ms, Some(1840));
     }
 
     #[test]

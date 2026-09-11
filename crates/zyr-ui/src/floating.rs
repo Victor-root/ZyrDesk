@@ -845,6 +845,11 @@ pub fn watch(app: App) {
                     // propre boucle, relancée ici quand la précédente
                     // s'est arrêtée.
                     crate::pointeur::follow(&app);
+                    // Et la santé de la session, relue bien plus souvent
+                    // que cette veille-ci ne tourne : ce qu'elle allume
+                    // doit se voir dans le tiers de seconde, et cette
+                    // veille passe une fois par seconde.
+                    crate::voyants::watch(&app);
                     // Et le clavier appartient à l'image, toujours. Le
                     // menu ne le lui prend plus : la carte que ce
                     // programme dessine n'est jamais activée et ne porte
@@ -946,7 +951,20 @@ fn put_the_button_up(app: &App, process: u32) {
         // même réponse pour tous les écrans, et une seule à tenir.
         crate::menu::raise(app, crate::fenetre::echelle(), crate::theme::light());
     }
+    // Et les deux voyants, dans le coin d'en face. Ce qui s'ouvre ici est
+    // la fenêtre qui les portera : elle reste rangée tant qu'il n'y a
+    // rien à dire, ce qui est la plus grande partie d'une session.
+    crate::voyants::raise(app, the_other_corner(picture));
     lay_the_button(picture);
+}
+
+/// Le coin haut gauche de l'image, à la même marge que le bouton.
+///
+/// La même marge et non une deuxième : les deux coins sont regardés l'un
+/// après l'autre, et deux écarts différents se voient tout de suite.
+fn the_other_corner(picture: (i32, i32, i32, i32)) -> (i32, i32) {
+    let margin = margin();
+    (picture.0 + margin, picture.1 + margin)
 }
 
 /// What the button comes to in real pixels, on the screen it hangs over.
@@ -975,6 +993,7 @@ pub fn lower(app: &App) {
         .take()
         .is_some()
     {
+        crate::voyants::lower(app);
         #[cfg(windows)]
         {
             crate::menu::lower(app);
@@ -1859,6 +1878,10 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
     let anchor = hung_from(picture, nudge(), logo(), margin());
     decide_the_direction(picture, anchor, menu_height());
     put_the_button(picture, anchor);
+    // Les voyants suivent l'image d'ici, et non d'une veille à eux : ils
+    // sont posés sur le même bord que ce bouton, et une image qu'on
+    // redimensionne les emmènerait chacun à son rythme.
+    crate::voyants::lay(the_other_corner(picture));
 }
 
 /// Ce que la carte du menu prend de haut, qui décide du sens d'ouverture.

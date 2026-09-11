@@ -88,6 +88,10 @@ mod theme;
 // lit le pavé est de Windows, comme la session.
 mod touchpad;
 mod tray;
+// Les deux voyants d'une session, dans le coin de l'image opposé au
+// bouton flottant. Ce qui décide se compile partout ; les pastilles sont
+// une fenêtre, donc de Windows.
+mod voyants;
 
 #[cfg(windows)]
 mod elevated;

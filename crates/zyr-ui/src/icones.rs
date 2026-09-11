@@ -97,6 +97,15 @@ pub const ECRAN_EN_FACE: Icone = dessin(&[
     Trait::Chemin("M9 21h6M12 17v4M7 10.5h3l1.5-3 2 6 1.5-3h2"),
 ]);
 
+/// Le lien entre les deux ordinateurs : trois arcs et un point, le dessin
+/// que tout le monde lit comme « réseau » sans qu'on ait à l'écrire.
+pub const LIEN: Icone = dessin(&[
+    Trait::Chemin("M2.5 9.5a13.5 13.5 0 0 1 19 0"),
+    Trait::Chemin("M6.5 13.5a8 8 0 0 1 11 0"),
+    Trait::Chemin("M10 17.5a3 3 0 0 1 4 0"),
+    Trait::Rond(11.0, 20.0, 2.0, 2.0, 1.0),
+]);
+
 pub const CHEVRON: Icone = dessin(&[Trait::Chemin("M9 5l7 7-7 7")]);
 
 pub const RETOUR: Icone = dessin(&[Trait::Chemin("M15 5l-7 7 7 7")]);

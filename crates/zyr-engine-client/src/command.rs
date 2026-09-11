@@ -139,6 +139,15 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
     // one patience and every part of it is told the same.
     args.push("--control-timeout".to_string());
     args.push(zyr_proto::net::UNHEARD_LIMIT.as_millis().to_string());
+    // And it draws nothing of its own over the picture about the link.
+    // The engine's own warning is red letters burnt into the frames, in a
+    // colour and a size it chose, and it arrives seconds after the person
+    // has already seen the picture stop: it is worked out over a window
+    // of its own, on the far side of a decoder that has nothing to
+    // decode. ZyrDesk says it instead, in a window of its own laid over
+    // the picture, from a reading it takes five times a second
+    // ([D177](../../docs/DECISIONS.md), patch P-M16).
+    args.push("--no-connection-warnings".to_string());
     if settings.absolute_mouse {
         args.push("--absolute-mouse".to_string());
     }
@@ -196,6 +205,9 @@ mod tests {
     #[test]
     fn the_engine_always_says_what_the_session_costs() {
         let args = session_arguments("host", &SessionSettings::default());
+        // Rien du moteur n'est dessiné dans l'image : ZyrDesk montre
+        // lui-même ce qu'il y a à dire du lien, dans une fenêtre à lui.
+        assert!(args.iter().any(|a| a == "--no-connection-warnings"));
         let path = value_of(&args, "--report-stats").expect("un chemin pour les mesures");
         assert!(path.ends_with("session-stats.txt"));
     }
