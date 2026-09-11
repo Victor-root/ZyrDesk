@@ -334,10 +334,7 @@ pub fn what_is_offered() -> String {
     // marker and nothing else, so said on its own it reads as an empty
     // clipboard where the shapes were all there behind the object. The
     // one line that says why something never crossed has to name both.
-    match what_ole_offers() {
-        Some(behind) => format!("{plainly} ; derrière l'objet OLE : {behind}"),
-        None => plainly,
-    }
+    format!("{plainly} ; derrière l'objet OLE : {}", what_ole_offers())
 }
 
 /// The names on the clipboard itself, which is what a program reading it
@@ -363,17 +360,24 @@ fn the_plain_names() -> String {
     named.join(", ")
 }
 
-/// The names the object behind an OLE clipboard offers, when there is
-/// one.
+/// The names the object behind an OLE clipboard offers.
 ///
-/// Nothing when the clipboard was not written that way, which is the
-/// ordinary case and not a fault.
-fn what_ole_offers() -> Option<String> {
+/// Says why there are none rather than coming back empty, and that is
+/// the whole of what this is for: a refusal here and an object offering
+/// nothing look identical from the journal, and they are the two ends of
+/// two entirely different faults.
+fn what_ole_offers() -> String {
     // SAFETY: takes nothing and hands over an object held to the end of
     // this. It opens the clipboard itself, so nothing here may hold it.
-    let object = unsafe { OleGetClipboard() }.ok()?;
+    let object = match unsafe { OleGetClipboard() } {
+        Ok(object) => object,
+        Err(e) => return format!("l'OLE n'a rendu aucun objet : {e}"),
+    };
     // SAFETY: an object OLE just handed over, asked what it can give.
-    let walk = unsafe { object.EnumFormatEtc(DATADIR_GET.0 as u32) }.ok()?;
+    let walk = match unsafe { object.EnumFormatEtc(DATADIR_GET.0 as u32) } {
+        Ok(walk) => walk,
+        Err(e) => return format!("l'objet ne dit pas ce qu'il offre : {e}"),
+    };
     let mut named = Vec::new();
     // A ceiling, because this is a journal line and not an inventory: a
     // program offering forty shapes of one thing says nothing more in
@@ -392,7 +396,10 @@ fn what_ole_offers() -> Option<String> {
             break;
         }
     }
-    (!named.is_empty()).then(|| named.join(", "))
+    if named.is_empty() {
+        return "il n'offre rien".to_string();
+    }
+    named.join(", ")
 }
 
 /// What a format is called, in the words of whoever registered it or in
