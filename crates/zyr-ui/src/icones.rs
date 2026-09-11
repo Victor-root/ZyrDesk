@@ -80,10 +80,21 @@ pub const RESOLUTION: Icone = dessin(&[
     Trait::Chemin("M9 21h6M12 17v4"),
 ]);
 
-pub const ECRAN_HOTE: Icone = dessin(&[
-    Trait::Rond(2.0, 4.0, 13.0, 9.0, 1.5),
-    Trait::Rond(9.0, 11.0, 13.0, 9.0, 1.5),
-]);
+/// Les deux ordinateurs d'une session, comme le logo du produit les
+/// dessine : celui d'en face derrière, celui qui regarde devant.
+pub const ECRAN_HOTE: Icone = dessin(&[LA_BAS, ICI]);
+
+/// Chacun des deux seul.
+///
+/// De quoi allumer l'un d'eux par-dessus la paire sans redessiner la
+/// paire, ce qui est comment un voyant dit lequel des deux ordinateurs
+/// coince. Écrits à partir des mêmes deux traits que la paire : recopiés,
+/// ils s'en écarteraient au premier pixel changé.
+pub const ECRAN_LA_BAS: Icone = dessin(&[LA_BAS]);
+pub const ECRAN_ICI: Icone = dessin(&[ICI]);
+
+const LA_BAS: Trait = Trait::Rond(2.0, 4.0, 13.0, 9.0, 1.5);
+const ICI: Trait = Trait::Rond(9.0, 11.0, 13.0, 9.0, 1.5);
 
 pub const DEBIT: Icone = dessin(&[Trait::Chemin("M3 12h3l3-7 4 14 3-7h5")]);
 

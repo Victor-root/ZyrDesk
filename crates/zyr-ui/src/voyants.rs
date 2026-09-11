@@ -6,6 +6,12 @@
 //! en route, l'autre pour l'image elle-même, quand l'un des deux
 //! ordinateurs ne suit plus à l'encodage ou au décodage.
 //!
+//! La seconde dit lequel des deux. Elle porte les deux écrans du logo du
+//! produit, celui d'en face derrière et celui-ci devant, tous deux en
+//! sourdine, et rallume celui qui coince ; les deux quand les deux
+//! coincent. Ça se lit sans légende puisque c'est le dessin de la
+//! marque, et ça tient en dix-huit pixels là où un mot n'y tiendrait pas.
+//!
 //! What they replace. The client engine has a warning of its own for the
 //! first of the two: red letters at thirty-six points, burnt into the
 //! frames it decodes, in a colour and a size it chose. Two things are
@@ -68,25 +74,32 @@ const TOO_LATE_PCT: f64 = 5.0;
 /// lève les yeux vers le coin de l'image y trouve encore quelque chose.
 const HOLDS: Duration = Duration::from_millis(1500);
 
-/// Lequel des deux.
+/// Ce qu'un voyant peut dire.
+///
+/// Trois et non deux, pour deux pastilles : celle de l'image porte les
+/// deux ordinateurs et allume celui qui coince, donc elle compte pour
+/// deux ici et pour une à l'écran.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Which {
     /// Le lien entre les deux ordinateurs.
     Link,
-    /// L'image elle-même, faite là-bas et refaite ici.
-    Picture,
+    /// L'image telle que l'ordinateur d'en face la fait.
+    Far,
+    /// Et telle que celui-ci la refait.
+    Here,
 }
 
 impl std::fmt::Display for Which {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Which::Link => "lien",
-            Which::Picture => "image",
+            Which::Far => "image là-bas",
+            Which::Here => "image ici",
         })
     }
 }
 
-/// Ce qu'une lecture dit de chacun des deux : rien, ou ce qui ne va pas.
+/// Ce qu'une lecture dit de chacun : rien, ou ce qui ne va pas.
 ///
 /// Les mots et non seulement le fait : un voyant qui s'allume sans que
 /// rien ne dise pourquoi est un voyant qu'on finit par ignorer, et le
@@ -94,7 +107,8 @@ impl std::fmt::Display for Which {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Reads {
     pub link: Option<String>,
-    pub picture: Option<String>,
+    pub far: Option<String>,
+    pub here: Option<String>,
 }
 
 /// Ce qu'une lecture dit, sans mémoire d'aucune sorte.
@@ -123,21 +137,27 @@ pub fn read(mesures: &Mesures) -> Reads {
         reads.link = Some(format!("{late:.1} % des images arrivent trop tard"));
     }
 
-    // Une cadence qui manque laisse ce voyant éteint : sans elle il n'y a
-    // pas de temps disponible, donc rien à comparer, et un voyant allumé
-    // faute de mesure serait un voyant allumé pour rien.
+    // Une cadence qui manque laisse ces deux-là éteints : sans elle il
+    // n'y a pas de temps disponible, donc rien à comparer, et un voyant
+    // allumé faute de mesure serait un voyant allumé pour rien.
+    //
+    // Les deux sont pesés chacun de son côté et non l'un ou l'autre : ils
+    // peuvent très bien coincer ensemble, sur deux machines fatiguées ou
+    // sur une session trop grande pour les deux, et la pastille sait le
+    // dire.
     if let Some(budget) = mesures
         .fps
         .filter(|rate| *rate > 0.0)
         .map(|rate| 1000.0 / rate)
     {
         if let Some(host) = mesures.host_ms.filter(|each| *each >= budget) {
-            reads.picture = Some(format!(
+            reads.far = Some(format!(
                 "l'ordinateur d'en face met {host:.0} ms par image, \
                  pour {budget:.0} ms disponibles"
             ));
-        } else if let Some(decode) = mesures.decode_ms.filter(|each| *each >= budget) {
-            reads.picture = Some(format!(
+        }
+        if let Some(decode) = mesures.decode_ms.filter(|each| *each >= budget) {
+            reads.here = Some(format!(
                 "cet ordinateur met {decode:.0} ms à décoder une image, \
                  pour {budget:.0} ms disponibles"
             ));
@@ -150,13 +170,14 @@ pub fn read(mesures: &Mesures) -> Reads {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Shown {
     pub link: bool,
-    pub picture: bool,
+    pub far: bool,
+    pub here: bool,
 }
 
 impl Shown {
     /// Rien du tout.
     pub fn nothing(self) -> bool {
-        !self.link && !self.picture
+        !self.link && !self.far && !self.here
     }
 }
 
@@ -168,7 +189,8 @@ impl Shown {
 #[derive(Default)]
 pub struct Steady {
     link: Option<Instant>,
-    picture: Option<Instant>,
+    far: Option<Instant>,
+    here: Option<Instant>,
 }
 
 impl Steady {
@@ -176,7 +198,8 @@ impl Steady {
     pub fn after(&mut self, reads: &Reads, now: Instant) -> Shown {
         Shown {
             link: still(&mut self.link, reads.link.is_some(), now),
-            picture: still(&mut self.picture, reads.picture.is_some(), now),
+            far: still(&mut self.far, reads.far.is_some(), now),
+            here: still(&mut self.here, reads.here.is_some(), now),
         }
     }
 }
@@ -284,7 +307,8 @@ fn fresh(started: std::time::SystemTime) -> Option<Mesures> {
 fn said(reads: &Reads, was: Shown, shown: Shown) {
     for (which, before, after, why) in [
         (Which::Link, was.link, shown.link, &reads.link),
-        (Which::Picture, was.picture, shown.picture, &reads.picture),
+        (Which::Far, was.far, shown.far, &reads.far),
+        (Which::Here, was.here, shown.here, &reads.here),
     ] {
         if before == after {
             continue;
@@ -306,8 +330,11 @@ fn said(reads: &Reads, was: Shown, shown: Shown) {
 /// Plus petite que le bouton flottant, qui fait quarante-quatre : ce
 /// bouton-là est ce qu'on vise avec la main, celui-ci n'est qu'à lire, et
 /// une pastille de la taille du bouton dans le coin d'en face se prendrait
-/// pour un deuxième bouton.
-const BADGE: f32 = 26.0;
+/// pour un deuxième bouton. Assez grande tout de même pour porter un
+/// dessin de dix-huit, qui est la taille à laquelle le menu dessine les
+/// siennes : celle de l'image en porte deux écrans dont un seul est
+/// allumé, et plus petit les deux se confondraient.
+const BADGE: f32 = 28.0;
 
 /// Ce qui sépare les deux.
 const BETWEEN: f32 = 6.0;
@@ -317,7 +344,7 @@ const BETWEEN: f32 = 6.0;
 const ROOM: f32 = 8.0;
 
 /// Ce qui sépare le dessin du bord de sa pastille.
-const INSET: f32 = 6.0;
+const INSET: f32 = 5.0;
 
 /// Le rayon des coins d'une pastille : la moitié de son côté, donc un
 /// rond.
@@ -328,6 +355,18 @@ const ROUNDED: f32 = BADGE / 2.0;
 static ITS_WINDOW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 #[cfg(windows)]
 static LIT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Ce que ce nombre-là veut dire.
+///
+/// Trois bits pour deux pastilles : celle de l'image est là dès que l'un
+/// des deux ordinateurs coince, et allume celui des deux qui coince.
+#[cfg(windows)]
+mod bit {
+    pub const LINK: u8 = 1;
+    pub const FAR: u8 = 2;
+    pub const HERE: u8 = 4;
+    pub const PICTURE: u8 = FAR | HERE;
+}
 
 #[cfg(windows)]
 thread_local! {
@@ -447,7 +486,16 @@ fn show(app: &crate::app::App, shown: Shown) {
     if window == 0 {
         return;
     }
-    let lit = u8::from(shown.link) | (u8::from(shown.picture) << 1);
+    let mut lit = 0;
+    for (on, bit) in [
+        (shown.link, bit::LINK),
+        (shown.far, bit::FAR),
+        (shown.here, bit::HERE),
+    ] {
+        if on {
+            lit |= bit;
+        }
+    }
     if LIT.swap(lit, Ordering::Relaxed) == lit {
         return;
     }
@@ -573,12 +621,16 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             return;
         };
         toile.commence(Couleur::RIEN);
-        for (rank, (on, icone)) in [
-            (lit & 1 != 0, &crate::icones::LIEN),
-            (lit & 2 != 0, &crate::icones::CODEC),
-        ]
-        .into_iter()
-        .enumerate()
+        // Chacune a sa place et la garde, même quand l'autre est éteinte :
+        // celle de l'image reste la deuxième, avec un vide à sa gauche là
+        // où serait celle du lien. Serrées l'une contre l'autre, la
+        // seconde sauterait de place chaque fois que la première s'allume,
+        // et un voyant qui bouge est un voyant qu'on relit au lieu de le
+        // reconnaître. Le vide ne se voit pas : la fenêtre est claire
+        // partout où rien n'est dessiné.
+        for (rank, on) in [lit & bit::LINK != 0, lit & bit::PICTURE != 0]
+            .into_iter()
+            .enumerate()
         {
             if !on {
                 continue;
@@ -593,7 +645,24 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             toile.ombre(pastille, rayon, SOMBRE.ombre_2, scale);
             toile.remplis(pastille, rayon, SOMBRE.surface_1.voile(0.94));
             toile.trace_dedans(pastille, rayon, scale, SOMBRE.trait_fort);
-            toile.icone(icone, pastille.elargi(-INSET * scale), SOMBRE.attention);
+            let dessin = pastille.elargi(-INSET * scale);
+            if rank == 0 {
+                toile.icone(&crate::icones::LIEN, dessin, SOMBRE.attention);
+                continue;
+            }
+            // La pastille de l'image porte les deux ordinateurs, celui
+            // d'en face derrière et celui-ci devant, comme le logo du
+            // produit les dessine. Les deux sont posés en sourdine, puis
+            // celui qui coince est repassé par-dessus en clair : c'est
+            // tout ce qu'il faut pour dire lequel des deux, et ça se lit
+            // sans légende puisque c'est le dessin de la marque.
+            toile.icone(&crate::icones::ECRAN_HOTE, dessin, SOMBRE.texte_faible);
+            if lit & bit::FAR != 0 {
+                toile.icone(&crate::icones::ECRAN_LA_BAS, dessin, SOMBRE.attention);
+            }
+            if lit & bit::HERE != 0 {
+                toile.icone(&crate::icones::ECRAN_ICI, dessin, SOMBRE.attention);
+            }
         }
         if !toile.finit() {
             return;
@@ -658,7 +727,7 @@ mod tests {
         };
         let reads = read(&frozen);
         assert!(reads.link.is_some_and(|why| why.contains("figée")));
-        assert!(reads.picture.is_none());
+        assert!(reads.far.is_none() && reads.here.is_none());
     }
 
     #[test]
@@ -690,7 +759,10 @@ mod tests {
             ..healthy()
         };
         let reads = read(&slow);
-        assert!(reads.picture.is_some_and(|why| why.contains("d'en face")));
+        assert!(reads.far.is_some_and(|why| why.contains("d'en face")));
+        // Et celui-ci n'y est pour rien : la pastille doit allumer le bon
+        // des deux écrans, pas les deux.
+        assert!(reads.here.is_none());
         assert!(reads.link.is_none());
     }
 
@@ -701,10 +773,33 @@ mod tests {
             decode_ms: Some(40.0),
             ..healthy()
         };
-        assert!(
-            read(&slow)
-                .picture
-                .is_some_and(|why| why.contains("cet ordinateur"))
+        let reads = read(&slow);
+        assert!(reads.here.is_some_and(|why| why.contains("cet ordinateur")));
+        assert!(reads.far.is_none());
+    }
+
+    #[test]
+    fn two_computers_that_both_struggle_light_both_screens() {
+        // Une session trop grande pour les deux machines : la pastille
+        // n'a pas à choisir laquelle nommer, elle les allume toutes deux.
+        let both = Mesures {
+            fps: Some(24.0),
+            host_ms: Some(45.0),
+            decode_ms: Some(50.0),
+            ..healthy()
+        };
+        let reads = read(&both);
+        assert!(reads.far.is_some());
+        assert!(reads.here.is_some());
+
+        let mut steady = Steady::default();
+        assert_eq!(
+            steady.after(&reads, Instant::now()),
+            Shown {
+                link: false,
+                far: true,
+                here: true
+            }
         );
     }
 
@@ -748,7 +843,8 @@ mod tests {
             steady.after(&wrong, start),
             Shown {
                 link: true,
-                picture: false
+                far: false,
+                here: false
             }
         );
         let well = read(&healthy());
@@ -782,25 +878,27 @@ mod tests {
     }
 
     #[test]
-    fn the_two_are_counted_apart() {
+    fn the_three_are_counted_apart() {
         let start = Instant::now();
         let mut steady = Steady::default();
-        let only_the_picture = read(&Mesures {
+        let only_the_far_one = read(&Mesures {
             fps: Some(40.0),
             host_ms: Some(25.0),
             ..healthy()
         });
         assert_eq!(
-            steady.after(&only_the_picture, start),
+            steady.after(&only_the_far_one, start),
             Shown {
                 link: false,
-                picture: true
+                far: true,
+                here: false
             }
         );
         assert!(
             !Shown {
                 link: false,
-                picture: true
+                far: true,
+                here: false
             }
             .nothing()
         );
