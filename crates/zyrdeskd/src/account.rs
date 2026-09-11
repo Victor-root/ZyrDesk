@@ -1398,7 +1398,7 @@ login_attempts_per_minute = 1000
                 identity.clone(),
                 Arc::new({
                     let log = log.clone();
-                    move |line: &str| log.write(line)
+                    move |_, line: &str| log.write(line)
                 }),
                 Marking::Ecn,
             )

@@ -32,7 +32,7 @@ use zyr_proto::log::Log;
 use zyr_proto::net::{TUNNEL_PORT, device_loopback_addr};
 use zyr_proto::paths;
 use zyr_proto::session::WantedScreen;
-use zyr_transport::junction::Say;
+use zyr_transport::junction::{Aloud, Say};
 use zyr_transport::{
     Connection, Fingerprint, Identity, Junction, Media, MediaProfile, Sending, TunnelEndpoint,
     packet_size,
@@ -588,7 +588,10 @@ impl Ways {
         // and no other will carry the tunnel.
         let say: Say = Arc::new({
             let log = self.log.clone();
-            move |line: &str| log.write(line)
+            move |aloud, line: &str| match aloud {
+                Aloud::Says => log.write(line),
+                Aloud::Hunts => log.debug(|| line.to_string()),
+            }
         });
         let marking = self.remembered.wire().marking;
         let junction = Junction::bind(
@@ -1745,7 +1748,7 @@ mod tests {
         let far = Junction::bind(
             "127.0.0.1:0".parse().unwrap(),
             far_identity.clone(),
-            Arc::new(|_: &str| {}),
+            Arc::new(|_, _: &str| {}),
             Marking::Ecn,
         )
         .unwrap();

@@ -17,6 +17,11 @@
 //!   engine's whole log.
 //! - `message:refusé`, or the same word written on its own, keeps the
 //!   lines that hold it anywhere.
+//! - `level:debug` keeps only what was written for a hunt, and
+//!   `-level:debug` throws all of it away. There are two levels and no
+//!   more: what the product says of itself, and what only a hunt wants.
+//!   The second is written by a build made for hunting and by no other,
+//!   so in an ordinary build there is none of it to ask for.
 //! - `-tag:card` throws away what it names instead of keeping it.
 //! - `"deux mots"` is one thing and not two.
 //!
@@ -54,6 +59,8 @@ enum Part {
     /// What the line is filed under, or the file it is in when it is
     /// filed under nothing.
     Tag,
+    /// Which of the two voices it was written in.
+    Level,
     /// The line itself, tag and date and all.
     Anything,
 }
@@ -94,6 +101,7 @@ impl Sifting {
             let after = piece.split_once(':').map(|(_, rest)| rest);
             let (of, wanted) = match (key.as_str(), after) {
                 ("tag", Some(wanted)) => (Part::Tag, wanted),
+                ("level", Some(wanted)) => (Part::Level, wanted),
                 ("message", Some(wanted)) => (Part::Anything, wanted),
                 // A colon inside a word is an address, a time or a
                 // spelling this product uses everywhere: looked for as
@@ -131,11 +139,13 @@ impl Sifting {
     /// enough that it should not need a second word for it.
     pub fn keeps(&self, line: &str, within: &str) -> bool {
         let lowered = line.to_lowercase();
-        let tag = tag_of(line).unwrap_or_default().to_lowercase();
+        let (level, tag) = about(line).unwrap_or((SOMEBODY_ELSE, ""));
+        let tag = tag.to_lowercase();
         let within = within.to_lowercase();
         self.terms.iter().all(|term| {
             let found = match term.of {
                 Part::Tag => tag.contains(&term.wanted) || within.contains(&term.wanted),
+                Part::Level => level.starts_with(&term.wanted),
                 Part::Anything => lowered.contains(&term.wanted),
             };
             found != term.against
@@ -154,15 +164,40 @@ impl fmt::Display for Sifting {
     }
 }
 
-/// What a line is filed under, when it carries one.
+/// What a line says of itself: the voice it was written in and what it
+/// is filed under.
 ///
-/// Read at the one place it can be rather than hunted for: the tag sits
-/// in brackets straight after the date, so a bracket anywhere in the
-/// message is a bracket in the message and nothing else.
-fn tag_of(line: &str) -> Option<&str> {
-    let rest = line.get(AFTER_THE_DATE..)?.strip_prefix(" [")?;
+/// Read at the one place they can be rather than hunted for: both sit
+/// straight after the date, in that order, so a letter or a bracket
+/// anywhere in the message is part of the message and nothing else.
+///
+/// Nothing at all for a line the engines wrote, which carries neither.
+fn about(line: &str) -> Option<(&'static str, &str)> {
+    let rest = line.get(AFTER_THE_DATE..)?.strip_prefix(' ')?;
+    let (voice, rest) = rest.split_at_checked(1)?;
+    let rest = rest.strip_prefix(" [")?;
     let (tag, _) = rest.split_once(']')?;
-    (!tag.is_empty() && !tag.contains(' ')).then_some(tag)
+    if tag.is_empty() || tag.contains(' ') {
+        return None;
+    }
+    Some((named(voice), tag))
+}
+
+/// What a voice is called, in the word somebody would type.
+///
+/// Lines the engines wrote are neither, and are called so: asking for
+/// one level or the other must not quietly hand over a third kind.
+const SOMEBODY_ELSE: &str = "engine";
+
+fn named(voice: &str) -> &'static str {
+    // Read from the letters the journal writes rather than spelled out
+    // again here: two lists of the same letters drift apart the first
+    // time one of them is touched, and nothing would say so.
+    match voice.chars().next() {
+        Some(crate::log::HUNTS) => "debug",
+        Some(crate::log::SAYS) => "info",
+        _ => SOMEBODY_ELSE,
+    }
 }
 
 /// What was written, cut into things, quotes holding their spaces.
@@ -201,9 +236,14 @@ fn unquoted(said: &str) -> &str {
 mod tests {
     use super::*;
 
-    /// Une ligne comme le journal les écrit.
+    /// Une ligne comme le journal les écrit, dans la voix ordinaire.
     fn ligne(tag: &str, message: &str) -> String {
-        format!("2026-09-11 18:55:03 [{tag}] {message}")
+        format!("2026-09-11 18:55:03 I [{tag}] {message}")
+    }
+
+    /// La même, dans celle que seule une chasse veut.
+    fn ligne_de_chasse(tag: &str, message: &str) -> String {
+        format!("2026-09-11 18:55:03 D [{tag}] {message}")
     }
 
     #[test]
@@ -288,8 +328,30 @@ mod tests {
         // Et nulle part ailleurs : un crochet dans le message est un
         // crochet dans le message.
         let written = ligne("clipboard", "[pas une étiquette] la suite");
-        assert_eq!(tag_of(&written), Some("clipboard"));
-        assert_eq!(tag_of("00:00:03 - SDL Info (0): [hevc @ 0x1] rien"), None);
+        assert_eq!(about(&written), Some(("info", "clipboard")));
+        assert_eq!(about("00:00:03 - SDL Info (0): [hevc @ 0x1] rien"), None);
+    }
+
+    #[test]
+    fn une_voix_se_demande_par_son_nom_ou_par_sa_lettre() {
+        // Ce qui n'est là que pour une chasse noie tout le reste : on
+        // doit pouvoir ne garder que ça, ou tout sauf ça.
+        let chasse = ligne_de_chasse("way", "pas un paquet depuis 1098 ms");
+        let dit = ligne("way", "voie 1 ouverte vers PC-SAV");
+
+        assert!(Sifting::of("level:debug").keeps(&chasse, "service.log"));
+        assert!(!Sifting::of("level:debug").keeps(&dit, "service.log"));
+        assert!(Sifting::of("-level:debug").keeps(&dit, "service.log"));
+        // La lettre suffit, et la casse ne compte pas.
+        assert!(Sifting::of("level:D").keeps(&chasse, "service.log"));
+
+        // Et ce que les moteurs écrivent n'est ni l'un ni l'autre :
+        // demander une voix ne doit pas rendre en douce une troisième
+        // sorte de ligne.
+        let moteur = "00:00:03 - SDL Info (0): IDR frame request sent";
+        assert!(!Sifting::of("level:debug").keeps(moteur, "session.log"));
+        assert!(!Sifting::of("level:info").keeps(moteur, "session.log"));
+        assert!(Sifting::of("level:engine").keeps(moteur, "session.log"));
     }
 
     #[test]
@@ -317,7 +379,7 @@ mod tests {
 
         let written = std::fs::read_to_string(&path).unwrap();
         let line = written.lines().next().unwrap();
-        assert_eq!(tag_of(line), Some("clipboard"), "{line}");
+        assert_eq!(about(line), Some(("info", "clipboard")), "{line}");
         assert!(Sifting::of("tag:clipboard").keeps(line, "service"));
 
         std::fs::remove_dir_all(&folder).ok();

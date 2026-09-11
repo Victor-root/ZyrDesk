@@ -371,9 +371,9 @@ mod tests {
         let path = folder.join("service.log");
 
         let mut written = String::new();
-        written.push_str("2026-09-11 18:55:03 [clipboard] ce que tient cet ordinateur\n");
+        written.push_str("2026-09-11 18:55:03 I [clipboard] ce que tient cet ordinateur\n");
         for line in 0..KEPT + 40 {
-            let _ = writeln!(written, "2026-09-11 18:55:04 [ways] voie {line} ouverte");
+            let _ = writeln!(written, "2026-09-11 18:55:04 I [ways] voie {line} ouverte");
         }
         std::fs::write(&path, &written).unwrap();
 
@@ -385,7 +385,7 @@ mod tests {
         let trie = last_lines(&path, "service", &Sifting::of("tag:clipboard"));
         assert_eq!(
             trie,
-            "2026-09-11 18:55:03 [clipboard] ce que tient cet ordinateur"
+            "2026-09-11 18:55:03 I [clipboard] ce que tient cet ordinateur"
         );
 
         std::fs::remove_dir_all(&folder).unwrap();
@@ -397,7 +397,7 @@ mod tests {
         // « est-ce que ça marche ? » au lieu de « il n'y avait rien ».
         let folder = a_folder_of_its_own("tri-vide");
         let path = folder.join("service.log");
-        std::fs::write(&path, "2026-09-11 18:55:04 [ways] voie 1 ouverte\n").unwrap();
+        std::fs::write(&path, "2026-09-11 18:55:04 I [ways] voie 1 ouverte\n").unwrap();
 
         let trie = last_lines(&path, "service", &Sifting::of("tag:clipboard"));
         assert!(trie.contains("rien ici ne répond au tri"), "{trie}");

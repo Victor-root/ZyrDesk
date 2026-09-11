@@ -522,7 +522,7 @@ mod tests {
         let _guard = runtime.enter();
         let identity =
             std::sync::Arc::new(zyr_transport::Identity::load_or_create(&folder).unwrap());
-        let say: zyr_transport::junction::Say = std::sync::Arc::new(|_: &str| {});
+        let say: zyr_transport::junction::Say = std::sync::Arc::new(|_, _: &str| {});
         let junction = Junction::bind(
             "0.0.0.0:0".parse().unwrap(),
             identity,

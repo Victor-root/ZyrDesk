@@ -47,7 +47,25 @@ use crate::relay::Branch;
 use crate::sifting;
 
 /// Where a line about a path goes.
-pub type Say = Arc<dyn Fn(&str) + Send + Sync>;
+pub type Say = Arc<dyn Fn(Aloud, &str) + Send + Sync>;
+
+/// How loud a line is.
+///
+/// This crate is under everything and writes nothing itself: it hands
+/// its lines to whoever is listening. But it is the only one that knows
+/// which of them say what happened and which only count things, so it
+/// says so, and the listener decides what a build keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Aloud {
+    /// What the transport says of itself: a road taken, a card given up
+    /// on, a socket that refuses. Worth keeping in every build, since a
+    /// session that will not open is diagnosed from exactly these.
+    Says,
+    /// What counts and measures. It drowns the rest and helps nobody
+    /// whose session will not open, so it belongs to a build made for
+    /// hunting and to no other.
+    Hunts,
+}
 
 /// The port every card carries. Nothing listens there: a card is a name.
 const CARD_PORT: u16 = 47000;
@@ -1001,11 +1019,14 @@ impl Junction {
         let ipv6 = socket.local_addr()?.is_ipv6();
         let room = arriving_room(&socket);
         if room < ARRIVING_ROOM {
-            say(&format!(
-                "the system holds {room} bytes of what arrives on this socket, not the {ARRIVING_ROOM} \
-                 asked for: what comes in faster than this program is given the processor is lost \
-                 before anything can count it"
-            ));
+            say(
+                Aloud::Says,
+                &format!(
+                    "the system holds {room} bytes of what arrives on this socket, not the \
+                     {ARRIVING_ROOM} asked for: what comes in faster than this program is given \
+                     the processor is lost before anything can count it"
+                ),
+            );
         }
         let socket = marking.applied(runtime.wrap_udp_socket(socket)?);
         let me = identity.fingerprint();
@@ -1408,7 +1429,7 @@ impl Inner {
             }
         }
         for line in said {
-            (self.say)(&line);
+            (self.say)(Aloud::Says, &line);
         }
         let mut never_left = Vec::new();
         for (card, road, probe) in probes {
@@ -1618,7 +1639,7 @@ impl Inner {
                 };
                 drop(table);
                 if let Some(line) = said {
-                    (self.say)(&line);
+                    (self.say)(Aloud::Says, &line);
                 }
                 for (road, held) in flushed {
                     self.send_held(road, &held);
@@ -1781,10 +1802,13 @@ async fn read_the_relay(junction: Weak<Inner>, card: SocketAddr, branch: Branch)
     loop {
         let Some(packet) = branch.arrived().await else {
             if let Some(inner) = junction.upgrade() {
-                (inner.say)(&format!(
-                    "card {card}: the branch to the relay at {} is gone",
-                    branch.address()
-                ));
+                (inner.say)(
+                    Aloud::Says,
+                    &format!(
+                        "card {card}: the branch to the relay at {} is gone",
+                        branch.address()
+                    ),
+                );
             }
             return;
         };
@@ -1922,23 +1946,30 @@ async fn look_after(junction: Weak<Inner>) {
         let since = now.duration_since(before);
         before = now;
         if since > LATE {
-            (inner.say)(&format!(
-                "this computer did not run for {} ms, and sent nothing at all meanwhile",
-                since.as_millis()
-            ));
+            (inner.say)(
+                Aloud::Says,
+                &format!(
+                    "this computer did not run for {} ms, and sent nothing at all meanwhile",
+                    since.as_millis()
+                ),
+            );
         }
+        // Counted and not witnessed: this pair says the socket went
+        // quiet and spoke again, which it does a dozen times while two
+        // computers are still finding each other. It is what a hunt
+        // reads, and what drowns everything else.
         if let Some(line) = inner.still_hearing(&mut last_arrival, &mut said_deaf, now) {
-            (inner.say)(&line);
+            (inner.say)(Aloud::Hunts, &line);
         }
         if let Some(line) = inner.still_sending(&mut said_refused) {
-            (inner.say)(&line);
+            (inner.say)(Aloud::Says, &line);
         }
         inner.tick(now);
         // After the look-over and not before: what is worth reading is
         // where the roads stand once this turn has probed, answered and
         // elected, not where they stood a tenth of a second ago.
         for line in inner.roads_that_moved(&mut said_roads) {
-            (inner.say)(&line);
+            (inner.say)(Aloud::Says, &line);
         }
     }
 }
@@ -1997,7 +2028,7 @@ mod tests {
     const PATIENCE: Duration = Duration::from_secs(5);
 
     fn quiet() -> Say {
-        Arc::new(|_| {})
+        Arc::new(|_, _| {})
     }
 
     fn local() -> SocketAddr {

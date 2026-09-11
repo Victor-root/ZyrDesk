@@ -210,9 +210,9 @@ async fn hand_to_the_engine(
     };
 
     if let Some(log) = &log {
-        log.write(&format!(
-            "{channel:?}: reaching this computer's own engine at {engine}:{port}"
-        ));
+        log.debug(|| {
+            format!("{channel:?}: reaching this computer's own engine at {engine}:{port}")
+        });
     }
     let local = match TcpStream::connect(SocketAddr::new(engine, port)).await {
         Ok(local) => local,
@@ -227,14 +227,10 @@ async fn hand_to_the_engine(
     };
     local.set_nodelay(true)?;
     if let Some(log) = &log {
-        log.write(&format!(
-            "{channel:?}: connected, carrying it to and from the engine"
-        ));
+        log.debug(|| format!("{channel:?}: connected, carrying it to and from the engine"));
     }
     let outcome = pump::relay_stream(local, sending, receiving).await;
-    if let Some(log) = &log {
-        log.write(&format!("{channel:?}: {}", said(&outcome)));
-    }
+    how_it_ended(log.as_ref(), channel, &outcome);
     outcome
 }
 
@@ -266,9 +262,9 @@ async fn carry_to_the_tunnel(
     log: Option<Log>,
 ) -> io::Result<()> {
     if let Some(log) = &log {
-        log.write(&format!(
-            "{channel:?}: the local engine reached it, opening the tunnel's own stream"
-        ));
+        log.debug(|| {
+            format!("{channel:?}: the local engine reached it, opening the tunnel's own stream")
+        });
     }
     let (mut sending, receiving) = match connection.open_stream().await {
         Ok(stream) => stream,
@@ -283,21 +279,27 @@ async fn carry_to_the_tunnel(
     };
     pump::announce(&mut sending, channel).await?;
     if let Some(log) = &log {
-        log.write(&format!(
-            "{channel:?}: named to the far computer, carrying it to and from the engine"
-        ));
+        log.debug(|| {
+            format!("{channel:?}: named to the far computer, carrying it to and from the engine")
+        });
     }
     let outcome = pump::relay_stream(local, sending, receiving).await;
-    if let Some(log) = &log {
-        log.write(&format!("{channel:?}: {}", said(&outcome)));
-    }
+    how_it_ended(log.as_ref(), channel, &outcome);
     outcome
 }
 
-/// What a stream's relay coming back says, for the journal.
-fn said(outcome: &io::Result<()>) -> String {
+/// Says how a stream ended, and in which voice.
+///
+/// The two are not the same news at all. A stream that simply ran out is
+/// the ordinary end of every one of the twenty a session opens, and
+/// twenty lines of it drown whatever else happened; one that was cut is
+/// the thing somebody opened the journal to find.
+fn how_it_ended(log: Option<&Log>, channel: StreamChannel, outcome: &io::Result<()>) {
+    let Some(log) = log else {
+        return;
+    };
     match outcome {
-        Ok(()) => "both ends are done".to_string(),
-        Err(e) => format!("stopped: {e}"),
+        Ok(()) => log.debug(|| format!("{channel:?}: both ends are done")),
+        Err(e) => log.write(&format!("{channel:?}: stopped: {e}")),
     }
 }

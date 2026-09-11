@@ -23,6 +23,24 @@
 //! sit inside four thousand about a session, and the difference between
 //! reading those six and reading all four thousand is that they can be
 //! asked for by name. `zyr_proto::journal` is where the asking happens.
+//!
+//! # The two voices
+//!
+//! A line is written in one of two, and which one decides whether it
+//! exists at all outside a build made for hunting.
+//!
+//! [`Log::write`] is the product saying what it did, what it refused,
+//! what it found. It is there in every build, because it is what
+//! somebody sends when something goes wrong on their machine, and a
+//! product that explains itself only to its own author explains itself
+//! to nobody.
+//!
+//! [`Log::debug`] is what counts, measures, or narrates a piece of
+//! plumbing that worked. Twenty streams opening and closing cleanly, a
+//! socket going quiet for a second while two computers find each other:
+//! true, useful while hunting, and drowning everything else the rest of
+//! the time. An ordinary build does not write it and does not even put
+//! the words together.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -54,6 +72,16 @@ const KEPT: u64 = 256 * 1024;
 /// no filter can ever name: whoever is looking for it would have to ask
 /// for everything, which is the thing tags exist to avoid.
 pub const OTHERWISE: &str = "zyrdesk";
+
+/// The two voices a line can be written in, one letter each.
+///
+/// One says what the product did, and is there in every build. The other
+/// is what a hunt wants and nothing else, and only a build made for
+/// hunting carries it. They sit in the same file, in the order things
+/// happened, because a hunt is exactly the moment the two are read
+/// against each other.
+pub const SAYS: char = 'I';
+pub const HUNTS: char = 'D';
 
 /// Log opened in append mode, shared by the whole service.
 ///
@@ -118,6 +146,12 @@ impl Log {
 
     /// Writes one timestamped line at the end of the file.
     ///
+    /// What the product says of itself: what it did, what it refused,
+    /// what it found. Kept in every build, because this is the line
+    /// somebody sends when something goes wrong on their machine, and a
+    /// product that explains itself only to its own author explains
+    /// itself to nobody.
+    ///
     /// The end is sought every time: the journal screen can empty this
     /// file from another program while the service runs, and a line must
     /// then land at the new top rather than at a remembered place.
@@ -125,12 +159,38 @@ impl Log {
     /// Never fails: a log that refuses to write must not stop the
     /// service it is watching.
     pub fn write(&self, message: &str) {
+        self.said(SAYS, message);
+    }
+
+    /// Writes a line nobody wants except while hunting something.
+    ///
+    /// What counts, measures, or narrates a piece of plumbing that
+    /// worked. It drowns everything else, and nothing about it helps
+    /// somebody whose session will not open, so it belongs to the build
+    /// made for hunting and to no other.
+    ///
+    /// Taken as something to call rather than as a message: outside a
+    /// debug build the words are never put together at all, the closure
+    /// being dropped unread. A line that costs a `format!` at every turn
+    /// of a loop for a file nobody will ever hold is still a cost.
+    #[cfg(debug_assertions)]
+    pub fn debug(&self, message: impl FnOnce() -> String) {
+        self.said(HUNTS, &message());
+    }
+
+    /// The same, in a build that is not for hunting: nothing at all.
+    #[cfg(not(debug_assertions))]
+    #[inline]
+    pub fn debug(&self, _message: impl FnOnce() -> String) {}
+
+    /// Puts one line down, in whichever voice.
+    fn said(&self, voice: char, message: &str) {
         let Ok(mut file) = self.file.lock() else {
             return;
         };
         let _ = trimmed(&mut file);
         let _ = file.seek(SeekFrom::End(0));
-        let _ = writeln!(file, "{} [{}] {message}", now(), self.tag);
+        let _ = writeln!(file, "{} {voice} [{}] {message}", now(), self.tag);
         let _ = file.flush();
     }
 }
@@ -241,6 +301,39 @@ mod tests {
             lines[2]
         );
         assert_eq!(presse_papiers.tag(), "clipboard");
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn ce_qui_est_pour_la_chasse_ne_s_ecrit_que_dans_la_version_qui_chasse() {
+        // Les deux voix dans le même fichier et dans l'ordre où les
+        // choses se sont passées : une chasse est justement le moment
+        // où on lit l'une contre l'autre. Et hors de cette version-là,
+        // la seconde n'existe pas, pas même sous la forme des mots qu'il
+        // aurait fallu assembler.
+        let path = fresh_path("voix");
+        let log = Log::open(&path).unwrap();
+
+        log.write("ce que le produit a fait");
+        let mut assembled = false;
+        log.debug(|| {
+            assembled = true;
+            "ce que seule une chasse veut".to_string()
+        });
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+        assert!(lines[0].contains(&format!(" {SAYS} [")), "{}", lines[0]);
+
+        if cfg!(debug_assertions) {
+            assert!(assembled, "la version qui chasse assemble ses mots");
+            assert_eq!(lines.len(), 2);
+            assert!(lines[1].contains(&format!(" {HUNTS} [")), "{}", lines[1]);
+        } else {
+            assert!(!assembled, "les mots ont été assemblés pour rien");
+            assert_eq!(lines.len(), 1, "{contents}");
+        }
 
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }

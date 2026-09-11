@@ -2959,6 +2959,24 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Rien de ce que le produit écrit n'a changé de contenu : ce sont les mêmes lignes, avec un mot de plus devant. Les moteurs écrivent toujours ce qu'ils veulent comme ils le veulent, et personne ne leur demande rien. La pile de correctifs reste à quatorze.
 
+## D182. Deux voix au journal, et une seule des deux survit à la version finale (2026-09-11, pendant M6)
+
+**Le besoin.** « Est-ce que tu as bien adapté le code pour qu'on puisse avoir deux builds, un de debug avec tout le merdier de log et une release qui n'a pas tout ce merdier ? » Non : [D181](#d181-le-journal-se-trie-par-étiquette-comme-celui-dun-téléphone-2026-09-11-pendant-m6) avait réglé comment **trier** ce qui est écrit, pas **si** ça doit l'être.
+
+**Deux voix et pas plus, et la coupure n'est pas où on l'attend.** Ce n'est pas « les logs » d'un côté et « pas de logs » de l'autre. Un journal est la façon dont ce produit s'explique : le retirer d'une version finale, ce serait ne plus pouvoir diagnostiquer quoi que ce soit sur la machine de quelqu'un, ce qui est exactement ce qu'on passe nos soirées à faire. La coupure est ailleurs : **ce que le produit dit de lui-même** reste partout, et **ce qui compte, mesure ou raconte une plomberie qui a marché** n'existe que dans la version qui chasse.
+
+**Ce qui a changé de voix, et pourquoi ces lignes-là.** Les vingt flux qu'une session ouvre et referme proprement, qui écrivaient trois lignes chacun ; la paire « plus un paquet depuis mille millisecondes » et « ça repart », qui se répète une dizaine de fois pendant que deux ordinateurs se cherchent. Toutes vraies, toutes utiles pendant une chasse, et toutes noyant le reste le reste du temps. Un flux **coupé**, lui, reste : c'est justement ce qu'on ouvre le journal pour trouver.
+
+**Rien n'est assemblé pour rien.** `Log::debug` prend de quoi faire la ligne plutôt que la ligne : hors de la version qui chasse, les mots ne sont jamais mis bout à bout, la fermeture étant abandonnée sans être lue. Une ligne qui coûte un `format!` à chaque tour d'une boucle pour un fichier que personne n'ouvrira jamais reste un coût.
+
+**La voix est écrite sur la ligne, et le tri sait la demander.** Une lettre entre la date et l'étiquette. `level:debug` ne garde que ce qui est là pour une chasse, `-level:debug` jette tout ça, et les deux lettres sont définies à un seul endroit, celui qui écrit, le tri les lisant de là plutôt que de les réécrire de son côté.
+
+**Le transport ne sait pas écrire, mais il sait à quel point il parle.** Cette caisse-là est sous tout le reste et ne tient aucun journal : elle tend ses lignes à qui écoute. Mais elle est la seule à savoir lesquelles des siennes disent ce qui s'est passé et lesquelles ne font que compter, alors elle le dit, et celui qui écoute décide de ce qu'une version garde.
+
+**Et la version se nomme.** Un journal sans aucune ligne de chasse, c'est soit une version qui n'en écrit pas, soit un moment où rien n'est arrivé, et les deux se lisent exactement pareil. Alors la ligne de version le dit : « version de débogage » ou rien. Sans ça, on cherche une soirée durant une ligne qui n'allait jamais être là.
+
+**Ce que ça ne change pas.** `cargo build` et `cargo build --release`, rien d'autre à passer : c'est `debug_assertions`, l'équivalent exact de ce qui sert sur Android, et il n'y a pas de troisième version qui chasserait à moitié. Les moteurs écrivent toujours ce qu'ils veulent comme ils le veulent. La pile de correctifs reste à quatorze.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
