@@ -3060,6 +3060,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "zyr-clipboard"
+version = "0.1.0"
+dependencies = [
+ "windows",
+ "zyr-proto",
+]
+
+[[package]]
 name = "zyr-control"
 version = "0.1.0"
 dependencies = [
@@ -3199,6 +3207,7 @@ dependencies = [
  "windows-numerics",
  "windows-sys 0.61.2",
  "zyr-broker",
+ "zyr-clipboard",
  "zyr-control",
  "zyr-proto",
  "zyr-session",

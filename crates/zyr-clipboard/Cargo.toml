@@ -1,0 +1,32 @@
+[package]
+name = "zyr-clipboard"
+description = "Le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-proto.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Le presse-papiers lui-même n'est qu'une poignée de fonctions, mais
+# l'imagerie qui fait d'une capture d'écran un PNG n'existe qu'en COM, et
+# `windows-sys` ne porte aucune interface COM. Le paquet `windows` les
+# décrit toutes, il est déjà dans le verrou du dépôt (l'interface et le
+# son s'en servent), et prendre les deux moitiés au même endroit évite
+# d'avoir deux noms pour un même HANDLE.
+windows = { version = "0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    # WIC, l'imagerie de Windows : elle seule sait faire un PNG d'une
+    # capture d'écran sans qu'on embarque un encodeur.
+    "Win32_Graphics_Imaging",
+    "Win32_System_Com",
+    # Le flux en mémoire dans lequel l'encodeur écrit.
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    # CF_UNICODETEXT et CF_DIB, que windows range avec l'OLE.
+    "Win32_System_Ole",
+] }

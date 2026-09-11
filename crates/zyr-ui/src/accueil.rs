@@ -5249,7 +5249,8 @@ fn vide_le_journal(app: &App) {
 /// Le presse-papiers peut refuser, et un bouton qui dit « Copié » sur un
 /// refus enverrait quelqu'un coller du vide sur l'autre ordinateur.
 fn copie(app: &App, texte: &str, quoi: Quoi) {
-    if !mis_au_presse_papiers(texte) {
+    if let Err(e) = zyr_clipboard::hold_this(&zyr_proto::clipboard::Clip::text(texte)) {
+        crate::journal::note(&format!("copie refusée : {e}"));
         annonce(app, "La copie a été refusée par Windows.", true);
         return;
     }
@@ -5262,42 +5263,6 @@ fn copie(app: &App, texte: &str, quoi: Quoi) {
         ETAT.lock().expect("accueil").copie = None;
         redraw(&app);
     });
-}
-
-fn mis_au_presse_papiers(texte: &str) -> bool {
-    use windows_sys::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
-    };
-    use windows_sys::Win32::System::Memory::{
-        GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock,
-    };
-    use windows_sys::Win32::System::Ole::CF_UNICODETEXT;
-
-    let mots = wide(texte);
-    // SAFETY: le presse-papiers est ouvert et refermé ici même, et la
-    // mémoire remise appartient au système dès qu'il l'a prise.
-    unsafe {
-        if OpenClipboard(std::ptr::null_mut()) == 0 {
-            return false;
-        }
-        EmptyClipboard();
-        let taille = std::mem::size_of_val(&mots[..]);
-        let bloc = GlobalAlloc(GMEM_MOVEABLE, taille);
-        if bloc.is_null() {
-            CloseClipboard();
-            return false;
-        }
-        let ou = GlobalLock(bloc);
-        if ou.is_null() {
-            CloseClipboard();
-            return false;
-        }
-        std::ptr::copy_nonoverlapping(mots.as_ptr(), ou.cast::<u16>(), mots.len());
-        GlobalUnlock(bloc);
-        let pris = !SetClipboardData(CF_UNICODETEXT as u32, bloc).is_null();
-        CloseClipboard();
-        pris
-    }
 }
 
 /* ---- Ce qu'on redemande au service --------------------------------------- */
