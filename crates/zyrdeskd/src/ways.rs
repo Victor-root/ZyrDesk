@@ -1157,10 +1157,16 @@ impl Ways {
     /// no helper is started to read it.
     pub async fn keep_the_clipboards_in_step(self) {
         let mut shared: HashMap<WayId, Option<zyr_proto::clipboard::Stamp>> = HashMap::new();
+        // The ways whose last turn did not go, so that what went wrong is
+        // written once and not four times a second. A far computer of an
+        // older build refuses every one of these turns, and a journal
+        // with four such lines a second in it has nothing else in it.
+        let mut stuck: HashSet<WayId> = HashSet::new();
         loop {
             tokio::time::sleep(CLIPBOARD_TURN).await;
             let open = self.the_open_ways();
             shared.retain(|way, _| open.iter().any(|(open, _)| open == way));
+            stuck.retain(|way| open.iter().any(|(open, _)| open == way));
             if open.is_empty() || !self.remembered.read().preferred.shared_clipboard {
                 continue;
             }
@@ -1171,32 +1177,41 @@ impl Ways {
                 let seen = shared.get(&way).copied().flatten();
                 let pushing = here.clone().filter(|clip| Some(clip.stamp()) != seen);
                 let agreed = pushing.as_ref().map(Clip::stamp).or(seen);
-                match aside::ask_about_the_clipboard(&connection, pushing, seen).await {
+                let went = match aside::ask_about_the_clipboard(&connection, pushing, seen).await {
+                    // Left out of what is agreed when it could not be put
+                    // on, so the next turn asks for it again: a clipboard
+                    // held by another program for a moment is the
+                    // ordinary case and not a fault.
                     Ok(Some(theirs)) => {
                         let stamp = theirs.stamp();
-                        match crate::clipboard::give_it(&theirs, &self.log) {
-                            Ok(()) => {
-                                shared.insert(way, Some(stamp));
-                            }
-                            // Left out of what is agreed, so the next
-                            // turn asks for it again: a clipboard held by
-                            // another program for a moment is the
-                            // ordinary case and not a fault.
-                            Err(refused) => self.log.write(&format!(
-                                "way {way}: the clipboard is not shared: {refused}"
-                            )),
-                        }
+                        crate::clipboard::give_it(&theirs, &self.log).map(|()| {
+                            shared.insert(way, Some(stamp));
+                        })
                     }
                     Ok(None) => {
                         shared.insert(way, agreed);
+                        Ok(())
                     }
-                    // Said in the journal and nowhere else, and the turn
-                    // after tries again. A way that has gone is closed by
-                    // the watch beside this one, and until it is, there
-                    // is nothing here worth stopping a session over.
-                    Err(e) => self
-                        .log
-                        .write(&format!("way {way}: the clipboard did not cross: {e}")),
+                    Err(e) => Err(e.to_string()),
+                };
+                // Said in the journal and nowhere else, and the turn
+                // after tries again. A way that has gone is closed by the
+                // watch beside this one, and until it is, there is
+                // nothing here worth stopping a session over.
+                match went {
+                    Ok(()) => {
+                        if stuck.remove(&way) {
+                            self.log
+                                .write(&format!("way {way}: the clipboard is shared again"));
+                        }
+                    }
+                    Err(refused) => {
+                        if stuck.insert(way) {
+                            self.log.write(&format!(
+                                "way {way}: the clipboard is not being shared: {refused}"
+                            ));
+                        }
+                    }
                 }
             }
         }

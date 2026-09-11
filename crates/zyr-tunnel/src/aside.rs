@@ -85,6 +85,18 @@ pub const VERSION: u32 = 19;
 /// Anything longer is not one of ours, with the one exception below.
 const LONGEST_QUESTION: usize = 512;
 
+/// Longest answer this channel takes.
+///
+/// A ceiling protects whoever is listening from whoever is speaking, and
+/// the two sides are not exposed to the same thing: this computer takes
+/// questions from anyone it lets in, and answers only from the computer
+/// it went to. One answer carries a whole journal, which is a page and
+/// not a line, so the two ceilings part company here rather than a
+/// question being allowed to weigh a page. Four times what a journal can
+/// weigh at its very largest, its four files being read from the end and
+/// cut.
+const LONGEST_ANSWER: usize = 4 * 1024 * 1024;
+
 /// Longest a message carrying a clipboard may be, in either direction.
 ///
 /// The one question that is a page rather than a line, and the one answer
@@ -113,18 +125,6 @@ const CLIPBOARD: &str = "clipboard";
 /// channel uses one: a message that names what it does not carry and a
 /// message that lost a piece on the way must not look alike.
 const NONE: &str = "none";
-
-/// Longest answer this channel takes.
-///
-/// A ceiling protects whoever is listening from whoever is speaking, and
-/// the two sides are not exposed to the same thing: this computer takes
-/// questions from anyone it lets in, and answers only from the computer
-/// it went to. One answer carries a whole journal, which is a page and
-/// not a line, so the two ceilings part company here rather than a
-/// question being allowed to weigh a page. Four times what a journal can
-/// weigh at its very largest, its four files being read from the end and
-/// cut.
-const LONGEST_ANSWER: usize = 4 * 1024 * 1024;
 
 /// What the host side answers on ZyrDesk's own channel.
 ///
