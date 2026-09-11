@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+use windows::Win32::System::Com::{DATADIR_GET, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData,
     GetClipboardFormatNameW, GetClipboardSequenceNumber, IsClipboardFormatAvailable, OpenClipboard,
@@ -28,7 +29,10 @@ use windows::Win32::System::DataExchange::{
 use windows::Win32::System::Memory::{
     GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
 };
-use windows::Win32::System::Ole::{CF_BITMAP, CF_DIB, CF_DIBV5, CF_HDROP, CF_TEXT, CF_UNICODETEXT};
+use windows::Win32::System::Ole::{
+    CF_BITMAP, CF_DIB, CF_DIBV5, CF_HDROP, CF_TEXT, CF_UNICODETEXT, OleGetClipboard,
+    ReleaseStgMedium,
+};
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 use windows::core::w;
 use zyr_proto::clipboard::{Clip, Kind, Listing};
@@ -116,8 +120,19 @@ pub fn what_it_holds() -> Result<Option<Found>, Trouble> {
         // to be able to copy or paste.
         the_drop_on_it()
     };
-    let Some(dropped) = dropped else {
-        return Ok(None);
+    // And the same question asked the other way round, for a clipboard
+    // written through OLE: those carry the thing itself on one side and
+    // a marker on the other, so a program reading the plain way can find
+    // « DataObject » and nothing else where the names were there all
+    // along. Asked second and only on nothing, since the plain way costs
+    // one call and this one wakes the program that did the copying.
+    //
+    // The clipboard is let go of first, which is not tidiness: OLE opens
+    // it itself to answer, and a clipboard still held here is an answer
+    // that never comes.
+    let dropped = match dropped.or_else(the_drop_ole_holds) {
+        Some(dropped) => dropped,
+        None => return Ok(None),
     };
     let Walked {
         listed,
@@ -145,6 +160,47 @@ fn the_drop_on_it() -> Option<Vec<PathBuf>> {
         IsClipboardFormatAvailable(u32::from(CF_HDROP.0)).ok()?;
         HDROP(GetClipboardData(u32::from(CF_HDROP.0)).ok()?.0)
     };
+    let paths = the_paths_in(dropped);
+    (!paths.is_empty()).then_some(paths)
+}
+
+/// The same, out of the object OLE hands over rather than off the
+/// clipboard itself.
+///
+/// Which is where the Explorer's own copies turn out to live: a program
+/// that offers its files through OLE leaves the plain clipboard carrying
+/// a marker, and the names are behind the object. Nothing else about
+/// them is different, so what comes back here goes on to be walked
+/// exactly like the other.
+fn the_drop_ole_holds() -> Option<Vec<PathBuf>> {
+    // SAFETY: takes nothing and hands over an object held until it is
+    // dropped at the end of this.
+    let object = unsafe { OleGetClipboard() }.ok()?;
+    let wanted = FORMATETC {
+        cfFormat: CF_HDROP.0,
+        ptd: std::ptr::null_mut(),
+        dwAspect: DVASPECT_CONTENT.0,
+        lindex: -1,
+        tymed: TYMED_HGLOBAL.0 as u32,
+    };
+    // SAFETY: an object OLE just handed over, asked for one shape of one
+    // format, and what comes back is given straight back below.
+    let mut medium = unsafe { object.GetData(&wanted) }.ok()?;
+    let paths = if medium.tymed == TYMED_HGLOBAL.0 as u32 {
+        // SAFETY: a global handle, which is what the shape asked for says
+        // it is and the one branch of the union it fills.
+        the_paths_in(HDROP(unsafe { medium.u.hGlobal }.0))
+    } else {
+        Vec::new()
+    };
+    // SAFETY: what `GetData` handed over belongs to whoever asked, and
+    // handing it back is what frees it.
+    unsafe { ReleaseStgMedium(&mut medium) };
+    (!paths.is_empty()).then_some(paths)
+}
+
+/// The paths inside a drop, however the drop was come by.
+fn the_paths_in(dropped: HDROP) -> Vec<PathBuf> {
     // SAFETY: a handle the clipboard just gave us. Naming this file asks
     // how many there are rather than for one of them.
     let how_many = unsafe { DragQueryFileW(dropped, u32::MAX, None) };
@@ -168,7 +224,7 @@ fn the_drop_on_it() -> Option<Vec<PathBuf>> {
             &spelled[..written as usize],
         )));
     }
-    (!paths.is_empty()).then_some(paths)
+    paths
 }
 
 pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
@@ -273,6 +329,20 @@ pub fn let_go() {
 /// itself, and every other trace of that moment looks exactly like a
 /// clipboard nobody touched.
 pub fn what_is_offered() -> String {
+    let plainly = the_plain_names();
+    // What the plain walk shows of a clipboard written through OLE is a
+    // marker and nothing else, so said on its own it reads as an empty
+    // clipboard where the shapes were all there behind the object. The
+    // one line that says why something never crossed has to name both.
+    match what_ole_offers() {
+        Some(behind) => format!("{plainly} ; derrière l'objet OLE : {behind}"),
+        None => plainly,
+    }
+}
+
+/// The names on the clipboard itself, which is what a program reading it
+/// the plain way sees.
+fn the_plain_names() -> String {
     let Ok(_open) = Open::now() else {
         return "le presse-papiers n'a pas pu être ouvert".to_string();
     };
@@ -293,6 +363,38 @@ pub fn what_is_offered() -> String {
     named.join(", ")
 }
 
+/// The names the object behind an OLE clipboard offers, when there is
+/// one.
+///
+/// Nothing when the clipboard was not written that way, which is the
+/// ordinary case and not a fault.
+fn what_ole_offers() -> Option<String> {
+    // SAFETY: takes nothing and hands over an object held to the end of
+    // this. It opens the clipboard itself, so nothing here may hold it.
+    let object = unsafe { OleGetClipboard() }.ok()?;
+    // SAFETY: an object OLE just handed over, asked what it can give.
+    let walk = unsafe { object.EnumFormatEtc(DATADIR_GET.0 as u32) }.ok()?;
+    let mut named = Vec::new();
+    // A ceiling, because this is a journal line and not an inventory: a
+    // program offering forty shapes of one thing says nothing more in
+    // forty names than in the first few.
+    while named.len() < 16 {
+        let mut shapes = [FORMATETC::default(); 8];
+        let mut taken = 0u32;
+        // SAFETY: a run of blocks of ours, as many as we said, and the
+        // count written into ours. What it answers is « all of them » or
+        // « fewer », and the count below says which.
+        let _ = unsafe { walk.Next(&mut shapes, Some(&mut taken)) };
+        for shape in &shapes[..taken as usize] {
+            named.push(the_name_of(u32::from(shape.cfFormat)));
+        }
+        if (taken as usize) < shapes.len() {
+            break;
+        }
+    }
+    (!named.is_empty()).then(|| named.join(", "))
+}
+
 /// What a format is called, in the words of whoever registered it or in
 /// this product's own for the ones Windows has always had.
 fn the_name_of(format: u32) -> String {
@@ -310,6 +412,7 @@ fn the_name_of(format: u32) -> String {
         known if known == u32::from(CF_DIB.0) => "bitmap".to_string(),
         known if known == u32::from(CF_DIBV5.0) => "bitmap récent".to_string(),
         known if known == u32::from(CF_BITMAP.0) => "image".to_string(),
+        known if known == u32::from(CF_HDROP.0) => "fichiers".to_string(),
         other => format!("format {other}"),
     }
 }
