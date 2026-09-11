@@ -395,6 +395,10 @@ pub fn carry_the_clipboard_here() {
             return;
         }
     };
+    // Under whose name, because that decides what it is allowed to see:
+    // a helper under the wrong one reads a clipboard that looks empty and
+    // has no way at all of saying why.
+    hunted(|| format!("this helper is running as {}", whoever_this_is()));
     let until = Instant::now() + HELPER_LIVES;
     let mut counted: Option<u32> = None;
     // Whether this helper is the one holding the far computer's files.
@@ -610,6 +614,36 @@ fn said(what: &str) {
     if let Ok(log) = Log::open(&crate::service::log_path()) {
         log.about(TAG).write(what);
     }
+}
+
+/// The same, in the voice only a hunt wants.
+///
+/// The journal is not even opened otherwise: a helper starts every few
+/// seconds for the whole of a session, and a file opened for a line
+/// nobody is going to write is a file opened for nothing.
+#[cfg(windows)]
+fn hunted(what: impl FnOnce() -> String) {
+    if !zyr_proto::FOR_HUNTING {
+        return;
+    }
+    if let Ok(log) = Log::open(&crate::service::log_path()) {
+        log.about(TAG).debug(what);
+    }
+}
+
+/// Who this helper is, as Windows names them.
+#[cfg(windows)]
+fn whoever_this_is() -> String {
+    use windows_sys::Win32::System::WindowsProgramming::GetUserNameW;
+
+    let mut spelled = [0u16; 256];
+    let mut room = spelled.len() as u32;
+    // SAFETY: a buffer of ours, whose length is handed over and written
+    // back as the length of what was put in it, the nought counted.
+    if unsafe { GetUserNameW(spelled.as_mut_ptr(), &mut room) } == 0 {
+        return "a name Windows would not give".to_string();
+    }
+    String::from_utf16_lossy(&spelled[..room.saturating_sub(1) as usize])
 }
 
 /// Reads a clip from the pair of files that name it and hold it.

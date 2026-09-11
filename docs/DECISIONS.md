@@ -2995,6 +2995,24 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Rien du tri lui-même, ni des étiquettes, ni des deux voix : la langue, le voyage et le tamis de D181 et [D182](#d182-deux-voix-au-journal-et-une-seule-des-deux-survit-à-la-version-finale-2026-09-11-pendant-m6) sont intacts, il n'y manquait que quelqu'un pour les appeler. Le dialecte ne bouge pas. La pile de correctifs reste à quatorze.
 
+## D184. L'assistant du presse-papiers est la personne, pas le service (2026-09-11, pendant M6)
+
+**Le relevé, enfin lisible.** Avec le tri de [D183](#d183-la-page-du-journal-répond-à-la-boîte-de-tri-toujours-2026-09-11-pendant-m6), six lignes au lieu de quatre mille : sur l'ordinateur contrôlé, un copier de fichiers dans l'explorateur donne « rien dessus qui traverse ; il tient DataObject ; derrière l'objet OLE : il n'offre rien ». L'OLE rend bien un objet, cet objet accepte de dire ce qu'il offre, et ce qu'il offre est vide.
+
+**La cause, lue dans notre propre code.** L'assistant qui lit et écrit le presse-papiers était démarré avec le jeton du service recopié dans la session de l'écran : il tournait donc sous le compte système, sur le bureau de la personne. C'était vrai de tous les assistants depuis le début, et pour tous les autres c'est parfaitement juste : lire un bureau, changer une résolution, taper un moteur sur l'épaule, c'est du travail de service.
+
+**Pourquoi le texte et les images marchaient quand même.** Un presse-papiers n'est pas une chose homogène. Du texte et une image y sont posés tels quels, en blocs de mémoire que quiconque a accès à la station de fenêtres peut relire, et le compte système l'a. Des fichiers, jamais : un presse-papiers ne porte pas de fichier, il porte une promesse, et cette promesse est un objet qui vit à l'intérieur du programme qui l'a posée. La lire, c'est un programme qui appelle dans un autre. Windows ne le permet qu'entre deux programmes de la même personne au même niveau, et le service et l'explorateur n'étaient ni l'un ni l'autre.
+
+**Ce qui explique les deux moitiés qui ne marchaient pas, et rien d'autre.** Dans un sens, l'objet de l'explorateur nous revenait creux, d'où les six lignes ci-dessus. Dans l'autre, ce que cet ordinateur offrait au loin ([D180](#d180-les-fichiers-copiés-traversent-au-moment-du-coller-2026-09-11-pendant-m6)) était posé par un programme dans lequel l'explorateur de la personne n'a pas le droit d'appeler, ce qui se voit exactement comme un presse-papiers vide : « y'a rien qui me propose de coller ». Une seule cause, les deux symptômes, et les deux sortes qui marchaient épargnées parce qu'elles ne traversent aucune frontière.
+
+**La correction n'est pas un contournement.** Un assistant qui agit sur le bureau au nom de quelqu'un doit être ce quelqu'un : c'est ce que Windows attend, et c'est ce qui fait que les règles du presse-papiers, qui sont par personne et par niveau, s'appliquent comme elles le doivent. Ce jeton-là est celui de la moitié ordinaire du compte, celle sous laquelle tourne l'explorateur de la personne, administrateur ou non. Les autres assistants ne bougent pas : ils n'agissent au nom de personne.
+
+**Un refus honnête en prime.** Là où personne n'est connecté, il n'y a pas de jeton à obtenir, donc plus d'assistant démarré : un ordinateur à son écran de connexion n'a le presse-papiers de personne, et le journal le dit une fois au lieu de faire lire un bureau vide pendant des heures.
+
+**Et le journal dit désormais sous quel nom il lit.** Une ligne de chasse, donc absente de la version finale ([D182](#d182-deux-voix-au-journal-et-une-seule-des-deux-survit-à-la-version-finale-2026-09-11-pendant-m6)), et le journal n'est même pas ouvert pour elle là-bas. Trois soirées sont parties à chercher ailleurs faute de cette ligne : le compte sous lequel tourne un assistant décide de ce qu'il a le droit de voir, donc il s'écrit.
+
+**Ce que ça ne change pas.** Le dossier de données se résout par le chemin du programme et non par le compte, donc l'assistant lit et écrit exactement les mêmes fichiers qu'avant. Le dialecte ne bouge pas, aucun moteur n'est touché, la pile de correctifs reste à quatorze.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

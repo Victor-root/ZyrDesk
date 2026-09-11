@@ -45,7 +45,7 @@ use windows_sys::Win32::System::JobObjects::{
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
     SetInformationJobObject,
 };
-use windows_sys::Win32::System::RemoteDesktop::WTSGetActiveConsoleSessionId;
+use windows_sys::Win32::System::RemoteDesktop::{WTSGetActiveConsoleSessionId, WTSQueryUserToken};
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessAsUserW, DETACHED_PROCESS,
     GetCurrentProcess, GetExitCodeProcess, OpenProcessToken, PROCESS_INFORMATION,
@@ -566,10 +566,24 @@ pub fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<Errand> {
     )
 }
 
+/// Whose a helper is, which decides what the desk lets it touch.
+#[derive(Clone, Copy)]
+enum Whose {
+    /// The service's own account, moved onto that session's screen. What
+    /// every errand here has always been: enough to read a desk, change a
+    /// screen, tap an engine on the shoulder.
+    TheService,
+    /// The person signed in at that screen.
+    ///
+    /// For the one helper that does not merely look at the desk but acts
+    /// on it in somebody's name. See [`start_carrying_the_clipboard`].
+    ThePerson,
+}
+
 /// Starts a helper in the session that owns the screen, to read the
 /// shape of this computer's pointer.
 pub fn start_reading_the_pointer() -> io::Result<()> {
-    start_a_helper(POINTER_ARGUMENT)
+    start_a_helper(POINTER_ARGUMENT, Whose::TheService)
 }
 
 /// Whether this program was started to read the pointer.
@@ -579,8 +593,20 @@ pub fn asked_to_follow_the_pointer() -> bool {
 
 /// Starts a helper in that same session, to read and write this
 /// computer's clipboard.
+///
+/// The one helper started as the person and not as the service, and it
+/// has to be. A clipboard is not simply a thing sitting on a window
+/// station: text and pictures do sit there as plain blocks anybody with
+/// the station can read, but files never do. What a program puts there
+/// for files is a promise, an object living inside it, and reading or
+/// paying that promise means one program calling into another. Windows
+/// refuses that across accounts and across levels: the service is the
+/// system, the Explorer is the person, and neither can reach into the
+/// other. Under the service's account the object came back hollow going
+/// one way, and what this computer offered was invisible going the other,
+/// which is precisely the two halves that never worked.
 pub fn start_carrying_the_clipboard() -> io::Result<()> {
-    start_a_helper(CLIPBOARD_ARGUMENT)
+    start_a_helper(CLIPBOARD_ARGUMENT, Whose::ThePerson)
 }
 
 /// Whether this program was started to carry the clipboard.
@@ -595,11 +621,14 @@ pub fn asked_to_carry_the_clipboard() -> bool {
 /// every other errand here: those do one thing and hand back an answer,
 /// these read for as long as they live and say what they read through
 /// files. Nothing here holds on to one either; each ends by itself.
-fn start_a_helper(argument: &str) -> io::Result<()> {
+fn start_a_helper(argument: &str, whose: Whose) -> io::Result<()> {
     let session =
         session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
     let ourselves = std::env::current_exe()?;
-    let token = service_token_for(session)?;
+    let token = match whose {
+        Whose::TheService => service_token_for(session)?,
+        Whose::ThePerson => the_person_at(session)?,
+    };
     let environment = environment_of(&token)?;
 
     let mut line = command_line(&ourselves, &[argument.to_string()]);
@@ -981,6 +1010,29 @@ fn the_engine_named_in(arguments: impl Iterator<Item = String>) -> Option<u32> {
     let mut after = arguments.skip_while(|a| a != LET_GO_ARGUMENT);
     after.next()?;
     after.next()?.parse().ok()
+}
+
+/// The token of whoever is signed in at that session.
+///
+/// The person as Windows itself knows them at that screen, with the
+/// ordinary rights of somebody sitting at their own desk and no others:
+/// an administrator is handed the everyday half of their account, which
+/// is the half their own Explorer runs under. That is the whole point,
+/// since a program is only allowed to speak to another one on the desk
+/// when the two are the same person at the same level.
+///
+/// Refuses where nobody is signed in, and that refusal is worth having:
+/// a computer at its sign-in screen has no clipboard belonging to anyone,
+/// and saying so beats starting something that would read an empty desk
+/// for hours.
+fn the_person_at(session: u32) -> io::Result<Handle> {
+    let mut theirs: HANDLE = std::ptr::null_mut();
+    // Safe: the handle it hands back is taken in charge right after. It
+    // asks for a right only the system holds, which the service is.
+    if unsafe { WTSQueryUserToken(session, &mut theirs) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(Handle(theirs))
 }
 
 /// The service's token, duplicated and attached to the wanted session.
