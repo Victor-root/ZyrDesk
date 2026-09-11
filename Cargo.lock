@@ -3064,6 +3064,7 @@ name = "zyr-clipboard"
 version = "0.1.0"
 dependencies = [
  "windows",
+ "windows-core",
  "zyr-proto",
 ]
 

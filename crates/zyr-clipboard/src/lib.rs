@@ -46,9 +46,9 @@ mod files;
 mod packed;
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use zyr_proto::clipboard::Clip;
+use zyr_proto::clipboard::{Clip, Listing};
 
 pub use files::MOST_FILES;
 
@@ -136,6 +136,47 @@ pub fn what_it_holds() -> Result<Option<Found>, Trouble> {
 /// A refusal is what it says it is: nothing of it went on at all.
 pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
     board::hold_this(clip)
+}
+
+/// Puts on this computer's clipboard, in the place of those files, a
+/// promise to hand them over when somebody asks for them.
+///
+/// Which is how files paste at all when they are on another computer.
+/// A clipboard never holds a file, only a way of reaching one, and that
+/// way is this: a list of names and weights now, and the bytes of one of
+/// them the moment a program pastes and not a moment before. The folder
+/// is where those bytes will be waited for.
+///
+/// This lasts as long as the program that called it does, and no longer:
+/// what stands in for the files lives inside it. Whoever calls this is
+/// signing up to stay for as long as [`still_standing`] answers yes.
+pub fn stand_in_for(listed: &Listing, folder: &Path) -> Result<(), Trouble> {
+    board::stand_in_for(listed, folder)
+}
+
+/// Whether what was stood in for is still what the clipboard holds.
+///
+/// It stops being true the moment anybody copies anything else anywhere
+/// on this computer, and that is the word to let go by: a promise nobody
+/// can reach any more is a program with no reason left to wait.
+pub fn still_standing() -> bool {
+    board::still_standing()
+}
+
+/// Whether somebody has pasted what is being stood in for.
+///
+/// Nothing in Windows asks for the contents of those files except a
+/// program pasting them, so being asked is the paste. It is the only
+/// word this side gets that the bytes are wanted, and the whole reason
+/// nothing crosses before it.
+pub fn somebody_pasted() -> bool {
+    board::somebody_pasted()
+}
+
+/// Lets go of the promise, the clipboard having moved on to something
+/// else.
+pub fn let_go() {
+    board::let_go()
 }
 
 /// The names of everything on this computer's clipboard right now.

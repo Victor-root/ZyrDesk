@@ -1,11 +1,13 @@
-//! The same three questions, on a computer that is not Windows.
+//! The same questions, on a computer that is not Windows.
 //!
 //! Answered with a refusal and never with a guess, for the reason
 //! `zyr-sound` answers the same way: a false « it is empty » would have
 //! the far computer's clipboard quietly emptied, and a false « it is
 //! posted » would have somebody paste what never arrived.
 
-use zyr_proto::clipboard::Clip;
+use std::path::Path;
+
+use zyr_proto::clipboard::{Clip, Listing};
 
 use crate::{Found, Trouble};
 
@@ -22,6 +24,22 @@ pub fn what_it_holds() -> Result<Option<Found>, Trouble> {
 pub fn hold_this(_clip: &Clip) -> Result<Vec<String>, Trouble> {
     nowhere()
 }
+
+pub fn stand_in_for(_listed: &Listing, _folder: &Path) -> Result<(), Trouble> {
+    nowhere()
+}
+
+/// Nothing was ever stood in for, the refusal above having seen to it, so
+/// nothing stands and nobody can have pasted it.
+pub fn still_standing() -> bool {
+    false
+}
+
+pub fn somebody_pasted() -> bool {
+    false
+}
+
+pub fn let_go() {}
 
 /// Said in the same words as the refusals above, since it is the same
 /// answer: there is no clipboard here to look at.

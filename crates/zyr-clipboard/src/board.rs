@@ -14,8 +14,9 @@
 //! always been able to put there.
 
 mod picture;
+mod standing;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
@@ -30,7 +31,7 @@ use windows::Win32::System::Memory::{
 use windows::Win32::System::Ole::{CF_BITMAP, CF_DIB, CF_DIBV5, CF_HDROP, CF_TEXT, CF_UNICODETEXT};
 use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 use windows::core::w;
-use zyr_proto::clipboard::{Clip, Kind};
+use zyr_proto::clipboard::{Clip, Kind, Listing};
 
 use crate::files::{self, Walked};
 use crate::{Found, Trouble};
@@ -233,6 +234,25 @@ pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
         )));
     }
     Ok(refused)
+}
+
+/// Files are not put on a clipboard, they are stood in for: what the rest
+/// of this file does with the thing itself, `standing` does with a promise
+/// to hand it over.
+pub fn stand_in_for(listed: &Listing, folder: &Path) -> Result<(), Trouble> {
+    standing::stand_in_for(listed, folder)
+}
+
+pub fn still_standing() -> bool {
+    standing::still_standing()
+}
+
+pub fn somebody_pasted() -> bool {
+    standing::somebody_pasted()
+}
+
+pub fn let_go() {
+    standing::let_go()
 }
 
 /// The names of everything on this computer's clipboard right now.

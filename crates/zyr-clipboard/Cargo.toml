@@ -27,10 +27,19 @@ windows = { version = "0.61.3", features = [
     "Win32_System_Com_StructuredStorage",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
-    # CF_UNICODETEXT et CF_DIB, que windows range avec l'OLE.
+    # De quoi nommer les attributs d'un fichier ordinaire, pour décrire
+    # ceux qu'on tient à la place de l'autre ordinateur.
+    "Win32_Storage_FileSystem",
+    # CF_UNICODETEXT et CF_DIB, que windows range avec l'OLE, et le
+    # presse-papiers OLE lui-même, seul capable de tenir la place de
+    # fichiers qui ne sont pas encore là.
     "Win32_System_Ole",
     # Ce qu'un glisser-déposer et un copier de l'explorateur posent au
     # presse-papiers : une poignée de chemins, lue par la famille du
     # shell.
     "Win32_UI_Shell",
 ] }
+# Ce que la macro qui bâtit un objet COM écrit : elle nomme cette
+# caisse-là par son nom, et ne la trouve pas sous celui de la famille.
+# C'est la même, republiée par `windows`, déjà dans le verrou du dépôt.
+windows-core = "0.61.2"
