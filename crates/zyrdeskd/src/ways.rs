@@ -1217,6 +1217,114 @@ impl Ways {
         }
     }
 
+    /// Carries the bytes of copied files, a piece at a time, on every way
+    /// this computer holds open.
+    ///
+    /// Beside the clipboard above rather than inside it, because the two
+    /// have nothing like the same pace. The clipboard is a stamp four
+    /// times a second for ever; this is nothing at all until somebody
+    /// pastes, and then as fast as the link will carry it until the last
+    /// byte is there.
+    ///
+    /// One piece is in flight at a time in each direction, which is the
+    /// whole of what keeps a file from eating the picture it travels
+    /// beside: nothing is ever asked for before the last piece arrived,
+    /// so a file can never hold more of the link than one piece, whatever
+    /// it weighs.
+    ///
+    /// Nothing is asked at all while no file is in play. A paste on this
+    /// computer is one reason to ask; files copied here that the far
+    /// computer might paste are the other, and that one has to be asked
+    /// about, since a far end that pastes can only say so in an answer
+    /// and answers only come to questions.
+    pub async fn carry_the_pieces(self) {
+        // What each far computer is still waiting for, which is what it
+        // said at the end of the last turn.
+        let mut owed: HashMap<WayId, aside::Wanted> = HashMap::new();
+        // Which way last handed a piece over, since one copy comes from
+        // one computer and the others would only refuse.
+        let mut gave: Option<WayId> = None;
+        // The ways whose last turn did not go, so that a far computer of
+        // an older build is one line and not four a second.
+        let mut stuck: HashSet<WayId> = HashSet::new();
+        loop {
+            let mut open = self.the_open_ways();
+            owed.retain(|way, _| open.iter().any(|(open, _)| open == way));
+            stuck.retain(|way| open.iter().any(|(open, _)| open == way));
+            if open.is_empty() || !self.remembered.read().preferred.shared_clipboard {
+                tokio::time::sleep(CLIPBOARD_TURN).await;
+                continue;
+            }
+            let mut asking = crate::clipboard::what_a_paste_here_wants(&self.log);
+            if asking.is_none() && owed.is_empty() && !crate::clipboard::files_may_be_wanted_here()
+            {
+                tokio::time::sleep(CLIPBOARD_TURN).await;
+                continue;
+            }
+            if let Some(gave) = gave
+                && let Some(at) = open.iter().position(|(way, _)| *way == gave)
+            {
+                open.swap(0, at);
+            }
+
+            let mut moved = false;
+            for (way, connection) in open {
+                // A piece that cannot be read costs that ask and not the
+                // session: the file was moved, or this clipboard has gone
+                // on to something else, and the far end stops asking of
+                // its own accord.
+                let giving = match owed.remove(&way).map(crate::clipboard::a_piece_of) {
+                    Some(Ok(piece)) => Some(piece),
+                    Some(Err(refused)) => {
+                        self.log
+                            .write(&format!("way {way}: nothing was handed over: {refused}"));
+                        None
+                    }
+                    None => None,
+                };
+                if asking.is_none() && giving.is_none() {
+                    continue;
+                }
+                let handed = giving.is_some();
+                match aside::ask_for_pieces(&connection, asking, giving).await {
+                    Ok((given, wanted)) => {
+                        moved |= handed;
+                        if stuck.remove(&way) {
+                            self.log
+                                .write(&format!("way {way}: files are crossing again"));
+                        }
+                        if let Some(wanted) = wanted {
+                            owed.insert(way, wanted);
+                        }
+                        if let Some(given) = given {
+                            asking = None;
+                            gave = Some(way);
+                            moved = true;
+                            if let Err(refused) = crate::transfer::take(&given, &self.log) {
+                                self.log
+                                    .write(&format!("way {way}: the paste here stops: {refused}"));
+                            }
+                        }
+                    }
+                    // Said in the journal and nowhere else, and the turn
+                    // after tries again. A way that has gone is closed by
+                    // the watch beside this one.
+                    Err(e) => {
+                        if stuck.insert(way) {
+                            self.log
+                                .write(&format!("way {way}: files are not crossing: {e}"));
+                        }
+                    }
+                }
+            }
+            // Straight on to the next piece while any are moving, and
+            // back to looking about four times a second when none are.
+            if !moved {
+                tokio::time::sleep(CLIPBOARD_TURN).await;
+            }
+        }
+    }
+
     /// The ways open right now, each with the connection to speak on.
     ///
     /// Taken and let go of in one move, so that nothing waiting on the

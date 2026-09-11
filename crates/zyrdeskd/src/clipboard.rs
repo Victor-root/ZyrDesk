@@ -23,6 +23,22 @@
 //!
 //! The helper only runs while somebody is asking, exactly like the
 //! pointer's. A computer nobody is watching has its clipboard to itself.
+//!
+//! # Files, and the one file that says so
+//!
+//! Files are the exception to all of it. What a clipboard holds of a file
+//! is a name, so what a helper puts on this one for the far computer's
+//! files is a promise to hand them over, and a promise lives inside the
+//! program that made it: a helper that made one cannot go home at the end
+//! of its ten seconds without taking the files with it.
+//!
+//! So there is a third file, and it is one word. The helper writes it at
+//! every turn while it holds such a promise, and the word says whether
+//! anybody has pasted yet. It carries three things at once: the service
+//! learns that somebody pasted and starts bringing the bytes in; it knows
+//! not to start a second helper beside one that is holding something; and
+//! when the last session goes it takes the file away, which is how the
+//! helper is told to let go and end.
 
 // Outside Windows nothing calls this module: the service does not exist
 // there. The shape of it stays compiled and tested everywhere, and the
@@ -33,7 +49,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use zyr_proto::clipboard::{Clip, Head, Stamp};
+use zyr_proto::clipboard::{Clip, Head, Kind, Stamp};
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
@@ -71,6 +87,15 @@ const AFTER_THE_LAST_QUESTION: Duration = Duration::from_secs(4);
 /// for ever would be a clipboard that never shares again.
 const SETTLES_WITHIN: Duration = Duration::from_secs(3);
 
+/// How old a helper's mark has to be before the helper counts as gone.
+///
+/// It is written at every turn of a loop that turns five times a second,
+/// so a mark this old is a helper that has stopped writing it. Without
+/// this, a helper that died while holding the far computer's files would
+/// leave a mark nobody ever takes away, and no other helper would be
+/// started beside it for the rest of the session.
+const A_STAND_GOES_STALE_AFTER: Duration = Duration::from_secs(2);
+
 /// Whether the thread that keeps a helper alive is running.
 static KEEPING: AtomicBool = AtomicBool::new(false);
 
@@ -84,6 +109,10 @@ static GIVEN: Mutex<Option<(Stamp, Instant)>> = Mutex::new(None);
 /// What was last found too heavy to cross, so it is said once and not at
 /// every turn of every session.
 static TOO_LARGE: Mutex<Option<Stamp>> = Mutex::new(None);
+
+/// What last stopped a paste here from starting at all, for the same
+/// reason and to the same end.
+static PASTE_REFUSED: Mutex<Option<String>> = Mutex::new(None);
 
 /// What this computer has on its clipboard.
 ///
@@ -143,6 +172,94 @@ pub fn give_it(clip: &Clip, log: &Log) -> Result<(), String> {
     Ok(())
 }
 
+/// What a helper is doing about files that live on the far computer.
+///
+/// There is no third state and no « none »: a helper that is holding
+/// nothing writes no mark at all, and no mark is the answer everything
+/// here reads as « nobody is holding anything ».
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stand {
+    /// They are on this computer's clipboard and nobody has pasted them.
+    Held,
+    /// Somebody pasted, so their bytes are wanted now.
+    Pasting,
+}
+
+impl Stand {
+    fn spelled(self) -> &'static str {
+        match self {
+            Self::Held => "standing",
+            Self::Pasting => "pasting",
+        }
+    }
+
+    fn of(said: &str) -> Option<Self> {
+        match said.trim() {
+            "standing" => Some(Self::Held),
+            "pasting" => Some(Self::Pasting),
+            _ => None,
+        }
+    }
+}
+
+/// What a helper is doing about the far computer's files right now.
+///
+/// Nothing when none is holding any, and nothing again when the mark is
+/// older than a helper writing it every fifth of a second would leave it:
+/// that mark is one a helper died holding, and believing it would be this
+/// service never starting another for the rest of the session.
+pub fn a_stand_is_up() -> Option<Stand> {
+    let mark = paths::clipboard_standing();
+    let said = std::fs::read_to_string(&mark).ok()?;
+    std::fs::metadata(&mark)
+        .and_then(|about| about.modified())
+        .is_ok_and(|when| {
+            when.elapsed()
+                .is_ok_and(|since| since < A_STAND_GOES_STALE_AFTER)
+        })
+        .then(|| Stand::of(&said))
+        .flatten()
+}
+
+/// The next piece a paste on this computer is still waiting for.
+///
+/// This is where a paste becomes a transfer. Nothing crosses while the
+/// far computer's files merely sit on this clipboard; the moment somebody
+/// pastes them, the helper says so, and the bytes start being asked for
+/// from here.
+///
+/// Nothing means the far computer may stop sending, which covers both
+/// « nobody here is pasting » and « what was being pasted is all here ».
+pub fn what_a_paste_here_wants(log: &Log) -> Option<zyr_tunnel::aside::Wanted> {
+    if a_stand_is_up() == Some(Stand::Pasting)
+        && let Some(clip) = written_clip(&paths::clipboard_here())
+        && let Some(listed) = clip.listing()
+        && let Err(refused) = crate::transfer::coming_in(clip.stamp(), &listed, log)
+    {
+        // Said once: what refuses here is a folder that will not open,
+        // and a disk does not change its mind between two turns of a loop
+        // that turns four times a second.
+        let mut said = PASTE_REFUSED.lock().expect("ce qui empêche de coller");
+        if said.replace(refused.clone()).as_deref() != Some(refused.as_str()) {
+            log.write(&format!("files: nothing can be pasted here: {refused}"));
+        }
+    }
+    crate::transfer::what_is_still_wanted()
+}
+
+/// Whether the far computer may come asking for the bytes of files
+/// copied on this one.
+///
+/// The one reason to keep asking when there is nothing to ask for: a far
+/// end that pastes can only say so in an answer, and answers only come to
+/// questions. False while what is on this clipboard came from the far
+/// computer in the first place, since nobody asks for their own files
+/// back.
+pub fn files_may_be_wanted_here() -> bool {
+    a_stand_is_up().is_none()
+        && written_clip(&paths::clipboard_here()).is_some_and(|clip| clip.kind() == Kind::Files)
+}
+
 /// Whether that is more than a session carries, said once when it is.
 ///
 /// The one rule about weight, and it lives here because here is the one
@@ -190,7 +307,14 @@ fn keep_a_helper(log: Log) {
         let mut started: Option<Instant> = None;
         let mut refused = false;
         while !nobody_is_asking() {
-            if started.is_none_or(|at| at.elapsed() > START_ANOTHER_AFTER) {
+            // Not while one of them is holding the far computer's files.
+            // That one stays for as long as they are on the clipboard,
+            // which can be minutes, and a second beside it would read a
+            // clipboard it can make nothing of and say so once every few
+            // seconds for the whole of that time.
+            if a_stand_is_up().is_none()
+                && started.is_none_or(|at| at.elapsed() > START_ANOTHER_AFTER)
+            {
                 match crate::session::start_carrying_the_clipboard() {
                     Ok(()) => {
                         if started.is_none() {
@@ -225,6 +349,12 @@ fn keep_a_helper(log: Log) {
         forget_the_pair(&paths::clipboard_here());
         forget_the_pair(&paths::clipboard_wanted());
         let _ = std::fs::remove_file(paths::clipboard_files());
+        // Taking the mark away is how a helper holding the far computer's
+        // files is told the sessions have gone: it lets go on finding its
+        // own mark taken, since what it was holding is files nobody can
+        // send any more.
+        let _ = std::fs::remove_file(paths::clipboard_standing());
+        crate::transfer::forget(&log);
         *GIVEN.lock().expect("ce qui vient d'être donné") = None;
         KEEPING.store(false, Ordering::SeqCst);
     });
@@ -240,10 +370,18 @@ fn keep_a_helper(_log: Log) {
 /// This is the helper, and it only ever runs in the session that owns the
 /// screen: started anywhere else it reads a window station with no
 /// clipboard on it. It ends by itself so that nothing has to end it.
+///
+/// Files are the one thing that keeps it past its hour. What stands in
+/// for the far computer's files lives inside whoever put it on the
+/// clipboard, so a helper that has put one there cannot go home: it would
+/// take the files with it. It stays until somebody copies something else,
+/// or until the service takes its mark away.
 #[cfg(windows)]
 pub fn carry_the_clipboard_here() {
     let until = Instant::now() + HELPER_LIVES;
     let mut counted: Option<u32> = None;
+    // Whether this helper is the one holding the far computer's files.
+    let mut standing = false;
     // What is already written down, and not nothing. A helper takes over
     // from another every few seconds for the whole of a session: one that
     // started from nothing would write the same clipboard down again, and
@@ -258,19 +396,39 @@ pub fn carry_the_clipboard_here() {
     // or a picture this machine's imaging will not take, is one line and
     // not five a second for as long as the session lasts.
     let mut complained: Option<String> = None;
-    while Instant::now() < until {
+    while standing || Instant::now() < until {
         if let Some(wanted) = written_clip(&paths::clipboard_wanted()) {
-            match zyr_clipboard::hold_this(&wanted) {
+            // Files are the odd one and always were: a clipboard never
+            // holds a file, so there is nothing here to put on one. What
+            // goes on instead is a promise to hand them over, and that
+            // promise is what keeps this helper alive afterwards.
+            let put = if wanted.kind() == Kind::Files {
+                stand_in_for_them(&wanted).inspect(|()| {
+                    standing = true;
+                    counted = Some(zyr_clipboard::times_it_changed());
+                    written = Some(wanted.stamp());
+                    hold_the_mark(Stand::Held);
+                    said(&format!(
+                        "clipboard: this computer now offers {}, and their bytes will cross when \
+                         somebody pastes them",
+                        wanted.in_words()
+                    ));
+                })
+            } else {
+                zyr_clipboard::hold_this(&wanted)
+                    .map(|missing| {
+                        for what in missing {
+                            say_once(&mut complained, &format!("clipboard: {what}"));
+                        }
+                    })
+                    .map_err(|e| e.to_string())
+            };
+            match put {
                 // Read back on the very next turn, because putting
                 // something on a clipboard is what changes it: the line
                 // this helper then writes is what tells the service the
                 // giving landed.
-                Ok(missing) => {
-                    forget_the_pair(&paths::clipboard_wanted());
-                    for what in missing {
-                        say_once(&mut complained, &format!("clipboard: {what}"));
-                    }
-                }
+                Ok(()) => forget_the_pair(&paths::clipboard_wanted()),
                 // Left where it is, so the next turn tries again: a
                 // clipboard held by another program for a moment is the
                 // ordinary case and not a fault. The service takes the
@@ -281,6 +439,33 @@ pub fn carry_the_clipboard_here() {
                     &format!("clipboard: it would not take what it was given: {e}"),
                 ),
             }
+        }
+
+        if standing {
+            if !paths::clipboard_standing().exists() {
+                // The service has taken the mark away, which is the one
+                // way it has of saying the sessions have gone. What is
+                // being held is files nobody can send any more.
+                zyr_clipboard::let_go();
+                said("clipboard: the far computer's files are no longer offered here");
+                return;
+            }
+            if zyr_clipboard::still_standing() {
+                hold_the_mark(if zyr_clipboard::somebody_pasted() {
+                    Stand::Pasting
+                } else {
+                    Stand::Held
+                });
+                std::thread::sleep(LOOK_EVERY);
+                continue;
+            }
+            // Somebody copied something else on this computer, which is
+            // what takes the promise off the clipboard. The turn goes on
+            // to the ordinary reading, which picks up whatever took its
+            // place.
+            zyr_clipboard::let_go();
+            standing = false;
+            let _ = std::fs::remove_file(paths::clipboard_standing());
         }
 
         // The counter is the cheap half of this: reading a picture every
@@ -349,6 +534,39 @@ pub fn carry_the_clipboard_here() {
         }
         std::thread::sleep(LOOK_EVERY);
     }
+}
+
+/// Offers the far computer's files on this computer's clipboard.
+///
+/// Nothing of them is read here and nothing has to be: what goes on the
+/// clipboard is their names and a promise, and the promise is only called
+/// in when somebody pastes.
+#[cfg(windows)]
+fn stand_in_for_them(wanted: &Clip) -> Result<(), String> {
+    let listed = wanted
+        .listing()
+        .ok_or_else(|| "cette liste de fichiers ne se lit pas".to_string())?;
+    zyr_clipboard::stand_in_for(&listed, &paths::pasted()).map_err(|e| e.to_string())?;
+    // Where this computer's copied files really are stops being true of
+    // anything the moment what it holds lives on the other computer.
+    // Left there, it would have this computer hand over the files of a
+    // copy that is over, to a far end asking about this one.
+    let _ = std::fs::remove_file(paths::clipboard_files());
+    write_the_pair(&paths::clipboard_here(), wanted).map_err(|e| e.to_string())
+}
+
+/// Says, to the service, that this helper is holding the far computer's
+/// files and how far that has got.
+///
+/// Written at every turn rather than when the word changes: the same file
+/// is also how the service knows a helper is still there, and a file only
+/// says that while it is being written.
+#[cfg(windows)]
+fn hold_the_mark(what: Stand) {
+    let _ = zyr_proto::files::replace(
+        &paths::clipboard_standing(),
+        &format!("{}\n", what.spelled()),
+    );
 }
 
 /// Writes that down unless it is word for word what was written last.

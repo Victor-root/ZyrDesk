@@ -100,7 +100,7 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 ## M8 : Confort
 
 - Objectif : les fonctions qui font « produit fini ».
-- Contenu : ~~presse-papiers texte bidirectionnel (canal tunnel + agent hôte)~~ (fait en M6, texte et images, D179), ~~sélection d'écran (multi-écran hôte)~~ (fait en M6), préréglages de qualité avec bascule rapide, sonde de débit pré-session, politique spectateur unique/reprise, consentement et indicateur côté hôte.
+- Contenu : ~~presse-papiers texte bidirectionnel (canal tunnel + agent hôte)~~ (fait en M6, texte et images, D179 ; fichiers au coller, D180), ~~sélection d'écran (multi-écran hôte)~~ (fait en M6), préréglages de qualité avec bascule rapide, sonde de débit pré-session, politique spectateur unique/reprise, consentement et indicateur côté hôte.
 - Critères de sortie : presse-papiers <= 500 ms ; changement de qualité ou d'écran <= 3 s en conservant fenêtre et tunnel ; deuxième client entrant traité selon la politique (occupé ou reprise).
 
 ## M9 : Écran virtuel
@@ -123,4 +123,4 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 
 ## Évolutions post-v1 (ordre indicatif)
 
-Transfert de fichiers, presse-papiers des fichiers, manettes (via installation optionnelle du pilote historique, ou mieux si l'écosystème évolue), coupure de l'audio côté hôte (périphérique virtuel déjà présent chez l'utilisateur, type enceintes de streaming Steam), HDR complet, 120 FPS, multi-écran simultané, Wake-on-LAN, partage entre comptes (invités), lecteur natif maison (v2), clients autres plateformes.
+Transfert de fichiers hors presse-papiers, manettes (via installation optionnelle du pilote historique, ou mieux si l'écosystème évolue), coupure de l'audio côté hôte (périphérique virtuel déjà présent chez l'utilisateur, type enceintes de streaming Steam), HDR complet, 120 FPS, multi-écran simultané, Wake-on-LAN, partage entre comptes (invités), lecteur natif maison (v2), clients autres plateformes.

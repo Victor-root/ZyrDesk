@@ -888,6 +888,10 @@ pub fn watch(app: App) {
                     // doit se voir dans le tiers de seconde, et cette
                     // veille passe une fois par seconde.
                     crate::voyants::watch(&app);
+                    // Et ce qui arrive des fichiers qu'on colle, relu au
+                    // même rythme et pour la même raison : une barre qui
+                    // avance une fois par seconde n'a pas l'air d'avancer.
+                    crate::transfert::watch(&app);
                     // Et le clavier appartient à l'image, toujours. Le
                     // menu ne le lui prend plus : la carte que ce
                     // programme dessine n'est jamais activée et ne porte

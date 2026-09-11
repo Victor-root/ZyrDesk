@@ -907,8 +907,15 @@ impl Answers for Attending {
         ),
         String,
     > {
-        if giving.is_some() {
-            return Err("rien n'est collé sur cet ordinateur".to_string());
+        if let Some(piece) = giving
+            && let Err(refused) = crate::transfer::take(&piece, &self.log)
+        {
+            // The paste stops rather than asking for that piece again:
+            // what refuses is a disk, and a disk does not change its mind
+            // between two turns. The transfer is dropped by `take`, so
+            // the far end is told to stop sending on this very answer.
+            self.log
+                .write(&format!("files: the paste here stops: {refused}"));
         }
         // A piece that cannot be read costs that ask and not the session:
         // the file was moved, or the clipboard has gone on to something
@@ -922,7 +929,7 @@ impl Answers for Attending {
             }
             None => None,
         };
-        Ok((given, None))
+        Ok((given, crate::clipboard::what_a_paste_here_wants(&self.log)))
     }
 }
 

@@ -19,6 +19,7 @@ mod said;
 mod screen;
 mod speakers;
 mod supervisor;
+mod transfer;
 mod ways;
 
 #[cfg(windows)]

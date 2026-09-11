@@ -389,6 +389,57 @@ impl Listing {
     }
 }
 
+/// How far a transfer of copied files has got.
+///
+/// Written by whoever is bringing them in and read by whoever draws it,
+/// which are two programs: the service carries the bytes, the interface
+/// shows the person how far they are. One line in one file, for the
+/// reason everything between those two is a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HowFar {
+    pub done: u64,
+    pub whole: u64,
+    pub files: usize,
+}
+
+impl HowFar {
+    /// How far along in hundredths, which is what a ring or a bar is
+    /// drawn from.
+    ///
+    /// A transfer of nothing at all is finished, not half done: an empty
+    /// file is a real thing to copy and it has no middle.
+    pub fn hundredths(&self) -> u32 {
+        if self.whole == 0 {
+            return 100;
+        }
+        ((self.done.min(self.whole) as u128 * 100) / self.whole as u128) as u32
+    }
+
+    /// The one line it is written as: the three numbers, in that order.
+    pub fn written(&self) -> String {
+        format!("{} {} {}\n", self.done, self.whole, self.files)
+    }
+
+    /// Reads what the line above wrote.
+    pub fn read(said: &str) -> Result<Self, Unreadable> {
+        let mut numbers = said.split_whitespace();
+        let mut next = || numbers.next().ok_or(Unreadable);
+        let done = next()?.parse().map_err(|_| Unreadable)?;
+        let whole = next()?.parse().map_err(|_| Unreadable)?;
+        let files = next()?.parse().map_err(|_| Unreadable)?;
+        Ok(Self { done, whole, files })
+    }
+
+    /// What it says to somebody watching, in the words of the interface.
+    ///
+    /// The weight and not the count of files, because the weight is what
+    /// the waiting is made of: a thousand small files go by in the time
+    /// one large one takes.
+    pub fn in_words(&self) -> String {
+        format!("{} / {}", weighed(self.done), weighed(self.whole))
+    }
+}
+
 /// A weight in the largest unit that leaves it above one, which is how a
 /// person reads one.
 ///

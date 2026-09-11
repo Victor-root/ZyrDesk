@@ -83,6 +83,10 @@ mod settings;
 mod shortcuts;
 mod startup;
 mod theme;
+// Ce que le bouton flottant montre des fichiers qui arrivent : la vitre
+// de la marque se remplit comme une barre de chargement. Ce qui se lit se
+// compile partout ; ce qui se dessine est celui du bouton.
+mod transfert;
 // Le pavé tactile de cet ordinateur, lu par ce programme lui-même. Ce qui
 // reconnaît un geste est de l'arithmétique et se compile partout ; ce qui
 // lit le pavé est de Windows, comme la session.

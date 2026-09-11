@@ -14,7 +14,7 @@ Construit par ZyrDesk (là où les moteurs ne font rien) :
 - L'expérience produit : interface, comptes, liste d'appareils, présence, connexion en un clic.
 - Le réseau moderne : tunnel chiffré unique, traversée NAT, relais de secours, reprise de session.
 - L'intégration Windows propre : service, accès non supervisé, installateur, mises à jour.
-- Le presse-papiers partagé (le protocole GameStream n'a aucun canal presse-papiers).
+- Le presse-papiers partagé, fichiers compris (le protocole GameStream n'a aucun canal presse-papiers).
 
 Points risqués identifiés et traités (détails dans [NETWORK.md](NETWORK.md) et [ROADMAP.md](ROADMAP.md)) :
 
@@ -121,6 +121,7 @@ Règle : jamais un écran noir sans explication. Le service détecte et l'interf
 - Journaux : tous les composants écrivent dans le sous-dossier `logs` des données du produit (rotation), en temps universel et sous la même forme, le service et la fenêtre partageant le même écrivain. Chaque binaire porte l'empreinte du code dont il a été compilé, gravée par un script de compilation, et l'écrit en tête de sa trace : une panne se lit toujours contre la version qui l'a produite. La fenêtre rassemble les quatre traces sur un écran, sous cet entête, avec un bouton qui copie l'ensemble. `zyr-cli doctor` vérifie : encodeurs disponibles, GPU hybride, règle pare-feu, service actif, broker joignable, type de NAT, latence relais.
 - Mises à jour : canal unique ; l'interface télécharge et vérifie le paquet, refuse d'appliquer pendant une session active, puis arrête le service, remplace les binaires (moteurs compris) et redémarre. Poignée de main de version entre interface, service et broker : les décalages de versions sont détectés proprement.
 - Presse-papiers : canal ZyrDesk dédié dans le tunnel, des deux côtés à la fois, plus un assistant que le service relance dans la session qui tient l'écran (seul un programme de cette session peut lire ou écrire son presse-papiers ; le service est assis sur une station de fenêtres qui n'en porte aucune). Texte et images, les images en PNG, l'imagerie de Windows faisant le PNG d'une capture d'écran. Interrupteur dans le menu du bouton flottant, allumé par défaut. Indisponible sur l'écran de connexion, qui n'a pas de session pour tenir un presse-papiers (assumé). Détails : [D179](DECISIONS.md).
+- Fichiers au presse-papiers : au copier ne traverse que la liste des noms et des poids, quel que soit ce qu'ils pèsent ; les octets ne partent qu'au coller, l'assistant tenant entretemps la place des fichiers sur le presse-papiers de celui qui colle. Un morceau de deux cent cinquante mille octets à la fois dans chaque sens, ce qui borne par construction ce qu'un fichier peut prendre au lien sans rien avoir à régler. Les octets se posent dans un dossier du produit, jamais directement là où la personne colle, et Windows fait lui-même cette dernière copie. La marque du bouton flottant se remplit comme une barre de chargement. Détails : [D180](DECISIONS.md).
 - Consentement et visibilité : pendant une session entrante, l'hôte affiche un indicateur (icône d'état + notification au début de session).
 
 ## 10. Organisation du dépôt
@@ -139,7 +140,7 @@ ZyrDesk/
 │  ├─ zyr-lan/                 # annonce mDNS de cet ordinateur, appel direct, découverte des autres
 │  ├─ zyr-screen/              # l'écran virtuel : pilote, réveil, sommeil, arrangement des écrans
 │  ├─ zyr-sound/               # le son de la session, dans le mélangeur de Windows
-│  ├─ zyr-clipboard/           # le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne, et les images en PNG
+│  ├─ zyr-clipboard/           # le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne, les images en PNG, et la place tenue aux fichiers d'en face
 │  ├─ zyr-broker/              # ce que le service et le serveur se disent : messages, tickets et laissez-passer signés
 │  ├─ zyr-account/             # le lien de compte, le rattachement, le canal vivant, la présence, le rendez-vous
 │  ├─ zyrdeskd/                # binaire service Windows : registre des voies, serveur du tube, tous les tunnels, superviseur du moteur hôte
@@ -162,4 +163,4 @@ ZyrDesk/
 - Service <-> serveur (HTTPS et WSS, JSON, seulement quand un lien de compte existe) : création de compte, connexion, rattachement et révocation d'appareils prouvés par leur clé, présence, contacts et partages, tickets de session et rendez-vous, laissez-passer de relais, révocations poussées. Détails : [SERVER.md](SERVER.md) §6.
 - Service <-> Sunshine : processus + configuration générée + REST loopback (`/serverinfo` santé, `POST /api/pin` appairage).
 - Superviseur <-> Moonlight : processus + ligne de commande + parsing des journaux/statistiques + codes de sortie.
-- Tunnel (une connexion QUIC par session) : canal ZyrDesk = le produit qui se parle à lui-même (carte des ports du moteur d'en face, code d'appairage, presse-papiers partagé, et plus tard statistiques et sonde de débit), une question par stream, un message de texte dans chaque sens ouvert par le numéro de version du dialecte ; les autres streams portent les flux TCP GameStream (HTTP, HTTPS, RTSP) ; les datagrammes portent la vidéo, le contrôle temps réel et l'audio, précédés d'un octet de canal. Détails : [NETWORK.md](NETWORK.md).
+- Tunnel (une connexion QUIC par session) : canal ZyrDesk = le produit qui se parle à lui-même (carte des ports du moteur d'en face, code d'appairage, presse-papiers partagé, morceaux des fichiers qu'on colle, et plus tard statistiques et sonde de débit), une question par stream, un message de texte dans chaque sens ouvert par le numéro de version du dialecte ; les autres streams portent les flux TCP GameStream (HTTP, HTTPS, RTSP) ; les datagrammes portent la vidéo, le contrôle temps réel et l'audio, précédés d'un octet de canal. Détails : [NETWORK.md](NETWORK.md).

@@ -350,6 +350,7 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     };
     runtime.spawn(machine.ways.clone().keep_tidy());
     runtime.spawn(machine.ways.clone().keep_the_clipboards_in_step());
+    runtime.spawn(machine.ways.clone().carry_the_pieces());
 
     let mut policy = Policy::new();
     let runtime_path = EngineRuntime::standard_path();

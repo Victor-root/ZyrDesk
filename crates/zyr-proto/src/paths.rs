@@ -265,6 +265,49 @@ pub fn clipboard_files() -> PathBuf {
     data_dir().join("clipboard-files.txt")
 }
 
+/// Where the helper says it is holding the far computer's files on this
+/// computer's clipboard, and whether somebody has pasted them.
+///
+/// One word in one file, and it is read by both programs for two
+/// different things. The helper writes it at every turn of its loop: the
+/// word says how far the thing has got, and the file being fresh says the
+/// helper is still there, which is what stops the service from starting a
+/// second one beside it. The service takes it away when the last session
+/// goes, and a helper that finds its own mark gone lets go of the
+/// clipboard: what it was holding is files nobody can send any more.
+pub fn clipboard_standing() -> PathBuf {
+    data_dir().join("clipboard-standing.txt")
+}
+
+/// Where the service writes how far the files being pasted have got, for
+/// the floating button to draw.
+///
+/// One line and three numbers, rewritten only when the hundredth it draws
+/// changes: a bar is what somebody watches while they wait, and a bar
+/// that moves in steps nobody can see is a file rewritten forty times a
+/// second for nothing.
+///
+/// It is not there when nothing is coming in, which is how the button
+/// knows to draw nothing at all.
+pub fn files_coming() -> PathBuf {
+    data_dir().join("files-coming.txt")
+}
+
+/// The folder the far computer's files land in while they are being
+/// pasted.
+///
+/// Of the product's own and never where the person is pasting: Windows
+/// does that last copy itself, out of what this product hands it, at the
+/// moment and to the place the person chose. A product writing into
+/// somebody's Documents folder by itself would be a product deciding
+/// something that was never asked of it.
+///
+/// It goes when the last session goes. What was pasted is somewhere else
+/// by then, and what was not is a transfer nobody finished.
+pub fn pasted() -> PathBuf {
+    data_dir().join("pasted")
+}
+
 /// The bytes that go with one of the two lines above.
 ///
 /// Beside it under the same name, since the two are one thing written in
@@ -340,6 +383,9 @@ mod tests {
             clipboard_here(),
             clipboard_wanted(),
             clipboard_files(),
+            clipboard_standing(),
+            files_coming(),
+            pasted(),
             beside(&clipboard_here()),
             beside(&clipboard_wanted()),
             account(),

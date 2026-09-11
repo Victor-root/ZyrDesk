@@ -146,6 +146,9 @@ const GROWING: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 /// Le curseur à redire, demandé d'ailleurs que du fil de la fenêtre.
 const CURSEUR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
+/// La barre du transfert a bougé, demandé du fil qui la relit.
+const AVANCE: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
+
 /// The window itself, and what it is showing.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 /// The side of the window in real pixels, which is the largest of the
@@ -289,6 +292,23 @@ pub fn moving(yes: bool) {
         // SAFETY: un message déposé dans la file d'une fenêtre à nous,
         // depuis le fil qui suit le geste.
         unsafe { PostMessageW(window as HWND, CURSEUR, 0, 0) };
+    }
+}
+
+/// Dit au bouton que ce qui arrive a avancé, et qu'il a donc à se
+/// redessiner.
+///
+/// Déposé dans sa file plutôt que dessiné ici : la toile et la fenêtre
+/// appartiennent au fil qui les a faites, et ce qui relit l'avancement
+/// n'est pas celui-là.
+pub fn the_bar_moved() {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
+
+    let window = ITS_WINDOW.load(Ordering::Relaxed);
+    if window != 0 {
+        // SAFETY: un message déposé dans la file d'une fenêtre à nous.
+        unsafe { PostMessageW(window as HWND, AVANCE, 0, 0) };
     }
 }
 
@@ -542,20 +562,9 @@ fn arrived() -> bool {
 /// plutôt qu'à sa gauche, pour que le logo fasse face au menu plutôt que
 /// de lui tourner le dos.
 pub fn marque(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored: bool) {
-    let per_unit = (cadre.droite - cadre.gauche) / drawing::SIDE;
     for shape in &drawing::SHAPES {
-        let gauche = if mirrored {
-            cadre.droite - (shape.middle.0 + shape.half.0 - drawing::ORIGIN) * per_unit
-        } else {
-            cadre.gauche + (shape.middle.0 - shape.half.0 - drawing::ORIGIN) * per_unit
-        };
-        let place = Cadre::pose(
-            gauche,
-            cadre.haut + (shape.middle.1 - shape.half.1 - drawing::ORIGIN) * per_unit,
-            shape.half.0 * 2.0 * per_unit,
-            shape.half.1 * 2.0 * per_unit,
-        );
-        let radius = shape.radius * per_unit;
+        let place = placed(cadre, shape, mirrored);
+        let radius = shape.radius * per_unit(cadre);
         toile.remplis(place, radius, shape.fill.voile(part));
         if shape.outlined {
             // Sur le bord et non dedans : c'est ce que fait un trait dans
@@ -564,11 +573,70 @@ pub fn marque(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored: bo
             toile.trace_sur(
                 place,
                 radius,
-                drawing::HALF_STROKE * 2.0 * per_unit,
+                drawing::HALF_STROKE * 2.0 * per_unit(cadre),
                 drawing::LINE.voile(part),
             );
         }
     }
+}
+
+/// Remplit la vitre de l'écran de devant, comme une barre de chargement,
+/// de ce qui est arrivé des fichiers qu'on colle.
+///
+/// Là et non à côté du bouton : cette vitre-là est déjà un rectangle que
+/// tout le monde lit comme un écran, elle fait vingt pixels sur douze là
+/// où le pourtour du bouton n'en offre que deux, et la marque reste la
+/// marque plutôt que de devenir un dessin flanqué d'un second.
+///
+/// Elle se remplit du côté où le dessin regarde, donc de la droite quand
+/// il est retourné.
+fn fill_the_pane(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored: bool) {
+    /// La vitre de l'écran de devant : le dernier des quatre dessins,
+    /// donc celui qui est posé par-dessus tous les autres.
+    const PANE: usize = drawing::SHAPES.len() - 1;
+    /// Ce qui se voit toujours, transfert ouvert et rien encore arrivé.
+    /// Une vitre vide se lit comme une vitre, pas comme une attente.
+    const AT_LEAST: f32 = 0.08;
+
+    let pane = placed(cadre, &drawing::SHAPES[PANE], mirrored);
+    let large = (pane.droite - pane.gauche) * part.clamp(AT_LEAST, 1.0);
+    let gauche = if mirrored {
+        pane.droite - large
+    } else {
+        pane.gauche
+    };
+    let filled = Cadre::pose(gauche, pane.haut, large, pane.bas - pane.haut);
+    toile.remplis(
+        filled,
+        drawing::SHAPES[PANE].radius * per_unit(cadre),
+        drawing::WHITE,
+    );
+}
+
+/// Where one shape of the drawing falls inside that frame.
+///
+/// Apart from the drawing above because the bar a transfer fills wants
+/// the very same answer for one of those shapes: two ways of working out
+/// where the near screen sits would be two screens that drift apart the
+/// first time the drawing is touched.
+fn placed(cadre: Cadre, shape: &drawing::Round, mirrored: bool) -> Cadre {
+    let per_unit = per_unit(cadre);
+    let gauche = if mirrored {
+        cadre.droite - (shape.middle.0 + shape.half.0 - drawing::ORIGIN) * per_unit
+    } else {
+        cadre.gauche + (shape.middle.0 - shape.half.0 - drawing::ORIGIN) * per_unit
+    };
+    Cadre::pose(
+        gauche,
+        cadre.haut + (shape.middle.1 - shape.half.1 - drawing::ORIGIN) * per_unit,
+        shape.half.0 * 2.0 * per_unit,
+        shape.half.1 * 2.0 * per_unit,
+    )
+}
+
+/// Ce que vaut, dans ce cadre, une unité du repère où le dessin est écrit.
+fn per_unit(cadre: Cadre) -> f32 {
+    (cadre.droite - cadre.gauche) / drawing::SIDE
 }
 
 /// Draws the logo as it stands and hands the whole picture to Windows.
@@ -604,13 +672,13 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         let Some(toile) = toile.as_ref() else {
             return;
         };
+        let mirrored = MIRRORED.load(Ordering::Relaxed);
+        let cadre = Cadre::pose(left, top, wide, wide);
         toile.commence(crate::design::Couleur::RIEN);
-        marque(
-            toile,
-            Cadre::pose(left, top, wide, wide),
-            1.0,
-            MIRRORED.load(Ordering::Relaxed),
-        );
+        marque(toile, cadre, 1.0, mirrored);
+        if let Some(part) = crate::transfert::how_far() {
+            fill_the_pane(toile, cadre, part, mirrored);
+        }
         if !toile.finit() {
             return;
         }
@@ -681,6 +749,10 @@ unsafe extern "system" fn answer(
             if sous_la_main(window) {
                 curseur();
             }
+            0
+        }
+        AVANCE => {
+            repaint(window);
             0
         }
         WM_LBUTTONDOWN => {
