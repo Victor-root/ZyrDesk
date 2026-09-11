@@ -3227,6 +3227,7 @@ dependencies = [
  "winresource",
  "zyr-account",
  "zyr-broker",
+ "zyr-clipboard",
  "zyr-control",
  "zyr-engine-host",
  "zyr-lan",

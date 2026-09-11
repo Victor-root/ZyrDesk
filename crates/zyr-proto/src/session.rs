@@ -756,6 +756,22 @@ pub struct Preferred {
     /// size, the rate and the codec: written down, and applied when the
     /// picture is opened again.
     pub steady_far_rate: bool,
+    /// Whether the two computers share one clipboard for the length of
+    /// the session.
+    ///
+    /// What is copied on either of them can then be pasted on the other,
+    /// text and pictures alike. Nothing of it travels through the
+    /// engines: their protocol has no clipboard channel and never will,
+    /// so it goes on the product's own channel inside the tunnel.
+    ///
+    /// On until somebody says otherwise, which is the opposite of the
+    /// three switches above and for a reason: this one is not a taste but
+    /// what a remote desktop is for. Copying an address on one machine to
+    /// paste it on the other is the errand somebody sits down to do, and
+    /// a session that quietly refused it would send them looking for a
+    /// setting. It is a switch all the same, because a clipboard is a
+    /// private thing and sharing one is a thing to be able to stop.
+    pub shared_clipboard: bool,
 }
 
 impl Default for Preferred {
@@ -771,6 +787,7 @@ impl Default for Preferred {
             system_keys: true,
             touchpad_gestures: false,
             steady_far_rate: Serving::default().steady_rate,
+            shared_clipboard: true,
         }
     }
 }
@@ -1292,6 +1309,9 @@ mod tests {
             // du pavé sont lus par ZyrDesk lui-même.
             touchpad_gestures: true,
             steady_far_rate: false,
+            // Ni celui-ci : un presse-papiers partagé ne passe par aucun
+            // moteur, leur protocole n'ayant pas de canal pour ça.
+            shared_clipboard: false,
         };
         let settings = preferred.settings(Some(a_screen(3840, 2160)));
         assert_eq!((settings.width, settings.height), (2560, 1440));

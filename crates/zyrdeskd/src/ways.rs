@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 
 use tokio::task::JoinHandle;
 use zyr_control::{Reached, Session, WayId};
+use zyr_proto::clipboard::Clip;
 use zyr_proto::log::Log;
 use zyr_proto::net::{TUNNEL_PORT, device_loopback_addr};
 use zyr_proto::paths;
@@ -63,6 +64,14 @@ const GRACE: Duration = Duration::from_secs(120);
 
 /// How often the ways are looked over.
 const SWEEP: Duration = Duration::from_secs(2);
+
+/// How often a session looks at what was copied, on either computer.
+///
+/// A fifth of a second is what the helper takes to notice, so a turn
+/// slightly longer than that: between copying on one machine and being
+/// able to paste on the other sits half a second at the very worst, which
+/// is less than the walk from one keyboard to the next.
+const CLIPBOARD_TURN: Duration = Duration::from_millis(250);
 
 /// How to reach a computer.
 pub enum Knock {
@@ -1126,6 +1135,84 @@ impl Ways {
             .lock()
             .expect("registre des voies")
             .held(Instant::now(), Open::road)
+    }
+
+    /// Keeps the two clipboards in step, on every way this computer holds
+    /// open, for as long as the service runs.
+    ///
+    /// Only this side asks. The channel inside the tunnel is asked on by
+    /// whoever opened the way and answered by whoever took it, and that
+    /// is enough for something that goes both ways: one message hands
+    /// over what was copied here and brings back what was copied there.
+    ///
+    /// What both ends last agreed on is remembered per way, and it is
+    /// what makes this cost almost nothing: a clipboard changes a few
+    /// times an hour, so nearly every turn is one stamp going out and one
+    /// word coming back. It is also what stops what somebody copied from
+    /// bouncing between two machines, since a thing put on a clipboard
+    /// reads back with the very stamp it arrived under.
+    ///
+    /// Nothing at all happens while the switch is off, and nothing while
+    /// no way is open: this computer's clipboard is then never read, and
+    /// no helper is started to read it.
+    pub async fn keep_the_clipboards_in_step(self) {
+        let mut shared: HashMap<WayId, Option<zyr_proto::clipboard::Stamp>> = HashMap::new();
+        loop {
+            tokio::time::sleep(CLIPBOARD_TURN).await;
+            let open = self.the_open_ways();
+            shared.retain(|way, _| open.iter().any(|(open, _)| open == way));
+            if open.is_empty() || !self.remembered.read().preferred.shared_clipboard {
+                continue;
+            }
+            // Read once for all the ways, since there is one clipboard on
+            // this computer however many sessions it holds.
+            let here = crate::clipboard::what_this_computer_has(&self.log);
+            for (way, connection) in open {
+                let seen = shared.get(&way).copied().flatten();
+                let pushing = here.clone().filter(|clip| Some(clip.stamp()) != seen);
+                let agreed = pushing.as_ref().map(Clip::stamp).or(seen);
+                match aside::ask_about_the_clipboard(&connection, pushing, seen).await {
+                    Ok(Some(theirs)) => {
+                        let stamp = theirs.stamp();
+                        match crate::clipboard::give_it(&theirs, &self.log) {
+                            Ok(()) => {
+                                shared.insert(way, Some(stamp));
+                            }
+                            // Left out of what is agreed, so the next
+                            // turn asks for it again: a clipboard held by
+                            // another program for a moment is the
+                            // ordinary case and not a fault.
+                            Err(refused) => self.log.write(&format!(
+                                "way {way}: the clipboard is not shared: {refused}"
+                            )),
+                        }
+                    }
+                    Ok(None) => {
+                        shared.insert(way, agreed);
+                    }
+                    // Said in the journal and nowhere else, and the turn
+                    // after tries again. A way that has gone is closed by
+                    // the watch beside this one, and until it is, there
+                    // is nothing here worth stopping a session over.
+                    Err(e) => self
+                        .log
+                        .write(&format!("way {way}: the clipboard did not cross: {e}")),
+                }
+            }
+        }
+    }
+
+    /// The ways open right now, each with the connection to speak on.
+    ///
+    /// Taken and let go of in one move, so that nothing waiting on the
+    /// far computer is waiting under the register's lock as well.
+    fn the_open_ways(&self) -> Vec<(WayId, Connection)> {
+        let register = self.register.lock().expect("registre des voies");
+        register
+            .kept
+            .iter()
+            .map(|(way, kept)| (*way, kept.thing.connection.clone()))
+            .collect()
     }
 
     /// Closes the ways with nothing left to serve, for as long as the

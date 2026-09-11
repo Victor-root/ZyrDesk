@@ -849,6 +849,40 @@ impl Answers for Attending {
         ));
         Ok(zyr_tunnel::Settled::StartingOver)
     }
+
+    /// Takes what was copied on the far computer, and hands back what was
+    /// copied here.
+    ///
+    /// Both halves in one message, because a clipboard is one thing and
+    /// the two computers are equals about it: whichever of them somebody
+    /// copied on, the other has to end up holding it.
+    ///
+    /// Nothing is written down about which of the two it came from, and
+    /// nothing needs to be: what arrives goes on this computer's
+    /// clipboard, this computer's clipboard then reads back with the very
+    /// stamp it came with, and the next turn has nothing to say. It is
+    /// the same stamp that stops what somebody copied from bouncing
+    /// between two machines for the length of a session.
+    ///
+    /// The clipboard is only ever touched while a session is open, and
+    /// the helper that touches it stops a few seconds after the last
+    /// question. A computer nobody is watching keeps its clipboard to
+    /// itself.
+    fn clipboard(
+        &self,
+        pushing: Option<zyr_proto::clipboard::Clip>,
+        seen: Option<zyr_proto::clipboard::Stamp>,
+    ) -> Result<Option<zyr_proto::clipboard::Clip>, String> {
+        if let Some(coming) = &pushing {
+            crate::clipboard::give_it(coming, &self.log)?;
+        }
+        let held = crate::clipboard::what_this_computer_has(&self.log);
+        // Nothing when the far computer already holds what is here, which
+        // is almost every turn, and nothing again when this computer's
+        // clipboard is empty: an empty clipboard here must never empty
+        // the one over there.
+        Ok(held.filter(|clip| Some(clip.stamp()) != seen))
+    }
 }
 
 /// What the local engine wrote down about its own encoders, in the

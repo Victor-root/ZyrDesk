@@ -187,11 +187,11 @@ impl Clip {
         self.bytes.len() > LARGEST
     }
 
-    /// What it is, in the words of a journal.
+    /// What it is, in the words the service writes its journal in.
     pub fn in_words(&self) -> String {
         match self.kind {
-            Kind::Text => format!("{} caractères de texte", self.bytes.len()),
-            Kind::Picture => format!("une image de {} octets", self.bytes.len()),
+            Kind::Text => format!("{} bytes of text", self.bytes.len()),
+            Kind::Picture => format!("a picture of {} bytes", self.bytes.len()),
         }
     }
 

@@ -24,6 +24,7 @@ use std::io;
 use std::sync::Arc;
 
 use tokio::io::AsyncWriteExt;
+use zyr_proto::clipboard::{Clip, Stamp};
 use zyr_proto::net::{BasePortOutOfRange, EnginePorts};
 use zyr_proto::session::WantedScreen;
 use zyr_transport::{Connection, MediaProfile, RecvStream, SendStream};
@@ -71,14 +72,47 @@ use crate::pump;
 /// question here worth asking of a computer nobody can even open a
 /// session with: it is a second, independent trace, kept apart from the
 /// journal, and reading it from the far end is the same errand a remote
-/// desktop already exists to spare.
-pub const VERSION: u32 = 18;
+/// desktop already exists to spare. Version 19 carries what somebody
+/// copied, which the engines' protocol has no channel for and never will:
+/// it is the one question here that goes both ways at once, the same
+/// message handing over what was copied on this side and asking for what
+/// was copied on the other.
+pub const VERSION: u32 = 19;
 
 /// Longest question this channel takes.
 ///
 /// It carries port numbers, a four-digit code and a machine name.
-/// Anything longer is not one of ours.
+/// Anything longer is not one of ours, with the one exception below.
 const LONGEST_QUESTION: usize = 512;
+
+/// Longest a message carrying a clipboard may be, in either direction.
+///
+/// The one question that is a page rather than a line, and the one answer
+/// whose ceiling is a question's as well. What somebody copied has to
+/// travel from whichever of the two computers they copied it on, so the
+/// asking end pushes and the answering end answers, and the two ends of
+/// the same exchange are allowed the same weight.
+///
+/// It is read only once the question has named itself, which is what
+/// keeps the line above a line for everything else: see `a_question`. And
+/// it is larger than what a clip may weigh, because a clip travels
+/// written in base64, which costs a third of it again.
+const LONGEST_CLIPBOARD: usize = 8 * 1024 * 1024;
+
+/// The one verb whose message is allowed that weight.
+///
+/// Written once and read in three places: where a question is spelled,
+/// where it is read back, and where the ceiling is decided on the first
+/// few bytes of it.
+const CLIPBOARD: &str = "clipboard";
+
+/// What a message says where a clip or a stamp could have been and there
+/// is none.
+///
+/// A word and not an absent field, for the reason the rest of this
+/// channel uses one: a message that names what it does not carry and a
+/// message that lost a piece on the way must not look alike.
+const NONE: &str = "none";
 
 /// Longest answer this channel takes.
 ///
@@ -332,6 +366,27 @@ pub trait Answers: Send + Sync + 'static {
     /// says so plainly rather than leaving the far end to find out from a
     /// broken way.
     fn film_this_screen(&self, id: Option<String>) -> Result<Settled, String>;
+
+    /// Takes what was copied over there, and hands back what was copied
+    /// here.
+    ///
+    /// The one thing on this channel that travels both ways in one
+    /// message, and it has to: a clipboard is shared or it is not, and
+    /// which of the two computers somebody copied on is not something
+    /// either end gets to decide. Whoever is watching asks; this end
+    /// takes what came with the question and answers with its own.
+    ///
+    /// `seen` is the stamp of what the asking end believes both
+    /// clipboards hold. Nothing is handed back when this computer holds
+    /// that very thing, which is almost every turn: a clipboard is asked
+    /// about several times a second and changes a few times an hour.
+    ///
+    /// Nothing is also handed back when this computer holds nothing at
+    /// all, and that is not the same statement dressed up: an empty
+    /// clipboard here must not empty the one over there. What is never
+    /// said is « I have nothing, drop yours ».
+    fn clipboard(&self, pushing: Option<Clip>, seen: Option<Stamp>)
+    -> Result<Option<Clip>, String>;
 }
 
 /// What a computer answers when it is told something its engine takes
@@ -400,6 +455,13 @@ pub enum Question {
     /// Serve your picture from that screen, or, with nothing named, from
     /// your main one.
     FilmThisScreen { id: Option<String> },
+    /// Here is what was copied on this computer, if anything new was;
+    /// hand back what was copied on yours, unless it is the one I say I
+    /// already have.
+    Clipboard {
+        pushing: Option<Clip>,
+        seen: Option<Stamp>,
+    },
 }
 
 /// What comes back.
@@ -452,6 +514,12 @@ pub enum Told {
     /// finished starting.
     Screens {
         listed: String,
+    },
+    /// What was copied on the far computer, or nothing when it holds the
+    /// very thing the question said it already had, and nothing again
+    /// when it holds nothing at all.
+    Clipboard {
+        theirs: Option<Clip>,
     },
     /// The far computer is as it was asked to be, or is starting its
     /// engine over to be it.
@@ -509,6 +577,19 @@ impl fmt::Display for Question {
                     if *quiet { "quiet" } else { "play" }
                 )
             }
+            // What is already shared first, because it is one word and
+            // whatever is being pushed is a page: the reading below takes
+            // the two words that name the message, then the one that says
+            // what is shared, then the whole of the rest.
+            Question::Clipboard { pushing, seen } => write!(
+                f,
+                "{VERSION} {CLIPBOARD} {} {}",
+                match seen {
+                    Some(stamp) => stamp.to_string(),
+                    None => NONE.to_string(),
+                },
+                carried(pushing)
+            ),
             Question::DrawYourPointer { drawn } => {
                 write!(
                     f,
@@ -547,6 +628,11 @@ impl fmt::Display for Told {
             // above travels whole: this channel ends a message by closing
             // the stream.
             Told::Screens { listed } => write!(f, "{VERSION} screens {listed}"),
+            // Whole, like the journal above: this channel ends a message
+            // by closing the stream, so a page needs no folding.
+            Told::Clipboard { theirs } => {
+                write!(f, "{VERSION} {CLIPBOARD} {}", carried(theirs))
+            }
             Told::Settled { how } => write!(
                 f,
                 "{VERSION} settled {}",
@@ -560,6 +646,19 @@ impl fmt::Display for Told {
 }
 
 impl Question {
+    /// How long the answer to this question may be.
+    ///
+    /// One ceiling for all of them and one exception, which is the
+    /// clipboard: a clip going the other way is the same page as a clip
+    /// coming this way, and a channel that let one through and not the
+    /// other would share a clipboard in one direction only.
+    fn longest_answer(&self) -> usize {
+        match self {
+            Question::Clipboard { .. } => LONGEST_CLIPBOARD,
+            _ => LONGEST_ANSWER,
+        }
+    }
+
     fn parse(message: &str) -> Result<Self, String> {
         let said = after_the_version(message)?;
         let (verb, rest) = split_first(said);
@@ -594,6 +693,20 @@ impl Question {
                     named => Some(named.to_string()),
                 },
             }),
+            CLIPBOARD => {
+                let (said, pushing) = split_first(rest);
+                Ok(Question::Clipboard {
+                    pushing: what_was_carried(pushing)?,
+                    seen: match said {
+                        NONE | "" => None,
+                        stamp => Some(
+                            stamp
+                                .parse()
+                                .map_err(|_| format!("« {stamp} » ne nomme rien"))?,
+                        ),
+                    },
+                })
+            }
             "hush" => match rest {
                 "quiet" => Ok(Question::Hush { quiet: true }),
                 "play" => Ok(Question::Hush { quiet: false }),
@@ -668,6 +781,9 @@ impl Told {
             "screens" => Ok(Ok(Told::Screens {
                 listed: rest.to_string(),
             })),
+            CLIPBOARD => Ok(Ok(Told::Clipboard {
+                theirs: what_was_carried(rest).map_err(unreadable)?,
+            })),
             "settled" => match rest {
                 "already" => Ok(Ok(Told::Settled {
                     how: Settled::Already,
@@ -705,6 +821,28 @@ fn served(said: &str) -> Result<MediaProfile, String> {
             frames_per_second,
         }),
         _ => Err(format!("« {said} » ne dit pas ce qu'une session demande")),
+    }
+}
+
+/// A clip as it travels, or the word that says there is none.
+///
+/// The same spelling in both directions, since it is the same thing being
+/// carried: what somebody copied, going towards whichever computer has
+/// not got it.
+fn carried(clip: &Option<Clip>) -> String {
+    match clip {
+        Some(clip) => clip.on_the_wire(),
+        None => NONE.to_string(),
+    }
+}
+
+/// Reads what the two above wrote.
+fn what_was_carried(said: &str) -> Result<Option<Clip>, String> {
+    match said.trim() {
+        NONE | "" => Ok(None),
+        carried => Clip::from_the_wire(carried)
+            .map(Some)
+            .map_err(|e| e.to_string()),
     }
 }
 
@@ -755,7 +893,7 @@ pub async fn ask(connection: &Connection, question: &Question) -> io::Result<Tol
     sending.shutdown().await?;
 
     let heard = receiving
-        .read_to_end(LONGEST_ANSWER)
+        .read_to_end(question.longest_answer())
         .await
         .map_err(io::Error::other)?;
     match Told::parse(&String::from_utf8_lossy(&heard))? {
@@ -997,23 +1135,86 @@ pub async fn ask_to_film_this_screen(
     }
 }
 
+/// Hands the far ZyrDesk what was copied here, and asks for what was
+/// copied there.
+///
+/// One message for both halves of a shared clipboard, because a clipboard
+/// is one thing and the two computers are equals about it: whichever of
+/// them somebody copied on, the other has to end up holding it. Only the
+/// side watching asks, since only that side has a reason to: nothing is
+/// shared between two computers that are not in a session.
+///
+/// `seen` is the stamp of what both ends last agreed on, and it is what
+/// keeps this cheap. Almost every turn is that stamp going out and
+/// nothing at all coming back.
+pub async fn ask_about_the_clipboard(
+    connection: &Connection,
+    pushing: Option<Clip>,
+    seen: Option<Stamp>,
+) -> io::Result<Option<Clip>> {
+    match ask(connection, &Question::Clipboard { pushing, seen }).await? {
+        Told::Clipboard { theirs } => Ok(theirs),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
     mut receiving: RecvStream,
     answering: Arc<dyn Answers>,
 ) -> io::Result<()> {
-    let asked = receiving
-        .read_to_end(LONGEST_QUESTION)
-        .await
-        .map_err(io::Error::other)?;
-    let said = String::from_utf8_lossy(&asked).to_string();
+    let said = a_question(&mut receiving).await?;
 
     let told = match Question::parse(&said) {
         Ok(question) => attended(question, answering).await,
         Err(refusal) => Err(refusal),
     };
     say(sending, told).await
+}
+
+/// Reads a question, and lets the one that carries a clipboard weigh more
+/// than a line.
+///
+/// Two ceilings, and which of them applies is settled on the first few
+/// hundred bytes rather than after the whole of it has been taken in:
+/// this computer answers questions from every computer it lets in, so a
+/// question is a line, and a line is all that is ever held from a verb
+/// this build has never heard of. What somebody copied is the one
+/// question that is a page, and it is let past the first ceiling only
+/// once its own name has been read.
+async fn a_question(receiving: &mut RecvStream) -> io::Result<String> {
+    let mut said = Vec::new();
+    let mut room = LONGEST_QUESTION;
+    let mut heard = vec![0u8; 64 * 1024];
+    while let Some(read) = receiving
+        .read(&mut heard)
+        .await
+        .map_err(|e| unreadable(e.to_string()))?
+    {
+        said.extend_from_slice(&heard[..read]);
+        if said.len() <= room {
+            continue;
+        }
+        if room != LONGEST_QUESTION || !carries_a_clipboard(&said) {
+            return Err(unreadable(
+                "une question plus longue que ce que ce canal porte",
+            ));
+        }
+        room = LONGEST_CLIPBOARD;
+    }
+    Ok(String::from_utf8_lossy(&said).into_owned())
+}
+
+/// Whether what has been read so far is the head of the one question that
+/// is allowed to be a page.
+///
+/// Read on the head alone and never on the whole, which is the point of
+/// it: at the moment this is asked, the rest has not been taken in yet.
+fn carries_a_clipboard(head: &[u8]) -> bool {
+    let head = &head[..head.len().min(LONGEST_QUESTION)];
+    let said = String::from_utf8_lossy(head);
+    after_the_version(&said).is_ok_and(|rest| rest.starts_with(CLIPBOARD))
 }
 
 /// Does what was asked, on a thread where waiting is allowed.
@@ -1135,6 +1336,14 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .map_err(|e| format!("l'écran à filmer n'a pas pu être choisi : {e}"))?
                 .map(|how| Told::Settled { how })
         }
+        // Off the thread as well: it writes what came down on a disk and
+        // reads what is there from another file, and a clip is a page.
+        Question::Clipboard { pushing, seen } => {
+            tokio::task::spawn_blocking(move || answering.clipboard(pushing, seen))
+                .await
+                .map_err(|e| format!("le presse-papiers n'a pas pu être échangé : {e}"))?
+                .map(|theirs| Told::Clipboard { theirs })
+        }
     }
 }
 
@@ -1216,6 +1425,33 @@ mod tests {
             Question::FilmThisScreen {
                 id: Some("{daeac860-f4db-5208-b1f5-cf59444fb768}".to_string()),
             },
+            // Le presse-papiers, qui est la seule question à porter
+            // quelque chose dans les deux sens à la fois. Les quatre cas
+            // sont là parce que les quatre arrivent : rien des deux
+            // côtés au tout début d'une session, quelque chose à donner,
+            // quelque chose déjà partagé, et les deux ensemble.
+            Question::Clipboard {
+                pushing: None,
+                seen: None,
+            },
+            Question::Clipboard {
+                pushing: Some(Clip::text("l'adresse du serveur : 10.0.0.4")),
+                seen: None,
+            },
+            Question::Clipboard {
+                pushing: None,
+                seen: Some(Clip::text("déjà partagé").stamp()),
+            },
+            Question::Clipboard {
+                pushing: Some(Clip::picture(vec![0x89, b'P', b'N', b'G', 0x00, 0xff])),
+                seen: Some(Clip::text("déjà partagé").stamp()),
+            },
+            // Un texte vide n'est pas l'absence de texte, et les deux
+            // doivent se distinguer d'un bout à l'autre du canal.
+            Question::Clipboard {
+                pushing: Some(Clip::text("")),
+                seen: None,
+            },
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -1272,6 +1508,16 @@ mod tests {
             },
             Told::Settled {
                 how: Settled::StartingOver,
+            },
+            // Rien n'est pas la même chose qu'un presse-papiers vide :
+            // rien veut dire « tu l'as déjà », et vider celui d'en face
+            // n'est jamais demandé.
+            Told::Clipboard { theirs: None },
+            Told::Clipboard {
+                theirs: Some(Clip::text("deux lignes\net la seconde")),
+            },
+            Told::Clipboard {
+                theirs: Some(Clip::picture(vec![0x89, b'P', b'N', b'G', 0x00, 0xff])),
             },
         ] {
             let said = told.to_string();

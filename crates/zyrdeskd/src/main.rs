@@ -5,6 +5,7 @@
 //! to install, start, stop or remove it.
 
 mod account;
+mod clipboard;
 mod control;
 mod gateway;
 mod incoming;
@@ -130,6 +131,17 @@ fn main() -> ExitCode {
     #[cfg(windows)]
     if session::asked_to_follow_the_pointer() {
         pointer::follow_the_pointer_here();
+        return ExitCode::SUCCESS;
+    }
+
+    // And a seventh, for this computer's clipboard. The same blindness
+    // once more: a clipboard belongs to a window station, and the
+    // service's carries none. Like the pointer above it reads for a
+    // while and ends by itself, and unlike it, it writes as well: what
+    // was copied on the far computer is put on this one from here.
+    #[cfg(windows)]
+    if session::asked_to_carry_the_clipboard() {
+        clipboard::carry_the_clipboard_here();
         return ExitCode::SUCCESS;
     }
 

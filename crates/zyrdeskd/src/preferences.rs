@@ -39,6 +39,7 @@ const CAPTURE: &str = "capture";
 const MUTE_FAR_SPEAKERS: &str = "mute_far_speakers";
 const SYSTEM_KEYS: &str = "system_keys";
 const TOUCHPAD_GESTURES: &str = "touchpad_gestures";
+const SHARED_CLIPBOARD: &str = "shared_clipboard";
 const STEADY_FAR_RATE: &str = "steady_far_rate";
 const ECN: &str = "ecn";
 const FIXED_PORT: &str = "fixed_port";
@@ -262,6 +263,10 @@ fn rendered(preferences: Preferences) -> String {
          # là-bas, mais une image complète encodée soixante fois par\n\
          # seconde pour rien. Son moteur le lit à son démarrage.\n\
          {STEADY_FAR_RATE} = {}\n\
+         # Les deux ordinateurs partagent un seul presse-papiers le temps\n\
+         # de la session : ce qui est copié sur l'un se colle sur l'autre,\n\
+         # texte comme image. Rien n'en passe par les moteurs.\n\
+         {SHARED_CLIPBOARD} = {}\n\
          \n\
          # Ce que cet ordinateur fait quand c'est LUI qu'on regarde.\n\
          # Renvoyer un écran immobile à pleine cadence : plus fluide, mais\n\
@@ -295,6 +300,7 @@ fn rendered(preferences: Preferences) -> String {
         yes_no(preferred.system_keys),
         yes_no(preferred.touchpad_gestures),
         yes_no(preferred.steady_far_rate),
+        yes_no(preferred.shared_clipboard),
         yes_no(preferences.serving.steady_rate),
         preferences.serving.capture,
         yes_no(preferences.ecn),
@@ -375,6 +381,9 @@ fn parsed(text: &str) -> Preferences {
             STEADY_FAR_RATE => {
                 preferred.steady_far_rate = told(value, preferred.steady_far_rate);
             }
+            SHARED_CLIPBOARD => {
+                preferred.shared_clipboard = told(value, preferred.shared_clipboard);
+            }
             ECN => preferences.ecn = told(value, preferences.ecn),
             FIXED_PORT => preferences.fixed_port = told(value, preferences.fixed_port),
             _ => {}
@@ -413,6 +422,7 @@ mod tests {
                 system_keys: false,
                 touchpad_gestures: true,
                 steady_far_rate: false,
+                shared_clipboard: false,
             },
             serving: Serving {
                 steady_rate: false,

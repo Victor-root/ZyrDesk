@@ -140,6 +140,19 @@ pub const DESK_GROWN_ARGUMENT: &str = "--take-the-grown-screen";
 /// another for as long as somebody is asking.
 pub const POINTER_ARGUMENT: &str = "--follow-the-pointer";
 
+/// And a seventh, for this computer's clipboard; see
+/// `crate::clipboard`.
+///
+/// The same blindness again: a clipboard belongs to a window station, and
+/// the one a service sits on carries none at all. Asked from there, this
+/// computer's clipboard is a clipboard nobody has ever copied anything
+/// to, and anything written to it is written where nobody will paste.
+///
+/// Like the pointer above, it reads for a while rather than doing one
+/// thing, and ends by itself. Unlike it, it writes too: what was copied
+/// on the far computer is put on this one from here.
+pub const CLIPBOARD_ARGUMENT: &str = "--carry-the-clipboard";
+
 /// What the first of those carries when a session wants the desk noted
 /// and nothing moved, which is what « keep your own screen » asks for.
 ///
@@ -552,19 +565,41 @@ pub fn take_the_grown_screen(wanted: WantedScreen) -> io::Result<Errand> {
 
 /// Starts a helper in the session that owns the screen, to read the
 /// shape of this computer's pointer.
-///
-/// Started and never waited for, which is what sets it apart from every
-/// other errand here: those do one thing and hand back an answer, this
-/// one reads for as long as it lives and says what it read through a
-/// file. Nothing here holds on to it either; it ends by itself.
 pub fn start_reading_the_pointer() -> io::Result<()> {
+    start_a_helper(POINTER_ARGUMENT)
+}
+
+/// Whether this program was started to read the pointer.
+pub fn asked_to_follow_the_pointer() -> bool {
+    std::env::args().any(|argument| argument == POINTER_ARGUMENT)
+}
+
+/// Starts a helper in that same session, to read and write this
+/// computer's clipboard.
+pub fn start_carrying_the_clipboard() -> io::Result<()> {
+    start_a_helper(CLIPBOARD_ARGUMENT)
+}
+
+/// Whether this program was started to carry the clipboard.
+pub fn asked_to_carry_the_clipboard() -> bool {
+    std::env::args().any(|argument| argument == CLIPBOARD_ARGUMENT)
+}
+
+/// Starts this program again in the session that owns the screen, to do
+/// nothing but what that argument names.
+///
+/// Started and never waited for, which is what sets these apart from
+/// every other errand here: those do one thing and hand back an answer,
+/// these read for as long as they live and say what they read through
+/// files. Nothing here holds on to one either; each ends by itself.
+fn start_a_helper(argument: &str) -> io::Result<()> {
     let session =
         session_on_screen().ok_or_else(|| io::Error::other("no session owns the screen"))?;
     let ourselves = std::env::current_exe()?;
     let token = service_token_for(session)?;
     let environment = environment_of(&token)?;
 
-    let mut line = command_line(&ourselves, &[POINTER_ARGUMENT.to_string()]);
+    let mut line = command_line(&ourselves, &[argument.to_string()]);
     let mut desktop: Vec<u16> = wide(DESKTOP);
 
     let mut startup: STARTUPINFOW = unsafe { std::mem::zeroed() };
@@ -597,11 +632,6 @@ pub fn start_reading_the_pointer() -> io::Result<()> {
     drop(Handle(started.hProcess));
     drop(Handle(started.hThread));
     Ok(())
-}
-
-/// Whether this program was started to read the pointer.
-pub fn asked_to_follow_the_pointer() -> bool {
-    std::env::args().any(|argument| argument == POINTER_ARGUMENT)
 }
 
 /// Puts the desk back the way it was noted, from the session that owns

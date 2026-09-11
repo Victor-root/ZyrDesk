@@ -27,7 +27,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 29;
+pub const PROTOCOL: u32 = 30;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -651,7 +651,7 @@ fn access_read(said: &str) -> Access {
 fn spelled(preferred: &Preferred) -> String {
     format!(
         "asked={} bitrate={} codec={} display={} mouse={} stats={} hush={} keys={} touchpad={} \
-         steady={}",
+         steady={} clipboard={}",
         preferred.asked,
         preferred.bitrate_kbps,
         preferred.codec,
@@ -665,7 +665,8 @@ fn spelled(preferred: &Preferred) -> String {
         said(preferred.mute_far_speakers),
         said(preferred.system_keys),
         said(preferred.touchpad_gestures),
-        said(preferred.steady_far_rate)
+        said(preferred.steady_far_rate),
+        said(preferred.shared_clipboard)
     )
 }
 
@@ -1314,6 +1315,7 @@ impl<'a> Fields<'a> {
             system_keys: self.flag("keys", fallback.system_keys),
             touchpad_gestures: self.flag("touchpad", fallback.touchpad_gestures),
             steady_far_rate: self.flag("steady", fallback.steady_far_rate),
+            shared_clipboard: self.flag("clipboard", fallback.shared_clipboard),
         }
     }
 }
@@ -1556,6 +1558,7 @@ mod tests {
             system_keys: false,
             touchpad_gestures: true,
             steady_far_rate: false,
+            shared_clipboard: false,
         }
     }
 

@@ -18,10 +18,11 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use zyr_proto::clipboard::{Clip, Stamp};
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
 use zyr_proto::session::WantedScreen;
 use zyr_transport::{Identity, MediaProfile, TunnelEndpoint};
-use zyr_tunnel::{Answers, Tunnel, aside};
+use zyr_tunnel::{Answers, StreamChannel, Tunnel, aside};
 
 /// Past this, nothing is getting through.
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -65,6 +66,9 @@ struct FakeEngine {
     filming: Arc<std::sync::Mutex<Option<String>>>,
     /// What the session opening on it said it would be served.
     opening: Arc<std::sync::Mutex<Option<MediaProfile>>>,
+    /// What is on its clipboard, which a session may both read and
+    /// replace.
+    clipboard: Arc<std::sync::Mutex<Option<Clip>>>,
 }
 
 impl Answers for FakeEngine {
@@ -169,6 +173,25 @@ impl Answers for FakeEngine {
         *filming = id;
         Ok(zyr_tunnel::Settled::StartingOver)
     }
+
+    /// Ce que fait une vraie machine : elle prend ce qui vient, et ne
+    /// rend ce qu'elle a que si ce n'est pas déjà ce que l'autre dit
+    /// tenir.
+    fn clipboard(
+        &self,
+        pushing: Option<Clip>,
+        seen: Option<Stamp>,
+    ) -> Result<Option<Clip>, String> {
+        let mut held = self.clipboard.lock().unwrap();
+        if let Some(coming) = pushing {
+            *held = Some(coming);
+            return Ok(None);
+        }
+        match held.as_ref() {
+            Some(clip) if Some(clip.stamp()) != seen => Ok(Some(clip.clone())),
+            _ => Ok(None),
+        }
+    }
 }
 
 /// Ce qu'une machine à carte Intel sait faire : pas d'AV1. C'est le cas
@@ -178,6 +201,10 @@ const HOST_CODECS: &str = "H.264 HEVC";
 /// Deux écrans allumés sur la machine d'en face, le principal d'abord :
 /// c'est le cas qui a valu la question.
 const HOST_SCREENS: &str = "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M";
+
+/// Ce que quelqu'un avait copié sur la machine d'en face avant que la
+/// session ne s'ouvre.
+const HOST_CLIPBOARD: &str = "l'adresse du serveur : 10.0.0.4";
 
 /// La forme du curseur d'en face : autre chose que la flèche, sans quoi
 /// le tour ne prouverait rien, une flèche étant aussi ce que rend un mot
@@ -247,6 +274,8 @@ struct Bench {
     emptied: Arc<AtomicBool>,
     /// Which of its screens it was last asked to be served from.
     filming: Arc<std::sync::Mutex<Option<String>>>,
+    /// What is on the far computer's clipboard.
+    clipboard: Arc<std::sync::Mutex<Option<Clip>>>,
 }
 
 impl Bench {
@@ -291,6 +320,8 @@ impl Bench {
         let filming: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
         let opening: Arc<std::sync::Mutex<Option<MediaProfile>>> =
             Arc::new(std::sync::Mutex::new(None));
+        let clipboard: Arc<std::sync::Mutex<Option<Clip>>> =
+            Arc::new(std::sync::Mutex::new(Some(Clip::text(HOST_CLIPBOARD))));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -305,6 +336,7 @@ impl Bench {
                 emptied: emptied.clone(),
                 filming: filming.clone(),
                 opening: opening.clone(),
+                clipboard: clipboard.clone(),
             }),
             None,
         )
@@ -338,6 +370,7 @@ impl Bench {
             emptied,
             filming,
             opening,
+            clipboard,
         }
     }
 
@@ -822,4 +855,90 @@ async fn ce_que_la_machine_d_en_face_atteint_arrive_entier() {
         .unwrap();
     assert_eq!(page, host_reach_log());
     assert!(page.len() > 10_000, "{} octets", page.len());
+}
+
+#[tokio::test]
+async fn le_presse_papiers_traverse_le_tunnel_dans_les_deux_sens() {
+    // Un presse-papiers partagé n'a pas de sens dans un seul sens : ce
+    // qu'on copie là-bas doit se coller ici, et ce qu'on copie ici doit
+    // se coller là-bas. Un seul message fait les deux.
+    let bench = Bench::bring_up(42840, 20).await;
+
+    // Ce que quelqu'un avait copié en face, remis parce que celui qui
+    // demande ne tient rien.
+    let venu = before_the_end(aside::ask_about_the_clipboard(
+        &bench.connection,
+        None,
+        None,
+    ))
+    .await
+    .unwrap()
+    .expect("ce qui était copié en face");
+    assert_eq!(venu.said(), Some(HOST_CLIPBOARD));
+
+    // Et redemandé en disant qu'on le tient déjà : rien ne revient.
+    // C'est ce qui fait tenir la fonction, une question étant posée
+    // plusieurs fois par seconde pendant toute une session.
+    let encore = before_the_end(aside::ask_about_the_clipboard(
+        &bench.connection,
+        None,
+        Some(venu.stamp()),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(encore, None);
+
+    // L'autre sens : une image copiée ici, plus lourde qu'une ligne,
+    // part par la question elle-même. C'est le seul message de ce canal
+    // qui pèse une page en partant, et c'est ce que la lecture en deux
+    // temps existe pour laisser passer.
+    let image = Clip::picture(vec![0x89; 300_000]);
+    let rien = before_the_end(aside::ask_about_the_clipboard(
+        &bench.connection,
+        Some(image.clone()),
+        Some(venu.stamp()),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(rien, None, "ce qu'on vient de donner ne doit pas revenir");
+    assert_eq!(bench.clipboard.lock().unwrap().as_ref(), Some(&image));
+
+    // Et ce qui est copié en face après coup revient, image comprise :
+    // les deux sens portent la même chose.
+    let la_bas = Clip::picture(vec![0x50; 200_000]);
+    *bench.clipboard.lock().unwrap() = Some(la_bas.clone());
+    let recu = before_the_end(aside::ask_about_the_clipboard(
+        &bench.connection,
+        None,
+        Some(image.stamp()),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(recu, Some(la_bas));
+}
+
+#[tokio::test]
+async fn une_question_trop_longue_qui_n_est_pas_le_presse_papiers_est_refusee() {
+    // Le plafond d'une page n'est levé que pour la question qui le
+    // nomme : sans ça, n'importe quel verbe inconnu pourrait faire
+    // retenir des mégaoctets à un ordinateur qui n'a encore rien
+    // compris de ce qu'on lui dit.
+    let bench = Bench::bring_up(42850, 21).await;
+
+    let (mut sending, mut receiving) = bench.connection.open_stream().await.unwrap();
+    zyr_tunnel::pump::announce(&mut sending, StreamChannel::ZyrDesk)
+        .await
+        .unwrap();
+    let trop = format!("{} pair 1234 {}", aside::VERSION, "n".repeat(8192));
+    sending.write_all(trop.as_bytes()).await.unwrap();
+    sending.shutdown().await.unwrap();
+
+    // Le canal se ferme sans rien répondre, ce qui est exactement ce
+    // qu'on veut : rien n'a été retenu, rien n'a été fait.
+    let heard = before_the_end(receiving.read_to_end(64 * 1024)).await;
+    assert!(
+        heard.as_ref().map(Vec::is_empty).unwrap_or(true),
+        "{heard:?}"
+    );
+    assert!(bench.handed.lock().unwrap().is_empty());
 }

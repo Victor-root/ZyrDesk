@@ -12,6 +12,7 @@ repository.workspace = true
 [dependencies]
 zyr-proto.workspace = true
 zyr-engine-host.workspace = true
+zyr-clipboard.workspace = true
 zyr-transport.workspace = true
 zyr-tunnel.workspace = true
 zyr-control.workspace = true

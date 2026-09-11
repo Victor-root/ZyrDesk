@@ -124,6 +124,14 @@ impl Answers for NoEngine {
     fn film_this_screen(&self, _id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
         Err("le banc de mesure ne filme aucun écran".to_string())
     }
+
+    fn clipboard(
+        &self,
+        _pushing: Option<zyr_proto::clipboard::Clip>,
+        _seen: Option<zyr_proto::clipboard::Stamp>,
+    ) -> Result<Option<zyr_proto::clipboard::Clip>, String> {
+        Err("le banc de mesure n'a pas de presse-papiers".to_string())
+    }
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
