@@ -29,4 +29,8 @@ windows = { version = "0.61.3", features = [
     "Win32_System_Memory",
     # CF_UNICODETEXT et CF_DIB, que windows range avec l'OLE.
     "Win32_System_Ole",
+    # Ce qu'un glisser-déposer et un copier de l'explorateur posent au
+    # presse-papiers : une poignée de chemins, lue par la famille du
+    # shell.
+    "Win32_UI_Shell",
 ] }

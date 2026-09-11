@@ -22,6 +22,7 @@ use zyr_proto::clipboard::{Clip, Stamp};
 use zyr_proto::net::{EnginePorts, device_loopback_addr};
 use zyr_proto::session::WantedScreen;
 use zyr_transport::{Identity, MediaProfile, TunnelEndpoint};
+use zyr_tunnel::aside::{Given, Wanted};
 use zyr_tunnel::{Answers, StreamChannel, Tunnel, aside};
 
 /// Past this, nothing is getting through.
@@ -69,6 +70,14 @@ struct FakeEngine {
     /// What is on its clipboard, which a session may both read and
     /// replace.
     clipboard: Arc<std::sync::Mutex<Option<Clip>>>,
+    /// The files its own clipboard named, as their bytes, so a piece of
+    /// one can be handed over.
+    has: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    /// What it wants next of what the far computer named, which is a
+    /// paste under way over there.
+    wants: Arc<std::sync::Mutex<Option<Wanted>>>,
+    /// The pieces it was handed, in the order they came.
+    taken: Arc<std::sync::Mutex<Vec<Given>>>,
 }
 
 impl Answers for FakeEngine {
@@ -192,6 +201,31 @@ impl Answers for FakeEngine {
             _ => Ok(None),
         }
     }
+
+    /// Ce que fait une vraie machine : elle rend le morceau demandé de
+    /// ce que son presse-papiers nomme, prend celui qu'on lui donne, et
+    /// dit ce qu'elle veut ensuite.
+    fn pieces(
+        &self,
+        asking: Option<Wanted>,
+        giving: Option<Given>,
+    ) -> Result<(Option<Given>, Option<Wanted>), String> {
+        if let Some(coming) = giving {
+            self.taken.lock().unwrap().push(coming);
+        }
+        let given = asking.and_then(|asked| {
+            let has = self.has.lock().unwrap();
+            let file = has.get(asked.rank as usize)?;
+            let from = (asked.from as usize).min(file.len());
+            let upto = (from + asked.how_many as usize).min(file.len());
+            Some(Given {
+                rank: asked.rank,
+                from: asked.from,
+                bytes: file[from..upto].to_vec(),
+            })
+        });
+        Ok((given, *self.wants.lock().unwrap()))
+    }
 }
 
 /// Ce qu'une machine à carte Intel sait faire : pas d'AV1. C'est le cas
@@ -276,6 +310,12 @@ struct Bench {
     filming: Arc<std::sync::Mutex<Option<String>>>,
     /// What is on the far computer's clipboard.
     clipboard: Arc<std::sync::Mutex<Option<Clip>>>,
+    /// The bytes of the files its clipboard names.
+    has: Arc<std::sync::Mutex<Vec<Vec<u8>>>>,
+    /// What it wants next of what this computer named.
+    wants: Arc<std::sync::Mutex<Option<Wanted>>>,
+    /// The pieces it was handed.
+    taken: Arc<std::sync::Mutex<Vec<Given>>>,
 }
 
 impl Bench {
@@ -322,6 +362,9 @@ impl Bench {
             Arc::new(std::sync::Mutex::new(None));
         let clipboard: Arc<std::sync::Mutex<Option<Clip>>> =
             Arc::new(std::sync::Mutex::new(Some(Clip::text(HOST_CLIPBOARD))));
+        let has: Arc<std::sync::Mutex<Vec<Vec<u8>>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let wants: Arc<std::sync::Mutex<Option<Wanted>>> = Arc::new(std::sync::Mutex::new(None));
+        let taken: Arc<std::sync::Mutex<Vec<Given>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         let host = Tunnel::host(
             host_side.unwrap(),
             ENGINE,
@@ -337,6 +380,9 @@ impl Bench {
                 filming: filming.clone(),
                 opening: opening.clone(),
                 clipboard: clipboard.clone(),
+                has: has.clone(),
+                wants: wants.clone(),
+                taken: taken.clone(),
             }),
             None,
         )
@@ -371,6 +417,9 @@ impl Bench {
             filming,
             opening,
             clipboard,
+            has,
+            wants,
+            taken,
         }
     }
 
@@ -941,4 +990,74 @@ async fn une_question_trop_longue_qui_n_est_pas_le_presse_papiers_est_refusee() 
         "{heard:?}"
     );
     assert!(bench.handed.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn les_morceaux_d_un_fichier_traversent_dans_les_deux_sens() {
+    // Ce qu'un presse-papiers porte d'un fichier est son nom ; les
+    // octets suivent, un morceau à la fois, et dans le sens où on les
+    // veut. Un seul message porte les deux, comme pour le presse-papiers
+    // lui-même, et pour la même raison : seul celui qui a ouvert la voie
+    // peut demander quoi que ce soit.
+    let bench = Bench::bring_up(42860, 22).await;
+
+    // Le sens où l'on tire : la machine d'en face a copié, celle-ci
+    // colle, donc elle demande.
+    let fichier: Vec<u8> = (0..200_000u32).map(|at| (at % 251) as u8).collect();
+    *bench.has.lock().unwrap() = vec![b"court".to_vec(), fichier.clone()];
+
+    let mut rassemble = Vec::new();
+    let mut depuis = 0u64;
+    while (depuis as usize) < fichier.len() {
+        let asked = Wanted {
+            rank: 1,
+            from: depuis,
+            how_many: aside::A_PIECE as u32,
+        };
+        let (given, _) =
+            before_the_end(aside::ask_for_pieces(&bench.connection, Some(asked), None))
+                .await
+                .unwrap();
+        let given = given.expect("le morceau demandé");
+        assert_eq!(given.rank, 1);
+        assert_eq!(given.from, depuis);
+        assert!(!given.bytes.is_empty(), "un morceau vide ne finit jamais");
+        depuis += given.bytes.len() as u64;
+        rassemble.extend_from_slice(&given.bytes);
+    }
+    assert_eq!(
+        rassemble, fichier,
+        "le fichier remonté n'est pas le fichier"
+    );
+
+    // Et le sens où l'on pousse : c'est cette machine-ci qui a copié, et
+    // celle d'en face qui colle, donc elle dit ce qu'elle veut et on le
+    // lui donne. La réponse à un morceau donné dit le morceau suivant,
+    // ce qui fait un aller-retour par morceau et pas deux.
+    let voulu = Wanted {
+        rank: 0,
+        from: 4096,
+        how_many: 1024,
+    };
+    *bench.wants.lock().unwrap() = Some(voulu);
+    let (_, wanted) = before_the_end(aside::ask_for_pieces(&bench.connection, None, None))
+        .await
+        .unwrap();
+    assert_eq!(wanted, Some(voulu));
+
+    let donne = Given {
+        rank: 0,
+        from: 4096,
+        bytes: vec![0x2a; 1024],
+    };
+    *bench.wants.lock().unwrap() = None;
+    let (_, wanted) = before_the_end(aside::ask_for_pieces(
+        &bench.connection,
+        None,
+        Some(donne.clone()),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(wanted, None, "rien voulu de plus veut dire que c'est fini");
+    assert_eq!(*bench.taken.lock().unwrap(), vec![donne]);
 }

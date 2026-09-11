@@ -21,6 +21,13 @@
 //! Windows has always carried, for every other program. Windows works
 //! out the older shapes from that second one by itself.
 //!
+//! Files are the odd one, and the difference is the whole of how they
+//! work. A clipboard never holds a file: it holds the names of files that
+//! live on that machine's disks. So what is read here is the names, the
+//! weights, and what every folder among them holds, walked into; and what
+//! is read of the files themselves is nothing at all until somebody
+//! pastes them somewhere.
+//!
 //! # The border
 //!
 //! This crate knows Windows' clipboard and nothing about ZyrDesk, in the
@@ -35,11 +42,44 @@
 #[cfg_attr(windows, path = "board.rs")]
 #[cfg_attr(not(windows), path = "elsewhere.rs")]
 mod board;
+mod files;
 mod packed;
 
 use std::fmt;
+use std::path::PathBuf;
 
 use zyr_proto::clipboard::Clip;
+
+pub use files::MOST_FILES;
+
+/// What a clipboard was found to hold.
+///
+/// Two things and not one, because files are not like the rest. What
+/// crosses is the clip; where the files it names really are on this
+/// computer is the second half, and it never crosses and could not mean
+/// anything if it did, naming disks and folders of this machine alone.
+/// It is empty for everything that is not files, which is everything
+/// that is the thing itself rather than a name for it.
+#[derive(Debug)]
+pub struct Found {
+    pub clip: Clip,
+    pub really: Vec<PathBuf>,
+    /// Whether more files were copied than one copy names, so that what
+    /// crosses is the beginning of what was asked for and not the whole.
+    pub cut_short: bool,
+}
+
+impl Found {
+    /// Something that is what it says it is, with nowhere else to look.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fn of(clip: Clip) -> Self {
+        Self {
+            clip,
+            really: Vec::new(),
+            cut_short: false,
+        }
+    }
+}
 
 /// Why the clipboard could not be reached.
 ///
@@ -68,9 +108,14 @@ impl std::error::Error for Trouble {}
 /// this product carries.
 ///
 /// Nothing is not a fault: a clipboard that has never been used, and one
-/// holding something that is neither text nor a picture, both answer
-/// that way.
-pub fn what_it_holds() -> Result<Option<Clip>, Trouble> {
+/// holding something this product does not carry, both answer that way.
+///
+/// Files are looked at last of all, and that is not an ordering for its
+/// own sake: a program that offers a file and a picture of it means the
+/// file, but one that offers text alongside means the text, and a
+/// screenshot offers a picture and nothing else. Looking at files last
+/// costs nothing, since a clipboard holding files holds nothing else.
+pub fn what_it_holds() -> Result<Option<Found>, Trouble> {
     board::what_it_holds()
 }
 
@@ -136,6 +181,7 @@ mod tests {
         // mentiraient à qui décide d'envoyer quelque chose à partir de
         // la réponse.
         assert!(what_it_holds().is_err());
+        assert!(Found::of(Clip::text("bonjour")).really.is_empty());
         assert!(hold_this(&Clip::text("bonjour")).is_err());
         assert_eq!(times_it_changed(), 0);
         assert!(what_is_offered().contains("Windows"));

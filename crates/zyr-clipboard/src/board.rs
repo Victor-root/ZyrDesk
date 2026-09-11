@@ -15,6 +15,7 @@
 
 mod picture;
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
@@ -26,11 +27,13 @@ use windows::Win32::System::DataExchange::{
 use windows::Win32::System::Memory::{
     GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
 };
-use windows::Win32::System::Ole::{CF_BITMAP, CF_DIB, CF_DIBV5, CF_TEXT, CF_UNICODETEXT};
+use windows::Win32::System::Ole::{CF_BITMAP, CF_DIB, CF_DIBV5, CF_HDROP, CF_TEXT, CF_UNICODETEXT};
+use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
 use windows::core::w;
 use zyr_proto::clipboard::{Clip, Kind};
 
-use crate::Trouble;
+use crate::files::{self, Walked};
+use crate::{Found, Trouble};
 
 /// How many times opening the clipboard is tried before giving up.
 ///
@@ -79,30 +82,90 @@ impl Drop for Open {
     }
 }
 
-pub fn what_it_holds() -> Result<Option<Clip>, Trouble> {
+pub fn what_it_holds() -> Result<Option<Found>, Trouble> {
     let png_format = the_png_format();
-    let _open = Open::now()?;
+    let dropped = {
+        let _open = Open::now()?;
 
-    if let Some(said) = text_on_it()
-        && !said.is_empty()
-    {
-        return Ok(Some(Clip::text(&said)));
+        if let Some(said) = text_on_it()
+            && !said.is_empty()
+        {
+            return Ok(Some(Found::of(Clip::text(&said))));
+        }
+        // The picture as its own program left it, which is the only
+        // shape that keeps what a bitmap cannot hold: what is
+        // see-through in it.
+        if let Some(png) = bytes_on_it(png_format) {
+            return Ok(Some(Found::of(Clip::picture(png))));
+        }
+        // And otherwise the bitmap, which is what a screenshot is.
+        // Nothing here reads what a bitmap says about see-through parts:
+        // a program that had any to say would have offered the shape
+        // above, and a screenshot's spare byte per pixel is famously
+        // whatever the screen happened to leave there. Read as anything
+        // but opaque, it turns a screenshot black.
+        if let Some(dib) = bytes_on_it(u32::from(CF_DIB.0)) {
+            return picture::a_png_of(&dib).map(|png| Some(Found::of(Clip::picture(png))));
+        }
+        // Last, files, and the clipboard is let go of before they are
+        // looked at: walking a folder of ten thousand files is a walk
+        // across a disk, and nothing on this desktop should wait on it
+        // to be able to copy or paste.
+        the_drop_on_it()
+    };
+    let Some(dropped) = dropped else {
+        return Ok(None);
+    };
+    let Walked {
+        listed,
+        really,
+        cut_short,
+    } = files::walked(&dropped);
+    if listed.is_empty() {
+        return Ok(None);
     }
-    // The picture as its own program left it, which is the only shape
-    // that keeps what a bitmap cannot hold: what is see-through in it.
-    if let Some(png) = bytes_on_it(png_format) {
-        return Ok(Some(Clip::picture(png)));
+    Ok(Some(Found {
+        clip: Clip::files(&listed),
+        really,
+        cut_short,
+    }))
+}
+
+/// The paths the Explorer put on the clipboard, when it put any.
+///
+/// Their own paths on this computer, which is all a clipboard ever holds
+/// of a file: what is copied is the name and never the thing.
+fn the_drop_on_it() -> Option<Vec<PathBuf>> {
+    // SAFETY: reads the clipboard this task holds open, and a drop is a
+    // moveable memory handle like everything else it carries.
+    let dropped = unsafe {
+        IsClipboardFormatAvailable(u32::from(CF_HDROP.0)).ok()?;
+        HDROP(GetClipboardData(u32::from(CF_HDROP.0)).ok()?.0)
+    };
+    // SAFETY: a handle the clipboard just gave us. Naming this file asks
+    // how many there are rather than for one of them.
+    let how_many = unsafe { DragQueryFileW(dropped, u32::MAX, None) };
+    let mut paths = Vec::with_capacity(how_many as usize);
+    for which in 0..how_many {
+        // SAFETY: the same handle, asked first how long the name is and
+        // then for the name in a buffer of that length and one more for
+        // the nought it writes.
+        let taken = unsafe { DragQueryFileW(dropped, which, None) };
+        if taken == 0 {
+            continue;
+        }
+        let mut spelled = vec![0u16; taken as usize + 1];
+        // SAFETY: the same again, into a buffer made to the size it
+        // just asked for.
+        let written = unsafe { DragQueryFileW(dropped, which, Some(&mut spelled)) };
+        if written == 0 {
+            continue;
+        }
+        paths.push(PathBuf::from(String::from_utf16_lossy(
+            &spelled[..written as usize],
+        )));
     }
-    // And otherwise the bitmap, which is what a screenshot is. Nothing
-    // here reads what a bitmap says about see-through parts: a program
-    // that had any to say would have offered the shape above, and a
-    // screenshot's spare byte per pixel is famously whatever the screen
-    // happened to leave there. Read as anything but opaque, it turns a
-    // screenshot black.
-    if let Some(dib) = bytes_on_it(u32::from(CF_DIB.0)) {
-        return picture::a_png_of(&dib).map(|png| Some(Clip::picture(png)));
-    }
-    Ok(None)
+    (!paths.is_empty()).then_some(paths)
 }
 
 pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {

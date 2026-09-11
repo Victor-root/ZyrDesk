@@ -23,6 +23,8 @@ use std::fmt;
 use std::io;
 use std::sync::Arc;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use tokio::io::AsyncWriteExt;
 use zyr_proto::clipboard::{Clip, Stamp};
 use zyr_proto::net::{BasePortOutOfRange, EnginePorts};
@@ -76,8 +78,12 @@ use crate::pump;
 /// copied, which the engines' protocol has no channel for and never will:
 /// it is the one question here that goes both ways at once, the same
 /// message handing over what was copied on this side and asking for what
-/// was copied on the other.
-pub const VERSION: u32 = 19;
+/// was copied on the other. Version 20 carries the files themselves,
+/// piece by piece and only once somebody pastes them: what a clipboard
+/// holds of a file is its name, so the names cross at once and weigh
+/// nothing, and the bytes follow a piece at a time in whichever direction
+/// they are wanted.
+pub const VERSION: u32 = 20;
 
 /// Longest question this channel takes.
 ///
@@ -97,26 +103,41 @@ const LONGEST_QUESTION: usize = 512;
 /// cut.
 const LONGEST_ANSWER: usize = 4 * 1024 * 1024;
 
-/// Longest a message carrying a clipboard may be, in either direction.
+/// Longest a message carrying a page may be, in either direction.
 ///
-/// The one question that is a page rather than a line, and the one answer
-/// whose ceiling is a question's as well. What somebody copied has to
-/// travel from whichever of the two computers they copied it on, so the
-/// asking end pushes and the answering end answers, and the two ends of
-/// the same exchange are allowed the same weight.
+/// Two questions are pages rather than lines, and their answers are
+/// pages too. What somebody copied has to travel from whichever of the
+/// two computers they copied it on, so the asking end pushes and the
+/// answering end answers, and the two ends of the same exchange are
+/// allowed the same weight.
 ///
 /// It is read only once the question has named itself, which is what
 /// keeps the line above a line for everything else: see `a_question`. And
-/// it is larger than what a clip may weigh, because a clip travels
+/// it is larger than what either of them may weigh, because both travel
 /// written in base64, which costs a third of it again.
-const LONGEST_CLIPBOARD: usize = 8 * 1024 * 1024;
+const LONGEST_PAGE: usize = 8 * 1024 * 1024;
 
-/// The one verb whose message is allowed that weight.
+/// The two verbs whose messages are allowed that weight.
 ///
-/// Written once and read in three places: where a question is spelled,
-/// where it is read back, and where the ceiling is decided on the first
-/// few bytes of it.
+/// Written once and read in three places each: where a question is
+/// spelled, where it is read back, and where the ceiling is decided on
+/// the first few bytes of it.
 const CLIPBOARD: &str = "clipboard";
+const PIECES: &str = "pieces";
+
+/// How much of a file travels in one message.
+///
+/// One piece is asked for and answered at a time, and that is the whole
+/// of what keeps a file from eating the session it travels beside: there
+/// is never more than one piece of it in the pipe, whatever the file
+/// weighs and however fast the link is. Nothing has to be rationed,
+/// because nothing is ever asked for twice over.
+///
+/// Large enough that a fast link is not spending its time waiting for the
+/// next ask, small enough that the picture never waits behind it: at a
+/// tenth of a second of round trip, which is a bad link, this is still
+/// two and a half megabytes a second.
+pub const A_PIECE: usize = 256 * 1024;
 
 /// What a message says where a clip or a stamp could have been and there
 /// is none.
@@ -387,6 +408,153 @@ pub trait Answers: Send + Sync + 'static {
     /// said is « I have nothing, drop yours ».
     fn clipboard(&self, pushing: Option<Clip>, seen: Option<Stamp>)
     -> Result<Option<Clip>, String>;
+
+    /// Takes a piece of a file that was copied over there, and hands back
+    /// a piece of one that was copied here.
+    ///
+    /// Both ways in one message, exactly like the clipboard above, and
+    /// for exactly the same reason: whichever of the two computers
+    /// somebody copied files on, it is the other one they may paste them
+    /// on, and only the side that opened the way can ask anything at all.
+    ///
+    /// `asking` is a piece this end is to hand over, out of the files its
+    /// own clipboard named. `giving` is a piece of what the far
+    /// clipboard named, arriving because this end asked for it.
+    ///
+    /// What comes back is that piece, and what this end wants next: a
+    /// paste in progress here says so by wanting the piece after the one
+    /// it was just given, and says it is done by wanting nothing.
+    fn pieces(
+        &self,
+        asking: Option<Wanted>,
+        giving: Option<Given>,
+    ) -> Result<(Option<Given>, Option<Wanted>), String>;
+}
+
+/// A piece of a file somebody copied, asked for.
+///
+/// The file is named by its rank in the listing that crossed and never by
+/// its path: a rank cannot be made to mean another file, where a path
+/// handed over by the far computer is a path this one would have to check
+/// all over again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Wanted {
+    pub rank: u32,
+    pub from: u64,
+    pub how_many: u32,
+}
+
+impl fmt::Display for Wanted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {} {}", self.rank, self.from, self.how_many)
+    }
+}
+
+impl Wanted {
+    fn read(said: &str) -> Result<Self, String> {
+        let mut pieces = said.split_whitespace();
+        let mut number = |what: &str| {
+            pieces
+                .next()
+                .and_then(|said| said.parse::<u64>().ok())
+                .ok_or_else(|| format!("un morceau de fichier sans {what}"))
+        };
+        let rank = number("rang")?;
+        let from = number("départ")?;
+        let how_many = number("longueur")?;
+        Ok(Self {
+            rank: rank
+                .try_into()
+                .map_err(|_| "un rang hors de tout".to_string())?,
+            from,
+            how_many: how_many
+                .try_into()
+                .map_err(|_| "une longueur hors de tout".to_string())?,
+        })
+    }
+}
+
+/// A piece of a file, handed over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Given {
+    pub rank: u32,
+    pub from: u64,
+    pub bytes: Vec<u8>,
+}
+
+impl fmt::Display for Given {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {} {}",
+            self.rank,
+            self.from,
+            BASE64.encode(&self.bytes)
+        )
+    }
+}
+
+impl Given {
+    fn read(said: &str) -> Result<Self, String> {
+        let mut pieces = said.trim().splitn(3, char::is_whitespace);
+        let mut number = |what: &str| {
+            pieces
+                .next()
+                .and_then(|said| said.parse::<u64>().ok())
+                .ok_or_else(|| format!("un morceau de fichier sans {what}"))
+        };
+        let rank = number("rang")?;
+        let from = number("départ")?;
+        let bytes = BASE64
+            .decode(pieces.next().unwrap_or("").trim())
+            .map_err(|_| "un morceau de fichier illisible".to_string())?;
+        Ok(Self {
+            rank: rank
+                .try_into()
+                .map_err(|_| "un rang hors de tout".to_string())?,
+            from,
+            bytes,
+        })
+    }
+}
+
+/// One half of a message about pieces of files, or the word that says
+/// there is none.
+///
+/// Written and read once for the four places it appears: both halves of
+/// the question and both halves of the answer.
+fn half<T: fmt::Display>(named: &str, what: &Option<T>) -> String {
+    match what {
+        Some(what) => format!("{named} {what}"),
+        None => format!("{named} {NONE}"),
+    }
+}
+
+/// Splits a message into its two named halves.
+///
+/// The names are there so that a message missing a half and a message
+/// that lost one on the way do not look alike, which is the rule the rest
+/// of this channel follows.
+fn halves<'a>(said: &'a str, first: &str, second: &str) -> Result<(&'a str, &'a str), String> {
+    let said = said.trim();
+    let rest = said
+        .strip_prefix(first)
+        .ok_or_else(|| format!("un message qui ne dit pas « {first} »"))?;
+    let (before, after) = rest
+        .split_once(second)
+        .ok_or_else(|| format!("un message qui ne dit pas « {second} »"))?;
+    Ok((before.trim(), after.trim()))
+}
+
+/// Reads a half that may say there is nothing.
+fn some_of<T>(
+    said: &str,
+    read: impl FnOnce(&str) -> Result<T, String>,
+) -> Result<Option<T>, String> {
+    match said {
+        NONE | "" => Ok(None),
+        carried => read(carried).map(Some),
+    }
 }
 
 /// What a computer answers when it is told something its engine takes
@@ -462,6 +630,12 @@ pub enum Question {
         pushing: Option<Clip>,
         seen: Option<Stamp>,
     },
+    /// Hand me that piece of a file you named, and here is a piece of one
+    /// I named; tell me what you want next.
+    Pieces {
+        asking: Option<Wanted>,
+        giving: Option<Given>,
+    },
 }
 
 /// What comes back.
@@ -520,6 +694,12 @@ pub enum Told {
     /// when it holds nothing at all.
     Clipboard {
         theirs: Option<Clip>,
+    },
+    /// The piece that was asked for, and what the far computer wants next
+    /// of what this one named.
+    Pieces {
+        given: Option<Given>,
+        wanted: Option<Wanted>,
     },
     /// The far computer is as it was asked to be, or is starting its
     /// engine over to be it.
@@ -590,6 +770,12 @@ impl fmt::Display for Question {
                 },
                 carried(pushing)
             ),
+            Question::Pieces { asking, giving } => write!(
+                f,
+                "{VERSION} {PIECES} {} {}",
+                half("asking", asking),
+                half("giving", giving)
+            ),
             Question::DrawYourPointer { drawn } => {
                 write!(
                     f,
@@ -633,6 +819,12 @@ impl fmt::Display for Told {
             Told::Clipboard { theirs } => {
                 write!(f, "{VERSION} {CLIPBOARD} {}", carried(theirs))
             }
+            Told::Pieces { given, wanted } => write!(
+                f,
+                "{VERSION} {PIECES} {} {}",
+                half("given", given),
+                half("wanted", wanted)
+            ),
             Told::Settled { how } => write!(
                 f,
                 "{VERSION} settled {}",
@@ -654,7 +846,7 @@ impl Question {
     /// other would share a clipboard in one direction only.
     fn longest_answer(&self) -> usize {
         match self {
-            Question::Clipboard { .. } => LONGEST_CLIPBOARD,
+            Question::Clipboard { .. } | Question::Pieces { .. } => LONGEST_PAGE,
             _ => LONGEST_ANSWER,
         }
     }
@@ -705,6 +897,13 @@ impl Question {
                                 .map_err(|_| format!("« {stamp} » ne nomme rien"))?,
                         ),
                     },
+                })
+            }
+            PIECES => {
+                let (asking, giving) = halves(rest, "asking", "giving")?;
+                Ok(Question::Pieces {
+                    asking: some_of(asking, Wanted::read)?,
+                    giving: some_of(giving, Given::read)?,
                 })
             }
             "hush" => match rest {
@@ -784,6 +983,13 @@ impl Told {
             CLIPBOARD => Ok(Ok(Told::Clipboard {
                 theirs: what_was_carried(rest).map_err(unreadable)?,
             })),
+            PIECES => {
+                let (given, wanted) = halves(rest, "given", "wanted").map_err(unreadable)?;
+                Ok(Ok(Told::Pieces {
+                    given: some_of(given, Given::read).map_err(unreadable)?,
+                    wanted: some_of(wanted, Wanted::read).map_err(unreadable)?,
+                }))
+            }
             "settled" => match rest {
                 "already" => Ok(Ok(Told::Settled {
                     how: Settled::Already,
@@ -1158,6 +1364,26 @@ pub async fn ask_about_the_clipboard(
     }
 }
 
+/// Hands the far ZyrDesk a piece of a file copied here, and asks for a
+/// piece of one copied there.
+///
+/// One message for both, like the clipboard it follows from. Only one
+/// piece is ever in flight in each direction, and that is the whole of
+/// what keeps a file from eating the session it travels beside: a link
+/// twice as fast carries the file twice as fast and the picture exactly
+/// as it was, because nothing is ever asked for before the last piece
+/// arrived.
+pub async fn ask_for_pieces(
+    connection: &Connection,
+    asking: Option<Wanted>,
+    giving: Option<Given>,
+) -> io::Result<(Option<Given>, Option<Wanted>)> {
+    match ask(connection, &Question::Pieces { asking, giving }).await? {
+        Told::Pieces { given, wanted } => Ok((given, wanted)),
+        other => Err(unreadable(format!("réponse hors sujet : {other}"))),
+    }
+}
+
 /// Answers whatever the other ZyrDesk asks. Host side.
 pub async fn answer(
     sending: SendStream,
@@ -1196,25 +1422,26 @@ async fn a_question(receiving: &mut RecvStream) -> io::Result<String> {
         if said.len() <= room {
             continue;
         }
-        if room != LONGEST_QUESTION || !carries_a_clipboard(&said) {
+        if room != LONGEST_QUESTION || !carries_a_page(&said) {
             return Err(unreadable(
                 "une question plus longue que ce que ce canal porte",
             ));
         }
-        room = LONGEST_CLIPBOARD;
+        room = LONGEST_PAGE;
     }
     Ok(String::from_utf8_lossy(&said).into_owned())
 }
 
-/// Whether what has been read so far is the head of the one question that
-/// is allowed to be a page.
+/// Whether what has been read so far is the head of one of the two
+/// questions that are allowed to be a page.
 ///
 /// Read on the head alone and never on the whole, which is the point of
 /// it: at the moment this is asked, the rest has not been taken in yet.
-fn carries_a_clipboard(head: &[u8]) -> bool {
+fn carries_a_page(head: &[u8]) -> bool {
     let head = &head[..head.len().min(LONGEST_QUESTION)];
     let said = String::from_utf8_lossy(head);
-    after_the_version(&said).is_ok_and(|rest| rest.starts_with(CLIPBOARD))
+    after_the_version(&said)
+        .is_ok_and(|rest| rest.starts_with(CLIPBOARD) || rest.starts_with(PIECES))
 }
 
 /// Does what was asked, on a thread where waiting is allowed.
@@ -1344,6 +1571,14 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
                 .map_err(|e| format!("le presse-papiers n'a pas pu être échangé : {e}"))?
                 .map(|theirs| Told::Clipboard { theirs })
         }
+        // And off it too, and this one more than any: both halves of it
+        // are a disk being read and a disk being written.
+        Question::Pieces { asking, giving } => {
+            tokio::task::spawn_blocking(move || answering.pieces(asking, giving))
+                .await
+                .map_err(|e| format!("les morceaux n'ont pas pu être échangés : {e}"))?
+                .map(|(given, wanted)| Told::Pieces { given, wanted })
+        }
     }
 }
 
@@ -1452,6 +1687,44 @@ mod tests {
                 pushing: Some(Clip::text("")),
                 seen: None,
             },
+            // Les morceaux d'un fichier, qui vont eux aussi dans les
+            // deux sens à la fois : on demande un morceau de ce que
+            // l'autre a copié, et on donne un morceau de ce qu'on a
+            // copié soi-même.
+            Question::Pieces {
+                asking: None,
+                giving: None,
+            },
+            Question::Pieces {
+                asking: Some(Wanted {
+                    rank: 3,
+                    from: 8_589_934_592,
+                    how_many: A_PIECE as u32,
+                }),
+                giving: None,
+            },
+            Question::Pieces {
+                asking: None,
+                giving: Some(Given {
+                    rank: 0,
+                    from: 0,
+                    bytes: vec![0, 1, 2, 250, 255],
+                }),
+            },
+            // Un morceau vide n'est pas l'absence de morceau : c'est la
+            // fin d'un fichier, et les deux doivent se distinguer.
+            Question::Pieces {
+                asking: Some(Wanted {
+                    rank: 0,
+                    from: 0,
+                    how_many: 0,
+                }),
+                giving: Some(Given {
+                    rank: 9,
+                    from: 4096,
+                    bytes: Vec::new(),
+                }),
+            },
         ] {
             let said = question.to_string();
             assert_eq!(Question::parse(&said), Ok(question), "sur « {said} »");
@@ -1518,6 +1791,25 @@ mod tests {
             },
             Told::Clipboard {
                 theirs: Some(Clip::picture(vec![0x89, b'P', b'N', b'G', 0x00, 0xff])),
+            },
+            // Rien voulu est ce qui dit à l'autre bout qu'il peut cesser
+            // d'envoyer : il faut que ça se distingue d'un morceau de
+            // longueur nulle.
+            Told::Pieces {
+                given: None,
+                wanted: None,
+            },
+            Told::Pieces {
+                given: Some(Given {
+                    rank: 2,
+                    from: 262_144,
+                    bytes: vec![7; 32],
+                }),
+                wanted: Some(Wanted {
+                    rank: 2,
+                    from: 262_176,
+                    how_many: A_PIECE as u32,
+                }),
             },
         ] {
             let said = told.to_string();

@@ -7,7 +7,7 @@
 
 use zyr_proto::clipboard::Clip;
 
-use crate::Trouble;
+use crate::{Found, Trouble};
 
 fn nowhere<T>() -> Result<T, Trouble> {
     Err(Trouble::of(
@@ -15,7 +15,7 @@ fn nowhere<T>() -> Result<T, Trouble> {
     ))
 }
 
-pub fn what_it_holds() -> Result<Option<Clip>, Trouble> {
+pub fn what_it_holds() -> Result<Option<Found>, Trouble> {
     nowhere()
 }
 

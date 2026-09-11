@@ -250,6 +250,21 @@ pub fn clipboard_wanted() -> PathBuf {
     data_dir().join("clipboard-wanted.txt")
 }
 
+/// Where the files named by what is on this computer's clipboard really
+/// are on this computer's disks, one path to a line, in the order the
+/// listing names them.
+///
+/// Never crosses, and could not mean anything if it did: it names disks
+/// and folders of this machine alone. It is what lets the service open
+/// the right file when the far computer asks for the third of a list.
+///
+/// Beside the pair above rather than inside it, because it is not part of
+/// what a clipboard holds: a clipboard holds the names, and this says
+/// where those names point on this one machine.
+pub fn clipboard_files() -> PathBuf {
+    data_dir().join("clipboard-files.txt")
+}
+
 /// The bytes that go with one of the two lines above.
 ///
 /// Beside it under the same name, since the two are one thing written in
@@ -324,6 +339,7 @@ mod tests {
             pointer_here(),
             clipboard_here(),
             clipboard_wanted(),
+            clipboard_files(),
             beside(&clipboard_here()),
             beside(&clipboard_wanted()),
             account(),

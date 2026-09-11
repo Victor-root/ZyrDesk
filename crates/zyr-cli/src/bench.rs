@@ -132,6 +132,20 @@ impl Answers for NoEngine {
     ) -> Result<Option<zyr_proto::clipboard::Clip>, String> {
         Err("le banc de mesure n'a pas de presse-papiers".to_string())
     }
+
+    fn pieces(
+        &self,
+        _asking: Option<zyr_tunnel::aside::Wanted>,
+        _giving: Option<zyr_tunnel::aside::Given>,
+    ) -> Result<
+        (
+            Option<zyr_tunnel::aside::Given>,
+            Option<zyr_tunnel::aside::Wanted>,
+        ),
+        String,
+    > {
+        Err("le banc de mesure ne copie aucun fichier".to_string())
+    }
 }
 /// The bench takes connections from any interface.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);

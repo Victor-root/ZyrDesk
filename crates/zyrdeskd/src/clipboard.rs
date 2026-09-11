@@ -224,6 +224,7 @@ fn keep_a_helper(log: Log) {
         // than on what the last one left written down.
         forget_the_pair(&paths::clipboard_here());
         forget_the_pair(&paths::clipboard_wanted());
+        let _ = std::fs::remove_file(paths::clipboard_files());
         *GIVEN.lock().expect("ce qui vient d'être donné") = None;
         KEEPING.store(false, Ordering::SeqCst);
     });
@@ -295,10 +296,10 @@ pub fn carry_the_clipboard_here() {
         counted = Some(counter);
         let news = !std::mem::take(&mut taking_over);
         match zyr_clipboard::what_it_holds() {
-            Ok(Some(clip)) if written != Some(clip.stamp()) => {
-                match write_the_pair(&paths::clipboard_here(), &clip) {
+            Ok(Some(found)) if written != Some(found.clip.stamp()) => {
+                match write_it_down(&found) {
                     Ok(()) => {
-                        written = Some(clip.stamp());
+                        written = Some(found.clip.stamp());
                         complained = None;
                         // One line per thing copied, which is the right
                         // rate: a clipboard changes a few times an hour.
@@ -308,8 +309,15 @@ pub fn carry_the_clipboard_here() {
                         if news {
                             said(&format!(
                                 "clipboard: this computer now holds {}",
-                                clip.in_words()
+                                found.clip.in_words()
                             ));
+                            if found.cut_short {
+                                said(&format!(
+                                    "clipboard: more was copied than one copy carries, so only \
+                                     the first {} files of it cross",
+                                    zyr_clipboard::MOST_FILES
+                                ));
+                            }
                         }
                     }
                     Err(e) => say_once(
@@ -377,6 +385,79 @@ fn written_clip(named: &std::path::Path) -> Option<Clip> {
     let head: Head = std::fs::read_to_string(named).ok()?.parse().ok()?;
     let bytes = std::fs::read(paths::beside(named)).ok()?;
     head.matches(&bytes).then(|| Clip::new(head.kind, bytes))
+}
+
+/// Writes down what the clipboard was found to hold.
+///
+/// Three files for files and two for everything else, and the third goes
+/// before the line that names the other two: the same rule as the bytes,
+/// since a line that names a listing names places that have to be written
+/// down before anybody reads it.
+#[cfg(windows)]
+fn write_it_down(found: &zyr_clipboard::Found) -> std::io::Result<()> {
+    if !found.really.is_empty() {
+        let mut where_they_are = String::new();
+        for path in &found.really {
+            where_they_are.push_str(&path.to_string_lossy());
+            where_they_are.push('\n');
+        }
+        zyr_proto::files::replace(&paths::clipboard_files(), &where_they_are)?;
+    }
+    write_the_pair(&paths::clipboard_here(), &found.clip)
+}
+
+/// Where the file of that rank really is on this computer.
+///
+/// By rank and never by the path that crossed: a rank is a number that
+/// cannot be made to name another file, where a path handed over by the
+/// far computer would be a path this one has to check all over again.
+///
+/// Nothing when this computer's clipboard has moved on since, which is
+/// the far computer asking for a file of a copy that is over.
+pub fn where_the_file_is(rank: usize) -> Option<std::path::PathBuf> {
+    std::fs::read_to_string(paths::clipboard_files())
+        .ok()?
+        .lines()
+        .nth(rank)
+        .filter(|line| !line.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// A piece of one of the files this computer's clipboard named.
+///
+/// Read straight off the disk each time rather than held open: a paste
+/// can be minutes apart from the copy that started it, and a file held
+/// open all that while is a file nobody else may move or delete.
+pub fn a_piece_of(asked: zyr_tunnel::aside::Wanted) -> Result<zyr_tunnel::aside::Given, String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let rank = asked.rank as usize;
+    let path = where_the_file_is(rank)
+        .ok_or_else(|| format!("le fichier {rank} n'est plus celui qui est copié ici"))?;
+    let mut open = std::fs::File::open(&path)
+        .map_err(|e| format!("{} ne s'ouvre pas : {e}", path.display()))?;
+    open.seek(SeekFrom::Start(asked.from))
+        .map_err(|e| format!("{} ne se lit pas : {e}", path.display()))?;
+
+    // Read to whatever really comes, which is what says a file ended:
+    // a piece shorter than the one asked for is the end of it, and an
+    // empty one is a file that had nothing left.
+    let mut bytes = vec![0u8; asked.how_many as usize];
+    let mut taken = 0;
+    while taken < bytes.len() {
+        match open.read(&mut bytes[taken..]) {
+            Ok(0) => break,
+            Ok(read) => taken += read,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(format!("{} ne se lit pas : {e}", path.display())),
+        }
+    }
+    bytes.truncate(taken);
+    Ok(zyr_tunnel::aside::Given {
+        rank: asked.rank,
+        from: asked.from,
+        bytes,
+    })
 }
 
 /// Writes a clip as that pair of files.

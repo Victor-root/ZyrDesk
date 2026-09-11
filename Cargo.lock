@@ -3190,6 +3190,7 @@ dependencies = [
 name = "zyr-tunnel"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "socket2",
  "tokio",
  "windows-sys 0.61.2",

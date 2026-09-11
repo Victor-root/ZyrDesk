@@ -883,6 +883,47 @@ impl Answers for Attending {
         // the one over there.
         Ok(held.filter(|clip| Some(clip.stamp()) != seen))
     }
+
+    /// Hands over a piece of a file this computer's clipboard named, and
+    /// takes a piece of one the far clipboard named.
+    ///
+    /// Both ways in one message, like the clipboard above. Which of the
+    /// two halves is doing anything depends on which computer somebody
+    /// copied on and which they are pasting on, and neither end decides
+    /// that.
+    ///
+    /// What is wanted back is what a paste under way on this computer is
+    /// still missing, and nothing at all when nobody here is pasting.
+    /// That nothing is the whole of how the far end learns it may stop
+    /// sending.
+    fn pieces(
+        &self,
+        asking: Option<zyr_tunnel::aside::Wanted>,
+        giving: Option<zyr_tunnel::aside::Given>,
+    ) -> Result<
+        (
+            Option<zyr_tunnel::aside::Given>,
+            Option<zyr_tunnel::aside::Wanted>,
+        ),
+        String,
+    > {
+        if giving.is_some() {
+            return Err("rien n'est collé sur cet ordinateur".to_string());
+        }
+        // A piece that cannot be read costs that ask and not the session:
+        // the file was moved, or the clipboard has gone on to something
+        // else, and the far end asks again or gives up on its own.
+        let given = match asking.map(crate::clipboard::a_piece_of) {
+            Some(Ok(piece)) => Some(piece),
+            Some(Err(refused)) => {
+                self.log
+                    .write(&format!("files: nothing was handed over: {refused}"));
+                None
+            }
+            None => None,
+        };
+        Ok((given, None))
+    }
 }
 
 /// What the local engine wrote down about its own encoders, in the
