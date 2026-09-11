@@ -3013,6 +3013,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Le dossier de données se résout par le chemin du programme et non par le compte, donc l'assistant lit et écrit exactement les mêmes fichiers qu'avant. Le dialecte ne bouge pas, aucun moteur n'est touché, la pile de correctifs reste à quatorze.
 
+## D185. Deux assistants se recouvrent, un seul parle (2026-09-11, pendant M6)
+
+**Ce que le premier relevé qui marche a montré.** Les fichiers traversent, dans les deux sens, sur les deux machines, de 1,8 Mo à 4,7 Go. Restaient deux lignes fausses dans le journal, et elles venaient de la même chose : un assistant est relancé avant que le précédent ne meure, exprès, pour que la lecture du presse-papiers ne s'arrête jamais entre les deux. Pendant ce recouvrement il y en a deux qui lisent.
+
+**Une ligne qui disait le contraire de la vérité.** Une seconde après « cet ordinateur offre maintenant 1 fichier, et leurs octets traverseront quand quelqu'un collera », l'autre assistant lisait le presse-papiers, y trouvait la promesse que son voisin venait d'y poser, et écrivait « rien dessus qui traverse ». C'est la ligne même qui sert à diagnostiquer un presse-papiers qui ne passe pas : la lire à l'envers, c'est repartir chercher une panne qui n'existe pas. Le service refusait déjà d'en démarrer un pendant qu'une promesse est tenue ; c'est désormais aussi la règle de celui qui tournait déjà quand elle a été posée.
+
+**Et la même chose annoncée deux fois.** Chaque assistant retenait, à son démarrage, ce qui était déjà noté. Dix secondes plus tard ce souvenir était vieux, et les deux annonçaient la même copie. Le souvenir est supprimé : la question se pose au fichier au moment où elle se pose, ce qui est une chose en moins à tenir plutôt qu'une de plus. Deux assistants qui tombent sur le même instant peuvent encore parler tous les deux, ce qui fait une ligne de trop et rien d'autre, ce qu'ils notent étant identique.
+
+**Ce que ça ne change pas.** Rien de ce qui traverse, rien du recouvrement lui-même, qui est ce qui garantit qu'une copie faite entre deux assistants ne soit pas perdue. Le dialecte ne bouge pas et la pile de correctifs reste à quatorze.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

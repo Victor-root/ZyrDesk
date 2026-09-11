@@ -403,11 +403,6 @@ pub fn carry_the_clipboard_here() {
     let mut counted: Option<u32> = None;
     // Whether this helper is the one holding the far computer's files.
     let mut standing = false;
-    // What is already written down, and not nothing. A helper takes over
-    // from another every few seconds for the whole of a session: one that
-    // started from nothing would write the same clipboard down again, and
-    // say so again, every time one of them started.
-    let mut written = written_clip(&paths::clipboard_here()).map(|clip| clip.stamp());
     // Whether this is the first thing this helper has looked at. A
     // clipboard found the way it was left is not news, and saying it is
     // would fill a journal with one line per helper rather than one line
@@ -427,7 +422,6 @@ pub fn carry_the_clipboard_here() {
                 stand_in_for_them(&wanted).inspect(|()| {
                     standing = true;
                     counted = Some(zyr_clipboard::times_it_changed());
-                    written = Some(wanted.stamp());
                     hold_the_mark(Stand::Held);
                     said(&format!(
                         "this computer now offers {}, and their bytes will cross when \
@@ -489,6 +483,18 @@ pub fn carry_the_clipboard_here() {
             let _ = std::fs::remove_file(paths::clipboard_standing());
         }
 
+        // Not while another helper on this computer is holding the far
+        // computer's files. What is on the clipboard then is that other
+        // helper's promise: this one can make nothing of it, and would
+        // read it as a clipboard carrying nothing it takes, which is the
+        // opposite of the truth. The service already refuses to start one
+        // in that state; this is the same rule for the one that was
+        // already running when the promise went up.
+        if a_stand_is_up().is_some() {
+            zyr_clipboard::answer_for(LOOK_EVERY);
+            continue;
+        }
+
         // The counter is the cheap half of this: reading a picture every
         // fifth of a second to discover it has not changed would cost a
         // few million bytes each time. Nought is a system that would not
@@ -502,10 +508,9 @@ pub fn carry_the_clipboard_here() {
         counted = Some(counter);
         let news = !std::mem::take(&mut taking_over);
         match zyr_clipboard::what_it_holds() {
-            Ok(Some(found)) if written != Some(found.clip.stamp()) => {
+            Ok(Some(found)) if !already_written(&found) => {
                 match write_it_down(&found) {
                     Ok(()) => {
-                        written = Some(found.clip.stamp());
                         complained = None;
                         // One line per thing copied, which is the right
                         // rate: a clipboard changes a few times an hour.
@@ -644,6 +649,23 @@ fn whoever_this_is() -> String {
         return "a name Windows would not give".to_string();
     }
     String::from_utf16_lossy(&spelled[..room.saturating_sub(1) as usize])
+}
+
+/// Whether what was just found on the clipboard is already written down.
+///
+/// Asked of the file each time and never kept from the start of a helper:
+/// that file is shared with whatever other helper is running, and one is
+/// always started before the last has died so that the reading never
+/// stops. A helper holding a stamp taken at its own start writes down,
+/// and says out loud, a copy the other has already written down and said,
+/// which is the same copy announced twice.
+///
+/// Two landing in the very same instant can still both speak. That is one
+/// line too many in a journal and nothing worse: what they write down is
+/// the same thing.
+#[cfg(windows)]
+fn already_written(found: &zyr_clipboard::Found) -> bool {
+    written_clip(&paths::clipboard_here()).map(|clip| clip.stamp()) == Some(found.clip.stamp())
 }
 
 /// Reads a clip from the pair of files that name it and hold it.
