@@ -2965,7 +2965,7 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Deux voix et pas plus, et la coupure n'est pas où on l'attend.** Ce n'est pas « les logs » d'un côté et « pas de logs » de l'autre. Un journal est la façon dont ce produit s'explique : le retirer d'une version finale, ce serait ne plus pouvoir diagnostiquer quoi que ce soit sur la machine de quelqu'un, ce qui est exactement ce qu'on passe nos soirées à faire. La coupure est ailleurs : **ce que le produit dit de lui-même** reste partout, et **ce qui compte, mesure ou raconte une plomberie qui a marché** n'existe que dans la version qui chasse.
 
-**Ce qui a changé de voix, et pourquoi ces lignes-là.** Les vingt flux qu'une session ouvre et referme proprement, qui écrivaient trois lignes chacun ; la paire « plus un paquet depuis mille millisecondes » et « ça repart », qui se répète une dizaine de fois pendant que deux ordinateurs se cherchent. Toutes vraies, toutes utiles pendant une chasse, et toutes noyant le reste le reste du temps. Un flux **coupé**, lui, reste : c'est justement ce qu'on ouvre le journal pour trouver.
+**Ce qui a changé de voix, et pourquoi ces lignes-là.** Les vingt flux qu'une session ouvre et referme proprement, qui écrivaient trois lignes chacun ; la paire « plus un paquet depuis mille millisecondes » et « ça repart », qui se répète une dizaine de fois pendant que deux ordinateurs se cherchent. Toutes vraies, toutes utiles pendant une chasse, et toutes noyant le reste du temps. Un flux **coupé**, lui, reste : c'est justement ce qu'on ouvre le journal pour trouver.
 
 **Rien n'est assemblé pour rien.** `Log::debug` prend de quoi faire la ligne plutôt que la ligne : hors de la version qui chasse, les mots ne sont jamais mis bout à bout, la fermeture étant abandonnée sans être lue. Une ligne qui coûte un `format!` à chaque tour d'une boucle pour un fichier que personne n'ouvrira jamais reste un coût.
 
@@ -2976,6 +2976,24 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 **Et la version se nomme.** Un journal sans aucune ligne de chasse, c'est soit une version qui n'en écrit pas, soit un moment où rien n'est arrivé, et les deux se lisent exactement pareil. Alors la ligne de version le dit : « version de débogage » ou rien. Sans ça, on cherche une soirée durant une ligne qui n'allait jamais être là.
 
 **Ce que ça ne change pas.** `cargo build` et `cargo build --release`, rien d'autre à passer : c'est `debug_assertions`, l'équivalent exact de ce qui sert sur Android, et il n'y a pas de troisième version qui chasserait à moitié. Les moteurs écrivent toujours ce qu'ils veulent comme ils le veulent. La pile de correctifs reste à quatorze.
+
+## D183. La page du journal répond à la boîte de tri, toujours (2026-09-11, pendant M6)
+
+**Ce qui s'est passé.** « J'ai bien mis le tag mais ça ne change rien, y'a toujours tout qui apparaît, et même si je fais Copier le tri il met encore la totale. » Le tri de [D181](#d181-le-journal-se-trie-par-étiquette-comme-celui-dun-téléphone-2026-09-11-pendant-m6) marchait de bout en bout : la boîte, le voyage jusqu'au service, la lecture des fichiers avant la coupe. Personne ne le demandait. Il fallait cliquer « Actualiser », et rien ne le disait.
+
+**Pire que de ne rien faire : avoir l'air de faire.** À la première lettre tapée, le bouton passait de « Copier tout » à « Copier le tri ». Le produit annonçait donc avoir pris le tri en compte, et emportait ensuite la page d'avant. Un bouton qui ment sur ce qu'il fait coûte plus cher qu'un bouton qui ne fait rien, parce qu'on ne va pas vérifier.
+
+**La règle, et elle tient en une phrase.** Ce qui est à l'écran répond à ce qui est écrit dans la boîte. Tout le reste en découle : la page se relit d'elle-même peu après la dernière lettre, et « Copier » emporte la page, donc emporte le tri.
+
+**Trois cents millisecondes, et pas une question par lettre.** L'horloge est reposée à chaque lettre, donc c'est la lettre que personne ne suit qui déclenche la lecture. Sans ce repos, « tag:clipboard » ferait relire quatre fichiers treize fois de suite.
+
+**Celui d'ici se resserre tout seul, celui d'en face se demande.** Relire son propre journal, c'est lire quatre fichiers sur son disque. Relire celui d'une autre machine, c'est une route ouverte jusqu'à elle, parfois un rendez-vous arrangé par le serveur, et des secondes. Une par pause dans la frappe serait payée cher pour rien : là-bas, « Actualiser » ou Entrée lit, et le bouton reste honnête par l'alinéa suivant.
+
+**Le bouton relit si la page est en retard.** Entre un tri collé d'un coup et la page qui se resserre, il y a le repos de l'horloge et l'aller-retour du service, et c'est juste assez pour cliquer entre les deux. La page porte donc le tri auquel elle répond ; s'il ne correspond pas à la boîte, « Copier le tri » relit d'abord et emporte cette réponse-là. C'est la seule façon que le bouton ne mente jamais, y compris pour le journal d'en face.
+
+**Une réponse en retard n'écrase plus une réponse récente.** Chaque question ouvre sa propre conversation avec le service : deux lectures lancées coup sur coup peuvent revenir dans l'autre sens, et la page aurait alors montré la réponse à un tri déjà remplacé sans que rien ne le dise. La page ne prend que la réponse à la dernière question partie.
+
+**Ce que ça ne change pas.** Rien du tri lui-même, ni des étiquettes, ni des deux voix : la langue, le voyage et le tamis de D181 et [D182](#d182-deux-voix-au-journal-et-une-seule-des-deux-survit-à-la-version-finale-2026-09-11-pendant-m6) sont intacts, il n'y manquait que quelqu'un pour les appeler. Le dialecte ne bouge pas. La pile de correctifs reste à quatorze.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

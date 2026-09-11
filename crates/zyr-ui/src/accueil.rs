@@ -237,6 +237,20 @@ struct Etat {
     /// à chaque image reviendrait à le relire en entier pour n'en
     /// dessiner que trente lignes.
     lignes: Vec<String>,
+    /// Le tri auquel cette page répond, et rien tant qu'aucune réponse
+    /// n'est arrivée.
+    ///
+    /// « Copier le tri » emporte la page telle qu'elle est à l'écran : il
+    /// faut donc savoir si elle répond bien à ce qui est écrit dans la
+    /// boîte, faute de quoi le bouton emporterait la page d'avant sous le
+    /// nom du tri.
+    tri: Option<String>,
+    /// Le tri de la dernière question partie.
+    ///
+    /// Chaque question ouvre sa propre conversation avec le service :
+    /// deux lectures lancées coup sur coup peuvent revenir dans l'autre
+    /// sens, et la plus ancienne écraserait la plus récente.
+    tri_demande: String,
     /// Depuis quand « Vider » attend sa confirmation.
     vidage: Option<std::time::Instant>,
     annonce: Option<Annonce>,
@@ -276,6 +290,8 @@ impl Etat {
             ecoute: None,
             journal_de: None,
             lignes: Vec::new(),
+            tri: None,
+            tri_demande: String::new(),
             vidage: None,
             annonce: None,
             souci: None,
@@ -956,9 +972,10 @@ unsafe extern "system" fn answer(
     use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DefWindowProcW, EN_CHANGE, HTCLIENT, IDC_ARROW, IDC_HAND, LoadCursorW, SetCursor,
-        WM_COMMAND, WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-        WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETCURSOR, WM_SYSKEYDOWN,
+        DefWindowProcW, EN_CHANGE, HTCLIENT, IDC_ARROW, IDC_HAND, KillTimer, LoadCursorW,
+        SetCursor, SetTimer, WM_COMMAND, WM_CTLCOLOREDIT, WM_ERASEBKGND, WM_KEYDOWN,
+        WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_SETCURSOR,
+        WM_SYSKEYDOWN, WM_TIMER,
     };
 
     match message {
@@ -1026,6 +1043,31 @@ unsafe extern "system" fn answer(
         // dit sous lui et ce que son bouton permet.
         WM_COMMAND if (holding >> 16) as u32 & 0xFFFF == EN_CHANGE => {
             invalide(window);
+            // Et celui du tri relit le journal de lui-même : on écrit, la
+            // page se resserre, sans rien à cliquer. Celui d'ici
+            // seulement : relire celui d'en face ouvre une route jusqu'à
+            // l'autre machine, et une par pause dans la frappe se paierait
+            // en secondes. Là-bas, c'est « Actualiser » ou Entrée qui lit.
+            //
+            // Lu puis relâché : le dessin tient l'état pendant qu'il lit
+            // les champs, et les prendre ici dans l'autre ordre serait
+            // deux fils qui s'attendent.
+            let boite = CHAMPS.lock().expect("accueil")[Champ::Tri.rang()];
+            if with == boite && ETAT.lock().expect("accueil").journal_de.is_none() {
+                // SAFETY: une horloge posée sur une fenêtre à nous,
+                // depuis le fil qui la possède. La reposer la repart de
+                // zéro, ce qui fait qu'une lettre de plus repousse la
+                // lecture au lieu d'en ajouter une.
+                unsafe { SetTimer(window, REPOS_DU_TRI, REPOS_DU_TRI_MS, None) };
+            }
+            0
+        }
+        WM_TIMER if holding == REPOS_DU_TRI => {
+            // SAFETY: une horloge à nous, sur le fil qui l'a posée.
+            unsafe { KillTimer(window, REPOS_DU_TRI) };
+            if let Some(app) = programme() {
+                relis_le_journal(&app, Apres::Montrer);
+            }
             0
         }
         _ => {
@@ -1058,6 +1100,17 @@ const AGIR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
 /// Une image de plus du fil qui va et vient, demandée par le rythme.
 const ANIME: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
+
+/// L'horloge qui laisse au tri le temps d'être écrit avant de relire.
+const REPOS_DU_TRI: usize = 1;
+
+/// Ce qu'on laisse à la dernière lettre, en millisecondes.
+///
+/// La boîte de tri se comporte comme celle d'un logcat : on écrit, la
+/// page se resserre, sans rien à cliquer. Une question par lettre ferait
+/// relire les quatre fichiers treize fois pour « tag:clipboard », donc
+/// c'est la lettre que personne ne suit qui déclenche la lecture.
+const REPOS_DU_TRI_MS: u32 = 300;
 
 /// Où la souris est, en vrais pixels depuis le coin de la toile.
 fn ou_est(with: windows_sys::Win32::Foundation::LPARAM) -> (f32, f32) {
@@ -2778,9 +2831,9 @@ impl Mise<'_> {
         self.les_lignes(Cadre::pose(ou.gauche, y, large, lignes));
         y += lignes + self.px(design::PAS_4);
 
-        // La boîte de tri, entre les lignes et les boutons : ce qui est
-        // écrit là décide de ce que « Actualiser » relit et de ce que
-        // « Copier » emporte. Vide, rien n'est trié.
+        // La boîte de tri, entre les lignes et les boutons : la page se
+        // resserre d'elle-même sur ce qui est écrit là, et c'est cette
+        // page que « Copier » emporte. Vide, rien n'est trié.
         y += self.champ(ou.gauche, y, large, Champ::Tri);
         y += self.px(design::PAS_3);
 
@@ -4479,10 +4532,7 @@ fn fait(app: &App, quoi: Quoi) {
                 .unwrap_or_default();
             copie(app, &empreinte, Quoi::CopierEmpreinte);
         }
-        Quoi::CopierJournal => {
-            let tout = ETAT.lock().expect("accueil").lignes.join("\n");
-            copie(app, &tout, Quoi::CopierJournal);
-        }
+        Quoi::CopierJournal => copie_le_journal(app),
         Quoi::ARegler(rang) => remedie(app, rang),
         Quoi::Voisin(rang) => lance_le_voisin(app, rang, false),
         Quoi::EnLocal(rang) => lance_le_voisin(app, rang, true),
@@ -4535,7 +4585,10 @@ fn fait(app: &App, quoi: Quoi) {
                     rattache(app, epinglage);
                 }
                 Ecran::Renommage => renomme(app),
-                Ecran::Accueil | Ecran::Journal | Ecran::Reglages => {}
+                // Entrée dans la boîte de tri relit tout de suite, sans
+                // attendre le repos de l'horloge.
+                Ecran::Journal => relis_le_journal(app, Apres::Montrer),
+                Ecran::Accueil | Ecran::Reglages => {}
             }
         }
         Quoi::OuvrirCompte => ouvre_le_compte(app),
@@ -4577,7 +4630,7 @@ fn fait(app: &App, quoi: Quoi) {
             redraw(app);
         }
         Quoi::Vider => vide_le_journal(app),
-        Quoi::Actualiser => relis_le_journal(app),
+        Quoi::Actualiser => relis_le_journal(app, Apres::Montrer),
         Quoi::OuvrirLesJournaux => ouvre_un_dossier(app, "logs"),
         Quoi::Ascenseur(_) => {}
     }
@@ -5189,51 +5242,109 @@ fn ouvre_le_journal(app: &App, de: Option<Peer>) {
         etat.vidage = None;
         etat.defile_lignes = (0.0, 0.0);
         etat.lignes = vec!["Lecture…".to_string()];
+        etat.tri = None;
     }
     ferme_les_champs();
     ouvre_les_champs(&Champ::JOURNAL);
     ecris_dans_le_champ(Champ::Tri, &tri);
     redraw(app);
-    relis_le_journal(app);
+    relis_le_journal(app, Apres::Montrer);
 }
 
-fn relis_le_journal(app: &App) {
-    let de = ETAT.lock().expect("accueil").journal_de.clone();
+/// Ce qu'on fait de la page une fois lue.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Apres {
+    /// La montrer, et rien de plus.
+    Montrer,
+    /// La montrer et l'emporter : « Copier le tri » cliqué sur une page
+    /// qui n'était pas encore celle du tri.
+    Emporter,
+}
+
+/// Redemande la page du journal ouvert, triée comme la boîte le demande.
+///
+/// Appelée depuis le fil qui dessine, qui est le seul à pouvoir lire la
+/// boîte et poser les horloges de cette fenêtre.
+fn relis_le_journal(app: &App, apres: Apres) {
+    // Une lecture qui attendait son repos n'a plus lieu d'être : celle-ci
+    // la remplace.
+    let fenetre = ITS_WINDOW.load(Ordering::Relaxed);
+    if fenetre != 0 {
+        use windows_sys::Win32::Foundation::HWND;
+        use windows_sys::Win32::UI::WindowsAndMessaging::KillTimer;
+        // SAFETY: une horloge à nous, sur le fil qui l'a posée. Rien si
+        // elle n'était pas posée.
+        unsafe { KillTimer(fenetre as HWND, REPOS_DU_TRI) };
+    }
     // Lu avant de partir : la question s'en va sur un autre fil, et le
     // champ appartient à celui qui dessine.
     let tri = texte_du_champ(Champ::Tri).trim().to_string();
+    let de = {
+        let mut etat = ETAT.lock().expect("accueil");
+        etat.tri_demande = tri.clone();
+        etat.journal_de.clone()
+    };
     let app = app.clone();
     crate::app::spawn(async move {
         let texte = match &de {
             None => crate::journal::journal(&tri).await,
-            Some(voisin) => {
-                crate::journal::far_journal(voisin.address.clone(), voisin.fingerprint.clone(), tri)
-                    .await
-                    // Montré dans le journal lui-même : c'est là que
-                    // regarde la personne qui vient de cliquer, et un
-                    // ordinateur qui ne répond pas est déjà la moitié de
-                    // la réponse.
-                    .unwrap_or_else(|raison| raison)
-            }
+            Some(voisin) => crate::journal::far_journal(
+                voisin.address.clone(),
+                voisin.fingerprint.clone(),
+                tri.clone(),
+            )
+            .await
+            // Montré dans le journal lui-même : c'est là que regarde la
+            // personne qui vient de cliquer, et un ordinateur qui ne
+            // répond pas est déjà la moitié de la réponse.
+            .unwrap_or_else(|raison| raison),
         };
         // Joindre une machine distante prend le temps qu'il faut : le
-        // journal a pu être refermé, ou avoir changé d'ordinateur,
+        // journal a pu être refermé, avoir changé d'ordinateur ou de tri
         // entre-temps. Ce qui arrive en retard n'écrase pas ce qui est à
         // l'écran.
         let mut etat = ETAT.lock().expect("accueil");
-        if etat.journal_de != de || etat.ecran != Ecran::Journal {
+        if etat.journal_de != de || etat.ecran != Ecran::Journal || etat.tri_demande != tri {
             return;
         }
         etat.lignes = texte.lines().map(str::to_string).collect();
+        etat.tri = Some(tri);
         // Le plus récent est en bas : c'est là que se trouve ce qui vient
         // d'arriver, et c'est ce qu'on ouvre le journal pour lire. Plus
         // bas que tout plutôt que d'une hauteur comptée : ce qui vient
         // d'être lu n'a pas encore été mesuré, et c'est le dessin qui
         // ramènera ce nombre à ce qu'il y a réellement à voir.
         etat.defile_lignes = (0.0, TOUT_EN_BAS);
+        let emporte = (apres == Apres::Emporter).then(|| etat.lignes.join("\n"));
         drop(etat);
         redraw(&app);
+        if let Some(tout) = emporte {
+            // Posé depuis le fil qui dessine, comme toute copie de cette
+            // fenêtre.
+            let sien = app.clone();
+            let _ = app.run_on_main_thread(move || copie(&sien, &tout, Quoi::CopierJournal));
+        }
     });
+}
+
+/// Emporte la page du journal, qui doit répondre à ce qui est écrit dans
+/// la boîte.
+///
+/// Le bouton dit « Copier le tri » et ne doit jamais emporter autre
+/// chose : entre le tri collé dans la boîte et la page qui se resserre il
+/// y a le repos de l'horloge et l'aller-retour du service, et c'est juste
+/// assez pour cliquer entre les deux. Une page en retard est donc relue,
+/// et c'est sa réponse qui part.
+fn copie_le_journal(app: &App) {
+    let tri = texte_du_champ(Champ::Tri).trim().to_string();
+    let page = {
+        let etat = ETAT.lock().expect("accueil");
+        (etat.tri.as_deref() == Some(tri.as_str())).then(|| etat.lignes.join("\n"))
+    };
+    match page {
+        Some(tout) => copie(app, &tout, Quoi::CopierJournal),
+        None => relis_le_journal(app, Apres::Emporter),
+    }
 }
 
 /// Vider efface la seule trace de ce qui vient de se passer. Un deuxième
@@ -5275,7 +5386,8 @@ fn vide_le_journal(app: &App) {
             redraw(&app);
             return;
         }
-        relis_le_journal(&app);
+        let sien = app.clone();
+        let _ = app.run_on_main_thread(move || relis_le_journal(&sien, Apres::Montrer));
     });
 }
 
