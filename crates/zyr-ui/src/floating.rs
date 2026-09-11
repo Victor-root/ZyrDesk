@@ -45,7 +45,14 @@ use crate::app::App;
 // has nowhere else to say it, standing behind the picture, and a menu
 // entry that seems to do nothing is exactly the kind of thing that cannot
 // be diagnosed from a screenshot.
-use crate::journal::note;
+
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "floating";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
 
 /// How often the session is looked for.
 ///

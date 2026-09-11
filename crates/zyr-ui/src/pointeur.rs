@@ -26,6 +26,14 @@ use zyr_proto::session::Pointer;
 
 use crate::app::App;
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "pointer";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// Combien de fois par seconde la forme est demandée.
 ///
 /// Vingt : une main qui entre dans un champ de texte voit la barre
@@ -60,7 +68,7 @@ pub fn follow(app: &App) {
     crate::app::spawn(async move {
         let seen = keep_it_in_step(&app).await;
         zyr_session::point_like_nothing();
-        crate::journal::note(&format!("forme du curseur : {seen}"));
+        note(&format!("forme du curseur : {seen}"));
         FOLLOWING.store(false, Ordering::SeqCst);
     });
 }
@@ -118,7 +126,7 @@ async fn keep_it_in_step(app: &App) -> Seen {
                 seen.saw(shape);
                 if let Err(reason) = zyr_session::point_like(shape) {
                     seen.why = "la forme n'a pas pu être écrite pour le lecteur";
-                    crate::journal::note(&format!("forme du curseur non écrite : {reason}"));
+                    note(&format!("forme du curseur non écrite : {reason}"));
                     return seen;
                 }
             }

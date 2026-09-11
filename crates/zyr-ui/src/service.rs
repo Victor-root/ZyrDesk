@@ -10,6 +10,14 @@
 
 use zyr_control::{Answer, Request, Service};
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "service";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// Asks one thing, and waits for the one answer.
 pub async fn ask(request: &Request) -> Result<Answer, String> {
     let mut service = Service::join().await.map_err(|e| e.to_string())?;
@@ -56,9 +64,9 @@ pub fn wake_the_service() {
         if Service::join().await.is_ok() {
             return;
         }
-        crate::journal::note("service muet, démarrage demandé");
+        note("service muet, démarrage demandé");
         let outcome = crate::app::spawn_blocking(started).await;
-        crate::journal::note(&match outcome {
+        note(&match outcome {
             Ok(Ok(())) => "service demandé au démarrage".to_string(),
             Ok(Err(e)) => format!("service non démarré : {e}"),
             Err(e) => format!("service non démarré : {e}"),

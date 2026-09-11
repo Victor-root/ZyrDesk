@@ -54,6 +54,9 @@ impl Desk {
     }
 }
 
+/// What this module's lines are filed under.
+pub const TAG: &str = "control";
+
 /// Everything an answer is drawn from.
 ///
 /// Built by the supervisor, which owns all of it: the desk holds no
@@ -830,7 +833,7 @@ mod tests {
                     fingerprint,
                     machine: machine.clone(),
                     order: StopOrder::new(),
-                    log: log.clone(),
+                    log: log.about(TAG),
                 },
             )
             .unwrap();

@@ -33,6 +33,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
+/// What this module's lines are filed under.
+const TAG: &str = "sound";
+
 /// Whether the last thing this service asked of the speakers was to be
 /// quiet.
 static ASKED: AtomicBool = AtomicBool::new(false);
@@ -58,6 +61,7 @@ static WATCHED: AtomicBool = AtomicBool::new(false);
 /// back on a machine that was left silent, even when nobody is signed in
 /// yet at the moment the service starts.
 pub fn keep_in_step(wanted: bool, a_session_is_open: bool, log: &Log) {
+    let log = &log.about(TAG);
     // One line per session, whatever is decided, and this is the whole
     // reason both facts are handed over separately rather than already
     // multiplied together: what is worth reading is not that the
@@ -114,6 +118,7 @@ pub fn keep_in_step(wanted: bool, a_session_is_open: bool, log: &Log) {
 /// Only the service asks this, and a service is a Windows thing.
 #[cfg(windows)]
 pub fn pick_up_where_it_was_left(log: &Log) {
+    let log = &log.about(TAG);
     if !paths::hushed_speakers().exists() {
         return;
     }

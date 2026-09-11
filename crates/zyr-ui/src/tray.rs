@@ -25,6 +25,14 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 
 use crate::app::App;
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "tray";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// Ce que le menu répond quand on choisit une de ses lignes.
 const OUVRIR: usize = 1;
 const QUITTER: usize = 2;
@@ -346,11 +354,11 @@ fn ouvre() {
 /// than stopped through Windows, which would want administrator rights
 /// every single time.
 fn quit() {
-    crate::journal::note("fermeture demandée depuis la zone de notification");
+    note("fermeture demandée depuis la zone de notification");
     crate::app::spawn(async move {
         match crate::desk::stop_service().await {
-            Ok(()) => crate::journal::note("service arrêté, fermeture"),
-            Err(reason) => crate::journal::note(&format!("service non arrêté : {reason}")),
+            Ok(()) => note("service arrêté, fermeture"),
+            Err(reason) => note(&format!("service non arrêté : {reason}")),
         }
         retire();
         crate::app::quitte();

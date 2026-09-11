@@ -41,6 +41,9 @@ use zyr_proto::log::Log;
 use zyr_proto::paths;
 use zyr_tunnel::aside::{A_PIECE, Given, Wanted};
 
+/// What this module's lines are filed under.
+const TAG: &str = "files";
+
 /// The one transfer coming into this computer, when there is one.
 ///
 /// One at a time, because one clipboard holds one thing: pasting
@@ -90,6 +93,7 @@ struct Coming {
 /// What was on its way before is dropped: one clipboard holds one thing,
 /// and what is no longer on it is not being pasted by anybody.
 pub fn coming_in(stamp: Stamp, listed: &Listing, log: &Log) -> Result<(), String> {
+    let log = &log.about(TAG);
     let mut held = COMING.lock().expect("transfert en cours");
     if held.as_ref().is_some_and(|coming| coming.stamp == stamp) {
         return Ok(());
@@ -104,7 +108,7 @@ pub fn coming_in(stamp: Stamp, listed: &Listing, log: &Log) -> Result<(), String
         .map_err(|e| format!("le dossier des fichiers reçus ne s'ouvre pas : {e}"))?;
 
     log.write(&format!(
-        "files: bringing in {} from the far computer",
+        "bringing in {} from the far computer",
         listed.in_words()
     ));
     *held = Some(Coming {
@@ -162,6 +166,7 @@ pub fn what_is_still_wanted() -> Option<Wanted> {
 /// the session lasts. So what was coming in is dropped, and the far
 /// computer is told to stop sending on the very next answer.
 pub fn take(given: &Given, log: &Log) -> Result<bool, String> {
+    let log = &log.about(TAG);
     let mut held = COMING.lock().expect("transfert en cours");
     let Some(coming) = held.as_mut() else {
         return Ok(true);
@@ -228,6 +233,7 @@ fn reached(coming: &Coming) -> HowFar {
 /// then, Windows having copied it out of what this product handed it, and
 /// what was not pasted is a transfer nobody finished.
 pub fn forget(log: &Log) {
+    let log = &log.about(TAG);
     let mut held = COMING.lock().expect("transfert en cours");
     drop_it(&mut held, "goes with the session", log);
 }
@@ -242,7 +248,7 @@ fn drop_it(held: &mut Option<Coming>, why: &str, log: &Log) {
     let _ = std::fs::remove_file(paths::files_coming());
     if let Some(coming) = held.take() {
         let _ = std::fs::remove_dir_all(&coming.where_they_land);
-        log.write(&format!("files: what was coming in {why}"));
+        log.write(&format!("what was coming in {why}"));
     }
 }
 
@@ -286,14 +292,14 @@ fn say_how_far(coming: &mut Coming, over: bool, log: &Log) {
     let took = coming.since.elapsed();
     if over {
         log.write(&format!(
-            "files: {} came in, in {:.1} s",
+            "{} came in, in {:.1} s",
             weighed(done),
             took.as_secs_f32()
         ));
         return;
     }
     log.write(&format!(
-        "files: {} of {} in, {} a second",
+        "{} of {} in, {} a second",
         weighed(done),
         weighed(whole),
         weighed((done as f64 / took.as_secs_f64().max(0.001)) as u64)

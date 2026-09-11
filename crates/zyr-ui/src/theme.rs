@@ -31,6 +31,14 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::app::App;
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "theme";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// The three answers, spelled as the file spells them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Choix {
@@ -143,7 +151,7 @@ pub fn choose(choix: Choix) {
         choix.name()
     );
     if let Err(e) = zyr_proto::files::replace(&zyr_proto::paths::chosen_theme(), &written) {
-        crate::journal::note(&format!("thème non retenu : {e}"));
+        note(&format!("thème non retenu : {e}"));
     }
     on_the_window();
 }
@@ -302,11 +310,6 @@ fn wide(text: &str) -> Vec<u16> {
         .encode_wide()
         .chain(Some(0))
         .collect()
-}
-
-#[cfg(windows)]
-fn note(what: &str) {
-    crate::journal::note(what);
 }
 
 #[cfg(test)]

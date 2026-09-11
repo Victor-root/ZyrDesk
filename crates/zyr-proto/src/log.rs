@@ -11,6 +11,18 @@
 //! follows local time steps back an hour once a year, and the lines end
 //! up out of order at the exact moment one is trying to understand a
 //! nighttime incident.
+//!
+//! # What a line is filed under
+//!
+//! Every line carries a tag, written between brackets after the date:
+//! the part of the product that wrote it. One tag to a module, which is
+//! the only rule that keeps them worth anything: a tag somebody has to
+//! look up is a tag nobody types.
+//!
+//! It is what makes a journal answerable. Six lines about the clipboard
+//! sit inside four thousand about a session, and the difference between
+//! reading those six and reading all four thousand is that they can be
+//! asked for by name. `zyr_proto::journal` is where the asking happens.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -36,6 +48,13 @@ const AT_MOST: u64 = 4 * 1024 * 1024;
 /// The end, where whatever is being investigated lives.
 const KEPT: u64 = 256 * 1024;
 
+/// What a line is filed under when nobody said.
+///
+/// A real word rather than a blank, because a blank tag is a line that
+/// no filter can ever name: whoever is looking for it would have to ask
+/// for everything, which is the thing tags exist to avoid.
+pub const OTHERWISE: &str = "zyrdesk";
+
 /// Log opened in append mode, shared by the whole service.
 ///
 /// Copies share the one open file: the tunnel's tasks write to the same
@@ -43,6 +62,13 @@ const KEPT: u64 = 256 * 1024;
 #[derive(Debug, Clone)]
 pub struct Log {
     file: Arc<Mutex<File>>,
+    /// What lines written through this copy are filed under.
+    ///
+    /// On the copy and not on the call, which is the whole of what makes
+    /// tags stay right: a module takes its own copy once and everything
+    /// it writes afterwards is filed under it, with nothing to remember
+    /// and nothing to keep in step at three hundred call sites.
+    tag: &'static str,
 }
 
 impl Log {
@@ -65,7 +91,29 @@ impl Log {
             .open(path)?;
         Ok(Self {
             file: Arc::new(Mutex::new(file)),
+            tag: OTHERWISE,
         })
+    }
+
+    /// The same journal, writing under that tag.
+    ///
+    /// The same file and the same lock, so lines from every part of the
+    /// product still land in one file in the order they happened. What
+    /// changes is only what each of them is filed under.
+    ///
+    /// Taken once where a module holds its journal, rather than at each
+    /// line: a tag chosen afresh three hundred times is three hundred
+    /// chances to spell it differently.
+    pub fn about(&self, tag: &'static str) -> Self {
+        Self {
+            file: Arc::clone(&self.file),
+            tag,
+        }
+    }
+
+    /// What lines written through this copy are filed under.
+    pub fn tag(&self) -> &'static str {
+        self.tag
     }
 
     /// Writes one timestamped line at the end of the file.
@@ -82,7 +130,7 @@ impl Log {
         };
         let _ = trimmed(&mut file);
         let _ = file.seek(SeekFrom::End(0));
-        let _ = writeln!(file, "{} {message}", now());
+        let _ = writeln!(file, "{} [{}] {message}", now(), self.tag);
         let _ = file.flush();
     }
 }
@@ -162,6 +210,39 @@ mod tests {
         let timestamp = now();
         assert_eq!(timestamp.len(), 19, "{timestamp}");
         assert!(timestamp.contains('-') && timestamp.contains(':'));
+    }
+
+    #[test]
+    fn chaque_ligne_porte_son_etiquette_et_le_fichier_reste_le_meme() {
+        // C'est ce qui fait qu'on peut demander six lignes au milieu de
+        // quatre mille : l'étiquette est sur la ligne, et une copie
+        // étiquetée écrit dans le même fichier et dans le même ordre.
+        let path = fresh_path("etiquettes");
+        let log = Log::open(&path).unwrap();
+        let presse_papiers = log.about("clipboard");
+
+        log.write("sans étiquette particulière");
+        presse_papiers.write("ce que tient cet ordinateur");
+        log.write("et la suite");
+
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 3, "un seul fichier pour les deux copies");
+        assert!(
+            lines[0].contains(&format!("[{OTHERWISE}] ")),
+            "{}",
+            lines[0]
+        );
+        assert!(lines[1].contains("[clipboard] "), "{}", lines[1]);
+        assert!(lines[1].ends_with("ce que tient cet ordinateur"));
+        assert!(
+            lines[2].contains(&format!("[{OTHERWISE}] ")),
+            "{}",
+            lines[2]
+        );
+        assert_eq!(presse_papiers.tag(), "clipboard");
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

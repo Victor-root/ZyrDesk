@@ -34,8 +34,15 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
 use crate::app::App;
 
-use crate::journal::note;
 use crate::paint::Cadre;
+
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "floating";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
 
 /// The drawing, in the units of its own file, which is what makes this
 /// the same logo as everywhere else in the product rather than a second

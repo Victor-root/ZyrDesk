@@ -45,6 +45,14 @@ use crate::mesures::Mesures;
 
 /* ---- Ce qu'une lecture dit ------------------------------------------- */
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "voyants";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// Depuis combien de temps l'image doit être figée pour que ça se voie.
 ///
 /// Un tiers de seconde. En dessous, c'est une image en retard comme il en
@@ -320,7 +328,7 @@ fn said(reads: &Reads, was: Shown, shown: Shown) {
         if before == after {
             continue;
         }
-        crate::journal::note(&match (after, why) {
+        note(&match (after, why) {
             (true, Some(why)) => format!("voyant {which} : {why}"),
             // Allumé sans raison dans cette lecture-ci : la cause est
             // passée entre deux lectures et le voyant tient encore.
@@ -586,7 +594,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
         )
     };
     if window.is_null() {
-        crate::journal::note("voyants : la fenêtre n'a pas pu s'ouvrir");
+        note("voyants : la fenêtre n'a pas pu s'ouvrir");
         return;
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);

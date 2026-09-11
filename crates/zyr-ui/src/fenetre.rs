@@ -27,6 +27,14 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
 use crate::app::App;
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "window";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// Ce que la fenêtre fait de large et de haut en s'ouvrant, et ce en
 /// dessous de quoi elle ne descend pas, en pixels de page.
 ///
@@ -187,7 +195,7 @@ pub fn ouvre(app: &App) -> Result<(), String> {
         return Err("la fenêtre de ZyrDesk n'a pas pu s'ouvrir".to_string());
     }
     ELLE.store(elle as isize, Ordering::Relaxed);
-    crate::journal::note(&format!(
+    note(&format!(
         "fenêtre ouverte par ZyrDesk, {large}x{haute} px à {} %",
         dpi * 100 / 96
     ));
@@ -378,7 +386,7 @@ fn dit_si_elle_descend_ou_remonte(quoi: usize) {
     if RANGEE.swap(rangee, Ordering::Relaxed) == rangee {
         return;
     }
-    crate::journal::note(&format!(
+    note(&format!(
         "fenêtre {} ; le premier plan est {}",
         if rangee {
             "rangée dans la barre des tâches"

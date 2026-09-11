@@ -28,11 +28,18 @@ use crate::app::App;
 use crate::design::{self, Couleur, Palette};
 use crate::floating::{Act, Sens};
 use crate::icones;
-use crate::journal::note;
 use crate::mesures::Mesures;
 use crate::paint::{Cadre, Cale, Icone, Plume, Toile};
 use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
+
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "floating";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
 
 /// Une ligne de la carte.
 ///

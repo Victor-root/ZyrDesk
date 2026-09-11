@@ -21,6 +21,16 @@
 //! draws a small one. Both come out of the .ico at exactly those sizes,
 //! with nothing stretched at all.
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+#[cfg(windows)]
+const TAG: &str = "icon";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+#[cfg(windows)]
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// Puts the right icon on the home window, at the sizes Windows is about
 /// to draw it at.
 ///
@@ -63,7 +73,7 @@ pub fn on_the_window() {
         // as the program.
         let icon = unsafe { LoadImageW(ours, IDI_APPLICATION, IMAGE_ICON, side, side, 0) };
         if icon.is_null() {
-            crate::journal::note(&format!(
+            note(&format!(
                 "icône de la fenêtre : Windows n'a pas rendu le dessin en {side} px"
             ));
             continue;
@@ -71,7 +81,7 @@ pub fn on_the_window() {
         // SAFETY: our own window, and a handle it keeps.
         unsafe { SendMessageW(home, WM_SETICON, which as WPARAM, icon as LPARAM) };
     }
-    crate::journal::note(&format!(
+    note(&format!(
         "icône de la fenêtre posée en {} et {} px (écran à {} %)",
         sides[0].1,
         sides[1].1,

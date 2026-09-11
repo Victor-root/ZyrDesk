@@ -139,14 +139,25 @@ fn interface_log() -> PathBuf {
     paths::logs_dir().join("interface.log")
 }
 
-/// Writes down what the window just did.
+/// Writes down what the window just did, under that tag.
+///
+/// Every part of the window declares one of its own where it writes,
+/// rather than choosing one at each line: what a tag is worth is that it
+/// is the same one every time, and one picked afresh a hundred and forty
+/// times is a hundred and forty chances to spell it differently.
 ///
 /// Never fails and never says so: a trace that could stop the thing it
 /// is watching would be worse than no trace.
-pub fn note(what: &str) {
+pub fn note_about(tag: &'static str, what: &str) {
     if let Some(log) = own_log() {
-        log.write(what);
+        log.about(tag).write(what);
     }
+}
+
+/// The same, for what belongs to the window itself rather than to one
+/// part of it.
+pub fn note(what: &str) {
+    note_about("interface", what);
 }
 
 /// Says which build this window is, the moment it opens.

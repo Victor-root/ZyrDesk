@@ -51,6 +51,9 @@ use crate::machine::{Door, Hosting};
 use crate::preferences::Remembered;
 use crate::ways::Ways;
 
+/// What this module's lines are filed under.
+const TAG: &str = "account";
+
 /// What the road to a computer of the account starts with.
 const ROAD: &str = "account:";
 
@@ -205,7 +208,7 @@ impl Account {
     pub fn at(path: PathBuf, log: Log) -> Self {
         Account(Arc::new(Inner {
             path,
-            log,
+            log: log.about(TAG),
             started: Mutex::new(None),
             held: Mutex::new(None),
             admitted: Mutex::new(Vec::new()),

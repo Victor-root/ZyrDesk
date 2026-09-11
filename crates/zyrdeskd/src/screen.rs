@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
+/// What this module's lines are filed under.
+const TAG: &str = "screen";
+
 /// Where the identifier the engine knows the virtual screen by is kept.
 ///
 /// Learned from the engine, which is the only thing that computes it,
@@ -183,10 +186,10 @@ pub fn forget_what_cannot_be_put_back(log: &Log) {
         return;
     }
     match std::fs::remove_file(&owed) {
-        Ok(()) => log.write(&format!(
+        Ok(()) => log.about(TAG).write(&format!(
             "the engine was holding an arrangement of screens it can never put back, naming this              computer's virtual screen ({ours}) which sleeps between sessions; it has been              dropped, so it stops switching every screen back on at each start"
         )),
-        Err(e) => log.write(&format!(
+        Err(e) => log.about(TAG).write(&format!(
             "the engine holds an arrangement of screens it can never put back ({}), and it could              not be dropped: {e}",
             owed.display()
         )),
@@ -641,6 +644,7 @@ pub fn sleep_after_a_session(still_nobody: &dyn Fn() -> bool) -> Result<Vec<Stri
 /// Answers whether it was woken, which is what says it has to be put back.
 #[cfg(windows)]
 pub fn wake_to_be_named(log: &Log) -> bool {
+    let log = &log.about(TAG);
     if remembered().is_some() {
         return false;
     }
@@ -676,6 +680,7 @@ pub fn wake_to_be_named(log: &Log) -> bool {
 /// here is ordinary and means try again in a moment, never give up.
 #[cfg(windows)]
 pub fn back_to_sleep(log: &Log, still_nobody: &dyn Fn() -> bool) -> bool {
+    let log = &log.about(TAG);
     match sleep_after_a_session(still_nobody) {
         Ok(said) => {
             for line in said {
@@ -898,6 +903,7 @@ pub struct AsStarted<'a> {
 /// started aimed at a screen that is no longer there, which is what
 /// happens when the driver goes.
 pub fn learn_from(engine_log: &std::path::Path, as_started: AsStarted<'_>, log: &Log) -> Learned {
+    let log = &log.about(TAG);
     /// The engine lists its screens as it starts and answers on its own
     /// port a moment later, but the two are not the same moment and the
     /// log is written through a buffer. Read a few times rather than
@@ -1184,6 +1190,7 @@ fn write_down(log: Option<&Log>, said: Vec<String>) {
     let Some(log) = log else {
         return;
     };
+    let log = log.about(TAG);
     for line in said {
         log.write(&line);
     }

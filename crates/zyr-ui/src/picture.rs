@@ -42,6 +42,14 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicIsize, Ordering};
 use crate::app::App;
 use zyr_proto::session::{DisplayMode, Screen};
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "picture";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// The engine window this program has taken in hand.
 #[derive(Default)]
 pub struct Picture {
@@ -153,7 +161,7 @@ pub fn reshape(app: &App, shape: (i32, i32)) {
         held.shape = shape;
         held.process
     };
-    crate::journal::note(&format!(
+    note(&format!(
         "l'image du lecteur {process} prend la forme {}x{}",
         shape.0, shape.1
     ));
@@ -213,7 +221,7 @@ pub fn hold(app: &App, process: u32) -> bool {
             // computer's picture actually arrives at, which is the
             // answer to what a black band on screen means, and it exists
             // nowhere else once the window has been laid in ours.
-            crate::journal::note(&format!(
+            note(&format!(
                 "image du lecteur {process} posée dans la fenêtre de ZyrDesk, en {}x{}",
                 shape.0, shape.1
             ));
@@ -713,7 +721,7 @@ fn lay_on(
         // at the new size before there is anything to show. Only the
         // first of the two is ours, and only this tells them apart.
         if !same_size && !a_gesture_is_running() {
-            crate::journal::note(&format!(
+            note(&format!(
                 "image posée en {width}x{height} sans main sur la fenêtre : le lecteur a rendu \
                  la main en {} µs",
                 laid.as_micros()
@@ -843,7 +851,7 @@ fn lay_on(
     // told in one line at the end instead.
     if !moving && laid > A_FRAME {
         WAS_BUSY.store(true, Ordering::Relaxed);
-        crate::journal::note(&format!(
+        note(&format!(
             "image posée en {:.0} ms, soit plus d'une image : le lecteur a tardé à répondre",
             laid.as_secs_f64() * 1000.0
         ));
@@ -1046,7 +1054,7 @@ fn tell_the_drag() {
         } else {
             " (image portée par la fenêtre)"
         };
-        crate::journal::note(&format!(
+        note(&format!(
             "déplacement{ending} : {steps} pas ; poser {laying:.0} ms (pire {worst:.1}), \
              dont image {picture:.0} ms (pire {picture_worst:.1}) et bouton {button:.0} ms ; \
              système et vue web {system:.0} ms (pire {system_worst:.1})"
@@ -1059,7 +1067,7 @@ fn tell_the_drag() {
         _ => "un coin",
     };
     let turns = TURNS.load(Ordering::Relaxed);
-    crate::journal::note(&format!(
+    note(&format!(
         "redimensionnement par {held} : {steps} pas, {turns} changements de sens ; \
          poser {laying:.0} ms (pire {worst:.1}), \
          dont image {picture:.0} ms (pire {picture_worst:.1}) et bouton {button:.0} ms ; \
@@ -1237,7 +1245,7 @@ fn tell_the_gap(stood: Option<(i32, i32, i32, i32)>, asked: (i32, i32, i32, i32)
     if GAP.swap(both, Ordering::Relaxed) == both {
         return;
     }
-    crate::journal::note(&format!(
+    note(&format!(
         "image demandée en {asked:?}, posée en {got:?} : écart de {off:?} sur les quatre bords"
     ));
 }
@@ -1258,7 +1266,7 @@ static CUT: AtomicI64 = AtomicI64::new(-1);
 fn tell_the_corner(width: i32, height: i32, border: i32, round: i32) {
     let both = (i64::from(border) << 32) | i64::from(round) & 0xFFFF_FFFF;
     if CUT.swap(both, Ordering::Relaxed) != both {
-        crate::journal::note(&format!(
+        note(&format!(
             "coins de l'image : image {width}x{height}, bordure de {border} px, \
              rayon de {round} px"
         ));
@@ -1449,7 +1457,7 @@ pub fn tell_what_is_asked_for(
         ),
         None => format!("taille demandée : {asked}"),
     };
-    crate::journal::note(&format!(
+    note(&format!(
         "{seen} ; image demandée au loin en {wide}x{high} à {} images/s et {} Mb/s en {}, {why}",
         settings.fps,
         settings.bitrate_kbps / 1000,
@@ -1632,7 +1640,7 @@ fn watch_the_front() {
         return;
     };
     if !taken {
-        crate::journal::note("premier plan non suivi : Windows a refusé le crochet des fenêtres");
+        note("premier plan non suivi : Windows a refusé le crochet des fenêtres");
     }
 }
 
@@ -1732,7 +1740,7 @@ fn say_where_the_front_went(window: windows_sys::Win32::Foundation::HWND) {
     if FRONT_SAID.swap(window as isize, Ordering::Relaxed) == window as isize {
         return;
     }
-    crate::journal::note(&format!(
+    note(&format!(
         "le premier plan passe {}",
         in_these_words(whose_window(window), window)
     ));
@@ -1756,7 +1764,7 @@ fn draw_the_bar(window: windows_sys::Win32::Foundation::HWND) {
 
     let lit = who_holds_the_front() != Front::Elsewhere;
     if BAR_LIT.swap(lit, Ordering::Relaxed) != lit {
-        crate::journal::note(&format!(
+        note(&format!(
             "barre de titre {} : le premier plan est {}",
             if lit { "active" } else { "inactive" },
             the_front_in_words()
@@ -1968,7 +1976,7 @@ fn round_the_window(home: windows_sys::Win32::Foundation::HWND, may: bool) {
         );
         corners
     };
-    crate::journal::note(&format!(
+    note(&format!(
         "coins de la fenêtre : {} demandés, le compositeur a répondu {answer:#x}",
         match (may, whole) {
             (_, true) => "droits, sans bordure, la fenêtre couvrant l'écran",
@@ -2068,11 +2076,11 @@ fn tell_the_frame(home: windows_sys::Win32::Foundation::HWND) {
     // "nowhere". Printed as it comes, it reads like a measurement and is
     // not one.
     if !crate::fenetre::a_l_ecran() {
-        crate::journal::note("cadre de la fenêtre : elle est rangée dans la barre des tâches");
+        note("cadre de la fenêtre : elle est rangée dans la barre des tâches");
         return;
     }
     let screen = about.rcMonitor;
-    crate::journal::note(&format!(
+    note(&format!(
         "cadre de la fenêtre : écran {}x{} en ({}, {}), fenêtre {}x{} en ({}, {}), intérieur {}x{} ; \
          il reste {} px de cadre en largeur et {} px en hauteur",
         screen.right - screen.left,
@@ -2118,7 +2126,7 @@ fn tell_the_cut(
     // SAFETY: a window this program took in hand, and the rectangle is
     // ours. A window with no shape answers that it has none.
     let kind = unsafe { GetWindowRgnBox(engine, &mut box_of) };
-    crate::journal::note(&format!(
+    note(&format!(
         "découpe de l'image {what} ({taken}) sur {}x{} : elle couvre ({}, {}, {}, {}), sorte {kind}",
         asked.0, asked.1, box_of.left, box_of.top, box_of.right, box_of.bottom
     ));
@@ -2189,7 +2197,7 @@ fn say_the_size_again(engine: windows_sys::Win32::Foundation::HWND, size: (i32, 
             )
         };
     }
-    crate::journal::note(&format!(
+    note(&format!(
         "taille de l'image redite au lecteur : {}x{}",
         size.0, size.1
     ));
@@ -2508,7 +2516,7 @@ fn hand_the_keyboard_over(engine: windows_sys::Win32::Foundation::HWND, over: bo
     let joined = unsafe { AttachThreadInput(ours, theirs, i32::from(over)) } != 0;
     ITS_THREAD.store(if over && joined { theirs } else { 0 }, Ordering::Relaxed);
     if !over {
-        crate::journal::note("clavier repris à la session");
+        note("clavier repris à la session");
         return;
     }
     // SAFETY: a window this program took in hand, which the call above
@@ -2525,7 +2533,7 @@ fn hand_the_keyboard_over(engine: windows_sys::Win32::Foundation::HWND, over: bo
             SetFocus(engine);
             GetFocus()
         } == engine;
-    crate::journal::note(if took {
+    note(if took {
         "clavier confié à la session : les deux programmes partagent une entrée, l'image a le focus"
     } else if joined {
         "clavier confié à la session mais le focus n'a pas atterri sur l'image"
@@ -2599,7 +2607,7 @@ pub(crate) fn the_keyboard_to_the_picture() -> bool {
         // the front is on our own window is exactly the state where the
         // far computer stops answering Alt+Tab: the line has to be able
         // to show that, or it reads as everything being well.
-        crate::journal::note(&format!(
+        note(&format!(
             "{} ; le premier plan est {}",
             if told == 1 {
                 "le clavier est bien à la session"
@@ -2672,7 +2680,7 @@ fn carry_the_picture(
         SetLastError(0);
         if SetParent(engine, home).is_null() && GetLastError() != 0 {
             let why = GetLastError();
-            crate::journal::note(&format!(
+            note(&format!(
                 "l'image n'a pas pu être portée par la fenêtre ({why:#x}), déplacement pas à pas"
             ));
             return;
@@ -2717,7 +2725,7 @@ fn carry_the_picture(
         // itself, which is where « the picture hops once, just as it
         // grows » would fall. Counted rather than reasoned about: the
         // reasoning has been wrong twice.
-        crate::journal::note(&format!(
+        note(&format!(
             "image portée par la fenêtre : mauvaise lecture pendant {:.1} ms \
              (adoptée {:.1}, remise {:.1}) ; visée (0, 0, {width}, {height}), \
              obtenue {:?}",
@@ -2745,7 +2753,7 @@ fn the_front_to_the_picture(engine: windows_sys::Win32::Foundation::HWND) {
 
     // SAFETY: a window this program took in hand, and just handed back.
     let taken = unsafe { SetForegroundWindow(engine) } != 0;
-    crate::journal::note(&format!(
+    note(&format!(
         "premier plan redemandé pour l'image rendue à elle-même : Windows a {} ; il est {}",
         if taken { "accepté" } else { "refusé" },
         the_front_in_words()
@@ -2863,7 +2871,7 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
         if who_holds_the_front() == Front::Ours {
             the_front_to_the_picture(engine);
         }
-        crate::journal::note(&format!(
+        note(&format!(
             "image rendue à elle-même : mauvaise lecture pendant {:.1} ms \
              (déplacée {:.1}, style {:.1}, sortie {:.1}, dessus {:.1}) ; \
              visée ({}, {}, {}, {}), obtenue {:?}",
@@ -3077,7 +3085,7 @@ fn let_the_picture_go(window: windows_sys::Win32::Foundation::HWND) {
     // whether the move really was handed over or is being played step by
     // step again behind our backs.
     // SAFETY: our own window, read only.
-    crate::journal::note(&format!(
+    note(&format!(
         "{} rendu au système : {} en {:.0} ms, image redimensionnée {} fois ; \
          fenêtre {:?}, cadre dessiné {:?}, image {:?}, dedans {:?}",
         held.what,
@@ -3800,7 +3808,7 @@ pub(crate) fn shut_the_pointer_in(held: bool) {
         }
         // SAFETY: nought gives the pointer the whole desk back.
         unsafe { ClipCursor(std::ptr::null()) };
-        crate::journal::note("pointeur rendu au bureau, la souris n'est plus celle d'un jeu");
+        note("pointeur rendu au bureau, la souris n'est plus celle d'un jeu");
         return;
     }
     let Some((left, top, right, bottom)) = the_engines_window().and_then(where_it_stands) else {
@@ -3832,13 +3840,13 @@ pub(crate) fn shut_the_pointer_in(held: bool) {
         // it is granted, and what it costs is a pointer walking out of a
         // game with nothing to say why.
         if !CAGE_REFUSED.swap(true, Ordering::Relaxed) {
-            crate::journal::note("pointeur non enfermé dans l'image : Windows a refusé la cage");
+            note("pointeur non enfermé dans l'image : Windows a refusé la cage");
         }
         return;
     }
     CAGE_REFUSED.store(false, Ordering::Relaxed);
     if !SHUT_IN.swap(true, Ordering::Relaxed) {
-        crate::journal::note("pointeur enfermé dans l'image, la souris étant celle d'un jeu");
+        note("pointeur enfermé dans l'image, la souris étant celle d'un jeu");
     }
 }
 

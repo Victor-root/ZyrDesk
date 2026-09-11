@@ -43,6 +43,9 @@ use crate::account::{self, Rendezvous};
 use crate::preferences::Remembered;
 use crate::said::{self, Said};
 
+/// What this module's lines are filed under.
+const TAG: &str = "way";
+
 /// Where the tunnel leaves from: any interface, any port.
 const EVERY_INTERFACE: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
@@ -373,6 +376,7 @@ pub struct Ways {
 
 impl Ways {
     pub fn new(log: Log, remembered: Remembered) -> Self {
+        let log = log.about(TAG);
         Self {
             register: Arc::new(Mutex::new(Register::new())),
             alive: still_running,

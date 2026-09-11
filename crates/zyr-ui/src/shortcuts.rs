@@ -26,6 +26,14 @@ use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "keys";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// What a combination can be asked to do.
 ///
 /// Three, and no more: what a person reaches for without leaving the
@@ -232,7 +240,7 @@ pub fn read(path: &Path) -> io::Result<Bound> {
 /// button into a one-way door.
 fn read_or_shipped(path: &Path) -> Bound {
     read(path).unwrap_or_else(|e| {
-        crate::journal::note(&format!(
+        note(&format!(
             "raccourcis illisibles ({e}), combinaisons d'origine en attendant"
         ));
         Bound::out_of_the_box()
@@ -550,7 +558,7 @@ fn hold_them(app: &crate::app::App) -> bool {
         // numbers.
         let key = unsafe { MapVirtualKeyW(u32::from(scan), MAPVK_VSC_TO_VK) };
         if key == 0 {
-            crate::journal::note(&format!(
+            note(&format!(
                 "raccourci {combination} : ce clavier n'a pas cette touche"
             ));
             continue;
@@ -572,7 +580,7 @@ fn hold_them(app: &crate::app::App) -> bool {
         // SAFETY: no window, so the combination belongs to this thread,
         // and the identifier is ours and unique within it.
         if unsafe { RegisterHotKey(null_mut(), id, modifiers, key) } != 0 {
-            crate::journal::note(&format!(
+            note(&format!(
                 "raccourci {combination} tenu pour {}",
                 doing.name()
             ));
@@ -581,7 +589,7 @@ fn hold_them(app: &crate::app::App) -> bool {
             // Said out loud: another program holding the same
             // combination is the ordinary reason, and from the outside
             // it looks exactly like a shortcut that does nothing.
-            crate::journal::note(&format!(
+            note(&format!(
                 "raccourci {combination} refusé par Windows, sans doute déjà pris ailleurs"
             ));
         }
@@ -622,7 +630,7 @@ fn do_it(app: &crate::app::App, doing: Doing) {
     match doing {
         Doing::Menu => {
             if let Err(e) = crate::floating::show_the_menu(app) {
-                crate::journal::note(&format!("raccourci du menu sans effet : {e}"));
+                note(&format!("raccourci du menu sans effet : {e}"));
             }
         }
         Doing::End => on_the_session(app, crate::floating::Act::End),
@@ -633,7 +641,7 @@ fn do_it(app: &crate::app::App, doing: Doing) {
             let app = app.clone();
             crate::app::spawn(async move {
                 if let Err(e) = crate::session::watch_the_next_far_screen(app.clone()).await {
-                    crate::journal::note(&format!("raccourci d'écran sans effet : {e}"));
+                    note(&format!("raccourci d'écran sans effet : {e}"));
                 }
             });
         }
@@ -647,7 +655,7 @@ fn on_the_session(app: &crate::app::App, act: crate::floating::Act) {
     let app = app.clone();
     crate::app::spawn(async move {
         if let Err(e) = crate::floating::ask(&app, act).await {
-            crate::journal::note(&format!("raccourci sans effet : {e}"));
+            note(&format!("raccourci sans effet : {e}"));
         }
     });
 }

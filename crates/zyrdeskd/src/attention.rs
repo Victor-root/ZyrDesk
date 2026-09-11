@@ -40,6 +40,9 @@ use std::io;
 
 use zyr_proto::log::Log;
 
+/// What this module's lines are filed under.
+const TAG: &str = "attention";
+
 /// Where Windows keeps the one setting that decides whether a program
 /// may press Ctrl+Alt+Suppr on this computer's behalf.
 const POLICY_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Policies\System";
@@ -90,6 +93,7 @@ pub fn forget_it() {
 /// Everything that decides the outcome is written down first, because
 /// the call itself decides nothing and reports nothing.
 pub fn press(log: &Log) -> io::Result<()> {
+    let log = &log.about(TAG);
     log.write(&format!(
         "Ctrl+Alt+Suppr: policy {}, this service is in session {}, the screen is on session {}",
         match what_the_policy_says() {

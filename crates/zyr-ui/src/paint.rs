@@ -68,6 +68,14 @@ use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::design::{Couleur, Ombre};
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "paint";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// La famille de caractères, celle du système, dans l'ordre où le
 /// dessinateur la cherche.
 ///
@@ -979,7 +987,7 @@ impl Toile {
             // dit qu'elle est incomplète. C'est arrivé une fois, à
             // l'oeil barré du menu, dont le contour est la seule courbe
             // de Bézier du produit.
-            crate::journal::note(&format!("dessin : chemin non lu, « {dit} »"));
+            note(&format!("dessin : chemin non lu, « {dit} »"));
         }
         self.chemins.borrow_mut().push((dit, neuf.clone()));
         neuf

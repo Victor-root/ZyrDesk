@@ -57,6 +57,9 @@ use zyr_proto::session::WantedScreen;
 /// Value Windows returns when no session is attached to the screen.
 const NO_SESSION: u32 = 0xFFFF_FFFF;
 
+/// What this module's lines are filed under.
+const TAG: &str = "desk";
+
 /// Desktop we aim at: the one carrying the interactive display.
 const DESKTOP: &str = "winsta0\\default";
 
@@ -476,7 +479,7 @@ fn the_way_named_in(arguments: impl Iterator<Item = String>) -> Option<bool> {
 pub fn move_the_speakers(quiet: bool) -> u32 {
     let said = |what: String| {
         if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
-            log.write(&what);
+            log.about(TAG).write(&what);
         }
     };
     let already = match zyr_sound::speakers_muted() {
@@ -718,6 +721,7 @@ pub fn do_this_to_the_desk(asked: Desk) {
         }
     };
     if let Ok(log) = zyr_proto::log::Log::open(&crate::service::log_path()) {
+        let log = log.about(TAG);
         for line in said {
             log.write(&line);
         }

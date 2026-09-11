@@ -45,6 +45,13 @@ use crate::ways::Ways;
 /// Margin given to the engine to open its ports at start-up.
 const START_DELAY: Duration = Duration::from_secs(30);
 
+/// What this module's lines are filed under.
+///
+/// The same word for the two files that hold the service together: what
+/// Windows starts and what it runs are one thing to whoever is looking
+/// for a line about either.
+const TAG: &str = "service";
+
 /// How often the supervisor takes back control to check the engine's
 /// state, the session on screen and the stop order.
 const WATCH_PERIOD: Duration = Duration::from_millis(500);
@@ -270,6 +277,7 @@ pub enum End {
 
 /// Runs until a stop is asked for.
 pub fn run(order: &StopOrder, log: &Log) -> End {
+    let log = &log.about(TAG);
     let exe = paths::host_engine_exe();
 
     // A screen some session picked belongs to that session and to nothing
@@ -537,7 +545,7 @@ fn desk(
             fingerprint: identity.fingerprint(),
             machine,
             order,
-            log: log.clone(),
+            log: log.about(crate::control::TAG),
         },
     )
     .map_err(|e| e.to_string())

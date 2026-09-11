@@ -27,6 +27,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::paths;
+use crate::sifting::Sifting;
 
 /// How many lines are kept from each file.
 ///
@@ -84,7 +85,18 @@ impl Journal {
 
     /// Closes the heading on the engines in place, then gathers the
     /// files.
-    pub fn gathered(mut self) -> String {
+    pub fn gathered(self) -> String {
+        self.sifted(&Sifting::everything())
+    }
+
+    /// The same, keeping only the lines that answer what was asked.
+    ///
+    /// The asking happens as the files are read and never on the page
+    /// once it is made, and that is the whole of what makes it worth
+    /// anything: only the last hundred and twenty lines of each file
+    /// reach a page, and six lines about the clipboard are almost never
+    /// among the last hundred and twenty of a session.
+    pub fn sifted(mut self, sift: &Sifting) -> String {
         let here = |present: bool| if present { "présent" } else { "absent" };
         self.says("Moteur hôte", here(paths::host_engine_exe().is_file()));
         self.says("Moteur client", here(paths::client_engine_exe().is_file()));
@@ -93,11 +105,17 @@ impl Journal {
             self.says("Moteurs", &engines);
         }
         self.says("Journaux", &paths::logs_dir().display().to_string());
+        // Said in the heading, because a page of six lines that does not
+        // say what it was sifted through reads as a product with nothing
+        // to say rather than as an answer to a question.
+        if !sift.takes_everything() {
+            self.says("Tri", sift.said());
+        }
 
         let mut text = self.0;
         for (file, what) in FILES {
             let _ = write!(text, "\n\n--- {what} ({file}) ---\n");
-            text.push_str(&last_lines(&paths::logs_dir().join(file)));
+            text.push_str(&last_lines(&paths::logs_dir().join(file), file, sift));
         }
         text
     }
@@ -194,16 +212,31 @@ fn build_from(text: &str) -> String {
 /// Only the end is ever read from disk. A log can have grown for months,
 /// and reading the whole of it to keep a hundred lines would hold the
 /// program on a file nobody asked to see all of.
-fn last_lines(path: &Path) -> String {
+///
+/// `within` is what the file is called, which stands in for a tag on the
+/// lines that carry none: the engines write their own journals in their
+/// own shape, and this is what lets one of them be asked for whole.
+fn last_lines(path: &Path, within: &str, sift: &Sifting) -> String {
     use std::io::{Read, Seek, SeekFrom};
 
     // How much of the end is read, at most. Far more than the lines
     // kept can need, so the cap never shows in an ordinary journal.
+    //
+    // Wider when something is being asked for, and by a good deal: what
+    // is asked for is rare by definition, and a hundred lines about the
+    // clipboard are spread across a session's whole journal rather than
+    // sitting at the end of it.
     const READ_AT_MOST: u64 = 256 * 1024;
+    const READ_AT_MOST_WHEN_ASKED: u64 = 4 * 1024 * 1024;
+    let read_at_most = if sift.takes_everything() {
+        READ_AT_MOST
+    } else {
+        READ_AT_MOST_WHEN_ASKED
+    };
 
     let read = std::fs::File::open(path).and_then(|mut file| {
         let written = file.metadata()?.len();
-        let skipped = written.saturating_sub(READ_AT_MOST);
+        let skipped = written.saturating_sub(read_at_most);
         file.seek(SeekFrom::Start(skipped))?;
         let mut end = Vec::new();
         file.read_to_end(&mut end)?;
@@ -232,8 +265,22 @@ fn last_lines(path: &Path) -> String {
     } else {
         &lines[..]
     };
-    let from = whole.len().saturating_sub(KEPT);
-    let mut kept = whole[from..].join("\n");
+    // Asked of every line read and not of the ones kept, which is the
+    // point: what is being looked for is rare, and a file's last hundred
+    // and twenty lines almost never hold it.
+    let answered: Vec<&&str> = whole
+        .iter()
+        .filter(|line| sift.keeps(line, within))
+        .collect();
+    if answered.is_empty() && !sift.takes_everything() {
+        return "(rien ici ne répond au tri)".to_string();
+    }
+    let from = answered.len().saturating_sub(KEPT);
+    let mut kept = answered[from..]
+        .iter()
+        .map(|line| **line)
+        .collect::<Vec<&str>>()
+        .join("\n");
     if from > 0 || skipped > 0 {
         kept.insert_str(0, "(le début n'est pas montré)\n");
     }
@@ -243,6 +290,11 @@ fn last_lines(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Rien de demandé, donc tout gardé.
+    fn tout() -> Sifting {
+        Sifting::everything()
+    }
 
     fn a_folder_of_its_own(what: &str) -> std::path::PathBuf {
         let folder = std::env::temp_dir().join(format!(
@@ -256,7 +308,7 @@ mod tests {
     #[test]
     fn a_file_that_does_not_exist_is_said_rather_than_left_blank() {
         let nowhere = Path::new("/nowhere/zyrdesk/none.log");
-        assert!(last_lines(nowhere).contains("rien d'écrit"));
+        assert!(last_lines(nowhere, "none", &tout()).contains("rien d'écrit"));
     }
 
     #[test]
@@ -267,7 +319,7 @@ mod tests {
         let written: Vec<String> = (0..KEPT + 40).map(|line| format!("ligne {line}")).collect();
         std::fs::write(&path, written.join("\n")).unwrap();
 
-        let kept = last_lines(&path);
+        let kept = last_lines(&path, "essai", &tout());
         // La fin, qui est là où se trouve la panne, et jamais le début.
         assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
         assert!(!kept.contains("ligne 0\n"), "{kept}");
@@ -291,7 +343,7 @@ mod tests {
         }
         std::fs::write(&path, &written).unwrap();
 
-        let kept = last_lines(&path);
+        let kept = last_lines(&path, "essai", &tout());
         assert!(
             kept.ends_with("ligne 39999 avec un peu de matière autour"),
             "fin : {}",
@@ -310,11 +362,66 @@ mod tests {
     }
 
     #[test]
+    fn le_tri_se_fait_a_la_lecture_et_non_sur_la_page() {
+        // C'est toute la différence : seules les cent vingt dernières
+        // lignes d'un fichier arrivent sur une page, et six lignes de
+        // presse-papiers ne sont presque jamais parmi les cent vingt
+        // dernières d'une session.
+        let folder = a_folder_of_its_own("tri");
+        let path = folder.join("service.log");
+
+        let mut written = String::new();
+        written.push_str("2026-09-11 18:55:03 [clipboard] ce que tient cet ordinateur\n");
+        for line in 0..KEPT + 40 {
+            let _ = writeln!(written, "2026-09-11 18:55:04 [ways] voie {line} ouverte");
+        }
+        std::fs::write(&path, &written).unwrap();
+
+        // Sans tri, la ligne du début est hors de portée.
+        let tout = last_lines(&path, "service", &tout());
+        assert!(!tout.contains("ce que tient"), "{tout}");
+
+        // Avec, elle est la seule qui reste.
+        let trie = last_lines(&path, "service", &Sifting::of("tag:clipboard"));
+        assert_eq!(
+            trie,
+            "2026-09-11 18:55:03 [clipboard] ce que tient cet ordinateur"
+        );
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn un_tri_qui_ne_rend_rien_le_dit_plutot_que_de_laisser_un_blanc() {
+        // Un blanc se lit comme un fichier vide, et la question devient
+        // « est-ce que ça marche ? » au lieu de « il n'y avait rien ».
+        let folder = a_folder_of_its_own("tri-vide");
+        let path = folder.join("service.log");
+        std::fs::write(&path, "2026-09-11 18:55:04 [ways] voie 1 ouverte\n").unwrap();
+
+        let trie = last_lines(&path, "service", &Sifting::of("tag:clipboard"));
+        assert!(trie.contains("rien ici ne répond au tri"), "{trie}");
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn une_page_triee_dit_sous_quel_tri_elle_a_ete_prise() {
+        // Sinon elle se lit comme un produit qui n'a rien à dire plutôt
+        // que comme la réponse à une question.
+        let text = Journal::of_this_computer().sifted(&Sifting::of("tag:clipboard"));
+        assert!(text.contains("Tri "), "{}", &text[..400]);
+        assert!(text.contains("tag:clipboard"), "{}", &text[..400]);
+        // Et une page non triée ne porte pas la ligne du tout.
+        assert!(!Journal::of_this_computer().gathered().contains("\nTri "));
+    }
+
+    #[test]
     fn an_unreadable_file_says_so_rather_than_nothing() {
         // Un dossier n'est pas lisible comme un fichier : c'est le
         // moyen portable d'obtenir un refus qui n'est pas « absent ».
         let folder = a_folder_of_its_own("illisible");
-        let read = last_lines(&folder);
+        let read = last_lines(&folder, "essai", &tout());
         assert!(read.starts_with("(illisible"), "{read}");
         std::fs::remove_dir_all(&folder).unwrap();
     }

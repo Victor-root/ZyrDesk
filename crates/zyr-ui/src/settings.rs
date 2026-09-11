@@ -29,6 +29,14 @@ use zyr_proto::session::{
 use crate::service;
 use crate::session::Changed;
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "settings";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// What the settings screen shows.
 #[derive(PartialEq)]
 pub struct Settings {
@@ -428,12 +436,12 @@ async fn remember(named: &str, said: String, change: impl FnOnce(&mut Preferred)
         return;
     }
     match service::ask(&Request::Choose { preferred }).await {
-        Ok(Answer::Done) => crate::journal::note(&said),
-        Ok(other) => crate::journal::note(&format!(
+        Ok(Answer::Done) => note(&said),
+        Ok(other) => note(&format!(
             "{named} not written down: {}",
             service::unexpected(other)
         )),
-        Err(reason) => crate::journal::note(&format!("{named} not written down: {reason}")),
+        Err(reason) => note(&format!("{named} not written down: {reason}")),
     }
 }
 

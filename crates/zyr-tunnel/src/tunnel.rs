@@ -20,6 +20,9 @@ use crate::aside::{self, Answers};
 use crate::channel::{DatagramChannel, StreamChannel};
 use crate::pump::{self, Counters, DatagramPorts, Reading};
 
+/// What this crate's lines are filed under.
+const TAG: &str = "tunnel";
+
 /// One side of the tunnel, pumps running.
 ///
 /// Everything stops when it is dropped: the pumps have no reason to
@@ -46,6 +49,7 @@ impl Tunnel {
         answering: Arc<dyn Answers>,
         log: Option<Log>,
     ) -> io::Result<Self> {
+        let log = log.map(|log| log.about(TAG));
         let ports = answering.engine();
         let datagrams = Arc::new(DatagramPorts::towards_engine(engine, ports)?);
         let counters = Arc::new(Counters::default());
@@ -67,6 +71,7 @@ impl Tunnel {
         ports: EnginePorts,
         log: Option<Log>,
     ) -> io::Result<Self> {
+        let log = log.map(|log| log.about(TAG));
         // The listeners are open before we hand back: the engine may
         // show up the instant the session is announced to it.
         let mut listeners = Vec::new();

@@ -19,6 +19,14 @@ use zyr_proto::paths;
 
 use crate::service;
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "desk";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// A ZyrDesk the home screen shows.
 #[derive(Clone, PartialEq)]
 pub struct Peer {
@@ -184,7 +192,7 @@ pub async fn kick(fingerprint: String) -> Result<(), String> {
         .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
     match service::ask(&Request::Kick { peer }).await? {
         Answer::Done => {
-            crate::journal::note(&format!("{peer} déconnecté"));
+            note(&format!("{peer} déconnecté"));
             Ok(())
         }
         other => Err(service::unexpected(other)),
@@ -219,11 +227,11 @@ pub async fn attach(attach: Attach) -> Result<Attached, String> {
     let server = attach.server.clone();
     match service::ask(&Request::Attach(attach)).await? {
         Answer::Done => {
-            crate::journal::note(&format!("cet ordinateur est rattaché à {server}"));
+            note(&format!("cet ordinateur est rattaché à {server}"));
             Ok(Attached::Done)
         }
         Answer::Unpinned { presented } => {
-            crate::journal::note(&format!(
+            note(&format!(
                 "{server} présente une clé que personne ne garantit ({presented}), à confirmer"
             ));
             Ok(Attached::Unpinned(presented.to_string()))
@@ -236,7 +244,7 @@ pub async fn attach(attach: Attach) -> Result<Attached, String> {
 pub async fn detach() -> Result<(), String> {
     match service::ask(&Request::Detach).await? {
         Answer::Done => {
-            crate::journal::note("cet ordinateur est détaché de son compte");
+            note("cet ordinateur est détaché de son compte");
             Ok(())
         }
         other => Err(service::unexpected(other)),
@@ -273,7 +281,7 @@ pub async fn revoke_device(device: String) -> Result<(), String> {
     .await?
     {
         Answer::Done => {
-            crate::journal::note(&format!("appareil {device} révoqué"));
+            note(&format!("appareil {device} révoqué"));
             Ok(())
         }
         other => Err(service::unexpected(other)),
@@ -354,13 +362,13 @@ pub async fn set_at_boot(on: bool) -> Result<(), String> {
         // is put back before the failure is reported, or the computer
         // would answer at power-on with no window anywhere to say so.
         let put_back = service::ask(&Request::SetAtBoot { on: !on }).await;
-        crate::journal::note(&format!(
+        note(&format!(
             "démarrage avec Windows non enregistré ({e}), service remis : {}",
             if put_back.is_ok() { "oui" } else { "non" }
         ));
         return Err(e);
     }
-    crate::journal::note(if on {
+    note(if on {
         "ZyrDesk reviendra avec Windows"
     } else {
         "ZyrDesk ne reviendra pas tout seul"
@@ -408,7 +416,7 @@ pub async fn authorize(
 
     match service::ask(&Request::Authorize { peer, host, name }).await? {
         Answer::Done => {
-            crate::journal::note(&format!("{peer} écrit dans la liste"));
+            note(&format!("{peer} écrit dans la liste"));
             Ok(())
         }
         other => Err(service::unexpected(other)),
@@ -427,7 +435,7 @@ pub async fn forget(fingerprint: String) -> Result<(), String> {
         .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
     match service::ask(&Request::Forget { peer }).await? {
         Answer::Done => {
-            crate::journal::note(&format!("{peer} oublié"));
+            note(&format!("{peer} oublié"));
             Ok(())
         }
         other => Err(service::unexpected(other)),
@@ -442,7 +450,7 @@ pub async fn forget(fingerprint: String) -> Result<(), String> {
 /// program register one on its own.
 pub async fn start_service() -> Result<(), String> {
     let program = service_program()?;
-    crate::journal::note(&format!("mise en service demandée : {}", program.display()));
+    note(&format!("mise en service demandée : {}", program.display()));
 
     // On a thread where waiting is allowed: this holds until the person
     // has answered the elevation prompt and the service has started.
@@ -451,10 +459,10 @@ pub async fn start_service() -> Result<(), String> {
         .map_err(|e| {
             // What broke is a thread of ours, in words meant for a log:
             // the person gets a sentence, the journal gets the detail.
-            crate::journal::note(&format!("mise en service interrompue : {e}"));
+            note(&format!("mise en service interrompue : {e}"));
             "la mise en service ne s'est pas terminée. Le journal dit pourquoi.".to_string()
         })?;
-    crate::journal::note(&match &outcome {
+    note(&match &outcome {
         Ok(()) => "service mis en place".to_string(),
         Err(reason) => format!("service non mis en place : {reason}"),
     });

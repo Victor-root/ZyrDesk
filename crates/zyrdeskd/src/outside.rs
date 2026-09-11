@@ -39,6 +39,9 @@ use tokio::runtime::Handle;
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
+/// What this module's lines are filed under.
+const TAG: &str = "reach";
+
 /// Who is asked, and it is deliberately nobody of ours: a resolver every
 /// network in the world reaches, run by somebody with no stake in this
 /// product and no way to be down at the same moment as our own server.
@@ -74,6 +77,7 @@ impl Drop for Watching {
 /// A session is opening here: from now until it ends, what this computer
 /// can reach is written down.
 pub fn watch(log: &Log) -> Watching {
+    let log = &log.about(TAG);
     SESSIONS.fetch_add(1, Ordering::SeqCst);
     if !ASKING.swap(true, Ordering::SeqCst)
         && let Ok(runtime) = Handle::try_current()

@@ -40,6 +40,14 @@
 // compilé et éprouvé partout.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "touchpad";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// Ce qu'un geste à plusieurs doigts veut dire.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Gesture {
@@ -404,7 +412,7 @@ pub fn open_the_windows_page() {
         .arg("ms-settings:devices-touchpad")
         .spawn();
     if let Err(e) = opened {
-        crate::journal::note(&format!("réglages du pavé tactile non ouverts : {e}"));
+        note(&format!("réglages du pavé tactile non ouverts : {e}"));
     }
 }
 
@@ -483,7 +491,7 @@ pub fn read_the_pad(wanted: bool) -> bool {
 
     if !wanted {
         if READING.let_go() {
-            crate::journal::note(&format!(
+            note(&format!(
                 "pavé tactile : {} trames lues, {} à trois doigts ou plus, {} gestes",
                 counted::FRAMES.load(Ordering::Relaxed),
                 counted::THREES.load(Ordering::Relaxed),
@@ -501,7 +509,7 @@ pub fn read_the_pad(wanted: bool) -> bool {
     counted::GESTURES.store(0, Ordering::Relaxed);
     *HAND.lock().expect("lecture du pavé") = Reading::new();
     *FRAME.lock().expect("trame du pavé") = Frame::new();
-    crate::journal::note(if taken {
+    note(if taken {
         "pavé tactile lu par ZyrDesk : ses gestes partent dans la session"
     } else {
         "pavé tactile non lu : Windows a refusé de le donner"

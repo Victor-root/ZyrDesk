@@ -28,6 +28,14 @@ use zyr_session::{Outcome, Step, Wanted};
 
 use crate::service;
 
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "session";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
+
 /// A session already under way, as the service describes it.
 #[derive(PartialEq)]
 pub struct Ongoing {
@@ -226,7 +234,7 @@ pub async fn watch_the_far_screen(app: App, id: Option<String>) -> Result<(), St
         other => return Err(crate::service::unexpected(other)),
     };
     ask_for_the_far_screen(id);
-    crate::journal::note(&format!(
+    note(&format!(
         "écran de l'ordinateur distant : {}",
         if starting_over {
             "son moteur redémarre pour en changer, l'image est relancée"
@@ -363,7 +371,7 @@ pub async fn take_where_it_stands(
 fn tell_the_player(settings: SessionSettings) -> Result<(), String> {
     let told = zyr_session::tell_the_player(&settings).map_err(|e| e.to_string())?;
     *SHOWN.lock().expect("réglages de l'image") = Some(settings);
-    crate::journal::note(&format!("le lecteur suit maintenant « {told} »"));
+    note(&format!("le lecteur suit maintenant « {told} »"));
     Ok(())
 }
 
@@ -379,7 +387,7 @@ async fn serve_at(app: App, way: WayId, shown: SessionSettings, kbps: u32) -> Re
         // again, which negotiates the rate the way every change of rate
         // did before.
         Answer::Refused(reason) => {
-            crate::journal::note(&format!(
+            note(&format!(
                 "débit : l'ordinateur distant n'a pas pu être réglé où il est ({reason}), \
                  l'image est relancée"
             ));
@@ -387,7 +395,7 @@ async fn serve_at(app: App, way: WayId, shown: SessionSettings, kbps: u32) -> Re
         }
         other => return Err(crate::service::unexpected(other)),
     }
-    crate::journal::note(&format!(
+    note(&format!(
         "débit : l'ordinateur distant sert à {} Mb/s sans rien relancer",
         kbps / 1000
     ));
@@ -405,7 +413,7 @@ async fn serve_steady(app: App, way: WayId, rate: bool) -> Result<(), String> {
         Answer::Refused(reason) => return Err(reason),
         other => return Err(crate::service::unexpected(other)),
     };
-    crate::journal::note(&format!(
+    note(&format!(
         "écran d'en face : {}",
         if starting_over {
             "son moteur redémarre pour changer de cadence, l'image est relancée"
@@ -445,7 +453,7 @@ async fn become_that_size(
         } => (wide, high),
         Answer::Showing { size: None } => (guessed.width, guessed.height),
         Answer::Refused(reason) => {
-            crate::journal::note(&format!(
+            note(&format!(
                 "l'ordinateur distant n'a pas préparé son écran : {reason}"
             ));
             (guessed.width, guessed.height)
@@ -760,7 +768,7 @@ fn asked_afresh(app: &App, wanted: &mut Wanted, preferred: &mut Preferred) {
 /// picture is brought back the same way, and `ComingBack` says how long
 /// that is worth trying.
 fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
-    crate::journal::note(&format!("session demandée vers {}", wanted.host));
+    note(&format!("session demandée vers {}", wanted.host));
     let mut coming_back = ComingBack::none();
     loop {
         let towards = wanted.host.clone();
@@ -768,7 +776,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         let running = match zyr_session::open(
             &wanted,
             &mut |step| {
-                crate::journal::note(&written(&step));
+                note(&written(&step));
                 opening.reached(&step);
                 // The floating button hangs on that process, and this window
                 // is the only one that knows its number until the service
@@ -794,13 +802,11 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             // left standing, since no session will end to take it.
             Err(zyr_session::Error::Abandoned) => {
                 crate::floating::Floating::was_closed_on_purpose(app);
-                crate::journal::note(
-                    "ouverture abandonnée : la session a été fermée avant l'image",
-                );
+                note("ouverture abandonnée : la session a été fermée avant l'image");
                 return finish(app, true, String::new());
             }
             Err(e) => {
-                crate::journal::note(&format!(
+                note(&format!(
                     "session non ouverte : {}",
                     e.to_string().replace('\n', " ")
                 ));
@@ -833,13 +839,13 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             // the whole of what a session that used to die looks like
             // now, and the journal is where anybody finds out whether it
             // held.
-            crate::journal::note(&format!(
+            note(&format!(
                 "l'image est revenue après {} reprise(s), la session continue",
                 coming_back.try_number()
             ));
         }
         coming_back.opened();
-        crate::journal::note(&format!("session en cours, lecteur {process}"));
+        note(&format!("session en cours, lecteur {process}"));
         // What the player was started with, which is what every change
         // made while it runs starts from.
         *SHOWN.lock().expect("réglages de l'image") = Some(running.settings());
@@ -860,13 +866,13 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         if !lay_the_picture_when_it_opens(app, process)
             && !crate::floating::Floating::a_close_was_asked_for(app)
         {
-            crate::journal::note(&format!(
+            note(&format!(
                 "le lecteur {process} n'a pas ouvert d'image en {} s, l'écran d'ouverture est \
                  retiré quand même",
                 WINDOW_TAKES.as_secs()
             ));
         }
-        crate::journal::note(&opening.how_long_it_took());
+        note(&opening.how_long_it_took());
         crate::accueil::range_l_ouverture(app);
 
         // Waiting costs nothing here and buys the one thing the person
@@ -878,7 +884,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         // a player stopped to be told something new looks exactly like one
         // that stopped for good, and only this tells the two apart.
         if OPEN_AGAIN.swap(0, Ordering::SeqCst) == process {
-            crate::journal::note(&format!(
+            note(&format!(
                 "image relancée avec ce qui est choisi maintenant (le lecteur a dit {ended:?})"
             ));
             crate::accueil::relance(app);
@@ -887,7 +893,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         }
 
         let on_purpose = crate::floating::Floating::was_closed_on_purpose(app);
-        crate::journal::note(&match &ended {
+        note(&match &ended {
             Ok(outcome) if on_purpose => {
                 format!("session fermée volontairement, le lecteur a dit {outcome:?}")
             }
@@ -907,7 +913,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         // screen and this thread keeps everything it knows, so what they
         // see is a picture that freezes and returns.
         if coming_back.after(&ended, showing_since.elapsed()) {
-            crate::journal::note(&format!(
+            note(&format!(
                 "la session est tombée toute seule, l'image est reprise ({} sur {})",
                 coming_back.in_a_row, COMES_BACK_IN_A_ROW
             ));
@@ -970,7 +976,7 @@ pub async fn apply_session(app: App) -> Result<(), String> {
     // is waiting on that player wakes the instant it goes, and reads this
     // to know whether the session is over or beginning again.
     OPEN_AGAIN.store(process, Ordering::SeqCst);
-    crate::journal::note(&format!(
+    note(&format!(
         "réglages appliqués : le lecteur {process} est relancé"
     ));
     if !crate::floating::stop_the_player(process) {
@@ -986,9 +992,9 @@ pub async fn apply_session(app: App) -> Result<(), String> {
 pub fn end_it(app: &App) {
     let asked = app.clone();
     crate::app::spawn(async move {
-        crate::journal::note("session terminée par la croix de la fenêtre");
+        note("session terminée par la croix de la fenêtre");
         if let Err(reason) = crate::floating::ask(&asked, crate::floating::Act::End).await {
-            crate::journal::note(&format!(
+            note(&format!(
                 "la croix n'a pas pu terminer la session : {}",
                 reason.replace('\n', " ")
             ));
@@ -1223,13 +1229,13 @@ fn written(step: &Step) -> String {
 /// knowing which of the two sides it was already on.
 fn how_the_window_stands(_app: &App, when: &str) {
     if crate::fenetre::sienne() == 0 {
-        crate::journal::note(&format!("{when} : plus de fenêtre d'accueil"));
+        note(&format!("{when} : plus de fenêtre d'accueil"));
         return;
     }
     fn say(what: bool) -> &'static str {
         if what { "oui" } else { "non" }
     }
-    crate::journal::note(&format!(
+    note(&format!(
         "{when} : accueil à l'écran={} plein écran={}",
         say(crate::fenetre::a_l_ecran()),
         say(crate::fenetre::tient_l_ecran()),
@@ -1242,7 +1248,7 @@ fn how_the_window_stands(_app: &App, when: &str) {
 /// will end to take it: nothing was running when they pressed the cross.
 fn closed_during_the_pause(app: &App) {
     crate::floating::Floating::was_closed_on_purpose(app);
-    crate::journal::note("reprise abandonnée : la session a été fermée pendant l'attente");
+    note("reprise abandonnée : la session a été fermée pendant l'attente");
     finish(app, true, String::new());
 }
 

@@ -35,12 +35,19 @@ use crate::design::{self, Couleur, Palette};
 use crate::desk::{Attached, Peer, Standing, Watcher};
 use crate::folders::Engines;
 use crate::icones;
-use crate::journal::note;
 use crate::paint::{Cadre, Cale, Icone, Plume, Toile};
 use crate::session::Ongoing;
 use crate::settings::Settings;
 use crate::shortcuts::{Combination, Doing, Held};
 use crate::theme::Choix;
+
+/// Ce sous quoi ce module classe ses lignes du journal.
+const TAG: &str = "home";
+
+/// Écrit une ligne sous l'étiquette de ce module.
+fn note(what: &str) {
+    crate::journal::note_about(TAG, what);
+}
 
 /// Ce que le service peut changer sans que personne ne clique : une
 /// session ouverte depuis l'autre bout, un moteur déposé dans son
@@ -5250,7 +5257,7 @@ fn vide_le_journal(app: &App) {
 /// refus enverrait quelqu'un coller du vide sur l'autre ordinateur.
 fn copie(app: &App, texte: &str, quoi: Quoi) {
     if let Err(e) = zyr_clipboard::hold_this(&zyr_proto::clipboard::Clip::text(texte)) {
-        crate::journal::note(&format!("copie refusée : {e}"));
+        note(&format!("copie refusée : {e}"));
         annonce(app, "La copie a été refusée par Windows.", true);
         return;
     }

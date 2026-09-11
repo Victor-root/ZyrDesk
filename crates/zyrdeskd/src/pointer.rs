@@ -43,6 +43,9 @@ use std::time::{Duration, Instant};
 use zyr_proto::log::Log;
 use zyr_proto::session::Pointer;
 
+/// What this module's lines are filed under.
+const TAG: &str = "pointer";
+
 /// How often the helper reads the pointer.
 ///
 /// About a drawn frame. The answer travels to another computer and is
@@ -82,6 +85,7 @@ static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
 /// follows. A pointer that arrives right an instant late is worth far
 /// more than an answer that holds up the channel it travels on.
 pub fn shape(log: &Log) -> Pointer {
+    let log = &log.about(TAG);
     *ASKED.lock().expect("dernière question") = Some(Instant::now());
     if !KEEPING.swap(true, Ordering::SeqCst) {
         keep_a_helper(log.clone());
@@ -113,8 +117,9 @@ fn nobody_is_asking() -> bool {
 /// shared with everything else this service does.
 #[cfg(windows)]
 fn keep_a_helper(log: Log) {
+    let log = log.about(TAG);
     std::thread::spawn(move || {
-        log.write("pointer: a session is asking what shape this computer's pointer has");
+        log.write("a session is asking what shape this computer's pointer has");
         let mut started: Option<Instant> = None;
         let mut refused = false;
         while !nobody_is_asking() {
@@ -122,7 +127,7 @@ fn keep_a_helper(log: Log) {
                 match crate::session::start_reading_the_pointer() {
                     Ok(()) => {
                         if started.is_none() {
-                            log.write("pointer: reading it from the session that owns the screen");
+                            log.write("reading it from the session that owns the screen");
                         }
                         refused = false;
                         started = Some(Instant::now());
@@ -133,7 +138,7 @@ fn keep_a_helper(log: Log) {
                     Err(e) => {
                         if !refused {
                             refused = true;
-                            log.write(&format!("pointer: nothing can read the pointer here: {e}"));
+                            log.write(&format!("nothing can read the pointer here: {e}"));
                         }
                         started = None;
                     }
@@ -142,7 +147,7 @@ fn keep_a_helper(log: Log) {
             std::thread::sleep(READ_EVERY);
         }
         log.write(&format!(
-            "pointer: nobody is asking any more, the last shape read was {}",
+            "nobody is asking any more, the last shape read was {}",
             written_shape()
         ));
         // The word goes with the asking: the next session starts on the

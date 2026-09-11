@@ -25,6 +25,13 @@ use zyr_proto::paths;
 
 use crate::supervisor::{self, End, StopOrder};
 
+/// What this module's lines are filed under.
+///
+/// The same word for the two files that hold the service together: what
+/// Windows starts and what it runs are one thing to whoever is looking
+/// for a line about either.
+pub const TAG: &str = "service";
+
 /// Internal service name, the one Windows uses.
 pub const NAME: &str = "ZyrDesk";
 

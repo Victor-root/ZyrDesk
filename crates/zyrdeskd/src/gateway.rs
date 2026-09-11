@@ -47,6 +47,9 @@ use zyr_tunnel::{Answers, Tunnel, nudge};
 use crate::machine::{Door, Machine};
 use crate::said::{self, Said};
 
+/// What this module's lines are filed under.
+const TAG: &str = "gateway";
+
 /// How often a session in progress is looked over.
 const SESSION_WATCH: Duration = Duration::from_secs(2);
 
@@ -1371,7 +1374,7 @@ impl Gateway {
             fingerprint: identity.fingerprint(),
             pointer_drawn: AtomicU8::new(2),
             offering: Arc::new(AtomicU64::new(0)),
-            log: log.clone(),
+            log: log.about(TAG),
         });
         let door = machine.door.clone();
         let incoming = machine.incoming.clone();

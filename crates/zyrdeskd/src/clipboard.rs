@@ -53,6 +53,12 @@ use zyr_proto::clipboard::{Clip, Head, Kind, Stamp};
 use zyr_proto::log::Log;
 use zyr_proto::paths;
 
+/// What this module's lines are filed under.
+///
+/// One word to a module, which is the only rule that keeps a tag worth
+/// anything: one somebody has to look up is one nobody types.
+const TAG: &str = "clipboard";
+
 /// How often the helper looks at the clipboard.
 ///
 /// Slower than the pointer beside it by a good margin, and it is the
@@ -125,6 +131,7 @@ static PASTE_REFUSED: Mutex<Option<String>> = Mutex::new(None);
 /// put on it and has not landed. In none of those has this computer
 /// anything to say, and saying nothing is never read as « empty yours ».
 pub fn what_this_computer_has(log: &Log) -> Option<Clip> {
+    let log = &log.about(TAG);
     *ASKED.lock().expect("dernière question") = Some(Instant::now());
     if !KEEPING.swap(true, Ordering::SeqCst) {
         keep_a_helper(log.clone());
@@ -148,7 +155,7 @@ pub fn what_this_computer_has(log: &Log) -> Option<Clip> {
         Some(_) => {
             *given = None;
             forget_the_pair(&paths::clipboard_wanted());
-            log.write("clipboard: what came from the far computer never reached this clipboard");
+            log.write("what came from the far computer never reached this clipboard");
             clip
         }
         None => clip,
@@ -162,11 +169,12 @@ pub fn what_this_computer_has(log: &Log) -> Option<Clip> {
 /// behind, and a clipboard that lands a fifth of a second later lands
 /// before any hand reaches for it.
 pub fn give_it(clip: &Clip, log: &Log) -> Result<(), String> {
+    let log = &log.about(TAG);
     write_the_pair(&paths::clipboard_wanted(), clip)
         .map_err(|e| format!("le presse-papiers n'a pas pu être posé : {e}"))?;
     *GIVEN.lock().expect("ce qui vient d'être donné") = Some((clip.stamp(), Instant::now()));
     log.write(&format!(
-        "clipboard: {} is going on this computer's clipboard",
+        "{} is going on this computer's clipboard",
         clip.in_words()
     ));
     Ok(())
@@ -231,6 +239,7 @@ pub fn a_stand_is_up() -> Option<Stand> {
 /// Nothing means the far computer may stop sending, which covers both
 /// « nobody here is pasting » and « what was being pasted is all here ».
 pub fn what_a_paste_here_wants(log: &Log) -> Option<zyr_tunnel::aside::Wanted> {
+    let log = &log.about(TAG);
     if a_stand_is_up() == Some(Stand::Pasting)
         && let Some(clip) = written_clip(&paths::clipboard_here())
         && let Some(listed) = clip.listing()
@@ -279,7 +288,7 @@ fn more_than_it_carries(clip: &Clip, log: &Log) -> bool {
     let mut said = TOO_LARGE.lock().expect("ce qui ne passe pas");
     if said.replace(clip.stamp()) != Some(clip.stamp()) {
         log.write(&format!(
-            "clipboard: {} is more than a session carries, and stays on this computer",
+            "{} is more than a session carries, and stays on this computer",
             clip.in_words()
         ));
     }
@@ -302,8 +311,9 @@ fn nobody_is_asking() -> bool {
 /// shared with everything else this service does.
 #[cfg(windows)]
 fn keep_a_helper(log: Log) {
+    let log = log.about(TAG);
     std::thread::spawn(move || {
-        log.write("clipboard: a session is sharing this computer's clipboard");
+        log.write("a session is sharing this computer's clipboard");
         let mut started: Option<Instant> = None;
         let mut refused = false;
         while !nobody_is_asking() {
@@ -318,9 +328,7 @@ fn keep_a_helper(log: Log) {
                 match crate::session::start_carrying_the_clipboard() {
                     Ok(()) => {
                         if started.is_none() {
-                            log.write(
-                                "clipboard: reading it from the session that owns the screen",
-                            );
+                            log.write("reading it from the session that owns the screen");
                         }
                         refused = false;
                         started = Some(Instant::now());
@@ -331,9 +339,7 @@ fn keep_a_helper(log: Log) {
                     Err(e) => {
                         if !refused {
                             refused = true;
-                            log.write(&format!(
-                                "clipboard: nothing can reach the clipboard here: {e}"
-                            ));
+                            log.write(&format!("nothing can reach the clipboard here: {e}"));
                         }
                         started = None;
                     }
@@ -341,7 +347,7 @@ fn keep_a_helper(log: Log) {
             }
             std::thread::sleep(LOOK_EVERY);
         }
-        log.write("clipboard: nobody is sharing it any more");
+        log.write("nobody is sharing it any more");
         // Both pairs go with the asking. What this computer had copied
         // is no more a session's business once the session has gone, and
         // the next one starts on what is really on the clipboard rather
@@ -385,7 +391,7 @@ pub fn carry_the_clipboard_here() {
     let _attending = match zyr_clipboard::attend() {
         Ok(attending) => attending,
         Err(e) => {
-            said(&format!("clipboard: {e}"));
+            said(&e.to_string());
             return;
         }
     };
@@ -420,7 +426,7 @@ pub fn carry_the_clipboard_here() {
                     written = Some(wanted.stamp());
                     hold_the_mark(Stand::Held);
                     said(&format!(
-                        "clipboard: this computer now offers {}, and their bytes will cross when \
+                        "this computer now offers {}, and their bytes will cross when \
                          somebody pastes them",
                         wanted.in_words()
                     ));
@@ -429,7 +435,7 @@ pub fn carry_the_clipboard_here() {
                 zyr_clipboard::hold_this(&wanted)
                     .map(|missing| {
                         for what in missing {
-                            say_once(&mut complained, &format!("clipboard: {what}"));
+                            say_once(&mut complained, &what);
                         }
                     })
                     .map_err(|e| e.to_string())
@@ -447,7 +453,7 @@ pub fn carry_the_clipboard_here() {
                 // what bounds this.
                 Err(e) => say_once(
                     &mut complained,
-                    &format!("clipboard: it would not take what it was given: {e}"),
+                    &format!("it would not take what it was given: {e}"),
                 ),
             }
         }
@@ -458,7 +464,7 @@ pub fn carry_the_clipboard_here() {
                 // way it has of saying the sessions have gone. What is
                 // being held is files nobody can send any more.
                 zyr_clipboard::let_go();
-                said("clipboard: the far computer's files are no longer offered here");
+                said("the far computer's files are no longer offered here");
                 return;
             }
             if zyr_clipboard::still_standing() {
@@ -504,12 +510,12 @@ pub fn carry_the_clipboard_here() {
                         // trace, which is none.
                         if news {
                             said(&format!(
-                                "clipboard: this computer now holds {}",
+                                "this computer now holds {}",
                                 found.clip.in_words()
                             ));
                             if found.cut_short {
                                 said(&format!(
-                                    "clipboard: more was copied than one copy carries, so only \
+                                    "more was copied than one copy carries, so only \
                                      the first {} files of it cross",
                                     zyr_clipboard::MOST_FILES
                                 ));
@@ -518,7 +524,7 @@ pub fn carry_the_clipboard_here() {
                     }
                     Err(e) => say_once(
                         &mut complained,
-                        &format!("clipboard: what is on it could not be written down: {e}"),
+                        &format!("what is on it could not be written down: {e}"),
                     ),
                 }
             }
@@ -530,14 +536,14 @@ pub fn carry_the_clipboard_here() {
             Ok(None) if news => say_once(
                 &mut complained,
                 &format!(
-                    "clipboard: nothing on it that crosses ; it holds {}",
+                    "nothing on it that crosses ; it holds {}",
                     zyr_clipboard::what_is_offered()
                 ),
             ),
             Err(e) if news => say_once(
                 &mut complained,
                 &format!(
-                    "clipboard: it would not be read: {e} ; it holds {}",
+                    "it would not be read: {e} ; it holds {}",
                     zyr_clipboard::what_is_offered()
                 ),
             ),
@@ -602,7 +608,7 @@ pub fn carry_the_clipboard_here() {}
 #[cfg(windows)]
 fn said(what: &str) {
     if let Ok(log) = Log::open(&crate::service::log_path()) {
-        log.write(what);
+        log.about(TAG).write(what);
     }
 }
 

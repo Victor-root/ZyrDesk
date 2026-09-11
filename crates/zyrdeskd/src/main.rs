@@ -251,7 +251,8 @@ fn service_log() -> std::path::PathBuf {
 #[cfg(windows)]
 fn noted(what: &str) {
     if let Ok(log) = zyr_proto::log::Log::open(&service_log()) {
-        log.write(&format!("{what}, {}", zyr_proto::version_line()));
+        log.about(crate::service::TAG)
+            .write(&format!("{what}, {}", zyr_proto::version_line()));
     }
 }
 
