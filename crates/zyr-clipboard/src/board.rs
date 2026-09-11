@@ -19,13 +19,14 @@ use std::time::Duration;
 
 use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber,
-    IsClipboardFormatAvailable, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
+    CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData,
+    GetClipboardFormatNameW, GetClipboardSequenceNumber, IsClipboardFormatAvailable, OpenClipboard,
+    RegisterClipboardFormatW, SetClipboardData,
 };
 use windows::Win32::System::Memory::{
     GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
 };
-use windows::Win32::System::Ole::{CF_DIB, CF_DIBV5, CF_UNICODETEXT};
+use windows::Win32::System::Ole::{CF_BITMAP, CF_DIB, CF_DIBV5, CF_TEXT, CF_UNICODETEXT};
 use windows::core::w;
 use zyr_proto::clipboard::{Clip, Kind};
 
@@ -104,7 +105,8 @@ pub fn what_it_holds() -> Result<Option<Clip>, Trouble> {
     Ok(None)
 }
 
-pub fn hold_this(clip: &Clip) -> Result<(), Trouble> {
+pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
+    let mut refused = Vec::new();
     // Everything is made ready before the clipboard is opened. Turning a
     // PNG back into a bitmap is the slowest thing this crate does, and
     // doing it with the clipboard in hand would stop every program on the
@@ -121,20 +123,92 @@ pub fn hold_this(clip: &Clip) -> Result<(), Trouble> {
         // for every other program. Windows works the older shapes out
         // from that second one by itself, so nothing else has to be put
         // there.
-        Kind::Picture => vec![
-            (the_png_format(), clip.bytes().to_vec()),
-            (u32::from(CF_DIBV5.0), picture::a_bitmap_of(clip.bytes())?),
-        ],
+        //
+        // The bitmap is the one of the two that has to be made here, and
+        // it is made without stopping the rest: losing it costs the
+        // programs that read nothing else, and failing the whole because
+        // of it would leave a clipboard emptied with nothing put back,
+        // which is worse than either.
+        Kind::Picture => {
+            let mut both = vec![(the_png_format(), clip.bytes().to_vec())];
+            match picture::a_bitmap_of(clip.bytes()) {
+                Ok(bitmap) => both.push((u32::from(CF_DIBV5.0), bitmap)),
+                Err(e) => refused.push(format!(
+                    "l'image n'est posée qu'en PNG, le bitmap que lisent les autres programmes \
+                     n'a pas pu être fait : {e}"
+                )),
+            }
+            both
+        }
     };
 
     let _open = Open::now()?;
     // SAFETY: the clipboard is ours for as long as the guard above lives.
     unsafe { EmptyClipboard() }
         .map_err(|e| Trouble::of(format!("le presse-papiers n'a pas pu être vidé : {e}")))?;
+    let mut put = 0;
     for (format, bytes) in ready {
-        Block::holding(&bytes)?.given_to(format)?;
+        match Block::holding(&bytes).and_then(|block| block.given_to(format)) {
+            Ok(()) => put += 1,
+            Err(e) => refused.push(e.to_string()),
+        }
     }
-    Ok(())
+    if put == 0 {
+        return Err(Trouble::of(format!(
+            "rien n'a pu être posé au presse-papiers : {}",
+            refused.join(" ; ")
+        )));
+    }
+    Ok(refused)
+}
+
+/// The names of everything on this computer's clipboard right now.
+///
+/// Read for the journal and for nothing else. It is the one line that
+/// says, after the fact, why something somebody copied never crossed: a
+/// clipboard carrying a shape this product does not take says nothing of
+/// itself, and every other trace of that moment looks exactly like a
+/// clipboard nobody touched.
+pub fn what_is_offered() -> String {
+    let Ok(_open) = Open::now() else {
+        return "le presse-papiers n'a pas pu être ouvert".to_string();
+    };
+    let mut named = Vec::new();
+    let mut format = 0;
+    loop {
+        // SAFETY: reads the clipboard this task holds open, nought
+        // starting the walk and nought ending it.
+        format = unsafe { EnumClipboardFormats(format) };
+        if format == 0 {
+            break;
+        }
+        named.push(the_name_of(format));
+    }
+    if named.is_empty() {
+        return "rien".to_string();
+    }
+    named.join(", ")
+}
+
+/// What a format is called, in the words of whoever registered it or in
+/// this product's own for the ones Windows has always had.
+fn the_name_of(format: u32) -> String {
+    let mut spelled = [0u16; 80];
+    // SAFETY: the slice is ours, and the call is told how long it is.
+    let taken = unsafe { GetClipboardFormatNameW(format, &mut spelled) };
+    if taken > 0 {
+        return String::from_utf16_lossy(&spelled[..taken as usize]);
+    }
+    // The ones Windows has always had are numbered and not named, and
+    // their numbers say nothing to whoever reads a journal.
+    match format {
+        known if known == u32::from(CF_UNICODETEXT.0) => "texte".to_string(),
+        known if known == u32::from(CF_TEXT.0) => "texte ancien".to_string(),
+        known if known == u32::from(CF_DIB.0) => "bitmap".to_string(),
+        known if known == u32::from(CF_DIBV5.0) => "bitmap récent".to_string(),
+        known if known == u32::from(CF_BITMAP.0) => "image".to_string(),
+        other => format!("format {other}"),
+    }
 }
 
 pub fn times_it_changed() -> u32 {

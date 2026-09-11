@@ -111,10 +111,18 @@ pub fn what_this_computer_has(log: &Log) -> Option<Clip> {
             clip
         }
         Some((_, when)) if when.elapsed() < SETTLES_WITHIN => None,
-        _ => {
+        // It did not land in the time a helper takes to notice, put it on
+        // and say so. The order is taken away rather than left there: a
+        // helper that will not take it would go on trying every fifth of
+        // a second for as long as the session lasts, and neither the
+        // clipboard nor the journal is any better for that.
+        Some(_) => {
             *given = None;
+            forget_the_pair(&paths::clipboard_wanted());
+            log.write("clipboard: what came from the far computer never reached this clipboard");
             clip
         }
+        None => clip,
     }
 }
 
@@ -236,6 +244,10 @@ pub fn carry_the_clipboard_here() {
     let until = Instant::now() + HELPER_LIVES;
     let mut counted: Option<u32> = None;
     let mut written: Option<Stamp> = None;
+    // What went wrong last, so that a clipboard held by another program,
+    // or a picture this machine's imaging will not take, is one line and
+    // not five a second for as long as the session lasts.
+    let mut complained: Option<String> = None;
     while Instant::now() < until {
         if let Some(wanted) = written_clip(&paths::clipboard_wanted()) {
             match zyr_clipboard::hold_this(&wanted) {
@@ -243,13 +255,21 @@ pub fn carry_the_clipboard_here() {
                 // something on a clipboard is what changes it: the line
                 // this helper then writes is what tells the service the
                 // giving landed.
-                Ok(()) => forget_the_pair(&paths::clipboard_wanted()),
+                Ok(missing) => {
+                    forget_the_pair(&paths::clipboard_wanted());
+                    for what in missing {
+                        say_once(&mut complained, &format!("clipboard: {what}"));
+                    }
+                }
                 // Left where it is, so the next turn tries again: a
                 // clipboard held by another program for a moment is the
-                // ordinary case and not a fault.
-                Err(e) => said(&format!(
-                    "clipboard: it would not take what it was given: {e}"
-                )),
+                // ordinary case and not a fault. The service takes the
+                // order away when it has waited long enough, which is
+                // what bounds this.
+                Err(e) => say_once(
+                    &mut complained,
+                    &format!("clipboard: it would not take what it was given: {e}"),
+                ),
             }
         }
 
@@ -266,15 +286,63 @@ pub fn carry_the_clipboard_here() {
         counted = Some(counter);
         match zyr_clipboard::what_it_holds() {
             Ok(Some(clip)) if written != Some(clip.stamp()) => {
-                if write_the_pair(&paths::clipboard_here(), &clip).is_ok() {
-                    written = Some(clip.stamp());
+                match write_the_pair(&paths::clipboard_here(), &clip) {
+                    Ok(()) => {
+                        written = Some(clip.stamp());
+                        complained = None;
+                        // One line per thing copied, which is the right
+                        // rate: a clipboard changes a few times an hour.
+                        // Without it, a picture that never crossed and a
+                        // clipboard nobody touched leave exactly the same
+                        // trace, which is none.
+                        said(&format!(
+                            "clipboard: this computer now holds {}",
+                            clip.in_words()
+                        ));
+                    }
+                    Err(e) => say_once(
+                        &mut complained,
+                        &format!("clipboard: what is on it could not be written down: {e}"),
+                    ),
                 }
             }
-            Ok(_) => {}
-            Err(e) => said(&format!("clipboard: it would not be read: {e}")),
+            // Nothing this product carries. Said with what the clipboard
+            // was really offering, because that is the one thing that
+            // tells « nobody copied anything » from « somebody copied
+            // something this product does not take », and the two look
+            // identical from everywhere else.
+            Ok(None) => say_once(
+                &mut complained,
+                &format!(
+                    "clipboard: nothing on it that crosses ; it holds {}",
+                    zyr_clipboard::what_is_offered()
+                ),
+            ),
+            Ok(Some(_)) => {}
+            Err(e) => say_once(
+                &mut complained,
+                &format!(
+                    "clipboard: it would not be read: {e} ; it holds {}",
+                    zyr_clipboard::what_is_offered()
+                ),
+            ),
         }
         std::thread::sleep(LOOK_EVERY);
     }
+}
+
+/// Writes that down unless it is word for word what was written last.
+///
+/// Everything in the loop above can go wrong at every turn, five times a
+/// second, for as long as whatever is wrong lasts. What is worth reading
+/// is that it went wrong and what it said, once.
+#[cfg(windows)]
+fn say_once(last: &mut Option<String>, what: &str) {
+    if last.as_deref() == Some(what) {
+        return;
+    }
+    *last = Some(what.to_string());
+    said(what);
 }
 
 #[cfg(not(windows))]

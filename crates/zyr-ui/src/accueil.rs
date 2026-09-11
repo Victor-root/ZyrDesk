@@ -5254,6 +5254,9 @@ fn copie(app: &App, texte: &str, quoi: Quoi) {
         annonce(app, "La copie a été refusée par Windows.", true);
         return;
     }
+    // Ce qu'une pose incomplète rendrait ne concerne que les images, et
+    // ce bouton ne copie que du texte : il n'y a qu'une forme à poser, et
+    // elle est posée ou le refus ci-dessus l'a dit.
     ETAT.lock().expect("accueil").copie = Some((quoi, std::time::Instant::now()));
     redraw(app);
 

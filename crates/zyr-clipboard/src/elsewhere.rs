@@ -19,8 +19,14 @@ pub fn what_it_holds() -> Result<Option<Clip>, Trouble> {
     nowhere()
 }
 
-pub fn hold_this(_clip: &Clip) -> Result<(), Trouble> {
+pub fn hold_this(_clip: &Clip) -> Result<Vec<String>, Trouble> {
     nowhere()
+}
+
+/// Said in the same words as the refusals above, since it is the same
+/// answer: there is no clipboard here to look at.
+pub fn what_is_offered() -> String {
+    "le presse-papiers ne se lit ainsi que sous Windows".to_string()
 }
 
 /// Nought, which is the answer this crate documents as « the system

@@ -80,8 +80,27 @@ pub fn what_it_holds() -> Result<Option<Clip>, Trouble> {
 /// In place of and not beside: a clipboard holds one thing, and leaving
 /// the old one under the new would have programs paste whichever of the
 /// two they happened to prefer.
-pub fn hold_this(clip: &Clip) -> Result<(), Trouble> {
+///
+/// Answers what of it could not be put there, said in words meant to be
+/// read, and nothing at all when the whole of it went. A picture goes on
+/// twice over, as the PNG it came as and as a bitmap for the programs
+/// that read nothing else, and the second of those can fail on its own: a
+/// picture on the clipboard in one shape out of two is worth having, and
+/// is not worth reporting as a picture that never arrived.
+///
+/// A refusal is what it says it is: nothing of it went on at all.
+pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
     board::hold_this(clip)
+}
+
+/// The names of everything on this computer's clipboard right now.
+///
+/// For the journal and for nothing else. What this crate carries is text
+/// and pictures; a clipboard holding neither leaves no trace of itself,
+/// and that silence is indistinguishable from a clipboard nobody touched.
+/// This is the line that tells the two apart.
+pub fn what_is_offered() -> String {
+    board::what_is_offered()
 }
 
 /// How many times this computer's clipboard has changed since Windows
@@ -119,5 +138,6 @@ mod tests {
         assert!(what_it_holds().is_err());
         assert!(hold_this(&Clip::text("bonjour")).is_err());
         assert_eq!(times_it_changed(), 0);
+        assert!(what_is_offered().contains("Windows"));
     }
 }
