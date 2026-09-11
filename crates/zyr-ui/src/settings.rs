@@ -493,6 +493,23 @@ pub async fn remember_touchpad_gestures(theirs: bool) {
     .await;
 }
 
+/// Writes down whether the two computers share one clipboard.
+pub async fn remember_shared_clipboard(shared: bool) {
+    remember(
+        "whether the clipboard is shared",
+        format!(
+            "the two computers {} share one clipboard from now on",
+            if shared { "will" } else { "will no longer" }
+        ),
+        |preferred| {
+            let moved = preferred.shared_clipboard != shared;
+            preferred.shared_clipboard = shared;
+            moved
+        },
+    )
+    .await;
+}
+
 /// What the service has been told a session should look like.
 ///
 /// The ordinary settings when it cannot be asked: a session is about to

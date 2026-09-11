@@ -53,6 +53,14 @@ pub const PAVE: Icone = dessin(&[
     Trait::Chemin("M8 8v4M12 8v4M16 8v4"),
 ]);
 
+/// Le presse-papiers : la planche, la pince qui la tient par le haut, et
+/// les deux lignes de ce qui y est posé.
+pub const PRESSE_PAPIERS: Icone = dessin(&[
+    Trait::Rond(4.0, 4.5, 16.0, 17.5, 2.0),
+    Trait::Rond(8.5, 2.0, 7.0, 4.5, 1.5),
+    Trait::Chemin("M8 12h8M8 16h5"),
+]);
+
 pub const CAD: Icone = dessin(&[
     Trait::Rond(2.5, 6.0, 19.0, 12.0, 2.0),
     Trait::Chemin("M6 10h1M9.5 10h1M13 10h1M16.5 10h1M6 14h12"),

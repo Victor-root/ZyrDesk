@@ -166,7 +166,7 @@ enum Reglage {
 /// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
 /// dans le journal à l'ouverture plutôt que remplacé par du vide qui
 /// ressemblerait à un défaut.
-const LIGNES: [Ligne; 19] = [
+const LIGNES: [Ligne; 20] = [
     Ligne::Mesures,
     Ligne::Separateur,
     Ligne::Entree(Entree {
@@ -210,6 +210,13 @@ const LIGNES: [Ligne; 19] = [
         cotes: ["Cet ordinateur", "La session"],
         passe: Act::Touchpad,
         ou: &AU_PAVE,
+    }),
+    Ligne::Bascule(Bascule {
+        icone: &icones::PRESSE_PAPIERS,
+        mot: "Presse-papiers",
+        cotes: ["Chacun le sien", "Partagé"],
+        passe: Act::Clipboard,
+        ou: &PARTAGE,
     }),
     Ligne::Entree(Entree {
         icone: &icones::CAD,
@@ -425,7 +432,7 @@ static BARRE: Mutex<Barre> = Mutex::new(Barre::vide());
 /// veilles derrière la même carte.
 static TOUR: AtomicU32 = AtomicU32::new(0);
 
-/// Où en est chacun des quatre interrupteurs.
+/// Où en est chacun des cinq interrupteurs.
 ///
 /// Relus à chaque ouverture de la carte plutôt que retenus : le raccourci
 /// du produit bascule la souris, et le mélangeur de Windows est ouvert à
@@ -435,6 +442,7 @@ static EN_JEU: AtomicBool = AtomicBool::new(false);
 static COUPE: AtomicBool = AtomicBool::new(false);
 static IMMERSIF: AtomicBool = AtomicBool::new(false);
 static AU_PAVE: AtomicBool = AtomicBool::new(false);
+static PARTAGE: AtomicBool = AtomicBool::new(false);
 
 /// De combien un pixel de page vaut de vrais pixels.
 static ECHELLE: AtomicU32 = AtomicU32::new(100);
@@ -2559,6 +2567,7 @@ async fn relis_les_bascules(app: &App) {
     let mut change = pose(&EN_JEU, crate::floating::in_game_mouse(app));
     change |= pose(&IMMERSIF, crate::floating::keys_to_the_session(app));
     change |= pose(&AU_PAVE, crate::floating::gestures_to_the_session(app));
+    change |= pose(&PARTAGE, crate::floating::the_clipboard_is_shared(app));
     // Sans session le mélangeur n'a rien à dire, et la carte ne s'ouvre
     // pas sans session : un refus se laisse donc tel quel plutôt que
     // d'éteindre l'interrupteur.

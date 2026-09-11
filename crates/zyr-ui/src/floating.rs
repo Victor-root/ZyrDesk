@@ -142,6 +142,8 @@ pub enum Act {
     SystemKeys,
     /// Which of the two the touchpad's own gestures belong to.
     Touchpad,
+    /// Whether the two computers share one clipboard.
+    Clipboard,
     /// Whether the pointer is kept inside the picture.
     PointerLock,
     End,
@@ -171,6 +173,7 @@ impl Act {
             | Act::LockScreen
             | Act::Sound
             | Act::Touchpad
+            | Act::Clipboard
             | Act::End => None,
         }
     }
@@ -195,6 +198,7 @@ impl Act {
             | Act::LockScreen
             | Act::Sound
             | Act::Touchpad
+            | Act::Clipboard
             | Act::End => None,
         }
     }
@@ -211,6 +215,7 @@ impl std::fmt::Display for Act {
             Act::Sound => "son de la session",
             Act::SystemKeys => "touches système",
             Act::Touchpad => "gestes du pavé tactile",
+            Act::Clipboard => "presse-papiers partagé",
             Act::PointerLock => "pointeur tenu dans l'image",
             Act::End => "fin de la session",
         })
@@ -297,6 +302,14 @@ pub struct Floating {
     /// knows. Nothing else on this computer, and no engine, is even aware
     /// there is a pad being read.
     touchpad: AtomicBool,
+    /// Whether the two computers share one clipboard right now.
+    ///
+    /// Counted here like the two above it, and this one holds nothing at
+    /// all beyond the switch: sharing is done by the two services, on the
+    /// product's own channel inside the tunnel, and this window's whole
+    /// part in it is to say which way the switch is and to write that
+    /// down.
+    clipboard: AtomicBool,
     /// Whether this computer is drawing its own pointer over the picture.
     ///
     /// Counted like the three above, and put down whenever a player is
@@ -807,6 +820,9 @@ pub fn watch(app: App) {
                                     .is_some_and(|held| !held.any()),
                             Ordering::Relaxed,
                         );
+                        state
+                            .clipboard
+                            .store(preferred.shared_clipboard, Ordering::Relaxed);
                         state.pointer_held.store(false, Ordering::Relaxed);
                         // What the far computer draws is not put down
                         // here: it lives over there, in an engine this
@@ -1249,6 +1265,28 @@ pub fn gestures_to_the_session(app: &App) -> bool {
     app.floating().touchpad.load(Ordering::Relaxed)
 }
 
+/// The same, for the one clipboard the two computers share.
+pub fn the_clipboard_is_shared(app: &App) -> bool {
+    app.floating().clipboard.load(Ordering::Relaxed)
+}
+
+/// Throws the switch that decides whether the two computers share one
+/// clipboard.
+///
+/// The shortest of them all, and that is the whole design of it: nothing
+/// here reads or writes a clipboard. The two services do that, on the
+/// product's own channel inside the tunnel, and they read this switch
+/// from the settings at every turn of their watch. So throwing it is
+/// writing it down, and the sharing starts or stops within the quarter
+/// of a second that follows.
+async fn share_the_clipboard(app: &App) -> Result<(), String> {
+    let state = app.floating();
+    let shared = !state.clipboard.load(Ordering::Relaxed);
+    state.clipboard.store(shared, Ordering::Relaxed);
+    crate::settings::remember_shared_clipboard(shared).await;
+    Ok(())
+}
+
 /// Throws the switch that decides which of the two computers the
 /// touchpad's own gestures belong to.
 ///
@@ -1354,6 +1392,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
         Act::LockScreen => return lock_over_there(app).await,
         Act::Sound => return hush_the_session(app).await,
         Act::Touchpad => return the_pad_to_the_session(app).await,
+        Act::Clipboard => return share_the_clipboard(app).await,
         _ => {}
     }
 
