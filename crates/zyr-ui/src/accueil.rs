@@ -2778,6 +2778,12 @@ impl Mise<'_> {
         self.les_lignes(Cadre::pose(ou.gauche, y, large, lignes));
         y += lignes + self.px(design::PAS_4);
 
+        // La boîte de tri, entre les lignes et les boutons : ce qui est
+        // écrit là décide de ce que « Actualiser » relit et de ce que
+        // « Copier » emporte. Vide, rien n'est trié.
+        y += self.champ(ou.gauche, y, large, Champ::Tri);
+        y += self.px(design::PAS_3);
+
         let vidage = self
             .etat
             .vidage
@@ -2801,8 +2807,16 @@ impl Mise<'_> {
             Quoi::Actualiser,
             true,
         ));
+        let trie = !texte_du_champ(Champ::Tri).trim().is_empty();
         rangee.push((
-            if copie { "Copié" } else { "Copier tout" }.to_string(),
+            if copie {
+                "Copié"
+            } else if trie {
+                "Copier le tri"
+            } else {
+                "Copier tout"
+            }
+            .to_string(),
             Sorte::Principal,
             Quoi::CopierJournal,
             true,
@@ -3977,11 +3991,12 @@ enum Champ {
     Courriel,
     Invitation,
     NouveauNom,
+    Tri,
 }
 
 impl Champ {
     /// Combien il y en a en tout : chacun a sa place, ouvert ou non.
-    const COMBIEN: usize = 10;
+    const COMBIEN: usize = 11;
     /// Ceux du dialogue d'ajout, dans l'ordre où on les remplit.
     const AJOUT: [Champ; 3] = [Champ::Empreinte, Champ::Adresse, Champ::Nom];
     /// Ceux du dialogue de compte, les deux derniers pour une inscription.
@@ -3995,6 +4010,8 @@ impl Champ {
     ];
     /// Celui du renommage d'un appareil.
     const RENOMMAGE: [Champ; 1] = [Champ::NouveauNom];
+    /// Celui qui trie le journal.
+    const JOURNAL: [Champ; 1] = [Champ::Tri];
 
     fn rang(self) -> usize {
         match self {
@@ -4008,6 +4025,7 @@ impl Champ {
             Champ::Courriel => 7,
             Champ::Invitation => 8,
             Champ::NouveauNom => 9,
+            Champ::Tri => 10,
         }
     }
 
@@ -4023,6 +4041,7 @@ impl Champ {
             Champ::Courriel => "Adresse e-mail (facultatif)",
             Champ::Invitation => "Code d'invitation (si le serveur en demande un)",
             Champ::NouveauNom => "Nouveau nom",
+            Champ::Tri => "Tri",
         }
     }
 
@@ -4039,6 +4058,7 @@ impl Champ {
             Champ::Courriel => "victor@exemple.fr",
             Champ::Invitation => "AB12-CD34",
             Champ::NouveauNom => "PC du salon",
+            Champ::Tri => "tag:clipboard -DataObject",
         }
     }
 
@@ -5158,6 +5178,10 @@ fn dit_le_souci(app: &App, texte: &str) {
 /* ---- Le journal ---------------------------------------------------------- */
 
 fn ouvre_le_journal(app: &App, de: Option<Peer>) {
+    // Ce qui était écrit dans la boîte est repris : on ouvre ce journal
+    // deux fois de suite pour un même tri, une fois ici et une fois en
+    // face, et le retaper serait la moitié du travail.
+    let tri = texte_du_champ(Champ::Tri);
     {
         let mut etat = ETAT.lock().expect("accueil");
         etat.ecran = Ecran::Journal;
@@ -5166,18 +5190,24 @@ fn ouvre_le_journal(app: &App, de: Option<Peer>) {
         etat.defile_lignes = (0.0, 0.0);
         etat.lignes = vec!["Lecture…".to_string()];
     }
+    ferme_les_champs();
+    ouvre_les_champs(&Champ::JOURNAL);
+    ecris_dans_le_champ(Champ::Tri, &tri);
     redraw(app);
     relis_le_journal(app);
 }
 
 fn relis_le_journal(app: &App) {
     let de = ETAT.lock().expect("accueil").journal_de.clone();
+    // Lu avant de partir : la question s'en va sur un autre fil, et le
+    // champ appartient à celui qui dessine.
+    let tri = texte_du_champ(Champ::Tri).trim().to_string();
     let app = app.clone();
     crate::app::spawn(async move {
         let texte = match &de {
-            None => crate::journal::journal().await,
+            None => crate::journal::journal(&tri).await,
             Some(voisin) => {
-                crate::journal::far_journal(voisin.address.clone(), voisin.fingerprint.clone())
+                crate::journal::far_journal(voisin.address.clone(), voisin.fingerprint.clone(), tri)
                     .await
                     // Montré dans le journal lui-même : c'est là que
                     // regarde la personne qui vient de cliquer, et un

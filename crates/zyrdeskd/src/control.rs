@@ -20,6 +20,7 @@ use zyr_control::{Answer, Door, PROTOCOL, Reached, Request, Standing};
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
+use zyr_proto::sifting::Sifting;
 use zyr_transport::{Fingerprint, authorized};
 
 use crate::account::{self, Attaching};
@@ -718,15 +719,15 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             answering.order.ask_for_a_stop();
             Answer::Done
         }
-        Request::Journal => Answer::Journal(
-            answering
-                .machine
-                .journal(answering.fingerprint, &answering.log),
-        ),
-        Request::FarJournal { host, peer } => {
+        Request::Journal { sift } => Answer::Journal(answering.machine.journal(
+            answering.fingerprint,
+            &answering.log,
+            &Sifting::of(&sift),
+        )),
+        Request::FarJournal { host, peer, sift } => {
             let ways = &answering.machine.ways;
             match one_question(&host, peer, answering, async |label, knock| {
-                ways.ask_a_computer_for_its_journal(label, peer, knock)
+                ways.ask_a_computer_for_its_journal(label, peer, knock, &sift)
                     .await
             })
             .await

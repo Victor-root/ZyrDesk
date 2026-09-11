@@ -37,6 +37,7 @@ use zyr_proto::log::Log;
 use zyr_proto::net::{EnginePorts, TUNNEL_PORT};
 use zyr_proto::paths;
 use zyr_proto::session::{Serving, WantedScreen};
+use zyr_proto::sifting::Sifting;
 use zyr_transport::junction::Say;
 use zyr_transport::{
     AllowedPeers, EndpointError, Fingerprint, Identity, Junction, Knocking, Media, MediaProfile,
@@ -664,10 +665,18 @@ impl Answers for Attending {
     /// Said in this computer's own journal as it goes out. Somebody
     /// reading a machine from elsewhere leaves a trace on it, like every
     /// other thing a far computer may ask for here.
-    fn journal(&self) -> Result<String, String> {
-        self.log
-            .write("a computer asked this one for its journal, and it was handed over");
-        Ok(self.machine.journal(self.fingerprint, &self.log))
+    fn journal(&self, sift: &str) -> Result<String, String> {
+        self.log.write(&format!(
+            "a computer asked this one for its journal{}, and it was handed over",
+            if sift.is_empty() {
+                String::new()
+            } else {
+                format!(" sifted through « {sift} »")
+            }
+        ));
+        Ok(self
+            .machine
+            .journal(self.fingerprint, &self.log, &Sifting::of(sift)))
     }
 
     /// Hands over what this computer has measured of its own access to

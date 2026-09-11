@@ -97,7 +97,7 @@ impl Answers for NoEngine {
         Err("le banc de mesure n'a pas d'écran virtuel".to_string())
     }
 
-    fn journal(&self) -> Result<String, String> {
+    fn journal(&self, _sift: &str) -> Result<String, String> {
         Err("le banc de mesure ne tient pas de journal".to_string())
     }
 

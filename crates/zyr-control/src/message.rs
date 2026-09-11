@@ -306,14 +306,23 @@ pub enum Request {
     /// fingerprint, what stands in the way of it being reachable, who it
     /// sees on the network. A window reading the files by itself would
     /// have a page missing exactly the lines nobody can work out alone.
-    Journal,
+    ///
+    /// `sift` is what was written in the box above the button, and it is
+    /// carried here rather than applied to the page afterwards: only the
+    /// last hundred and twenty lines of each file reach a page, and six
+    /// lines about one thing are almost never among them.
+    Journal { sift: String },
     /// Another computer's journal, fetched from it.
     ///
     /// The whole point of it: reading the far machine's journal spares
     /// walking to it, which is the errand a remote desktop exists to
     /// spare. It travels on the product's own channel, between the two
     /// halves of ZyrDesk, and no engine is any the wiser.
-    FarJournal { host: String, peer: Fingerprint },
+    FarJournal {
+        host: String,
+        peer: Fingerprint,
+        sift: String,
+    },
     /// Empties another computer's journal.
     ///
     /// The other half of reading it. A fault is found by emptying both
@@ -461,10 +470,13 @@ impl Request {
                 on: fields.text("on")? == "yes",
             }),
             "stop" => Ok(Request::Stop),
-            "journal" => Ok(Request::Journal),
+            "journal" => Ok(Request::Journal {
+                sift: fields.said("sift"),
+            }),
             "far-journal" => Ok(Request::FarJournal {
                 host: unpacked(fields.text("host")?),
                 peer: fields.parsed("peer")?,
+                sift: fields.said("sift"),
             }),
             "clear-far-journal" => Ok(Request::ClearFarJournal {
                 host: unpacked(fields.text("host")?),
@@ -574,9 +586,14 @@ impl fmt::Display for Request {
             Request::Kick { peer } => write!(f, "kick peer={peer}"),
             Request::SetAtBoot { on } => write!(f, "at-boot on={}", said(*on)),
             Request::Stop => f.write_str("stop"),
-            Request::Journal => f.write_str("journal"),
-            Request::FarJournal { host, peer } => {
-                write!(f, "far-journal host={} peer={peer}", packed(host))
+            Request::Journal { sift } => write!(f, "journal sift={}", packed(sift)),
+            Request::FarJournal { host, peer, sift } => {
+                write!(
+                    f,
+                    "far-journal host={} peer={peer} sift={}",
+                    packed(host),
+                    packed(sift)
+                )
             }
             Request::ClearFarJournal { host, peer } => {
                 write!(f, "clear-far-journal host={} peer={peer}", packed(host))
@@ -1291,6 +1308,16 @@ impl<'a> Fields<'a> {
         }
     }
 
+    /// Reads a text that may hold spaces, empty when it is absent.
+    ///
+    /// The same rule as the yes-or-no above and for the same reason: a
+    /// field added after the fact costs an older half of the product
+    /// that one thing instead of the whole exchange. Empty here is the
+    /// useful fallback, since an empty filter is no filter at all.
+    fn said(&self, key: &str) -> String {
+        self.text(key).map(unpacked).unwrap_or_default()
+    }
+
     /// Reads a whole set of preferences.
     ///
     /// A missing field falls back to what the product does by default
@@ -1463,7 +1490,14 @@ mod tests {
             Request::SetAtBoot { on: true },
             Request::SetAtBoot { on: false },
             Request::Stop,
-            Request::Journal,
+            Request::Journal {
+                sift: String::new(),
+            },
+            // Un tri porte des espaces et des guillemets, comme tout ce
+            // qui se tape à la main.
+            Request::Journal {
+                sift: "tag:clipboard -\"deux mots\"".to_string(),
+            },
             // Une adresse écrite à la main peut porter une espace, ici
             // comme partout ailleurs.
             Request::FarCodecs { way: WayId(7) },
@@ -1490,6 +1524,12 @@ mod tests {
             Request::FarJournal {
                 host: "pc de victor.local".to_string(),
                 peer: fingerprint(),
+                sift: String::new(),
+            },
+            Request::FarJournal {
+                host: "pc de victor.local".to_string(),
+                peer: fingerprint(),
+                sift: "tag:clipboard".to_string(),
             },
             Request::ClearFarJournal {
                 host: "pc de victor.local".to_string(),

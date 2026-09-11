@@ -82,8 +82,12 @@ use crate::pump;
 /// piece by piece and only once somebody pastes them: what a clipboard
 /// holds of a file is its name, so the names cross at once and weigh
 /// nothing, and the bytes follow a piece at a time in whichever direction
-/// they are wanted.
-pub const VERSION: u32 = 20;
+/// they are wanted. Version 21 lets the journal be asked for sifted: what
+/// somebody typed in the box travels with the question, so that the far
+/// computer keeps the lines that answer it before it cuts its journal
+/// down to a page, which is the only order in which a sift is worth
+/// anything.
+pub const VERSION: u32 = 21;
 
 /// Longest question this channel takes.
 ///
@@ -298,7 +302,7 @@ pub trait Answers: Send + Sync + 'static {
     /// smaller one than the permission those computers already hold,
     /// which is to take the screen, the keyboard and the mouse of this
     /// machine. A page of what it has written down is less than that.
-    fn journal(&self) -> Result<String, String>;
+    fn journal(&self, sift: &str) -> Result<String, String>;
 
     /// What this computer has measured of its own access to the
     /// Internet, gathered and handed over whole.
@@ -601,7 +605,12 @@ pub enum Question {
     /// nothing asked for, put it back to sleep.
     Screen { wanted: Option<WantedScreen> },
     /// Hand over your journal, so it can be read from here.
-    Journal,
+    ///
+    /// Sifted through what is carried with the question, and sifted
+    /// there rather than here: only the end of each file reaches a page,
+    /// so lines dropped before the cut are lines that would never have
+    /// crossed at all. Empty asks for the whole of it.
+    Journal { sift: String },
     /// Hand over what you have measured of your own access to the
     /// Internet, so it can be read from here.
     ReachLog,
@@ -736,7 +745,7 @@ impl fmt::Display for Question {
                 Some(screen) => write!(f, "{VERSION} screen {screen}"),
                 None => write!(f, "{VERSION} screen none"),
             },
-            Question::Journal => write!(f, "{VERSION} journal"),
+            Question::Journal { sift } => write!(f, "{VERSION} journal {sift}"),
             Question::ReachLog => write!(f, "{VERSION} reach"),
             Question::EmptyTheJournal => write!(f, "{VERSION} empty-journal"),
             Question::Codecs => write!(f, "{VERSION} codecs"),
@@ -873,7 +882,9 @@ impl Question {
                     wanted: Some(screen),
                 }),
             },
-            "journal" => Ok(Question::Journal),
+            "journal" => Ok(Question::Journal {
+                sift: rest.to_string(),
+            }),
             "reach" => Ok(Question::ReachLog),
             "empty-journal" => Ok(Question::EmptyTheJournal),
             "codecs" => Ok(Question::Codecs),
@@ -1246,8 +1257,11 @@ pub async fn ask_for_a_screen(
 /// journal of a computer nobody is watching is exactly the moment it is
 /// wanted, since what is being looked for is usually why nobody can
 /// watch it.
-pub async fn ask_for_the_journal(connection: &Connection) -> io::Result<String> {
-    match ask(connection, &Question::Journal).await? {
+pub async fn ask_for_the_journal(connection: &Connection, sift: &str) -> io::Result<String> {
+    let asking = Question::Journal {
+        sift: sift.to_string(),
+    };
+    match ask(connection, &asking).await? {
         Told::Journal { text } => Ok(text),
         other => Err(unreadable(format!("réponse hors sujet : {other}"))),
     }
@@ -1521,7 +1535,7 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         // Off the thread as well: gathering a journal is four files read
         // from a disk, and a disk that has gone to sleep takes its time
         // about waking up.
-        Question::Journal => tokio::task::spawn_blocking(move || answering.journal())
+        Question::Journal { sift } => tokio::task::spawn_blocking(move || answering.journal(&sift))
             .await
             .map_err(|e| format!("le journal n'a pas pu être rassemblé : {e}"))?
             .map(|text| Told::Journal { text }),
@@ -1649,7 +1663,12 @@ mod tests {
                 }),
             },
             Question::Screen { wanted: None },
-            Question::Journal,
+            Question::Journal {
+                sift: String::new(),
+            },
+            Question::Journal {
+                sift: "tag:clipboard".to_string(),
+            },
             Question::ReachLog,
             Question::EmptyTheJournal,
             Question::Codecs,

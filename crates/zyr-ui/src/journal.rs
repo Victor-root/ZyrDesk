@@ -30,19 +30,28 @@ use zyr_control::{Answer, Request};
 use zyr_proto::journal::Journal;
 use zyr_proto::log::Log;
 use zyr_proto::paths;
+use zyr_proto::sifting::Sifting;
 
 use crate::service;
 
 /// This computer's journal, ready to be copied out.
-pub async fn journal() -> String {
-    match service::ask(&Request::Journal).await {
+///
+/// `sift` is what was written in the box above the button, and it is
+/// asked of the service rather than applied to the page that comes back:
+/// only the end of each file reaches a page, and lines about one thing
+/// are almost never among the last of a session's four thousand.
+pub async fn journal(sift: &str) -> String {
+    let asking = Request::Journal {
+        sift: sift.to_string(),
+    };
+    match service::ask(&asking).await {
         Ok(Answer::Journal(text)) => text,
-        Ok(other) => gathered_here(&service::unexpected(other)),
+        Ok(other) => gathered_here(&service::unexpected(other), sift),
         // A service that is not answering is exactly when a journal is
         // wanted, so the files are gathered here instead. What is lost
         // is what only the service knew, and its silence is written in
         // its place rather than left as a gap.
-        Err(reason) => gathered_here(&reason),
+        Err(reason) => gathered_here(&reason, sift),
     }
 }
 
@@ -52,13 +61,17 @@ pub async fn journal() -> String {
 /// to it, and one that is asleep or gone answers nothing at all. The
 /// refusal that comes back then is the same one a session would have
 /// been refused with, which is what makes it worth reading.
-pub async fn far_journal(host: String, fingerprint: String) -> Result<String, String> {
+pub async fn far_journal(
+    host: String,
+    fingerprint: String,
+    sift: String,
+) -> Result<String, String> {
     let peer = fingerprint
         .trim()
         .parse()
         .map_err(|_| "cette empreinte n'a pas la forme attendue".to_string())?;
     note(&format!("journal demandé à {peer}"));
-    match service::ask(&Request::FarJournal { host, peer }).await {
+    match service::ask(&Request::FarJournal { host, peer, sift }).await {
         Ok(Answer::Journal(text)) => Ok(text),
         Ok(other) => Err(service::unexpected(other)),
         Err(reason) => {
@@ -69,10 +82,10 @@ pub async fn far_journal(host: String, fingerprint: String) -> Result<String, St
 }
 
 /// What this window can gather on its own, the service being silent.
-fn gathered_here(reason: &str) -> String {
+fn gathered_here(reason: &str, sift: &str) -> String {
     let mut journal = Journal::of_this_computer();
     journal.says("Service", &reason.replace('\n', " "));
-    journal.gathered()
+    journal.sifted(&Sifting::of(sift))
 }
 
 /// Empties everything the product has written down here.
@@ -174,8 +187,10 @@ mod tests {
         // C'est justement quand le service ne répond pas qu'on ouvre le
         // journal : la page doit venir quand même, et dire ce qui
         // manque plutôt que laisser un blanc.
-        let text =
-            gathered_here("le service ZyrDesk ne tourne pas.\n  Lancez « zyrdeskd status ».");
+        let text = gathered_here(
+            "le service ZyrDesk ne tourne pas.\n  Lancez « zyrdeskd status ».",
+            "",
+        );
         assert!(text.contains("Service"), "{text}");
         assert!(text.contains("ne tourne pas"), "{text}");
         // Sur une ligne : le journal aligne ses étiquettes, et une

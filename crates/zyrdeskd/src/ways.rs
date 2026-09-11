@@ -478,9 +478,10 @@ impl Ways {
         host: &str,
         peer: Fingerprint,
         knock: Knock,
+        sift: &str,
     ) -> Result<(String, Option<String>), String> {
         let word = self.a_word_with(host, peer, knock).await?;
-        let text = aside::ask_for_the_journal(&word.connection)
+        let text = aside::ask_for_the_journal(&word.connection, sift)
             .await
             .map_err(|e| refused_by(host, "n'a pas donné son journal", &e))?;
         self.log.write(&format!(

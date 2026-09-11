@@ -2939,6 +2939,26 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Ce qu'un autre programme offre en fichiers virtuels, une pièce jointe dans un courrielleur par exemple, ne traverse toujours pas : le produit lit les fichiers copiés dans l'explorateur, qui sont des fichiers sur un disque. Dix mille fichiers au plus par copier, et le journal le dit quand il en manque. Un morceau qui ne s'écrit pas arrête le transfert plutôt que d'être redemandé sans fin, parce que ce qui refuse est un disque et qu'un disque ne change pas d'avis entre deux tours d'une boucle. Et un transfert coupé en route n'est pas repris : ce qui n'est pas arrivé est un coller que personne n'a fini.
 
+## D181. Le journal se trie par étiquette, comme celui d'un téléphone (2026-09-11, pendant M6)
+
+**Le besoin, et il est le mien autant que le sien.** « À chaque fois qu'on veut voir un truc particulier j'ai pas besoin de t'envoyer tout ce tas de merde pour au final 2 lignes qui nous intéressent, sinon ça bouffe ton contexte pour rien. » Une session écrit quatre mille lignes ; six parlent du presse-papiers. Jusqu'ici, lire ces six-là voulait dire envoyer les quatre mille.
+
+**Chaque ligne porte une étiquette.** Entre crochets après la date, le nom de la partie du produit qui l'a écrite. Une par module et pas une de plus : une étiquette qu'il faut aller chercher est une étiquette que personne ne tape.
+
+**Elle se pose là où le module prend son journal, une fois.** `Log::about("clipboard")` rend le même journal, le même fichier et le même verrou, écrivant sous ce mot-là ; tout ce que le module écrit ensuite en hérite. C'est ce qui a permis d'étiqueter trois cents endroits en en touchant trente, et surtout ce qui fait que les étiquettes restent justes : une étiquette choisie à chaque ligne serait trois cents occasions de l'écrire autrement, et un jeu d'étiquettes qui dérive ne vaut rien.
+
+**La langue est celle que tout le monde connaît déjà**, celle du journal d'un téléphone, et délibérément rien de plus : `tag:clipboard` garde ce que cette partie-là a écrit, un mot seul se cherche dans toute la ligne, un moins devant jette au lieu de garder, des guillemets tiennent deux mots ensemble, et plusieurs choses demandées gardent ce qui répond à toutes. Rien n'y est sensible à la casse, personne ne se souvenant de la casse d'une étiquette lue une fois. Et rien ne peut y être faux : ce qui n'est pas une des formes ci-dessus est un mot à chercher dans la ligne, ce qui est la lecture utile d'une faute de frappe.
+
+**Le nom du fichier compte comme une étiquette.** Les moteurs écrivent leur journal à leur façon et ne portent rien ; sans ça le leur ne se demanderait pas du tout. Et demander un fichier entier est une chose assez courante pour ne pas mériter un second mot.
+
+**Le tri se fait à la lecture et jamais sur la page une fois faite.** C'est là toute la différence : seules les cent vingt dernières lignes de chaque fichier arrivent sur une page, et six lignes de presse-papiers ne sont presque jamais parmi les cent vingt dernières d'une session. Alors ce qui est écrit dans la boîte voyage : jusqu'au service par le tube nommé, et jusqu'à l'ordinateur d'en face par le canal de ZyrDesk, dont le dialecte passe en version 21. Le journal distant se trie là-bas, avant d'être coupé. Et quand un tri est demandé, la lecture va chercher bien plus loin dans chaque fichier, ce qui est demandé étant rare par définition.
+
+**La page dit sous quel tri elle a été prise.** Une ligne « Tri » dans l'en-tête. Sans elle, six lignes se liraient comme un produit qui n'a rien à dire plutôt que comme la réponse à une question. Et un fichier où rien ne répond le dit, au lieu de laisser un blanc qui se lit comme un fichier vide.
+
+**La boîte est entre les lignes et les boutons**, là où le journal d'un téléphone la met, et le bouton dit ce qu'il emporte : « Copier tout » quand elle est vide, « Copier le tri » quand elle ne l'est pas. Une boîte vide n'est pas un tri qui ne garde rien, c'est pas de tri du tout, et le bouton copie alors exactement ce qu'il a toujours copié.
+
+**Ce que ça ne change pas.** Rien de ce que le produit écrit n'a changé de contenu : ce sont les mêmes lignes, avec un mot de plus devant. Les moteurs écrivent toujours ce qu'ils veulent comme ils le veulent, et personne ne leur demande rien. La pile de correctifs reste à quatorze.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

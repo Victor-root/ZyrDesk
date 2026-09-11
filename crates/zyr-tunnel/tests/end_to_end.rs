@@ -144,9 +144,15 @@ impl Answers for FakeEngine {
             .or(Some(HOST_SCREEN)))
     }
 
-    fn journal(&self) -> Result<String, String> {
+    fn journal(&self, sift: &str) -> Result<String, String> {
         if self.emptied.load(Ordering::Relaxed) {
             return Ok(String::new());
+        }
+        // Le tri se fait là où le journal se rassemble : ce qu'on rend
+        // ici dit sous quel tri on l'a rendu, ce qui suffit à voir qu'il
+        // a bien traversé.
+        if !sift.is_empty() {
+            return Ok(format!("trié par « {sift} »"));
         }
         Ok(host_journal())
     }
@@ -818,7 +824,7 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
     // page tronquée en silence se lit comme une page complète.
     let bench = Bench::bring_up(42780, 16).await;
 
-    let page = before_the_end(aside::ask_for_the_journal(&bench.connection))
+    let page = before_the_end(aside::ask_for_the_journal(&bench.connection, ""))
         .await
         .unwrap();
     assert_eq!(page, host_journal());
@@ -835,10 +841,21 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
         .unwrap();
     assert!(bench.emptied.load(Ordering::Relaxed));
 
-    let page = before_the_end(aside::ask_for_the_journal(&bench.connection))
+    let page = before_the_end(aside::ask_for_the_journal(&bench.connection, ""))
         .await
         .unwrap();
     assert!(page.is_empty(), "{page}");
+
+    // Et le tri traverse avec la question : il se fait là-bas, avant que
+    // la page ne soit coupée, seul ordre où un tri vaut quelque chose.
+    bench.emptied.store(false, Ordering::Relaxed);
+    let trie = before_the_end(aside::ask_for_the_journal(
+        &bench.connection,
+        "tag:clipboard",
+    ))
+    .await
+    .unwrap();
+    assert_eq!(trie, "trié par « tag:clipboard »");
 
     // Et ce que cette machine sait encoder, qui décide de ce que le menu
     // d'en face a le droit d'offrir. Elle est la seule à le savoir :

@@ -28,6 +28,7 @@ use zyr_proto::journal::Journal;
 use zyr_proto::log::Log;
 use zyr_proto::net::TUNNEL_PORT;
 use zyr_proto::paths;
+use zyr_proto::sifting::Sifting;
 use zyr_transport::{Fingerprint, Junction, Media};
 
 use crate::account::{self, Account};
@@ -136,7 +137,7 @@ impl Machine {
     /// The same page whoever asked, which is the whole point of it being
     /// written here: a journal read from another computer that differed
     /// from the one read on the spot would be worth nothing to compare.
-    pub fn journal(&self, fingerprint: Fingerprint, log: &Log) -> String {
+    pub fn journal(&self, fingerprint: Fingerprint, log: &Log, sift: &Sifting) -> String {
         let mut journal = Journal::of_this_computer();
         journal.says(
             "Service",
@@ -156,7 +157,7 @@ impl Machine {
         journal.says("Compte", &self.account_line());
         journal.says("Sessions ouvertes", &self.ways.count().to_string());
         journal.says("Ordinateurs vus", &self.computers_seen(log));
-        journal.gathered()
+        journal.sifted(sift)
     }
 
     /// Where this computer really listens.
@@ -486,7 +487,7 @@ mod tests {
                 .parse()
                 .unwrap();
 
-        let text = machine.journal(fingerprint, &log);
+        let text = machine.journal(fingerprint, &log, &Sifting::everything());
         // Ce que la fenêtre ne peut pas lire seule, et qui est la moitié
         // de ce qu'on ouvre un journal pour savoir.
         assert!(text.contains(&fingerprint.to_string()), "{text}");
