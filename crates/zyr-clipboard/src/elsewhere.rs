@@ -29,6 +29,18 @@ pub fn stand_in_for(_listed: &Listing, _folder: &Path) -> Result<(), Trouble> {
     nowhere()
 }
 
+/// There is no place to take up beside a clipboard there is none of.
+pub struct Attending;
+
+pub fn attend() -> Result<Attending, Trouble> {
+    nowhere()
+}
+
+/// A plain wait, there being no clipboard here to answer for.
+pub fn answer_for(how_long: std::time::Duration) {
+    std::thread::sleep(how_long);
+}
+
 /// Nothing was ever stood in for, the refusal above having seen to it, so
 /// nothing stands and nobody can have pasted it.
 pub fn still_standing() -> bool {

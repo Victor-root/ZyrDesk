@@ -40,10 +40,14 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
 use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
-use windows::Win32::System::Ole::OleSetClipboard;
+use windows::Win32::System::Ole::{OleInitialize, OleSetClipboard, OleUninitialize};
 use windows::Win32::UI::Shell::{
     CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, FD_ATTRIBUTES, FD_FILESIZE, FD_PROGRESSUI,
     FILEDESCRIPTORW, IDataObjectAsyncCapability, IDataObjectAsyncCapability_Impl,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    DispatchMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE,
+    PeekMessageW, QS_ALLINPUT, TranslateMessage,
 };
 use windows::core::{BOOL, Ref, implement};
 use zyr_proto::clipboard::{Listed, Listing};
@@ -80,6 +84,78 @@ thread_local! {
     /// later whether it is still the one being held, and both are kept
     /// per thread because a clipboard belongs to one.
     static STANDING: RefCell<Option<(IDataObject, u32)>> = const { RefCell::new(None) };
+}
+
+/// This thread's place in the system's own arrangement, held for as long
+/// as this is.
+///
+/// Nothing here works without it. An object put on a clipboard is put
+/// there through OLE, OLE only speaks to a thread that has opened an
+/// apartment, and what it opens for that thread is a window of its own
+/// through which every other program's questions arrive. Which is the
+/// other half of the price: this thread has to read its messages, or the
+/// paste in the other program waits for an answer nobody is listening
+/// for. See [`answer_for`].
+pub struct Attending(bool);
+
+impl Attending {
+    /// Opens it, or says why not.
+    pub fn opened() -> Result<Self, Trouble> {
+        // SAFETY: nothing is touched but this thread's own apartment.
+        match unsafe { OleInitialize(None) } {
+            Ok(()) => Ok(Self(true)),
+            // A thread already in an apartment of another kind keeps the
+            // one it had, which is an answer and not a fault; what will
+            // not work is putting something on the clipboard from it, and
+            // that is what the refusal says.
+            Err(e) => Err(Trouble::of(format!(
+                "ce programme n'a pas sa place auprès du presse-papiers : {e}"
+            ))),
+        }
+    }
+}
+
+impl Drop for Attending {
+    fn drop(&mut self) {
+        if self.0 {
+            // SAFETY: balances the one call above, and only that one.
+            unsafe { OleUninitialize() };
+        }
+    }
+}
+
+/// Waits that long, answering meanwhile what the system asks of this
+/// thread.
+///
+/// Not a plain sleep, and the difference is the whole of whether a paste
+/// works: the clipboard's own window lives on this thread, every other
+/// program's questions about what is on the clipboard arrive there as
+/// messages, and a thread that never reads its messages is a paste that
+/// hangs until Windows gives up on it.
+pub fn answer_for(how_long: Duration) {
+    let until = Instant::now() + how_long;
+    loop {
+        let Some(left) = until.checked_duration_since(Instant::now()) else {
+            return;
+        };
+        // SAFETY: no handle is waited on, only this thread's own queue.
+        unsafe {
+            MsgWaitForMultipleObjectsEx(
+                None,
+                u32::try_from(left.as_millis()).unwrap_or(u32::MAX),
+                QS_ALLINPUT,
+                MWMO_INPUTAVAILABLE,
+            )
+        };
+        let mut said = MSG::default();
+        // SAFETY: a message of ours, filled and then handed straight back.
+        while unsafe { PeekMessageW(&mut said, None, 0, 0, PM_REMOVE) }.as_bool() {
+            unsafe {
+                let _ = TranslateMessage(&said);
+                DispatchMessageW(&said);
+            }
+        }
+    }
 }
 
 /// Puts an object on the clipboard that stands in for those files.
@@ -140,12 +216,19 @@ pub fn somebody_pasted() -> bool {
     ASKED_FOR.load(Ordering::SeqCst)
 }
 
-/// Lets go of what was being held, the clipboard having moved on.
+/// Lets go of the promise that was being held.
 ///
-/// Dropped and not cleared: by the time this is called the clipboard is
-/// somebody else's, and clearing it would throw away whatever they just
-/// copied.
+/// Cleared when this program is still the one holding the clipboard,
+/// since what it holds is a promise about to be broken and a clipboard
+/// offering files nobody can send is worse than an empty one. Only
+/// dropped otherwise: by then the clipboard is somebody else's, and
+/// clearing it would throw away whatever they just copied.
 pub fn let_go() {
+    if still_standing() {
+        // SAFETY: nothing is named, which is what empties a clipboard.
+        // A refusal leaves it as it was, which the drop below covers.
+        let _ = unsafe { OleSetClipboard(None) };
+    }
     STANDING.with(|held| *held.borrow_mut() = None);
     ASKED_FOR.store(false, Ordering::SeqCst);
 }

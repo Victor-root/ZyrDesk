@@ -47,9 +47,11 @@ mod packed;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use zyr_proto::clipboard::{Clip, Listing};
 
+pub use board::Attending;
 pub use files::MOST_FILES;
 
 /// What a clipboard was found to hold.
@@ -136,6 +138,32 @@ pub fn what_it_holds() -> Result<Option<Found>, Trouble> {
 /// A refusal is what it says it is: nothing of it went on at all.
 pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
     board::hold_this(clip)
+}
+
+/// Takes this thread's place beside the system's clipboard, for as long
+/// as the answer is held.
+///
+/// What a program has to do before it can hold anything on a clipboard
+/// for other programs, and the thing that is easiest to forget: without
+/// it [`stand_in_for`] refuses, and every paste of what it would have
+/// offered refuses with it.
+///
+/// It comes with an obligation, which is [`answer_for`]: the place taken
+/// up here is a window on this thread, and other programs' questions
+/// about the clipboard arrive there as messages this thread has to read.
+pub fn attend() -> Result<Attending, Trouble> {
+    board::attend()
+}
+
+/// Waits that long, answering meanwhile what the system asks of this
+/// thread.
+///
+/// In the place of a plain sleep, everywhere a thread that has called
+/// [`attend`] would have slept. The difference is the whole of whether a
+/// paste works: a thread that never reads its messages is a paste in
+/// another program that waits for an answer nobody is listening for.
+pub fn answer_for(how_long: Duration) {
+    board::answer_for(how_long)
 }
 
 /// Puts on this computer's clipboard, in the place of those files, a

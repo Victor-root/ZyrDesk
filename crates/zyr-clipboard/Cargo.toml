@@ -38,6 +38,10 @@ windows = { version = "0.61.3", features = [
     # presse-papiers : une poignée de chemins, lue par la famille du
     # shell.
     "Win32_UI_Shell",
+    # La file de messages du fil qui tient le presse-papiers pour les
+    # autres programmes : sans la lire, leurs questions restent sans
+    # réponse et leur coller attend dans le vide.
+    "Win32_UI_WindowsAndMessaging",
 ] }
 # Ce que la macro qui bâtit un objet COM écrit : elle nomme cette
 # caisse-là par son nom, et ne la trouve pas sous celui de la famille.

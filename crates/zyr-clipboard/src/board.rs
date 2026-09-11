@@ -36,6 +36,8 @@ use zyr_proto::clipboard::{Clip, Kind, Listing};
 use crate::files::{self, Walked};
 use crate::{Found, Trouble};
 
+pub use standing::Attending;
+
 /// How many times opening the clipboard is tried before giving up.
 ///
 /// Not a fault to be refused once: the clipboard belongs to whoever holds
@@ -241,6 +243,14 @@ pub fn hold_this(clip: &Clip) -> Result<Vec<String>, Trouble> {
 /// to hand it over.
 pub fn stand_in_for(listed: &Listing, folder: &Path) -> Result<(), Trouble> {
     standing::stand_in_for(listed, folder)
+}
+
+pub fn attend() -> Result<standing::Attending, Trouble> {
+    standing::Attending::opened()
+}
+
+pub fn answer_for(how_long: Duration) {
+    standing::answer_for(how_long)
 }
 
 pub fn still_standing() -> bool {

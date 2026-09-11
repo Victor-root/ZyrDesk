@@ -378,6 +378,17 @@ fn keep_a_helper(_log: Log) {
 /// or until the service takes its mark away.
 #[cfg(windows)]
 pub fn carry_the_clipboard_here() {
+    // Taken before anything else and held to the end. Without it nothing
+    // can be offered on this computer's clipboard for other programs, so
+    // a helper that could not take its place is a helper with half a job
+    // and no way of saying which half.
+    let _attending = match zyr_clipboard::attend() {
+        Ok(attending) => attending,
+        Err(e) => {
+            said(&format!("clipboard: {e}"));
+            return;
+        }
+    };
     let until = Instant::now() + HELPER_LIVES;
     let mut counted: Option<u32> = None;
     // Whether this helper is the one holding the far computer's files.
@@ -456,7 +467,7 @@ pub fn carry_the_clipboard_here() {
                 } else {
                     Stand::Held
                 });
-                std::thread::sleep(LOOK_EVERY);
+                zyr_clipboard::answer_for(LOOK_EVERY);
                 continue;
             }
             // Somebody copied something else on this computer, which is
@@ -475,7 +486,7 @@ pub fn carry_the_clipboard_here() {
         // what it costs to be right rather than fast.
         let counter = zyr_clipboard::times_it_changed();
         if counter != 0 && counted == Some(counter) {
-            std::thread::sleep(LOOK_EVERY);
+            zyr_clipboard::answer_for(LOOK_EVERY);
             continue;
         }
         counted = Some(counter);
@@ -532,7 +543,7 @@ pub fn carry_the_clipboard_here() {
             ),
             _ => {}
         }
-        std::thread::sleep(LOOK_EVERY);
+        zyr_clipboard::answer_for(LOOK_EVERY);
     }
 }
 
