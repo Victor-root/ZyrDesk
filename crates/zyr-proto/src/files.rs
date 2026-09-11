@@ -22,6 +22,15 @@ const IN_THE_MAKING: &str = "new";
 /// the real one for the length of the write, under the same name with
 /// one more ending, and takes its place in a single move.
 pub fn replace(path: &Path, contents: &str) -> io::Result<()> {
+    replace_bytes(path, contents.as_bytes())
+}
+
+/// The same, for what is not text.
+///
+/// A clipboard carries pictures, and a picture is bytes. Everything else
+/// about the write is the one above: the same file beside the real one,
+/// the same single move.
+pub fn replace_bytes(path: &Path, contents: &[u8]) -> io::Result<()> {
     if let Some(folder) = path.parent() {
         fs::create_dir_all(folder)?;
     }

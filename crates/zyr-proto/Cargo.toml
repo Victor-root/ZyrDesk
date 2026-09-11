@@ -7,6 +7,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# Ce qu'un presse-papiers porte voyage sur un canal de texte, et une
+# image n'en est pas : ces deux-là sont déjà dans le verrou du dépôt, le
+# premier chez les comptes et le second chez le transport.
+base64 = "0.23.1"
 if-addrs = "0.15.0"
 rand = "0.10.2"
+sha2 = "0.11.0"
 time = { version = "0.3.55", default-features = false, features = ["std", "formatting", "macros"] }

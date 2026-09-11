@@ -8,7 +8,7 @@
 //! location of an installed product comes with the service.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const DATA_VAR: &str = "ZYRDESK_DATA";
 
@@ -222,6 +222,41 @@ pub fn session_pointer() -> PathBuf {
 /// read its own answer.
 pub fn pointer_here() -> PathBuf {
     data_dir().join("pointer-here.txt")
+}
+
+/// Where the helper on the session that owns the screen writes what this
+/// computer has on its clipboard.
+///
+/// Two files and not one, the line naming and a file beside it holding:
+/// the service looks several times a second and a picture weighs a few
+/// hundred thousand bytes, so what is looked at that often is a line of
+/// two words. The bytes are written first and the line after them, so a
+/// line that names bytes names bytes that are already there.
+///
+/// The same blindness as the pointer beside it, and the same answer: a
+/// clipboard belongs to a window station, the service sits on one that
+/// carries none, and no right makes it otherwise.
+pub fn clipboard_here() -> PathBuf {
+    data_dir().join("clipboard-here.txt")
+}
+
+/// Where the service leaves what this computer is to put on its
+/// clipboard, for that same helper to pick up.
+///
+/// The other direction, and its own pair of files: what this computer
+/// has and what it is being given are two different things, and the one
+/// moment they are the same is the moment the giving is done.
+pub fn clipboard_wanted() -> PathBuf {
+    data_dir().join("clipboard-wanted.txt")
+}
+
+/// The bytes that go with one of the two lines above.
+///
+/// Beside it under the same name, since the two are one thing written in
+/// two files. Named here rather than at each of the four places that
+/// open them: one rule, one spelling.
+pub fn beside(named: &Path) -> PathBuf {
+    named.with_extension("bin")
 }
 
 /// The link of this device to an account, when there is one: the
