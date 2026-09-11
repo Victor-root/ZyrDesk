@@ -2063,6 +2063,14 @@ fn tell_the_frame(home: windows_sys::Win32::Foundation::HWND) {
     if !read {
         return;
     }
+    // A window down in the taskbar answers a two hundred pixel rectangle
+    // sitting at minus thirty-two thousand, which is how the system says
+    // "nowhere". Printed as it comes, it reads like a measurement and is
+    // not one.
+    if !crate::fenetre::a_l_ecran() {
+        crate::journal::note("cadre de la fenêtre : elle est rangée dans la barre des tâches");
+        return;
+    }
     let screen = about.rcMonitor;
     crate::journal::note(&format!(
         "cadre de la fenêtre : écran {}x{} en ({}, {}), fenêtre {}x{} en ({}, {}), intérieur {}x{} ; \
@@ -2552,6 +2560,25 @@ fn hand_the_keyboard_over(engine: windows_sys::Win32::Foundation::HWND, over: bo
 pub(crate) fn the_keyboard_to_the_picture() -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
 
+    // Nothing at all while our window is down in the taskbar, and this is
+    // not tidiness. The picture goes down with it, the system taking an
+    // owned window away with the one that owns it, and the two programs
+    // share one input state for the whole of a session: the active
+    // window, the focus, all of it. Handing that shared state to a window
+    // nobody can see leaves the front on a hidden window, once a second,
+    // for as long as the window stays down; the shell then reads this
+    // program as the one being used, and its own button in the taskbar
+    // stops bringing the window back up, since a button whose group holds
+    // the front is a button that minimises. That is a window stuck in the
+    // taskbar, and it is what was reported.
+    //
+    // `lay_it_out` has answered the same question the same way since it
+    // was written: a window that is not on screen is not a window to lay
+    // anything on. Coming back up puts this right by itself, the watch
+    // saying it again a second later.
+    if !crate::fenetre::a_l_ecran() {
+        return false;
+    }
     if CARRIED.load(Ordering::Relaxed) == 0 {
         return false;
     }

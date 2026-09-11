@@ -263,6 +263,7 @@ unsafe extern "system" fn repond(
         // plus tard, et un dedans en retard sur son cadre se voit pendant
         // tout un redimensionnement.
         WM_SIZE => {
+            dit_si_elle_descend_ou_remonte(holding);
             let (large, haute) = ((with & 0xFFFF) as i32, ((with >> 16) & 0xFFFF) as i32);
             let dedans = crate::accueil::sa_toile();
             if dedans != 0 {
@@ -353,6 +354,39 @@ unsafe extern "system" fn repond(
             unsafe { DefWindowProcW(window, message, holding, with) }
         }
     }
+}
+
+/// Où la fenêtre en était la dernière fois qu'on l'a dit.
+#[cfg(windows)]
+static RANGEE: AtomicBool = AtomicBool::new(false);
+
+/// Dit quand la fenêtre descend dans la barre des tâches et quand elle en
+/// remonte, avec ce qui tient le premier plan à cet instant.
+///
+/// Deux lignes par aller-retour et pas une de plus. Une fenêtre qui ne
+/// remonte pas est le genre d'ennui qu'on ne peut pas photographier, et
+/// ces deux lignes disent les deux seules choses qui le départagent : si
+/// l'ordre de remonter est seulement arrivé jusqu'ici, et à qui
+/// appartenait le premier plan quand elle est descendue. Le second
+/// répond à lui seul du cas où le système ne redemande rien parce qu'il
+/// nous croit déjà devant.
+#[cfg(windows)]
+fn dit_si_elle_descend_ou_remonte(quoi: usize) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SIZE_MINIMIZED;
+
+    let rangee = quoi as u32 == SIZE_MINIMIZED;
+    if RANGEE.swap(rangee, Ordering::Relaxed) == rangee {
+        return;
+    }
+    crate::journal::note(&format!(
+        "fenêtre {} ; le premier plan est {}",
+        if rangee {
+            "rangée dans la barre des tâches"
+        } else {
+            "ressortie de la barre des tâches"
+        },
+        crate::picture::the_front_in_words()
+    ));
 }
 
 /* ---- La montrer, la ranger ------------------------------------------ */
