@@ -637,7 +637,7 @@ fn said(what: &str) {
 /// nobody is going to write is a file opened for nothing.
 #[cfg(windows)]
 fn hunted(what: impl FnOnce() -> String) {
-    if !zyr_proto::FOR_HUNTING {
+    if !zyr_proto::for_hunting() {
         return;
     }
     if let Ok(log) = Log::open(&crate::service::log_path()) {

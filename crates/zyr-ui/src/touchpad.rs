@@ -58,6 +58,15 @@ fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
+/// La même, pour ce qui décide de ces gestes ailleurs qu'ici.
+///
+/// L'interrupteur vit dans le menu du bouton flottant, et ce qu'il refuse
+/// se cherche sous le même nom que le reste : une chasse qui demanderait
+/// deux étiquettes pour un seul sujet serait une chasse à moitié faite.
+pub fn said(what: &str) {
+    note(what);
+}
+
 /// La même, dans la voix que seule une chasse veut.
 ///
 /// Publique, parce que ce qui décide des gestes du pavé n'est pas tout

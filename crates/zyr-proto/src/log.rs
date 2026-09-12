@@ -26,21 +26,26 @@
 //!
 //! # The two voices
 //!
-//! A line is written in one of two, and which one decides whether it
-//! exists at all outside a build made for hunting.
+//! A line is written in one of two, and which one decides whether it is
+//! written at all while nothing is being hunted.
 //!
 //! [`Log::write`] is the product saying what it did, what it refused,
-//! what it found. It is there in every build, because it is what
-//! somebody sends when something goes wrong on their machine, and a
-//! product that explains itself only to its own author explains itself
-//! to nobody.
+//! what it found. It is there always, because it is what somebody sends
+//! when something goes wrong on their machine, and a product that
+//! explains itself only to its own author explains itself to nobody.
 //!
 //! [`Log::debug`] is what counts, measures, or narrates a piece of
 //! plumbing that worked. Twenty streams opening and closing cleanly, a
 //! socket going quiet for a second while two computers find each other:
 //! true, useful while hunting, and drowning everything else the rest of
-//! the time. An ordinary build does not write it and does not even put
-//! the words together.
+//! the time. It is not written the rest of the time, and the words are
+//! not even put together.
+//!
+//! Which of the two states the product is in is decided when it starts
+//! and not when it is compiled. That was the first arrangement and it was
+//! wrong: whoever builds this product builds it one way, and a line only
+//! a second kind of build ever writes is a line that is never there on
+//! the evening it is wanted. See [`crate::for_hunting`].
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -169,19 +174,17 @@ impl Log {
     /// somebody whose session will not open, so it belongs to the build
     /// made for hunting and to no other.
     ///
-    /// Taken as something to call rather than as a message: outside a
-    /// debug build the words are never put together at all, the closure
-    /// being dropped unread. A line that costs a `format!` at every turn
-    /// of a loop for a file nobody will ever hold is still a cost.
-    #[cfg(debug_assertions)]
+    /// Taken as something to call rather than as a message: while nothing
+    /// is being hunted the words are never put together at all, the
+    /// closure being dropped unread. A line that costs a `format!` at
+    /// every turn of a loop for a file nobody will ever hold is still a
+    /// cost.
     pub fn debug(&self, message: impl FnOnce() -> String) {
+        if !crate::for_hunting() {
+            return;
+        }
         self.said(HUNTS, &message());
     }
-
-    /// The same, in a build that is not for hunting: nothing at all.
-    #[cfg(not(debug_assertions))]
-    #[inline]
-    pub fn debug(&self, _message: impl FnOnce() -> String) {}
 
     /// Puts one line down, in whichever voice.
     fn said(&self, voice: char, message: &str) {
@@ -326,8 +329,12 @@ mod tests {
         let lines: Vec<&str> = contents.lines().collect();
         assert!(lines[0].contains(&format!(" {SAYS} [")), "{}", lines[0]);
 
-        if cfg!(debug_assertions) {
-            assert!(assembled, "la version qui chasse assemble ses mots");
+        // Ce que la chasse est ou n'est pas se décide au démarrage, sur
+        // un fichier posé à côté du journal : l'essai se lit donc de la
+        // même façon dans les deux compilations, et ce qu'il vérifie est
+        // qu'une ligne de chasse coûte zéro tant qu'on ne chasse pas.
+        if crate::for_hunting() {
+            assert!(assembled, "à la chasse, les mots s'assemblent");
             assert_eq!(lines.len(), 2);
             assert!(lines[1].contains(&format!(" {HUNTS} [")), "{}", lines[1]);
         } else {

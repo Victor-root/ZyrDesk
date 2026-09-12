@@ -1398,8 +1398,12 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     if let Some(held) = crate::touchpad::what_windows_still_holds().filter(|held| held.any()) {
         crate::touchpad::read_the_pad(false);
         let what_to_do = held.what_to_do();
-        note(&format!(
-            "gestes du pavé tactile : {what_to_do}\n  Ce que cette page a écrit : {}",
+        // Sous l'étiquette du pavé et non sous celle de ce menu : tout ce
+        // qui décide de ces gestes se cherche sous un seul nom, sinon une
+        // chasse en demande deux pour un seul sujet.
+        crate::touchpad::said(&format!(
+            "les gestes n'ont pas pu être pris à Windows. {what_to_do}\n  \
+             Ce que sa page a écrit : {}",
             crate::touchpad::what_that_page_says()
         ));
         crate::touchpad::open_the_windows_page();

@@ -21,22 +21,37 @@ pub const PRODUCT_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// against what anyone believes is installed.
 pub const BUILD: &str = env!("ZYR_BUILD");
 
-/// Whether this binary carries what is written only for a hunt.
+/// Whether this computer is writing what is written only for a hunt.
 ///
-/// Said out loud wherever the build is named, and it has to be: a
-/// journal that holds no hunting lines is either a build that never
-/// writes them or a moment when nothing happened, and those two read
-/// exactly alike. Whoever is handed the journal has to be able to tell
-/// which, or they spend an evening looking for a line that was never
-/// going to be there.
-pub const FOR_HUNTING: bool = cfg!(debug_assertions);
+/// Decided when the product starts, not when it is compiled. It was the
+/// other way round at first, and that was wrong for a reason nothing in
+/// the code could have shown: whoever builds this product builds it one
+/// way, always the same way, and a line that only a second kind of build
+/// ever writes is a line that is simply never there on the evening it is
+/// wanted. A hunt then costs a rebuild of everything, a reinstall and a
+/// lost afternoon, which is exactly when nobody has one.
+///
+/// So it is a file, put beside the journal it fills: present, this
+/// computer writes the hunting lines; absent, it does not. Nothing to
+/// rebuild, nothing to pass, and the same binary either way. Read once,
+/// because the answer cannot change while the product runs and asking a
+/// disk at every line would be its own kind of cost.
+pub fn for_hunting() -> bool {
+    use std::sync::OnceLock;
+
+    static HUNTING: OnceLock<bool> = OnceLock::new();
+    *HUNTING.get_or_init(|| paths::hunting().exists())
+}
 
 /// One line naming the product and the build behind it.
+///
+/// It says whether the hunting lines are being written, and it has to: a
+/// journal holding none of them is either a computer that does not write
+/// them or a moment when nothing happened, and those two read exactly
+/// alike. Whoever is handed the journal must be able to tell which, or
+/// they spend an evening looking for a line that was never going to be
+/// there.
 pub fn version_line() -> String {
-    let hunting = if FOR_HUNTING {
-        ", version de débogage"
-    } else {
-        ""
-    };
+    let hunting = if for_hunting() { ", à la chasse" } else { "" };
     format!("ZyrDesk {PRODUCT_VERSION} ({BUILD}{hunting})")
 }

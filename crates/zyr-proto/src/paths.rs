@@ -351,6 +351,17 @@ pub fn floating_button() -> PathBuf {
 /// Apart for the same reason again: it says what somebody wants to look
 /// at on this machine. It used to live in the browser's own store, which
 /// went with the browser.
+/// The file whose presence turns the hunting lines on.
+///
+/// A file and not a build: whoever builds this product builds it one way,
+/// and a line only a second kind of build ever writes is a line that is
+/// never there on the evening it is wanted. Made by hand, next to the
+/// journal it fills, and removed the same way. Its contents are nobody's
+/// business: what counts is that it is there.
+pub fn hunting() -> PathBuf {
+    data_dir().join("hunting.txt")
+}
+
 /// What Windows had set for its own touchpad gestures before this product
 /// took them.
 ///

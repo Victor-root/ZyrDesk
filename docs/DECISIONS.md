@@ -3099,6 +3099,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Le refus dit maintenant toute la page.** Trois valeurs nommées ne suffisaient pas : les noms que Windows écrit changent d'une de ses versions à l'autre, et un refus qui n'en nomme que trois ne se vérifie pas contre la page qu'on vient de régler à la main. La clé est donc lue en entier, chaque valeur avec son nombre, en voix ordinaire parce qu'un refus est ce que le produit dit de lui-même.
 
+## D191. La chasse se décide au démarrage, pas à la compilation (2026-09-12, pendant M6)
+
+**Le relevé.** « Je n'ai toujours pas de tag touchpad. » Et la ligne de version le disait : pas de mention de débogage, donc pas une ligne de chasse écrite. Réponse : « compile sans `--release` ». Réponse à la réponse, et elle ferme le sujet : `cargo build --release`, dans une ligne de commande tapée telle quelle depuis le premier jour.
+
+**[D182](#d182-deux-voix-au-journal-et-une-seule-des-deux-survit-à-la-version-finale-2026-09-11-pendant-m6) reposait sur une supposition que rien dans le code ne pouvait montrer.** Que celui qui chasse dispose d'une compilation de chasse. C'est faux : on compile ce produit d'une seule façon, toujours la même, et une ligne que seule une seconde sorte de compilation écrit est une ligne qui n'est jamais là le soir où on la veut. La chasse coûtait alors une recompilation entière, une réinstallation et un après-midi, c'est-à-dire précisément ce dont personne ne dispose au moment où quelque chose ne marche pas.
+
+**Alors c'est un fichier.** Posé à côté du journal qu'il remplit : présent, cet ordinateur écrit les lignes de chasse ; absent, il ne les écrit pas. Rien à recompiler, rien à passer en argument, le même binaire dans les deux cas, et la ligne de version dit dans lequel des deux états il est.
+
+**Ce que D182 gardait est gardé.** Une ligne de chasse ne prend toujours pas la ligne mais de quoi la faire, donc tant que personne ne chasse les mots ne sont pas assemblés : le coût reste nul, il est simplement décidé une fois au démarrage plutôt qu'une fois à la compilation. Et le tri sait toujours les demander par `level:debug`.
+
+**Une leçon plus large que ce fichier.** Un outil de diagnostic qui demande autre chose que ce que la personne fait déjà n'est pas un outil de diagnostic. Le nôtre demandait une compilation différente ; il n'a donc jamais servi une seule fois, y compris pendant les trois soirées où il aurait tout changé.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
