@@ -1368,7 +1368,14 @@ async fn share_the_clipboard(app: &App) -> Result<(), String> {
 /// where the person has to act, and nothing is said to have been done.
 async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     let state = app.floating();
-    if state.touchpad.load(Ordering::Relaxed) {
+    let on = state.touchpad.load(Ordering::Relaxed);
+    crate::touchpad::hunted(|| {
+        format!(
+            "interrupteur des gestes cliqué, il était {}",
+            if on { "allumé" } else { "éteint" }
+        )
+    });
+    if on {
         state.touchpad.store(false, Ordering::Relaxed);
         crate::touchpad::read_the_pad(false);
         crate::settings::remember_touchpad_gestures(false).await;

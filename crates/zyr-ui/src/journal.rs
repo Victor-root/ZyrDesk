@@ -173,6 +173,17 @@ pub fn note(what: &str) {
     note_about("interface", what);
 }
 
+/// Writes down what only a hunt wants, under that tag.
+///
+/// For what counts, measures, or tells of plumbing that worked: the line
+/// exists in a build made for hunting and in no other, and outside one
+/// the words are never even put together.
+pub fn hunt_about(tag: &'static str, what: impl FnOnce() -> String) {
+    if let Some(log) = own_log() {
+        log.about(tag).debug(what);
+    }
+}
+
 /// Says which build this window is, the moment it opens.
 pub fn opened() {
     note(&format!("fenêtre ouverte, {}", zyr_proto::version_line()));

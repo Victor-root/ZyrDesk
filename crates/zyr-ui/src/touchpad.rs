@@ -48,6 +48,16 @@ fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
+/// La même, dans la voix que seule une chasse veut.
+///
+/// Publique, parce que ce qui décide des gestes du pavé n'est pas tout
+/// ici : l'interrupteur vit dans le menu du bouton flottant, et une
+/// chasse qui demanderait deux étiquettes pour un seul sujet serait une
+/// chasse à moitié faite.
+pub fn hunted(what: impl FnOnce() -> String) {
+    crate::journal::hunt_about(TAG, what);
+}
+
 /// Ce qu'un geste à plusieurs doigts veut dire.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Gesture {
@@ -349,6 +359,25 @@ pub fn what_windows_still_holds() -> Option<Held> {
     let slide = a_setting("ThreeFingerSlideEnabled");
     let tap = a_setting("ThreeFingerTapEnabled");
     let four_tap = a_setting("FourFingerTapEnabled");
+    // Les trois valeurs telles quelles, parce que c'est d'elles que sort
+    // le refus et qu'elles n'ont aucune autre trace : lues en dehors de
+    // ce que la page de Windows montre, elles sont le seul moyen de
+    // savoir si ce qui a été réglé là-bas est bien ce qui est lu ici.
+    hunted(|| {
+        let said = |value: Option<u32>| match value {
+            Some(value) => value.to_string(),
+            None => "rien d'écrit".to_string(),
+        };
+        format!(
+            "ce que Windows garde, sous HKCU\\{WHERE_WINDOWS_KEEPS_IT} : \
+             ThreeFingerSlideEnabled={}, ThreeFingerTapEnabled={}, \
+             FourFingerTapEnabled={} ; tout ce qui n'est pas zéro est un \
+             geste que Windows répond lui-même",
+            said(slide),
+            said(tap),
+            said(four_tap)
+        )
+    });
     // None of them written is a computer whose pad Windows never had a
     // page for, which is a computer with no precision touchpad: there is
     // nothing here to take back and nothing to read either.
@@ -477,6 +506,9 @@ mod counted {
     pub static FRAMES: AtomicU32 = AtomicU32::new(0);
     pub static THREES: AtomicU32 = AtomicU32::new(0);
     pub static GESTURES: AtomicU32 = AtomicU32::new(0);
+    /// Combien de doigts la dernière trame portait, pour n'écrire une
+    /// ligne qu'au changement.
+    pub static FINGERS: AtomicU32 = AtomicU32::new(0);
 }
 
 /// Reads the pad for as long as it is wanted, and says whether the
@@ -502,6 +534,7 @@ pub fn read_the_pad(wanted: bool) -> bool {
     }
     let Some(taken) = READING.hold(open_the_reading, close_the_reading) else {
         // Already held, which is every turn of the watch but the first.
+        hunted(|| "le pavé était déjà lu, rien à reprendre".to_string());
         return true;
     };
     counted::FRAMES.store(0, Ordering::Relaxed);
@@ -699,6 +732,13 @@ fn a_report_came_in(packet: *mut core::ffi::c_void) {
         if fingers >= THREE {
             counted::THREES.fetch_add(1, Ordering::Relaxed);
         }
+        // Une ligne au changement du nombre de doigts, jamais à la trame :
+        // le pavé en envoie une centaine par seconde, et ce qui se lit
+        // d'une main est le moment où elle se pose et celui où elle part.
+        let before = counted::FINGERS.swap(fingers, Ordering::Relaxed);
+        if before != fingers {
+            hunted(|| format!("{before} doigt(s) puis {fingers}, à {across} sur {down} millièmes"));
+        }
         // SAFETY: no argument, and it answers with a count of
         // milliseconds since the machine started.
         let now = unsafe { GetTickCount64() };
@@ -708,6 +748,7 @@ fn a_report_came_in(packet: *mut core::ffi::c_void) {
             .saw(fingers, across, down, now);
         if let Some(gesture) = made {
             counted::GESTURES.fetch_add(1, Ordering::Relaxed);
+            hunted(|| format!("geste reconnu : {gesture}"));
             crate::floating::the_pad_said(gesture);
         }
     }

@@ -22,6 +22,7 @@
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 
 use crate::app::App;
 
@@ -52,6 +53,8 @@ enum Ligne {
     Mesures,
     /// Un trait entre deux groupes.
     Separateur,
+    /// Ce que le menu vient de refuser de faire, et pourquoi.
+    Refus,
     /// Une ligne qu'on clique, comme la page les appelle.
     Entree(Entree),
     /// Une ligne qui porte un choix entre deux côtés.
@@ -173,8 +176,12 @@ enum Reglage {
 /// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
 /// dans le journal à l'ouverture plutôt que remplacé par du vide qui
 /// ressemblerait à un défaut.
-const LIGNES: [Ligne; 21] = [
+const LIGNES: [Ligne; 22] = [
     Ligne::Mesures,
+    // Juste sous les mesures, donc en tête de ce qu'on lit : ce qui vient
+    // d'être refusé se lit avant ce qu'on allait cliquer ensuite. Elle ne
+    // prend aucune place tant qu'il n'y a rien à dire.
+    Ligne::Refus,
     Ligne::Separateur,
     Ligne::Entree(Entree {
         icone: &icones::PLEIN_ECRAN,
@@ -489,6 +496,43 @@ static VERS_LA_DROITE: AtomicBool = AtomicBool::new(false);
 /// Ce que la carte prend de large, mesuré sur toutes ses lignes.
 static LARGE_CARTE: AtomicU32 = AtomicU32::new(0);
 
+/// Ce que le menu vient de refuser de faire, et depuis quand.
+///
+/// Le menu de la vue web portait une ligne rouge pour ça. Celui que
+/// ZyrDesk dessine ne l'avait pas reprise, et un refus n'allait donc plus
+/// que dans le journal : l'interrupteur des gestes du pavé tactile, qui
+/// refuse à bon droit tant que Windows garde ces gestes pour lui, se
+/// contentait d'ouvrir une page de Windows et de ne pas basculer. Un
+/// interrupteur qui ne bascule pas sans dire pourquoi est un
+/// interrupteur cassé, même quand il a parfaitement raison.
+static REFUS: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+
+/// Ce que ce refus prend de haut, mesuré au dessin comme la carte l'est.
+static HAUTE_DU_REFUS: AtomicU32 = AtomicU32::new(0);
+
+/// Le temps qu'un refus reste sur la carte.
+///
+/// Long, parce qu'il porte ce qu'il y a à faire ailleurs et que c'est
+/// ailleurs qu'on part le faire : un refus effacé pendant qu'on lit la
+/// page de Windows serait un refus jamais lu.
+const TEMPS_DU_REFUS: Duration = Duration::from_secs(20);
+
+/// Ce qu'il y a à dire d'un refus, tant qu'il est frais.
+///
+/// Ce qui a passé son temps est oublié au passage : la carte se rouvre
+/// souvent, et un refus d'il y a une heure se relirait comme celui du
+/// clic qu'on vient de faire.
+fn refus_a_dire() -> Option<String> {
+    let mut refus = REFUS.lock().expect("refus du menu");
+    if refus
+        .as_ref()
+        .is_some_and(|(_, depuis)| depuis.elapsed() >= TEMPS_DU_REFUS)
+    {
+        *refus = None;
+    }
+    refus.as_ref().map(|(dit, _)| dit.clone())
+}
+
 /// Le tour de veille des réglages, qui arrête le précédent.
 static TOUR_DES_REGLAGES: AtomicU32 = AtomicU32::new(0);
 
@@ -788,6 +832,9 @@ impl Ligne {
         match self {
             Ligne::Mesures => hauteur_des_mesures(echelle),
             Ligne::Separateur => (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle,
+            // Mesurée au dessin, où se trouve de quoi mesurer du texte
+            // replié, et relue ici comme la largeur de la carte l'est.
+            Ligne::Refus => lue(&HAUTE_DU_REFUS),
             Ligne::Curseur(_) => hauteur_du_curseur(echelle),
             _ => tenue::LIGNE * echelle,
         }
@@ -799,6 +846,12 @@ impl Ligne {
     /// pas encore dit lesquels, ne laisse rien à choisir : la ligne
     /// s'efface plutôt que d'ouvrir une liste vide.
     fn se_voit(&self, menu: Option<&SessionMenu>) -> bool {
+        // Sans refus à dire, la ligne n'est pas là du tout : elle ne doit
+        // rien coûter les neuf cent quatre-vingt-dix-neuf fois où tout se
+        // passe bien.
+        if matches!(self, Ligne::Refus) {
+            return refus_a_dire().is_some();
+        }
         let Some(menu) = menu else {
             // Sans réponse, la carte se réduit à ce qui ne dépend pas de
             // la session : mieux vaut une carte courte qu'une carte de
@@ -1294,7 +1347,10 @@ fn mesure_la_carte(toile: &Toile, echelle: f32) {
             Ligne::Mesures => {
                 (tenue::MESURE * 4.0 + tenue::ENTRE_MESURES * 3.0 + design::PAS_2 * 2.0) * echelle
             }
-            Ligne::Separateur => 0.0,
+            // Replié sur la largeur que les autres lignes décident : un
+            // refus est une phrase, et une carte large comme une phrase
+            // serait une carte deux fois trop large pour tout le reste.
+            Ligne::Separateur | Ligne::Refus => 0.0,
             Ligne::Entree(entree) => {
                 let droite =
                     toile.largeur(&entree.droite.dit(), Plume::de(design::LEGENDE * echelle));
@@ -1681,7 +1737,7 @@ fn sous(ou: (i32, i32)) -> Option<Cible> {
             (tenue::POUCE - tenue::BARRE) * echelle / 2.0,
         ))
         .then_some(Cible::Barre(rang)),
-        Ligne::Mesures | Ligne::Separateur => None,
+        Ligne::Mesures | Ligne::Separateur | Ligne::Refus => None,
     }
 }
 
@@ -1749,6 +1805,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             match ligne {
                 Ligne::Mesures => pinceau.mesures(ou),
                 Ligne::Separateur => pinceau.separateur(ou),
+                Ligne::Refus => pinceau.refus(ou),
                 Ligne::Entree(entree) => pinceau.entree(ou, entree, sous_la_main.is_some()),
                 Ligne::Bascule(bascule) => pinceau.cotes(
                     ou,
@@ -2103,6 +2160,31 @@ impl Pinceau<'_> {
             ),
             0.0,
             self.couleurs.r#trait,
+        );
+    }
+
+    /// Ce que le menu vient de refuser de faire, écrit en toutes lettres.
+    ///
+    /// Replié sur la largeur de la carte : ce qu'un refus a à dire est ce
+    /// qu'il faut faire ailleurs, et abréger cela reviendrait à ne rien
+    /// dire du tout.
+    fn refus(&self, ou: Cadre) {
+        let Some(dit) = refus_a_dire() else {
+            return;
+        };
+        let bord = design::PAS_2 * self.echelle;
+        let large = ou.droite - ou.gauche - bord * 2.0;
+        let plume = Plume::de(design::LEGENDE * self.echelle);
+        // Mesuré ici parce qu'ici est le seul endroit qui sache mesurer du
+        // texte replié, et rangé pour que la carte s'ouvre dessus, comme
+        // sa largeur l'est déjà.
+        let haute = self.toile.hauteur(&dit, plume, large);
+        range(&HAUTE_DU_REFUS, haute + bord * 2.0);
+        self.toile.ecris(
+            &dit,
+            plume,
+            self.couleurs.attention,
+            Cadre::pose(ou.gauche + bord, ou.haut + bord, large, haute),
         );
     }
 
@@ -2493,12 +2575,17 @@ fn dit_le_clic(mot: &str) {
 
 /// Et dit un refus, s'il y en a un.
 ///
-/// Un refus ne va qu'au journal tant que le menu de la vue web est encore
-/// là : c'est lui qui porte la ligne rouge qui le dit, et en dessiner une
-/// deuxième ici ferait deux endroits à tenir pour la même phrase.
+/// Sur la carte et dans le journal. Sur la carte parce que c'est là que
+/// regarde la personne qui vient de cliquer, et dans le journal parce que
+/// la carte se referme et qu'une phrase lue une fois ne se retrouve plus.
 fn dit_le_refus(refus: Result<(), String>) {
-    if let Err(refus) = refus {
-        note(&format!("menu du bouton flottant : {refus}"));
+    let Err(refus) = refus else {
+        return;
+    };
+    note(&format!("menu du bouton flottant : {refus}"));
+    *REFUS.lock().expect("refus du menu") = Some((refus, Instant::now()));
+    if let Some(app) = PROGRAM.lock().expect("programme du menu").clone() {
+        redessine(&app);
     }
 }
 

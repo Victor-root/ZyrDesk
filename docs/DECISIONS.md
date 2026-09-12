@@ -3073,6 +3073,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Le dialecte ne bouge pas : l'entête est du texte dans une page qui en était déjà pleine. Une page venue d'une moitié plus ancienne du produit n'annonce aucun nom, la rangée ne s'affiche pas, et tout se tape comme avant. La pile de correctifs reste à quatorze.
 
+## D189. Un refus se lit sur la carte, pas seulement dans le journal (2026-09-12, pendant M6)
+
+**Le relevé.** « J'ai testé les gestes du pavé tactile : quand j'active sur la session, ça m'ouvre simplement les paramètres du pavé tactile de Windows, et c'est tout. Le bouton ne s'active pas, même si je reclique dessus. »
+
+**L'interrupteur avait raison, et se taisait.** Windows répond lui-même aux gestes à trois et quatre doigts, et il ne les lâche que depuis une page de ses réglages, qu'aucun appel ne remplace : allumer l'interrupteur pendant que Windows les garde ferait agir chaque geste deux fois, une fois à chaque bout. Il refuse donc, et ouvre la page où la personne peut les rendre. Ce refus était écrit, en français, avec les sections à régler dans les mots de Windows. Il n'allait nulle part.
+
+**Parce qu'une ligne rouge était restée dans une vue web supprimée.** Le menu du bouton flottant était une page web ; ZyrDesk le dessine lui-même depuis, et la ligne rouge qui portait les refus n'a pas été reprise. Le commentaire de la fonction le disait noir sur blanc, « un refus ne va qu'au journal tant que le menu de la vue web est encore là », et la vue web n'était plus là. Tout refus de ce menu était donc muet, pas seulement celui-ci : c'est simplement le seul qui refuse souvent, parce qu'il est le seul à refuser par conception.
+
+**Une ligne du menu, qui ne coûte rien tant qu'il n'y a rien à dire.** Elle se replie sur la largeur de la carte, se mesure au dessin comme la largeur de la carte l'est déjà, et s'efface d'elle-même après vingt secondes : le temps d'aller lire la page de Windows qui vient de s'ouvrir, puisque c'est là que l'on part en la lisant. Un interrupteur qui ne bascule pas sans dire pourquoi est un interrupteur cassé, même quand il a parfaitement raison.
+
+**Et de quoi chasser, sous une seule étiquette.** Les trois valeurs que Windows garde sont lues dans son registre, hors de tout ce que sa page montre : rien d'autre ne dit si ce qui a été réglé là-bas est bien ce qui est lu ici. Elles s'écrivent donc telles quelles, avec le clic de l'interrupteur, les doigts qui se posent et se lèvent, et chaque geste reconnu. En voix de chasse, donc absentes de la version finale, et sous `touchpad`, y compris pour ce qui se décide dans le menu : une chasse qui demanderait deux étiquettes pour un seul sujet serait une chasse à moitié faite.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
