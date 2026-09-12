@@ -3157,6 +3157,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Les rapports bruts partent.** Ils ont répondu, la question est close, et le journal n'a pas à garder l'échafaudage.
 
+## D195. Le cran d'un balayage se mesure, il ne se choisit pas (2026-09-12, pendant M6)
+
+**Ce que les deux directions séparées ont montré.** Trois touchers à trois doigts dans le relevé. Le premier : 76 millièmes en travers, 11 de haut en bas, un vrai balayage de côté. Les deux autres : 24 en travers pour 250 de haut en bas, et 10 pour 175, c'est-à-dire des gestes verticaux et pas des balayages du tout. Aucun des trois n'a donc jamais approché le cran demandé, et le refus n'a jamais rien eu à voir avec le sens : c'était la distance, dans les trois cas.
+
+**Ce que [D194](#d194-un-balayage-fait-dix-pour-cent-du-pavé-pas-vingt-2026-09-12-pendant-m6) avait mal lu.** Les 82, 128, 175 et 237 millièmes sur lesquels le cran avait été ramené à un dixième étaient une distance unique, le plus grand écart quelle que soit la direction. Trois de ces quatre chiffres étaient donc verticaux, et régler un seuil horizontal dessus revenait à le régler sur des gestes qui n'étaient pas des balayages. Un dixième de pavé était encore au-dessus du seul balayage réel du relevé.
+
+**Le cran est maintenant celui d'un vrai balayage.** Six pour cent du pavé, sous les 76 millièmes mesurés et une fois et demie l'immobilité tolérée pour un appui : en dessous de quatre pour cent c'est un appui, au-dessus de six c'est un balayage, et entre les deux rien ne part. Un test tient cette distance à la valeur mesurée pour qu'elle ne remonte pas toute seule.
+
+**Et la fin d'un toucher s'écrit avec son début.** Le plus grand écart ne dit pas si la main est restée là où elle est allée. Une main qui roule en se posant s'écarte et revient ; une main qui balaye s'écarte et reste. Écrits de la même façon, ces deux-là sont impossibles à distinguer, et c'est exactement la question posée par les 250 millièmes verticaux d'un toucher de deux cents millisecondes.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

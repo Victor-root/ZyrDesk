@@ -110,18 +110,19 @@ const FOUR: u32 = 4;
 
 /// How far the hand travels for one window, in thousandths of the pad.
 ///
-/// A tenth of the pad, which is what a swipe really measures: four
-/// deliberate three-finger swipes were read at 82, 128, 175 and 237
-/// thousandths, and a fifth of the pad let none of them through. Three
-/// fingers side by side already take a quarter of the width, so what is
-/// left to travel is short, and a threshold that asked for more asked for
-/// a gesture nobody makes.
+/// Measured rather than chosen: a real three-finger swipe sideways, read
+/// with the two directions kept apart, moved the middle of the hand 76
+/// thousandths across and 11 up and down. Three fingers side by side
+/// already take a quarter of the width, so what is left to travel is
+/// short, and asking for a tenth of the pad let that swipe through the
+/// net, let alone a fifth.
 ///
-/// Well above the stillness a tap is allowed, so the two cannot be
-/// confused. Counted in thousandths rather than in what the pad reports:
-/// every pad has its own ruler, and a threshold in its units would be a
-/// different gesture on every laptop.
-const A_STEP: i32 = 100;
+/// Half again the stillness a tap is allowed, so a tap that slips a
+/// little is still a tap and nothing in between is either. Counted in
+/// thousandths rather than in what the pad reports: every pad has its own
+/// ruler, and a threshold in its units would be a different gesture on
+/// every laptop.
+const A_STEP: i32 = 60;
 
 /// How long the fingers may stay down and still be a tap.
 const AT_MOST_A_TAP: u64 = 300;
@@ -146,6 +147,14 @@ enum State {
         /// largest count ever says so.
         how_many: u32,
         from: (i32, i32),
+        /// And where it is now, which nothing here decides anything by.
+        ///
+        /// Kept for the one line a hunt reads: how far the hand went says
+        /// nothing about whether it stayed there. A swipe that really went
+        /// sideways ends where it went; a hand that only rolled as it
+        /// landed ends where it started, and the two are otherwise
+        /// written down exactly alike.
+        to: (i32, i32),
         since: u64,
         /// The furthest the hand has been from where it landed, sideways
         /// and up and down apart, which is what keeps a slow drift from
@@ -221,6 +230,7 @@ impl Reading {
                 self.state = State::Down {
                     how_many: fingers,
                     from: (x, y),
+                    to: (x, y),
                     since: at,
                     apart: (0, 0),
                 };
@@ -231,12 +241,14 @@ impl Reading {
                 from,
                 since,
                 apart,
+                ..
             } => {
                 let (dx, dy) = (x - from.0, y - from.1);
                 let how_many = how_many.max(fingers);
                 self.state = State::Down {
                     how_many,
                     from,
+                    to: (x, y),
                     since,
                     apart: (apart.0.max(dx.abs()), apart.1.max(dy.abs())),
                 };
@@ -1508,16 +1520,16 @@ mod tests {
 
     #[test]
     fn a_swipe_of_the_length_a_hand_really_makes_changes_a_window() {
-        // Quatre balayages à trois doigts vraiment faits ont parcouru 82,
-        // 128, 175 et 237 millièmes de pavé. Un cran plus exigeant n'en
-        // laissait pas passer un seul, et le geste n'existait donc pas.
+        // Un vrai balayage de côté, mesuré sur le pavé : 76 millièmes en
+        // travers, 11 de haut en bas. Un cran plus exigeant ne le laissait
+        // pas passer, et le geste n'existait donc pas.
         let mut reading = Reading::new();
         let mut made = Vec::new();
         made.extend(reading.saw(3, 400, 500, 0));
-        for step in 1..=8 {
-            made.extend(reading.saw(3, 400 + step * 16, 500, (step * 8) as u64));
+        for step in 1..=4 {
+            made.extend(reading.saw(3, 400 + step * 19, 500 + step * 3, (step * 8) as u64));
         }
-        made.extend(reading.saw(0, 528, 500, 100));
+        made.extend(reading.saw(0, 476, 512, 100));
         assert_eq!(made, vec![Gesture::Rightwards]);
     }
 
