@@ -1428,11 +1428,16 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     // same road and under the same condition. Said rather than refused:
     // the tap is a click and crosses whatever the keyboard is doing, so
     // half of what was asked for works from this moment.
+    //
+    // Sous l'étiquette du pavé, comme tout ce qui décide de ces gestes :
+    // dit sous celle de ce menu, c'est une ligne qu'on ne trouve qu'en
+    // cherchant ailleurs que là où l'on cherche, donc une ligne qui n'a
+    // jamais servi.
     if !keys_to_the_session(app) {
-        note(
-            "gestes du pavé tactile : le glissement à trois doigts change de fenêtre \
-             sur l'ordinateur d'en face seulement quand le clavier lui appartient \
-             (ligne « Clavier », côté « Immersif »)",
+        crate::touchpad::said(
+            "le glissement à trois doigts est un Alt+Tab, et Windows le garde pour lui \
+             tant que la ligne « Clavier » du menu est sur « Partagé » : il changera \
+             de fenêtre sur cet ordinateur-ci. Côté « Immersif », il va à la session",
         );
     }
     Ok(())
