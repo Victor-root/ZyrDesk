@@ -1384,10 +1384,20 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     if crate::touchpad::what_windows_still_holds().is_none() {
         return Err("cet ordinateur n'a pas de pavé tactile de précision.".to_string());
     }
+    // Dit allumé avant d'allumer, et non après. La veille du bouton
+    // flottant tourne à côté et redit à chaque tour ce que cet
+    // interrupteur vaut : si elle passe pendant que celui-ci réfléchit,
+    // elle lit « éteint », arrête la lecture et rend à Windows ce qui
+    // vient de lui être pris. Le tour d'après, tout est à refaire, et
+    // c'est ce qu'on lisait dans le journal : mis à zéro puis rendu dans
+    // la même seconde, puis refusé pour une raison qu'on venait de
+    // recréer soi-même.
+    state.touchpad.store(true, Ordering::Relaxed);
     // La lecture prend d'abord à Windows les gestes qu'il répondait
     // lui-même : c'est elle qui les lui rendra en s'arrêtant, et c'est
     // tout ce que la personne a à faire.
     if !crate::touchpad::read_the_pad(true) {
+        state.touchpad.store(false, Ordering::Relaxed);
         return Err("Windows n'a pas donné le pavé tactile à ZyrDesk.".to_string());
     }
     // Relu après coup, parce que c'est la seule preuve qui vaille : si
@@ -1396,6 +1406,7 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     // Tout est alors remis comme c'était et la page s'ouvre, où la
     // personne peut faire à la main ce qui a été refusé au programme.
     if let Some(held) = crate::touchpad::what_windows_still_holds().filter(|held| held.any()) {
+        state.touchpad.store(false, Ordering::Relaxed);
         crate::touchpad::read_the_pad(false);
         let what_to_do = held.what_to_do();
         // Sous l'étiquette du pavé et non sous celle de ce menu : tout ce
@@ -1409,7 +1420,6 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
         crate::touchpad::open_the_windows_page();
         return Err(what_to_do);
     }
-    state.touchpad.store(true, Ordering::Relaxed);
     // Remembered like the keyboard beside it: this is thrown in the
     // middle of a session, and the side it is left on is the side the
     // next session should open on.

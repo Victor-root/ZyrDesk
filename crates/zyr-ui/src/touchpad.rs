@@ -765,8 +765,8 @@ pub fn read_the_pad(wanted: bool) -> bool {
         return false;
     }
     let Some(taken) = READING.hold(open_the_reading, close_the_reading) else {
-        // Already held, which is every turn of the watch but the first.
-        hunted(|| "le pavé était déjà lu, rien à reprendre".to_string());
+        // Already held, which is every turn of the watch but the first,
+        // so a line a second saying that nothing happened.
         return true;
     };
     // Pris dès que la lecture tient, pour que les gestes n'agissent pas
@@ -971,27 +971,37 @@ fn a_report_came_in(packet: *mut core::ffi::c_void) {
         // SAFETY: no argument, and it answers with a count of
         // milliseconds since the machine started.
         let now = unsafe { GetTickCount64() };
-        let made = HAND
-            .lock()
-            .expect("lecture du pavé")
-            .saw(fingers, across, down, now);
-        if let Some(gesture) = made {
-            counted::GESTURES.fetch_add(1, Ordering::Relaxed);
-            hunted(|| format!("geste reconnu : {gesture}"));
-            crate::floating::the_pad_said(gesture);
-        }
         // Une ligne au changement du nombre de doigts, jamais à la trame :
         // le pavé en envoie une centaine par seconde, et ce qui se lit
         // d'une main est le moment où elle se pose et celui où elle part.
-        // Écrite après la décision et non avant, parce que ce qu'on veut
-        // savoir est ce que cette trame-là a changé.
         let before = counted::FINGERS.swap(fingers, Ordering::Relaxed);
-        if before != fingers && zyr_proto::for_hunting() {
-            let stands = HAND.lock().expect("lecture du pavé").how_it_stands();
+        let telling = before != fingers && zyr_proto::for_hunting();
+
+        let mut hand = HAND.lock().expect("lecture du pavé");
+        // Avant et après, parce que le moment qui décide de tout est la
+        // levée : c'est là qu'un appui est accepté ou refusé, et après
+        // elle la main est revenue à rien. Dire seulement l'après, c'est
+        // écrire « rien » à l'instant précis qu'on cherchait à lire.
+        let was = telling.then(|| hand.how_it_stands());
+        let made = hand.saw(fingers, across, down, now);
+        let stands = telling.then(|| hand.how_it_stands());
+        drop(hand);
+
+        if let Some(gesture) = made {
+            counted::GESTURES.fetch_add(1, Ordering::Relaxed);
+            // En voix ordinaire : un geste reconnu est rare, c'est ce que
+            // le produit vient de faire, et savoir s'il en reconnaît ne
+            // doit demander à personne d'allumer quoi que ce soit.
+            note(&format!("geste reconnu : {gesture}"));
+            crate::floating::the_pad_said(gesture);
+        }
+        if telling {
             hunted(|| {
                 format!(
-                    "{before} doigt(s) puis {fingers}, à {across} sur {down} millièmes ; \
-                     la main : {stands}"
+                    "{before} doigt(s) puis {fingers}, à {across} sur {down} millièmes, \
+                     à l'instant {now} ; la main : {} puis {}",
+                    was.unwrap_or_default(),
+                    stands.unwrap_or_default()
                 )
             });
         }
