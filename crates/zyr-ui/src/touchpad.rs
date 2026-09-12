@@ -110,12 +110,18 @@ const FOUR: u32 = 4;
 
 /// How far the hand travels for one window, in thousandths of the pad.
 ///
-/// A fifth of the pad, so an ordinary swipe changes one window and a long
-/// slide changes several, which is what the hand expects of a gesture it
-/// can keep going. Counted in thousandths rather than in what the pad
-/// reports: every pad has its own ruler, and a threshold in its units
-/// would be a different gesture on every laptop.
-const A_STEP: i32 = 200;
+/// A tenth of the pad, which is what a swipe really measures: four
+/// deliberate three-finger swipes were read at 82, 128, 175 and 237
+/// thousandths, and a fifth of the pad let none of them through. Three
+/// fingers side by side already take a quarter of the width, so what is
+/// left to travel is short, and a threshold that asked for more asked for
+/// a gesture nobody makes.
+///
+/// Well above the stillness a tap is allowed, so the two cannot be
+/// confused. Counted in thousandths rather than in what the pad reports:
+/// every pad has its own ruler, and a threshold in its units would be a
+/// different gesture on every laptop.
+const A_STEP: i32 = 100;
 
 /// How long the fingers may stay down and still be a tap.
 const AT_MOST_A_TAP: u64 = 300;
@@ -141,9 +147,16 @@ enum State {
         how_many: u32,
         from: (i32, i32),
         since: u64,
-        /// The furthest the hand has been from where it landed, which is
-        /// what keeps a slow drift from being read as a tap.
-        apart: i32,
+        /// The furthest the hand has been from where it landed, sideways
+        /// and up and down apart, which is what keeps a slow drift from
+        /// being read as a tap.
+        ///
+        /// The two kept apart rather than as one distance, because that
+        /// one distance is the whole question when a swipe is not
+        /// recognised: it says the hand went somewhere without saying
+        /// where, and a hunt cannot tell a swipe too short from a swipe
+        /// that went up and down.
+        apart: (i32, i32),
     },
     /// Three fingers sliding sideways, `steps` windows asked for so far.
     Sliding { from: i32, steps: i32 },
@@ -209,7 +222,7 @@ impl Reading {
                     how_many: fingers,
                     from: (x, y),
                     since: at,
-                    apart: 0,
+                    apart: (0, 0),
                 };
                 None
             }
@@ -225,7 +238,7 @@ impl Reading {
                     how_many,
                     from,
                     since,
-                    apart: apart.max(dx.abs()).max(dy.abs()),
+                    apart: (apart.0.max(dx.abs()), apart.1.max(dy.abs())),
                 };
                 // A four-finger slide changes this computer's own virtual
                 // desktops and always has: only the tap is taken from it,
@@ -278,7 +291,7 @@ impl Reading {
                 since,
                 apart,
                 ..
-            } if at.saturating_sub(since) <= AT_MOST_A_TAP && apart <= STILL => {
+            } if at.saturating_sub(since) <= AT_MOST_A_TAP && apart.0.max(apart.1) <= STILL => {
                 Some(if how_many == THREE {
                     Gesture::ThreeTap
                 } else {
@@ -729,7 +742,7 @@ static PAD: std::sync::Mutex<Option<Pad>> = std::sync::Mutex::new(None);
 /// enough fingers ever landed on it, and how many gestures came of them.
 #[cfg(windows)]
 mod counted {
-    use std::sync::atomic::{AtomicBool, AtomicU32};
+    use std::sync::atomic::AtomicU32;
 
     pub static FRAMES: AtomicU32 = AtomicU32::new(0);
     pub static THREES: AtomicU32 = AtomicU32::new(0);
@@ -737,21 +750,7 @@ mod counted {
     /// Combien de doigts la dernière trame portait, pour n'écrire une
     /// ligne qu'au changement.
     pub static FINGERS: AtomicU32 = AtomicU32::new(0);
-    /// Combien de rapports bruts ont déjà été écrits tels quels depuis le
-    /// début de cette lecture.
-    pub static REPORTS: AtomicU32 = AtomicU32::new(0);
-    /// Si plus d'un doigt a déjà été en jeu, puisque c'est là que la
-    /// recopie des rapports bruts commence.
-    pub static SEVERAL: AtomicBool = AtomicBool::new(false);
 }
-
-/// Combien de rapports bruts sont recopiés au journal par lecture.
-///
-/// Assez pour couvrir une main qui se pose à plusieurs doigts, glisse et
-/// se relève, et pas un de plus : le pavé en envoie une centaine par
-/// seconde, et un journal qui les prendrait tous ne se lirait pas.
-#[cfg(windows)]
-const REPORTS_WRITTEN_DOWN: u32 = 40;
 
 /// Reads the pad for as long as it is wanted, and says whether the
 /// reading stands.
@@ -790,8 +789,6 @@ pub fn read_the_pad(wanted: bool) -> bool {
     counted::FRAMES.store(0, Ordering::Relaxed);
     counted::THREES.store(0, Ordering::Relaxed);
     counted::GESTURES.store(0, Ordering::Relaxed);
-    counted::REPORTS.store(0, Ordering::Relaxed);
-    counted::SEVERAL.store(false, Ordering::Relaxed);
     *HAND.lock().expect("lecture du pavé") = Reading::new();
     *FRAME.lock().expect("trame du pavé") = Frame::new();
     note(if taken {
@@ -1150,7 +1147,7 @@ fn described(device: windows_sys::Win32::Foundation::HANDLE) -> Option<Pad> {
     let (across, down) = (across?, down?);
     // Une seule fois par pavé, et c'est la première chose qu'une chasse a
     // besoin de savoir : combien de doigts ce pavé sait décrire d'un coup,
-    // puisque c'est ce nombre qui décide s'il découpe une trame ou non.
+    // et sur quelle règle il les compte.
     hunted(|| {
         format!(
             "pavé décrit : {} emplacement(s) de doigt {fingers:?}, \
@@ -1270,8 +1267,6 @@ impl Frame {
                     .map(|(which, across, down)| (*finger, which, across, down))
             })
             .collect();
-        let writing = worth_writing_down(said, self.wanted, &here);
-
         let taken = match said {
             // Not one contact is touching, so nothing is on the pad,
             // whatever the report announces and whatever was being put
@@ -1296,9 +1291,8 @@ impl Frame {
             // Nought announced with nothing open, and contacts all the
             // same: the last report of a frame already handed over,
             // delivered a second time. Taken for a frame of its own it
-            // made one of a single finger, wherever that finger happened
-            // to be, and that is what every three-finger gesture was
-            // reading as three, then one, then one.
+            // would make one of a single finger, wherever that finger
+            // happened to be.
             Some(_) => false,
             // A pad that announces nothing is read one report at a time,
             // which is what a pad holding a whole frame at once comes to
@@ -1324,26 +1318,6 @@ impl Frame {
             }
         }
         let seen = self.seen.len() as u32;
-        if writing {
-            hunted(|| {
-                format!(
-                    "rapport de {} octets : {} ; le pavé annonce {} ; doigts posés :{} ; \
-                     {} ; trame : {} voulu(s), {seen} vu(s)",
-                    report.len(),
-                    as_it_came(report),
-                    match said {
-                        Some(how_many) => how_many.to_string(),
-                        None => "rien".to_owned(),
-                    },
-                    what_was_posed(&here),
-                    if taken { "pris" } else { "déjà vu, laissé" },
-                    match self.wanted {
-                        Some(wanted) => wanted.to_string(),
-                        None => "aucun".to_owned(),
-                    },
-                )
-            });
-        }
         if !taken || seen < self.wanted.unwrap_or_default() {
             return None;
         }
@@ -1360,67 +1334,6 @@ impl Frame {
         self.wanted = None;
         Some(whole)
     }
-}
-
-/// Whether this report is one of the few written down as it came.
-///
-/// Nothing is written while a single finger is in play: the first reports
-/// of a reading are those of a cursor being moved, and what a hunt needs
-/// to see is what the pad sends when a hand puts several fingers down. So
-/// the writing starts at the first report that involves more than one, and
-/// stops when enough of them have been written.
-#[cfg(windows)]
-fn worth_writing_down(
-    said: Option<u32>,
-    wanted: Option<u32>,
-    here: &[(u16, u32, i32, i32)],
-) -> bool {
-    use std::sync::atomic::Ordering;
-
-    let several = said.is_some_and(|how_many| how_many > 1)
-        || wanted.is_some_and(|how_many| how_many > 1)
-        || here.len() > 1;
-    if several {
-        counted::SEVERAL.store(true, Ordering::Relaxed);
-    } else if !counted::SEVERAL.load(Ordering::Relaxed) {
-        return false;
-    }
-    let written = counted::REPORTS.load(Ordering::Relaxed);
-    if written >= REPORTS_WRITTEN_DOWN {
-        return false;
-    }
-    counted::REPORTS.store(written + 1, Ordering::Relaxed);
-    true
-}
-
-/// One report exactly as the pad sent it.
-///
-/// For a hunt and for nothing else, and for the one question the parsed
-/// view cannot answer: whether what this pad sends is what the code
-/// believes it sends.
-#[cfg(windows)]
-fn as_it_came(report: &[u8]) -> String {
-    use std::fmt::Write;
-
-    report.iter().fold(String::new(), |mut out, byte| {
-        let _ = write!(out, "{byte:02x}");
-        out
-    })
-}
-
-/// The contacts of one report, as the system's parser reads them.
-#[cfg(windows)]
-fn what_was_posed(here: &[(u16, u32, i32, i32)]) -> String {
-    use std::fmt::Write;
-
-    if here.is_empty() {
-        return " aucun".to_owned();
-    }
-    here.iter()
-        .fold(String::new(), |mut out, (finger, which, across, down)| {
-            let _ = write!(out, " n°{finger} doigt {which} en {across} sur {down},");
-            out
-        })
 }
 
 /// How many fingers the pad says are on it, `None` when this report does
@@ -1507,7 +1420,7 @@ mod tests {
         made
     }
 
-    /// Trois doigts glissés de `from` à `to`, un dixième de pavé à la
+    /// Trois doigts glissés de `from` à `to`, vingt millièmes de pavé à la
     /// fois, comme un vrai pavé les rapporte.
     fn slid(reading: &mut Reading, from: i32, to: i32) -> Vec<Gesture> {
         let mut made = Vec::new();
@@ -1591,6 +1504,21 @@ mod tests {
                 Gesture::Rightwards,
             ]
         );
+    }
+
+    #[test]
+    fn a_swipe_of_the_length_a_hand_really_makes_changes_a_window() {
+        // Quatre balayages à trois doigts vraiment faits ont parcouru 82,
+        // 128, 175 et 237 millièmes de pavé. Un cran plus exigeant n'en
+        // laissait pas passer un seul, et le geste n'existait donc pas.
+        let mut reading = Reading::new();
+        let mut made = Vec::new();
+        made.extend(reading.saw(3, 400, 500, 0));
+        for step in 1..=8 {
+            made.extend(reading.saw(3, 400 + step * 16, 500, (step * 8) as u64));
+        }
+        made.extend(reading.saw(0, 528, 500, 100));
+        assert_eq!(made, vec![Gesture::Rightwards]);
     }
 
     #[test]

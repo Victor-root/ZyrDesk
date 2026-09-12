@@ -3143,6 +3143,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **La chasse reste, et vise mieux.** Les rapports bruts sont toujours recopiés, mais plus à partir du premier : à partir du premier qui met plus d'un doigt en jeu. Les quarante premiers d'une lecture étaient ceux d'un curseur qu'on déplace, et ils ont coûté un aller-retour pour ne montrer que ce qu'on savait déjà. Ils partiront quand les gestes marcheront.
 
+## D194. Un balayage fait dix pour cent du pavé, pas vingt (2026-09-12, pendant M6)
+
+**Ce que la correction précédente a vraiment réparé.** L'appui à trois doigts marche. Les trames sont justes, le relevé le montre rapport par rapport : trois contacts annoncés, trois contacts lus, à chaque fois. Mais [D193](#d193-le-pavé-envoie-un-doigt-par-rapport-et-chaque-rapport-deux-fois-2026-09-12-pendant-m6) attribuait le 3 puis 1 puis 1 aux rapports livrés en double, et c'est faux.
+
+**Ce qui se passait vraiment.** Ce pavé tient ses cinq doigts dans un seul rapport, il ne découpe rien du tout. Le 3 puis 1 puis 1 n'était pas une trame coupée en morceaux : c'était la main qui se posait et se relevait plusieurs fois, la levée n'étant jamais rapportée. Sans levée, l'état restait « posé » depuis le tout premier contact, avec un point de départ vieux de plusieurs minutes ; le voir ne plus bouger m'a fait lire une oscillation là où il n'y avait qu'un zéro manquant. Les doublons sont bien réels, et sans conséquence pour un pavé qui ne découpe pas. Ce qui a tout réparé est la levée, rien d'autre.
+
+**Et j'ai pris un symptôme pour une cause, encore.** Trois fois de suite sur ce seul sujet. Ce qui a fini par trancher n'est aucun raisonnement mais les octets recopiés tels quels, qui ont montré en une ligne ce que trois hypothèses n'avaient pas trouvé.
+
+**Ce qui reste, et qui se mesure.** Le glissement ne se déclenchait pas parce qu'il demandait un cinquième de pavé. Quatre balayages à trois doigts vraiment faits ont parcouru 82, 128, 175 et 237 millièmes : le seuil n'en laissait passer aucun. Trois doigts côte à côte prennent déjà un quart de la largeur, ce qui reste à parcourir est court, et demander vingt pour cent était demander un geste que personne ne fait. Le cran passe à un dixième, largement au-dessus de l'immobilité tolérée pour un appui, et un test le tient à la distance mesurée.
+
+**La distance parcourue se note maintenant en deux.** De côté d'une part, de haut en bas de l'autre. Une seule distance disait que la main était allée quelque part sans dire où, et ne permettait pas de distinguer un balayage trop court d'un balayage parti en biais, qui est justement la question quand un geste n'est pas reconnu.
+
+**Les rapports bruts partent.** Ils ont répondu, la question est close, et le journal n'a pas à garder l'échafaudage.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
