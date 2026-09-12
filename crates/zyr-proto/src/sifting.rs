@@ -8,26 +8,37 @@
 //!
 //! # What can be written in the box
 //!
-//! The same handful of things as the one every developer already knows
-//! from a phone's own log, and deliberately no more:
+//! A plain word is the name of a part of the product, and that is nine
+//! askings out of ten: `clipboard` keeps the lines that part wrote.
+//! Lines the engines write carry no name of their own, so the file they
+//! are in stands in for one, and `session` is the client engine's whole
+//! log.
 //!
-//! - `tag:clipboard` keeps the lines that part of the product wrote.
-//!   Lines the engines write carry no tag of their own, so the name of
-//!   the file they are in stands in for one: `tag:session` is the client
-//!   engine's whole log.
-//! - `message:refusé`, or the same word written on its own, keeps the
-//!   lines that hold it anywhere.
+//! Several of them keep **one or the other**, because a line carries one
+//! name and never two: `clipboard files` is both subjects at once, which
+//! is the whole reason for typing two. Everything else piles up as
+//! « and », so `clipboard -level:debug` is that part of the product with
+//! its hunting lines left out.
+//!
+//! The rest is there for when a plain word is not enough:
+//!
+//! - `tag:clipboard` is the long way of writing `clipboard`, and means
+//!   exactly the same thing.
+//! - `"deux mots"` or `message:refusé` looks inside the line rather than
+//!   at its name. Quotes are what tells one from the other: quoted is
+//!   text to find, bare is a name.
+//! - a word carrying a colon, like `192.168.1.5:47000`, is an address, a
+//!   time or one of this product's own spellings, never the name of a
+//!   part of it, so it too is looked for inside the line.
 //! - `level:debug` keeps only what was written for a hunt, and
 //!   `-level:debug` throws all of it away. There are two levels and no
 //!   more: what the product says of itself, and what only a hunt wants.
 //!   The second is written by a build made for hunting and by no other,
 //!   so in an ordinary build there is none of it to ask for.
-//! - `-tag:card` throws away what it names instead of keeping it.
-//! - `"deux mots"` is one thing and not two.
+//! - a `-` in front of anything throws away what it names instead of
+//!   keeping it.
 //!
-//! Several of them together keep what answers all of them, which is what
-//! makes a pair like `tag:clipboard -message:DataObject` worth typing.
-//! Nothing matches by case, since nobody remembers the case of a tag
+//! Nothing matches by case, since nobody remembers the case of a name
 //! they read once.
 //!
 //! An empty box is not a filter that keeps nothing: it is no filter at
@@ -84,8 +95,9 @@ impl Sifting {
     /// Reads what was written in the box.
     ///
     /// Nothing here can be wrong: what is not one of the shapes above is
-    /// a word to look for in the line, which is the useful reading of a
-    /// mistyped one. A box that refused what was typed would be a box
+    /// read as the name of a part of the product, which is the useful
+    /// reading of a mistyped one, since a name nothing carries simply
+    /// keeps nothing. A box that refused what was typed would be a box
     /// that argues instead of answering.
     pub fn of(said: &str) -> Self {
         let mut terms = Vec::new();
@@ -94,19 +106,26 @@ impl Sifting {
                 Some(rest) => (true, rest.to_string()),
                 None => (false, piece),
             };
-            let key = piece
-                .split_once(':')
-                .map(|(key, _)| key.to_lowercase())
-                .unwrap_or_default();
-            let after = piece.split_once(':').map(|(_, rest)| rest);
+            let (key, after) = match piece.split_once(':') {
+                Some((key, rest)) => (key.to_lowercase(), Some(rest)),
+                None => (String::new(), None),
+            };
             let (of, wanted) = match (key.as_str(), after) {
                 ("tag", Some(wanted)) => (Part::Tag, wanted),
                 ("level", Some(wanted)) => (Part::Level, wanted),
                 ("message", Some(wanted)) => (Part::Anything, wanted),
                 // A colon inside a word is an address, a time or a
-                // spelling this product uses everywhere: looked for as
-                // it stands rather than read as a key nobody meant.
-                _ => (Part::Anything, piece.as_str()),
+                // spelling this product writes everywhere, and never the
+                // name of one of its parts: looked for inside the line
+                // as it stands rather than read as a key nobody meant.
+                (_, Some(_)) => (Part::Anything, piece.as_str()),
+                // Quotes say « these words, somewhere in the line », and
+                // that is what makes them worth typing at all now that a
+                // bare word means something else.
+                (_, None) if piece.starts_with('"') => (Part::Anything, piece.as_str()),
+                // And a plain word names a part of the product, which is
+                // nine askings out of ten and therefore costs nothing.
+                (_, None) => (Part::Tag, piece.as_str()),
             };
             let wanted = unquoted(wanted).to_lowercase();
             if !wanted.is_empty() {
@@ -129,27 +148,39 @@ impl Sifting {
         self.terms.is_empty()
     }
 
-    /// Whether that line answers everything that was asked of it.
+    /// Whether that line answers what was asked of it.
     ///
-    /// `within` is the file the line is in, and it counts as a tag of
+    /// `within` is the file the line is in, and it counts as a name of
     /// its own beside the one the line carries. Two reasons, and both
     /// matter: the engines write their own journals in their own shape
-    /// and carry no tag at all, so the file is the only name theirs has;
+    /// and carry no name at all, so the file is the only one theirs has;
     /// and asking for one whole file is a thing somebody wants often
     /// enough that it should not need a second word for it.
+    ///
+    /// The names asked for are weighed together as « one or the other »,
+    /// and everything else as « and ». A line carries one name: asking
+    /// for two and keeping what answers both would keep nothing at all,
+    /// which is the opposite of what somebody typing two of them wants.
     pub fn keeps(&self, line: &str, within: &str) -> bool {
         let lowered = line.to_lowercase();
         let (level, tag) = about(line).unwrap_or((SOMEBODY_ELSE, ""));
         let tag = tag.to_lowercase();
         let within = within.to_lowercase();
-        self.terms.iter().all(|term| {
-            let found = match term.of {
-                Part::Tag => tag.contains(&term.wanted) || within.contains(&term.wanted),
-                Part::Level => level.starts_with(&term.wanted),
-                Part::Anything => lowered.contains(&term.wanted),
-            };
-            found != term.against
-        })
+        let found = |term: &Term| match term.of {
+            Part::Tag => tag.contains(&term.wanted) || within.contains(&term.wanted),
+            Part::Level => level.starts_with(&term.wanted),
+            Part::Anything => lowered.contains(&term.wanted),
+        };
+
+        let a_name_asked_for = |term: &&Term| term.of == Part::Tag && !term.against;
+        let mut asked = self.terms.iter().filter(a_name_asked_for).peekable();
+        if asked.peek().is_some() && !asked.any(&found) {
+            return false;
+        }
+        self.terms
+            .iter()
+            .filter(|term| !a_name_asked_for(term))
+            .all(|term| found(term) != term.against)
     }
 
     /// What was asked, as it was written.
@@ -172,7 +203,7 @@ impl fmt::Display for Sifting {
 /// anywhere in the message is part of the message and nothing else.
 ///
 /// Nothing at all for a line the engines wrote, which carries neither.
-fn about(line: &str) -> Option<(&'static str, &str)> {
+pub(crate) fn about(line: &str) -> Option<(&'static str, &str)> {
     let rest = line.get(AFTER_THE_DATE..)?.strip_prefix(' ')?;
     let (voice, rest) = rest.split_at_checked(1)?;
     let rest = rest.strip_prefix(" [")?;
@@ -257,13 +288,49 @@ mod tests {
 
     #[test]
     fn une_etiquette_demandee_ecarte_tout_le_reste() {
-        let tamis = Sifting::of("tag:clipboard");
-        assert!(!tamis.takes_everything());
+        // Le mot seul et la forme longue disent la même chose : le
+        // second est ce qui a été tapé pendant des semaines, et rien de
+        // ce qui a été appris ne doit cesser de marcher.
+        for said in ["clipboard", "tag:clipboard"] {
+            let tamis = Sifting::of(said);
+            assert!(!tamis.takes_everything(), "{said}");
+            assert!(
+                tamis.keeps(
+                    &ligne("clipboard", "ce que tient cet ordinateur"),
+                    "service"
+                ),
+                "{said}"
+            );
+            assert!(
+                !tamis.keeps(&ligne("ways", "voie 1 ouverte"), "service"),
+                "{said}"
+            );
+        }
+    }
+
+    #[test]
+    fn plusieurs_etiquettes_gardent_l_une_ou_l_autre() {
+        // Une ligne ne porte qu'une étiquette : les exiger toutes ne
+        // garderait jamais rien, ce qui est le contraire de ce que veut
+        // celui qui en tape deux.
+        let tamis = Sifting::of("clipboard files");
         assert!(tamis.keeps(
             &ligne("clipboard", "ce que tient cet ordinateur"),
             "service"
         ));
-        assert!(!tamis.keeps(&ligne("ways", "voie 1 ouverte"), "service"));
+        assert!(tamis.keeps(&ligne("files", "1 fichier de 4,7 Go arrive"), "service"));
+        assert!(!tamis.keeps(&ligne("way", "voie 1 ouverte"), "service"));
+    }
+
+    #[test]
+    fn une_etiquette_et_un_refus_se_cumulent() {
+        // Les étiquettes entre elles font « l'une ou l'autre », tout le
+        // reste fait « et » : c'est ce qui rend « le sujet, sans le
+        // bruit connu » possible en deux mots.
+        let tamis = Sifting::of("clipboard files -level:debug");
+        assert!(tamis.keeps(&ligne("files", "1 fichier arrive"), "service"));
+        assert!(!tamis.keeps(&ligne_de_chasse("files", "morceau 12 demandé"), "service"));
+        assert!(!tamis.keeps(&ligne("way", "voie 1 ouverte"), "service"));
     }
 
     #[test]
@@ -292,17 +359,23 @@ mod tests {
     }
 
     #[test]
-    fn un_mot_seul_se_cherche_dans_toute_la_ligne() {
-        let tamis = Sifting::of("DataObject");
-        assert!(tamis.keeps(&ligne("clipboard", "il tient DataObject"), "service"));
-        assert!(!tamis.keeps(&ligne("clipboard", "il tient du texte"), "service"));
+    fn un_mot_dans_la_ligne_se_demande_entre_guillemets_ou_par_son_nom() {
+        // Les deux formes de la recherche de texte, maintenant qu'un mot
+        // nu nomme une partie du produit.
+        for tamis in [
+            Sifting::of("\"DataObject\""),
+            Sifting::of("message:DataObject"),
+        ] {
+            assert!(tamis.keeps(&ligne("clipboard", "il tient DataObject"), "service"));
+            assert!(!tamis.keeps(&ligne("clipboard", "il tient du texte"), "service"));
+        }
     }
 
     #[test]
-    fn plusieurs_choses_demandees_se_cumulent() {
-        // C'est ce qui rend une paire comme celle-ci utile : l'étiquette
-        // pour le sujet, le moins pour le bruit connu.
-        let tamis = Sifting::of("tag:clipboard -DataObject");
+    fn une_etiquette_et_un_mot_ecarte_se_cumulent() {
+        // C'est ce qui rend une paire comme celle-ci utile : le nom pour
+        // le sujet, le moins pour le bruit connu.
+        let tamis = Sifting::of("clipboard -\"DataObject\"");
         assert!(tamis.keeps(&ligne("clipboard", "15997 octets de texte"), "service"));
         assert!(!tamis.keeps(&ligne("clipboard", "il tient DataObject"), "service"));
         assert!(!tamis.keeps(&ligne("ways", "15997 octets de texte"), "service"));

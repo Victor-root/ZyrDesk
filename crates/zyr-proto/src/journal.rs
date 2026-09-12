@@ -23,11 +23,40 @@
 //! and still has a journal worth reading, which is exactly when one is
 //! wanted most.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::paths;
 use crate::sifting::Sifting;
+
+/// The heading line naming what can be asked for on this page.
+///
+/// Written by whoever gathered the page, so it names what is really in
+/// that computer's files rather than what this build happens to know
+/// about, and read back by the box above the button to offer them. One
+/// word, defined here, so that what writes it and what reads it cannot
+/// drift apart.
+pub const NAMES_HEADING: &str = "Étiquettes";
+
+/// The names a gathered page says can be asked for.
+///
+/// Empty for a page that carries no such line, which is a page gathered
+/// by an older half of the product: the box then offers nothing and
+/// everything still has to be typed, which is what it did before.
+pub fn names_in(page: &str) -> Vec<String> {
+    page.lines()
+        .find_map(|line| line.strip_prefix(NAMES_HEADING)?.split_once(':'))
+        .map(|(_, named)| {
+            named
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 /// How many lines are kept from each file.
 ///
@@ -112,11 +141,30 @@ impl Journal {
             self.says("Tri", sift.said());
         }
 
-        let mut text = self.0;
+        // The files are read before the heading is closed, so that it can
+        // name what is really in them. Nothing else can: the box that
+        // offers these names is on another computer half the time, and a
+        // name offered that no line carries is a dead end offered.
+        let mut named = BTreeSet::new();
+        let mut bodies = String::new();
         for (file, what) in FILES {
-            let _ = write!(text, "\n\n--- {what} ({file}) ---\n");
-            text.push_str(&last_lines(&paths::logs_dir().join(file), file, sift));
+            let _ = write!(bodies, "\n\n--- {what} ({file}) ---\n");
+            bodies.push_str(&last_lines(
+                &paths::logs_dir().join(file),
+                file,
+                sift,
+                &mut named,
+            ));
         }
+        if !named.is_empty() {
+            self.says(
+                NAMES_HEADING,
+                &named.into_iter().collect::<Vec<_>>().join(", "),
+            );
+        }
+
+        let mut text = self.0;
+        text.push_str(&bodies);
         text
     }
 }
@@ -216,7 +264,12 @@ fn build_from(text: &str) -> String {
 /// `within` is what the file is called, which stands in for a tag on the
 /// lines that carry none: the engines write their own journals in their
 /// own shape, and this is what lets one of them be asked for whole.
-fn last_lines(path: &Path, within: &str, sift: &Sifting) -> String {
+///
+/// Every name met on the way is put in `named`, whether or not its line
+/// survives the sifting. That is the whole point of collecting them
+/// here: what can be asked for is what the files hold, not what is left
+/// once the asking has been done.
+fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<String>) -> String {
     use std::io::{Read, Seek, SeekFrom};
 
     // How much of the end is read, at most. Far more than the lines
@@ -268,19 +321,28 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting) -> String {
     // Asked of every line read and not of the ones kept, which is the
     // point: what is being looked for is rare, and a file's last hundred
     // and twenty lines almost never hold it.
-    let answered: Vec<&&str> = whole
-        .iter()
-        .filter(|line| sift.keeps(line, within))
-        .collect();
+    //
+    // A line with no name of its own answers to the file it is in, so
+    // that is what goes in the list for it: the engines write whole
+    // journals that way, and theirs would otherwise be impossible to ask
+    // for from a list of names.
+    let stem = within.strip_suffix(".log").unwrap_or(within);
+    let mut answered: Vec<&str> = Vec::new();
+    for line in whole {
+        named.insert(
+            crate::sifting::about(line)
+                .map_or(stem, |(_, tag)| tag)
+                .to_lowercase(),
+        );
+        if sift.keeps(line, within) {
+            answered.push(line);
+        }
+    }
     if answered.is_empty() && !sift.takes_everything() {
         return "(rien ici ne répond au tri)".to_string();
     }
     let from = answered.len().saturating_sub(KEPT);
-    let mut kept = answered[from..]
-        .iter()
-        .map(|line| **line)
-        .collect::<Vec<&str>>()
-        .join("\n");
+    let mut kept = answered[from..].join("\n");
     if from > 0 || skipped > 0 {
         kept.insert_str(0, "(le début n'est pas montré)\n");
     }
@@ -290,6 +352,11 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les noms rencontrés ne sont pas le sujet de ces essais-là.
+    fn read(path: &Path, within: &str, sift: &Sifting) -> String {
+        last_lines(path, within, sift, &mut BTreeSet::new())
+    }
 
     /// Rien de demandé, donc tout gardé.
     fn tout() -> Sifting {
@@ -308,7 +375,7 @@ mod tests {
     #[test]
     fn a_file_that_does_not_exist_is_said_rather_than_left_blank() {
         let nowhere = Path::new("/nowhere/zyrdesk/none.log");
-        assert!(last_lines(nowhere, "none", &tout()).contains("rien d'écrit"));
+        assert!(read(nowhere, "none", &tout()).contains("rien d'écrit"));
     }
 
     #[test]
@@ -319,7 +386,7 @@ mod tests {
         let written: Vec<String> = (0..KEPT + 40).map(|line| format!("ligne {line}")).collect();
         std::fs::write(&path, written.join("\n")).unwrap();
 
-        let kept = last_lines(&path, "essai", &tout());
+        let kept = read(&path, "essai", &tout());
         // La fin, qui est là où se trouve la panne, et jamais le début.
         assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
         assert!(!kept.contains("ligne 0\n"), "{kept}");
@@ -343,7 +410,7 @@ mod tests {
         }
         std::fs::write(&path, &written).unwrap();
 
-        let kept = last_lines(&path, "essai", &tout());
+        let kept = read(&path, "essai", &tout());
         assert!(
             kept.ends_with("ligne 39999 avec un peu de matière autour"),
             "fin : {}",
@@ -378,15 +445,56 @@ mod tests {
         std::fs::write(&path, &written).unwrap();
 
         // Sans tri, la ligne du début est hors de portée.
-        let tout = last_lines(&path, "service", &tout());
+        let tout = read(&path, "service", &tout());
         assert!(!tout.contains("ce que tient"), "{tout}");
 
         // Avec, elle est la seule qui reste.
-        let trie = last_lines(&path, "service", &Sifting::of("tag:clipboard"));
+        let trie = read(&path, "service", &Sifting::of("tag:clipboard"));
         assert_eq!(
             trie,
             "2026-09-11 18:55:03 I [clipboard] ce que tient cet ordinateur"
         );
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn ce_qu_on_peut_demander_se_lit_dans_les_fichiers_et_se_relit_en_tete() {
+        // La boîte de tri ne peut pas le deviner : la moitié du temps la
+        // page vient d'un autre ordinateur, et un nom proposé qu'aucune
+        // ligne ne porte est une impasse proposée.
+        let folder = a_folder_of_its_own("noms");
+        let path = folder.join("service.log");
+        let mut written = String::new();
+        let _ = writeln!(written, "2026-09-11 18:55:03 I [clipboard] ce qu'il tient");
+        let _ = writeln!(written, "2026-09-11 18:55:04 I [way] voie 1 ouverte");
+        std::fs::write(&path, &written).unwrap();
+
+        let mut named = BTreeSet::new();
+        last_lines(&path, "service.log", &Sifting::of("clipboard"), &mut named);
+        // Relevés même quand le tri les écarte : ce qu'on peut demander
+        // est ce que les fichiers portent, pas ce qui reste une fois la
+        // demande faite.
+        assert_eq!(
+            named.iter().cloned().collect::<Vec<_>>(),
+            ["clipboard", "way"]
+        );
+
+        // Une ligne sans nom répond à celui de son fichier, faute de quoi
+        // le journal d'un moteur ne se demanderait pas d'une liste.
+        let engine = folder.join("session.log");
+        std::fs::write(&engine, "00:00:03 - SDL Info (0): IDR demandée\n").unwrap();
+        let mut named = BTreeSet::new();
+        last_lines(&engine, "session.log", &Sifting::everything(), &mut named);
+        assert_eq!(named.iter().cloned().collect::<Vec<_>>(), ["session"]);
+
+        // Et ce que l'entête écrit, la boîte le relit tel quel.
+        let mut journal = Journal(String::new());
+        journal.says(NAMES_HEADING, "clipboard, files, way");
+        assert_eq!(names_in(&journal.0), ["clipboard", "files", "way"]);
+        // Une page d'une moitié plus ancienne du produit n'en porte pas :
+        // la boîte ne propose alors rien et tout se tape, comme avant.
+        assert!(names_in("Ordinateur       : PC-SAV").is_empty());
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
@@ -399,7 +507,7 @@ mod tests {
         let path = folder.join("service.log");
         std::fs::write(&path, "2026-09-11 18:55:04 I [ways] voie 1 ouverte\n").unwrap();
 
-        let trie = last_lines(&path, "service", &Sifting::of("tag:clipboard"));
+        let trie = read(&path, "service", &Sifting::of("tag:clipboard"));
         assert!(trie.contains("rien ici ne répond au tri"), "{trie}");
 
         std::fs::remove_dir_all(&folder).unwrap();
@@ -421,8 +529,8 @@ mod tests {
         // Un dossier n'est pas lisible comme un fichier : c'est le
         // moyen portable d'obtenir un refus qui n'est pas « absent ».
         let folder = a_folder_of_its_own("illisible");
-        let read = last_lines(&folder, "essai", &tout());
-        assert!(read.starts_with("(illisible"), "{read}");
+        let refused = read(&folder, "essai", &tout());
+        assert!(refused.starts_with("(illisible"), "{refused}");
         std::fs::remove_dir_all(&folder).unwrap();
     }
 

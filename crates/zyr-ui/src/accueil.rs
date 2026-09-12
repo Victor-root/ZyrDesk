@@ -245,6 +245,14 @@ struct Etat {
     /// boîte, faute de quoi le bouton emporterait la page d'avant sous le
     /// nom du tri.
     tri: Option<String>,
+    /// Les noms que la page ouverte dit porter, à cocher plutôt qu'à
+    /// taper.
+    ///
+    /// Ils viennent de la page elle-même et jamais d'une liste tenue
+    /// ici : la moitié du temps elle vient d'un autre ordinateur, et un
+    /// nom proposé qu'aucune de ses lignes ne porte serait une impasse
+    /// proposée.
+    etiquettes: Vec<String>,
     /// Le tri de la dernière question partie.
     ///
     /// Chaque question ouvre sa propre conversation avec le service :
@@ -291,6 +299,7 @@ impl Etat {
             journal_de: None,
             lignes: Vec::new(),
             tri: None,
+            etiquettes: Vec::new(),
             tri_demande: String::new(),
             vidage: None,
             annonce: None,
@@ -394,6 +403,9 @@ enum Quoi {
     Deconnecter(usize),
     Ajouter,
     Interrupteur(Bouton),
+    /// Un des noms que la page du journal porte, par son rang : coché, il
+    /// s'ajoute à la boîte de tri, décoché il en part.
+    Etiquette(usize),
     Segment(Choisi, usize),
     Raccourci(Doing),
     /// Fermer le dialogue ouvert, quel qu'il soit.
@@ -1108,7 +1120,7 @@ const REPOS_DU_TRI: usize = 1;
 ///
 /// La boîte de tri se comporte comme celle d'un logcat : on écrit, la
 /// page se resserre, sans rien à cliquer. Une question par lettre ferait
-/// relire les quatre fichiers treize fois pour « tag:clipboard », donc
+/// relire les quatre fichiers treize fois pour « clipboard », donc
 /// c'est la lettre que personne ne suit qui déclenche la lecture.
 const REPOS_DU_TRI_MS: u32 = 300;
 
@@ -2626,6 +2638,51 @@ impl Mise<'_> {
         (haut_du_titre + ecart + explication).max(bouton)
     }
 
+    /// Les noms que la page ouverte porte, en rangées qui se replient, et
+    /// rendus de la hauteur qu'ils ont prise.
+    ///
+    /// Cochés plutôt que tapés, parce que ce sont eux qu'on veut neuf
+    /// fois sur dix et que les retenir par coeur n'est le travail de
+    /// personne. Rien du tout pour une page qui n'en annonce aucun, ce
+    /// qui est le cas d'une page venue d'une moitié plus ancienne du
+    /// produit : tout se tape alors, comme avant.
+    fn les_etiquettes(&mut self, x: f32, y: f32, large: f32) -> f32 {
+        let noms = self.etat.etiquettes.clone();
+        if noms.is_empty() {
+            return 0.0;
+        }
+        let coches: Vec<String> = texte_du_champ(Champ::Tri)
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
+        let haute = self.px(tenue::BOUTON);
+        let entre = self.px(design::PAS_2);
+        let (mut ligne, mut bas) = (x, y);
+        for (rang, nom) in noms.iter().enumerate() {
+            let pris = self.large_du_bouton(nom, false);
+            // Replié dès qu'un nom déborderait, jamais avant : un
+            // dialogue étroit en met deux par rangée et un large les met
+            // tous sur une, sans que rien n'ait à être compté d'avance.
+            if ligne > x && ligne + pris > x + large {
+                ligne = x;
+                bas += haute + entre;
+            }
+            self.bouton(
+                Cadre::pose(ligne, bas, pris, haute),
+                nom,
+                if coches.iter().any(|mot| mot == nom) {
+                    Sorte::Principal
+                } else {
+                    Sorte::Discret
+                },
+                Quoi::Etiquette(rang),
+                true,
+            );
+            ligne += pris + entre;
+        }
+        bas + haute + self.px(design::PAS_3) - y
+    }
+
     /// Une rangée d'actions, rangées à droite, et rendue de sa hauteur.
     ///
     /// Ce qui détruit se pose à gauche, écarté du reste : il ne doit pas
@@ -2831,9 +2888,11 @@ impl Mise<'_> {
         self.les_lignes(Cadre::pose(ou.gauche, y, large, lignes));
         y += lignes + self.px(design::PAS_4);
 
-        // La boîte de tri, entre les lignes et les boutons : la page se
-        // resserre d'elle-même sur ce qui est écrit là, et c'est cette
-        // page que « Copier » emporte. Vide, rien n'est trié.
+        // Les noms que cette page porte, puis la boîte qu'ils
+        // remplissent : la page se resserre d'elle-même sur ce qui est
+        // écrit là, et c'est cette page que « Copier » emporte. Vide,
+        // rien n'est trié.
+        y += self.les_etiquettes(ou.gauche, y, large);
         y += self.champ(ou.gauche, y, large, Champ::Tri);
         y += self.px(design::PAS_3);
 
@@ -4111,7 +4170,7 @@ impl Champ {
             Champ::Courriel => "victor@exemple.fr",
             Champ::Invitation => "AB12-CD34",
             Champ::NouveauNom => "PC du salon",
-            Champ::Tri => "tag:clipboard -DataObject",
+            Champ::Tri => "clipboard files",
         }
     }
 
@@ -4142,6 +4201,10 @@ impl Champ {
             Champ::Serveur => "Comme l'installation du serveur l'a affiché, avec le port s'il \
                                n'est pas 443. Toujours chiffré : une adresse en http:// est \
                                refusée."
+                .to_string(),
+            Champ::Tri => "Un ou plusieurs noms ci-dessus, séparés par des espaces : la page \
+                           garde l'un ou l'autre. « mot entre guillemets » cherche dans le \
+                           texte, et un moins devant écarte."
                 .to_string(),
             _ => String::new(),
         }
@@ -4533,6 +4596,7 @@ fn fait(app: &App, quoi: Quoi) {
             copie(app, &empreinte, Quoi::CopierEmpreinte);
         }
         Quoi::CopierJournal => copie_le_journal(app),
+        Quoi::Etiquette(rang) => bascule_l_etiquette(app, rang),
         Quoi::ARegler(rang) => remedie(app, rang),
         Quoi::Voisin(rang) => lance_le_voisin(app, rang, false),
         Quoi::EnLocal(rang) => lance_le_voisin(app, rang, true),
@@ -5243,6 +5307,9 @@ fn ouvre_le_journal(app: &App, de: Option<Peer>) {
         etat.defile_lignes = (0.0, 0.0);
         etat.lignes = vec!["Lecture…".to_string()];
         etat.tri = None;
+        // Ceux de la page précédente ne sont pas ceux de celle-ci, et
+        // c'est le plus vrai en passant de son journal à celui d'en face.
+        etat.etiquettes = Vec::new();
     }
     ferme_les_champs();
     ouvre_les_champs(&Champ::JOURNAL);
@@ -5308,6 +5375,7 @@ fn relis_le_journal(app: &App, apres: Apres) {
             return;
         }
         etat.lignes = texte.lines().map(str::to_string).collect();
+        etat.etiquettes = zyr_proto::journal::names_in(&texte);
         etat.tri = Some(tri);
         // Le plus récent est en bas : c'est là que se trouve ce qui vient
         // d'arriver, et c'est ce qu'on ouvre le journal pour lire. Plus
@@ -5325,6 +5393,31 @@ fn relis_le_journal(app: &App, apres: Apres) {
             let _ = app.run_on_main_thread(move || copie(&sien, &tout, Quoi::CopierJournal));
         }
     });
+}
+
+/// Coche ou décoche ce nom-là dans la boîte de tri.
+///
+/// Le nom est ajouté ou retiré de ce qui est déjà écrit plutôt que de le
+/// remplacer : cocher deux noms est ce qui garde les deux sujets à la
+/// fois, et ce qu'on avait tapé à la main à côté reste là où il était.
+fn bascule_l_etiquette(app: &App, rang: usize) {
+    let Some(nom) = ETAT.lock().expect("accueil").etiquettes.get(rang).cloned() else {
+        return;
+    };
+    let mut mots: Vec<String> = texte_du_champ(Champ::Tri)
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+    match mots.iter().position(|mot| *mot == nom) {
+        Some(ou) => {
+            mots.remove(ou);
+        }
+        None => mots.push(nom),
+    }
+    ecris_dans_le_champ(Champ::Tri, &mots.join(" "));
+    // Relu tout de suite : un clic a dit ce qu'il voulait, il n'y a plus
+    // de lettre à attendre.
+    relis_le_journal(app, Apres::Montrer);
 }
 
 /// Emporte la page du journal, qui doit répondre à ce qui est écrit dans

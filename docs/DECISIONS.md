@@ -3051,6 +3051,24 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne dit toujours pas.** Pourquoi la voie s'est tue à ce moment-là. Le relevé trié sur les fichiers ne porte que les fichiers ; la réponse est sous les étiquettes de la voie et de la session, et c'est le prochain relevé qui la donnera.
 
+## D188. Un mot seul est une étiquette, et la page dit lesquelles elle porte (2026-09-12, pendant M6)
+
+**La demande.** « Retire le fait de devoir mettre `tag:`, juste on met le nom. Et faudrait pouvoir en mettre plusieurs séparés par un espace. Et en fonction des tags disponibles, un bouton pour simplement les cocher. »
+
+**Un mot seul nomme une partie du produit.** C'est neuf demandes sur dix, donc c'est ce qui doit coûter le moins. `tag:clipboard` reste valable et veut dire exactement la même chose : ce qui a été appris pendant des semaines ne doit pas cesser de marcher du jour au lendemain.
+
+**Plusieurs gardent l'une ou l'autre, et c'est forcé.** Une ligne porte une étiquette et jamais deux : les exiger toutes ne garderait rien, ce qui est exactement le contraire de ce que veut quelqu'un qui en tape deux. Tout le reste continue de s'additionner, si bien que `clipboard files -level:debug` est deux sujets à la fois sans les lignes de chasse.
+
+**Ce qu'un mot nu ne peut plus faire, deux choses le font.** Chercher dans le texte se demande entre guillemets ou par `message:`. Et un mot qui porte un deux-points, comme une adresse ou une heure, ne peut pas être le nom d'une partie du produit : il se cherche donc dans la ligne, comme avant. Les guillemets deviennent ainsi ce qui distingue « ce texte » de « ce nom », ce qui est une raison de les taper au lieu d'une décoration.
+
+**Les noms proposés viennent de la page, pas d'une liste.** Une liste tenue dans la fenêtre dériverait au premier module ajouté et proposerait des noms qu'aucune ligne ne porte. Alors c'est la machine qui tient les fichiers qui les relève en les lisant, avant le tri et non après, et qui les écrit dans l'entête de la page. La fenêtre les relit de là. Ça marche pour le journal d'en face sans que rien ne traverse en plus, et une page lue à l'oeil dit elle aussi ce qu'on peut lui demander.
+
+**Une ligne sans nom répond à celui de son fichier.** Les moteurs écrivent leur journal à leur façon et n'en portent aucun ; sans ça, `session` ne serait proposable nulle part alors que c'est tout le journal du moteur client.
+
+**Cochés plutôt que tapés.** Une rangée de noms au-dessus de la boîte, qui se replie toute seule selon la largeur du dialogue. Un clic ajoute le nom à ce qui est déjà écrit ou l'en retire, sans toucher au reste : cocher deux noms garde les deux sujets, et ce qu'on avait tapé à la main à côté reste où il était. Pas de bouton qui ouvre une liste : la liste tient sur deux rangées et un dialogue de plus serait un clic de plus pour rien.
+
+**Ce que ça ne change pas.** Le dialecte ne bouge pas : l'entête est du texte dans une page qui en était déjà pleine. Une page venue d'une moitié plus ancienne du produit n'annonce aucun nom, la rangée ne s'affiche pas, et tout se tape comme avant. La pile de correctifs reste à quatorze.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
