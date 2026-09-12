@@ -3111,6 +3111,8 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Une leçon plus large que ce fichier.** Un outil de diagnostic qui demande autre chose que ce que la personne fait déjà n'est pas un outil de diagnostic. Le nôtre demandait une compilation différente ; il n'a donc jamais servi une seule fois, y compris pendant les trois soirées où il aurait tout changé.
 
+**Et la leçon s'appliquait encore une fois de trop.** « Pourquoi tu ne le mets pas dans le journal directement ? » Parce que j'avais remplacé « recompile autrement » par « va poser un fichier à la main », ce qui est la même corvée autrement épelée. L'interrupteur est donc dans l'écran du journal, où l'on est déjà quand on en a besoin, à côté du tri et de « Copier ». Le fichier reste, mais comme moyen et non comme geste : il est ce que la fenêtre écrit et ce que le service relit, parce que ce sont deux programmes et qu'un seul clic doit allumer les deux. Chacun le regarde de nouveau toutes les deux secondes, si bien que rien n'est à redémarrer ; entre deux regards la réponse est tenue, et une ligne qui ne s'écrit pas coûte un coup d'oeil à une horloge.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

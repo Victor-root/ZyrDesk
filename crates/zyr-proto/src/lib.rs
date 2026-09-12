@@ -33,14 +33,63 @@ pub const BUILD: &str = env!("ZYR_BUILD");
 ///
 /// So it is a file, put beside the journal it fills: present, this
 /// computer writes the hunting lines; absent, it does not. Nothing to
-/// rebuild, nothing to pass, and the same binary either way. Read once,
-/// because the answer cannot change while the product runs and asking a
-/// disk at every line would be its own kind of cost.
+/// rebuild, nothing to pass, and the same binary either way.
+///
+/// A file rather than something each program holds for itself, because
+/// there are several of them: the window throws the switch, and the
+/// service, which is another program entirely and the one that writes
+/// most of what is worth hunting, has to be turned on by the same click.
+///
+/// Looked at again now and then rather than once: a switch that took a
+/// restart of everything to take effect would be the same chore over
+/// again, differently spelled. Between two looks the answer is held, so
+/// a line that is not written costs a glance at a clock and two atomics.
 pub fn for_hunting() -> bool {
     use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::time::Instant;
 
-    static HUNTING: OnceLock<bool> = OnceLock::new();
-    *HUNTING.get_or_init(|| paths::hunting().exists())
+    /// Ce qu'on attend avant de redemander au disque, en millisecondes.
+    const LOOK_AGAIN: u64 = 2_000;
+
+    static HUNTING: AtomicBool = AtomicBool::new(false);
+    static LOOKED: AtomicU64 = AtomicU64::new(0);
+    static SINCE: OnceLock<Instant> = OnceLock::new();
+
+    let now = SINCE.get_or_init(Instant::now).elapsed().as_millis() as u64;
+    let looked = LOOKED.load(Ordering::Relaxed);
+    // Zéro veut dire « jamais regardé », d'où le plancher à un : sans lui
+    // le premier instant du programme se relirait comme jamais.
+    if looked == 0 || now.saturating_sub(looked) >= LOOK_AGAIN {
+        LOOKED.store(now.max(1), Ordering::Relaxed);
+        HUNTING.store(paths::hunting().exists(), Ordering::Relaxed);
+    }
+    HUNTING.load(Ordering::Relaxed)
+}
+
+/// Turns the hunting lines on for every program of this product on this
+/// computer, or off.
+///
+/// Thrown from the journal, where somebody already is when they want it,
+/// and taken up by the service within a couple of seconds without either
+/// of them being restarted.
+pub fn hunt(on: bool) -> std::io::Result<()> {
+    let named = paths::hunting();
+    if !on {
+        return match std::fs::remove_file(&named) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        };
+    }
+    if let Some(folder) = named.parent() {
+        std::fs::create_dir_all(folder)?;
+    }
+    // Ce qu'il y a dedans ne regarde personne : c'est sa présence qui dit
+    // tout. Une phrase quand même, pour qui le trouverait sans savoir.
+    std::fs::write(
+        &named,
+        "Tant que ce fichier est là, ZyrDesk écrit aussi ce qu'il compte et mesure.\n",
+    )
 }
 
 /// One line naming the product and the build behind it.
