@@ -729,7 +729,7 @@ static PAD: std::sync::Mutex<Option<Pad>> = std::sync::Mutex::new(None);
 /// enough fingers ever landed on it, and how many gestures came of them.
 #[cfg(windows)]
 mod counted {
-    use std::sync::atomic::AtomicU32;
+    use std::sync::atomic::{AtomicBool, AtomicU32};
 
     pub static FRAMES: AtomicU32 = AtomicU32::new(0);
     pub static THREES: AtomicU32 = AtomicU32::new(0);
@@ -740,16 +740,16 @@ mod counted {
     /// Combien de rapports bruts ont déjà été écrits tels quels depuis le
     /// début de cette lecture.
     pub static REPORTS: AtomicU32 = AtomicU32::new(0);
+    /// Si plus d'un doigt a déjà été en jeu, puisque c'est là que la
+    /// recopie des rapports bruts commence.
+    pub static SEVERAL: AtomicBool = AtomicBool::new(false);
 }
 
-/// Combien de rapports bruts sont recopiés au journal au début d'une
-/// lecture.
+/// Combien de rapports bruts sont recopiés au journal par lecture.
 ///
-/// Assez pour couvrir une main qui se pose, glisse et se relève, et pas un
-/// de plus : le pavé en envoie une centaine par seconde, et un journal qui
-/// les prendrait tous ne se lirait pas. Ce qui s'y cherche est comment ce
-/// pavé-là découpe une trame entre ses rapports, et cela se voit sur les
-/// premiers ou ne se voit pas.
+/// Assez pour couvrir une main qui se pose à plusieurs doigts, glisse et
+/// se relève, et pas un de plus : le pavé en envoie une centaine par
+/// seconde, et un journal qui les prendrait tous ne se lirait pas.
 #[cfg(windows)]
 const REPORTS_WRITTEN_DOWN: u32 = 40;
 
@@ -791,6 +791,7 @@ pub fn read_the_pad(wanted: bool) -> bool {
     counted::THREES.store(0, Ordering::Relaxed);
     counted::GESTURES.store(0, Ordering::Relaxed);
     counted::REPORTS.store(0, Ordering::Relaxed);
+    counted::SEVERAL.store(false, Ordering::Relaxed);
     *HAND.lock().expect("lecture du pavé") = Reading::new();
     *FRAME.lock().expect("trame du pavé") = Frame::new();
     note(if taken {
@@ -1210,24 +1211,30 @@ fn what_the_system_knows(device: windows_sys::Win32::Foundation::HANDLE) -> Opti
 
 /// One frame of the pad, put together from the reports that carry it.
 ///
-/// A pad with more fingers on it than one report holds says how many
-/// there are in the first report of a frame and nought in the ones that
-/// finish it. So a nought means two different things, all fingers gone
-/// and there is more coming, and only whether a frame is still short of
-/// its fingers tells the two apart.
+/// A pad sends one contact per report and says in the first of them how
+/// many the frame has, or it holds the whole frame in one report and says
+/// so in that one. Either way the count is what opens a frame, and a
+/// nought announced belongs to a frame already open.
+///
+/// And a report may arrive twice, word for word, the same instant of the
+/// pad delivered a second time. The contacts of a frame are told apart by
+/// the identifier the pad follows each finger with, so a repeat adds
+/// nothing; a repeat of the last report of a frame already handed over
+/// adds nothing either.
+///
+/// A hand leaving the pad is a report where nothing touches: the pad
+/// names a finger one last time with its touch gone, and the count it
+/// announces still holds that finger. So what says the pad is empty is
+/// that no contact touches, and never the count.
 #[cfg(windows)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct Frame {
-    wanted: u32,
-    /// Whether a report of this frame announced how many fingers it has.
-    ///
-    /// Only the first report of a frame carries a count; the ones that
-    /// bring the rest of the fingers say nothing. Without this, their
-    /// silence was taken for a count of its own, which cut every frame in
-    /// two and handed over a hand with the wrong number of fingers at the
-    /// wrong place.
-    told: bool,
-    seen: u32,
+    /// How many contacts the frame being put together was announced to
+    /// have, and nothing at all while none is open.
+    wanted: Option<u32>,
+    /// The contacts gathered so far, each by the collection it came in and
+    /// the identifier the pad gave it.
+    seen: Vec<(u16, u32)>,
     across: i64,
     down: i64,
 }
@@ -1236,107 +1243,111 @@ struct Frame {
 impl Frame {
     const fn new() -> Self {
         Self {
-            wanted: 0,
-            told: false,
-            seen: 0,
+            wanted: None,
+            seen: Vec::new(),
             across: 0,
             down: 0,
         }
     }
 
-    /// Whether this frame is still short of the fingers it was announced
-    /// to have.
-    const fn waiting(&self) -> bool {
-        self.told && self.seen < self.wanted
+    /// Opens a frame of `wanted` contacts, dropping whatever was being put
+    /// together.
+    fn begins(&mut self, wanted: u32) {
+        self.wanted = Some(wanted);
+        self.seen.clear();
+        self.across = 0;
+        self.down = 0;
     }
 
     /// Adds one report, and hands back the frame when it is whole.
     fn gathering(&mut self, pad: &Pad, report: &mut [u8]) -> Option<(u32, i32, i32)> {
-        use std::sync::atomic::Ordering;
-
-        // Les premiers rapports d'une lecture sont recopiés au journal tels
-        // quels, avec ce que l'analyseur du système en tire. Deux fois de
-        // suite j'ai supposé comment ce pavé découpe une trame entre
-        // plusieurs rapports, deux fois de suite je me suis trompé : ce qui
-        // manque n'est pas une idée de plus mais ce que le pavé envoie
-        // vraiment.
-        let written = counted::REPORTS.load(Ordering::Relaxed);
-        let writing = written < REPORTS_WRITTEN_DOWN;
-        if writing {
-            counted::REPORTS.store(written + 1, Ordering::Relaxed);
-        }
-
         let said = how_many_fingers(pad, report);
-        // A count announced is what the start of a frame looks like: only
-        // the first report of one carries it. It also rescues a frame
-        // left open by a pad that announced more fingers than it ever
-        // sent, which would otherwise stay open for the session.
-        //
-        // Nought announced is two different things, and which one it is
-        // depends on whether a frame is still waiting: the last reports
-        // of a frame carry nought, and so does the hand leaving the pad.
-        let opens = match said {
-            Some(how_many) if how_many > 0 => true,
-            Some(_) => !self.waiting(),
-            None => false,
-        };
-        if opens {
-            *self = Self::new();
-            self.wanted = said.unwrap_or(0);
-            self.told = true;
-        }
+        let here: Vec<(u16, u32, i32, i32)> = pad
+            .fingers
+            .iter()
+            .filter_map(|finger| {
+                a_finger(pad, *finger, report)
+                    .map(|(which, across, down)| (*finger, which, across, down))
+            })
+            .collect();
+        let writing = worth_writing_down(said, self.wanted, &here);
 
-        let mut posed = String::new();
-        for finger in &pad.fingers {
-            let Some((across, down)) = a_finger(pad, *finger, report) else {
-                continue;
-            };
-            if writing {
-                use std::fmt::Write;
-                let _ = write!(posed, " n°{finger} en {across} sur {down},");
+        let taken = match said {
+            // Not one contact is touching, so nothing is on the pad,
+            // whatever the report announces and whatever was being put
+            // together. This is the only thing that says a hand has left:
+            // the pad names a finger one last time with nothing touching,
+            // and a frame left half finished must never hide it or the
+            // gesture it belonged to would never end.
+            _ if here.is_empty() => {
+                self.begins(0);
+                true
             }
-            self.seen += 1;
-            self.across += i64::from(across);
-            self.down += i64::from(down);
+            // A count announced opens a frame. It also rescues one left
+            // open by a pad that announced more contacts than it ever
+            // sent, which would otherwise stay open for the session.
+            Some(how_many) if how_many > 0 => {
+                self.begins(how_many);
+                true
+            }
+            // Nought announced with a frame open: one of the reports that
+            // carry the rest of its contacts.
+            Some(_) if self.wanted.is_some() => true,
+            // Nought announced with nothing open, and contacts all the
+            // same: the last report of a frame already handed over,
+            // delivered a second time. Taken for a frame of its own it
+            // made one of a single finger, wherever that finger happened
+            // to be, and that is what every three-finger gesture was
+            // reading as three, then one, then one.
+            Some(_) => false,
+            // A pad that announces nothing is read one report at a time,
+            // which is what a pad holding a whole frame at once comes to
+            // anyway.
+            None => {
+                self.begins(here.len() as u32);
+                true
+            }
+        };
+
+        if taken {
+            for (finger, which, across, down) in &here {
+                // One frame holds each contact once. The pad follows a
+                // finger with the same identifier for as long as it stays
+                // down, so a report delivered twice would otherwise count
+                // that finger twice and put the hand where it is not.
+                if self.seen.contains(&(*finger, *which)) {
+                    continue;
+                }
+                self.seen.push((*finger, *which));
+                self.across += i64::from(*across);
+                self.down += i64::from(*down);
+            }
         }
-        // A pad that never says how many fingers it has is read one
-        // report at a time, which is what a pad with room for all of them
-        // at once comes to anyway.
-        //
-        // Never for a frame that was announced. The reports carrying the
-        // rest of its fingers say nothing, and taking their silence for a
-        // count of their own was the whole of this: a frame of three was
-        // handed over as a frame of one, then of two, at the place of
-        // whichever finger happened to be in that report. Nothing moved
-        // where a hand had moved, and no gesture was ever recognised.
-        if !self.told {
-            self.wanted = self.seen;
-        }
-        // Avant le renvoi, pour que les rapports qui ne finissent pas une
-        // trame s'écrivent aussi : ce sont eux qui disent comment elle est
-        // découpée.
+        let seen = self.seen.len() as u32;
         if writing {
             hunted(|| {
                 format!(
-                    "rapport {written} de {} octets : {} ; le pavé annonce {} ; \
-                     doigts posés :{} ; trame : {} voulu(s), {} vu(s), annoncée : {}",
+                    "rapport de {} octets : {} ; le pavé annonce {} ; doigts posés :{} ; \
+                     {} ; trame : {} voulu(s), {seen} vu(s)",
                     report.len(),
                     as_it_came(report),
                     match said {
                         Some(how_many) => how_many.to_string(),
                         None => "rien".to_owned(),
                     },
-                    if posed.is_empty() { " aucun" } else { &posed },
-                    self.wanted,
-                    self.seen,
-                    self.told,
+                    what_was_posed(&here),
+                    if taken { "pris" } else { "déjà vu, laissé" },
+                    match self.wanted {
+                        Some(wanted) => wanted.to_string(),
+                        None => "aucun".to_owned(),
+                    },
                 )
             });
         }
-        if self.seen < self.wanted {
+        if !taken || seen < self.wanted.unwrap_or_default() {
             return None;
         }
-        let whole = match self.seen {
+        let whole = match seen {
             // The hand has left the pad, which is the one answer with no
             // place to it.
             0 => (0, 0, 0),
@@ -1346,9 +1357,40 @@ impl Frame {
                 Pad::between(pad.down, (self.down / i64::from(fingers)) as i32),
             ),
         };
-        *self = Self::new();
+        self.wanted = None;
         Some(whole)
     }
+}
+
+/// Whether this report is one of the few written down as it came.
+///
+/// Nothing is written while a single finger is in play: the first reports
+/// of a reading are those of a cursor being moved, and what a hunt needs
+/// to see is what the pad sends when a hand puts several fingers down. So
+/// the writing starts at the first report that involves more than one, and
+/// stops when enough of them have been written.
+#[cfg(windows)]
+fn worth_writing_down(
+    said: Option<u32>,
+    wanted: Option<u32>,
+    here: &[(u16, u32, i32, i32)],
+) -> bool {
+    use std::sync::atomic::Ordering;
+
+    let several = said.is_some_and(|how_many| how_many > 1)
+        || wanted.is_some_and(|how_many| how_many > 1)
+        || here.len() > 1;
+    if several {
+        counted::SEVERAL.store(true, Ordering::Relaxed);
+    } else if !counted::SEVERAL.load(Ordering::Relaxed) {
+        return false;
+    }
+    let written = counted::REPORTS.load(Ordering::Relaxed);
+    if written >= REPORTS_WRITTEN_DOWN {
+        return false;
+    }
+    counted::REPORTS.store(written + 1, Ordering::Relaxed);
+    true
 }
 
 /// One report exactly as the pad sent it.
@@ -1366,6 +1408,21 @@ fn as_it_came(report: &[u8]) -> String {
     })
 }
 
+/// The contacts of one report, as the system's parser reads them.
+#[cfg(windows)]
+fn what_was_posed(here: &[(u16, u32, i32, i32)]) -> String {
+    use std::fmt::Write;
+
+    if here.is_empty() {
+        return " aucun".to_owned();
+    }
+    here.iter()
+        .fold(String::new(), |mut out, (finger, which, across, down)| {
+            let _ = write!(out, " n°{finger} doigt {which} en {across} sur {down},");
+            out
+        })
+}
+
 /// How many fingers the pad says are on it, `None` when this report does
 /// not say.
 #[cfg(windows)]
@@ -1373,9 +1430,14 @@ fn how_many_fingers(pad: &Pad, report: &mut [u8]) -> Option<u32> {
     a_value(pad, 0, usage::DIGITIZER, usage::HOW_MANY, report)
 }
 
-/// Where one finger is, `None` when it is not touching the pad.
+/// Which contact this collection carries and where it is, `None` when it
+/// is not touching the pad.
+///
+/// The identifier comes back with it because that is what tells two
+/// contacts of one frame apart, a pad that sends its fingers one report at
+/// a time putting them all in the same collection.
 #[cfg(windows)]
-fn a_finger(pad: &Pad, finger: u16, report: &mut [u8]) -> Option<(i32, i32)> {
+fn a_finger(pad: &Pad, finger: u16, report: &mut [u8]) -> Option<(u32, i32, i32)> {
     use windows_sys::Win32::Devices::HumanInterfaceDevice::{
         HIDP_STATUS_SUCCESS, HidP_GetUsages, HidP_Input,
     };
@@ -1402,9 +1464,10 @@ fn a_finger(pad: &Pad, finger: u16, report: &mut [u8]) -> Option<(i32, i32)> {
     if asked != HIDP_STATUS_SUCCESS || !set[..how_many as usize].contains(&usage::TOUCHING) {
         return None;
     }
+    let which = a_value(pad, finger, usage::DIGITIZER, usage::A_FINGER, report)?;
     let across = a_value(pad, finger, usage::DESKTOP, usage::ACROSS, report)?;
     let down = a_value(pad, finger, usage::DESKTOP, usage::DOWN, report)?;
-    Some((across as i32, down as i32))
+    Some((which, across as i32, down as i32))
 }
 
 /// One number of one collection of a report.

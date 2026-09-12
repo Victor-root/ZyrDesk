@@ -3131,6 +3131,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que cela coûte et ce que cela vaut.** Quelques dizaines de lignes au début de chaque lecture, sous `touchpad` comme le reste. En face : trois tentatives à l'aveugle, chacune payée d'une compilation, d'une réinstallation et d'une soirée.
 
+## D193. Le pavé envoie un doigt par rapport, et chaque rapport deux fois (2026-09-12, pendant M6)
+
+**Ce que les octets ont dit.** Cinq emplacements de doigt, un rapport de trente octets, et dedans : un identifiant de rapport, cinq contacts de cinq octets, l'instant de la mesure, le nombre de contacts, le bouton. Avec un doigt posé, le premier emplacement est rempli et les quatre autres sont à zéro, le nombre annoncé est un. Et surtout, la moitié des rapports arrivent deux fois, octet pour octet, même instant de mesure compris.
+
+**Ce que cela démontre.** Si ce pavé tenait toute une trame dans un rapport, chacun annoncerait trois et porterait trois contacts, et l'assemblage aurait rendu trois doigts à chaque fois, doublon ou pas. Il rendait 3, puis 1, puis 1. Donc le pavé envoie un contact par rapport, et le doublon casse l'assemblage : le dernier rapport d'une trame, livré une seconde fois alors que la trame est déjà rendue, était pris pour une trame à lui tout seul, d'un doigt, là où ce doigt se trouvait. Un tiers des trames à trois doigts, deux tiers à un seul, exactement ce que le compteur disait : 777 sur 2225.
+
+**Le protocole a de quoi s'en sortir, et il n'était pas lu.** Chaque contact porte un identifiant que le pavé lui garde tant qu'il reste posé. C'est fait pour ça : distinguer les contacts d'une même trame. Le code s'en servait pour reconnaître les emplacements et n'en lisait jamais la valeur. Maintenant une trame ne prend chaque identifiant qu'une fois, et un rapport qui n'annonce rien alors qu'aucune trame n'est ouverte ne compte pas.
+
+**Et la main qui se lève n'était jamais vue.** Pas un seul « zéro doigt » en vingt secondes de relevé, alors que la main s'est levée dix fois. Un appui ne se décide qu'à la levée : aucun appui à trois doigts ne pouvait donc être reconnu, quand bien même le compte aurait été juste. Le pavé nomme un doigt une dernière fois en disant qu'il ne touche plus, et le nombre qu'il annonce le compte encore ; attendre ce nombre en ne comptant que les doigts qui touchent, c'était attendre une trame qui n'arriverait jamais. Ce qui dit que le pavé est vide n'est donc pas le nombre annoncé mais le fait qu'aucun contact ne touche.
+
+**La chasse reste, et vise mieux.** Les rapports bruts sont toujours recopiés, mais plus à partir du premier : à partir du premier qui met plus d'un doigt en jeu. Les quarante premiers d'une lecture étaient ceux d'un curseur qu'on déplace, et ils ont coûté un aller-retour pour ne montrer que ce qu'on savait déjà. Ils partiront quand les gestes marcheront.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
