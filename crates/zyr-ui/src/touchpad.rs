@@ -22,15 +22,25 @@
 //! turns those reports into the gestures the product carries, and
 //! `crate::floating` decides what each of them means for the session.
 //!
-//! The one thing this cannot do is stop Windows answering them too. That
-//! lives in the person's own touchpad settings, on a page of Windows, and
-//! there is no supported call for it: the registry values behind that page
-//! are read once, deep in the input stack, and a program writing them
-//! changes what the page shows and nothing about what the pad does. So
-//! this reads them rather than writing them, and the switch that turns the
-//! reading on refuses while Windows still holds the gestures: on and held
-//! at once would have every gesture happen twice, once at each end, which
-//! is worse than either.
+//! Windows answering them too would have every gesture happen twice, once
+//! at each end, which is worse than not carrying them at all. What
+//! Windows answers lives in the person's own touchpad settings, and no
+//! call sets that page: so this writes what the page writes, under the
+//! values it keeps, and tells the system a setting of the person's has
+//! changed, which is how Windows asks to be told.
+//!
+//! Written for the length of the reading and put back when it stops, and
+//! what was there is written on disk first: what this undoes outlives the
+//! program, so a window killed while it holds them leaves the machine
+//! knowing what to put back. Nothing is asked of the person, which is the
+//! whole point of doing it here: going to set three dropdowns every time
+//! one changes one's mind about where one's fingers go is the product's
+//! work, not theirs.
+//!
+//! It is still read back afterwards, and the switch refuses if Windows
+//! did not let go: what the system does with a setting is the system's
+//! business, and a switch that reported success on a gesture still
+//! answered at both ends would be a switch that lies.
 //!
 //! Ce qui reconnaît un geste ne parle pas à Windows et se compile
 //! partout : c'est de l'arithmétique sur des doigts, et c'est la seule
@@ -342,42 +352,30 @@ impl Held {
 const WHERE_WINDOWS_KEEPS_IT: &str =
     "Software\\Microsoft\\Windows\\CurrentVersion\\PrecisionTouchPad";
 
+/// The gestures of Windows' own that stand in the way, under the names
+/// its touchpad page writes them by.
+///
+/// The four-finger slide is not among them: it changes this computer's
+/// own virtual desktops, nothing here ever takes it, and taking a gesture
+/// nobody wants would be taking something for nothing.
+#[cfg(windows)]
+const IN_THE_WAY: [&str; 3] = [
+    "ThreeFingerSlideEnabled",
+    "ThreeFingerTapEnabled",
+    "FourFingerTapEnabled",
+];
+
 /// What Windows still holds, `None` on a computer with no precision
 /// touchpad at all.
-///
-/// Read and never written. The page these two values belong to is read
-/// once, deep in the input stack, and a program that writes them changes
-/// what the page shows and nothing about what the pad does: written here,
-/// this would be a switch that reports success and does nothing, which is
-/// the one kind of switch worth refusing to build.
 #[cfg(windows)]
 pub fn what_windows_still_holds() -> Option<Held> {
-    // Nought is the one value that means « nothing », for both: it is what
-    // the page writes when a gesture is set to « Rien ». Anything else is
-    // some action of Windows' own, and a value that cannot be read at all
-    // is the default, which is an action too.
+    // Nought is the one value that means « nothing »: it is what the page
+    // writes when a gesture is set to « Rien ». Anything else is some
+    // action of Windows' own, and a value that cannot be read at all is
+    // the default, which is an action too.
     let slide = a_setting("ThreeFingerSlideEnabled");
     let tap = a_setting("ThreeFingerTapEnabled");
     let four_tap = a_setting("FourFingerTapEnabled");
-    // Les trois valeurs telles quelles, parce que c'est d'elles que sort
-    // le refus et qu'elles n'ont aucune autre trace : lues en dehors de
-    // ce que la page de Windows montre, elles sont le seul moyen de
-    // savoir si ce qui a été réglé là-bas est bien ce qui est lu ici.
-    hunted(|| {
-        let said = |value: Option<u32>| match value {
-            Some(value) => value.to_string(),
-            None => "rien d'écrit".to_string(),
-        };
-        format!(
-            "ce que Windows garde, sous HKCU\\{WHERE_WINDOWS_KEEPS_IT} : \
-             ThreeFingerSlideEnabled={}, ThreeFingerTapEnabled={}, \
-             FourFingerTapEnabled={} ; tout ce qui n'est pas zéro est un \
-             geste que Windows répond lui-même",
-            said(slide),
-            said(tap),
-            said(four_tap)
-        )
-    });
     // None of them written is a computer whose pad Windows never had a
     // page for, which is a computer with no precision touchpad: there is
     // nothing here to take back and nothing to read either.
@@ -389,6 +387,66 @@ pub fn what_windows_still_holds() -> Option<Held> {
         tap: tap != Some(0),
         four_tap: four_tap != Some(0),
     })
+}
+
+/// Everything that page has written, with what it says right now.
+///
+/// Written into the journal when the switch refuses, and read whole
+/// rather than by name: which names Windows writes changes from one of
+/// its own versions to the next, and a refusal naming only the three
+/// looked at here is a refusal nobody can check against the page they
+/// have just set by hand.
+#[cfg(windows)]
+pub fn what_that_page_says() -> String {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_READ, RegCloseKey, RegEnumValueW, RegOpenKeyExW,
+    };
+
+    let path = wide(WHERE_WINDOWS_KEEPS_IT);
+    let mut key: HKEY = std::ptr::null_mut();
+    // SAFETY: a string of ours ended by nought, and a slot of ours for the
+    // key, which is closed at the end of this.
+    let opened = unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, path.as_ptr(), 0, KEY_READ, &mut key) };
+    if opened != ERROR_SUCCESS {
+        return format!("cette page n'a rien écrit du tout (erreur {opened})");
+    }
+    let mut said = Vec::new();
+    for which in 0.. {
+        let mut name = [0u16; 256];
+        let mut long = name.len() as u32;
+        // Les noms d'abord et les valeurs ensuite, par leur nom : demander
+        // les deux d'un coup demande de deviner la taille de chacune, et
+        // une taille devinée trop courte arrête la liste au milieu.
+        // SAFETY: a buffer of ours, whose length is handed over and
+        // written back, and nothing asked of the value itself.
+        let read = unsafe {
+            RegEnumValueW(
+                key,
+                which,
+                name.as_mut_ptr(),
+                &mut long,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if read != ERROR_SUCCESS {
+            break;
+        }
+        let name = String::from_utf16_lossy(&name[..long as usize]);
+        match a_setting(&name) {
+            Some(value) => said.push(format!("{name}={value}")),
+            None => said.push(format!("{name}=(pas un nombre)")),
+        }
+    }
+    // SAFETY: the key opened just above, closed once.
+    unsafe { RegCloseKey(key) };
+    if said.is_empty() {
+        return "cette page n'a écrit aucune valeur".to_string();
+    }
+    said.join(", ")
 }
 
 #[cfg(not(windows))]
@@ -419,6 +477,157 @@ fn a_setting(named: &str) -> Option<u32> {
         )
     };
     (asked == 0).then_some(value)
+}
+
+/// Writes one of that page's values, and says whether Windows took it.
+#[cfg(windows)]
+fn set_a_setting(named: &str, value: u32) -> bool {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, REG_DWORD, RegSetKeyValueW};
+
+    let path = wide(WHERE_WINDOWS_KEEPS_IT);
+    let name = wide(named);
+    // SAFETY: two strings of ours ended by nought, and four bytes of ours
+    // whose size is the one the call is told to expect.
+    let written = unsafe {
+        RegSetKeyValueW(
+            HKEY_CURRENT_USER,
+            path.as_ptr(),
+            name.as_ptr(),
+            REG_DWORD,
+            std::ptr::from_ref(&value).cast(),
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    written == ERROR_SUCCESS
+}
+
+/// Takes from Windows the gestures it still answers, and writes down what
+/// it had.
+///
+/// This is the whole of what the person asked for: one switch and nothing
+/// else to do. Asking somebody to go and set three dropdowns on a page of
+/// Windows every time they change their mind about where their fingers
+/// go is asking them to do the product's work.
+///
+/// What Windows had is written on disk before anything is changed, and in
+/// that order: a machine that loses power between the two puts back what
+/// it finds written, and a machine that loses power before it is written
+/// has nothing to put back because nothing was taken.
+#[cfg(windows)]
+fn take_the_gestures() {
+    let had: Vec<(String, u32)> = IN_THE_WAY
+        .iter()
+        .filter_map(|named| Some(((*named).to_string(), a_setting(named)?)))
+        .filter(|(_, value)| *value != 0)
+        .collect();
+    if had.is_empty() {
+        return;
+    }
+    write_down_what_windows_had(&had);
+    for (named, value) in &had {
+        let taken = set_a_setting(named, 0);
+        note(&format!(
+            "{named} était à {value}, mis à zéro pour cette session{}",
+            if taken { "" } else { " : refusé par Windows" }
+        ));
+    }
+    tell_windows_its_page_changed();
+}
+
+/// Rend à Windows ce qui lui a été pris, s'il lui a été pris quelque
+/// chose.
+///
+/// Appelé quand le pavé cesse d'être lu, quelle que soit la raison, et
+/// une fois de plus au démarrage suivant : un programme tué en tenant ces
+/// gestes laisserait le pavé de quelqu'un changé sans que rien sur la
+/// machine ne dise pourquoi.
+#[cfg(windows)]
+pub fn give_the_gestures_back() {
+    let had = what_windows_had();
+    if had.is_empty() {
+        return;
+    }
+    for (named, value) in &had {
+        let given = set_a_setting(named, *value);
+        note(&format!(
+            "{named} rendu à Windows à {value}{}",
+            if given { "" } else { " : refusé par Windows" }
+        ));
+    }
+    tell_windows_its_page_changed();
+    let _ = std::fs::remove_file(zyr_proto::paths::touchpad_to_give_back());
+}
+
+#[cfg(not(windows))]
+pub fn give_the_gestures_back() {}
+
+#[cfg(not(windows))]
+pub fn what_that_page_says() -> String {
+    String::new()
+}
+
+/// Dit au système qu'un réglage de la personne a changé.
+///
+/// La façon dont Windows demande à être prévenu, et pas une astuce : ce
+/// qui lit cette page n'a aucune autre raison de la relire, et la page
+/// des réglages envoie le même message quand la personne y touche.
+#[cfg(windows)]
+fn tell_windows_its_page_changed() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HWND_BROADCAST, SMTO_ABORTIFHUNG, SendMessageTimeoutW, WM_SETTINGCHANGE,
+    };
+
+    let section = wide("PrecisionTouchPad");
+    let mut answered = 0usize;
+    // SAFETY: a message with a string of ours that survives the call, and
+    // a wait short enough that a program that has stopped answering does
+    // not stop this one with it.
+    unsafe {
+        SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            section.as_ptr() as isize,
+            SMTO_ABORTIFHUNG,
+            200,
+            &mut answered,
+        )
+    };
+}
+
+/// Ce que Windows avait, gardé le temps de le lui rendre.
+#[cfg(windows)]
+fn write_down_what_windows_had(had: &[(String, u32)]) {
+    let written: String = had
+        .iter()
+        .map(|(named, value)| format!("{named}={value}\n"))
+        .collect();
+    if let Err(e) = zyr_proto::files::replace(&zyr_proto::paths::touchpad_to_give_back(), &written)
+    {
+        note(&format!(
+            "ce que Windows avait n'a pas pu être écrit, donc rien ne lui est pris : {e}"
+        ));
+    }
+}
+
+/// Et ce qui en a été relu.
+#[cfg(windows)]
+fn what_windows_had() -> Vec<(String, u32)> {
+    let Ok(said) = std::fs::read_to_string(zyr_proto::paths::touchpad_to_give_back()) else {
+        return Vec::new();
+    };
+    said.lines()
+        .filter_map(|line| {
+            let (named, value) = line.split_once('=')?;
+            // Seuls les noms que ce programme connaît sont rendus : un
+            // fichier abîmé ne doit pas écrire n'importe quoi dans les
+            // réglages de quelqu'un.
+            IN_THE_WAY
+                .contains(&named)
+                .then(|| Some((named.to_string(), value.trim().parse().ok()?)))?
+        })
+        .collect()
 }
 
 /// A string as Windows reads them, ended by nought.
@@ -523,6 +732,10 @@ pub fn read_the_pad(wanted: bool) -> bool {
 
     if !wanted {
         if READING.let_go() {
+            // Rendus ici et nulle part ailleurs : tant que ce programme ne
+            // lit pas le pavé, Windows garde ses gestes, quelle que soit
+            // la raison pour laquelle la lecture s'arrête.
+            give_the_gestures_back();
             note(&format!(
                 "pavé tactile : {} trames lues, {} à trois doigts ou plus, {} gestes",
                 counted::FRAMES.load(Ordering::Relaxed),
@@ -537,6 +750,10 @@ pub fn read_the_pad(wanted: bool) -> bool {
         hunted(|| "le pavé était déjà lu, rien à reprendre".to_string());
         return true;
     };
+    // Pris dès que la lecture tient, pour que les gestes n'agissent pas
+    // aux deux bouts à la fois. Rendus à l'arrêt de la lecture, juste
+    // au-dessus : les deux vont ensemble et ne sont écrits qu'ici.
+    take_the_gestures();
     counted::FRAMES.store(0, Ordering::Relaxed);
     counted::THREES.store(0, Ordering::Relaxed);
     counted::GESTURES.store(0, Ordering::Relaxed);

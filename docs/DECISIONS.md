@@ -3085,6 +3085,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et de quoi chasser, sous une seule étiquette.** Les trois valeurs que Windows garde sont lues dans son registre, hors de tout ce que sa page montre : rien d'autre ne dit si ce qui a été réglé là-bas est bien ce qui est lu ici. Elles s'écrivent donc telles quelles, avec le clic de l'interrupteur, les doigts qui se posent et se lèvent, et chaque geste reconnu. En voix de chasse, donc absentes de la version finale, et sous `touchpad`, y compris pour ce qui se décide dans le menu : une chasse qui demanderait deux étiquettes pour un seul sujet serait une chasse à moitié faite.
 
+## D190. ZyrDesk prend les gestes à Windows lui-même, et les lui rend (2026-09-12, pendant M6)
+
+**Ce qui a été demandé.** « Ce comportement ne me convient pas, je ne veux pas avoir à désactiver sous Windows à chaque fois que je veux décider de faire transférer ces gestes ou non. Je veux uniquement à choisir dans le bouton flottant, et strictement rien d'autre à faire. » Et il a raison : aller régler trois menus déroulants sur une page de Windows chaque fois qu'on change d'avis sur l'endroit où vont ses doigts, c'est faire le travail du produit à sa place.
+
+**Ce que [D189](#d189-un-refus-se-lit-sur-la-carte-pas-seulement-dans-le-journal-2026-09-12-pendant-m6) tenait pour acquis.** Que ces valeurs se lisent et ne s'écrivent pas, parce qu'un programme qui les écrit changerait ce que la page montre sans rien changer à ce que le pavé fait. C'était une affirmation, pas une vérification, et elle décidait de toute l'expérience de cet interrupteur.
+
+**Alors elles s'écrivent.** Ce que la page de Windows écrit, sous les valeurs où elle le garde, suivi du message par lequel le système demande à être prévenu qu'un réglage de la personne a changé. Pris quand la lecture du pavé commence, rendus quand elle s'arrête, quelle qu'en soit la raison : les deux tiennent au même endroit, il n'y a donc aucun chemin par lequel ils resteraient pris.
+
+**Ce que Windows avait est écrit sur disque avant qu'on y touche.** Ce que ceci défait survit au programme : une fenêtre tuée en tenant ces gestes laisserait le pavé de quelqu'un changé sans que rien sur la machine ne dise pourquoi ni ne sache le remettre. Le fichier est écrit d'abord et relu au démarrage suivant, si bien qu'une coupure de courant entre les deux ne peut que rendre ce qui a été pris, jamais l'inverse.
+
+**Et c'est relu après coup.** Ce que le système fait d'un de ses réglages reste son affaire : si Windows n'a pas lâché malgré ce qui vient d'être écrit, tout est remis comme c'était, la page s'ouvre, et le refus est dit. Un interrupteur qui annoncerait avoir réussi sur un geste encore répondu aux deux bouts serait un interrupteur qui ment, et ce refus-là vaut mieux que ce mensonge.
+
+**Le refus dit maintenant toute la page.** Trois valeurs nommées ne suffisaient pas : les noms que Windows écrit changent d'une de ses versions à l'autre, et un refus qui n'en nomme que trois ne se vérifie pas contre la page qu'on vient de régler à la main. La clé est donc lue en entier, chaque valeur avec son nombre, en voix ordinaire parce qu'un refus est ce que le produit dit de lui-même.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

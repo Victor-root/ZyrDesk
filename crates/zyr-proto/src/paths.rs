@@ -351,6 +351,18 @@ pub fn floating_button() -> PathBuf {
 /// Apart for the same reason again: it says what somebody wants to look
 /// at on this machine. It used to live in the browser's own store, which
 /// went with the browser.
+/// What Windows had set for its own touchpad gestures before this product
+/// took them.
+///
+/// Written on disk and not merely held in memory, because what it undoes
+/// outlives this program: a window that is killed while it holds those
+/// gestures would leave somebody's touchpad changed with nothing on the
+/// machine saying why, and nothing able to put it back. Found at the next
+/// start, it is given back before anything else.
+pub fn touchpad_to_give_back() -> PathBuf {
+    data_dir().join("touchpad-to-give-back.txt")
+}
+
 pub fn chosen_theme() -> PathBuf {
     data_dir().join("theme.conf")
 }

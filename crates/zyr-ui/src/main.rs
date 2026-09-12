@@ -117,6 +117,11 @@ fn main() {
     // système agrandirait lui-même ce qui est déjà à la bonne taille.
     app::compte_en_vrais_pixels();
     journal::opened();
+    // Avant toute chose : un ZyrDesk tué pendant qu'il tenait les gestes
+    // du pavé tactile a laissé le réglage de quelqu'un changé sans que
+    // rien sur la machine ne dise pourquoi. Rien du tout si rien n'a été
+    // pris, ce qui est le cas ordinaire.
+    touchpad::give_the_gestures_back();
 
     let app = app::App::neuf();
     if let Err(e) = app::ouvre_le_courrier() {

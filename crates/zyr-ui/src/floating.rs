@@ -1381,17 +1381,29 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
         crate::settings::remember_touchpad_gestures(false).await;
         return Ok(());
     }
-    let Some(held) = crate::touchpad::what_windows_still_holds() else {
+    if crate::touchpad::what_windows_still_holds().is_none() {
         return Err("cet ordinateur n'a pas de pavé tactile de précision.".to_string());
-    };
-    if held.any() {
-        let what_to_do = held.what_to_do();
-        note(&format!("gestes du pavé tactile : {what_to_do}"));
-        crate::touchpad::open_the_windows_page();
-        return Err(what_to_do);
     }
+    // La lecture prend d'abord à Windows les gestes qu'il répondait
+    // lui-même : c'est elle qui les lui rendra en s'arrêtant, et c'est
+    // tout ce que la personne a à faire.
     if !crate::touchpad::read_the_pad(true) {
         return Err("Windows n'a pas donné le pavé tactile à ZyrDesk.".to_string());
+    }
+    // Relu après coup, parce que c'est la seule preuve qui vaille : si
+    // Windows n'a pas lâché malgré ce qui vient d'être écrit, chaque
+    // geste agirait aux deux bouts, ce qui est pire que de ne rien avoir.
+    // Tout est alors remis comme c'était et la page s'ouvre, où la
+    // personne peut faire à la main ce qui a été refusé au programme.
+    if let Some(held) = crate::touchpad::what_windows_still_holds().filter(|held| held.any()) {
+        crate::touchpad::read_the_pad(false);
+        let what_to_do = held.what_to_do();
+        note(&format!(
+            "gestes du pavé tactile : {what_to_do}\n  Ce que cette page a écrit : {}",
+            crate::touchpad::what_that_page_says()
+        ));
+        crate::touchpad::open_the_windows_page();
+        return Err(what_to_do);
     }
     state.touchpad.store(true, Ordering::Relaxed);
     // Remembered like the keyboard beside it: this is thrown in the
