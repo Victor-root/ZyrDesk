@@ -3023,6 +3023,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Rien de ce qui traverse, rien du recouvrement lui-même, qui est ce qui garantit qu'une copie faite entre deux assistants ne soit pas perdue. Le dialecte ne bouge pas et la pile de correctifs reste à quatorze.
 
+## D186. Le coup frappé pour rien, qui est le seul moyen d'entendre l'autre (2026-09-12, pendant M6)
+
+**Le relevé.** « Du client vers le stream ça ne fonctionne pas, j'ai la boîte de dialogue Windows qui s'ouvre pour commencer le transfert mais il reste à 0 %, alors que du stream vers client ça fonctionne. » Et le journal disait déjà l'essentiel : la **liste** des fichiers traverse dans les deux sens, ce sont les **octets** qui n'en ont qu'un.
+
+**La cause, et elle tient dans l'asymétrie du canal.** Le canal ZyrDesk est une question par flux : le client demande, l'hôte répond, jamais l'inverse. Un hôte qui colle ne peut donc dire qu'il veut des octets que **dans une réponse**, et une réponse ne vient qu'à une question. C'est pour ça que la boucle qui porte les morceaux a, depuis le début, une troisième raison de parler en plus de « je colle » et « je dois un morceau » : « des fichiers sont copiés ici, l'autre pourrait vouloir les coller ». Son propre commentaire le disait mot pour mot.
+
+**Ce qu'elle faisait.** Cette troisième raison ouvrait bien la boucle, puis la ligne d'après, pour chaque voie, refusait de parler à une voie à qui l'on n'avait rien à demander ni rien à donner. Le coup frappé à vide, qui est précisément le seul moment où l'autre bout peut ouvrir la bouche, n'était donc jamais frappé. L'hôte collait dans le vide et Windows attendait à zéro pour l'éternité.
+
+**Et pourquoi l'autre sens marchait.** Coller sur le client, c'est le client qui demande. Il avait quelque chose à dire, donc il parlait, donc la conversation avait lieu. La moitié qui marchait et celle qui ne marchait pas étaient la même ligne, lue dans un sens ou dans l'autre.
+
+**La correction.** La raison se lit une fois et pèse aux deux endroits, la boucle et chaque voie, au lieu d'être lue à un endroit et oubliée à l'autre. Un garde qui laisse passer et un second qui renvoie, c'est la forme que prend une panne qui ne ressemble à rien.
+
+**Ce que ça ne change pas.** Rien du dialecte, rien du rythme : le coup à vide se frappe au pas du presse-papiers, quatre fois par seconde, et seulement tant que des fichiers sont posés sur ce presse-papiers-ci. Un morceau à la fois dans chaque sens, comme avant. La pile de correctifs reste à quatorze.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

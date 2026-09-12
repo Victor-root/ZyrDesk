@@ -1263,9 +1263,12 @@ impl Ways {
                 tokio::time::sleep(CLIPBOARD_TURN).await;
                 continue;
             }
+            // Read once and weighed twice, here and at each way below:
+            // the two used to say different things, and a knock let
+            // through by the first was turned away by the second.
+            let may_be_wanted = crate::clipboard::files_may_be_wanted_here();
             let mut asking = crate::clipboard::what_a_paste_here_wants(&self.log);
-            if asking.is_none() && owed.is_empty() && !crate::clipboard::files_may_be_wanted_here()
-            {
+            if asking.is_none() && owed.is_empty() && !may_be_wanted {
                 tokio::time::sleep(CLIPBOARD_TURN).await;
                 continue;
             }
@@ -1290,7 +1293,11 @@ impl Ways {
                     }
                     None => None,
                 };
-                if asking.is_none() && giving.is_none() {
+                // Nothing to ask and nothing to hand over is still worth
+                // a knock while files copied here may be wanted: that
+                // knock is the only moment a far end that is pasting them
+                // gets to say so, since it may only speak in an answer.
+                if asking.is_none() && giving.is_none() && !may_be_wanted {
                     continue;
                 }
                 let handed = giving.is_some();
