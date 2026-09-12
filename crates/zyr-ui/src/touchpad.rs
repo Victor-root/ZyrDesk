@@ -257,6 +257,16 @@ impl Reading {
         }
     }
 
+    /// Où en est la main, pour une chasse et pour rien d'autre.
+    ///
+    /// Des nombres bruts qui ne veulent rien dire pour personne, et c'est
+    /// exactement ce qu'il faut ici : quand un geste n'est pas reconnu,
+    /// la seule question est de savoir lequel de ces nombres n'est pas
+    /// celui qu'on croyait.
+    pub fn how_it_stands(&self) -> String {
+        format!("{:?}", self.state)
+    }
+
     /// The hand has left the pad.
     fn lifted(&mut self, at: u64) -> Option<Gesture> {
         // A tap is what a gesture turns out to have been, and it can only
@@ -958,13 +968,6 @@ fn a_report_came_in(packet: *mut core::ffi::c_void) {
         if fingers >= THREE {
             counted::THREES.fetch_add(1, Ordering::Relaxed);
         }
-        // Une ligne au changement du nombre de doigts, jamais à la trame :
-        // le pavé en envoie une centaine par seconde, et ce qui se lit
-        // d'une main est le moment où elle se pose et celui où elle part.
-        let before = counted::FINGERS.swap(fingers, Ordering::Relaxed);
-        if before != fingers {
-            hunted(|| format!("{before} doigt(s) puis {fingers}, à {across} sur {down} millièmes"));
-        }
         // SAFETY: no argument, and it answers with a count of
         // milliseconds since the machine started.
         let now = unsafe { GetTickCount64() };
@@ -976,6 +979,21 @@ fn a_report_came_in(packet: *mut core::ffi::c_void) {
             counted::GESTURES.fetch_add(1, Ordering::Relaxed);
             hunted(|| format!("geste reconnu : {gesture}"));
             crate::floating::the_pad_said(gesture);
+        }
+        // Une ligne au changement du nombre de doigts, jamais à la trame :
+        // le pavé en envoie une centaine par seconde, et ce qui se lit
+        // d'une main est le moment où elle se pose et celui où elle part.
+        // Écrite après la décision et non avant, parce que ce qu'on veut
+        // savoir est ce que cette trame-là a changé.
+        let before = counted::FINGERS.swap(fingers, Ordering::Relaxed);
+        if before != fingers && zyr_proto::for_hunting() {
+            let stands = HAND.lock().expect("lecture du pavé").how_it_stands();
+            hunted(|| {
+                format!(
+                    "{before} doigt(s) puis {fingers}, à {across} sur {down} millièmes ; \
+                     la main : {stands}"
+                )
+            });
         }
     }
 }
