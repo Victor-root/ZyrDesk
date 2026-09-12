@@ -3167,6 +3167,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et la fin d'un toucher s'écrit avec son début.** Le plus grand écart ne dit pas si la main est restée là où elle est allée. Une main qui roule en se posant s'écarte et revient ; une main qui balaye s'écarte et reste. Écrits de la même façon, ces deux-là sont impossibles à distinguer, et c'est exactement la question posée par les 250 millièmes verticaux d'un toucher de deux cents millisecondes.
 
+## D196. Le sélecteur de fenêtres reste ouvert tant que la main glisse (2026-09-12, pendant M6)
+
+**Le geste part, et il ne sert à rien.** Dix glissements reconnus sur le relevé, et ce que la personne voit est un sélecteur de fenêtres qui clignote sans arriver nulle part.
+
+**Pourquoi.** Chaque cran tapait un Alt+Tab entier, touche enfoncée et relâchée. Un Alt+Tab tapé entier va à la dernière fenêtre utilisée ; un deuxième revient d'où l'on vient. Deux crans dans le même balayage font donc un aller-retour, et le sélecteur apparaît et disparaît à chaque fois au lieu de rester ouvert. C'est un geste qui marche mécaniquement et qui ne fait rien de ce qu'on lui demande.
+
+**Alt reste donc enfoncé pour toute la durée du glissement.** Il descend au premier cran, chaque cran suivant n'envoie plus que Tab, et il remonte quand la main s'en va. C'est exactement ce que fait une main qui enchaîne des Tab au clavier, et ce que fait le geste de Windows lui-même : le sélecteur reste ouvert, chaque cran avance le choix, la levée valide.
+
+**Une touche laissée enfoncée est la pire chose que ce programme puisse abandonner derrière lui.** Il n'y a que trois façons de sortir d'un glissement : la main qui part, un quatrième doigt qui arrive, un cinquième. Les trois disent maintenant la fin du glissement, l'arrêt de la lecture du pavé la dit aussi quelle qu'en soit la raison, et la rendre quand elle n'est pas tenue ne coûte rien. Un test tient les trois sorties.
+
+**Et cette fin n'est pas comptée comme un geste.** C'est le même qui se termine : annoncée, elle doublerait chaque glissement dans le compte comme dans le journal. Elle s'écrit en voix de chasse, parce que c'est elle qui rend la touche.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -88,6 +88,10 @@ pub enum Gesture {
     ThreeTap,
     /// Quatre doigts posés et relevés sans bouger.
     FourTap,
+    /// Un glissement qui s'arrête, la main étant partie ou un quatrième
+    /// doigt étant venu. Le sélecteur de fenêtres qu'il tenait ouvert se
+    /// referme là-dessus, et sur rien d'autre.
+    Chosen,
 }
 
 impl std::fmt::Display for Gesture {
@@ -97,6 +101,7 @@ impl std::fmt::Display for Gesture {
             Gesture::Rightwards => "trois doigts vers la droite",
             Gesture::ThreeTap => "trois doigts posés",
             Gesture::FourTap => "quatre doigts posés",
+            Gesture::Chosen => "le glissement est fini",
         })
     }
 }
@@ -214,8 +219,13 @@ impl Reading {
             return self.lifted(at);
         }
         if fingers > FOUR {
+            // Cinq doigts appartiennent à Windows, et un glissement en
+            // cours s'arrête là. Il tenait le sélecteur de fenêtres
+            // ouvert, et ce qui l'ouvre doit toujours dire quand le
+            // refermer.
+            let sliding = matches!(self.state, State::Sliding { .. });
             self.state = State::Elsewhere;
-            return None;
+            return sliding.then_some(Gesture::Chosen);
         }
         // Fewer than three, with something already begun: a finger
         // landing a moment after the others, or leaving a moment before
@@ -276,7 +286,7 @@ impl Reading {
             // it a gesture of Windows', halfway through.
             State::Sliding { .. } if fingers == FOUR => {
                 self.state = State::Elsewhere;
-                None
+                Some(Gesture::Chosen)
             }
             State::Sliding { .. } => self.stepped(x),
         }
@@ -310,6 +320,9 @@ impl Reading {
                     Gesture::FourTap
                 })
             }
+            // Le glissement tenait le sélecteur de fenêtres ouvert, et la
+            // main qui part est ce qui choisit.
+            State::Sliding { .. } => Some(Gesture::Chosen),
             _ => None,
         }
     }
@@ -774,6 +787,11 @@ mod counted {
 pub fn read_the_pad(wanted: bool) -> bool {
     use std::sync::atomic::Ordering;
 
+    // Avant tout le reste : un glissement peut être en cours, et ce qu'il
+    // tient ouvert n'a plus personne pour le refermer dès que la lecture
+    // s'arrête. Dit aussi au démarrage, où cela ne coûte rien et où cela
+    // rattrape n'importe quel arrêt qui aurait mal fini.
+    crate::floating::let_the_windows_go();
     if !wanted {
         if READING.let_go() {
             // Rendus ici et nulle part ailleurs : tant que ce programme ne
@@ -1013,11 +1031,21 @@ fn a_report_came_in(packet: *mut core::ffi::c_void) {
         drop(hand);
 
         if let Some(gesture) = made {
-            counted::GESTURES.fetch_add(1, Ordering::Relaxed);
-            // En voix ordinaire : un geste reconnu est rare, c'est ce que
-            // le produit vient de faire, et savoir s'il en reconnaît ne
-            // doit demander à personne d'allumer quoi que ce soit.
-            note(&format!("geste reconnu : {gesture}"));
+            if gesture == Gesture::Chosen {
+                // La fin d'un glissement n'est pas un geste de plus, c'est
+                // le même qui se termine : comptée et annoncée, elle
+                // doublerait chaque glissement dans le compte comme dans
+                // le journal. Écrite quand même, en voix de chasse : c'est
+                // elle qui rend la touche que le glissement tenait.
+                hunted(|| gesture.to_string());
+            } else {
+                counted::GESTURES.fetch_add(1, Ordering::Relaxed);
+                // En voix ordinaire : un geste reconnu est rare, c'est ce
+                // que le produit vient de faire, et savoir s'il en
+                // reconnaît ne doit demander à personne d'allumer quoi que
+                // ce soit.
+                note(&format!("geste reconnu : {gesture}"));
+            }
             crate::floating::the_pad_said(gesture);
         }
         if telling {
@@ -1504,7 +1532,7 @@ mod tests {
         let mut reading = Reading::new();
         assert_eq!(
             slid(&mut reading, 100, 100 + A_STEP),
-            vec![Gesture::Rightwards]
+            vec![Gesture::Rightwards, Gesture::Chosen]
         );
 
         let mut reading = Reading::new();
@@ -1514,6 +1542,7 @@ mod tests {
                 Gesture::Rightwards,
                 Gesture::Rightwards,
                 Gesture::Rightwards,
+                Gesture::Chosen,
             ]
         );
     }
@@ -1530,7 +1559,27 @@ mod tests {
             made.extend(reading.saw(3, 400 + step * 19, 500 + step * 3, (step * 8) as u64));
         }
         made.extend(reading.saw(0, 476, 512, 100));
-        assert_eq!(made, vec![Gesture::Rightwards]);
+        assert_eq!(made, vec![Gesture::Rightwards, Gesture::Chosen]);
+    }
+
+    #[test]
+    fn no_slide_ever_ends_without_saying_so() {
+        // Un glissement tient Alt enfoncé pour garder le sélecteur de
+        // fenêtres ouvert, et c'est la fin du glissement qui le rend. Il
+        // n'y a que trois façons d'en sortir, et aucune ne doit laisser
+        // cette touche à personne.
+        for ending in [0, FOUR, FOUR + 1] {
+            let mut reading = Reading::new();
+            let mut made = Vec::new();
+            made.extend(reading.saw(3, 100, 500, 0));
+            made.extend(reading.saw(3, 100 + A_STEP, 500, 40));
+            made.extend(reading.saw(ending, 100 + A_STEP, 500, 80));
+            assert_eq!(
+                made,
+                vec![Gesture::Rightwards, Gesture::Chosen],
+                "un glissement fini à {ending} doigt(s)"
+            );
+        }
     }
 
     #[test]
@@ -1538,7 +1587,7 @@ mod tests {
         let mut reading = Reading::new();
         assert_eq!(
             slid(&mut reading, 900, 900 - A_STEP),
-            vec![Gesture::Leftwards]
+            vec![Gesture::Leftwards, Gesture::Chosen]
         );
     }
 
@@ -1553,7 +1602,10 @@ mod tests {
         made.extend(reading.saw(3, 100 + A_STEP, 500, 40));
         made.extend(reading.saw(3, 100, 500, 80));
         made.extend(reading.saw(0, 100, 500, 120));
-        assert_eq!(made, vec![Gesture::Rightwards, Gesture::Leftwards]);
+        assert_eq!(
+            made,
+            vec![Gesture::Rightwards, Gesture::Leftwards, Gesture::Chosen]
+        );
     }
 
     #[test]
@@ -1618,7 +1670,7 @@ mod tests {
         made.extend(reading.saw(4, 100 + 2 * A_STEP, 500, 80));
         made.extend(reading.saw(4, 100 + 3 * A_STEP, 500, 120));
         made.extend(reading.saw(0, 100 + 3 * A_STEP, 500, 160));
-        assert_eq!(made, vec![Gesture::Rightwards]);
+        assert_eq!(made, vec![Gesture::Rightwards, Gesture::Chosen]);
     }
 
     #[test]
@@ -1655,7 +1707,7 @@ mod tests {
         made.extend(reading.saw(3, 100 + A_STEP, 500, 24));
         made.extend(reading.saw(2, 100 + A_STEP, 500, 32));
         made.extend(reading.saw(0, 100 + A_STEP, 500, 40));
-        assert_eq!(made, vec![Gesture::Rightwards]);
+        assert_eq!(made, vec![Gesture::Rightwards, Gesture::Chosen]);
     }
 
     #[test]
@@ -1665,7 +1717,7 @@ mod tests {
         let mut reading = Reading::new();
         assert_eq!(
             slid(&mut reading, 100, 100 + A_STEP),
-            vec![Gesture::Rightwards]
+            vec![Gesture::Rightwards, Gesture::Chosen]
         );
         assert_eq!(tapped(&mut reading, 3, 200, 260), vec![Gesture::ThreeTap]);
     }

@@ -1462,6 +1462,10 @@ pub fn the_pad_said(gesture: crate::touchpad::Gesture) {
         // et une main n'apprend pas deux sens pour un seul geste.
         Gesture::Rightwards => the_window_after(false),
         Gesture::Leftwards => the_window_after(true),
+        Gesture::Chosen => {
+            let_the_windows_go();
+            true
+        }
     };
     if !done {
         note(&format!("{gesture} : Windows a refusé de le transmettre"));
@@ -2488,7 +2492,22 @@ fn play_or_pause() -> bool {
     false
 }
 
+/// Whether a slide is holding the window switcher open.
+///
+/// True means Alt is held down on this computer by us and by nobody else,
+/// so every way out of a slide has to come back through
+/// [`let_the_windows_go`]. A key left pressed behind is the worst thing
+/// this program could leave on a machine.
+static SWITCHING: AtomicBool = AtomicBool::new(false);
+
 /// Types Alt+Tab, or Alt+Maj+Tab to go the other way.
+///
+/// Alt goes down at the first step of a slide and stays down until the
+/// hand lets go. That is what holds the switcher open and what makes each
+/// further step move the choice on: tapping the whole of Alt+Tab at every
+/// step switches to the last window and back again, which is a switcher
+/// blinking and a hand getting nowhere. A hand doing this on a keyboard
+/// does not let go of Alt between two Tabs either.
 ///
 /// Typed here rather than sent anywhere, and that is the whole of how it
 /// crosses: Windows keeps Alt+Tab for itself on this computer, and the
@@ -2504,7 +2523,10 @@ fn the_window_after(back: bool) -> bool {
         Key::Place(place::SHIFT),
         Key::Place(place::TAB),
     );
-    let mut keys = vec![(alt, false)];
+    let mut keys = Vec::new();
+    if !SWITCHING.swap(true, Ordering::Relaxed) {
+        keys.push((alt, false));
+    }
     if back {
         keys.push((shift, false));
     }
@@ -2513,12 +2535,37 @@ fn the_window_after(back: bool) -> bool {
     if back {
         keys.push((shift, true));
     }
-    keys.push((alt, true));
     typed(&keys)
 }
 
 #[cfg(not(windows))]
 fn the_window_after(_back: bool) -> bool {
+    false
+}
+
+/// Lets go of the switcher a slide was holding open, the hand having
+/// chosen.
+///
+/// Asked again for what is already the case costs nothing, which is what
+/// lets every end of a slide say it without knowing what the others did:
+/// the hand leaving the pad, a fourth finger joining, a fifth, and the
+/// reading being stopped for any reason at all.
+pub fn let_the_windows_go() {
+    if !SWITCHING.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    if !alt_is_let_go() {
+        note("le sélecteur de fenêtres : Windows a refusé de rendre Alt");
+    }
+}
+
+#[cfg(windows)]
+fn alt_is_let_go() -> bool {
+    typed(&[(Key::Place(place::ALT), true)])
+}
+
+#[cfg(not(windows))]
+fn alt_is_let_go() -> bool {
     false
 }
 
