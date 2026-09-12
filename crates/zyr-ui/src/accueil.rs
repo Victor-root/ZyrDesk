@@ -784,6 +784,11 @@ mod tenue {
     /// La hauteur du texte du journal : ce qu'il prend au plus, en part
     /// de la fenêtre, et jamais plus que ça.
     pub const JOURNAL: (f32, f32) = (0.6, 560.0);
+
+    /// Et jamais moins que ça, quoi que prenne le reste du dialogue :
+    /// une fenêtre de journal où l'on ne voit plus le journal n'en est
+    /// plus une.
+    pub const JOURNAL_AU_MOINS: f32 = 140.0;
 }
 
 /* ---- Ce que la fenêtre tient ------------------------------------------ */
@@ -1323,8 +1328,14 @@ impl Mise<'_> {
     }
 
     /// Note que ceci répond au clic.
+    ///
+    /// Jamais pendant une mesure : une chose mesurée n'est pas posée, et
+    /// ce qui n'est pas posé ne peut pas être cliqué. Un dialogue est
+    /// mesuré tout entier avant d'être dessiné, à un endroit qui n'est
+    /// pas le sien, et prendre ces places-là pour des boutons rendrait
+    /// cliquable un coin de fenêtre où il n'y a rien.
     fn repond(&mut self, quoi: Quoi, ou: Cadre) {
-        if self.vivante {
+        if self.vivante && !self.muet {
             self.cliquables.push((quoi, ou));
         }
     }
@@ -2638,6 +2649,19 @@ impl Mise<'_> {
         (haut_du_titre + ecart + explication).max(bouton)
     }
 
+    /// Ce qu'une chose prendrait, sans la poser.
+    ///
+    /// Pour ce qui doit être mesuré avant que ce qui vient au-dessus soit
+    /// posé : le dialogue se dessine de haut en bas, et rien d'autre ne
+    /// permet de rendre à l'un la place qu'un autre prendra plus bas.
+    fn mesure_seule(&mut self, ce_qui: impl FnOnce(&mut Self) -> f32) -> f32 {
+        let avant = self.muet;
+        self.muet = true;
+        let pris = ce_qui(self);
+        self.muet = avant;
+        pris
+    }
+
     /// Les noms que la page ouverte porte, en rangées qui se replient, et
     /// rendus de la hauteur qu'ils ont prise.
     ///
@@ -2881,10 +2905,17 @@ impl Mise<'_> {
         y += self.entete_du_dialogue(ou, &titre, &mot);
         y += self.px(design::PAS_4);
 
+        // Ce que les noms prendront, mesuré avant de poser les lignes.
+        // C'est aux lignes de leur rendre cette place : le dialogue doit
+        // tenir dans la fenêtre, et une rangée de noms de plus qui le
+        // ferait grandir mettrait « Copier » hors d'atteinte.
+        let noms = self.mesure_seule(|mise| mise.les_etiquettes(ou.gauche, y, large));
+
         // Le journal se lit sur des lignes entières : il prend la place
         // qu'il peut, sans jamais pousser son dialogue hors de la
-        // fenêtre.
-        let lignes = (fenetre * tenue::JOURNAL.0).min(self.px(tenue::JOURNAL.1));
+        // fenêtre, et jamais moins que de quoi en lire quelques-unes.
+        let lignes = ((fenetre * tenue::JOURNAL.0).min(self.px(tenue::JOURNAL.1)) - noms)
+            .max(self.px(tenue::JOURNAL_AU_MOINS));
         self.les_lignes(Cadre::pose(ou.gauche, y, large, lignes));
         y += lignes + self.px(design::PAS_4);
 
@@ -3950,10 +3981,20 @@ fn roule(window: windows_sys::Win32::Foundation::HWND, crans: f32, travers: bool
     let mut etat = ETAT.lock().expect("accueil");
     let ou = match etat.ecran {
         Ecran::Accueil => Ou::Page,
-        // Le texte du journal défile chez lui : c'est la seule chose qui
-        // se lit dans ce dialogue, et le dialogue lui-même tient dans la
-        // fenêtre.
-        Ecran::Journal => Ou::Lignes,
+        // Le texte du journal défile chez lui : c'est ce qu'on lit dans
+        // ce dialogue, et le dialogue lui-même est fait pour tenir dans
+        // la fenêtre. Sauf quand il n'y tient pas malgré tout, sur un
+        // écran très bas : la molette sert alors d'abord à atteindre ce
+        // qui en dépasse, faute de quoi les boutons du bas sont
+        // inatteignables.
+        Ecran::Journal => {
+            let (contenu, place, _) = etat.mesure(Ou::Dialogue);
+            if contenu > place {
+                Ou::Dialogue
+            } else {
+                Ou::Lignes
+            }
+        }
         _ => Ou::Dialogue,
     };
     let de = -crans * echelle() * tenue::CRAN;

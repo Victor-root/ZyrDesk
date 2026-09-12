@@ -3067,6 +3067,10 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Cochés plutôt que tapés.** Une rangée de noms au-dessus de la boîte, qui se replie toute seule selon la largeur du dialogue. Un clic ajoute le nom à ce qui est déjà écrit ou l'en retire, sans toucher au reste : cocher deux noms garde les deux sujets, et ce qu'on avait tapé à la main à côté reste où il était. Pas de bouton qui ouvre une liste : la liste tient sur deux rangées et un dialogue de plus serait un clic de plus pour rien.
 
+**Et ce sont les lignes du journal qui paient cette place.** Vingt et un noms sur trois rangées ont fait grandir le dialogue jusqu'à lui faire dépasser la fenêtre, et « Copier » avec. La règle du dialogue était déjà écrite dans le code qui aiguille la molette, « le dialogue lui-même tient dans la fenêtre » : la rangée de noms se mesure donc avant que les lignes ne soient posées, et les lignes lui rendent exactement ce qu'elle prend. Jamais en dessous de quoi en lire quelques-unes ; et si un écran très bas déborde malgré tout, la molette sert d'abord à atteindre ce qui dépasse plutôt qu'à faire défiler le texte.
+
+**Une mesure ne répond pas au clic.** Un dialogue est mesuré tout entier avant d'être dessiné, dans un coin qui n'est pas le sien, et cette passe-là inscrivait ses boutons parmi les choses cliquables. Personne ne s'en était aperçu parce que ces places tombaient sur le fond noirci ; y ajouter une rangée qui se mesure à sa vraie place aurait rendu les noms cliquables là où s'affichent les lignes. Ce qui est mesuré n'est pas posé, et ce qui n'est pas posé ne se clique pas.
+
 **Ce que ça ne change pas.** Le dialecte ne bouge pas : l'entête est du texte dans une page qui en était déjà pleine. Une page venue d'une moitié plus ancienne du produit n'annonce aucun nom, la rangée ne s'affiche pas, et tout se tape comme avant. La pile de correctifs reste à quatorze.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
