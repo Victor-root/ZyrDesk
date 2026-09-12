@@ -3117,6 +3117,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce qui est perdu, et c'est peu.** Une ligne de chasse coûte maintenant son `format!` même quand personne ne la lira. Elles sont rares et bornées ; et le prix de l'autre arrangement était trois soirées à chercher une ligne qui n'était jamais écrite.
 
+## D192. Les rapports du pavé s'écrivent tels quels plutôt que d'être supposés (2026-09-12, pendant M6)
+
+**Deux suppositions, deux erreurs.** Les gestes à trois doigts ne sont jamais reconnus. D'abord j'ai cru que ce pavé tenait tous ses doigts dans un seul rapport, et chaque trame était rendue avec un doigt de trop ou de moins. Puis j'ai cru savoir comment il découpe une trame entre plusieurs rapports, et la correction n'a rien changé : le journal montre toujours les mêmes 3, 1, 2, 3 qui se suivent, toujours 774 trames à trois doigts pour zéro geste.
+
+**Une troisième supposition n'a aucune raison d'être meilleure.** Ce qui manque n'est pas une idée de plus sur la façon dont ce matériel parle, c'est ce qu'il dit. Les quarante premiers rapports d'une lecture sont donc recopiés au journal tels quels, en octets, avec à côté ce que l'analyseur du système en tire : le nombre de doigts que le rapport annonce, les emplacements qu'il reconnaît comme posés et où, puis l'état de la trame après coup.
+
+**Écrits avant que la trame soit rendue, pas après.** Un rapport qui ne finit pas une trame ne rend rien, et ce sont précisément ceux-là qui disent comment elle est découpée : ne garder que les trames entières, c'était encore regarder le résultat de la supposition plutôt que la matière.
+
+**Bornés à quarante, et remis à zéro à chaque lecture.** Assez pour une main qui se pose, glisse et se relève ; le pavé en envoie une centaine par seconde, et un journal qui les prendrait tous ne se lirait pas.
+
+**Et la description du pavé, une fois.** Combien d'emplacements de doigt il déclare et sur quelles règles il compte : c'est ce nombre qui décide s'il découpe ses trames ou non, et il n'avait jamais été écrit nulle part.
+
+**Ce que cela coûte et ce que cela vaut.** Quelques dizaines de lignes au début de chaque lecture, sous `touchpad` comme le reste. En face : trois tentatives à l'aveugle, chacune payée d'une compilation, d'une réinstallation et d'une soirée.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

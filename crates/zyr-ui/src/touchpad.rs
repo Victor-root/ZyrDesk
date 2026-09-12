@@ -737,7 +737,21 @@ mod counted {
     /// Combien de doigts la dernière trame portait, pour n'écrire une
     /// ligne qu'au changement.
     pub static FINGERS: AtomicU32 = AtomicU32::new(0);
+    /// Combien de rapports bruts ont déjà été écrits tels quels depuis le
+    /// début de cette lecture.
+    pub static REPORTS: AtomicU32 = AtomicU32::new(0);
 }
+
+/// Combien de rapports bruts sont recopiés au journal au début d'une
+/// lecture.
+///
+/// Assez pour couvrir une main qui se pose, glisse et se relève, et pas un
+/// de plus : le pavé en envoie une centaine par seconde, et un journal qui
+/// les prendrait tous ne se lirait pas. Ce qui s'y cherche est comment ce
+/// pavé-là découpe une trame entre ses rapports, et cela se voit sur les
+/// premiers ou ne se voit pas.
+#[cfg(windows)]
+const REPORTS_WRITTEN_DOWN: u32 = 40;
 
 /// Reads the pad for as long as it is wanted, and says whether the
 /// reading stands.
@@ -776,6 +790,7 @@ pub fn read_the_pad(wanted: bool) -> bool {
     counted::FRAMES.store(0, Ordering::Relaxed);
     counted::THREES.store(0, Ordering::Relaxed);
     counted::GESTURES.store(0, Ordering::Relaxed);
+    counted::REPORTS.store(0, Ordering::Relaxed);
     *HAND.lock().expect("lecture du pavé") = Reading::new();
     *FRAME.lock().expect("trame du pavé") = Frame::new();
     note(if taken {
@@ -1131,12 +1146,23 @@ fn described(device: windows_sys::Win32::Foundation::HANDLE) -> Option<Pad> {
     if fingers.is_empty() {
         return None;
     }
+    let (across, down) = (across?, down?);
+    // Une seule fois par pavé, et c'est la première chose qu'une chasse a
+    // besoin de savoir : combien de doigts ce pavé sait décrire d'un coup,
+    // puisque c'est ce nombre qui décide s'il découpe une trame ou non.
+    hunted(|| {
+        format!(
+            "pavé décrit : {} emplacement(s) de doigt {fingers:?}, \
+             en largeur {across:?}, en hauteur {down:?}",
+            fingers.len()
+        )
+    });
     Some(Pad {
         device: device as isize,
         preparsed,
         fingers,
-        across: across?,
-        down: down?,
+        across,
+        down,
     })
 }
 
@@ -1226,6 +1252,20 @@ impl Frame {
 
     /// Adds one report, and hands back the frame when it is whole.
     fn gathering(&mut self, pad: &Pad, report: &mut [u8]) -> Option<(u32, i32, i32)> {
+        use std::sync::atomic::Ordering;
+
+        // Les premiers rapports d'une lecture sont recopiés au journal tels
+        // quels, avec ce que l'analyseur du système en tire. Deux fois de
+        // suite j'ai supposé comment ce pavé découpe une trame entre
+        // plusieurs rapports, deux fois de suite je me suis trompé : ce qui
+        // manque n'est pas une idée de plus mais ce que le pavé envoie
+        // vraiment.
+        let written = counted::REPORTS.load(Ordering::Relaxed);
+        let writing = written < REPORTS_WRITTEN_DOWN;
+        if writing {
+            counted::REPORTS.store(written + 1, Ordering::Relaxed);
+        }
+
         let said = how_many_fingers(pad, report);
         // A count announced is what the start of a frame looks like: only
         // the first report of one carries it. It also rescues a frame
@@ -1246,10 +1286,15 @@ impl Frame {
             self.told = true;
         }
 
+        let mut posed = String::new();
         for finger in &pad.fingers {
             let Some((across, down)) = a_finger(pad, *finger, report) else {
                 continue;
             };
+            if writing {
+                use std::fmt::Write;
+                let _ = write!(posed, " n°{finger} en {across} sur {down},");
+            }
             self.seen += 1;
             self.across += i64::from(across);
             self.down += i64::from(down);
@@ -1267,6 +1312,27 @@ impl Frame {
         if !self.told {
             self.wanted = self.seen;
         }
+        // Avant le renvoi, pour que les rapports qui ne finissent pas une
+        // trame s'écrivent aussi : ce sont eux qui disent comment elle est
+        // découpée.
+        if writing {
+            hunted(|| {
+                format!(
+                    "rapport {written} de {} octets : {} ; le pavé annonce {} ; \
+                     doigts posés :{} ; trame : {} voulu(s), {} vu(s), annoncée : {}",
+                    report.len(),
+                    as_it_came(report),
+                    match said {
+                        Some(how_many) => how_many.to_string(),
+                        None => "rien".to_owned(),
+                    },
+                    if posed.is_empty() { " aucun" } else { &posed },
+                    self.wanted,
+                    self.seen,
+                    self.told,
+                )
+            });
+        }
         if self.seen < self.wanted {
             return None;
         }
@@ -1283,6 +1349,21 @@ impl Frame {
         *self = Self::new();
         Some(whole)
     }
+}
+
+/// One report exactly as the pad sent it.
+///
+/// For a hunt and for nothing else, and for the one question the parsed
+/// view cannot answer: whether what this pad sends is what the code
+/// believes it sends.
+#[cfg(windows)]
+fn as_it_came(report: &[u8]) -> String {
+    use std::fmt::Write;
+
+    report.iter().fold(String::new(), |mut out, byte| {
+        let _ = write!(out, "{byte:02x}");
+        out
+    })
 }
 
 /// How many fingers the pad says are on it, `None` when this report does
