@@ -54,6 +54,21 @@ use zyr_proto::clipboard::{Clip, Listing};
 pub use board::Attending;
 pub use files::MOST_FILES;
 
+/// How long a paste waits for its next bytes before it is given up as not
+/// going to finish.
+///
+/// Generous, because what is being waited on is a network and a person:
+/// the first bytes cannot start moving until the service has noticed the
+/// paste, and a link that stalls for half a minute is a link that may
+/// well come back. Past this, Windows is told the copy failed, which is
+/// far better than a copy dialog that never ends.
+///
+/// Said here rather than beside the waiting, because it is not only the
+/// waiting's business: whatever holds the bytes coming in has to hold
+/// them for exactly as long, or one of the two gives up on a paste the
+/// other is still serving.
+pub const PATIENCE: Duration = Duration::from_secs(60);
+
 /// What a clipboard was found to hold.
 ///
 /// Two things and not one, because files are not like the rest. What

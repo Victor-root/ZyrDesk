@@ -54,15 +54,7 @@ use zyr_proto::clipboard::{Listed, Listing};
 
 use crate::Trouble;
 
-/// How long a file's next bytes are waited for before the paste is given
-/// up as not going to finish.
-///
-/// Generous, because what is being waited on is a network and a person:
-/// the first bytes cannot start moving until the service has noticed the
-/// paste, and a link that stalls for half a minute is a link that may
-/// well come back. Past this, Windows is told the copy failed, which is
-/// far better than a copy dialog that never ends.
-const PATIENCE: Duration = Duration::from_secs(60);
+use crate::PATIENCE;
 
 /// How often the file is looked at again while its bytes are arriving.
 const LOOK_AGAIN: Duration = Duration::from_millis(40);

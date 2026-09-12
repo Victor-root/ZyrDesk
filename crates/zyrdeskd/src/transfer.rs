@@ -22,9 +22,12 @@
 //! itself would be a product deciding something that was never asked of
 //! it.
 //!
-//! The folder goes when the session goes. What was pasted is somewhere
-//! else by then, Windows having copied it out, and what was not pasted is
-//! a transfer nobody finished.
+//! The folder goes when the paste is over, and the paste is over when
+//! nothing has come for it in a while. Not when the session goes: a link
+//! that blinks closes one way and opens another a moment later, and a
+//! transfer tied to the first would be four gigabytes thrown away at
+//! eighty per cent for a hiccup. What is kept meanwhile is exactly what
+//! lets the next way carry on from the piece that was reached.
 
 // Outside Windows nothing calls this module: the service does not exist
 // there. Its logic has nothing platform-specific about it and stays
@@ -73,6 +76,13 @@ struct Coming {
     at: usize,
     where_they_land: PathBuf,
     since: Instant,
+    /// When a piece last landed.
+    ///
+    /// What says whether anybody is still serving this paste. The session
+    /// that started it is not the answer: a link that blinks closes the
+    /// way and opens another, and a transfer tied to the first would be
+    /// four gigabytes thrown away for a hiccup.
+    last_piece: Instant,
     /// What was last said out loud about it, so that a line is written
     /// when it starts, when it ends, and at each tenth of the way, and
     /// not four times a second.
@@ -118,6 +128,7 @@ pub fn coming_in(stamp: Stamp, listed: &Listing, log: &Log) -> Result<(), String
         at: 0,
         where_they_land,
         since: Instant::now(),
+        last_piece: Instant::now(),
         said: 0,
         // A hundred and one, which no hundredth ever is: the first piece
         // to land is what draws the bar, and nought would have it look
@@ -184,6 +195,7 @@ pub fn take(given: &Given, log: &Log) -> Result<bool, String> {
         return Err(refused);
     }
     coming.done[rank] = given.from + given.bytes.len() as u64;
+    coming.last_piece = Instant::now();
     // A piece shorter than one asked for is the end of that file, and an
     // empty one is a file that was already whole: both move on, and
     // neither is a fault. Without the second, a file whose weight changed
@@ -227,11 +239,33 @@ fn reached(coming: &Coming) -> HowFar {
     }
 }
 
+/// Whether a paste coming in here may still be served.
+///
+/// A transfer is under way and its last piece is recent enough that
+/// something is plainly still sending. This is what outlives a session:
+/// a link that blinks closes one way and opens another a moment later,
+/// and everything about the paste, the bytes already written and the
+/// place kept on the clipboard, is worth holding across that gap rather
+/// than throwing four gigabytes away for a hiccup.
+///
+/// The same patience as the one Windows is made to wait, read from
+/// there rather than written again here: whoever holds the bytes and
+/// whoever waits for them must give up at the same moment, or one of the
+/// two is serving a paste the other has already abandoned.
+pub fn still_coming() -> bool {
+    COMING
+        .lock()
+        .expect("transfert en cours")
+        .as_ref()
+        .is_some_and(|coming| coming.last_piece.elapsed() < zyr_clipboard::PATIENCE)
+}
+
 /// Drops whatever was on its way and takes the folder with it.
 ///
-/// Called when the session goes. What was pasted is somewhere else by
-/// then, Windows having copied it out of what this product handed it, and
-/// what was not pasted is a transfer nobody finished.
+/// Called when the session goes and nothing is coming any more. What was
+/// pasted is somewhere else by then, Windows having copied it out of what
+/// this product handed it, and what was not pasted is a transfer nobody
+/// finished.
 pub fn forget(log: &Log) {
     let log = &log.about(TAG);
     let mut held = COMING.lock().expect("transfert en cours");
@@ -443,6 +477,34 @@ mod tests {
         assert_eq!(what_is_still_wanted(), None);
 
         forget(&log);
+        std::fs::remove_dir_all(&folder).ok();
+    }
+
+    #[test]
+    fn un_transfert_qui_bouge_encore_survit_a_la_session_qui_l_a_ouvert() {
+        // Une liaison qui cligne ferme une voie et en ouvre une autre.
+        // Un transfert accroché à la première, ce sont quatre gigaoctets
+        // jetés à quatre-vingts pour cent pour un hoquet : ce qui décide
+        // est le dernier morceau reçu, jamais la session.
+        let (log, folder) = a_log("hoquet");
+        let whole = A_PIECE as u64 + 3;
+        let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
+
+        assert!(!still_coming(), "rien ne vient encore");
+        coming_in(a_copy("hoquet"), &listed, &log).unwrap();
+        assert!(still_coming(), "un transfert qui vient d'ouvrir attend");
+
+        take(&given(0, 0, vec![0u8; A_PIECE]), &log).unwrap();
+        assert!(still_coming());
+
+        // Sans nouvelle depuis plus longtemps que ce que Windows attend :
+        // plus personne ne sert ce coller, et le tenir plus longtemps
+        // serait tenir un presse-papiers pour rien.
+        COMING.lock().unwrap().as_mut().unwrap().last_piece -= zyr_clipboard::PATIENCE;
+        assert!(!still_coming());
+
+        forget(&log);
+        assert!(!still_coming());
         std::fs::remove_dir_all(&folder).ok();
     }
 

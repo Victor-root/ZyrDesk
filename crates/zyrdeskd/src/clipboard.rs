@@ -316,7 +316,16 @@ fn keep_a_helper(log: Log) {
         log.write("a session is sharing this computer's clipboard");
         let mut started: Option<Instant> = None;
         let mut refused = false;
-        while !nobody_is_asking() {
+        // A paste still being served keeps all of this alive past the
+        // session that started it. Everything below hangs together: the
+        // helper standing in for the far computer's files, the mark that
+        // keeps it standing, the bytes already written down, and Windows
+        // waiting on its copy. Ending here on the session alone would
+        // take all four away four seconds after a link blinked, and four
+        // gigabytes at eighty per cent with it. A session that comes back
+        // during that time is simply somebody asking again, and the paste
+        // carries on from the piece it had reached.
+        while !nobody_is_asking() || crate::transfer::still_coming() {
             // Not while one of them is holding the far computer's files.
             // That one stays for as long as they are on the clipboard,
             // which can be minutes, and a second beside it would read a

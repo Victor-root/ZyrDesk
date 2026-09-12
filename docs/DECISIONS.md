@@ -3037,6 +3037,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que ça ne change pas.** Rien du dialecte, rien du rythme : le coup à vide se frappe au pas du presse-papiers, quatre fois par seconde, et seulement tant que des fichiers sont posés sur ce presse-papiers-ci. Un morceau à la fois dans chaque sens, comme avant. La pile de correctifs reste à quatorze.
 
+## D187. Un transfert appartient au coller, pas à la session (2026-09-12, pendant M6)
+
+**Le relevé.** Quatre gigaoctets, quatre-vingts pour cent, puis « erreur non spécifiée » dans la fenêtre de copie de Windows. Et le journal, sous `tag:files`, donnait la suite exacte : treize mégaoctets par seconde pendant cinq minutes sans un accroc, puis, sept secondes après la dernière tranche, « ce qui arrivait s'en va avec la session ».
+
+**C'était vrai à la lettre.** Quatre choses tenaient ensemble et s'arrêtaient ensemble : les octets déjà écrits, le dossier qui les reçoit, la place tenue sur le presse-papiers pour les fichiers d'en face, et Windows qui attend sa copie. Toutes les quatre partaient quatre secondes après la dernière question du presse-papiers, c'est-à-dire quatre secondes après que la voie se soit tue. Une liaison qui cligne ferme une voie et en ouvre une autre un instant plus tard ; à ce moment-là tout était déjà jeté.
+
+**Ce qui décide est le dernier morceau reçu.** Pas la session, qui n'est qu'un des moyens par lesquels les octets arrivent. Tant qu'un coller est encore servi, tout ce qui le sert reste en place. Une session qui revient pendant ce temps-là n'est rien de plus que quelqu'un qui redemande, et le coller repart du morceau atteint : le transfert savait déjà reprendre là où il en était, puisqu'il tient pour chaque fichier ce qui en est écrit. Il n'y avait rien à ajouter, seulement quelque chose à cesser de détruire.
+
+**Une seule patience pour les deux bouts.** Celle qu'on fait subir à Windows, lue de là plutôt que réécrite ici. Celui qui tient les octets et celui qui les attend doivent renoncer au même instant : plus court d'un côté, on jette un coller que l'autre sert encore ; plus long, on tient un presse-papiers pour une copie que Windows a déjà abandonnée.
+
+**Ce que ça ne change pas.** Rien du rythme, rien du dialecte, rien de ce qui traverse. Une minute sans un octet reste une minute de trop et le coller s'arrête, en disant où il en était. La pile de correctifs reste à quatorze.
+
+**Ce que ça ne dit toujours pas.** Pourquoi la voie s'est tue à ce moment-là. Le relevé trié sur les fichiers ne porte que les fichiers ; la réponse est sous les étiquettes de la voie et de la session, et c'est le prochain relevé qui la donnera.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
