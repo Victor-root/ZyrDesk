@@ -3193,6 +3193,22 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et rien n'est repris à personne.** Un clavier que la personne a mis sur la session elle-même n'a pas été pris ici et n'est donc pas rendu ici. Il n'y a que ce que cet interrupteur a jeté qui revienne avec lui.
 
+## D198. Rien ne tient une touche enfoncée, et [D196](#d196-le-sélecteur-de-fenêtres-reste-ouvert-tant-que-la-main-glisse-2026-09-12-pendant-m6) et [D197](#d197-le-pavé-emmène-le-clavier-avec-lui-2026-09-12-pendant-m6) sont annulées (2026-09-12, pendant M6)
+
+**Ce qui est arrivé.** Touche Windows bloquée en position enfoncée, tout ce qui se tape ensuite ouvre un raccourci. Pour la deuxième fois de la journée, une touche coincée sur cette machine.
+
+**Ce que le relevé dit, et il est sans appel.** L'étiquette `touchpad` n'apparaît pas une fois : le pavé n'a pas été lu de toute la session. Aucun geste, aucun Alt enfoncé, rien de D196 n'a tourné. Ce n'est pas là que ça s'est cassé.
+
+**Où ça s'est cassé.** Le moteur, côté touches système : il prend une touche à l'aller, l'envoie à l'ordinateur d'en face et l'avale ici. Le compteur écrit quatre appuis portés là-bas pour trois relâchements. La touche Windows est donc restée enfoncée sur l'ordinateur distant, et c'est le seul endroit où quelque chose peut rester enfoncé dans cette affaire. Le chemin est celui que l'interrupteur « Clavier » ouvre, mis sur « Immersif ».
+
+**Et D197 mettait cet interrupteur toute seule.** Jeter automatiquement celui-là, c'était infliger ce défaut à chaque fois que quelqu'un donne le pavé à la session, sans qu'il l'ait demandé ni sache pourquoi. Annulée.
+
+**D196 est annulée aussi, et pas parce qu'elle est coupable.** Elle tenait Alt enfoncé entre deux trames, ce qui est la seule chose de ce genre que ce programme ait jamais faite. Elle avait ses trois sorties, son filet à l'arrêt de la lecture, son test ; et elle n'a pas tourné une seule fois ce soir-là. Mais Alt n'est même pas dans la liste des touches que le moteur porte de l'autre côté : le maintenir ne pouvait donc pas atteindre l'ordinateur d'en face, et tout ce qu'elle apportait était un risque, celui-là même dont le reste de cette page parle. Le balayage retourne à un Alt+Tab entier, qui clignote et qui ne va nulle part, en attendant mieux.
+
+**La règle qui reste.** Ce programme ne laisse aucune touche enfoncée entre deux événements, quelles que soient les précautions prises autour. Une touche coincée se paie en mots de passe perdus et en après-midi entiers, et rien de ce qu'un geste apporte ne vaut ce prix-là.
+
+**Ce qui reste à réparer, et ce n'est pas ici.** Une touche portée à l'ordinateur d'en face doit être relâchée là-bas quand la session perd le clavier ou s'arrête, sans quoi elle y reste enfoncée. C'est dans le moteur, ce qui demande de le recompiler.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

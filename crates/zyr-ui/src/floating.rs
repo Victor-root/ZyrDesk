@@ -1379,7 +1379,6 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
         state.touchpad.store(false, Ordering::Relaxed);
         crate::touchpad::read_the_pad(false);
         crate::settings::remember_touchpad_gestures(false).await;
-        give_the_system_keys_back(app).await;
         return Ok(());
     }
     if crate::touchpad::what_windows_still_holds().is_none() {
@@ -1425,59 +1424,18 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     // middle of a session, and the side it is left on is the side the
     // next session should open on.
     crate::settings::remember_touchpad_gestures(true).await;
-    take_the_system_keys(app).await;
+    // The slide travels as an Alt+Tab typed by hand, so it travels by the
+    // same road and under the same condition. Said rather than refused:
+    // the tap is a click and crosses whatever the keyboard is doing, so
+    // half of what was asked for works from this moment.
+    if !keys_to_the_session(app) {
+        note(
+            "gestes du pavé tactile : le glissement à trois doigts change de fenêtre \
+             sur l'ordinateur d'en face seulement quand le clavier lui appartient \
+             (ligne « Clavier », côté « Immersif »)",
+        );
+    }
     Ok(())
-}
-
-/// Whether the keyboard switch was thrown here, for the pad's sake.
-///
-/// So it is given back with the pad and not otherwise: a keyboard the
-/// person put on the session themselves is theirs, and taking it off them
-/// because a gesture happens to be over would be answering a question
-/// nobody asked.
-static KEYS_FOR_THE_PAD: AtomicBool = AtomicBool::new(false);
-
-/// Gives the session the keyboard the pad's slide needs.
-///
-/// A three-finger slide is an Alt+Tab typed on this computer, and an
-/// Alt+Tab typed here only ever reaches the far computer while the engine
-/// is taking the system keys. Left to the person, that is a second switch
-/// to find and throw before the first one does what it says; and what was
-/// asked for was one switch and nothing else to do, which is the same
-/// thing this one already does with what Windows held.
-///
-/// Nothing when the keyboard is already on the session: it was not taken
-/// here, so it is not given back here either.
-async fn take_the_system_keys(app: &App) {
-    if keys_to_the_session(app) {
-        return;
-    }
-    if let Err(refus) = throw_the_system_keys(app).await {
-        note(&format!(
-            "gestes du pavé tactile : le clavier n'a pas pu passer à la session, \
-             le glissement à trois doigts changera de fenêtre ici. {refus}"
-        ));
-        return;
-    }
-    KEYS_FOR_THE_PAD.store(true, Ordering::Relaxed);
-    note(
-        "gestes du pavé tactile : le clavier passe à la session avec eux, \
-         sans quoi le glissement à trois doigts changerait de fenêtre ici",
-    );
-}
-
-/// And gives it back, the pad being given back.
-async fn give_the_system_keys_back(app: &App) {
-    if !KEYS_FOR_THE_PAD.swap(false, Ordering::Relaxed) || !keys_to_the_session(app) {
-        return;
-    }
-    if let Err(refus) = throw_the_system_keys(app).await {
-        note(&format!(
-            "gestes du pavé tactile : le clavier n'a pas pu revenir à cet ordinateur. {refus}"
-        ));
-        return;
-    }
-    note("gestes du pavé tactile : le clavier revient à cet ordinateur avec eux");
 }
 
 /// Ce qu'un geste du pavé fait de la session.
@@ -1504,10 +1462,6 @@ pub fn the_pad_said(gesture: crate::touchpad::Gesture) {
         // et une main n'apprend pas deux sens pour un seul geste.
         Gesture::Rightwards => the_window_after(false),
         Gesture::Leftwards => the_window_after(true),
-        Gesture::Chosen => {
-            let_the_windows_go();
-            true
-        }
     };
     if !done {
         note(&format!("{gesture} : Windows a refusé de le transmettre"));
@@ -1535,10 +1489,6 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
         Act::Touchpad => return the_pad_to_the_session(app).await,
         Act::Clipboard => return share_the_clipboard(app).await,
         Act::Voyants => return always_show_the_voyants(app),
-        // Séparé pour que le pavé puisse le jeter lui-même : son
-        // glissement est un Alt+Tab, et un Alt+Tab ne traverse que si le
-        // clavier est à la session.
-        Act::SystemKeys => return throw_the_system_keys(app).await,
         _ => {}
     }
 
@@ -1565,28 +1515,18 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
                 .pointer_held
                 .fetch_xor(true, Ordering::Relaxed);
         }
+        Act::SystemKeys => {
+            let theirs = !app
+                .floating()
+                .system_keys
+                .fetch_xor(true, Ordering::Relaxed);
+            // Remembered, unlike the mouse: this one is thrown back and
+            // forth in the middle of a session, and the side it is left on
+            // is the side the next session should open on.
+            crate::settings::remember_system_keys(theirs).await;
+        }
         _ => {}
     }
-    Ok(())
-}
-
-/// Throws the switch that says which of the two computers Alt+Tab, Échap
-/// and the Windows key belong to.
-///
-/// Its own function because the touchpad throws it too: a three-finger
-/// slide is an Alt+Tab typed here, and an Alt+Tab typed here only reaches
-/// the far computer while the engine is taking the system keys.
-async fn throw_the_system_keys(app: &App) -> Result<(), String> {
-    let process = the_player(app)?;
-    type_at_the_picture(app, Act::SystemKeys, process).await?;
-    let theirs = !app
-        .floating()
-        .system_keys
-        .fetch_xor(true, Ordering::Relaxed);
-    // Remembered, unlike the mouse: this one is thrown back and forth in
-    // the middle of a session, and the side it is left on is the side the
-    // next session should open on.
-    crate::settings::remember_system_keys(theirs).await;
     Ok(())
 }
 
@@ -2548,22 +2488,7 @@ fn play_or_pause() -> bool {
     false
 }
 
-/// Whether a slide is holding the window switcher open.
-///
-/// True means Alt is held down on this computer by us and by nobody else,
-/// so every way out of a slide has to come back through
-/// [`let_the_windows_go`]. A key left pressed behind is the worst thing
-/// this program could leave on a machine.
-static SWITCHING: AtomicBool = AtomicBool::new(false);
-
 /// Types Alt+Tab, or Alt+Maj+Tab to go the other way.
-///
-/// Alt goes down at the first step of a slide and stays down until the
-/// hand lets go. That is what holds the switcher open and what makes each
-/// further step move the choice on: tapping the whole of Alt+Tab at every
-/// step switches to the last window and back again, which is a switcher
-/// blinking and a hand getting nowhere. A hand doing this on a keyboard
-/// does not let go of Alt between two Tabs either.
 ///
 /// Typed here rather than sent anywhere, and that is the whole of how it
 /// crosses: Windows keeps Alt+Tab for itself on this computer, and the
@@ -2579,10 +2504,7 @@ fn the_window_after(back: bool) -> bool {
         Key::Place(place::SHIFT),
         Key::Place(place::TAB),
     );
-    let mut keys = Vec::new();
-    if !SWITCHING.swap(true, Ordering::Relaxed) {
-        keys.push((alt, false));
-    }
+    let mut keys = vec![(alt, false)];
     if back {
         keys.push((shift, false));
     }
@@ -2591,37 +2513,12 @@ fn the_window_after(back: bool) -> bool {
     if back {
         keys.push((shift, true));
     }
+    keys.push((alt, true));
     typed(&keys)
 }
 
 #[cfg(not(windows))]
 fn the_window_after(_back: bool) -> bool {
-    false
-}
-
-/// Lets go of the switcher a slide was holding open, the hand having
-/// chosen.
-///
-/// Asked again for what is already the case costs nothing, which is what
-/// lets every end of a slide say it without knowing what the others did:
-/// the hand leaving the pad, a fourth finger joining, a fifth, and the
-/// reading being stopped for any reason at all.
-pub fn let_the_windows_go() {
-    if !SWITCHING.swap(false, Ordering::Relaxed) {
-        return;
-    }
-    if !alt_is_let_go() {
-        note("le sélecteur de fenêtres : Windows a refusé de rendre Alt");
-    }
-}
-
-#[cfg(windows)]
-fn alt_is_let_go() -> bool {
-    typed(&[(Key::Place(place::ALT), true)])
-}
-
-#[cfg(not(windows))]
-fn alt_is_let_go() -> bool {
     false
 }
 
