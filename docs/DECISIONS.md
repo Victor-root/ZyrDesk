@@ -3179,6 +3179,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et cette fin n'est pas comptée comme un geste.** C'est le même qui se termine : annoncée, elle doublerait chaque glissement dans le compte comme dans le journal. Elle s'écrit en voix de chasse, parce que c'est elle qui rend la touche.
 
+## D197. Le pavé emmène le clavier avec lui (2026-09-12, pendant M6)
+
+**Le geste marche et change la mauvaise fenêtre.** Le balayage est reconnu, le sélecteur reste ouvert, le choix se fait ; sur cet ordinateur-ci et non sur celui d'en face.
+
+**Ce n'était pas un défaut, c'était un autre interrupteur.** Un glissement à trois doigts est un Alt+Tab tapé ici, et Windows garde Alt+Tab pour lui : le seul moment où il traverse est celui où le moteur prend les touches système, c'est-à-dire la ligne « Clavier » sur « Immersif ». Sur « Partagé », l'Alt+Tab reste ici, et c'est exactement ce que cette ligne-là promet. Le code le savait déjà et l'écrivait au journal, sous une étiquette que personne ne lit au moment où il faudrait.
+
+**Une phrase au journal n'est pas un outil.** C'est la même leçon que [D191](#d191-la-chasse-se-décide-au-démarrage-pas-à-la-compilation-2026-09-12-pendant-m6) : un avertissement qui demande d'aller le chercher ailleurs que là où l'on regarde n'a jamais servi une seule fois.
+
+**Alors le pavé emmène le clavier.** Donner le pavé à la session lui donne aussi les touches système, et le lui reprendre les rend. C'est le même contrat que [D190](#d190-zyrdesk-prend-les-gestes-à-windows-lui-même-et-les-lui-rend-2026-09-12-pendant-m6) pour les gestes que Windows répondait lui-même : cet interrupteur prend ce dont il a besoin et le rend. Ce qui avait été demandé est un seul interrupteur et strictement rien d'autre à faire ; deux interrupteurs dont l'un ne tient sa promesse que si l'autre est mis, c'est exactement ce qui avait été refusé.
+
+**Rien n'est caché.** La ligne « Clavier » de la carte se relit après chaque bascule et montre le nouveau côté aussitôt, et le journal dit ce qui a été pris et ce qui a été rendu.
+
+**Et rien n'est repris à personne.** Un clavier que la personne a mis sur la session elle-même n'a pas été pris ici et n'est donc pas rendu ici. Il n'y a que ce que cet interrupteur a jeté qui revienne avec lui.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

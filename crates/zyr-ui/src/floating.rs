@@ -1379,6 +1379,7 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
         state.touchpad.store(false, Ordering::Relaxed);
         crate::touchpad::read_the_pad(false);
         crate::settings::remember_touchpad_gestures(false).await;
+        give_the_system_keys_back(app).await;
         return Ok(());
     }
     if crate::touchpad::what_windows_still_holds().is_none() {
@@ -1424,18 +1425,59 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     // middle of a session, and the side it is left on is the side the
     // next session should open on.
     crate::settings::remember_touchpad_gestures(true).await;
-    // The slide travels as an Alt+Tab typed by hand, so it travels by the
-    // same road and under the same condition. Said rather than refused:
-    // the tap is a click and crosses whatever the keyboard is doing, so
-    // half of what was asked for works from this moment.
-    if !keys_to_the_session(app) {
-        note(
-            "gestes du pavé tactile : le glissement à trois doigts change de fenêtre \
-             sur l'ordinateur d'en face seulement quand le clavier lui appartient \
-             (ligne « Clavier », côté « Immersif »)",
-        );
-    }
+    take_the_system_keys(app).await;
     Ok(())
+}
+
+/// Whether the keyboard switch was thrown here, for the pad's sake.
+///
+/// So it is given back with the pad and not otherwise: a keyboard the
+/// person put on the session themselves is theirs, and taking it off them
+/// because a gesture happens to be over would be answering a question
+/// nobody asked.
+static KEYS_FOR_THE_PAD: AtomicBool = AtomicBool::new(false);
+
+/// Gives the session the keyboard the pad's slide needs.
+///
+/// A three-finger slide is an Alt+Tab typed on this computer, and an
+/// Alt+Tab typed here only ever reaches the far computer while the engine
+/// is taking the system keys. Left to the person, that is a second switch
+/// to find and throw before the first one does what it says; and what was
+/// asked for was one switch and nothing else to do, which is the same
+/// thing this one already does with what Windows held.
+///
+/// Nothing when the keyboard is already on the session: it was not taken
+/// here, so it is not given back here either.
+async fn take_the_system_keys(app: &App) {
+    if keys_to_the_session(app) {
+        return;
+    }
+    if let Err(refus) = throw_the_system_keys(app).await {
+        note(&format!(
+            "gestes du pavé tactile : le clavier n'a pas pu passer à la session, \
+             le glissement à trois doigts changera de fenêtre ici. {refus}"
+        ));
+        return;
+    }
+    KEYS_FOR_THE_PAD.store(true, Ordering::Relaxed);
+    note(
+        "gestes du pavé tactile : le clavier passe à la session avec eux, \
+         sans quoi le glissement à trois doigts changerait de fenêtre ici",
+    );
+}
+
+/// And gives it back, the pad being given back.
+async fn give_the_system_keys_back(app: &App) {
+    if !KEYS_FOR_THE_PAD.swap(false, Ordering::Relaxed) || !keys_to_the_session(app) {
+        return;
+    }
+    if let Err(refus) = throw_the_system_keys(app).await {
+        note(&format!(
+            "gestes du pavé tactile : le clavier n'a pas pu revenir à cet ordinateur. {refus}"
+        ));
+        return;
+    }
+    note("gestes du pavé tactile : le clavier revient à cet ordinateur avec eux");
 }
 
 /// Ce qu'un geste du pavé fait de la session.
@@ -1493,6 +1535,10 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
         Act::Touchpad => return the_pad_to_the_session(app).await,
         Act::Clipboard => return share_the_clipboard(app).await,
         Act::Voyants => return always_show_the_voyants(app),
+        // Séparé pour que le pavé puisse le jeter lui-même : son
+        // glissement est un Alt+Tab, et un Alt+Tab ne traverse que si le
+        // clavier est à la session.
+        Act::SystemKeys => return throw_the_system_keys(app).await,
         _ => {}
     }
 
@@ -1519,18 +1565,28 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
                 .pointer_held
                 .fetch_xor(true, Ordering::Relaxed);
         }
-        Act::SystemKeys => {
-            let theirs = !app
-                .floating()
-                .system_keys
-                .fetch_xor(true, Ordering::Relaxed);
-            // Remembered, unlike the mouse: this one is thrown back and
-            // forth in the middle of a session, and the side it is left on
-            // is the side the next session should open on.
-            crate::settings::remember_system_keys(theirs).await;
-        }
         _ => {}
     }
+    Ok(())
+}
+
+/// Throws the switch that says which of the two computers Alt+Tab, Échap
+/// and the Windows key belong to.
+///
+/// Its own function because the touchpad throws it too: a three-finger
+/// slide is an Alt+Tab typed here, and an Alt+Tab typed here only reaches
+/// the far computer while the engine is taking the system keys.
+async fn throw_the_system_keys(app: &App) -> Result<(), String> {
+    let process = the_player(app)?;
+    type_at_the_picture(app, Act::SystemKeys, process).await?;
+    let theirs = !app
+        .floating()
+        .system_keys
+        .fetch_xor(true, Ordering::Relaxed);
+    // Remembered, unlike the mouse: this one is thrown back and forth in
+    // the middle of a session, and the side it is left on is the side the
+    // next session should open on.
+    crate::settings::remember_system_keys(theirs).await;
     Ok(())
 }
 
