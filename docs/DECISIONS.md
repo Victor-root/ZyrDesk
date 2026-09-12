@@ -3197,17 +3197,17 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce qui est arrivé.** Touche Windows bloquée en position enfoncée, tout ce qui se tape ensuite ouvre un raccourci. Pour la deuxième fois de la journée, une touche coincée sur cette machine.
 
-**Ce que le relevé dit, et il est sans appel.** L'étiquette `touchpad` n'apparaît pas une fois : le pavé n'a pas été lu de toute la session. Aucun geste, aucun Alt enfoncé, rien de D196 n'a tourné. Ce n'est pas là que ça s'est cassé.
+**Où, exactement.** Sur l'ordinateur d'en face, à l'intérieur de la session, et non sur le clavier qu'on a sous les doigts. Le pavé n'a pas servi de cette session-là, une souris était branchée ; aucun geste n'est donc en cause.
 
-**Où ça s'est cassé.** Le moteur, côté touches système : il prend une touche à l'aller, l'envoie à l'ordinateur d'en face et l'avale ici. Le compteur écrit quatre appuis portés là-bas pour trois relâchements. La touche Windows est donc restée enfoncée sur l'ordinateur distant, et c'est le seul endroit où quelque chose peut rester enfoncé dans cette affaire. Le chemin est celui que l'interrupteur « Clavier » ouvre, mis sur « Immersif ».
+**Ce que le moteur écrit.** Côté touches système, il prend une touche à l'aller, l'envoie à l'ordinateur d'en face et l'avale ici. Son compteur dit quatre appuis portés là-bas pour trois relâchements, et qu'il tenait encore la touche Windows gauche au moment de la dernière ligne. Puis le lien de commande est tombé avant la fin propre de la session. La touche est restée enfoncée là-bas. Le chemin est celui que l'interrupteur « Clavier » ouvre, mis sur « Immersif ».
 
-**Et D197 mettait cet interrupteur toute seule.** Jeter automatiquement celui-là, c'était infliger ce défaut à chaque fois que quelqu'un donne le pavé à la session, sans qu'il l'ait demandé ni sache pourquoi. Annulée.
+**Et D197 mettait cet interrupteur toute seule.** Jeter automatiquement celui-là, c'était infliger ce défaut à chaque fois que quelqu'un donne le pavé à la session, sans qu'il l'ait demandé ni sache pourquoi. Annulée tant que ce chemin peut laisser une touche derrière lui.
 
-**D196 est annulée aussi, et pas parce qu'elle est coupable.** Elle tenait Alt enfoncé entre deux trames, ce qui est la seule chose de ce genre que ce programme ait jamais faite. Elle avait ses trois sorties, son filet à l'arrêt de la lecture, son test ; et elle n'a pas tourné une seule fois ce soir-là. Mais Alt n'est même pas dans la liste des touches que le moteur porte de l'autre côté : le maintenir ne pouvait donc pas atteindre l'ordinateur d'en face, et tout ce qu'elle apportait était un risque, celui-là même dont le reste de cette page parle. Le balayage retourne à un Alt+Tab entier, qui clignote et qui ne va nulle part, en attendant mieux.
+**D196 est annulée aussi, et pas parce qu'elle est coupable.** Elle n'a pas tourné ce soir-là. Elle tenait Alt enfoncé entre deux trames, ce qui est la seule chose de ce genre que ce programme ait jamais faite, et un maintien pareil serait resté derrière lui de la même façon le jour où le lien tombe au mauvais moment. C'est une deuxième touche qui peut se coincer ajoutée pendant qu'on cherche pourquoi la première se coince. Le balayage retourne donc à un Alt+Tab entier, qui clignote et qui ne va nulle part, en attendant mieux.
 
 **La règle qui reste.** Ce programme ne laisse aucune touche enfoncée entre deux événements, quelles que soient les précautions prises autour. Une touche coincée se paie en mots de passe perdus et en après-midi entiers, et rien de ce qu'un geste apporte ne vaut ce prix-là.
 
-**Ce qui reste à réparer, et ce n'est pas ici.** Une touche portée à l'ordinateur d'en face doit être relâchée là-bas quand la session perd le clavier ou s'arrête, sans quoi elle y reste enfoncée. C'est dans le moteur, ce qui demande de le recompiler.
+**Ce qui reste à réparer, et ce n'est pas ici.** Le moteur rend bien ce qu'il tient quand le clavier s'en va, mais il le rend en posant un événement dans la file du jeu d'outils, qui n'est plus vidée quand la session se termine, et sur un lien qui vient de tomber. Il n'y a donc pas de dernier recours : ce qui est parti à l'aller ne revient pas toujours. C'est dans le moteur client, et de l'autre côté aussi, ce qui demande de recompiler les deux.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
