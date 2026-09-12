@@ -975,7 +975,7 @@ fn a_report_came_in(packet: *mut core::ffi::c_void) {
         // le pavé en envoie une centaine par seconde, et ce qui se lit
         // d'une main est le moment où elle se pose et celui où elle part.
         let before = counted::FINGERS.swap(fingers, Ordering::Relaxed);
-        let telling = before != fingers && zyr_proto::for_hunting();
+        let telling = before != fingers;
 
         let mut hand = HAND.lock().expect("lecture du pavé");
         // Avant et après, parce que le moment qui décide de tout est la
@@ -1193,6 +1193,14 @@ fn what_the_system_knows(device: windows_sys::Win32::Foundation::HANDLE) -> Opti
 #[derive(Clone, Copy, Debug)]
 struct Frame {
     wanted: u32,
+    /// Whether a report of this frame announced how many fingers it has.
+    ///
+    /// Only the first report of a frame carries a count; the ones that
+    /// bring the rest of the fingers say nothing. Without this, their
+    /// silence was taken for a count of its own, which cut every frame in
+    /// two and handed over a hand with the wrong number of fingers at the
+    /// wrong place.
+    told: bool,
     seen: u32,
     across: i64,
     down: i64,
@@ -1203,24 +1211,39 @@ impl Frame {
     const fn new() -> Self {
         Self {
             wanted: 0,
+            told: false,
             seen: 0,
             across: 0,
             down: 0,
         }
     }
 
+    /// Whether this frame is still short of the fingers it was announced
+    /// to have.
+    const fn waiting(&self) -> bool {
+        self.told && self.seen < self.wanted
+    }
+
     /// Adds one report, and hands back the frame when it is whole.
     fn gathering(&mut self, pad: &Pad, report: &mut [u8]) -> Option<(u32, i32, i32)> {
-        let told = how_many_fingers(pad, report);
-        // A frame begins when the one being put together has all its
-        // fingers, and again whenever a report announces a count of its
-        // own: only the first report of a frame carries one, so that is
-        // what a new frame looks like. Without the second half, a pad
-        // that announced more fingers than it ever sent would leave a
-        // frame open for the rest of the session.
-        if self.seen >= self.wanted || told.is_some_and(|how_many| how_many > 0) {
+        let said = how_many_fingers(pad, report);
+        // A count announced is what the start of a frame looks like: only
+        // the first report of one carries it. It also rescues a frame
+        // left open by a pad that announced more fingers than it ever
+        // sent, which would otherwise stay open for the session.
+        //
+        // Nought announced is two different things, and which one it is
+        // depends on whether a frame is still waiting: the last reports
+        // of a frame carry nought, and so does the hand leaving the pad.
+        let opens = match said {
+            Some(how_many) if how_many > 0 => true,
+            Some(_) => !self.waiting(),
+            None => false,
+        };
+        if opens {
             *self = Self::new();
-            self.wanted = told.unwrap_or(0);
+            self.wanted = said.unwrap_or(0);
+            self.told = true;
         }
 
         for finger in &pad.fingers {
@@ -1234,7 +1257,14 @@ impl Frame {
         // A pad that never says how many fingers it has is read one
         // report at a time, which is what a pad with room for all of them
         // at once comes to anyway.
-        if told.is_none() {
+        //
+        // Never for a frame that was announced. The reports carrying the
+        // rest of its fingers say nothing, and taking their silence for a
+        // count of their own was the whole of this: a frame of three was
+        // handed over as a frame of one, then of two, at the place of
+        // whichever finger happened to be in that report. Nothing moved
+        // where a hand had moved, and no gesture was ever recognised.
+        if !self.told {
             self.wanted = self.seen;
         }
         if self.seen < self.wanted {

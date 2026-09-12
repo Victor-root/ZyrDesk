@@ -406,9 +406,6 @@ enum Quoi {
     /// Un des noms que la page du journal porte, par son rang : coché, il
     /// s'ajoute à la boîte de tri, décoché il en part.
     Etiquette(usize),
-    /// Allume ou éteint les lignes que seule une chasse veut, pour tous
-    /// les programmes de ce produit sur cet ordinateur.
-    ToutNoter,
     Segment(Choisi, usize),
     Raccourci(Doing),
     /// Fermer le dialogue ouvert, quel qu'il soit.
@@ -2947,21 +2944,6 @@ impl Mise<'_> {
                 true,
             ));
         }
-        // Ce qui allume les lignes que seule une chasse veut. Ici parce
-        // qu'ici est l'endroit où l'on est déjà quand on en a besoin :
-        // demander d'aller poser un fichier à la main serait la même
-        // corvée qu'une compilation à part, autrement épelée.
-        let chasse = zyr_proto::for_hunting();
-        rangee.push((
-            "Tout noter".to_string(),
-            if chasse {
-                Sorte::Principal
-            } else {
-                Sorte::Discret
-            },
-            Quoi::ToutNoter,
-            true,
-        ));
         rangee.push((
             "Actualiser".to_string(),
             Sorte::Discret,
@@ -4656,26 +4638,6 @@ fn fait(app: &App, quoi: Quoi) {
         }
         Quoi::CopierJournal => copie_le_journal(app),
         Quoi::Etiquette(rang) => bascule_l_etiquette(app, rang),
-        Quoi::ToutNoter => {
-            let veut = !zyr_proto::for_hunting();
-            match zyr_proto::hunt(veut) {
-                // Relu tout de suite : la ligne de version en tête de la
-                // page dit dans quel état on est, donc elle change avec.
-                Ok(()) => {
-                    note(if veut {
-                        "tout est noté, y compris ce qui compte et mesure"
-                    } else {
-                        "seul ce que le produit dit de lui-même est noté"
-                    });
-                    relis_le_journal(app, Apres::Montrer);
-                }
-                Err(e) => annonce(
-                    app,
-                    &format!("ce réglage n'a pas pu être écrit : {e}"),
-                    true,
-                ),
-            }
-        }
         Quoi::ARegler(rang) => remedie(app, rang),
         Quoi::Voisin(rang) => lance_le_voisin(app, rang, false),
         Quoi::EnLocal(rang) => lance_le_voisin(app, rang, true),

@@ -3111,7 +3111,11 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Une leçon plus large que ce fichier.** Un outil de diagnostic qui demande autre chose que ce que la personne fait déjà n'est pas un outil de diagnostic. Le nôtre demandait une compilation différente ; il n'a donc jamais servi une seule fois, y compris pendant les trois soirées où il aurait tout changé.
 
-**Et la leçon s'appliquait encore une fois de trop.** « Pourquoi tu ne le mets pas dans le journal directement ? » Parce que j'avais remplacé « recompile autrement » par « va poser un fichier à la main », ce qui est la même corvée autrement épelée. L'interrupteur est donc dans l'écran du journal, où l'on est déjà quand on en a besoin, à côté du tri et de « Copier ». Le fichier reste, mais comme moyen et non comme geste : il est ce que la fenêtre écrit et ce que le service relit, parce que ce sont deux programmes et qu'un seul clic doit allumer les deux. Chacun le regarde de nouveau toutes les deux secondes, si bien que rien n'est à redémarrer ; entre deux regards la réponse est tenue, et une ligne qui ne s'écrit pas coûte un coup d'oeil à une horloge.
+**Et la leçon s'appliquait encore deux fois de trop.** D'abord un fichier à poser à la main, ce qui est la même corvée autrement épelée. Puis un bouton dans l'écran du journal, ce qui est encore un geste de plus. « Retire-moi ce bouton qui ne sert à rien, tout le debug tu le fous dans le log que je copierai, point. »
+
+**Il a raison, et la garde entière est retirée.** Tout est écrit, toujours. Ce que les deux voix décident n'est plus si une ligne existe mais comment on la retrouve : le tri les sépare après coup, par la lettre que chaque ligne porte, et `-level:debug` laisse la plomberie de côté sans que rien n'ait eu à être décidé d'avance. Le bruit que D182 voulait éviter est arrêté par le tri, qui n'existait pas encore quand D182 a été écrit. Il n'y a plus ni fichier, ni bouton, ni compilation à part.
+
+**Ce qui est perdu, et c'est peu.** Une ligne de chasse coûte maintenant son `format!` même quand personne ne la lira. Elles sont rares et bornées ; et le prix de l'autre arrangement était trois soirées à chercher une ligne qui n'était jamais écrite.
 
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 

@@ -631,15 +631,8 @@ fn said(what: &str) {
 }
 
 /// The same, in the voice only a hunt wants.
-///
-/// The journal is not even opened otherwise: a helper starts every few
-/// seconds for the whole of a session, and a file opened for a line
-/// nobody is going to write is a file opened for nothing.
 #[cfg(windows)]
 fn hunted(what: impl FnOnce() -> String) {
-    if !zyr_proto::for_hunting() {
-        return;
-    }
     if let Ok(log) = Log::open(&crate::service::log_path()) {
         log.about(TAG).debug(what);
     }

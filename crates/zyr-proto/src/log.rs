@@ -26,26 +26,25 @@
 //!
 //! # The two voices
 //!
-//! A line is written in one of two, and which one decides whether it is
-//! written at all while nothing is being hunted.
+//! Everything is written, always. What the two voices decide is how a
+//! line is found again, not whether it exists.
 //!
 //! [`Log::write`] is the product saying what it did, what it refused,
-//! what it found. It is there always, because it is what somebody sends
-//! when something goes wrong on their machine, and a product that
-//! explains itself only to its own author explains itself to nobody.
+//! what it found.
 //!
 //! [`Log::debug`] is what counts, measures, or narrates a piece of
 //! plumbing that worked. Twenty streams opening and closing cleanly, a
 //! socket going quiet for a second while two computers find each other:
-//! true, useful while hunting, and drowning everything else the rest of
-//! the time. It is not written the rest of the time, and the words are
-//! not even put together.
+//! true, and drowning everything else when one is looking for something
+//! else entirely.
 //!
-//! Which of the two states the product is in is decided when it starts
-//! and not when it is compiled. That was the first arrangement and it was
-//! wrong: whoever builds this product builds it one way, and a line only
-//! a second kind of build ever writes is a line that is never there on
-//! the evening it is wanted. See [`crate::for_hunting`].
+//! It was gated once, first on the kind of build and then on a file, and
+//! both were wrong for the same reason: a line that has to be turned on
+//! is a line that is not there on the evening it is wanted, and turning
+//! it on is a chore asked of somebody who is already stuck. The sifting
+//! is what separates the two now, by the letter each line carries, and it
+//! separates them after the fact rather than before: `-level:debug`
+//! leaves the plumbing out, and nothing had to be decided in advance.
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -180,9 +179,6 @@ impl Log {
     /// every turn of a loop for a file nobody will ever hold is still a
     /// cost.
     pub fn debug(&self, message: impl FnOnce() -> String) {
-        if !crate::for_hunting() {
-            return;
-        }
         self.said(HUNTS, &message());
     }
 
@@ -309,38 +305,22 @@ mod tests {
     }
 
     #[test]
-    fn ce_qui_est_pour_la_chasse_ne_s_ecrit_que_dans_la_version_qui_chasse() {
-        // Les deux voix dans le même fichier et dans l'ordre où les
-        // choses se sont passées : une chasse est justement le moment
-        // où on lit l'une contre l'autre. Et hors de cette version-là,
-        // la seconde n'existe pas, pas même sous la forme des mots qu'il
-        // aurait fallu assembler.
+    fn les_deux_voix_s_ecrivent_dans_l_ordre_ou_les_choses_se_sont_passees() {
+        // Les deux dans le même fichier et dans cet ordre-là : une chasse
+        // est justement le moment où l'on lit l'une contre l'autre, et
+        // c'est le tri qui les sépare après coup, par la lettre que
+        // chaque ligne porte.
         let path = fresh_path("voix");
         let log = Log::open(&path).unwrap();
 
         log.write("ce que le produit a fait");
-        let mut assembled = false;
-        log.debug(|| {
-            assembled = true;
-            "ce que seule une chasse veut".to_string()
-        });
+        log.debug(|| "ce que seule une chasse veut".to_string());
 
         let contents = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 2, "{contents}");
         assert!(lines[0].contains(&format!(" {SAYS} [")), "{}", lines[0]);
-
-        // Ce que la chasse est ou n'est pas se décide au démarrage, sur
-        // un fichier posé à côté du journal : l'essai se lit donc de la
-        // même façon dans les deux compilations, et ce qu'il vérifie est
-        // qu'une ligne de chasse coûte zéro tant qu'on ne chasse pas.
-        if crate::for_hunting() {
-            assert!(assembled, "à la chasse, les mots s'assemblent");
-            assert_eq!(lines.len(), 2);
-            assert!(lines[1].contains(&format!(" {HUNTS} [")), "{}", lines[1]);
-        } else {
-            assert!(!assembled, "les mots ont été assemblés pour rien");
-            assert_eq!(lines.len(), 1, "{contents}");
-        }
+        assert!(lines[1].contains(&format!(" {HUNTS} [")), "{}", lines[1]);
 
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
