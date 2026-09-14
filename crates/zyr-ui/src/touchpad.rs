@@ -583,6 +583,12 @@ fn set_a_setting(named: &str, value: u32) -> bool {
 /// has nothing to put back because nothing was taken.
 #[cfg(windows)]
 fn take_the_gestures() {
+    // Toute la page, en voix de chasse. Ce qui commande vraiment ces
+    // gestes n'est peut-être pas l'une des trois valeurs connues ici, et
+    // les noms que Windows écrit là changent d'une de ses versions à la
+    // suivante : lues toutes, elles se comparent à la page qu'on a sous
+    // les yeux.
+    hunted(|| format!("la page du pavé dit : {}", what_that_page_says()));
     let had: Vec<(String, u32)> = IN_THE_WAY
         .iter()
         .filter_map(|named| Some(((*named).to_string(), a_setting(named)?)))
@@ -786,8 +792,13 @@ mod counted {
     /// ligne qu'au changement, et pour que le crochet sache si une main
     /// est posée sur le pavé.
     pub static FINGERS: AtomicU32 = AtomicU32::new(0);
-    /// Ce que le crochet a vu passer pendant qu'une main était posée, et
-    /// ce qu'il en a pris à Windows.
+    /// Ce que le crochet a vu passer en tout, ce qu'il a vu pendant
+    /// qu'une main était posée, et ce qu'il en a pris à Windows.
+    ///
+    /// Le premier des trois n'est pas du luxe : sans lui, « rien vu sous
+    /// une main » et « crochet mort » s'écrivent pareil, et ce sont deux
+    /// pannes qui n'ont rien à voir.
+    pub static KEYS_ALL: AtomicU32 = AtomicU32::new(0);
     pub static KEYS_SEEN: AtomicU32 = AtomicU32::new(0);
     pub static KEYS_TAKEN: AtomicU32 = AtomicU32::new(0);
 }
@@ -857,6 +868,7 @@ unsafe extern "system" fn what_windows_makes(code: i32, what: usize, about: isiz
     use windows_sys::Win32::UI::WindowsAndMessaging::{CallNextHookEx, HC_ACTION, KBDLLHOOKSTRUCT};
 
     let taken = code == HC_ACTION as i32 && {
+        counted::KEYS_ALL.fetch_add(1, Ordering::Relaxed);
         // SAFETY: at this code and this one alone, the system says the
         // description it points at is there and is that shape.
         let key = unsafe { &*(about as *const KBDLLHOOKSTRUCT) };
@@ -924,10 +936,12 @@ pub fn read_the_pad(wanted: bool) -> bool {
             give_the_gestures_back();
             note(&format!(
                 "pavé tactile : {} trames lues, {} à trois doigts ou plus, {} gestes ; \
-                 crochet : {} frappes vues sous une main posée, {} reprises à Windows",
+                 crochet : {} frappes vues en tout, {} sous une main posée, \
+                 {} reprises à Windows",
                 counted::FRAMES.load(Ordering::Relaxed),
                 counted::THREES.load(Ordering::Relaxed),
                 counted::GESTURES.load(Ordering::Relaxed),
+                counted::KEYS_ALL.load(Ordering::Relaxed),
                 counted::KEYS_SEEN.load(Ordering::Relaxed),
                 counted::KEYS_TAKEN.load(Ordering::Relaxed),
             ));
@@ -951,6 +965,7 @@ pub fn read_the_pad(wanted: bool) -> bool {
             "les touches des gestes n'ont pas pu être reprises à Windows : le geste agira des deux côtés",
         );
     }
+    counted::KEYS_ALL.store(0, Ordering::Relaxed);
     counted::KEYS_SEEN.store(0, Ordering::Relaxed);
     counted::KEYS_TAKEN.store(0, Ordering::Relaxed);
     counted::FRAMES.store(0, Ordering::Relaxed);
