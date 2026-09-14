@@ -3223,6 +3223,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **La fenêtre est taillée pour la bulle dès le départ.** L'agrandir à l'arrivée de la main se verrait, et ce qui n'est pas dessiné ne coûte qu'au compositeur, lequel ne mêle cette fenêtre que lorsqu'une pastille est déjà là.
 
+## D200. Les dessins des voyants sont redessinés, pas seulement rhabillés (2026-09-14, pendant M6)
+
+**Le lien n'était pas symétrique, et c'était mesurable.** Ses trois arcs avaient chacun leur centre, à dix-neuf et neuf centièmes, dix-neuf et trente et un, dix-neuf et soixante-quatorze, et le point du bas un quatrième à vingt et un. Trois arcs qui ne tournent pas autour du même point laissent des jours qui ne se ressemblent pas : un et quarante-six sous le plus petit, trois et soixante-trois puis trois et quatre-vingt-douze au-dessus. C'est ce qu'on voit sans savoir le nommer, le petit arc collé au point pendant que les deux autres respirent. Et l'encre entière était posée un point huit trop bas dans son repère, donc décentrée dans la pastille.
+
+**Un seul centre, un seul angle, un seul écart.** Les trois arcs et le point tournent maintenant autour de douze et trente centièmes, ouverts du même angle, de rayons cinq et un, neuf et trois, treize et demi. Le jour vaut deux et quatre partout, et l'encre est centrée. Ce n'est pas un autre dessin, c'est le même redressé : aucune icône du produit ne change de sens.
+
+**Deux contours entiers qui se traversent font une tache.** Les deux ordinateurs de la marque se croisaient : quatre traits dans un carré de deux unités de haut, ce qui à vingt-six pixels ne se lit plus comme deux écrans. Celui d'en face devient un contour ouvert qui s'arrête là où celui de devant commence. Ouvert plutôt que rempli d'un aplat, parce qu'un aplat devrait connaître la couleur de ce qu'il y a dessous, et qu'il n'y en a pas une seule : ces pastilles flottent sur le bureau d'un autre ordinateur. Un contour qui s'arrête dit « derrière » sans rien demander à personne.
+
+**Celui qu'on n'allume jamais seul reste celui qu'on n'allume jamais seul.** Le contour ouvert ne se tient pas debout tout seul, et c'est sans conséquence : il n'est dessiné que par-dessus la paire, pour rallumer l'ordinateur qui coince. C'est la paire qui remet ce qui lui manque, et c'est le seul usage qu'il ait jamais eu.
+
+**L'état passe du dessin à l'anneau.** La pastille perd son trait d'un point et prend un anneau de deux, qui porte la couleur : sombre quand elle n'a rien à dire, couleur d'alerte quand elle en a. Un cheveu clair est posé juste dehors. Les deux sont là pour deux fonds différents : l'anneau se détache d'un bureau clair, le cheveu d'un bureau noir, et un seul des deux se voit à la fois. C'est pour ça qu'il en faut deux.
+
+**Ce qui permet à la pastille de l'image de dire lequel des deux.** L'anneau dit qu'il y a un problème, le dessin dit où : les deux écrans restent en sourdine et seul celui qui coince passe en couleur. Séparer les deux rôles est ce qui rend les deux lisibles en même temps, là où une pastille dont tout devient orange ne dit plus que la moitié.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

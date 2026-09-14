@@ -389,6 +389,14 @@ const BUBBLE_AT_MOST: f32 = 2.0 * PADDING + 3.0 * 17.0;
 /// rond.
 const ROUNDED: f32 = BADGE / 2.0;
 
+/// L'épaisseur de l'anneau qui cerne une pastille.
+///
+/// C'est lui qui porte l'état : sombre quand la pastille n'a rien à dire,
+/// couleur d'alerte quand elle en a. Deux points et non un, parce qu'un
+/// trait d'un point se lit comme un bord et pas comme un voyant, et
+/// qu'entre les deux il reste toute la place qu'il faut au dessin.
+const RING: f32 = 2.0;
+
 /// La fenêtre, et ce qu'elle montre.
 #[cfg(windows)]
 static ITS_WINDOW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
@@ -792,14 +800,32 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             let left = (ROOM + rank as f32 * (BADGE + BETWEEN)) * scale;
             let pastille = Cadre::pose(left, ROOM * scale, BADGE * scale, BADGE * scale);
             let rayon = ROUNDED * scale;
-            // Sans ombre portée, et c'est le trait qui donne le bord. Ces
+            // Sans ombre portée, et c'est le bord qui dit tout. Ces
             // pastilles flottent sur le bureau d'un autre ordinateur, qui
             // peut être de n'importe quelle couleur : une ombre y est
             // invisible sur un fond noir et y fait une tache grise sur un
             // fond clair, ce qui est le contraire de ce qu'on lui
-            // demandait. Le trait, lui, se voit sur les deux.
-            toile.remplis(pastille, rayon, SOMBRE.surface_1.voile(0.94));
-            toile.trace_dedans(pastille, rayon, scale, SOMBRE.trait_fort);
+            // demandait.
+            //
+            // Deux traits plutôt qu'un, et chacun pour un fond : l'anneau
+            // épais, sombre ou couleur d'alerte, se détache d'un bureau
+            // clair ; le cheveu clair posé juste dehors détache la
+            // pastille d'un bureau noir, où l'anneau seul se fondrait. Un
+            // seul des deux se voit à la fois, et c'est pour ça qu'il en
+            // faut deux.
+            let cerne = if on {
+                SOMBRE.attention
+            } else {
+                SOMBRE.trait_fort
+            };
+            toile.remplis(pastille, rayon, SOMBRE.fond.voile(0.94));
+            toile.trace_dedans(pastille, rayon, RING * scale, cerne);
+            toile.trace_sur(
+                pastille.elargi(scale / 2.0),
+                rayon + scale / 2.0,
+                scale,
+                SOMBRE.texte.voile(0.16),
+            );
             let dessin = pastille.elargi(-INSET * scale);
             if rank == 0 {
                 let couleur = if on {

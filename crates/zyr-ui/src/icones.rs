@@ -98,10 +98,25 @@ pub const ECRAN_HOTE: Icone = dessin(&[LA_BAS, ICI]);
 /// paire, ce qui est comment un voyant dit lequel des deux ordinateurs
 /// coince. Écrits à partir des mêmes deux traits que la paire : recopiés,
 /// ils s'en écarteraient au premier pixel changé.
+///
+/// Celui d'en face ne se dessine que par-dessus la paire, jamais seul :
+/// son contour s'arrête là où l'autre commence, et seule la paire remet
+/// ce qui lui manque.
 pub const ECRAN_LA_BAS: Icone = dessin(&[LA_BAS]);
 pub const ECRAN_ICI: Icone = dessin(&[ICI]);
 
-const LA_BAS: Trait = Trait::Rond(2.0, 4.0, 13.0, 9.0, 1.5);
+/// Celui d'en face : le même rectangle que l'autre, mais ouvert aux deux
+/// endroits où celui de devant le recouvre.
+///
+/// Ouvert et non entier, parce que deux contours entiers se traversent :
+/// quatre traits se croisaient dans un carré de deux unités de haut, et à
+/// la taille d'un voyant ça fait une tache au lieu de deux ordinateurs.
+/// S'arrêter là où l'autre commence est comment un dessin dit « derrière »
+/// sans avoir besoin d'être rempli, donc sans avoir à connaître la couleur
+/// de ce qu'il y a dessous.
+const LA_BAS: Trait = Trait::Chemin(
+    "M15 11V5.5A1.5 1.5 0 0 0 13.5 4H3.5A1.5 1.5 0 0 0 2 5.5V11.5A1.5 1.5 0 0 0 3.5 13H9",
+);
 const ICI: Trait = Trait::Rond(9.0, 11.0, 13.0, 9.0, 1.5);
 
 pub const DEBIT: Icone = dessin(&[Trait::Chemin("M3 12h3l3-7 4 14 3-7h5")]);
@@ -118,11 +133,18 @@ pub const ECRAN_EN_FACE: Icone = dessin(&[
 
 /// Le lien entre les deux ordinateurs : trois arcs et un point, le dessin
 /// que tout le monde lit comme « réseau » sans qu'on ait à l'écrire.
+///
+/// Les trois arcs et le point tournent autour d'un seul et même centre, à
+/// douze et trente centièmes, ouverts du même angle et espacés du même
+/// écart : c'est ce qui laisse le même jour de deux unités et quatre
+/// dixièmes partout. Les arcs d'avant avaient chacun leur centre, donc
+/// des jours de un et demi puis trois et demi puis quatre, et le point se
+/// trouvait collé sous le plus petit.
 pub const LIEN: Icone = dessin(&[
-    Trait::Chemin("M2.5 9.5a13.5 13.5 0 0 1 19 0"),
-    Trait::Chemin("M6.5 13.5a8 8 0 0 1 11 0"),
-    Trait::Chemin("M10 17.5a3 3 0 0 1 4 0"),
-    Trait::Rond(11.0, 20.0, 2.0, 2.0, 1.0),
+    Trait::Chemin("M2.62 8.59A13.5 13.5 0 0 1 21.38 8.59"),
+    Trait::Chemin("M5.54 11.61A9.3 9.3 0 0 1 18.46 11.61"),
+    Trait::Chemin("M8.46 14.63A5.1 5.1 0 0 1 15.54 14.63"),
+    Trait::Rond(11.1, 17.4, 1.8, 1.8, 0.9),
 ]);
 
 pub const CHEVRON: Icone = dessin(&[Trait::Chemin("M9 5l7 7-7 7")]);
