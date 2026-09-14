@@ -3209,6 +3209,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce qui reste à réparer, et ce n'est pas ici.** Le moteur rend bien ce qu'il tient quand le clavier s'en va, mais il le rend en posant un événement dans la file du jeu d'outils, qui n'est plus vidée quand la session se termine, et sur un lien qui vient de tomber. Il n'y a donc pas de dernier recours : ce qui est parti à l'aller ne revient pas toujours. C'est dans le moteur client, et de l'autre côté aussi, ce qui demande de recompiler les deux.
 
+## D199. Les deux voyants perdent leur ombre, grandissent, et disent pourquoi (2026-09-14, pendant M6)
+
+**L'ombre portée faisait le contraire de ce qu'on lui demandait.** Elle était là pour donner un bord à un rond sombre posé sur un fond sombre. Mais ces pastilles flottent sur le bureau d'un autre ordinateur, qui n'est pas toujours sombre : sur un fond clair, l'ombre devient une tache grise et floue autour de chaque pastille, et c'est la première chose qu'on voit. Le trait qui les cerne, lui, se voit sur les deux fonds et suffit. L'ombre part.
+
+**Leur taille se règle sur le bouton flottant, pas dans l'absolu.** Vingt-huit pixels avaient été choisis pour qu'on ne prenne pas une pastille pour un second bouton. C'était se garder d'un risque qui n'existe pas : elles sont dans le coin opposé, elles ne se cliquent pas, et rien ne les confond. Ce qu'elles étaient vraiment, c'était trop petites pour se lire, celle de l'image portant deux écrans dont un seul est allumé. Elles passent à quarante, soit un dixième de moins que le bouton : assez près pour appartenir à la même famille, assez loin pour qu'on ne les confonde pas.
+
+**Et elles disent maintenant pourquoi.** Un voyant qui s'allume sans rien expliquer est un voyant qu'on finit par ignorer, ce que cette page disait déjà en envoyant la raison au journal. Le journal est le bon endroit pour la garder et le mauvais pour la lire au moment où la pastille s'allume. La main posée dessus ouvre donc une bulle sous elle, avec la phrase que le journal reçoit, mot pour mot : rien n'est écrit deux fois.
+
+**La main est lue, jamais prise.** Cette fenêtre laisse tout passer, clics compris, parce que le coin où elle se pose appartient à l'ordinateur d'en face et qu'une main qui vise son menu Démarrer ne doit pas tomber sur un voyant. Prendre la souris pour savoir où elle est aurait coûté exactement ce qu'on avait refusé de coûter. Demander au système où est le curseur, à chaque tour d'une veille qui tourne déjà, ne prend rien à personne.
+
+**Une phrase même quand tout va bien.** Ces pastilles se tiennent à l'écran sur demande, éteintes. Une bulle vide sous une pastille éteinte laisserait croire que la question n'a pas de réponse, alors que la réponse est que tout va bien.
+
+**La fenêtre est taillée pour la bulle dès le départ.** L'agrandir à l'arrivée de la main se verrait, et ce qui n'est pas dessiné ne coûte qu'au compositeur, lequel ne mêle cette fenêtre que lorsqu'une pastille est déjà là.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

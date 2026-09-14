@@ -248,7 +248,7 @@ pub fn watch(app: &crate::app::App) {
     let app = app.clone();
     crate::app::spawn(async move {
         keep_up(&app).await;
-        show(&app, Shown::default(), false);
+        show(&app, Shown::default(), &Reads::default(), false);
         WATCHING.store(false, Ordering::SeqCst);
     });
 }
@@ -279,7 +279,7 @@ async fn keep_up(app: &crate::app::App) {
             // alors est les pastilles elles-mêmes, et une session dont
             // les lectures n'ont pas commencé est précisément le moment
             // où quelqu'un les regarde.
-            show(app, Shown::default(), held);
+            show(app, Shown::default(), &Reads::default(), held);
             continue;
         };
         let reads = read(&mesures);
@@ -295,7 +295,7 @@ async fn keep_up(app: &crate::app::App) {
         // l'occasion de changer d'avis. Ce qui est dit deux fois ne coûte
         // rien : la fenêtre garde ce qu'elle montre et ne se redessine
         // que sur une vraie différence.
-        show(app, shown, held);
+        show(app, shown, &reads, held);
     }
 }
 
@@ -342,24 +342,48 @@ fn said(reads: &Reads, was: Shown, shown: Shown) {
 
 /// Le côté d'une pastille, en pixels de page.
 ///
-/// Plus petite que le bouton flottant, qui fait quarante-quatre : ce
-/// bouton-là est ce qu'on vise avec la main, celui-ci n'est qu'à lire, et
-/// une pastille de la taille du bouton dans le coin d'en face se prendrait
-/// pour un deuxième bouton. Assez grande tout de même pour porter un
-/// dessin de dix-huit, qui est la taille à laquelle le menu dessine les
-/// siennes : celle de l'image en porte deux écrans dont un seul est
-/// allumé, et plus petit les deux se confondraient.
-const BADGE: f32 = 28.0;
+/// Un dixième de moins que le bouton flottant, qui fait quarante-quatre.
+/// Assez près pour qu'on les voie de la même famille, assez loin pour
+/// qu'on ne prenne pas l'une pour l'autre : ce bouton-là est ce qu'on
+/// vise avec la main, celles-ci ne sont qu'à lire. Plus petites, elles ne
+/// se lisaient pas : celle de l'image porte deux écrans dont un seul est
+/// allumé, et il faut de la place pour que les deux se distinguent.
+const BADGE: f32 = 40.0;
 
 /// Ce qui sépare les deux.
-const BETWEEN: f32 = 6.0;
+const BETWEEN: f32 = 8.0;
 
-/// Ce qu'on laisse tout autour d'elles dans la fenêtre, pour que l'ombre
-/// ait où tomber.
+/// La marge autour d'elles dans la fenêtre.
+///
+/// Assez pour que le bord d'une pastille ne touche pas celui de la
+/// fenêtre, et c'est la même marge qui sert de gouttière à la bulle.
 const ROOM: f32 = 8.0;
 
 /// Ce qui sépare le dessin du bord de sa pastille.
-const INSET: f32 = 5.0;
+const INSET: f32 = 7.0;
+
+/// La largeur de la bulle qui dit pourquoi, en pixels de page.
+const BUBBLE: f32 = 260.0;
+
+/// Ce qui la sépare des pastilles.
+const UNDER: f32 = 6.0;
+
+/// Sa marge intérieure.
+const PADDING: f32 = 10.0;
+
+/// Le rayon de ses coins.
+const CORNER: f32 = 8.0;
+
+/// La taille de ce qui s'y écrit.
+const WORDS: f32 = 12.0;
+
+/// Ce que la bulle peut prendre de haut, au plus.
+///
+/// Réservé dans la fenêtre sans être forcément dessiné : la hauteur vraie
+/// d'un texte ne se mesure qu'une fois la toile faite, et la fenêtre est
+/// taillée avant elle. Trois lignes suffisent aux phrases que ces deux-là
+/// ont à dire, et ce qui reste est clair, donc invisible.
+const BUBBLE_AT_MOST: f32 = 2.0 * PADDING + 3.0 * 17.0;
 
 /// Le rayon des coins d'une pastille : la moitié de son côté, donc un
 /// rond.
@@ -387,7 +411,29 @@ mod bit {
     /// question : ce nombre dit ce que la fenêtre montre, et ce qui est
     /// montré n'est plus seulement ce qui est allumé.
     pub const HELD: u8 = 8;
+    /// La pastille sur laquelle la main est posée, s'il y en a une.
+    ///
+    /// Rangée ici avec le reste parce que c'est encore la même question :
+    /// ce nombre dit ce que la fenêtre montre, et une bulle ouverte sous
+    /// une pastille en fait partie. Y être lui vaut aussi d'être
+    /// redessinée quand la main arrive et quand elle part, sans que rien
+    /// d'autre ait à s'en occuper.
+    pub const OVER_LINK: u8 = 16;
+    pub const OVER_PICTURE: u8 = 32;
+    pub const OVER: u8 = OVER_LINK | OVER_PICTURE;
 }
+
+/// Ce que les pastilles ont à dire, mot pour mot.
+///
+/// Gardé à côté de ce qui est allumé parce que la bulle en a besoin au
+/// moment où elle se dessine, et que ce moment-là n'est pas celui où la
+/// lecture a été faite.
+#[cfg(windows)]
+static WHY: std::sync::Mutex<Reads> = std::sync::Mutex::new(Reads {
+    link: None,
+    far: None,
+    here: None,
+});
 
 #[cfg(windows)]
 thread_local! {
@@ -399,10 +445,14 @@ thread_local! {
 #[cfg(windows)]
 fn its_size() -> (i32, i32) {
     let scale = crate::fenetre::echelle();
-    (
-        ((2.0 * BADGE + BETWEEN + 2.0 * ROOM) * scale).ceil() as i32,
-        ((BADGE + 2.0 * ROOM) * scale).ceil() as i32,
-    )
+    // Taillée pour la bulle dès le départ, et non agrandie quand elle
+    // s'ouvre : redimensionner une fenêtre à calque sous une main qui
+    // passe se verrait. Ce qui n'est pas dessiné ne coûte qu'au
+    // compositeur, lequel ne mêle cette fenêtre que lorsqu'une pastille
+    // est déjà là.
+    let wide = (2.0 * BADGE + BETWEEN).max(BUBBLE) + 2.0 * ROOM;
+    let high = BADGE + UNDER + BUBBLE_AT_MOST + 2.0 * ROOM;
+    ((wide * scale).ceil() as i32, (high * scale).ceil() as i32)
 }
 
 /// Ouvre la fenêtre des voyants, une fois par session.
@@ -500,7 +550,7 @@ fn window_corner(anchor: (i32, i32)) -> (i32, i32) {
 /// se voit pas, mais elle reste une fenêtre que le compositeur mêle à
 /// chaque image de la session.
 #[cfg(windows)]
-fn show(app: &crate::app::App, shown: Shown, held: bool) {
+fn show(app: &crate::app::App, shown: Shown, reads: &Reads, held: bool) {
     use std::sync::atomic::Ordering;
 
     let window = ITS_WINDOW.load(Ordering::Relaxed);
@@ -518,10 +568,22 @@ fn show(app: &crate::app::App, shown: Shown, held: bool) {
             lit |= bit;
         }
     }
-    if LIT.swap(lit, Ordering::Relaxed) == lit {
+    let anything = !shown.nothing() || held;
+    // La main n'est cherchée que sur des pastilles qui sont là : sans
+    // elles la fenêtre est rangée, et une bulle sous une pastille
+    // invisible n'expliquerait rien.
+    if anything {
+        lit |= the_hand_over_them(window);
+    }
+    *WHY.lock().expect("raisons des voyants") = reads.clone();
+    // Redessinée à chaque tour tant que la main est posée, et au seul
+    // changement sinon : ce que la bulle dit porte des nombres qui
+    // bougent, et une bulle qui garderait ceux de la première lecture
+    // dirait une chose fausse tout le temps qu'on la regarde.
+    let under_the_hand = lit & bit::OVER != 0;
+    if LIT.swap(lit, Ordering::Relaxed) == lit && !under_the_hand {
         return;
     }
-    let anything = !shown.nothing() || held;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNOACTIVATE, ShowWindow};
@@ -537,7 +599,72 @@ fn show(app: &crate::app::App, shown: Shown, held: bool) {
 }
 
 #[cfg(not(windows))]
-fn show(_app: &crate::app::App, _shown: Shown, _held: bool) {}
+fn show(_app: &crate::app::App, _shown: Shown, _reads: &Reads, _held: bool) {}
+
+/// Sur laquelle des deux la main est posée, s'il y en a une.
+///
+/// Lue au système plutôt que reçue en messages, et c'est ce qui permet à
+/// cette fenêtre de rester traversante. Le coin où elle se pose
+/// appartient à l'ordinateur d'en face : une main qui vise son menu
+/// Démarrer ne doit pas tomber sur un voyant, donc les clics passent au
+/// travers, donc les mouvements aussi. Demander où est le curseur ne
+/// prend rien à personne et répond à la seule question posée.
+#[cfg(windows)]
+fn the_hand_over_them(window: isize) -> u8 {
+    use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
+
+    let mut hand = POINT { x: 0, y: 0 };
+    // SAFETY: un point à nous, que le système remplit.
+    if unsafe { GetCursorPos(&mut hand) } == 0 {
+        return 0;
+    }
+    let mut place = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: une fenêtre à nous, dont le rectangle est lu dans le nôtre.
+    if unsafe { GetWindowRect(window as HWND, &mut place) } == 0 {
+        return 0;
+    }
+    let scale = crate::fenetre::echelle();
+    let side = (BADGE * scale).round() as i32;
+    let top = place.top + (ROOM * scale).round() as i32;
+    if hand.y < top || hand.y >= top + side {
+        return 0;
+    }
+    for (rank, which) in [bit::OVER_LINK, bit::OVER_PICTURE].into_iter().enumerate() {
+        let left = place.left + ((ROOM + rank as f32 * (BADGE + BETWEEN)) * scale).round() as i32;
+        if hand.x >= left && hand.x < left + side {
+            return which;
+        }
+    }
+    0
+}
+
+/// Ce que la pastille sous la main a à dire.
+///
+/// Une phrase même quand tout va bien : ces pastilles se tiennent à
+/// l'écran sur demande, éteintes, et une bulle vide sous une pastille
+/// éteinte laisserait croire que la question n'a pas de réponse.
+fn what_it_says(rank: usize, why: &Reads) -> String {
+    if rank == 0 {
+        return why
+            .link
+            .clone()
+            .unwrap_or_else(|| "le lien va bien : rien ne se perd et l'image suit".to_string());
+    }
+    let both: Vec<&str> = [why.far.as_deref(), why.here.as_deref()]
+        .into_iter()
+        .flatten()
+        .collect();
+    if both.is_empty() {
+        return "les deux ordinateurs suivent : l'image est encodée et décodée à temps".to_string();
+    }
+    both.join("\n")
+}
 
 /// Bâtit la fenêtre, cachée : elle ne se montre qu'au premier voyant.
 #[cfg(windows)]
@@ -665,11 +792,12 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             let left = (ROOM + rank as f32 * (BADGE + BETWEEN)) * scale;
             let pastille = Cadre::pose(left, ROOM * scale, BADGE * scale, BADGE * scale);
             let rayon = ROUNDED * scale;
-            // Une ombre sous chacune : ces pastilles flottent sur le
-            // bureau d'un autre ordinateur, qui peut être de n'importe
-            // quelle couleur, et un rond sombre posé sur un fond sombre
-            // n'a pas de bord.
-            toile.ombre(pastille, rayon, SOMBRE.ombre_2, scale);
+            // Sans ombre portée, et c'est le trait qui donne le bord. Ces
+            // pastilles flottent sur le bureau d'un autre ordinateur, qui
+            // peut être de n'importe quelle couleur : une ombre y est
+            // invisible sur un fond noir et y fait une tache grise sur un
+            // fond clair, ce qui est le contraire de ce qu'on lui
+            // demandait. Le trait, lui, se voit sur les deux.
             toile.remplis(pastille, rayon, SOMBRE.surface_1.voile(0.94));
             toile.trace_dedans(pastille, rayon, scale, SOMBRE.trait_fort);
             let dessin = pastille.elargi(-INSET * scale);
@@ -695,6 +823,24 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             if lit & bit::HERE != 0 {
                 toile.icone(&crate::icones::ECRAN_ICI, dessin, SOMBRE.attention);
             }
+        }
+        // La bulle après les pastilles, pour qu'elle passe par-dessus si
+        // jamais les deux se touchaient.
+        if lit & bit::OVER != 0 {
+            let rank = usize::from(lit & bit::OVER_LINK == 0);
+            let mot = what_it_says(rank, &WHY.lock().expect("raisons des voyants"));
+            let plume = crate::paint::Plume::de(WORDS * scale);
+            let dedans = (BUBBLE - 2.0 * PADDING) * scale;
+            let bulle = Cadre::pose(
+                ROOM * scale,
+                (ROOM + BADGE + UNDER) * scale,
+                BUBBLE * scale,
+                toile.hauteur(&mot, plume, dedans) + 2.0 * PADDING * scale,
+            );
+            let rayon = CORNER * scale;
+            toile.remplis(bulle, rayon, SOMBRE.surface_1.voile(0.96));
+            toile.trace_dedans(bulle, rayon, scale, SOMBRE.trait_fort);
+            toile.ecris(&mot, plume, SOMBRE.texte, bulle.elargi(-PADDING * scale));
         }
         if !toile.finit() {
             return;
@@ -737,6 +883,35 @@ mod tests {
             since_frame_ms: Some(12),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_badge_under_the_hand_says_what_it_reads() {
+        let reads = read(&Mesures {
+            since_frame_ms: Some(FROZEN_MS),
+            ..healthy()
+        });
+        assert!(what_it_says(0, &reads).contains("figée"));
+    }
+
+    #[test]
+    fn a_badge_with_nothing_to_report_says_so_rather_than_nothing() {
+        // Elles se tiennent à l'écran sur demande, éteintes : une bulle
+        // vide laisserait croire que la question n'a pas de réponse.
+        let calm = Reads::default();
+        assert!(!what_it_says(0, &calm).is_empty());
+        assert!(!what_it_says(1, &calm).is_empty());
+    }
+
+    #[test]
+    fn the_picture_badge_says_both_computers_when_both_are_late() {
+        let reads = Reads {
+            link: None,
+            far: Some("là-bas".to_string()),
+            here: Some("ici".to_string()),
+        };
+        let said = what_it_says(1, &reads);
+        assert!(said.contains("là-bas") && said.contains("ici"));
     }
 
     #[test]
