@@ -282,6 +282,25 @@ fn failure(context: &str, error: impl std::fmt::Display) -> ExitCode {
 /// meets it once.
 #[cfg(windows)]
 fn absent_or(error: &windows_service::Error, context: &str) -> ExitCode {
+    // Lancé et jamais revenu. Ce que Windows en dit ne parle que de
+    // délai, alors que la question est de savoir quel programme il a
+    // lancé : une inscription tient le chemin qu'on lui a donné, et
+    // déplacer le dépôt la laisse pointer sur l'ancien. Le chemin inscrit
+    // est la seule chose qui manque pour le voir, et Windows ne le dit
+    // jamais de lui-même.
+    if service::never_reported(error) {
+        eprintln!("Le service ZyrDesk a été lancé et n'a jamais répondu.");
+        match service::registered_at() {
+            Some(program) => {
+                eprintln!("  Windows lance celui-ci :\n    {}", program.display());
+                eprintln!(
+                    "  Si ce n'est pas le programme que vous venez de compiler, réinscrivez-le,\n                       en fenêtre administrateur :\n    zyrdeskd setup"
+                );
+            }
+            None => eprintln!("  Windows n'a pas dit quel programme il lance."),
+        }
+        return ExitCode::FAILURE;
+    }
     if !service::unknown(error) {
         return failure(context, with_causes(error));
     }

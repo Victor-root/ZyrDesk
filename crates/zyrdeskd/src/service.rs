@@ -596,6 +596,33 @@ fn reported(error: &windows_service::Error) -> Option<i32> {
     }
 }
 
+/// Code Windows returns for a service that never reported in.
+const NEVER_REPORTED: i32 = 1053;
+
+/// Le programme que Windows lance quand on lui demande ce service.
+///
+/// Demandé parce qu'un service inscrit ne pointe pas forcément sur le
+/// programme qu'on vient de compiler : déplacer le dépôt laisse
+/// l'inscription sur l'ancien chemin, et Windows lance alors un programme
+/// qui n'est plus là ou qui n'est plus le bon, sans jamais dire lequel.
+pub fn registered_at() -> Option<std::path::PathBuf> {
+    let manager =
+        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).ok()?;
+    let service = manager
+        .open_service(NAME, ServiceAccess::QUERY_CONFIG)
+        .ok()?;
+    Some(service.query_config().ok()?.executable_path)
+}
+
+/// Whether that is Windows saying the service never reported in.
+///
+/// Ni un refus ni une panne : le programme a été lancé et n'a jamais dit
+/// à Windows qu'il tournait. Ce qu'il est devenu entre les deux ne se lit
+/// nulle part, et surtout pas dans ces mots-là.
+pub fn never_reported(error: &windows_service::Error) -> bool {
+    reported(error) == Some(NEVER_REPORTED)
+}
+
 /// Whether that is Windows saying it does not know this service at all.
 ///
 /// The one answer of the lot that is not a fault but a state: nothing
