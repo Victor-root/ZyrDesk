@@ -21,6 +21,14 @@ use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 /// What Windows says when the person turns the prompt down.
 const REFUSED: i32 = 1223;
 
+/// À partir d'où un code de sortie n'est plus celui d'un programme.
+///
+/// Windows range là ce qu'il dit d'un programme qui s'est arrêté de
+/// lui-même : plantage, débordement, image abîmée. Le nôtre ne sort que
+/// par zéro ou un, donc rien de cette forme ne peut venir de lui, et tout
+/// ce qui en vient veut dire qu'il n'a rien pu dire.
+const CRASHED: u32 = 0xC000_0000;
+
 /// COM, initialised for as long as this lasts.
 ///
 /// The shell expects it. The thread this runs on is ours alone, so it is
@@ -100,6 +108,19 @@ fn waited(running: HANDLE) -> Result<(), String> {
     }
     if code == 0 {
         return Ok(());
+    }
+    // Un code de cette forme n'est pas un compte rendu du programme mais
+    // la façon dont Windows dit qu'il s'est arrêté brutalement. Le
+    // service n'a alors rien écrit, et l'envoyer lire un journal qui ne
+    // dira rien est le pire des renvois : on cherche une heure à l'endroit
+    // où il n'y a rien à trouver.
+    if code >= CRASHED {
+        return Err(format!(
+            "le service s'est arrêté brutalement pendant sa mise en place \
+             (0x{code:08X}), sans rien écrire.\n  \
+             Lancez-le à la main dans une fenêtre administrateur pour voir ce \
+             qu'il dit :\n  zyrdeskd setup"
+        ));
     }
     Err(format!(
         "la mise en service a échoué (code {code}).\n  \
