@@ -3291,6 +3291,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Pourquoi ceci n'est pas [D196](#d196-le-sélecteur-de-fenêtres-reste-ouvert-tant-que-la-main-glisse-2026-09-12-pendant-m6), annulée pour la même idée.** Ce jour-là, c'était ZyrDesk qui tenait Alt enfoncé sur l'ordinateur de la personne, et une touche restée enfoncée là est une machine inutilisable. Ici, l'Alt est tenu sur l'ordinateur d'en face, par le moteur, dans un flux qu'il vide déjà à la perte du clavier et à la fin de la session. Il est rangé dans la liste des touches tenues, et non à côté, précisément pour que ces deux-là le rendent ; et la lecture du pavé dit la fin du glissement avant de s'arrêter, quelle qu'en soit la raison. Trois choses le rendent, là où D196 n'en avait aucune.
 
+## D205. ZyrDesk reprend à Windows les touches de ses propres gestes (2026-09-14, pendant M6)
+
+**Demander à la personne d'aller éteindre trois listes déroulantes avant chaque session, c'est lui faire faire le travail du produit.** [D204](#d204-ce-que-windows-tient-il-ne-le-lâche-pas-parce-quon-lécrit-2026-09-14-pendant-m6) constatait que Windows ne lâche pas un geste du pavé parce qu'on écrit sa valeur, et s'arrêtait là, en concluant qu'il fallait le dire à la personne. Ce n'est pas une conclusion, c'est un abandon : un interrupteur qui demande d'aller en actionner trois autres ailleurs n'est pas un interrupteur.
+
+**Ce que le pilote fabrique est une frappe, et une frappe se reprend.** Windows répond au glissement à trois doigts par Alt+Tab, ce qui passe par le clavier de la machine comme n'importe quelle frappe. Un crochet de bas niveau est posé en même temps que la lecture du pavé, et il ne les laisse pas passer. C'est la seule interception possible depuis un programme, et elle n'a rien d'un contournement : ce n'est pas une valeur devinée ni une minuterie, c'est la frappe elle-même, prise là où elle passe.
+
+**La condition ne peut pas se tromper.** Rien n'est repris à personne sauf quand une main tient trois doigts sur le pavé, ce que ce programme sait parce qu'il lit les rapports du pavé cent fois par seconde. Personne ne tape Alt+Tab au clavier dans cette position-là. Hors de cette position, le crochet rend tout ce qu'il voit.
+
+**Et ce programme ne se reprend pas lui-même.** Les frappes qu'il envoie passent devant ce crochet comme les autres : elles portent donc sa marque, dans le champ que le système réserve à qui les injecte. Sans elle, le raccourci du geste serait avalé au moment même où il part, et le geste n'arriverait nulle part.
+
+**Les valeurs de la page sont écrites quand même.** Non pour qu'elles agissent, elles n'agissent pas, mais pour que la page de Windows soit d'accord avec ce qui se passe, et pour qu'une ouverture de session plus tard reparte du bon endroit. Rien n'en est attendu, et c'est écrit là où on lira ce code.
+
+**Deux textes qui mentaient sont partis.** Le commentaire de l'interrupteur décrivait encore une conception abandonnée, celle du refus et de la page ouverte à la main, et c'est lui qui a fait chercher la panne ailleurs pendant quatre essais. Et l'avertissement disant que le glissement dépend de la ligne « Clavier » n'est plus vrai depuis [D202](#d202-un-geste-du-pavé-ne-passe-plus-par-le-clavier-de-cet-ordinateur-2026-09-14-pendant-m6) : le geste ne passe plus par les touches système du moteur mais par un raccourci à nous.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

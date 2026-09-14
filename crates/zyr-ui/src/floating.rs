@@ -1401,15 +1401,21 @@ async fn share_the_clipboard(app: &App) -> Result<(), String> {
 /// engine is aware there is one, and nothing in what they speak carries a
 /// hand with several fingers on it.
 ///
-/// Turning it on is refused while Windows still answers those gestures
-/// itself, and that refusal is the whole honesty of this switch. Windows
-/// only lets go of them from a page of its own settings, and no call
-/// changes it: the values behind that page are read once, deep in the
-/// system's own input, and a program writing them changes what the page
-/// shows and nothing about what the pad does. Left to happen anyway, the
-/// switch would be on and every gesture would act twice, once at each
-/// end, which is worse than not having it at all. So the page is opened
-/// where the person has to act, and nothing is said to have been done.
+/// Windows does not let go of those gestures because the values behind
+/// its own page have been written: its settings page reads them again,
+/// its driver does not, and the gesture goes on acting on this computer
+/// while this program sends it to the session. They are written all the
+/// same, so that the page agrees with what is happening and so that a
+/// later sign-in starts from the right place, but nothing is expected of
+/// them.
+///
+/// What the driver makes of the gesture is a keystroke like any other,
+/// and a keystroke can be taken back. That is what the hook laid with the
+/// reading does, under a condition that cannot be mistaken: a hand with
+/// three fingers on the pad. So this switch is the whole of what the
+/// person has to do, which is what a switch is for; asking them to go and
+/// turn three dropdowns off before every session was asking them to do
+/// the product's work.
 async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     let state = app.floating();
     let on = state.touchpad.load(Ordering::Relaxed);
@@ -1468,22 +1474,6 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     // middle of a session, and the side it is left on is the side the
     // next session should open on.
     crate::settings::remember_touchpad_gestures(true).await;
-    // The slide travels as an Alt+Tab typed by hand, so it travels by the
-    // same road and under the same condition. Said rather than refused:
-    // the tap is a click and crosses whatever the keyboard is doing, so
-    // half of what was asked for works from this moment.
-    //
-    // Sous l'étiquette du pavé, comme tout ce qui décide de ces gestes :
-    // dit sous celle de ce menu, c'est une ligne qu'on ne trouve qu'en
-    // cherchant ailleurs que là où l'on cherche, donc une ligne qui n'a
-    // jamais servi.
-    if !keys_to_the_session(app) {
-        crate::touchpad::said(
-            "le glissement à trois doigts est un Alt+Tab, et Windows le garde pour lui \
-             tant que la ligne « Clavier » du menu est sur « Partagé » : il changera \
-             de fenêtre sur cet ordinateur-ci. Côté « Immersif », il va à la session",
-        );
-    }
     Ok(())
 }
 
@@ -2523,7 +2513,11 @@ fn typed(keys: &[(u16, bool)]) -> bool {
                     wScan: *place,
                     dwFlags: KEYEVENTF_SCANCODE | if *up { KEYEVENTF_KEYUP } else { 0 },
                     time: 0,
-                    dwExtraInfo: 0,
+                    // Marquées, parce que le crochet qui reprend à
+                    // Windows les touches de ses propres gestes voit
+                    // passer celles-ci aussi : sans la marque, il
+                    // reprendrait ce que ce programme vient d'envoyer.
+                    dwExtraInfo: crate::touchpad::OURS,
                 },
             },
         })

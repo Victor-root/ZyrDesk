@@ -783,8 +783,119 @@ mod counted {
     pub static THREES: AtomicU32 = AtomicU32::new(0);
     pub static GESTURES: AtomicU32 = AtomicU32::new(0);
     /// Combien de doigts la dernière trame portait, pour n'écrire une
-    /// ligne qu'au changement.
+    /// ligne qu'au changement, et pour que le crochet sache si une main
+    /// est posée sur le pavé.
     pub static FINGERS: AtomicU32 = AtomicU32::new(0);
+    /// Ce que le crochet a vu passer pendant qu'une main était posée, et
+    /// ce qu'il en a pris à Windows.
+    pub static KEYS_SEEN: AtomicU32 = AtomicU32::new(0);
+    pub static KEYS_TAKEN: AtomicU32 = AtomicU32::new(0);
+}
+
+/// La marque que ce programme pose sur les frappes qu'il envoie.
+///
+/// Le crochet ci-dessous reprend à Windows ce qu'il fabrique pour ses
+/// propres gestes, et ce que ce programme tape passe par le même chemin :
+/// sans cette marque, il reprendrait ses propres frappes et le geste
+/// n'arriverait nulle part. Les quatre lettres du produit, pour qu'une
+/// valeur vue dans un débogueur dise d'où elle vient.
+pub const OURS: usize = 0x5A59_5244;
+
+/// Le crochet qui reprend à Windows les touches de ses propres gestes.
+///
+/// Windows ne lâche pas un geste du pavé parce qu'on écrit sa valeur :
+/// sa page de réglages la relit, son pilote non, et le geste continue
+/// d'agir sur cet ordinateur-ci pendant que ce programme l'envoie dans la
+/// session. Demander à la personne d'aller éteindre trois listes
+/// déroulantes avant chaque session, c'est lui faire faire le travail du
+/// produit.
+///
+/// Ce que Windows fabrique pour ce geste est une frappe comme une autre,
+/// et une frappe se reprend. Elle l'est à une condition qui ne peut pas
+/// se tromper : une main tient trois doigts sur le pavé. Personne ne tape
+/// Alt+Tab au clavier dans cette position-là, et hors de cette
+/// position-là rien n'est repris à personne.
+#[cfg(windows)]
+static SWALLOWING: crate::hook::Held = crate::hook::Held::new();
+
+/// Pose ce crochet, et répond ce que le système en a fait.
+#[cfg(windows)]
+fn lay_the_hook() -> isize {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, WH_KEYBOARD_LL};
+
+    // SAFETY: a callback of this program's own, for the whole machine,
+    // laid on the thread that goes on to read its messages.
+    let laid = unsafe {
+        SetWindowsHookExW(
+            WH_KEYBOARD_LL,
+            Some(what_windows_makes),
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    laid as isize
+}
+
+/// Et le rend.
+#[cfg(windows)]
+fn take_the_hook_back(laid: isize) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx;
+
+    // SAFETY: the hook this thread laid, given back on that same thread,
+    // which is the only one allowed to.
+    unsafe { UnhookWindowsHookEx(laid as *mut core::ffi::c_void) };
+}
+
+/// Ce que le système appelle devant chaque frappe de la machine.
+///
+/// Court, parce qu'il le faut : toutes les frappes de l'ordinateur
+/// attendent derrière, et une réponse qui traîne fait retirer le crochet
+/// par le système sans que rien ne le dise.
+#[cfg(windows)]
+unsafe extern "system" fn what_windows_makes(code: i32, what: usize, about: isize) -> isize {
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{CallNextHookEx, HC_ACTION, KBDLLHOOKSTRUCT};
+
+    let taken = code == HC_ACTION as i32 && {
+        // SAFETY: at this code and this one alone, the system says the
+        // description it points at is there and is that shape.
+        let key = unsafe { &*(about as *const KBDLLHOOKSTRUCT) };
+        ours_to_take(key.vkCode, key.dwExtraInfo)
+    };
+    if taken {
+        counted::KEYS_TAKEN.fetch_add(1, Ordering::Relaxed);
+        // Rien ne passe derrière : c'est tout ce que « reprendre » veut
+        // dire, et c'est ce qui empêche le geste d'agir ici.
+        return 1;
+    }
+    // SAFETY: a hook that takes nothing hands it on, which is what the
+    // system asks of every one of them.
+    unsafe { CallNextHookEx(std::ptr::null_mut(), code, what, about) }
+}
+
+/// Whether this keystroke is one Windows made for a gesture of its own.
+#[cfg(windows)]
+fn ours_to_take(key: u32, marked: usize) -> bool {
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{VK_MENU, VK_TAB};
+
+    // Ce que ce programme tape porte sa marque et n'est jamais repris :
+    // il passe devant ce crochet comme tout le reste.
+    if marked == OURS {
+        return false;
+    }
+    // Une main posée à trois doigts, donc une main qui fait un geste et
+    // non une main sur le clavier.
+    if counted::FINGERS.load(Ordering::Relaxed) < THREE {
+        return false;
+    }
+    counted::KEYS_SEEN.fetch_add(1, Ordering::Relaxed);
+    // Les deux dont Windows se sert pour changer de fenêtre, et elles
+    // seules : son glissement à quatre doigts change de bureau avec
+    // d'autres touches, et le reprendre serait prendre ce que personne
+    // n'a demandé.
+    let key = key as u16;
+    key == VK_MENU || key == VK_TAB
 }
 
 /// Reads the pad for as long as it is wanted, and says whether the
@@ -809,12 +920,16 @@ pub fn read_the_pad(wanted: bool) -> bool {
             // Rendus ici et nulle part ailleurs : tant que ce programme ne
             // lit pas le pavé, Windows garde ses gestes, quelle que soit
             // la raison pour laquelle la lecture s'arrête.
+            SWALLOWING.let_go();
             give_the_gestures_back();
             note(&format!(
-                "pavé tactile : {} trames lues, {} à trois doigts ou plus, {} gestes",
+                "pavé tactile : {} trames lues, {} à trois doigts ou plus, {} gestes ; \
+                 crochet : {} frappes vues sous une main posée, {} reprises à Windows",
                 counted::FRAMES.load(Ordering::Relaxed),
                 counted::THREES.load(Ordering::Relaxed),
                 counted::GESTURES.load(Ordering::Relaxed),
+                counted::KEYS_SEEN.load(Ordering::Relaxed),
+                counted::KEYS_TAKEN.load(Ordering::Relaxed),
             ));
         }
         return false;
@@ -828,6 +943,16 @@ pub fn read_the_pad(wanted: bool) -> bool {
     // aux deux bouts à la fois. Rendus à l'arrêt de la lecture, juste
     // au-dessus : les deux vont ensemble et ne sont écrits qu'ici.
     take_the_gestures();
+    // Et le crochet par-dessus : les valeurs écrites plus haut mettent la
+    // page de Windows d'accord avec ce qui se passe, son pilote ne les
+    // relit pas, et c'est lui qui répond au geste.
+    if SWALLOWING.hold(lay_the_hook, take_the_hook_back) == Some(false) {
+        note(
+            "les touches des gestes n'ont pas pu être reprises à Windows : le geste agira des deux côtés",
+        );
+    }
+    counted::KEYS_SEEN.store(0, Ordering::Relaxed);
+    counted::KEYS_TAKEN.store(0, Ordering::Relaxed);
     counted::FRAMES.store(0, Ordering::Relaxed);
     counted::THREES.store(0, Ordering::Relaxed);
     counted::GESTURES.store(0, Ordering::Relaxed);
