@@ -787,9 +787,18 @@ pub fn stop_the_player(_process: u32) -> bool {
     false
 }
 
+/// Le programme, pour les endroits que le système appelle et à qui la
+/// boîte à outils ne donne rien.
+///
+/// Rangé ici pour le fil qui lit le pavé : il reconnaît un geste sur un
+/// fil à lui, et ce qu'un geste demande ensuite ne peut se faire que sur
+/// celui qui dessine.
+static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
+
 /// Follows the sessions for as long as the program runs, and puts the
 /// button up and down with them.
 pub fn watch(app: App) {
+    *PROGRAM.lock().expect("programme du bouton flottant") = Some(app.clone());
     crate::app::spawn(async move {
         loop {
             tokio::time::sleep(LOOK).await;
@@ -1456,21 +1465,56 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
 /// lecture/pause sont reprises à Windows par le moteur, qui les donne à
 /// l'ordinateur d'en face, ce qui est le chemin d'un Alt+Tab tapé au
 /// clavier.
+///
+/// Les reprendre, le moteur ne le fait que tant que le clavier appartient
+/// à son image, et donner le clavier à l'image d'un autre programme ne se
+/// fait que depuis le fil qui dessine. Les frappes passent donc par lui,
+/// comme celles du menu, et pour la même raison : tapées d'ici sans ce
+/// détour, elles partaient pendant que le clavier était encore à la
+/// fenêtre de ZyrDesk, le moteur les laissait passer, et Windows changeait
+/// de fenêtre sur cet ordinateur-ci au lieu de l'ordinateur d'en face.
 pub fn the_pad_said(gesture: crate::touchpad::Gesture) {
     use crate::touchpad::Gesture;
 
-    let done = match gesture {
-        Gesture::ThreeTap => a_middle_click(),
-        Gesture::FourTap => play_or_pause(),
-        // Vers la droite la fenêtre suivante, vers la gauche la
-        // précédente : c'est le sens que Windows donne aux mêmes gestes,
-        // et une main n'apprend pas deux sens pour un seul geste.
-        Gesture::Rightwards => the_window_after(false),
-        Gesture::Leftwards => the_window_after(true),
+    // Le clic ne demande rien à personne et part d'ici : il va là où le
+    // pointeur est posé, ce que le clavier ne décide pas.
+    //
+    // Vers la droite la fenêtre suivante, vers la gauche la précédente :
+    // c'est le sens que Windows donne aux mêmes gestes, et une main
+    // n'apprend pas deux sens pour un seul geste.
+    let key: fn() -> bool = match gesture {
+        Gesture::ThreeTap => {
+            if !a_middle_click() {
+                note(&format!("{gesture} : Windows a refusé de le transmettre"));
+            }
+            return;
+        }
+        Gesture::FourTap => play_or_pause,
+        Gesture::Rightwards => || the_window_after(false),
+        Gesture::Leftwards => || the_window_after(true),
     };
-    if !done {
-        note(&format!("{gesture} : Windows a refusé de le transmettre"));
-    }
+
+    let Some(app) = PROGRAM
+        .lock()
+        .expect("programme du bouton flottant")
+        .clone()
+    else {
+        note(&format!("{gesture} : la fenêtre n'est pas encore là"));
+        return;
+    };
+    let _ = app.run_on_main_thread(move || {
+        if !crate::picture::the_keyboard_to_the_picture() {
+            note(&format!(
+                "{gesture} : l'image n'a pas repris le clavier, donc Windows garde la \
+                 frappe pour cet ordinateur-ci ; le premier plan est {}",
+                crate::picture::the_front_in_words()
+            ));
+            return;
+        }
+        if !key() {
+            note(&format!("{gesture} : Windows a refusé de le transmettre"));
+        }
+    });
 }
 
 /// The same, from anywhere in the program rather than from the menu.

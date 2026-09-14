@@ -3237,6 +3237,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce qui permet à la pastille de l'image de dire lequel des deux.** L'anneau dit qu'il y a un problème, le dessin dit où : les deux écrans restent en sourdine et seul celui qui coince passe en couleur. Séparer les deux rôles est ce qui rend les deux lisibles en même temps, là où une pastille dont tout devient orange ne dit plus que la moitié.
 
+## D201. Un geste du pavé donne le clavier à l'image avant de taper (2026-09-14, pendant M6)
+
+**Le geste était reconnu depuis le début, et il était tapé.** Le journal du 14 septembre le dit trois fois : « geste reconnu : trois doigts vers la droite », sans refus derrière, donc `SendInput` a bien envoyé Alt+Tab. Et pourtant le sélecteur de tâches qui s'ouvrait était celui de cet ordinateur-ci. Les deux lignes suivantes disent pourquoi, et elles disent la même chose de deux côtés : ici « le premier plan passe à ZyrDesk » à l'instant du geste, et là-bas, dans le moteur, `passed: 0 switch off, 0 the window says the keyboard left it, 2 the system names another window` avec `ours 0x110a2c, last elsewhere: focus 0x206aa`.
+
+**Le compteur du moteur le dit par ce qu'il ne compte pas.** Deux touches passées pour trois Alt+Tab, soit douze frappes : le moteur n'en a pour ainsi dire vu aucune. Son crochet se pose quand son image prend le clavier et se retire quand elle le perd (« hook laid 10 times over 10 comings of the keyboard »). Une frappe envoyée pendant que le clavier est ailleurs n'est pas refusée par le crochet, elle ne le rencontre jamais.
+
+**Ce que le chemin du menu faisait déjà et que celui du geste ne faisait pas.** Les raccourcis du menu passent par `hand_over_and_type`, qui donne le clavier à l'image, vérifie qu'il y est arrivé, et tape seulement ensuite. Le geste, lui, appelait `the_window_after` tout droit. Le commentaire de cette fonction demandait pourtant exactement cette condition depuis qu'elle est écrite : « it needs the same thing of the session: the keyboard has to belong to it ». Personne ne la remplissait.
+
+**Donner le clavier ne se fait pas depuis n'importe quel fil.** C'est ce qui explique que la faute ait tenu : le pavé est lu sur un fil à lui, et donner le clavier à la fenêtre d'un autre programme n'est possible que depuis celui dont l'entrée a été jointe à la sienne, c'est-à-dire celui qui dessine. Le geste saute donc sur ce fil, comme le menu, et y fait les deux choses dans l'ordre.
+
+**Le clic, lui, ne bouge pas.** Un clic va où le pointeur est posé et ne demande rien au clavier : il part toujours du fil qui lit le pavé. C'est aussi le seul des trois gestes qui a toujours fonctionné, ce qui était déjà l'indice.
+
+**Ce que cela ne change pas.** Le glissement reste un Alt+Tab tapé sur cet ordinateur-ci, et la ligne « Clavier » du menu décide toujours s'il traverse : sur « Partagé », le moteur ne reprend pas les touches système et le geste change de fenêtre ici. Le produit le dit déjà au moment où l'on allume les gestes, et cette décision ne touche pas à cette règle.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
