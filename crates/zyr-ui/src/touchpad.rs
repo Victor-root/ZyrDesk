@@ -88,6 +88,13 @@ pub enum Gesture {
     ThreeTap,
     /// Quatre doigts posés et relevés sans bouger.
     FourTap,
+    /// La main s'est levée après un glissement.
+    ///
+    /// Pas un geste mais la fin d'un geste, et il faut le dire parce que
+    /// le sélecteur de fenêtres de l'ordinateur d'en face reste ouvert
+    /// entre deux crans : c'est ce qui laisse voir sur quelle fenêtre on
+    /// va tomber, et ça se ferme quand la main part.
+    SlideOver,
 }
 
 impl std::fmt::Display for Gesture {
@@ -97,6 +104,7 @@ impl std::fmt::Display for Gesture {
             Gesture::Rightwards => "trois doigts vers la droite",
             Gesture::ThreeTap => "trois doigts posés",
             Gesture::FourTap => "quatre doigts posés",
+            Gesture::SlideOver => "la main s'est levée",
         })
     }
 }
@@ -282,6 +290,16 @@ impl Reading {
         }
     }
 
+    /// Whether a slide is under way right now.
+    ///
+    /// Asked when the reading stops: the far computer holds an Alt for
+    /// as long as a slide lasts, and the end of that slide is the only
+    /// thing that gives it back. A reading that stops in the middle of
+    /// one would leave it held with nothing left to say otherwise.
+    pub fn is_sliding(&self) -> bool {
+        matches!(self.state, State::Sliding { .. })
+    }
+
     /// Où en est la main, pour une chasse et pour rien d'autre.
     ///
     /// Des nombres bruts qui ne veulent rien dire pour personne, et c'est
@@ -310,6 +328,11 @@ impl Reading {
                     Gesture::FourTap
                 })
             }
+            // Un glissement qui finit se dit, alors qu'un appui qui finit
+            // est l'appui lui-même : c'est ce qui referme le sélecteur de
+            // fenêtres là-bas, lequel est resté ouvert d'un cran à
+            // l'autre.
+            State::Sliding { .. } => Some(Gesture::SlideOver),
             _ => None,
         }
     }
@@ -776,6 +799,13 @@ pub fn read_the_pad(wanted: bool) -> bool {
 
     if !wanted {
         if READING.let_go() {
+            // Un glissement en cours tient un Alt sur l'ordinateur d'en
+            // face, et sa fin est la seule chose qui le rende. Dite ici
+            // tant qu'il reste quelqu'un pour la dire : après, ce fil ne
+            // lit plus rien et plus aucune levée de main ne sera vue.
+            if HAND.lock().expect("lecture du pavé").is_sliding() {
+                crate::floating::the_pad_said(Gesture::SlideOver);
+            }
             // Rendus ici et nulle part ailleurs : tant que ce programme ne
             // lit pas le pavé, Windows garde ses gestes, quelle que soit
             // la raison pour laquelle la lecture s'arrête.
@@ -1013,7 +1043,11 @@ fn a_report_came_in(packet: *mut core::ffi::c_void) {
         drop(hand);
 
         if let Some(gesture) = made {
-            counted::GESTURES.fetch_add(1, Ordering::Relaxed);
+            // La levée n'en est pas un : elle finit celui d'avant, et la
+            // compter ferait dire à ce nombre le double de ce qu'il dit.
+            if gesture != Gesture::SlideOver {
+                counted::GESTURES.fetch_add(1, Ordering::Relaxed);
+            }
             // En voix ordinaire : un geste reconnu est rare, c'est ce que
             // le produit vient de faire, et savoir s'il en reconnaît ne
             // doit demander à personne d'allumer quoi que ce soit.
@@ -1504,7 +1538,7 @@ mod tests {
         let mut reading = Reading::new();
         assert_eq!(
             slid(&mut reading, 100, 100 + A_STEP),
-            vec![Gesture::Rightwards]
+            vec![Gesture::Rightwards, Gesture::SlideOver]
         );
 
         let mut reading = Reading::new();
@@ -1514,6 +1548,7 @@ mod tests {
                 Gesture::Rightwards,
                 Gesture::Rightwards,
                 Gesture::Rightwards,
+                Gesture::SlideOver,
             ]
         );
     }
@@ -1530,7 +1565,7 @@ mod tests {
             made.extend(reading.saw(3, 400 + step * 19, 500 + step * 3, (step * 8) as u64));
         }
         made.extend(reading.saw(0, 476, 512, 100));
-        assert_eq!(made, vec![Gesture::Rightwards]);
+        assert_eq!(made, vec![Gesture::Rightwards, Gesture::SlideOver]);
     }
 
     #[test]
@@ -1538,7 +1573,7 @@ mod tests {
         let mut reading = Reading::new();
         assert_eq!(
             slid(&mut reading, 900, 900 - A_STEP),
-            vec![Gesture::Leftwards]
+            vec![Gesture::Leftwards, Gesture::SlideOver]
         );
     }
 
@@ -1553,7 +1588,25 @@ mod tests {
         made.extend(reading.saw(3, 100 + A_STEP, 500, 40));
         made.extend(reading.saw(3, 100, 500, 80));
         made.extend(reading.saw(0, 100, 500, 120));
-        assert_eq!(made, vec![Gesture::Rightwards, Gesture::Leftwards]);
+        assert_eq!(
+            made,
+            vec![Gesture::Rightwards, Gesture::Leftwards, Gesture::SlideOver]
+        );
+    }
+
+    #[test]
+    fn a_slide_says_when_the_hand_leaves_and_an_appui_does_not() {
+        // L'ordinateur d'en face tient un Alt tant que le glissement
+        // dure : sans cette fin, son sélecteur de fenêtres resterait
+        // ouvert pour toujours. Un appui, lui, ne tient rien, et une fin
+        // de plus ne voudrait rien dire.
+        let mut reading = Reading::new();
+        let made = slid(&mut reading, 100, 100 + A_STEP);
+        assert_eq!(made.last(), Some(&Gesture::SlideOver));
+        assert_eq!(made.iter().filter(|g| **g == Gesture::SlideOver).count(), 1);
+
+        let mut reading = Reading::new();
+        assert_eq!(tapped(&mut reading, 3, 0, 90), vec![Gesture::ThreeTap]);
     }
 
     #[test]
@@ -1655,7 +1708,7 @@ mod tests {
         made.extend(reading.saw(3, 100 + A_STEP, 500, 24));
         made.extend(reading.saw(2, 100 + A_STEP, 500, 32));
         made.extend(reading.saw(0, 100 + A_STEP, 500, 40));
-        assert_eq!(made, vec![Gesture::Rightwards]);
+        assert_eq!(made, vec![Gesture::Rightwards, Gesture::SlideOver]);
     }
 
     #[test]
@@ -1665,7 +1718,7 @@ mod tests {
         let mut reading = Reading::new();
         assert_eq!(
             slid(&mut reading, 100, 100 + A_STEP),
-            vec![Gesture::Rightwards]
+            vec![Gesture::Rightwards, Gesture::SlideOver]
         );
         assert_eq!(tapped(&mut reading, 3, 200, 260), vec![Gesture::ThreeTap]);
     }

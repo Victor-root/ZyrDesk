@@ -3279,6 +3279,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Le garde-fou qui manquait.** L'essai qui vérifie que chaque entrée du menu nomme un raccourci auquel le moteur répond ne couvrait pas les trois des gestes, alors que son commentaire dit précisément pourquoi il existe : changer une lettre sans changer le moteur fait taper une combinaison qui ne fait rien, ou pire, une autre que celle voulue. C'est exactement le risque qui vient d'être couru. Les trois y sont.
 
+## D204. Ce que Windows tient, il ne le lâche pas parce qu'on l'écrit (2026-09-14, pendant M6)
+
+**Le geste agissait aux deux bouts, et c'est le produit qui l'avait prévu.** Le commentaire de l'interrupteur du pavé le dit depuis qu'il est écrit : Windows ne lâche ces gestes que depuis sa propre page de réglages, aucun appel ne le change, et écrire la valeur change ce que la page montre sans rien changer à ce que le pavé fait. Il ajoute ce qui arriverait si on passait outre, mot pour mot : « le geste agirait deux fois, une fois à chaque bout ». Une version plus récente a ajouté l'écriture de la valeur en supposant que `WM_SETTINGCHANGE` suffirait, sans toucher à ce commentaire. Il a fallu quatre essais pour revenir à ce qu'il disait.
+
+**Et c'est ce qui masquait tout le reste.** Windows ouvrait son sélecteur de tâches sur l'ordinateur de la personne au moment du geste, donc le premier plan passait au sélecteur, donc la frappe que ZyrDesk envoyait ensuite n'atteignait plus la fenêtre du moteur. Le moteur ne voyait rien et son silence se lisait comme un défaut à lui. La seule preuve possible était ailleurs : le glissement continuait à changer les fenêtres de cet ordinateur-ci alors que plus une ligne de ce programme ne tape Alt+Tab.
+
+**La conclusion honnête, pour l'instant.** La personne doit mettre « Balayages à trois doigts » sur « Rien » dans la page de Windows. C'est ce que le produit voulait éviter et il n'y arrive pas par un appel. Ce qui reste à faire est de le lui dire au lieu de la laisser croire que l'interrupteur a suffi.
+
+**Le sélecteur de fenêtres reste maintenant ouvert pendant le glissement.** Une fois le geste passé, il manquait l'essentiel de ce qu'il sert à faire : chaque cran pressait et relâchait Alt, donc la liste des fenêtres de l'ordinateur d'en face s'ouvrait et se refermait trop vite pour être lue, et on changeait de fenêtre sans voir laquelle arrivait. Une main ne fait pas autrement : elle tient Alt et tape Tab, et c'est le relâchement d'Alt qui choisit. Le moteur tient donc cet Alt d'un cran à l'autre, et un quatrième raccourci lui dit que la main a quitté le pavé.
+
+**Pourquoi ceci n'est pas [D196](#d196-le-sélecteur-de-fenêtres-reste-ouvert-tant-que-la-main-glisse-2026-09-12-pendant-m6), annulée pour la même idée.** Ce jour-là, c'était ZyrDesk qui tenait Alt enfoncé sur l'ordinateur de la personne, et une touche restée enfoncée là est une machine inutilisable. Ici, l'Alt est tenu sur l'ordinateur d'en face, par le moteur, dans un flux qu'il vide déjà à la perte du clavier et à la fin de la session. Il est rangé dans la liste des touches tenues, et non à côté, précisément pour que ces deux-là le rendent ; et la lecture du pavé dit la fin du glissement avant de s'arrêter, quelle qu'en soit la raison. Trois choses le rendent, là où D196 n'en avait aucune.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

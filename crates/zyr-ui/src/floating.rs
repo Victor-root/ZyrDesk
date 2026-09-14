@@ -167,6 +167,13 @@ pub enum Act {
     /// whether a gesture crosses.
     WindowAfter,
     WindowBefore,
+    /// Et la main levée, qui referme le sélecteur là-bas.
+    ///
+    /// Le moteur tient Alt enfoncé d'un cran à l'autre, ce qui laisse le
+    /// sélecteur de fenêtres ouvert pendant que la main glisse, comme il
+    /// reste ouvert sous une main qui ne lâche pas Alt entre deux Tab.
+    /// Sans ce mot-là, il resterait ouvert pour toujours.
+    SlideOver,
     /// And the play/pause key over there, which a four-finger tap asks
     /// for and which Windows keeps here in just the same way.
     PlayPause,
@@ -196,6 +203,7 @@ impl Act {
             Act::PointerLock => Some(b'L'),
             Act::WindowAfter => Some(b'O'),
             Act::WindowBefore => Some(b'B'),
+            Act::SlideOver => Some(b'U'),
             Act::PlayPause => Some(b'P'),
             Act::Fullscreen
             | Act::SecureAttention
@@ -225,6 +233,7 @@ impl Act {
             Act::PointerLock => Some(0x26),
             Act::WindowAfter => Some(0x18),
             Act::WindowBefore => Some(0x30),
+            Act::SlideOver => Some(0x16),
             Act::PlayPause => Some(0x19),
             Act::Fullscreen
             | Act::SecureAttention
@@ -254,6 +263,7 @@ impl std::fmt::Display for Act {
             Act::PointerLock => "pointeur tenu dans l'image",
             Act::WindowAfter => "fenêtre suivante là-bas",
             Act::WindowBefore => "fenêtre précédente là-bas",
+            Act::SlideOver => "fin du glissement",
             Act::PlayPause => "lecture ou pause là-bas",
             Act::End => "fin de la session",
         })
@@ -1528,6 +1538,7 @@ pub fn the_pad_said(gesture: crate::touchpad::Gesture) {
         Gesture::FourTap => Act::PlayPause,
         Gesture::Rightwards => Act::WindowAfter,
         Gesture::Leftwards => Act::WindowBefore,
+        Gesture::SlideOver => Act::SlideOver,
     };
 
     let Some(app) = PROGRAM
@@ -2667,6 +2678,7 @@ mod tests {
             (Act::WindowAfter, b'O', 0x18),
             (Act::WindowBefore, b'B', 0x30),
             (Act::PlayPause, b'P', 0x19),
+            (Act::SlideOver, b'U', 0x16),
         ] {
             assert_eq!(act.letter(), Some(letter), "sur « {act} »");
             assert_eq!(act.where_it_sits(), Some(place), "sur « {act} »");
