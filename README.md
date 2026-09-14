@@ -98,7 +98,7 @@ Les moteurs compilés, eux, viennent du workflow « Moteurs » et se mettent en 
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\packaging\engines\fetch-engines.ps1
 ```
 
-Il faut le programme `gh` une fois (`winget install --id GitHub.cli && gh auth login`), le dépôt étant privé. Les compiler soi-même est décrit dans [docs/engines/COMPILER-LES-MOTEURS.md](docs/engines/COMPILER-LES-MOTEURS.md).
+Il faut le programme `gh` une fois (`winget install --id GitHub.cli && gh auth login`). Non pas à cause du dépôt, qui est ouvert : ce que laisse une compilation n'est servi qu'à quelqu'un d'identifié, quelle que soit la visibilité du dépôt. Publier les moteurs en *release* plutôt qu'en dépôt de compilation les rendrait téléchargeables sans rien installer. Les compiler soi-même est décrit dans [docs/engines/COMPILER-LES-MOTEURS.md](docs/engines/COMPILER-LES-MOTEURS.md).
 
 Construction de l'installateur Windows : voir [packaging/windows/README.md](packaging/windows/README.md).
 

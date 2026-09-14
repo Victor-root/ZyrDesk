@@ -5,10 +5,18 @@
 # take the better part of an hour. The CI builds them once when their
 # pinned source moves; this brings the result over.
 #
-# It goes through the GitHub CLI rather than a plain download. The
-# ZyrDesk repository is private, so what its builds produce is not a
-# public file: `gh` already holds the credentials for it, and no token
-# has to be written down anywhere on the machine.
+# It goes through the GitHub CLI rather than a plain download, and that
+# is not about the repository being open or closed. What a workflow
+# leaves behind is served to somebody who has signed in and to nobody
+# else, whatever the repository's own visibility: a plain download of an
+# artifact answers with a refusal even on a repository anybody can read.
+# `gh` already holds the credentials, so no token has to be written down
+# anywhere on the machine.
+#
+# What would do away with it is publishing the engines as a release
+# rather than as what a build leaves behind: release files are served to
+# anybody on an open repository, and would want neither the program nor
+# a sign-in.
 #
 # Nothing is fetched when the engines already come from the latest
 # build: they weigh tens of megabytes, and they move a handful of times
@@ -48,7 +56,8 @@ function Assert-Ran($what) {
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     Write-Host "Le programme « gh » est introuvable." -ForegroundColor Yellow
-    Write-Host "  Il sert à récupérer les moteurs compilés, qui vivent dans un dépôt privé."
+    Write-Host "  Il sert à récupérer les moteurs compilés. Ce que laisse une compilation"
+    Write-Host "  n'est servi qu'à quelqu'un d'identifié, même sur un dépôt ouvert."
     Write-Host "  À installer une seule fois :"
     Write-Host ""
     Write-Host "      winget install --id GitHub.cli"
