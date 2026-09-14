@@ -71,6 +71,14 @@ zyrdeskd uninstall   # le retirer
 
 Prérequis : Rust stable. Les moteurs sont des submodules et ne sont pas nécessaires pour compiler la partie ZyrDesk.
 
+Sous Windows, Rust ne suffit pas : il assemble avec l'éditeur de liens de Microsoft, qui n'est pas livré avec lui. Sans lui, la compilation s'arrête sur `linker \`link.exe\` not found` dès la première caisse, avant même d'avoir touché au code de ZyrDesk. Il vient des **Build Tools for Visual Studio**, avec la charge de travail « Développement Desktop en C++ » ; Visual Studio Code n'est pas la même chose et ne le porte pas.
+
+```powershell
+winget install --id Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+Écrit ici parce qu'une machine neuve est le seul endroit où cela se voit, et que le message d'erreur ne dit pas quoi installer.
+
 ```bash
 git clone https://github.com/Victor-root/ZyrDesk
 cd ZyrDesk
