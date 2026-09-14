@@ -380,6 +380,20 @@ const MESURES: [Chiffre; 4] = [
 /// temps de décodage nul.
 const RIEN: &str = "-";
 
+/// Combien de temps une mesure qui manque garde ce qu'elle disait.
+///
+/// Une de ces quatre manque parfois à une seconde et revient à la
+/// suivante : ce que l'ordinateur d'en face mesure ne voyage pas avec
+/// chaque image, et une seconde peut passer sans qu'aucune ne le porte.
+/// Effacée aussitôt, la mesure clignote entre un nombre et un tiret, et
+/// un nombre qui clignote se lit plus mal qu'un nombre d'une seconde de
+/// retard — qui est de toute façon ce qu'on lit, ces quatre-là étant des
+/// moyennes sur la seconde écoulée.
+///
+/// Trois secondes et pas plus : au-delà ce n'est plus une lecture qui a
+/// sauté mais une mesure qui n'existe plus, et le tiret dit alors vrai.
+const GARDE: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Le rythme du moteur, qui écrit une fois par seconde. Demander plus
 /// souvent relirait le même fichier pour le même nombre.
 const RYTHME: std::time::Duration = std::time::Duration::from_secs(1);
@@ -438,9 +452,12 @@ impl Cible {
 /// Écrits là où ils sont lus plutôt que gardés en nombres : la mise en
 /// forme se fait alors une fois par seconde et non une fois par image, et
 /// le fil qui dessine n'a plus qu'à poser du texte.
-#[derive(PartialEq)]
 struct Barre {
     chiffres: [String; 4],
+    /// Quand chacune a vraiment été lue, et non recopiée de la lecture
+    /// d'avant. Hors de toute comparaison : ces instants bougent à chaque
+    /// tour sans que rien ne se lise autrement.
+    lues: [Option<Instant>; 4],
     flux: String,
 }
 
@@ -597,22 +614,42 @@ impl Barre {
     const fn vide() -> Self {
         Barre {
             chiffres: [String::new(), String::new(), String::new(), String::new()],
+            lues: [None; 4],
             flux: String::new(),
         }
     }
 
-    /// Ce qu'une lecture du moteur donne à lire.
-    fn de(dit: &Mesures) -> Self {
-        Barre {
-            chiffres: std::array::from_fn(|rang| {
-                let quoi = &MESURES[rang];
-                match (quoi.lu)(dit) {
-                    Some(nombre) => format!("{nombre:.*} {}", quoi.apres, quoi.unite),
-                    None => RIEN.to_string(),
+    /// Ce qu'une lecture du moteur donne à lire, la précédente à la main.
+    ///
+    /// La précédente parce qu'une mesure qui manque garde un moment ce
+    /// qu'elle disait plutôt que de s'effacer ; voir `GARDE`.
+    fn de(dit: &Mesures, avant: &Barre, maintenant: Instant) -> Self {
+        let mut chiffres: [String; 4] = std::array::from_fn(|_| String::new());
+        let mut lues = [None; 4];
+        for (rang, quoi) in MESURES.iter().enumerate() {
+            if let Some(nombre) = (quoi.lu)(dit) {
+                chiffres[rang] = format!("{nombre:.*} {}", quoi.apres, quoi.unite);
+                lues[rang] = Some(maintenant);
+                continue;
+            }
+            match avant.lues[rang] {
+                Some(quand) if maintenant.duration_since(quand) < GARDE => {
+                    chiffres[rang].clone_from(&avant.chiffres[rang]);
+                    lues[rang] = Some(quand);
                 }
-            }),
+                _ => chiffres[rang] = RIEN.to_string(),
+            }
+        }
+        Barre {
+            chiffres,
+            lues,
             flux: flux(dit),
         }
+    }
+
+    /// Si ce qui se lit a changé, les instants mis à part.
+    fn se_lit_autrement(&self, que: &Barre) -> bool {
+        self.chiffres != que.chiffres || self.flux != que.flux
     }
 }
 
@@ -959,7 +996,8 @@ pub fn raise(app: &App, echelle: f32, clair: bool) {
     // Quatre tirets avant la première lecture, et non quatre vides : la
     // barre est là dès la première ouverture, et ce qu'elle montre alors
     // est ce que le produit montre pour une mesure qui manque.
-    *BARRE.lock().expect("mesures du menu") = Barre::de(&Mesures::default());
+    *BARRE.lock().expect("mesures du menu") =
+        Barre::de(&Mesures::default(), &Barre::vide(), Instant::now());
     range(&ECHELLE, echelle);
     CLAIR.store(clair, Ordering::Relaxed);
     OUVERT.store(false, Ordering::Relaxed);
@@ -2696,12 +2734,16 @@ fn suis_les_mesures(app: &App, ouvert: bool) {
     let app = app.clone();
     crate::app::spawn(async move {
         while TOUR.load(Ordering::Relaxed) == tour {
-            let lue = Barre::de(&crate::mesures::session_measures());
+            let dit = crate::mesures::session_measures();
+            let maintenant = Instant::now();
             // Le verrou est rendu avant l'attente : un verrou tenu à
-            // travers une attente est un verrou tenu une seconde.
+            // travers une attente est un verrou tenu une seconde. Pris
+            // avant la lecture et non après, parce que celle-ci part de
+            // la précédente pour les mesures qui manquent.
             let change = {
                 let mut barre = BARRE.lock().expect("mesures du menu");
-                let change = *barre != lue;
+                let lue = Barre::de(&dit, &barre, maintenant);
+                let change = barre.se_lit_autrement(&lue);
                 *barre = lue;
                 change
             };
