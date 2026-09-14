@@ -3267,6 +3267,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce qui est parti avec.** Les deux fonctions qui tapaient Alt+Tab et la touche lecture ici, et avec elles la moitié du petit type qui disait si une touche s'envoie par sa place ou par son nom : plus rien ne s'envoie par son nom, l'unique clé qui le demandait étant maintenant pressée là-bas.
 
+## D203. Le raccourci d'un geste se dit à l'arrivée, et quitte la lettre N (2026-09-14, pendant M6)
+
+**Vingt et un gestes, pas une ligne du moteur.** Le journal du 14 septembre au soir dit tout ce que ZyrDesk a fait : vingt et un gestes reconnus, aucun refus, donc le lecteur trouvé, le clavier donné à l'image et la frappe partie vingt et une fois. Le moteur, lui, dit qu'il a bien pris le clavier à chaque fois, et ne dit rien d'autre. Le raccourci n'a jamais atteint la fonction qui lui répond.
+
+**Deux choses se lisent pareil de loin.** Un raccourci qui n'arrive pas et un raccourci qui arrive sans être reconnu laissent le même silence. Le moteur écrit donc maintenant une ligne pour chaque frappe portant Ctrl+Alt+Maj, avec le nom et la place que sa boîte à outils y a lus, et une autre quand aucun des siens n'y répond. Le mot « touchpad » est dans les deux, parce que rien d'autre n'envoie ces combinaisons et parce que c'est sous ce tri-là qu'on les cherchera.
+
+**La lettre N était prise à l'autre bout.** Le moteur hôte garde Ctrl+Alt+Maj+N pour lui, pour montrer et cacher le pointeur qu'il dessine, et l'avale au lieu de la presser. Ce n'est pas ce qui fait le silence décrit plus haut, qui se produit avant, sur cet ordinateur-ci ; c'est une collision réelle quand même, et une lettre prise aux deux bouts est un geste qui fait autre chose sur l'ordinateur d'en face. Elle passe à O.
+
+**Trois lettres choisies pour leur place et non pour leur sens.** O, B et P occupent la même place sur un clavier azerty que sur un qwerty. C'est ce qui permet de les envoyer par leur place, comme tout ce que ce programme tape ; W, qui aurait été le mnémonique de « window », ne l'aurait pas permis, et le nom que la boîte à outils lit à cet endroit-là sur un azerty est déjà celui d'une autre combinaison du moteur.
+
+**Le garde-fou qui manquait.** L'essai qui vérifie que chaque entrée du menu nomme un raccourci auquel le moteur répond ne couvrait pas les trois des gestes, alors que son commentaire dit précisément pourquoi il existe : changer une lettre sans changer le moteur fait taper une combinaison qui ne fait rien, ou pire, une autre que celle voulue. C'est exactement le risque qui vient d'être couru. Les trois y sont.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

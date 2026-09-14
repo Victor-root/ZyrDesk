@@ -194,7 +194,7 @@ impl Act {
             Act::MouseMode => Some(b'M'),
             Act::SystemKeys => Some(b'K'),
             Act::PointerLock => Some(b'L'),
-            Act::WindowAfter => Some(b'N'),
+            Act::WindowAfter => Some(b'O'),
             Act::WindowBefore => Some(b'B'),
             Act::PlayPause => Some(b'P'),
             Act::Fullscreen
@@ -223,7 +223,7 @@ impl Act {
             Act::MouseMode => Some(0x32),
             Act::SystemKeys => Some(0x25),
             Act::PointerLock => Some(0x26),
-            Act::WindowAfter => Some(0x31),
+            Act::WindowAfter => Some(0x18),
             Act::WindowBefore => Some(0x30),
             Act::PlayPause => Some(0x19),
             Act::Fullscreen
@@ -2661,6 +2661,12 @@ mod tests {
             (Act::MouseMode, b'M', 0x32),
             (Act::SystemKeys, b'K', 0x25),
             (Act::PointerLock, b'L', 0x26),
+            // Celles des gestes du pavé. O et non N pour la fenêtre
+            // suivante : le moteur hôte garde Ctrl+Alt+Maj+N pour lui et
+            // l'avale au lieu de le presser.
+            (Act::WindowAfter, b'O', 0x18),
+            (Act::WindowBefore, b'B', 0x30),
+            (Act::PlayPause, b'P', 0x19),
         ] {
             assert_eq!(act.letter(), Some(letter), "sur « {act} »");
             assert_eq!(act.where_it_sits(), Some(place), "sur « {act} »");
