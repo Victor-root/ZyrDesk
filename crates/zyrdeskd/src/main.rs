@@ -193,14 +193,14 @@ fn run(command: Command) -> ExitCode {
                 println!("Service retiré.");
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("retrait du service", with_causes(&e)),
+            Err(e) => absent_or(&e, "retrait du service"),
         },
         Command::Start => match service::start() {
             Ok(()) => {
                 println!("Service démarré.");
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("démarrage du service", with_causes(&e)),
+            Err(e) => absent_or(&e, "démarrage du service"),
         },
         Command::Stop => match service::stop() {
             Ok(service::Stopped::WasRunning) => {
@@ -211,7 +211,7 @@ fn run(command: Command) -> ExitCode {
                 println!("Service déjà arrêté.");
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("arrêt du service", with_causes(&e)),
+            Err(e) => absent_or(&e, "arrêt du service"),
         },
         Command::Status => match service::state() {
             Ok(state) => {
@@ -219,7 +219,7 @@ fn run(command: Command) -> ExitCode {
                 println!("  Journal : {}", service_log().display());
                 ExitCode::SUCCESS
             }
-            Err(e) => failure("état du service", with_causes(&e)),
+            Err(e) => absent_or(&e, "état du service"),
         },
     }
 }
@@ -270,6 +270,27 @@ fn run(_command: Command) -> ExitCode {
 fn failure(context: &str, error: impl std::fmt::Display) -> ExitCode {
     eprintln!("Échec : {context}");
     eprintln!("  {error}");
+    ExitCode::FAILURE
+}
+
+/// Says a service that was never installed here, or says the failure.
+///
+/// Windows answers the same way whether it is asked to start, stop,
+/// describe or remove a service it does not know, and its own words name
+/// neither the situation nor the one thing to do about it. A machine
+/// where ZyrDesk has never run meets this before anything else, and it
+/// meets it once.
+#[cfg(windows)]
+fn absent_or(error: &windows_service::Error, context: &str) -> ExitCode {
+    if !service::unknown(error) {
+        return failure(context, with_causes(error));
+    }
+    eprintln!("Le service ZyrDesk n'est pas installé sur cet ordinateur.");
+    eprintln!("  À installer une fois, en fenêtre administrateur :");
+    eprintln!();
+    eprintln!("      zyrdeskd setup");
+    eprintln!();
+    eprintln!("  La fenêtre de ZyrDesk le fait aussi d'elle-même au premier lancement.");
     ExitCode::FAILURE
 }
 

@@ -596,6 +596,17 @@ fn reported(error: &windows_service::Error) -> Option<i32> {
     }
 }
 
+/// Whether that is Windows saying it does not know this service at all.
+///
+/// The one answer of the lot that is not a fault but a state: nothing
+/// has ever been installed on this machine. Told apart because Windows
+/// words it exactly like everything else that can go wrong here, « le
+/// service spécifié n'existe pas », which says neither what happened nor
+/// the one thing to do about it.
+pub fn unknown(error: &windows_service::Error) -> bool {
+    reported(error) == Some(UNKNOWN_SERVICE)
+}
+
 /// Removes the service. It disappears once stopped.
 pub fn uninstall() -> ServiceResult<()> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
