@@ -156,6 +156,20 @@ pub enum Act {
     Voyants,
     /// Whether the pointer is kept inside the picture.
     PointerLock,
+    /// The window after on the far computer, or the one before.
+    ///
+    /// What a three-finger slide asks for. It has a shortcut of its own
+    /// rather than being Alt+Tab typed here, because Alt+Tab typed here
+    /// is kept by this computer's Windows: only the engine's hook ever
+    /// takes it back, and only while the picture holds the keyboard. The
+    /// engine presses it on the far computer itself, down the session's
+    /// own input stream, so nothing about this machine's windows decides
+    /// whether a gesture crosses.
+    WindowAfter,
+    WindowBefore,
+    /// And the play/pause key over there, which a four-finger tap asks
+    /// for and which Windows keeps here in just the same way.
+    PlayPause,
     End,
 }
 
@@ -163,21 +177,26 @@ impl Act {
     /// Letter of the engine's Ctrl+Alt+Shift shortcut, for the ones that
     /// have one.
     ///
-    /// Five do not. Ending a session is asked of the far computer over
-    /// the tunnel, since what ends it there is that computer letting its
-    /// desktop go; covering the screen is done to our own window, the
-    /// engine's having gone inside it; the sound is hushed on this
-    /// computer's own mixer, where the player has a strip like any other
-    /// program; and the last two are the pair Windows keeps for itself at
-    /// both ends of a session, Ctrl+Alt+Suppr and the lock screen, which
+    /// Eight do not, and for four reasons. Ending a session is asked of
+    /// the far computer over the tunnel, since what ends it there is that
+    /// computer letting its desktop go; covering the screen is done to
+    /// our own window, the engine's having gone inside it; the sound is
+    /// hushed on this computer's own mixer, where the player has a strip
+    /// like any other program; Ctrl+Alt+Suppr and the lock screen are the
+    /// pair Windows keeps for itself at both ends of a session, so they
     /// travel on the product's own channel and are done over there by the
-    /// service, the one program on that machine allowed to.
+    /// service, the one program on that machine allowed to; and the pad,
+    /// the clipboard and the badges are switches of this program alone,
+    /// which the engine has no business hearing about.
     fn letter(self) -> Option<u8> {
         match self {
             Act::Stats => Some(b'S'),
             Act::MouseMode => Some(b'M'),
             Act::SystemKeys => Some(b'K'),
             Act::PointerLock => Some(b'L'),
+            Act::WindowAfter => Some(b'N'),
+            Act::WindowBefore => Some(b'B'),
+            Act::PlayPause => Some(b'P'),
             Act::Fullscreen
             | Act::SecureAttention
             | Act::LockScreen
@@ -204,6 +223,9 @@ impl Act {
             Act::MouseMode => Some(0x32),
             Act::SystemKeys => Some(0x25),
             Act::PointerLock => Some(0x26),
+            Act::WindowAfter => Some(0x31),
+            Act::WindowBefore => Some(0x30),
+            Act::PlayPause => Some(0x19),
             Act::Fullscreen
             | Act::SecureAttention
             | Act::LockScreen
@@ -230,6 +252,9 @@ impl std::fmt::Display for Act {
             Act::Clipboard => "presse-papiers partagé",
             Act::Voyants => "voyants montrés en permanence",
             Act::PointerLock => "pointeur tenu dans l'image",
+            Act::WindowAfter => "fenêtre suivante là-bas",
+            Act::WindowBefore => "fenêtre précédente là-bas",
+            Act::PlayPause => "lecture ou pause là-bas",
             Act::End => "fin de la session",
         })
     }
@@ -1466,15 +1491,26 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
 /// l'ordinateur d'en face, ce qui est le chemin d'un Alt+Tab tapé au
 /// clavier.
 ///
-/// Les reprendre, le moteur ne le fait que tant que le clavier appartient
-/// à son image, et donner le clavier à l'image d'un autre programme ne se
-/// fait que depuis le fil qui dessine. Les frappes passent donc par lui,
-/// comme celles du menu, et pour la même raison : tapées d'ici sans ce
-/// détour, elles partaient pendant que le clavier était encore à la
-/// fenêtre de ZyrDesk, le moteur les laissait passer, et Windows changeait
-/// de fenêtre sur cet ordinateur-ci au lieu de l'ordinateur d'en face.
+/// Elles ne sont plus tapées telles quelles. Alt+Tab et la touche
+/// lecture/pause tapées ici, Windows les garde : le crochet du moteur est
+/// la seule chose qui les lui reprenne, et il n'est posé que tant que
+/// l'image tient le clavier. Un geste fait sur un pavé qu'on a donné à la
+/// session n'a pas à dépendre de quelle fenêtre est devant sur cet
+/// ordinateur-ci. Chacune a donc son raccourci à elle, que Windows ne
+/// garde pas, et c'est le moteur qui presse la vraie touche sur
+/// l'ordinateur d'en face, dans le flux d'entrée de la session.
+///
+/// Reste une condition, une seule, et c'est celle que le menu remplit
+/// déjà pour ses propres raccourcis : la fenêtre du moteur doit recevoir
+/// la frappe, donc tenir le clavier, ce dont `hand_over_and_type`
+/// s'assure avant de taper.
+///
+/// Les lignes partent sous l'étiquette du pavé et non sous celle de ce
+/// menu : tout ce qui décide de ces gestes se cherche sous un seul nom,
+/// sinon une chasse en demande deux pour un seul sujet.
 pub fn the_pad_said(gesture: crate::touchpad::Gesture) {
     use crate::touchpad::Gesture;
+    use crate::touchpad::said;
 
     // Le clic ne demande rien à personne et part d'ici : il va là où le
     // pointeur est posé, ce que le clavier ne décide pas.
@@ -1482,16 +1518,16 @@ pub fn the_pad_said(gesture: crate::touchpad::Gesture) {
     // Vers la droite la fenêtre suivante, vers la gauche la précédente :
     // c'est le sens que Windows donne aux mêmes gestes, et une main
     // n'apprend pas deux sens pour un seul geste.
-    let key: fn() -> bool = match gesture {
+    let act = match gesture {
         Gesture::ThreeTap => {
             if !a_middle_click() {
-                note(&format!("{gesture} : Windows a refusé de le transmettre"));
+                said(&format!("{gesture} : Windows a refusé de le transmettre"));
             }
             return;
         }
-        Gesture::FourTap => play_or_pause,
-        Gesture::Rightwards => || the_window_after(false),
-        Gesture::Leftwards => || the_window_after(true),
+        Gesture::FourTap => Act::PlayPause,
+        Gesture::Rightwards => Act::WindowAfter,
+        Gesture::Leftwards => Act::WindowBefore,
     };
 
     let Some(app) = PROGRAM
@@ -1499,20 +1535,22 @@ pub fn the_pad_said(gesture: crate::touchpad::Gesture) {
         .expect("programme du bouton flottant")
         .clone()
     else {
-        note(&format!("{gesture} : la fenêtre n'est pas encore là"));
+        said(&format!("{gesture} : la fenêtre n'est pas encore là"));
         return;
     };
-    let _ = app.run_on_main_thread(move || {
-        if !crate::picture::the_keyboard_to_the_picture() {
-            note(&format!(
-                "{gesture} : l'image n'a pas repris le clavier, donc Windows garde la \
-                 frappe pour cet ordinateur-ci ; le premier plan est {}",
-                crate::picture::the_front_in_words()
-            ));
+    let process = match the_player(&app) {
+        Ok(process) => process,
+        Err(why) => {
+            said(&format!("{gesture} : {why}"));
             return;
         }
-        if !key() {
-            note(&format!("{gesture} : Windows a refusé de le transmettre"));
+    };
+    // Donner le clavier à l'image d'un autre programme ne se fait que
+    // depuis le fil dont l'entrée a été jointe à la sienne, et le pavé est
+    // lu sur un fil à lui.
+    let _ = app.run_on_main_thread(move || {
+        if let Err(why) = hand_over_and_type(act, process) {
+            said(&format!("{gesture} : {why}"));
         }
     });
 }
@@ -2403,21 +2441,21 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
     // that is a shortcut which works or not depending on whether they
     // let go in between. The engine reads the whole combination either
     // way: what it does not get from us, it already has.
-    let to_press: Vec<Key> = [
+    let to_press: Vec<u16> = [
         (place::CTRL, VK_CONTROL),
         (place::ALT, VK_MENU),
         (place::SHIFT, VK_SHIFT),
     ]
     .into_iter()
     .filter(|(_, named)| !a_finger_holds(*named))
-    .map(|(place, _)| Key::Place(place))
+    .map(|(place, _)| place)
     .collect();
 
     // Pressed in order, released in the mirror order: no key is left
     // down that was not down before.
-    let mut keys: Vec<(Key, bool)> = to_press.iter().map(|place| (*place, false)).collect();
-    keys.push((Key::Place(key), false));
-    keys.push((Key::Place(key), true));
+    let mut keys: Vec<(u16, bool)> = to_press.iter().map(|place| (*place, false)).collect();
+    keys.push((key, false));
+    keys.push((key, true));
     keys.extend(to_press.iter().rev().map(|place| (*place, true)));
 
     if typed(&keys) {
@@ -2449,54 +2487,34 @@ mod place {
     pub const CTRL: u16 = 0x1D;
     pub const ALT: u16 = 0x38;
     pub const SHIFT: u16 = 0x2A;
-    pub const TAB: u16 = 0x0F;
-}
-
-/// A key as it is typed: by its place, or by its name.
-///
-/// Almost everything goes by its place, for the reason above. A key that
-/// has no engraving anywhere, like the one that plays and pauses, is the
-/// exception: it means the same thing on every keyboard in the world, its
-/// place moves from one laptop to the next, and its name is the only
-/// thing about it that is fixed.
-#[derive(Clone, Copy)]
-enum Key {
-    Place(u16),
-    Named(u16),
 }
 
 /// Types those keys, in that order, and says whether the system took them
 /// all.
 ///
-/// Each pair is a key and whether it is going up. Shared by everything
-/// this program types: what it hands the system is the same either way,
-/// and two copies of it would be two chances to send a keystroke slightly
-/// differently.
+/// Each pair is where a key sits and whether it is going up. Shared by
+/// everything this program types: what it hands the system is the same
+/// either way, and two copies of it would be two chances to send a
+/// keystroke slightly differently.
 #[cfg(windows)]
-fn typed(keys: &[(Key, bool)]) -> bool {
+fn typed(keys: &[(u16, bool)]) -> bool {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
         INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
     };
 
     let events: Vec<INPUT> = keys
         .iter()
-        .map(|(key, up)| {
-            let (name, place, how) = match key {
-                Key::Place(place) => (0, *place, KEYEVENTF_SCANCODE),
-                Key::Named(name) => (*name, 0, 0),
-            };
-            INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: name,
-                        wScan: place,
-                        dwFlags: how | if *up { KEYEVENTF_KEYUP } else { 0 },
-                        time: 0,
-                        dwExtraInfo: 0,
-                    },
+        .map(|(place, up)| INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: 0,
+                    wScan: *place,
+                    dwFlags: KEYEVENTF_SCANCODE | if *up { KEYEVENTF_KEYUP } else { 0 },
+                    time: 0,
+                    dwExtraInfo: 0,
                 },
-            }
+            },
         })
         .collect();
 
@@ -2513,61 +2531,7 @@ fn typed(keys: &[(Key, bool)]) -> bool {
 }
 
 #[cfg(not(windows))]
-fn typed(_keys: &[(Key, bool)]) -> bool {
-    false
-}
-
-/// Presses the key that plays and pauses.
-///
-/// It travels the same road as Alt+Tab and for the same reason: Windows
-/// keeps it for itself here, handing it to whatever is playing on this
-/// computer, and the engine's own hook is the one thing that ever takes
-/// it back for the session. So this needs what that needs, the keyboard
-/// belonging to the picture.
-#[cfg(windows)]
-fn play_or_pause() -> bool {
-    use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_MEDIA_PLAY_PAUSE;
-
-    let key = Key::Named(VK_MEDIA_PLAY_PAUSE);
-    typed(&[(key, false), (key, true)])
-}
-
-#[cfg(not(windows))]
-fn play_or_pause() -> bool {
-    false
-}
-
-/// Types Alt+Tab, or Alt+Maj+Tab to go the other way.
-///
-/// Typed here rather than sent anywhere, and that is the whole of how it
-/// crosses: Windows keeps Alt+Tab for itself on this computer, and the
-/// one thing that ever takes it back is the engine's own hook, which
-/// steps in front of every keystroke of the machine while the picture has
-/// the keyboard. What it takes, it hands to the far computer. So this is
-/// the same road a hand's own Alt+Tab takes, and it needs the same thing
-/// of the session: the keyboard has to belong to it.
-#[cfg(windows)]
-fn the_window_after(back: bool) -> bool {
-    let (alt, shift, tab) = (
-        Key::Place(place::ALT),
-        Key::Place(place::SHIFT),
-        Key::Place(place::TAB),
-    );
-    let mut keys = vec![(alt, false)];
-    if back {
-        keys.push((shift, false));
-    }
-    keys.push((tab, false));
-    keys.push((tab, true));
-    if back {
-        keys.push((shift, true));
-    }
-    keys.push((alt, true));
-    typed(&keys)
-}
-
-#[cfg(not(windows))]
-fn the_window_after(_back: bool) -> bool {
+fn typed(_keys: &[(u16, bool)]) -> bool {
     false
 }
 

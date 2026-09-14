@@ -3251,6 +3251,22 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que cela ne change pas.** Le glissement reste un Alt+Tab tapé sur cet ordinateur-ci, et la ligne « Clavier » du menu décide toujours s'il traverse : sur « Partagé », le moteur ne reprend pas les touches système et le geste change de fenêtre ici. Le produit le dit déjà au moment où l'on allume les gestes, et cette décision ne touche pas à cette règle.
 
+## D202. Un geste du pavé ne passe plus par le clavier de cet ordinateur (2026-09-14, pendant M6)
+
+**[D201](#d201-un-geste-du-pavé-donne-le-clavier-à-limage-avant-de-taper-2026-09-14-pendant-m6) réparait la dernière marche d'un escalier qui n'aurait pas dû exister.** Le chemin d'un glissement à trois doigts comptait cinq maillons : ZyrDesk lit le pavé, reconnaît le geste, tape Alt+Tab sur le clavier de cet ordinateur-ci, le crochet du moteur le reprend à Windows, le moteur l'envoie à l'ordinateur d'en face. Deux de ces maillons ne nous appartiennent pas, et les deux ont une condition : Windows garde Alt+Tab pour lui, et le crochet n'est posé que tant que l'image tient le clavier. Donner le clavier à l'image avant de taper remplit la seconde ; elle reste une condition, sur un geste qui ne devrait en avoir aucune.
+
+**Un geste du pavé n'a rien à voir avec les fenêtres de cet ordinateur-ci.** La personne a donné son pavé à la session par la ligne « Pavé tactile » du menu. Ce qu'elle a demandé doit arriver, quelle que soit la fenêtre qui se trouve devant et quel que soit l'état de la ligne « Clavier », laquelle parle d'autre chose : des touches que sa main presse, pas des gestes que le produit lit lui-même.
+
+**Le moteur presse la vraie touche là-bas.** Trois raccourcis à nous, Ctrl+Alt+Maj+N, +B et +P, que Windows ne garde pas et qui arrivent à la fenêtre du moteur comme n'importe quelle frappe. Le moteur y répond en écrivant Alt+Tab, Alt+Maj+Tab ou la touche lecture/pause directement dans le flux d'entrée de la session. Plus de crochet, plus de touches système reprises, plus de Windows à contourner : l'escalier passe de cinq marches à trois.
+
+**Ce que le journal prouvait des deux moitiés séparément.** Le compteur du moteur disait deux touches vues pour douze envoyées : non pas un refus, une absence, le crochet n'ayant pas été là. Et dans le même journal, Ctrl+Alt+Maj+K arrivait au moteur et y basculait l'interrupteur. Le chemin choisi est donc celui dont on avait la preuve qu'il fonctionne, et il laisse une seule condition au lieu de trois : la fenêtre du moteur doit recevoir la frappe, ce dont `hand_over_and_type` s'assure déjà pour tous les raccourcis du menu.
+
+**Les touches sont rendues avant d'écrire.** Les trois modificateurs qui ont porté le raccourci sont partis là-bas comme enfoncés avant que le moteur ne reconnaisse la combinaison. Sans les rendre, l'ordinateur d'en face recevrait Ctrl+Alt+Maj+Tab. Le moteur fait ce que fait déjà son collage de texte, pour la même raison, et relâche Alt en dernier : rien ne reste enfoncé sur la machine de quelqu'un d'autre.
+
+**Le clic à trois doigts ne bouge pas.** Il va là où le pointeur est posé et n'a jamais rien demandé au clavier. C'était aussi le seul des trois gestes qui fonctionnait, ce qui était l'indice depuis le début.
+
+**Ce qui est parti avec.** Les deux fonctions qui tapaient Alt+Tab et la touche lecture ici, et avec elles la moitié du petit type qui disait si une touche s'envoie par sa place ou par son nom : plus rien ne s'envoie par son nom, l'unique clé qui le demandait étant maintenant pressée là-bas.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
