@@ -475,6 +475,20 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 Err(reason) => Answer::Refused(reason),
             }
         }
+        Request::WakeTheTouchpad => {
+            // Hors du fil qui porte ce canal : éteindre un périphérique
+            // et attendre qu'il revienne prend le temps d'un rattachement
+            // matériel, et tout ce qui parle à ce service ferait la queue
+            // derrière.
+            match tokio::task::spawn_blocking(crate::touchpad::wake_it_again).await {
+                Ok(Ok(said)) => {
+                    answering.log.about("touchpad").write(&said);
+                    Answer::Done
+                }
+                Ok(Err(reason)) => Answer::Refused(reason),
+                Err(e) => Answer::Refused(format!("le pavé n'a pas pu être redémarré : {e}")),
+            }
+        }
         Request::LockScreen { way } => match answering.machine.ways.ask_to_lock(way).await {
             Ok(()) => Answer::Done,
             Err(reason) => Answer::Refused(reason),

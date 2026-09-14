@@ -1427,7 +1427,13 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
     });
     if on {
         state.touchpad.store(false, Ordering::Relaxed);
+        // Les valeurs de Windows sont rendues par l'arrêt de la lecture,
+        // et le pavé est redémarré derrière pour qu'il les relise : sans
+        // ça, ses gestes resteraient coupés une fois la session finie,
+        // ce qui est exactement le défaut qu'on vient de corriger, à
+        // l'envers.
         crate::touchpad::read_the_pad(false);
+        wake_the_touchpad().await;
         crate::settings::remember_touchpad_gestures(false).await;
         return Ok(());
     }
@@ -1470,11 +1476,37 @@ async fn the_pad_to_the_session(app: &App) -> Result<(), String> {
         crate::touchpad::open_the_windows_page();
         return Err(what_to_do);
     }
+    // Les valeurs viennent d'être mises à zéro, et Windows ne les relit
+    // pas : ce qui applique ses gestes les a lues une fois et les garde.
+    // Le pavé qui s'en va et revient repart des siennes, et ce sont
+    // maintenant les nôtres.
+    wake_the_touchpad().await;
     // Remembered like the keyboard beside it: this is thrown in the
     // middle of a session, and the side it is left on is the side the
     // next session should open on.
     crate::settings::remember_touchpad_gestures(true).await;
     Ok(())
+}
+
+/// Demande au service d'éteindre et de rallumer le pavé.
+///
+/// Au service parce qu'éteindre un périphérique demande les droits d'un
+/// administrateur, que cette fenêtre n'a pas et qu'il a. Rien ne lui est
+/// nommé : il cherche lui-même les pavés de précision de la machine, et
+/// un nom parti d'ici serait une façon de lui faire éteindre ce que cette
+/// fenêtre n'a pas le droit d'éteindre.
+///
+/// Un refus est dit et n'arrête rien. Ce redémarrage décide de l'endroit
+/// où le geste agit, pas de la lecture du pavé, laquelle tient déjà : un
+/// interrupteur qui se refuserait pour ça laisserait la personne sans
+/// gestes du tout plutôt qu'avec des gestes qui agissent des deux côtés.
+async fn wake_the_touchpad() {
+    if let Err(why) = crate::service::ask(&zyr_control::Request::WakeTheTouchpad).await {
+        crate::touchpad::said(&format!(
+            "le pavé n'a pas pu être éteint et rallumé, donc Windows garde les réglages \
+             qu'il avait lus et ses gestes agiront ici aussi : {why}"
+        ));
+    }
 }
 
 /// Ce qu'un geste du pavé fait de la session.

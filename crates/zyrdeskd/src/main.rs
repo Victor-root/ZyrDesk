@@ -19,6 +19,7 @@ mod said;
 mod screen;
 mod speakers;
 mod supervisor;
+mod touchpad;
 mod transfer;
 mod ways;
 

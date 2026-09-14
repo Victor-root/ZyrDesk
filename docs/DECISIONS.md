@@ -3305,6 +3305,24 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Deux textes qui mentaient sont partis.** Le commentaire de l'interrupteur décrivait encore une conception abandonnée, celle du refus et de la page ouverte à la main, et c'est lui qui a fait chercher la panne ailleurs pendant quatre essais. Et l'avertissement disant que le glissement dépend de la ligne « Clavier » n'est plus vrai depuis [D202](#d202-un-geste-du-pavé-ne-passe-plus-par-le-clavier-de-cet-ordinateur-2026-09-14-pendant-m6) : le geste ne passe plus par les touches système du moteur mais par un raccourci à nous.
 
+## D206. Le pavé s'en va et revient, c'est ce qui fait relire Windows (2026-09-14, pendant M6)
+
+**Deux hypothèses éliminées par la mesure, dans cet ordre.** Le crochet posé par [D205](#d205-zyrdesk-reprend-à-windows-les-touches-de-ses-propres-gestes-2026-09-14-pendant-m6) a compté cent douze frappes vues et zéro sous une main posée, les cent douze étant exactement celles que ce programme envoie lui-même. Windows ne fabrique donc aucune frappe pour ce geste : il n'y a rien à reprendre au clavier. Et la page du pavé, lue entière, ne cache aucun réglage inconnu : `ThreeFingerSlideEnabled` est bien la valeur qui commande, elle est écrite à zéro, et l'écriture réussit.
+
+**Ce qui reste est donc établi par élimination et non supposé.** Le composant de Windows qui applique ces gestes a lu ces valeurs une fois et les garde ; la page des réglages les lui fait relire par un chemin qui n'est ouvert à personne d'autre ; et aucune application ne peut prendre un pavé de précision en exclusif.
+
+**Un périphérique qui se rattache repart de ses réglages.** C'est le seul levier qui reste, et il est franc : le pavé est éteint puis rallumé, Windows relit, et les valeurs qu'il lit sont les nôtres. Ça coûte une seconde de pavé mort à l'allumage de l'interrupteur et autant à son extinction. C'est le prix, et il a été choisi contre les deux autres : couper le geste en permanence avec une ouverture de session à faire une fois, ou continuer de chercher sans garantie qu'une solution propre existe.
+
+**Fait par le service et non par la fenêtre.** Éteindre un périphérique demande les droits d'un administrateur. La fenêtre ne les a pas, le service les a.
+
+**Et rien ne lui est nommé.** Le service cherche lui-même les pavés de précision de la machine, par ce que chacun déclare de son usage, et ne touche à rien d'autre. Un identifiant de périphérique parti de la fenêtre et obéi par le service serait une façon de faire éteindre à un programme privilégié ce que son appelant n'a pas le droit d'éteindre, ce qui est la définition même d'une élévation.
+
+**Le rallumage prime sur tout.** Il est tenté même quand l'extinction a échoué, et son refus est le premier mot du message : un pavé laissé éteint, c'est un portable sans pointeur, et c'est le seul résultat que ce code n'a pas le droit de produire.
+
+**Un refus n'arrête pas l'interrupteur.** Ce redémarrage décide de l'endroit où le geste agit, pas de la lecture du pavé, laquelle tient déjà. Un interrupteur qui se refuserait pour ça laisserait la personne sans gestes du tout plutôt qu'avec des gestes qui agissent des deux côtés.
+
+**Et le pavé est redémarré aussi à l'extinction.** Les valeurs d'origine sont rendues par l'arrêt de la lecture, et sans relecture elles ne vaudraient rien : les gestes resteraient coupés une fois la session finie, ce qui est le défaut d'aujourd'hui remis à l'envers.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
