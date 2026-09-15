@@ -3411,6 +3411,12 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce que la GPL demande, au passage, était dit de travers.** Trois documents affirmaient que l'export des diffs dans `patches/` répondait à une obligation de licence. C'est faux : l'obligation est de fournir la source correspondant aux binaires distribués, et les deux forks publics la portent déjà, le journal du produit écrivant le numéro de compilation qui la désigne. L'export serait un confort de lecture, rien de plus, et il n'existe pas.
 
+## D216. Un tri qui ne rend rien dit quel mot ajouter (2026-09-15, pendant M6)
+
+**Une page qui ment par omission.** Chercher pourquoi un geste du pavé tactile n'arrive pas dans la session, trier sur « touchpad », et lire « rien ici ne répond au tri » en face du journal du lecteur. La phrase se lit comme un moteur qui n'a rien dit. Il avait tout dit : ses lignes ne portent aucun nom, elles répondent donc au nom de leur fichier, et « touchpad » n'est pas « session ». Le seul journal qui tenait la réponse était écarté par le tri le plus évident à taper.
+
+**La règle est bonne, c'est son silence qui ne l'était pas.** Un mot seul cherche un nom, jamais du texte libre, et c'est ce qui permet de demander un fichier entier d'un mot. Ce qui manquait est ce que la page dit quand ce choix écarte tout un fichier : elle nomme maintenant le mot à ajouter, et seulement là où c'est vrai, c'est-à-dire pour un fichier dont aucune ligne ne porte de nom.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

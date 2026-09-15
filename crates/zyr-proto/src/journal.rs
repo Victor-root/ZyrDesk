@@ -390,18 +390,20 @@ fn last_lines(
     // for from a list of names.
     let stem = within.strip_suffix(".log").unwrap_or(within);
     let mut answered: Vec<&str> = Vec::new();
+    // Les noms de ce fichier-ci, pour savoir quoi dire s'il ne rend rien.
+    let mut its_own = BTreeSet::new();
     for line in whole {
-        named.insert(
-            crate::sifting::about(line)
-                .map_or(stem, |(_, tag)| tag)
-                .to_lowercase(),
-        );
+        let name = crate::sifting::about(line)
+            .map_or(stem, |(_, tag)| tag)
+            .to_lowercase();
+        its_own.insert(name.clone());
+        named.insert(name);
         if sift.keeps(line, within) {
             answered.push(line);
         }
     }
     if answered.is_empty() && !sift.takes_everything() {
-        return "(rien ici ne répond au tri)".to_string();
+        return nothing_here(sift, stem, &its_own);
     }
     if from_its_start {
         return both_ends(&answered);
@@ -417,6 +419,26 @@ fn last_lines(
         kept.insert_str(0, "(le début n'est pas montré)\n");
     }
     kept
+}
+
+/// What to say of a file that answered nothing, which is not always the
+/// same news.
+///
+/// Un fichier dont les lignes ne portent aucun nom répond au sien, et à
+/// lui seul. Demander « touchpad » écarte donc le journal du lecteur en
+/// entier, y compris les lignes qui parlent du pavé tactile, et la page
+/// disait « rien ici ne répond au tri » : cela se lit comme un moteur
+/// qui n'a rien dit, alors qu'il avait tout dit. Un soir de chasse y est
+/// passé. La phrase nomme maintenant le mot à ajouter.
+fn nothing_here(sift: &Sifting, stem: &str, its_own: &BTreeSet<String>) -> String {
+    let nameless = its_own.len() == 1 && its_own.contains(stem);
+    if sift.asks_for_a_name() && nameless {
+        return format!(
+            "(rien ici ne répond au tri ; les lignes de ce fichier ne portent pas de nom et \
+             répondent au sien : ajoutez « {stem} » au tri pour les lire)"
+        );
+    }
+    "(rien ici ne répond au tri)".to_string()
 }
 
 /// Where the last run of a file begins, when the file says so.
@@ -585,6 +607,39 @@ mod tests {
         );
         assert!(!kept.contains("ne sont pas montrées"), "{kept}");
         assert_eq!(kept.lines().count(), 21, "{kept}");
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn un_fichier_sans_nom_dit_quel_mot_ajouter_au_tri() {
+        // La panne exacte : demander « touchpad » écarte le journal du
+        // lecteur en entier, parce que ses lignes ne portent pas de nom
+        // et répondent au sien. La page disait « rien ici ne répond au
+        // tri », ce qui se lit comme un moteur qui n'a rien dit alors
+        // qu'il avait tout dit.
+        let folder = a_folder_of_its_own("sans-nom");
+
+        // Le journal d'un moteur : aucune ligne n'a d'étiquette.
+        let moteur = folder.join("session.log");
+        std::fs::write(
+            &moteur,
+            "00:00:08 - SDL Info (0): zyr: touchpad: rien pour nous\n",
+        )
+        .unwrap();
+        let rendu = read(&moteur, "session.log", &Sifting::of("touchpad"));
+        assert!(rendu.contains("ajoutez « session » au tri"), "{rendu}");
+
+        // Un fichier dont les lignes portent des noms ne dit rien de
+        // tel : y ajouter son propre nom n'y changerait rien.
+        let service = folder.join("service.log");
+        std::fs::write(&service, "2026-09-15 18:30:18 I [way] voie 1 ouverte\n").unwrap();
+        let rendu = read(&service, "service.log", &Sifting::of("touchpad"));
+        assert_eq!(rendu, "(rien ici ne répond au tri)", "{rendu}");
+
+        // Et le tri qui nomme bien le fichier le rend.
+        let rendu = read(&moteur, "session.log", &Sifting::of("touchpad session"));
+        assert!(rendu.contains("rien pour nous"), "{rendu}");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }

@@ -187,6 +187,18 @@ impl Sifting {
     pub fn said(&self) -> &str {
         &self.said
     }
+
+    /// Whether a name was asked for at all.
+    ///
+    /// Read by whoever has to explain an empty answer: a file that holds
+    /// nothing because a name was asked for and its lines carry none is a
+    /// very different thing from a file that holds nothing at all, and
+    /// the two said the same sentence.
+    pub fn asks_for_a_name(&self) -> bool {
+        self.terms
+            .iter()
+            .any(|term| term.of == Part::Tag && !term.against)
+    }
 }
 
 impl fmt::Display for Sifting {
