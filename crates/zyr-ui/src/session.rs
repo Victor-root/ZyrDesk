@@ -863,9 +863,9 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
         // Costs nothing where it was already right: by the time the
         // service holds an ordinary session, the picture has been in our
         // window for seconds.
-        if !lay_the_picture_when_it_opens(app, process)
-            && !crate::floating::Floating::a_close_was_asked_for(app)
-        {
+        if lay_the_picture_when_it_opens(app, process) {
+            opening.picture_laid(crate::picture::laid_at(app));
+        } else if !crate::floating::Floating::a_close_was_asked_for(app) {
             note(&format!(
                 "le lecteur {process} n'a pas ouvert d'image, l'écran d'ouverture est retiré \
                  quand même"
@@ -1106,12 +1106,12 @@ fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
 fn told(step: Step) -> Option<(String, Option<String>)> {
     Some(match step {
         Step::Reached { packet } => (format!("Tunnel établi, paquets de {packet} octets."), None),
-        Step::Pairing { again: false } => (
+        Step::Pairing { again: None } => (
             "Premier accès à cet ordinateur : les deux font connaissance. Rien à faire."
                 .to_string(),
             None,
         ),
-        Step::Pairing { again: true } => (
+        Step::Pairing { again: Some(_) } => (
             "Cet ordinateur ne nous reconnaît plus : les deux font connaissance à nouveau. Rien \
              à faire."
                 .to_string(),
@@ -1159,12 +1159,16 @@ fn told(step: Step) -> Option<(String, Option<String>)> {
 /// this line lie by four seconds. The picture is laid the moment its
 /// window opens, well before; what comes after is this program watching
 /// the player for a while to be sure it does not die on the spot, which
-/// is what a far computer refusing the session looks like.
+/// is what a far computer refusing the session looks like. So the
+/// picture is timed on its own, from the ask and from the player's own
+/// start: it is the only one of these durations a person actually sits
+/// through, and it was the only one this line never held.
 struct Opening {
     asked: std::time::Instant,
     reached: Option<std::time::Duration>,
     starting: Option<std::time::Duration>,
     showing: Option<std::time::Duration>,
+    shown: Option<std::time::Duration>,
 }
 
 impl Opening {
@@ -1174,7 +1178,23 @@ impl Opening {
             reached: None,
             starting: None,
             showing: None,
+            shown: None,
         }
+    }
+
+    /// Notes when the picture itself landed, which no step says.
+    ///
+    /// C'est pourtant la seule durée que la personne ressent : tout le
+    /// reste se passe pendant qu'elle regarde l'écran d'ouverture, et ce
+    /// qu'elle attend est l'image. Elle n'était écrite nulle part, et
+    /// une ouverture de vingt-cinq secondes ne se lisait donc dans
+    /// aucune ligne de ce journal.
+    ///
+    /// Le moment vient de l'image elle-même et jamais de l'horloge lue
+    /// ici : elle est souvent posée par l'autre fil pendant que
+    /// celui-ci regarde encore le lecteur tenir.
+    fn picture_laid(&mut self, at: Option<std::time::Instant>) {
+        self.shown = at.map(|at| at.saturating_duration_since(self.asked));
     }
 
     /// Notes when a step was reached, for the three that mark a boundary.
@@ -1203,12 +1223,14 @@ impl Opening {
         format!(
             "session tenue après {} ms : {} pour joindre l'ordinateur distant, {} à lui demander \
              ce qu'il faut, {} à lancer le lecteur, {} à le regarder tenir. L'image, elle, est \
-             posée dès que sa fenêtre s'ouvre, donc avant cette dernière attente",
+             arrivée {} après la demande, dont {} entre le lecteur et elle",
             whole.as_millis(),
             since(Some(std::time::Duration::ZERO), self.reached),
             since(self.reached, self.starting),
             since(self.starting, self.showing),
             since(self.showing, Some(whole)),
+            since(Some(std::time::Duration::ZERO), self.shown),
+            since(self.showing, self.shown),
         )
     }
 }
@@ -1222,10 +1244,13 @@ impl Opening {
 fn written(step: &Step) -> String {
     match step {
         Step::Reached { packet } => format!("tunnel ouvert, paquets de {packet} octets"),
-        Step::Pairing { again: false } => "présentation des deux ordinateurs".to_string(),
-        Step::Pairing { again: true } => {
-            "l'ordinateur distant ne reconnaît plus celui-ci, nouvelle présentation".to_string()
-        }
+        Step::Pairing { again: None } => "présentation des deux ordinateurs".to_string(),
+        Step::Pairing {
+            again: Some(stopped),
+        } => format!(
+            "l'ordinateur distant ne reconnaît plus celui-ci, nouvelle présentation (le lecteur \
+             s'est arrêté sur {stopped:?})"
+        ),
         Step::PairingNeeded { .. } => {
             "en attente du code à taper sur l'ordinateur distant".to_string()
         }

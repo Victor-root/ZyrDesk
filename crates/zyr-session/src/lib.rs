@@ -126,10 +126,17 @@ pub enum Step {
     /// The two computers have never met, and are being introduced.
     /// Nothing is asked of anyone.
     ///
-    /// `again` when they believed they already knew each other and the
-    /// far one turned out not to agree, which is what a pairing forgotten
-    /// on the other side looks like from here.
-    Pairing { again: bool },
+    /// `again` holds what the player stopped on when they believed they
+    /// already knew each other and the far one turned out not to agree,
+    /// which is what a pairing forgotten on the other side looks like
+    /// from here. `None` on a first meeting.
+    ///
+    /// What it stopped on is carried rather than dropped: an
+    /// introduction redone at every single session is either a far
+    /// computer that truly forgets or a player that died of something
+    /// else and was read as one, and the exit code is the only thing
+    /// that tells the two apart.
+    Pairing { again: Option<SessionOutcome> },
     /// The same, without a tunnel to carry the code: it has to be typed
     /// on the other computer. Only the diagnostic path ever gets here.
     PairingNeeded { pin: String },
@@ -792,14 +799,7 @@ pub fn open(
     let engine = ClientEngine::new(&exe, state).with_log(&log);
 
     if !already_known {
-        introduce(
-            &engine,
-            &target,
-            driving.as_mut(),
-            false,
-            told,
-            still_wanted,
-        )?;
+        introduce(&engine, &target, driving.as_mut(), None, told, still_wanted)?;
         told(Step::Paired);
     }
 
@@ -837,8 +837,15 @@ pub fn open(
     // Only when the pairing was skipped. Having just been introduced and
     // still being turned away is another fault entirely, and doing it
     // twice would not make it any better.
-    if already_known && gave_up_at_once(&mut session, still_wanted)? {
-        introduce(&engine, &target, driving.as_mut(), true, told, still_wanted)?;
+    if already_known && let Some(stopped) = gave_up_at_once(&mut session, still_wanted)? {
+        introduce(
+            &engine,
+            &target,
+            driving.as_mut(),
+            Some(stopped),
+            told,
+            still_wanted,
+        )?;
         told(Step::Paired);
         carry_on(still_wanted)?;
         told(Step::Starting);
@@ -875,7 +882,7 @@ fn introduce(
     engine: &ClientEngine,
     target: &str,
     driving: Option<&mut Driving>,
-    again: bool,
+    again: Option<SessionOutcome>,
     told: &mut dyn FnMut(Step),
     still_wanted: &dyn Fn() -> bool,
 ) -> Result<(), Error> {
@@ -922,11 +929,14 @@ fn introduce(
 /// session during these few seconds had the two computers introduced
 /// again over a session the person had just left, and the far engine,
 /// asked for a pairing nobody was waiting for, refused it.
-fn gave_up_at_once(session: &mut Session, still_wanted: &dyn Fn() -> bool) -> Result<bool, Error> {
+fn gave_up_at_once(
+    session: &mut Session,
+    still_wanted: &dyn Fn() -> bool,
+) -> Result<Option<SessionOutcome>, Error> {
     let deadline = Instant::now() + SESSION_TAKES;
     while Instant::now() < deadline {
         if !still_wanted() {
-            return Ok(false);
+            return Ok(None);
         }
         let stopped = session
             .settled(WATCH_STEP)
@@ -935,7 +945,7 @@ fn gave_up_at_once(session: &mut Session, still_wanted: &dyn Fn() -> bool) -> Re
             return Ok(worth_introducing_again(stopped, still_wanted()));
         }
     }
-    Ok(false)
+    Ok(None)
 }
 
 /// Whether what the engine stopped on is worth introducing the two
@@ -950,16 +960,21 @@ fn gave_up_at_once(session: &mut Session, still_wanted: &dyn Fn() -> bool) -> Re
 /// that computer takes the stream away, and the engine stops on a
 /// failure: from here that is indistinguishable from a computer that no
 /// longer knows this one. Only the caller knows, so the caller is asked.
-fn worth_introducing_again(stopped: Option<SessionOutcome>, still_wanted: bool) -> bool {
-    still_wanted
-        && matches!(
-            stopped,
-            Some(
-                SessionOutcome::Failed
-                    | SessionOutcome::Unreachable
-                    | SessionOutcome::Unknown { .. }
-            )
-        )
+fn worth_introducing_again(
+    stopped: Option<SessionOutcome>,
+    still_wanted: bool,
+) -> Option<SessionOutcome> {
+    if !still_wanted {
+        return None;
+    }
+    match stopped {
+        Some(
+            outcome @ (SessionOutcome::Failed
+            | SessionOutcome::Unreachable
+            | SessionOutcome::Unknown { .. }),
+        ) => Some(outcome),
+        _ => None,
+    }
 }
 
 /// The service, and the way it holds for this session.
@@ -1236,18 +1251,27 @@ mod tests {
         // été réinstallée, remise à zéro, ou simplement avoir oublié. Le
         // moteur repart alors en moins d'une seconde, et c'est le seul
         // signe qu'on en ait.
-        assert!(worth_introducing_again(Some(Outcome::Failed), true));
-        assert!(worth_introducing_again(Some(Outcome::Unreachable), true));
-        assert!(worth_introducing_again(
-            Some(Outcome::Unknown { code: Some(9) }),
-            true
-        ));
+        // Et ce que le lecteur a dit est rendu tel quel : c'est la seule
+        // pièce qui distingue un ordinateur qui oublie vraiment d'un
+        // lecteur mort d'autre chose et lu comme tel.
+        assert_eq!(
+            worth_introducing_again(Some(Outcome::Failed), true),
+            Some(Outcome::Failed)
+        );
+        assert_eq!(
+            worth_introducing_again(Some(Outcome::Unreachable), true),
+            Some(Outcome::Unreachable)
+        );
+        assert_eq!(
+            worth_introducing_again(Some(Outcome::Unknown { code: Some(9) }), true),
+            Some(Outcome::Unknown { code: Some(9) })
+        );
 
         // Toujours en cours : la session a pris, on n'y touche pas.
-        assert!(!worth_introducing_again(None, true));
+        assert_eq!(worth_introducing_again(None, true), None);
         // Terminée toute seule : quelqu'un l'a fermée. Réappairer
         // rouvrirait une session qu'on vient de quitter.
-        assert!(!worth_introducing_again(Some(Outcome::Ended), true));
+        assert_eq!(worth_introducing_again(Some(Outcome::Ended), true), None);
     }
 
     #[test]
@@ -1267,8 +1291,9 @@ mod tests {
             Some(Outcome::Ended),
             None,
         ] {
-            assert!(
-                !worth_introducing_again(arret.clone(), false),
+            assert_eq!(
+                worth_introducing_again(arret.clone(), false),
+                None,
                 "sur {arret:?}"
             );
         }

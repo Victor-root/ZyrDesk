@@ -188,6 +188,15 @@ struct Held {
     /// computer answers with what its screen turned out to be able to
     /// do.
     shape: (i32, i32),
+    /// The moment it was laid.
+    ///
+    /// Written here because this is the only place that knows it. Two
+    /// threads race to lay a picture, and whichever loses learns nothing
+    /// from its own call but « already held » : an opening that read the
+    /// clock when its own call came back therefore measured its own
+    /// waiting, not the picture, and floored every fast session at the
+    /// length of the watch running beside it.
+    at: std::time::Instant,
 }
 
 /// Takes that player's window in hand and lays it over ours, and says
@@ -216,6 +225,7 @@ pub fn hold(app: &App, process: u32) -> bool {
                 process,
                 window,
                 shape,
+                at: std::time::Instant::now(),
             });
             // The shape is worth writing down: it is the size the far
             // computer's picture actually arrives at, which is the
@@ -233,6 +243,15 @@ pub fn hold(app: &App, process: u32) -> bool {
     }
     fit(app);
     true
+}
+
+/// When the picture in hand was laid, for whoever is timing an opening.
+pub fn laid_at(app: &App) -> Option<std::time::Instant> {
+    app.picture()
+        .held
+        .lock()
+        .expect("image tenue")
+        .map(|held| held.at)
 }
 
 /// Lets go, the session being over.

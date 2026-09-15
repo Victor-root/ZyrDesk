@@ -3345,6 +3345,14 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et la preuve manquait parce que la page la coupait.** Le journal ne gardait que les cent vingt dernières lignes de chaque fichier, et le moteur en écrit une quarantaine rien qu'à ouvrir son décodeur : son démarrage, qui est justement ce qu'on cherchait, n'y arrivait jamais. Un tri en garde maintenant cinq cents, ce qui n'allonge la page que là où quelqu'un a demandé à voir.
 
+## D209. L'ouverture dit combien de temps l'image a mis, et pourquoi elle recommence les présentations (2026-09-15, pendant M6)
+
+**La seule durée qu'une personne ressent n'était écrite nulle part.** Le bilan d'ouverture comptait quatre choses : joindre l'ordinateur d'en face, lui demander ce qu'il faut, lancer le lecteur, le regarder tenir. Aucune n'est l'image. Une ouverture de vingt-cinq secondes se lisait donc comme une session tenue en six, et le reste ne se retrouvait qu'en soustrayant à la main deux horodatages arrondis à la seconde, ce que cette ligne existe précisément pour éviter.
+
+**Et l'instant vient de l'image, jamais de l'horloge lue par celui qui attend.** Deux fils courent après la même image, et celui qui perd la course n'apprend rien de son propre appel : il lui est répondu « déjà tenue ». Une ouverture qui regardait sa montre au retour de son appel mesurait son attente à elle, pas l'image, et plaquait toute session rapide sur la durée de la surveillance qui tourne à côté. Le moment est donc noté là où il est connu, au moment où la fenêtre du lecteur est posée dans la nôtre, et relu ensuite.
+
+**Les présentations refaites à chaque session sont un fait, pas une explication.** Le journal disait « l'ordinateur distant ne reconnaît plus celui-ci » et s'arrêtait là. Or cette phrase est une déduction : ce que l'on sait réellement est que le lecteur s'est arrêté avant d'avoir rien montré, et le code sur lequel il s'est arrêté est la seule pièce qui distingue un ordinateur qui oublie vraiment d'un lecteur mort d'autre chose et lu comme tel. Il est maintenant porté jusqu'au journal et jusqu'à la ligne de commande.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
