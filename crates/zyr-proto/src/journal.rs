@@ -64,6 +64,17 @@ pub fn names_in(page: &str) -> Vec<String> {
 /// that has just gone wrong, short enough to stay one readable paste.
 const KEPT: usize = 120;
 
+/// Et combien quand quelque chose est demandé.
+///
+/// Un tri vient de quelqu'un qui sait ce qu'il cherche et qui a déjà
+/// réduit ce qui sort : en garder davantage n'allonge la page que là où
+/// c'est exactement ce qu'on voulait. Sans cela, le début d'un démarrage
+/// reste hors de portée quoi qu'on demande, et c'est justement ce qu'on
+/// cherche quand une ouverture traîne : le moteur écrit une quarantaine
+/// de lignes rien qu'à ouvrir son décodeur, et cent vingt ne remontent
+/// même pas jusqu'à son premier mot.
+const KEPT_WHEN_ASKED: usize = 500;
+
 /// The files gathered, in the order they are read.
 const FILES: [(&str, &str); 4] = [
     ("service.log", "Le service"),
@@ -122,9 +133,8 @@ impl Journal {
     ///
     /// The asking happens as the files are read and never on the page
     /// once it is made, and that is the whole of what makes it worth
-    /// anything: only the last hundred and twenty lines of each file
-    /// reach a page, and six lines about the clipboard are almost never
-    /// among the last hundred and twenty of a session.
+    /// anything: only the end of each file reaches a page, and six lines
+    /// about the clipboard are almost never among the last of a session.
     pub fn sifted(mut self, sift: &Sifting) -> String {
         let here = |present: bool| if present { "présent" } else { "absent" };
         self.says("Moteur hôte", here(paths::host_engine_exe().is_file()));
@@ -341,7 +351,12 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
     if answered.is_empty() && !sift.takes_everything() {
         return "(rien ici ne répond au tri)".to_string();
     }
-    let from = answered.len().saturating_sub(KEPT);
+    let kept = if sift.takes_everything() {
+        KEPT
+    } else {
+        KEPT_WHEN_ASKED
+    };
+    let from = answered.len().saturating_sub(kept);
     let mut kept = answered[from..].join("\n");
     if from > 0 || skipped > 0 {
         kept.insert_str(0, "(le début n'est pas montré)\n");

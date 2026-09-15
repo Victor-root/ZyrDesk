@@ -3333,6 +3333,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et le rythme se relâche avec lui.** La milliseconde entre deux regards sert à ne pas laisser voir la fenêtre du moteur avant qu'elle soit posée dans la nôtre, course qui se joue à l'instant où elle s'ouvre. Passé le temps ordinaire, elle coûte plus qu'elle ne rapporte : une image, c'est seize millisecondes, et seize millisecondes ne se voient pas.
 
+## D208. Le moteur ne cherche personne sur le réseau (2026-09-15, pendant M6)
+
+**Vingt-cinq secondes contre trois.** Le même ordinateur, la même minute, le même ordinateur d'en face : Parsec montre son image en trois secondes, ZyrDesk en vingt-cinq. Ce n'est pas une lenteur de réseau, la voie s'ouvre en quatre millisecondes et le tour du monde vaut un millième de seconde.
+
+**Le trou se situe entre les premières demandes du moteur et son flux.** Le journal du service le date à la seconde près : le moteur ouvre ses tunnels de dialogue tout de suite, puis plus rien pendant dix-sept secondes, puis son flux s'ouvre et l'image arrive huit secondes plus tard. Les six secondes que la fenêtre attend avant de déclarer la session tenue tournent à côté et ne retardent rien : l'image est posée par un fil qui n'attend pas celui-là.
+
+**Ce que le moteur fait de ces dix-sept secondes.** Il cherche des ordinateurs sur le réseau. Lancé pour une session, il démarre quand même sa découverte par annonces, trouve les vraies machines qui se tiennent derrière notre tunnel, et retient de chacune toutes les adresses qu'elle possède. Son sondage les essaie ensuite l'une après l'autre jusqu'à ce qu'une réponde, et sur un réseau où l'IPv6 est annoncée sans être joignable, chacune coûte une tentative de connexion entière.
+
+**Il n'a rien à découvrir.** ZyrDesk lui donne la seule adresse à laquelle il doive jamais parler, un tunnel sur la machine même, et cette adresse est tout ce qu'une session est. La découverte est donc éteinte quand ZyrDesk le pilote, ce que le moteur sait déjà par le mode dans lequel il est lancé.
+
+**Et la preuve manquait parce que la page la coupait.** Le journal ne gardait que les cent vingt dernières lignes de chaque fichier, et le moteur en écrit une quarantaine rien qu'à ouvrir son décodeur : son démarrage, qui est justement ce qu'on cherchait, n'y arrivait jamais. Un tri en garde maintenant cinq cents, ce qui n'allonge la page que là où quelqu'un a demandé à voir.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
