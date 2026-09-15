@@ -3353,6 +3353,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Les présentations refaites à chaque session sont un fait, pas une explication.** Le journal disait « l'ordinateur distant ne reconnaît plus celui-ci » et s'arrêtait là. Or cette phrase est une déduction : ce que l'on sait réellement est que le lecteur s'est arrêté avant d'avoir rien montré, et le code sur lequel il s'est arrêté est la seule pièce qui distingue un ordinateur qui oublie vraiment d'un lecteur mort d'autre chose et lu comme tel. Il est maintenant porté jusqu'au journal et jusqu'à la ligne de commande.
 
+## D210. Le journal du lecteur commence là où sa session commence (2026-09-15, pendant M6)
+
+**Trois soirs de chasse perdus sur un journal qui coupait la réponse.** Chaque fichier rendait ses cent vingt dernières lignes, cinq cents quand quelqu'un triait. Or le lecteur écrit des milliers de lignes par session, dont une quarantaine rien qu'à ouvrir son décodeur : ses cent vingt dernières sont toujours la fin d'une séance, jamais son démarrage. Le démarrage était précisément ce qu'on cherchait, et il était structurellement hors d'atteinte, quoi qu'on demande.
+
+**La marque existait déjà, il suffisait de la lire.** ZyrDesk écrit lui-même une ligne dans le journal du lecteur au moment où il le lance. C'est la seule chose qui dise où commence ce qu'un lecteur a raconté : lui n'en pose aucune. Elle est maintenant partagée entre celui qui l'écrit et celui qui la lit, plutôt que recopiée des deux côtés, sans quoi un mot retouché d'un côté couperait la lecture de l'autre en silence.
+
+**Les deux bouts, et jamais le milieu.** Le début d'une séance explique une ouverture qui traîne, sa fin explique une session qui tombe, et son milieu est la même image décodée quarante mille fois. Cent cinquante lignes de chaque côté, et ce qui manque entre les deux est compté à voix haute : un journal amputé en silence se lit comme un journal complet.
+
+**Et la règle ne vaut que là où le produit sait où commence ce qu'il lit.** Le service, la fenêtre et le moteur hôte n'ont pas de marque d'ouverture : ils gardent leur fin, comme avant.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

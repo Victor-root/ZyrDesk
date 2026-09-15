@@ -75,12 +75,36 @@ const KEPT: usize = 120;
 /// même pas jusqu'à son premier mot.
 const KEPT_WHEN_ASKED: usize = 500;
 
+/// Comment le lecteur d'une session ouvre son journal.
+///
+/// Écrit par ce qui le lance, et lu ici : c'est la seule marque qui dise
+/// où commence ce qu'un lecteur a raconté, le lecteur, lui, n'en posant
+/// aucune. Partagée plutôt que recopiée des deux côtés, sans quoi une
+/// retouche d'un mot d'un côté couperait la lecture de l'autre en
+/// silence.
+pub const SESSION_OPENS: &str = "--- session towards ";
+
+/// Combien de lignes on garde de chaque bout d'un journal dont on sait
+/// où il commence.
+///
+/// Son début explique une ouverture qui traîne, sa fin explique une
+/// session qui tombe, et son milieu est la même image décodée quarante
+/// mille fois. Les deux bouts, donc, et ce qui manque entre les deux est
+/// compté à voix haute.
+const KEPT_EACH_END: usize = 150;
+
 /// The files gathered, in the order they are read.
-const FILES: [(&str, &str); 4] = [
-    ("service.log", "Le service"),
-    ("session.log", "Le moteur client"),
-    ("engine-console.log", "Le moteur hôte"),
-    ("interface.log", "La fenêtre"),
+///
+/// The third column is what opens one run of that file, where anything
+/// does. Without it the last hundred and twenty lines of the client
+/// engine's journal are always the end of a session, and the start of
+/// one, which is where an opening explains itself, was out of reach
+/// whatever anybody asked for.
+const FILES: [(&str, &str, &str); 4] = [
+    ("service.log", "Le service", ""),
+    ("session.log", "Le moteur client", SESSION_OPENS),
+    ("engine-console.log", "Le moteur hôte", ""),
+    ("interface.log", "La fenêtre", ""),
 ];
 
 /// The files emptied with the others and never gathered.
@@ -157,11 +181,12 @@ impl Journal {
         // name offered that no line carries is a dead end offered.
         let mut named = BTreeSet::new();
         let mut bodies = String::new();
-        for (file, what) in FILES {
+        for (file, what, opens) in FILES {
             let _ = write!(bodies, "\n\n--- {what} ({file}) ---\n");
             bodies.push_str(&last_lines(
                 &paths::logs_dir().join(file),
                 file,
+                opens,
                 sift,
                 &mut named,
             ));
@@ -193,7 +218,11 @@ impl Journal {
 /// Answers what could not be emptied, said in words meant to be read.
 pub fn emptied() -> Vec<String> {
     let mut refused = Vec::new();
-    for (file, what) in FILES.iter().chain(ALSO_EMPTIED.iter()) {
+    for (file, what) in FILES
+        .iter()
+        .map(|(file, what, _)| (file, what))
+        .chain(ALSO_EMPTIED.iter().map(|(file, what)| (file, what)))
+    {
         if let Err(e) = empty(&paths::logs_dir().join(file)) {
             refused.push(format!("{what} ({file}) : {e}"));
         }
@@ -275,11 +304,24 @@ fn build_from(text: &str) -> String {
 /// lines that carry none: the engines write their own journals in their
 /// own shape, and this is what lets one of them be asked for whole.
 ///
+/// `opens` is what starts one run of that file, where anything does.
+/// Given one, the reading begins at the last of them rather than at
+/// however many lines fit from the end, and keeps both ends of what
+/// follows: the beginning explains an opening that dragged, the end
+/// explains a session that fell over, and the two are never within a
+/// hundred and twenty lines of each other.
+///
 /// Every name met on the way is put in `named`, whether or not its line
 /// survives the sifting. That is the whole point of collecting them
 /// here: what can be asked for is what the files hold, not what is left
 /// once the asking has been done.
-fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<String>) -> String {
+fn last_lines(
+    path: &Path,
+    within: &str,
+    opens: &str,
+    sift: &Sifting,
+    named: &mut BTreeSet<String>,
+) -> String {
     use std::io::{Read, Seek, SeekFrom};
 
     // How much of the end is read, at most. Far more than the lines
@@ -291,7 +333,11 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
     // sitting at the end of it.
     const READ_AT_MOST: u64 = 256 * 1024;
     const READ_AT_MOST_WHEN_ASKED: u64 = 4 * 1024 * 1024;
-    let read_at_most = if sift.takes_everything() {
+    // And as wide for a file whose own beginning is being looked for:
+    // a cut that lands past the mark loses it, and losing it puts the
+    // reading back on the end of the file, which is the very thing the
+    // mark exists to get away from.
+    let read_at_most = if sift.takes_everything() && opens.is_empty() {
         READ_AT_MOST
     } else {
         READ_AT_MOST_WHEN_ASKED
@@ -328,6 +374,12 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
     } else {
         &lines[..]
     };
+    // And where this file says out loud where one run of it begins, that
+    // is where the reading begins.
+    let (whole, from_its_start) = match last_mark(whole, opens) {
+        Some(at) => (&whole[at..], true),
+        None => (whole, false),
+    };
     // Asked of every line read and not of the ones kept, which is the
     // point: what is being looked for is rare, and a file's last hundred
     // and twenty lines almost never hold it.
@@ -351,6 +403,9 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
     if answered.is_empty() && !sift.takes_everything() {
         return "(rien ici ne répond au tri)".to_string();
     }
+    if from_its_start {
+        return both_ends(&answered);
+    }
     let kept = if sift.takes_everything() {
         KEPT
     } else {
@@ -364,13 +419,42 @@ fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<St
     kept
 }
 
+/// Where the last run of a file begins, when the file says so.
+fn last_mark(lines: &[&str], opens: &str) -> Option<usize> {
+    if opens.is_empty() {
+        return None;
+    }
+    lines.iter().rposition(|line| line.starts_with(opens))
+}
+
+/// Both ends of what one run said, and the count of what lies between.
+///
+/// Whole while it fits, which is the ordinary case: a session that
+/// opened and closed says a few hundred lines. What overflows is a
+/// session that ran, and what it wrote while it ran is the same frame
+/// decoded over and over.
+fn both_ends(lines: &[&str]) -> String {
+    if lines.len() <= KEPT_EACH_END * 2 {
+        return lines.join("\n");
+    }
+    let dropped = lines.len() - KEPT_EACH_END * 2;
+    let mut kept = lines[..KEPT_EACH_END].join("\n");
+    let _ = write!(
+        kept,
+        "\n({dropped} lignes du milieu ne sont pas montrées)\n"
+    );
+    kept.push_str(&lines[lines.len() - KEPT_EACH_END..].join("\n"));
+    kept
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Les noms rencontrés ne sont pas le sujet de ces essais-là.
+    /// Les noms rencontrés ne sont pas le sujet de ces essais-là, ni la
+    /// marque d'ouverture, que seul le journal du lecteur porte.
     fn read(path: &Path, within: &str, sift: &Sifting) -> String {
-        last_lines(path, within, sift, &mut BTreeSet::new())
+        last_lines(path, within, "", sift, &mut BTreeSet::new())
     }
 
     /// Rien de demandé, donc tout gardé.
@@ -444,6 +528,90 @@ mod tests {
     }
 
     #[test]
+    fn le_journal_du_lecteur_commence_ou_sa_session_commence() {
+        // La panne exacte, et pourquoi une ouverture lente est restée
+        // trois soirs inexpliquée : les cent vingt dernières lignes du
+        // journal du lecteur sont toujours la fin d'une session, jamais
+        // son démarrage, et son démarrage était justement ce qu'on
+        // cherchait.
+        let folder = a_folder_of_its_own("depart");
+        let path = folder.join("session.log");
+
+        let mut written = String::new();
+        let _ = writeln!(written, "{SESSION_OPENS}une-session-d-avant ---");
+        for line in 0..KEPT + 40 {
+            let _ = writeln!(written, "vieille ligne {line}");
+        }
+        let _ = writeln!(written, "{SESSION_OPENS}127.77.0.1:42000 ---");
+        let _ = writeln!(written, "00:00:00 - le lecteur ouvre la bouche");
+        for line in 0..KEPT + 40 {
+            let _ = writeln!(written, "00:00:12 - ligne {line}");
+        }
+        let _ = writeln!(written, "00:00:27 - image posée");
+        std::fs::write(&path, &written).unwrap();
+
+        let kept = last_lines(
+            &path,
+            "session.log",
+            SESSION_OPENS,
+            &tout(),
+            &mut BTreeSet::new(),
+        );
+        // Le premier mot du lecteur, qui est tout l'objet de la chose.
+        assert!(kept.starts_with(SESSION_OPENS), "{}", &kept[..80]);
+        assert!(
+            kept.contains("le lecteur ouvre la bouche"),
+            "début manquant"
+        );
+        // Sa dernière, qui explique une session qui tombe.
+        assert!(kept.ends_with("00:00:27 - image posée"), "fin manquante");
+        // Et rien de la session d'avant.
+        assert!(!kept.contains("vieille ligne"), "{kept}");
+
+        // Une session courte tient entière, sans rien annoncer.
+        let court = folder.join("court.log");
+        let mut written = String::new();
+        let _ = writeln!(written, "{SESSION_OPENS}127.77.0.1:42000 ---");
+        for line in 0..20 {
+            let _ = writeln!(written, "00:00:0{} - ligne {line}", line % 10);
+        }
+        std::fs::write(&court, &written).unwrap();
+        let kept = last_lines(
+            &court,
+            "session.log",
+            SESSION_OPENS,
+            &tout(),
+            &mut BTreeSet::new(),
+        );
+        assert!(!kept.contains("ne sont pas montrées"), "{kept}");
+        assert_eq!(kept.lines().count(), 21, "{kept}");
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn un_fichier_sans_marque_garde_sa_fin_comme_avant() {
+        // La règle ne vaut que là où le produit sait où commence ce
+        // qu'il lit. Ailleurs, la fin reste la fin.
+        let folder = a_folder_of_its_own("sans-marque");
+        let path = folder.join("service.log");
+        let written: Vec<String> = (0..KEPT + 40).map(|line| format!("ligne {line}")).collect();
+        std::fs::write(&path, written.join("\n")).unwrap();
+
+        let kept = last_lines(
+            &path,
+            "service.log",
+            SESSION_OPENS,
+            &tout(),
+            &mut BTreeSet::new(),
+        );
+        assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
+        assert!(kept.starts_with("(le début n'est pas montré)"), "{kept}");
+
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
     fn le_tri_se_fait_a_la_lecture_et_non_sur_la_page() {
         // C'est toute la différence : seules les cent vingt dernières
         // lignes d'un fichier arrivent sur une page, et six lignes de
@@ -486,7 +654,13 @@ mod tests {
         std::fs::write(&path, &written).unwrap();
 
         let mut named = BTreeSet::new();
-        last_lines(&path, "service.log", &Sifting::of("clipboard"), &mut named);
+        last_lines(
+            &path,
+            "service.log",
+            "",
+            &Sifting::of("clipboard"),
+            &mut named,
+        );
         // Relevés même quand le tri les écarte : ce qu'on peut demander
         // est ce que les fichiers portent, pas ce qui reste une fois la
         // demande faite.
@@ -500,7 +674,13 @@ mod tests {
         let engine = folder.join("session.log");
         std::fs::write(&engine, "00:00:03 - SDL Info (0): IDR demandée\n").unwrap();
         let mut named = BTreeSet::new();
-        last_lines(&engine, "session.log", &Sifting::everything(), &mut named);
+        last_lines(
+            &engine,
+            "session.log",
+            SESSION_OPENS,
+            &Sifting::everything(),
+            &mut named,
+        );
         assert_eq!(named.iter().cloned().collect::<Vec<_>>(), ["session"]);
 
         // Et ce que l'entête écrit, la boîte le relit tel quel.
@@ -580,7 +760,7 @@ mod tests {
         assert!(lines.next().unwrap().starts_with("Ordinateur"), "{text}");
         // Et les quatre fichiers y sont, nommés, même ceux que cet
         // ordinateur n'a jamais écrits.
-        for (file, what) in FILES {
+        for (file, what, _) in FILES {
             assert!(text.contains(&format!("--- {what} ({file}) ---")), "{text}");
         }
     }
@@ -619,7 +799,7 @@ mod tests {
         // n'y est pas. Mais vider le journal avant un essai doit le
         // vider aussi, sans quoi on lit trois semaines de relevé en face
         // d'une séance de cinq minutes.
-        let gathered: Vec<&str> = FILES.iter().map(|(file, _)| *file).collect();
+        let gathered: Vec<&str> = FILES.iter().map(|(file, _, _)| *file).collect();
         let also: Vec<&str> = ALSO_EMPTIED.iter().map(|(file, _)| *file).collect();
         assert!(also.contains(&"reach.log"));
         assert!(also.contains(&"reach-distant.log"));

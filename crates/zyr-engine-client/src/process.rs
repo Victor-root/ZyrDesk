@@ -295,7 +295,7 @@ impl ClientEngine {
         let mut command = self.command(&command::session_arguments(host, settings))?;
         command.stdin(Stdio::null());
         if let Some(mut log) = self.open_log()? {
-            let _ = writeln!(log, "--- session towards {host} ---");
+            let _ = writeln!(log, "{}{host} ---", zyr_proto::journal::SESSION_OPENS);
             let errors = log.try_clone()?;
             command.stdout(Stdio::from(log)).stderr(Stdio::from(errors));
         }
