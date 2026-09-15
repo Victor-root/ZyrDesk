@@ -867,9 +867,8 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             && !crate::floating::Floating::a_close_was_asked_for(app)
         {
             note(&format!(
-                "le lecteur {process} n'a pas ouvert d'image en {} s, l'écran d'ouverture est \
-                 retiré quand même",
-                WINDOW_TAKES.as_secs()
+                "le lecteur {process} n'a pas ouvert d'image, l'écran d'ouverture est retiré \
+                 quand même"
             ));
         }
         note(&opening.how_long_it_took());
@@ -1002,8 +1001,33 @@ pub fn end_it(app: &App) {
     });
 }
 
-/// How long the engine is given to open its window.
+/// Combien de temps une ouverture prend d'ordinaire.
+///
+/// Passé ce délai, rien n'est abandonné : c'est le moment où l'attente
+/// est dite au journal. Elle l'était au contraire par un abandon, et
+/// c'est ce qui a été vu sur une machine lente : l'écran d'ouverture
+/// retiré à vingt secondes, l'accueil rendu avec sa carte de session
+/// verte, et l'image qui arrivait neuf secondes plus tard sur un écran
+/// que la personne croyait raté.
 const WINDOW_TAKES: Duration = Duration::from_secs(20);
+
+/// Et le mur, qui n'est pas une durée d'attente mais un garde-fou.
+///
+/// Ce qui finit cette attente est le lecteur qui ouvre son image, la
+/// personne qui ferme, ou le lecteur qui s'en va. Ce plafond n'est là que
+/// pour qu'aucun fil ne tourne sans fin si aucun des trois n'arrive
+/// jamais, et il est large exprès : une ouverture qui prend une minute
+/// est une ouverture lente, pas une ouverture ratée.
+const WINDOW_AT_MOST: Duration = Duration::from_secs(180);
+
+/// Le rythme une fois que l'ouverture a duré.
+///
+/// La milliseconde d'au-dessus sert à ne pas laisser voir la fenêtre du
+/// moteur avant qu'elle soit posée dans la nôtre, et cette course-là se
+/// joue à l'instant où elle s'ouvre. Passé le temps qu'une ouverture
+/// prend d'ordinaire, elle coûte plus qu'elle ne rapporte : une image,
+/// c'est seize millisecondes, et seize millisecondes ne se voient pas.
+const WINDOW_STEP_AFTER: Duration = Duration::from_millis(16);
 
 /// How often it is looked for while it does.
 ///
@@ -1038,8 +1062,9 @@ fn lay_the_picture_as_soon_as_it_opens(app: App, process: u32) {
 /// places at once and none the worse for it: laying a picture already
 /// laid does nothing, and the lock inside is there for exactly this.
 fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
-    let until = std::time::Instant::now() + WINDOW_TAKES;
-    while std::time::Instant::now() < until {
+    let began = std::time::Instant::now();
+    let mut long = false;
+    while began.elapsed() < WINDOW_AT_MOST {
         if crate::picture::hold(app, process) {
             return true;
         }
@@ -1050,7 +1075,23 @@ fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
         if crate::floating::Floating::a_close_was_asked_for(app) {
             return false;
         }
-        std::thread::sleep(WINDOW_STEP);
+        // Un lecteur qui n'est plus là n'ouvrira plus rien, et l'écran
+        // d'ouverture n'a plus rien à couvrir. C'est cette fin-là qui
+        // manquait : sans elle, il n'y avait que le chronomètre pour
+        // arrêter l'attente, donc il arrêtait aussi celles qui allaient
+        // aboutir.
+        if !crate::floating::still_running(process) {
+            return false;
+        }
+        if !long && began.elapsed() >= WINDOW_TAKES {
+            long = true;
+            note(&format!(
+                "le lecteur {process} n'a pas encore ouvert d'image après {} s ; l'écran \
+                 d'ouverture reste tant qu'il tourne",
+                WINDOW_TAKES.as_secs()
+            ));
+        }
+        std::thread::sleep(if long { WINDOW_STEP_AFTER } else { WINDOW_STEP });
     }
     false
 }

@@ -3323,6 +3323,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et le pavé est redémarré aussi à l'extinction.** Les valeurs d'origine sont rendues par l'arrêt de la lecture, et sans relecture elles ne vaudraient rien : les gestes resteraient coupés une fois la session finie, ce qui est le défaut d'aujourd'hui remis à l'envers.
 
+## D207. L'écran d'ouverture attend le lecteur, pas un chronomètre (2026-09-15, pendant M6)
+
+**Une session qui marche, rendue comme une session ratée.** Sur un ordinateur lent, le lecteur a mis vingt-neuf secondes à ouvrir son image, puis vingt-cinq la fois suivante. L'écran d'ouverture, lui, abandonnait à vingt. Entre les deux, la personne voyait son accueil, avec une carte de session verte annonçant qu'elle était connectée et aucune image : tout était vrai, la session tenait, le tunnel portait ses paquets, et cela se lisait comme un échec.
+
+**Un chronomètre ne sait pas si ce qu'il attend va arriver.** Trois choses finissent cette attente, et aucune n'est une durée : le lecteur ouvre son image, la personne ferme la fenêtre, ou le lecteur s'en va. C'est la troisième qui manquait, et c'est son absence qui laissait le chronomètre décider seul : faute de savoir reconnaître une ouverture perdue, il arrêtait aussi celles qui allaient aboutir.
+
+**Le délai reste, et il ne sert plus qu'à parler.** Vingt secondes est bien le temps qu'une ouverture prend d'ordinaire ; passé ce délai le journal le dit, et l'attente continue. Un plafond large demeure, non comme une durée d'attente mais pour qu'aucun fil ne tourne sans fin si aucune des trois fins n'arrive jamais.
+
+**Et le rythme se relâche avec lui.** La milliseconde entre deux regards sert à ne pas laisser voir la fenêtre du moteur avant qu'elle soit posée dans la nôtre, course qui se joue à l'instant où elle s'ouvre. Passé le temps ordinaire, elle coûte plus qu'elle ne rapporte : une image, c'est seize millisecondes, et seize millisecondes ne se voient pas.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

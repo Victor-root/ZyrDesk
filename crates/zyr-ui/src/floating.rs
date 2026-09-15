@@ -755,7 +755,7 @@ pub async fn player(app: &App) -> Option<u32> {
 
 /// Whether that player is still running.
 #[cfg(windows)]
-fn still_running(process: u32) -> bool {
+pub(crate) fn still_running(process: u32) -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
     use windows_sys::Win32::System::Threading::{
         GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -778,7 +778,7 @@ fn still_running(process: u32) -> bool {
 }
 
 #[cfg(not(windows))]
-fn still_running(_process: u32) -> bool {
+pub(crate) fn still_running(_process: u32) -> bool {
     false
 }
 
