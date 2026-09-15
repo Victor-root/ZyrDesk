@@ -3363,6 +3363,18 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Et la règle ne vaut que là où le produit sait où commence ce qu'il lit.** Le service, la fenêtre et le moteur hôte n'ont pas de marque d'ouverture : ils gardent leur fin, comme avant.
 
+## D211. Seize des vingt-sept secondes d'une ouverture étaient une carte son ouverte deux fois (2026-09-15, pendant M6)
+
+**La mesure, enfin complète.** Le journal du lecteur, lu depuis son premier mot (D210), date chaque ligne à la milliseconde. Sur une ouverture de vingt-sept secondes il donne ceci : huit secondes de silence, puis « Failed to open audio device: WASAPI can't find requested audio endpoint » ; huit secondes de silence à nouveau, puis exactement la même phrase ; et seulement alors la demande de flux à l'ordinateur d'en face. Le trou de dix-sept secondes cherché pendant quatre soirs était une carte son qui ne répond pas, interrogée deux fois.
+
+**Deux questions, deux moteurs de son construits.** Le lecteur demandait séparément si la carte s'ouvre et ce que le moteur derrière elle sait faire. Chaque question construisait un moteur de son identique, le lisait et le jetait. Sur une machine dont la carte ne répond pas, Windows met huit secondes à le dire, et on le lui demandait deux fois avant qu'une session puisse s'ouvrir. Un seul moteur répond maintenant aux deux.
+
+**Et rien n'est désactivé.** Le son fait partie du produit : l'ordinateur d'en face rend le sien dans la session pendant que sa pièce reste silencieuse. Couper l'interrogation aurait rendu l'ouverture instantanée et le son impossible. Elle est faite une fois, ce qui est le minimum, et non zéro.
+
+**Ce qui reste n'est pas un défaut, c'est une carte graphique de 2010.** Les sept dernières secondes se lisent ligne par ligne : la file de décodage déborde, le lecteur redemande une image-clé, elle déborde encore. Cet ordinateur met quarante et une millisecondes à décoder une image pour quatorze disponibles, et le produit le dit déjà dans son voyant. Une ouverture plus rapide s'y achète en baissant la définition ou la cadence, pas en corrigeant du code.
+
+**Le reste tient en trois secondes** : une demi-seconde de questions, deux secondes pour que l'ordinateur d'en face démarre sa capture, une seconde de poignées de main.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

@@ -1039,6 +1039,14 @@ const WINDOW_STEP_AFTER: Duration = Duration::from_millis(16);
 /// the one thing this whole arrangement exists to avoid.
 const WINDOW_STEP: Duration = Duration::from_millis(1);
 
+/// Le lecteur dont la lenteur a déjà été dite.
+///
+/// Deux fils attendent la même image, et disaient donc la même phrase
+/// deux fois, à six secondes d'écart, ce qui se lit comme deux
+/// ouvertures lentes au lieu d'une seule. Le lecteur et non un simple
+/// oui : la session suivante doit pouvoir le dire à son tour.
+static SAID_IT_DRAGS: AtomicU32 = AtomicU32::new(0);
+
 /// Lays the picture in our window the moment the engine opens it.
 ///
 /// The session watch would do it too, but it comes round once a second,
@@ -1085,11 +1093,13 @@ fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
         }
         if !long && began.elapsed() >= WINDOW_TAKES {
             long = true;
-            note(&format!(
-                "le lecteur {process} n'a pas encore ouvert d'image après {} s ; l'écran \
-                 d'ouverture reste tant qu'il tourne",
-                WINDOW_TAKES.as_secs()
-            ));
+            if SAID_IT_DRAGS.swap(process, Ordering::SeqCst) != process {
+                note(&format!(
+                    "le lecteur {process} n'a pas encore ouvert d'image après {} s ; l'écran \
+                     d'ouverture reste tant qu'il tourne",
+                    WINDOW_TAKES.as_secs()
+                ));
+            }
         }
         std::thread::sleep(if long { WINDOW_STEP_AFTER } else { WINDOW_STEP });
     }
