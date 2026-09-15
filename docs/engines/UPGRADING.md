@@ -4,19 +4,26 @@ Ce document est la procédure de référence pour mettre à niveau Sunshine et M
 
 ## Principe
 
-Chaque moteur est un fork qui ne contient que : le tag upstream épinglé + une petite pile de commits ZyrDesk clairement identifiés (préfixe `zyr:` dans les messages). Mettre à niveau = rebaser cette pile sur le nouveau tag. La difficulté est bornée par la taille de la pile (0 à 2 commits pour Sunshine, 6 maximum pour Moonlight), pas par la taille des moteurs.
+Chaque moteur est un fork qui ne contient que : le tag upstream épinglé + notre pile de commits, tous préfixés `zyr:`. Mettre à niveau = rebaser cette pile sur le nouveau tag.
+
+La difficulté n'est pas bornée par un nombre de commits, il n'y a pas de plafond ([STRATEGY.md §0](STRATEGY.md)). Elle est bornée par la marque `zyr:` : chaque ligne de notre fait à l'intérieur d'un fichier upstream porte un commentaire qui commence par là et qui dit pourquoi elle existe. Un `grep -rn "zyr:"` dans un moteur rend donc l'écart complet, avec son intention, avant même d'ouvrir un diff. **Commencer par là.**
+
+Deux choses à savoir avant de s'y mettre :
+
+- Les fichiers nommés `zyr*` n'appartiennent qu'à nous et ne peuvent pas entrer en conflit. Seuls leurs points d'accroche dans le code upstream le peuvent.
+- Les endroits denses sont connus et se comptent sur une main. Au 2026-09-15 : `src/video.cpp` de Sunshine, où notre travail traverse le fil de capture, la boucle d'encodage et le choix de l'écran ; `app/streaming/session.cpp` de Moonlight. Si upstream a réécrit l'un des deux, ce n'est plus un rebase mais une reconstruction : lire le manifeste pour savoir ce que le patch devait obtenir, et le réécrire contre le code neuf.
 
 ## Procédure pas à pas
 
-1. Lire l'écart actuel : `patches/MANIFEST.md` + les fichiers `.patch` du monorepo donnent la liste exacte de nos modifications et leur raison d'être, sans ouvrir les forks.
+1. Lire l'écart actuel : [`patches/MANIFEST.md`](../../patches/MANIFEST.md) donne la liste de nos modifications et leur raison d'être, et `grep -rn "zyr:"` dans chaque fork donne leur emplacement exact. Le manifeste dit le pourquoi, le code dit le où.
 2. Dans le fork concerné :
    - `git fetch upstream` puis identifier le nouveau tag cible (pour Sunshine, ne jamais descendre sous la version plancher notée dans le manifeste ; vérifier les notes de version pour les correctifs de sécurité).
    - Créer la nouvelle branche : `git checkout -b zyr/<nouveau-tag> <nouveau-tag>`.
-   - Rebaser la pile : `git cherry-pick` des commits `zyr:` de l'ancienne branche (ou `git rebase --onto`). Résoudre les conflits : ils sont localisés par construction (habillage et interrupteurs uniquement).
+   - Rebaser la pile : `git cherry-pick` des commits `zyr:` de l'ancienne branche (ou `git rebase --onto`). Les conflits sont localisés par construction, et ce qui est en conflit porte toujours la marque : elle dit quoi préserver.
    - Mettre à jour les submodules imbriqués du moteur comme le fait upstream (`git submodule update --init --recursive`).
 3. Compiler le moteur avec nos scripts CI (Sunshine : MSYS2 UCRT64 ; Moonlight : MSVC + Qt). Corriger ce qui casse À L'INTÉRIEUR de notre pile uniquement ; si upstream a cassé autre chose, c'est son problème ou un signe qu'il faut attendre une version plus mûre.
 4. Exécuter la suite « contrat moteur » (ci-dessous). C'est elle qui décide si la mise à niveau est sûre.
-5. Dans le monorepo : bump du submodule, régénération des `.patch` (fait par la CI), mise à jour du manifeste (tag, hash, changements notables côté upstream qui nous concernent).
+5. Dans le monorepo : bump du submodule (c'est lui, et lui seul, qui met un patch en circulation), mise à jour du manifeste (tag, hash, changements notables côté upstream qui nous concernent, patchs devenus inutiles et retirés).
 6. Passer les tests d'intégration et le banc de performance (voir [../TESTING.md](../TESTING.md)) : une mise à niveau qui fait régresser les seuils G-* est refusée ou investiguée.
 7. Vérifier l'interopérabilité N-1 : nouveau client contre ancien hôte, ancien client contre nouvel hôte.
 
@@ -40,7 +47,7 @@ Moonlight :
 - Le mode portable isole bien l'état dans le dossier fourni.
 - `--packet-size` est honoré (vérifié par capture de paquets : taille maximale observée conforme).
 - Les statistiques nécessaires au banc sont présentes dans les journaux/overlay au format attendu par notre parseur.
-- Les codes de sortie distinguent bien fin normale (0), session en échec (2), machine injoignable (3) et appairage refusé (4), tels que posés par P-M5.
+- Les codes de sortie distinguent bien fin normale (0), session en échec (2), machine injoignable (3), appairage refusé (4) et ordinateur distant qui ne nous reconnaît pas (6), tels que posés par P-M5.
 
 ## Répétition mensuelle automatique
 
@@ -48,7 +55,9 @@ Un job CI mensuel (`upgrade-rehearsal`) tente à blanc la mise à niveau vers le
 
 ## Règles pour que ça reste vrai
 
+- **Poser la marque `zyr:` sur chaque ligne de notre fait dans du code upstream**, avec la raison écrite à côté. C'est la règle qui remplace l'ancien plafond, et c'est elle qui rend ce document exécutable. Une modification sans marque est un défaut au même titre qu'un test qui ne passe pas.
 - Ne JAMAIS ajouter une fonctionnalité produit dans un moteur : elle vivrait dans la zone de conflit permanente.
-- Chaque nouveau patch doit être inscrit au manifeste avec sa raison et son plan de sortie (contribution upstream envisageable ? suppression possible quand upstream expose l'option ?).
+- Préférer un fichier `zyr*` à nous chaque fois qu'un patch a le choix : il ne peut pas entrer en conflit.
+- Chaque nouveau patch doit être inscrit au manifeste avec sa raison et son plan de sortie, dans le même mouvement que le patch et jamais après coup (contribution upstream envisageable ? suppression possible quand upstream expose l'option ?).
 - Si une évolution upstream rend un de nos patchs inutile : le supprimer immédiatement à la mise à niveau suivante.
-- Si la pile Moonlight dépasse 6 commits ou la pile Sunshine dépasse 2, c'est un signal d'architecture : chercher le mécanisme officiel manquant ou proposer l'interrupteur upstream, pas empiler.
+- Avant d'écrire un patch de plus, chercher le mécanisme officiel manquant ou l'interrupteur à proposer en amont. Ce n'est plus un plafond qui le rappelle, c'est cette ligne.

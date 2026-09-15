@@ -2,14 +2,31 @@
 
 Objectif : utiliser les moteurs officiels comme fondations invisibles, avec un nombre de points de contact volontairement minimal, pour que leurs mises à niveau restent simples pendant des années.
 
-Règle absolue : AUCUNE fonctionnalité ZyrDesk ne vit dans le code des moteurs. Un patch ne peut que retirer de l'habillage (fenêtre, marque), exposer un interrupteur, ou corriger un défaut du moteur qui se mesure sans ZyrDesk et se propose en amont. Cette troisième porte a été ouverte une fois, par [D25](../DECISIONS.md), et le registre dit à quel prix. Toute logique produit vit dans nos crates Rust et pilote les moteurs par leurs interfaces officielles : fichier de configuration, ligne de commande, API REST locale, journaux, codes de sortie.
+Règle absolue : AUCUNE fonctionnalité ZyrDesk ne vit dans le code des moteurs. Un patch ne peut que retirer de l'habillage (fenêtre, marque), exposer un interrupteur, ou corriger un défaut du moteur qui se mesure sans ZyrDesk et se propose en amont. Toute logique produit vit dans nos crates Rust et pilote les moteurs par leurs interfaces officielles : fichier de configuration, ligne de commande, API REST locale, journaux, codes de sortie.
+
+## 0. La règle qui rend une mise à niveau possible : la marque `zyr:`
+
+**Il n'y a pas de plafond au nombre de patchs.** Il y en avait un, posé au début du projet quand personne ne savait encore combien de fonctionnalités le produit porterait. Il a été franchi une dizaine de fois, chaque fois pour une bonne raison, et il n'a jamais rien signalé d'utile : il est levé le 2026-09-15. Ce qui le remplace n'est pas un chiffre, c'est une discipline, et c'est elle qui décide si une mise à niveau reste faisable.
+
+**Toute ligne de notre fait à l'intérieur du code d'un moteur porte un commentaire commençant par `zyr:` qui dit pourquoi elle est là.** Sans exception : pour une ligne comme pour deux cents, pour un nombre changé comme pour une fonction entière. C'est ce qui permet à un seul `grep -rn "zyr:"` de rendre l'écart complet avec son intention, sans ouvrir un seul diff.
+
+Trois règles vont avec, qui n'en sont que la conséquence :
+
+- Tout commit dans un fork commence par `zyr:` dans son message. C'est ce qui rend la pile rebasable d'un `git rebase --onto`.
+- Tout fichier qui n'existe que pour nous s'appelle `zyr*` et vit à côté de ses voisins upstream. Un fichier à nous n'entre jamais en conflit : upstream n'y touchera jamais. C'est la forme à préférer chaque fois qu'un patch a le choix.
+- Tout patch a son entrée dans [`patches/MANIFEST.md`](../../patches/MANIFEST.md), avec sa raison d'être et son plan de sortie. Le manifeste est mis à jour dans le même mouvement que le patch, jamais après coup.
+
+**Pourquoi tout ceci, en une phrase.** Le jour où un moteur est rebasé sur une version amont plus récente, git donne le *quoi* de chaque patch et le retrouve tout seul. Le *pourquoi* n'existe que dans ces commentaires et dans le manifeste. Un patch dont le pourquoi est perdu ne se rebase pas : il se réinvente, contre du code qui a changé, sans savoir ce qu'il devait obtenir.
+
+**Ceci s'adresse autant à une IA qu'à une personne.** Une IA qui reprend ce dépôt sans le contexte de ce qui précède n'a que ces marques pour retrouver l'écart. Les poser est donc une obligation, pas un confort, et une modification d'un moteur sans marque `zyr:` est un défaut au même titre qu'un test qui ne passe pas.
 
 ## 1. Intégration retenue : forks légers en submodules
 
 - Deux forks GitHub : [ZyrDesk-Sunshine](https://github.com/Victor-root/ZyrDesk-Sunshine) et [ZyrDesk-Moonlight](https://github.com/Victor-root/ZyrDesk-Moonlight).
-- Dans chaque fork, une branche `zyr/<tag-upstream>` = le tag officiel épinglé + notre petite pile de commits (0 à 2 pour Sunshine, 7 maximum pour Moonlight).
+- Dans chaque fork, une branche `zyr/<tag-upstream>` = le tag officiel épinglé + notre pile de commits, tous préfixés `zyr:`.
 - Le monorepo les référence en submodules (`engines/sunshine`, `engines/moonlight-qt`). Les submodules imbriqués des moteurs (Moonlight embarque moonlight-common-c, qui embarque enet ; Sunshine embarque un arbre third-party complet) restent intacts.
-- À chaque bump de submodule, la CI exporte le delta en fichiers `.patch` lisibles dans `patches/` du monorepo, avec un manifeste (identifiant, raison d'être, candidat à une contribution upstream ou non). On voit ainsi notre écart complet sans ouvrir les forks, et cela documente publiquement nos modifications (obligation GPL de clarté sur les sources correspondantes).
+- L'écart complet se lit dans [`patches/MANIFEST.md`](../../patches/MANIFEST.md) : identifiant, raison d'être, commits, candidat à une contribution upstream ou non. Le manifeste dit le pourquoi ; les forks, publics, portent le quoi.
+- L'obligation GPL est remplie par les forks eux-mêmes : ils sont publics, la branche `zyr/<tag>` porte la source correspondant exactement aux binaires distribués, et le journal du produit écrit le numéro de compilation des moteurs, qui la désigne. Rien d'autre n'est dû.
 
 Alternatives rejetées :
 
@@ -23,7 +40,7 @@ Alternatives rejetées :
 - Moonlight : dernière release stable `v6.1.0`. Elle porte déjà l'AV1 et le YUV 4:4:4, les deux fonctions dont dépendent nos objectifs de qualité. Le choix de cette version contre la branche principale est motivé en D14.
 - Accélérateur assumé pour démarrer : jusqu'au jalon M4, les binaires officiels préconstruits (renommés) pouvaient être utilisés tels quels pour prototyper. Depuis M4, les deux moteurs sortent de nos propres compilations (MSYS2 + GCC pour Sunshine, MSVC + Qt pour Moonlight), pour le rebranding et l'hygiène GPL.
 
-## 3. Points de contact avec Sunshine (2 micro-patchs maximum)
+## 3. Points de contact avec Sunshine
 
 À une ligne près, tout ce dont ZyrDesk a besoin existe déjà dans Sunshine officiel :
 
@@ -50,16 +67,9 @@ Alternatives rejetées :
 | Arrêt propre | signal console + respect de son code de sortie spécial « arrêt volontaire » (sinon son contrat de supervision attend un respawn) |
 | Icône et éditeur portés par l'exécutable | `SUNSHINE_ICON_PATH`, `SUNSHINE_PUBLISHER_NAME`, `SUNSHINE_PUBLISHER_WEBSITE` et `SUNSHINE_PUBLISHER_ISSUE_URL` à la configuration : Sunshine les prévoit et demande explicitement aux produits tiers de poser les leurs |
 
-Patch appliqué :
+Patchs appliqués : voir [`patches/MANIFEST.md`](../../patches/MANIFEST.md), qui fait foi. Cette page dit ce qui passe par les interfaces officielles ; le manifeste dit ce qui a dû être patché et pourquoi. Deux listes des mêmes patchs finiraient par diverger, et l'ont fait.
 
-- P-S2 : le nom de produit porté par l'exécutable Windows, seul champ de cette série que le moteur n'exposait pas encore.
-
-Contingences identifiées (patchs UNIQUEMENT si la vérification M1 l'exige) :
-
-- P-S1 : désactiver l'annonce mDNS si Sunshine s'annonce sur le réseau malgré la liaison loopback et qu'aucune option ne le contrôle.
-- Aucune autre contingence connue.
-
-## 4. Points de contact avec Moonlight (7 micro-patchs maximum, plafond relevé par [D25](../DECISIONS.md))
+## 4. Points de contact avec Moonlight
 
 Mécanismes officiels utilisés :
 
@@ -74,22 +84,9 @@ Mécanismes officiels utilisés :
 | Mouvement de la souris en mode jeu | lu du système par le moteur, au seul endroit où les messages de sa fenêtre passent avant sa bibliothèque d'affichage ([P-M14](../../patches/MANIFEST.md)). Cette bibliothèque jette le mouvement brut destiné à une fenêtre dont elle croit qu'elle n'a pas le clavier, ce qu'elle décide du premier plan, qu'une fenêtre portée dans la nôtre ne peut jamais tenir : le mode jeu n'a jamais rien envoyé du tout ([D158](../DECISIONS.md)). Même cause que les touches système ([D43](../DECISIONS.md)). Lu seulement tant que la fenêtre sous le pointeur est celle du moteur : ses boutons à lui sont posés par-dessus l'image et sa fenêtre ne couvre pas toujours l'écran, donc une main partie ailleurs conduisait deux pointeurs à la fois. La cage du pointeur qui va avec ce mode reste à ZyrDesk : le système ne laisse enfermer le pointeur qu'au programme du premier plan |
 | Réglages fins non exposés en CLI | clés du fichier INI portable (écrites avant lancement, jamais pendant une session) |
 
-Pile de patchs prévue (le manifeste `patches/MANIFEST.md` fait foi) :
+Patchs appliqués : voir [`patches/MANIFEST.md`](../../patches/MANIFEST.md), qui fait foi, pour la même raison que côté Sunshine.
 
-| Id | Patch | Taille attendue | Statut |
-|---|---|---|---|
-| P-M1 | Suppression des fenêtres du moteur en lancement ligne de commande (session et appairage), erreurs vers la sortie d'erreur | ~140 lignes | Appliqué |
-| P-M2 | Rebranding : titre de la fenêtre vidéo, icônes, noms d'organisation/produit, métadonnées de l'exécutable, nom affiché par le mélangeur de volume | mécanique | Appliqué |
-| P-M5 | Codes de sortie distincts (fin normale / session en échec / machine injoignable / appairage refusé) câblés dans les fins de commande | inclus dans P-M1 | Appliqué |
-| P-M6 | Le moteur ne s'annonce plus (présence Discord) et ne joint plus le site du projet d'origine (compatibilité, correspondances de manettes) | ~15 lignes, que du retrait | Appliqué |
-| P-M7 | Fermeture de l'application sur l'hôte en ligne de commande, sans fenêtre, avec un code de sortie propre | ~40 lignes | Appliqué |
-| P-M8 | L'appairage réussi est écrit sur le disque avant que le moteur ne s'arrête | ~15 lignes | Appliqué |
-| P-M13 | Le moteur suit la forme du curseur d'en face et la donne au sien | ~228 lignes | Appliqué, dans le mécanisme de P-M11 |
-| P-M14 | Le mouvement d'un jeu est lu du système, et non de la bibliothèque d'affichage | ~170 lignes | Appliqué, dans le mécanisme de P-M10 |
-| P-M3 | Ligne de statistiques périodique lisible par machine sur stdout | ~60 lignes | Seulement si les journaux existants ne suffisent pas au banc de mesure |
-| P-M4 | Interrupteur pour ne pas demander le chiffrement vidéo interne (Moonlight le demande par défaut sur CPU avec accélération AES) | ~10 lignes | Contingence : seulement si la vérification M1 montre que Sunshine chiffre quand même en mode 0 sur loopback (double chiffrement inutile) |
-
-Le plafond est atteint, et le chiffre est celui du manifeste, qui fait foi. Le prochain besoin qui semble demander un patch se traite en amont ou par une interface officielle, pas en empilant un de plus : c'est exactement le signal que ce plafond existe pour donner.
+Ce qu'il faut chercher avant d'en écrire un de plus n'a pas changé avec la levée du plafond : un mécanisme officiel qu'on aurait manqué, ou un interrupteur à proposer en amont. Un patch qui corrige un défaut du moteur, mesurable sans ZyrDesk, est le bon genre de patch : il a vocation à remonter chez eux et à disparaître de chez nous.
 
 ## 5. Schéma d'adressage loopback côté client
 

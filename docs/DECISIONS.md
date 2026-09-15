@@ -3401,6 +3401,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Le doute penche toujours du côté du son.** Là où la question ne peut pas être posée, la réponse est oui : un faux « il n'y en a pas » retirerait le son d'une machine qui en a, ce qui est de loin la pire des deux erreurs. Et la réponse n'est jamais retenue d'une session à l'autre : c'est un fait vrai à un instant, et une enceinte branchée entre deux sessions doit compter.
 
+## D215. Le plafond de patchs est levé, la marque `zyr:` le remplace (2026-09-15, pendant M6)
+
+**Un plafond relevé dix fois ne mesure plus rien.** Les deux moteurs en portaient un, deux patchs pour Sunshine et sept pour Moonlight, posé au tout début du projet quand personne ne savait encore combien de fonctionnalités le produit porterait. La réalité est de huit et dix-neuf. Chaque franchissement a été motivé et écrit, aucun n'a jamais été refusé faute de place, et le signal que ce chiffre devait donner n'a donc jamais servi à rien : il a simplement reculé.
+
+**Ce qui le remplace est une discipline, pas un nombre.** Toute ligne de notre fait à l'intérieur du code d'un moteur porte un commentaire commençant par `zyr:` qui dit pourquoi elle est là, sans exception. Un seul `grep` rend alors l'écart complet avec son intention, et c'est cela, et non le nombre de patchs, qui décide si une mise à niveau reste faisable. Trois règles en découlent : tout commit de fork préfixé `zyr:`, tout fichier qui n'est qu'à nous nommé `zyr*` et donc à l'abri de tout conflit, et toute entrée inscrite au manifeste dans le même mouvement que le patch.
+
+**Et le registre devient le seul garde-fou.** Tant qu'un chiffre existait, une pile trop longue se voyait toute seule ; désormais rien ne signale une dérive sauf `patches/MANIFEST.md`. Git retrouvera toujours ce qu'un patch change ; jamais ce qu'il devait obtenir. Un patch non inscrit est donc un patch qu'on réinventera au lieu de le rebaser, et cinq l'étaient au moment d'écrire ceci : ils sont entrés au registre avec cette décision.
+
+**Ce que la GPL demande, au passage, était dit de travers.** Trois documents affirmaient que l'export des diffs dans `patches/` répondait à une obligation de licence. C'est faux : l'obligation est de fournir la source correspondant aux binaires distribués, et les deux forks publics la portent déjà, le journal du produit écrivant le numéro de compilation qui la désigne. L'export serait un confort de lecture, rien de plus, et il n'existe pas.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
