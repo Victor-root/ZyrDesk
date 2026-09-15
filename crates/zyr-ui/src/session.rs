@@ -942,6 +942,11 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             Ok(Outcome::Unreachable) => {
                 finish(app, false, "L'ordinateur distant n'a pas répondu.".into())
             }
+            Ok(Outcome::NotPaired) => finish(
+                app,
+                false,
+                "L'ordinateur distant ne reconnaît plus celui-ci.".into(),
+            ),
             Ok(Outcome::Unknown { .. }) => finish(
                 app,
                 false,

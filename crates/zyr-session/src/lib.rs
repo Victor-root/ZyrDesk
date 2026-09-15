@@ -971,6 +971,7 @@ fn worth_introducing_again(
         Some(
             outcome @ (SessionOutcome::Failed
             | SessionOutcome::Unreachable
+            | SessionOutcome::NotPaired
             | SessionOutcome::Unknown { .. }),
         ) => Some(outcome),
         _ => None,

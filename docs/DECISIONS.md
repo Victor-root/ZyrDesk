@@ -3375,6 +3375,22 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Le reste tient en trois secondes** : une demi-seconde de questions, deux secondes pour que l'ordinateur d'en face démarre sa capture, une seconde de poignées de main.
 
+## D212. La carte son était interrogée une troisième fois, dans la connexion elle-même (2026-09-15, pendant M6)
+
+**Vingt-sept secondes devenues dix-neuf, et le même coupable trois fois.** D211 en avait retiré deux interrogations sur trois. La troisième se voit maintenant que le journal du lecteur se lit du premier mot au dernier : elle est faite au démarrage du son du flux, à l'intérieur même de la connexion. Huit secondes de plus, et elles sont les pires des trois : l'image arrive déjà pendant ce temps-là et s'entasse derrière un décodeur qui n'existe pas encore. La file déborde, le lecteur redemande une image-clé, elle déborde encore, et cela dure jusqu'à ce que Windows finisse de dire non.
+
+**La réponse d'avant la session est gardée.** Elle est donnée une fois, avant que rien ne s'ouvre, et la personne est prévenue à ce moment-là que la session sera muette. Reposer la question dix secondes plus tard à la même carte ne pouvait rien apprendre de neuf.
+
+**Et une carte qui meurt en cours de session est toujours rattrapée.** Le lecteur reconstruit son moteur de son toutes les deux cents trames quand il l'a perdu, ce qui sert exactement à cela : un casque débranché puis rebranché. Seule la carte qui n'a jamais répondu avant la session n'est plus redemandée.
+
+**Ce qui reste des huit dernières secondes n'est pas du code.** PC-ACCUEIL déclare une sortie audio par défaut qui ne répond plus, et Windows met huit secondes à l'admettre. Une machine dont la carte son répond ne paie rien de tout cela.
+
+## D213. « Injoignable » ne veut pas dire « ne nous reconnaît pas » (2026-09-15, pendant M6)
+
+**Un ordinateur qui répond en une milliseconde, rapporté comme n'ayant jamais répondu.** Le lecteur rendait le même code de sortie pour les quatre façons dont son lancement pouvait échouer, dont « cet ordinateur ne nous a jamais été présenté ». Le journal disait donc « le lecteur s'est arrêté sur Unreachable » d'une machine dont la voie s'ouvrait en trois millisecondes, et la première chose que cela fait faire est de chercher une panne de réseau qui n'existe pas.
+
+**Chaque échec porte maintenant son nom.** Ne pas se reconnaître a son propre code, et le produit le dit tel quel, à la fenêtre comme à la ligne de commande. Ce que cela change n'est pas la conduite, qui était déjà la bonne, mais ce qu'on lit : les deux ordinateurs sont représentés l'un à l'autre dans les deux cas.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

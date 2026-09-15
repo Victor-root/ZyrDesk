@@ -23,6 +23,15 @@ const UNREACHABLE: i32 = 3;
 /// (P-M5).
 const PAIRING_REFUSED: i32 = 4;
 
+/// What the engine returns when the far computer does not know this one.
+///
+/// Its own code because it is the one failure that is not this
+/// computer's: everything the engine could not do used to come back as
+/// « the far computer never answered », and a journal saying that of a
+/// machine answering in one millisecond sends whoever reads it looking
+/// for a network fault that was never there.
+const NOT_PAIRED: i32 = 6;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionOutcome {
     /// The engine stopped normally.
@@ -31,6 +40,8 @@ pub enum SessionOutcome {
     Failed,
     /// The other computer was never reached.
     Unreachable,
+    /// The other computer does not know this one.
+    NotPaired,
     /// The engine stopped in a way it does not name, a crash among them.
     Unknown { code: Option<i32> },
 }
@@ -579,6 +590,7 @@ fn outcome_of(code: Option<i32>) -> SessionOutcome {
         Some(0) => SessionOutcome::Ended,
         Some(SESSION_FAILED) => SessionOutcome::Failed,
         Some(UNREACHABLE) => SessionOutcome::Unreachable,
+        Some(NOT_PAIRED) => SessionOutcome::NotPaired,
         code => SessionOutcome::Unknown { code },
     }
 }
@@ -595,6 +607,7 @@ mod outcomes {
         assert_eq!(outcome_of(Some(0)), SessionOutcome::Ended);
         assert_eq!(outcome_of(Some(SESSION_FAILED)), SessionOutcome::Failed);
         assert_eq!(outcome_of(Some(UNREACHABLE)), SessionOutcome::Unreachable);
+        assert_eq!(outcome_of(Some(NOT_PAIRED)), SessionOutcome::NotPaired);
         assert_eq!(
             outcome_of(Some(42)),
             SessionOutcome::Unknown { code: Some(42) }

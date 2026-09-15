@@ -127,6 +127,10 @@ pub fn run(args: Args) -> ExitCode {
             "l'ordinateur distant n'a pas répondu",
             format!("Journal : {}", log.display()),
         ),
+        Ok(SessionOutcome::NotPaired) => failure(
+            "l'ordinateur distant ne reconnaît plus celui-ci",
+            format!("Journal : {}", log.display()),
+        ),
         Ok(SessionOutcome::Unknown { code }) => {
             let code = code
                 .map(|c| c.to_string())
