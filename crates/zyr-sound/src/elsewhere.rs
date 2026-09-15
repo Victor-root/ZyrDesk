@@ -25,3 +25,13 @@ pub fn speakers_muted() -> Result<bool, Trouble> {
 pub fn mute_speakers(_quiet: bool) -> Result<(), Trouble> {
     nowhere()
 }
+
+/// Yes, since nothing here can say otherwise.
+///
+/// The one question of the five that answers rather than refusing, and
+/// it says yes: what reads it decides whether to stop a player from
+/// looking for a sound card, and a false « there is none » would take
+/// the sound away from a machine that has one.
+pub fn anything_to_play_through() -> bool {
+    true
+}

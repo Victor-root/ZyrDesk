@@ -36,7 +36,13 @@ pub fn quit_arguments(host: &str) -> Vec<String> {
 /// Hardware decoding is imposed: a silent fallback to software would
 /// give a session that looks like it works while missing the whole
 /// performance target. A visible failure is worth more.
-pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> {
+///
+/// `sound_card` says whether this computer has anything to play the
+/// session's sound through. Told to the player rather than left for it
+/// to find out: opening a sound card that is not there takes Windows
+/// eight seconds to refuse, and they are spent before the picture, at
+/// every single session.
+pub fn session_arguments(host: &str, settings: &SessionSettings, sound_card: bool) -> Vec<String> {
     let mut args = vec![
         "stream".to_string(),
         host.to_string(),
@@ -148,6 +154,9 @@ pub fn session_arguments(host: &str, settings: &SessionSettings) -> Vec<String> 
     // the picture, from a reading it takes five times a second
     // ([D177](../../docs/DECISIONS.md), patch P-M16).
     args.push("--no-connection-warnings".to_string());
+    if !sound_card {
+        args.push("--no-sound-card".to_string());
+    }
     if settings.absolute_mouse {
         args.push("--absolute-mouse".to_string());
     }
@@ -168,6 +177,23 @@ mod tests {
     }
 
     #[test]
+    fn une_machine_sans_carte_son_le_dit_au_lecteur() {
+        // Huit secondes par session, dépensées avant l'image à se faire
+        // refuser une carte son qui n'existe pas. Le lecteur n'a pas à
+        // le découvrir : ce qui le lance connaît déjà la machine.
+        let muet = session_arguments("host", &SessionSettings::default(), false);
+        assert!(muet.iter().any(|a| a == "--no-sound-card"), "{muet:?}");
+
+        // Et une machine qui en a une ne dit rien : le lecteur fait ce
+        // qu'il a toujours fait.
+        let sonore = session_arguments("host", &SessionSettings::default(), true);
+        assert!(
+            !sonore.iter().any(|a| a.contains("sound-card")),
+            "{sonore:?}"
+        );
+    }
+
+    #[test]
     fn pairing_never_asks_a_question() {
         assert_eq!(
             pairing_arguments("127.0.0.1", "0421"),
@@ -177,7 +203,7 @@ mod tests {
 
     #[test]
     fn the_session_targets_the_host_s_only_application() {
-        let args = session_arguments("192.168.1.10", &SessionSettings::default());
+        let args = session_arguments("192.168.1.10", &SessionSettings::default(), true);
         assert_eq!(args[0], "stream");
         assert_eq!(args[1], "192.168.1.10");
         assert_eq!(args[2], APPLICATION);
@@ -194,7 +220,7 @@ mod tests {
             display_mode: DisplayMode::Fullscreen,
             ..SessionSettings::default()
         };
-        let args = session_arguments("host", &settings);
+        let args = session_arguments("host", &settings, true);
         assert_eq!(value_of(&args, "--resolution"), Some("2560x1440"));
         assert_eq!(value_of(&args, "--fps"), Some("120"));
         assert_eq!(value_of(&args, "--bitrate"), Some("80000"));
@@ -204,7 +230,7 @@ mod tests {
 
     #[test]
     fn the_engine_always_says_what_the_session_costs() {
-        let args = session_arguments("host", &SessionSettings::default());
+        let args = session_arguments("host", &SessionSettings::default(), true);
         // Rien du moteur n'est dessiné dans l'image : ZyrDesk montre
         // lui-même ce qu'il y a à dire du lien, dans une fenêtre à lui.
         assert!(args.iter().any(|a| a == "--no-connection-warnings"));
@@ -217,7 +243,7 @@ mod tests {
         // C'est par ce fichier qu'un réglage agit pendant que l'image
         // tourne : sans lui, chaque changement de taille ou de codec
         // serait un lecteur à relancer.
-        let args = session_arguments("host", &SessionSettings::default());
+        let args = session_arguments("host", &SessionSettings::default(), true);
         let path = value_of(&args, "--follow-settings").expect("un chemin à suivre");
         assert!(path.ends_with("session-wanted.txt"));
     }
@@ -229,7 +255,7 @@ mod tests {
         // forme change chaque fois qu'une main traverse un champ de
         // texte, ce qui reconstruirait l'image plusieurs fois par
         // seconde s'ils n'étaient qu'un.
-        let args = session_arguments("host", &SessionSettings::default());
+        let args = session_arguments("host", &SessionSettings::default(), true);
         let path = value_of(&args, "--follow-pointer").expect("un chemin à suivre");
         assert!(path.ends_with("session-pointer.txt"));
         assert_ne!(path, value_of(&args, "--follow-settings").unwrap());
@@ -241,7 +267,7 @@ mod tests {
         // d'un silence du réseau, la route étant revenue à la septième et
         // le tunnel en tenant trente : c'est la patience la plus courte
         // qui décide, et celle du moteur était la sienne.
-        let args = session_arguments("host", &SessionSettings::default());
+        let args = session_arguments("host", &SessionSettings::default(), true);
         assert_eq!(
             value_of(&args, "--control-timeout"),
             Some(
@@ -255,7 +281,7 @@ mod tests {
 
     #[test]
     fn hardware_decoding_and_frame_pacing_are_always_imposed() {
-        let args = session_arguments("host", &SessionSettings::default());
+        let args = session_arguments("host", &SessionSettings::default(), true);
         assert_eq!(value_of(&args, "--video-decoder"), Some("hardware"));
         assert!(args.iter().any(|a| a == "--frame-pacing"));
     }
@@ -268,7 +294,7 @@ mod tests {
         // les prend, des deux côtés de l'interrupteur : l'autre façon de
         // prendre ces touches a été retirée parce qu'elle ne pouvait pas
         // marcher, pas parce qu'on lui préférait celle-ci.
-        let args = session_arguments("host", &SessionSettings::default());
+        let args = session_arguments("host", &SessionSettings::default(), true);
         assert_eq!(value_of(&args, "--capture-system-keys"), Some("zyrdesk"));
         assert!(!args.iter().any(|a| a == "always"));
 
@@ -276,7 +302,7 @@ mod tests {
             system_keys: false,
             ..SessionSettings::default()
         };
-        let args = session_arguments("host", &laissees);
+        let args = session_arguments("host", &laissees, true);
         assert_eq!(
             value_of(&args, "--capture-system-keys"),
             Some("zyrdesk-off")
@@ -290,21 +316,21 @@ mod tests {
         // face à mettre son bureau à la taille demandée. Sans lui il
         // garde la sienne, et l'écart entre les deux formes est gravé en
         // bandes noires dans chaque image envoyée.
-        let args = session_arguments("host", &SessionSettings::default());
+        let args = session_arguments("host", &SessionSettings::default(), true);
         assert!(args.iter().any(|a| a == "--game-optimization"));
         assert!(!args.iter().any(|a| a == "--no-game-optimization"));
     }
 
     #[test]
     fn the_packet_size_stays_the_engine_s_business_until_imposed() {
-        let args = session_arguments("host", &SessionSettings::default());
+        let args = session_arguments("host", &SessionSettings::default(), true);
         assert!(!args.iter().any(|a| a == "--packet-size"));
 
         let imposed = SessionSettings {
             packet_size: Some(1264),
             ..SessionSettings::default()
         };
-        let args = session_arguments("host", &imposed);
+        let args = session_arguments("host", &imposed, true);
         assert_eq!(value_of(&args, "--packet-size"), Some("1264"));
     }
 
@@ -315,7 +341,7 @@ mod tests {
             stats_overlay: false,
             ..SessionSettings::default()
         };
-        let args = session_arguments("host", &without);
+        let args = session_arguments("host", &without, true);
         assert!(!args.iter().any(|a| a == "--absolute-mouse"));
         assert!(!args.iter().any(|a| a == "--performance-overlay"));
 
@@ -324,7 +350,7 @@ mod tests {
             stats_overlay: true,
             ..SessionSettings::default()
         };
-        let args = session_arguments("host", &with);
+        let args = session_arguments("host", &with, true);
         assert!(args.iter().any(|a| a == "--absolute-mouse"));
         assert!(args.iter().any(|a| a == "--performance-overlay"));
     }

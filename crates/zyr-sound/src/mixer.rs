@@ -101,6 +101,17 @@ fn playing_to() -> Result<IMMDevice, Trouble> {
         .map_err(|e| Trouble::of(format!("cet ordinateur n'a pas de sortie audio : {e}")))
 }
 
+/// Whether this computer has anything to play a sound through at all.
+///
+/// The same question `playing_to` already asks, kept to its answer: a
+/// machine with no sound output has no default endpoint, and Windows
+/// says so at once. What takes eight seconds is not knowing, it is
+/// trying to open one that is not there.
+pub fn anything_to_play_through() -> bool {
+    let _com = Com::up();
+    playing_to().is_ok()
+}
+
 /// The speakers' own mute, which is the device's and not the mix's.
 fn the_speakers() -> Result<IAudioEndpointVolume, Trouble> {
     let device = playing_to()?;

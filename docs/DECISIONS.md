@@ -3391,6 +3391,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Chaque échec porte maintenant son nom.** Ne pas se reconnaître a son propre code, et le produit le dit tel quel, à la fenêtre comme à la ligne de commande. Ce que cela change n'est pas la conduite, qui était déjà la bonne, mais ce qu'on lit : les deux ordinateurs sont représentés l'un à l'autre dans les deux cas.
 
+## D214. On dit au lecteur qu'il n'y a pas de carte son, il ne le découvre plus (2026-09-15, pendant M6)
+
+**La mesure qui tranche.** Une enceinte Bluetooth branchée sur la machine d'essai, l'image arrive en 1,5 seconde. Débranchée, 9,1 secondes. Tout l'écart tient dans un seul appel : ouvrir une carte son que cet ordinateur n'a pas, ce que Windows met huit secondes à refuser. Vingt-sept secondes au départ, dix-neuf après D211, onze après D212, et il restait celle-là.
+
+**Huit secondes pour s'entendre dire qu'il n'y a pas de son n'a aucun sens.** C'est la remarque qui a fait chercher plus loin, et elle est juste : ce n'est pas la question qui est lente, c'est la façon de la poser. Demander à Windows s'il existe une sortie audio par défaut se répond immédiatement ; c'est en ouvrir une qui n'existe pas qui traîne.
+
+**Alors ZyrDesk pose la question et le lecteur la reçoit.** Le produit parlait déjà à la carte son de sa propre machine, pour faire taire la pièce d'en face pendant une session : la même porte répond à celle-ci. La réponse part sur la ligne de commande du lecteur, qui n'ouvre alors plus rien du tout, ni sous-système audio ni périphérique.
+
+**Le doute penche toujours du côté du son.** Là où la question ne peut pas être posée, la réponse est oui : un faux « il n'y en a pas » retirerait le son d'une machine qui en a, ce qui est de loin la pire des deux erreurs. Et la réponse n'est jamais retenue d'une session à l'autre : c'est un fait vrai à un instant, et une enceinte branchée entre deux sessions doit compter.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

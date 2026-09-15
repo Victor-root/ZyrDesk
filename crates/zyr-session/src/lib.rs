@@ -142,6 +142,13 @@ pub enum Step {
     PairingNeeded { pin: String },
     /// They know each other now.
     Paired,
+    /// This computer has nothing to play the session's sound through,
+    /// and its player is started knowing it.
+    ///
+    /// Worth saying out loud: the session is silent and the person is
+    /// owed the reason, which is a sound card missing here and not
+    /// anything the far computer did.
+    NoSoundCardHere,
     /// The engine is starting.
     Starting,
     /// The engine is running, and this is the process it runs as.
@@ -809,10 +816,20 @@ pub fn open(
     // player making its stream over where it stands.
     tell_the_player(&settings)?;
 
+    // Asked once, here, and handed to every player this opening starts:
+    // a computer with no sound output must never be sent looking for
+    // one. Windows answers at once; what takes eight seconds is opening
+    // a card that is not there, and those eight seconds were spent
+    // before the picture at every single session.
+    let sound_card = zyr_sound::anything_to_play_through();
+    if !sound_card {
+        told(Step::NoSoundCardHere);
+    }
+
     carry_on(still_wanted)?;
     told(Step::Starting);
     let mut session = engine
-        .start_session(&target, &settings)
+        .start_session(&target, &settings, sound_card)
         .map_err(Error::Engine)?;
     told(Step::Showing {
         process: session.process_id(),
@@ -850,7 +867,7 @@ pub fn open(
         carry_on(still_wanted)?;
         told(Step::Starting);
         session = engine
-            .start_session(&target, &settings)
+            .start_session(&target, &settings, sound_card)
             .map_err(Error::Engine)?;
         told(Step::Showing {
             process: session.process_id(),

@@ -1137,6 +1137,10 @@ fn told(step: Step) -> Option<(String, Option<String>)> {
             Some(pin),
         ),
         Step::Paired => ("Les deux ordinateurs se connaissent.".to_string(), None),
+        Step::NoSoundCardHere => (
+            "Cet ordinateur n'a pas de sortie audio : la session sera muette.".to_string(),
+            None,
+        ),
         Step::Starting => ("Démarrage de l'image…".to_string(), None),
         Step::Showing { .. } => ("L'image arrive…".to_string(), None),
         // The two of these the person is left waiting through, so they
@@ -1270,6 +1274,9 @@ fn written(step: &Step) -> String {
             "en attente du code à taper sur l'ordinateur distant".to_string()
         }
         Step::Paired => "les deux ordinateurs se connaissent".to_string(),
+        Step::NoSoundCardHere => "cet ordinateur n'a pas de sortie audio, le lecteur est lancé \
+             sans en chercher une"
+            .to_string(),
         Step::Starting => "démarrage du lecteur".to_string(),
         Step::Showing { process, .. } => format!("lecteur en marche, processus {process}"),
         Step::SpeakersLeftAlone { refused } => {

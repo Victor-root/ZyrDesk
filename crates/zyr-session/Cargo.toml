@@ -11,4 +11,5 @@ zyr-proto.workspace = true
 zyr-engine-client.workspace = true
 zyr-transport.workspace = true
 zyr-control.workspace = true
+zyr-sound.workspace = true
 tokio = { version = "1.53.1", features = ["rt", "net", "time"] }

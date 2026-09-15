@@ -167,6 +167,9 @@ fn tell(step: Step, host: &str) {
             println!("  En attente de l'autorisation...");
         }
         Step::Paired => println!("  Les deux ordinateurs se connaissent.\n"),
+        Step::NoSoundCardHere => {
+            println!("  Cet ordinateur n'a pas de sortie audio : la session sera muette.");
+        }
         Step::Starting => println!("Connexion à {host}..."),
         // Rien à en dire ici : la ligne de commande n'a pas de
         // bouton flottant à accrocher dessus.

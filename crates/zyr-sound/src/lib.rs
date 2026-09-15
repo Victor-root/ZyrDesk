@@ -93,6 +93,21 @@ pub fn mute_speakers(quiet: bool) -> Result<(), Trouble> {
     mixer::mute_speakers(quiet)
 }
 
+/// Whether this computer has anything to play a session's sound through.
+///
+/// Asked before a player is started, so that a computer with no sound
+/// output is never sent looking for one. Windows answers that question
+/// at once; what takes eight seconds, every session, is opening a card
+/// that is not there, and those eight seconds are spent before the
+/// picture.
+///
+/// Yes wherever it cannot be asked. A false « there is none » would take
+/// the sound away from a machine that has one, which is the worse of the
+/// two mistakes by far.
+pub fn anything_to_play_through() -> bool {
+    mixer::anything_to_play_through()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +129,15 @@ mod tests {
         assert!(mute(1, true).is_err());
         assert!(speakers_muted().is_err());
         assert!(mute_speakers(true).is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn la_carte_son_est_supposee_presente_faute_de_pouvoir_demander() {
+        // La seule des cinq questions qui répond au lieu de refuser, et
+        // elle répond oui : ce qui la lit décide d'empêcher un lecteur
+        // de chercher une carte son, et un faux « il n'y en a pas »
+        // retirerait le son d'une machine qui en a une.
+        assert!(anything_to_play_through());
     }
 }

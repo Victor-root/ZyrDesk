@@ -297,13 +297,17 @@ impl ClientEngine {
     /// It is not waited on here: the session belongs to the engine
     /// process from that moment, and whoever asked for it may close
     /// without ending it.
+    /// `sound_card` is whether this computer has anything to play the
+    /// session's sound through, which the player is told rather than
+    /// left to find out; see `command::session_arguments`.
     pub fn start_session(
         &self,
         host: &str,
         settings: &SessionSettings,
+        sound_card: bool,
     ) -> Result<Session, EngineError> {
         self.state.prepare()?;
-        let mut command = self.command(&command::session_arguments(host, settings))?;
+        let mut command = self.command(&command::session_arguments(host, settings, sound_card))?;
         command.stdin(Stdio::null());
         if let Some(mut log) = self.open_log()? {
             let _ = writeln!(log, "{}{host} ---", zyr_proto::journal::SESSION_OPENS);
@@ -638,7 +642,7 @@ mod tests {
             Err(EngineError::ExecutableNotFound(_))
         ));
         assert!(matches!(
-            engine.start_session("127.0.0.1", &SessionSettings::default()),
+            engine.start_session("127.0.0.1", &SessionSettings::default(), true),
             Err(EngineError::ExecutableNotFound(_))
         ));
         let _ = engine.state().forget();
