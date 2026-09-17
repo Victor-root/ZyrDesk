@@ -38,7 +38,6 @@ const STEADY_RATE: &str = "steady_rate";
 const CAPTURE: &str = "capture";
 const MUTE_FAR_SPEAKERS: &str = "mute_far_speakers";
 const SYSTEM_KEYS: &str = "system_keys";
-const TOUCHPAD_GESTURES: &str = "touchpad_gestures";
 const SHARED_CLIPBOARD: &str = "shared_clipboard";
 const STEADY_FAR_RATE: &str = "steady_far_rate";
 const ECN: &str = "ecn";
@@ -252,12 +251,6 @@ fn rendered(preferences: Preferences) -> String {
          # plutôt que d'agir sur cet ordinateur. Se rebascule en cours de\n\
          # session depuis le menu du bouton flottant.\n\
          {SYSTEM_KEYS} = {}\n\
-         # Les gestes du pavé tactile, trois doigts glissés ou posés et\n\
-         # quatre doigts posés, partent dans la session plutôt que d'agir\n\
-         # sur cet ordinateur. Demande que Windows ait cessé de les\n\
-         # prendre pour lui : Paramètres, Pavé tactile, gestes à trois et\n\
-         # à quatre doigts, sur Rien.\n\
-         {TOUCHPAD_GESTURES} = {}\n\
          # Demander à l'ordinateur d'en face de réenvoyer son écran à\n\
          # pleine cadence même quand rien ne bouge : pointeur plus fluide\n\
          # là-bas, mais une image complète encodée soixante fois par\n\
@@ -298,7 +291,6 @@ fn rendered(preferences: Preferences) -> String {
         yes_no(preferred.stats_overlay),
         yes_no(preferred.mute_far_speakers),
         yes_no(preferred.system_keys),
-        yes_no(preferred.touchpad_gestures),
         yes_no(preferred.steady_far_rate),
         yes_no(preferred.shared_clipboard),
         yes_no(preferences.serving.steady_rate),
@@ -375,9 +367,6 @@ fn parsed(text: &str) -> Preferences {
                 preferred.mute_far_speakers = told(value, preferred.mute_far_speakers);
             }
             SYSTEM_KEYS => preferred.system_keys = told(value, preferred.system_keys),
-            TOUCHPAD_GESTURES => {
-                preferred.touchpad_gestures = told(value, preferred.touchpad_gestures);
-            }
             STEADY_FAR_RATE => {
                 preferred.steady_far_rate = told(value, preferred.steady_far_rate);
             }
@@ -420,7 +409,6 @@ mod tests {
                 stats_overlay: true,
                 mute_far_speakers: true,
                 system_keys: false,
-                touchpad_gestures: true,
                 steady_far_rate: false,
                 shared_clipboard: false,
             },

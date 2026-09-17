@@ -176,7 +176,7 @@ enum Reglage {
 /// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
 /// dans le journal à l'ouverture plutôt que remplacé par du vide qui
 /// ressemblerait à un défaut.
-const LIGNES: [Ligne; 22] = [
+const LIGNES: [Ligne; 21] = [
     Ligne::Mesures,
     // Juste sous les mesures, donc en tête de ce qu'on lit : ce qui vient
     // d'être refusé se lit avant ce qu'on allait cliquer ensuite. Elle ne
@@ -224,13 +224,6 @@ const LIGNES: [Ligne; 22] = [
         cotes: ["Partagé", "Immersif"],
         passe: Act::SystemKeys,
         ou: &IMMERSIF,
-    }),
-    Ligne::Bascule(Bascule {
-        icone: &icones::PAVE,
-        mot: "Pavé tactile",
-        cotes: ["Cet ordinateur", "La session"],
-        passe: Act::Touchpad,
-        ou: &AU_PAVE,
     }),
     Ligne::Bascule(Bascule {
         icone: &icones::PRESSE_PAPIERS,
@@ -479,7 +472,6 @@ static TOUR: AtomicU32 = AtomicU32::new(0);
 static EN_JEU: AtomicBool = AtomicBool::new(false);
 static COUPE: AtomicBool = AtomicBool::new(false);
 static IMMERSIF: AtomicBool = AtomicBool::new(false);
-static AU_PAVE: AtomicBool = AtomicBool::new(false);
 static PARTAGE: AtomicBool = AtomicBool::new(false);
 static TENUS: AtomicBool = AtomicBool::new(false);
 
@@ -517,11 +509,9 @@ static LARGE_CARTE: AtomicU32 = AtomicU32::new(0);
 ///
 /// Le menu de la vue web portait une ligne rouge pour ça. Celui que
 /// ZyrDesk dessine ne l'avait pas reprise, et un refus n'allait donc plus
-/// que dans le journal : l'interrupteur des gestes du pavé tactile, qui
-/// refuse à bon droit tant que Windows garde ces gestes pour lui, se
-/// contentait d'ouvrir une page de Windows et de ne pas basculer. Un
-/// interrupteur qui ne bascule pas sans dire pourquoi est un
-/// interrupteur cassé, même quand il a parfaitement raison.
+/// que dans le journal : un interrupteur qui se refuse à bon droit et se
+/// contente de ne pas basculer est un interrupteur cassé, même quand il
+/// a parfaitement raison.
 static REFUS: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
 /// Ce que ce refus prend de haut, mesuré au dessin comme la carte l'est.
@@ -2706,7 +2696,6 @@ async fn relis_les_bascules(app: &App) {
 
     let mut change = pose(&EN_JEU, crate::floating::in_game_mouse(app));
     change |= pose(&IMMERSIF, crate::floating::keys_to_the_session(app));
-    change |= pose(&AU_PAVE, crate::floating::gestures_to_the_session(app));
     change |= pose(&PARTAGE, crate::floating::the_clipboard_is_shared(app));
     change |= pose(&TENUS, crate::floating::the_voyants_are_held_up(app));
     // Sans session le mélangeur n'a rien à dire, et la carte ne s'ouvre

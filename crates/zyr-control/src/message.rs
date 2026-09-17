@@ -128,20 +128,6 @@ pub enum Request {
     /// The far ZyrDesk presses it on its own machine, which is the one
     /// program there the system will let.
     SecureAttention { way: WayId },
-    /// Éteint et rallume le pavé tactile de cet ordinateur.
-    ///
-    /// Ce que Windows fait d'un geste à trois doigts est décidé par des
-    /// valeurs que la fenêtre écrit elle-même, et dont Windows ne tient
-    /// aucun compte : ce qui applique ces gestes les a lues une fois et
-    /// les garde. Un périphérique qui s'en va et revient repart des
-    /// siennes, et ce sont alors les nôtres.
-    ///
-    /// Demandé au service parce qu'éteindre un périphérique demande les
-    /// droits d'un administrateur, que la fenêtre n'a pas. Rien n'est
-    /// porté avec : le service cherche lui-même les pavés de précision de
-    /// la machine, et un nom qui arriverait d'ici serait une façon de lui
-    /// faire éteindre ce que son appelant n'a pas le droit d'éteindre.
-    WakeTheTouchpad,
     /// Asks the far computer to put its lock screen up.
     ///
     /// What stands in for Windows+L, which cannot travel: Windows keeps
@@ -397,7 +383,6 @@ impl Request {
             "sas" => Ok(Request::SecureAttention {
                 way: WayId(fields.parsed("way")?),
             }),
-            "padwake" => Ok(Request::WakeTheTouchpad),
             "lock" => Ok(Request::LockScreen {
                 way: WayId(fields.parsed("way")?),
             }),
@@ -546,7 +531,6 @@ impl fmt::Display for Request {
             ),
             Request::Pair { way, pin } => write!(f, "pair way={way} pin={pin}"),
             Request::SecureAttention { way } => write!(f, "sas way={way}"),
-            Request::WakeTheTouchpad => write!(f, "padwake"),
             Request::LockScreen { way } => write!(f, "lock way={way}"),
             Request::SteadyFar { way, rate } => {
                 write!(f, "steady way={way} rate={}", said(*rate))
@@ -683,7 +667,7 @@ fn access_read(said: &str) -> Access {
 /// and the answer so the two can never drift apart.
 fn spelled(preferred: &Preferred) -> String {
     format!(
-        "asked={} bitrate={} codec={} display={} mouse={} stats={} hush={} keys={} touchpad={} \
+        "asked={} bitrate={} codec={} display={} mouse={} stats={} hush={} keys={} \
          steady={} clipboard={}",
         preferred.asked,
         preferred.bitrate_kbps,
@@ -697,7 +681,6 @@ fn spelled(preferred: &Preferred) -> String {
         said(preferred.stats_overlay),
         said(preferred.mute_far_speakers),
         said(preferred.system_keys),
-        said(preferred.touchpad_gestures),
         said(preferred.steady_far_rate),
         said(preferred.shared_clipboard)
     )
@@ -1356,7 +1339,6 @@ impl<'a> Fields<'a> {
             stats_overlay: self.flag("stats", fallback.stats_overlay),
             mute_far_speakers: self.flag("hush", fallback.mute_far_speakers),
             system_keys: self.flag("keys", fallback.system_keys),
-            touchpad_gestures: self.flag("touchpad", fallback.touchpad_gestures),
             steady_far_rate: self.flag("steady", fallback.steady_far_rate),
             shared_clipboard: self.flag("clipboard", fallback.shared_clipboard),
         }
@@ -1418,7 +1400,6 @@ mod tests {
             },
             Request::Release { way: WayId(3) },
             Request::SecureAttention { way: WayId(3) },
-            Request::WakeTheTouchpad,
             Request::LockScreen { way: WayId(3) },
             Request::SteadyFar {
                 way: WayId(3),
@@ -1613,7 +1594,6 @@ mod tests {
             stats_overlay: true,
             mute_far_speakers: true,
             system_keys: false,
-            touchpad_gestures: true,
             steady_far_rate: false,
             shared_clipboard: false,
         }

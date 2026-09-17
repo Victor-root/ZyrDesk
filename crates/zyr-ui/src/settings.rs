@@ -480,27 +480,6 @@ pub async fn remember_system_keys(theirs: bool) {
     .await;
 }
 
-/// Writes down which side of the switch the touchpad's gestures are on.
-pub async fn remember_touchpad_gestures(theirs: bool) {
-    remember(
-        "where the touchpad's gestures go",
-        format!(
-            "the touchpad's own gestures will go to {} from now on",
-            if theirs {
-                "the session"
-            } else {
-                "this computer"
-            }
-        ),
-        |preferred| {
-            let moved = preferred.touchpad_gestures != theirs;
-            preferred.touchpad_gestures = theirs;
-            moved
-        },
-    )
-    .await;
-}
-
 /// Writes down whether the two computers share one clipboard.
 pub async fn remember_shared_clipboard(shared: bool) {
     remember(

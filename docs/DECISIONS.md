@@ -3425,6 +3425,14 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Deux lignes pour trancher, une de chaque côté.** Le lecteur dit maintenant toute arrivée d'une des quatre touches de geste, quels que soient les modificateurs qu'il croit tenus, et il nomme ces modificateurs ; il ne dit plus rien des autres frappes de la session, ce qu'il faisait jusqu'ici et qui revenait à tenir un journal de frappe. ZyrDesk, de son côté, nomme dans sa ligne d'envoi les modificateurs qu'il n'a pas pressés parce qu'un doigt les tenait. Les deux lignes mises face à face disent si la combinaison est partie entière, si elle est arrivée, et dans quel état.
 
+## D218. Le geste au pavé tactile est retiré (2026-09-17, pendant M6)
+
+**Constat de Victor après le vrai test.** Le geste à trois doigts se voyait mal en usage réel malgré les deux journaux mis côte à côte : *« ça marche pas en vrai ça m'a cassé les couilles ce putain de touchpad »*. Décision sans appel : retirer la fonctionnalité entière plutôt que de continuer à la déboguer.
+
+**Ce qui part.** Côté ZyrDesk : le module qui lisait le pavé et reconnaissait ses gestes, l'interrupteur du menu, le réglage mémorisé, la demande de redémarrage du pavé adressée au service, et le canal de contrôle qui la portait. Côté moteur (Moonlight) : les quatre combinaisons ajoutées à la liste de raccourcis, les deux fonctions qui pressaient Alt+Tab et lecture/pause sur l'ordinateur d'en face, et toutes les lignes de journal qui n'existaient que pour elles. P-M17 est marqué retiré dans le manifeste plutôt que supprimé de la table : l'écart avec l'amont est redevenu nul sur ce point précis, et la ligne le dit.
+
+**Ce qui reste.** Le pavé tactile ordinaire de Windows continue de fonctionner sans rien de particulier : c'est le geste que ZyrDesk lui ajoutait qui disparaît, pas le pavé lui-même.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

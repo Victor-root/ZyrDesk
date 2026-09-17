@@ -87,10 +87,6 @@ mod theme;
 // de la marque se remplit comme une barre de chargement. Ce qui se lit se
 // compile partout ; ce qui se dessine est celui du bouton.
 mod transfert;
-// Le pavé tactile de cet ordinateur, lu par ce programme lui-même. Ce qui
-// reconnaît un geste est de l'arithmétique et se compile partout ; ce qui
-// lit le pavé est de Windows, comme la session.
-mod touchpad;
 mod tray;
 // Les deux voyants d'une session, dans le coin de l'image opposé au
 // bouton flottant. Ce qui décide se compile partout ; les pastilles sont
@@ -117,11 +113,6 @@ fn main() {
     // système agrandirait lui-même ce qui est déjà à la bonne taille.
     app::compte_en_vrais_pixels();
     journal::opened();
-    // Avant toute chose : un ZyrDesk tué pendant qu'il tenait les gestes
-    // du pavé tactile a laissé le réglage de quelqu'un changé sans que
-    // rien sur la machine ne dise pourquoi. Rien du tout si rien n'a été
-    // pris, ce qui est le cas ordinaire.
-    touchpad::give_the_gestures_back();
 
     let app = app::App::neuf();
     if let Err(e) = app::ouvre_le_courrier() {

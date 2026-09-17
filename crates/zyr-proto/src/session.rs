@@ -722,22 +722,6 @@ pub struct Preferred {
     /// the fault this exists to close, and the menu says which side the
     /// switch is on, so the other way round surprises nobody.
     pub system_keys: bool,
-    /// Whether the touchpad's own gestures belong to the session or to
-    /// the computer that is watching it.
-    ///
-    /// The same question as the one above, one storey lower and about a
-    /// different hand: on a laptop, three fingers sliding sideways switch
-    /// windows, three fingers tapping are a middle click and four tapping
-    /// play or pause, and Windows answers all three itself, on this side,
-    /// whatever a session is showing. They are the last gestures of an
-    /// ordinary day that cannot cross.
-    ///
-    /// Off until somebody asks, and this one is not a taste but a
-    /// condition: Windows only stops answering them when its own touchpad
-    /// settings say so, and until then turning this on would have every
-    /// gesture happen twice, once at each end. So it is asked for, and the
-    /// menu says what Windows still holds.
-    pub touchpad_gestures: bool,
     /// Whether the far computer resends a still screen at full rate.
     ///
     /// A setting of that machine's engine, asked for from here, for the
@@ -785,7 +769,6 @@ impl Default for Preferred {
             stats_overlay: false,
             mute_far_speakers: false,
             system_keys: true,
-            touchpad_gestures: false,
             steady_far_rate: Serving::default().steady_rate,
             shared_clipboard: true,
         }
@@ -1305,9 +1288,6 @@ mod tests {
             // l'image, il dit ce qu'on demande à la machine d'en face.
             mute_far_speakers: true,
             system_keys: false,
-            // Rien de ce champ n'atteint le moteur non plus : les gestes
-            // du pavé sont lus par ZyrDesk lui-même.
-            touchpad_gestures: true,
             steady_far_rate: false,
             // Ni celui-ci : un presse-papiers partagé ne passe par aucun
             // moteur, leur protocole n'ayant pas de canal pour ça.
