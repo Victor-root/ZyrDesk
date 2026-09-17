@@ -2474,15 +2474,19 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
     // that is a shortcut which works or not depending on whether they
     // let go in between. The engine reads the whole combination either
     // way: what it does not get from us, it already has.
-    let to_press: Vec<u16> = [
-        (place::CTRL, VK_CONTROL),
-        (place::ALT, VK_MENU),
-        (place::SHIFT, VK_SHIFT),
-    ]
-    .into_iter()
-    .filter(|(_, named)| !a_finger_holds(*named))
-    .map(|(place, _)| place)
-    .collect();
+    let mut to_press: Vec<u16> = Vec::new();
+    let mut a_finger_has: Vec<&str> = Vec::new();
+    for (name, place, named) in [
+        ("Ctrl", place::CTRL, VK_CONTROL),
+        ("Alt", place::ALT, VK_MENU),
+        ("Maj", place::SHIFT, VK_SHIFT),
+    ] {
+        if a_finger_holds(named) {
+            a_finger_has.push(name);
+        } else {
+            to_press.push(place);
+        }
+    }
 
     // Pressed in order, released in the mirror order: no key is left
     // down that was not down before.
@@ -2495,9 +2499,23 @@ fn shortcut(act: Act, process: u32) -> Result<(), String> {
         // Said out loud because nothing else can say it: if the picture
         // does not react, this line is what tells a keystroke that never
         // left from one the engine chose to ignore.
+        //
+        // And what was skipped with it. The engine answers only when it
+        // holds the three modifiers itself; one of them skipped here on
+        // the word of a finger that has in truth already let go, and the
+        // combination arrives short, is recognised by nobody, and nothing
+        // anywhere says why.
         note(&format!(
-            "{act} envoyé au lecteur {process} : Ctrl+Alt+Maj+{}, à la place {key:#04x}",
-            char::from(letter)
+            "{act} envoyé au lecteur {process} : Ctrl+Alt+Maj+{}, à la place {key:#04x}{}",
+            char::from(letter),
+            if a_finger_has.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " ; non pressé ici, un doigt le tenait déjà : {}",
+                    a_finger_has.join(", ")
+                )
+            }
         ));
         Ok(())
     } else {

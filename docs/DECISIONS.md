@@ -3417,6 +3417,14 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **La règle est bonne, c'est son silence qui ne l'était pas.** Un mot seul cherche un nom, jamais du texte libre, et c'est ce qui permet de demander un fichier entier d'un mot. Ce qui manquait est ce que la page dit quand ce choix écarte tout un fichier : elle nomme maintenant le mot à ajouter, et seulement là où c'est vrai, c'est-à-dire pour un fichier dont aucune ligne ne porte de nom.
 
+## D217. Treize raccourcis envoyés, un seul arrivé : ce qui manque pour savoir lequel ment (2026-09-17, pendant M6)
+
+**Ce que le journal établit.** Sur NOTEBOOK-VICTOR, la chaîne du geste tient jusqu'au bout côté ZyrDesk : le pavé est lu, huit gestes sont reconnus, treize raccourcis sont tapés, et le crochet clavier en compte cent quatre, soit exactement treize fois les huit frappes d'une combinaison. Aucun refus nulle part. Dans le journal du lecteur, sur ces treize, un seul est arrivé, et celui-là a été parfaitement compris : la table des combinaisons, les places de clavier et l'autorisation du mode sont donc hors de cause. Les douze autres n'ont pas seulement été ignorés, ils n'ont laissé aucune trace du tout.
+
+**Pourquoi l'absence de trace est elle-même l'indice.** Le moteur ne disait un mot que lorsqu'il croyait tenir les trois modificateurs. Une frappe qui arrive avec l'un d'eux manquant et une frappe qui n'arrive jamais s'écrivent donc pareil : rien. Or ZyrDesk saute volontairement un modificateur qu'un doigt tient déjà, ce qu'il lit dans l'état asynchrone du clavier, lequel peut encore annoncer enfoncée une touche que la frappe précédente vient de relâcher. Une combinaison partie sans son Ctrl est exactement une combinaison que personne ne reconnaît et dont personne ne parle.
+
+**Deux lignes pour trancher, une de chaque côté.** Le lecteur dit maintenant toute arrivée d'une des quatre touches de geste, quels que soient les modificateurs qu'il croit tenus, et il nomme ces modificateurs ; il ne dit plus rien des autres frappes de la session, ce qu'il faisait jusqu'ici et qui revenait à tenir un journal de frappe. ZyrDesk, de son côté, nomme dans sa ligne d'envoi les modificateurs qu'il n'a pas pressés parce qu'un doigt les tenait. Les deux lignes mises face à face disent si la combinaison est partie entière, si elle est arrivée, et dans quel état.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
