@@ -8,8 +8,9 @@ Chaque brique, le choix retenu, la raison, et les alternatives sérieusement con
 |---|---|---|
 | Cœur, service, tunnel, CLI, broker | Rust | Sûreté mémoire pour du code réseau exposé en permanence, performances, écosystème exact (tokio, quinn/iroh, axum, windows-service) |
 | Interface | Dessinée par le produit, en Direct2D et DirectWrite, dans une fenêtre Win32 à lui | Rien n'est embarqué, le texte est rendu par le moteur du système ; zéro processus de navigateur ; le système de design reste écrit une seule fois. Aucune boîte à outils d'interface : 321 caisses de moins dans le verrou du projet |
-| Moteur hôte | Sunshine officiel en processus enfant | Zéro modification visée : pilotage complet par config/CLI/REST vérifié sur le code |
-| Moteur client | moonlight-qt officiel en processus enfant | Pipeline décodage D3D11VA + présentation D3D11 + frame pacing : des années de réglages Windows qu'on ne réécrit pas |
+| Moteur | Le moteur ZyrDesk, en Rust, encodage et décodage par FFmpeg ([D219](DECISIONS.md), en construction) | Latence, qualité d'image et fluidité avant tout ; plus aucune jointure avec un programme qu'on ne contrôle pas ; débit de l'encodeur piloté par le tunnel |
+| Moteur hôte, jusqu'au débranchement | Sunshine en processus enfant | Remplacé par le moteur ZyrDesk ([D219](DECISIONS.md)) ; reste le filet tant que le nôtre ne le bat pas |
+| Moteur client, jusqu'au débranchement | moonlight-qt en processus enfant | Remplacé par le moteur ZyrDesk ([D219](DECISIONS.md)) ; reste le filet tant que le nôtre ne le bat pas |
 | Transport | quinn, et sous QUIC une couche de chemins à nous : aiguilleur, sondes signées, branche de relais | Contrôleur média mesuré au banc M2 (D13) ; la migration relais vers direct se fait sans que QUIC le sache, donc sans changer de transport ; examen d'iroh clos par D119 |
 | IPC local | Named pipes (tokio) + RPC typé maison | Natif Windows, simple, contrôle d'accès par identité de l'appelant |
 | Secrets | DPAPI (profil SYSTEM) côté service, lien de compte compris ; la fenêtre ne tient aucun secret | Standard Windows, zéro dépendance exotique |

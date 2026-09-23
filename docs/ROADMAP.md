@@ -90,6 +90,17 @@ Le projet avance par jalons courts, chacun testable de bout en bout par un non-d
 - Résultat observable : UDP direct bloqué au pare-feu entre les deux PC -> la session s'établit quand même ; on débloque -> passage en direct sans interruption perceptible.
 - Critères de sortie : session via relais avec surcoût de latence <= 1 aller-retour supplémentaire vers le relais ; promotion automatique vérifiée ; l'utilisateur voit toujours le chemin actif. À vérifier sur deux PC et un conteneur en suivant [docs/testing/M6-PROTOCOLE.md](testing/M6-PROTOCOLE.md).
 
+## MZ : Le moteur ZyrDesk
+
+- Objectif : remplacer Sunshine et Moonlight par un moteur à nous, en Rust, dédié aux performances ([D219](DECISIONS.md)). **Priorité absolue : latence, qualité d'image, fluidité.** Rien ne se gagne à leurs dépens.
+- Méthode : chaque module se conçoit après avoir compris comment Sunshine et Moonlight traitent le même problème ; la technique se comprend, le code ne se reprend pas, sauf s'il n'y a vraiment pas d'autre choix, et alors c'est dit avant et sa provenance est notée. Encodage et décodage par FFmpeg (encodeurs matériels Nvidia, AMD, Intel, et logiciel de secours). Le nouveau moteur vit à côté des anciens, un réglage choisit lequel sert une session.
+- Étape 0, conception : document de conception validé par Victor avant la première ligne de code (ce qui passe dans le tunnel, ce qui tourne dans le service et dans la fenêtre, capture, encodage, réparation des pertes, affichage, mesure).
+- Étape 1, premier pixel : capture de l'écran, H.264 matériel, tunnel, décodage, image dessinée dans la fenêtre de ZyrDesk, souris et clavier. Sans son.
+- Étape 2, une session complète : son, écran sécurisé (UAC, écran de connexion), changement de taille et écran virtuel, reprise après coupure, débit de l'encodeur piloté par le contrôleur du tunnel.
+- Étape 3, la qualité : H.265, AV1, 4:4:4, multi-écran.
+- Étape 4, le débranchement : Sunshine, Moonlight, leurs patchs, leurs compilations, leurs caisses de pilotage et l'appairage par code quittent le projet.
+- Critères de sortie de chaque étape, mesurés sur les mêmes machines contre le moteur d'aujourd'hui : latence de bout en bout inférieure ou égale, G-frame tenu, qualité d'image au moins égale à débit égal, G-start tenu. Le débranchement n'a lieu que quand les quatre sont verts sur NVIDIA, Intel et, dès qu'une machine le permet, AMD.
+
 ## M7 : Résilience
 
 - Objectif : le produit encaisse la vraie vie.

@@ -1,5 +1,7 @@
 # Stratégie moteurs : frontières avec Sunshine et Moonlight
 
+> **Stratégie de transition.** ZyrDesk écrit son propre moteur ([D219](../DECISIONS.md), jalon MZ de [ROADMAP.md](../ROADMAP.md)). Ce qui suit reste la règle pour Sunshine et Moonlight tant qu'ils servent de filet, et tombe avec eux au débranchement.
+
 Objectif : utiliser les moteurs officiels comme fondations invisibles, avec un nombre de points de contact volontairement minimal, pour que leurs mises à niveau restent simples pendant des années.
 
 Règle absolue : AUCUNE fonctionnalité ZyrDesk ne vit dans le code des moteurs. Un patch ne peut que retirer de l'habillage (fenêtre, marque), exposer un interrupteur, ou corriger un défaut du moteur qui se mesure sans ZyrDesk et se propose en amont. Toute logique produit vit dans nos crates Rust et pilote les moteurs par leurs interfaces officielles : fichier de configuration, ligne de commande, API REST locale, journaux, codes de sortie.

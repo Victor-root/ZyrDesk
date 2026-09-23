@@ -3433,6 +3433,29 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Ce qui reste.** Le pavé tactile ordinaire de Windows continue de fonctionner sans rien de particulier : c'est le geste que ZyrDesk lui ajoutait qui disparaît, pas le pavé lui-même.
 
+## D219. ZyrDesk aura son propre moteur, dédié aux performances (2026-09-23, pendant M6)
+
+> Révise la ligne « Moteur hôte » et la ligne « Moteur client » de [TECH-CHOICES.md](TECH-CHOICES.md), et fait de [engines/STRATEGY.md](engines/STRATEGY.md) une stratégie de transition.
+
+**Décision de Victor.** Sunshine et Moonlight cessent d'être les fondations du produit. ZyrDesk écrit son propre moteur, en Rust : capture, encodage, transport, décodage, affichage, son et entrées. Les codecs ne sont pas réinventés (H.264, H.265, AV1 restent), ni les interfaces du système (Direct3D, et Vulkan si un jour utile) : c'est la chaîne entière entre les deux qui devient la nôtre. Les semaines passées sur les deux moteurs ne sont pas regrettées, elles ont appris ce qu'un moteur doit faire et où il casse.
+
+**La priorité absolue : latence, qualité d'image, fluidité.** Les trois pèsent autant, et aucune ne se sacrifie à la commodité du code, au confort d'une fonction ou à la vitesse d'écriture. Toute étape du moteur se mesure sur ces trois-là avant d'être déclarée faite, et le moteur ne remplace ceux d'aujourd'hui que le jour où il les bat sur les mêmes machines.
+
+**Pourquoi, mesuré sur le projet et non ressenti.** Au moment d'écrire ceci, 134 des 206 décisions précédentes parlent des moteurs ; 24 patchs sont actifs, dont 45 commits et 2 700 lignes dans Moonlight, alors que la stratégie de départ visait zéro modification. Une grande part du code de ZyrDesk n'existe que pour piloter deux programmes qu'il ne contrôle pas : leurs deux caisses de pilotage, la fenêtre de l'image posée sur la nôtre, un menu qui parle au lecteur en simulant des frappes, des statistiques lues dans une ligne de journal, un fichier surveillé pour changer le flux. Et chaque gros défaut récent vivait à cette jointure : le geste du pavé qui n'arrivait qu'une fois sur treize ([D218](#d218-le-geste-au-pavé-tactile-est-retiré-2026-09-17-pendant-m6)), vingt-cinq secondes de démarrage perdues à interroger trois fois une carte son ([D211](#d211-seize-des-vingt-sept-secondes-dune-ouverture-étaient-une-carte-son-ouverte-deux-fois-2026-09-15-pendant-m6), [D212](#d212-la-carte-son-était-interrogée-une-troisième-fois-dans-la-connexion-elle-même-2026-09-15-pendant-m6), [D214](#d214-on-dit-au-lecteur-quil-ny-a-pas-de-carte-son-il-ne-le-découvre-plus-2026-09-15-pendant-m6)), l'appairage par code refait à l'intérieur d'un tunnel dont les deux bouts se sont déjà reconnus, le clavier qui passe mal d'une fenêtre à l'autre. Un moteur à nous n'a pas de jointure. Il donne aussi ce que les moteurs empêchaient : le contrôleur de congestion du tunnel, qui sait quand le réseau se dégrade, règle directement le débit de l'encodeur, au lieu d'un débit figé pour toute la session.
+
+**Ce qui est déjà à nous et ne se réécrit pas.** Le tunnel et son contrôleur média, les identités, le relais, le serveur et les comptes, le service Windows, l'écran virtuel, le son (mélangeur), le presse-papiers et les fichiers, l'interface. Toute la moitié réseau des moteurs (sept ports, leurs protocoles, leur appairage) n'est pas réécrite : elle disparaît.
+
+**La méthode.** Chaque module se conçoit après avoir lu comment Sunshine et Moonlight résolvent le même problème : leur code est la meilleure documentation qui existe sur les cas particuliers de Windows et des cartes graphiques. Ce qui s'y prend, c'est la technique et la compréhension, pas le code : le moteur de ZyrDesk est écrit par ZyrDesk, pour ses propres contraintes. La seule exception est le cas où il n'y a vraiment pas d'autre choix, par exemple une suite de valeurs qu'un pilote exige et qui ne se trouve documentée nulle part ailleurs ; c'est alors dit à Victor avant, et le morceau repris dit d'où il vient, ce que la GPL v3 commune aux trois projets permet. L'encodage et le décodage passent par FFmpeg, la même bibliothèque que Sunshine utilise déjà pour atteindre les encodeurs matériels des trois fabricants (Nvidia, AMD, Intel), avec un encodeur logiciel de secours.
+
+**Les principes de performance, posés avant la conception détaillée.**
+- L'image ne quitte jamais la carte graphique entre la capture et l'encodeur, ni entre le décodeur et l'écran : pas une copie par la mémoire centrale.
+- L'encodeur est réglé pour la latence : aucune image différée, aucune anticipation, un débit qu'une image ne dépasse pas.
+- L'image se dessine dans la fenêtre de ZyrDesk elle-même : plus de seconde fenêtre, ni de clavier à se disputer.
+- Une perte se répare sans attendre un aller-retour quand c'est possible, et en redemandant le minimum quand ce ne l'est pas.
+- La mesure vient d'abord : latence de bout en bout, régularité de l'intervalle entre images, qualité à débit égal, toujours comparées au moteur d'aujourd'hui sur les mêmes machines.
+
+**Le chemin.** Le nouveau moteur grandit à côté des anciens, avec un réglage qui choisit lequel sert une session. Sunshine et Moonlight restent le filet jusqu'à ce que le nôtre les batte ; alors seulement ils sont débranchés, avec leurs patchs, leurs compilations et leurs caisses de pilotage. Les étapes et leurs critères sont dans [ROADMAP.md](ROADMAP.md), jalon MZ. Avant la première ligne de code, un document de conception est écrit et validé par Victor. Jusqu'au débranchement, la discipline `zyr:` de [engines/STRATEGY.md](engines/STRATEGY.md) reste due sur toute modification des moteurs actuels.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
