@@ -29,10 +29,10 @@ tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time", "syn
 # with a certificate nobody vouches for: the road of every self-hosted
 # server.
 zyr-server = { path = "../../server/zyr-server" }
-rcgen = "0.14.8"
+rcgen = "0.14.10"
 
 [target.'cfg(windows)'.build-dependencies]
-winresource = "0.1.24"
+winresource = "0.1.31"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"

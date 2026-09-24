@@ -19,7 +19,7 @@ path = "src/main.rs"
 # The program's Windows resource: its manifest, which asks for the
 # system's modern controls and says this program counts in real pixels,
 # and its icon, the one the taskbar draws.
-embed-resource = "3"
+embed-resource = "3.0.11"
 
 [dependencies]
 zyr-proto.workspace = true
@@ -43,7 +43,7 @@ tokio = { version = "1.53.1", features = [
 # cannot describe and `windows` does: both crates are of the same family,
 # and this one is already in the project's lock file, pulled in by the
 # sound crate.
-windows = { version = "0.61.3", features = [
+windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common",
@@ -55,7 +55,7 @@ windows = { version = "0.61.3", features = [
 ] }
 # The points and matrices Direct2D uses: a separate crate of the family,
 # already in the project's lock file since `windows` depends on it.
-windows-numerics = "0.2"
+windows-numerics = "0.3.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     # Rounded window corners belong to the compositor, and it is the one

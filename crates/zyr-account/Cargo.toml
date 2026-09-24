@@ -8,12 +8,12 @@ repository.workspace = true
 
 [dependencies]
 base64 = "0.23.1"
-futures-util = "0.3.33"
+futures-util = "0.3.34"
 http-body-util = "0.1.5"
 hyper = { version = "1.11.1", features = ["client", "http1"] }
-hyper-rustls = { version = "0.27.9", default-features = false, features = ["http1", "ring", "tls12"] }
-hyper-util = { version = "0.1.20", features = ["client-legacy", "http1", "tokio"] }
-rustls = { version = "0.23.43", default-features = false, features = ["ring", "std"] }
+hyper-rustls = { version = "0.27.10", default-features = false, features = ["http1", "ring", "tls12"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tokio = { version = "1.53.1", features = ["rt", "net", "sync", "time", "macros"] }
@@ -24,4 +24,4 @@ zyr-transport.workspace = true
 
 [dev-dependencies]
 zyr-server = { path = "../../server/zyr-server" }
-rcgen = "0.14.8"
+rcgen = "0.14.10"

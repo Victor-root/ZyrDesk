@@ -13,7 +13,7 @@ repository.workspace = true
 # nothing checks. The windows package comes from the same publisher, it is
 # already in the repository's lock file (the interface uses it), and the
 # compiler checks every call there.
-windows = { version = "0.61.3", features = [
+windows = { version = "0.62.2", features = [
     "Win32_Media_Audio",
     # The speakers' mute, which is a property of the device and not of
     # the mix: that is why it does not reach the capture.

@@ -7,21 +7,20 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-bytes = "1.11.1"
-quinn = "0.11.11"
-# Held at this version: 0.11.17 subtracts twice the size of a datagram
-# dropped from the send queue, whose bookkeeping goes below zero as soon
-# as the queue overflows once. The transport then starts sending from a
-# queue whose size it no longer knows, then panics in the middle of a
-# send, which kills the session without a word. The zyr-transport burst
-# test proves it. To be raised once the fix is published.
-quinn-proto = "=0.11.16"
-rcgen = "0.14.8"
+bytes = "1.12.1"
+quinn = "0.11.12"
+# Never below this version: 0.11.17 subtracts twice the size of a
+# datagram dropped from the send queue, whose bookkeeping goes below zero
+# as soon as the queue overflows once, then panics in the middle of a
+# send, which kills the session without a word. 0.11.18 keeps that
+# bookkeeping in the queue alone. The zyr-transport burst test guards it.
+quinn-proto = "0.11.18"
+rcgen = "0.14.10"
 ring = "0.17.14"
-rustls = { version = "0.23.43", default-features = false, features = ["ring", "std"] }
-rustls-webpki = { version = "0.103.13", features = ["ring"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std"] }
+rustls-webpki = { version = "0.103.15", features = ["ring"] }
 sha2 = "0.11.0"
 socket2 = "0.6.5"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "macros", "io-util", "time", "sync"] }
-webpki-roots = "1"
+webpki-roots = "1.0.9"
 zyr-proto.workspace = true

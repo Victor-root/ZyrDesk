@@ -40,7 +40,7 @@ zyr-broker = { path = "crates/zyr-broker" }
 zyr-account = { path = "crates/zyr-account" }
 zyr-screen = { path = "crates/zyr-screen" }
 zyr-sound = { path = "crates/zyr-sound" }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive"] }
 
 [profile.release]
 lto = "thin"

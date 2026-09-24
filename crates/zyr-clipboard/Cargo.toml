@@ -16,7 +16,7 @@ zyr-proto.workspace = true
 # is already in the repository's lock file (the interface and the sound
 # use it), and taking both halves from the same place avoids having two
 # names for one HANDLE.
-windows = { version = "0.61.3", features = [
+windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     # WIC, the imaging of Windows: only it can make a PNG out of a
@@ -45,4 +45,4 @@ windows = { version = "0.61.3", features = [
 # What the macro that builds a COM object writes: it names this crate by
 # its own name, and does not find it under the family's. It is the same
 # one, republished by `windows`, already in the repository's lock file.
-windows-core = "0.61.2"
+windows-core = "0.62.2"
