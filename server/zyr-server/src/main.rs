@@ -17,7 +17,7 @@ use zyr_server::store::Store;
 #[derive(Parser)]
 #[command(name = "zyrdesk-server", version = zyr_proto::PRODUCT_VERSION, about = "Serveur ZyrDesk : comptes, mise en relation et relais")]
 struct Cli {
-    /// Le fichier de configuration.
+    /// The configuration file.
     #[arg(long, default_value = config::DEFAULT_PATH, global = true)]
     config: PathBuf,
     #[command(subcommand)]
@@ -26,47 +26,49 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Sert, jusqu'à ce qu'on l'arrête.
+    /// Serves, until it is stopped.
     Run,
-    /// Où en est le serveur.
+    /// Where the server stands.
     Status,
-    /// Les comptes.
+    /// The accounts.
     User {
         #[command(subcommand)]
         action: UserAction,
     },
-    /// Les codes d'invitation.
+    /// The invitation codes.
     Invite {
         #[command(subcommand)]
         action: InviteAction,
     },
-    /// L'empreinte à comparer dans l'application.
+    /// The fingerprint to compare in the app.
     Fingerprint,
-    /// Le serveur se joint lui-même, comme un appareil le ferait.
+    /// The server reaches itself, as a device would.
     Check,
-    /// Une copie cohérente de la base, de la configuration et des clés.
+    /// A consistent copy of the database, the configuration and the
+    /// keys.
     Backup { folder: PathBuf },
 }
 
 #[derive(Subcommand)]
 enum UserAction {
-    /// Crée un compte, quelle que soit la politique d'inscription.
+    /// Creates an account, whatever the sign-up policy.
     Create {
         username: String,
         #[arg(long)]
         email: Option<String>,
-        /// Lit le mot de passe sur l'entrée standard, une ligne.
+        /// Reads the password from standard input, one line.
         #[arg(long)]
         password_stdin: bool,
     },
     List,
-    /// Remet un mot de passe, ce qui déconnecte le compte partout.
+    /// Resets a password, which signs the account out everywhere.
     ResetPassword {
         username: String,
         #[arg(long)]
         password_stdin: bool,
     },
-    /// Supprime un compte et tout ce qui était à lui.
+    /// Deletes an account and everything that belonged to
+    /// it.
     Delete {
         username: String,
     },

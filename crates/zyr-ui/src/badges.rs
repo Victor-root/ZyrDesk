@@ -275,8 +275,8 @@ async fn keep_up(app: &crate::app::App) {
         }
         let held = crate::floating::the_badges_are_held_up(app);
         let Some(measures) = fresh(started) else {
-            // Held on screen, they are there even before the engine
-            // over there has written a single reading: what is being
+            // Held on screen, they are there even before the client
+            // engine has written a single reading: what is being
             // looked at then is the badges themselves, and a session
             // whose readings have not started is precisely the moment
             // someone looks at them.

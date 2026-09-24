@@ -190,8 +190,8 @@ mod tests {
 
     #[test]
     fn a_self_signed_server_is_refused_with_its_key_shown() {
-        // C'est ce que la fenêtre montre à la personne pour qu'elle
-        // compare avec ce que l'installation a affiché.
+        // This is what the window shows the person so that they can
+        // compare it with what the installation displayed.
         let certificate = self_signed();
         let presented = public_key_fingerprint(&certificate).unwrap();
         assert_eq!(

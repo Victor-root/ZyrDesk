@@ -455,11 +455,11 @@ mod tests {
 
     #[test]
     fn the_size_a_session_asked_for_is_the_one_the_screen_is_born_at() {
-        // Un écran qui se réveille porte la première taille de sa liste.
-        // Laissée dans un ordre fixe, chaque session recevait un écran né
-        // à la plus petite taille offerte, et il fallait réarranger tout
-        // le bureau une deuxième fois pour la corriger, pendant que le
-        // moteur le réarrangeait déjà.
+        // A screen that wakes up takes the first size of its list. With
+        // the list left in a fixed order, every session got a screen born
+        // at the smallest size on offer, and the whole desktop had to be
+        // rearranged a second time to correct it, while the engine was
+        // already rearranging it.
         let wanted = Mode::new(1920, 1080, 60);
         let mut modes: Vec<Mode> = vec![wanted];
         modes.extend(
@@ -469,11 +469,11 @@ mod tests {
                 .filter(|mode| *mode != wanted),
         );
         assert_eq!(modes[0], wanted);
-        // Et elle n'y est qu'une fois, même quand elle est déjà offerte.
+        // And it is only there once, even when it is already offered.
         assert_eq!(modes.iter().filter(|mode| **mode == wanted).count(), 1);
         assert_eq!(modes.len(), ALWAYS_OFFERED.len());
 
-        // Une taille que personne n'offrait s'ajoute sans en chasser une.
+        // A size nobody offered is added without pushing one out.
         let unusual = Mode::new(2048, 1152, 60);
         let mut modes: Vec<Mode> = vec![unusual];
         modes.extend(
@@ -488,9 +488,9 @@ mod tests {
 
     #[test]
     fn the_sizes_a_screen_is_born_with_cover_the_usual_ones() {
-        // Chaque taille absente d'ici coûte un redémarrage de l'écran à
-        // la première session qui la demande : celles-là couvrent
-        // l'écrasante majorité des ordinateurs.
+        // Every size missing from here costs a restart of the screen
+        // for the first session that asks for it: these cover the
+        // overwhelming majority of computers.
         for common in [(1920, 1080), (2560, 1440), (3840, 2160)] {
             assert!(
                 ALWAYS_OFFERED.iter().any(|m| (m.width, m.height) == common),

@@ -237,8 +237,8 @@ mod tests {
 
     #[test]
     fn a_body_touched_in_transit_is_refused() {
-        // Le corps voyage tel quel : un octet changé, et la signature ne
-        // le couvre plus.
+        // The body travels as it is: one byte changed, and the signature
+        // no longer covers it.
         let key = ServerKey::generate();
         let sealed = key
             .seal(&Word {

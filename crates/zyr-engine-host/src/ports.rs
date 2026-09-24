@@ -36,19 +36,19 @@ pub fn ports_are_free(ports: &EnginePorts) -> bool {
 mod tests {
     use super::*;
 
-    /// Ce qui empêche les deux essais qui touchent à de vrais ports de
-    /// se marcher dessus.
+    /// What stops the two tests that touch real ports from treading on
+    /// each other.
     ///
-    /// Un port n'appartient pas au processus mais à la machine, et le
-    /// lanceur d'essais fait tourner ceux d'un même binaire en parallèle.
-    /// L'un des deux réserve puis relâche toute la série pour vérifier
-    /// qu'elle est libre, l'autre en occupe un pour vérifier qu'elle ne
-    /// l'est plus : lancés ensemble, ils se prennent le même numéro et
-    /// celui qui arrive second échoue sur « adresse déjà utilisée ».
+    /// A port belongs not to the process but to the machine, and the test
+    /// runner runs the tests of one binary in parallel. One of the two
+    /// reserves and then releases the whole series to check that it is
+    /// free, the other occupies one of them to check that it no longer
+    /// is: started together, they grab the same number from each other
+    /// and the one that comes second fails on "address already in use".
     static REAL_PORTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Le tour de chacun, sans qu'un essai déjà en échec en fasse échouer
-    /// un second pour une raison qui n'est pas la sienne.
+    /// Each one's turn, without a test that has already failed making a
+    /// second one fail for a reason that is not its own.
     fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
         REAL_PORTS.lock().unwrap_or_else(|held| held.into_inner())
     }

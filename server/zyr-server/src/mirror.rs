@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(answered, nonce);
         assert_eq!(seen, asking.local_addr().unwrap());
 
-        // Tout autre datagramme est ignoré, sans réponse.
+        // Any other datagram is ignored, with no answer.
         asking.send_to(b"bonjour", mirror.address()).await.unwrap();
         let silence =
             tokio::time::timeout(Duration::from_millis(300), asking.recv_from(&mut buf)).await;

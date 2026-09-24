@@ -1027,9 +1027,9 @@ const WINDOW_AT_MOST: Duration = Duration::from_secs(180);
 
 /// The rhythm once the opening has gone on for a while.
 ///
-/// The millisecond above is there so that the engine's window is never
-/// seen before it is laid in ours, and that race is run the instant it
-/// opens. Past the time an opening usually takes, it costs more than it
+/// The millisecond of `WINDOW_STEP` is there so that the engine's window
+/// is never seen before it is laid in ours, and that race is run the
+/// instant it opens. Past the time an opening usually takes, it costs more than it
 /// brings: a frame is sixteen milliseconds, and sixteen milliseconds do
 /// not show.
 const WINDOW_STEP_AFTER: Duration = Duration::from_millis(16);

@@ -9,11 +9,10 @@
 //! and not the machine's, so it costs no administrator rights and
 //! follows whoever asked for it rather than everybody on the computer.
 
-// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
-// lui-même, et ce qui dessine n'existe que sous Windows comme les
-// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
-// fichier reste compilé et vérifié, il n'est simplement appelé par
-// personne.
+// Everything here is asked for by the home screen, which this program
+// draws itself, and what draws only exists on Windows, like the windows
+// it dresses. Elsewhere, nothing asks these questions: the file stays
+// compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 /// Where Windows looks for what to start with a session.

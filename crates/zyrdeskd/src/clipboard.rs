@@ -801,9 +801,9 @@ mod tests {
 
     #[test]
     fn a_line_that_does_not_match_its_bytes_is_skipped() {
-        // Le service lit entre les deux écritures : ce moment-là doit
-        // être « rien à dire ce tour-ci » et jamais la moitié de deux
-        // choses collée au presse-papiers d'en face.
+        // The service reads between the two writes: that moment must
+        // be "nothing to say this round" and never half of two things
+        // pasted onto the far clipboard.
         let folder = fresh_folder("entre-deux");
         let named = folder.join("clipboard-here.txt");
         write_the_pair(&named, &Clip::text("le nouveau")).unwrap();
@@ -815,9 +815,9 @@ mod tests {
 
     #[test]
     fn nobody_asks_as_long_as_nobody_has_asked() {
-        // C'est ce qui décide qu'un ordinateur que personne ne regarde
-        // garde son presse-papiers pour lui : sans question, plus aucun
-        // assistant n'est relancé et le dernier s'éteint tout seul.
+        // This is what decides that a computer nobody is watching keeps
+        // its clipboard to itself: with no question, no helper is
+        // started again any more and the last one goes out by itself.
         *ASKED.lock().unwrap() = None;
         assert!(nobody_is_asking());
         *ASKED.lock().unwrap() = Some(Instant::now());
@@ -828,9 +828,9 @@ mod tests {
 
     #[test]
     fn a_helper_is_restarted_before_the_previous_one_dies() {
-        // Sans ce recouvrement, la lecture s'arrêterait entre deux
-        // assistants et ce qu'on copie pendant ce temps-là ne partirait
-        // jamais.
+        // Without this overlap, the reading would stop between two
+        // helpers and whatever is copied in the meantime would never
+        // leave.
         assert!(
             START_ANOTHER_AFTER < HELPER_LIVES,
             "un assistant doit être relancé avant la fin du précédent"

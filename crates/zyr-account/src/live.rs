@@ -563,7 +563,7 @@ mod tests {
         assert_eq!(snapshot.me.as_deref(), Some("d1"));
         assert_eq!(snapshot.server, Some(server));
 
-        // La présence touche les appareils du compte et ceux des partages.
+        // Presence touches the account's devices and those of the shares.
         snapshot.apply(&FromServer::Presence {
             device: "d2".into(),
             online: true,
@@ -577,7 +577,7 @@ mod tests {
         assert!(snapshot.devices[1].online);
         assert_eq!(snapshot.shares[0].device.access, Access::EngineMissing);
 
-        // Ajouté, renommé, révoqué.
+        // Added, renamed, revoked.
         snapshot.apply(&FromServer::DeviceAdded {
             device: device("d3", false),
         });
@@ -593,7 +593,7 @@ mod tests {
         });
         assert_eq!(snapshot.devices.len(), 2);
 
-        // Contacts et partages.
+        // Contacts and shares.
         let contact = ContactInfo {
             id: "c1".into(),
             username: "ami".into(),
@@ -626,7 +626,7 @@ mod tests {
         snapshot.disconnected("coupé".into());
         assert!(!snapshot.connected);
         assert_eq!(snapshot.trouble.as_deref(), Some("coupé"));
-        // Les listes restent : c'est ce que l'accueil montre en gris.
+        // The lists stay: that is what the home screen shows in grey.
         assert_eq!(snapshot.devices.len(), 2);
     }
 }

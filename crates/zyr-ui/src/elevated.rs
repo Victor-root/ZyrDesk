@@ -21,12 +21,12 @@ use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 /// What Windows says when the person turns the prompt down.
 const REFUSED: i32 = 1223;
 
-/// À partir d'où un code de sortie n'est plus celui d'un programme.
+/// The point from which an exit code is no longer a program's own.
 ///
-/// Windows range là ce qu'il dit d'un programme qui s'est arrêté de
-/// lui-même : plantage, débordement, image abîmée. Le nôtre ne sort que
-/// par zéro ou un, donc rien de cette forme ne peut venir de lui, et tout
-/// ce qui en vient veut dire qu'il n'a rien pu dire.
+/// Windows puts there what it says about a program that stopped by
+/// itself: a crash, an overflow, a damaged image. Ours only ever exits
+/// with zero or one, so nothing of that form can come from it, and
+/// anything that comes from there means it was unable to say anything.
 const CRASHED: u32 = 0xC000_0000;
 
 /// COM, initialised for as long as this lasts.
@@ -109,11 +109,11 @@ fn waited(running: HANDLE) -> Result<(), String> {
     if code == 0 {
         return Ok(());
     }
-    // Un code de cette forme n'est pas un compte rendu du programme mais
-    // la façon dont Windows dit qu'il s'est arrêté brutalement. Le
-    // service n'a alors rien écrit, et l'envoyer lire un journal qui ne
-    // dira rien est le pire des renvois : on cherche une heure à l'endroit
-    // où il n'y a rien à trouver.
+    // A code of this form is not a report from the program but the way
+    // Windows says it stopped abruptly. The service has then written
+    // nothing, and sending the person off to read a journal that will say
+    // nothing is the worst referral there is: an hour goes on searching
+    // the place where there is nothing to find.
     if code >= CRASHED {
         return Err(format!(
             "le service s'est arrêté brutalement pendant sa mise en place \

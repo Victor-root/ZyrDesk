@@ -350,11 +350,11 @@ mod tests {
         let sent = probe(&sender, &receiver);
         let bytes = seal_probe(&sender, &sent).unwrap();
         assert!(is_ours(&bytes));
-        // Le premier octet ne peut pas être celui d'un paquet QUIC, dont
-        // le bit fixe est toujours levé.
+        // The first byte cannot be that of a QUIC packet, whose fixed
+        // bit is always set.
         assert_eq!(bytes[0] & 0x40, 0);
-        // Aussi grosse qu'un paquet de session, et jamais plus : c'est
-        // tout ce qu'une sonde prouve, et une route se juge là-dessus.
+        // As big as a session packet, and never bigger: that is all a
+        // probe proves, and a road is judged on it.
         assert!(bytes.len() <= AS_BIG_AS_A_PACKET, "{} octets", bytes.len());
         assert!(
             bytes.len() >= AS_BIG_AS_A_PACKET - 2,
@@ -367,7 +367,7 @@ mod tests {
         };
         assert_eq!(sealed.claims(), &sent);
         assert_eq!(sealed.opened_by(sender.fingerprint()), Some(&sent));
-        // Signée par un autre : rien.
+        // Signed by another: nothing.
         assert!(sealed.opened_by(receiver.fingerprint()).is_none());
     }
 
@@ -391,14 +391,15 @@ mod tests {
         let sender = Identity::generate().unwrap();
         let receiver = Identity::generate().unwrap();
         let mut bytes = seal_probe(&sender, &probe(&sender, &receiver)).unwrap();
-        // Le numéro, juste après les deux empreintes et la session.
+        // The number, just after the two fingerprints and the
+        // session.
         let at = MAGIC.len() + 1 + 1 + 2 + 32 + 32;
         bytes[at] ^= 0x01;
         let Some(Heard::Probe(sealed)) = heard(&bytes) else {
             panic!("pas lu comme une sonde");
         };
         assert!(sealed.opened_by(sender.fingerprint()).is_none());
-        // Et un datagramme tronqué ne se lit pas du tout.
+        // And a truncated datagram does not read at all.
         assert!(heard(&bytes[..bytes.len() - 3]).is_none());
         assert!(heard(b"\x00ZYR\x09").is_none());
         assert!(heard(b"pas a nous").is_none());
@@ -412,8 +413,8 @@ mod tests {
         };
         assert_eq!(read, nonce);
 
-        // Et c'est tout ce que fait un miroir : il répond à la question,
-        // et à rien d'autre.
+        // And that is all a mirror does: it answers the question, and
+        // nothing else.
         let asking: SocketAddr = "82.64.12.7:53211".parse().unwrap();
         let answered = what_the_mirror_answers(&who_am_i(nonce), asking).unwrap();
         assert_eq!(

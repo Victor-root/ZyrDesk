@@ -59,7 +59,7 @@ pub struct EngineRuntime {
 }
 
 impl EngineRuntime {
-    /// Standard location, among the data of the product.
+    /// Standard location, among the product's data.
     pub fn standard_path() -> PathBuf {
         zyr_proto::paths::data_dir().join("host-runtime.conf")
     }

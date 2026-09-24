@@ -5,11 +5,10 @@
 //! but not running, which is something the person can act on, and this
 //! is where they act on it.
 
-// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
-// lui-même, et ce qui dessine n'existe que sous Windows comme les
-// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
-// fichier reste compilé et vérifié, il n'est simplement appelé par
-// personne.
+// Everything here is asked for by the home window, which this program
+// draws itself, and what draws only exists on Windows, like the windows
+// it dresses. Elsewhere, nothing asks these questions: the file stays
+// compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::PathBuf;
@@ -19,10 +18,10 @@ use zyr_proto::paths;
 
 use crate::service;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module's lines are filed under.
 const TAG: &str = "desk";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
@@ -62,7 +61,8 @@ pub struct Standing {
     /// Whether the ZyrDesk of this network are let in without anyone
     /// recognising them one by one.
     pub trusting: bool,
-    /// Whether the tunnel's packets carry their congestion mark.
+    /// Whether the packets of the tunnel carry their congestion
+    /// mark.
     pub ecn: bool,
     /// Whether the door listens on the product's own port.
     pub fixed_port: bool,
@@ -527,8 +527,8 @@ mod tests {
 
     #[test]
     fn a_service_that_does_not_answer_leaves_the_switches_down() {
-        // Sinon la fenêtre montrerait un ordinateur joignable alors que
-        // rien ne tourne pour le joindre.
+        // Otherwise the window would show a computer as reachable when
+        // nothing is running to reach it.
         let standing = Standing::without_the_service("le service ne tourne pas".to_string());
         assert!(!standing.hosting);
         assert!(!standing.wanted);

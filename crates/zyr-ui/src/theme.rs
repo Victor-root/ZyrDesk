@@ -20,21 +20,20 @@
 //! and the window is redrawn. Nothing here polls a registry on a timer
 //! for an answer that changes twice a day.
 
-// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
-// lui-même, et ce qui dessine n'existe que sous Windows comme les
-// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
-// fichier reste compilé et vérifié, il n'est simplement appelé par
-// personne.
+// Everything here is asked for by the home window, which this program
+// draws itself, and what draws only exists under Windows, like the
+// windows it dresses. Elsewhere, nothing asks these questions: the file
+// stays compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::app::App;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module files its journal lines under.
 const TAG: &str = "theme";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
@@ -319,8 +318,8 @@ mod tests {
 
     #[test]
     fn every_choice_is_written_and_read_back_as_itself() {
-        // Le fichier est le seul endroit où le choix survit à la fenêtre :
-        // un nom qui ne se relit pas est un choix perdu au redémarrage.
+        // The file is the only place where the choice outlives the window:
+        // a name that does not read back is a choice lost on restart.
         for choice in Choice::ALL {
             assert_eq!(Choice::read(choice.name()), Some(choice));
             assert!(!choice.word().is_empty());
@@ -333,8 +332,8 @@ mod tests {
         for choice in Choice::ALL {
             assert_eq!(Choice::of(choice.rank()), choice);
         }
-        // Ce que dit un fichier abîmé : suivre Windows, comme au premier
-        // démarrage.
+        // What a damaged file says: follow Windows, as on the first
+        // start.
         assert_eq!(Choice::of(9), Choice::System);
     }
 }

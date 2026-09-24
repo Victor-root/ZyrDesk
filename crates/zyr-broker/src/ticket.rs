@@ -327,8 +327,8 @@ mod tests {
             verifier.ticket_for_host(&signed, host, 1_010).unwrap(),
             ticket
         );
-        // L'autre bout le lit aussi, et c'est un autre vérificateur : le
-        // sien, avec sa propre mémoire des tickets vus.
+        // The other end reads it too, and that is another verifier: its
+        // own, with its own memory of the tickets seen.
         let other_end = Verifier::new(key.public());
         assert_eq!(
             other_end.ticket_for_client(&signed, client, 1_010).unwrap(),
@@ -339,9 +339,9 @@ mod tests {
 
     #[test]
     fn a_ticket_for_another_device_is_refused() {
-        // Un ticket valide n'ouvre que la machine qu'il nomme : l'hôte
-        // n'admet pas au nom d'un autre, et le client ne part pas au nom
-        // d'un autre.
+        // A valid ticket only opens the machine it names: the host does
+        // not admit in the name of another, and the client does not set
+        // off in the name of another.
         let key = ServerKey::generate();
         let (client, host) = two();
         let stranger = Identity::generate().unwrap().fingerprint();
@@ -361,8 +361,8 @@ mod tests {
                 .unwrap_err(),
             Refusal::NotForMe { named: client }
         );
-        // Et un ticket refusé pour ça n'a pas été « vu » : le bon appareil
-        // peut encore s'en servir.
+        // And a ticket refused for that has not been "seen": the right
+        // device can still use it.
         assert!(verifier.ticket_for_host(&signed, host, 1_000).is_ok());
     }
 
@@ -407,8 +407,8 @@ mod tests {
         let skew = CLOCK_SKEW.as_secs();
         let life = TICKET_LIFE.as_secs();
 
-        // Un peu d'avance sur l'horloge du serveur passe ; beaucoup ne
-        // passe pas, et la phrase dit que ce sont les horloges.
+        // A little lead on the server's clock gets through; a lot does
+        // not, and the sentence says it is the clocks.
         let verifier = Verifier::new(key.public());
         assert!(
             verifier
@@ -421,7 +421,7 @@ mod tests {
                 .unwrap_err(),
             Refusal::NotYet
         );
-        // Expiré, avec la même tolérance.
+        // Expired, with the same tolerance.
         assert!(
             Verifier::new(key.public())
                 .ticket_for_host(&signed, host, 10_000 + life + skew)
@@ -478,8 +478,9 @@ mod tests {
         );
         assert_eq!(verifier.pass(&signed, client, 1_000).unwrap(), pass);
         assert_eq!(pass.expires - pass.issued, PASS_LIFE.as_secs());
-        // Et il vaut aussi longtemps qu'il vit : un appareil dont la
-        // connexion au relais a lâché revient avec le même.
+        // And it holds for as long as it lives: a device whose
+        // connection to the relay gave way comes back with the same
+        // one.
         assert_eq!(verifier.pass(&signed, client, 1_060).unwrap(), pass);
 
         let ticket = key

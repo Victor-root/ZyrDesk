@@ -81,12 +81,13 @@ mod tests {
         assert!(limiter.allows_at(somebody(), start));
         assert!(limiter.allows_at(somebody(), start));
         assert!(!limiter.allows_at(somebody(), start));
-        // Vingt secondes plus tard, un tiers du seau est revenu : un
-        // essai, et pas deux.
+        // Twenty seconds later, a third of the bucket has come back:
+        // one attempt, and not two.
         let later = start + Duration::from_secs(20);
         assert!(limiter.allows_at(somebody(), later));
         assert!(!limiter.allows_at(somebody(), later));
-        // Et une minute pleine remplit tout, sans jamais déborder.
+        // And a full minute fills it all, without ever
+        // overflowing.
         let much_later = later + Duration::from_secs(600);
         for _ in 0..3 {
             assert!(limiter.allows_at(somebody(), much_later));
