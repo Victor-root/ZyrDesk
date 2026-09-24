@@ -676,6 +676,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef25905e51abafe4dcea6c15fec58c57b601cdbd0ee53d22ea1d3016c587d39b"
 
 [[package]]
+name = "fixedbitset"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
+
+[[package]]
 name = "flate2"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1202,6 +1208,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
+name = "libloading"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "754ca22de805bb5744484a5b151a9e1a8e837d5dc232c2d7d8c2e3492edc8b60"
+dependencies = [
+ "cfg-if",
+ "windows-link",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1617,6 +1633,24 @@ dependencies = [
  "time",
  "x509-parser",
  "yasna",
+]
+
+[[package]]
+name = "readme-rustdocifier"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08ad765b21a08b1a8e5cdce052719188a23772bcbefb3c439f0baaf62c56ceac"
+
+[[package]]
+name = "reed-solomon-simd"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cffef0520d30fbd4151fb20e262947ae47fb0ab276a744a19b6398438105a072"
+dependencies = [
+ "cpufeatures 0.2.17",
+ "fixedbitset",
+ "once_cell",
+ "readme-rustdocifier",
 ]
 
 [[package]]
@@ -3073,6 +3107,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zyr-codec"
+version = "0.1.0"
+dependencies = [
+ "libloading",
+ "zyr-media",
+ "zyr-proto",
+]
+
+[[package]]
 name = "zyr-control"
 version = "0.1.0"
 dependencies = [
@@ -3102,12 +3145,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "zyr-host"
+version = "0.1.0"
+dependencies = [
+ "zyr-codec",
+ "zyr-control",
+ "zyr-media",
+ "zyr-proto",
+]
+
+[[package]]
 name = "zyr-lan"
 version = "0.1.0"
 dependencies = [
  "mdns-sd",
  "zyr-proto",
  "zyr-transport",
+]
+
+[[package]]
+name = "zyr-media"
+version = "0.1.0"
+dependencies = [
+ "reed-solomon-simd",
+]
+
+[[package]]
+name = "zyr-player"
+version = "0.1.0"
+dependencies = [
+ "zyr-codec",
+ "zyr-control",
+ "zyr-media",
+ "zyr-proto",
 ]
 
 [[package]]

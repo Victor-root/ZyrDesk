@@ -1,0 +1,10 @@
+[package]
+name = "zyr-media"
+description = "Wire formats of the ZyrDesk engine: packets, error correction, input, pacing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+reed-solomon-simd = "3.1.0"

@@ -2,6 +2,10 @@
 resolver = "2"
 members = [
     "crates/zyr-proto",
+    "crates/zyr-media",
+    "crates/zyr-codec",
+    "crates/zyr-host",
+    "crates/zyr-player",
     "crates/zyr-engine-host",
     "crates/zyr-engine-client",
     "crates/zyr-transport",
@@ -28,6 +32,10 @@ repository = "https://github.com/Victor-root/ZyrDesk"
 
 [workspace.dependencies]
 zyr-proto = { path = "crates/zyr-proto" }
+zyr-media = { path = "crates/zyr-media" }
+zyr-codec = { path = "crates/zyr-codec" }
+zyr-host = { path = "crates/zyr-host" }
+zyr-player = { path = "crates/zyr-player" }
 zyr-engine-host = { path = "crates/zyr-engine-host" }
 zyr-engine-client = { path = "crates/zyr-engine-client" }
 zyr-transport = { path = "crates/zyr-transport" }

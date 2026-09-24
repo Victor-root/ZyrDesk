@@ -1,0 +1,13 @@
+[package]
+name = "zyr-host"
+description = "Host side of the ZyrDesk engine: capture, encoding, input and sound of the computer being shown"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-codec.workspace = true
+zyr-control.workspace = true
+zyr-media.workspace = true
+zyr-proto.workspace = true

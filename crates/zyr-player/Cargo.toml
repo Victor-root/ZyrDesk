@@ -1,0 +1,13 @@
+[package]
+name = "zyr-player"
+description = "Client side of the ZyrDesk engine: decoding, display and sound of the computer being watched"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+zyr-codec.workspace = true
+zyr-control.workspace = true
+zyr-media.workspace = true
+zyr-proto.workspace = true
