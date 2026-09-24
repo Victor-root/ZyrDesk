@@ -2,8 +2,9 @@
 //! given with the pipe, and patience with a pipe busy for an instant.
 //!
 //! The service's control channel and the engines' links are both named
-//! pipes. Who may open one is written into it when it is made, never
-//! checked afterwards, so the list travels with the call that makes it.
+//! pipes. Who may open one is written into it when it is made, and
+//! cannot be decided later, so the list travels with the call that
+//! makes it.
 
 use std::ffi::c_void;
 use std::io;

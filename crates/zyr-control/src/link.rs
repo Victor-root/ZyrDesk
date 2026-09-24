@@ -127,7 +127,9 @@ const READ_AHEAD: usize = 64 * 1024;
 ///
 /// Drawn from the system generator among 62 characters, or 36 once
 /// Windows has folded the case of a pipe name: over 160 bits, far out
-/// of reach of anyone trying names until one answers.
+/// of reach of anyone hoping to make the link's pipe before it. The
+/// name is no secret once made, Windows listing every pipe to whoever
+/// asks: who may open a link is up to its access list alone.
 const NAME_DRAWN: usize = 32;
 
 /// A link waiting for the other process, for one connection only.
@@ -138,6 +140,9 @@ pub struct LinkListener {
 
 impl LinkListener {
     /// Makes a link under a name nobody can guess, nor already hold.
+    ///
+    /// Called within a tokio runtime, which the link is handed to as
+    /// soon as it exists: outside one, tokio panics.
     pub fn create(access: Access) -> io::Result<Self> {
         Self::claim(&random::alphanumeric_string(NAME_DRAWN), &access)
     }
@@ -192,7 +197,9 @@ impl Link {
         }
     }
 
-    /// The process at the other end, when the system says which.
+    /// The process at the other end, when the system says which: how
+    /// to make sure the one expected took the link, its name being no
+    /// secret to anyone the access list lets in.
     pub fn peer_process(&self) -> Option<u32> {
         self.peer
     }
@@ -222,7 +229,14 @@ impl LinkReader {
             if let Some(frame) = next_frame(&mut self.received)? {
                 return Ok(Some(frame));
             }
-            if self.stream.read_buf(&mut self.received).await? == 0 {
+            let read = match self.stream.read_buf(&mut self.received).await {
+                // A socket whose other end left with frames still unread
+                // says so with a reset where a pipe says it is over: the
+                // other end is gone all the same.
+                Err(e) if e.kind() == io::ErrorKind::ConnectionReset => 0,
+                read => read?,
+            };
+            if read == 0 {
                 if self.received.is_empty() {
                     return Ok(None);
                 }
@@ -444,14 +458,20 @@ mod tests {
         Channel::Audio,
     ];
 
-    /// Access every test link is made with: the one that also lets a
-    /// test run by the person at a Windows machine reach its own link.
-    const IN_TESTS: Access = Access::SystemAndInteractive;
+    /// Access every test link is made with: the system, and every
+    /// account signed in whatever the way, so a test reaches its own
+    /// link on Windows when run at the machine as well as by a service
+    /// or over the network, where nobody counts as logged in at it.
+    fn in_tests() -> Access {
+        Access::SystemAnd {
+            user_sid: "S-1-5-11".to_string(),
+        }
+    }
 
     /// Both ends of a fresh link: the one that accepted, then the one
     /// that connected.
     async fn both_ends() -> (Link, Link) {
-        let listener = LinkListener::create(IN_TESTS).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let name = listener.name().to_string();
         let accepting = tokio::spawn(listener.accept());
         let connected = connect(&name).await.unwrap();
@@ -607,15 +627,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_other_side_leaving_without_reading_reads_as_the_end_too() {
+        let (accepted, connected) = both_ends().await;
+        let (mut reads, mut writes) = accepted.split();
+        writes.send(Channel::Video, b"never read").await.unwrap();
+        drop(connected);
+        assert!(reads.next().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
     async fn a_link_left_halfway_through_a_frame_is_an_error_not_an_end() {
-        let (mut reads, mut feeding) = fed_by_hand();
-        feeding
-            .write_all(&head(10, Channel::Audio as u8))
-            .await
-            .unwrap();
-        feeding.write_all(b"abc").await.unwrap();
-        drop(feeding);
-        assert_eq!(kind_of(reads.next().await), io::ErrorKind::UnexpectedEof);
+        let mut frame = head(1 + 3, Channel::Audio as u8);
+        frame.extend_from_slice(b"abc");
+        // Inside the head as well as inside the payload.
+        for cut in 1..frame.len() {
+            let (mut reads, mut feeding) = fed_by_hand();
+            feeding.write_all(&frame[..cut]).await.unwrap();
+            drop(feeding);
+            assert_eq!(
+                kind_of(reads.next().await),
+                io::ErrorKind::UnexpectedEof,
+                "coupure après {cut} octets"
+            );
+        }
+    }
+
+    #[test]
+    fn frames_come_out_one_by_one_however_their_bytes_arrive() {
+        let sent = [
+            (Channel::Control, &b"first"[..]),
+            (Channel::Audio, &b""[..]),
+            (Channel::Video, &b"third"[..]),
+        ];
+        let mut bytes = Vec::new();
+        for (channel, payload) in sent {
+            bytes.extend(head(1 + payload.len() as u32, channel as u8));
+            bytes.extend_from_slice(payload);
+        }
+
+        // All in a single read, then one byte per read.
+        for reads in [vec![bytes.as_slice()], bytes.chunks(1).collect()] {
+            let mut received = BytesMut::new();
+            let mut arrived = Vec::new();
+            for read in reads {
+                received.extend_from_slice(read);
+                while let Some((channel, payload)) = next_frame(&mut received).unwrap() {
+                    arrived.push((channel, payload.to_vec()));
+                }
+            }
+            assert_eq!(
+                arrived,
+                sent.map(|(channel, payload)| (channel, payload.to_vec()))
+            );
+            assert!(received.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_half_dropped_leaves_the_other_direction_open() {
+        let (accepted, connected) = both_ends().await;
+        let (mut reads, _) = connected.split();
+        let (_, mut writes) = accepted.split();
+        writes.send(Channel::Control, b"still open").await.unwrap();
+        let (_, arrived) = reads.next().await.unwrap().unwrap();
+        assert_eq!(&arrived[..], b"still open");
     }
 
     #[tokio::test]
@@ -667,8 +742,8 @@ mod tests {
     #[tokio::test]
     async fn a_name_already_held_cannot_be_claimed_again() {
         let drawn = random::alphanumeric_string(NAME_DRAWN);
-        let holder = LinkListener::claim(&drawn, &IN_TESTS).unwrap();
-        assert!(LinkListener::claim(&drawn, &IN_TESTS).is_err());
+        let holder = LinkListener::claim(&drawn, &in_tests()).unwrap();
+        assert!(LinkListener::claim(&drawn, &in_tests()).is_err());
 
         // The failed attempt took nothing away from the holder.
         let name = holder.name().to_string();
@@ -682,14 +757,24 @@ mod tests {
 
     #[tokio::test]
     async fn two_links_never_share_a_name() {
-        let one = LinkListener::create(IN_TESTS).unwrap();
-        let other = LinkListener::create(IN_TESTS).unwrap();
+        let one = LinkListener::create(in_tests()).unwrap();
+        let other = LinkListener::create(in_tests()).unwrap();
         assert_ne!(one.name(), other.name());
     }
 
     #[tokio::test]
+    async fn a_link_is_made_with_every_access() {
+        // On Windows this is where the system reads each access list.
+        for access in [Access::SystemOnly, in_tests(), Access::SystemAndInteractive] {
+            if let Err(e) = LinkListener::create(access.clone()) {
+                panic!("{access:?} : {e}");
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn a_link_already_connected_takes_nobody_else() {
-        let listener = LinkListener::create(IN_TESTS).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let name = listener.name().to_string();
         let accepting = tokio::spawn(listener.accept());
         let _first = connect(&name).await.unwrap();
@@ -751,7 +836,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         use std::path::Path;
 
-        let listener = LinkListener::create(IN_TESTS).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let socket = Path::new(listener.name());
         let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(socket), 0o600);
@@ -763,7 +848,7 @@ mod tests {
     async fn nothing_is_left_behind_once_the_name_is_no_longer_needed() {
         use std::path::PathBuf;
 
-        let abandoned = LinkListener::create(IN_TESTS).unwrap();
+        let abandoned = LinkListener::create(in_tests()).unwrap();
         let directory = PathBuf::from(abandoned.name())
             .parent()
             .unwrap()
@@ -771,7 +856,7 @@ mod tests {
         drop(abandoned);
         assert!(!directory.exists());
 
-        let listener = LinkListener::create(IN_TESTS).unwrap();
+        let listener = LinkListener::create(in_tests()).unwrap();
         let name = listener.name().to_string();
         let directory = PathBuf::from(&name).parent().unwrap().to_path_buf();
         let accepting = tokio::spawn(listener.accept());
