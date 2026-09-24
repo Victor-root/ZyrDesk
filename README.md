@@ -108,6 +108,7 @@ Ceci s'adresse autant à une IA qu'à une personne qui reprend le dépôt.
 
 - **Le code s'écrit en anglais** : noms de fichiers et de modules, types, fonctions, variables, constantes, noms des tests, commentaires et documentation du code, dans le Rust comme dans les scripts, la CI et la feuille de style.
 - **Ce que la personne lit reste en français** : textes de l'interface, messages affichés, et tout ce que le programme écrit pour être lu.
+- **L'aide des outils en ligne de commande** (`--help`) naît des commentaires du code : elle est en anglais, comme leurs options.
 - **Ce qui est écrit sur le disque ou passe sur le réseau garde son nom exact**, même français (valeurs de préférences, clés de `install.env`, champs échangés avec le serveur, règle de pare-feu, dossier `vendor/ecran-virtuel`) : le renommer casserait une installation existante ou le dialogue entre deux versions.
 - **La documentation de `docs/` reste en français**, et l'historique de [docs/DECISIONS.md](docs/DECISIONS.md) ne se réécrit pas.
 - Toute modification du code d'un moteur suit la marque `zyr:` de [docs/engines/STRATEGY.md](docs/engines/STRATEGY.md).

@@ -255,10 +255,10 @@ mod tests {
 
     #[test]
     fn no_size_arrives_that_nobody_asked_for() {
-        // Le pilote croise toute fréquence globale avec toutes les
-        // tailles : une seule ligne oubliée ici et l'écran offre des
-        // tailles que personne n'a demandées, dont le bureau distant
-        // peut se retrouver habillé.
+        // The driver crosses any global refresh rate with every
+        // size: a single line forgotten here and the screen offers
+        // sizes nobody asked for, which the far desktop can end up
+        // wearing.
         let written = settings_file(&[Mode::new(1920, 1080, 60)]);
         assert!(!written.contains("g_refresh_rate"), "{written}");
         assert_eq!(written.matches("<width>").count(), 1);
@@ -266,8 +266,8 @@ mod tests {
 
     #[test]
     fn the_same_sizes_write_the_same_file() {
-        // Ce qui permet de ne rien toucher quand rien ne change, et donc
-        // de ne pas redémarrer un écran pour rien.
+        // What makes it possible to touch nothing when nothing changes,
+        // and so not to restart a screen for nothing.
         let modes = [Mode::new(2560, 1440, 60)];
         assert_eq!(settings_file(&modes), settings_file(&modes));
         assert_ne!(

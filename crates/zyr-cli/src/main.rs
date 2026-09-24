@@ -42,7 +42,7 @@ enum Command {
     },
     /// Opens a session on a remote computer
     Connect(connect::Args),
-    /// Shows the fingerprint of this machine
+    /// Shows this machine's fingerprint
     Identity,
     /// Measures what the tunnel costs between two computers
     Bench {

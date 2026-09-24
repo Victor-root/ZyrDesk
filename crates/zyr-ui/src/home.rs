@@ -1131,8 +1131,8 @@ const SIFT_PAUSE: usize = 1;
 ///
 /// The sift box behaves like a logcat's: one types, the page narrows,
 /// with nothing to click. One question per letter would read the four
-/// files again thirteen times for "clipboard", so it is the letter
-/// nobody follows that sets off the reading.
+/// files again nine times for "clipboard", so it is the letter nobody
+/// follows that sets off the reading.
 const SIFT_PAUSE_MS: u32 = 300;
 
 /// Where the mouse is, in real pixels from the canvas's corner.
@@ -2139,12 +2139,12 @@ impl Painter<'_> {
         // the only address that comes from here.
         let here = peer.seen;
         let local_only = here && !busy && self.under_the_hand(&Target::Local(rank));
-        let handle = self
+        let in_session = self
             .seen
             .sessions
             .iter()
             .any(|session| session.fingerprint == peer.fingerprint);
-        // The reverse of `handle`: not a computer this window has
+        // The reverse of `in_session`: not a computer this window has
         // reached, but the one controlling it right now.
         let controlling = self
             .seen
@@ -2172,7 +2172,7 @@ impl Painter<'_> {
                 self.colours.surface_1
             },
         );
-        let edge = if handle {
+        let edge = if in_session {
             self.colours.online.mixed_with(self.colours.border, 0.4)
         } else if controlling {
             self.colours.warning.mixed_with(self.colours.border, 0.4)
@@ -2188,7 +2188,7 @@ impl Painter<'_> {
         // wants to read what the far machine has written. The one
         // controlling this computer does not fade either: it is
         // precisely that card one wants to see.
-        let opacity = if busy && !handle && !controlling {
+        let opacity = if busy && !in_session && !controlling {
             0.5
         } else {
             1.0
@@ -2244,16 +2244,16 @@ impl Painter<'_> {
         // ways the hand is choosing: without it, the house in the corner
         // would be a drawing with no name.
         let hint = self.px(layout::HINT);
-        if handle || hovered || local_only || controlling {
+        if in_session || hovered || local_only || controlling {
             self.draw_text(
-                match (handle, local_only, controlling) {
+                match (in_session, local_only, controlling) {
                     (true, _, _) => "Session en cours",
                     (false, true, _) => "Se connecter en local",
                     (false, false, true) => "Vous contrôle actuellement",
                     (false, false, false) => "Se connecter",
                 },
                 self.caption(),
-                if handle {
+                if in_session {
                     self.colours.online
                 } else if controlling {
                     self.colours.warning
@@ -4400,13 +4400,13 @@ unsafe extern "system" fn in_a_field(
     use windows_sys::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CHAR, WM_KEYDOWN};
 
     let vk = holding as u16;
-    let handle = vk == VK_TAB || vk == VK_RETURN || vk == VK_ESCAPE;
+    let ours = vk == VK_TAB || vk == VK_RETURN || vk == VK_ESCAPE;
     // The character that follows the key is swallowed with it: without
     // this the field beeps, a tab not being a character it accepts.
     if message == WM_CHAR && (holding == 9 || holding == 13 || holding == 27) {
         return 0;
     }
-    if message == WM_KEYDOWN && handle {
+    if message == WM_KEYDOWN && ours {
         match vk {
             VK_TAB => {
                 // SAFETY: a question to the system about this thread's
@@ -5584,8 +5584,8 @@ fn watch(app: App) {
 /// changed.
 ///
 /// What has not changed is not redrawn: the window often stays open
-/// during a session, and repainting an identical frame three times a
-/// minute would be processor time taken from the session's picture.
+/// during a session, and repainting an identical frame every three
+/// seconds would be processor time taken from the session's picture.
 async fn reread(app: &App) -> bool {
     let machine = crate::desk::standing().await;
     let peers = crate::desk::peers().await;

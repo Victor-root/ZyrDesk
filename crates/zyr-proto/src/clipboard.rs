@@ -513,18 +513,19 @@ mod tests {
 
     #[test]
     fn the_same_thing_twice_carries_the_same_name() {
-        // C'est tout ce qui fait tenir la fonction : sans ça, chaque tour
-        // renverrait le presse-papiers à l'autre ordinateur pour rien, et
-        // ce qui arrive repartirait aussitôt d'où il vient.
+        // That is all that holds the feature together: without it, every
+        // turn would send the clipboard back to the other computer for
+        // nothing, and what arrives would go straight back to where it
+        // came from.
         assert_eq!(Clip::text("bonjour").stamp(), Clip::text("bonjour").stamp());
         assert_ne!(Clip::text("bonjour").stamp(), Clip::text("bonsoir").stamp());
     }
 
     #[test]
     fn a_text_and_a_picture_of_the_same_bytes_are_not_the_same_thing() {
-        // L'espèce entre dans l'empreinte, sans quoi une image qui se
-        // trouve avoir les octets d'un texte serait collée comme un
-        // texte.
+        // The kind goes into the stamp, or else a picture that
+        // happens to have the bytes of a text would be pasted as a
+        // text.
         let bytes = b"PNG".to_vec();
         assert_ne!(
             Clip::new(Kind::Text, bytes.clone()).stamp(),
@@ -560,9 +561,9 @@ mod tests {
         assert_eq!(head.kind, Kind::Picture);
         assert_eq!(head.stamp, clip.stamp());
         assert!(head.matches(clip.bytes()));
-        // Une tête lue entre les deux écritures ne correspond pas aux
-        // octets encore en place : c'est ce qui la fait sauter ce tour-là
-        // au lieu de coller la moitié de deux choses.
+        // A head read between the two writes does not match the bytes
+        // still in place: that is what makes it skip that turn instead of
+        // pasting half of two things.
         assert!(!head.matches(&[1, 2]));
     }
 
@@ -598,15 +599,15 @@ mod tests {
         let clip = Clip::files(&listing);
         assert_eq!(clip.kind(), Kind::Files);
         assert_eq!(clip.listing().unwrap(), listing);
-        // Et il traverse le tunnel comme les deux autres espèces.
+        // And it crosses the tunnel like the other two kinds.
         assert_eq!(Clip::from_the_wire(&clip.on_the_wire()).unwrap(), clip);
     }
 
     #[test]
     fn a_list_weighs_what_its_files_weigh_and_not_what_it_weighs() {
-        // C'est tout l'intérêt : cent gigaoctets nommés tiennent en
-        // quelques centaines d'octets, et rien ne bouge tant que
-        // personne ne colle.
+        // That is the whole point: a hundred gigabytes named fit in
+        // a few hundred bytes, and nothing moves as long as nobody
+        // pastes.
         let listing = Listing::of(vec![
             listed("gros.iso", 80_000_000_000),
             listed("encore.iso", 20_000_000_000),
@@ -622,18 +623,18 @@ mod tests {
 
     #[test]
     fn a_path_that_leaves_its_folder_is_refused() {
-        // C'est la machine d'en face qui remet ces noms, et un nom est
-        // une chose qu'on choisit : sans ça, coller un dossier pourrait
-        // écrire n'importe où sur ce disque-ci.
+        // It is the far machine that hands over these names, and a name
+        // is something one chooses: without this, pasting a folder
+        // could write anywhere on this disk.
         assert!(Listed::new("../ailleurs.txt", 1).is_none());
         assert!(Listed::new("dossier/../../ailleurs.txt", 1).is_none());
         assert!(Listed::new("/racine.txt", 1).is_none());
         assert!(Listed::new("C:/Windows/System32/rien.dll", 1).is_none());
         assert!(Listed::new("", 1).is_none());
         assert!(Listed::new("dossier//vide.txt", 1).is_none());
-        // Et une liste entière tombe avec une seule de ses lignes : une
-        // moitié de dossier collée comme si c'était le tout est pire que
-        // rien du tout.
+        // And a whole list falls with a single one of its lines: half a
+        // folder pasted as if it were the whole is worse than nothing at
+        // all.
         assert!(Listing::read("3 ../ailleurs.txt").is_err());
         assert!(Listing::read("pas-un-nombre fichier.txt").is_err());
         assert!(Listing::read("3").is_err());
@@ -641,8 +642,8 @@ mod tests {
 
     #[test]
     fn a_path_arrives_with_its_slashes_one_way_only() {
-        // Windows écrit ses chemins avec l'autre barre, et les deux
-        // ordinateurs doivent nommer le même fichier pareil.
+        // Windows writes its paths with the other slash, and the
+        // two computers must name the same file the same way.
         let file = listed(r"2026\lac.jpg", 12);
         assert_eq!(file.path(), "2026/lac.jpg");
         assert_eq!(file.name(), "lac.jpg");

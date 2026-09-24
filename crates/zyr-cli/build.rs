@@ -1,12 +1,12 @@
 //! Puts the product's mark and name on the command line tool.
 //!
-//! Le seul programme du produit qu'une personne lance elle-même en
-//! tapant son nom. Il vit donc dans la liste des programmes comme les
-//! autres, et doit y dire lequel il est plutôt que d'y montrer le nom de
-//! son fichier.
+//! The one program of the product that a person starts themselves, by
+//! typing its name. So it lives in the list of programs like the others,
+//! and has to say there which one it is rather than show the name of its
+//! file.
 //!
-//! Rien d'autre n'est posé ici : ce que le fichier dit de lui-même, son
-//! nom et sa version, vient du paquet.
+//! Nothing else is set here: what the file says about itself, its name
+//! and its version, comes from the package.
 
 fn main() {
     // Redone when the drawing changes, which Cargo cannot know on its

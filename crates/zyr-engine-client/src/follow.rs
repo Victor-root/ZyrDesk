@@ -101,7 +101,8 @@ mod tests {
 
     #[test]
     fn the_line_says_what_the_engine_reads() {
-        // La forme exacte : c'est ce que le moteur relit, mot pour mot.
+        // The exact form: it is what the engine reads back, word for
+        // word.
         let settings = SessionSettings {
             width: 2560,
             height: 1440,
@@ -114,8 +115,8 @@ mod tests {
             line(&settings),
             "width=2560 height=1440 fps=120 bitrate=30000 codec=HEVC"
         );
-        // Et le codec dans les mots de la ligne de commande, que le
-        // moteur relit avec la même table.
+        // And the codec in the words of the command line, which the
+        // engine reads back with the same table.
         for codec in [Codec::Auto, Codec::H264, Codec::Hevc, Codec::Av1] {
             let said = line(&SessionSettings {
                 codec,
@@ -144,9 +145,9 @@ mod tests {
             format!("{}\n", line(&first))
         );
 
-        // Réécrit par-dessus, entier, sans rien laisser à côté : le
-        // moteur ne doit jamais tomber sur une ligne à moitié écrite ni
-        // sur un fichier de travail.
+        // Written over, whole, leaving nothing beside it: the engine
+        // must never come across a half-written line nor a working
+        // file.
         let second = SessionSettings {
             bitrate_kbps: 45_000,
             ..first
@@ -163,9 +164,10 @@ mod tests {
 
     #[test]
     fn the_pointer_shape_is_written_only_when_it_changes() {
-        // Elle est demandée plusieurs fois par seconde pendant toute une
-        // session : réécrire le fichier à chaque fois userait le disque
-        // pour un mot identique, et ferait relire le moteur pour rien.
+        // The shape is asked for several times a second for a whole
+        // session: rewriting the file every time would wear the disk for
+        // an identical word, and make the engine read it again for
+        // nothing.
         let folder = std::env::temp_dir().join(format!(
             "zyrdesk-pointer-{}",
             zyr_proto::random::alphanumeric_string(8)
@@ -178,7 +180,8 @@ mod tests {
         assert!(!point_like_at(&path, Pointer::Text).unwrap());
         assert!(point_like_at(&path, Pointer::Wait).unwrap());
         assert_eq!(fs::read_to_string(&path).unwrap(), "wait\n");
-        // Et rien à côté : le moteur lit entre deux écritures.
+        // And nothing beside it: the engine reads between two
+        // writes.
         assert!(!path.with_extension("new").exists());
 
         let _ = fs::remove_dir_all(&folder);
@@ -186,12 +189,12 @@ mod tests {
 
     #[test]
     fn no_longer_following_the_pointer_gives_back_the_ordinary_arrow() {
-        // C'est ce que fait `point_like_nothing`, et il écrit au lieu
-        // d'effacer : un moteur encore en marche ne lit pas une absence,
-        // il resterait sous la dernière forme reçue. Un sablier sur une
-        // machine qui ne fait rien, ou, quand l'ordinateur d'en face
-        // venait de répondre qu'il dessinait son propre curseur, pas de
-        // curseur du tout.
+        // That is what `point_like_nothing` does, and it writes instead
+        // of erasing: an engine still running does not read an absence,
+        // it would stay under the last shape received. An hourglass over
+        // a machine doing nothing, or, when the far computer had just
+        // answered that it was drawing its own pointer, no pointer at
+        // all.
         let folder = std::env::temp_dir().join(format!(
             "zyrdesk-pointer-{}",
             zyr_proto::random::alphanumeric_string(8)

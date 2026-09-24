@@ -15,7 +15,7 @@ use zyr_server::keys::{self, Tls};
 use zyr_server::store::Store;
 
 #[derive(Parser)]
-#[command(name = "zyrdesk-server", version = zyr_proto::PRODUCT_VERSION, about = "Serveur ZyrDesk : comptes, mise en relation et relais")]
+#[command(name = "zyrdesk-server", version = zyr_proto::PRODUCT_VERSION, about = "ZyrDesk server: accounts, rendezvous and relay")]
 struct Cli {
     /// The configuration file.
     #[arg(long, default_value = config::DEFAULT_PATH, global = true)]

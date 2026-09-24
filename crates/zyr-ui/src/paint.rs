@@ -8,7 +8,7 @@
 //!
 //! An ordinary window, for its part, is framed by the system and opaque: the
 //! canvas is poured into it when the system asks for a repaint. Both draw
-//! the same way and only differ at the very end, `shifted` on one side and
+//! the same way and only differ at the very end, `lay_on` on one side and
 //! `copy_to` on the other.
 //!
 //! **Direct2D and DirectWrite**, provided by Windows: nothing is bundled,
@@ -489,7 +489,7 @@ impl Canvas {
     /// Pours the canvas into a surface, at this spot.
     ///
     /// What an ordinary window needs, framed and opaque, which repaints
-    /// itself when the system asks it to: `shifted` hands over the picture
+    /// itself when the system asks it to: `lay_on` hands over the picture
     /// and the place in a single gesture, which a layered window allows
     /// and an ordinary window knows nothing of. The transparency does not
     /// travel here, and has no business here: what is poured was drawn on
@@ -678,7 +678,7 @@ impl Canvas {
     /// vertically.
     ///
     /// Centred vertically, so a wrapped block wants a rect of its own
-    /// height: `height` gives it.
+    /// height: `height_of` gives it.
     pub fn draw_text(&self, text: &str, pen: Pen, colour: Colour, rect: Rect) {
         let Some(layout) =
             self.text_layout(text, pen, rect.right - rect.left, rect.bottom - rect.top)
@@ -992,7 +992,7 @@ impl Canvas {
     /// a curve, an arc, and close. An unknown letter stops the reading
     /// rather than being skipped: a half-drawn icon looks like a
     /// defect, a missing icon like an oversight, and the second one
-    /// gets looked into. It is `path` that says so out loud.
+    /// gets looked into. It is `path_of` that says so out loud.
     fn read_path(&self, said: &str) -> Option<ID2D1PathGeometry> {
         // SAFETY: a shape and its sink, both ours, closed again before
         // leaving.

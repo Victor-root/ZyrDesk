@@ -123,7 +123,7 @@ impl std::error::Error for IdentityError {}
 
 /// The device's certificate, in its identity folder.
 const CERTIFICATE_FILE: &str = "device.crt";
-/// The private key of the device.
+/// The device's private key.
 const KEY_FILE: &str = "device.key";
 
 fn read(path: &Path) -> Result<Vec<u8>, IdentityError> {

@@ -87,21 +87,21 @@ pub fn run(args: Args) -> ExitCode {
         // computer exactly as its own settings had it.
         hush_the_far_speakers: false,
         steady_far_rate: zyr_proto::session::Serving::default().steady_rate,
-        // La ligne de commande sert le diagnostic : elle demande une
-        // taille et donc l'écran qu'il faut pour la porter. Mais elle ne
-        // mesure aucun écran, donc elle n'a pas d'agrandissement à
-        // réclamer : l'ordinateur d'en face garde le sien.
+        // The command line is there for diagnosis: it asks for a size
+        // and so for the screen needed to carry it. But it measures no
+        // screen, so it has no magnification to ask for: the far
+        // computer keeps its own.
         wants_a_screen_over_there: true,
         far_magnification: 0,
-        // Et l'écran principal de la machine d'en face, qui est ce que
-        // demande toute session tant que personne n'a dit autre chose.
-        // Choisir entre plusieurs écrans se fait en les regardant, donc
-        // dans la fenêtre, et jamais ici.
+        // And the main screen of the far machine, which is what every
+        // session asks for as long as nobody has said otherwise.
+        // Choosing between several screens is done by looking at them,
+        // so in the window, and never here.
         far_screen: None,
-        // La ligne de commande joint l'ordinateur nommé par la meilleure
-        // voie disponible. Se priver du serveur est un choix qui se fait
-        // en voyant que la machine voulue est dans la pièce d'à côté,
-        // donc sur sa carte, dans la fenêtre.
+        // The command line reaches the named computer by the best way
+        // available. Doing without the server is a choice made on seeing
+        // that the wanted machine is in the next room, so on its card,
+        // in the window.
         only_here: false,
     };
 
@@ -171,8 +171,8 @@ fn tell(step: Step, host: &str) {
             println!("  Cet ordinateur n'a pas de sortie audio : la session sera muette.");
         }
         Step::Starting => println!("Connexion à {host}..."),
-        // Rien à en dire ici : la ligne de commande n'a pas de
-        // bouton flottant à accrocher dessus.
+        // Nothing to say about it here: the command line has
+        // no floating button to hang on it.
         Step::Showing { .. } => {}
         Step::SpeakersLeftAlone { refused } => {
             println!("  Les enceintes de {host} restent allumées : {refused}");
@@ -248,10 +248,10 @@ fn build_settings(args: &Args) -> Result<SessionSettings, String> {
         packet_size: None,
         absolute_mouse: !args.relative_mouse,
         stats_overlay: args.stats,
-        // Alt+Tab et la touche Windows partent dans la session, comme
-        // sous l'interface. Rien ici ne peut les rebasculer : le menu qui
-        // le fait est celui du bouton flottant, que cette commande
-        // n'ouvre pas.
+        // Alt+Tab and the Windows key go into the session, as under the
+        // interface. Nothing here can switch them back: the menu that
+        // does it is the one of the floating button, which this command
+        // does not open.
         system_keys: true,
     })
 }

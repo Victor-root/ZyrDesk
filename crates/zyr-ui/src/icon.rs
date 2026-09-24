@@ -1,4 +1,4 @@
-//! L'icône de la fenêtre : celle de la barre des tâches et du bandeau.
+//! The window's icon: the one in the taskbar and in the title bar.
 //!
 //! A window's icon and a program's icon are two different things, and the
 //! first one wins. Windows draws the program's icon out of the .ico
@@ -21,11 +21,11 @@
 //! draws a small one. Both come out of the .ico at exactly those sizes,
 //! with nothing stretched at all.
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module's lines are filed under.
 #[cfg(windows)]
 const TAG: &str = "icon";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 #[cfg(windows)]
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);

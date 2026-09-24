@@ -44,7 +44,7 @@ pub const PORT: u16 = 5353;
 /// Key the fingerprint travels under.
 const FINGERPRINT_KEY: &str = "fp";
 
-/// Key the name of the machine travels under.
+/// Key the machine's name travels under.
 const NAME_KEY: &str = "nom";
 
 /// How long a computer stays listed after it was last heard from.

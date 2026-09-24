@@ -61,8 +61,7 @@ pub struct Standing {
     /// Whether the ZyrDesk of this network are let in without anyone
     /// recognising them one by one.
     pub trusting: bool,
-    /// Whether the packets of the tunnel carry their congestion
-    /// mark.
+    /// Whether the tunnel's packets carry their congestion mark.
     pub ecn: bool,
     /// Whether the door listens on the product's own port.
     pub fixed_port: bool,

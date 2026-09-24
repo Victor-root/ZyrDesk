@@ -126,11 +126,11 @@ pub const FAR_SCREEN: Icon = icon_of(&[
 /// everyone reads as "network" without it having to be written.
 ///
 /// The three arcs and the dot turn around one and the same centre, at
-/// twelve and thirty hundredths, opened by the same angle and spaced by
-/// the same step: that is what leaves the same gap of two units and four
-/// tenths everywhere. The arcs before had a centre each, so gaps of one
-/// and a half, then three and a half, then four, and the dot ended up
-/// stuck under the smallest one.
+/// (12, 18.30), opened by the same angle and spaced by the same step:
+/// that is what leaves the same gap of two units and four tenths
+/// everywhere. The arcs before had a centre each, so gaps of one and a
+/// half, then three and a half, then four, and the dot ended up stuck
+/// under the smallest one.
 pub const LINK: Icon = icon_of(&[
     Stroke::SvgPath("M2.62 8.59A13.5 13.5 0 0 1 21.38 8.59"),
     Stroke::SvgPath("M5.54 11.61A9.3 9.3 0 0 1 18.46 11.61"),

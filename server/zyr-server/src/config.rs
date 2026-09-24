@@ -248,8 +248,8 @@ public_url = "https://zyr.exemple.fr"
 
     #[test]
     fn the_clear_off_the_machine_is_refused() {
-        // C'est la règle qui vit dans le code et non dans la
-        // documentation : sans TLS, seule la boucle locale.
+        // It is the rule that lives in the code and not in
+        // the documentation: without TLS, the loopback only.
         let text = BEHIND_A_PROXY.replace("127.0.0.1:8443", "0.0.0.0:8080");
         assert!(matches!(
             Config::parse(&text).unwrap_err(),
@@ -326,8 +326,8 @@ login_attempts_per_minute = 3
 
     #[test]
     fn a_key_nobody_knows_is_refused_rather_than_ignored() {
-        // Une faute de frappe dans le fichier serait sinon un réglage
-        // silencieusement laissé à son défaut.
+        // A typo in the file would otherwise be a setting silently
+        // left at its default.
         let text = BEHIND_A_PROXY.replace("name =", "nom =");
         assert!(matches!(
             Config::parse(&text).unwrap_err(),

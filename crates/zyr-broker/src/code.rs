@@ -111,8 +111,8 @@ mod tests {
 
     #[test]
     fn a_code_travels_as_a_stable_word() {
-        // Le mot est le contrat : la fenêtre le lit pour parler français,
-        // et un serveur plus récent ne doit pas le reformuler.
+        // The word is the contract: the window reads it to speak French,
+        // and a newer server must not reword it.
         assert_eq!(
             serde_json::to_string(&Code::InvalidCredentials).unwrap(),
             "\"invalid_credentials\""

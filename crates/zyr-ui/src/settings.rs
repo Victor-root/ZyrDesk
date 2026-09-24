@@ -14,10 +14,10 @@
 //! says whether it worked. The lists themselves stay in `zyr-proto`: a
 //! second copy written in JavaScript would drift from them.
 
-// Ce qu'une session propose et ce qu'on y choisit ne se lit que dans le
-// menu du bouton flottant, qui n'existe que sous Windows comme la session
-// elle-même. Le reste de ce fichier, les réglages de l'accueil, sert
-// partout.
+// What a session offers and what is chosen in it can only be read in the
+// menu of the floating button, which only exists on Windows, like the
+// session itself. The rest of this file, the settings of the home window,
+// serves everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use zyr_control::{Answer, Request};
@@ -29,10 +29,10 @@ use zyr_proto::session::{
 use crate::service;
 use crate::session::Changed;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module files its journal lines under.
 const TAG: &str = "settings";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
@@ -536,8 +536,8 @@ mod tests {
         }
     }
 
-    /// Un écran ordinaire de cette taille, pour les essais qui ne parlent
-    /// que de taille.
+    /// An ordinary screen of this size, for the tests that are only about
+    /// size.
     fn a_screen(wide: u32, high: u32) -> Screen {
         Screen {
             wide,
@@ -549,17 +549,17 @@ mod tests {
 
     #[test]
     fn what_the_screen_shows_and_sends_back_is_the_same_thing() {
-        // Les deux formes se croisent à chaque changement : ce qui
-        // s'affiche doit pouvoir être renvoyé tel quel.
+        // The two forms cross at every change: what is shown must
+        // be able to be sent back as it is.
         let written = chosen().laid_over(Preferred::default());
         assert_eq!(Chosen::of(written), chosen());
     }
 
     #[test]
     fn the_settings_screen_leaves_the_session_menu_alone() {
-        // L'écran des réglages ne porte plus ni la taille, ni le débit :
-        // les renvoyer tels quels ne doit rien effacer de ce que le menu
-        // de la session a réglé.
+        // The settings screen no longer carries the size, nor the rate:
+        // sending them back as they are must not erase anything the
+        // session menu has set.
         let set_from_the_menu = Preferred {
             asked: Asked::Fixed(2560, 1440),
             bitrate_kbps: 15_000,
@@ -573,9 +573,10 @@ mod tests {
 
     #[test]
     fn the_screen_says_what_a_session_would_ask_for_here() {
-        // Sans ça, la fenêtre porterait sa propre table, qui s'écarterait
-        // de celle du produit au premier changement. Et la table ne
-        // suffit pas : « l'écran » ne vaut pas la même chose partout.
+        // Without that, the window would carry its own table, which would
+        // drift away from that of the product at the first change. And
+        // the table is not enough: "the screen" does not come to the same
+        // thing everywhere.
         let shown = Settings::shown(Preferred::default(), None);
         assert_eq!((shown.width, shown.height), (1920, 1080));
         assert_eq!(shown.fps, 60);
@@ -590,23 +591,23 @@ mod tests {
             }),
         );
         assert_eq!((big.width, big.height), (3840, 2160));
-        // La cadence de l'écran mesuré et non celle du défaut : c'est ce
-        // que la ligne sous « Qualité » doit annoncer.
+        // The rate of the measured screen and not the default one: that
+        // is what the line under "Qualité" must announce.
         assert_eq!(big.fps, 144);
     }
 
     #[test]
     fn a_session_line_says_what_its_value_comes_down_to_here() {
-        // « L'écran » ne se lit pas dans le mot : la ligne doit dire à
-        // quoi il revient sur cet ordinateur-ci, sinon on ne sait pas si
-        // on demande du 4K ou du 1080p.
+        // "The screen" cannot be read from the word: the line must say
+        // what it comes to on this computer, otherwise nobody knows
+        // whether they are asking for 4K or 1080p.
         let screen = SessionChoice::of(Preferred::default(), Some(a_screen(2560, 1440)));
         assert_eq!(screen.asked, "client");
         assert_eq!((screen.width, screen.height), (2560, 1440));
 
-        // Et l'écran d'en face n'est pas connu ici : en attendant qu'il
-        // le dise, la ligne montre ce qu'une session demanderait, qui est
-        // l'écran de cet ordinateur-ci.
+        // And the far screen is not known here: until it says so, the
+        // line shows what a session would ask for, which is the screen of
+        // this computer.
         let far = SessionChoice::of(
             Preferred {
                 asked: Asked::Host,

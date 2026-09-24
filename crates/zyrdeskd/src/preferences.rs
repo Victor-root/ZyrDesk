@@ -442,8 +442,8 @@ mod tests {
 
     #[test]
     fn saving_one_setting_does_not_wipe_the_other() {
-        // Les deux vivent dans le même fichier : une écriture qui ne
-        // connaîtrait qu'un des deux effacerait l'autre en silence.
+        // The two live in the same file: a write that knew only one
+        // of them would silently erase the other.
         let path = temporary_file("ensemble");
         let remembered = Remembered::at(path.clone());
 
@@ -455,7 +455,7 @@ mod tests {
         assert_eq!(from_disk(&path), chosen());
         assert_eq!(remembered.read(), chosen());
 
-        // Et dans l'autre sens.
+        // And the other way round.
         remembered.set_remote_access(true).unwrap();
         assert_eq!(from_disk(&path).preferred, chosen().preferred);
 
@@ -474,7 +474,8 @@ mod tests {
         remembered
             .set_trust_local_network(chosen().trust_local_network)
             .unwrap();
-        // Le service redémarre : rien en mémoire, tout sur le disque.
+        // The service restarts: nothing in memory, everything on
+        // disk.
         assert_eq!(Remembered::at(path.clone()).read(), chosen());
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
@@ -514,8 +515,8 @@ mod tests {
 
     #[test]
     fn one_unreadable_line_does_not_cost_the_others() {
-        // Un fichier écrit par un ZyrDesk plus récent, ou corrigé de
-        // travers, ne doit pas remettre tout le reste à zéro.
+        // A file written by a more recent ZyrDesk, or edited the
+        // wrong way, must not reset everything else to zero.
         let text = "quality = ultra\ncodec = HEVC\nun-verbe-inconnu = 3\nstats_overlay = yes\n";
         let read = parsed(text).preferred;
         assert_eq!(read.asked, Asked::default());
@@ -542,8 +543,8 @@ mod tests {
 
     #[test]
     fn the_network_switches_are_on_unless_a_plain_no_turns_them_off() {
-        // Ce sont des interrupteurs de comparaison : le produit se
-        // comporte comme QUIC partout tant que personne n'a écrit non.
+        // These are comparison switches: the product behaves like QUIC
+        // everywhere as long as nobody has written no.
         let remembered = Remembered::at(temporary_file("essais"));
         assert_eq!(
             remembered.wire(),
@@ -582,9 +583,9 @@ mod tests {
 
     #[test]
     fn a_rate_nobody_could_watch_leaves_the_one_that_was_there() {
-        // Le fichier se corrige à la main : un zéro tapé de travers
-        // donnerait une session qu'on ne verrait pas, et il n'y aurait
-        // rien à l'écran pour dire pourquoi.
+        // The file is edited by hand: a zero typed by mistake would
+        // give a session nobody could see, and there would be nothing
+        // on screen to say why.
         for wrong in [
             "asked = screen\nbitrate = 0",
             "asked = screen\nbitrate = beaucoup",

@@ -575,8 +575,8 @@ mod tests {
         .unwrap();
         assert_eq!(first.address(), relay.address);
 
-        // Un paquet entier du tunnel, la seule taille qui compte : c'est
-        // ce qui passe, ou le relais ne sert à rien.
+        // A whole packet of the tunnel, the only size that matters: that
+        // is what goes through, or the relay is of no use.
         let packet = vec![7u8; usize::from(GUARANTEED_MTU)];
         assert!(first.send(&packet));
         let arrived = tokio::time::timeout(PATIENCE, second.arrived())
@@ -588,11 +588,12 @@ mod tests {
 
     #[tokio::test]
     async fn what_the_branch_had_no_room_for_is_counted() {
-        // Une route relayée est deux routes à la suite, et la première
-        // a sa propre file. Quand elle déborde, le transport y jette le
-        // plus ancien sans un mot : ce compteur est le seul endroit d'où
-        // une route saturée ici se distingue d'un ordinateur d'en face
-        // devenu muet, et les deux tuent la session de la même façon.
+        // A relayed road is two roads one after the other, and the first
+        // has its own queue. When it overflows, the transport throws the
+        // oldest out of it without a word: this counter is the only
+        // place from which a road saturated here can be told apart from
+        // a far computer gone silent, and both kill the session in the
+        // same way.
         let relay = Bare::open();
         let profile = MediaProfile::default();
         let branch = Branch::open(
@@ -605,8 +606,8 @@ mod tests {
         .await
         .unwrap();
 
-        // Aucune attente dans la boucle : rien ne part tant qu'elle
-        // tourne, donc la file déborde.
+        // No wait in the loop: nothing goes out while it runs, so
+        // the queue overflows.
         let packet = vec![7u8; usize::from(GUARANTEED_MTU)];
         for _ in 0..(crate::congestion::FASTEST.send_queue() / packet.len() * 4) {
             branch.send(&packet);
@@ -642,8 +643,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_relay_presenting_another_certificate_is_not_joined() {
-        // C'est ce qui empêche de détourner une session vers un relais
-        // qui n'est pas celui que le serveur a nommé.
+        // That is what stops a session being diverted to a relay that
+        // is not the one the server named.
         let relay = Bare::open();
         let device = Identity::generate().unwrap();
         let mut wanted = relay.wanted(b"laissez-passer");
@@ -665,8 +666,8 @@ mod tests {
         let doorway = Doorway::bind("127.0.0.1:0".parse().unwrap()).unwrap();
         let address = doorway.local_address().unwrap();
         let identity = Identity::generate().unwrap();
-        // Sans point d'accès dessus, personne ne lit la prise : c'est le
-        // relais qui la fait tourner, miroir compris.
+        // Without an endpoint on it, nobody reads the socket: it is the
+        // relay that keeps it running, mirror included.
         let _relay =
             TunnelEndpoint::relay_on(&identity, Media::default(), Arc::new(doorway)).unwrap();
 

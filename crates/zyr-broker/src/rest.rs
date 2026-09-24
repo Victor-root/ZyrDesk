@@ -273,8 +273,8 @@ mod tests {
 
     #[test]
     fn an_older_answer_without_the_optional_fields_still_reads() {
-        // Un serveur qui ne dit ni e-mail ni invitation, ni expiration :
-        // la demande se lit quand même.
+        // A server that mentions neither e-mail nor invitation, nor
+        // expiry: the request reads all the same.
         let register: Register =
             serde_json::from_str(r#"{"username":"victor","password":"douze caractères"}"#).unwrap();
         assert_eq!(register.email, None);
