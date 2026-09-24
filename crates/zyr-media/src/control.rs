@@ -134,6 +134,11 @@ pub enum ByeReason {
 }
 
 impl ByeReason {
+    /// The value written on the wire.
+    pub fn wire(self) -> u8 {
+        self as u8
+    }
+
     pub fn from_wire(value: u8) -> Option<Self> {
         match value {
             1 => Some(ByeReason::Asked),
@@ -156,6 +161,11 @@ pub enum NoticeKind {
 }
 
 impl NoticeKind {
+    /// The value written on the wire.
+    pub fn wire(self) -> u8 {
+        self as u8
+    }
+
     pub fn from_wire(value: u8) -> Option<Self> {
         match value {
             1 => Some(NoticeKind::NoEncoder),
@@ -384,11 +394,11 @@ impl ToPlayer {
                 out.extend_from_slice(&host_us.to_le_bytes());
             }),
             ToPlayer::Notice { kind, text } => framed(out, NOTICE, |out| {
-                out.push(*kind as u8);
+                out.push(kind.wire());
                 // What the length leaves once kind and notice kind are in.
                 out.extend_from_slice(clipped(text, MAX_CONTROL_MESSAGE - 2).as_bytes());
             }),
-            ToPlayer::Bye { reason } => framed(out, PLAYER_BYE, |out| out.push(*reason as u8)),
+            ToPlayer::Bye { reason } => framed(out, PLAYER_BYE, |out| out.push(reason.wire())),
         }
     }
 }
@@ -438,7 +448,9 @@ impl ControlMessage for ToPlayer {
     }
 }
 
-/// Appends one message: its length, its kind, and the body `body` writes.
+/// Appends one message: its length, its kind, and the body `body` writes,
+/// which is never longer than a message may be (the only body that could,
+/// a notice's, is cut to fit).
 fn framed(out: &mut Vec<u8>, kind: u8, body: impl FnOnce(&mut Vec<u8>)) {
     let start = out.len();
     out.extend_from_slice(&[0, 0, kind]);
@@ -655,6 +667,24 @@ mod tests {
         let mut reader = ControlReader::<ToPlayer>::new();
         reader.feed(&stream(&messages, ToPlayer::write));
         assert_eq!(read_all(&mut reader), messages);
+    }
+
+    #[test]
+    fn wire_values_name_the_right_notice_and_reason() {
+        for kind in [
+            NoticeKind::NoEncoder,
+            NoticeKind::CaptureTrouble,
+            NoticeKind::EncoderTrouble,
+            NoticeKind::AudioTrouble,
+            NoticeKind::DisplayChanged,
+        ] {
+            assert_eq!(NoticeKind::from_wire(kind.wire()), Some(kind));
+        }
+        for reason in [ByeReason::Asked, ByeReason::ServiceStop, ByeReason::Fatal] {
+            assert_eq!(ByeReason::from_wire(reason.wire()), Some(reason));
+        }
+        assert_eq!(NoticeKind::from_wire(0), None);
+        assert_eq!(ByeReason::from_wire(4), None);
     }
 
     #[test]

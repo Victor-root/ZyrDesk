@@ -139,6 +139,8 @@ impl Packetizer {
         let parity = self.parity_for(data);
         let each = VIDEO_HEADER + shard;
 
+        // Every count fits its field: at most MAX_SHARDS shards of at most
+        // MAX_SHARD_BYTES, which bounds the size as well.
         let mut head = [0u8; VIDEO_HEADER];
         VideoHeader {
             key: frame.key,
