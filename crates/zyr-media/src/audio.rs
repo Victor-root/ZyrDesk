@@ -416,6 +416,51 @@ mod tests {
         assert_eq!(buffer.counters().late, 0);
     }
 
+    /// A network losing, mixing up and doubling packets, and a sequence
+    /// jumping ahead now and then: whatever is played since the buffer
+    /// last ran dry is in order, each packet once.
+    #[test]
+    fn whatever_arrives_packets_leave_in_order_and_once() {
+        let mut noise = Noise::new(22);
+        let mut buffer = JitterBuffer::new(3);
+        let mut sequence = 0u16;
+        let mut on_the_way: Vec<u16> = Vec::new();
+        let mut last_played: Option<u16> = None;
+        let mut played = 0;
+        for _ in 0..200_000 {
+            match noise.below(200) {
+                0 => sequence = sequence.wrapping_add(noise.below(40) as u16),
+                1..=100 => {
+                    if !noise.percent(5) {
+                        on_the_way.push(sequence);
+                    }
+                    sequence = sequence.wrapping_add(1);
+                    if on_the_way.len() > noise.below(4) {
+                        let arrives = on_the_way.swap_remove(noise.below(on_the_way.len()));
+                        buffer.push(arrives, &packet(arrives));
+                        if noise.percent(3) {
+                            buffer.push(arrives, &packet(arrives));
+                        }
+                    }
+                }
+                _ => match buffer.pop() {
+                    Popped::Packet(bytes) => {
+                        let now = u16::from_le_bytes([bytes[0], bytes[1]]);
+                        if let Some(before) = last_played {
+                            let after = now.wrapping_sub(before);
+                            assert!(after != 0 && after < 0x8000, "{before} then {now}");
+                        }
+                        last_played = Some(now);
+                        played += 1;
+                    }
+                    Popped::Missing => {}
+                    Popped::Empty => last_played = None,
+                },
+            }
+        }
+        assert!(played > 40_000, "{played}");
+    }
+
     #[test]
     fn whatever_arrives_the_buffer_stays_within_its_size() {
         let mut noise = Noise::new(21);

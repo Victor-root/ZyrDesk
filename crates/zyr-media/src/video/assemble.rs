@@ -72,7 +72,8 @@ pub struct AssemblyCounters {
     /// rest of their frame.
     pub malformed: u64,
     /// Shards of a new frame refused because `poll` was not called since
-    /// the last one, with `max_pending_frames` frames already waiting.
+    /// the last one, with more than `max_pending_frames` frames already
+    /// waiting.
     pub overflow: u64,
     /// Frames delivered, repaired or not.
     pub frames_complete: u64,
@@ -179,7 +180,8 @@ impl Assembler {
         if whole {
             return self.deliver(stream);
         }
-        let crowded = self.pending.len() > self.limits.max_pending_frames;
+        let newer = self.pending.len() - usize::from(seen);
+        let crowded = newer >= self.limits.max_pending_frames;
         let overdue = self
             .newer_since()
             .is_some_and(|since| now.saturating_duration_since(since) >= self.limits.reorder_grace);
@@ -896,6 +898,41 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_never_seen_is_given_up_once_as_many_newer_ones_wait() {
+        let mut noise = Noise::new(15);
+        let mut host = Host::new(0);
+        let limits = AssemblyLimits {
+            max_pending_frames: 3,
+            ..AssemblyLimits::default()
+        };
+        let mut assembler = Assembler::new(limits);
+        let at = Instant::now();
+        for datagram in host.send(&noise.bytes(100)) {
+            assembler.push(&datagram, at).unwrap();
+        }
+        assert_eq!(drain(&mut assembler, at).len(), 1);
+        // Frame 1 is lost on the way, and three newer frames wait behind
+        // it, each missing a packet.
+        host.send(&noise.bytes(100));
+        for n in 0..3 {
+            let datagrams = host.send(&noise.bytes(5_000));
+            assembler.push(&datagrams[0], at).unwrap();
+            let out = drain(&mut assembler, at);
+            if n < 2 {
+                assert!(out.is_empty());
+            } else {
+                assert_eq!(
+                    out,
+                    vec![Assembled::Lost {
+                        stream: 1,
+                        frame: 1
+                    }]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_packet_that_contradicts_its_frame_is_refused() {
         let mut host = Host::new(20);
         let mut assembler = Assembler::new(AssemblyLimits {
@@ -1058,6 +1095,72 @@ mod tests {
         }
         assert_eq!(assembler.pending.len(), 3);
         assert_eq!(assembler.counters().overflow, 7);
+    }
+
+    /// Frames a millisecond apart, each packet delayed by up to two
+    /// milliseconds, some lost, some doubled: every frame is settled once
+    /// and in order, whole with the right bytes whenever enough of its
+    /// shards arrived, and given up only when they did not. The last
+    /// frame arrives whole, so that none before it is left waiting.
+    #[test]
+    fn every_frame_is_settled_once_whatever_the_network_does() {
+        let mut noise = Noise::new(16);
+        let mut host = Host::new(20);
+        let mut assembler = Assembler::new(AssemblyLimits::default());
+        let start = Instant::now();
+        let mut sent = Vec::new();
+        let mut arrivals: Vec<(Duration, Vec<u8>)> = Vec::new();
+        let frames = 2_000u64;
+        for n in 0..frames {
+            let size = 1 + noise.below(12_000);
+            let data = noise.bytes(size);
+            let datagrams = host.send(&data);
+            let needed = datagrams.len() - parity_of(&datagrams[0]);
+            let mut arrived = 0;
+            for (index, datagram) in datagrams.into_iter().enumerate() {
+                if n + 1 < frames && noise.percent(8) {
+                    continue;
+                }
+                arrived += 1;
+                let at =
+                    ms(n) + Duration::from_micros(index as u64 * 10 + noise.below(2_000) as u64);
+                if noise.percent(1) {
+                    arrivals.push((at + Duration::from_micros(300), datagram.clone()));
+                }
+                arrivals.push((at, datagram));
+            }
+            sent.push((data, arrived >= needed));
+        }
+        arrivals.sort_by_key(|(at, _)| *at);
+
+        let mut settled = Vec::new();
+        for (at, datagram) in &arrivals {
+            let now = start + *at;
+            while let Some(deadline) = assembler.next_deadline().filter(|d| *d < now) {
+                settled.extend(drain(&mut assembler, deadline));
+            }
+            assembler.push(datagram, now).unwrap();
+            settled.extend(drain(&mut assembler, now));
+        }
+        settled.extend(drain(&mut assembler, start + Duration::from_secs(10)));
+
+        assert_eq!(settled.len(), sent.len());
+        for (n, (assembled, (data, enough))) in settled.iter().zip(&sent).enumerate() {
+            match assembled {
+                Assembled::Frame(frame) => {
+                    assert_eq!(frame.frame, n as u32);
+                    assert_eq!(&frame.data, data, "frame {n}");
+                    assert!(enough, "frame {n}");
+                }
+                Assembled::Lost { frame, .. } => {
+                    assert_eq!(*frame, n as u32);
+                    assert!(!enough, "frame {n} lost");
+                }
+            }
+        }
+        let counters = assembler.counters();
+        assert!(counters.frames_lost > 0 && counters.frames_recovered_by_fec > 0);
+        assert_eq!(counters.malformed, 0);
     }
 
     /// Prints how fast frames go through packetizer and assembler, parity

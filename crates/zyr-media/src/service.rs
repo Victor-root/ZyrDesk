@@ -8,13 +8,14 @@
 //! Service to host engine:
 //!
 //! ```text
-//! 1 Setup        datagram_budget u16 (the first message)
-//! 2 Film         display string ("" for the main screen)
-//! 3 Rate         kbps u32
-//! 4 Steady       on u8
-//! 5 DrawPointer  on u8
+//! 1 Setup  datagram_budget u16 (the first message)
+//! 2 Film   display string ("" for the main screen)
 //! 6 Stop
 //! ```
+//!
+//! Kinds 3, 4 and 5 are retired, never to be given again: the bitrate,
+//! the steady cadence and the pointer drawn into the picture belong to
+//! the viewer, and travel from the player in its `Wanted` only.
 //!
 //! Host engine to service:
 //!
@@ -23,6 +24,7 @@
 //! 2 Filming   display string, width u32, height u32
 //! 3 Displays  displays
 //! 4 Trouble   text string
+//! 5 Serving   kbps u32, fps u16
 //! displays: count u16, then each: id string, main u8, width u32,
 //!           height u32, name string
 //! ```
@@ -60,18 +62,6 @@ pub enum ToEngine {
     Film {
         display: String,
     },
-    /// The live ceiling on the bitrate.
-    Rate {
-        kbps: u32,
-    },
-    /// Whether a still screen is sent again at the full rate.
-    Steady {
-        on: bool,
-    },
-    /// Whether the host draws its pointer into the picture.
-    DrawPointer {
-        on: bool,
-    },
     Stop,
 }
 
@@ -95,6 +85,9 @@ pub enum ToService {
     Displays(Vec<Display>),
     /// A sentence in French, for the journal.
     Trouble { text: String },
+    /// What the encoder serves now, sent after each start or change, for
+    /// the service to size the tunnel's media window.
+    Serving { kbps: u32, fps: u16 },
 }
 
 /// What the service tells the player on the client.
@@ -106,9 +99,6 @@ pub enum ToPlayer {
 
 const SETUP: u8 = 1;
 const FILM: u8 = 2;
-const RATE: u8 = 3;
-const STEADY: u8 = 4;
-const DRAW_POINTER: u8 = 5;
 const STOP: u8 = 6;
 
 impl ToEngine {
@@ -123,12 +113,6 @@ impl ToEngine {
                 out.push(FILM);
                 put_text(&mut out, display);
             }
-            ToEngine::Rate { kbps } => {
-                out.push(RATE);
-                out.extend_from_slice(&kbps.to_le_bytes());
-            }
-            ToEngine::Steady { on } => out.extend_from_slice(&[STEADY, u8::from(*on)]),
-            ToEngine::DrawPointer { on } => out.extend_from_slice(&[DRAW_POINTER, u8::from(*on)]),
             ToEngine::Stop => out.push(STOP),
         }
         out
@@ -143,15 +127,6 @@ impl ToEngine {
             FILM => ToEngine::Film {
                 display: reader.text("display")?,
             },
-            RATE => ToEngine::Rate {
-                kbps: reader.u32()?,
-            },
-            STEADY => ToEngine::Steady {
-                on: reader.flag("on")?,
-            },
-            DRAW_POINTER => ToEngine::DrawPointer {
-                on: reader.flag("on")?,
-            },
             STOP => ToEngine::Stop,
             other => return Err(WireError::Kind(other)),
         };
@@ -164,6 +139,7 @@ const READY: u8 = 1;
 const FILMING: u8 = 2;
 const DISPLAYS: u8 = 3;
 const TROUBLE: u8 = 4;
+const SERVING: u8 = 5;
 
 impl ToService {
     pub fn encode(&self) -> Vec<u8> {
@@ -196,6 +172,11 @@ impl ToService {
                 out.push(TROUBLE);
                 put_text(&mut out, text);
             }
+            ToService::Serving { kbps, fps } => {
+                out.push(SERVING);
+                out.extend_from_slice(&kbps.to_le_bytes());
+                out.extend_from_slice(&fps.to_le_bytes());
+            }
         }
         out
     }
@@ -216,6 +197,10 @@ impl ToService {
             DISPLAYS => ToService::Displays(read_displays(&mut reader)?),
             TROUBLE => ToService::Trouble {
                 text: reader.text("text")?,
+            },
+            SERVING => ToService::Serving {
+                kbps: reader.u32()?,
+                fps: reader.u16()?,
             },
             other => return Err(WireError::Kind(other)),
         };
@@ -319,10 +304,6 @@ mod tests {
             ToEngine::Film {
                 display: displays()[1].id.clone(),
             },
-            ToEngine::Rate { kbps: 150_000 },
-            ToEngine::Steady { on: true },
-            ToEngine::Steady { on: false },
-            ToEngine::DrawPointer { on: true },
             ToEngine::Stop,
         ]
     }
@@ -349,6 +330,10 @@ mod tests {
             ToService::Displays(displays()),
             ToService::Trouble {
                 text: "La capture de l'écran a échoué".to_owned(),
+            },
+            ToService::Serving {
+                kbps: 62_872,
+                fps: 144,
             },
         ]
     }
@@ -405,11 +390,17 @@ mod tests {
     #[test]
     fn unknown_kinds_and_impossible_values_are_named() {
         assert_eq!(ToEngine::decode(&[99]), Err(WireError::Kind(99)));
+        for retired in [3, 4, 5] {
+            assert_eq!(
+                ToEngine::decode(&[retired, 1, 0, 0, 0]),
+                Err(WireError::Kind(retired))
+            );
+        }
         assert_eq!(ToService::decode(&[0]), Err(WireError::Kind(0)));
         assert_eq!(ToPlayer::decode(&[2]), Err(WireError::Kind(2)));
         assert_eq!(
-            ToEngine::decode(&[STEADY, 2]),
-            Err(WireError::Invalid("on"))
+            ToPlayer::decode(&[TUNNEL, 0, 0, 0, 0, 2]),
+            Err(WireError::Invalid("relayed"))
         );
         assert_eq!(
             ToService::decode(&[TROUBLE, 2, 0, 0xff, 0xfe]),

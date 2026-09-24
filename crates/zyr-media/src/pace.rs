@@ -97,12 +97,10 @@ impl Cadence {
         let at = self.next_repeat.filter(|at| self.steady && now >= *at)?;
         self.last_sent = Some(now);
         // The next point of the grid after now: a loop woken late skips
-        // the points it missed rather than sending them in a burst.
-        let missed = (now - at).as_nanos() / self.period.as_nanos();
-        self.next_repeat = u32::try_from(missed + 1)
-            .ok()
-            .and_then(|periods| self.period.checked_mul(periods))
-            .and_then(|ahead| at.checked_add(ahead));
+        // the points it missed rather than sending them in a burst. What
+        // is left of a period is below a second, so it fits in u64.
+        let into = (now - at).as_nanos() % self.period.as_nanos();
+        self.next_repeat = now.checked_add(self.period - Duration::from_nanos(into as u64));
         Some(Due::Repeat)
     }
 
@@ -137,8 +135,10 @@ impl Cadence {
     }
 }
 
+/// The time between two pictures, never zero: a rate of 0 is taken as 1,
+/// and one beyond a picture a nanosecond as that.
 fn period_of(fps: u32) -> Duration {
-    Duration::from_secs(1) / fps.max(1)
+    (Duration::from_secs(1) / fps.max(1)).max(Duration::from_nanos(1))
 }
 
 #[cfg(test)]
@@ -365,5 +365,16 @@ mod tests {
         assert_eq!(cadence.next_wakeup(), None);
         assert_eq!(cadence.due(Instant::now()), None);
         assert_eq!(cadence.period, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_rate_beyond_a_picture_a_nanosecond_still_keeps_a_grid() {
+        let at = Instant::now();
+        let mut cadence = Cadence::new(u32::MAX, true);
+        assert_eq!(cadence.period, Duration::from_nanos(1));
+        assert_eq!(cadence.on_captured(at), Now::Emit);
+        let late = at + us(1_000);
+        assert_eq!(cadence.due(late), Some(Due::Repeat));
+        assert_eq!(cadence.next_wakeup(), Some(late + Duration::from_nanos(1)));
     }
 }
