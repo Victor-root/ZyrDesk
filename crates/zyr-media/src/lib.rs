@@ -7,6 +7,13 @@
 //! at which pictures leave, and the measures a session keeps.
 
 pub mod codec;
+pub mod video;
+
+#[cfg(test)]
+mod testing;
+mod wire;
+
+pub use wire::WireError;
 
 /// Version of the engine's wire formats, checked at the first message.
 pub const MEDIA_VERSION: u16 = 1;
