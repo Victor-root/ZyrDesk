@@ -316,8 +316,8 @@ mod tests {
 
     #[test]
     fn only_what_is_asked_travels() {
-        // Une partie tue est une partie que le moteur laisse telle
-        // quelle : écrire une valeur à sa place serait en choisir une.
+        // A part left unsaid is a part the engine leaves as it is:
+        // writing a value in its place would be choosing one.
         let request = serve_request(
             ports(),
             &credentials(),
@@ -331,9 +331,9 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&request.body).unwrap();
         assert_eq!(value, serde_json::json!({ "bitrate_kbps": 20000 }));
 
-        // Et les quatre ensemble, chacun dans sa forme : un nom, deux
-        // nombres, un oui ou non, jamais rien entre guillemets qui n'en
-        // demande.
+        // And the four together, each in its own form: a name, two
+        // numbers, a yes or no, never anything in quotation marks that
+        // does not call for them.
         let request = serve_request(
             ports(),
             &credentials(),
@@ -355,8 +355,8 @@ mod tests {
             })
         );
 
-        // Et le curseur seul, qui est la façon dont une session le dit à
-        // chaque tour de sa veille : rien d'autre ne doit partir avec.
+        // And the pointer alone, which is how a session says it at every
+        // turn of its watch: nothing else must go out with it.
         let request = serve_request(
             ports(),
             &credentials(),

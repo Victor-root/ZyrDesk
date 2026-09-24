@@ -306,9 +306,9 @@ mod tests {
 
     #[test]
     fn nobody_asks_as_long_as_nobody_has_asked() {
-        // C'est ce qui décide qu'un ordinateur que personne ne regarde
-        // ne lit rien du tout : sans question, plus aucun assistant
-        // n'est relancé et le dernier s'éteint tout seul.
+        // That is what decides that a computer nobody is watching
+        // reads nothing at all: with no question, no helper is started
+        // again and the last one goes out by itself.
         *ASKED.lock().unwrap() = None;
         assert!(nobody_is_asking());
         *ASKED.lock().unwrap() = Some(Instant::now());
@@ -319,9 +319,9 @@ mod tests {
 
     #[test]
     fn a_helper_is_restarted_before_the_previous_one_dies() {
-        // Sans ce recouvrement, la lecture s'arrêterait entre deux
-        // assistants et le curseur se figerait sur sa dernière forme le
-        // temps qu'un autre démarre.
+        // Without this overlap, the reading would stop between two
+        // helpers and the pointer would freeze on its last shape while
+        // another one starts.
         assert!(
             START_ANOTHER_AFTER < HELPER_LIVES,
             "un assistant doit être relancé avant la fin du précédent"
@@ -330,9 +330,9 @@ mod tests {
 
     #[test]
     fn a_missing_word_is_the_ordinary_arrow() {
-        // Le service lit ce fichier avant qu'aucun assistant n'ait eu le
-        // temps d'écrire : ce moment-là doit être une flèche et non un
-        // refus, sans quoi la première session n'aurait pas de curseur.
+        // The service reads this file before any helper has had the time
+        // to write: that moment must be an arrow and not a refusal, or
+        // else the first session would have no pointer.
         let _ = std::fs::remove_file(zyr_proto::paths::pointer_here());
         assert_eq!(written_shape(), Pointer::Arrow);
     }

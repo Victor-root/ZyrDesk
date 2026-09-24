@@ -16,11 +16,10 @@
 //! behind the picture, where anything it put on screen would be read by
 //! nobody.
 
-// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
-// lui-même, et ce qui dessine n'existe que sous Windows comme les
-// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
-// fichier reste compilé et vérifié, il n'est simplement appelé par
-// personne.
+// Everything here is asked for by the home window, which this program
+// draws itself, and what draws only exists on Windows, like the windows
+// it dresses. Elsewhere, nothing asks these questions: the file stays
+// compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::PathBuf;
@@ -184,17 +183,17 @@ mod tests {
 
     #[test]
     fn a_silent_service_is_named_in_its_own_line_rather_than_left_out() {
-        // C'est justement quand le service ne répond pas qu'on ouvre le
-        // journal : la page doit venir quand même, et dire ce qui
-        // manque plutôt que laisser un blanc.
+        // It is precisely when the service does not answer that the
+        // journal gets opened: the page must come all the same, and say
+        // what is missing rather than leave a blank.
         let text = gathered_here(
             "le service ZyrDesk ne tourne pas.\n  Lancez « zyrdeskd status ».",
             "",
         );
         assert!(text.contains("Service"), "{text}");
         assert!(text.contains("ne tourne pas"), "{text}");
-        // Sur une ligne : le journal aligne ses étiquettes, et une
-        // raison repliée casserait la colonne.
+        // On one line: the journal lines up its tags, and a folded
+        // reason would break the column.
         let service = text
             .lines()
             .find(|line| line.starts_with("Service"))

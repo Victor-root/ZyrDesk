@@ -63,7 +63,8 @@ pub enum Trouble {
     Answer(String),
     /// Another version of the dialect: another program answers there.
     Protocol(u32),
-    /// Another signing key: another server's data answers there.
+    /// Another signing key: the data of another server answers
+    /// there.
     OtherServer(SocketAddr),
     /// The server says it has a mirror, and it does not answer.
     Mirror(SocketAddr, String),
@@ -350,7 +351,8 @@ mod tests {
             assert_eq!(checked.fingerprint, fingerprint);
             assert_eq!(checked.info.name, "Essai");
             assert_eq!(checked.info.protocol, PROTOCOL);
-            // Le miroir a répondu, et a vu la question venir d'ici.
+            // The mirror answered, and saw the question come from
+            // here.
             let seen = checked.mirror.expect("le miroir n'a pas été joint");
             assert!(seen.ip().is_loopback(), "{seen}");
             assert_eq!(checked.info.udp_port, running.app.udp_port);
@@ -368,13 +370,14 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn another_server_on_the_port_is_told_apart() {
-        // Deux configurations, deux clés : celle qui répond n'est pas
-        // celle qu'on vérifie, et c'est dit plutôt que pris pour bon.
+        // Two configurations, two keys: the one that answers is not
+        // the one being checked, and that is said rather than taken
+        // as good.
         let (theirs, their_folder, _) = configured("autre", true);
         let running = crate::start(theirs.clone()).await.unwrap();
         let (ours, our_folder, _) = configured("notre", true);
-        // Notre configuration, mais avec le certificat et le port de
-        // l'autre : la clé de signature est la seule chose qui diffère.
+        // Our configuration, but with the certificate and the port of
+        // the other: the signing key is the only thing that differs.
         let probed = Config {
             api: crate::config::Api {
                 listen: running.address,
@@ -389,7 +392,8 @@ mod tests {
         assert!(matches!(refused, Trouble::OtherServer(_)), "{refused}");
         running.stop().await;
 
-        // Et rien qui réponde se dit avec l'adresse.
+        // And nothing answering is said along with the
+        // address.
         let (silent, silent_folder, _) = configured("muet", false);
         let refused = tokio::task::spawn_blocking(move || {
             check(&at(&silent, "127.0.0.1:9".parse().unwrap()))
