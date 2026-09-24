@@ -7,10 +7,13 @@
 //! at which pictures leave, and the measures a session keeps.
 
 pub mod audio;
+pub mod clock;
 pub mod codec;
 pub mod control;
 pub mod input;
+pub mod pace;
 pub mod service;
+pub mod stats;
 pub mod video;
 
 #[cfg(test)]
