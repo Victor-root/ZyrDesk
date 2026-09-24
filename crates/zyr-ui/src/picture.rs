@@ -42,10 +42,10 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicIsize, Ordering};
 use crate::app::App;
 use zyr_proto::session::{DisplayMode, Screen};
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module files its journal lines under.
 const TAG: &str = "picture";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
@@ -273,9 +273,9 @@ pub fn take_the_screen(app: &App, whole: bool) -> Result<(), String> {
     if crate::main_window::handle() == 0 {
         return Err("la fenêtre de ZyrDesk n'est plus là".to_string());
     }
-    // La fenêtre écrit ce qu'elle devient avant de bouger, jamais après :
-    // prendre l'écran est ce qui fait demander au système quel cadre elle
-    // aura, et la réponse en dépend.
+    // The window writes down what it is becoming before it moves, never
+    // after: taking the screen is what makes the system ask which frame
+    // it will have, and the answer depends on it.
     let was = crate::main_window::holds_the_screen();
     crate::main_window::take_the_screen(whole);
     if was != whole {
@@ -587,12 +587,12 @@ fn covers_its_screen(home: windows_sys::Win32::Foundation::HWND) -> bool {
         right: 0,
         bottom: 0,
     };
-    // SAFETY: le bloc du système, dont la taille est écrite dedans comme
-    // l'appel le demande.
+    // SAFETY: the system's block, whose size is written inside it as the
+    // call asks.
     let mut about: MONITORINFO = unsafe { std::mem::zeroed() };
     about.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-    // SAFETY: notre propre fenêtre, et deux blocs à nous que les appels
-    // remplissent.
+    // SAFETY: our own window, and two blocks of ours that the calls
+    // fill in.
     let read = unsafe {
         GetWindowRect(home, &mut where_it_is) != 0
             && GetMonitorInfoW(
@@ -1805,7 +1805,7 @@ pub enum Front {
     Ours,
     /// The player's, which during a session means the picture.
     ThePlayer,
-    /// Another program's, or nobody's.
+    /// Another program, or nobody.
     Elsewhere,
 }
 
@@ -3983,28 +3983,30 @@ mod tests {
 
     #[test]
     fn a_wide_window_at_a_narrow_shape_does_not_run_past_a_whole_number() {
-        // 3840 x 1080 tenu par un entier de 32 bits ferait 4 milliards en
-        // chemin. Compté large, la réponse est juste.
+        // 3840 x 1080 held in a 32-bit integer would come to 4 billion
+        // along the way. Counted wide, the answer is right.
         assert_eq!(across(3_000_000, 1080, 1920), 5_333_333);
     }
 
     #[test]
     fn the_floor_leaves_room_for_the_button_whichever_edge_is_pulled() {
-        // Le bouton fait 91 pixels de côté sur un écran agrandi, plus sa
-        // marge. Tirer un bord fixe une des deux tailles et laisse l'autre
-        // suivre la forme : les deux doivent laisser la place au bouton,
-        // sinon il n'y a plus de sortie qu'au clavier.
+        // The button is 91 pixels square on a magnified screen, plus its
+        // margin. Pulling an edge sets one of the two sizes and lets the
+        // other follow the shape: both must leave room for the button, or
+        // else the only way out left is the keyboard.
         let room = (107, 107);
         for shape in [(1920, 1080), (1080, 1920), (2560, 1080), (1024, 1024)] {
             let (wide, high) = the_least_picture(Some(room), shape);
             assert!(wide >= room.0, "largeur {wide} sur {shape:?}");
             assert!(high >= room.1, "hauteur {high} sur {shape:?}");
-            // Un bord vertical tiré : la largeur tient, la hauteur suit.
+            // A vertical edge pulled: the width holds, the height
+            // follows.
             assert!(
                 across(wide, shape.0, shape.1) >= room.1,
                 "hauteur suivie sur {shape:?}"
             );
-            // Un bord horizontal tiré : l'inverse.
+            // A horizontal edge pulled: the other way
+            // round.
             assert!(
                 across(high, shape.1, shape.0) >= room.0,
                 "largeur suivie sur {shape:?}"
@@ -4012,14 +4014,14 @@ mod tests {
         }
     }
 
-    // La fenêtre des essais du glissement : posée en (100, 100), 960x540
-    // dedans, un cadre de 16 de large et 42 de haut, une image 16:9.
+    // The window of the drag tests: placed at (100, 100), 960x540
+    // inside, a frame 16 wide and 42 high, a 16:9 picture.
     const NOW: (i32, i32, i32, i32) = (100, 100, 1076, 682);
     const FRAME: (i32, i32) = (16, 42);
     const SHAPE: (i32, i32) = (1920, 1080);
 
-    /// Ce que le système propose, tenu à la forme, la main étant là où
-    /// cette proposition dit qu'elle est.
+    /// What the system proposes, held to the shape, the hand being
+    /// where that proposal says it is.
     fn drag(wanted: (i32, i32, i32, i32), least: (i32, i32)) -> (i32, i32, i32, i32) {
         what_the_drag_becomes(
             NOW,
@@ -4033,8 +4035,9 @@ mod tests {
 
     #[test]
     fn the_edges_the_hand_holds_are_the_ones_that_move() {
-        // Un bord vertical, un bord horizontal, puis un coin : la
-        // proposition du système laisse les autres bords au pixel près.
+        // A vertical edge, a horizontal edge, then a corner: the
+        // proposal of the system leaves the other edges where they are,
+        // to the pixel.
         assert_eq!(the_edges_under_the_hand(NOW, (100, 100, 1276, 582)), A_SIDE);
         assert_eq!(the_edges_under_the_hand(NOW, (60, 100, 1016, 582)), A_SIDE);
         assert_eq!(
@@ -4053,8 +4056,9 @@ mod tests {
 
     #[test]
     fn pulling_the_bottom_edge_makes_the_width_follow() {
-        // La main descend le bord du bas de 200 : la hauteur mène, la
-        // largeur suit, et les deux autres bords ne bougent pas.
+        // The hand brings the bottom edge down by 200: the height
+        // leads, the width follows, and the other two edges do not
+        // move.
         let (x, y, cx, cy) = drag((100, 100, 976, 782), (1, 1));
         assert_eq!((x, y, cy), (100, 100, 782));
         assert_eq!(cx, across(782 - 42, 1080, 1920) + 16);
@@ -4069,8 +4073,8 @@ mod tests {
 
     #[test]
     fn pulling_the_top_edge_keeps_the_bottom_where_it_is() {
-        // La main remonte le bord du haut : l'origine bouge avec elle, et
-        // le bas de la fenêtre reste exactement où il était.
+        // The hand pulls the top edge up: the origin moves with it, and
+        // the bottom of the window stays exactly where it was.
         let (_, y, _, cy) = drag((100, 60, 976, 622), (1, 1));
         assert_eq!(y + cy, 682);
     }
@@ -4083,10 +4087,10 @@ mod tests {
 
     #[test]
     fn a_corner_answers_a_hand_going_in_either_direction() {
-        // Le coin bas droit tenu, la main part droit à droite, puis droit
-        // en bas. La fenêtre grandit dans les deux cas : s'en tenir à un
-        // seul côté pour tout le glissement rendait l'un des deux gestes
-        // sans effet.
+        // The bottom right corner held, the hand goes straight to the
+        // right, then straight down. The window grows in both cases:
+        // sticking to a single side for the whole drag left one of the
+        // two gestures without effect.
         let corner = A_SIDE | TOP_OR_BOTTOM;
         let sideways =
             what_the_drag_becomes(NOW, (100, 100, 1016, 582), FRAME, SHAPE, (1, 1), corner);
@@ -4098,9 +4102,9 @@ mod tests {
 
     #[test]
     fn a_corner_moving_steadily_does_not_send_the_window_back_and_forth() {
-        // Le geste qui faisait trembler l'image : la main descend en
-        // diagonale, un peu plus large à un pas, un peu plus haut au pas
-        // suivant. La fenêtre doit grandir à chaque pas, jamais reculer.
+        // The gesture that made the picture shake: the hand goes down
+        // diagonally, a little wider at one step, a little taller at the
+        // next. The window must grow at every step, never shrink back.
         let (mut left, mut top, mut right, mut bottom) = NOW;
         let mut widths = Vec::new();
         for step in 0..40 {
@@ -4124,16 +4128,16 @@ mod tests {
                 pair
             );
         }
-        // Et elle suit vraiment la main : quarante pas de deux ou trois
-        // pixels ne peuvent pas laisser la fenêtre sur place.
+        // And it really follows the hand: forty steps of two or three
+        // pixels cannot leave the window where it was.
         assert!(widths[39] - widths[0] > 60, "{widths:?}");
     }
 
     #[test]
     fn the_drag_cannot_take_the_window_under_the_floor() {
-        // Le bord du bas remonté à fond, puis le côté rentré à fond : la
-        // fenêtre s'arrête à la taille où le bouton tient encore, en
-        // hauteur comme en largeur.
+        // The bottom edge pushed all the way up, then the side pushed
+        // all the way in: the window stops at the size where the button
+        // still fits, in height as in width.
         let least = the_least_picture(Some((107, 107)), SHAPE);
         for wanted in [
             (100, 100, 976, 100),
@@ -4156,10 +4160,10 @@ mod tests {
 
     #[test]
     fn a_window_being_carried_is_not_a_window_being_resized() {
-        // La fenêtre part vers le haut à gauche, taille inchangée : c'est
-        // un déplacement. Tenir une forme là-dessus corrigeait l'origine
-        // et remettait la fenêtre à son point de départ à chaque pas, ce
-        // qui la rendait immobile.
+        // The window goes off towards the top left, its size unchanged:
+        // that is a move. Holding a shape on it corrected the origin and
+        // put the window back at its starting point at every step, which
+        // made it immovable.
         for elsewhere in [(60, 40), (400, 300), (100, 40), (60, 100)] {
             let carried = (elsewhere.0, elsewhere.1, 976, 582);
             assert!(
@@ -4167,7 +4171,7 @@ mod tests {
                 "déplacement pris pour un redimensionnement : {carried:?}"
             );
         }
-        // Et un vrai redimensionnement reste reconnu, même d'un pixel.
+        // And a real resize is still recognised, even by one pixel.
         assert!(the_size_moves(NOW, (100, 100, 977, 582)));
         assert!(the_size_moves(NOW, (100, 100, 976, 583)));
     }
@@ -4180,9 +4184,8 @@ mod tests {
 
     #[test]
     fn without_a_button_the_floor_is_still_a_real_size() {
-        // Aucun bouton veut dire aucune session, donc aucune forme à
-        // tenir : il reste qu'une taille de zéro ferait diviser par zéro
-        // plus loin.
+        // No button means no session, so no shape to hold: still, a size
+        // of zero would mean dividing by zero further on.
         let (wide, high) = the_least_picture(None, (1920, 1080));
         assert!(wide >= 1 && high >= 1);
     }

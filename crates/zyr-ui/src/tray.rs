@@ -10,14 +10,14 @@
 //! words, and the one thing its menu offers besides opening the window
 //! is a way to stop everything at once.
 //!
-//! **Elle est dessinée**, comme tout le reste du produit, à la taille
-//! exacte que la barre demande. Il n'y a donc aucune image à réduire ni à
-//! agrandir : c'était le seul moyen d'avoir une icône nette à seize
-//! pixels comme à vingt-huit, et c'est maintenant la même marque que
-//! celle du bouton flottant et de l'accueil, tracée par le même dessin.
+//! **It is drawn**, like everything else in the product, at the exact
+//! size the bar asks for. So there is no picture to shrink or to enlarge:
+//! that was the only way to have an icon that is sharp at sixteen pixels
+//! as well as at twenty-eight, and it is now the same mark as that of the
+//! floating button and of the home window, traced by the same drawing.
 
-// Une zone de notification est une chose du système, et ce produit ne
-// tourne que sous Windows. Ailleurs, il n'y a pas d'icône à poser.
+// A notification area is a thing of the system, and this product only
+// runs on Windows. Elsewhere, there is no icon to put up.
 #![cfg_attr(not(windows), allow(dead_code, unused_imports))]
 
 use std::sync::Mutex;
@@ -25,22 +25,22 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 
 use crate::app::App;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module's lines are filed under.
 const TAG: &str = "tray";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
-/// Ce que le menu répond quand on choisit une de ses lignes.
+/// What the menu answers when one of its lines is chosen.
 const OPEN: usize = 1;
 const QUIT: usize = 2;
 
-/// Ce qu'il reste de la marque quand cet ordinateur n'est pas joignable.
+/// What is left of the mark when this computer cannot be reached.
 ///
-/// Pâlie plutôt qu'un autre dessin : elle reste reconnaissable à seize
-/// pixels, là où un second symbole ne serait qu'une tache.
+/// Faded rather than a different drawing: it stays recognisable at
+/// sixteen pixels, where a second symbol would only be a smudge.
 const DIMMED: f32 = 90.0 / 255.0;
 
 /// What the icon last said, so it is only redrawn when it changes.
@@ -54,13 +54,13 @@ const DIMMED: f32 = 90.0 / 255.0;
 #[derive(Default)]
 pub struct Shown(Mutex<Option<(bool, bool)>>);
 
-/// La fenêtre qui reçoit ce que l'icône a à dire, et l'icône elle-même
-/// telle que le système la garde.
+/// The window that receives what the icon has to say, and the icon
+/// itself as the system keeps it.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 static ITS_ICON: AtomicIsize = AtomicIsize::new(0);
 
-/// Le numéro sous lequel cette icône est déposée, et le message par
-/// lequel elle parle.
+/// The number this icon is put up under, and the message it speaks
+/// through.
 const ICON_ID: u32 = 1;
 #[cfg(windows)]
 const CALLBACK: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
@@ -80,9 +80,9 @@ pub fn raise() -> Result<(), String> {
         return Ok(());
     }
     let class_name: Vec<u16> = "ZyrDeskIcone".encode_utf16().chain(Some(0)).collect();
-    // SAFETY: une classe déclarée une fois et une fenêtre bâtie dessus,
-    // sur le fil qui pompera ses messages. Elle ne montre rien : c'est ce
-    // que le système demande pour porter une icône.
+    // SAFETY: a class declared once and a window built on it, on the
+    // thread that will pump its messages. It shows nothing: it is what
+    // the system asks for to carry an icon.
     let hwnd = unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = WNDCLASSW {
@@ -124,8 +124,8 @@ pub fn raise() -> Result<(), String> {
     data.hIcon = drawn(false);
     ITS_ICON.store(data.hIcon as isize, Ordering::Relaxed);
     copy_into(&mut data.szTip, "ZyrDesk");
-    // SAFETY: un bloc à nous, dont la taille est écrite dedans comme
-    // l'appel le demande.
+    // SAFETY: a block of ours, with its size written into it as the
+    // call asks.
     if unsafe { Shell_NotifyIconW(NIM_ADD, &data) } == 0 {
         return Err("Windows n'a pas pris l'icône de la zone de notification".to_string());
     }
@@ -137,15 +137,15 @@ pub fn raise() -> Result<(), String> {
     Err("il n'y a pas de zone de notification hors de Windows".to_string())
 }
 
-/// Le bloc que le système attend, rempli de ce qui ne change jamais.
+/// The block the system expects, filled with what never changes.
 #[cfg(windows)]
 fn icon_data(
     hwnd: windows_sys::Win32::Foundation::HWND,
 ) -> windows_sys::Win32::UI::Shell::NOTIFYICONDATAW {
     use windows_sys::Win32::UI::Shell::NOTIFYICONDATAW;
 
-    // SAFETY: un bloc à nous, rempli de zéros puis des seuls champs que
-    // les drapeaux annoncent.
+    // SAFETY: a block of ours, filled with zeros and then with only the
+    // fields the flags announce.
     let mut data: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
     data.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
     data.hWnd = hwnd;
@@ -153,7 +153,7 @@ fn icon_data(
     data
 }
 
-/// Écrit un mot dans un des champs de longueur fixe du système.
+/// Writes a word into one of the system's fixed-length fields.
 #[cfg(windows)]
 fn copy_into(cursor: &mut [u16], text: &str) {
     for (place, letter) in cursor.iter_mut().zip(text.encode_utf16().chain(Some(0))) {
@@ -213,8 +213,8 @@ fn says(app: &App, reachable: bool, playing: bool) {
             (false, false) => "ZyrDesk : cet ordinateur n'est pas joignable",
         },
     );
-    // SAFETY: un bloc à nous, et l'ancien dessin rendu une fois que le
-    // système ne s'en sert plus.
+    // SAFETY: a block of ours, and the old drawing given back once the
+    // system no longer uses it.
     unsafe {
         if Shell_NotifyIconW(NIM_MODIFY, &data) == 0 {
             let _ = DestroyIcon(data.hIcon);
@@ -245,11 +245,10 @@ fn asked_for() -> i32 {
     unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16)
 }
 
-/// La marque, tracée à la taille que la barre demande.
+/// The mark, traced at the size the bar asks for.
 ///
-/// Rien n'est réduit ni agrandi : c'est le dessin lui-même qui est fait à
-/// cette taille-là, ce qui est la seule façon d'avoir un bord net à seize
-/// pixels.
+/// Nothing is shrunk or enlarged: the drawing itself is made at that
+/// size, which is the only way to have a sharp edge at sixteen pixels.
 #[cfg(windows)]
 fn drawn(dimmed: bool) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
     let side = asked_for();
@@ -271,8 +270,8 @@ fn drawn(dimmed: bool) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
         .map_or(std::ptr::null_mut(), |icon| icon.0 as _)
 }
 
-/// SAFETY: appelée par le système sur le fil qui a fait cette fenêtre,
-/// avec les arguments qu'il documente.
+/// SAFETY: called by the system on the thread that made this window,
+/// with the arguments it documents.
 #[cfg(windows)]
 unsafe extern "system" fn answers(
     window: windows_sys::Win32::Foundation::HWND,
@@ -284,20 +283,19 @@ unsafe extern "system" fn answers(
 
     if message == CALLBACK {
         match (with & 0xFFFF) as u32 {
-            // Le clic gauche ouvre la fenêtre, ce que tout le monde
-            // attend d'une icône là-dessous ; le menu reste sur le bouton
-            // droit.
+            // The left click opens the window, which everyone expects of
+            // an icon down there; the menu stays on the right button.
             WM_LBUTTONUP => open(),
             WM_RBUTTONUP => pop_up_the_menu(window),
             _ => {}
         }
         return 0;
     }
-    // SAFETY: la réponse du système à tout ce qui n'est pas répondu ici.
+    // SAFETY: the system's answer to everything not answered here.
     unsafe { DefWindowProcW(window, message, holding, with) }
 }
 
-/// Ce que le menu de l'icône propose, et ce qu'il fait de la réponse.
+/// What the icon's menu offers, and what it does with the answer.
 #[cfg(windows)]
 fn pop_up_the_menu(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::POINT;
@@ -309,10 +307,10 @@ fn pop_up_the_menu(window: windows_sys::Win32::Foundation::HWND) {
     let open_label: Vec<u16> = "Ouvrir ZyrDesk".encode_utf16().chain(Some(0)).collect();
     let quit_label: Vec<u16> = "Quitter".encode_utf16().chain(Some(0)).collect();
     let mut cursor = POINT { x: 0, y: 0 };
-    // SAFETY: un menu fait ici et défait ici, et la place du curseur lue
-    // dans un bloc à nous. Le premier plan est donné à cette fenêtre
-    // avant de dérouler le menu, faute de quoi le menu resterait ouvert
-    // après le clic suivant : c'est ce que le système demande.
+    // SAFETY: a menu made here and unmade here, and the position of the
+    // pointer read into a block of ours. The foreground is given to this
+    // window before the menu drops down, otherwise the menu would stay
+    // open after the next click: that is what the system asks.
     let chosen = unsafe {
         GetCursorPos(&mut cursor);
         let menu = CreatePopupMenu();
@@ -365,11 +363,11 @@ fn quit() {
     });
 }
 
-/// Retire l'icône avant de partir.
+/// Takes the icon down before leaving.
 ///
-/// Sans ça elle reste dans la barre, fantôme, jusqu'à ce que quelqu'un
-/// passe la souris dessus : le système ne s'aperçoit qu'à ce moment-là
-/// que le programme n'est plus là.
+/// Without this it stays in the bar, a ghost, until someone moves the
+/// mouse over it: only then does the system notice that the program is
+/// gone.
 #[cfg(windows)]
 fn remove_the_icon() {
     use windows_sys::Win32::Foundation::HWND;
@@ -380,7 +378,7 @@ fn remove_the_icon() {
         return;
     }
     let data = icon_data(hwnd);
-    // SAFETY: un bloc à nous, nommant l'icône déposée au démarrage.
+    // SAFETY: a block of ours, naming the icon put up at start-up.
     unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
 }
 

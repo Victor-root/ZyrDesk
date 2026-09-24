@@ -299,10 +299,10 @@ async fn where_to_knock(
 ) -> Result<(String, Knock), String> {
     let also = every_address_of(peer, answering);
     if only_here {
-        // Écrit avant la ligne qui dit par où on frappe, et seulement
-        // quand c'est un choix : sans elle, une séance tenue sur ce
-        // réseau se lirait dans le journal comme une séance dont le
-        // serveur n'a pas voulu, ce qui est tout autre chose.
+        // Written before the line that says where to knock, and only
+        // when it is a choice: without it, a session held on this
+        // network would read in the journal like a session the server
+        // turned down, which is something else entirely.
         answering.log.write(&format!(
             "{host} was asked for on this network alone: no account, no meeting, no relay"
         ));
@@ -348,9 +348,9 @@ async fn one_question<T>(
     answering: &Answering,
     ask: impl AsyncFnOnce(&str, Knock) -> Result<T, String>,
 ) -> Result<T, String> {
-    // Une question se pose par la meilleure voie disponible : c'est une
-    // session que l'on choisit de tenir sur ce réseau, jamais un aller
-    // et retour de deux mots.
+    // A question is asked through the best way available: what is
+    // chosen to be held on this network is a session, never a round
+    // trip of two words.
     let (label, knock) = where_to_knock(host, peer, false, answering).await?;
     let meeting = knock.session();
     let answered = ask(&label, knock).await;
@@ -629,8 +629,9 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             }
         }
         Request::Authorize { peer, host, name } => {
-            // Cette empreinte est déjà celle de cet ordinateur : l'écrire
-            // n'ouvrirait rien et laisserait croire à un appairage fait.
+            // This fingerprint is already this computer's own: writing it
+            // down would open nothing and would suggest a pairing had
+            // been made.
             if peer == answering.fingerprint {
                 return Answer::Refused(
                     "c'est l'empreinte de cet ordinateur.\n  \
@@ -647,9 +648,9 @@ async fn one(request: Request, answering: &Answering) -> Answer {
                 .log
                 .write(&format!("{peer} written down as allowed in"));
 
-            // L'adresse est ce qui le fait rester à l'écran. Sans elle,
-            // il faudrait la retaper à chaque session, et c'est
-            // exactement ce que ce produit existe pour supprimer.
+            // The address is what keeps it on the screen. Without it,
+            // it would have to be typed again for every session, and
+            // that is exactly what this product exists to do away with.
             let Some(host) = host else {
                 return Answer::Done;
             };
@@ -671,14 +672,15 @@ async fn one(request: Request, answering: &Answering) -> Answer {
             }
         }
         Request::Forget { peer } => {
-            // Les deux listes, sinon un ordinateur retiré de l'écran
-            // continuerait d'entrer, ce que personne ne devinerait.
+            // Both lists, otherwise a computer taken off the screen
+            // would still get in, which nobody would guess.
             //
-            // L'autorisation d'abord. Si la seconde écriture échoue,
-            // l'ordinateur reste visible sans plus pouvoir entrer, et le
-            // refus dit de recommencer ; dans l'autre ordre, il aurait
-            // disparu de l'écran en gardant le droit d'entrer, invisible
-            // et impossible à deviner.
+            // The authorisation first. If the second write fails, the
+            // computer stays visible without being able to get in any
+            // more, and the refusal says to try again; in the other
+            // order, it would have vanished from the screen while
+            // keeping the right to get in, invisible and impossible to
+            // guess.
             if let Err(e) = authorized::remove(&paths::authorized_devices(), peer) {
                 return Answer::Refused(format!("cet ordinateur n'a pas pu être oublié : {e}"));
             }
@@ -879,8 +881,8 @@ mod tests {
             assert!(!standing.hosting);
             assert_eq!(standing.holdup, Holdup::Starting);
 
-            // Et l'empêchement voyage : sans lui, un moteur absent se
-            // lit comme un moteur qui démarre, indéfiniment.
+            // And the holdup travels: without it, a missing engine
+            // reads like an engine that is starting, forever.
             bench.hosting.held_by(Holdup::EngineMissing);
             let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
                 panic!("attendu un état");
@@ -979,8 +981,8 @@ mod tests {
             };
             assert_eq!(after, wanted);
 
-            // Et l'accès distant, qui partage le même fichier, n'a pas
-            // été emporté au passage.
+            // And remote access, which shares the same file, was not
+            // carried off along the way.
             let Ok(Answer::Standing(standing)) = caller.ask(&Request::Standing).await else {
                 panic!("attendu un état");
             };
@@ -990,8 +992,8 @@ mod tests {
 
     #[test]
     fn without_a_link_the_account_is_none_and_asks_nothing_of_anyone() {
-        // Le mode autonome, à l'octet près : pas de lien, pas de serveur,
-        // et les questions sur le compte se répondent sans réseau.
+        // Standalone mode, down to the byte: no link, no server, and the
+        // questions about the account are answered without a network.
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let bench = Bench::set_up(runtime.handle(), "account");
 
@@ -1006,8 +1008,8 @@ mod tests {
             let answer = caller.ask(&Request::Detach).await.unwrap();
             assert!(matches!(answer, Answer::Refused(_)), "{answer}");
 
-            // Une route de compte sans compte est refusée avant qu'une
-            // seule adresse soit essayée.
+            // An account road with no account is refused before a
+            // single address is tried.
             let answer = caller
                 .ask(&Request::Reach {
                     host: "account:d2".to_string(),
@@ -1022,10 +1024,10 @@ mod tests {
             };
             assert!(reason.contains("aucun compte"), "{reason}");
 
-            // Et la même route demandée en local est refusée pour ce
-            // qu'elle est : une route du serveur n'est pas une adresse
-            // d'ici, et la laisser échouer à la résolution dirait tout
-            // autre chose.
+            // And the same road asked for locally is refused for what
+            // it is: a road at the server is not an address from here,
+            // and letting it fail to resolve would say something else
+            // entirely.
             let answer = caller
                 .ask(&Request::Reach {
                     host: "account:d2".to_string(),
@@ -1048,11 +1050,11 @@ mod tests {
     #[test]
     fn a_silence_on_this_network_names_what_makes_it_rather_than_the_network() {
         let said = nothing_answered_here("192.168.1.20 ne répond pas : timed out");
-        // La raison d'origine reste entière : c'est elle qui dit quelles
-        // adresses ont été essayées.
+        // The original reason stays whole: it is what says which
+        // addresses were tried.
         assert!(said.contains("timed out"), "{said}");
-        // Et ce qui la suit envoie sur la seule machine qui sache, à la
-        // seule ligne qui réponde.
+        // And what follows it points to the only machine that knows, at
+        // the only line that answers.
         assert!(
             said.contains(&format!("Écouter sur le port {TUNNEL_PORT}")),
             "{said}"

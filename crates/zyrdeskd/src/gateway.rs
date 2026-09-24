@@ -1331,8 +1331,8 @@ impl Gateway {
                  and no other ZyrDesk seen on the local network",
             );
         }
-        // Nommés un par un. Une session refusée et une liste vide se
-        // ressemblent trop pour qu'on se contente d'un nombre.
+        // Named one by one. A refused session and an empty list look
+        // too much alike for a count to be enough.
         for device in &starting {
             log.write(&format!("{device} may come in"));
         }
@@ -1788,25 +1788,26 @@ mod tests {
 
     #[test]
     fn a_neighbour_is_let_in_without_anyone_writing_it_down() {
-        // C'est tout l'intérêt du réseau local : deux ZyrDesk allumés
-        // sur le même réseau se joignent sans rien recopier.
+        // That is the whole point of the local network: two ZyrDesks
+        // switched on on the same network reach each other without
+        // anything being copied out.
         let devices = joined(vec![fingerprint(1)], vec![fingerprint(2)]);
         assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
     }
 
     #[test]
     fn a_device_both_written_down_and_seen_is_one_device() {
-        // Sinon la même empreinte entrerait deux fois dans la liste que
-        // le transport consulte à chaque connexion.
+        // Otherwise the same fingerprint would go twice into the list
+        // the transport looks up on every connection.
         let devices = joined(vec![fingerprint(1)], vec![fingerprint(1), fingerprint(2)]);
         assert_eq!(devices, vec![fingerprint(1), fingerprint(2)]);
     }
 
     #[test]
     fn only_what_changed_in_the_list_is_worth_a_line() {
-        // La liste est refaite toutes les cinq secondes : le journal ne
-        // doit porter que les moments où elle bouge, sinon il n'y aura
-        // plus rien d'autre à y lire.
+        // The list is made again every five seconds: the journal must
+        // only carry the moments when it moves, or there will be
+        // nothing else left to read in it.
         let one = fingerprint(1);
         let two = fingerprint(2);
         assert!(apart(&[one, two], &[one, two]).is_empty());
@@ -1828,8 +1829,8 @@ mod tests {
         assert!(machine.remembered.trust_local_network());
         machine.remembered.set_trust_local_network(false).unwrap();
 
-        // Rien de ce que le réseau annonce ne doit plus entrer : c'est
-        // le seul effet attendu de cet interrupteur.
+        // Nothing the network announces may come in any more: that is
+        // the only effect expected of this switch.
         let devices = let_in(vec![fingerprint(1)], &machine);
         assert_eq!(devices, vec![fingerprint(1)]);
 
@@ -1838,9 +1839,10 @@ mod tests {
 
     #[test]
     fn a_computer_presented_by_a_ticket_is_let_in_whatever_the_network_says() {
-        // C'est ce qui fait entrer un ordinateur du compte à travers
-        // Internet : rien n'est écrit, rien ne s'annonce, le serveur l'a
-        // présenté. Et la confiance au réseau local n'y change rien.
+        // This is what lets a computer of the account in across the
+        // Internet: nothing is written down, nothing announces itself,
+        // the server has introduced it. And trust in the local network
+        // changes nothing about that.
         let (machine, folder) = machine("ticket");
         machine.remembered.set_trust_local_network(false).unwrap();
         machine

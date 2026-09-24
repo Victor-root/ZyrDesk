@@ -710,7 +710,8 @@ pub struct Standing {
     /// Whether the ZyrDesk of the local network are let in without
     /// anyone recognising them one by one.
     pub trusting: bool,
-    /// Whether the tunnel's packets carry their congestion mark.
+    /// Whether the packets of the tunnel carry their congestion
+    /// mark.
     pub ecn: bool,
     /// Whether the door listens on the product's own port.
     pub fixed_port: bool,
@@ -1026,8 +1027,8 @@ impl Answer {
                 },
             }),
             "codecs" => Ok(Answer::Codecs(rest.trim().to_string())),
-            // Une forme inconnue de cette compilation est la flèche
-            // ordinaire : la lecture ne peut pas échouer.
+            // A shape this build does not know is the ordinary
+            // arrow: reading cannot fail.
             "pointer" => Ok(Answer::Pointer(rest.trim().parse().unwrap_or_default())),
             "screens" => Ok(Answer::Screens(unfolded(rest.trim()))),
             "settled" => Ok(Answer::Settled {
@@ -1369,8 +1370,8 @@ mod tests {
                 only_here: false,
             },
             Request::Reach {
-                // La même, mais qui ne veut rien savoir d'ailleurs que
-                // de ce réseau.
+                // The same, but wanting nothing to do with anywhere
+                // other than this network.
                 host: "192.168.1.20".to_string(),
                 peer: fingerprint(),
                 media: MediaProfile {
@@ -1380,8 +1381,8 @@ mod tests {
                 only_here: true,
             },
             Request::Reach {
-                // Une adresse écrite à la main peut porter une espace :
-                // elle traverse le même champ que les autres textes.
+                // An address written by hand can carry a space: it
+                // crosses the same field as the other texts.
                 host: "pc de victor.local".to_string(),
                 peer: fingerprint(),
                 media: MediaProfile {
@@ -1409,8 +1410,8 @@ mod tests {
                 way: WayId(3),
                 rate: false,
             },
-            // Le débit se demande au milieu d'une session, en kilobits
-            // par seconde, comme le moteur d'en face le lit.
+            // The rate is asked for in the middle of a session, in
+            // kilobits per second, as the far engine reads it.
             Request::BitrateFar {
                 way: WayId(3),
                 kbps: 20_000,
@@ -1423,9 +1424,9 @@ mod tests {
                 way: WayId(3),
                 quiet: false,
             },
-            // L'agrandissement voyage avec la taille : un écran à la
-            // bonne taille sans lui, c'est le bureau de quelqu'un d'autre
-            // à la bonne résolution.
+            // The magnification travels with the size: a screen at the
+            // right size without it is somebody else's desktop at the
+            // right resolution.
             Request::FarScreen {
                 way: WayId(3),
                 wanted: Some(WantedScreen {
@@ -1434,8 +1435,8 @@ mod tests {
                     scale: 125,
                 }),
             },
-            // Zéro veut dire « aucun demandé », et c'est ce que dit une
-            // session qui n'a pas pu mesurer son propre écran.
+            // Nought means "none asked for", and it is what a session
+            // that could not measure its own screen says.
             Request::FarScreen {
                 way: WayId(3),
                 wanted: Some(WantedScreen {
@@ -1457,9 +1458,9 @@ mod tests {
             Request::SetTrust { on: false },
             Request::SetEcn { on: false },
             Request::SetFixedPort { on: false },
-            // Les trois réglages d'hôte voyagent ensemble dans un seul
-            // message : un champ qui ne fait pas l'aller-retour remet
-            // silencieusement les deux autres à ce qu'ils étaient.
+            // The three host settings travel together in a single
+            // message: a field that does not make the round trip
+            // silently puts the other two back to what they were.
             Request::ServeLike {
                 serving: Serving::default(),
             },
@@ -1491,13 +1492,13 @@ mod tests {
             Request::Journal {
                 sift: String::new(),
             },
-            // Un tri porte des espaces et des guillemets, comme tout ce
-            // qui se tape à la main.
+            // A sift carries spaces and quotation marks, like anything
+            // typed by hand.
             Request::Journal {
                 sift: "tag:clipboard -\"deux mots\"".to_string(),
             },
-            // Une adresse écrite à la main peut porter une espace, ici
-            // comme partout ailleurs.
+            // An address written by hand can carry a space, here as
+            // everywhere else.
             Request::FarCodecs { way: WayId(7) },
             Request::FarPointer { way: WayId(7) },
             Request::FarPointerDrawn {
@@ -1509,8 +1510,8 @@ mod tests {
                 drawn: false,
             },
             Request::FarScreens { way: WayId(7) },
-            // Rien de nommé veut dire l'écran principal, et c'est ce que
-            // demande toute session tant que personne n'a dit autre chose.
+            // Nothing named means the main screen, and it is what every
+            // session asks for as long as nobody has said otherwise.
             Request::FilmFarScreen {
                 way: WayId(7),
                 id: None,
@@ -1541,9 +1542,9 @@ mod tests {
                 preferred: Preferred::default(),
             },
             Request::Account,
-            // Un mot de passe porte des espaces, et le nom du serveur est
-            // ce que la personne a tapé : les deux traversent le même
-            // champ que les autres textes.
+            // A password carries spaces, and the name of the server is
+            // what the person typed: both cross the same field as the
+            // other texts.
             Request::Attach(Attach {
                 server: "zyr.exemple.fr:8443".to_string(),
                 username: "victor".to_string(),
@@ -1603,8 +1604,8 @@ mod tests {
         vec![
             Answer::Standing(Standing {
                 protocol: PROTOCOL,
-                // Une empreinte de compilation porte une espace : elle
-                // traverse le même champ « clé=valeur » que le reste.
+                // A build stamp carries a space: it crosses the same
+                // `key=value` field as the rest.
                 build: "599c1c4 2026-08-18".to_string(),
                 fingerprint: fingerprint(),
                 hosting: true,
@@ -1641,8 +1642,8 @@ mod tests {
                 packet: 1353,
             }),
             Answer::Peer(Peer {
-                // Un nom d'ordinateur contient des espaces bien plus
-                // souvent qu'on ne le croit.
+                // A computer name contains spaces far more often
+                // than one would think.
                 name: "PC de Victor".to_string(),
                 fingerprint: fingerprint(),
                 host: "192.168.1.20".to_string(),
@@ -1660,8 +1661,8 @@ mod tests {
                 written: true,
                 account: None,
             }),
-            // Un ordinateur du compte que le réseau ne porte pas : sa
-            // route est son identifiant chez le serveur.
+            // A computer of the account that the network does not
+            // carry: its road is its identifier at the server.
             Answer::Peer(Peer {
                 name: "Portable".to_string(),
                 fingerprint: fingerprint(),
@@ -1676,9 +1677,9 @@ mod tests {
                     shared_by: None,
                 }),
             }),
-            // Et un ordinateur qu'un contact a partagé, vu aussi sur le
-            // réseau local : une seule carte, avec l'adresse du réseau et
-            // le mot du compte.
+            // And a computer a contact has shared, also seen on the local
+            // network: a single card, with the address from the network
+            // and the word of the account.
             Answer::Peer(Peer {
                 name: "PC de l'atelier".to_string(),
                 fingerprint: fingerprint(),
@@ -1710,17 +1711,16 @@ mod tests {
             }),
             Answer::Settings(preferred()),
             Answer::Settings(Preferred::default()),
-            // Une page entière sur une ligne, avec ce qu'un journal
-            // porte vraiment : des retours à la ligne et des chemins
-            // Windows, dont les barres obliques inverses ne doivent pas
-            // se relire comme des retours à la ligne.
+            // A whole page on one line, with what a journal really
+            // carries: line breaks and Windows paths, whose backslashes
+            // must not read back as line breaks.
             Answer::Journal(
                 "ZyrDesk 0.1.0\nJournaux         : C:\\ProgramData\\ZyrDesk\\logs\n\n\
                  --- Le service (service.log) ---\nune ligne\nune autre"
                     .to_string(),
             ),
-            // Une ligne par écran, repliées pour voyager comme le fait
-            // le journal juste au-dessus.
+            // One line per screen, folded to travel the way the
+            // journal just above does.
             Answer::Screens(
                 "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M".to_string(),
             ),
@@ -1742,8 +1742,8 @@ mod tests {
                 connected: true,
                 trouble: None,
             })),
-            // Un ennui s'écrit pour être lu, sur plusieurs lignes au
-            // besoin : il voyage replié comme un refus.
+            // A trouble is written to be read, over several lines if
+            // need be: it travels folded like a refusal.
             Answer::Account(Some(Account {
                 server: "https://192.168.1.40:8443".to_string(),
                 name: String::new(),
@@ -1830,9 +1830,9 @@ mod tests {
     #[test]
     fn a_field_added_later_does_not_upset_an_older_reader() {
         let line = "reach host=192.168.1.20 peer=0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237 bitrate=20000 fps=60 codec=av1";
-        // Et une fenêtre d'avant, qui ne connaissait qu'une façon de
-        // joindre un ordinateur, demande bien celle-là : la voie qui ne
-        // veut rien savoir d'ailleurs se demande, elle ne se suppose pas.
+        // And a window from before, which knew only one way to reach a
+        // computer, does ask for that one: the way that wants nothing to
+        // do with anywhere else is asked for, it is not assumed.
         assert!(matches!(
             Request::parse(line),
             Ok(Request::Reach {
@@ -1844,9 +1844,9 @@ mod tests {
 
     #[test]
     fn an_older_service_is_still_understood_minus_what_it_cannot_do() {
-        // Le service d'avant ne connaît ni sa propre empreinte de
-        // compilation ni la confiance réseau. La fenêtre doit perdre ces
-        // deux choses-là, pas la conversation.
+        // The service from before knows neither its own build stamp nor
+        // network trust. The window must lose those two things, not the
+        // conversation.
         let line = format!(
             "standing protocol=6 fingerprint={} hosting=yes wanted=yes ways=0",
             fingerprint()
@@ -1857,8 +1857,8 @@ mod tests {
         assert_eq!(standing.protocol, 6);
         assert!(standing.build.is_empty());
         assert!(!standing.trusting);
-        // Les deux interrupteurs d'essai manquent d'un service plus
-        // ancien : ils sont alors sur leur position ordinaire.
+        // The two trial switches are missing from an older service:
+        // they are then in their ordinary position.
         assert!(standing.ecn);
         assert!(standing.fixed_port);
         assert_eq!(standing.holdup, Holdup::Starting);
@@ -1867,8 +1867,8 @@ mod tests {
 
     #[test]
     fn a_computer_of_the_account_reads_back_with_the_account_s_word_on_it() {
-        // Une fenêtre plus ancienne que le service ne connaît pas le
-        // compte : elle doit lire la carte sans lui, pas la perdre.
+        // A window older than the service does not know the account:
+        // it must read the card without it, not lose it.
         let line = format!(
             "peer name=Portable fingerprint={} address=account:d2 port=47000 seen=no written=no",
             fingerprint()
@@ -1878,8 +1878,9 @@ mod tests {
         };
         assert_eq!(read.account, None);
 
-        // Et un état d'accès que cette moitié n'a jamais entendu se lit
-        // comme un démarrage, qui est vrai le temps de la mettre à jour.
+        // And an access state this half has never heard of reads as
+        // starting up, which is true for as long as it takes to update
+        // it.
         assert_eq!(access_read("un-etat-inedit"), Access::Starting);
         for access in [
             Access::Off,
@@ -1894,9 +1895,9 @@ mod tests {
 
     #[test]
     fn a_holdup_nobody_understands_reads_as_the_ordinary_case() {
-        // Une moitié plus ancienne du produit ne doit pas afficher un
-        // empêchement inventé : elle montre « démarrage », qui est vrai
-        // le temps qu'on la mette à jour.
+        // An older half of the product must not show a made-up holdup:
+        // it shows "starting", which is true for as long as it takes to
+        // update it.
         assert_eq!(Holdup::read("un-empechement-inedit"), Holdup::Starting);
         assert_eq!(Holdup::read(""), Holdup::Starting);
         for holdup in [
@@ -1910,8 +1911,8 @@ mod tests {
 
     #[test]
     fn a_setting_the_other_half_never_heard_of_falls_back() {
-        // Une moitié du produit plus ancienne que l'autre perd le
-        // réglage qu'elle ne connaît pas, pas la conversation.
+        // A half of the product older than the other loses the
+        // setting it does not know, not the conversation.
         let Ok(Answer::Settings(read)) = Answer::parse("settings asked=2560x1440") else {
             panic!("« settings asked=2560x1440 » n'est pas relu comme des réglages");
         };
@@ -1920,8 +1921,8 @@ mod tests {
         assert_eq!(read.codec, Preferred::default().codec);
         assert_eq!(read.absolute_mouse, Preferred::default().absolute_mouse);
 
-        // Et une valeur que personne ne comprend ne vaut pas mieux
-        // qu'une absente : le défaut, et la session s'ouvre quand même.
+        // And a value nobody understands is worth no more than a
+        // missing one: the default, and the session opens all the same.
         let Ok(Answer::Settings(read)) = Answer::parse("settings asked=ultra bitrate=beaucoup")
         else {
             panic!("« settings asked=ultra » n'est pas relu comme des réglages");
@@ -1932,9 +1933,9 @@ mod tests {
 
     #[test]
     fn a_name_with_spaces_arrives_whole() {
-        // Le nom d'un ordinateur et l'adresse tapée pour le joindre
-        // portent tous deux du texte libre : les deux traversent le même
-        // champ `clé=valeur` et doivent en ressortir entiers.
+        // The name of a computer and the address typed to reach it both
+        // carry free text: both cross the same `key=value` field and
+        // must come out of it whole.
         for name in [
             "PC de Victor",
             "  PC  ",

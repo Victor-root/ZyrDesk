@@ -214,39 +214,40 @@ mod tests {
 
     #[test]
     fn a_screen_that_is_on_says_how_many_pixels_it_shows() {
-        // C'est ce nombre-là qui part dans le journal du service à chaque
-        // démarrage du moteur. Sans lui, « est-ce que l'écran de l'hôte
-        // est bien revenu » ne se répond qu'en allant voir la machine.
+        // It is this number that goes into the service's journal at every
+        // start of the engine. Without it, "did the host's screen really
+        // come back" can only be answered by going to look at the
+        // machine.
         let screens = screens_in_the_log(LOG);
         assert_eq!(screens[1].size, Some((1920, 1080)));
-        // Un écran éteint n'a pas de taille, et n'en invente pas une.
+        // A screen that is off has no size, and does not make one up.
         assert_eq!(screens[0].size, None);
     }
 
     #[test]
     fn the_engine_giving_up_on_the_screens_is_recognised() {
-        // La phrase exacte du moteur, telle qu'elle sort de son journal.
-        // C'est le seul endroit du produit qui sache que l'écran de
-        // l'hôte n'est pas revenu à ce qu'il était.
+        // The engine's exact sentence, as it comes out of its log. It is
+        // the only place in the product that knows the host's screen has
+        // not gone back to what it was.
         let gave_up = "[2026-08-25 21:16:26]: Warning: Failed to revert display device \
                        configuration (will retry once devices are added or removed). Enabling all \
                        of the available devices:\n[\n]";
         assert!(could_not_put_the_screens_back(gave_up));
-        // Une session ordinaire n'en parle jamais.
+        // An ordinary session never mentions it.
         assert!(!could_not_put_the_screens_back(LOG));
         assert!(!could_not_put_the_screens_back(""));
     }
 
     #[test]
     fn the_main_screen_is_picked_out_by_what_the_engine_says_of_it() {
-        // C'est l'écran que le moteur doit filmer sur toute machine qui a
-        // un écran à elle. Sans ce nom, il filme celui que la carte
-        // graphique énumère en premier, qui n'est pas le même d'une
-        // énumération à l'autre.
+        // It is the screen the engine has to capture on any machine that
+        // has a screen of its own. Without this name, it captures
+        // whichever one the graphics card lists first, which is not the
+        // same from one listing to the next.
         let screens = screens_in_the_log(LOG);
         let main = screens.iter().find(|screen| screen.main).unwrap();
         assert_eq!(main.display_name, r"\\.\DISPLAY1");
-        // L'écran virtuel est éteint : il n'est le principal de personne.
+        // The virtual screen is off: it is nobody's main screen.
         assert!(!screens[0].main);
     }
 
@@ -260,14 +261,15 @@ mod tests {
     fn a_machine_without_the_virtual_screen_yields_nothing() {
         let without = LOG.replace("VDD by MTT", "Dell U2720Q");
         assert!(the_virtual_screen(&without, &crate::mtt::MTT).is_none());
-        // Et ce n'est pas parce que rien n'a été lu.
+        // And that is not because nothing was read.
         assert_eq!(screens_in_the_log(&without).len(), 2);
     }
 
     #[test]
     fn the_last_list_wins_over_the_ones_before_it() {
-        // Le journal du moteur s'accumule d'un démarrage à l'autre : un
-        // identifiant qui a changé au dernier est celui qui compte.
+        // The engine's log builds up from one start to the next: an
+        // identifier that changed at the last one is the one that
+        // counts.
         let twice = format!("{LOG}{}", LOG.replace("64243705", "11111111"));
         let found = the_virtual_screen(&twice, &crate::mtt::MTT).unwrap();
         assert!(found.device_id.starts_with("{11111111"), "{found:?}");
@@ -285,8 +287,8 @@ mod tests {
     fn a_log_that_never_listed_anything_yields_nothing_rather_than_failing() {
         assert!(screens_in_the_log("").is_empty());
         assert!(screens_in_the_log("[2026-08-20 09:12:03]: Info: started").is_empty());
-        // Annoncée mais coupée en plein milieu, par exemple un journal
-        // lu pendant que le moteur écrivait dedans.
+        // Announced but cut off halfway, for example a log read while
+        // the engine was writing to it.
         let cut = "Currently available display devices:\n[\n  { \"device_id\": \"{a}\"";
         assert!(screens_in_the_log(cut).is_empty());
     }

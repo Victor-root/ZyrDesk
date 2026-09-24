@@ -419,9 +419,9 @@ impl Ways {
                     .lock()
                     .expect("registre des voies")
                     .give_back(device);
-                // Sur une ligne : un refus est écrit pour être lu à
-                // l'écran, sur plusieurs lignes, et le journal en compte
-                // une par événement.
+                // On one line: a refusal is written to be read on
+                // screen, over several lines, and the journal counts one
+                // line per event.
                 self.log
                     .write(&format!("no way to {host}: {}", e.replace('\n', " ")));
                 Err(e)
@@ -1589,20 +1589,20 @@ mod tests {
 
     #[test]
     fn a_computer_keeps_the_same_local_address_from_one_session_to_the_next() {
-        // Le moteur retient l'appairage sous l'adresse qu'il a composée :
-        // une adresse qui bougerait avec l'ordre des connexions lui
-        // ferait prendre un ordinateur connu pour un inconnu, et
-        // réappairer en silence.
+        // The engine remembers the pairing under the address it dialled:
+        // an address that moved with the order of connections would make
+        // it take a known computer for a stranger, and pair again in
+        // silence.
         let mut register = register();
         let first = register.reserve(peer()).unwrap();
         register.give_back(first);
 
-        // Un autre ordinateur ouvre une session entre-temps : il prend
-        // sa propre adresse, pas celle du premier.
+        // Another computer opens a session in the meantime: it takes
+        // its own address, not the one of the first.
         let second = register.reserve(other_peer()).unwrap();
         assert_ne!(first, second);
 
-        // Et le premier retrouve la sienne.
+        // And the first one gets its own back.
         assert_eq!(register.reserve(peer()), Some(first));
     }
 

@@ -12,7 +12,8 @@ pub enum Codec {
 }
 
 impl Codec {
-    /// Value the client engine's command line expects.
+    /// Value expected by the command line of the client
+    /// engine.
     pub fn engine_value(self) -> &'static str {
         match self {
             Codec::Auto => "auto",
@@ -966,10 +967,10 @@ mod tests {
 
     #[test]
     fn every_pointer_shape_has_its_word_and_only_one() {
-        // Le mot est lu par un moteur qui peut être d'une autre
-        // compilation que celle qui l'écrit : deux formes qui
-        // partageraient un mot en donneraient une pour l'autre, et une
-        // forme sans mot ne partirait jamais.
+        // The word is read by an engine that may come from another
+        // build than the one that writes it: two shapes sharing a word
+        // would give one for the other, and a shape without a word
+        // would never go out.
         let mut words: Vec<&str> = Pointer::ALL.iter().map(|shape| shape.word()).collect();
         words.sort_unstable();
         let how_many = words.len();
@@ -983,18 +984,18 @@ mod tests {
 
     #[test]
     fn an_unknown_word_gives_the_ordinary_arrow() {
-        // Les deux moitiés du produit s'installent à des jours
-        // différents : une machine d'en face plus récente peut nommer
-        // une forme que celle-ci n'a jamais entendue. Lui refuser la
-        // ligne entière retirerait le curseur pour un mot.
+        // The two halves of the product are installed on different
+        // days: a more recent far machine can name a shape this one
+        // has never heard of. Refusing it the whole line would take
+        // the pointer away over a word.
         assert_eq!("".parse::<Pointer>().unwrap(), Pointer::Arrow);
         assert_eq!("licorne".parse::<Pointer>().unwrap(), Pointer::Arrow);
-        // Et la casse ne décide de rien.
+        // And case decides nothing.
         assert_eq!("TEXT".parse::<Pointer>().unwrap(), Pointer::Text);
     }
 
-    /// Un écran ordinaire de cette taille, pour les essais qui ne parlent
-    /// que de taille.
+    /// An ordinary screen of this size, for the tests that are only about
+    /// size.
     fn a_screen(wide: u32, high: u32) -> Screen {
         Screen {
             wide,
@@ -1038,8 +1039,8 @@ mod tests {
 
     #[test]
     fn every_choice_survives_being_written_and_read_back() {
-        // Ces valeurs voyagent en texte sur le canal de contrôle et
-        // dans le fichier de réglages : elles doivent se relire.
+        // These values travel as text on the control channel and in
+        // the settings file: they must read back.
         for codec in [Codec::Auto, Codec::H264, Codec::Hevc, Codec::Av1] {
             assert_eq!(codec.to_string().parse::<Codec>().unwrap(), codec);
         }
@@ -1050,12 +1051,12 @@ mod tests {
 
     #[test]
     fn the_screen_is_asked_for_by_name_and_not_by_number() {
-        // Le cas qui compte : une image de la taille de l'écran est
-        // affichée pixel pour pixel. Demander autre chose, c'est jeter du
-        // détail à un bout et l'agrandir à l'autre.
+        // The case that matters: a picture the size of the screen is
+        // shown pixel for pixel. Asking for anything else is throwing
+        // detail away at one end and enlarging it at the other.
         assert_eq!(Asked::Client.size(Some((3840, 2160))), (3840, 2160));
         assert_eq!(Asked::Client.size(Some((3440, 1440))), (3440, 1440));
-        // Et un nombre reste un nombre, quel que soit l'écran.
+        // And a number stays a number, whatever the screen.
         assert_eq!(
             Asked::Fixed(1920, 1080).size(Some((3840, 2160))),
             (1920, 1080)
@@ -1066,17 +1067,17 @@ mod tests {
     fn an_unmeasurable_screen_falls_back_to_the_common_one() {
         assert_eq!(Asked::Client.size(None), UNKNOWN_SCREEN);
         assert_eq!(Asked::Client.size(Some((0, 0))), UNKNOWN_SCREEN);
-        // L'écran d'en face n'est pas connu ici avant que la machine
-        // d'en face ne le dise : en attendant, c'est celui-ci.
+        // The far screen is not known here before the far machine
+        // says it: until then, it is this one.
         assert_eq!(Asked::Host.size(Some((2560, 1440))), (2560, 1440));
         assert_eq!(Asked::Fixed(0, 1080).size(None), UNKNOWN_SCREEN);
     }
 
     #[test]
     fn the_magnification_of_this_screen_travels_only_when_it_is_this_screen() {
-        // Le cas de Victor : un portable à cent vingt-cinq pour cent. La
-        // session portait la taille et pas l'agrandissement, donc le
-        // texte arrivait deux fois plus petit qu'à la maison.
+        // Victor's case: a laptop at a hundred and twenty-five per cent.
+        // The session carried the size and not the magnification, so the
+        // text arrived twice as small as at home.
         let mine = Screen {
             wide: 1920,
             high: 1200,
@@ -1084,23 +1085,23 @@ mod tests {
             scale: 125,
         };
         assert_eq!(Asked::Client.magnification(Some(mine)), 125);
-        // Une taille choisie à la main n'est l'écran de personne : rien à
-        // copier, et la recommandation de Windows vaut mieux qu'un
-        // agrandissement pris sur un autre panneau.
+        // A size picked by hand is nobody's screen: nothing to copy, and
+        // the recommendation of Windows is better than a magnification
+        // taken from another panel.
         assert_eq!(Asked::Fixed(1280, 720).magnification(Some(mine)), 0);
-        // Et « l'écran de l'hôte » veut dire qu'on n'y touche pas, ni à
-        // la taille ni au reste.
+        // And "the host's screen" means it is not touched, neither its
+        // size nor the rest.
         assert_eq!(Asked::Host.magnification(Some(mine)), 0);
-        // Un écran qu'on n'a pas su mesurer ne réclame rien : un
-        // agrandissement deviné est pire qu'aucun.
+        // A screen that could not be measured asks for nothing:
+        // a guessed magnification is worse than none.
         assert_eq!(Asked::Client.magnification(None), 0);
     }
 
     #[test]
     fn the_far_computers_screens_survive_being_written_and_read_back() {
-        // Ils traversent le tunnel puis le canal entre nos programmes :
-        // une seule écriture, une seule lecture. Le cas de Victor : deux
-        // écrans allumés sur la machine d'en face.
+        // They cross the tunnel and then the channel between our
+        // programs: a single spelling, a single reading. Victor's case:
+        // two screens switched on on the far machine.
         let screens = vec![
             FarScreen {
                 id: "{daeac860-f4db-5208-b1f5-cf59444fb768}".to_string(),
@@ -1109,8 +1110,8 @@ mod tests {
                 high: 1440,
                 name: "ROG PG279Q".to_string(),
             },
-            // Un nom d'écran porte des espaces bien plus souvent qu'on ne
-            // le croit : il voyage en fin de ligne pour cette raison.
+            // A screen name carries spaces far more often than one would
+            // think: it travels at the end of the line for that reason.
             FarScreen {
                 id: "{64243705-4020-5895-b923-adc862c3457e}".to_string(),
                 main: false,
@@ -1125,22 +1126,22 @@ mod tests {
 
     #[test]
     fn a_screen_line_this_version_cannot_read_costs_that_screen_and_not_the_list() {
-        // Une version d'en face qui décrirait un écran autrement ne doit
-        // pas vider le menu : on perd cet écran-là, pas les autres.
+        // A version over there that described a screen differently must
+        // not empty the menu: that screen is lost, not the others.
         let mixed = "{aaa} main 1920x1080 Un écran\nn'importe quoi\n{bbb} other 1280x720 Un autre";
         let read = far_screens_read(mixed);
         assert_eq!(read.len(), 2);
         assert_eq!(read[0].name, "Un écran");
         assert!(!read[1].main);
-        // Et rien du tout se lit comme rien du tout.
+        // And nothing at all reads as nothing at all.
         assert!(far_screens_read("").is_empty());
     }
 
     #[test]
     fn the_screen_a_session_asks_for_survives_being_written_and_read_back() {
-        // Il traverse deux canaux, celui entre nos programmes et celui
-        // entre les deux ordinateurs : une seule écriture, une seule
-        // lecture.
+        // It crosses two channels, the one between our programs and
+        // the one between the two computers: a single spelling, a
+        // single reading.
         for wanted in [
             WantedScreen {
                 wide: 1920,
@@ -1156,9 +1157,9 @@ mod tests {
             let said = wanted.to_string();
             assert_eq!(said.parse::<WantedScreen>().unwrap(), wanted, "{said}");
         }
-        // Une taille toute seule n'est pas cet écran-là : l'agrandissement
-        // manquant se dirait zéro et rien ne distinguerait « laisse le
-        // tien » d'un message tronqué.
+        // A size on its own is not that screen: the missing magnification
+        // would read as zero and nothing would tell "leave yours" apart
+        // from a cut-off message.
         assert!("1920x1200".parse::<WantedScreen>().is_err());
         assert!("1920x1200@".parse::<WantedScreen>().is_err());
         assert!("1920x1200@beaucoup".parse::<WantedScreen>().is_err());
@@ -1166,8 +1167,8 @@ mod tests {
 
     #[test]
     fn every_size_asked_for_can_be_cut_into_colour_by_halves() {
-        // Un encodeur découpe la couleur par moitiés : une taille impaire
-        // se fait arrondir quelque part où on ne le voit pas.
+        // An encoder cuts colour into halves: an odd size gets rounded
+        // somewhere nobody sees it.
         for screen in [(1919, 1079), (3441, 1441), (1366, 768)] {
             let (wide, high) = Asked::Client.size(Some(screen));
             assert!(wide % 2 == 0 && high % 2 == 0, "{screen:?}");
@@ -1176,14 +1177,14 @@ mod tests {
 
     #[test]
     fn what_is_offered_can_be_written_and_read_back() {
-        // Ces valeurs voyagent en texte sur le canal de contrôle et dans
-        // le fichier de réglages : elles doivent se relire.
+        // These values travel as text on the control channel and in the
+        // settings file: they must read back.
         for asked in SIZES_OFFERED {
             assert_eq!(asked.to_string().parse::<Asked>().unwrap(), *asked);
         }
-        // « screen » est ce que les réglages déjà écrits sur les
-        // machines disent pour l'écran du client : ils doivent continuer
-        // de vouloir dire ça.
+        // "screen" is what the settings already written on the machines
+        // say for the screen of the client: they must go on meaning
+        // that.
         assert_eq!("screen".parse::<Asked>().unwrap(), Asked::Client);
         assert_eq!("SCREEN".parse::<Asked>().unwrap(), Asked::Client);
         assert_eq!("host".parse::<Asked>().unwrap(), Asked::Host);
@@ -1197,8 +1198,8 @@ mod tests {
             next_in(SIZES_OFFERED, *SIZES_OFFERED.last().unwrap()),
             SIZES_OFFERED[0]
         );
-        // Une valeur écrite par une version qui offrait autre chose ne
-        // doit pas coincer la ligne : elle retombe sur la première.
+        // A value written by a version that offered something else
+        // must not jam the line: it falls back on the first.
         assert_eq!(
             next_in(SIZES_OFFERED, Asked::Fixed(640, 480)),
             SIZES_OFFERED[0]
@@ -1209,22 +1210,23 @@ mod tests {
 
     #[test]
     fn the_rates_offered_go_up_a_megabit_at_a_time() {
-        // Un cran par mégabit : c'est ce qui permet de viser un débit et
-        // non une tranche de dix.
+        // One notch per megabit: that is what lets one aim at a rate and
+        // not at a band of ten.
         assert_eq!(RATES_OFFERED.first(), Some(&(RATE_LOWEST_MBPS * 1_000)));
         assert_eq!(RATES_OFFERED.last(), Some(&(RATE_HIGHEST_MBPS * 1_000)));
         for pair in RATES_OFFERED.windows(2) {
             assert_eq!(pair[1] - pair[0], 1_000, "entre {} et {}", pair[0], pair[1]);
         }
-        // Et le débit par défaut reste un cran de la liste : un réglage
-        // écrit qui n'y serait pas serait refusé à la première relecture.
+        // And the default rate stays a notch of the list: a written
+        // setting that was not in it would be refused at the first
+        // reading back.
         assert!(RATES_OFFERED.contains(&SessionSettings::default().bitrate_kbps));
     }
 
     #[test]
     fn the_rate_a_person_chose_is_the_rate_that_is_sent() {
-        // Rien ne le recalcule à partir de la taille : ce que la personne
-        // a choisi en regardant son image est ce qui part.
+        // Nothing works it out again from the size: what the person chose
+        // while watching their picture is what goes out.
         let chosen = Preferred {
             asked: Asked::Client,
             bitrate_kbps: 15_000,
@@ -1239,9 +1241,9 @@ mod tests {
 
     #[test]
     fn the_session_asks_for_the_rate_of_the_screen_it_lands_on() {
-        // Un écran à cent quarante-quatre reçoit cent quarante-quatre
-        // images, pas soixante : deux rafraîchissements sur trois
-        // montraient l'image précédente.
+        // A screen at a hundred and forty-four gets a hundred and
+        // forty-four frames, not sixty: two refreshes out of three
+        // were showing the previous frame.
         let on = |refresh| {
             Preferred::default()
                 .settings(Some(Screen {
@@ -1254,21 +1256,21 @@ mod tests {
         };
         assert_eq!(on(60), 60);
         assert_eq!(on(144), 144);
-        // Au-dessus du plafond, une part entière de la cadence de
-        // l'écran et non le plafond : les images doivent continuer de
-        // tomber une par rafraîchissement.
+        // Above the ceiling, a whole share of the rate of the screen
+        // and not the ceiling: the frames must keep landing one to a
+        // refresh.
         assert_eq!(on(240), 120);
         assert_eq!(on(360), 120);
         assert_eq!(on(165), 82);
-        // Sous le plancher, le plancher.
+        // Below the floor, the floor.
         assert_eq!(on(24), SLOWEST_RATE);
-        // Zéro et un sont ce que Windows répond pour un écran dont il ne
-        // tient pas la cadence : « pas mesuré » et non « très lent »,
-        // donc le défaut et pas le plancher.
+        // Nought and one are what Windows answers for a screen whose
+        // rate it does not hold: "not measured" and not "very slow", so
+        // the default and not the floor.
         assert_eq!(on(0), SessionSettings::default().fps);
         assert_eq!(on(1), SessionSettings::default().fps);
-        // Écran non mesurable : ce que le produit demandait avant que
-        // quoi que ce soit soit mesuré.
+        // A screen that cannot be measured: what the product asked
+        // for before anything at all was measured.
         assert_eq!(
             Preferred::default().settings(None).fps,
             SessionSettings::default().fps
@@ -1284,13 +1286,14 @@ mod tests {
             display_mode: DisplayMode::Windowed,
             absolute_mouse: false,
             stats_overlay: true,
-            // Rien de ce champ n'atteint le moteur : il ne décrit pas
-            // l'image, il dit ce qu'on demande à la machine d'en face.
+            // Nothing of this field reaches the engine: it does not
+            // describe the picture, it says what is asked of the far
+            // machine.
             mute_far_speakers: true,
             system_keys: false,
             steady_far_rate: false,
-            // Ni celui-ci : un presse-papiers partagé ne passe par aucun
-            // moteur, leur protocole n'ayant pas de canal pour ça.
+            // Nor this one: a shared clipboard goes through no engine,
+            // their protocol having no channel for it.
             shared_clipboard: false,
         };
         let settings = preferred.settings(Some(a_screen(3840, 2160)));
@@ -1300,17 +1303,17 @@ mod tests {
         assert_eq!(settings.display_mode, DisplayMode::Windowed);
         assert!(!settings.absolute_mouse);
         assert!(settings.stats_overlay);
-        // Le côté où l'interrupteur est laissé est celui où la session
-        // suivante s'ouvre.
+        // The side the switch is left on is the side the next session
+        // opens on.
         assert!(!settings.system_keys);
-        // La taille de paquet n'est pas un choix : le tunnel la décide.
+        // The packet size is not a choice: the tunnel decides it.
         assert_eq!(settings.packet_size, None);
     }
 
     #[test]
     fn the_defaults_still_open_the_session_they_used_to() {
-        // Personne n'a rien choisi et l'écran n'a pas pu être mesuré : ce
-        // qui sort doit rester exactement ce que le produit faisait.
+        // Nobody chose anything and the screen could not be measured:
+        // what comes out must stay exactly what the product used to do.
         assert_eq!(
             Preferred::default().settings(None),
             SessionSettings::default()

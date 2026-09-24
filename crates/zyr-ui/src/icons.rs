@@ -1,20 +1,20 @@
-//! Les icônes du produit, reprises trait pour trait des pages qui les
-//! portaient.
+//! The product's icons, taken stroke for stroke from the pages that used
+//! to carry them.
 //!
-//! Recopiées et non redessinées : ce sont les mêmes icônes, et les
-//! redessiner en donnerait d'autres.
+//! Copied and not redrawn: they are the same icons, and redrawing them
+//! would give different ones.
 //!
-//! Toutes ensemble et non chacune chez son écran : le menu de la session
-//! et l'accueil en partagent, et une icône dessinée à deux endroits est
-//! le jour où l'un des deux change.
+//! All together and not each beside its own screen: the session menu and
+//! the home window share some, and an icon drawn in two places is
+//! heading for the day one of the two changes.
 //!
-//! Toutes dans un repère de vingt-quatre et d'un trait de un et huit
-//! dixièmes, ce que la feuille de style demandait à toutes sans
-//! exception. Celles qui ont un autre repère le disent.
+//! All on a grid of twenty-four with a stroke of one point eight, which
+//! is what the stylesheet asked of every one of them without exception.
+//! The ones with a different grid say so.
 
 use crate::paint::{Icon, Stroke};
 
-/// Le repère et le trait communs, écrits une fois.
+/// The common grid and stroke, written once.
 const fn icon_of(strokes: &'static [Stroke]) -> Icon {
     Icon {
         grid: 24.0,
@@ -45,8 +45,8 @@ pub const KEYBOARD: Icon = icon_of(&[
     Stroke::SvgPath("M6 9h1M9.5 9h1M13 9h1M16.5 9h1M6 13h1M9.5 13h5M17 13h1"),
 ]);
 
-/// Le presse-papiers : la planche, la pince qui la tient par le haut, et
-/// les deux lignes de ce qui y est posé.
+/// The clipboard: the board, the clip that holds it at the top, and the
+/// two lines of what is laid on it.
 pub const CLIPBOARD: Icon = icon_of(&[
     Stroke::RoundRect(4.0, 4.5, 16.0, 17.5, 2.0),
     Stroke::RoundRect(8.5, 2.0, 7.0, 4.5, 1.5),
@@ -80,32 +80,31 @@ pub const RESOLUTION: Icon = icon_of(&[
     Stroke::SvgPath("M9 21h6M12 17v4"),
 ]);
 
-/// Les deux ordinateurs d'une session, comme le logo du produit les
-/// dessine : celui d'en face derrière, celui qui regarde devant.
+/// The two computers of a session, as the product's logo draws
+/// them: the far one behind, the one looking at it in front.
 pub const HOST_SCREEN: Icon = icon_of(&[OVER_THERE, HERE]);
 
-/// Chacun des deux seul.
+/// Each of the two alone.
 ///
-/// De quoi allumer l'un d'eux par-dessus la paire sans redessiner la
-/// paire, ce qui est comment un voyant dit lequel des deux ordinateurs
-/// coince. Écrits à partir des mêmes deux traits que la paire : recopiés,
-/// ils s'en écarteraient au premier pixel changé.
+/// What it takes to light up one of them over the pair without redrawing
+/// the pair, which is how a badge says which of the two computers is
+/// holding things up. Written from the same two strokes as the pair:
+/// copied, they would drift away from it at the first pixel changed.
 ///
-/// Celui d'en face ne se dessine que par-dessus la paire, jamais seul :
-/// son contour s'arrête là où l'autre commence, et seule la paire remet
-/// ce qui lui manque.
+/// The far one is only drawn over the pair, never alone: its outline
+/// stops where the other begins, and only the pair puts back what it is
+/// missing.
 pub const SCREEN_OVER_THERE: Icon = icon_of(&[OVER_THERE]);
 pub const SCREEN_HERE: Icon = icon_of(&[HERE]);
 
-/// Celui d'en face : le même rectangle que l'autre, mais ouvert aux deux
-/// endroits où celui de devant le recouvre.
+/// The far one: the same rectangle as the other, but open at the two
+/// places where the one in front covers it.
 ///
-/// Ouvert et non entier, parce que deux contours entiers se traversent :
-/// quatre traits se croisaient dans un carré de deux unités de haut, et à
-/// la taille d'un voyant ça fait une tache au lieu de deux ordinateurs.
-/// S'arrêter là où l'autre commence est comment un dessin dit « derrière »
-/// sans avoir besoin d'être rempli, donc sans avoir à connaître la couleur
-/// de ce qu'il y a dessous.
+/// Open and not whole, because two whole outlines cross each other: four
+/// strokes used to cross in a square two units high, and at the size of a
+/// badge that makes a smudge instead of two computers. Stopping where the
+/// other begins is how a drawing says "behind" without needing to be
+/// filled, so without having to know the colour of what lies underneath.
 const OVER_THERE: Stroke = Stroke::SvgPath(
     "M15 11V5.5A1.5 1.5 0 0 0 13.5 4H3.5A1.5 1.5 0 0 0 2 5.5V11.5A1.5 1.5 0 0 0 3.5 13H9",
 );
@@ -123,15 +122,15 @@ pub const FAR_SCREEN: Icon = icon_of(&[
     Stroke::SvgPath("M9 21h6M12 17v4M7 10.5h3l1.5-3 2 6 1.5-3h2"),
 ]);
 
-/// Le lien entre les deux ordinateurs : trois arcs et un point, le dessin
-/// que tout le monde lit comme « réseau » sans qu'on ait à l'écrire.
+/// The link between the two computers: three arcs and a dot, the drawing
+/// everyone reads as "network" without it having to be written.
 ///
-/// Les trois arcs et le point tournent autour d'un seul et même centre, à
-/// douze et trente centièmes, ouverts du même angle et espacés du même
-/// écart : c'est ce qui laisse le même jour de deux unités et quatre
-/// dixièmes partout. Les arcs d'avant avaient chacun leur centre, donc
-/// des jours de un et demi puis trois et demi puis quatre, et le point se
-/// trouvait collé sous le plus petit.
+/// The three arcs and the dot turn around one and the same centre, at
+/// twelve and thirty hundredths, opened by the same angle and spaced by
+/// the same step: that is what leaves the same gap of two units and four
+/// tenths everywhere. The arcs before had a centre each, so gaps of one
+/// and a half, then three and a half, then four, and the dot ended up
+/// stuck under the smallest one.
 pub const LINK: Icon = icon_of(&[
     Stroke::SvgPath("M2.62 8.59A13.5 13.5 0 0 1 21.38 8.59"),
     Stroke::SvgPath("M5.54 11.61A9.3 9.3 0 0 1 18.46 11.61"),
@@ -143,8 +142,8 @@ pub const CHEVRON: Icon = icon_of(&[Stroke::SvgPath("M9 5l7 7-7 7")]);
 
 pub const BACK: Icon = icon_of(&[Stroke::SvgPath("M15 5l-7 7 7 7")]);
 
-/// La marque de ce qui est choisi dans une liste. Plus épaisse que les
-/// autres, comme dans la page : c'est une coche et non un dessin.
+/// The mark of what is chosen in a list. Thicker than the others, as
+/// in the page: it is a tick and not a drawing.
 pub const TICK: Icon = Icon {
     grid: 24.0,
     thickness: 2.2,
@@ -157,11 +156,11 @@ pub const JOURNAL: Icon = icon_of(&[
     Stroke::SvgPath("M9 9h6M9 13h6M9 17h4"),
 ]);
 
-/// Une maison : joindre un ordinateur sans sortir d'ici.
+/// A house: reaching a computer without leaving here.
 ///
-/// Le dessin dit le lieu et non le fil, parce que c'est le lieu qui fait
-/// la différence : la session ne quitte pas la maison, et rien de ce qui
-/// est dehors ne peut la faire tomber.
+/// The drawing says the place and not the wire, because the place is
+/// what makes the difference: the session does not leave the house, and
+/// nothing outside can bring it down.
 pub const LOCAL_NETWORK: Icon = icon_of(&[
     Stroke::SvgPath("M3 10.5 12 3.5l9 7V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"),
     Stroke::SvgPath("M9.5 21v-6h5v6"),
@@ -176,13 +175,13 @@ pub const CROSS: Icon = icon_of(&[Stroke::SvgPath("M18 6 6 18M6 6l12 12")]);
 
 pub const PLUS: Icon = icon_of(&[Stroke::SvgPath("M12 5v14M5 12h14")]);
 
-/// Le chevron du repli « Avancé », ouvert vers le bas.
+/// The chevron of the "Avancé" fold, opening downwards.
 pub const CHEVRON_DOWN: Icon = icon_of(&[Stroke::SvgPath("M5 9l7 7 7-7")]);
 
-/// Le dessin de l'écran vide : un ordinateur, dans son propre repère.
+/// The drawing of the empty screen: a computer, on its own grid.
 ///
-/// Le sien parce qu'il n'est pas carré, et que c'est ce qui lui donne sa
-/// forme d'écran posé sur son pied.
+/// Its own because it is not square, and that is what gives it the shape
+/// of a screen standing on its foot.
 pub const NO_COMPUTER: Icon = Icon {
     grid: 64.0,
     thickness: 2.0,

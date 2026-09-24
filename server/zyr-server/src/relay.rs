@@ -732,8 +732,8 @@ mod tests {
         assert_eq!(&arrived[..], &packet[..]);
         assert_eq!(standing.relay.sessions(), 1);
 
-        // Les deux bouts s'en vont : la session est oubliée, et ce
-        // qu'elle a porté est écrit dans la base.
+        // Both ends go away: the session is forgotten, and what it
+        // carried is written into the database.
         drop(first);
         drop(second);
         let counted = tokio::time::timeout(PATIENCE, async {
@@ -759,9 +759,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_device_the_pass_does_not_name_is_turned_away() {
-        // Le relais ne porte qu'entre les deux empreintes nommées : un
-        // troisième appareil avec un laissez-passer de sa propre session
-        // n'entre pas dans celle des autres.
+        // The relay only carries between the two fingerprints named: a
+        // third device with a pass for its own session does not get into
+        // the session of the others.
         let standing = Standing::open(limits());
         let here = Identity::generate().unwrap();
         let there = Identity::generate().unwrap();
@@ -788,7 +788,7 @@ mod tests {
         .unwrap_err();
         assert!(refused.to_string().contains("deux autres"), "{refused}");
 
-        // Et un laissez-passer signé par un autre serveur ne vaut rien.
+        // And a pass signed by another server is worth nothing.
         let impostor = ServerKey::generate();
         let pass = Pass::new("s2", stranger.fingerprint(), here.fingerprint(), now());
         let forged = Wanted {
@@ -837,9 +837,9 @@ mod tests {
 
     #[test]
     fn a_session_over_its_rate_drops_what_does_not_fit() {
-        // Le plafond de débit est un seau qui se remplit : une rafale
-        // passe jusqu'à la seconde qu'il porte, le reste tombe, et une
-        // seconde plus tard tout est revenu.
+        // The rate ceiling is a bucket that fills up: a burst goes
+        // through up to the second's worth it holds, the rest is
+        // dropped, and a second later it has all come back.
         let start = Instant::now();
         let per_second = 12_000.0;
         let relayed = measured(per_second, start);
@@ -859,16 +859,16 @@ mod tests {
 
     #[test]
     fn each_half_of_the_road_is_named_dated_and_counted() {
-        // Le relais est le seul endroit qui voit les deux moitiés d'une
-        // route relayée. Sans lui, une moitié qui lâche et une session
-        // qui s'arrête s'écrivent exactement pareil sur les deux
-        // ordinateurs, et rien ne dit laquelle des deux lignes a cédé.
+        // The relay is the only place that sees both halves of a
+        // relayed road. Without it, a half that gives out and a session
+        // that stops are written exactly alike on both computers, and
+        // nothing says which of the two legs gave way.
         let start = Instant::now();
         let per_second = 12_000.0;
         let relayed = measured(per_second, start);
         let packet = Bytes::from(vec![0u8; 100]);
 
-        // Le premier paquet d'un côté ne rompt aucun silence.
+        // The first packet from a side breaks no silence.
         assert_eq!(relayed.carry(0, packet.clone(), per_second, start), None);
         assert_eq!(relayed.carry(1, packet.clone(), per_second, start), None);
         assert_eq!(
@@ -882,10 +882,10 @@ mod tests {
             Some(gone)
         );
 
-        // Et à la fin, chacun est nommé avec ce qu'il a envoyé et le
-        // moment où on l'a entendu pour la dernière fois : un côté qui
-        // parle encore et un côté muet depuis dix secondes, c'est
-        // précisément ce qu'aucun des deux ordinateurs ne peut voir.
+        // And at the end, each one is named with what it sent and when
+        // it was last heard: one side still talking and one side mute
+        // for ten seconds is precisely what neither of the two
+        // computers can see.
         let end = start + QUIET + gone + Duration::from_secs(1);
         let seen = relayed.seen(end);
         assert_eq!(seen[0].sent, 300);
@@ -896,11 +896,11 @@ mod tests {
 
     #[test]
     fn what_two_computers_exchange_beside_their_tunnel_is_not_the_session() {
-        // Les sondes de l'aiguilleur passent par le relais : ce sont
-        // elles qui mesurent le chemin relayé et le tiennent vivant.
-        // Elles ne comptent pas comme du trafic de session, et elles
-        // passent encore quand l'image est à son plafond, faute de quoi
-        // le chemin qu'elles mesurent mourrait sous elles.
+        // The junction's probes go through the relay: they are what
+        // measures the relayed road and keeps it alive. They do not
+        // count as session traffic, and they still go through when the
+        // picture is at its ceiling, or the road they measure would die
+        // under them.
         let start = Instant::now();
         let per_second = 12_000.0;
         let relayed = measured(per_second, start);
@@ -915,15 +915,16 @@ mod tests {
         }
         assert_eq!(relayed.carried(), 12_000, "le plafond de la session");
 
-        // La session est à son plafond, et une sonde passe quand même,
-        // sur son seau à elle, sans rien ajouter au compte.
+        // The session is at its ceiling, and a probe goes through all
+        // the same, on a bucket of its own, without adding anything to
+        // the count.
         let upkeep = per_second * UPKEEP_SHARE;
         relayed.carry(0, probe.clone(), per_second, start);
         assert_eq!(relayed.carried(), 12_000, "une sonde n'est pas la session");
         assert_eq!(relayed.flow.lock().unwrap().upkeep, upkeep - 60.0);
 
-        // Et ce seau-là est borné lui aussi : un centième du débit de
-        // la session, cent fois ce qu'il faut aux sondes et rien de plus.
+        // And that bucket has a bound too: a hundredth of the session's
+        // rate, a hundred times what the probes need and nothing more.
         for _ in 0..3 {
             relayed.carry(0, probe.clone(), per_second, start);
         }

@@ -115,8 +115,8 @@ impl Answers for FakeEngine {
         Ok(())
     }
 
-    /// Comme une machine dont le moteur ne peut pas être prié : il lit la
-    /// cadence à son démarrage, donc en changer le fait repartir.
+    /// Like a machine whose engine cannot be asked: it reads the frame
+    /// rate when it starts, so changing it makes it start over.
     fn serve_steady(&self, rate: bool) -> Result<zyr_tunnel::Settled, String> {
         if self.steady.swap(rate, Ordering::Relaxed) == rate {
             return Ok(zyr_tunnel::Settled::Already);
@@ -137,8 +137,8 @@ impl Answers for FakeEngine {
         wanted: Option<WantedScreen>,
     ) -> Result<Option<(u32, u32)>, String> {
         *self.screen.lock().unwrap() = wanted;
-        // Ce qu'une vraie machine répondrait quand personne ne veut de
-        // son écran virtuel : la taille de son écran à elle.
+        // What a real machine would answer when nobody wants its
+        // virtual screen: the size of its own screen.
         Ok(wanted
             .map(|screen| (screen.wide, screen.high))
             .or(Some(HOST_SCREEN)))
@@ -148,9 +148,9 @@ impl Answers for FakeEngine {
         if self.emptied.load(Ordering::Relaxed) {
             return Ok(String::new());
         }
-        // Le tri se fait là où le journal se rassemble : ce qu'on rend
-        // ici dit sous quel tri on l'a rendu, ce qui suffit à voir qu'il
-        // a bien traversé.
+        // The sift is done where the journal is gathered: what is given
+        // back here says which sift it was given back under, which is
+        // enough to see that the sift did get across.
         if !sift.is_empty() {
             return Ok(format!("trié par « {sift} »"));
         }
@@ -178,8 +178,8 @@ impl Answers for FakeEngine {
         Ok(HOST_POINTER)
     }
 
-    /// Ce que ferait une vraie machine : elle filme son écran principal
-    /// et il faut redémarrer son moteur pour en filmer un autre.
+    /// What a real machine would do: it films its main screen, and its
+    /// engine has to be restarted to film another one.
     fn film_this_screen(&self, id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
         let mut filming = self.filming.lock().unwrap();
         if *filming == id {
@@ -189,9 +189,9 @@ impl Answers for FakeEngine {
         Ok(zyr_tunnel::Settled::StartingOver)
     }
 
-    /// Ce que fait une vraie machine : elle prend ce qui vient, et ne
-    /// rend ce qu'elle a que si ce n'est pas déjà ce que l'autre dit
-    /// tenir.
+    /// What a real machine does: it takes what comes, and only gives
+    /// back what it has if that is not already what the other side
+    /// says it holds.
     fn clipboard(
         &self,
         pushing: Option<Clip>,
@@ -208,9 +208,9 @@ impl Answers for FakeEngine {
         }
     }
 
-    /// Ce que fait une vraie machine : elle rend le morceau demandé de
-    /// ce que son presse-papiers nomme, prend celui qu'on lui donne, et
-    /// dit ce qu'elle veut ensuite.
+    /// What a real machine does: it hands over the asked-for piece of
+    /// what its clipboard names, takes the one it is given, and says
+    /// what it wants next.
     fn pieces(
         &self,
         asking: Option<Wanted>,
@@ -234,32 +234,32 @@ impl Answers for FakeEngine {
     }
 }
 
-/// Ce qu'une machine à carte Intel sait faire : pas d'AV1. C'est le cas
-/// pour lequel cette question existe.
+/// What a machine with an Intel graphics card can do: no AV1. That is
+/// the case this question exists for.
 const HOST_CODECS: &str = "H.264 HEVC";
 
-/// Deux écrans allumés sur la machine d'en face, le principal d'abord :
-/// c'est le cas qui a valu la question.
+/// Two screens switched on at the far machine, the main one first: that
+/// is the case that called for the question.
 const HOST_SCREENS: &str = "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M";
 
-/// Ce que quelqu'un avait copié sur la machine d'en face avant que la
-/// session ne s'ouvre.
+/// What someone had copied on the far machine before the session
+/// opened.
 const HOST_CLIPBOARD: &str = "l'adresse du serveur : 10.0.0.4";
 
-/// La forme du curseur d'en face : autre chose que la flèche, sans quoi
-/// le tour ne prouverait rien, une flèche étant aussi ce que rend un mot
-/// que personne ne reconnaît.
+/// The shape of the far pointer: something other than the arrow,
+/// otherwise the round trip would prove nothing, an arrow also being
+/// what a word nobody recognises gives back.
 const HOST_POINTER: zyr_proto::session::Pointer = zyr_proto::session::Pointer::Text;
 
-/// Ce que la machine d'en face répond quand la session lui demande de
-/// garder son écran tel quel.
+/// What the far machine answers when the session asks it to keep its
+/// screen as it is.
 const HOST_SCREEN: (u32, u32) = (1366, 768);
 
-/// Un journal de la taille de ceux que le produit écrit vraiment.
+/// A journal the size of the ones the product really writes.
 ///
-/// Bien au-delà de ce que ce canal acceptait avant lui : c'est le premier
-/// message qui pèse une page et non une ligne, et c'est ce que ce test
-/// existe pour vérifier.
+/// Well beyond what this channel accepted before it: it is the first
+/// message that weighs a page and not a line, and that is what this test
+/// exists to check.
 fn host_journal() -> String {
     let mut page = String::from("ZyrDesk 0.1.0\nOrdinateur       : PC du SAV");
     page.push_str("\n\n--- Le service (service.log) ---");
@@ -478,11 +478,10 @@ async fn the_client_learns_the_host_engine_ports_from_the_host() {
 
 #[tokio::test]
 async fn the_watched_computer_learns_what_it_is_asked_to_serve() {
-    // Le défaut que ceci répare : la machine regardée ouvre son tunnel
-    // au démarrage de son service, bien avant qu'une session existe, et
-    // tenait donc une fenêtre calculée sur un débit nominal quel que
-    // soit le débit réellement demandé. Le premier mot d'une session le
-    // lui dit désormais.
+    // The fault this repairs: the watched machine opens its tunnel when
+    // its service starts, long before a session exists, and so held a
+    // window worked out for a nominal bitrate whatever the bitrate
+    // really asked for. The first word of a session now tells it.
     let bench = Bench::bring_up(42750, 6).await;
     assert_eq!(
         *bench.opening.lock().unwrap(),
@@ -492,10 +491,10 @@ async fn the_watched_computer_learns_what_it_is_asked_to_serve() {
 
 #[tokio::test]
 async fn the_pairing_code_travels_through_the_tunnel() {
-    // C'est ce qui remplace un code affiché sur un écran et tapé sur
-    // l'autre. Le tunnel a déjà reconnu les deux ordinateurs à leur
-    // empreinte avant de s'ouvrir : le code ne prouve rien de plus, et
-    // personne n'a plus à se lever.
+    // This is what replaces a code shown on one screen and typed on
+    // the other. The tunnel has already recognised both computers by
+    // their fingerprint before opening: the code proves nothing more,
+    // and nobody has to get up any more.
     let bench = Bench::bring_up(42850, 8).await;
 
     before_the_end(aside::ask_to_pair(
@@ -515,10 +514,10 @@ async fn the_pairing_code_travels_through_the_tunnel() {
 
 #[tokio::test]
 async fn ctrl_alt_del_travels_on_the_product_s_own_channel() {
-    // Windows garde cette combinaison pour lui aux deux bouts : celui qui
-    // regarde ne la voit jamais, et celui qui est regardé ne peut pas la
-    // recevoir d'un moteur. Elle traverse donc entre les deux moitiés de
-    // ZyrDesk, et aucun moteur n'en sait rien.
+    // Windows keeps this combination for itself at both ends: the one
+    // watching never sees it, and the one being watched cannot receive it
+    // from an engine. So it crosses between the two halves of ZyrDesk,
+    // and no engine knows anything about it.
     let bench = Bench::bring_up(42500, 7).await;
 
     before_the_end(aside::ask_for_the_secure_attention(&bench.connection))
@@ -530,10 +529,10 @@ async fn ctrl_alt_del_travels_on_the_product_s_own_channel() {
 
 #[tokio::test]
 async fn muting_the_host_is_asked_from_the_client() {
-    // C'est celui qui prend la main qui sait si la pièce d'en face doit
-    // se taire, et il n'est pas dedans pour aller le dire. La demande
-    // traverse donc entre les deux moitiés de ZyrDesk, comme le reste de
-    // ce qui n'appartient à aucun moteur.
+    // It is whoever takes control who knows whether the room over there
+    // should go quiet, and they are not in it to go and say so. So the
+    // request crosses between the two halves of ZyrDesk, like the rest
+    // of what belongs to no engine.
     let bench = Bench::bring_up(42950, 10).await;
 
     before_the_end(aside::ask_to_hush(&bench.connection, true))
@@ -541,8 +540,8 @@ async fn muting_the_host_is_asked_from_the_client() {
         .unwrap();
     assert!(bench.hushed.load(Ordering::Relaxed));
 
-    // Et dans l'autre sens, parce qu'une session peut finir sans que la
-    // machine d'en face s'en aperçoive autrement.
+    // And the other way, because a session can end without the far
+    // machine noticing it any other way.
     before_the_end(aside::ask_to_hush(&bench.connection, false))
         .await
         .unwrap();
@@ -551,11 +550,11 @@ async fn muting_the_host_is_asked_from_the_client() {
 
 #[tokio::test]
 async fn locking_the_far_computer_goes_through_the_product_s_own_channel() {
-    // Windows+L ne voyage pas : Windows la traite là où aucun programme
-    // ne la voit, aux deux bouts d'une session, et c'est exactement ce
-    // qui fait qu'un écran de verrouillage vaut quelque chose. La demande
-    // prend donc le chemin de Ctrl+Alt+Suppr, et le service d'en face
-    // lève l'écran depuis le seul endroit d'où son Windows l'accepte.
+    // Windows+L does not travel: Windows handles it where no program sees
+    // it, at both ends of a session, and that is exactly what makes a
+    // lock screen worth something. So the request takes the path of
+    // Ctrl+Alt+Suppr, and the far service puts the screen up from the
+    // only place its Windows accepts it from.
     let bench = Bench::bring_up(42750, 11).await;
 
     before_the_end(aside::ask_to_lock(&bench.connection))
@@ -566,14 +565,14 @@ async fn locking_the_far_computer_goes_through_the_product_s_own_channel() {
 
 #[tokio::test]
 async fn the_still_screen_rate_is_asked_from_the_client() {
-    // Ce que ça coûte est payé là-bas, mais la seule personne capable de
-    // dire si l'image est fluide est celle qui la regarde, et elle n'est
-    // pas devant la machine qu'il faudrait aller régler.
+    // What it costs is paid over there, but the only person able to say
+    // whether the picture is smooth is the one watching it, and they are
+    // not in front of the machine that would need adjusting.
     let bench = Bench::bring_up(42760, 13).await;
 
-    // Et un changement lui coûte un redémarrage de son moteur, qu'elle
-    // dit plutôt que de laisser l'autre bout le découvrir sur un tunnel
-    // cassé : c'est la même réponse que pour l'écran à filmer.
+    // And a change costs it a restart of its engine, which it says
+    // rather than letting the other end find out on a broken tunnel: it
+    // is the same answer as for the screen to film.
     assert_eq!(
         before_the_end(aside::ask_to_serve_steady(&bench.connection, true))
             .await
@@ -582,8 +581,8 @@ async fn the_still_screen_rate_is_asked_from_the_client() {
     );
     assert!(bench.steady.load(Ordering::Relaxed));
 
-    // Redemandée telle quelle, elle ne coûte rien du tout, ce qui est le
-    // cas ordinaire : toute session la demande.
+    // Asked for again as it is, it costs nothing at all, which is the
+    // ordinary case: every session asks for it.
     assert_eq!(
         before_the_end(aside::ask_to_serve_steady(&bench.connection, true))
             .await
@@ -602,8 +601,8 @@ async fn the_still_screen_rate_is_asked_from_the_client() {
 
 #[tokio::test]
 async fn an_engine_that_refuses_the_code_says_so_rather_than_going_quiet() {
-    // Sinon l'ordinateur qui se connecte attendrait sur un moteur qui
-    // n'attend rien, sans rien à montrer.
+    // Otherwise the computer connecting would wait on an engine that
+    // is waiting for nothing, with nothing to show.
     let bench = Bench::bring_up(42900, 9).await;
 
     let refusal = before_the_end(aside::ask_to_pair(&bench.connection, REFUSED_PIN, "PC"))
@@ -614,8 +613,8 @@ async fn an_engine_that_refuses_the_code_says_so_rather_than_going_quiet() {
         "{refusal}"
     );
 
-    // Et la voie tient toujours : un appairage raté n'emporte pas la
-    // session avec lui.
+    // And the way still holds: a failed pairing does not take the
+    // session down with it.
     let ports = before_the_end(aside::ask_the_ports(
         &bench.connection,
         MediaProfile::default(),
@@ -772,10 +771,10 @@ async fn the_counters_follow_what_travels() {
 
 #[tokio::test]
 async fn the_virtual_screen_is_asked_for_at_the_opening_and_given_back_at_the_end() {
-    // L'écran virtuel dort entre les sessions, ce qui est tout l'intérêt :
-    // une machine que personne ne regarde a les écrans que son
-    // propriétaire a branchés et pas un de plus. Il faut donc le demander,
-    // et le rendre.
+    // The virtual screen sleeps between sessions, which is the whole
+    // point: a machine nobody is watching has the screens its owner
+    // plugged in and not one more. So it has to be asked for, and given
+    // back.
     let bench = Bench::bring_up(42770, 15).await;
 
     let asked = WantedScreen {
@@ -786,15 +785,14 @@ async fn the_virtual_screen_is_asked_for_at_the_opening_and_given_back_at_the_en
     let showing = before_the_end(aside::ask_for_a_screen(&bench.connection, Some(asked)))
         .await
         .unwrap();
-    // L'agrandissement voyage avec la taille : un écran à la bonne taille
-    // mais pas au bon agrandissement, c'est le bureau de quelqu'un
-    // d'autre à la bonne résolution.
+    // The magnification travels with the size: a screen at the right size
+    // but not at the right magnification is someone else's desktop at the
+    // right resolution.
     assert_eq!(*bench.screen.lock().unwrap(), Some(asked));
     assert_eq!(showing, Some((3840, 2160)));
 
-    // Et ce qui est demandé voyage à chaque fois : c'est au réveil que le
-    // pilote lit les tailles qu'on lui a écrites, il n'y a pas de
-    // deuxième chance.
+    // And what is asked for travels every time: it is on waking that the
+    // driver reads the sizes written for it, there is no second chance.
     let asked = WantedScreen {
         wide: 2560,
         high: 1440,
@@ -805,10 +803,10 @@ async fn the_virtual_screen_is_asked_for_at_the_opening_and_given_back_at_the_en
         .unwrap();
     assert_eq!(*bench.screen.lock().unwrap(), Some(asked));
 
-    // Et sans rien de demandé, la machine d'en face répond la sienne :
-    // c'est ce qui rend « garder la résolution de l'hôte » possible,
-    // puisque rien de ce côté-ci ne peut deviner ce qui est branché
-    // là-bas.
+    // And with nothing asked for, the far machine answers with its
+    // own: that is what makes "keep the host's resolution" possible,
+    // since nothing on this side can guess what is plugged in over
+    // there.
     let showing = before_the_end(aside::ask_for_a_screen(&bench.connection, None))
         .await
         .unwrap();
@@ -818,24 +816,24 @@ async fn the_virtual_screen_is_asked_for_at_the_opening_and_given_back_at_the_en
 
 #[tokio::test]
 async fn the_far_machine_s_journal_arrives_whole() {
-    // Lire le journal de l'ordinateur distant sans marcher jusqu'à lui,
-    // c'est la panne diagnostiquée sur les deux journaux à la fois. Ce
-    // qui arrive doit donc être la page entière, lignes comprises : une
-    // page tronquée en silence se lit comme une page complète.
+    // Reading the remote computer's journal without walking over to it
+    // means the fault is diagnosed on both journals at once. So what
+    // arrives must be the whole page, lines included: a page cut short
+    // in silence reads like a complete page.
     let bench = Bench::bring_up(42780, 16).await;
 
     let page = before_the_end(aside::ask_for_the_journal(&bench.connection, ""))
         .await
         .unwrap();
     assert_eq!(page, host_journal());
-    // Et elle pèse bien plus qu'une question : c'est tout l'intérêt de
-    // deux plafonds séparés sur ce canal.
+    // And it weighs far more than a question: that is the whole point
+    // of two separate ceilings on this channel.
     assert!(page.len() > 20_000, "{} octets", page.len());
 
-    // L'autre moitié, et elle vient du même besoin : on vide les deux
-    // journaux, on refait ce qui ne marche pas, on lit les deux. Vider
-    // seulement celui qu'on a sous la main laisse la marche jusqu'à
-    // l'autre machine exactement là où elle était.
+    // The other half, and it comes from the same need: empty both
+    // journals, do again what does not work, read both. Emptying only
+    // the one at hand leaves the walk to the other machine exactly
+    // where it was.
     before_the_end(aside::ask_to_empty_the_journal(&bench.connection))
         .await
         .unwrap();
@@ -846,8 +844,9 @@ async fn the_far_machine_s_journal_arrives_whole() {
         .unwrap();
     assert!(page.is_empty(), "{page}");
 
-    // Et le tri traverse avec la question : il se fait là-bas, avant que
-    // la page ne soit coupée, seul ordre où un tri vaut quelque chose.
+    // And the sift crosses with the question: it is done over there,
+    // before the page is cut, the only order in which a sift is worth
+    // anything.
     bench.emptied.store(false, Ordering::Relaxed);
     let sifted = before_the_end(aside::ask_for_the_journal(
         &bench.connection,
@@ -857,17 +856,17 @@ async fn the_far_machine_s_journal_arrives_whole() {
     .unwrap();
     assert_eq!(sifted, "trié par « tag:clipboard »");
 
-    // Et ce que cette machine sait encoder, qui décide de ce que le menu
-    // d'en face a le droit d'offrir. Elle est la seule à le savoir :
-    // c'est elle qui encode.
+    // And what this machine can encode, which decides what the menu over
+    // there is allowed to offer. It is the only one that knows: it is
+    // the one that encodes.
     let named = before_the_end(aside::ask_what_it_can_encode(&bench.connection))
         .await
         .unwrap();
     assert_eq!(named, HOST_CODECS);
 
-    // Et les écrans de cette machine, avec celui qu'on veut regarder. Le
-    // cas de Victor : deux écrans allumés en face, et aucun moyen jusque-là
-    // de demander le second.
+    // And this machine's screens, with the one to watch. Victor's case: two
+    // screens switched on over there, and until then no way to ask for the
+    // second one.
     let listed = before_the_end(aside::ask_what_screens_it_has(&bench.connection))
         .await
         .unwrap();
@@ -876,10 +875,10 @@ async fn the_far_machine_s_journal_arrives_whole() {
     assert_eq!(read.len(), 2);
     assert!(read[0].main);
 
-    // Et la forme que son curseur a en ce moment, qui est ce que le
-    // curseur dessiné ici va prendre. Un aller-retour de plus, sur un
-    // canal déjà ouvert, pour un mot : c'est demandé plusieurs fois par
-    // seconde tant qu'une main bouge.
+    // And the shape its pointer has right now, which is what the
+    // pointer drawn here is about to take. One more round trip, on a
+    // channel already open, for one word: it is asked several times a
+    // second while a hand is moving.
     assert_eq!(
         before_the_end(aside::ask_for_the_pointer(&bench.connection))
             .await
@@ -887,16 +886,16 @@ async fn the_far_machine_s_journal_arrives_whole() {
         HOST_POINTER
     );
 
-    // L'écran principal est celui qu'elle filme déjà : toute session le
-    // demande, et presque aucune ne change quoi que ce soit.
+    // The main screen is the one it already films: every session asks
+    // for it, and almost none changes anything.
     assert_eq!(
         before_the_end(aside::ask_to_film_this_screen(&bench.connection, None))
             .await
             .unwrap(),
         zyr_tunnel::Settled::Already
     );
-    // L'autre lui coûte un redémarrage de son moteur, et elle le dit
-    // plutôt que de laisser l'autre bout le découvrir sur un tunnel cassé.
+    // The other one costs it a restart of its engine, and it says so
+    // rather than letting the other end find out on a broken tunnel.
     assert_eq!(
         before_the_end(aside::ask_to_film_this_screen(
             &bench.connection,
@@ -911,9 +910,9 @@ async fn the_far_machine_s_journal_arrives_whole() {
 
 #[tokio::test]
 async fn what_the_far_machine_reaches_arrives_whole() {
-    // Le pendant du journal, sur le même canal et pour la même raison :
-    // lu depuis ici plutôt qu'en marchant jusqu'à l'autre machine, et
-    // entier, une mesure par seconde comprise.
+    // The counterpart of the journal, on the same channel and for the
+    // same reason: read from here rather than by walking over to the
+    // other machine, and whole, with its one measurement per second.
     let bench = Bench::bring_up(42790, 17).await;
 
     let page = before_the_end(aside::ask_for_the_reach_log(&bench.connection))
@@ -925,13 +924,13 @@ async fn what_the_far_machine_reaches_arrives_whole() {
 
 #[tokio::test]
 async fn the_clipboard_crosses_the_tunnel_both_ways() {
-    // Un presse-papiers partagé n'a pas de sens dans un seul sens : ce
-    // qu'on copie là-bas doit se coller ici, et ce qu'on copie ici doit
-    // se coller là-bas. Un seul message fait les deux.
+    // A shared clipboard makes no sense one way only: what is copied
+    // over there must paste here, and what is copied here must paste
+    // over there. A single message does both.
     let bench = Bench::bring_up(42840, 20).await;
 
-    // Ce que quelqu'un avait copié en face, remis parce que celui qui
-    // demande ne tient rien.
+    // What someone had copied over there, handed over because the one
+    // asking holds nothing.
     let arrived = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
         None,
@@ -942,9 +941,9 @@ async fn the_clipboard_crosses_the_tunnel_both_ways() {
     .expect("ce qui était copié en face");
     assert_eq!(arrived.said(), Some(HOST_CLIPBOARD));
 
-    // Et redemandé en disant qu'on le tient déjà : rien ne revient.
-    // C'est ce qui fait tenir la fonction, une question étant posée
-    // plusieurs fois par seconde pendant toute une session.
+    // And asked again while saying it is already held: nothing
+    // comes back. That is what keeps the feature standing, with a
+    // question asked several times a second for a whole session.
     let again = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
         None,
@@ -954,10 +953,10 @@ async fn the_clipboard_crosses_the_tunnel_both_ways() {
     .unwrap();
     assert_eq!(again, None);
 
-    // L'autre sens : une image copiée ici, plus lourde qu'une ligne,
-    // part par la question elle-même. C'est le seul message de ce canal
-    // qui pèse une page en partant, et c'est ce que la lecture en deux
-    // temps existe pour laisser passer.
+    // The other way: a picture copied here, heavier than a line, leaves
+    // with the question itself. It is the only message on this channel
+    // that weighs a page on the way out, and it is what the two-step
+    // reading exists to let through.
     let image = Clip::picture(vec![0x89; 300_000]);
     let nothing = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
@@ -972,8 +971,8 @@ async fn the_clipboard_crosses_the_tunnel_both_ways() {
     );
     assert_eq!(bench.clipboard.lock().unwrap().as_ref(), Some(&image));
 
-    // Et ce qui est copié en face après coup revient, image comprise :
-    // les deux sens portent la même chose.
+    // And what is copied over there afterwards comes back, picture
+    // included: both ways carry the same thing.
     let over_there = Clip::picture(vec![0x50; 200_000]);
     *bench.clipboard.lock().unwrap() = Some(over_there.clone());
     let received = before_the_end(aside::ask_about_the_clipboard(
@@ -988,10 +987,10 @@ async fn the_clipboard_crosses_the_tunnel_both_ways() {
 
 #[tokio::test]
 async fn a_question_too_long_that_is_not_the_clipboard_is_refused() {
-    // Le plafond d'une page n'est levé que pour la question qui le
-    // nomme : sans ça, n'importe quel verbe inconnu pourrait faire
-    // retenir des mégaoctets à un ordinateur qui n'a encore rien
-    // compris de ce qu'on lui dit.
+    // The one-page ceiling is only lifted for the question that
+    // names it: without that, any unknown verb could make a
+    // computer hold on to megabytes while it has still understood
+    // nothing of what it is being told.
     let bench = Bench::bring_up(42850, 21).await;
 
     let (mut sending, mut receiving) = bench.connection.open_stream().await.unwrap();
@@ -1002,8 +1001,9 @@ async fn a_question_too_long_that_is_not_the_clipboard_is_refused() {
     sending.write_all(too_long.as_bytes()).await.unwrap();
     sending.shutdown().await.unwrap();
 
-    // Le canal se ferme sans rien répondre, ce qui est exactement ce
-    // qu'on veut : rien n'a été retenu, rien n'a été fait.
+    // The channel closes without answering anything, which is
+    // exactly what is wanted: nothing was held on to, nothing was
+    // done.
     let heard = before_the_end(receiving.read_to_end(64 * 1024)).await;
     assert!(
         heard.as_ref().map(Vec::is_empty).unwrap_or(true),
@@ -1014,15 +1014,15 @@ async fn a_question_too_long_that_is_not_the_clipboard_is_refused() {
 
 #[tokio::test]
 async fn the_pieces_of_a_file_cross_both_ways() {
-    // Ce qu'un presse-papiers porte d'un fichier est son nom ; les
-    // octets suivent, un morceau à la fois, et dans le sens où on les
-    // veut. Un seul message porte les deux, comme pour le presse-papiers
-    // lui-même, et pour la même raison : seul celui qui a ouvert la voie
-    // peut demander quoi que ce soit.
+    // What a clipboard carries of a file is its name; the bytes follow,
+    // one piece at a time, and in the direction they are wanted. A
+    // single message carries both, as for the clipboard itself, and for
+    // the same reason: only the one who opened the way can ask for
+    // anything.
     let bench = Bench::bring_up(42860, 22).await;
 
-    // Le sens où l'on tire : la machine d'en face a copié, celle-ci
-    // colle, donc elle demande.
+    // The pulling way: the far machine copied, this one pastes, so
+    // it asks.
     let file: Vec<u8> = (0..200_000u32).map(|at| (at % 251) as u8).collect();
     *bench.has.lock().unwrap() = vec![b"court".to_vec(), file.clone()];
 
@@ -1047,10 +1047,10 @@ async fn the_pieces_of_a_file_cross_both_ways() {
     }
     assert_eq!(gathered, file, "le fichier remonté n'est pas le fichier");
 
-    // Et le sens où l'on pousse : c'est cette machine-ci qui a copié, et
-    // celle d'en face qui colle, donc elle dit ce qu'elle veut et on le
-    // lui donne. La réponse à un morceau donné dit le morceau suivant,
-    // ce qui fait un aller-retour par morceau et pas deux.
+    // And the pushing way: it is this machine that copied, and the far
+    // one that pastes, so it says what it wants and is given it. The
+    // answer to a piece given names the next piece, which makes one
+    // round trip per piece and not two.
     let asked_for = Wanted {
         rank: 0,
         from: 4096,

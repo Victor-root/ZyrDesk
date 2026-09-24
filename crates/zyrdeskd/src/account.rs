@@ -1246,7 +1246,8 @@ mod tests {
             seen_from_outside(seen, TUNNEL_PORT),
             vec![seen, "82.64.12.7:47000".parse().unwrap()]
         );
-        // Le port n'a pas bougé en sortant : une seule adresse.
+        // The port did not move on the way out: a single
+        // address.
         let kept: SocketAddr = "82.64.12.7:47000".parse().unwrap();
         assert_eq!(seen_from_outside(kept, TUNNEL_PORT), vec![kept]);
     }
@@ -1267,14 +1268,14 @@ mod tests {
         ));
         let hosting = Hosting::new();
         let remembered = Remembered::at(folder.join("preferences.conf"));
-        // Voulu et en train de démarrer : pas encore prêt, et on le dit.
+        // Wanted and starting up: not ready yet, and that is said.
         assert_eq!(access_now(&hosting, &remembered), Access::Starting);
         hosting.open();
         assert_eq!(access_now(&hosting, &remembered), Access::Ready);
         hosting.held_by(Holdup::EngineMissing);
         assert_eq!(access_now(&hosting, &remembered), Access::EngineMissing);
-        // Coupé exprès, quel que soit l'état du moteur : c'est ce qui se
-        // lit en gris chez les autres.
+        // Switched off on purpose, whatever the state of the engine:
+        // that is what reads as grey on the other computers.
         remembered.set_remote_access(false).unwrap();
         hosting.open();
         assert_eq!(access_now(&hosting, &remembered), Access::Off);
@@ -1297,10 +1298,10 @@ mod tests {
             fingerprint(2),
             moment.saturating_sub(CLOCK_SKEW.as_secs() + 1),
         );
-        // Le premier est encore admis ; le second est expiré depuis plus
-        // longtemps que deux horloges honnêtes ne divergent.
+        // The first is still admitted; the second expired longer ago
+        // than two honest clocks drift apart.
         assert_eq!(account.admitted(), vec![fingerprint(1)]);
-        // Le même ordinateur présenté deux fois n'entre qu'une fois.
+        // The same computer presented twice only gets in once.
         account.admit(fingerprint(1), moment + 120);
         assert_eq!(account.admitted(), vec![fingerprint(1)]);
         let _ = std::fs::remove_dir_all(&folder);
@@ -1485,9 +1486,9 @@ login_attempts_per_minute = 1000
     async fn two_computers_of_one_account_see_each_other_and_are_presented() {
         let server = Server::start().await;
 
-        // Un serveur que personne ne garantit est refusé tant que sa clé
-        // n'est pas épinglée : c'est ce que la fenêtre montre pour
-        // demander la comparaison.
+        // A server nobody vouches for is refused as long as its key is
+        // not pinned: that is what the window shows to ask for the
+        // comparison.
         let pc = Computer::new("pc");
         let refused = pc
             .account
@@ -1528,8 +1529,8 @@ login_attempts_per_minute = 1000
             Some(Registration::Open)
         );
 
-        // Le PC accepte l'accès distant ; le serveur l'apprend au tour
-        // suivant, et le portable le voit prêt en arrivant.
+        // The PC accepts remote access; the server learns it at the
+        // next turn, and the laptop sees it ready as it arrives.
         pc.hosting.open();
         let laptop = Computer::new("portable");
         laptop.attach(&server, "Portable", false).await;
@@ -1554,22 +1555,23 @@ login_attempts_per_minute = 1000
             .id
             .clone();
 
-        // Le PC est prêt et le serveur est là : c'est par une rencontre
-        // qu'on ira le joindre, même si le réseau local le montre déjà.
+        // The PC is ready and the server is there: it will be reached
+        // through a meeting, even if the local network already shows
+        // it.
         assert_eq!(
             laptop
                 .account
                 .met_through_the_server(pc.identity.fingerprint()),
             Some(pc_device.clone())
         );
-        // Un ordinateur qui n'est d'aucun compte se joint à son adresse
-        // et pas autrement.
+        // A computer of no account is reached at its address and no
+        // other way.
         assert_eq!(laptop.account.met_through_the_server(fingerprint(9)), None);
 
-        // Le rendez-vous : le portable est présenté au PC, qui le laisse
-        // entrer sur la foi du ticket et dit où il répond, d'abord ses
-        // propres adresses, puis celle que le miroir du serveur lui
-        // renvoie, celle de sa prise vue de là.
+        // The rendezvous: the laptop is presented to the PC, which lets
+        // it in on the strength of the ticket and says where it answers,
+        // first its own addresses, then the one the server's mirror
+        // sends back to it, that of its socket as seen from there.
         let mut met = laptop.account.rendezvous(&pc_device).await.unwrap();
         assert_eq!(met.peer, pc.identity.fingerprint());
         assert_eq!(met.name, "PC de Victor");
@@ -1586,8 +1588,8 @@ login_attempts_per_minute = 1000
             .await
             .expect("le PC n'a jamais dit où il répond")
             .unwrap();
-        // Sur le port de sa porte, qui est celui du produit en usage
-        // ordinaire et celui que le système a donné dans cet essai.
+        // On the port of its door, which is the product's in
+        // ordinary use and the one the system gave in this test.
         let port = pc.junction.local_address().unwrap().port();
         assert_eq!(
             named,
@@ -1606,19 +1608,19 @@ login_attempts_per_minute = 1000
             account.admitted() == vec![laptop.identity.fingerprint()]
         })
         .await;
-        // Et il ouvre sa branche de relais en parallèle, sans que rien
-        // ne l'attende : le serveur lui a donné son laissez-passer avec
-        // le ticket, et le relais l'a pris.
+        // And it opens its branch of relay in parallel, with nothing
+        // waiting on it: the server gave it its pass with the ticket,
+        // and the relay took it.
         assert!(met.relay.is_some(), "le portable n'a pas eu de relais");
         pc.until_it_says("took the pass").await;
         assert_eq!(server.running.sessions_relayed(), 1);
         laptop.account.ended(&met.session);
 
-        // Et sa branche se referme avec la session, au lieu de garder sa
-        // place sur le relais tant que le service tourne : le relais en
-        // porte un nombre fini, et le 4 septembre il refusait tout le
-        // monde à la dixième, chacune d'elles une session finie depuis
-        // longtemps.
+        // And its branch closes with the session, instead of keeping its
+        // place on the relay for as long as the service runs: the relay
+        // carries a finite number of them, and on 4 September it was
+        // refusing everyone at the tenth, each of them a session long
+        // since over.
         let freed = async {
             while server.running.sessions_relayed() > 0 {
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1628,8 +1630,8 @@ login_attempts_per_minute = 1000
             .await
             .expect("la branche du PC tient sa place sur le relais après la session");
 
-        // Un appareil qui n'est pas prêt est refusé ici même, avec la
-        // raison, sans déranger le serveur.
+        // A device that is not ready is refused right here, with the
+        // reason, without bothering the server.
         pc.hosting.held_by(Holdup::EngineMissing);
         laptop
             .until("le portable ne voit jamais le PC sans moteur", |account| {
@@ -1641,9 +1643,8 @@ login_attempts_per_minute = 1000
             .await;
         let refused = laptop.account.rendezvous(&pc_device).await.unwrap_err();
         assert!(refused.contains("moteur hôte absent"), "{refused}");
-        // Et il ne sert plus à rien de passer par le serveur pour le
-        // joindre : ce qu'on sait de lui par ailleurs est tout ce qu'il
-        // reste.
+        // And there is no longer any point going through the server to
+        // reach it: what is known of it otherwise is all that is left.
         assert_eq!(
             laptop
                 .account
@@ -1651,7 +1652,7 @@ login_attempts_per_minute = 1000
             None
         );
 
-        // Renommé depuis le portable, le PC se voit sous son nouveau nom.
+        // Renamed from the laptop, the PC sees itself under its new name.
         laptop
             .account
             .rename(&pc_device, "PC du salon")
@@ -1665,7 +1666,7 @@ login_attempts_per_minute = 1000
         })
         .await;
 
-        // Révoqué depuis le PC, le portable oublie son lien tout seul.
+        // Revoked from the PC, the laptop forgets its link by itself.
         let laptop_device = laptop.account.standing().unwrap().device;
         pc.account.revoke(&laptop_device).await.unwrap();
         laptop
@@ -1680,8 +1681,8 @@ login_attempts_per_minute = 1000
         );
         assert!(laptop.account.devices().is_empty());
 
-        // Et le PC se détache lui-même : le fichier part, le serveur ne
-        // le compte plus.
+        // And the PC detaches itself: the file goes, and the server no
+        // longer counts it.
         pc.account.detach().await.unwrap();
         assert!(pc.account.standing().is_none());
         assert!(

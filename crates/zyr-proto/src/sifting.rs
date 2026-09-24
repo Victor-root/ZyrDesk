@@ -279,20 +279,21 @@ fn unquoted(said: &str) -> &str {
 mod tests {
     use super::*;
 
-    /// Une ligne comme le journal les écrit, dans la voix ordinaire.
+    /// A line the way the journal writes them, in the ordinary
+    /// voice.
     fn a_line(tag: &str, message: &str) -> String {
         format!("2026-09-11 18:55:03 I [{tag}] {message}")
     }
 
-    /// La même, dans celle que seule une chasse veut.
+    /// The same, in the one only a hunt wants.
     fn a_debug_line(tag: &str, message: &str) -> String {
         format!("2026-09-11 18:55:03 D [{tag}] {message}")
     }
 
     #[test]
     fn an_empty_box_sifts_nothing() {
-        // C'est ce qui fait que le bouton Copier continue de tout copier
-        // tant qu'on ne lui a rien demandé.
+        // This is what keeps the "Copier" button copying everything for
+        // as long as nothing has been asked of it.
         let sift = Sifting::of("   ");
         assert!(sift.takes_everything());
         assert!(sift.keeps(&a_line("clipboard", "peu importe"), "service"));
@@ -300,9 +301,9 @@ mod tests {
 
     #[test]
     fn a_tag_asked_for_leaves_out_everything_else() {
-        // Le mot seul et la forme longue disent la même chose : le
-        // second est ce qui a été tapé pendant des semaines, et rien de
-        // ce qui a été appris ne doit cesser de marcher.
+        // The bare word and the long form say the same thing: the
+        // second is what was typed for weeks, and nothing that was
+        // learnt must stop working.
         for said in ["clipboard", "tag:clipboard"] {
             let sift = Sifting::of(said);
             assert!(!sift.takes_everything(), "{said}");
@@ -322,9 +323,9 @@ mod tests {
 
     #[test]
     fn several_tags_keep_either_one() {
-        // Une ligne ne porte qu'une étiquette : les exiger toutes ne
-        // garderait jamais rien, ce qui est le contraire de ce que veut
-        // celui qui en tape deux.
+        // A line carries only one tag: requiring them all would never
+        // keep anything, which is the opposite of what someone typing
+        // two of them wants.
         let sift = Sifting::of("clipboard files");
         assert!(sift.keeps(
             &a_line("clipboard", "ce que tient cet ordinateur"),
@@ -336,9 +337,9 @@ mod tests {
 
     #[test]
     fn a_tag_and_an_exclusion_add_up() {
-        // Les étiquettes entre elles font « l'une ou l'autre », tout le
-        // reste fait « et » : c'est ce qui rend « le sujet, sans le
-        // bruit connu » possible en deux mots.
+        // Tags among themselves make "one or the other", everything
+        // else makes "and": that is what makes "the subject, without
+        // the known noise" possible in two words.
         let sift = Sifting::of("clipboard files -level:debug");
         assert!(sift.keeps(&a_line("files", "1 fichier arrive"), "service"));
         assert!(!sift.keeps(&a_debug_line("files", "morceau 12 demandé"), "service"));
@@ -347,24 +348,23 @@ mod tests {
 
     #[test]
     fn case_does_not_matter() {
-        // Personne ne se souvient de la casse d'une étiquette lue une
-        // fois.
+        // Nobody remembers the case of a tag they read once.
         let sift = Sifting::of("TAG:ClipBoard");
         assert!(sift.keeps(&a_line("clipboard", "quoi que ce soit"), "service"));
     }
 
     #[test]
     fn the_file_name_counts_as_a_tag() {
-        // Les moteurs écrivent leur journal à leur façon et ne portent
-        // aucune étiquette : sans ça, le leur ne se demanderait pas du
-        // tout. Et demander un fichier entier est une chose assez
-        // courante pour ne pas mériter un second mot.
+        // The engines write their journal their own way and carry no
+        // tag: without this, theirs could not be asked for at all. And
+        // asking for a whole file is a common enough thing not to
+        // deserve a second word.
         let sift = Sifting::of("tag:session");
         let engine = "00:00:03 - SDL Info (0): IDR frame request sent";
         assert!(sift.keeps(engine, "session.log"));
         assert!(!sift.keeps(engine, "service.log"));
-        // Et une ligne étiquetée reste dans son fichier : les deux noms
-        // vont ensemble plutôt que l'un à la place de l'autre.
+        // And a tagged line stays in its file: the two names go
+        // together rather than one in place of the other.
         let ours = a_line("clipboard", "ce que tient cet ordinateur");
         assert!(sift.keeps(&ours, "session.log"));
         assert!(Sifting::of("tag:clipboard").keeps(&ours, "service.log"));
@@ -372,8 +372,8 @@ mod tests {
 
     #[test]
     fn a_word_in_the_line_is_asked_for_in_quotes_or_by_its_name() {
-        // Les deux formes de la recherche de texte, maintenant qu'un mot
-        // nu nomme une partie du produit.
+        // The two forms of the text search, now that a bare word names a
+        // part of the product.
         for sift in [
             Sifting::of("\"DataObject\""),
             Sifting::of("message:DataObject"),
@@ -385,8 +385,8 @@ mod tests {
 
     #[test]
     fn a_tag_and_an_excluded_word_add_up() {
-        // C'est ce qui rend une paire comme celle-ci utile : le nom pour
-        // le sujet, le moins pour le bruit connu.
+        // This is what makes a pair like this one useful: the name for
+        // the subject, the minus for the known noise.
         let sift = Sifting::of("clipboard -\"DataObject\"");
         assert!(sift.keeps(&a_line("clipboard", "15997 octets de texte"), "service"));
         assert!(!sift.keeps(&a_line("clipboard", "il tient DataObject"), "service"));
@@ -402,16 +402,16 @@ mod tests {
 
     #[test]
     fn a_colon_inside_a_word_stays_in_the_word() {
-        // Ce produit écrit des adresses et des heures partout : les lire
-        // comme une clé inconnue ne rendrait jamais rien.
+        // This product writes addresses and times everywhere: reading
+        // them as an unknown key would never give anything back.
         let sift = Sifting::of("192.168.1.5:57577");
         assert!(sift.keeps(&a_line("ways", "card 192.168.1.5:57577 sondée"), "service"));
     }
 
     #[test]
     fn the_tag_is_read_where_the_journal_writes_it() {
-        // Et nulle part ailleurs : un crochet dans le message est un
-        // crochet dans le message.
+        // And nowhere else: a bracket in the message is a bracket in
+        // the message.
         let written = a_line("clipboard", "[pas une étiquette] la suite");
         assert_eq!(about(&written), Some(("info", "clipboard")));
         assert_eq!(about("00:00:03 - SDL Info (0): [hevc @ 0x1] rien"), None);
@@ -419,20 +419,20 @@ mod tests {
 
     #[test]
     fn a_voice_is_asked_for_by_its_name_or_its_letter() {
-        // Ce qui n'est là que pour une chasse noie tout le reste : on
-        // doit pouvoir ne garder que ça, ou tout sauf ça.
+        // What is only there for a hunt drowns everything else: it
+        // must be possible to keep only that, or everything but that.
         let debug = a_debug_line("way", "pas un paquet depuis 1098 ms");
         let info = a_line("way", "voie 1 ouverte vers PC-SAV");
 
         assert!(Sifting::of("level:debug").keeps(&debug, "service.log"));
         assert!(!Sifting::of("level:debug").keeps(&info, "service.log"));
         assert!(Sifting::of("-level:debug").keeps(&info, "service.log"));
-        // La lettre suffit, et la casse ne compte pas.
+        // The letter is enough, and case does not count.
         assert!(Sifting::of("level:D").keeps(&debug, "service.log"));
 
-        // Et ce que les moteurs écrivent n'est ni l'un ni l'autre :
-        // demander une voix ne doit pas rendre en douce une troisième
-        // sorte de ligne.
+        // And what the engines write is neither one nor the other:
+        // asking for a voice must not quietly hand back a third kind
+        // of line.
         let engine = "00:00:03 - SDL Info (0): IDR frame request sent";
         assert!(!Sifting::of("level:debug").keeps(engine, "session.log"));
         assert!(!Sifting::of("level:info").keeps(engine, "session.log"));
@@ -441,8 +441,9 @@ mod tests {
 
     #[test]
     fn what_was_written_reads_back_as_it_was() {
-        // La page dira sous quel tri elle a été prise : une page de six
-        // lignes qui ne le dit pas se lit comme un produit muet.
+        // The page will say which sift it was taken through: a page of
+        // six lines that does not say so reads as a product that is
+        // mute.
         let sift = Sifting::of("  tag:clipboard -DataObject  ");
         assert_eq!(sift.said(), "tag:clipboard -DataObject");
         assert_eq!(sift.to_string(), "tag:clipboard -DataObject");
@@ -450,10 +451,10 @@ mod tests {
 
     #[test]
     fn the_tag_is_found_where_the_journal_really_wrote_it() {
-        // Les deux moitiés se tiennent l'une l'autre : si le journal
-        // change la forme de sa date, l'étiquette cesse d'être là où on
-        // la cherche, et plus rien ne se trie. Écrit pour de vrai et
-        // relu, plutôt que recopié de tête ici.
+        // The two halves hold each other up: if the journal changes the
+        // shape of its date, the tag stops being where it is looked
+        // for, and nothing sifts any more. Written for real and read
+        // back, rather than copied out from memory here.
         let folder = std::env::temp_dir().join(format!(
             "zyrdesk-tamis-{}",
             crate::random::alphanumeric_string(8)

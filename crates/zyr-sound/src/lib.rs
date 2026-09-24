@@ -114,8 +114,8 @@ mod tests {
 
     #[test]
     fn a_refusal_reads_in_plain_words() {
-        // Ce texte finit dans le journal et parfois sous les yeux d'une
-        // personne : il doit se lire, pas se décoder.
+        // This text ends up in the journal and sometimes in front of a
+        // person: it must be read, not decoded.
         let trouble = Trouble::of("le mélangeur n'a pas répondu");
         assert_eq!(trouble.to_string(), "le mélangeur n'a pas répondu");
     }
@@ -123,8 +123,8 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn outside_windows_the_answer_is_honest() {
-        // Ni un faux « c'est coupé » ni un faux « c'est actif » : les
-        // deux mentiraient à qui affiche un interrupteur.
+        // Neither a false "it is muted" nor a false "it is on": both
+        // would lie to whoever shows a switch.
         assert!(muted(1).is_err());
         assert!(mute(1, true).is_err());
         assert!(speakers_muted().is_err());
@@ -134,10 +134,11 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn the_sound_card_is_assumed_present_for_want_of_asking() {
-        // La seule des cinq questions qui répond au lieu de refuser, et
-        // elle répond oui : ce qui la lit décide d'empêcher un lecteur
-        // de chercher une carte son, et un faux « il n'y en a pas »
-        // retirerait le son d'une machine qui en a une.
+        // The only one of the five questions that answers instead of
+        // refusing, and it answers yes: what reads it decides on
+        // keeping a player from looking for a sound card, and a false
+        // "there is none" would take the sound away from a machine that
+        // has one.
         assert!(anything_to_play_through());
     }
 }

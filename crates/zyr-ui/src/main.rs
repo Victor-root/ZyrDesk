@@ -31,38 +31,38 @@ mod folders;
 mod icon;
 mod journal;
 
-// Le logo du bouton flottant, dessiné par ce programme : il n'existe
-// que sous Windows, comme la fenêtre qui le porte.
+// The floating button's logo, drawn by this program: it only exists
+// on Windows, like the window that carries it.
 #[cfg(windows)]
 mod logo;
 
-// Ce qui dessine l'interface sans navigateur. Windows seulement, comme
-// les fenêtres qu'elle habille.
+// What draws the interface without a browser. Windows only, like the
+// windows it dresses.
 #[cfg(windows)]
 mod paint;
 
-// Les icônes que ce programme dessine, partagées par tous ses écrans.
+// The icons this program draws, shared by all of its screens.
 #[cfg(windows)]
 mod icons;
 
-// Le battement de ce qui bouge, réglé sur le compositeur de Windows.
+// The beat of whatever moves, tuned to the Windows compositor.
 #[cfg(windows)]
 mod pulse;
 
-// Le menu du bouton flottant, dessiné par ce programme.
+// The floating button's menu, drawn by this program.
 #[cfg(windows)]
 mod menu;
 
-// La fenêtre d'accueil, dessinée par ce programme.
+// The home window, drawn by this program.
 #[cfg(windows)]
 mod home;
 
-// La fenêtre elle-même, ouverte par ce programme.
+// The window itself, opened by this program.
 mod main_window;
 
-/// Hors de Windows il n'y a pas de fenêtre d'accueil, et pas de session
-/// non plus : ce qu'une session raconte pendant qu'elle s'ouvre tombe
-/// alors dans le vide, comme tout le reste de ce qui dessine.
+/// Outside Windows there is no home window, and no session either: what
+/// a session says while it opens then falls into the void, like
+/// everything else that draws.
 #[cfg(not(windows))]
 mod home {
     use crate::app::App;
@@ -83,14 +83,14 @@ mod settings;
 mod shortcuts;
 mod startup;
 mod theme;
-// Ce que le bouton flottant montre des fichiers qui arrivent : la vitre
-// de la marque se remplit comme une barre de chargement. Ce qui se lit se
-// compile partout ; ce qui se dessine est celui du bouton.
+// What the floating button shows of the files arriving: the pane of the
+// mark fills like a loading bar. The reading compiles everywhere; the
+// drawing is the button's.
 mod transfer;
 mod tray;
-// Les deux voyants d'une session, dans le coin de l'image opposé au
-// bouton flottant. Ce qui décide se compile partout ; les pastilles sont
-// une fenêtre, donc de Windows.
+// The two badges of a session, in the corner of the picture opposite the
+// floating button. What decides compiles everywhere; the badges are a
+// window, so they belong to Windows.
 mod badges;
 
 #[cfg(windows)]
@@ -108,9 +108,9 @@ fn main() {
     if app::already_open() {
         return;
     }
-    // Ce que ce programme dessine se compte en vrais pixels, sur chaque
-    // écran : dit avant qu'une seule fenêtre existe, faute de quoi le
-    // système agrandirait lui-même ce qui est déjà à la bonne taille.
+    // What this program draws is counted in real pixels, on every
+    // screen: said before a single window exists, or else the system
+    // would itself enlarge what is already at the right size.
     app::count_in_real_pixels();
     journal::opened();
 
@@ -119,16 +119,17 @@ fn main() {
         journal::note(&format!("ZyrDesk ne démarre pas : {e}"));
         return;
     }
-    // Ce que la personne a choisi de regarder, relu avant que la fenêtre
-    // s'ouvre : une fenêtre qui s'ouvrirait dans le mauvais thème, même
-    // le temps d'un battement, se verrait.
+    // What the person chose to look at, read again before the window
+    // opens: a window that opened in the wrong theme, even for the
+    // length of a beat, would be seen.
     theme::what_was_chosen();
     if let Err(e) = main_window::open(&app) {
         journal::note(&format!("ZyrDesk ne démarre pas : {e}"));
         return;
     }
     theme::on_the_window();
-    // Ce que Windows veut, suivi tant que le programme tourne.
+    // What Windows wants, followed for as long as the program
+    // runs.
     theme::watch(app.clone());
     // The window's own icon: taken from the compiled resource at the two
     // sizes Windows is about to draw it at.
@@ -150,9 +151,9 @@ fn main() {
     // to us has to be asked of the system rather than waited for as an
     // ordinary key press.
     shortcuts::listen(app.clone());
-    // Et l'accueil lui-même, dessiné dans le dedans de cette fenêtre. En
-    // dernier : il demande au service ce qu'il montre, et le service
-    // vient d'être réveillé.
+    // And the home screen itself, drawn in the inside of this window.
+    // Last: it asks the service what it shows, and the service has just
+    // been woken up.
     #[cfg(windows)]
     home::raise(&app);
     main_window::show();

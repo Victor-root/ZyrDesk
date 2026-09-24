@@ -605,9 +605,9 @@ mod outcomes {
 
     #[test]
     fn every_parting_code_the_engine_gives_is_named() {
-        // Les codes viennent du correctif P-M5 posé sur le moteur : s'ils
-        // changent d'un côté sans l'autre, une session ratée passerait
-        // pour une session normale, et personne ne verrait rien.
+        // The codes come from patch P-M5 applied to the engine: if they
+        // change on one side without the other, a failed session would
+        // pass for a normal one, and nobody would see anything.
         assert_eq!(outcome_of(Some(0)), SessionOutcome::Ended);
         assert_eq!(outcome_of(Some(SESSION_FAILED)), SessionOutcome::Failed);
         assert_eq!(outcome_of(Some(UNREACHABLE)), SessionOutcome::Unreachable);
@@ -616,8 +616,8 @@ mod outcomes {
             outcome_of(Some(42)),
             SessionOutcome::Unknown { code: Some(42) }
         );
-        // Tué par le système : aucun code, et ce n'est pas une fin
-        // normale pour autant.
+        // Killed by the system: no code, and that does not make it
+        // a normal end.
         assert_eq!(outcome_of(None), SessionOutcome::Unknown { code: None });
     }
 }
@@ -650,9 +650,9 @@ mod tests {
 
     #[test]
     fn what_the_engine_said_last_is_what_is_kept() {
-        // Le moteur ouvre sur des pages de notes graphiques et finit par
-        // la raison. Garder le début, ce qu'on faisait, montrait le bruit
-        // de démarrage et jetait la seule ligne utile.
+        // The engine opens with pages of graphics notes and ends with the
+        // reason. Keeping the beginning, which is what was done before,
+        // showed the start-up noise and threw away the only useful line.
         let said = "\
 00:00:00 - Qt Warning: SetProcessDpiAwarenessContext() failed
 00:00:00 - SDL Info (0): Compiled with SDL 2.31.0
@@ -661,22 +661,23 @@ PC-VICTOR is already paired";
         let kept = last_words(said, 400);
         assert!(kept.ends_with("is already paired"), "{kept}");
 
-        // Serré, il ne reste que la fin, et jamais rien de plus long que
-        // ce qui était demandé.
+        // Squeezed, only the end is left, and never anything longer than
+        // what was asked for.
         let kept = last_words(said, 30);
         assert!(kept.contains("already paired"), "{kept}");
         assert!(kept.len() <= 30, "{} caractères : {kept}", kept.len());
 
-        // Une seule ligne, plus longue que tout le budget : c'est sa fin
-        // qui porte la raison.
+        // A single line, longer than the whole budget: it is its end
+        // that carries the reason.
         let kept = last_words(&format!("{}refusé", "x".repeat(500)), 20);
         assert!(kept.ends_with("refusé"), "{kept}");
         assert_eq!(kept.len(), 20);
 
-        // Et la coupe tombe entre deux caractères, jamais au milieu
-        // d'un : le moteur parle la langue dans laquelle il a démarré,
-        // et couper un accent en deux ferait paniquer le programme au
-        // pire moment, celui où il a une panne à raconter.
+        // And the cut falls between two characters, never in the
+        // middle of one: the engine speaks the language it started in,
+        // and cutting an accent in two would make the program panic at
+        // the worst moment, the one where it has a fault to tell
+        // about.
         for budget in 1..40 {
             let kept = last_words(&"é".repeat(60), budget);
             assert!(kept.len() <= budget, "{budget} : {kept}");
@@ -695,8 +696,8 @@ PC-VICTOR is already paired";
 
     #[test]
     fn a_pairing_nobody_answers_is_cut_short_rather_than_waited_on() {
-        // Le moteur n'impose aucune limite à cette attente-là : sans
-        // celle-ci, une session s'ouvrirait indéfiniment sur rien.
+        // The engine puts no limit on that wait: without this one, a
+        // session would go on opening onto nothing forever.
         let pairing = Pairing {
             engine: patient_program().spawn().unwrap(),
             log: None,

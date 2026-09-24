@@ -92,9 +92,9 @@ fn named_in(line: &str) -> Option<Codec> {
 mod tests {
     use super::*;
 
-    /// Mot pour mot ce que le moteur écrit, pris dans le journal d'une
-    /// machine à carte Intel : elle sait faire du H.264 et du HEVC, pas
-    /// de l'AV1. C'est le cas qui a valu ce fichier.
+    /// Word for word what the engine writes, taken from the log of a
+    /// machine with an Intel card: it can do H.264 and HEVC, not AV1.
+    /// That is the case this file exists for.
     const A_RUN: &str = "\
 [01:37:57.922]: Info: // Testing for available encoders, this may generate errors. You can safely ignore those errors. //
 [01:37:57.922]: Info: Trying encoder [nvenc]
@@ -115,9 +115,9 @@ mod tests {
 
     #[test]
     fn only_the_last_run_counts() {
-        // Le journal porte tous les démarrages à la suite. Une carte qui
-        // savait faire de l'AV1 la semaine dernière ne dit rien de la
-        // machine d'aujourd'hui, et c'est aujourd'hui qu'on demande.
+        // The log carries every start one after another. A card that
+        // could do AV1 last week says nothing about the machine today,
+        // and it is today that is being asked about.
         let before = "\
 Info: // Testing for available encoders //
 Info: Found H.264 encoder: h264_nvenc [nvenc]
@@ -130,13 +130,14 @@ Info: Found AV1 encoder: av1_nvenc [nvenc]
 
     #[test]
     fn an_engine_that_has_not_said_says_nothing_rather_than_none() {
-        // Rien n'est une absence de réponse et jamais « aucun » : un
-        // ordinateur qui n'encoderait rien ne pourrait pas être regardé
-        // du tout, donc cette réponse-là parlerait de la lecture et non
-        // de la machine.
+        // Nothing is an absence of answer and never "none": a computer
+        // that could encode nothing could not be watched at all, so
+        // that answer would be about the reading and not about the
+        // machine.
         assert!(found_in("").is_empty());
         assert!(found_in("Info: // Testing for available encoders //\n").is_empty());
-        // Et ce qui vient d'avant les essais en cours ne compte pas.
+        // And what comes from before the current trials does not
+        // count.
         assert!(
             found_in(
                 "Info: Found AV1 encoder: av1_nvenc\nInfo: // Testing for available encoders //\n"
@@ -147,10 +148,10 @@ Info: Found AV1 encoder: av1_nvenc [nvenc]
 
     #[test]
     fn it_is_the_engines_own_log_that_is_read() {
-        // Et jamais la sortie console captée à côté : elle est vide sur
-        // certaines machines, et c'est un des quatre fichiers que le
-        // bouton « Vider » efface, y compris depuis l'autre bout d'un
-        // tunnel. La réponse aurait disparu au premier vidage.
+        // And never the console output captured beside it: it is empty
+        // on some machines, and it is one of the four files the "Vider"
+        // button clears, including from the other end of a tunnel. The
+        // answer would have vanished at the first clearing.
         let folder = std::env::temp_dir().join(format!(
             "zyrdesk-encoders-{}",
             zyr_proto::random::alphanumeric_string(8)
@@ -161,8 +162,8 @@ Info: Found AV1 encoder: av1_nvenc [nvenc]
 
         assert_eq!(found_for(&folder), vec![Codec::H264, Codec::Hevc]);
 
-        // Et un moteur qui n'a rien écrit du tout ne dit rien, plutôt
-        // que de faire échouer la lecture.
+        // And an engine that has written nothing at all says nothing,
+        // rather than making the reading fail.
         let empty = folder.join("vide");
         std::fs::create_dir_all(&empty).unwrap();
         assert!(found_for(&empty).is_empty());
@@ -172,9 +173,9 @@ Info: Found AV1 encoder: av1_nvenc [nvenc]
 
     #[test]
     fn a_codec_this_product_does_not_know_is_left_out() {
-        // Le moteur peut nommer demain un encodeur dont ce produit n'a
-        // jamais entendu parler. Une ligne illisible se saute ; elle ne
-        // fait pas rater celles qui suivent.
+        // Tomorrow the engine may name an encoder this product has
+        // never heard of. An unreadable line is skipped; it does not
+        // make the ones after it fail.
         let odd = "\
 Info: // Testing for available encoders //
 Info: Found VP9 encoder: vp9_qsv [quicksync]

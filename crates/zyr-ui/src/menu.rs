@@ -1,24 +1,25 @@
-//! Le menu du bouton flottant, dessiné par ZyrDesk.
+//! The floating button's menu, drawn by ZyrDesk.
 //!
-//! La carte qui s'ouvre sous le logo, dans une fenêtre à elle, faite des
-//! mêmes pixels que lui : une image qui porte sa transparence et qu'on
-//! remet telle quelle à Windows. Ni découpe, ni fond à effacer, ni cadre,
-//! et les clics passent partout où l'image est claire.
+//! The card that opens under the logo, in a window of its own, made of
+//! the same pixels as the logo: a picture that carries its own
+//! transparency and is handed to Windows as it is. No cut, no background
+//! to erase, no frame, and clicks go through wherever the picture is
+//! clear.
 //!
-//! Tout ce qui décide de son allure vient du système de design, lu dans
-//! la feuille de style à la compilation. Rien n'est écrit en dur ici : ce
-//! fichier dit où les choses vont, jamais de quelle couleur elles sont.
+//! Everything that decides how it looks comes from the design system,
+//! read from the stylesheet at build time. Nothing is hard-coded here:
+//! this file says where things go, never what colour they are.
 //!
-//! Les longueurs sont écrites en pixels de page, comme dans la feuille de
-//! style, et `scale` les passe en vrais pixels au moment de dessiner.
-//! C'est le même partage que partout ailleurs, et c'est ce qui permet de
-//! relire une mesure ici et de la retrouver là-bas.
+//! Lengths are written in page pixels, as in the stylesheet, and `scale`
+//! turns them into real pixels at drawing time. It is the same split as
+//! everywhere else, and it is what lets a measurement be read here and
+//! found again over there.
 //!
-//! La fenêtre suit la carte : elle est remesurée à chaque dessin, et
-//! l'image lui est remise en même temps que sa taille. Il n'existe donc
-//! pas d'instant où elle soit grande sans être peinte, ce qui est ce
-//! qu'une vue web ne savait pas faire et ce qui la forçait à se bâtir
-//! une fois pour toutes à sa plus grande taille possible.
+//! The window follows the card: it is measured again at every drawing,
+//! and the picture is handed to it together with its size. So there is
+//! never a moment when it is large without being painted, which is what a
+//! web view could not do and what forced it to be built once and for all
+//! at its largest possible size.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
@@ -34,133 +35,132 @@ use crate::paint::{Align, Canvas, Icon, Pen, Rect};
 use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module files its journal lines under.
 const TAG: &str = "floating";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
-/// Une ligne de la carte.
+/// A line of the card.
 ///
-/// La carte se décrit et se dessine ensuite : mesurer sa largeur demande
-/// de connaître toutes ses lignes avant d'en poser une seule, et une
-/// carte aussi large que sa plus longue ligne est ce que la feuille de
-/// style demande depuis toujours.
+/// The card is described first and drawn afterwards: measuring its width
+/// needs all of its lines known before a single one is laid down, and a
+/// card as wide as its longest line is what the stylesheet has always
+/// asked for.
 enum Line {
-    /// Ce que la session coûte : quatre nombres et une phrase.
+    /// What the session costs: four numbers and a sentence.
     Measures,
-    /// Un trait entre deux groupes.
+    /// A stroke between two groups.
     Separator,
-    /// Ce que le menu vient de refuser de faire, et pourquoi.
+    /// What the menu has just refused to do, and why.
     Refusal,
-    /// Une ligne qu'on clique, comme la page les appelle.
+    /// A line that is clicked, as the page calls them.
     Entry(Entry),
-    /// Une ligne qui porte un choix entre deux côtés.
+    /// A line that carries a choice between two sides.
     Toggle(Toggle),
-    /// Une ligne qui porte quelques valeurs côte à côte.
+    /// A line that carries a few values side by side.
     Choice(Choice),
-    /// Une ligne qu'on pousse le long d'une barre.
+    /// A line that is pushed along a bar.
     Slider(Slider),
-    /// Une ligne qui ouvre une liste à elle.
+    /// A line that opens a list of its own.
     List(List),
 }
 
-/// Une ligne qui porte quelques valeurs sans ordre entre elles.
+/// A line that carries a few values with no order between them.
 ///
-/// Des boutons et non une barre : le codec n'est pas une échelle, ce sont
-/// quelques noms dont un « Automatique » qui n'est pas une valeur mais un
-/// renoncement, et pousser un curseur promettrait un plus et un moins qui
-/// n'existent pas.
+/// Buttons and not a bar: the codec is not a scale, it is a few names,
+/// one of them an "Automatique" that is not a value but a renunciation,
+/// and pushing a slider would promise a more and a less that do not
+/// exist.
 struct Choice {
     icon: &'static Icon,
     label: &'static str,
     setting: Setting,
 }
 
-/// Une ligne qu'on règle en poussant un curseur, la valeur écrite
-/// au-dessus.
+/// A line set by pushing a slider, with the value written above it.
 ///
-/// Une échelle : plus grand, plus rapide, et on en cherche le bon cran en
-/// regardant l'image bouger. Les crans viennent du produit, un par
-/// mégabit, et le curseur va de zéro au nombre de valeurs moins une : il
-/// pousse des rangs et non des nombres, comme les autres lignes à liste.
+/// A scale: bigger, faster, and the right notch on it is found by
+/// watching the picture move. The notches come from the product, one per
+/// megabit, and the slider goes from zero to the number of values minus
+/// one: it pushes ranks and not numbers, like the other list lines.
 struct Slider {
     icon: &'static Icon,
     label: &'static str,
     setting: Setting,
 }
 
-/// Une ligne qui ouvre une liste à elle, à côté de la carte.
+/// A line that opens a list of its own, beside the card.
 ///
-/// Une liste plutôt qu'une barre pour deux raisons : ses premières
-/// entrées ne sont pas des nombres mais disent lequel des deux
-/// ordinateurs décide, ce qu'aucune barre ne sait dire, et il y en a
-/// quinze en dessous, ce qui fait des crans qu'on ne vise plus.
+/// A list rather than a bar, for two reasons: its first entries are
+/// not numbers but say which of the two computers decides, which no
+/// bar can say, and there are fifteen of them below, which makes
+/// notches one can no longer aim at.
 struct List {
     icon: &'static Icon,
     label: &'static str,
     setting: Setting,
 }
 
-/// Une ligne qui porte un choix plutôt qu'une action.
+/// A line that carries a choice rather than an action.
 ///
-/// Les deux mots sont là et celui qui est en place est allumé : la ligne
-/// d'avant annonçait ce que le clic ferait et jamais où l'on en était, et
-/// les deux modes ne se distinguent pas à l'oeil sur un bureau immobile.
-/// Il faut que ça se voie sans lire.
+/// Both words are there and the one in place is lit: the old line
+/// announced what the click would do and never where things stood, and
+/// the two modes cannot be told apart by eye on a still desktop. It has
+/// to be seen without reading.
 ///
-/// La ligne elle-même ne se clique pas, seulement ses deux côtés : ni
-/// main sous le pointeur ni fond allumé sur le reste, qui promettraient
-/// un clic qui ne fait rien.
+/// The line itself is not clicked, only its two sides: no hand under the
+/// pointer and no lit background over the rest, which would promise a
+/// click that does nothing.
 struct Toggle {
     icon: &'static Icon,
     label: &'static str,
-    /// Les deux côtés, dans l'ordre où ils se lisent. Le second est celui
-    /// qui vaut « oui ».
+    /// The two sides, in the order they are read. The second is the one
+    /// that stands for "yes".
     sides: [&'static str; 2],
-    /// Ce qu'on demande à la session pour passer d'un côté à l'autre.
+    /// What the session is asked for to switch sides.
     act: Act,
-    /// Où l'on en est : vrai pour le côté de droite.
+    /// Where things stand: true for the right-hand side.
     state: &'static AtomicBool,
 }
 
-/// Une entrée du menu : une icône, un mot, ce qui est écrit à sa droite,
-/// et ce qu'elle demande.
+/// An entry of the menu: an icon, a word, what is written to its right,
+/// and what it asks for.
 struct Entry {
     icon: &'static Icon,
     label: &'static str,
     trailing: Trailing,
     does: Does,
-    /// Écrite dans la couleur des choses qui ne se défont pas. Une seule
-    /// ligne du menu l'est, et c'est celle qui coupe la session.
+    /// Written in the colour of things that cannot be undone. Only one
+    /// line of the menu is, and it is the one that cuts the session off.
     destructive: bool,
 }
 
-/// Ce qui s'écrit à droite d'une ligne.
+/// What is written to the right of a line.
 enum Trailing {
-    /// Ce que la ligne fait, dit en toutes lettres.
+    /// What the line does, spelled out.
     Text(&'static str),
-    /// La combinaison en place pour ça, ou ce mot-ci tant que personne
-    /// ne lui en a donné une.
+    /// The combination in place for it, or this word here as long as
+    /// nobody has given it one.
     Key(Doing, &'static str),
 }
 
-/// Ce qu'une ligne demande quand on clique dessus.
+/// What a line asks for when it is clicked.
 #[derive(Clone, Copy)]
 enum Does {
-    /// Ce que la session sait faire, dans sa langue.
+    /// What the session can do, in its own language.
     Session(Act),
-    /// Ranger le bouton jusqu'à ce que le raccourci le rappelle.
+    /// Put the button away until the shortcut calls it back.
     PutAway,
 }
 
-/// Un des réglages que la session porte.
+/// One of the settings the session carries.
 ///
-/// Nommé ici comme le produit le nomme des deux côtés : c'est ce mot-là
-/// qui voyage jusqu'au service, et en avoir un deuxième pour l'affichage
-/// serait deux noms pour un réglage.
+/// Named here as the product names it on both sides: that is the word
+/// that travels to the service, and having a second one for display
+/// would be two names for one setting.
 #[derive(Clone, Copy, PartialEq)]
 enum Setting {
     Size,
@@ -170,17 +170,17 @@ enum Setting {
     Steady,
 }
 
-/// Ce que la carte contient, dans l'ordre.
+/// What the card holds, in order.
 ///
-/// Les mêmes lignes que la page, dans le même ordre, avec les mêmes mots,
-/// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
-/// dans le journal à l'ouverture plutôt que remplacé par du vide qui
-/// ressemblerait à un défaut.
+/// The same lines as the page, in the same order, with the same words,
+/// the same icons and the same actions. What is still missing is said in
+/// the journal on opening rather than replaced by an empty space that
+/// would look like a fault.
 const LINES: [Line; 21] = [
     Line::Measures,
-    // Juste sous les mesures, donc en tête de ce qu'on lit : ce qui vient
-    // d'être refusé se lit avant ce qu'on allait cliquer ensuite. Elle ne
-    // prend aucune place tant qu'il n'y a rien à dire.
+    // Just under the readings, so at the top of what is read: what has
+    // just been refused is read before whatever was going to be clicked
+    // next. It takes no room at all while there is nothing to say.
     Line::Refusal,
     Line::Separator,
     Line::Entry(Entry {
@@ -289,56 +289,56 @@ const LINES: [Line; 21] = [
     }),
 ];
 
-/// Ce que la feuille de style dit d'une ligne, en pixels de page.
+/// What the stylesheet says about a line, in page pixels.
 mod layout {
-    /// La hauteur qu'une ligne ne descend jamais en dessous.
+    /// The height a line never goes below.
     pub const LINE: f32 = 38.0;
-    /// Le côté d'une icône, et l'espace entre elle et le mot.
+    /// An icon's side, and the gap between it and the word.
     pub const ICON: f32 = 18.0;
-    /// Ce qui sépare le mot de ce qui est écrit à sa droite.
+    /// What separates the word from what is written to its
+    /// right.
     pub const AFTER_THE_LABEL: f32 = 24.0;
-    /// L'épaisseur d'un trait de séparation, et celle d'une bordure.
+    /// The thickness of a separating stroke, and that of a border.
     pub const HAIRLINE: f32 = 1.0;
-    /// La largeur que chaque mesure garde quel que soit son nombre, pour
-    /// que la barre ne respire pas au rythme des chiffres.
+    /// The width each reading keeps whatever its number, so that the bar
+    /// does not breathe in time with the figures.
     pub const READING: f32 = 78.0;
-    /// Ce qui sépare deux mesures, et ce qui sépare leur mot de leur
-    /// nombre.
+    /// What separates two readings, and what separates their word
+    /// from their number.
     pub const BETWEEN_READINGS: f32 = 16.0;
     pub const UNDER_THE_LABEL: f32 = 2.0;
-    /// La hauteur d'un interrupteur : sa légende, ce qui l'entoure
-    /// au-dessus et en dessous, et sa bordure. La page l'obtient de la
-    /// hauteur de ligne du navigateur, qui n'existe pas ici : elle est
-    /// donc dite.
+    /// The height of a switch: its caption, what surrounds it above
+    /// and below, and its border. The page gets it from the browser's
+    /// line height, which does not exist here: so it is stated.
     pub const TOGGLE: f32 = 24.0;
-    /// La place que prend un curseur, son pouce compris.
+    /// The room a slider takes, its thumb included.
     pub const SLIDER: f32 = 18.0;
-    /// L'épaisseur de la barre d'un curseur, et le côté de son pouce.
+    /// The thickness of a slider's bar, and the side of its thumb.
     pub const BAR: f32 = 4.0;
     pub const THUMB: f32 = 14.0;
-    /// Le côté d'un chevron et d'une coche : plus petits qu'une icône de
-    /// ligne, parce que ce sont des marques et non des dessins.
+    /// The side of a chevron and of a tick: smaller than a line's icon,
+    /// because they are marks and not drawings.
     pub const BRAND: f32 = 16.0;
 }
 
-/// Un des quatre chiffres de la barre : ce qu'il coûte, comment il se
-/// lit, et où il se prend dans ce que le moteur écrit.
+/// One of the bar's four figures: what it costs, how it reads, and
+/// where it is taken from in what the engine writes.
 struct Reading {
     label: &'static str,
     unit: &'static str,
-    /// Combien de décimales : le réseau se lit en millisecondes rondes,
-    /// le reste au centième.
+    /// How many decimals: the network reads in whole milliseconds, the
+    /// rest to the hundredth.
     decimals: usize,
     read: fn(&Measures) -> Option<f64>,
 }
 
-/// Les quatre mesures, dans l'ordre où elles se lisent : ce que coûte une
-/// image ici, ce qu'elle a coûté là-bas, ce qu'il y a entre les deux, et
-/// ce que le fil porte vraiment.
+/// The four readings, in the order they are read: what a frame costs
+/// here, what it cost over there, what lies between the two, and what the
+/// wire really carries.
 ///
-/// Les mêmes mots et les mêmes unités que la page, parce que ce sont les
-/// mêmes mesures : les inventer ici en donnerait quatre autres, et deux
-/// barres qui ne disent pas la même chose sur le même moteur.
+/// The same words and the same units as the page, because they are the
+/// same readings: inventing them here would give four others, and two
+/// bars that do not say the same thing about the same engine.
 const READINGS: [Reading; 4] = [
     Reading {
         label: "Décodage",
@@ -366,71 +366,72 @@ const READINGS: [Reading; 4] = [
     },
 ];
 
-/// Ce qu'une mesure montre tant qu'elle n'a rien à dire.
+/// What a reading shows while it has nothing to say.
 ///
-/// Le moteur ne dit rien plutôt que zéro quand il n'a rien mesuré, et
-/// zéro serait un mensonge : une seconde sans image décodée n'a pas un
-/// temps de décodage nul.
+/// The engine says nothing rather than zero when it has measured
+/// nothing, and zero would be a lie: a second with no frame decoded
+/// does not have a zero decoding time.
 const NO_READING: &str = "-";
 
-/// Combien de temps une mesure qui manque garde ce qu'elle disait.
+/// How long a missing reading keeps what it was saying.
 ///
-/// Une de ces quatre manque parfois à une seconde et revient à la
-/// suivante : ce que l'ordinateur d'en face mesure ne voyage pas avec
-/// chaque image, et une seconde peut passer sans qu'aucune ne le porte.
-/// Effacée aussitôt, la mesure clignote entre un nombre et un tiret, et
-/// un nombre qui clignote se lit plus mal qu'un nombre d'une seconde de
-/// retard — qui est de toute façon ce qu'on lit, ces quatre-là étant des
-/// moyennes sur la seconde écoulée.
+/// One of these four is sometimes missing for one second and back the
+/// next: what the far computer measures does not travel with every
+/// frame, and a second can go by without any frame carrying it. Wiped at
+/// once, the reading flickers between a number and a dash, and a
+/// flickering number is harder to read than a number one second late,
+/// which is what is being read anyway, since these four are averages
+/// over the second just gone.
 ///
-/// Trois secondes et pas plus : au-delà ce n'est plus une lecture qui a
-/// sauté mais une mesure qui n'existe plus, et le tiret dit alors vrai.
+/// Three seconds and no more: beyond that it is no longer a reading that
+/// skipped but a measurement that no longer exists, and the dash then
+/// tells the truth.
 const KEEP_FOR: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// Le rythme du moteur, qui écrit une fois par seconde. Demander plus
-/// souvent relirait le même fichier pour le même nombre.
+/// The engine's pulse, which writes once a second. Asking more often
+/// would reread the same file for the same number.
 const REFRESH: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// De combien une couleur teinte le fond quand elle sert de survol : ce
-/// que la feuille de style écrit `color-mix(in srgb, ... 12%,
+/// How much a colour tints the background when it serves as a hover:
+/// what the stylesheet writes as `color-mix(in srgb, ... 12%,
 /// transparent)`.
 const VEIL: f32 = 0.12;
 
-/// La fenêtre de la carte, et ce qu'elle sait d'elle-même.
+/// The card's window, and what it knows about itself.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
 static WIDTH: AtomicU32 = AtomicU32::new(0);
 static HEIGHT: AtomicU32 = AtomicU32::new(0);
 static OPEN: AtomicBool = AtomicBool::new(false);
 static LIGHT: AtomicBool = AtomicBool::new(false);
 
-/// Ce qui est sous la souris, et ce sur quoi un clic a commencé.
+/// What is under the mouse, and what a click started on.
 ///
-/// Écrits par la réponse de la fenêtre, que le système appelle, et lus
-/// par le dessin. Les deux tournent sur le fil qui possède la fenêtre,
-/// donc ces verrous ne sont jamais disputés.
+/// Written by the window's answer, which the system calls, and read by
+/// the drawing. Both run on the thread that owns the window, so these
+/// locks are never fought over.
 static HOVER: Mutex<Option<Target>> = Mutex::new(None);
 static PRESSED: Mutex<Option<Target>> = Mutex::new(None);
 
-/// Si la souris est dans cette fenêtre, pour ne demander qu'une fois à
-/// être prévenu de son départ.
+/// Whether the mouse is in this window, so as to ask only once to be
+/// told when it leaves.
 static HAND_INSIDE: AtomicBool = AtomicBool::new(false);
 
-/// Ce qu'on peut cliquer, dans la carte ou dans le panneau ouvert.
+/// What can be clicked, in the card or in the open panel.
 #[derive(Clone, Copy, PartialEq)]
 enum Target {
-    /// Une ligne qu'on clique en entier, par son rang dans `LINES`.
+    /// A line clicked as a whole, by its rank in `LINES`.
     Line(usize),
-    /// Un côté d'un interrupteur ou d'une ligne à boutons : le rang de sa
-    /// ligne, et lequel des côtés.
+    /// A side of a switch or of a line of buttons: the rank of its line,
+    /// and which of the sides.
     Side(usize, usize),
-    /// La barre d'un curseur.
+    /// The bar of a slider.
     Bar(usize),
-    /// Une valeur du panneau ouvert, par son rang dans la liste.
+    /// A value of the open panel, by its rank in the list.
     Value(usize),
 }
 
 impl Target {
-    /// La ligne de la carte dont il s'agit, quand c'en est une.
+    /// The card line in question, when it is one.
     fn line(self) -> Option<usize> {
         match self {
             Target::Line(rank) | Target::Side(rank, _) | Target::Bar(rank) => Some(rank),
@@ -439,96 +440,94 @@ impl Target {
     }
 }
 
-/// Ce que la barre des mesures montre : quatre nombres déjà écrits et la
-/// phrase du flux.
+/// What the readings bar shows: four numbers already written out and the
+/// stream's sentence.
 ///
-/// Écrits là où ils sont lus plutôt que gardés en nombres : la mise en
-/// forme se fait alors une fois par seconde et non une fois par image, et
-/// le fil qui dessine n'a plus qu'à poser du texte.
+/// Written out where they are read rather than kept as numbers: the
+/// formatting then happens once a second and not once a frame, and the
+/// drawing thread only has to lay down text.
 struct ReadingsBar {
     figures: [String; 4],
-    /// Quand chacune a vraiment été lue, et non recopiée de la lecture
-    /// d'avant. Hors de toute comparaison : ces instants bougent à chaque
-    /// tour sans que rien ne se lise autrement.
+    /// When each one was really read, and not copied over from the
+    /// reading before. Left out of every comparison: these instants move
+    /// at every turn without anything reading differently.
     read_at: [Option<Instant>; 4],
     stream: String,
 }
 
 static READINGS_BAR: Mutex<ReadingsBar> = Mutex::new(ReadingsBar::empty());
 
-/// Le tour de veille des mesures.
+/// The round of the readings watch.
 ///
-/// Il change à chaque ouverture et à chaque fermeture, ce qui arrête le
-/// tour précédent : sans ça, ouvrir et refermer vite laisserait deux
-/// veilles derrière la même carte.
+/// It changes at every opening and every closing, which stops the
+/// previous round: without that, opening and closing quickly would
+/// leave two watches behind the same card.
 static ROUND: AtomicU32 = AtomicU32::new(0);
 
-/// Où en est chacun des six interrupteurs.
+/// Where each of the six switches stands.
 ///
-/// Relus à chaque ouverture de la carte plutôt que retenus : le raccourci
-/// du produit bascule la souris, et le mélangeur de Windows est ouvert à
-/// tout le monde. Un interrupteur qui montre ce qu'il croit plutôt que ce
-/// qui est est un interrupteur qu'on ne croit pas deux fois.
+/// Read again at every opening of the card rather than remembered: the
+/// product's shortcut flips the mouse, and the Windows mixer is open to
+/// everyone. A switch that shows what it believes rather than what is, is
+/// a switch nobody believes twice.
 static IN_GAME: AtomicBool = AtomicBool::new(false);
 static MUTED: AtomicBool = AtomicBool::new(false);
 static IMMERSIVE: AtomicBool = AtomicBool::new(false);
 static SHARED: AtomicBool = AtomicBool::new(false);
 static HELD: AtomicBool = AtomicBool::new(false);
 
-/// De combien un pixel de page vaut de vrais pixels.
+/// How many real pixels a page pixel is worth.
 static SCALE: AtomicU32 = AtomicU32::new(100);
 
-/// La hauteur d'une ligne de légende et d'une ligne de corps, en vrais
-/// pixels.
+/// The height of a caption line and of a body line, in real pixels.
 ///
-/// Ce n'est pas la taille du caractère : une ligne de douze pixels en
-/// occupe environ seize, l'espace au-dessus et en dessous étant celui que
-/// la police demande. Empiler du texte sur sa taille plutôt que sur sa
-/// hauteur serre tout ce qui est empilé, et c'est ce qui rendait la barre
-/// des mesures plus tassée que celle de la page.
+/// It is not the size of the type: a twelve-pixel line takes up about
+/// sixteen, the space above and below being what the font asks for.
+/// Stacking text by its size rather than its height squeezes everything
+/// stacked, and that is what made the readings bar more cramped than the
+/// page's.
 ///
-/// Mesurées une fois, quand la carte l'est : elles ne dépendent que de la
-/// taille du texte et de l'agrandissement de l'écran, dont aucun ne bouge
-/// pendant une session.
+/// Measured once, when the card is: they depend only on the text size and
+/// the screen's magnification, neither of which moves during a session.
 static CAPTION_HEIGHT: AtomicU32 = AtomicU32::new(0);
 static BODY_HEIGHT: AtomicU32 = AtomicU32::new(0);
 
-/// Vers où le menu s'ouvre, donc à quel bord de sa fenêtre la carte est
-/// collée.
+/// Which way the menu opens, and so which edge of its window the card
+/// is stuck to.
 static UPWARD: AtomicBool = AtomicBool::new(false);
 
-/// Si la carte est collée au bord gauche de sa fenêtre plutôt qu'au
-/// droit, et le panneau à sa droite plutôt qu'à sa gauche : décidé par
-/// le bouton quand son bord droit n'a pas la place de porter la carte.
+/// Whether the card is stuck to the left edge of its window rather
+/// than the right, and the panel to its right rather than its left:
+/// decided by the button when its right edge does not have the room to
+/// carry the card.
 static RIGHTWARD: AtomicBool = AtomicBool::new(false);
 
-/// Ce que la carte prend de large, mesuré sur toutes ses lignes.
+/// How wide the card is, measured over all its lines.
 static CARD_WIDTH: AtomicU32 = AtomicU32::new(0);
 
-/// Ce que le menu vient de refuser de faire, et depuis quand.
+/// What the menu has just refused to do, and since when.
 ///
-/// Le menu de la vue web portait une ligne rouge pour ça. Celui que
-/// ZyrDesk dessine ne l'avait pas reprise, et un refus n'allait donc plus
-/// que dans le journal : un interrupteur qui se refuse à bon droit et se
-/// contente de ne pas basculer est un interrupteur cassé, même quand il
-/// a parfaitement raison.
+/// The web view's menu carried a red line for that. The one ZyrDesk draws
+/// had not carried it over, so a refusal only went to the journal: a
+/// switch that rightly refuses and simply does not flip is a broken
+/// switch, even when it is perfectly right.
 static REFUSAL: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
-/// Ce que ce refus prend de haut, mesuré au dessin comme la carte l'est.
+/// How tall this refusal is, measured when drawing, as the card is.
 static REFUSAL_HEIGHT: AtomicU32 = AtomicU32::new(0);
 
-/// Le temps qu'un refus reste sur la carte.
+/// How long a refusal stays on the card.
 ///
-/// Long, parce qu'il porte ce qu'il y a à faire ailleurs et que c'est
-/// ailleurs qu'on part le faire : un refus effacé pendant qu'on lit la
-/// page de Windows serait un refus jamais lu.
+/// Long, because it carries what there is to do elsewhere, and it is
+/// elsewhere that one goes off to do it: a refusal wiped while the
+/// Windows page is being read would be a refusal never read.
 const REFUSAL_TIME: Duration = Duration::from_secs(20);
 
-/// Ce qu'il y a à dire d'un refus, tant qu'il est frais.
+/// What there is to say about a refusal, while it is fresh.
 ///
-/// Ce qui a passé son temps est oublié au passage : la carte se rouvre
-/// souvent, et un refus d'il y a une heure se relirait comme celui du
-/// clic qu'on vient de faire.
+/// One that has had its time is forgotten on the way: the card opens
+/// again often, and a refusal from an hour ago would read like the one
+/// for the click just made.
 fn refusal_to_say() -> Option<String> {
     let mut refusal = REFUSAL.lock().expect("refus du menu");
     if refusal
@@ -540,50 +539,50 @@ fn refusal_to_say() -> Option<String> {
     refusal.as_ref().map(|(said, _)| said.clone())
 }
 
-/// Le tour de veille des réglages, qui arrête le précédent.
+/// The round of the settings watch, which stops the
+/// previous one.
 static SESSION_MENU_ROUND: AtomicU32 = AtomicU32::new(0);
 
-/// Ce que la session propose et où elle en est, demandé à l'ouverture de
-/// la carte.
+/// What the session offers and where it stands, asked for when the card
+/// opens.
 ///
-/// Demandé d'un coup plutôt qu'une liste à la fois : la carte se mesure
-/// sur ce qu'elle contient, donc elle a besoin de tout avant de poser
-/// quoi que ce soit.
+/// Asked for in one go rather than one list at a time: the card is
+/// measured on what it holds, so it needs everything before laying
+/// anything down.
 static SESSION_MENU: Mutex<Option<SessionMenu>> = Mutex::new(None);
 
-/// Le sous-menu ouvert, ou rien.
+/// The open submenu, or nothing.
 static PANEL: Mutex<Option<Setting>> = Mutex::new(None);
 
-/// Le cran où une main tient le curseur du débit, tant qu'elle le tient.
+/// The notch where a hand holds the bitrate slider, while it holds it.
 ///
-/// Ce qui est choisi n'est écrit qu'au relâchement : un curseur poussé
-/// d'un bout à l'autre traverse quinze crans, et chacun d'eux serait un
-/// aller-retour jusqu'au service pour un débit que personne n'a voulu.
+/// What is chosen is only written on release: a slider pushed from one
+/// end to the other crosses fifteen notches, and each of them would be a
+/// round trip to the service for a bitrate nobody wanted.
 static PUSHED: Mutex<Option<usize>> = Mutex::new(None);
 
-/// Le programme, pour les endroits que le système appelle et à qui la
-/// boîte à outils ne donne rien.
+/// The program, for the places the system calls and that the toolkit
+/// gives nothing to.
 static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
-/// Les combinaisons en place, lues à l'ouverture de la session.
+/// The combinations in place, read when the session opens.
 ///
-/// Lues et non gravées : elles se choisissent dans les réglages. Lues une
-/// fois, parce que la carte prend la largeur de sa plus longue ligne et
-/// que cette largeur est celle de sa fenêtre, laquelle ne change pas de
-/// taille d'une session à l'autre. C'est le moment que la page choisit
-/// elle aussi.
+/// Read and not set in stone: they are chosen in the settings. Read once,
+/// because the card takes the width of its longest line and that width is
+/// its window's, which does not change size from one session to the next.
+/// It is the moment the page chooses too.
 static KEYS: Mutex<Vec<(Doing, Option<String>)>> = Mutex::new(Vec::new());
 
-// La toile de cette fenêtre, tenue par le fil qui la possède : une
-// surface de dessin et la fenêtre qu'elle habille appartiennent au fil
-// qui les a faites.
+// This window's canvas, held by the thread that owns it: a drawing
+// surface and the window it dresses belong to the thread that made
+// them.
 thread_local! {
     static CANVAS: std::cell::RefCell<Option<Canvas>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Une longueur rangée dans un entier partagé, en centièmes de pixel : un
-/// nombre à virgule ne s'y range pas, et le centième suffit à un écran
-/// agrandi de cent soixante-quinze pour cent.
+/// A length stored in a shared integer, in hundredths of a pixel: a
+/// decimal number cannot be stored there, and a hundredth is enough for a
+/// screen magnified to a hundred and seventy-five per cent.
 fn store(cell: &AtomicU32, how_many: f32) {
     cell.store((how_many * 100.0).round() as u32, Ordering::Relaxed);
 }
@@ -609,10 +608,10 @@ impl ReadingsBar {
         }
     }
 
-    /// Ce qu'une lecture du moteur donne à lire, la précédente à la main.
+    /// What a read of the engine shows, with the previous one at hand.
     ///
-    /// La précédente parce qu'une mesure qui manque garde un moment ce
-    /// qu'elle disait plutôt que de s'effacer ; voir `KEEP_FOR`.
+    /// The previous one because a missing reading keeps what it was
+    /// saying for a while rather than being wiped; see `KEEP_FOR`.
     fn of(readings: &Measures, before: &ReadingsBar, now: Instant) -> Self {
         let mut figures: [String; 4] = std::array::from_fn(|_| String::new());
         let mut read_at = [None; 4];
@@ -637,14 +636,15 @@ impl ReadingsBar {
         }
     }
 
-    /// Si ce qui se lit a changé, les instants mis à part.
+    /// Whether what is read has changed, leaving the
+    /// instants aside.
     fn reads_differently(&self, other: &ReadingsBar) -> bool {
         self.figures != other.figures || self.stream != other.stream
     }
 }
 
 impl Setting {
-    /// Le nom sous lequel il voyage, des deux côtés.
+    /// The name it travels under, on both sides.
     fn name(self) -> &'static str {
         match self {
             Setting::Size => "asked",
@@ -655,7 +655,7 @@ impl Setting {
         }
     }
 
-    /// Les valeurs proposées, dans l'ordre du produit.
+    /// The values on offer, in the product's order.
     fn values(self, menu: &SessionMenu) -> Vec<String> {
         match self {
             Setting::Size => menu.sizes.iter().map(|size| size.value.clone()).collect(),
@@ -666,13 +666,13 @@ impl Setting {
                 .collect(),
             Setting::Bitrate => menu.rates.iter().map(u32::to_string).collect(),
             Setting::Codec => menu.codecs.clone(),
-            // Deux mots et non une liste : c'est un interrupteur, et ses
-            // deux côtés se nomment dans la fenêtre comme ceux d'à côté.
+            // Two words and not a list: it is a switch, and its two
+            // sides are named in the window like the ones next to it.
             Setting::Steady => vec!["off".to_string(), "on".to_string()],
         }
     }
 
-    /// Ce qui s'écrit pour cette valeur, là où on la choisit.
+    /// What is written for this value, where it is chosen.
     fn label(self, menu: &SessionMenu, value: &str) -> String {
         match self {
             Setting::Size => match value {
@@ -713,14 +713,14 @@ impl Setting {
         }
     }
 
-    /// Ce qui s'écrit à droite de la ligne du menu, quand la valeur en
-    /// place ne s'y lit pas déjà.
+    /// What is written to the right of the menu line, when the value
+    /// in place is not already read there.
     fn summary(self, menu: &SessionMenu) -> String {
         let current = self.current(menu);
         match self {
-            // Ce à quoi le choix revient réellement ici : « client » ne
-            // dit pas si on demande du 4K ou du 1080p, et c'est justement
-            // ce qu'on veut savoir avant d'ouvrir la session.
+            // What the choice really comes to here: "client" does not say
+            // whether 4K or 1080p is being asked for, and that is exactly
+            // what one wants to know before opening the session.
             Setting::Size => {
                 if current == "host" {
                     return "hôte".to_string();
@@ -736,8 +736,9 @@ impl Setting {
                     pixels
                 }
             }
-            // Le nom seul : « (principal) » y prendrait la place du nom
-            // sans rien apprendre, la liste le disant déjà.
+            // The name alone: "(principal)" would take the name's room
+            // there without teaching anything, since the list already
+            // says it.
             Setting::Screen => menu
                 .screens
                 .iter()
@@ -747,23 +748,22 @@ impl Setting {
         }
     }
 
-    /// Ce qui s'écrit en colonne de droite dans la liste.
+    /// What is written in the list's right-hand column.
     fn aside(self, menu: &SessionMenu, value: &str) -> String {
         match self {
-            // Le rapport de la taille, dit comme les écrans se vendent :
-            // deux nombres se comparent mal, et 21:9 à côté de 16:9 dit
-            // tout de suite ce qui va être coupé. Rien pour les deux
-            // premières : ce à quoi elles reviennent dépend de l'écran
-            // qu'on a en face.
+            // The size's ratio, said the way screens are sold: two
+            // numbers compare badly, and 21:9 next to 16:9 says at once
+            // what is going to be cut. Nothing for the first two: what
+            // they come to depends on the screen one is facing.
             Setting::Size if value != "client" && value != "host" => menu
                 .sizes
                 .iter()
                 .find(|size| size.value == value)
                 .filter(|size| size.width > 0)
                 .map_or_else(String::new, |size| ratio(size.width, size.height)),
-            // La taille de l'écran, comme le rapport l'est pour la
-            // résolution : deux écrans se distinguent d'abord par là, et
-            // un nom de modèle ne dit rien à qui ne l'a pas acheté.
+            // The screen's size, as the ratio is for the resolution: two
+            // screens are told apart by that first, and a model name
+            // says nothing to anyone who did not buy it.
             Setting::Screen => menu
                 .screens
                 .iter()
@@ -775,7 +775,7 @@ impl Setting {
         }
     }
 
-    /// Où l'on en est.
+    /// Where things stand.
     fn current(self, menu: &SessionMenu) -> String {
         match self {
             Setting::Size => menu.now.asked.clone(),
@@ -786,28 +786,28 @@ impl Setting {
         }
     }
 
-    /// Ce que la machine d'en face a dit ne pas savoir faire.
+    /// What the far machine said it cannot do.
     ///
-    /// Rien du tout veut dire qu'elle n'a rien dit, jamais qu'elle ne sait
-    /// rien faire : hors session, ou pendant que son moteur démarre, la
-    /// question n'a pas de réponse, et une question sans réponse doit
-    /// laisser le menu exactement comme il était.
+    /// Nothing at all means it has said nothing, never that it can do
+    /// nothing: outside a session, or while its engine is starting, the
+    /// question has no answer, and a question with no answer must leave
+    /// the menu exactly as it was.
     fn out_of_reach(self, menu: &SessionMenu, value: &str) -> bool {
         self == Setting::Codec && menu.beyond_it.iter().any(|other| other == value)
     }
 }
 
-/// Une taille, en pixels.
+/// A size, in pixels.
 fn in_pixels(size: &Offered) -> String {
     format!("{}x{}", size.width, size.height)
 }
 
-/// Le rapport d'une taille, réduit comme on le lit sur une fiche d'écran.
+/// A size's ratio, reduced as it reads on a screen's spec sheet.
 ///
-/// Calculé plutôt qu'écrit à côté de chaque nombre : une deuxième table
-/// s'écarterait de la première le jour où une taille s'ajoute. Les deux
-/// rapports que personne n'écrit sous leur forme réduite sont dits comme
-/// tout le monde les dit.
+/// Worked out rather than written next to each number: a second table
+/// would drift from the first the day a size is added. The two ratios
+/// nobody writes in their reduced form are said the way everybody says
+/// them.
 fn ratio(width: u32, top: u32) -> String {
     fn gcd(a: u32, b: u32) -> u32 {
         if b == 0 { a } else { gcd(b, a % b) }
@@ -821,8 +821,8 @@ fn ratio(width: u32, top: u32) -> String {
     }
 }
 
-/// La ligne grise sous les chiffres : de quoi l'image est faite. Ce qui
-/// manque ne laisse pas de trou, il ne s'écrit pas.
+/// The grey line under the figures: what the picture is made of. What
+/// is missing leaves no gap, it is not written.
 fn stream(said: &Measures) -> String {
     let mut pieces: Vec<String> = Vec::new();
     if let Some(codec) = &said.codec {
@@ -838,7 +838,7 @@ fn stream(said: &Measures) -> String {
 }
 
 impl Trailing {
-    /// Ce qui s'écrit, une fois les raccourcis connus.
+    /// What is written, once the shortcuts are known.
     fn text(&self) -> String {
         match self {
             Trailing::Text(label) => (*label).to_string(),
@@ -854,35 +854,36 @@ impl Trailing {
 }
 
 impl Line {
-    /// La hauteur que cette ligne prend, en vrais pixels.
+    /// The height this line takes, in real pixels.
     fn height(&self, scale: f32) -> f32 {
         match self {
             Line::Measures => readings_height(scale),
             Line::Separator => (design::SPACE_2 * 2.0 + layout::HAIRLINE) * scale,
-            // Mesurée au dessin, où se trouve de quoi mesurer du texte
-            // replié, et relue ici comme la largeur de la carte l'est.
+            // Measured when drawing, where there is what it takes to
+            // measure wrapped text, and read back here as the card's
+            // width is.
             Line::Refusal => load(&REFUSAL_HEIGHT),
             Line::Slider(_) => slider_height(scale),
             _ => layout::LINE * scale,
         }
     }
 
-    /// Si cette ligne a lieu d'être en ce moment.
+    /// Whether this line has a reason to be there right now.
     ///
-    /// Une machine d'en face qui n'a qu'un écran, ou dont le moteur n'a
-    /// pas encore dit lesquels, ne laisse rien à choisir : la ligne
-    /// s'efface plutôt que d'ouvrir une liste vide.
+    /// A far machine with only one screen, or whose engine has not yet
+    /// said which ones, leaves nothing to choose: the line goes away
+    /// rather than open an empty list.
     fn is_visible(&self, menu: Option<&SessionMenu>) -> bool {
-        // Sans refus à dire, la ligne n'est pas là du tout : elle ne doit
-        // rien coûter les neuf cent quatre-vingt-dix-neuf fois où tout se
-        // passe bien.
+        // With no refusal to say, the line is not there at all: it must
+        // cost nothing the nine hundred and ninety-nine times when all
+        // goes well.
         if matches!(self, Line::Refusal) {
             return refusal_to_say().is_some();
         }
         let Some(menu) = menu else {
-            // Sans réponse, la carte se réduit à ce qui ne dépend pas de
-            // la session : mieux vaut une carte courte qu'une carte de
-            // lignes vides.
+            // With no answer, the card shrinks to what does not depend
+            // on the session: a short card is better than a card of
+            // empty lines.
             return !matches!(self, Line::Choice(_) | Line::Slider(_) | Line::List(_));
         };
         match self {
@@ -893,7 +894,7 @@ impl Line {
 }
 
 impl Toggle {
-    /// Ce qui s'écrit sur ses deux côtés.
+    /// What is written on its two sides.
     fn words(&self) -> Vec<String> {
         self.sides
             .iter()
@@ -901,17 +902,17 @@ impl Toggle {
             .collect()
     }
 
-    /// Lequel des deux est en place.
+    /// Which of the two is in place.
     fn current_side(&self) -> usize {
         usize::from(self.state.load(Ordering::Relaxed))
     }
 }
 
-/// Ce qui s'écrit sur les côtés d'une ligne à choix.
+/// What is written on the sides of a choice line.
 ///
-/// À part de la ligne pour qu'on puisse le demander avec les réglages
-/// déjà en main : les redemander à ce moment-là reprendrait un verrou
-/// qu'on tient.
+/// Apart from the line so that it can be asked for with the settings
+/// already in hand: asking for them again at that moment would take
+/// again a lock that is already held.
 fn words_of(menu: &SessionMenu, setting: Setting) -> Vec<String> {
     setting
         .values(menu)
@@ -921,14 +922,13 @@ fn words_of(menu: &SessionMenu, setting: Setting) -> Vec<String> {
 }
 
 impl Choice {
-    /// Ce qui s'écrit sur ses côtés, tel que la session les propose.
+    /// What is written on its sides, as the session offers them.
     fn words(&self) -> Option<Vec<String>> {
         let session_menu = SESSION_MENU.lock().expect("réglages du menu");
         Some(words_of(session_menu.as_ref()?, self.setting))
     }
 
-    /// Lequel est en place, et ceux que la machine d'en face ne sait pas
-    /// faire.
+    /// Which one is in place, and the ones the far machine cannot do.
     fn current(&self) -> Option<(usize, Vec<bool>)> {
         let session_menu = SESSION_MENU.lock().expect("réglages du menu");
         let menu = session_menu.as_ref()?;
@@ -945,8 +945,8 @@ impl Choice {
 }
 
 impl Slider {
-    /// Le cran où il en est : celui qu'une main tient, sinon celui qui est
-    /// écrit.
+    /// The notch it is at: the one a hand is holding, otherwise the one
+    /// that is written.
     fn notch(&self) -> Option<(usize, usize)> {
         let session_menu = SESSION_MENU.lock().expect("réglages du menu");
         let menu = session_menu.as_ref()?;
@@ -966,8 +966,8 @@ impl Slider {
         ))
     }
 
-    /// Ce qui s'écrit à droite de son mot : ce qu'il vaut au cran où il
-    /// est, y compris pendant qu'une main le pousse.
+    /// What is written to the right of its word: what it is worth at
+    /// the notch it is at, including while a hand is pushing it.
     fn value(&self) -> String {
         let session_menu = SESSION_MENU.lock().expect("réglages du menu");
         let Some(menu) = session_menu.as_ref() else {
@@ -981,11 +981,11 @@ impl Slider {
     }
 }
 
-/// Ouvre la fenêtre de la carte, une fois par session.
+/// Opens the card's window, once per session.
 ///
-/// Bâtie sur le fil qui dessine, comme celle du logo : une fenêtre
-/// appartient au fil qui l'a faite, et une fenêtre faite sur le fil de la
-/// veille n'entendrait jamais une souris.
+/// Built on the drawing thread, like the logo's: a window belongs to the
+/// thread that made it, and a window made on the watch's thread would
+/// never hear a mouse.
 pub fn raise(app: &App, scale: f32, light: bool) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
@@ -993,9 +993,9 @@ pub fn raise(app: &App, scale: f32, light: bool) {
     let owner = crate::main_window::handle();
     *PROGRAM.lock().expect("programme du menu") = Some(app.clone());
     *KEYS.lock().expect("raccourcis du menu") = crate::shortcuts::engraved();
-    // Quatre tirets avant la première lecture, et non quatre vides : la
-    // barre est là dès la première ouverture, et ce qu'elle montre alors
-    // est ce que le produit montre pour une mesure qui manque.
+    // Four dashes before the first read, and not four blanks: the bar is
+    // there from the first opening, and what it shows then is what the
+    // product shows for a missing reading.
     *READINGS_BAR.lock().expect("mesures du menu") =
         ReadingsBar::of(&Measures::default(), &ReadingsBar::empty(), Instant::now());
     store(&SCALE, scale);
@@ -1003,25 +1003,24 @@ pub fn raise(app: &App, scale: f32, light: bool) {
     OPEN.store(false, Ordering::Relaxed);
     *PANEL.lock().expect("panneau du menu") = None;
     let _ = app.run_on_main_thread(move || build(owner));
-    // Ce que la session propose, demandé une fois : les crans ne changent
-    // pas d'un clic à l'autre. La fenêtre est bâtie sans attendre, parce
-    // qu'une carte fermée n'a rien à montrer et que la réponse la
-    // rattrapera avant la première ouverture.
+    // What the session offers, asked for once: the notches do not change
+    // from one click to the next. The window is built without waiting,
+    // because a closed card has nothing to show and the answer will catch
+    // up with it before the first opening.
     reread_the_session_menu(app);
 }
 
-/// Redemande ce que la session propose et où elle en est, et recommence
-/// tant que la machine d'en face n'a pas dit ce qu'elle sait encoder.
+/// Asks again what the session offers and where it stands, and starts over
+/// as long as the far machine has not said what it can encode.
 ///
-/// Elle met quelques secondes à le dire : son moteur démarre, puis le
-/// chemin se met à servir la session. Demandée une seule fois à
-/// l'ouverture du bouton, la question tombait toujours avant, et le menu
-/// s'ouvrait en proposant un codec que cette machine-là ne sait pas
-/// faire ; il ne se reprenait qu'une fois la carte déjà sous les yeux, ce
-/// qui se voit.
+/// It takes a few seconds to say so: its engine starts, then the road
+/// starts serving the session. Asked only once when the button opened, the
+/// question always came before that, and the menu opened offering a codec
+/// that particular machine cannot do; it only corrected itself once the
+/// card was already in front of the eyes, which shows.
 ///
-/// Un numéro de tour, comme pour les mesures : deux ouvertures rapprochées
-/// ne laissent pas deux veilles derrière la même carte.
+/// A numbered round, as for the readings: two openings close together do
+/// not leave two watches behind the same card.
 fn reread_the_session_menu(app: &App) {
     let app = app.clone();
     let round = SESSION_MENU_ROUND.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1030,9 +1029,9 @@ fn reread_the_session_menu(app: &App) {
             && ITS_WINDOW.load(Ordering::Relaxed) != 0
         {
             let read = crate::settings::session_menu(app.clone()).await;
-            // Rien du tout veut dire qu'elle n'a rien dit, jamais qu'elle
-            // ne sait rien faire : c'est donc là-dessus que la question se
-            // repose, et nulle part ailleurs.
+            // Nothing at all means it has said nothing, never that it can
+            // do nothing: so it is on that, and nowhere else, that the
+            // question is asked again.
             let answered = !read.beyond_it.is_empty();
             let change = {
                 let mut session_menu = SESSION_MENU.lock().expect("réglages du menu");
@@ -1051,48 +1050,50 @@ fn reread_the_session_menu(app: &App) {
     });
 }
 
-/// Referme la carte et rend sa fenêtre avec la session.
+/// Closes the card and returns its window with the session.
 pub fn lower(app: &App) {
     let window = ITS_WINDOW.swap(0, Ordering::Relaxed);
     if window == 0 {
         return;
     }
     OPEN.store(false, Ordering::Relaxed);
-    // La veille des mesures ne se range pas d'elle-même : elle suit la
-    // carte, et une carte ouverte à la fin d'une session ne se referme
-    // pas, elle disparaît.
+    // The readings watch does not put itself away: it follows the
+    // card, and a card open at the end of a session does not close, it
+    // disappears.
     follow_the_readings(app, false);
     *PROGRAM.lock().expect("programme du menu") = None;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
 
-        // SAFETY: une fenêtre à nous, défaite sur le fil qui l'a faite.
+        // SAFETY: a window of ours, destroyed on the thread that made
+        // it.
         unsafe { DestroyWindow(window as HWND) };
         CANVAS.with_borrow_mut(|canvas| *canvas = None);
     });
 }
 
-/// Montre la carte, ou la range.
+/// Shows the card, or puts it away.
 pub fn show(is_open: bool) {
     if ITS_WINDOW.load(Ordering::Relaxed) == 0 || OPEN.swap(is_open, Ordering::Relaxed) == is_open {
         return;
     }
-    // Une carte rangée ne garde rien de la main qui la lisait : rouverte,
-    // elle montrerait une ligne allumée sous une souris posée ailleurs.
+    // A card put away keeps nothing of the hand that was reading it:
+    // opened again, it would show a line lit under a mouse resting
+    // elsewhere.
     *HOVER.lock().expect("survol du menu") = None;
     *PRESSED.lock().expect("appui du menu") = None;
     HAND_INSIDE.store(false, Ordering::Relaxed);
     let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
         return;
     };
-    // Un menu qu'on rouvre s'ouvre sur lui-même : rester dans une liste
-    // choisie il y a deux sessions serait un menu qui a l'air d'un autre.
+    // A menu opened again opens on itself: staying in a list chosen two
+    // sessions ago would be a menu that looks like another one.
     *PANEL.lock().expect("panneau du menu") = None;
     *PUSHED.lock().expect("curseur du menu") = None;
-    // Ce qui vit dans la carte ne vit que pendant qu'on la regarde. Les
-    // interrupteurs et les réglages se relisent à chaque ouverture parce
-    // qu'ils peuvent avoir bougé sans elle.
+    // What lives in the card only lives while it is being looked at. The
+    // switches and the settings are read again at every opening because
+    // they may have moved without it.
     follow_the_readings(&app, is_open);
     if is_open {
         let asked = app.clone();
@@ -1110,33 +1111,33 @@ pub fn show(is_open: bool) {
         if is_open {
             repaint(window);
         }
-        // SAFETY: une fenêtre à nous, montrée sans prendre le premier
-        // plan.
+        // SAFETY: a window of ours, shown without taking the
+        // foreground.
         unsafe {
             ShowWindow(window, if is_open { SW_SHOWNOACTIVATE } else { SW_HIDE });
         }
     });
 }
 
-/// Dit si la carte est ouverte, pour qui a besoin de la basculer.
+/// Says whether the card is open, for whoever needs to toggle it.
 pub fn is_open() -> bool {
     OPEN.load(Ordering::Relaxed)
 }
 
-/// Ce que sa fenêtre prend de haut.
+/// How tall its window is.
 ///
-/// Pour le bouton, qui s'en sert à décider si le menu a la place de
-/// s'ouvrir vers le bas.
+/// For the button, which uses it to decide whether the menu has
+/// room to open downwards.
 pub fn height() -> i32 {
     HEIGHT.load(Ordering::Relaxed) as i32
 }
 
-/// Ce que sa fenêtre prend de large en tout, pour ce sens vertical-là.
+/// How wide its window is in all, for that vertical direction.
 ///
-/// À côté, elle compte aussi le bouton et l'espace qui l'en sépare :
-/// c'est sa fenêtre entière qui se pose à côté de lui, jamais sa seule
-/// carte, voir `lay`. Pour le bouton, qui s'en sert à décider de quel
-/// bord il y a la place de la faire partir.
+/// Sideways, it also counts the button and the space between them: it
+/// is its whole window that is laid beside the button, never its card
+/// alone, see `lay`. For the button, which uses it to decide from
+/// which edge there is room to send it off.
 pub fn width(opens: Opens, logo: i32) -> i32 {
     let width = WIDTH.load(Ordering::Relaxed) as i32;
     match opens {
@@ -1145,13 +1146,12 @@ pub fn width(opens: Opens, logo: i32) -> i32 {
     }
 }
 
-/// Pose la carte sous le logo, au-dessus, ou à côté, selon le sens que
-/// le bouton a décidé ; et son bord droit ou son bord gauche, selon
-/// celui qu'il a décidé avoir la place de porter la carte.
+/// Lays the card under the logo, above it, or beside it, in the
+/// direction the button decided; and by its right edge or its left
+/// edge, whichever it decided has the room to carry the card.
 ///
-/// La même ancre que le logo, dans le même geste : les deux fenêtres ne
-/// peuvent donc pas être en désaccord sur l'endroit où se trouve le
-/// bouton.
+/// The same anchor as the logo, in the same move: so the two windows
+/// cannot disagree about where the button is.
 pub fn lay(
     anchor: (i32, i32),
     opens: Opens,
@@ -1172,43 +1172,44 @@ pub fn lay(
         WIDTH.load(Ordering::Relaxed) as i32,
         HEIGHT.load(Ordering::Relaxed) as i32,
     );
-    // La fenêtre est plus grande que la carte, de tout ce que l'ombre
-    // déborde : c'est donc la **carte** qu'on pose, et la fenêtre autour
-    // d'elle. Posée comme si les deux ne faisaient qu'une, la carte
-    // tombait vingt pixels trop bas et vingt trop à gauche, ce qui se
-    // voit au premier coup d'oeil à côté de l'ancien menu.
+    // The window is larger than the card by all that the shadow spills
+    // over: so it is the **card** that is laid, and the window around
+    // it. Laid as if the two were one, the card fell twenty pixels too
+    // low and twenty too far left, which shows at first glance next to
+    // the old menu.
     let scale = scale();
-    // La toile porte la carte dessinée pour le bord d'où elle est
-    // partie, et rien ne la redessine d'elle-même : sans ceci, un bord
-    // qui vient de changer déplaçait la fenêtre tout de suite, sur une
-    // image encore posée pour l'ancien, ce qui se voyait le temps d'un
-    // reflet avant le prochain dessin.
+    // The canvas carries the card drawn for the edge it set out from,
+    // and nothing redraws it by itself: without this, an edge that had
+    // just changed moved the window at once, over a picture still laid
+    // out for the old one, which showed for a glimpse before the next
+    // drawing.
     let vertical_change =
         UPWARD.swap(opens == Opens::Up, Ordering::Relaxed) != (opens == Opens::Up);
     let horizontal_change = RIGHTWARD.swap(on_the_right, Ordering::Relaxed) != on_the_right;
     if (vertical_change || horizontal_change)
         && let Some(app) = PROGRAM.lock().expect("programme du menu").clone()
     {
-        // Redemandé au fil qui possède la fenêtre : c'est lui qui tient
-        // la toile, et ceci court sur celui qui suit la main.
+        // Asked again of the thread that owns the window: it is the one
+        // holding the canvas, and this runs on the one that follows the
+        // hand.
         let _ = app.run_on_main_thread(move || repaint(window as HWND));
     }
     let overflow_px = shadow_overflow(scale).round() as i32;
     let card_height = height - overflow_px * 2;
-    // Collée au même bord que le logo, et séparée de lui de l'espace
-    // que la feuille de style met entre les deux : son bord droit
-    // d'habitude, son bord gauche quand le premier n'a pas la place, ce
-    // que le bouton a déjà décidé.
+    // Stuck to the same edge as the logo, and separated from it by the
+    // space the stylesheet puts between the two: its right edge as a
+    // rule, its left edge when the first has no room, which the button
+    // has already decided.
     let between = (design::SPACE_2 * scale).round() as i32;
-    // Le coin que `SetWindowPos` reçoit plus bas prend encore un debord
-    // de plus, pour une raison qui reste au-dessus de cette fonction :
-    // posée telle quelle, la carte tombait vingt pixels trop à gauche.
-    // Quand c'est la carte qui est collée à ce bord-là plutôt que
-    // laissée au bord droit, elle porte elle-même un second debord (son
-    // ombre à elle, `card` la posant à `overflow_px` et non à zéro), et les
-    // deux s'ajoutent sans se répondre : sans le retirer ici deux fois,
-    // le bord de la carte serait tombé deux debords après le bouton
-    // plutôt qu'au même endroit que lui.
+    // The corner `SetWindowPos` receives further down takes yet one more
+    // overflow, for a reason that stands higher up in this function: laid
+    // as it is, the card fell twenty pixels too far left. When it is the
+    // card that is stuck to that edge rather than left at the right edge,
+    // it carries a second overflow itself (its own shadow, `card` laying it
+    // at `overflow_px` and not at zero), and the two add up without either
+    // accounting for the other: without taking it off twice here, the
+    // card's edge would have fallen two overflows past the button rather
+    // than at the same place as it.
     let horizontal = if on_the_right {
         anchor.0 - logo - overflow_px * 2
     } else {
@@ -1220,10 +1221,11 @@ pub fn lay(
             horizontal,
             anchor.1 - logo - between - card_height - overflow_px,
         ),
-        // À côté, la carte part du haut du bouton et glisse de ce qu'il
-        // faut pour tenir dans l'image : c'est toute sa raison d'être là
-        // plutôt que dessous. Sa fenêtre entière et non sa seule carte,
-        // le panneau d'une liste s'ouvrant dedans.
+        // To the side, the card starts from the top of the button and
+        // slides by as much as it takes to fit in the picture: that is
+        // its whole reason for being there rather than below. Its whole
+        // window and not its card alone, since a list's panel opens
+        // inside it.
         Opens::Side => (
             if on_the_right {
                 anchor.0 + between - overflow_px * 2
@@ -1233,8 +1235,8 @@ pub fn lay(
             (anchor.1 - overflow_px).clamp(picture.1, (picture.3 - height).max(picture.1)),
         ),
     };
-    // SAFETY: une fenêtre à nous, posée sans être activée ni
-    // redimensionnée.
+    // SAFETY: a window of ours, laid without being activated
+    // or resized.
     unsafe {
         SetWindowPos(
             window as HWND,
@@ -1248,7 +1250,7 @@ pub fn lay(
     };
 }
 
-/// Bâtit la fenêtre, à la taille que ses lignes demandent.
+/// Builds the window, at the size its lines ask for.
 fn build(owner: isize) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -1257,8 +1259,8 @@ fn build(owner: isize) {
         WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
     };
 
-    /// Le nom de la classe, dans les caractères que Windows compte, fini
-    /// par le zéro qu'il cherche.
+    /// The class's name, in the characters Windows counts, ended by the
+    /// zero it looks for.
     const CLASS: [u16; 13] = [
         b'Z' as u16,
         b'y' as u16,
@@ -1275,15 +1277,15 @@ fn build(owner: isize) {
         0,
     ];
 
-    // La taille se mesure avant que la fenêtre existe : elle dépend du
-    // texte, et mesurer du texte demande de quoi le dessiner.
+    // The size is measured before the window exists: it depends on the
+    // text, and measuring text takes something to draw it with.
     let Some(measure) = Canvas::new(1, 1) else {
         note("bouton flottant : le menu n'a pas pu être mesuré");
         return;
     };
     let scale = scale();
-    // La hauteur d'une ligne de texte, demandée à la police une fois pour
-    // toutes : tout ce qui est empilé dans cette carte s'appuie dessus.
+    // The height of a line of text, asked of the font once and for all:
+    // everything stacked in this card rests on it.
     store(
         &CAPTION_HEIGHT,
         measure.line_height(Pen::of(design::CAPTION * scale)),
@@ -1298,10 +1300,10 @@ fn build(owner: isize) {
     HEIGHT.store(height as u32, Ordering::Relaxed);
     drop(measure);
 
-    // SAFETY: une classe déclarée une fois et une fenêtre bâtie dessus,
-    // sur le fil qui pompera ses messages. Une classe déclarée deux fois
-    // est refusée sans autre effet, d'où la réponse non lue : la deuxième
-    // session retrouve celle de la première.
+    // SAFETY: a class declared once and a window built on it, on the
+    // thread that will pump its messages. A class declared twice is
+    // refused with no other effect, hence the unread answer: the second
+    // session finds the first one's again.
     let window = unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = WNDCLASSW {
@@ -1345,11 +1347,11 @@ fn build(owner: isize) {
     ));
 }
 
-/// Ce que la carte prend, en vrais pixels.
+/// What the card takes up, in real pixels.
 ///
-/// Aussi large que sa ligne la plus longue, ce que la feuille de style
-/// demande depuis toujours et qu'aucun nombre écrit à la main ne saurait
-/// tenir : un libellé rallongé couperait son raccourci.
+/// As wide as its longest line, which the stylesheet has always asked
+/// for and which no number written by hand could hold to: a label made
+/// longer would cut off its shortcut.
 fn size(canvas: &Canvas) -> (i32, i32) {
     let scale = scale();
     let overflow_px = shadow_overflow(scale);
@@ -1367,19 +1369,19 @@ fn size(canvas: &Canvas) -> (i32, i32) {
     )
 }
 
-/// Ce que la carte prend de large : sa ligne la plus longue.
+/// How wide the card is: its longest line.
 ///
-/// Ce que la feuille de style demande depuis toujours et qu'aucun nombre
-/// écrit à la main ne saurait tenir : un libellé rallongé couperait son
-/// raccourci. Mesurée sur **toutes** ses lignes, y compris celles qui ne
-/// se voient pas en ce moment : une carte qui rétrécit quand une ligne
-/// s'en va est une carte qui change de largeur sous la main.
+/// What the stylesheet has always asked for and no number written by
+/// hand could hold to: a label made longer would cut off its shortcut.
+/// Measured over **all** of its lines, including the ones not showing
+/// right now: a card that shrinks when a line goes away is a card that
+/// changes width under the hand.
 fn card_width(scale: f32) -> f32 {
     load(&CARD_WIDTH).max(design::SPACE_2 * 2.0 * scale)
 }
 
-/// La même, mesurée. Rangée ensuite, parce que la mise en page la
-/// redemande à chaque image et que mesurer du texte coûte.
+/// The same, measured. Stored afterwards, because the layout asks
+/// for it again at every frame and measuring text costs.
 fn measure_the_card(canvas: &Canvas, scale: f32) {
     let session_menu = SESSION_MENU.lock().expect("réglages du menu");
     let mut width: f32 = 0.0;
@@ -1389,9 +1391,9 @@ fn measure_the_card(canvas: &Canvas, scale: f32) {
                 (layout::READING * 4.0 + layout::BETWEEN_READINGS * 3.0 + design::SPACE_2 * 2.0)
                     * scale
             }
-            // Replié sur la largeur que les autres lignes décident : un
-            // refus est une phrase, et une carte large comme une phrase
-            // serait une carte deux fois trop large pour tout le reste.
+            // Wrapped to the width the other lines decide: a refusal is
+            // a sentence, and a card as wide as a sentence would be a
+            // card twice too wide for everything else.
             Line::Separator | Line::Refusal => 0.0,
             Line::Entry(entry) => {
                 let right =
@@ -1404,9 +1406,9 @@ fn measure_the_card(canvas: &Canvas, scale: f32) {
                 sides_width(canvas, &toggle.words(), scale),
                 scale,
             ),
-            // Ses mots sont demandés avec les réglages déjà en main : les
-            // redemander à la ligne reprendrait le verrou qu'on tient, ce
-            // qui arrête le fil qui dessine pour de bon.
+            // Its words are asked for with the settings already in hand:
+            // asking the line for them again would take again the lock
+            // being held, which stops the drawing thread for good.
             Line::Choice(choice) => match session_menu.as_ref() {
                 Some(menu) => around(
                     canvas,
@@ -1416,8 +1418,8 @@ fn measure_the_card(canvas: &Canvas, scale: f32) {
                 ),
                 None => 0.0,
             },
-            // Sa barre prend toute la largeur, donc elle n'en demande
-            // aucune : c'est sa tête qui décide, comme pour les autres.
+            // Its bar takes the whole width, so it asks for none: it is
+            // its head that decides, as for the others.
             Line::Slider(slider) => {
                 let value = session_menu
                     .as_ref()
@@ -1439,18 +1441,18 @@ fn measure_the_card(canvas: &Canvas, scale: f32) {
     store(&CARD_WIDTH, width);
 }
 
-/// Ce qu'une ligne prend de large : son icône, son mot, ce qui vient à
-/// droite, et tout ce qui les entoure.
+/// How wide a line is: its icon, its word, what comes on the right,
+/// and everything around them.
 ///
-/// La même mesure pour toutes les sortes de lignes, parce que c'est la
-/// même mise en page : ce qui change est ce qu'il y a à droite.
+/// The same measurement for every kind of line, because it is the same
+/// layout: what changes is what is on the right.
 fn around(canvas: &Canvas, label: &str, right: f32, scale: f32) -> f32 {
     canvas.width_of(label, Pen::of(design::BODY * scale))
         + right
         + (design::SPACE_2 * 2.0 + layout::ICON + design::SPACE_3 + layout::AFTER_THE_LABEL) * scale
 }
 
-/// Ce que les côtés d'une ligne à choix prennent de large, ensemble.
+/// How wide the sides of a choice line are, together.
 fn sides_width(canvas: &Canvas, words: &[String], scale: f32) -> f32 {
     words
         .iter()
@@ -1458,16 +1460,16 @@ fn sides_width(canvas: &Canvas, words: &[String], scale: f32) -> f32 {
         .sum()
 }
 
-/// Et ce qu'un seul côté prend : son mot et ce qui l'entoure.
+/// And what one side takes: its word and what surrounds it.
 fn side_width(canvas: &Canvas, label: &str, scale: f32) -> f32 {
     canvas.width_of(label, Pen::of(design::CAPTION * scale)) + design::SPACE_3 * 2.0 * scale
 }
 
-/// Où tombent les côtés d'une ligne à choix, poussés au bord droit et
-/// collés les uns aux autres.
+/// Where the sides of a choice line fall, pushed to the right edge
+/// and stuck to one another.
 ///
-/// Ils forment un seul objet, avec une bordure autour de tous et rien
-/// entre eux.
+/// They form a single object, with one border around them all and
+/// nothing between them.
 fn sides_of(canvas: &Canvas, at: Rect, words: &[String], scale: f32) -> Vec<Rect> {
     let widths: Vec<f32> = words
         .iter()
@@ -1486,7 +1488,7 @@ fn sides_of(canvas: &Canvas, at: Rect, words: &[String], scale: f32) -> Vec<Rect
         .collect()
 }
 
-/// La barre d'un curseur, sous la tête de sa ligne.
+/// The bar of a slider, under the head of its line.
 fn slider_bar(at: Rect, scale: f32) -> Rect {
     let edge = design::SPACE_2 * scale;
     let top = at.top
@@ -1502,10 +1504,10 @@ fn slider_bar(at: Rect, scale: f32) -> Rect {
     )
 }
 
-/// Les réglages qui ouvrent une liste, dans l'ordre de la carte.
+/// The settings that open a list, in the card's order.
 ///
-/// Lus dans les lignes plutôt qu'écrits une seconde fois : ajouter une
-/// liste au menu suffit alors à lui donner son panneau.
+/// Read from the lines rather than written a second time: adding a
+/// list to the menu is then enough to give it its panel.
 fn with_a_panel() -> impl Iterator<Item = Setting> {
     LINES.iter().filter_map(|line| match line {
         Line::List(list) => Some(list.setting),
@@ -1513,12 +1515,12 @@ fn with_a_panel() -> impl Iterator<Item = Setting> {
     })
 }
 
-/// Ce que le plus large des panneaux prend, ou rien quand aucun n'a de
-/// quoi s'ouvrir.
+/// How wide the widest of the panels is, or nothing when none has what
+/// it takes to open.
 ///
-/// Le plus large et non celui qui est ouvert : la fenêtre ne peut pas
-/// changer de largeur au moment où l'on ouvre une liste sans que le
-/// dessin qu'elle porte change de place au même instant.
+/// The widest and not the one that is open: the window cannot change
+/// width at the moment a list is opened without the drawing it carries
+/// moving at the same instant.
 fn panels_width(canvas: &Canvas, scale: f32) -> f32 {
     let session_menu = SESSION_MENU.lock().expect("réglages du menu");
     let Some(menu) = session_menu.as_ref() else {
@@ -1529,7 +1531,7 @@ fn panels_width(canvas: &Canvas, scale: f32) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// Ce qu'un panneau prend de large : sa plus longue valeur.
+/// How wide a panel is: its longest value.
 fn panel_width(canvas: &Canvas, menu: &SessionMenu, setting: Setting, scale: f32) -> f32 {
     setting
         .values(menu)
@@ -1544,7 +1546,7 @@ fn panel_width(canvas: &Canvas, menu: &SessionMenu, setting: Setting, scale: f32
         .fold(0.0, f32::max)
 }
 
-/// La hauteur du plus haut des panneaux, pour la même raison.
+/// The height of the tallest panel, for the same reason.
 fn panels_height(scale: f32) -> f32 {
     let session_menu = SESSION_MENU.lock().expect("réglages du menu");
     let Some(menu) = session_menu.as_ref() else {
@@ -1555,11 +1557,11 @@ fn panels_height(scale: f32) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// Ce qu'un panneau prend de haut : ses valeurs, et rien d'autre.
+/// How tall a panel is: its values, and nothing else.
 ///
-/// Sans titre : on sait où l'on est, la ligne qui l'a ouvert est en face
-/// et son chevron le dit. Une ligne de plus pour redire le mot d'à côté
-/// serait une ligne de moins pour les valeurs.
+/// No title: one knows where one is, the line that opened it is facing
+/// it and its chevron says so. One more line to repeat the word next to
+/// it would be one line less for the values.
 fn panel_height(menu: &SessionMenu, setting: Setting, scale: f32) -> f32 {
     let how_many = setting.values(menu).len();
     if how_many == 0 {
@@ -1568,13 +1570,13 @@ fn panel_height(menu: &SessionMenu, setting: Setting, scale: f32) -> f32 {
     (design::SPACE_2 * 2.0 + layout::LINE * how_many as f32) * scale
 }
 
-/// Le panneau ouvert dans sa fenêtre, du côté de la carte d'où elle
-/// n'est pas partie : à sa gauche d'habitude, à sa droite quand elle
-/// est elle-même collée au bord gauche de la fenêtre.
+/// The open panel in its window, on the side of the card it did not
+/// set out from: on its left as a rule, on its right when the card
+/// itself is stuck to the window's left edge.
 fn panel(canvas: &Canvas, setting: Setting, scale: f32) -> Option<Rect> {
-    // La carte et la ligne d'abord, le verrou des réglages ensuite : les
-    // mesurer demande ce même verrou, et un verrou repris pendant qu'on
-    // le tient arrête le fil qui dessine pour de bon.
+    // The card and the line first, the settings lock afterwards:
+    // measuring them takes that same lock, and a lock taken again while
+    // it is held stops the drawing thread for good.
     let card = card(scale);
     let line = panel_line(setting, scale)?;
     let session_menu = SESSION_MENU.lock().expect("réglages du menu");
@@ -1584,11 +1586,11 @@ fn panel(canvas: &Canvas, setting: Setting, scale: f32) -> Option<Rect> {
         return None;
     }
     let width = panel_width(canvas, menu, setting, scale);
-    // Ouvert en face de la ligne qui l'ouvre, sa première valeur sur
-    // elle : un panneau de deux valeurs collé en haut de la carte
-    // pendant qu'on clique une ligne du bas est un panneau qu'on cherche
-    // des yeux. Il descend de ce qu'il faut pour tenir dans la fenêtre,
-    // qui est bâtie assez haute pour le plus grand d'entre eux.
+    // Opened facing the line that opens it, its first value level with
+    // it: a panel of two values stuck at the top of the card while a
+    // line at the bottom is being clicked is a panel one has to search
+    // for with one's eyes. It comes down by as much as it takes to fit
+    // in the window, which is built tall enough for the largest of them.
     let edge = design::SPACE_2 * scale;
     let inside = shadow_overflow(scale);
     let bottom = (HEIGHT.load(Ordering::Relaxed) as f32 - inside - height).max(inside);
@@ -1605,7 +1607,7 @@ fn panel(canvas: &Canvas, setting: Setting, scale: f32) -> Option<Rect> {
     ))
 }
 
-/// Où tombe la ligne qui ouvre ce panneau, quand elle se voit.
+/// Where the line that opens this panel falls, when it shows.
 fn panel_line(setting: Setting, scale: f32) -> Option<Rect> {
     walk(scale)
         .into_iter()
@@ -1613,7 +1615,7 @@ fn panel_line(setting: Setting, scale: f32) -> Option<Rect> {
         .map(|(_, _, place)| place)
 }
 
-/// La place de chacune des valeurs du panneau ouvert.
+/// The place of each of the open panel's values.
 fn panel_walk(canvas: &Canvas, setting: Setting, scale: f32) -> Vec<Rect> {
     let Some(panel) = panel(canvas, setting, scale) else {
         return Vec::new();
@@ -1639,13 +1641,13 @@ fn panel_walk(canvas: &Canvas, setting: Setting, scale: f32) -> Vec<Rect> {
         .collect()
 }
 
-/// De combien l'ombre sort de la carte, de chaque côté.
+/// How far the shadow spills out of the card, on each side.
 fn shadow_overflow(scale: f32) -> f32 {
     let shadow = palette().shadow_2;
     (shadow.soft + shadow.down.abs().max(shadow.across.abs())) * scale
 }
 
-/// La hauteur de la barre des mesures.
+/// The height of the readings bar.
 fn readings_height(scale: f32) -> f32 {
     design::SPACE_2 * scale
         + load(&CAPTION_HEIGHT)
@@ -1656,18 +1658,18 @@ fn readings_height(scale: f32) -> f32 {
         + design::SPACE_1 * scale
 }
 
-/// La hauteur d'une ligne à curseur : sa tête, puis la barre en dessous.
+/// The height of a slider line: its head, then the bar below.
 fn slider_height(scale: f32) -> f32 {
     (design::SPACE_2 + layout::UNDER_THE_LABEL + layout::SLIDER + design::SPACE_3) * scale
         + load(&BODY_HEIGHT)
 }
 
-/// La carte dans sa fenêtre.
+/// The card in its window.
 ///
-/// Aussi haute que ce qu'elle montre, et pas plus. Des lignes vont et
-/// viennent selon la session, et la fenêtre est bâtie une fois pour la
-/// plus grande des cartes possibles : celle-ci est donc collée au bord
-/// d'où le menu s'ouvre, qui est le seul que personne ne doit voir bouger.
+/// As tall as what it shows, and no taller. Lines come and go with the
+/// session, and the window is built once for the largest card possible: so
+/// this one is stuck to the edge the menu opens from, which is the only
+/// one nobody must see move.
 fn card(scale: f32) -> Rect {
     let (width, height) = (
         WIDTH.load(Ordering::Relaxed) as f32,
@@ -1689,7 +1691,7 @@ fn card(scale: f32) -> Rect {
     Rect::at(left, top, card_width(scale), show)
 }
 
-/// La hauteur de ce que la carte montre en ce moment.
+/// The height of what the card is showing right now.
 fn content(scale: f32) -> f32 {
     let session_menu = SESSION_MENU.lock().expect("réglages du menu");
     design::SPACE_2 * scale * 2.0
@@ -1700,12 +1702,12 @@ fn content(scale: f32) -> f32 {
             .sum::<f32>()
 }
 
-/// Chaque ligne visible et la place qu'elle prend, du haut de la carte
-/// vers le bas.
+/// Each visible line and the room it takes, from the top of the card
+/// downwards.
 ///
-/// Lue par le dessin et par la souris, une seule fois écrite : une carte
-/// dont les lignes sont dessinées à un endroit et cliquées à un autre est
-/// une carte qui rend le mauvais menu.
+/// Read by the drawing and by the mouse, written only once: a card whose
+/// lines are drawn in one place and clicked in another is a card that
+/// serves the wrong menu.
 fn walk(scale: f32) -> Vec<(usize, &'static Line, Rect)> {
     let card = card(scale);
     let edge = design::SPACE_2 * scale;
@@ -1732,14 +1734,13 @@ fn walk(scale: f32) -> Vec<(usize, &'static Line, Rect)> {
     placed
 }
 
-/// Ce qui est sous ce point de la fenêtre, quand c'est quelque chose
-/// qu'on clique.
+/// What is under this point of the window, when it is something that
+/// gets clicked.
 ///
-/// Ce qui est en morceaux, les côtés d'un interrupteur et les valeurs
-/// d'un panneau, demande de savoir où ils tombent, donc de quoi mesurer
-/// du texte : la toile de la fenêtre, celle-là même sur laquelle ils ont
-/// été dessinés. Une souris qui viserait d'après une autre mesure que le
-/// dessin viserait à côté.
+/// What comes in pieces, the sides of a switch and the values of a
+/// panel, needs to know where they fall, and so something to measure
+/// text with: the window's canvas, the very one they were drawn on. A
+/// mouse aiming by another measurement than the drawing would miss.
 fn under(point: (i32, i32)) -> Option<Target> {
     let (x, y) = (point.0 as f32, point.1 as f32);
     let scale = scale();
@@ -1777,9 +1778,9 @@ fn under(point: (i32, i32)) -> Option<Target> {
                 .map(|side| Target::Side(rank, side))
         }),
         Line::Slider(_) => inside(&slider_bar(place, scale).grown(
-            // La barre fait quatre pixels de haut : viser quatre pixels
-            // avec une souris est un travail, et personne n'a demandé un
-            // travail. Ce qu'on attrape est la hauteur du pouce.
+            // The bar is four pixels tall: aiming at four pixels with a
+            // mouse is a chore, and nobody asked for a chore. What gets
+            // caught is the thumb's height.
             (layout::THUMB - layout::BAR) * scale / 2.0,
         ))
         .then_some(Target::Bar(rank)),
@@ -1787,14 +1788,14 @@ fn under(point: (i32, i32)) -> Option<Target> {
     }
 }
 
-/// Dessine la carte et la remet à la fenêtre.
+/// Draws the card and hands it to the window.
 ///
-/// La fenêtre suit ce que la carte demande. Elle peut changer de taille
-/// sans que rien ne clignote : l'image et la taille sont remises à Windows
-/// dans le même geste, donc il n'existe pas d'instant où la fenêtre soit
-/// grande sans être peinte. C'est ce qu'une vue web ne sait pas faire, et
-/// c'est ce qui permet ici de mesurer la carte sur ce qu'elle contient
-/// vraiment plutôt que sur ce qu'elle pourrait contenir un jour.
+/// The window follows what the card asks for. It can change size without
+/// anything flickering: the picture and the size are handed to Windows in
+/// the same move, so there is no moment when the window is large without
+/// being painted. That is what a web view cannot do, and it is what lets
+/// the card here be measured on what it really holds rather than on what
+/// it might hold one day.
 fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
@@ -1806,9 +1807,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     let is_open = *PANEL.lock().expect("panneau du menu");
 
     CANVAS.with_borrow_mut(|canvas| {
-        // Ce qu'il faut de place, mesuré sur la toile qui est là : mesurer
-        // du texte ne demande pas la bonne taille de toile, seulement une
-        // toile.
+        // The room needed, measured on the canvas that is there: measuring
+        // text does not need the right size of canvas, only a canvas.
         if canvas.is_none() {
             *canvas = Canvas::new(1, 1);
         }
@@ -1822,8 +1822,9 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         }
         WIDTH.store(width as u32, Ordering::Relaxed);
         HEIGHT.store(height as u32, Ordering::Relaxed);
-        // Refaite dès qu'elle n'est plus à la bonne taille, ce qui est
-        // aussi le cas de celle d'un pixel qui vient de servir à mesurer.
+        // Made again as soon as it is no longer the right size, which is
+        // also the case of the one-pixel canvas that has just served for
+        // measuring.
         if measure.size() != (width, height) {
             *canvas = Canvas::new(width, height);
         }
@@ -1904,16 +1905,14 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             right: 0,
             bottom: 0,
         };
-        // SAFETY: une fenêtre à nous, dont le rectangle est lu dans le
-        // nôtre.
+        // SAFETY: a window of ours, whose rectangle is read into ours.
         if unsafe { GetWindowRect(window, &mut place) } == 0 {
             return;
         }
-        // Accrochée par le bord d'où le menu s'ouvre, et par celui d'où
-        // il part verticalement : ce sont les deux seuls que personne ne
-        // doit voir bouger quand la fenêtre change de taille. Ce sont
-        // aussi ceux que `lay` calcule, donc les deux tombent d'accord
-        // d'eux-mêmes.
+        // Hung by the edge the menu opens from, and by the one it sets
+        // out from vertically: those are the only two nobody must see
+        // move when the window changes size. They are also the ones
+        // `lay` works out, so the two agree by themselves.
         let x = if RIGHTWARD.load(Ordering::Relaxed) {
             place.left
         } else {
@@ -1928,22 +1927,22 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     });
 }
 
-/// Ce qui ne change pas pendant qu'une carte se dessine : de quoi
-/// dessiner, de combien un pixel de page compte, et le thème.
+/// What does not change while a card is being drawn: something to draw
+/// with, how much a page pixel counts for, and the theme.
 ///
-/// Porté ensemble plutôt que passé trois fois à chaque ligne, et le menu
-/// en a maintenant sept sortes.
+/// Carried together rather than passed three times to every line, and
+/// the menu now has seven kinds of them.
 struct Painter<'a> {
     canvas: &'a Canvas,
     scale: f32,
     colours: Palette,
 }
 
-/// Ce qu'une ligne à côtés montre : sa tête, ses mots, celui qui est en
-/// place, et ceux que la machine d'en face ne sait pas faire.
+/// What a line with sides shows: its head, its words, the one in place,
+/// and the ones the far machine cannot do.
 ///
-/// Porté ensemble parce que ça se dessine ensemble, et qu'un interrupteur
-/// et une ligne à boutons ne s'en décrivent pas autrement.
+/// Carried together because it is drawn together, and because a switch
+/// and a line of buttons are described no differently.
 struct Sides<'a> {
     icon: &'a Icon,
     label: &'a str,
@@ -1953,8 +1952,8 @@ struct Sides<'a> {
 }
 
 impl Painter<'_> {
-    /// Le début d'une ligne, qui est le même pour toutes : son icône à sa
-    /// place, et son mot après.
+    /// The start of a line, which is the same for all of them: its icon
+    /// in its place, and its word after it.
     fn head(&self, at: Rect, icon: &Icon, label: &str, ink: Colour) {
         let (canvas, scale) = (self.canvas, self.scale);
         let side = layout::ICON * scale;
@@ -1979,7 +1978,7 @@ impl Painter<'_> {
         );
     }
 
-    /// Le fond qu'une ligne prend sous la main.
+    /// The background a line takes under the hand.
     fn hover(&self, at: Rect, tint: Option<Colour>) {
         if let Some(tint) = tint {
             self.canvas
@@ -1987,8 +1986,8 @@ impl Painter<'_> {
         }
     }
 
-    /// Ce qui s'écrit à droite d'une ligne, dans la couleur des choses
-    /// qu'on lit sans les chercher.
+    /// What is written to the right of a line, in the colour of things
+    /// one reads without looking for them.
     fn on_the_right(&self, at: Rect, label: &str, size: f32, ink: Colour) {
         if label.is_empty() {
             return;
@@ -2004,8 +2003,8 @@ impl Painter<'_> {
         );
     }
 
-    /// Une entrée : son icône, son mot, ce qui est écrit à sa droite, et
-    /// le fond que le survol lui met.
+    /// An entry: its icon, its word, what is written to its right, and
+    /// the background the hover gives it.
     fn entry(&self, at: Rect, entry: &Entry, under_the_hand: bool) {
         let colours = self.colours;
         let ink = if entry.destructive {
@@ -2013,9 +2012,9 @@ impl Painter<'_> {
         } else {
             colours.text
         };
-        // La ligne qui coupe la session s'allume de sa propre couleur
-        // plutôt que du gris des autres : ce n'est pas un survol de plus,
-        // c'est celui dont il faut se méfier.
+        // The line that cuts the session off lights up in its own colour
+        // rather than the grey of the others: it is not one more hover,
+        // it is the one to be wary of.
         self.hover(
             at,
             under_the_hand.then(|| {
@@ -2035,8 +2034,8 @@ impl Painter<'_> {
         );
     }
 
-    /// Une ligne qui ouvre une liste : sa valeur en place, puis le chevron
-    /// qui dit qu'elle mène ailleurs.
+    /// A line that opens a list: its value in place, then the chevron that
+    /// says it leads elsewhere.
     fn list(&self, at: Rect, list: &List, under_the_hand: bool) {
         let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
         self.hover(at, under_the_hand.then_some(colours.surface_3));
@@ -2046,12 +2045,12 @@ impl Painter<'_> {
         let edge = design::SPACE_2 * scale;
         let open = *PANEL.lock().expect("panneau du menu") == Some(list.setting);
         canvas.icon(
-            // Le chevron dit dans quel sens la liste s'ouvre, donc il se
-            // retourne quand elle est ouverte : elle paraît à gauche
-            // d'habitude, il pointe vers elle ; à droite quand la carte
-            // est elle-même collée au bord gauche de la fenêtre, il
-            // pointe vers elle en pointant tout simplement où il pointait
-            // déjà, fermée.
+            // The chevron says which way the list opens, so it turns
+            // round when the list is open: the list appears on the left
+            // as a rule, and it points towards it; on the right when the
+            // card itself is stuck to the window's left edge, it points
+            // towards it by simply pointing where it already pointed
+            // while closed.
             if open && !RIGHTWARD.load(Ordering::Relaxed) {
                 &icons::BACK
             } else {
@@ -2081,13 +2080,13 @@ impl Painter<'_> {
         );
     }
 
-    /// Une ligne à côtés : un interrupteur ou une suite de boutons, dont
-    /// un seul est plein.
+    /// A line with sides: a switch or a row of buttons, only one of which
+    /// is filled.
     ///
-    /// Les deux se dessinent ici parce qu'ils se dessinent pareil. Ce qui
-    /// les sépare est ce qu'ils font, pas ce qu'ils montrent : l'un
-    /// bascule la session tout de suite, l'autre écrit un choix que la
-    /// session prend là où elle est.
+    /// Both are drawn here because they are drawn the same way. What sets
+    /// them apart is what they do, not what they show: one flips the
+    /// session at once, the other writes a choice that the session takes
+    /// up where it stands.
     fn sides(&self, at: Rect, spec: &Sides, under_the_hand: Option<usize>) {
         let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
         let words = spec.words;
@@ -2113,10 +2112,10 @@ impl Painter<'_> {
                 (None, colours.text_faint)
             };
             if let Some(background) = background {
-                // Le fond de l'objet entier, vu au travers de ce côté-là :
-                // les côtés n'en forment qu'un, arrondi par dehors et droit
-                // là où ils se touchent, ce qu'aucun rectangle arrondi ne
-                // sait être à lui seul.
+                // The background of the whole object, seen through that
+                // side: the sides make up a single one, rounded on the
+                // outside and straight where they touch, which no rounded
+                // rectangle can be on its own.
                 canvas.clipped(*place, || canvas.fill(whole, radius, background));
             }
             canvas.draw_text(
@@ -2126,11 +2125,11 @@ impl Painter<'_> {
                 *place,
             );
             if bar {
-                // Ce que la machine d'en face ne sait pas faire garde sa
-                // place : une possibilité qui disparaît d'un ordinateur à
-                // l'autre laisse croire à un menu qui change d'avis, là où
-                // c'est la machine regardée qui n'a pas la même carte
-                // graphique. Barré, donc, et non effacé.
+                // What the far machine cannot do keeps its place: an
+                // option that disappears from one computer to the next
+                // suggests a menu that changes its mind, when it is the
+                // machine being looked at that does not have the same
+                // graphics card. Struck through, then, and not wiped.
                 let middle = (place.top + place.bottom) / 2.0;
                 let half_label =
                     canvas.width_of(&words[rank], Pen::of(design::CAPTION * scale)) / 2.0;
@@ -2150,19 +2149,19 @@ impl Painter<'_> {
         canvas.stroke_inside(whole, radius, layout::HAIRLINE * scale, colours.border);
     }
 
-    /// Une ligne à curseur : sa tête, sa valeur, et la barre en dessous.
+    /// A slider line: its head, its value, and the bar below.
     fn slider(&self, at: Rect, slider: &Slider) {
         let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
-        // Sa tête tient sur la hauteur d'une ligne de corps, la barre
-        // prenant le reste.
+        // Its head fits in the height of a body line, the bar taking
+        // the rest.
         let head = Rect {
             bottom: at.top + design::SPACE_2 * scale * 2.0 + load(&BODY_HEIGHT),
             ..at
         };
         self.head(head, slider.icon, slider.label, colours.text);
-        // La valeur d'un réglage se lit là où se lisent les raccourcis,
-        // mais elle n'en est pas un : c'est ce que la ligne vaut, donc elle
-        // se lit comme le reste de la ligne et non en retrait.
+        // A setting's value is read where the shortcuts are read, but it is
+        // not one: it is what the line is worth, so it reads like the rest
+        // of the line and not toned down.
         self.on_the_right(head, &slider.value(), design::BODY * scale, colours.text);
 
         let Some((notch, how_many)) = slider.notch() else {
@@ -2177,8 +2176,8 @@ impl Painter<'_> {
             0.0
         };
         let thumb = layout::THUMB * scale;
-        // Le pouce reste entier dans la barre à ses deux bouts : posé sur
-        // sa seule part, il déborderait de la moitié de lui-même.
+        // The thumb stays whole inside the bar at both its ends: placed
+        // by its share alone, it would spill over by half of itself.
         let thumb_x = bar.left + thumb / 2.0 + (bar.right - bar.left - thumb) * part;
         let middle = (bar.top + bar.bottom) / 2.0;
         canvas.fill(
@@ -2193,11 +2192,11 @@ impl Painter<'_> {
         );
     }
 
-    /// Le trait entre deux groupes, au milieu de la place qu'il prend.
+    /// The stroke between two groups, centred in the room it takes.
     ///
-    /// Rentré d'un pas de chaque côté, comme la feuille de style le
-    /// demande : un trait qui va d'un bord à l'autre coupe la carte en
-    /// deux au lieu de séparer deux groupes de lignes.
+    /// Brought in by one step on each side, as the stylesheet asks: a
+    /// stroke that runs from one edge to the other cuts the card in
+    /// two instead of separating two groups of lines.
     fn separator(&self, at: Rect) {
         let edge = design::SPACE_2 * self.scale;
         self.canvas.fill(
@@ -2212,11 +2211,11 @@ impl Painter<'_> {
         );
     }
 
-    /// Ce que le menu vient de refuser de faire, écrit en toutes lettres.
+    /// What the menu has just refused to do, spelled out.
     ///
-    /// Replié sur la largeur de la carte : ce qu'un refus a à dire est ce
-    /// qu'il faut faire ailleurs, et abréger cela reviendrait à ne rien
-    /// dire du tout.
+    /// Wrapped to the card's width: what a refusal has to say is what
+    /// needs doing elsewhere, and cutting that short would come down to
+    /// saying nothing at all.
     fn refusal(&self, at: Rect) {
         let Some(said) = refusal_to_say() else {
             return;
@@ -2224,9 +2223,9 @@ impl Painter<'_> {
         let edge = design::SPACE_2 * self.scale;
         let width = at.right - at.left - edge * 2.0;
         let pen = Pen::of(design::CAPTION * self.scale);
-        // Mesuré ici parce qu'ici est le seul endroit qui sache mesurer du
-        // texte replié, et rangé pour que la carte s'ouvre dessus, comme
-        // sa largeur l'est déjà.
+        // Measured here because here is the only place that can measure
+        // wrapped text, and stored so that the card opens on it, as its
+        // width already is.
         let height = self.canvas.height_of(&said, pen, width);
         store(&REFUSAL_HEIGHT, height + edge * 2.0);
         self.canvas.draw_text(
@@ -2237,8 +2236,8 @@ impl Painter<'_> {
         );
     }
 
-    /// La barre des quatre mesures : un mot par-dessus un nombre, quatre
-    /// fois, et la phrase du flux en dessous.
+    /// The bar of the four readings: a word over a number, four times,
+    /// and the stream's sentence below.
     fn measures(&self, at: Rect) {
         let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
         let edge = design::SPACE_2 * scale;
@@ -2284,13 +2283,13 @@ impl Painter<'_> {
         }
     }
 
-    /// Le panneau d'un réglage, du côté de la carte d'où elle n'est pas
-    /// partie : ses valeurs, dont une porte la marque.
+    /// A setting's panel, on the side of the card it did not set out
+    /// from: its values, one of which carries the mark.
     ///
-    /// Sans titre. On sait où l'on est : la ligne qui l'a ouvert est en
-    /// face, son chevron s'est retourné vers lui, et la cliquer à nouveau
-    /// referme. Un titre qui redit le mot d'à côté prend une ligne pour
-    /// n'apprendre rien.
+    /// No title. One knows where one is: the line that opened it is
+    /// facing it, its chevron has turned round towards it, and clicking
+    /// it again closes it. A title that repeats the word next to it takes
+    /// a line to teach nothing.
     fn panel(&self, setting: Setting, hover: Option<Target>) {
         let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
         let Some(place) = panel(canvas, setting, scale) else {
@@ -2353,10 +2352,10 @@ impl Painter<'_> {
     }
 }
 
-/// Ce que la fenêtre répond quand le système lui parle.
+/// What the window answers when the system speaks to it.
 ///
-/// SAFETY: appelée par le système sur le fil qui a fait cette fenêtre,
-/// avec les arguments qu'il documente.
+/// SAFETY: called by the system on the thread that made this window,
+/// with the arguments it documents.
 unsafe extern "system" fn answer(
     window: windows_sys::Win32::Foundation::HWND,
     message: u32,
@@ -2375,17 +2374,17 @@ unsafe extern "system" fn answer(
     match message {
         WM_MOUSEMOVE => {
             if !HAND_INSIDE.swap(true, Ordering::Relaxed) {
-                // Demandé dès qu'une main arrive : sans ça rien ne dit
-                // jamais qu'elle est repartie, et la dernière ligne
-                // survolée resterait allumée sous une souris qui n'est
-                // plus là.
+                // Asked for as soon as a hand arrives: without that
+                // nothing ever says it has left, and the last line
+                // hovered would stay lit under a mouse that is no
+                // longer there.
                 let mut tracking = TRACKMOUSEEVENT {
                     cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
                     dwFlags: TME_LEAVE,
                     hwndTrack: window,
                     dwHoverTime: 0,
                 };
-                // SAFETY: une fenêtre à nous, et la demande est à nous.
+                // SAFETY: a window of ours, and the request is ours.
                 unsafe { TrackMouseEvent(&mut tracking) };
             }
             if pushes(window, point(with)) {
@@ -2400,33 +2399,34 @@ unsafe extern "system" fn answer(
             0
         }
         WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
-            // La ligne est demandée au système plutôt que reprise du
-            // dernier survol : le curseur se décide avant que le
-            // mouvement soit annoncé, et la main serait alors en retard
-            // d'un geste.
+            // The line is asked of the system rather than taken from
+            // the last hover: the pointer's shape is decided before the
+            // move is announced, and the hand would then be one move
+            // late.
             let cursor = if under_the_mouse(window).is_some() {
                 IDC_HAND
             } else {
                 IDC_ARROW
             };
-            // SAFETY: un curseur du système, demandé par son nom.
+            // SAFETY: one of the system's pointer shapes, asked
+            // for by its name.
             unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), cursor)) };
             1
         }
         WM_LBUTTONDOWN => {
             let target = under(point(with));
             *PRESSED.lock().expect("appui du menu") = target;
-            // Un curseur se prend et se pousse : le geste commence ici et
-            // ne finit qu'au relâchement, où seul le cran d'arrivée est
-            // écrit.
+            // A slider is taken and pushed: the gesture starts here and
+            // only ends on release, where only the notch it arrives at is
+            // written.
             if matches!(target, Some(Target::Bar(_))) {
                 pushes(window, point(with));
             }
             0
         }
-        // Au relâchement, et là où l'appui a commencé : c'est ce qu'un
-        // clic veut dire, et c'est ce qui laisse repartir d'un bouton
-        // qu'on n'aurait pas dû viser.
+        // On release, and where the press began: that is what a click
+        // means, and it is what lets one slip away from a button one
+        // should not have aimed at.
         WM_LBUTTONUP => {
             let pressed = PRESSED.lock().expect("appui du menu").take();
             if let Some(Target::Bar(rank)) = pressed {
@@ -2440,14 +2440,13 @@ unsafe extern "system" fn answer(
             }
             0
         }
-        // SAFETY: la réponse du système à tout ce à quoi on ne répond pas
-        // ici.
+        // SAFETY: the system's answer to everything not answered here.
         _ => unsafe { DefWindowProcW(window, message, holding, with) },
     }
 }
 
-/// Où la souris est dans la fenêtre, tel que le système l'écrit dans un
-/// message : deux nombres signés dans les deux moitiés d'un seul.
+/// Where the mouse is in the window, as the system writes it in a
+/// message: two signed numbers in the two halves of a single one.
 fn point(with: windows_sys::Win32::Foundation::LPARAM) -> (i32, i32) {
     (
         i32::from((with & 0xFFFF) as i16),
@@ -2455,15 +2454,14 @@ fn point(with: windows_sys::Win32::Foundation::LPARAM) -> (i32, i32) {
     )
 }
 
-/// Ce qui est sous le pointeur, demandé au système.
+/// What is under the pointer, asked of the system.
 fn under_the_mouse(window: windows_sys::Win32::Foundation::HWND) -> Option<Target> {
     use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
     let mut at = POINT { x: 0, y: 0 };
-    // SAFETY: un point à nous, et une fenêtre à nous dans laquelle il est
-    // ramené.
+    // SAFETY: a point of ours, and a window of ours it is brought into.
     let read = unsafe { GetCursorPos(&mut at) != 0 && ScreenToClient(window, &mut at) != 0 };
     if !read {
         return None;
@@ -2471,8 +2469,8 @@ fn under_the_mouse(window: windows_sys::Win32::Foundation::HWND) -> Option<Targe
     under((at.x, at.y))
 }
 
-/// Allume ce qui est sous la souris, et redessine quand ce n'est plus la
-/// même chose.
+/// Lights up what is under the mouse, and redraws when it is no longer
+/// the same thing.
 fn hovers(window: windows_sys::Win32::Foundation::HWND, target: Option<Target>) {
     let mut hover = HOVER.lock().expect("survol du menu");
     if *hover == target {
@@ -2483,16 +2481,16 @@ fn hovers(window: windows_sys::Win32::Foundation::HWND, target: Option<Target>) 
     repaint(window);
 }
 
-/// Fait ce que ce qui vient d'être cliqué demande.
+/// Does what the thing just clicked asks for.
 ///
-/// Un refus ne va qu'au journal tant que le menu de la vue web est encore
-/// là : c'est lui qui porte la ligne rouge qui le dit, et en dessiner une
-/// deuxième ici ferait deux endroits à tenir pour la même phrase.
+/// A refusal only goes to the journal while the web view's menu is still
+/// there: it is the one carrying the red line that says it, and drawing a
+/// second one here would make two places to keep up for the same sentence.
 ///
-/// Dit avant de partir, et pas seulement quand ça refuse. Ce menu est
-/// derrière l'image et ses lignes sont rares : sans cette ligne, une
-/// entrée qui semble ne rien faire ne se distingue pas d'un clic qui n'est
-/// jamais arrivé, et les deux se réparent ailleurs.
+/// Said before it goes off, and not only when it refuses. This menu is
+/// behind the picture and its lines are few: without this line, an entry
+/// that seems to do nothing cannot be told apart from a click that never
+/// arrived, and the two are fixed in different places.
 fn acts(target: Target) {
     let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
         return;
@@ -2501,9 +2499,9 @@ fn acts(target: Target) {
         (Target::Line(_), Some(Line::Entry(entry))) => {
             say_the_click(entry.label);
             let does = entry.does;
-            // Refermée avant que ce soit parti, comme la page le fait : ce
-            // qui suit prend le temps qu'il prend, et une carte laissée
-            // ouverte par-dessus serait une nappe posée sur l'image.
+            // Closed before it goes off, as the page does: what follows
+            // takes the time it takes, and a card left open on top would
+            // be a tablecloth laid over the picture.
             show(false);
             crate::app::spawn(async move {
                 let refusal = match does {
@@ -2514,17 +2512,16 @@ fn acts(target: Target) {
             });
         }
         (Target::Line(_), Some(Line::List(list))) => {
-            // La même ligne ouvre et referme : une liste ouverte à côté du
-            // menu se referme là où on l'a ouverte, et pas seulement par
-            // son titre.
+            // The same line opens and closes: a list opened beside the
+            // menu closes where it was opened, and not only by its title.
             let mut panel = PANEL.lock().expect("panneau du menu");
             *panel = (*panel != Some(list.setting)).then_some(list.setting);
             drop(panel);
             redraw(&app);
         }
         (Target::Side(_, side), Some(Line::Toggle(toggle))) => {
-            // Pousser un interrupteur du côté où il est déjà ne fait rien,
-            // comme tout interrupteur.
+            // Pushing a switch to the side it is already on does nothing,
+            // like any switch.
             if toggle.current_side() == side {
                 return;
             }
@@ -2532,15 +2529,15 @@ fn acts(target: Target) {
                 "menu du bouton flottant : « {} » mis sur « {} »",
                 toggle.label, toggle.sides[side]
             ));
-            // La carte reste ouverte : on regarde l'image après avoir
-            // basculé, et la rouvrir pour la ligne d'à côté ferait deux
-            // gestes pour un réglage.
+            // The card stays open: one looks at the picture after
+            // flipping, and opening it again for the next line would
+            // make two gestures for one setting.
             let act = toggle.act;
             crate::app::spawn(async move {
                 match crate::floating::ask(&app, act).await {
-                    // Relu plutôt que supposé : c'est la seule façon de
-                    // montrer où l'on en est vraiment, et le son se lit
-                    // dans le mélangeur de Windows et non ici.
+                    // Read again rather than assumed: it is the only
+                    // way to show where things really stand, and the
+                    // sound is read in the Windows mixer and not here.
                     Ok(()) => reread_the_toggles(&app).await,
                     Err(refusal) => say_the_refusal(Err(refusal)),
                 }
@@ -2550,9 +2547,9 @@ fn acts(target: Target) {
             let Some(value) = value_of(choice.setting, side) else {
                 return;
             };
-            // Ce que la machine d'en face ne sait pas faire n'est pas un
-            // choix : le proposer barré dit pourquoi, le laisser cliquer
-            // dirait le contraire.
+            // What the far machine cannot do is not a choice: offering
+            // it struck through says why, letting it be clicked would
+            // say the opposite.
             let refuse = SESSION_MENU
                 .lock()
                 .expect("réglages du menu")
@@ -2570,13 +2567,12 @@ fn acts(target: Target) {
             let Some(value) = value_of(setting, rank) else {
                 return;
             };
-            // La liste se referme sur le choix : rester dedans après avoir
-            // choisi laisserait croire qu'il reste quelque chose à y faire.
+            // The list closes on the choice: staying in it after choosing
+            // would suggest there is something left to do there.
             *PANEL.lock().expect("panneau du menu") = None;
-            // Et la carte avec elle : ce qui est choisi dans une liste se
-            // voit tout de suite, ce qu'on veut regarder alors est
-            // l'image, et une carte laissée par-dessus serait une nappe
-            // posée dessus.
+            // And the card with it: what is chosen in a list shows at
+            // once, what one wants to look at then is the picture, and a
+            // card left on top would be a tablecloth laid over it.
             show(false);
             choose(&app, setting, value);
         }
@@ -2584,7 +2580,7 @@ fn acts(target: Target) {
     }
 }
 
-/// La valeur d'un réglage à ce rang-là.
+/// A setting's value at that rank.
 fn value_of(setting: Setting, rank: usize) -> Option<String> {
     SESSION_MENU
         .lock()
@@ -2593,11 +2589,11 @@ fn value_of(setting: Setting, rank: usize) -> Option<String> {
         .and_then(|menu| setting.values(menu).get(rank).cloned())
 }
 
-/// Écrit ce choix, le donne à la session là où elle est, et relit ce que
-/// la session en dit.
+/// Writes this choice, gives it to the session where it stands, and reads
+/// back what the session says about it.
 ///
-/// Relu et non supposé : choisir une taille change ce que « client » vaut,
-/// et c'est la réponse qui le porte.
+/// Read back and not assumed: choosing a size changes what "client" is
+/// worth, and it is the answer that carries it.
 fn choose(app: &App, setting: Setting, value: String) {
     note(&format!(
         "menu du bouton flottant : {} mis sur « {value} »",
@@ -2618,21 +2614,21 @@ fn choose(app: &App, setting: Setting, value: String) {
     });
 }
 
-/// Dit qu'une ligne a été cliquée.
+/// Says that a line was clicked.
 ///
-/// Dit avant que ce soit parti, et pas seulement quand ça refuse. Ce menu
-/// est derrière l'image et ses lignes sont rares : sans cette ligne, une
-/// entrée qui semble ne rien faire ne se distingue pas d'un clic qui n'est
-/// jamais arrivé, et les deux se réparent ailleurs.
+/// Said before it goes off, and not only when it refuses. This menu is
+/// behind the picture and its lines are few: without this line, an entry
+/// that seems to do nothing cannot be told apart from a click that never
+/// arrived, and the two are fixed in different places.
 fn say_the_click(label: &str) {
     note(&format!("menu du bouton flottant : « {label} » cliqué"));
 }
 
-/// Et dit un refus, s'il y en a un.
+/// And says a refusal, if there is one.
 ///
-/// Sur la carte et dans le journal. Sur la carte parce que c'est là que
-/// regarde la personne qui vient de cliquer, et dans le journal parce que
-/// la carte se referme et qu'une phrase lue une fois ne se retrouve plus.
+/// On the card and in the journal. On the card because that is where the
+/// person who has just clicked is looking, and in the journal because the
+/// card closes and a sentence read once cannot be found again.
 fn say_the_refusal(refusal: Result<(), String>) {
     let Err(refusal) = refusal else {
         return;
@@ -2644,11 +2640,12 @@ fn say_the_refusal(refusal: Result<(), String>) {
     }
 }
 
-/// Pousse le curseur là où la main est, et dit si elle en tenait un.
+/// Pushes the slider to where the hand is, and says whether it was
+/// holding one.
 ///
-/// Rien n'est écrit tant qu'elle le tient : un curseur poussé d'un bout à
-/// l'autre traverse tous ses crans, et chacun serait un aller-retour
-/// jusqu'au service pour un débit que personne n'a voulu.
+/// Nothing is written while it holds it: a slider pushed from one end to
+/// the other crosses all its notches, and each would be a round trip to
+/// the service for a bitrate nobody wanted.
 fn pushes(window: windows_sys::Win32::Foundation::HWND, at: (i32, i32)) -> bool {
     let Some(Target::Bar(rank)) = *PRESSED.lock().expect("appui du menu") else {
         return false;
@@ -2665,9 +2662,9 @@ fn pushes(window: windows_sys::Win32::Foundation::HWND, at: (i32, i32)) -> bool 
     };
     let bar = slider_bar(place, scale);
     let thumb = layout::THUMB * scale;
-    // Le pouce ne va pas d'un bord à l'autre mais d'un centre à l'autre :
-    // compté sur la barre entière, les deux crans du bout ne se
-    // laisseraient pas atteindre.
+    // The thumb does not go from one edge to the other but from one
+    // centre to the other: counted over the whole bar, the two end
+    // notches could not be reached.
     let travel = (bar.right - bar.left - thumb).max(1.0);
     let part = ((at.0 as f32 - bar.left - thumb / 2.0) / travel).clamp(0.0, 1.0);
     let notch = (part * (how_many.max(1) - 1) as f32).round() as usize;
@@ -2680,7 +2677,7 @@ fn pushes(window: windows_sys::Win32::Foundation::HWND, at: (i32, i32)) -> bool 
     true
 }
 
-/// Lâche le curseur, et écrit le cran où il a été laissé.
+/// Lets the slider go, and writes the notch it was left at.
 fn released(window: windows_sys::Win32::Foundation::HWND, rank: usize) {
     let Some(notch) = PUSHED.lock().expect("curseur du menu").take() else {
         return;
@@ -2706,14 +2703,13 @@ fn released(window: windows_sys::Win32::Foundation::HWND, rank: usize) {
     choose(&app, slider.setting, value);
 }
 
-/// Relit où en sont les quatre interrupteurs, et redessine si ça a bougé.
+/// Rereads where the four switches stand, and redraws if anything moved.
 ///
-/// Trois d'entre eux sont ce que ce programme croit, parce que c'est lui
-/// qui les bascule et que le moteur ne dit jamais où il en est ; le son se
-/// demande au mélangeur de Windows, qui le sait et qui est ouvert à tout
-/// le monde.
+/// Three of them are what this program believes, because it is the one
+/// flipping them and the engine never says where it stands; the sound is
+/// asked of the Windows mixer, which knows it and is open to everyone.
 async fn reread_the_toggles(app: &App) {
-    /// Pose où en est un interrupteur, et dit si ça a bougé.
+    /// Sets where a switch stands, and says if it moved.
     fn set(cell: &AtomicBool, value: bool) -> bool {
         cell.swap(value, Ordering::Relaxed) != value
     }
@@ -2722,9 +2718,9 @@ async fn reread_the_toggles(app: &App) {
     change |= set(&IMMERSIVE, crate::floating::keys_to_the_session(app));
     change |= set(&SHARED, crate::floating::the_clipboard_is_shared(app));
     change |= set(&HELD, crate::floating::the_badges_are_held_up(app));
-    // Sans session le mélangeur n'a rien à dire, et la carte ne s'ouvre
-    // pas sans session : un refus se laisse donc tel quel plutôt que
-    // d'éteindre l'interrupteur.
+    // Without a session the mixer has nothing to say, and the card does
+    // not open without a session: so a refusal is left as it is rather
+    // than turning the switch off.
     if let Ok(muted) = crate::floating::hushed(app).await {
         change |= set(&MUTED, muted);
     }
@@ -2733,13 +2729,13 @@ async fn reread_the_toggles(app: &App) {
     }
 }
 
-/// Suit ce que la session coûte tant que la carte est ouverte, et pas une
-/// seconde de plus : des chiffres que personne ne regarde ne valent ni le
-/// fichier ni le réveil.
+/// Follows what the session costs while the card is open, and not a
+/// second longer: figures nobody looks at are worth neither the file nor
+/// the wake-up.
 fn follow_the_readings(app: &App, is_open: bool) {
-    // Le tour change à chaque appel, ce qui arrête celui d'avant : sans
-    // ça, ouvrir et refermer vite laisserait deux veilles derrière la
-    // même carte.
+    // The round changes at every call, which stops the one before:
+    // without that, opening and closing quickly would leave two watches
+    // behind the same card.
     let round = ROUND.fetch_add(1, Ordering::Relaxed) + 1;
     if !is_open {
         return;
@@ -2749,10 +2745,10 @@ fn follow_the_readings(app: &App, is_open: bool) {
         while ROUND.load(Ordering::Relaxed) == round {
             let said = crate::measures::session_measures();
             let now = Instant::now();
-            // Le verrou est rendu avant l'attente : un verrou tenu à
-            // travers une attente est un verrou tenu une seconde. Pris
-            // avant la lecture et non après, parce que celle-ci part de
-            // la précédente pour les mesures qui manquent.
+            // The lock is given back before the wait: a lock held
+            // across a wait is a lock held for a second. Taken before
+            // the read and not after, because the read starts from the
+            // previous one for the missing readings.
             let change = {
                 let mut bar = READINGS_BAR.lock().expect("mesures du menu");
                 let load = ReadingsBar::of(&said, &bar, now);
@@ -2768,7 +2764,7 @@ fn follow_the_readings(app: &App, is_open: bool) {
     });
 }
 
-/// Redessine la carte depuis un fil qui n'est pas celui qui la dessine.
+/// Redraws the card from a thread that is not the one drawing it.
 fn redraw(app: &App) {
     let _ = app.run_on_main_thread(|| {
         use windows_sys::Win32::Foundation::HWND;

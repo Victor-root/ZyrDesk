@@ -219,28 +219,27 @@ mod tests {
 
     #[test]
     fn a_computer_merely_seen_is_not_a_computer_paired_with() {
-        // La panne exacte, et la raison pour laquelle plus aucune session
-        // ne s'ouvrait : le moteur écrit tout ordinateur qu'on lui a
-        // donné, appairé ou non. Le croire appairé revient à sauter les
-        // présentations, et le moteur d'en face raccroche en moins d'une
-        // seconde.
+        // The exact fault, and the reason no session opened any more: the
+        // engine writes down every computer it was given, paired or not.
+        // Believing it paired amounts to skipping the introductions, and
+        // the engine over there hangs up in less than a second.
         assert!(!names_a_certificate(MERELY_SEEN));
         assert!(names_a_certificate(PAIRED));
 
-        // Un fichier de réglages sans le moindre ordinateur.
+        // A settings file without a single computer in it.
         assert!(!names_a_certificate("[General]\nhosts\\size=0\n"));
         assert!(!names_a_certificate(""));
     }
 
     #[test]
     fn a_certificate_is_recognised_wherever_it_sits_in_the_list() {
-        // La clé porte le rang de l'ordinateur : c'est sa fin qui compte,
-        // jamais son début.
+        // The key carries the computer's rank: its end is what counts,
+        // never its beginning.
         assert!(names_a_certificate(
             "hosts\\4\\srvcert=@ByteArray(quelque chose)"
         ));
-        // Et une clé qui finit autrement ne doit rien déclencher, sans
-        // quoi on revient à la panne d'avant.
+        // And a key that ends otherwise must set nothing off, or it is
+        // back to the fault from before.
         assert!(!names_a_certificate("hosts\\1\\srvcertificatethumb=abc"));
         assert!(!names_a_certificate("hosts\\1\\hostname=srvcert"));
         assert!(!names_a_certificate("hosts\\1\\autresrvcert=@ByteArray(x)"));
@@ -272,8 +271,9 @@ mod tests {
         assert_eq!(folder_identifier("fe80::1%eth0"), "fe80--1-eth0");
         assert_eq!(folder_identifier("..."), "device");
         assert_eq!(folder_identifier(""), "device");
-        // Le cas ordinaire depuis que c'est l'empreinte qui nomme : elle
-        // passe telle quelle, n'étant déjà que des chiffres hexadécimaux.
+        // The ordinary case since the fingerprint is what names a
+        // computer: it goes through as it is, being nothing but
+        // hexadecimal digits already.
         let fingerprint = "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237";
         assert_eq!(folder_identifier(fingerprint), fingerprint);
     }

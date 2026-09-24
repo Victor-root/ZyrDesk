@@ -1,16 +1,16 @@
-//! Les deux voyants d'une session, dans le coin haut gauche de l'image.
+//! The two badges of a session, in the top left corner of the picture.
 //!
-//! Deux petites pastilles posées par-dessus l'image, à l'opposé du bouton
-//! flottant, et qui ne s'allument que quand il y a quelque chose à dire :
-//! l'une pour le lien, quand l'image se fige ou que des images se perdent
-//! en route, l'autre pour l'image elle-même, quand l'un des deux
-//! ordinateurs ne suit plus à l'encodage ou au décodage.
+//! Two small badges laid over the picture, opposite the floating button,
+//! which only light up when there is something to say: one for the link,
+//! when the picture freezes or frames get lost on the way, the other for
+//! the picture itself, when one of the two computers can no longer keep
+//! up with encoding or decoding.
 //!
-//! La seconde dit lequel des deux. Elle porte les deux écrans du logo du
-//! produit, celui d'en face derrière et celui-ci devant, tous deux en
-//! sourdine, et rallume celui qui coince ; les deux quand les deux
-//! coincent. Ça se lit sans légende puisque c'est le dessin de la
-//! marque, et ça tient en dix-huit pixels là où un mot n'y tiendrait pas.
+//! The second one says which of the two. It carries the two screens of
+//! the product's logo, the far one behind and this one in front, both
+//! dimmed, and lights up again the one that is struggling; both when both
+//! are struggling. It reads without a caption since it is the brand's own
+//! drawing, and it fits in eighteen pixels where a word would not.
 //!
 //! What they replace. The client engine has a warning of its own for the
 //! first of the two: red letters at thirty-six points, burnt into the
@@ -23,20 +23,20 @@
 //! for it is thrown at the session's start (patch P-M16) and this says it
 //! instead.
 //!
-//! Ce qui le rend vif. Le moteur écrit ce qu'une session coûte, et depuis
-//! peu il l'écrit cinq fois par seconde plutôt qu'une, avec un nombre de
-//! plus : depuis combien de temps l'image ne bouge plus. Celui-là ne se
-//! moyenne pas et ne s'attend pas, il est vrai à l'instant où il est lu,
-//! et c'est lui qui allume le premier voyant avant que la main n'ait eu
-//! le temps de bouger la souris pour vérifier.
+//! What makes it quick. The engine writes down what a session costs, and
+//! lately it writes it five times a second rather than once, with one
+//! more number: how long the picture has not moved. That one is not
+//! averaged and not waited for, it is true the moment it is read, and it
+//! is what lights the first badge before the hand has had time to move
+//! the mouse to check.
 //!
-//! Ce qui décide n'est pas de Windows et se compile partout : c'est de
-//! l'arithmétique sur une lecture, et c'est la seule moitié dont un essai
-//! puisse dire quoi que ce soit. Les pastilles, elles, sont une fenêtre,
-//! donc de Windows, comme la session.
+//! What decides is not Windows code and compiles everywhere: it is
+//! arithmetic on a reading, and it is the only half a test can say
+//! anything about. The badges, for their part, are a window, so Windows
+//! code, like the session.
 
-// Hors de Windows il n'y a pas d'image à couvrir, mais ce qui décide est
-// compilé et éprouvé partout.
+// Outside Windows there is no picture to cover, but what decides is
+// compiled and tested everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::time::{Duration, Instant};
@@ -45,55 +45,56 @@ use crate::measures::Measures;
 
 /* ---- Ce qu'une lecture dit ------------------------------------------- */
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module files its journal lines under.
 const TAG: &str = "voyants";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
-/// Depuis combien de temps l'image doit être figée pour que ça se voie.
+/// How long the picture must have been frozen for it to show.
 ///
-/// Un tiers de seconde. En dessous, c'est une image en retard comme il en
-/// passe, et un voyant qui clignote à ce rythme-là ne veut plus rien
-/// dire ; au-dessus, la personne a déjà remarqué et le voyant arrive
-/// après elle.
+/// A third of a second. Below that, it is one of the late frames that go
+/// by all the time, and a badge that blinks at that pace no longer means
+/// anything; above it, the person has already noticed and the badge
+/// arrives after them.
 const FROZEN_MS: u64 = 350;
 
-/// Combien d'images perdues en route, en pour cent de la seconde écoulée,
-/// avant que ça se dise.
+/// How many frames lost on the way, as a percentage of the second gone
+/// by, before it is said.
 ///
-/// Deux pour cent : une image sur cinquante, ce qui se voit sur un bureau
-/// qu'on fait défiler et ne se voit pas sur un bureau immobile.
+/// Two percent: one frame in fifty, which shows on a desktop being
+/// scrolled and does not show on a still desktop.
 const LOST_PCT: f64 = 2.0;
 
-/// Et combien arrivées trop tard pour être montrées.
+/// And how many arriving too late to be shown.
 ///
-/// Plus haut que les précédentes : celles-ci sont bien arrivées, et ce
-/// qu'elles disent est que le lien tremble plutôt qu'il ne perd.
+/// Higher than for the ones before: these did arrive, and what they
+/// say is that the link is shaking rather than losing.
 const TOO_LATE_PCT: f64 = 5.0;
 
-/// Combien de temps un voyant reste allumé après que sa cause a cessé.
+/// How long a badge stays lit after its cause has stopped.
 ///
-/// Sans ça il clignote : la cause tient sur une lecture, les lectures
-/// arrivent cinq fois par seconde, et un réseau qui va mal va mal par
-/// à-coups. Une seconde et demie est ce qu'il faut pour qu'une main qui
-/// lève les yeux vers le coin de l'image y trouve encore quelque chose.
+/// Without this it blinks: the cause holds for one reading, readings
+/// arrive five times a second, and a network that is doing badly does
+/// badly in fits and starts. A second and a half is what it takes for
+/// the person, looking up at the corner of the picture, to still find
+/// something there.
 const HOLDS: Duration = Duration::from_millis(1500);
 
-/// Ce qu'un voyant peut dire.
+/// What a badge can say.
 ///
-/// Trois et non deux, pour deux pastilles : celle de l'image porte les
-/// deux ordinateurs et allume celui qui coince, donc elle compte pour
-/// deux ici et pour une à l'écran.
+/// Three and not two, for two badges: the picture one carries both
+/// computers and lights the one that is struggling, so it counts as
+/// two here and as one on screen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Which {
-    /// Le lien entre les deux ordinateurs.
+    /// The link between the two computers.
     Link,
-    /// L'image telle que l'ordinateur d'en face la fait.
+    /// The picture as the far computer makes it.
     Far,
-    /// Et telle que celui-ci la refait.
+    /// And as this one makes it again.
     Here,
 }
 
@@ -107,11 +108,11 @@ impl std::fmt::Display for Which {
     }
 }
 
-/// Ce qu'une lecture dit de chacun : rien, ou ce qui ne va pas.
+/// What a reading says about each one: nothing, or what is wrong.
 ///
-/// Les mots et non seulement le fait : un voyant qui s'allume sans que
-/// rien ne dise pourquoi est un voyant qu'on finit par ignorer, et le
-/// journal est le seul endroit où la raison tient.
+/// The words and not only the fact: a badge that lights up with
+/// nothing saying why is a badge people end up ignoring, and the
+/// journal is the only place where the reason fits.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Reads {
     pub link: Option<String>,
@@ -119,18 +120,19 @@ pub struct Reads {
     pub here: Option<String>,
 }
 
-/// Ce qu'une lecture dit, sans mémoire d'aucune sorte.
+/// What a reading says, with no memory of any kind.
 ///
-/// Le temps disponible pour une image est calculé sur la cadence mesurée
-/// et non sur celle demandée, et ce n'est pas un pis-aller : ce qu'on
-/// cherche est de savoir si un des deux ordinateurs est ce qui donne le
-/// rythme. Un hôte qui met vingt-cinq millisecondes par image sert
-/// quarante images par seconde, donc son temps d'encodage **est** le
-/// temps disponible, et le voyant s'allume ; le même hôte à trois
-/// millisecondes sur une session à trente images a trente-trois
-/// millisecondes devant lui et ne gêne personne. Demander la cadence
-/// voulue aurait coûté un aller-retour au service à chaque lecture, et
-/// aurait eu tort dès que quelqu'un la change en cours de session.
+/// The time available for a frame is worked out from the measured frame
+/// rate and not from the one asked for, and that is not a second best:
+/// what we are after is whether one of the two computers is what sets
+/// the pace. A host that takes twenty-five milliseconds per frame serves
+/// forty frames a second, so its encoding time **is** the time
+/// available, and the badge lights up; the same host at three
+/// milliseconds on a thirty-frame session has thirty-three milliseconds
+/// ahead of it and gets in nobody's way. Asking for the wanted frame
+/// rate would have cost a round trip to the service on every reading,
+/// and would have been wrong as soon as someone changes it during the
+/// session.
 pub fn read(measures: &Measures) -> Reads {
     let mut reads = Reads::default();
 
@@ -145,14 +147,13 @@ pub fn read(measures: &Measures) -> Reads {
         reads.link = Some(format!("{late:.1} % des images arrivent trop tard"));
     }
 
-    // Une cadence qui manque laisse ces deux-là éteints : sans elle il
-    // n'y a pas de temps disponible, donc rien à comparer, et un voyant
-    // allumé faute de mesure serait un voyant allumé pour rien.
+    // A missing frame rate leaves these two off: without it there is no
+    // time available, so nothing to compare, and a badge lit for want of
+    // a measure would be a badge lit for nothing.
     //
-    // Les deux sont pesés chacun de son côté et non l'un ou l'autre : ils
-    // peuvent très bien coincer ensemble, sur deux machines fatiguées ou
-    // sur une session trop grande pour les deux, et la pastille sait le
-    // dire.
+    // Each of the two is weighed on its own and not one or the other:
+    // they may very well struggle together, on two tired machines or on a
+    // session too big for both, and the badge can say so.
     if let Some(budget) = measures
         .fps
         .filter(|rate| *rate > 0.0)
@@ -174,7 +175,7 @@ pub fn read(measures: &Measures) -> Reads {
     reads
 }
 
-/// Ce que les pastilles montrent, une fois la lecture calmée.
+/// What the badges show, once the reading has been calmed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Shown {
     pub link: bool,
@@ -183,17 +184,17 @@ pub struct Shown {
 }
 
 impl Shown {
-    /// Rien du tout.
+    /// Nothing at all.
     pub fn nothing(self) -> bool {
         !self.link && !self.far && !self.here
     }
 }
 
-/// Ce qui tient les voyants allumés d'une lecture à l'autre.
+/// What keeps the badges lit from one reading to the next.
 ///
-/// Une seule chose, et c'est tout ce qui sépare un voyant utile d'une
-/// guirlande : allumé à la lecture qui le dit, éteint seulement quand
-/// plus rien ne l'a dit depuis un moment.
+/// One thing only, and it is all that separates a useful badge from a
+/// string of fairy lights: lit on the reading that says so, off only
+/// once nothing has said so for a while.
 #[derive(Default)]
 pub struct Steady {
     link: Option<Instant>,
@@ -202,7 +203,7 @@ pub struct Steady {
 }
 
 impl Steady {
-    /// Ce que cette lecture-là laisse allumé.
+    /// What this reading leaves lit.
     pub fn after(&mut self, reads: &Reads, now: Instant) -> Shown {
         Shown {
             link: still(&mut self.link, reads.link.is_some(), now),
@@ -212,7 +213,8 @@ impl Steady {
     }
 }
 
-/// Un voyant, rallumé pour un moment quand sa cause est là.
+/// One badge, lit again for a while when its cause is
+/// there.
 fn still(until: &mut Option<Instant>, wrong: bool, now: Instant) -> bool {
     if wrong {
         *until = Some(now + HOLDS);
@@ -222,22 +224,22 @@ fn still(until: &mut Option<Instant>, wrong: bool, now: Instant) -> bool {
 
 /* ---- La boucle qui les tient ----------------------------------------- */
 
-/// Combien de fois par seconde la lecture est relue.
+/// How many times a second the reading is read again.
 ///
-/// Le moteur en écrit cinq ; celle-ci en lit un peu plus souvent, pour
-/// que le retard ajouté de ce côté-ci soit plus petit que celui de
-/// l'autre. Ce qu'on vise est qu'un voyant soit là dans le tiers de
-/// seconde qui suit ce qu'il annonce.
+/// The engine writes five; this loop reads a little more often, so
+/// that the delay added on this side is smaller than the one on the
+/// other. The aim is for a badge to be there within the third of a
+/// second that follows what it reports.
 const LOOK_EVERY: Duration = Duration::from_millis(80);
 
 #[cfg(windows)]
 static WATCHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Suit la santé de la session jusqu'à la fin de celle-ci.
+/// Follows the session's health until the session ends.
 ///
-/// Appelée à chaque tour de la veille du bouton flottant, comme la forme
-/// du curseur : elle ne fait rien tant qu'une boucle tourne déjà, et en
-/// relance une quand la précédente s'est arrêtée.
+/// Called on every round of the floating button's watch, like the
+/// pointer's shape: it does nothing while a loop is already running, and
+/// starts one again when the previous one has stopped.
 #[cfg(windows)]
 pub fn watch(app: &crate::app::App) {
     use std::sync::atomic::Ordering;
@@ -256,14 +258,13 @@ pub fn watch(app: &crate::app::App) {
 #[cfg(not(windows))]
 pub fn watch(_app: &crate::app::App) {}
 
-/// La boucle elle-même.
+/// The loop itself.
 #[cfg(windows)]
 async fn keep_up(app: &crate::app::App) {
-    // À partir de quand une lecture est celle de cette session-ci. Le
-    // fichier survit à la session qui l'a écrit, et une session qui
-    // s'ouvre le trouverait tel que la précédente l'a laissé, donc avec
-    // une image figée depuis des heures : un voyant allumé sur la
-    // première image d'une session parfaitement saine.
+    // From when on a reading belongs to this session. The file outlives
+    // the session that wrote it, and a session opening would find it as
+    // the previous one left it, so with a picture frozen for hours: a
+    // badge lit on the first frame of a perfectly healthy session.
     let started = std::time::SystemTime::now();
     let mut steady = Steady::default();
     let mut was = Shown::default();
@@ -274,11 +275,11 @@ async fn keep_up(app: &crate::app::App) {
         }
         let held = crate::floating::the_badges_are_held_up(app);
         let Some(measures) = fresh(started) else {
-            // Tenues à l'écran, elles sont là avant même que le moteur
-            // d'en face ait écrit une seule lecture : ce qu'on regarde
-            // alors est les pastilles elles-mêmes, et une session dont
-            // les lectures n'ont pas commencé est précisément le moment
-            // où quelqu'un les regarde.
+            // Held on screen, they are there even before the engine
+            // over there has written a single reading: what is being
+            // looked at then is the badges themselves, and a session
+            // whose readings have not started is precisely the moment
+            // someone looks at them.
             show(app, Shown::default(), &Reads::default(), held);
             continue;
         };
@@ -289,23 +290,22 @@ async fn keep_up(app: &crate::app::App) {
             said(&reads, was, shown);
             was = shown;
         }
-        // Dit à chaque tour et non au seul changement : cette boucle
-        // commence avant que la fenêtre des pastilles existe, et un
-        // voyant allumé pendant ce temps-là n'aurait plus jamais
-        // l'occasion de changer d'avis. Ce qui est dit deux fois ne coûte
-        // rien : la fenêtre garde ce qu'elle montre et ne se redessine
-        // que sur une vraie différence.
+        // Said on every round and not only on a change: this loop starts
+        // before the badges' window exists, and a badge lit during that
+        // time would never again get the chance to change its mind. What
+        // is said twice costs nothing: the window keeps what it shows and
+        // only redraws on a real difference.
         show(app, shown, &reads, held);
     }
 }
 
-/// La lecture, si elle est de cette session-ci.
+/// The reading, if it belongs to this session.
 #[cfg(windows)]
 fn fresh(started: std::time::SystemTime) -> Option<Measures> {
     let path = zyr_proto::paths::session_stats();
-    // L'heure du fichier plutôt que son contenu : rien dans la ligne ne
-    // dit quelle session l'a écrite, et son âge le dit sans rien ajouter
-    // à ce que le moteur écrit.
+    // The file's time rather than its contents: nothing in the line says
+    // which session wrote it, and its age says so without adding
+    // anything to what the engine writes.
     let written = std::fs::metadata(&path).ok()?.modified().ok()?;
     if written < started {
         return None;
@@ -313,11 +313,11 @@ fn fresh(started: std::time::SystemTime) -> Option<Measures> {
     Some(crate::measures::session_measures())
 }
 
-/// Dit ce qui vient de changer, et rien d'autre.
+/// Says what has just changed, and nothing else.
 ///
-/// Une ligne par allumage et une par extinction, jamais une par lecture :
-/// il en passe une douzaine par seconde, et un journal qui les porterait
-/// toutes ne porterait plus rien d'autre.
+/// One line when a badge lights up and one when it goes out, never one
+/// per reading: a dozen of those go by every second, and a journal that
+/// carried them all would carry nothing else.
 #[cfg(windows)]
 fn said(reads: &Reads, was: Shown, shown: Shown) {
     for (which, before, after, why) in [
@@ -330,8 +330,9 @@ fn said(reads: &Reads, was: Shown, shown: Shown) {
         }
         note(&match (after, why) {
             (true, Some(why)) => format!("voyant {which} : {why}"),
-            // Allumé sans raison dans cette lecture-ci : la cause est
-            // passée entre deux lectures et le voyant tient encore.
+            // Lit with no reason in this reading: the cause came and
+            // went between two readings and the badge is still
+            // holding.
             (true, None) => format!("voyant {which} allumé"),
             (false, _) => format!("voyant {which} éteint"),
         });
@@ -340,102 +341,101 @@ fn said(reads: &Reads, was: Shown, shown: Shown) {
 
 /* ---- Les pastilles elles-mêmes --------------------------------------- */
 
-/// Le côté d'une pastille, en pixels de page.
+/// The side of a badge, in page pixels.
 ///
-/// Un dixième de moins que le bouton flottant, qui fait quarante-quatre.
-/// Assez près pour qu'on les voie de la même famille, assez loin pour
-/// qu'on ne prenne pas l'une pour l'autre : ce bouton-là est ce qu'on
-/// vise avec la main, celles-ci ne sont qu'à lire. Plus petites, elles ne
-/// se lisaient pas : celle de l'image porte deux écrans dont un seul est
-/// allumé, et il faut de la place pour que les deux se distinguent.
+/// A tenth less than the floating button, which is forty-four. Close
+/// enough for them to look like the same family, far enough for one not
+/// to be taken for the other: that button is what the hand aims at, these
+/// are only for reading. Smaller, they could not be read: the picture one
+/// carries two screens of which only one is lit, and it takes room for
+/// the two to be told apart.
 const BADGE: f32 = 40.0;
 
-/// Ce qui sépare les deux.
+/// What separates the two.
 const BETWEEN: f32 = 8.0;
 
-/// La marge autour d'elles dans la fenêtre.
+/// The margin around them in the window.
 ///
-/// Assez pour que le bord d'une pastille ne touche pas celui de la
-/// fenêtre, et c'est la même marge qui sert de gouttière à la bulle.
+/// Enough for the edge of a badge not to touch the window's, and it
+/// is the same margin that serves as the bubble's gutter.
 const ROOM: f32 = 8.0;
 
-/// Ce qui sépare le dessin du bord de sa pastille.
+/// What separates the drawing from the edge of its badge.
 const INSET: f32 = 7.0;
 
-/// La largeur de la bulle qui dit pourquoi, en pixels de page.
+/// The width of the bubble that says why, in page pixels.
 const BUBBLE: f32 = 260.0;
 
-/// Ce qui la sépare des pastilles.
+/// What separates it from the badges.
 const UNDER: f32 = 6.0;
 
-/// Sa marge intérieure.
+/// Its inner margin.
 const PADDING: f32 = 10.0;
 
-/// Le rayon de ses coins.
+/// The radius of its corners.
 const CORNER: f32 = 8.0;
 
-/// La taille de ce qui s'y écrit.
+/// The size of what is written in it.
 const WORDS: f32 = 12.0;
 
-/// Ce que la bulle peut prendre de haut, au plus.
+/// The most height the bubble can take.
 ///
-/// Réservé dans la fenêtre sans être forcément dessiné : la hauteur vraie
-/// d'un texte ne se mesure qu'une fois la toile faite, et la fenêtre est
-/// taillée avant elle. Trois lignes suffisent aux phrases que ces deux-là
-/// ont à dire, et ce qui reste est clair, donc invisible.
+/// Set aside in the window without necessarily being drawn: the true
+/// height of a text can only be measured once the canvas is made, and the
+/// window is sized before it. Three lines are enough for the sentences
+/// these two have to say, and what is left over is clear, so invisible.
 const BUBBLE_AT_MOST: f32 = 2.0 * PADDING + 3.0 * 17.0;
 
-/// Le rayon des coins d'une pastille : la moitié de son côté, donc un
-/// rond.
+/// The radius of a badge's corners: half its side, so a circle.
 const ROUNDED: f32 = BADGE / 2.0;
 
-/// L'épaisseur de l'anneau qui cerne une pastille.
+/// The thickness of the ring around a badge.
 ///
-/// C'est lui qui porte l'état : sombre quand la pastille n'a rien à dire,
-/// couleur d'alerte quand elle en a. Deux points et non un, parce qu'un
-/// trait d'un point se lit comme un bord et pas comme un voyant, et
-/// qu'entre les deux il reste toute la place qu'il faut au dessin.
+/// It is what carries the state: dark when the badge has nothing to say,
+/// the warning colour when it has. Two points and not one, because a
+/// one-point line reads as an edge and not as a badge, and between the
+/// two there is still all the room the drawing needs.
 const RING: f32 = 2.0;
 
-/// La fenêtre, et ce qu'elle montre.
+/// The window, and what it shows.
 #[cfg(windows)]
 static ITS_WINDOW: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 #[cfg(windows)]
 static LIT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
-/// Ce que ce nombre-là veut dire.
+/// What that number means.
 ///
-/// Trois bits pour deux pastilles : celle de l'image est là dès que l'un
-/// des deux ordinateurs coince, et allume celui des deux qui coince.
+/// Three bits for two badges: the picture one is there as soon as either
+/// of the two computers is struggling, and lights whichever of the two
+/// is struggling.
 #[cfg(windows)]
 mod bit {
     pub const LINK: u8 = 1;
     pub const FAR: u8 = 2;
     pub const HERE: u8 = 4;
     pub const PICTURE: u8 = FAR | HERE;
-    /// Les deux pastilles tenues à l'écran, allumées ou non.
+    /// The two badges held on screen, lit or not.
     ///
-    /// Rangé avec les autres et non à côté, parce que c'est la même
-    /// question : ce nombre dit ce que la fenêtre montre, et ce qui est
-    /// montré n'est plus seulement ce qui est allumé.
+    /// Kept with the others and not beside them, because it is the same
+    /// question: this number says what the window shows, and what is
+    /// shown is no longer only what is lit.
     pub const HELD: u8 = 8;
-    /// La pastille sur laquelle la main est posée, s'il y en a une.
+    /// The badge the hand is resting on, if there is one.
     ///
-    /// Rangée ici avec le reste parce que c'est encore la même question :
-    /// ce nombre dit ce que la fenêtre montre, et une bulle ouverte sous
-    /// une pastille en fait partie. Y être lui vaut aussi d'être
-    /// redessinée quand la main arrive et quand elle part, sans que rien
-    /// d'autre ait à s'en occuper.
+    /// Kept here with the rest because it is the same question again:
+    /// this number says what the window shows, and a bubble open under a
+    /// badge is part of it. Being in it also earns it a redraw when the
+    /// hand arrives and when it leaves, without anything else having to
+    /// see to it.
     pub const OVER_LINK: u8 = 16;
     pub const OVER_PICTURE: u8 = 32;
     pub const OVER: u8 = OVER_LINK | OVER_PICTURE;
 }
 
-/// Ce que les pastilles ont à dire, mot pour mot.
+/// What the badges have to say, word for word.
 ///
-/// Gardé à côté de ce qui est allumé parce que la bulle en a besoin au
-/// moment où elle se dessine, et que ce moment-là n'est pas celui où la
-/// lecture a été faite.
+/// Kept beside what is lit because the bubble needs it at the moment it
+/// is drawn, and that moment is not the one when the reading was made.
 #[cfg(windows)]
 static WHY: std::sync::Mutex<Reads> = std::sync::Mutex::new(Reads {
     link: None,
@@ -449,25 +449,24 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-/// Ce que la fenêtre prend, en vrais pixels sur l'écran qu'elle couvre.
+/// What the window takes up, in real pixels on the screen it covers.
 #[cfg(windows)]
 fn its_size() -> (i32, i32) {
     let scale = crate::main_window::scale();
-    // Taillée pour la bulle dès le départ, et non agrandie quand elle
-    // s'ouvre : redimensionner une fenêtre à calque sous une main qui
-    // passe se verrait. Ce qui n'est pas dessiné ne coûte qu'au
-    // compositeur, lequel ne mêle cette fenêtre que lorsqu'une pastille
-    // est déjà là.
+    // Sized for the bubble from the start, and not enlarged when it
+    // opens: resizing a layered window under a passing hand would show.
+    // What is not drawn only costs the compositor, which only blends
+    // this window in when a badge is already there.
     let wide = (2.0 * BADGE + BETWEEN).max(BUBBLE) + 2.0 * ROOM;
     let high = BADGE + UNDER + BUBBLE_AT_MOST + 2.0 * ROOM;
     ((wide * scale).ceil() as i32, (high * scale).ceil() as i32)
 }
 
-/// Ouvre la fenêtre des voyants, une fois par session.
+/// Opens the badges' window, once per session.
 ///
-/// `anchor` est le coin haut gauche de l'image, déjà écarté de la marge :
-/// c'est là que la première pastille se pose, et la fenêtre déborde
-/// autour d'elle de ce que l'ombre demande.
+/// `anchor` is the top left corner of the picture, already moved in by
+/// the margin: that is where the first badge sits, and the window spills
+/// over around it by what the shadow asks for.
 #[cfg(windows)]
 pub fn raise(app: &crate::app::App, anchor: (i32, i32)) {
     use std::sync::atomic::Ordering;
@@ -483,7 +482,7 @@ pub fn raise(app: &crate::app::App, anchor: (i32, i32)) {
 #[cfg(not(windows))]
 pub fn raise(_app: &crate::app::App, _anchor: (i32, i32)) {}
 
-/// Les range avec la session.
+/// Puts them away with the session.
 #[cfg(windows)]
 pub fn lower(app: &crate::app::App) {
     use std::sync::atomic::Ordering;
@@ -497,7 +496,8 @@ pub fn lower(app: &crate::app::App) {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow;
 
-        // SAFETY: une fenêtre à nous, détruite sur le fil qui l'a faite.
+        // SAFETY: a window of ours, destroyed on the thread that made
+        // it.
         unsafe { DestroyWindow(window as HWND) };
     });
 }
@@ -505,11 +505,11 @@ pub fn lower(app: &crate::app::App) {
 #[cfg(not(windows))]
 pub fn lower(_app: &crate::app::App) {}
 
-/// Les pose dans le coin haut gauche de l'image.
+/// Lays them in the top left corner of the picture.
 ///
-/// Appelée d'où le bouton flottant est posé, donc cent vingt fois par
-/// seconde sous une main qui redimensionne : rien ici n'attend quoi que
-/// ce soit.
+/// Called from where the floating button is laid, so a hundred and
+/// twenty times a second under a hand that is resizing: nothing here
+/// waits for anything at all.
 #[cfg(windows)]
 pub fn lay(anchor: (i32, i32)) {
     use std::sync::atomic::Ordering;
@@ -524,10 +524,10 @@ pub fn lay(anchor: (i32, i32)) {
         return;
     }
     let (left, top) = window_corner(anchor);
-    // SAFETY: une fenêtre à nous, posée sans être activée ni
-    // redimensionnée. Poser une fenêtre depuis un autre fil se demande au
-    // système, ce qui est ce qui rend ceci sûr depuis celui qui suit une
-    // main.
+    // SAFETY: a window of ours, placed without being activated or
+    // resized. Placing a window from another thread is asked of the
+    // system, which is what makes this safe from the thread that follows
+    // a hand.
     unsafe {
         SetWindowPos(
             window as HWND,
@@ -544,19 +544,19 @@ pub fn lay(anchor: (i32, i32)) {
 #[cfg(not(windows))]
 pub fn lay(_anchor: (i32, i32)) {}
 
-/// Le coin de la fenêtre, pour une première pastille posée là.
+/// The window's corner, for a first badge laid there.
 #[cfg(windows)]
 fn window_corner(anchor: (i32, i32)) -> (i32, i32) {
     let room = (ROOM * crate::main_window::scale()).round() as i32;
     (anchor.0 - room, anchor.1 - room)
 }
 
-/// Allume ce qui doit l'être, et range la fenêtre quand plus rien ne
-/// l'est.
+/// Lights what should be lit, and puts the window away when nothing is
+/// any more.
 ///
-/// Rangée et non peinte vide : une fenêtre à calque entièrement claire ne
-/// se voit pas, mais elle reste une fenêtre que le compositeur mêle à
-/// chaque image de la session.
+/// Put away and not painted empty: a fully clear layered window cannot be
+/// seen, but it is still a window the compositor blends into every frame
+/// of the session.
 #[cfg(windows)]
 fn show(app: &crate::app::App, shown: Shown, reads: &Reads, held: bool) {
     use std::sync::atomic::Ordering;
@@ -577,17 +577,18 @@ fn show(app: &crate::app::App, shown: Shown, reads: &Reads, held: bool) {
         }
     }
     let anything = !shown.nothing() || held;
-    // La main n'est cherchée que sur des pastilles qui sont là : sans
-    // elles la fenêtre est rangée, et une bulle sous une pastille
-    // invisible n'expliquerait rien.
+    // The hand is only looked for over badges that are there: without
+    // them the window is put away, and a bubble under an invisible
+    // badge would explain nothing.
     if anything {
         lit |= the_hand_over_them(window);
     }
     *WHY.lock().expect("raisons des voyants") = reads.clone();
-    // Redessinée à chaque tour tant que la main est posée, et au seul
-    // changement sinon : ce que la bulle dit porte des nombres qui
-    // bougent, et une bulle qui garderait ceux de la première lecture
-    // dirait une chose fausse tout le temps qu'on la regarde.
+    // Redrawn on every round while the hand is resting there, and
+    // only on a change otherwise: what the bubble says carries
+    // numbers that move, and a bubble that kept those of the first
+    // reading would say something false the whole time it is being
+    // looked at.
     let under_the_hand = lit & bit::OVER != 0;
     if LIT.swap(lit, Ordering::Relaxed) == lit && !under_the_hand {
         return;
@@ -600,8 +601,8 @@ fn show(app: &crate::app::App, shown: Shown, reads: &Reads, held: bool) {
         if anything {
             repaint(window);
         }
-        // SAFETY: une fenêtre à nous, montrée ou rangée sans prendre le
-        // premier plan, sur le fil qui l'a faite.
+        // SAFETY: a window of ours, shown or put away without taking
+        // the foreground, on the thread that made it.
         unsafe { ShowWindow(window, if anything { SW_SHOWNOACTIVATE } else { SW_HIDE }) };
     });
 }
@@ -609,21 +610,21 @@ fn show(app: &crate::app::App, shown: Shown, reads: &Reads, held: bool) {
 #[cfg(not(windows))]
 fn show(_app: &crate::app::App, _shown: Shown, _reads: &Reads, _held: bool) {}
 
-/// Sur laquelle des deux la main est posée, s'il y en a une.
+/// Which of the two the hand is resting on, if either.
 ///
-/// Lue au système plutôt que reçue en messages, et c'est ce qui permet à
-/// cette fenêtre de rester traversante. Le coin où elle se pose
-/// appartient à l'ordinateur d'en face : une main qui vise son menu
-/// Démarrer ne doit pas tomber sur un voyant, donc les clics passent au
-/// travers, donc les mouvements aussi. Demander où est le curseur ne
-/// prend rien à personne et répond à la seule question posée.
+/// Read from the system rather than received as messages, and that is
+/// what lets this window stay click-through. The corner it sits in
+/// belongs to the far computer: a hand aiming at its Start menu must not
+/// land on a badge, so clicks go through, and so do movements. Asking
+/// where the pointer is takes nothing from anyone and answers the only
+/// question asked.
 #[cfg(windows)]
 fn the_hand_over_them(window: isize) -> u8 {
     use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
     let mut hand = POINT { x: 0, y: 0 };
-    // SAFETY: un point à nous, que le système remplit.
+    // SAFETY: a point of ours, which the system fills in.
     if unsafe { GetCursorPos(&mut hand) } == 0 {
         return 0;
     }
@@ -633,7 +634,7 @@ fn the_hand_over_them(window: isize) -> u8 {
         right: 0,
         bottom: 0,
     };
-    // SAFETY: une fenêtre à nous, dont le rectangle est lu dans le nôtre.
+    // SAFETY: a window of ours, whose rectangle is read into ours.
     if unsafe { GetWindowRect(window as HWND, &mut place) } == 0 {
         return 0;
     }
@@ -652,11 +653,11 @@ fn the_hand_over_them(window: isize) -> u8 {
     0
 }
 
-/// Ce que la pastille sous la main a à dire.
+/// What the badge under the hand has to say.
 ///
-/// Une phrase même quand tout va bien : ces pastilles se tiennent à
-/// l'écran sur demande, éteintes, et une bulle vide sous une pastille
-/// éteinte laisserait croire que la question n'a pas de réponse.
+/// A sentence even when all is well: these badges can be held on
+/// screen on request, unlit, and an empty bubble under an unlit badge
+/// would suggest the question has no answer.
 fn what_it_says(rank: usize, why: &Reads) -> String {
     if rank == 0 {
         return why
@@ -674,7 +675,8 @@ fn what_it_says(rank: usize, why: &Reads) -> String {
     both.join("\n")
 }
 
-/// Bâtit la fenêtre, cachée : elle ne se montre qu'au premier voyant.
+/// Builds the window, hidden: it only shows itself when the first
+/// badge comes on.
 #[cfg(windows)]
 fn build(owner: isize, anchor: (i32, i32)) {
     use std::sync::atomic::Ordering;
@@ -689,10 +691,10 @@ fn build(owner: isize, anchor: (i32, i32)) {
     let name = wide("ZyrDeskVoyants");
     let (wide_px, high) = its_size();
     let (left, top) = window_corner(anchor);
-    // SAFETY: une classe enregistrée une fois et une fenêtre bâtie
-    // dessus, sur le fil qui pompera ses messages. Une classe déjà
-    // enregistrée est refusée et rien de plus, ce pour quoi la réponse
-    // n'est pas lue : une deuxième session trouve celle de la première.
+    // SAFETY: a class registered once and a window built on it, on the
+    // thread that will pump its messages. A class already registered is
+    // refused and nothing more, which is why the answer is not read: a
+    // second session finds the one from the first.
     let window = unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = WNDCLASSW {
@@ -708,11 +710,11 @@ fn build(owner: isize, anchor: (i32, i32)) {
             lpszClassName: name.as_ptr(),
         };
         RegisterClassW(&class);
-        // Transparente aux clics, et c'est le seul de ces quatre attributs
-        // qui vaut d'être expliqué : ces pastilles ne se cliquent pas, et
-        // le coin haut gauche de l'image appartient à l'ordinateur d'en
-        // face. Une main qui vise son menu Démarrer ne doit pas tomber sur
-        // un voyant.
+        // Transparent to clicks, and it is the only one of these four
+        // attributes worth explaining: these badges are not for clicking,
+        // and the top left corner of the picture belongs to the far
+        // computer. A hand aiming at its Start menu must not land on a
+        // badge.
         CreateWindowExW(
             WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT,
             name.as_ptr(),
@@ -735,8 +737,8 @@ fn build(owner: isize, anchor: (i32, i32)) {
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
 }
 
-/// Cette fenêtre n'a rien à répondre : elle ne porte que son image, et
-/// les clics la traversent.
+/// This window has nothing to answer: it only carries its own image,
+/// and clicks go through it.
 #[cfg(windows)]
 unsafe extern "system" fn nothing(
     window: windows_sys::Win32::Foundation::HWND,
@@ -744,14 +746,14 @@ unsafe extern "system" fn nothing(
     holding: windows_sys::Win32::Foundation::WPARAM,
     with: windows_sys::Win32::Foundation::LPARAM,
 ) -> windows_sys::Win32::Foundation::LRESULT {
-    // SAFETY: appelée par le système sur le fil qui a fait cette fenêtre,
-    // avec les arguments qu'il documente.
+    // SAFETY: called by the system on the thread that made this window,
+    // with the arguments it documents.
     unsafe {
         windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(window, message, holding, with)
     }
 }
 
-/// Redessine les pastilles allumées.
+/// Redraws the lit badges.
 #[cfg(windows)]
 fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use std::sync::atomic::Ordering;
@@ -763,16 +765,17 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use crate::paint::Rect;
 
     let lit = LIT.load(Ordering::Relaxed);
-    // Tenues à l'écran, elles sont dessinées toutes les deux et chacune
-    // dit quand même ce qu'elle lit : c'est où elles sont dessinées que
-    // cela change et jamais ce qu'elles disent. Deux pastilles toujours
-    // allumées ne montreraient rien de leur travail.
+    // Held on screen, both are drawn and each one still says what it
+    // reads: it is where they are drawn that this changes, and never
+    // what they say. Two badges always lit would show nothing of their
+    // work.
     let held = lit & bit::HELD != 0;
     let scale = crate::main_window::scale();
     let (wide_px, high) = its_size();
     CANVAS.with_borrow_mut(|canvas| {
-        // Refaite quand l'écran a changé d'agrandissement : la toile est
-        // une image d'une taille donnée, et la fenêtre a suivi.
+        // Made again when the screen's magnification has changed: the
+        // canvas is an image of a given size, and the window has
+        // followed.
         if canvas
             .as_ref()
             .is_none_or(|had| had.size() != (wide_px, high))
@@ -783,13 +786,13 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             return;
         };
         canvas.begin(Colour::TRANSPARENT);
-        // Chacune a sa place et la garde, même quand l'autre est éteinte :
-        // celle de l'image reste la deuxième, avec un vide à sa gauche là
-        // où serait celle du lien. Serrées l'une contre l'autre, la
-        // seconde sauterait de place chaque fois que la première s'allume,
-        // et un voyant qui bouge est un voyant qu'on relit au lieu de le
-        // reconnaître. Le vide ne se voit pas : la fenêtre est claire
-        // partout où rien n'est dessiné.
+        // Each one has its place and keeps it, even when the other is off:
+        // the picture one stays second, with a gap on its left where the
+        // link one would be. Packed against each other, the second would
+        // jump places every time the first lights up, and a badge that
+        // moves is a badge people read again instead of recognising it.
+        // The gap does not show: the window is clear wherever nothing is
+        // drawn.
         for (rank, on) in [lit & bit::LINK != 0, lit & bit::PICTURE != 0]
             .into_iter()
             .enumerate()
@@ -800,19 +803,18 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             let left = (ROOM + rank as f32 * (BADGE + BETWEEN)) * scale;
             let dot = Rect::at(left, ROOM * scale, BADGE * scale, BADGE * scale);
             let radius = ROUNDED * scale;
-            // Sans ombre portée, et c'est le bord qui dit tout. Ces
-            // pastilles flottent sur le bureau d'un autre ordinateur, qui
-            // peut être de n'importe quelle couleur : une ombre y est
-            // invisible sur un fond noir et y fait une tache grise sur un
-            // fond clair, ce qui est le contraire de ce qu'on lui
-            // demandait.
+            // No drop shadow, and it is the edge that says it all. These
+            // badges float over another computer's desktop, which can be
+            // any colour: a shadow there is invisible on a black
+            // background and makes a grey smudge on a light one, which is
+            // the opposite of what it was asked for.
             //
-            // Deux traits plutôt qu'un, et chacun pour un fond : l'anneau
-            // épais, sombre ou couleur d'alerte, se détache d'un bureau
-            // clair ; le cheveu clair posé juste dehors détache la
-            // pastille d'un bureau noir, où l'anneau seul se fondrait. Un
-            // seul des deux se voit à la fois, et c'est pour ça qu'il en
-            // faut deux.
+            // Two lines rather than one, each for one background: the
+            // thick ring, dark or the warning colour, stands out from a
+            // light desktop; the light hairline laid just outside it sets
+            // the badge apart from a black desktop, where the ring alone
+            // would melt in. Only one of the two shows at a time, and
+            // that is why it takes two.
             let ring = if on { DARK.warning } else { DARK.border_strong };
             canvas.fill(dot, radius, DARK.background.faded(0.94));
             canvas.stroke_inside(dot, radius, RING * scale, ring);
@@ -828,12 +830,12 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
                 canvas.icon(&crate::icons::LINK, icon_area, colour);
                 continue;
             }
-            // La pastille de l'image porte les deux ordinateurs, celui
-            // d'en face derrière et celui-ci devant, comme le logo du
-            // produit les dessine. Les deux sont posés en sourdine, puis
-            // celui qui coince est repassé par-dessus en clair : c'est
-            // tout ce qu'il faut pour dire lequel des deux, et ça se lit
-            // sans légende puisque c'est le dessin de la marque.
+            // The picture badge carries both computers, the far one
+            // behind and this one in front, as the product's logo draws
+            // them. Both are laid down dimmed, then the one that is
+            // struggling is drawn over again brightly: that is all it
+            // takes to say which of the two, and it reads without a
+            // caption since it is the brand's own drawing.
             canvas.icon(&crate::icons::HOST_SCREEN, icon_area, DARK.text_faint);
             if lit & bit::FAR != 0 {
                 canvas.icon(&crate::icons::SCREEN_OVER_THERE, icon_area, DARK.warning);
@@ -842,8 +844,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
                 canvas.icon(&crate::icons::SCREEN_HERE, icon_area, DARK.warning);
             }
         }
-        // La bulle après les pastilles, pour qu'elle passe par-dessus si
-        // jamais les deux se touchaient.
+        // The bubble after the badges, so that it goes on top should the
+        // two ever touch.
         if lit & bit::OVER != 0 {
             let rank = usize::from(lit & bit::OVER_LINK == 0);
             let text = what_it_says(rank, &WHY.lock().expect("raisons des voyants"));
@@ -869,8 +871,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             right: 0,
             bottom: 0,
         };
-        // SAFETY: une fenêtre à nous, dont le rectangle est lu dans le
-        // nôtre.
+        // SAFETY: a window of ours, whose rectangle is read into ours.
         if unsafe { GetWindowRect(window, &mut place) } == 0 {
             return;
         }
@@ -878,7 +879,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     });
 }
 
-/// Un mot comme Windows les lit, terminé par un nought.
+/// A word the way Windows reads them, ending in a nought.
 #[cfg(windows)]
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
@@ -888,7 +889,8 @@ fn wide(text: &str) -> Vec<u16> {
 mod tests {
     use super::*;
 
-    /// Une lecture d'une session qui va bien, à soixante images.
+    /// A reading from a session that is doing well, at sixty
+    /// frames.
     fn healthy() -> Measures {
         Measures {
             fps: Some(60.0),
@@ -914,8 +916,8 @@ mod tests {
 
     #[test]
     fn a_badge_with_nothing_to_report_says_so_rather_than_nothing() {
-        // Elles se tiennent à l'écran sur demande, éteintes : une bulle
-        // vide laisserait croire que la question n'a pas de réponse.
+        // They can be held on screen on request, unlit: an empty bubble
+        // would suggest the question has no answer.
         let calm = Reads::default();
         assert!(!what_it_says(0, &calm).is_empty());
         assert!(!what_it_says(1, &calm).is_empty());
@@ -939,8 +941,9 @@ mod tests {
 
     #[test]
     fn a_reading_that_says_nothing_lights_nothing_either() {
-        // Une session qui vient de s'ouvrir : le moteur n'a pas encore
-        // écrit une seconde. Rien n'est su, donc rien ne s'allume.
+        // A session that has just opened: the engine has not yet
+        // written a single second. Nothing is known, so nothing lights
+        // up.
         assert_eq!(read(&Measures::default()), Reads::default());
     }
 
@@ -976,8 +979,8 @@ mod tests {
 
     #[test]
     fn a_host_that_cannot_keep_up_lights_the_picture() {
-        // Vingt-cinq millisecondes par image sur une session qui en sert
-        // quarante : son encodage est ce qui donne le rythme.
+        // Twenty-five milliseconds per frame on a session that serves
+        // forty: its encoding is what sets the pace.
         let slow = Measures {
             fps: Some(40.0),
             host_ms: Some(25.0),
@@ -985,8 +988,8 @@ mod tests {
         };
         let reads = read(&slow);
         assert!(reads.far.is_some_and(|why| why.contains("d'en face")));
-        // Et celui-ci n'y est pour rien : la pastille doit allumer le bon
-        // des deux écrans, pas les deux.
+        // And this one has nothing to do with it: the badge must light
+        // the right one of the two screens, not both.
         assert!(reads.here.is_none());
         assert!(reads.link.is_none());
     }
@@ -1005,8 +1008,8 @@ mod tests {
 
     #[test]
     fn two_computers_that_both_struggle_light_both_screens() {
-        // Une session trop grande pour les deux machines : la pastille
-        // n'a pas à choisir laquelle nommer, elle les allume toutes deux.
+        // A session too big for both machines: the badge does not have to
+        // choose which one to name, it lights them both.
         let both = Measures {
             fps: Some(24.0),
             host_ms: Some(45.0),
@@ -1030,8 +1033,8 @@ mod tests {
 
     #[test]
     fn a_slow_session_that_asked_for_slow_is_not_a_fault() {
-        // Trente images par seconde laissent trente-trois millisecondes
-        // par image : un hôte à vingt n'est en retard sur rien.
+        // Thirty frames a second leave thirty-three milliseconds per
+        // frame: a host at twenty is late for nothing.
         let calm = Measures {
             fps: Some(30.0),
             host_ms: Some(20.0),
@@ -1043,9 +1046,9 @@ mod tests {
 
     #[test]
     fn the_time_a_frame_waits_for_the_screen_is_not_counted() {
-        // Le temps de rendu comprend l'attente du rafraîchissement de
-        // l'écran, donc il approche toujours le temps disponible :
-        // compté, ce voyant serait allumé toute la session.
+        // The render time includes waiting for the screen's refresh,
+        // so it always comes close to the time available: counted,
+        // this badge would be lit the whole session.
         let ordinary = Measures {
             render_ms: Some(16.6),
             ..healthy()
@@ -1055,8 +1058,8 @@ mod tests {
 
     #[test]
     fn a_badge_stays_lit_for_a_moment_after_its_cause_has_gone() {
-        // Sans ça il clignote : la cause tient sur une lecture, et il en
-        // passe une douzaine par seconde.
+        // Without this it blinks: the cause holds for one reading, and a
+        // dozen go by every second.
         let start = Instant::now();
         let mut steady = Steady::default();
         let wrong = read(&Measures {
@@ -1095,9 +1098,9 @@ mod tests {
         steady.after(&wrong, start);
         let again = start + HOLDS - Duration::from_millis(10);
         steady.after(&wrong, again);
-        // La seconde cause repart d'où elle est, et non de la première :
-        // sinon un réseau qui va mal par à-coups éteindrait le voyant au
-        // milieu de ses à-coups.
+        // The second cause starts again from where it is, and not from
+        // the first: otherwise a network doing badly in fits and starts
+        // would turn the badge off in the middle of its fits.
         assert!(steady.after(&well, start + HOLDS).link);
         assert!(!steady.after(&well, again + HOLDS).link);
     }

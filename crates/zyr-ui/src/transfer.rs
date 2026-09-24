@@ -1,21 +1,21 @@
-//! Ce que le bouton flottant montre des fichiers qui arrivent.
+//! What the floating button shows of the files that are arriving.
 //!
-//! Coller sur cet ordinateur des fichiers copiés sur l'autre, c'est
-//! attendre : les octets traversent au moment du coller et non à celui du
-//! copier, et ils traversent à côté de l'image sans jamais lui passer
-//! devant. Ce qui manquait à cette attente, c'est de se voir.
+//! Pasting on this computer files copied on the other one means waiting:
+//! the bytes cross at the moment of the paste and not at that of the
+//! copy, and they cross alongside the picture without ever cutting in
+//! front of it. What this wait lacked was being seen.
 //!
-//! Elle se voit dans la marque elle-même : la vitre de l'écran de devant
-//! se remplit comme une barre de chargement. Ni fenêtre de plus, ni
-//! second dessin posé à côté du bouton.
+//! It is seen in the mark itself: the pane of the near screen fills like
+//! a loading bar. No extra window, and no second drawing laid beside the
+//! button.
 //!
-//! Ce qui est montré est ce qui arrive **ici**. Quand c'est l'ordinateur
-//! d'en face qui colle, l'attente se voit sur son bureau, dans la fenêtre
-//! de copie que Windows ouvre lui-même, et ce bureau-là est justement
-//! l'image qu'on regarde.
+//! What is shown is what arrives **here**. When it is the far computer
+//! that pastes, the wait is seen on its desktop, in the copy window
+//! Windows opens itself, and that desktop is precisely the picture being
+//! watched.
 
-// Hors de Windows il n'y a pas de bouton à dessiner, mais ce qui se lit
-// se compile partout.
+// Outside Windows there is no button to draw, but the reading compiles
+// everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -23,25 +23,26 @@ use std::time::Duration;
 
 use zyr_proto::clipboard::HowFar;
 
-/// Combien de fois par seconde la barre est relue.
+/// How many times a second the bar is read again.
 ///
-/// Le service ne réécrit ce qu'il a écrit que quand le centième change,
-/// donc relire plus souvent ne montrerait rien de plus ; relire moins
-/// souvent ferait une barre qui avance par sauts.
+/// The service only rewrites what it wrote when the hundredth changes,
+/// so reading more often would show nothing more; reading less often
+/// would make a bar that moves in jumps.
 const LOOK_EVERY: Duration = Duration::from_millis(200);
 
-/// Ce que porte le compteur quand rien n'arrive.
+/// What the counter holds when nothing is arriving.
 ///
-/// Au-delà de cent, ce qu'aucun centième n'est jamais.
+/// Beyond a hundred, which no hundredth ever is.
 const NOTHING: u32 = u32::MAX;
 
-/// Où en est ce qui arrive, en centièmes.
+/// How far along what is arriving is, in hundredths.
 static COMING: AtomicU32 = AtomicU32::new(NOTHING);
 
-/// Si la veille tourne déjà, une seule suffisant par session.
+/// Whether the watch is already running, one being enough per
+/// session.
 static WATCHING: AtomicBool = AtomicBool::new(false);
 
-/// Ce que la barre du bouton doit montrer, de zéro à un, ou rien.
+/// What the button's bar must show, from zero to one, or nothing.
 pub fn how_far() -> Option<f32> {
     match COMING.load(Ordering::Relaxed) {
         NOTHING => None,
@@ -49,11 +50,12 @@ pub fn how_far() -> Option<f32> {
     }
 }
 
-/// Relit l'avancement tant qu'une session dure, et tient la barre à jour.
+/// Reads the progress again for as long as a session lasts, and keeps the
+/// bar up to date.
 ///
-/// Relancée à chaque tour de la veille du bouton, comme les pastilles :
-/// celle-ci tourne une fois par seconde, et ce qu'on regarde avancer se
-/// regarde cinq fois plus souvent.
+/// Started again at every turn of the button's watch, like the badges:
+/// that one turns once a second, and what is watched moving forward is
+/// looked at five times as often.
 pub fn watch(app: &crate::app::App) {
     if WATCHING.swap(true, Ordering::SeqCst) {
         return;
@@ -61,14 +63,14 @@ pub fn watch(app: &crate::app::App) {
     let app = app.clone();
     crate::app::spawn(async move {
         keep_up(&app).await;
-        // La session s'en va : la barre s'en va avec elle, et le bouton
-        // l'apprend avant de disparaître.
+        // The session is going away: the bar goes with it, and the
+        // button learns so before it disappears.
         say(NOTHING);
         WATCHING.store(false, Ordering::SeqCst);
     });
 }
 
-/// La boucle elle-même.
+/// The loop itself.
 async fn keep_up(app: &crate::app::App) {
     loop {
         tokio::time::sleep(LOOK_EVERY).await;
@@ -79,7 +81,7 @@ async fn keep_up(app: &crate::app::App) {
     }
 }
 
-/// Pose ce chiffre-là, et ne redessine que s'il a bougé.
+/// Sets that figure, and only redraws if it has moved.
 fn say(hundredths: u32) {
     if COMING.swap(hundredths, Ordering::Relaxed) != hundredths {
         #[cfg(windows)]
@@ -87,11 +89,11 @@ fn say(hundredths: u32) {
     }
 }
 
-/// Ce que le service a écrit des fichiers qui arrivent, s'il en arrive.
+/// What the service has written about the files arriving, if any are.
 ///
-/// Pas de fichier veut dire rien en route : c'est le service qui l'enlève
-/// quand tout est là, et c'est ce qui fait disparaître la barre sans que
-/// personne ait à dire que c'est fini.
+/// No file means nothing on the way: it is the service that removes it
+/// when everything is there, and that is what makes the bar disappear
+/// without anyone having to say it is over.
 fn coming_in() -> Option<HowFar> {
     let said = std::fs::read_to_string(zyr_proto::paths::files_coming()).ok()?;
     HowFar::read(&said).ok()
@@ -103,9 +105,9 @@ mod tests {
 
     #[test]
     fn with_nothing_arriving_the_bar_is_not_drawn() {
-        // C'est ce qui la fait disparaître d'elle-même : le service
-        // enlève le fichier quand tout est là, et il n'y a rien à dire de
-        // plus.
+        // That is what makes it disappear by itself: the service removes
+        // the file when everything is there, and there is nothing more to
+        // say.
         say(NOTHING);
         assert_eq!(how_far(), None);
     }

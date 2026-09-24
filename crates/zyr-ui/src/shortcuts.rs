@@ -26,10 +26,10 @@ use std::io;
 use std::path::Path;
 use std::str::FromStr;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module's lines are filed under.
 const TAG: &str = "keys";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
@@ -379,13 +379,13 @@ pub fn placed(scan: u16) -> Option<&'static str> {
         .map(|(name, _)| *name)
 }
 
-/// Chaque combinaison, écrite comme elle est gravée sur le clavier
-/// branché, et rien pour ce à quoi aucune touche n'est attribuée.
+/// Every combination, written as it is engraved on the keyboard plugged
+/// in, and nothing for whatever no key is given to.
 ///
-/// Le produit retient la place d'une touche et non le signe dessus ; ceci
-/// refait le chemin en sens inverse. Lu par le menu de la session, qui
-/// dit à côté de chaque ligne la touche qui la déclenche, et par l'écran
-/// des réglages, où les trois se choisissent.
+/// The product remembers the place of a key and not the character on it;
+/// this goes back the other way. Read by the session menu, which says
+/// beside each line the key that triggers it, and by the settings screen,
+/// where the three are chosen.
 pub fn engraved() -> Vec<(Doing, Option<String>)> {
     let bound = read_or_shipped(&zyr_proto::paths::keyboard_shortcuts());
     Doing::ALL
@@ -400,11 +400,12 @@ pub fn engraved() -> Vec<(Doing, Option<String>)> {
         .collect()
 }
 
-/// Une combinaison telle qu'une personne la lit.
+/// A combination as a person reads it.
 ///
-/// Les touches tenues portent ici le mot du clavier français, quand
-/// `Display` porte celui du fichier : l'un se lit, l'autre se relit, et
-/// les confondre changerait ce qui est écrit sur le disque.
+/// The held keys carry the French keyboard's word here, whereas
+/// `Display` carries the file's: one is for reading, the other for
+/// reading back, and mixing them up would change what is written on the
+/// disk.
 fn spelled(combination: &Combination) -> String {
     let mut written = String::new();
     for (held, name) in [
@@ -422,10 +423,10 @@ fn spelled(combination: &Combination) -> String {
     written
 }
 
-/// Ce qui est gravé sur cette touche-là, sur le clavier branché.
+/// What is engraved on that key, on the keyboard plugged in.
 ///
-/// Faute de réponse, la place est écrite telle quelle : illisible mais
-/// jamais fausse, ce que la page fait déjà.
+/// Failing an answer, the place is written as it is: unreadable but
+/// never wrong, which is what the page already does.
 #[cfg(windows)]
 fn engraved_key(key: &str) -> String {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -435,17 +436,17 @@ fn engraved_key(key: &str) -> String {
     let Some(scan) = scan_code_of(key) else {
         return key.to_string();
     };
-    // SAFETY: deux questions au système sur le clavier de ce fil, qui ne
-    // touchent à rien qui soit à nous.
+    // SAFETY: two questions to the system about this thread's keyboard,
+    // which touch nothing of ours.
     let engraved = unsafe {
         match MapVirtualKeyW(u32::from(scan), MAPVK_VSC_TO_VK_EX) {
             0 => 0,
             code => MapVirtualKeyW(code, MAPVK_VK_TO_CHAR),
         }
     };
-    // Le bit de tête dit une touche morte, dont le signe est le reste.
-    // Les touches sans signe, Entrée ou les touches de fonction, ne
-    // répondent rien : c'est leur nom qui est lisible, pas leur gravure.
+    // The top bit marks a dead key, whose character is the rest. Keys
+    // without a character, Enter or the function keys, answer nothing:
+    // it is their name that can be read, not their engraving.
     match char::from_u32(engraved & 0x7FFF_FFFF) {
         Some(sign) if !sign.is_control() && sign != ' ' => sign.to_uppercase().to_string(),
         _ => key.to_string(),
@@ -691,8 +692,8 @@ mod tests {
 
     #[test]
     fn a_combination_without_anything_held_is_refused() {
-        // Elle avalerait cette touche pour toute la machine, y compris
-        // pour ce qu'on est en train de taper à l'autre bout.
+        // It would swallow that key for the whole machine, including
+        // for whatever is being typed at the other end.
         let alone: Combination = "KeyQ".parse().expect("KeyQ");
         assert!(!alone.stands());
     }

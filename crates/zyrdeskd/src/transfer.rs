@@ -358,7 +358,8 @@ mod tests {
         Given { rank, from, bytes }
     }
 
-    /// Où en est le transfert, lu là où le bouton le lit.
+    /// How far the transfer has got, read where the button
+    /// reads it.
     fn drawn() -> Option<HowFar> {
         HowFar::read(&std::fs::read_to_string(paths::files_coming()).ok()?).ok()
     }
@@ -388,7 +389,8 @@ mod tests {
             })
         );
         assert!(!take(&given(0, 0, b"abc".to_vec()), &log).unwrap());
-        // Le premier est plein, donc c'est le second qu'on veut.
+        // The first one is full, so the second one is what is
+        // wanted.
         assert_eq!(what_is_still_wanted().unwrap().rank, 1);
         assert_eq!(drawn().unwrap().done, 3);
 
@@ -407,12 +409,12 @@ mod tests {
 
     #[test]
     fn the_same_paste_announced_twice_does_not_start_over() {
-        // Celui qui voit le coller le voit à chaque tour de sa boucle :
-        // sans ça, le transfert recommencerait quatre fois par seconde et
-        // ne dépasserait jamais son premier morceau.
+        // Whoever notices the paste notices it at every turn of their
+        // loop: without this, the transfer would start over four times a
+        // second and never get past its first piece.
         let (log, folder) = a_log("deux-fois");
-        // Un morceau plein d'un fichier plus long, pour que le premier
-        // morceau ne finisse pas le transfert.
+        // A full piece of a longer file, so that the first piece does
+        // not finish the transfer.
         let whole = A_PIECE as u64 + 3;
         let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
         let same = a_copy("deux-fois");
@@ -426,7 +428,8 @@ mod tests {
             "le transfert a repris à zéro"
         );
 
-        // Une autre copie, elle, repart : ce n'est plus la même.
+        // Another copy, though, starts over: it is no longer the
+        // same one.
         coming_in(a_copy("une-autre"), &listed, &log).unwrap();
         assert_eq!(drawn().unwrap().done, 0);
 
@@ -436,13 +439,13 @@ mod tests {
 
     #[test]
     fn a_piece_that_does_not_land_where_expected_is_dropped() {
-        // C'est la réponse à une question posée avant que le
-        // presse-papiers change : l'écrire mettrait les octets d'une
-        // copie dans le fichier d'une autre.
-        // Un fichier d'un morceau plein et de trois octets : plein, parce
-        // qu'un morceau plus court que ce qu'on a demandé dit la fin du
-        // fichier, et qu'on veut ici un premier morceau qui ne la dise
-        // pas.
+        // It is the answer to a question asked before the clipboard
+        // changed: writing it would put the bytes of one copy into the
+        // file of another.
+        //
+        // A file of one full piece and three bytes: full, because a piece
+        // shorter than what was asked for says the file has ended, and
+        // what is wanted here is a first piece that does not say so.
         let (log, folder) = a_log("decale");
         let whole = A_PIECE as u64 + 3;
         let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
@@ -451,7 +454,8 @@ mod tests {
 
         let first = vec![b'a'; A_PIECE];
         assert!(!take(&given(0, 0, first.clone()), &log).unwrap());
-        // On attend l'octet suivant : celui qui repart de zéro est jeté.
+        // The next byte is what is waited for: the piece that starts
+        // again from zero is dropped.
         assert!(!take(&given(0, 0, b"zzz".to_vec()), &log).unwrap());
         assert_eq!(drawn().unwrap().done, A_PIECE as u64);
         assert!(take(&given(0, A_PIECE as u64, b"def".to_vec()), &log).unwrap());
@@ -466,9 +470,9 @@ mod tests {
 
     #[test]
     fn a_file_shorter_than_it_announced_is_not_asked_for_forever() {
-        // Un fichier qui a maigri entre la copie et le coller : le
-        // morceau court dit la fin, et sans ça on le redemanderait pour
-        // toujours.
+        // A file that shrank between the copy and the paste: the short
+        // piece says it has ended, and without that it would be asked
+        // for again forever.
         let (log, folder) = a_log("maigri");
         let listed = Listing::of(vec![Listed::new("un.txt", 4_000_000).unwrap()]);
         coming_in(a_copy("maigri"), &listed, &log).unwrap();
@@ -482,10 +486,10 @@ mod tests {
 
     #[test]
     fn a_transfer_still_moving_outlives_the_session_that_opened_it() {
-        // Une liaison qui cligne ferme une voie et en ouvre une autre.
-        // Un transfert accroché à la première, ce sont quatre gigaoctets
-        // jetés à quatre-vingts pour cent pour un hoquet : ce qui décide
-        // est le dernier morceau reçu, jamais la session.
+        // A link that blinks closes one way and opens another. A
+        // transfer tied to the first is four gigabytes thrown away at
+        // eighty per cent for a hiccup: what decides is the last piece
+        // received, never the session.
         let (log, folder) = a_log("hoquet");
         let whole = A_PIECE as u64 + 3;
         let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
@@ -497,9 +501,9 @@ mod tests {
         take(&given(0, 0, vec![0u8; A_PIECE]), &log).unwrap();
         assert!(still_coming());
 
-        // Sans nouvelle depuis plus longtemps que ce que Windows attend :
-        // plus personne ne sert ce coller, et le tenir plus longtemps
-        // serait tenir un presse-papiers pour rien.
+        // No news for longer than Windows waits: nobody is serving this
+        // paste any more, and holding it any longer would be holding a
+        // clipboard for nothing.
         COMING.lock().unwrap().as_mut().unwrap().last_piece -= zyr_clipboard::PATIENCE;
         assert!(!still_coming());
 
@@ -510,8 +514,8 @@ mod tests {
 
     #[test]
     fn without_a_transfer_nothing_is_wanted_and_nothing_is_drawn() {
-        // C'est ce que répond un ordinateur où personne ne colle, et
-        // c'est ce qui dit à l'autre bout qu'il peut cesser d'envoyer.
+        // This is what a computer where nobody is pasting answers, and
+        // it is what tells the other end it may stop sending.
         let (log, folder) = a_log("rien");
         forget(&log);
         assert_eq!(what_is_still_wanted(), None);
@@ -539,8 +543,8 @@ mod tests {
             .hundredths(),
             25
         );
-        // Rien à copier est fini et non à moitié fait : un fichier vide
-        // est une vraie chose à copier et il n'a pas de milieu.
+        // Nothing to copy is finished and not half done: an empty file
+        // is a real thing to copy and it has no middle.
         assert_eq!(
             HowFar {
                 done: 0,
@@ -550,8 +554,8 @@ mod tests {
             .hundredths(),
             100
         );
-        // Et ce qui déborde ne dépasse pas cent, un fichier ayant pu
-        // grossir entre la copie et le coller.
+        // And what overflows does not go past a hundred, since a
+        // file may have grown between the copy and the paste.
         assert_eq!(
             HowFar {
                 done: 400,

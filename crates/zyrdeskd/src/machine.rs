@@ -429,8 +429,9 @@ mod tests {
         };
 
         let shown = merged(seen, Vec::new(), Some(&snapshot));
-        // Le PC vu sur le réseau et rattaché au compte est une seule
-        // carte : l'adresse du réseau, et le mot du compte dessus.
+        // The PC seen on the network and attached to the account is
+        // a single card: the network's address, with the account's
+        // word on it.
         assert_eq!(shown.len(), 3, "{shown:?}");
         assert_eq!(shown[0].name, "PC-BUREAU");
         assert_eq!(shown[0].host, "192.168.1.20");
@@ -438,12 +439,12 @@ mod tests {
             shown[0].account.as_ref().map(|it| it.device.as_str()),
             Some("d1")
         );
-        // Le portable, que rien d'autre ne porte, est joint par sa route
-        // chez le serveur.
+        // The laptop, which nothing else carries, is reached by its road
+        // at the server.
         assert_eq!(shown[1].name, "Portable");
         assert_eq!(shown[1].host, "account:d2");
         assert!(!shown[1].seen && !shown[1].written);
-        // Et la machine partagée dit par qui.
+        // And the shared machine says by whom.
         assert_eq!(
             shown[2]
                 .account
@@ -451,11 +452,10 @@ mod tests {
                 .and_then(|it| it.shared_by.clone()),
             Some("ami".to_string())
         );
-        // Cet ordinateur-ci n'est pas une carte : on ne se connecte pas à
-        // soi-même.
+        // This computer is not a card: one does not connect to oneself.
         assert!(shown.iter().all(|peer| peer.name != "Moi"));
 
-        // Sans compte, rien ne change de ce qui existait.
+        // Without an account, nothing that existed changes.
         let shown = merged(Vec::new(), Vec::new(), None);
         assert!(shown.is_empty());
     }
@@ -464,15 +464,15 @@ mod tests {
     fn what_stands_in_the_way_is_named_rather_than_left_to_be_guessed() {
         let (machine, _, folder) = machine("acces");
 
-        // Un moteur absent et un moteur qui démarre se ressemblent trop
-        // pour qu'un journal se contente de « pas prêt ».
+        // A missing engine and an engine that is starting look too much
+        // alike for a journal to settle for "not ready".
         assert!(machine.remote_access().contains("démarrage"));
         machine.hosting.held_by(Holdup::EngineMissing);
         assert!(machine.remote_access().contains("absent"));
         machine.hosting.open();
         assert!(machine.remote_access().contains("prêt"));
 
-        // Et un accès coupé exprès n'est pas une panne.
+        // And access turned off on purpose is not a fault.
         machine.remembered.set_remote_access(false).unwrap();
         assert_eq!(machine.remote_access(), "désactivé");
 
@@ -488,14 +488,14 @@ mod tests {
                 .unwrap();
 
         let text = machine.journal(fingerprint, &log, &Sifting::everything());
-        // Ce que la fenêtre ne peut pas lire seule, et qui est la moitié
-        // de ce qu'on ouvre un journal pour savoir.
+        // What the window cannot read by itself, and which is half of
+        // what one opens a journal to find out.
         assert!(text.contains(&fingerprint.to_string()), "{text}");
         assert!(text.contains(&format!("dialecte {PROTOCOL}")), "{text}");
         assert!(text.contains("Accès distant"), "{text}");
-        // Sans voisin, la ligne le dit plutôt que de rester vide : une
-        // liste vide et une liste absente ne se lisent pas pareil. Le
-        // compte pareil.
+        // With no neighbour, the line says so rather than staying
+        // empty: an empty list and a missing list do not read the
+        // same. The account likewise.
         assert!(text.contains("Ordinateurs vus  : aucun"), "{text}");
         assert!(text.contains("Compte"), "{text}");
         assert_eq!(machine.account_line(), "aucun");
@@ -507,14 +507,14 @@ mod tests {
     fn a_journal_says_on_which_port_this_computer_is_really_waiting() {
         let (machine, _, folder) = machine("tunnel");
 
-        // Porte fermée : rien n'écoute, et c'est autre chose qu'un port
-        // dont on ne saurait rien.
+        // Door closed: nothing is listening, and that is something
+        // other than a port nothing is known about.
         assert!(machine.tunnel_line().contains("n'écoute nulle part"));
 
-        // Ouverte sur un port que le système a choisi, c'est-à-dire
-        // l'interrupteur coupé : la ligne nomme l'interrupteur, parce
-        // que d'en face cet ordinateur est indiscernable d'un réseau qui
-        // jette les paquets.
+        // Open on a port the system chose, that is, with the switch
+        // turned off: the line names the switch, because from over there
+        // this computer cannot be told apart from a network that throws
+        // the packets away.
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -541,8 +541,8 @@ mod tests {
             "{line}"
         );
 
-        // Rendue pendant que son exécuteur tient encore : la porte
-        // survivrait sinon à ce qui la fait tourner.
+        // Given back while its runtime still stands: otherwise the
+        // door would outlive what keeps it running.
         machine.door.closed();
         std::fs::remove_dir_all(&folder).unwrap();
     }

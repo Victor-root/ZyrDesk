@@ -5,16 +5,17 @@
 //! button, hanging in a corner, that opens what can be done without
 //! leaving the picture.
 //!
-//! Il est fait de deux fenêtres à nous, le logo et la carte du menu, que
-//! ce programme dessine lui-même : ni l'une ni l'autre ne porte de page,
-//! et il n'y a plus de navigateur nulle part sur l'image. Ce fichier ne
-//! dessine rien ; il tient où le bouton pend, ce qu'il fait, et quand il
-//! monte et descend.
+//! It is made of two windows of ours, the logo and the menu card, which
+//! this program draws itself: neither of them carries a page, and there
+//! is no browser anywhere on the picture any more. This file draws
+//! nothing; it keeps track of where the button hangs, what it does, and
+//! when it goes up and comes down.
 //!
-//! Des fenêtres à nous plutôt qu'un dessin fait dans l'image. Dessiner
-//! dedans reviendrait à apprendre au moteur ce qu'est ZyrDesk, ce que les
-//! moteurs sont précisément tenus d'ignorer ; et une fenêtre à nous se
-//! laisse cliquer sans que le moteur ait à rendre la souris.
+//! Windows of ours rather than a drawing made in the picture. Drawing
+//! inside it would mean teaching the engine what ZyrDesk is, which is
+//! precisely what the engines are bound to know nothing of; and a window
+//! of ours lets itself be clicked without the engine having to give the
+//! mouse back.
 //!
 //! Two things make that work, and both are why no session ever takes the
 //! screen exclusively. A window that owns the screen lets nothing be
@@ -46,10 +47,10 @@ use crate::app::App;
 // entry that seems to do nothing is exactly the kind of thing that cannot
 // be diagnosed from a screenshot.
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module files its journal lines under.
 const TAG: &str = "floating";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
@@ -140,7 +141,7 @@ pub enum Act {
     MouseMode,
     /// Ctrl+Alt+Suppr, pressed on the far computer.
     SecureAttention,
-    /// The far computer's lock screen, put up.
+    /// The lock screen of the far computer, put up.
     LockScreen,
     /// The session's own sound, hushed or given back on this computer.
     Sound,
@@ -381,30 +382,32 @@ struct Expected {
 
 static NUDGE: AtomicI64 = AtomicI64::new(0);
 
-/// D'où la carte du menu s'ouvre, vue du bouton.
+/// Which way the menu card opens, as seen from the button.
 ///
-/// Le bouton se pose n'importe où dans l'image, et la carte est plus
-/// haute que la moitié d'un écran : il n'y a pas un sens qui marche
-/// toujours, il y en a trois, et c'est la place qui reste autour du
-/// bouton qui décide lequel.
+/// The button can be put down anywhere in the picture, and the card
+/// is taller than half a screen: there is not one direction that
+/// always works, there are three, and it is the room left around the
+/// button that decides which.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Opens {
-    /// Sous le bouton, quand l'image a la place dessous.
+    /// Below the button, when the picture has room below
+    /// it.
     Down,
-    /// Au-dessus, quand elle ne l'a qu'au-dessus.
+    /// Above, when it only has room above.
     Up,
-    /// À gauche du bouton, quand ni l'un ni l'autre.
+    /// To the left of the button, when neither.
     ///
-    /// Un bouton posé à mi-hauteur ne laisse assez de place ni dessous ni
-    /// dessus, et la carte y était coupée par le bas de l'image. À côté,
-    /// elle a toute la hauteur de l'image pour elle : elle ne part plus
-    /// du bouton, elle se pose à sa gauche et glisse de ce qu'il faut
-    /// pour tenir en entier.
+    /// A button put down halfway up leaves enough room neither below nor
+    /// above, and the card was cut off there by the bottom of the
+    /// picture. Beside it, the card has the whole height of the picture
+    /// to itself: it no longer starts from the button, it sits to its
+    /// left and slides as far as it needs to fit whole.
     Side,
 }
 
 impl Opens {
-    /// Le sens rangé dans un nombre, le seul type qu'un atomique porte.
+    /// The direction stored in a number, the only type an atomic
+    /// carries.
     fn number(self) -> u8 {
         match self {
             Opens::Down => 0,
@@ -413,8 +416,8 @@ impl Opens {
         }
     }
 
-    /// Et relu. Un nombre que personne d'autre n'écrit : tout ce qui
-    /// n'est pas un sens connu est le sens par défaut.
+    /// And read back. A number nobody else writes: anything that is
+    /// not a known direction is the default direction.
     fn from_number(number: u8) -> Self {
         match number {
             1 => Opens::Up,
@@ -424,19 +427,19 @@ impl Opens {
     }
 }
 
-/// Le sens en place, décidé à chaque pose du bouton.
+/// The direction in force, decided every time the button is put down.
 ///
-/// La fenêtre de la carte est aussi haute que la carte pendant toute la
-/// session et pend au logo, qui occupe un de ses coins. Décidé ici et
-/// non dans la carte : elle ne sait pas où on l'a posée sur un écran,
-/// et le logo comme elle ont besoin de la réponse.
+/// The window of the card is as tall as the card for the whole session
+/// and hangs from the logo, which takes up one of its corners. Decided
+/// here and not in the card: it does not know where it was put on a
+/// screen, and the logo needs the answer just as the card does.
 static OPENS: AtomicU8 = AtomicU8::new(0);
 
-/// Si la fenêtre s'ouvre collée par son bord gauche plutôt que par son
-/// bord droit, décidé au même instant que `OPENS` et pour la même
-/// raison : un bouton posé près du bord gauche de l'image ne laisse pas
-/// à la carte la place de partir de son bord droit comme elle le fait
-/// d'habitude.
+/// Whether the window opens held by its left edge rather than by its
+/// right edge, decided at the same moment as `OPENS` and for the same
+/// reason: a button put down near the left edge of the picture does not
+/// leave the card the room to start from its right edge as it usually
+/// does.
 static TO_THE_RIGHT: AtomicBool = AtomicBool::new(false);
 
 /// The logo alone, in real pixels, which is not the size of the window
@@ -475,16 +478,16 @@ fn how_it_shows() -> u32 {
     0
 }
 
-/// D'où une carte de cette hauteur s'ouvre, pour un bouton pendu là.
+/// Which way a card of this height opens, for a button hanging there.
 ///
-/// Dessous tant que ça tient, dessus sinon, et à côté quand ni l'un ni
-/// l'autre : c'est l'ordre dans lequel une carte se lit le plus
-/// naturellement depuis le bouton qui l'ouvre.
+/// Below as long as it fits, above otherwise, and beside when neither:
+/// that is the order in which a card reads most naturally from the
+/// button that opens it.
 ///
-/// Une image trop courte pour la carte quel que soit le sens la garde
-/// du côté où il reste le plus de place : la mettre à côté ne
-/// l'empêcherait pas d'être coupée et lui coûterait en plus de ne plus
-/// partir du bouton.
+/// A picture too short for the card whatever the direction keeps it on
+/// the side with the most room left: putting it beside would not keep
+/// it from being cut off, and would also cost it no longer starting
+/// from the button.
 fn where_it_opens(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) -> Opens {
     let below = picture.3 - anchor.1;
     if height <= below {
@@ -504,13 +507,13 @@ fn where_it_opens(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32
     }
 }
 
-/// D'où une fenêtre de cette largeur a la place de partir, pour un
-/// bouton pendu là : collée à son bord droit comme d'habitude, tant que
-/// ça tient à sa gauche ; à son bord gauche sinon, tant que ça tient à
-/// sa droite.
+/// Which side a window of this width has room to start from, for a
+/// button hanging there: held by its right edge as usual, as long as it
+/// fits to its left; by its left edge otherwise, as long as it fits to
+/// its right.
 ///
-/// Une image trop étroite pour elle des deux côtés la garde du côté où
-/// il reste le plus de place, pour la même raison que `where_it_opens`.
+/// A picture too narrow for it on both sides keeps it on the side with
+/// the most room left, for the same reason as `where_it_opens`.
 fn opens_rightwards(picture: (i32, i32, i32, i32), anchor: (i32, i32), width: i32) -> bool {
     let room_left = anchor.0 - picture.0;
     if width <= room_left {
@@ -523,12 +526,11 @@ fn opens_rightwards(picture: (i32, i32, i32, i32), anchor: (i32, i32), width: i3
     room_right > room_left
 }
 
-/// Ce que la fenêtre du menu prend de large en tout pour ce sens
-/// vertical-là, qui décide de quel côté elle a la place de s'ouvrir.
+/// How wide the menu window is in all for that vertical direction,
+/// which decides on which side it has room to open.
 ///
-/// À côté, elle compte aussi le bouton et l'espace qui l'en sépare :
-/// c'est sa fenêtre entière qui se pose à côté de lui, jamais sa seule
-/// carte.
+/// Beside, it also counts the button and the gap between them: it is
+/// its whole window that sits beside the button, never its card alone.
 #[cfg(windows)]
 fn menu_width(opens: Opens) -> i32 {
     crate::menu::width(opens, logo().0)
@@ -796,15 +798,15 @@ pub fn watch(app: App) {
                     let was_confirmed =
                         app.floating().confirmed.swap(in_service, Ordering::Relaxed);
                     if !fresh && was_confirmed && !in_service {
-                        // Le service ne nomme plus cette voie, alors qu'il
-                        // la nommait à l'instant d'avant, et le lecteur
-                        // croit toujours tourner : une session finie
-                        // d'ailleurs (éjection, réglage qui ferme les
-                        // sessions en cours), que son moteur ne
-                        // remarquerait de lui-même qu'à son silence,
-                        // jusqu'à trente secondes plus tard. Arrêtée ici et
-                        // tenue pour volontaire, le même chemin que la
-                        // croix de la fenêtre prend.
+                        // The service no longer names this way, when it
+                        // named it a moment before, and the player still
+                        // believes it is running: a session ended from
+                        // elsewhere (a kick, a setting that closes the
+                        // sessions in progress), which its engine would
+                        // only notice by itself from its silence, up to
+                        // thirty seconds later. Stopped here and treated as
+                        // deliberate, by the same path the cross of the
+                        // window takes.
                         note(&format!(
                             "le service ne connaît plus la voie du lecteur {process}, arrêté ici"
                         ));
@@ -840,54 +842,55 @@ pub fn watch(app: App) {
                         // new player has not touched.
                     }
                     put_the_button_up(&app, process);
-                    // Rien de tout cela pendant que le menu est ouvert :
-                    // jeter un de ces interrupteurs donne le clavier à
-                    // l'image, et une main qui lit le menu vise autre
-                    // chose. Le changement de mode de souris, lui, les
-                    // jette avec lui : le clavier vient de partir de
-                    // toute façon, et attendre la fermeture du menu
-                    // laissait un moment sans aucun curseur.
+                    // None of this while the menu is open: throwing one
+                    // of these switches gives the keyboard to the
+                    // picture, and a hand reading the menu is aiming at
+                    // something else. The change of mouse mode, for its
+                    // part, throws them along with it: the keyboard has
+                    // just gone anyway, and waiting for the menu to
+                    // close left a moment with no pointer at all.
                     if !the_menu_is_open() {
                         keep_the_pointer_in_step(&app, process).await;
                         keep_the_far_pointer_in_step(&app).await;
                     }
-                    // Et le pointeur de cet ordinateur-ci reste dans
-                    // l'image tant que la souris est celle d'un jeu :
-                    // caché et libre, il s'en va derrière la main qui
-                    // joue. Ici et non chez le moteur, qui ne peut pas ;
-                    // voir `picture::shut_the_pointer_in`. Le menu ouvert
-                    // le rend, comme tout le reste : une main qui lit le
-                    // menu vise autre chose.
+                    // And the pointer of this computer stays inside the
+                    // picture as long as the mouse is in game mode:
+                    // hidden and free, it wanders off behind the hand
+                    // that is playing. Here and not in the engine, which
+                    // cannot; see `picture::shut_the_pointer_in`. The
+                    // open menu gives it back, like everything else: a
+                    // hand reading the menu is aiming at something else.
                     crate::picture::shut_the_pointer_in(in_game_mouse(&app) && !the_menu_is_open());
-                    // Et la forme que ce curseur prend, qui vient de
-                    // l'ordinateur d'en face et se demande bien plus
-                    // souvent que cette veille ne tourne : elle a sa
-                    // propre boucle, relancée ici quand la précédente
-                    // s'est arrêtée.
+                    // And the shape this pointer takes, which comes
+                    // from the far computer and is asked for far more
+                    // often than this watch goes round: it has its
+                    // own loop, started again here when the previous
+                    // one has stopped.
                     crate::pointer::follow(&app);
-                    // Et la santé de la session, relue bien plus souvent
-                    // que cette veille-ci ne tourne : ce qu'elle allume
-                    // doit se voir dans le tiers de seconde, et cette
-                    // veille passe une fois par seconde.
+                    // And the health of the session, read again far more
+                    // often than this watch goes round: what it lights
+                    // up must show within a third of a second, and this
+                    // watch comes round once a second.
                     crate::badges::watch(&app);
-                    // Et ce qui arrive des fichiers qu'on colle, relu au
-                    // même rythme et pour la même raison : une barre qui
-                    // avance une fois par seconde n'a pas l'air d'avancer.
+                    // And what arrives of the files being pasted, read
+                    // again at the same rhythm and for the same reason: a
+                    // bar that moves once a second does not look as if it
+                    // is moving.
                     crate::transfer::watch(&app);
-                    // Et le clavier appartient à l'image, toujours. Le
-                    // menu ne le lui prend plus : la carte que ce
-                    // programme dessine n'est jamais activée et ne porte
-                    // aucune page qui prendrait le focus, ce qui est
-                    // encore une chose que la vue web coûtait. Ceci reste
-                    // le filet, pour un clavier qu'une autre fenêtre a
-                    // pris ; le système refuse de toute façon net tant
-                    // qu'un autre programme est devant.
+                    // And the keyboard belongs to the picture, always.
+                    // The menu no longer takes it away: the card this
+                    // program draws is never activated and carries no
+                    // page that would take the focus, which is one more
+                    // thing the web view cost. This stays as the safety
+                    // net, for a keyboard another window has taken; the
+                    // system flatly refuses anyway as long as another
+                    // program is in front.
                     crate::picture::the_keyboard_back(&app);
                 }
                 None => {
-                    // Le pointeur d'abord : sans session il n'y a plus
-                    // d'image où l'enfermer, et une cage laissée derrière
-                    // une session tient tout le bureau.
+                    // The pointer first: without a session there is no
+                    // picture left to shut it in, and a cage left behind
+                    // by a session holds the whole desktop.
                     crate::picture::shut_the_pointer_in(false);
                     crate::picture::let_go(&app);
                     lower(&app);
@@ -934,8 +937,8 @@ fn adopt(app: &App, process: u32) -> bool {
 /// the engine only opens its window once the far computer has answered
 /// and the stream stands: showing the button any earlier would put it
 /// over a screen that has no picture on it yet.
-// Hors de Windows, le logo et la carte n'existent pas, et rien de ce qui
-// reste ici ne demande le programme.
+// Off Windows, the logo and the card do not exist, and nothing of what
+// remains here needs the program.
 #[cfg_attr(not(windows), allow(unused_variables))]
 fn put_the_button_up(app: &App, process: u32) {
     let Some(picture) = picture_of(process) else {
@@ -954,34 +957,35 @@ fn put_the_button_up(app: &App, process: u32) {
     let size = button_size() as i32;
     ITS_LOGO.store(size, Ordering::Relaxed);
 
-    // Le bouton est fait de deux fenêtres que ce programme dessine : le
-    // logo, sur lequel une main se pose, et la carte du menu. Les ouvrir
-    // ne coûte rien quand elles sont déjà ouvertes, ce qui fait de ce
-    // passage-ci le même travail à chaque tour de veille.
+    // The button is made of two windows this program draws: the logo,
+    // which a hand comes down on, and the menu card. Opening them costs
+    // nothing when they are already open, which makes this part the same
+    // work at every turn of the watch.
     #[cfg(windows)]
     {
         let anchor = hung_from(picture, nudge(), (size, size), margin());
         let opens = Opens::from_number(OPENS.load(Ordering::Relaxed));
         let room_right = TO_THE_RIGHT.load(Ordering::Relaxed);
         crate::logo::raise(app, size as u32, opens == Opens::Up, room_right, anchor);
-        // La carte se mesure sur ce que ses lignes demandent, donc elle a
-        // besoin de savoir de combien un pixel de page compte ici et quel
-        // thème la fenêtre porte.
-        // Le thème est demandé au produit et non à la fenêtre : c'est la
-        // même réponse pour tous les écrans, et une seule à tenir.
+        // The card measures itself on what its lines ask for, so it needs
+        // to know how much a page pixel counts for here and which theme
+        // the window wears.
+        //
+        // The theme is asked of the product and not of the window: it is
+        // the same answer for every screen, and only one to keep.
         crate::menu::raise(app, crate::main_window::scale(), crate::theme::light());
     }
-    // Et les deux voyants, dans le coin d'en face. Ce qui s'ouvre ici est
-    // la fenêtre qui les portera : elle reste rangée tant qu'il n'y a
-    // rien à dire, ce qui est la plus grande partie d'une session.
+    // And the two badges, in the opposite corner. What opens here is the
+    // window that will carry them: it stays put away as long as there is
+    // nothing to say, which is most of a session.
     crate::badges::raise(app, the_other_corner(picture));
     lay_the_button(picture);
 }
 
-/// Le coin haut gauche de l'image, à la même marge que le bouton.
+/// The top left corner of the picture, at the same margin as the button.
 ///
-/// La même marge et non une deuxième : les deux coins sont regardés l'un
-/// après l'autre, et deux écarts différents se voient tout de suite.
+/// The same margin and not a second one: the two corners are looked at
+/// one after the other, and two different gaps show at once.
 fn the_other_corner(picture: (i32, i32, i32, i32)) -> (i32, i32) {
     let margin = margin();
     (picture.0 + margin, picture.1 + margin)
@@ -1022,11 +1026,11 @@ pub fn lower(app: &App) {
     }
 }
 
-/// Range le bouton jusqu'à la prochaine session, ou jusqu'au raccourci
-/// qui le rappelle.
+/// Puts the button away until the next session, or until the shortcut
+/// that calls it back.
 ///
-/// Les deux fenêtres dont il est fait s'en vont ensemble, le logo et la
-/// carte : l'une laissée debout serait un bouton à moitié rangé.
+/// The two windows it is made of go away together, the logo and the
+/// card: one left standing would be a button half put away.
 pub fn hide(app: &App) -> Result<(), String> {
     if !a_session_is_up(app) {
         return Err("le bouton flottant n'est plus là".to_string());
@@ -1063,9 +1067,9 @@ pub async fn grabbed(app: &App) -> bool {
     let (Some(start), Some(picture)) = (cursor_now(), picture_of(process)) else {
         return true;
     };
-    // D'où le bouton part, compté et non relu : c'est le même calcul qui
-    // le pose, à partir des mêmes nombres, donc les deux ne peuvent pas
-    // se contredire.
+    // Where the button starts from, worked out and not read back: it is
+    // the same calculation that puts it down, from the same numbers, so
+    // the two cannot contradict each other.
     let from = hung_from(picture, nudge(), logo(), margin());
 
     let until = std::time::Instant::now() + AT_MOST;
@@ -1104,8 +1108,8 @@ pub async fn grabbed(app: &App) -> bool {
     !moved
 }
 
-/// Dit au logo que le geste est devenu un déplacement, au cran près où
-/// il le devient, puis qu'il est fini.
+/// Tells the logo that the gesture has become a drag, at the very step
+/// where it becomes one, then that it is over.
 #[cfg(windows)]
 fn moving(yes: bool) {
     crate::logo::moving(yes);
@@ -1859,13 +1863,13 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
     let anchor = hung_from(picture, nudge(), logo(), margin());
     decide_the_direction(picture, anchor, menu_height());
     put_the_button(picture, anchor);
-    // Les voyants suivent l'image d'ici, et non d'une veille à eux : ils
-    // sont posés sur le même bord que ce bouton, et une image qu'on
-    // redimensionne les emmènerait chacun à son rythme.
+    // The badges follow the picture from here, and not from a watch of
+    // their own: they sit on the same edge as this button, and a picture
+    // being resized would carry each of them off at its own rhythm.
     crate::badges::lay(the_other_corner(picture));
 }
 
-/// Ce que la carte du menu prend de haut, qui décide du sens d'ouverture.
+/// How tall the menu card is, which decides the direction it opens in.
 #[cfg(windows)]
 fn menu_height() -> i32 {
     crate::menu::height()
@@ -1876,27 +1880,27 @@ fn menu_height() -> i32 {
     0
 }
 
-/// Pose les deux fenêtres du bouton, et les montre ou les range.
+/// Lays the two windows of the button, and shows them or puts them away.
 ///
-/// Une seule ancre pour les deux : c'est ce qui les empêche d'être en
-/// désaccord sur l'endroit où se trouve le bouton, et il n'y a plus rien
-/// entre ce qu'on veut et ce qui est dessiné, la page qui prenait une
-/// image de retard étant partie.
+/// One anchor for both: that is what keeps them from disagreeing on
+/// where the button is, and there is nothing left between what is wanted
+/// and what is drawn, the page that ran a frame behind being gone.
 #[cfg(windows)]
 fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
     let opens = Opens::from_number(OPENS.load(Ordering::Relaxed));
     let room_right = TO_THE_RIGHT.load(Ordering::Relaxed);
-    // Le logo ne bouge que de deux coins, à côté la carte ne partant
-    // plus de lui : il garde le coin qu'il a quand elle est dessous. Son
-    // dessin, lui, se retourne avec le bord d'où la carte part, pour
-    // faire face au menu plutôt que de lui tourner le dos.
+    // The logo only moves between two corners, the card no longer
+    // starting from it when it opens beside: it keeps the corner it has
+    // when the card is below. Its drawing, for its part, turns round
+    // with the edge the card starts from, to face the menu rather than
+    // turn its back on it.
     crate::logo::lay(anchor, opens == Opens::Up, room_right);
     crate::menu::lay(anchor, opens, room_right, crate::logo::box_side(), picture);
 
-    // Le système remonte une fenêtre possédée avec celle qui la possède,
-    // ce qui est juste pour un bouton qui n'est en bas que parce que la
-    // fenêtre l'est. Ce qu'il ne décide pas est décidé ici : le bouton
-    // rangé à la main reste rangé.
+    // The system brings an owned window back up with the one that owns
+    // it, which is right for a button that is only down because the
+    // window is. What it does not decide is decided here: the button put
+    // away by hand stays put away.
     let up = !HIDDEN.load(Ordering::Relaxed);
     if SHOWN.swap(up, Ordering::Relaxed) != up {
         note(&format!(
@@ -1910,7 +1914,7 @@ fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
     }
 }
 
-/// Ce que le bouton montrait la dernière fois qu'on l'a décidé.
+/// What the button was showing the last time it was decided.
 #[cfg(windows)]
 static SHOWN: AtomicBool = AtomicBool::new(false);
 
@@ -1927,8 +1931,8 @@ fn put_the_button(_picture: (i32, i32, i32, i32), _anchor: (i32, i32)) {}
 /// session to hold to a shape either.
 #[cfg(windows)]
 pub fn room_for_the_button() -> Option<(i32, i32)> {
-    // Le logo et non la carte du menu : une image n'est pas trop petite
-    // pour un bouton parce qu'un menu fermé n'y tiendrait pas.
+    // The logo and not the menu card: a picture is not too small for a
+    // button because a closed menu would not fit in it.
     if crate::logo::its_window() == 0 {
         return None;
     }
@@ -2380,12 +2384,12 @@ mod tests {
 
     #[test]
     fn every_menu_entry_names_a_shortcut_the_engine_answers_to() {
-        // Les lettres sont celles du moteur client : les changer sans le
-        // moteur ferait taper une combinaison qui ne fait rien, ou pire,
-        // une autre que celle voulue.
-        // Et les places sont celles d'un clavier, indépendantes de ce
-        // qui est gravé dessus : c'est par là que le moteur reconnaît
-        // une touche en premier.
+        // The letters are those of the client engine: changing them
+        // without the engine would type a combination that does nothing,
+        // or worse, another one than the one wanted.
+        //
+        // And the places are those of a keyboard, independent of what is
+        // engraved on it: that is how the engine recognises a key first.
         for (act, letter, place) in [
             (Act::Stats, b'S', 0x1Fu16),
             (Act::MouseMode, b'M', 0x32),
@@ -2395,12 +2399,12 @@ mod tests {
             assert_eq!(act.letter(), Some(letter), "sur « {act} »");
             assert_eq!(act.where_it_sits(), Some(place), "sur « {act} »");
         }
-        // Les autres ne passent pas par le clavier du lecteur : terminer
-        // se demande à l'ordinateur d'en face à travers le tunnel,
-        // couvrir l'écran se fait à notre propre fenêtre, celle du moteur
-        // étant posée dedans, Ctrl+Alt+Suppr est la combinaison que
-        // Windows garde pour lui aux deux bouts, et le son se coupe dans
-        // le mélangeur de cet ordinateur-ci.
+        // The others do not go through the keyboard of the player: ending
+        // is asked of the far computer over the tunnel, covering the
+        // screen is done to our own window, the one of the engine being
+        // laid inside it, Ctrl+Alt+Suppr is the combination Windows keeps
+        // for itself at both ends, and the sound is cut in the mixer of
+        // this computer.
         for act in [
             Act::End,
             Act::Fullscreen,
@@ -2415,10 +2419,10 @@ mod tests {
 
     #[test]
     fn a_picture_smaller_than_the_button_is_answered_and_not_refused() {
-        // Ceci tourne dans l'appel du système à notre fenêtre : une
-        // panique y emporte tout le programme. Une fenêtre peut changer
-        // de taille sans qu'une main l'ait demandé, donc le cas doit
-        // avoir une réponse.
+        // This runs inside the call the system makes to our window: a
+        // panic there takes the whole program down. A window can change
+        // size without a hand having asked for it, so the case must
+        // have an answer.
         let button = (91, 91);
         for image in [
             (100, 100, 160, 134),
@@ -2457,17 +2461,16 @@ mod tests {
         let button = 91;
         ITS_LOGO.store(button, Ordering::Relaxed);
         let tall = 700;
-        // Le bouton en haut : la carte tient dessous, où elle se lit
-        // depuis lui.
+        // The button at the top: the card fits below, where it reads
+        // from the button.
         assert_eq!(where_it_opens(image, (1_904, 16), tall), Opens::Down);
-        // En bas : elle ne tient plus que dessus.
+        // At the bottom: it only fits above now.
         assert_eq!(where_it_opens(image, (1_904, 1_000), tall), Opens::Up);
-        // À mi-hauteur : ni l'un ni l'autre, et c'est là qu'elle était
-        // coupée par le bas de l'image.
+        // Halfway up: neither, and that is where it was cut off by the
+        // bottom of the picture.
         assert_eq!(where_it_opens(image, (1_904, 500), tall), Opens::Side);
-        // Une image trop courte pour elle de toute façon : à côté elle
-        // serait coupée aussi, donc elle garde le côté où il reste le
-        // plus de place.
+        // A picture too short for it anyway: beside, it would be cut
+        // off too, so it keeps the side with the most room left.
         let short = (0, 0, 1_920, 600);
         assert_eq!(where_it_opens(short, (1_904, 300), tall), Opens::Up);
         assert_eq!(where_it_opens(short, (1_904, 100), tall), Opens::Down);
@@ -2478,15 +2481,15 @@ mod tests {
         let image = (0, 0, 1_920, 1_080);
         ITS_LOGO.store(91, Ordering::Relaxed);
         let width = 320;
-        // Le bouton près du bord droit de l'image : la carte tient à sa
-        // gauche, où elle s'ouvre d'habitude.
+        // The button near the right edge of the picture: the card fits
+        // to its left, where it usually opens.
         assert!(!opens_rightwards(image, (1_904, 16), width));
-        // Près du bord gauche : elle n'y tient plus, et tient à sa
-        // droite.
+        // Near the left edge: it no longer fits there, and fits to
+        // its right.
         assert!(opens_rightwards(image, (16, 16), width));
-        // Une image trop étroite pour elle des deux côtés : elle garde
-        // le côté où il reste le plus de place, pour la même raison que
-        // le sens vertical.
+        // A picture too narrow for it on both sides: it keeps the side
+        // with the most room left, for the same reason as the vertical
+        // direction.
         let narrow = (0, 0, 200, 1_080);
         assert!(!opens_rightwards(narrow, (150, 16), width));
         assert!(opens_rightwards(narrow, (50, 16), width));
@@ -2494,10 +2497,10 @@ mod tests {
 
     #[test]
     fn there_is_one_way_to_end_a_session_and_not_two() {
-        // Les moteurs en offrent deux : partir en laissant le bureau
-        // distant ouvert, et le rendre. Porter cette différence jusqu'à
-        // la personne lui laisserait une session ni en cours ni finie.
-        // Une seule ligne du menu la termine, et elle porte un seul acte.
+        // The engines offer two: leaving with the far desktop left open,
+        // and handing it back. Carrying that difference up to the person
+        // would leave them a session neither running nor over. One single
+        // line of the menu ends it, and it carries one single act.
         assert_eq!(Act::End.to_string(), "fin de la session");
     }
 }

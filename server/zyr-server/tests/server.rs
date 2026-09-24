@@ -265,11 +265,11 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     assert_eq!(info.name, "Essai");
     assert_eq!(info.registration, Registration::Open);
     assert_eq!(info.protocol, PROTOCOL);
-    // Le serveur d'essai est ce binaire-là : son empreinte de
-    // compilation est donc la nôtre.
+    // The test server is that very binary: its build stamp is
+    // therefore ours.
     assert_eq!(info.build, zyr_proto::BUILD);
 
-    // Un compte, un mot de passe faux, un vrai.
+    // An account, a wrong password, a right one.
     let victor = server.register("victor");
     let (status, error) = server.post::<zyr_broker::rest::Error>(
         paths::LOGIN,
@@ -291,8 +291,8 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     assert_eq!(status, 200);
     assert_eq!(again.username, "victor");
 
-    // Deux appareils, dont l'un rattaché avec le jeton de compte fraîchement
-    // obtenu ; un jeton d'appareil fait ensuite tous les gestes du compte.
+    // Two devices, one of them attached with the freshly obtained account
+    // token; a device token then does everything the account does.
     let (_, pc1) = server.link(&victor.token, "PC de Victor");
     let (_, pc2) = server.link(&again.token, "Portable");
     let (status, devices) = server.get::<Vec<DeviceInfo>>(paths::DEVICES, Some(&pc1.token));
@@ -300,7 +300,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     assert_eq!(devices.len(), 2);
     assert!(devices.iter().all(|device| !device.online));
 
-    // Un jeton d'appareil ne rattache pas un autre appareil.
+    // A device token does not attach another device.
     let (status, error) = server.post::<zyr_broker::rest::Error>(
         paths::DEVICES,
         Some(&pc1.token),
@@ -308,7 +308,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     );
     assert_eq!((status, error.error), (401, Code::Unauthorized));
 
-    // Renommer, révoquer.
+    // Rename, revoke.
     let (status, renamed) = server
         .agent
         .patch(server.url(&format!("/v1/devices/{}", pc2.device.id)))
@@ -334,7 +334,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     let (status, error) = server.get::<zyr_broker::rest::Error>(paths::DEVICES, Some(&pc2.token));
     assert_eq!((status, error.error), (401, Code::Unauthorized));
 
-    // Un contact, demandé et accepté, puis un partage.
+    // A contact, asked for and accepted, then a share.
     let friend_account = server.register("ami");
     let (_, laptop) = server.link(&friend_account.token, "PC de l'ami");
     let (status, asked) = server.post::<ContactInfo>(
@@ -350,7 +350,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     let (_, seen_by_friend) = server.get::<Vec<ContactInfo>>(paths::CONTACTS, Some(&laptop.token));
     assert_eq!(seen_by_friend[0].username, "victor");
     assert!(!seen_by_friend[0].asked_by_me);
-    // Pas de partage avant l'accord.
+    // No share before the agreement.
     let (status, error) = server.post::<zyr_broker::rest::Error>(
         paths::SHARES,
         Some(&pc1.token),
@@ -401,7 +401,7 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
     let friend_account = server.register("ami");
     let (friend_identity, friend) = server.link(&friend_account.token, "PC de l'ami");
 
-    // Une preuve fausse ferme le canal avec la raison.
+    // A false proof closes the channel with the reason.
     let mut liar = connect(&server, &pc.token).await;
     let FromServer::Challenge { .. } = next(&mut liar).await else {
         panic!("un défi d'abord");
@@ -422,7 +422,8 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
         }
     ));
 
-    // Le PC arrive : il se voit, et voit le portable hors ligne.
+    // The PC arrives: it sees itself, and sees the laptop
+    // offline.
     let (mut pc_channel, welcome) =
         open_channel(&server, &pc.token, &pc_identity, &info.signing_key).await;
     let FromServer::Welcome { me, devices, .. } = welcome else {
@@ -432,7 +433,7 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
     let laptop = devices.iter().find(|d| d.id == other.device.id).unwrap();
     assert!(!laptop.online);
 
-    // Le portable arrive : le PC l'apprend.
+    // The laptop arrives: the PC learns of it.
     let (mut other_channel, _) =
         open_channel(&server, &other.token, &other_identity, &info.signing_key).await;
     assert_eq!(
@@ -443,7 +444,7 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
             access: Access::Off,
         }
     );
-    // Le PC accepte l'accès distant : le portable l'apprend.
+    // The PC accepts remote access: the laptop learns of it.
     say(
         &mut pc_channel,
         &FromDevice::State {
@@ -460,8 +461,8 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
         }
     );
 
-    // Le rendez-vous : le portable va vers le PC, les deux reçoivent le
-    // ticket, chacun le lit de son côté.
+    // The rendezvous: the laptop goes to the PC, both receive the
+    // ticket, each reads it on its own side.
     say(
         &mut other_channel,
         &FromDevice::SessionOpen {
@@ -494,8 +495,8 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
     assert_eq!(same_ticket, ticket);
     assert_eq!(opener.device, other.device.id);
 
-    // Chacun reçoit son propre laissez-passer, qui ne le laisse joindre
-    // que l'autre, au relais que le serveur nomme.
+    // Each one receives its own pass, which only lets it reach the
+    // other, at the relay the server names.
     assert!(info.relay);
     let relay = relay.expect("le portable n'a pas eu de laissez-passer");
     let pc_relay = pc_relay.expect("le PC n'a pas eu de laissez-passer");
@@ -525,7 +526,8 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
         .ticket_for_client(&ticket, other_identity.fingerprint(), now())
         .unwrap();
 
-    // Les candidats passent d'un bout à l'autre, et la fin aussi.
+    // The candidates go from one end to the other, and so does
+    // the end.
     let candidates = vec!["192.168.1.4:47000".parse().unwrap()];
     say(
         &mut other_channel,
@@ -554,7 +556,8 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
         FromServer::SessionEnd { session }
     );
 
-    // L'ami n'a aucun droit sur le PC tant que rien n'est partagé.
+    // The friend has no right over the PC as long as nothing is
+    // shared.
     let (mut friend_channel, _) =
         open_channel(&server, &friend.token, &friend_identity, &info.signing_key).await;
     say(
@@ -572,8 +575,8 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
         }
     );
 
-    // Révoqué depuis le PC, le portable est congédié avec la raison, et le
-    // PC l'apprend.
+    // Revoked from the PC, the laptop is dismissed with the reason, and
+    // the PC learns of it.
     assert_eq!(
         server.delete(&format!("/v1/devices/{}", other.device.id), &pc.token),
         200

@@ -44,7 +44,7 @@ pub const PORT: u16 = 5353;
 /// Key the fingerprint travels under.
 const FINGERPRINT_KEY: &str = "fp";
 
-/// Key the machine's name travels under.
+/// Key the name of the machine travels under.
 const NAME_KEY: &str = "nom";
 
 /// How long a computer stays listed after it was last heard from.
@@ -99,9 +99,9 @@ impl Found {
         let mut found = self.0.lock().expect("found peers");
         found.retain(|_, (_, seen)| now.duration_since(*seen) < FORGET_AFTER);
         let mut peers: Vec<Peer> = found.values().map(|(peer, _)| peer.clone()).collect();
-        // Rangés par nom : une carte qui change de place à chaque
-        // rafraîchissement est insupportable à l'usage, et rien dans
-        // l'ordre d'arrivée ne veut dire quoi que ce soit.
+        // Sorted by name: a card that changes place at every refresh
+        // is unbearable to use, and nothing in the order of arrival
+        // means anything at all.
         peers.sort_by(|a, b| a.name.cmp(&b.name).then(a.address.cmp(&b.address)));
         peers
     }
@@ -456,8 +456,9 @@ mod tests {
     use super::*;
 
     fn fingerprint(seed: u8) -> Fingerprint {
-        // Écrite puis relue, comme elle voyage sur le réseau : c'est le
-        // seul chemin par lequel une empreinte entre dans ce module.
+        // Written out then read back, as it travels over the network:
+        // that is the only path by which a fingerprint enters this
+        // module.
         format!("{seed:02x}").repeat(32).parse().unwrap()
     }
 
@@ -486,8 +487,9 @@ mod tests {
 
     #[test]
     fn only_the_first_sight_of_a_computer_is_worth_reporting() {
-        // Une machine se réannonce tant qu'elle tourne : sans ça, le
-        // journal se remplirait de la même ligne toutes les minutes.
+        // A machine re-announces itself for as long as it runs:
+        // without this, the journal would fill up with the same line
+        // every minute.
         let found = Found::new();
         assert!(found.note(peer(1, "PC-BUREAU"), Instant::now()));
         assert!(!found.note(peer(1, "PC-BUREAU"), Instant::now()));
@@ -502,8 +504,8 @@ mod tests {
             found.forget(&announced_as(&fingerprint(1))).as_deref(),
             Some("PC-BUREAU")
         );
-        // Un départ annoncé deux fois, ou celui d'une machine qu'on n'a
-        // jamais vue, ne doit rien raconter du tout.
+        // A departure announced twice, or that of a machine never seen,
+        // must not report anything at all.
         assert!(found.forget(&announced_as(&fingerprint(1))).is_none());
         assert!(found.forget("une-machine-inconnue").is_none());
     }
@@ -537,11 +539,11 @@ mod tests {
 
     #[test]
     fn every_address_a_computer_answers_at_is_kept() {
-        // Le défaut qui a coûté une session par jour : une machine à
-        // plusieurs cartes se fait entendre sur chacune d'elles, et la
-        // dernière arrivée effaçait les précédentes. On ouvrait donc la
-        // session par une adresse tirée au sort, dont une menait par un
-        // VPN et coûtait soixante millisecondes.
+        // The fault that cost a session a day: a machine with several
+        // cards makes itself heard on each of them, and the last to
+        // arrive used to wipe out the ones before. So the session was
+        // opened through an address drawn at random, one of which led
+        // through a VPN and cost sixty milliseconds.
         let found = Found::new();
         found.note(at(1, "PC-BUREAU", "192.168.1.20"), Instant::now());
         found.note(at(1, "PC-BUREAU", "192.168.2.20"), Instant::now());
@@ -556,7 +558,7 @@ mod tests {
                 "192.168.2.20".parse().unwrap()
             ]
         );
-        // La première entendue reste celle qu'on essaie d'abord.
+        // The first one heard stays the one tried first.
         assert_eq!(seen[0].address, "192.168.1.20".parse::<IpAddr>().unwrap());
     }
 
@@ -585,9 +587,8 @@ mod tests {
 
     #[test]
     fn a_goodbye_is_only_believed_from_where_that_computer_is() {
-        // Ce port est ouvert sur le réseau : sans cette vérification,
-        // n'importe qui ferait disparaître n'importe quel ordinateur de
-        // l'écran de n'importe qui d'autre.
+        // This port is open to the network: without this check, anyone
+        // could make any computer disappear from anyone else's screen.
         let found = Found::new();
         found.note(peer(1, "PC-BUREAU"), Instant::now());
 
@@ -602,32 +603,31 @@ mod tests {
         );
         assert!(found.peers().is_empty());
 
-        // Déjà parti : rien à dire, et surtout pas une seconde ligne dans
-        // le journal.
+        // Already gone: nothing to say, and above all not a second line
+        // in the journal.
         assert_eq!(found.forget_the_one_at(fingerprint(1), its_own), None);
     }
 
     #[test]
     fn a_computer_with_several_cards_is_always_reached_at_the_same_one() {
-        // Une machine à deux cartes annonce ses deux adresses, et elles
-        // arrivent en vrac : sans ordre arrêté, on la joindrait tantôt
-        // d'un côté tantôt de l'autre, et un essai sur deux échouerait
-        // sans que rien ne l'explique.
+        // A machine with two cards announces both its addresses, and
+        // they arrive in no order: without a settled order, it would be
+        // reached sometimes on one side and sometimes on the other, and
+        // every other attempt would fail with nothing to explain it.
         let one: IpAddr = "192.168.1.20".parse().unwrap();
         let two: IpAddr = "192.168.2.20".parse().unwrap();
         let six: IpAddr = "fe80::1".parse().unwrap();
         assert_eq!(in_order(vec![two, one]), vec![one, two]);
         assert_eq!(in_order(vec![six, two, one]), vec![one, two, six]);
-        // La version quatre d'abord : c'est là-dessus que le tunnel est
-        // ouvert.
+        // Version four first: that is what the tunnel is opened on.
         assert_eq!(in_order(vec![six, two]), vec![two, six]);
     }
 
     #[test]
     fn a_computer_found_says_where_else_it_answers() {
-        // La ligne qui manquait le jour où une session est partie par le
-        // mauvais côté d'une machine à quatre adresses : le journal n'en
-        // montrait qu'une, et rien ne disait qu'il y avait un choix.
+        // The line that was missing the day a session went out through
+        // the wrong side of a machine with four addresses: the journal
+        // showed only one of them, and nothing said there was a choice.
         let mut found = peer(1, "PC-BUREAU");
         assert_eq!(named(&found), "PC-BUREAU at 192.168.1.20");
         found.addresses.push("192.168.2.20".parse().unwrap());

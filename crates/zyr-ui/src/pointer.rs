@@ -1,21 +1,22 @@
-//! La forme du curseur d'en face, tenue à jour pendant une session.
+//! The shape of the far computer's pointer, kept up to date during a
+//! session.
 //!
-//! Le curseur qu'une main suit est dessiné ici, sans réseau au milieu,
-//! et c'est tout l'intérêt : celui de l'ordinateur distant est sa
-//! réponse à un mouvement qui a traversé deux fois. Mais un bureau dit
-//! ce qu'un clic va faire par la forme du curseur et par presque rien
-//! d'autre, et cette forme-là n'existe que chez lui.
+//! The pointer a hand follows is drawn here, with no network in between,
+//! and that is the whole point: the far computer's pointer is its answer
+//! to a movement that has crossed over twice. But a desktop says what a
+//! click is going to do through the shape of the pointer and almost
+//! nothing else, and that shape exists only over there.
 //!
-//! Elle est donc demandée, plusieurs fois par seconde tant qu'une
-//! session est à l'écran, et écrite dans le fichier que le lecteur suit.
-//! Rien n'est retenu d'une question à l'autre : une forme ne vaut rien
-//! un instant plus tard.
+//! So it is asked for, several times a second while a session is on the
+//! screen, and written into the file the player follows. Nothing is kept
+//! from one question to the next: a shape is worth nothing a moment
+//! later.
 //!
-//! Une seule connexion au service pour toute la session, et non une par
-//! question comme partout ailleurs dans cette fenêtre : ailleurs c'est
-//! une question de temps en temps, ici c'est vingt par seconde.
+//! A single connection to the service for the whole session, and not one
+//! per question as everywhere else in this window: elsewhere it is a
+//! question now and then, here it is twenty a second.
 
-// Une session n'existe que sous Windows, et cette boucle avec elle.
+// A session only exists on Windows, and this loop with it.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,40 +27,41 @@ use zyr_proto::session::Pointer;
 
 use crate::app::App;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module's lines are filed under.
 const TAG: &str = "pointer";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
-/// Combien de fois par seconde la forme est demandée.
+/// How many times a second the shape is asked for.
 ///
-/// Vingt : une main qui entre dans un champ de texte voit la barre
-/// apparaître dans les cinquante millisecondes, ce qui est en dessous de
-/// ce qu'un œil sépare, et c'est vingt allers-retours par seconde sur un
-/// canal déjà ouvert plutôt que soixante.
+/// Twenty: a hand that enters a text field sees the bar appear within
+/// fifty milliseconds, which is below what an eye can tell apart, and it
+/// is twenty round trips a second on a channel already open rather than
+/// sixty.
 const ASK_EVERY: Duration = Duration::from_millis(50);
 
-/// Combien de refus d'affilée avant d'abandonner.
+/// How many refusals in a row before giving up.
 ///
-/// Un refus isolé est une voie qui vient de se fermer ou un service qui
-/// redémarre. Plusieurs de suite veulent dire que cet ordinateur-là ne
-/// sait pas répondre, ce qui est le cas d'une machine d'en face plus
-/// ancienne que celle-ci : la session continue très bien sans, avec la
-/// flèche ordinaire, et il n'y a pas de raison de la harceler.
+/// A single refusal is a way that has just closed or a service that is
+/// restarting. Several in a row mean that computer does not know how to
+/// answer, which is the case of a far machine older than this one: the
+/// session carries on perfectly well without it, with the ordinary
+/// arrow, and there is no reason to pester it.
 const REFUSALS_BEFORE_GIVING_UP: u32 = 20;
 
-/// Vrai tant que la boucle tourne.
+/// True while the loop is running.
 static FOLLOWING: AtomicBool = AtomicBool::new(false);
 
-/// Suit la forme du curseur d'en face jusqu'à la fin de la session.
+/// Follows the shape of the far computer's pointer until the end of
+/// the session.
 ///
-/// Appelée à chaque tour de la veille : elle ne fait rien tant qu'une
-/// boucle tourne déjà, et en relance une quand la précédente s'est
-/// arrêtée, ce qui arrive à la fin d'une session comme à l'ouverture
-/// d'une image.
+/// Called at every turn of the watch: it does nothing while a loop is
+/// already running, and starts a new one when the previous one has
+/// stopped, which happens at the end of a session as well as when a
+/// picture opens.
 pub fn follow(app: &App) {
     if FOLLOWING.swap(true, Ordering::SeqCst) {
         return;
@@ -73,7 +75,7 @@ pub fn follow(app: &App) {
     });
 }
 
-/// La boucle elle-même, et ce qu'elle a vu passer.
+/// The loop itself, and what it saw go by.
 async fn keep_it_in_step(app: &App) -> Seen {
     let mut seen = Seen::default();
     let mut way = None;
@@ -86,11 +88,11 @@ async fn keep_it_in_step(app: &App) -> Seen {
             seen.why = "la session est terminée";
             return seen;
         }
-        // La voie est cherchée à chaque tour tant qu'elle manque, et non
-        // une fois au départ. Le service ne connaît une session qu'une
-        // fois le lecteur confié : cette boucle démarre bien avant, et
-        // renoncer là revenait à ne rien demander pendant les six
-        // secondes que met une session à être crue.
+        // The way is looked for at every turn for as long as it is
+        // missing, and not once at the start. The service only knows
+        // about a session once the player has been handed over: this
+        // loop starts well before that, and giving up there meant asking
+        // nothing during the six seconds a session takes to be believed.
         let asking = match way {
             Some(known) => known,
             None => match crate::session::the_way_in_use().await {
@@ -101,17 +103,17 @@ async fn keep_it_in_step(app: &App) -> Seen {
                 None => continue,
             },
         };
-        // En mode jeu, le jeu dessine son propre curseur et celui d'ici
-        // est caché : demander une forme que personne ne montrera serait
-        // vingt allers-retours par seconde pour rien. La boucle reste en
-        // vie, parce qu'on peut revenir au bureau sans fermer.
+        // In game mode, the game draws its own pointer and the one here
+        // is hidden: asking for a shape nobody will show would be twenty
+        // round trips a second for nothing. The loop stays alive, because
+        // the person can come back to the desktop without closing.
         //
-        // La flèche ordinaire est posée en partant, et jamais la dernière
-        // forme reçue. Le lecteur garde celle qu'on lui laisse, et l'une
-        // des treize n'en est pas une : « theirs » est une forme vide,
-        // pour les instants où l'ordinateur d'en face dessine lui-même le
-        // sien. Laissée là, elle rend invisible tout curseur que ce
-        // lecteur montrerait ensuite.
+        // The ordinary arrow is set on the way out, and never the last
+        // shape received. The player keeps whichever one it is left with,
+        // and one of the thirteen is not a shape at all: "theirs" is an
+        // empty shape, for the moments when the far computer draws its
+        // pointer itself. Left there, it makes invisible any pointer this
+        // player would show afterwards.
         if crate::floating::in_game_mouse(app) {
             if !in_a_game {
                 in_a_game = true;
@@ -131,9 +133,10 @@ async fn keep_it_in_step(app: &App) -> Seen {
                 }
             }
             Err(reason) => {
-                // La connexion est jetée, et la voie oubliée : un refus
-                // vient souvent d'un service qui a redémarré ou d'une
-                // image relancée, et la voie est alors une autre.
+                // The connection is thrown away, and the way forgotten:
+                // a refusal often comes from a service that has
+                // restarted or a picture that was relaunched, and the
+                // way is then a different one.
                 talking = None;
                 way = None;
                 refused += 1;
@@ -147,7 +150,8 @@ async fn keep_it_in_step(app: &App) -> Seen {
     }
 }
 
-/// Une question, sur la connexion tenue, rouverte quand elle a lâché.
+/// One question, on the connection being held, reopened when it has
+/// given way.
 async fn asked(talking: &mut Option<Service>, way: WayId) -> Result<Pointer, String> {
     if talking.is_none() {
         *talking = Some(Service::join().await.map_err(|e| e.to_string())?);
@@ -164,13 +168,12 @@ async fn asked(talking: &mut Option<Service>, way: WayId) -> Result<Pointer, Str
     }
 }
 
-/// Ce que la boucle a vu, pour le journal.
+/// What the loop saw, for the journal.
 ///
-/// Une ligne par session, et elle répond aux deux questions qu'un
-/// curseur resté en flèche pose : est-ce qu'on a reçu quoi que ce soit,
-/// et est-ce qu'autre chose qu'une flèche est passé. Une ligne par forme
-/// reçue en ferait vingt par seconde et ne répondrait à ni l'une ni
-/// l'autre.
+/// One line per session, and it answers the two questions a pointer
+/// stuck as an arrow raises: was anything received at all, and did
+/// anything other than an arrow come through. A line per shape received
+/// would make twenty a second and would answer neither.
 #[derive(Default)]
 struct Seen {
     answers: u64,
@@ -215,9 +218,9 @@ mod tests {
 
     #[test]
     fn the_journal_line_says_what_is_missing() {
-        // Elle est là pour un curseur resté en flèche : elle doit
-        // distinguer « rien n'est arrivé » de « tout est arrivé et
-        // c'était des flèches ».
+        // It is there for a pointer stuck as an arrow: it must
+        // tell "nothing arrived" apart from "everything arrived
+        // and it was all arrows".
         let nothing = Seen {
             why: "la session est terminée",
             ..Default::default()
@@ -234,8 +237,8 @@ mod tests {
         assert!(said.contains("3 reçues"), "{said}");
         assert!(said.contains("arrow text"), "{said}");
 
-        // Et un refus se dit sur une seule ligne : le journal aligne ses
-        // lignes, et une raison repliée casserait la colonne.
+        // And a refusal is told on a single line: the journal lines up
+        // its lines, and a reason that wraps would break the column.
         let refused = Seen {
             first_refusal: Some("la voie 3\n  n'existe plus".to_string()),
             ..Default::default()

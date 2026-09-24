@@ -982,9 +982,9 @@ impl Told {
             "codecs" => Ok(Ok(Told::Codecs {
                 named: rest.to_string(),
             })),
-            // Une forme que cette compilation ne connaît pas est la
-            // flèche ordinaire et jamais un refus : la lecture ne peut
-            // pas échouer, et c'est voulu.
+            // A shape this build does not know is the ordinary arrow
+            // and never a refusal: the reading cannot fail, and that
+            // is on purpose.
             "pointer" => Ok(Ok(Told::Pointer {
                 shape: rest.parse().unwrap_or_default(),
             })),
@@ -1617,8 +1617,9 @@ mod tests {
     #[test]
     fn every_question_survives_the_round_trip() {
         for question in [
-            // Ce qu'une session dit d'elle-même en ouvrant : c'est de
-            // là que l'ordinateur regardé tient la taille de sa fenêtre.
+            // What a session says about itself when opening: that is
+            // where the watched computer gets the size of its window
+            // from.
             Question::Ports {
                 serving: MediaProfile {
                     bits_per_second: 80_000_000,
@@ -1627,9 +1628,9 @@ mod tests {
             },
             Question::Pair {
                 pin: "0429".to_string(),
-                // Un nom d'ordinateur porte des espaces plus souvent
-                // qu'on ne le croit, et il voyage en fin de message
-                // pour cette raison précise.
+                // A computer name holds spaces more often than one
+                // would think, and it travels at the end of the
+                // message for that very reason.
                 name: "PC de Victor".to_string(),
             },
             Question::SecureAttention,
@@ -1640,12 +1641,12 @@ mod tests {
             Question::Lock,
             Question::Steady { rate: true },
             Question::Steady { rate: false },
-            // Le débit se demande au milieu d'une session, en kilobits
-            // par seconde, comme le moteur d'en face le lit.
+            // The bitrate is asked for in the middle of a session, in
+            // kilobits per second, as the far engine reads it.
             Question::Bitrate { kbps: 20_000 },
-            // L'agrandissement voyage collé à la taille : un écran à la
-            // bonne taille sans lui, c'est le bureau de quelqu'un
-            // d'autre à la bonne résolution.
+            // The magnification travels stuck to the size: a screen at
+            // the right size without it is someone else's desktop at
+            // the right resolution.
             Question::Screen {
                 wanted: Some(WantedScreen {
                     wide: 1920,
@@ -1653,8 +1654,8 @@ mod tests {
                     scale: 125,
                 }),
             },
-            // Zéro veut dire « aucun demandé » : c'est ce que dit une
-            // session qui n'a pas pu mesurer son propre écran.
+            // Zero means "none asked for": it is what a session says
+            // when it could not measure its own screen.
             Question::Screen {
                 wanted: Some(WantedScreen {
                     wide: 3840,
@@ -1673,17 +1674,17 @@ mod tests {
             Question::EmptyTheJournal,
             Question::Codecs,
             Question::Screens,
-            // Rien de nommé veut dire l'écran principal, et c'est ce que
-            // demande toute session tant que personne n'a dit autre chose.
+            // Nothing named means the main screen, and that is what every
+            // session asks for as long as nobody has said otherwise.
             Question::FilmThisScreen { id: None },
             Question::FilmThisScreen {
                 id: Some("{daeac860-f4db-5208-b1f5-cf59444fb768}".to_string()),
             },
-            // Le presse-papiers, qui est la seule question à porter
-            // quelque chose dans les deux sens à la fois. Les quatre cas
-            // sont là parce que les quatre arrivent : rien des deux
-            // côtés au tout début d'une session, quelque chose à donner,
-            // quelque chose déjà partagé, et les deux ensemble.
+            // The clipboard, which is the only question to carry
+            // something both ways at once. The four cases are there
+            // because all four happen: nothing on either side at the
+            // very start of a session, something to give, something
+            // already shared, and both together.
             Question::Clipboard {
                 pushing: None,
                 seen: None,
@@ -1700,16 +1701,16 @@ mod tests {
                 pushing: Some(Clip::picture(vec![0x89, b'P', b'N', b'G', 0x00, 0xff])),
                 seen: Some(Clip::text("déjà partagé").stamp()),
             },
-            // Un texte vide n'est pas l'absence de texte, et les deux
-            // doivent se distinguer d'un bout à l'autre du canal.
+            // An empty text is not the absence of text, and the two
+            // must stay apart from one end of the channel to the
+            // other.
             Question::Clipboard {
                 pushing: Some(Clip::text("")),
                 seen: None,
             },
-            // Les morceaux d'un fichier, qui vont eux aussi dans les
-            // deux sens à la fois : on demande un morceau de ce que
-            // l'autre a copié, et on donne un morceau de ce qu'on a
-            // copié soi-même.
+            // The pieces of a file, which also go both ways at once:
+            // we ask for a piece of what the other end copied, and
+            // give a piece of what we copied ourselves.
             Question::Pieces {
                 asking: None,
                 giving: None,
@@ -1730,8 +1731,8 @@ mod tests {
                     bytes: vec![0, 1, 2, 250, 255],
                 }),
             },
-            // Un morceau vide n'est pas l'absence de morceau : c'est la
-            // fin d'un fichier, et les deux doivent se distinguer.
+            // An empty piece is not the absence of a piece: it is the
+            // end of a file, and the two must be told apart.
             Question::Pieces {
                 asking: Some(Wanted {
                     rank: 0,
@@ -1764,16 +1765,16 @@ mod tests {
                 size: Some((1920, 1200)),
             },
             Told::Screen { size: None },
-            // Un journal voyage entier, lignes comprises : ce canal
-            // termine un message en fermant le flux, donc rien n'a
-            // besoin d'être replié sur une ligne.
+            // A journal travels whole, lines included: this channel
+            // ends a message by closing the stream, so nothing
+            // needs to be folded onto one line.
             Told::Journal {
                 text: "ZyrDesk 0.1.0\nOrdinateur       : PC de Victor\n\n--- Le service ---\nune \
                        ligne\nune autre"
                     .to_string(),
             },
-            // Le relevé voyage entier, lignes comprises, pour la même
-            // raison que le journal juste au-dessus.
+            // The record travels whole, lines included, for the same
+            // reason as the journal just above.
             Told::ReachLog {
                 text: "8.8.8.8:53 answered in 8 ms\n8.8.8.8:53 said nothing in 1000 ms".to_string(),
             },
@@ -1781,13 +1782,13 @@ mod tests {
             Told::Codecs {
                 named: "H.264 HEVC".to_string(),
             },
-            // Rien dit n'est pas « aucun » : il faut que les deux
-            // traversent le canal sans se confondre.
+            // Nothing said is not "none": the two have to cross
+            // the channel without being mistaken for each other.
             Told::Codecs {
                 named: String::new(),
             },
-            // La liste des écrans voyage entière, une ligne par écran,
-            // comme le journal et pour la même raison.
+            // The list of screens travels whole, one line per screen,
+            // like the journal and for the same reason.
             Told::Screens {
                 listed: "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M"
                     .to_string(),
@@ -1801,9 +1802,9 @@ mod tests {
             Told::Settled {
                 how: Settled::StartingOver,
             },
-            // Rien n'est pas la même chose qu'un presse-papiers vide :
-            // rien veut dire « tu l'as déjà », et vider celui d'en face
-            // n'est jamais demandé.
+            // Nothing is not the same thing as an empty clipboard:
+            // nothing means "you already have it", and emptying the far
+            // one is never asked for.
             Told::Clipboard { theirs: None },
             Told::Clipboard {
                 theirs: Some(Clip::text("deux lignes\net la seconde")),
@@ -1811,9 +1812,9 @@ mod tests {
             Told::Clipboard {
                 theirs: Some(Clip::picture(vec![0x89, b'P', b'N', b'G', 0x00, 0xff])),
             },
-            // Rien voulu est ce qui dit à l'autre bout qu'il peut cesser
-            // d'envoyer : il faut que ça se distingue d'un morceau de
-            // longueur nulle.
+            // Nothing wanted is what tells the other end it can stop
+            // sending: it has to be told apart from a piece of zero
+            // length.
             Told::Pieces {
                 given: None,
                 wanted: None,
@@ -1847,11 +1848,11 @@ mod tests {
 
     #[test]
     fn another_version_is_named_rather_than_misread() {
-        // La moitié du produit qui ne parle pas la même version doit être
-        // nommée, pas devinée : c'est la seule panne qui se répare en une
-        // phrase. Comptée depuis la version courante, pour que ce test ne
-        // se mette pas à parler de la version du jour à chaque fois qu'on
-        // en ajoute une.
+        // The half of the product that does not speak the same version
+        // must be named, not guessed: it is the only fault that is
+        // repaired in one sentence. Counted from the current version, so
+        // that this test does not start talking about today's version
+        // every time one is added.
         let newer = VERSION + 1;
         let refusal = Question::parse(&format!("{newer} ports")).unwrap_err();
         assert!(
@@ -1859,8 +1860,8 @@ mod tests {
             "{refusal}"
         );
 
-        // Et la version 1, qui n'était pas du texte du tout, ne doit pas
-        // passer pour une question valide.
+        // And version 1, which was not text at all, must not pass for a
+        // valid question.
         assert!(Question::parse("\u{1}\u{a4}\u{10}").is_err());
     }
 
@@ -1872,8 +1873,8 @@ mod tests {
 
     #[test]
     fn a_rate_that_is_not_a_number_is_refused() {
-        // Un débit illisible ne doit pas devenir zéro, qui voudrait dire
-        // « celui que le flux a négocié » : il est refusé, et dit pourquoi.
+        // An unreadable bitrate must not become zero, which would mean "the
+        // one the stream negotiated": it is refused, saying why.
         for said in ["bitrate", "bitrate beaucoup", "bitrate -5"] {
             let refusal = Question::parse(&format!("{VERSION} {said}")).unwrap_err();
             assert!(refusal.contains("débit"), "sur « {said} » : {refusal}");
@@ -1882,16 +1883,16 @@ mod tests {
 
     #[test]
     fn a_port_outside_the_engine_range_is_refused() {
-        // Un port faux enverrait les ports locaux du client n'importe
-        // où : mieux vaut le dire que les ouvrir et attendre.
+        // A wrong port would send the client's local ports anywhere
+        // at all: better to say so than to open them and wait.
         assert!(Told::parse(&format!("{VERSION} ports 80")).is_err());
         assert!(Told::parse(&format!("{VERSION} ports pas-un-nombre")).is_err());
     }
 
     #[test]
     fn a_reason_written_over_two_lines_arrives_whole() {
-        // Un refus est écrit pour être lu, parfois sur plusieurs lignes.
-        // Il voyage à plat et doit rester entièrement lisible.
+        // A refusal is written to be read, sometimes over several lines.
+        // It travels flat and must stay entirely readable.
         let folded = format!("{VERSION} no {}", shortened("deux\nlignes"));
         let Ok(Err(reason)) = Told::parse(&folded) else {
             panic!("« {folded} » n'est pas relu comme un refus");
@@ -1901,9 +1902,9 @@ mod tests {
 
     #[test]
     fn a_reason_too_long_for_the_channel_is_shortened_rather_than_lost() {
-        // Sans ça, le message dépasserait ce que le canal accepte et
-        // l'autre ordinateur verrait une panne de transport là où il
-        // devait lire une explication.
+        // Without this, the message would go beyond what the channel
+        // accepts, and the other computer would see a transport
+        // failure where it was meant to read an explanation.
         for reason in [
             "é".repeat(600),
             "x".repeat(600),
@@ -1918,7 +1919,7 @@ mod tests {
             assert!(matches!(Told::parse(&message), Ok(Err(_))), "{message}");
         }
 
-        // Et une raison qui tient n'est pas touchée.
+        // And a reason that fits is not touched.
         assert_eq!(
             shortened("le moteur n'attend aucun code"),
             "le moteur n'attend aucun code"

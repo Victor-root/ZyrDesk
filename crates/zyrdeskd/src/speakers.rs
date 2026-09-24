@@ -181,9 +181,9 @@ mod tests {
 
     #[test]
     fn what_is_owed_is_not_what_was_asked() {
-        // Des enceintes déjà muettes avant la session sont laissées
-        // telles quelles : les rallumer à la fin défairait un geste que
-        // ce produit n'a pas fait.
+        // Speakers already silent before the session are left as they
+        // are: turning them back on at the end would undo something
+        // this product never did.
         ASKED.store(true, Ordering::Relaxed);
         OWED.store(false, Ordering::Relaxed);
         let folder = std::env::temp_dir().join(format!(
@@ -193,9 +193,9 @@ mod tests {
         std::fs::create_dir_all(&folder).unwrap();
         let log = Log::open(&folder.join("service.log")).unwrap();
 
-        // Rien n'est demandé au système : la fonction s'arrête avant.
-        // Hors de Windows, toucher aux enceintes échoue toujours, donc
-        // « demandé » retombé veut dire qu'on n'y a pas touché.
+        // Nothing is asked of the system: the function stops before
+        // that. Outside Windows, touching the speakers always fails,
+        // so "asked" falling back means they were not touched.
         keep_in_step(false, false, &log);
         assert!(!ASKED.load(Ordering::Relaxed));
         assert!(!OWED.load(Ordering::Relaxed));

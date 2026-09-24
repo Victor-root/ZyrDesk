@@ -1,38 +1,37 @@
-//! Ce qui dessine l'interface de ZyrDesk, sans navigateur.
+//! What draws the ZyrDesk interface, without a browser.
 //!
-//! Une toile est un rectangle de pixels portant chacun sa transparence.
-//! Remise à une fenêtre à calque, elle **est** la fenêtre : il n'y a ni
-//! forme à découper, ni fond à effacer, ni cadre, et les clics passent
-//! d'eux-mêmes partout où l'image est claire. C'est ce qui a réglé le
-//! liseré du logo après douze essais.
+//! A canvas is a rectangle of pixels that each carry their own transparency.
+//! Handed to a layered window, it **is** the window: there is no shape to
+//! cut, no ground to erase, no frame, and clicks go through by themselves
+//! wherever the picture is clear. That is what settled the logo's edging
+//! after twelve trials.
 //!
-//! Une fenêtre ordinaire, elle, est encadrée par le système et opaque :
-//! la toile s'y verse quand le système demande de repeindre. Les deux
-//! dessinent de la même façon et n'en diffèrent qu'à la toute fin, `shifted`
-//! d'un côté et `copy_to` de l'autre.
+//! An ordinary window, for its part, is framed by the system and opaque: the
+//! canvas is poured into it when the system asks for a repaint. Both draw
+//! the same way and only differ at the very end, `shifted` on one side and
+//! `copy_to` on the other.
 //!
-//! **Direct2D et DirectWrite**, fournis par Windows : rien n'est
-//! embarqué, et le texte est rendu par le moteur qui rend celui du
-//! système, donc il ressemble à celui du système.
+//! **Direct2D and DirectWrite**, provided by Windows: nothing is bundled,
+//! and the text is rendered by the renderer that renders the system's own,
+//! so it looks like the system's own.
 //!
-//! **Dessiné par le processeur, et c'est voulu.** La carte graphique
-//! décode déjà de la vidéo en quatre mille par soixante ; lui demander en
-//! plus de dessiner une carte serait ajouter un client à la file la plus
-//! longue du produit. Une carte de menu coûte deux ou trois millisecondes
-//! de processeur, et seulement quand quelque chose change : à l'ouverture,
-//! au passage de la souris d'une ligne à l'autre, à la seconde qui fait
-//! bouger les chiffres. Zéro le reste du temps.
+//! **Drawn by the processor, and deliberately so.** The graphics card is
+//! already decoding 4K video at sixty frames a second; asking it to draw a
+//! card on top of that would add one more customer to the longest queue in
+//! the product. A menu card costs two or three milliseconds of processor
+//! time, and only when something changes: when it opens, when the mouse
+//! passes from one line to another, at the second that makes the figures
+//! move. Zero the rest of the time.
 //!
-//! Les longueurs se comptent ici en **vrais pixels**, comme partout du
-//! côté Rust. Ce que le système de design écrit est en pixels de page :
-//! `scale` fait le passage, une fois, à l'entrée.
+//! Lengths here are counted in **real pixels**, as everywhere on the Rust
+//! side. What the design system writes is in page pixels: `scale` does the
+//! conversion, once, on the way in.
 //!
-//! C'est une couche complète et non ce dont le premier écran a besoin :
-//! le logo n'en emploie que le remplissage et le contour, le menu y
-//! ajoute le texte, les icônes et les ombres, l'accueil le reste. Une
-//! couche taillée sur le premier client se rouvre à chaque suivant, et
-//! une couche qu'on rouvre est une couche dont personne ne connaît plus
-//! les règles.
+//! This is a complete layer and not what the first screen needs: the logo
+//! uses only its fill and its outline, the menu adds the text, the icons and
+//! the shadows, the home window the rest. A layer cut to fit its first
+//! client is reopened for every one that follows, and a layer that gets
+//! reopened is a layer whose rules nobody knows any more.
 #![allow(dead_code)]
 
 use windows::Win32::Foundation::{HWND, POINT, RECT, SIZE};
@@ -68,58 +67,56 @@ use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::design::{Colour, Shadow};
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module's lines are filed under.
 const TAG: &str = "paint";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
-/// La famille de caractères, celle du système, dans l'ordre où le
-/// dessinateur la cherche.
+/// The font family, the system's own, in the order the renderer looks
+/// for it.
 ///
-/// La même que celle de la feuille de style, à la lettre près : deux
-/// familles pour un produit, ce sont deux produits. Windows 11 a la
-/// première, Windows 10 la seconde, et DirectWrite descend la liste tout
-/// seul.
+/// The same as the stylesheet's, to the letter: two families for one
+/// product make two products. Windows 11 has the first, Windows 10 the
+/// second, and DirectWrite works down the list on its own.
 const FAMILY: &str = "Segoe UI Variable Text";
 const FAMILY_BEFORE: &str = "Segoe UI";
 
-/// La famille à chasse fixe, et celle d'avant, dans le même ordre et pour
-/// la même raison : ce que la feuille de style demande partout où des
-/// signes doivent s'aligner les uns sous les autres.
+/// The fixed-width family, and the one that came before it, in the same
+/// order and for the same reason: what the stylesheet asks for wherever
+/// characters must line up under one another.
 const MONO: &str = "Cascadia Mono";
 const MONO_BEFORE: &str = "Consolas";
 
-/// Un morceau d'icône, écrit dans les mêmes mots que le dessin dont il
-/// vient.
+/// A piece of an icon, written in the same words as the drawing it
+/// comes from.
 pub enum Stroke {
-    /// Un « d » de chemin SVG, repris tel quel.
+    /// The "d" of an SVG path, taken as it is.
     ///
-    /// Repris et non traduit : une icône transcrite à la main est une
-    /// icône qui finit par ne plus être la même, et celles-ci sont déjà
-    /// écrites une fois. Ce qui est compris ici est ce dont elles se
-    /// servent : aller à, tracer jusqu'à, horizontalement, verticalement,
-    /// une courbe, un arc, et refermer.
+    /// Taken over and not translated: an icon transcribed by hand is an
+    /// icon that ends up no longer being the same, and these are already
+    /// written once. What is understood here is what they use: move to,
+    /// line to, horizontally, vertically, a curve, an arc, and close.
     SvgPath(&'static str),
-    /// Un rectangle arrondi : x, y, largeur, hauteur, rayon.
+    /// A rounded rectangle: x, y, width, height and radius.
     RoundRect(f32, f32, f32, f32, f32),
 }
 
-/// Une icône : ses traits, le repère dans lequel ils sont écrits, et
-/// l'épaisseur de son trait dans ce repère.
+/// An icon: its strokes, the grid they are written in, and the
+/// thickness of its stroke in that grid.
 ///
-/// Elle porte son repère avec elle, comme le fait un dessin vectoriel :
-/// c'est ce qui permet de la poser dans n'importe quel cadre sans que
-/// personne ait à savoir en quelles unités elle a été dessinée.
+/// It carries its grid with it, as a vector drawing does: that is what
+/// lets it be placed in any rect without anyone having to know what
+/// units it was drawn in.
 pub struct Icon {
     pub grid: f32,
     pub thickness: f32,
     pub strokes: &'static [Stroke],
 }
 
-/// Où un mot se cale dans le cadre qu'on lui donne.
+/// Where a word is aligned in the rect it is given.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Align {
     Left,
@@ -127,48 +124,46 @@ pub enum Align {
     Right,
 }
 
-/// Ce qu'un mot fait quand il ne tient pas dans son cadre.
+/// What a word does when it does not fit in its rect.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Overflow {
-    /// Il passe à la ligne, comme un paragraphe.
+    /// It wraps onto the next line, like a paragraph.
     Wrap,
-    /// Il s'arrête sur des points de suspension, comme un nom d'ordinateur
-    /// plus long que sa carte.
+    /// It stops on an ellipsis, like a computer name longer than its card.
     Ellipsis,
-    /// Il continue, et c'est au cadre de le retenir : une ligne de journal
-    /// ne se replie pas, elle défile.
+    /// It carries on, and it is up to the rect to hold it in: a journal
+    /// line does not wrap, it scrolls.
     Visible,
 }
 
-/// Comment un mot s'écrit.
+/// How a word is written.
 ///
-/// Tout ensemble parce que tout se décide ensemble : une mise en page de
-/// texte se règle une fois pour toutes à sa fabrication, et la régler
-/// après coup sur une police partagée change aussi ce que les **mesures**
-/// emploient. Une plume est donc à la fois ce qu'on demande et la clé de
-/// ce qui a déjà été fabriqué.
+/// All together because it is all decided together: a text layout is set
+/// once and for all when it is made, and setting it afterwards on a
+/// shared font also changes what the **measurements** use. So a pen is
+/// both what is asked for and the key to what has already been made.
 #[derive(Clone, Copy, PartialEq)]
 pub struct Pen {
     pub size: f32,
     pub bold: bool,
     pub align: Align,
-    /// À chasse fixe : ce que la feuille de style demande pour une
-    /// empreinte, un journal, un code et une combinaison de touches, où
-    /// chaque signe doit tenir la place de son voisin.
+    /// Fixed width: what the stylesheet asks for in a fingerprint, a
+    /// journal, a code and a key combination, where each character must
+    /// take up the same room as its neighbour.
     pub mono: bool,
     pub overflow: Overflow,
-    /// Ce qu'on ajoute entre deux signes, en vrais pixels.
+    /// What is added between two characters, in real pixels.
     ///
-    /// Ce que la feuille de style appelle `letter-spacing` : une étiquette
-    /// de section en capitales et un code d'appairage se lisent mal
-    /// resserrés, et c'est le seul endroit où l'espace entre les lettres
-    /// est un choix du dessin.
+    /// What the stylesheet calls `letter-spacing`: a section label in
+    /// capitals and a pairing code read badly when packed tight, and it is
+    /// the only place where the space between letters is a choice of the
+    /// design.
     pub spacing: f32,
 }
 
 impl Pen {
-    /// Un mot ordinaire de cette taille, calé à gauche, qui passe à la
-    /// ligne quand il ne tient pas.
+    /// An ordinary word at this size, aligned left, which wraps onto
+    /// the next line when it does not fit.
     pub const fn of(size: f32) -> Self {
         Pen {
             size,
@@ -180,8 +175,8 @@ impl Pen {
         }
     }
 
-    /// La même, les signes écartés d'autant de fois leur taille : c'est
-    /// en `em` que la feuille de style l'écrit.
+    /// The same, with the characters spread apart by that many times
+    /// their size: the stylesheet writes it in `em`.
     pub fn spaced(self, part: f32) -> Self {
         Pen {
             spacing: self.size * part,
@@ -216,13 +211,14 @@ impl Pen {
     }
 }
 
-/// Une plume telle qu'on retrouve sa police : sa taille comptée au
-/// millième de pixel, un nombre à virgule ne se comparant pas autrement
-/// sans risquer de refabriquer la même police à chaque ligne.
+/// A pen in the form its font is found by: its size counted in
+/// thousandths of a pixel, since a floating-point number cannot be
+/// compared any other way without risking making the same font again for
+/// every line.
 ///
-/// L'écart entre les signes n'en fait pas partie, et ce n'est pas un
-/// oubli : il se pose sur la mise en page d'un mot et non sur la police,
-/// donc deux plumes qui ne diffèrent que par lui partagent la même.
+/// The spacing between characters is not part of it, and that is not an
+/// oversight: it is set on the layout of a word and not on the font, so
+/// two pens that differ only by it share the same one.
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
     size: u32,
@@ -244,7 +240,7 @@ impl Key {
     }
 }
 
-/// Un rectangle en vrais pixels, tel que tout ce fichier le compte.
+/// A rectangle in real pixels, the way this whole file counts it.
 #[derive(Clone, Copy)]
 pub struct Rect {
     pub left: f32,
@@ -254,8 +250,8 @@ pub struct Rect {
 }
 
 impl Rect {
-    /// Le rectangle de coin haut gauche donné, de cette largeur et de
-    /// cette hauteur.
+    /// The rectangle with the given top left corner, of this width
+    /// and this height.
     pub fn at(left: f32, top: f32, width: f32, height: f32) -> Self {
         Rect {
             left,
@@ -265,7 +261,8 @@ impl Rect {
         }
     }
 
-    /// Le même, écarté de tous les côtés. Un écart négatif le resserre.
+    /// The same one, pushed out on every side. A negative amount pulls
+    /// it in.
     pub fn grown(&self, by: f32) -> Self {
         Rect {
             left: self.left - by,
@@ -275,7 +272,7 @@ impl Rect {
         }
     }
 
-    /// Le même, décalé.
+    /// The same one, shifted.
     pub fn shifted(&self, dx: f32, dy: f32) -> Self {
         Rect {
             left: self.left + dx,
@@ -295,11 +292,11 @@ impl Rect {
     }
 }
 
-/// Une toile : des pixels, de quoi les dessiner, et de quoi les remettre
-/// à une fenêtre.
+/// A canvas: pixels, the means to draw them, and the means to hand them
+/// to a window.
 ///
-/// Bâtie une fois par fenêtre et gardée : ce qui coûte ici est de la
-/// bâtir, pas de dessiner dedans.
+/// Built once per window and kept: what costs here is building it, not
+/// drawing in it.
 pub struct Canvas {
     width: i32,
     height: i32,
@@ -309,37 +306,38 @@ pub struct Canvas {
     target: ID2D1DCRenderTarget,
     brush: ID2D1SolidColorBrush,
     writer: IDWriteFactory,
-    /// Les mises en page de texte déjà demandées, une par plume : les
-    /// fabriquer coûte, s'en servir non, et un menu emploie deux tailles
-    /// pour quinze lignes.
+    /// The text layouts already asked for, one per pen: making them
+    /// costs, using them does not, and a menu uses two sizes for fifteen
+    /// lines.
     fonts: std::cell::RefCell<Vec<(Key, IDWriteTextFormat)>>,
-    /// Les chemins déjà lus, une fois chacun : une icône est un texte,
-    /// et le relire à chaque image serait le relire quinze fois par
-    /// dessin pour le même trait. Ceux qui ne se lisent pas sont retenus
-    /// aussi, sans quoi leur refus se redirait à chaque image.
+    /// The paths already read, once each: an icon is a text, and reading
+    /// it again for every frame would mean reading it fifteen times per
+    /// drawing for the same stroke. The ones that cannot be read are
+    /// kept too, otherwise their refusal would be reported again on
+    /// every frame.
     paths: std::cell::RefCell<Vec<(&'static str, Option<ID2D1PathGeometry>)>>,
-    /// Le bout des traits et leurs angles, arrondis : c'est ce que les
-    /// icônes demandent, et le demander une fois vaut mieux que le
-    /// redemander à chaque trait.
+    /// The ends of the strokes and their corners, rounded: that is
+    /// what the icons ask for, and asking for it once is better than
+    /// asking again for every stroke.
     style: ID2D1StrokeStyle,
-    /// Et le même en pointillés, pour ce qui attend d'être rempli.
+    /// And the same one dashed, for what is waiting to be filled.
     dashed: ID2D1StrokeStyle,
     factory: ID2D1Factory,
 }
 
 impl Canvas {
-    /// Une toile de cette taille, en vrais pixels.
+    /// A canvas of this size, in real pixels.
     ///
-    /// Rendue par le processeur et non par la carte graphique : voir le
-    /// haut de ce fichier. C'est aussi ce qui évite d'avoir à survivre à
-    /// la perte d'un appareil graphique, ce qui arrive précisément quand
-    /// un pilote redémarre, c'est-à-dire au pire moment d'une session.
+    /// Rendered by the processor and not by the graphics card: see the
+    /// top of this file. It is also what avoids having to survive the
+    /// loss of a graphics device, which happens precisely when a driver
+    /// restarts, that is, at the worst moment of a session.
     pub fn new(width: i32, height: i32) -> Option<Canvas> {
         if width <= 0 || height <= 0 {
             return None;
         }
-        // SAFETY: chaque objet demandé au système est à nous jusqu'à ce
-        // que `Drop` le rende, et rien n'en sort d'ici.
+        // SAFETY: every object asked of the system is ours until `Drop`
+        // gives it back, and none of it leaves here.
         unsafe {
             let screen = GetDC(None);
             let surface = CreateCompatibleDC(Some(screen));
@@ -347,8 +345,8 @@ impl Canvas {
             info.bmiHeader = BITMAPINFOHEADER {
                 biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
                 biWidth: width,
-                // À l'endroit, ce qui pour une image se dit d'une hauteur
-                // négative.
+                // The right way up, which for an image is said with a
+                // negative height.
                 biHeight: -height,
                 biPlanes: 1,
                 biBitCount: 32,
@@ -371,9 +369,9 @@ impl Canvas {
                         format: DXGI_FORMAT_B8G8R8A8_UNORM,
                         alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
                     },
-                    // Tout est déjà compté en vrais pixels de ce côté-ci,
-                    // donc on demande au dessinateur de ne rien
-                    // remettre à l'échelle.
+                    // Everything is already counted in real pixels on
+                    // this side, so the renderer is asked not to rescale
+                    // anything.
                     dpiX: 96.0,
                     dpiY: 96.0,
                     usage: D2D1_RENDER_TARGET_USAGE_NONE,
@@ -418,17 +416,18 @@ impl Canvas {
         }
     }
 
-    /// Ce qu'elle fait de côté, pour qui doit savoir si elle est encore à
-    /// la bonne taille.
+    /// Its length on each side, for whoever needs to know whether it is
+    /// still the right size.
     pub fn size(&self) -> (i32, i32) {
         (self.width, self.height)
     }
 
-    /// Ouvre le dessin, la toile entièrement de cette couleur.
+    /// Opens the drawing, with the whole canvas in this colour.
     ///
-    /// `Colour::TRANSPARENT` pour une fenêtre à calque, où la transparence
-    /// laisse voir ce qu'il y a derrière ; un fond du système de design
-    /// pour une fenêtre ordinaire, qui est opaque et n'a rien derrière.
+    /// `Colour::TRANSPARENT` for a layered window, where the transparency
+    /// lets what is behind show through; a background from the design
+    /// system for an ordinary window, which is opaque and has nothing
+    /// behind it.
     pub fn begin(&self, background: Colour) {
         let whole = RECT {
             left: 0,
@@ -436,8 +435,8 @@ impl Canvas {
             right: self.width,
             bottom: self.height,
         };
-        // SAFETY: une cible et une surface à nous, liées le temps du
-        // dessin comme la documentation le demande.
+        // SAFETY: a target and a surface of ours, bound for the
+        // length of the drawing as the documentation asks.
         unsafe {
             let _ = self.target.BindDC(self.surface, &whole);
             self.target.BeginDraw();
@@ -445,17 +444,18 @@ impl Canvas {
         }
     }
 
-    /// Ferme le dessin, et dit si le dessinateur l'a accepté.
+    /// Closes the drawing, and says whether the renderer
+    /// accepted it.
     pub fn finish(&self) -> bool {
-        // SAFETY: la cible ouverte juste au-dessus.
+        // SAFETY: the target opened just above.
         unsafe { self.target.EndDraw(None, None).is_ok() }
     }
 
-    /// Remet la toile à la fenêtre, image et transparence comprises, et
-    /// la pose à cet endroit de l'écran.
+    /// Hands the canvas to the window, picture and transparency
+    /// included, and places it at this spot on the screen.
     ///
-    /// Un seul appel pour la place et pour l'image : la fenêtre ne peut
-    /// donc pas être vue à son nouvel endroit avec son ancienne image.
+    /// One single call for the place and for the picture: so the window
+    /// can never be seen in its new place with its old picture.
     pub fn lay_on(&self, window: isize, x: i32, y: i32) -> bool {
         let at = POINT { x, y };
         let size = SIZE {
@@ -469,7 +469,7 @@ impl Canvas {
             SourceConstantAlpha: 255,
             AlphaFormat: windows::Win32::Graphics::Gdi::AC_SRC_ALPHA as u8,
         };
-        // SAFETY: une fenêtre à nous et une surface à nous.
+        // SAFETY: a window of ours and a surface of ours.
         unsafe {
             UpdateLayeredWindow(
                 HWND(window as *mut std::ffi::c_void),
@@ -486,19 +486,19 @@ impl Canvas {
         }
     }
 
-    /// Verse la toile dans une surface, à cet endroit.
+    /// Pours the canvas into a surface, at this spot.
     ///
-    /// Ce qu'il faut pour une fenêtre ordinaire, encadrée et opaque, qui
-    /// se repeint quand le système le demande : `shifted` remet l'image et
-    /// la place en un seul geste, ce qu'une fenêtre à calque permet et
-    /// qu'une fenêtre ordinaire ne connaît pas. La transparence ne
-    /// voyage pas ici, et n'a rien à y faire : ce qu'on verse a été
-    /// dessiné sur un fond.
+    /// What an ordinary window needs, framed and opaque, which repaints
+    /// itself when the system asks it to: `shifted` hands over the picture
+    /// and the place in a single gesture, which a layered window allows
+    /// and an ordinary window knows nothing of. The transparency does not
+    /// travel here, and has no business here: what is poured was drawn on
+    /// a background.
     pub fn copy_to(&self, dc: HDC, x: i32, y: i32) -> bool {
         use windows::Win32::Graphics::Gdi::{BitBlt, SRCCOPY};
 
-        // SAFETY: une surface à nous, recopiée telle quelle dans celle que
-        // le système vient de prêter.
+        // SAFETY: a surface of ours, copied as it is into the one the
+        // system has just lent.
         unsafe {
             BitBlt(
                 dc,
@@ -515,25 +515,25 @@ impl Canvas {
         }
     }
 
-    /// Fait de la toile une icône du système.
+    /// Turns the canvas into a system icon.
     ///
-    /// Ce qu'il faut pour la zone de notification, qui ne prend pas une
-    /// image mais une icône. Le système en garde une copie, donc la toile
-    /// reste à nous ; ce qui revient est à celui qui le demande, jusqu'à
-    /// ce qu'il le rende.
+    /// What the notification area needs, since it takes not a picture but
+    /// an icon. The system keeps a copy of it, so the canvas stays ours;
+    /// what comes back belongs to whoever asks for it, until they give it
+    /// back.
     ///
-    /// Le masque est celui d'une icône en quatre octets par pixel : tout
-    /// à zéro, la transparence étant portée par les pixels eux-mêmes.
+    /// The mask is that of an icon with four bytes per pixel: all zeros,
+    /// the transparency being carried by the pixels themselves.
     pub fn to_icon(&self) -> Option<windows::Win32::UI::WindowsAndMessaging::HICON> {
         use windows::Win32::Graphics::Gdi::CreateBitmap;
         use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 
-        // Une ligne d'un dessin à un bit par pixel est comptée en mots de
-        // seize bits, ce que la taille ci-dessous arrondit.
+        // A row of a drawing at one bit per pixel is counted in
+        // sixteen-bit words, which the size below rounds up to.
         let per_row = ((self.width as usize).div_ceil(16)) * 2;
         let blank = vec![0u8; per_row * self.height.max(0) as usize];
-        // SAFETY: un dessin fait ici et rendu ici, et une icône que le
-        // système recopie avant de rendre la main.
+        // SAFETY: a drawing made here and given back here, and an icon
+        // that the system copies before handing back control.
         unsafe {
             let mask = CreateBitmap(
                 self.width,
@@ -557,10 +557,10 @@ impl Canvas {
         }
     }
 
-    /// Un rectangle aux coins arrondis, rempli.
+    /// A rectangle with rounded corners, filled.
     pub fn fill(&self, rect: Rect, radius: f32, colour: Colour) {
-        // SAFETY: un pinceau et une cible à nous, entre un début et une
-        // fin de dessin.
+        // SAFETY: a brush and a target of ours, between the start and
+        // the end of a drawing.
         unsafe {
             self.brush.SetColor(&tint(colour));
             self.target.FillRoundedRectangle(
@@ -574,13 +574,13 @@ impl Canvas {
         }
     }
 
-    /// Le contour d'un rectangle aux coins arrondis, tracé **à cheval**
-    /// sur son bord : la moitié dedans, la moitié dehors.
+    /// The outline of a rectangle with rounded corners, drawn
+    /// **straddling** its edge: half inside, half outside.
     ///
-    /// C'est ce que fait un trait dans un dessin vectoriel, donc c'est ce
-    /// qu'il faut pour redessiner un dessin.
+    /// That is what a stroke does in a vector drawing, so it is what is
+    /// needed to redraw a drawing.
     pub fn stroke_on(&self, rect: Rect, radius: f32, thickness: f32, colour: Colour) {
-        // SAFETY: comme au-dessus.
+        // SAFETY: as above.
         unsafe {
             self.brush.SetColor(&tint(colour));
             self.target.DrawRoundedRectangle(
@@ -596,12 +596,12 @@ impl Canvas {
         }
     }
 
-    /// Le même, mais tenant **entièrement à l'intérieur** du cadre.
+    /// The same, but held **entirely inside** the rect.
     ///
-    /// C'est ce que fait une bordure dans une page, donc c'est ce qu'il
-    /// faut pour redessiner une interface que le système de design
-    /// décrit. Les deux existent parce que les deux servent, et les
-    /// confondre décale un bord d'un demi-trait.
+    /// That is what a border does in a page, so it is what is needed to
+    /// redraw an interface that the design system describes. Both exist
+    /// because both are used, and mixing them up shifts an edge by half
+    /// a stroke.
     pub fn stroke_inside(&self, rect: Rect, radius: f32, thickness: f32, colour: Colour) {
         self.stroke_on(
             rect.grown(-thickness / 2.0),
@@ -611,14 +611,14 @@ impl Canvas {
         );
     }
 
-    /// Le contour d'un rectangle arrondi, en pointillés.
+    /// The outline of a rounded rectangle, dashed.
     ///
-    /// Ce que la feuille de style écrit `border-style: dashed`, et qui
-    /// dit une seule chose dans tout le produit : ceci attend d'être
-    /// rempli. Une carte pleine se borde d'un trait continu.
+    /// What the stylesheet writes as `border-style: dashed`, and which
+    /// says one thing only in the whole product: this is waiting to be
+    /// filled. A full card is edged with a solid line.
     pub fn stroke_dashed(&self, rect: Rect, radius: f32, thickness: f32, colour: Colour) {
-        // SAFETY: comme au-dessus, avec le style pointillé fabriqué en
-        // même temps que l'autre.
+        // SAFETY: as above, with the dashed style made at the same
+        // time as the other one.
         unsafe {
             self.brush.SetColor(&tint(colour));
             self.target.DrawRoundedRectangle(
@@ -634,13 +634,13 @@ impl Canvas {
         }
     }
 
-    /// L'ombre portée d'un rectangle arrondi, en vrais pixels.
+    /// The drop shadow of a rounded rectangle, in real pixels.
     ///
-    /// Faite de la silhouette redessinée en s'écartant, chacune très
-    /// pâle, ce qui accumule une bordure douce du bord vers l'extérieur.
-    /// Un flou gaussien demanderait un appareil graphique et ses
-    /// tourments, pour une différence que personne ne voit sur une ombre
-    /// de seize pixels posée sous une carte.
+    /// Made of the outline drawn again further and further out, each
+    /// time very faint, which builds up a soft border from the edge
+    /// outwards. A Gaussian blur would need a graphics device and all
+    /// its torments, for a difference nobody sees on a sixteen-pixel
+    /// shadow lying under a card.
     pub fn shadow(&self, rect: Rect, radius: f32, shadow: Shadow, scale: f32) {
         let blur = shadow.soft * scale;
         if blur <= 0.0 {
@@ -656,35 +656,36 @@ impl Canvas {
         }
     }
 
-    /// Dessine sans rien laisser sortir de ce cadre.
+    /// Draws without letting anything out of this rect.
     ///
-    /// Ce qu'il faut pour montrer une partie d'une forme sans en
-    /// fabriquer une deuxième : les deux côtés d'un interrupteur sont un
-    /// seul rectangle arrondi, et chacun n'en laisse voir que sa moitié.
+    /// What is needed to show part of a shape without making a second
+    /// one: the two sides of a switch are a single rounded rectangle,
+    /// and each lets only its own half show.
     pub fn clipped(&self, rect: Rect, inside: impl FnOnce()) {
-        // SAFETY: une cible à nous, entre un début et une fin de dessin,
-        // dont la découpe est refermée avant de rendre la main.
+        // SAFETY: a target of ours, between the start and the end of a
+        // drawing, whose clip is closed again before handing back
+        // control.
         unsafe {
             self.target
                 .PushAxisAlignedClip(&rect.d2d(), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         }
         inside();
-        // SAFETY: la découpe posée juste au-dessus.
+        // SAFETY: the clip set just above.
         unsafe { self.target.PopAxisAlignedClip() };
     }
 
-    /// Écrit un mot dans ce cadre, calé comme la plume le dit et centré en
-    /// hauteur.
+    /// Writes a word in this rect, aligned as the pen says and centred
+    /// vertically.
     ///
-    /// Centré en hauteur, donc un bloc replié veut un cadre de sa propre
-    /// hauteur : `height` la donne.
+    /// Centred vertically, so a wrapped block wants a rect of its own
+    /// height: `height` gives it.
     pub fn draw_text(&self, text: &str, pen: Pen, colour: Colour, rect: Rect) {
         let Some(layout) =
             self.text_layout(text, pen, rect.right - rect.left, rect.bottom - rect.top)
         else {
             return;
         };
-        // SAFETY: une mise en page à nous, employée le temps d'un dessin.
+        // SAFETY: a layout of ours, used for the length of one drawing.
         unsafe {
             self.brush.SetColor(&tint(colour));
             self.target.DrawTextLayout(
@@ -696,46 +697,46 @@ impl Canvas {
         }
     }
 
-    /// Ce qu'un mot prendrait de large, pour les endroits dont la largeur
-    /// est celle de leur ligne la plus longue.
+    /// How wide a word would be, for the places whose width is that of
+    /// their longest line.
     pub fn width_of(&self, text: &str, pen: Pen) -> f32 {
         self.measure(text, pen, UNBOUNDED)
             .map_or(0.0, |measure| measure.widthIncludingTrailingWhitespace)
     }
 
-    /// La hauteur qu'un mot prend, replié à cette largeur.
+    /// The height a word takes, wrapped at this width.
     ///
-    /// Ce qu'il faut pour empiler des paragraphes : ce que chacun occupe
-    /// dépend de la place qu'on lui laisse, et personne ne peut le deviner
-    /// sans le mettre en page.
+    /// What is needed to stack paragraphs: what each one takes up depends
+    /// on the room it is left, and nobody can guess it without laying it
+    /// out.
     pub fn height_of(&self, text: &str, pen: Pen, width: f32) -> f32 {
         self.measure(text, pen, width)
             .map_or(pen.size, |measure| measure.height)
     }
 
-    /// La hauteur d'une ligne de texte écrite de cette plume.
+    /// The height of a line of text written with this pen.
     ///
-    /// Ce n'est pas la taille du caractère : une ligne de douze pixels en
-    /// occupe environ seize, l'espace au-dessus et en dessous étant celui
-    /// que la police elle-même demande. C'est cette hauteur-là qu'emploie
-    /// la mise en page d'une page, et empiler du texte sur sa taille
-    /// plutôt que sur sa hauteur serre tout ce qui est empilé.
+    /// It is not the size of the characters: a twelve-pixel line takes up
+    /// about sixteen, the space above and below being what the font
+    /// itself asks for. That is the height a page's layout uses, and
+    /// stacking text by its size rather than by its height squeezes
+    /// everything that is stacked.
     pub fn line_height(&self, pen: Pen) -> f32 {
-        // Deux lettres qui vont en haut et en bas : la hauteur d'une ligne
-        // ne dépend pas de ce qu'on y écrit, mais une ligne vide n'en a
-        // pas.
+        // Two letters that reach to the top and to the bottom: the height
+        // of a line does not depend on what is written in it, but an empty
+        // line has none.
         self.height_of("Hg", pen, UNBOUNDED)
     }
 
-    /// Ce qu'un mot mesure, mis en page hors de tout dessin.
+    /// What a word measures, laid out away from any drawing.
     ///
-    /// Dans une boîte large mais **finie** : mesurer dans une boîte
-    /// démesurée fait perdre au calcul toute sa précision, et la largeur
-    /// revient alors à rien du tout. C'est ce qui écrasait les
-    /// interrupteurs du menu à la largeur de leur seule marge.
+    /// In a box that is wide but **finite**: measuring in a boundless
+    /// box makes the calculation lose all its precision, and the width
+    /// then comes back as nothing at all. That is what squeezed the
+    /// menu's switches down to the width of their margin alone.
     fn measure(&self, text: &str, pen: Pen, width: f32) -> Option<DWRITE_TEXT_METRICS> {
         let layout = self.text_layout(text, pen, width, UNBOUNDED)?;
-        // SAFETY: une mise en page à nous, mesurée et rendue aussitôt.
+        // SAFETY: a layout of ours, measured and given back at once.
         unsafe {
             let mut measure = DWRITE_TEXT_METRICS::default();
             layout.GetMetrics(&mut measure).ok()?;
@@ -743,12 +744,11 @@ impl Canvas {
         }
     }
 
-    /// Un mot mis en page dans cette boîte, prêt à être mesuré ou
-    /// dessiné.
+    /// A word laid out in this box, ready to be measured or drawn.
     ///
-    /// Le même chemin pour les deux, et c'est tout l'intérêt : ce qui est
-    /// mesuré est exactement ce qui sera dessiné, écart entre les signes
-    /// compris.
+    /// The same path for both, and that is the whole point: what is
+    /// measured is exactly what will be drawn, spacing between characters
+    /// included.
     fn text_layout(
         &self,
         text: &str,
@@ -757,16 +757,16 @@ impl Canvas {
         height: f32,
     ) -> Option<IDWriteTextLayout> {
         let font = self.font(pen)?;
-        // SAFETY: une fabrique et une mise en page à nous.
+        // SAFETY: a factory and a layout of ours.
         unsafe {
             let layout: IDWriteTextLayout = self
                 .writer
                 .CreateTextLayout(&utf16(text), &font, width, height)
                 .ok()?;
             if pen.spacing != 0.0 {
-                // Derrière le mot et non devant : c'est ce que fait
-                // `letter-spacing`, qui écarte les signes sans décaler le
-                // premier de son bord.
+                // Behind the word and not in front of it: that is what
+                // `letter-spacing` does, spreading the characters apart
+                // without moving the first one away from its edge.
                 if let Ok(spaced) = layout.cast::<IDWriteTextLayout1>() {
                     let _ = spaced.SetCharacterSpacing(
                         0.0,
@@ -783,13 +783,12 @@ impl Canvas {
         }
     }
 
-    /// La police de cette plume, fabriquée une fois.
+    /// The font of this pen, made once.
     ///
-    /// Toute la plume fait la clé, et ce n'est pas un détail : une mise en
-    /// page se règle une fois pour toutes à sa fabrication. Réglée après
-    /// coup sur une police partagée, elle change aussi celle que les
-    /// **mesures** emploient, et une mesure prise dans une boîte alignée à
-    /// droite ne vaut plus rien.
+    /// The whole pen makes the key, and that is not a detail: a layout is
+    /// set once and for all when it is made. Set afterwards on a shared
+    /// font, it also changes the one the **measurements** use, and a
+    /// measurement taken in a right-aligned box is then worth nothing.
     fn font(&self, pen: Pen) -> Option<IDWriteTextFormat> {
         let key = Key::of(pen);
         if let Some((_, found)) = self.fonts.borrow().iter().find(|(other, _)| *other == key) {
@@ -800,8 +799,8 @@ impl Canvas {
         Some(made)
     }
 
-    /// Demande la famille voulue, et celle d'avant si la machine n'a pas
-    /// la première.
+    /// Asks for the family wanted, and for the one before it if the
+    /// machine does not have the first.
     fn make_font(&self, pen: Pen) -> Option<IDWriteTextFormat> {
         let weight = if pen.bold {
             DWRITE_FONT_WEIGHT_SEMI_BOLD
@@ -813,8 +812,8 @@ impl Canvas {
         } else {
             [FAMILY, FAMILY_BEFORE]
         };
-        // SAFETY: une fabrique à nous ; un refus est une réponse et non
-        // une faute, d'où le second essai.
+        // SAFETY: a factory of ours; a refusal is an answer and not a
+        // fault, hence the second attempt.
         unsafe {
             for family in families {
                 let Ok(font) = self.writer.CreateTextFormat(
@@ -841,17 +840,17 @@ impl Canvas {
         None
     }
 
-    /// Règle ce que cette police fait d'un mot trop long.
+    /// Sets what this font does with a word that is too long.
     ///
-    /// Les points de suspension sont un dessin, et un dessin se demande à
-    /// la police qui le portera : c'est pour ça que ceci vient après elle
-    /// et non avant.
+    /// The ellipsis is a drawing, and a drawing is asked of the font that
+    /// will carry it: that is why this comes after the font and not
+    /// before.
     fn set_the_overflow(&self, font: &IDWriteTextFormat, overflow: Overflow) {
         if overflow == Overflow::Wrap {
             return;
         }
-        // SAFETY: une police à nous, et une marque de coupe demandée à la
-        // fabrique pour cette police-là.
+        // SAFETY: a font of ours, and a trimming sign asked of the
+        // factory for that very font.
         unsafe {
             let _ = font.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
             if overflow != Overflow::Ellipsis {
@@ -872,13 +871,13 @@ impl Canvas {
     }
 }
 
-/// Assez large pour qu'aucun mot n'aille à la ligne, et pas plus.
+/// Wide enough for no word to wrap, and no wider.
 const UNBOUNDED: f32 = 100_000.0;
 
 impl Drop for Canvas {
     fn drop(&mut self) {
-        // SAFETY: tout ce qui est rendu ici a été demandé dans `new`,
-        // et dans l'ordre inverse.
+        // SAFETY: everything given back here was asked for in `new`,
+        // and in the reverse order.
         unsafe {
             let _ = SelectObject(self.surface, self.before);
             let _ = DeleteObject(self.bitmap.into());
@@ -887,8 +886,7 @@ impl Drop for Canvas {
     }
 }
 
-/// Une couleur du système de design, dans les nombres que le dessinateur
-/// attend.
+/// A colour of the design system, in the numbers the renderer expects.
 fn tint(colour: Colour) -> D2D1_COLOR_F {
     D2D1_COLOR_F {
         r: colour.red,
@@ -899,19 +897,19 @@ fn tint(colour: Colour) -> D2D1_COLOR_F {
 }
 
 impl Canvas {
-    /// Pose une icône dans ce cadre.
+    /// Places an icon in this rect.
     ///
-    /// L'icône est dessinée dans son propre repère et le cadre décide de
-    /// sa taille : le trait suit, puisque le dessinateur met tout à
-    /// l'échelle, y compris son épaisseur. C'est ce qui fait qu'une icône
-    /// reste elle-même à cent vingt-cinq comme à cent soixante-quinze pour
-    /// cent, là où une image agrandie s'épaissit et se brouille.
+    /// The icon is drawn in its own grid and the rect decides its size:
+    /// the stroke follows, since the renderer scales everything, its
+    /// thickness included. That is what keeps an icon itself at a hundred
+    /// and twenty-five per cent as much as at a hundred and seventy-five,
+    /// where an enlarged picture thickens and blurs.
     pub fn icon(&self, icon: &Icon, rect: Rect, colour: Colour) {
         let part = (rect.right - rect.left) / icon.grid;
-        // SAFETY: une cible et un pinceau à nous, entre un début et une
-        // fin de dessin. Le repère est remis d'aplomb avant de rendre la
-        // main, sans quoi tout ce qui suivrait serait dessiné dans celui
-        // de l'icône.
+        // SAFETY: a target and a brush of ours, between the start and
+        // the end of a drawing. The grid is set straight again before
+        // handing back control, otherwise everything that followed would
+        // be drawn in the icon's grid.
         unsafe {
             self.target.SetTransform(&Matrix3x2 {
                 M11: part,
@@ -959,11 +957,11 @@ impl Canvas {
         }
     }
 
-    /// Le chemin de ce dessin, lu une fois.
+    /// The path of this drawing, read once.
     ///
-    /// Un chemin illisible est retenu comme tel et dit une seule fois. Le
-    /// retenir n'est pas de l'économie : sans ça il serait relu, et donc
-    /// redit, à chaque image dessinée.
+    /// An unreadable path is remembered as such and reported only once.
+    /// Remembering it is not thrift: without it, it would be read again,
+    /// and so reported again, for every frame drawn.
     fn path_of(&self, said: &'static str) -> Option<ID2D1PathGeometry> {
         if let Some((_, found)) = self
             .paths
@@ -975,30 +973,29 @@ impl Canvas {
         }
         let made = self.read_path(said);
         if made.is_none() {
-            // Dit et non tu. Une icône est faite de plusieurs traits :
-            // celui qui ne se lit pas disparaît, les autres restent, et
-            // ce qui s'affiche est une icône méconnaissable dont rien ne
-            // dit qu'elle est incomplète. C'est arrivé une fois, à
-            // l'oeil barré du menu, dont le contour est la seule courbe
-            // de Bézier du produit.
+            // Reported, not kept quiet. An icon is made of several
+            // strokes: the one that cannot be read disappears, the
+            // others stay, and what is shown is an unrecognisable icon
+            // with nothing to say that it is incomplete. It happened
+            // once, to the menu's crossed-out eye, whose outline is the
+            // only Bézier curve in the product.
             note(&format!("dessin : chemin non lu, « {said} »"));
         }
         self.paths.borrow_mut().push((said, made.clone()));
         made
     }
 
-    /// Lit un « d » de chemin SVG et en fait une forme.
+    /// Reads the "d" of an SVG path and turns it into a shape.
     ///
-    /// Ce qui est compris est ce dont les icônes de ce produit se
-    /// servent, et rien de plus : aller à, tracer jusqu'à, tracer à
-    /// l'horizontale, à la verticale, une courbe, un arc, et refermer.
-    /// Une lettre inconnue arrête la lecture plutôt que d'être sautée :
-    /// une icône à moitié dessinée ressemble à un défaut, une icône
-    /// absente à un oubli, et le second se cherche. C'est `path` qui le
-    /// dit à voix haute.
+    /// What is understood is what the icons of this product use, and
+    /// nothing more: move to, line to, horizontal line, vertical line,
+    /// a curve, an arc, and close. An unknown letter stops the reading
+    /// rather than being skipped: a half-drawn icon looks like a
+    /// defect, a missing icon like an oversight, and the second one
+    /// gets looked into. It is `path` that says so out loud.
     fn read_path(&self, said: &str) -> Option<ID2D1PathGeometry> {
-        // SAFETY: une forme et son embouchure à nous, refermées avant de
-        // sortir.
+        // SAFETY: a shape and its sink, both ours, closed again before
+        // leaving.
         unsafe {
             let shape = self.factory.CreatePathGeometry().ok()?;
             let sink = shape.Open().ok()?;
@@ -1048,9 +1045,8 @@ impl Canvas {
                         sink.AddLine(point(at));
                     }
                     'C' => {
-                        // Les deux poignées se comptent depuis le point
-                        // d'où la courbe part, donc avant de l'avoir
-                        // quitté.
+                        // Both handles are counted from the point the
+                        // curve starts from, so before having left it.
                         let (x1, y1) = (number()?, number()?);
                         let (x2, y2) = (number()?, number()?);
                         let (x, y) = (number()?, number()?);
@@ -1118,11 +1114,11 @@ impl Canvas {
     }
 }
 
-/// Ce qu'un chemin SVG dit, lettre par lettre et nombre par nombre.
+/// What an SVG path says, letter by letter and number by number.
 ///
-/// Un signe moins ouvre un nombre, il ne sépare pas : c'est la règle de
-/// ce langage, et c'est ce qui permet d'écrire « a9 9 0 1 1-12.8 0 » sans
-/// espace avant le douze.
+/// A minus sign opens a number, it does not separate: that is the rule of
+/// this language, and it is what allows writing "a9 9 0 1 1-12.8 0" with
+/// no space before the twelve.
 struct Tokens<'a> {
     rest: &'a str,
 }
@@ -1136,8 +1132,8 @@ impl<'a> Tokens<'a> {
         self.rest = self.rest.trim_start_matches([' ', ',', '\t', '\n']);
     }
 
-    /// La prochaine chose : une lettre, ou rien quand c'est un nombre qui
-    /// vient, ou la fin.
+    /// The next thing: a letter, or nothing when a number is coming, or
+    /// the end.
     fn letter_or_number(&mut self) -> Option<Option<char>> {
         self.skip();
         let first = self.rest.chars().next()?;
@@ -1168,13 +1164,13 @@ impl<'a> Tokens<'a> {
     }
 }
 
-/// Un point, dans les nombres que le dessinateur attend.
+/// A point, in the numbers the renderer expects.
 fn point(at: (f32, f32)) -> Vector2 {
     Vector2 { X: at.0, Y: at.1 }
 }
 
-/// Un mot dans les caractères que Windows compte, qui ne sont pas ceux
-/// de Rust.
+/// A word in the characters Windows counts, which are not the ones
+/// Rust counts.
 fn utf16(text: &str) -> Vec<u16> {
     text.encode_utf16().collect()
 }

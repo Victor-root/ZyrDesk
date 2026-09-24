@@ -64,33 +64,33 @@ pub fn names_in(page: &str) -> Vec<String> {
 /// that has just gone wrong, short enough to stay one readable paste.
 const KEPT: usize = 120;
 
-/// Et combien quand quelque chose est demandé.
+/// And how many when something is asked for.
 ///
-/// Un tri vient de quelqu'un qui sait ce qu'il cherche et qui a déjà
-/// réduit ce qui sort : en garder davantage n'allonge la page que là où
-/// c'est exactement ce qu'on voulait. Sans cela, le début d'un démarrage
-/// reste hors de portée quoi qu'on demande, et c'est justement ce qu'on
-/// cherche quand une ouverture traîne : le moteur écrit une quarantaine
-/// de lignes rien qu'à ouvrir son décodeur, et cent vingt ne remontent
-/// même pas jusqu'à son premier mot.
+/// A sift comes from someone who knows what they are looking for and has
+/// already narrowed down what comes out: keeping more only lengthens the
+/// page where that is exactly what was wanted. Without this, the
+/// beginning of a start-up stays out of reach whatever is asked for, and
+/// that is precisely what is being looked for when an opening drags: the
+/// engine writes some forty lines just to open its decoder, and a
+/// hundred and twenty do not even reach back to its first word.
 const KEPT_WHEN_ASKED: usize = 500;
 
-/// Comment le lecteur d'une session ouvre son journal.
+/// How the player of a session opens its journal.
 ///
-/// Écrit par ce qui le lance, et lu ici : c'est la seule marque qui dise
-/// où commence ce qu'un lecteur a raconté, le lecteur, lui, n'en posant
-/// aucune. Partagée plutôt que recopiée des deux côtés, sans quoi une
-/// retouche d'un mot d'un côté couperait la lecture de l'autre en
-/// silence.
+/// Written by whatever launches it, and read here: it is the only mark
+/// that says where what a player told begins, since the player itself
+/// sets none. Shared rather than copied on both sides, otherwise
+/// touching up one word on one side would silently cut off the reading
+/// on the other.
 pub const SESSION_OPENS: &str = "--- session towards ";
 
-/// Combien de lignes on garde de chaque bout d'un journal dont on sait
-/// où il commence.
+/// How many lines are kept from each end of a journal whose beginning is
+/// known.
 ///
-/// Son début explique une ouverture qui traîne, sa fin explique une
-/// session qui tombe, et son milieu est la même image décodée quarante
-/// mille fois. Les deux bouts, donc, et ce qui manque entre les deux est
-/// compté à voix haute.
+/// Its beginning explains an opening that drags, its end explains a
+/// session that falls over, and its middle is the same frame decoded
+/// forty thousand times. Both ends, then, and what is missing between
+/// the two is counted out loud.
 const KEPT_EACH_END: usize = 150;
 
 /// The files gathered, in the order they are read.
@@ -390,7 +390,8 @@ fn last_lines(
     // for from a list of names.
     let stem = within.strip_suffix(".log").unwrap_or(within);
     let mut answered: Vec<&str> = Vec::new();
-    // Les noms de ce fichier-ci, pour savoir quoi dire s'il ne rend rien.
+    // The names in this file itself, to know what to say if it gives
+    // nothing back.
     let mut its_own = BTreeSet::new();
     for line in whole {
         let name = crate::sifting::about(line)
@@ -424,12 +425,12 @@ fn last_lines(
 /// What to say of a file that answered nothing, which is not always the
 /// same news.
 ///
-/// Un fichier dont les lignes ne portent aucun nom répond au sien, et à
-/// lui seul. Demander « touchpad » écarte donc le journal du lecteur en
-/// entier, y compris les lignes qui parlent du pavé tactile, et la page
-/// disait « rien ici ne répond au tri » : cela se lit comme un moteur
-/// qui n'a rien dit, alors qu'il avait tout dit. Un soir de chasse y est
-/// passé. La phrase nomme maintenant le mot à ajouter.
+/// A file whose lines carry no name answers to its own, and to that
+/// alone. Asking for "touchpad" therefore leaves out the player's
+/// journal entirely, including the lines that talk about the touchpad,
+/// and the page used to say "rien ici ne répond au tri": that reads like
+/// an engine that said nothing, when it had said everything. An
+/// evening's hunt went into it. The sentence now names the word to add.
 fn nothing_here(sift: &Sifting, stem: &str, its_own: &BTreeSet<String>) -> String {
     let nameless = its_own.len() == 1 && its_own.contains(stem);
     if sift.asks_for_a_name() && nameless {
@@ -473,13 +474,14 @@ fn both_ends(lines: &[&str]) -> String {
 mod tests {
     use super::*;
 
-    /// Les noms rencontrés ne sont pas le sujet de ces essais-là, ni la
-    /// marque d'ouverture, que seul le journal du lecteur porte.
+    /// The names met on the way are not what these tests are about, and
+    /// neither is the opening mark, which only the player's journal
+    /// carries.
     fn read(path: &Path, within: &str, sift: &Sifting) -> String {
         last_lines(path, within, "", sift, &mut BTreeSet::new())
     }
 
-    /// Rien de demandé, donc tout gardé.
+    /// Nothing asked for, so everything kept.
     fn everything() -> Sifting {
         Sifting::everything()
     }
@@ -508,11 +510,12 @@ mod tests {
         std::fs::write(&path, written.join("\n")).unwrap();
 
         let kept = read(&path, "essai", &everything());
-        // La fin, qui est là où se trouve la panne, et jamais le début.
+        // The end, which is where the fault is, and never the
+        // beginning.
         assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
         assert!(!kept.contains("ligne 0\n"), "{kept}");
-        // Et ce qui a été laissé de côté est annoncé : un journal amputé
-        // en silence se lit comme un journal complet.
+        // And what was left out is announced: a journal cut short in
+        // silence reads like a complete one.
         assert!(kept.starts_with("(le début n'est pas montré)"), "{kept}");
 
         std::fs::remove_dir_all(&folder).unwrap();
@@ -523,8 +526,9 @@ mod tests {
         let folder = a_folder_of_its_own("enorme");
         let path = folder.join("enorme.log");
 
-        // Bien au-delà de ce que la lecture s'autorise : si elle lisait
-        // tout, ce test se verrait au chronomètre et à la mémoire.
+        // Well beyond what the reading allows itself: if it read
+        // everything, this test would show on the stopwatch and in the
+        // memory.
         let mut written = String::new();
         for line in 0..40_000 {
             written.push_str(&format!("ligne {line} avec un peu de matière autour\n"));
@@ -542,7 +546,7 @@ mod tests {
             "{}",
             &kept[..60]
         );
-        // Jamais de demi-ligne en tête après la coupe.
+        // Never half a line at the top after the cut.
         let second = kept.lines().nth(1).unwrap();
         assert!(second.starts_with("ligne "), "{second}");
 
@@ -551,11 +555,10 @@ mod tests {
 
     #[test]
     fn the_player_journal_starts_where_its_session_starts() {
-        // La panne exacte, et pourquoi une ouverture lente est restée
-        // trois soirs inexpliquée : les cent vingt dernières lignes du
-        // journal du lecteur sont toujours la fin d'une session, jamais
-        // son démarrage, et son démarrage était justement ce qu'on
-        // cherchait.
+        // The exact fault, and why a slow opening went unexplained for
+        // three evenings: the last hundred and twenty lines of the
+        // player's journal are always the end of a session, never its
+        // start, and its start was precisely what was being looked for.
         let folder = a_folder_of_its_own("depart");
         let path = folder.join("session.log");
 
@@ -579,18 +582,21 @@ mod tests {
             &everything(),
             &mut BTreeSet::new(),
         );
-        // Le premier mot du lecteur, qui est tout l'objet de la chose.
+        // The player's first word, which is the whole point of the
+        // thing.
         assert!(kept.starts_with(SESSION_OPENS), "{}", &kept[..80]);
         assert!(
             kept.contains("le lecteur ouvre la bouche"),
             "début manquant"
         );
-        // Sa dernière, qui explique une session qui tombe.
+        // Its last line, which explains a session that
+        // falls over.
         assert!(kept.ends_with("00:00:27 - image posée"), "fin manquante");
-        // Et rien de la session d'avant.
+        // And nothing of the session before.
         assert!(!kept.contains("vieille ligne"), "{kept}");
 
-        // Une session courte tient entière, sans rien annoncer.
+        // A short session fits whole, without announcing
+        // anything.
         let court = folder.join("court.log");
         let mut written = String::new();
         let _ = writeln!(written, "{SESSION_OPENS}127.77.0.1:42000 ---");
@@ -613,14 +619,14 @@ mod tests {
 
     #[test]
     fn a_nameless_file_says_which_word_to_add_to_the_sift() {
-        // La panne exacte : demander « touchpad » écarte le journal du
-        // lecteur en entier, parce que ses lignes ne portent pas de nom
-        // et répondent au sien. La page disait « rien ici ne répond au
-        // tri », ce qui se lit comme un moteur qui n'a rien dit alors
-        // qu'il avait tout dit.
+        // The exact fault: asking for "touchpad" leaves out the
+        // player's journal entirely, because its lines carry no name
+        // and answer to its own. The page used to say "rien ici ne
+        // répond au tri", which reads like an engine that said nothing
+        // when it had said everything.
         let folder = a_folder_of_its_own("sans-nom");
 
-        // Le journal d'un moteur : aucune ligne n'a d'étiquette.
+        // An engine's journal: no line has a tag.
         let engine = folder.join("session.log");
         std::fs::write(
             &engine,
@@ -630,14 +636,15 @@ mod tests {
         let shown = read(&engine, "session.log", &Sifting::of("touchpad"));
         assert!(shown.contains("ajoutez « session » au tri"), "{shown}");
 
-        // Un fichier dont les lignes portent des noms ne dit rien de
-        // tel : y ajouter son propre nom n'y changerait rien.
+        // A file whose lines carry names says nothing of the kind:
+        // adding its own name to it would change nothing.
         let service = folder.join("service.log");
         std::fs::write(&service, "2026-09-15 18:30:18 I [way] voie 1 ouverte\n").unwrap();
         let shown = read(&service, "service.log", &Sifting::of("touchpad"));
         assert_eq!(shown, "(rien ici ne répond au tri)", "{shown}");
 
-        // Et le tri qui nomme bien le fichier le rend.
+        // And the sift that does name the file gives it
+        // back.
         let shown = read(&engine, "session.log", &Sifting::of("touchpad session"));
         assert!(shown.contains("rien pour nous"), "{shown}");
 
@@ -646,8 +653,8 @@ mod tests {
 
     #[test]
     fn a_file_without_a_mark_keeps_its_end_as_before() {
-        // La règle ne vaut que là où le produit sait où commence ce
-        // qu'il lit. Ailleurs, la fin reste la fin.
+        // The rule only holds where the product knows where what it
+        // reads begins. Elsewhere, the end stays the end.
         let folder = a_folder_of_its_own("sans-marque");
         let path = folder.join("service.log");
         let written: Vec<String> = (0..KEPT + 40).map(|line| format!("ligne {line}")).collect();
@@ -668,10 +675,10 @@ mod tests {
 
     #[test]
     fn the_sift_happens_on_reading_and_not_on_the_page() {
-        // C'est toute la différence : seules les cent vingt dernières
-        // lignes d'un fichier arrivent sur une page, et six lignes de
-        // presse-papiers ne sont presque jamais parmi les cent vingt
-        // dernières d'une session.
+        // That is the whole difference: only the last hundred and
+        // twenty lines of a file reach a page, and six lines about
+        // the clipboard are almost never among the last hundred and
+        // twenty of a session.
         let folder = a_folder_of_its_own("tri");
         let path = folder.join("service.log");
 
@@ -682,11 +689,12 @@ mod tests {
         }
         std::fs::write(&path, &written).unwrap();
 
-        // Sans tri, la ligne du début est hors de portée.
+        // Without a sift, the line at the beginning is out
+        // of reach.
         let unsifted = read(&path, "service", &everything());
         assert!(!unsifted.contains("ce que tient"), "{unsifted}");
 
-        // Avec, elle est la seule qui reste.
+        // With one, it is the only one left.
         let sifted = read(&path, "service", &Sifting::of("tag:clipboard"));
         assert_eq!(
             sifted,
@@ -698,9 +706,9 @@ mod tests {
 
     #[test]
     fn what_can_be_asked_for_is_read_from_the_files_and_read_back_from_the_heading() {
-        // La boîte de tri ne peut pas le deviner : la moitié du temps la
-        // page vient d'un autre ordinateur, et un nom proposé qu'aucune
-        // ligne ne porte est une impasse proposée.
+        // The sift box cannot guess it: half the time the page comes
+        // from another computer, and a name offered that no line carries
+        // is a dead end offered.
         let folder = a_folder_of_its_own("noms");
         let path = folder.join("service.log");
         let mut written = String::new();
@@ -716,16 +724,16 @@ mod tests {
             &Sifting::of("clipboard"),
             &mut named,
         );
-        // Relevés même quand le tri les écarte : ce qu'on peut demander
-        // est ce que les fichiers portent, pas ce qui reste une fois la
-        // demande faite.
+        // Collected even when the sift leaves them out: what can be
+        // asked for is what the files carry, not what is left once the
+        // asking is done.
         assert_eq!(
             named.iter().cloned().collect::<Vec<_>>(),
             ["clipboard", "way"]
         );
 
-        // Une ligne sans nom répond à celui de son fichier, faute de quoi
-        // le journal d'un moteur ne se demanderait pas d'une liste.
+        // A line with no name answers to the name of its file, otherwise
+        // an engine's journal could not be asked for from a list.
         let engine = folder.join("session.log");
         std::fs::write(&engine, "00:00:03 - SDL Info (0): IDR demandée\n").unwrap();
         let mut named = BTreeSet::new();
@@ -738,12 +746,13 @@ mod tests {
         );
         assert_eq!(named.iter().cloned().collect::<Vec<_>>(), ["session"]);
 
-        // Et ce que l'entête écrit, la boîte le relit tel quel.
+        // And what the heading writes, the box reads back as it
+        // is.
         let mut journal = Journal(String::new());
         journal.says(NAMES_HEADING, "clipboard, files, way");
         assert_eq!(names_in(&journal.0), ["clipboard", "files", "way"]);
-        // Une page d'une moitié plus ancienne du produit n'en porte pas :
-        // la boîte ne propose alors rien et tout se tape, comme avant.
+        // A page from an older half of the product carries none: the box
+        // then offers nothing and everything is typed, as before.
         assert!(names_in("Ordinateur       : PC-SAV").is_empty());
 
         std::fs::remove_dir_all(&folder).unwrap();
@@ -751,8 +760,8 @@ mod tests {
 
     #[test]
     fn a_sift_that_gives_nothing_says_so_rather_than_leaving_a_blank() {
-        // Un blanc se lit comme un fichier vide, et la question devient
-        // « est-ce que ça marche ? » au lieu de « il n'y avait rien ».
+        // A blank reads like an empty file, and the question becomes
+        // "does it work?" instead of "there was nothing".
         let folder = a_folder_of_its_own("tri-vide");
         let path = folder.join("service.log");
         std::fs::write(&path, "2026-09-11 18:55:04 I [ways] voie 1 ouverte\n").unwrap();
@@ -765,19 +774,20 @@ mod tests {
 
     #[test]
     fn a_sifted_page_says_which_sift_it_was_taken_under() {
-        // Sinon elle se lit comme un produit qui n'a rien à dire plutôt
-        // que comme la réponse à une question.
+        // Otherwise it reads as a product with nothing to say rather
+        // than as the answer to a question.
         let text = Journal::of_this_computer().sifted(&Sifting::of("tag:clipboard"));
         assert!(text.contains("Tri "), "{}", &text[..400]);
         assert!(text.contains("tag:clipboard"), "{}", &text[..400]);
-        // Et une page non triée ne porte pas la ligne du tout.
+        // And a page that was not sifted does not carry the
+        // line at all.
         assert!(!Journal::of_this_computer().gathered().contains("\nTri "));
     }
 
     #[test]
     fn an_unreadable_file_says_so_rather_than_nothing() {
-        // Un dossier n'est pas lisible comme un fichier : c'est le
-        // moyen portable d'obtenir un refus qui n'est pas « absent ».
+        // A folder cannot be read like a file: that is the portable
+        // way of getting a refusal that is not "missing".
         let folder = a_folder_of_its_own("illisible");
         let refused = read(&folder, "essai", &everything());
         assert!(refused.starts_with("(illisible"), "{refused}");
@@ -786,9 +796,9 @@ mod tests {
 
     #[test]
     fn the_heading_lines_up() {
-        // Compté en caractères et non en octets : « ô » en occupe deux,
-        // et une colonne mesurée à l'octet se croirait de travers là où
-        // elle est parfaitement droite.
+        // Counted in characters and not in bytes: "ô" takes up two, and
+        // a column measured in bytes would think itself crooked where
+        // it is perfectly straight.
         let mut journal = Journal(String::new());
         journal.says("Service", "en marche");
         journal.says("Moteur hôte", "présent");
@@ -806,15 +816,15 @@ mod tests {
 
     #[test]
     fn a_journal_opens_on_the_build_and_the_computer() {
-        // Les deux moitiés du produit compilées à des moments
-        // différents, c'est la panne que personne ne pense à vérifier :
-        // elle est en première ligne, avant toute autre chose.
+        // Two halves of the product compiled at different times is the
+        // fault nobody thinks to check for: it is on the first line,
+        // before anything else.
         let text = Journal::of_this_computer().gathered();
         let mut lines = text.lines();
         assert_eq!(lines.next().unwrap(), crate::version_line());
         assert!(lines.next().unwrap().starts_with("Ordinateur"), "{text}");
-        // Et les quatre fichiers y sont, nommés, même ceux que cet
-        // ordinateur n'a jamais écrits.
+        // And the four files are there, named, even the ones this
+        // computer has never written.
         for (file, what, _) in FILES {
             assert!(text.contains(&format!("--- {what} ({file}) ---")), "{text}");
         }
@@ -822,9 +832,10 @@ mod tests {
 
     #[test]
     fn the_engines_build_is_read_from_what_the_script_writes() {
-        // Mot pour mot ce que packaging/engines/fetch-engines.ps1 écrit :
-        // les deux doivent parler de la même chose, faute de quoi le
-        // journal dirait « moteurs présents » sans jamais dire lesquels.
+        // Word for word what packaging/engines/fetch-engines.ps1 writes:
+        // the two must be talking about the same thing, otherwise the
+        // journal would say "engines present" without ever saying which
+        // ones.
         let written = "# Moteurs ZyrDesk : d'où viennent ceux qui sont en place.\n\
              # Écrit par packaging/engines/fetch-engines.ps1, à ne pas corriger à la main.\n\
              run = 17392044\n\
@@ -839,9 +850,9 @@ mod tests {
 
     #[test]
     fn engines_put_there_by_hand_say_nothing_rather_than_lie() {
-        // Déposer les moteurs soi-même reste parfaitement valable : il
-        // n'y a alors rien à dire de leur provenance, et surtout rien à
-        // inventer.
+        // Putting the engines there yourself stays perfectly valid:
+        // there is then nothing to say about where they came from, and
+        // above all nothing to make up.
         assert!(build_from("").is_empty());
         assert!(build_from("n'importe quoi").is_empty());
         assert!(build_from("# run = 1\n").is_empty());
@@ -849,11 +860,11 @@ mod tests {
 
     #[test]
     fn what_is_emptied_covers_more_than_what_is_gathered() {
-        // Le relevé de ce que l'ordinateur atteint tient une mesure par
-        // seconde : il noierait la copie qu'on relit d'un trait, donc il
-        // n'y est pas. Mais vider le journal avant un essai doit le
-        // vider aussi, sans quoi on lit trois semaines de relevé en face
-        // d'une séance de cinq minutes.
+        // The record of what the computer reaches holds one measurement
+        // a second: it would drown the copy that is read in one go, so
+        // it is not in it. But emptying the journal before a test must
+        // empty it too, otherwise three weeks of records get read
+        // against a five-minute session.
         let gathered: Vec<&str> = FILES.iter().map(|(file, _, _)| *file).collect();
         let also: Vec<&str> = ALSO_EMPTIED.iter().map(|(file, _)| *file).collect();
         assert!(also.contains(&"reach.log"));
@@ -869,9 +880,8 @@ mod tests {
 
     #[test]
     fn a_file_that_was_never_written_is_already_empty() {
-        // Vider le journal d'un ordinateur qui n'a jamais hébergé ne
-        // doit pas se plaindre du fichier que le moteur hôte n'a jamais
-        // ouvert.
+        // Emptying the journal of a computer that has never hosted must
+        // not complain about the file the host engine never opened.
         let folder = a_folder_of_its_own("vidage");
         assert!(empty(&folder.join("jamais.log")).is_ok());
 

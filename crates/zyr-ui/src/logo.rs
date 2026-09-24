@@ -26,8 +26,8 @@
 //! them through wherever the picture is clear. Four of the faults this
 //! button has worn since it was born cannot happen here at all.
 //!
-//! Le menu est une fenêtre à côté, dessinée de la même façon : il ne
-//! reste plus de vue web nulle part sur l'image.
+//! The menu is a window beside it, drawn the same way: there is no web
+//! view left anywhere on the picture.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
@@ -36,10 +36,10 @@ use crate::app::App;
 
 use crate::paint::Rect;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module files its journal lines under.
 const TAG: &str = "floating";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
@@ -150,10 +150,12 @@ const GROWS_IN: std::time::Duration = std::time::Duration::from_millis(120);
 /// One more frame of that growth, asked for by the beat.
 const GROWING: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 
-/// Le curseur à redire, demandé d'ailleurs que du fil de la fenêtre.
+/// The pointer to be set again, asked for from somewhere other than
+/// the window's thread.
 const CURSOR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
-/// La barre du transfert a bougé, demandé du fil qui la relit.
+/// The transfer's bar has moved, asked for from the thread
+/// that rereads it.
 const PROGRESS: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
 
 /// The window itself, and what it is showing.
@@ -164,9 +166,9 @@ static ITS_BOX: AtomicU32 = AtomicU32::new(0);
 /// Whether a hand is over it, whether one is holding it, and whether the
 /// hold has turned into a move.
 ///
-/// Les deux derniers ne sont pas le même moment : un bouton pressé se
-/// dessine pressé tout de suite, mais il ne se déplace qu'une fois la
-/// main partie, et le curseur doit dire lequel des deux arrive.
+/// The last two are not the same moment: a pressed button is drawn
+/// pressed at once, but it only moves once the hand has set off, and the
+/// pointer has to say which of the two is happening.
 static UNDER: AtomicBool = AtomicBool::new(false);
 static TAKEN: AtomicBool = AtomicBool::new(false);
 static MOVING: AtomicBool = AtomicBool::new(false);
@@ -253,19 +255,21 @@ pub fn box_side() -> i32 {
     ITS_BOX.load(Ordering::Relaxed) as i32
 }
 
-/// La fenêtre elle-même, pour ce qui a besoin de la nommer au système.
+/// The window itself, for whatever needs to name it to the system.
 ///
-/// L'écran sur lequel le bouton pend, et donc son agrandissement, se lit
-/// à travers elle : c'est la seule fenêtre du bouton qui soit toujours là.
+/// The screen the button hangs on, and so its magnification, is read
+/// through it: it is the only window of the button that is always there.
 pub fn its_window() -> isize {
     ITS_WINDOW.load(Ordering::Relaxed)
 }
 
-/// Montre ou range le logo depuis le fil qui dessine, où l'on est déjà.
+/// Shows or hides the logo from the thread that draws, where we already
+/// are.
 ///
-/// Le même geste que `shown`, sans le détour par la boucle : ce qui pose
-/// le bouton tourne déjà sur ce fil-là, et y repasser par la file des
-/// messages retarderait d'une image un bouton qu'on vient de déplacer.
+/// The same gesture as `shown`, without the detour through the loop:
+/// what lays the button already runs on that thread, and going back to
+/// it through the message queue would delay by one frame a button that
+/// has just been moved.
 pub fn shown_now(visible: bool) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNOACTIVATE, ShowWindow};
@@ -279,42 +283,43 @@ pub fn shown_now(visible: bool) {
     unsafe { ShowWindow(window, if visible { SW_SHOWNOACTIVATE } else { SW_HIDE }) };
 }
 
-/// Dit que la main qui tient le bouton a commencé à le déplacer, ou
-/// qu'elle a fini.
+/// Says that the hand holding the button has started moving it, or that
+/// it has finished.
 ///
-/// Le curseur seul en dépend, et c'est bien le déplacement qu'il annonce
-/// et non l'appui : un simple clic presse le bouton lui aussi, et il ne
-/// doit pas pour autant montrer la croix des quatre directions.
+/// Only the pointer depends on it, and it is indeed the move that it
+/// announces and not the press: a plain click presses the button too,
+/// and that is no reason for it to show the four-way cross.
 pub fn moving(yes: bool) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
     MOVING.store(yes, Ordering::Relaxed);
-    // Le système ne redemande la forme du curseur qu'au prochain
-    // mouvement de la souris : sans ce mot-là, la croix des quatre
-    // directions resterait affichée après le lâcher, jusqu'à ce que la
-    // main bouge d'un pixel.
+    // The system only asks for the pointer's shape again at the next
+    // movement of the mouse: without this word, the four-way cross
+    // would stay on show after the release, until the hand moves by a
+    // pixel.
     let window = ITS_WINDOW.load(Ordering::Relaxed);
     if window != 0 {
-        // SAFETY: un message déposé dans la file d'une fenêtre à nous,
-        // depuis le fil qui suit le geste.
+        // SAFETY: a message dropped into the queue of a window of
+        // ours, from the thread that follows the gesture.
         unsafe { PostMessageW(window as HWND, CURSOR, 0, 0) };
     }
 }
 
-/// Dit au bouton que ce qui arrive a avancé, et qu'il a donc à se
-/// redessiner.
+/// Tells the button that what is arriving has moved on, and so that it
+/// has to draw itself again.
 ///
-/// Déposé dans sa file plutôt que dessiné ici : la toile et la fenêtre
-/// appartiennent au fil qui les a faites, et ce qui relit l'avancement
-/// n'est pas celui-là.
+/// Dropped into its queue rather than drawn here: the canvas and the
+/// window belong to the thread that made them, and what rereads the
+/// progress is not that one.
 pub fn the_bar_moved() {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
     let window = ITS_WINDOW.load(Ordering::Relaxed);
     if window != 0 {
-        // SAFETY: un message déposé dans la file d'une fenêtre à nous.
+        // SAFETY: a message dropped into the queue of a window of
+        // ours.
         unsafe { PostMessageW(window as HWND, PROGRESS, 0, 0) };
     }
 }
@@ -382,8 +387,9 @@ pub fn lay(anchor: (i32, i32), upward: bool, mirrored: bool) {
     if (upward_change || mirrored_change)
         && let Some(app) = PROGRAM.lock().expect("programme du logo").clone()
     {
-        // Redemandé au fil qui possède la fenêtre : c'est lui qui tient
-        // la toile, et ceci court sur celui qui suit la main.
+        // Asked again of the thread that owns the window: it is the one
+        // holding the canvas, and this runs on the one that follows the
+        // hand.
         let _ = app.run_on_main_thread(move || repaint(window as HWND));
     }
     let side = ITS_BOX.load(Ordering::Relaxed) as i32;
@@ -549,34 +555,34 @@ fn arrived() -> bool {
     done
 }
 
-/// Pose la marque ZyrDesk dans ce cadre, sur cette toile.
+/// Lays the ZyrDesk mark in this rect, on this canvas.
 ///
-/// Ici et non recopiée ailleurs : c'est le même dessin sur le bouton
-/// flottant, dans l'en-tête de l'accueil et sur l'écran d'ouverture d'une
-/// session, et deux dessins pour une marque, ce sont deux marques.
+/// Here and not copied elsewhere: it is the same drawing on the floating
+/// button, in the header of the home screen and on the screen a session
+/// opens on, and two drawings for one mark are two marks.
 ///
-/// Le cadre est carré, comme le repère du dessin : un cadre qui ne l'est
-/// pas laisse simplement du vide en bas, le logo n'occupant pas toute sa
-/// hauteur.
+/// The rect is square, like the drawing's grid: a rect that is not simply
+/// leaves empty space at the bottom, the logo not taking up all of its
+/// height.
 ///
-/// `part` est ce qu'il en reste : un pour la marque pleine, moins pour
-/// une marque en retrait. C'est ce que l'icône près de l'horloge emploie
-/// pour dire que cet ordinateur n'est pas joignable, en restant la même
-/// marque plutôt qu'en devenant un second dessin.
+/// `part` is how much of it is left: one for the full mark, less for a
+/// mark that steps back. It is what the icon near the clock uses to say
+/// that this computer cannot be reached, while staying the same mark
+/// rather than becoming a second drawing.
 ///
-/// `mirrored` la retourne de gauche à droite, à l'endroit près : c'est
-/// ce que demande le bouton flottant quand son menu s'ouvre à sa droite
-/// plutôt qu'à sa gauche, pour que le logo fasse face au menu plutôt que
-/// de lui tourner le dos.
+/// `mirrored` flips it left to right, still the right way up: that is
+/// what the floating button asks for when its menu opens to its right
+/// rather than its left, so that the logo faces the menu rather than
+/// turning its back on it.
 pub fn brand(canvas: &crate::paint::Canvas, rect: Rect, part: f32, mirrored: bool) {
     for shape in &drawing::SHAPES {
         let place = placed(rect, shape, mirrored);
         let radius = shape.radius * per_unit(rect);
         canvas.fill(place, radius, shape.fill.faded(part));
         if shape.outlined {
-            // Sur le bord et non dedans : c'est ce que fait un trait dans
-            // le dessin d'origine, et un contour rentré dedans amincirait
-            // le logo de la moitié de son trait.
+            // On the edge and not inside it: that is what a stroke does
+            // in the original drawing, and an outline pulled inside would
+            // make the logo thinner by half its stroke.
             canvas.stroke_on(
                 place,
                 radius,
@@ -587,22 +593,22 @@ pub fn brand(canvas: &crate::paint::Canvas, rect: Rect, part: f32, mirrored: boo
     }
 }
 
-/// Remplit la vitre de l'écran de devant, comme une barre de chargement,
-/// de ce qui est arrivé des fichiers qu'on colle.
+/// Fills the pane of the near screen, like a loading bar, with how much
+/// of the files being pasted has arrived.
 ///
-/// Là et non à côté du bouton : cette vitre-là est déjà un rectangle que
-/// tout le monde lit comme un écran, elle fait vingt pixels sur douze là
-/// où le pourtour du bouton n'en offre que deux, et la marque reste la
-/// marque plutôt que de devenir un dessin flanqué d'un second.
+/// There and not beside the button: that pane is already a rectangle
+/// everyone reads as a screen, it is twenty pixels by twelve where the
+/// rim of the button offers only two, and the mark stays the mark rather
+/// than becoming a drawing flanked by a second one.
 ///
-/// Elle se remplit du côté où le dessin regarde, donc de la droite quand
-/// il est retourné.
+/// It fills from the side the drawing faces, so from the right when it
+/// is mirrored.
 fn fill_the_pane(canvas: &crate::paint::Canvas, rect: Rect, part: f32, mirrored: bool) {
-    /// La vitre de l'écran de devant : le dernier des quatre dessins,
-    /// donc celui qui est posé par-dessus tous les autres.
+    /// The pane of the near screen: the last of the four drawings, so
+    /// the one laid over all the others.
     const PANE: usize = drawing::SHAPES.len() - 1;
-    /// Ce qui se voit toujours, transfert ouvert et rien encore arrivé.
-    /// Une vitre vide se lit comme une vitre, pas comme une attente.
+    /// What always shows, with a transfer open and nothing arrived yet.
+    /// An empty pane reads as a pane, not as a wait.
     const AT_LEAST: f32 = 0.08;
 
     let pane = placed(rect, &drawing::SHAPES[PANE], mirrored);
@@ -641,7 +647,8 @@ fn placed(rect: Rect, shape: &drawing::Round, mirrored: bool) -> Rect {
     )
 }
 
-/// Ce que vaut, dans ce cadre, une unité du repère où le dessin est écrit.
+/// What one unit of the grid the drawing is written on is worth, in this
+/// rect.
 fn per_unit(rect: Rect) -> f32 {
     (rect.right - rect.left) / drawing::SIDE
 }
@@ -690,8 +697,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             return;
         }
 
-        // Placée en même temps qu'elle est peinte : la fenêtre ne peut
-        // donc pas être vue à son nouvel endroit avec son ancienne image.
+        // Placed at the same time as it is painted: so the window cannot
+        // be seen at its new place with its old picture.
         let mut place = RECT {
             left: 0,
             top: 0,
@@ -750,8 +757,8 @@ unsafe extern "system" fn answer(
             cursor();
             1
         }
-        // Redit sans que la souris ait bougé : le geste vient de finir et
-        // la forme qu'il montrait n'est plus la bonne.
+        // Said again without the mouse having moved: the gesture has just
+        // finished and the shape it showed is no longer the right one.
         CURSOR => {
             if under_the_hand(window) {
                 cursor();
@@ -778,7 +785,7 @@ unsafe extern "system" fn answer(
     }
 }
 
-/// Pose la forme que le curseur doit avoir sur le logo.
+/// Sets the shape the pointer must have over the logo.
 fn cursor() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         IDC_HAND, IDC_SIZEALL, LoadCursorW, SetCursor,
@@ -793,16 +800,16 @@ fn cursor() {
     unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), shape)) };
 }
 
-/// Si la souris est bien sur cette fenêtre-là.
+/// Whether the mouse really is over this window.
 ///
-/// Le curseur appartient à tout le monde : le poser alors que la main est
-/// ailleurs changerait la forme montrée par la fenêtre d'à côté.
+/// The pointer belongs to everyone: setting it while the hand is
+/// elsewhere would change the shape shown by the window next door.
 fn under_the_hand(window: windows_sys::Win32::Foundation::HWND) -> bool {
     use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, WindowFromPoint};
 
     let mut cursor = POINT { x: 0, y: 0 };
-    // SAFETY: une place à remplir, et la fenêtre que le système rend.
+    // SAFETY: a slot to fill, and the window the system gives back.
     unsafe {
         if GetCursorPos(&mut cursor) == 0 {
             return false;

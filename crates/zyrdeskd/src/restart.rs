@@ -173,7 +173,8 @@ mod tests {
     #[test]
     fn an_engine_asking_to_be_left_where_it_is_gets_its_wish() {
         let mut policy = Policy::new();
-        // Même tombé tout de suite : il a demandé, on ne le relance pas.
+        // Even if it fell straight away: it asked, so it is not started
+        // again.
         assert_eq!(
             policy.after_stop(Some(ENGINE_ASKED_TO_BE_LEFT), Duration::ZERO),
             Next::Finish
@@ -183,24 +184,24 @@ mod tests {
 
     #[test]
     fn an_engine_taken_with_its_session_is_never_started_again_on_the_spot() {
-        // C'est le défaut qui a coûté un écran. Un ordinateur qui s'éteint
-        // emporte le moteur, et ce qu'il savait de l'écran d'avant la
-        // session ne vit que dans ce qu'il a écrit : un moteur relancé
-        // dans la seconde le dépense sur une machine qui n'aura bientôt
-        // plus d'écrans du tout, et le lendemain il n'y a plus rien à
-        // remettre. L'attente doit durer plus longtemps qu'une extinction.
+        // This is the fault that cost a screen. A computer shutting down
+        // takes the engine with it, and what the engine knew of the screen
+        // from before the session lives only in what it wrote: an engine
+        // started again within the second spends it on a machine that will
+        // soon have no screens at all, and the next day there is nothing
+        // left to put back. The wait must last longer than a shutdown.
         let mut policy = Policy::new();
         let Next::Restart(wait) = policy.after_stop(Some(TAKEN_WITH_ITS_SESSION), HEALTHY_LIFE)
         else {
             panic!("emporté avec sa session n'est pas une panne");
         };
         assert!(wait >= seconds(5), "{wait:?} ne couvre pas une extinction");
-        // Et ce n'est pas une faute : le compteur ne bouge pas, sinon une
-        // machine où l'on change d'utilisateur finirait par renoncer.
+        // And it is not a fault: the counter does not move, otherwise a
+        // machine where someone switches user would end up giving up.
         assert_eq!(policy.failures(), 0);
 
-        // Y compris quand le moteur venait tout juste de démarrer, ce qui
-        // est le cas du deuxième et du troisième pendant une extinction.
+        // Including when the engine had only just started, which is the
+        // case of the second and the third during a shutdown.
         let mut policy = Policy::new();
         assert_eq!(
             policy.after_stop(Some(TAKEN_WITH_ITS_SESSION), seconds(2)),
@@ -211,10 +212,10 @@ mod tests {
 
     #[test]
     fn a_computer_that_keeps_taking_the_engine_is_waited_out_longer_each_time() {
-        // Une extinction emporte aussi tous les moteurs démarrés derrière
-        // le premier. Une attente qui ne grandirait pas continuerait à en
-        // fournir à une machine qui s'en va, et chacun dépense ce dont le
-        // démarrage suivant aura besoin.
+        // A shutdown also takes away every engine started behind the
+        // first. A wait that did not grow would keep supplying them to a
+        // machine that is going, and each one spends what the next start
+        // will need.
         let mut policy = Policy::new();
         let mut previous = Duration::ZERO;
         for _ in 0..4 {
@@ -228,8 +229,8 @@ mod tests {
         }
         assert!(previous > SESSION_TOOK_IT, "l'attente n'a jamais grandi");
 
-        // Un moteur qui tient sa vie remet tout à zéro : un changement
-        // d'utilisateur des semaines plus tard repart d'une attente courte.
+        // An engine that holds its time puts everything back to zero: a
+        // user switch weeks later starts again from a short wait.
         policy.after_stop(Some(1), HEALTHY_LIFE);
         assert_eq!(
             policy.after_stop(Some(TAKEN_WITH_ITS_SESSION), seconds(2)),

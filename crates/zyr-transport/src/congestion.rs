@@ -384,16 +384,16 @@ mod tests {
 
     #[test]
     fn the_window_holds_everything_the_stream_makes_while_the_connection_lives() {
-        // Le relevé qui a valu cette règle : le 4 septembre, la route est
-        // revenue sept secondes après s'être tue, et l'ordinateur qui
-        // regardait est resté muet trois secondes de plus, sa fenêtre
-        // étant pleine et le transport n'envoyant plus que ses sondes,
-        // espacées de plusieurs secondes. Le moteur client renonce à dix
-        // secondes de silence : la session est morte d'une coupure que
-        // le tunnel, lui, avait passée. La fenêtre tient donc tout ce
-        // que le flux fait pendant le silence le plus long qu'une
-        // connexion survive, la limite d'inactivité du transport, avec
-        // de la marge pour ce qui voyage à côté de l'image.
+        // The record that earned this rule: on 4 September, the road came
+        // back seven seconds after going silent, and the computer
+        // watching stayed mute for three more seconds, its window being
+        // full and the transport sending nothing but its probes, spaced
+        // several seconds apart. The client engine gives up after ten
+        // seconds of silence: the session died of an outage that the
+        // tunnel, for its part, had got through. The window therefore
+        // holds everything the stream makes during the longest silence a
+        // connection survives, the transport's idle limit, with room to
+        // spare for what travels beside the picture.
         for mbps in [5, 20, 40, 80, 150] {
             let profile = profile(mbps);
             let over_the_silence = profile.bits_per_second / 8 * MAXIMUM_IDLE.as_secs();
@@ -408,35 +408,34 @@ mod tests {
 
     #[test]
     fn the_side_that_sends_no_picture_holds_the_fastest_streams_window() {
-        // Ce que cet ordinateur envoie ne s'approche jamais de cette
-        // fenêtre, et c'est le but : pendant que la route se tait, le
-        // canal de contrôle du moteur renvoie tout ce qui n'est pas
-        // accusé à chaque tour de son horloge, et une fenêtre taillée
-        // sur le débit demandé se remplissait de ces renvois en
-        // quelques secondes.
+        // What this computer sends never comes near this window, and
+        // that is the point: while the road is silent, the engine's
+        // control channel sends again everything not acknowledged at
+        // every turn of its clock, and a window sized on the bitrate
+        // asked for filled up with those resends in a few seconds.
         let media = Media::from(profile(5));
         let watching = MediaController::new(media.clone(), Sending::Inputs);
         assert_eq!(watching.window(), FASTEST.window());
         assert!(watching.window() > profile(5).window());
 
-        // Et le débit de la session n'y change rien : ce n'est pas son
-        // flux.
+        // And the session's bitrate changes nothing here: it is not
+        // its stream.
         media.serving(profile(80));
         assert_eq!(watching.window(), FASTEST.window());
     }
 
     #[test]
     fn the_send_queue_holds_whole_frames() {
-        // La propriété qui compte, et qui manquait : une file plus
-        // courte qu'une image perd des paquets de chaque image clé sur
-        // le meilleur des réseaux, la correction d'erreurs ne rattrape
-        // pas un quart d'image, et le lecteur attend une image clé qui
-        // est coupée à son tour. L'image ne s'établit jamais.
+        // The property that matters, and that was missing: a queue
+        // shorter than a frame loses packets from every key frame on
+        // the best of networks, error correction does not make up for
+        // a quarter of a frame, and the player waits for a key frame
+        // that is cut short in its turn. The picture never comes up.
         //
-        // Vérifié sur la file réellement construite, celle du flux le
-        // plus rapide, et pour chaque débit offert : c'est la seule
-        // qu'une connexion aura jamais, quel que soit le débit demandé
-        // après coup.
+        // Checked on the queue actually built, the fastest stream's,
+        // and for every bitrate offered: it is the only one a
+        // connection will ever have, whatever bitrate is asked for
+        // afterwards.
         for kbps in RATES_OFFERED {
             let frame = u64::from(kbps) * 1_000 / 8 / 60;
             assert!(
@@ -449,36 +448,35 @@ mod tests {
 
     #[test]
     fn the_side_that_sends_no_picture_gets_a_queue_its_own_size() {
-        // Le 4 septembre, le client a jeté 23805 des 38565 paquets qu'il
-        // a confiés au tunnel, soit 62 %, alors qu'il n'envoyait que du
-        // clavier-souris. Sa file était celle du flux le plus rapide,
-        // taillée pour ne pas couper une image clé chez celui qui
-        // encode : un mégaoctet de paquets de cinquante octets, ce sont
-        // des milliers de paquets et des dizaines de secondes de retard.
-        // Et le canal qui les porte est fiable : tout ce que la file
-        // jetait en silence était renvoyé, et le renvoi tombait dans la
-        // même file pleine.
+        // On 4 September, the client threw away 23805 of the 38565
+        // packets it handed to the tunnel, that is 62%, when all it was
+        // sending was keyboard and mouse. Its queue was the fastest
+        // stream's, sized not to cut a key frame on the side that
+        // encodes: a megabyte of fifty-byte packets is thousands of
+        // packets and tens of seconds of delay. And the channel carrying
+        // them is reliable: everything the queue silently threw away was
+        // sent again, and the resend fell into the same full queue.
         assert!(
             Sending::Inputs.queue() * 8 < Sending::Pictures.queue(),
             "les deux côtés ont presque la même file : {} contre {}",
             Sending::Inputs.queue(),
             Sending::Pictures.queue()
         );
-        // Assez large tout de même pour la rafale que fait une main sur
-        // une souris, sans quoi on aurait échangé une panne contre une
-        // autre.
+        // Wide enough all the same for the burst a hand on a mouse
+        // makes, or one failure would have been traded for another.
         assert!(Sending::Inputs.queue() >= 16 * 1024);
-        // Et celle de l'ordinateur regardé ne bouge pas : elle tient six
-        // images du flux le plus rapide, ce que le test au-dessus vérifie.
+        // And the queue of the computer being watched does not move: it
+        // holds six frames of the fastest stream, which the test above
+        // checks.
         assert_eq!(Sending::Pictures.queue(), FASTEST.send_queue());
     }
 
     #[test]
     fn the_window_follows_the_session_that_is_being_served() {
-        // Le défaut que ceci répare : l'ordinateur regardé ouvre son
-        // tunnel au démarrage du service, bien avant qu'une session lui
-        // demande quoi que ce soit, et gardait donc la fenêtre du profil
-        // nominal pendant qu'il servait à quatre-vingts mégabits.
+        // The fault this repairs: the computer being watched opens its
+        // tunnel when the service starts, long before a session asks it
+        // for anything, and so kept the nominal profile's window while
+        // it was serving at eighty megabits.
         let media = Media::from(profile(20));
         let controller = MediaController::new(media.clone(), Sending::Pictures);
         let nominal = controller.window();
@@ -490,15 +488,15 @@ mod tests {
         );
         assert_eq!(controller.window(), profile(80).window());
 
-        // Et la copie que le transport se fait de son contrôleur suit la
-        // même session : sans cela, la fenêtre se figerait au premier
-        // clonage.
+        // And the copy the transport makes of its controller follows the
+        // same session: without that, the window would freeze at the
+        // first clone.
         let copy = controller.clone_box();
         media.serving_at(profile(40).bits_per_second);
         assert_eq!(copy.window(), controller.window());
 
-        // Plus personne à servir : elle revient à ce avec quoi la porte
-        // a été construite, et n'hérite pas de la session précédente.
+        // Nobody left to serve: it goes back to what the door was built
+        // with, and does not inherit from the previous session.
         media.serving_nobody();
         assert_eq!(controller.window(), nominal);
     }

@@ -273,9 +273,9 @@ mod tests {
 
     #[test]
     fn every_line_carries_its_tag_and_the_file_stays_the_same() {
-        // C'est ce qui fait qu'on peut demander six lignes au milieu de
-        // quatre mille : l'étiquette est sur la ligne, et une copie
-        // étiquetée écrit dans le même fichier et dans le même ordre.
+        // This is what makes it possible to ask for six lines out of
+        // four thousand: the tag is on the line, and a tagged copy
+        // writes into the same file and in the same order.
         let path = fresh_path("etiquettes");
         let log = Log::open(&path).unwrap();
         let clipboard = log.about("clipboard");
@@ -306,10 +306,10 @@ mod tests {
 
     #[test]
     fn both_voices_are_written_in_the_order_things_happened() {
-        // Les deux dans le même fichier et dans cet ordre-là : une chasse
-        // est justement le moment où l'on lit l'une contre l'autre, et
-        // c'est le tri qui les sépare après coup, par la lettre que
-        // chaque ligne porte.
+        // Both in the same file and in that order: a hunt is precisely
+        // the moment when one is read against the other, and it is the
+        // sift that separates them afterwards, by the letter each line
+        // carries.
         let path = fresh_path("voix");
         let log = Log::open(&path).unwrap();
 
@@ -330,8 +330,8 @@ mod tests {
         let path = fresh_path("taille");
         let log = Log::open(&path).unwrap();
 
-        // Grossi au-delà de la limite par le fichier directement : y
-        // aller ligne à ligne prendrait le plus clair du test.
+        // Grown past the limit through the file directly: getting
+        // there line by line would take up most of the test.
         {
             let mut file = log.file.lock().unwrap();
             let line = format!("{} du remplissage sans intérêt\n", now());
@@ -345,11 +345,12 @@ mod tests {
 
         let contents = std::fs::read_to_string(&path).unwrap();
         assert!(contents.len() as u64 <= KEPT + 256, "{}", contents.len());
-        // La fin est là, le début est parti, et la coupe est annoncée.
+        // The end is there, the beginning is gone, and the cut is
+        // announced.
         assert!(contents.ends_with("la ligne qui compte\n"));
         assert!(contents.starts_with("(le début"), "{}", &contents[..60]);
-        // Et jamais de demi-ligne en tête : la coupe tombe sur une
-        // frontière.
+        // And never half a line at the top: the cut falls on a
+        // boundary.
         let second = contents.lines().nth(1).unwrap();
         assert!(second.starts_with(char::is_numeric), "{second}");
 

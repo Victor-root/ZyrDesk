@@ -148,8 +148,8 @@ mod tests {
 
     #[test]
     fn a_folder_crosses_whole_and_under_its_own_name() {
-        // C'est ce que fait l'explorateur quand il colle un dossier :
-        // le dossier réapparaît, avec ce qu'il y a dedans.
+        // This is what Explorer does when it pastes a folder: the
+        // folder appears again, with what is inside it.
         let root = a_tree("un-dossier");
         let walk = walked(&[root.join("photos")]);
 
@@ -162,9 +162,9 @@ mod tests {
 
     #[test]
     fn the_two_lists_stay_aligned_with_each_other() {
-        // C'est ce qui fait qu'on sait quel fichier ouvrir quand l'autre
-        // ordinateur demande le troisième de la liste. Deux listes qui
-        // se décalent enverraient le mauvais fichier sous le bon nom.
+        // This is how the file to open is known when the other computer
+        // asks for the third one on the list. Two lists that slip out of
+        // step would send the wrong file under the right name.
         let root = a_tree("en-face");
         let walk = walked(&[root.join("photos"), root.join("seul.txt")]);
 
@@ -179,8 +179,8 @@ mod tests {
 
     #[test]
     fn what_does_not_exist_is_left_out_without_bringing_down_the_rest() {
-        // Un fichier effacé entre la copie et la lecture est la moitié
-        // d'une seconde d'écart, et il ne doit pas coûter les autres.
+        // A file deleted between the copy and the reading is a matter
+        // of half a second, and it must not cost the others.
         let root = a_tree("manquant");
         let walk = walked(&[root.join("nulle-part.txt"), root.join("seul.txt")]);
 
@@ -191,9 +191,9 @@ mod tests {
 
     #[test]
     fn a_copy_cut_at_the_ceiling_says_so() {
-        // Sans ça, un dossier arrive en ayant l'air entier sans l'être,
-        // et ce qui manque d'une copie de dix mille fichiers n'est pas
-        // une chose qu'on repère en regardant.
+        // Without this, a folder arrives looking whole without being
+        // so, and what is missing from a copy of ten thousand files is
+        // not something anyone spots by looking.
         let root = a_tree("plafond");
         assert!(!walked(&[root.join("photos")]).cut_short);
         std::fs::remove_dir_all(&root).ok();

@@ -845,17 +845,18 @@ mod tests {
 
     #[tokio::test]
     async fn the_room_promised_is_never_more_than_the_room_of_the_moment() {
-        // La taille de paquet demandée au moteur vaut pour toute la
-        // session, et le chemin, lui, peut se rétrécir en cours de
-        // route : le transport retombe alors au plancher garanti. Une
-        // taille prise sur la mesure du moment ne passait plus du tout,
-        // et l'image se figeait sans que rien ne le dise.
+        // The packet size asked of the engine holds for the whole
+        // session, while the road, for its part, can narrow along the
+        // way: the transport then falls back to the guaranteed floor. A
+        // size taken from the measurement of the moment then no longer
+        // got through at all, and the picture froze with nothing saying
+        // so.
         let pair = pair().await;
         let now = pair.client_side.usable_datagram().unwrap();
         let promised = pair.client_side.guaranteed_usable_datagram().unwrap();
         assert!(promised <= now, "{promised} promis contre {now} mesurés");
-        // Et il en reste assez pour un vrai paquet vidéo, sans quoi la
-        // prudence ne servirait qu'à refuser les sessions.
+        // And enough of it is left for a real video packet, or the
+        // caution would only serve to refuse sessions.
         let size = crate::mtu::packet_size(promised).expect("le plancher doit rester utilisable");
         assert!(
             size.bytes >= crate::mtu::MINIMUM_SIZE,
@@ -877,11 +878,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_session_the_far_end_closes_reads_as_an_end_and_not_as_a_fault() {
-        // Ce que voit l'ordinateur regardé quand la personne ferme sa
-        // session : l'autre bout raccroche, sans code et sans un mot. Lu
-        // comme une panne, chaque fin de session ordinaire s'écrivait
-        // « connexion impossible » dans son journal, et une vraie panne
-        // ne s'y distinguait plus de rien.
+        // What the computer being watched sees when the person closes
+        // their session: the other end hangs up, with no code and
+        // without a word. Read as a fault, every ordinary end of a
+        // session was written as "connexion impossible" in its journal,
+        // and a real fault could no longer be told apart from anything
+        // there.
         let pair = pair().await;
         drop(pair.client_side);
         let ended = tokio::time::timeout(PATIENCE, pair.host_side.read_datagram()).await;
@@ -900,28 +902,30 @@ mod tests {
 
     #[tokio::test]
     async fn a_burst_bigger_than_the_send_queue_leaves_the_connection_alive() {
-        // Une image clé part d'un bloc, et la pompe la pousse plus vite
-        // que le transport ne la met sur le fil : la file d'envoi déborde
-        // à chaque image clé, sur le meilleur des réseaux. Ce qui déborde
-        // se jette, c'est voulu. Ce qui ne doit jamais arriver est que la
-        // connexion elle-même y passe, et c'est ce que fait un transport
-        // dont la comptabilité de file déraille : la session meurt sans
-        // qu'une seule ligne de journal dise pourquoi.
+        // A key frame leaves in one block, and the pump pushes it faster
+        // than the transport puts it on the wire: the send queue
+        // overflows at every key frame, on the best of networks. What
+        // overflows is thrown away, and that is intended. What must never
+        // happen is the connection itself going down with it, and that is
+        // what a transport whose queue accounting goes off the rails
+        // does: the session dies without a single journal line saying
+        // why.
         let pair = pair().await;
         let room = pair.client_side.guaranteed_usable_datagram().unwrap() as usize;
         let packet = Bytes::from(vec![0u8; room]);
 
-        // Aucune attente dans la boucle : rien ne part tant qu'elle
-        // tourne, donc la file déborde plusieurs fois.
+        // No waiting in the loop: nothing leaves while it runs, so
+        // the queue overflows several times.
         for _ in 0..(Sending::Pictures.queue() / room * 8) {
             pair.client_side.send_datagram(packet.clone()).unwrap();
         }
 
-        // Ce qui doit survivre est la connexion, pas les paquets. Un
-        // datagramme envoyé après une rafale faite pour tout faire
-        // déborder a toutes les raisons de se perdre, et le demander
-        // serait demander au transport une promesse qu'il ne fait pas :
-        // c'est un flux fiable qui dit si la connexion est encore là.
+        // What must survive is the connection, not the packets. A
+        // datagram sent after a burst made to overflow everything has
+        // every reason to get lost, and asking for it would be asking
+        // the transport for a promise it does not make: it is a
+        // reliable stream that says whether the connection is still
+        // there.
         let said = tokio::time::timeout(PATIENCE, pair.word_across(b"apres")).await;
         assert_eq!(
             said.expect("la connexion n'a pas survécu à la rafale"),

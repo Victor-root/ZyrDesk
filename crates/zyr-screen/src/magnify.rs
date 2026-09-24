@@ -312,21 +312,22 @@ mod tests {
 
     #[test]
     fn the_magnifications_windows_offers_are_written_in_its_own_order() {
-        // Le message privé parle en pas le long de cette liste : dans un
-        // autre ordre, demander 150 % en donnerait 175.
+        // The private message speaks in steps along this list: in
+        // another order, asking for 150% would give 175.
         assert!(OFFERED.windows(2).all(|two| two[0] < two[1]));
         assert_eq!(OFFERED.first(), Some(&100));
     }
 
     #[test]
     fn a_step_names_the_percentage_it_stands_for() {
-        // La recommandée est au rang `-lowest` : un pas de zéro vaut
-        // donc la recommandée, et les autres se comptent depuis elle.
+        // The recommended one is at rank `-lowest`: a step of zero is
+        // therefore the recommended one, and the others are counted
+        // from it.
         assert_eq!(at(0, 0), 100);
         assert_eq!(at(1, 0), 125);
         assert_eq!(at(1, -1), 100);
         assert_eq!(at(1, 2), 175);
-        // Hors de la liste, rien plutôt qu'un chiffre inventé.
+        // Off the list, nothing rather than a made-up number.
         assert_eq!(at(0, -1), 0);
         assert_eq!(at(11, 1), 0);
     }

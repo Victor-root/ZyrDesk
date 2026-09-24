@@ -11,9 +11,9 @@
 //! what it holds is what lets a window opened afterwards, or reopened
 //! after a crash, show the session instead of an empty home screen.
 
-// Relancer l'image et savoir par où elle passe ne se demande que depuis
-// le menu du bouton flottant, qui n'existe que sous Windows comme la
-// session elle-même.
+// Restarting the picture and finding out which way it travels are only
+// asked for from the floating button's menu, which only exists on
+// Windows, like the session itself.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::io;
@@ -28,10 +28,10 @@ use zyr_session::{Outcome, Step, Wanted};
 
 use crate::service;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module files its journal lines under.
 const TAG: &str = "session";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
@@ -1006,32 +1006,32 @@ pub fn end_it(app: &App) {
     });
 }
 
-/// Combien de temps une ouverture prend d'ordinaire.
+/// How long an opening usually takes.
 ///
-/// Passé ce délai, rien n'est abandonné : c'est le moment où l'attente
-/// est dite au journal. Elle l'était au contraire par un abandon, et
-/// c'est ce qui a été vu sur une machine lente : l'écran d'ouverture
-/// retiré à vingt secondes, l'accueil rendu avec sa carte de session
-/// verte, et l'image qui arrivait neuf secondes plus tard sur un écran
-/// que la personne croyait raté.
+/// Past this delay, nothing is given up: it is the moment the wait is
+/// told to the journal. It used to be told by giving up instead, and
+/// that is what was seen on a slow machine: the opening screen taken
+/// away at twenty seconds, the home window given back with its green
+/// session card, and the picture arriving nine seconds later on a
+/// screen the person believed had failed.
 const WINDOW_TAKES: Duration = Duration::from_secs(20);
 
-/// Et le mur, qui n'est pas une durée d'attente mais un garde-fou.
+/// And the wall, which is not a waiting time but a safeguard.
 ///
-/// Ce qui finit cette attente est le lecteur qui ouvre son image, la
-/// personne qui ferme, ou le lecteur qui s'en va. Ce plafond n'est là que
-/// pour qu'aucun fil ne tourne sans fin si aucun des trois n'arrive
-/// jamais, et il est large exprès : une ouverture qui prend une minute
-/// est une ouverture lente, pas une ouverture ratée.
+/// What ends this wait is the player opening its picture, the person
+/// closing, or the player going away. This ceiling is only there so that
+/// no thread runs forever if none of the three ever happens, and it is
+/// wide on purpose: an opening that takes a minute is a slow opening, not
+/// a failed one.
 const WINDOW_AT_MOST: Duration = Duration::from_secs(180);
 
-/// Le rythme une fois que l'ouverture a duré.
+/// The rhythm once the opening has gone on for a while.
 ///
-/// La milliseconde d'au-dessus sert à ne pas laisser voir la fenêtre du
-/// moteur avant qu'elle soit posée dans la nôtre, et cette course-là se
-/// joue à l'instant où elle s'ouvre. Passé le temps qu'une ouverture
-/// prend d'ordinaire, elle coûte plus qu'elle ne rapporte : une image,
-/// c'est seize millisecondes, et seize millisecondes ne se voient pas.
+/// The millisecond above is there so that the engine's window is never
+/// seen before it is laid in ours, and that race is run the instant it
+/// opens. Past the time an opening usually takes, it costs more than it
+/// brings: a frame is sixteen milliseconds, and sixteen milliseconds do
+/// not show.
 const WINDOW_STEP_AFTER: Duration = Duration::from_millis(16);
 
 /// How often it is looked for while it does.
@@ -1044,12 +1044,12 @@ const WINDOW_STEP_AFTER: Duration = Duration::from_millis(16);
 /// the one thing this whole arrangement exists to avoid.
 const WINDOW_STEP: Duration = Duration::from_millis(1);
 
-/// Le lecteur dont la lenteur a déjà été dite.
+/// The player whose slowness has already been told.
 ///
-/// Deux fils attendent la même image, et disaient donc la même phrase
-/// deux fois, à six secondes d'écart, ce qui se lit comme deux
-/// ouvertures lentes au lieu d'une seule. Le lecteur et non un simple
-/// oui : la session suivante doit pouvoir le dire à son tour.
+/// Two threads wait for the same picture, and so said the same
+/// sentence twice, six seconds apart, which reads as two slow
+/// openings instead of one. The player and not a plain yes: the next
+/// session must be able to say it in its turn.
 static SAID_IT_DRAGS: AtomicU32 = AtomicU32::new(0);
 
 /// Lays the picture in our window the moment the engine opens it.
@@ -1088,11 +1088,11 @@ fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
         if crate::floating::Floating::a_close_was_asked_for(app) {
             return false;
         }
-        // Un lecteur qui n'est plus là n'ouvrira plus rien, et l'écran
-        // d'ouverture n'a plus rien à couvrir. C'est cette fin-là qui
-        // manquait : sans elle, il n'y avait que le chronomètre pour
-        // arrêter l'attente, donc il arrêtait aussi celles qui allaient
-        // aboutir.
+        // A player that is gone will open nothing more, and the opening
+        // screen has nothing left to cover. That ending is the one that
+        // was missing: without it, there was only the stopwatch to stop
+        // the wait, so it also stopped the ones that were about to
+        // succeed.
         if !crate::floating::still_running(process) {
             return false;
         }
@@ -1203,15 +1203,15 @@ impl Opening {
 
     /// Notes when the picture itself landed, which no step says.
     ///
-    /// C'est pourtant la seule durée que la personne ressent : tout le
-    /// reste se passe pendant qu'elle regarde l'écran d'ouverture, et ce
-    /// qu'elle attend est l'image. Elle n'était écrite nulle part, et
-    /// une ouverture de vingt-cinq secondes ne se lisait donc dans
-    /// aucune ligne de ce journal.
+    /// Yet it is the only duration the person feels: everything else
+    /// happens while they watch the opening screen, and what they are
+    /// waiting for is the picture. It was written nowhere, and so an
+    /// opening of twenty-five seconds could not be read in any line of
+    /// this journal.
     ///
-    /// Le moment vient de l'image elle-même et jamais de l'horloge lue
-    /// ici : elle est souvent posée par l'autre fil pendant que
-    /// celui-ci regarde encore le lecteur tenir.
+    /// The moment comes from the picture itself and never from the clock
+    /// read here: it is often laid by the other thread while this one is
+    /// still watching the player hold.
     fn picture_laid(&mut self, at: Option<std::time::Instant>) {
         self.shown = at.map(|at| at.saturating_duration_since(self.asked));
     }
@@ -1386,8 +1386,8 @@ mod tests {
     fn a_picture_that_falls_over_comes_back_a_bounded_number_of_times() {
         let mut coming_back = ComingBack::none();
         assert!(!coming_back.tried());
-        // Elle revient, tant que la session ne tient pas assez longtemps
-        // entre deux pour que ce soit un nouvel accident.
+        // It comes back, as long as the session does not stand long
+        // enough in between for it to be a new accident.
         for attempt in 1..=COMES_BACK_IN_A_ROW {
             assert!(
                 coming_back.after(&fell_over(), Duration::from_secs(2)),
@@ -1395,8 +1395,8 @@ mod tests {
             );
             assert_eq!(coming_back.in_a_row, attempt);
         }
-        // Passé ce compte, la personne est prévenue plutôt que de
-        // regarder un écran qui ne se pose jamais.
+        // Past that count, the person is told rather than left
+        // watching a screen that never settles.
         assert!(!coming_back.after(&fell_over(), Duration::from_secs(2)));
         assert!(coming_back.tried());
     }
@@ -1408,8 +1408,8 @@ mod tests {
             assert!(coming_back.after(&fell_over(), Duration::from_secs(2)));
         }
         assert!(!coming_back.after(&fell_over(), Duration::from_secs(2)));
-        // Une session qui a tenu une minute puis tombe est une panne
-        // neuve, et non la même qui recommence.
+        // A session that stood for a minute and then falls over is a
+        // new failure, and not the same one starting again.
         assert!(coming_back.after(&fell_over(), HELD_LONG_ENOUGH));
         assert_eq!(coming_back.in_a_row, 1);
     }
@@ -1417,15 +1417,15 @@ mod tests {
     #[test]
     fn a_session_the_far_computer_ended_is_not_brought_back() {
         let mut coming_back = ComingBack::none();
-        // Raccrocher est une décision de l'ordinateur d'en face, pas un
-        // accident à défaire.
+        // Hanging up is a decision of the far computer, not an accident
+        // to undo.
         assert!(!coming_back.after(&Ok(Outcome::Ended), Duration::from_secs(2)));
-        // Et un ordinateur jamais joint a déjà répondu à la question
-        // qu'une reprise reposerait.
+        // And a computer never reached has already answered the
+        // question a comeback would ask again.
         assert!(!coming_back.after(&Ok(Outcome::Unreachable), Duration::from_secs(2)));
         assert!(!coming_back.tried());
-        // Un lecteur qui s'en va sans rien dire, si : de la place de la
-        // personne c'est la même chose qu'une session qui tombe.
+        // A player that goes away without a word, yes: from where the
+        // person sits, it is the same thing as a session falling over.
         assert!(coming_back.after(
             &Ok(Outcome::Unknown { code: Some(1) }),
             Duration::from_secs(2)
@@ -1435,19 +1435,20 @@ mod tests {
     #[test]
     fn an_opening_that_finds_nobody_is_only_retried_while_coming_back() {
         let mut coming_back = ComingBack::none();
-        // La première tentative est celle de la personne : elle a cliqué,
-        // et l'échec se dit là où elle le voit.
+        // The first attempt is the person's: they clicked, and the
+        // failure is told where they see it.
         assert!(!coming_back.again());
 
         assert!(coming_back.after(&fell_over(), Duration::from_secs(2)));
-        // Une reprise qui ne s'ouvre pas est un de ses essais, et ils sont
-        // comptés à part parce qu'ils coûtent une demi-minute chacun.
+        // A comeback that does not open is one of its tries, and they are
+        // counted apart because they cost half a minute each.
         for attempt in 1..=OPENINGS_MISSED_IN_A_ROW {
             assert!(coming_back.again(), "essai manqué {attempt}");
         }
         assert!(!coming_back.again());
 
-        // L'image revenue, ce qu'il a fallu pour y arriver est dépensé.
+        // With the picture back, what it took to get there has been
+        // spent.
         coming_back.opened();
         assert!(coming_back.again());
     }
@@ -1476,14 +1477,14 @@ mod tests {
                 "depuis « {watched} »"
             );
         }
-        // Un écran que la liste ne connaît pas est une liste qui a changé
-        // sous la session : le tour repart du premier.
+        // A screen the list does not know is a list that has changed
+        // under the session: the round starts again from the first.
         assert_eq!(
             the_one_after(&screens, "parti").map(|screen| screen.id.as_str()),
             Some("deux")
         );
-        // Et un ordinateur à un seul écran n'a nulle part où aller, ce
-        // qui n'est pas une panne : la touche est simplement muette.
+        // And a computer with a single screen has nowhere to go, which
+        // is not a fault: the key simply stays silent.
         assert!(the_one_after(&screens[..1], "un").is_none());
         assert!(the_one_after(&[], "").is_none());
     }

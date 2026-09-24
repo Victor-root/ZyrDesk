@@ -359,11 +359,11 @@ mod tests {
 
     #[test]
     fn the_engine_waits_as_long_as_the_tunnel_before_giving_a_session_up() {
-        // Le 4 septembre, deux sessions sont mortes à la dixième seconde
-        // d'un silence du réseau, deux fois : le tunnel en porte trente,
-        // le moteur en portait dix, et c'est le plus court qui décide.
-        // La patience est écrite une fois pour tout le produit, et le
-        // moteur en est informé.
+        // On 4 September, two sessions died at the tenth second of a
+        // network silence, twice: the tunnel holds out for thirty, the
+        // engine held out for ten, and it is the shorter one that
+        // decides. The patience is written once for the whole product,
+        // and the engine is told about it.
         let rendered = test_config().render_conf();
         assert!(
             rendered.contains(&format!(
@@ -376,12 +376,12 @@ mod tests {
 
     #[test]
     fn the_engine_is_told_nothing_at_all_about_this_computers_screens() {
-        // Le relevé de Victor : « il m'a coupé mes écrans physiques ».
-        // Le moteur sait arranger les écrans et le faisait, y compris
-        // éteindre ceux qu'il ne filme pas et rallumer une télé que son
-        // propriétaire garde éteinte. C'est le produit qui relève le
-        // bureau et le remet maintenant ; le moteur filme, et rien
-        // d'autre. Aucune de ces lignes ne doit reparaître.
+        // Victor's report: "it switched off my physical screens". The
+        // engine knows how to arrange screens and did so, including
+        // switching off the ones it does not film and switching back on
+        // a television its owner keeps switched off. It is the product
+        // that notes the desk and puts it back now; the engine films,
+        // and nothing else. None of these lines may come back.
         let rendered = test_config().render_conf();
         for line in [
             "dd_configuration_option",
@@ -396,12 +396,11 @@ mod tests {
 
     #[test]
     fn this_product_depends_on_nobody_for_sound() {
-        // Les deux lignes se tiennent. Sans la première, le moteur
-        // installe la carte son de Steam quand il en trouve les fichiers
-        // sur la machine. Sans la seconde, il cherche cette même carte et
-        // fait passer le son de l'ordinateur dessus le temps de chaque
-        // session : vide ne veut pas dire « aucune » pour lui, ça veut
-        // dire « celle de Steam ».
+        // The two lines hold each other up. Without the first, the engine
+        // installs Steam's sound card when it finds its files on the
+        // machine. Without the second, it looks for that same card and
+        // moves the computer's sound onto it for the length of every
+        // session: empty does not mean "none" to it, it means "Steam's".
         let rendered = test_config().render_conf();
         assert!(rendered.contains("install_steam_audio_drivers = disabled"));
         assert!(rendered.contains("virtual_sink = aucune-carte-son-virtuelle"));
@@ -409,11 +408,10 @@ mod tests {
 
     #[test]
     fn the_state_and_the_identifiers_are_two_files() {
-        // Un seul fichier pour les deux coûtait tous les appairages de
-        // la machine à chaque démarrage du service : le moteur relit et
-        // réécrit ce fichier pour y poser ses identifiants, à travers
-        // une bibliothèque qui ne sait pas rendre une liste JSON telle
-        // qu'elle l'a lue.
+        // A single file for both cost every pairing on the machine at
+        // every start of the service: the engine reads and rewrites
+        // that file to put its identifiers in it, through a library
+        // that cannot give a JSON list back as it read it.
         let config = test_config();
         assert_ne!(config.state_path(), config.credentials_path());
     }
@@ -463,10 +461,10 @@ mod tests {
         assert!(!rendered.contains("output_name"));
         assert!(!rendered.contains("adapter_name"));
 
-        // L'écran se nomme du nom que le moteur lui donne, jamais de
-        // celui que Windows numérote : ce dernier ne figure pas dans la
-        // liste qu'il consulte, donc il ne nomme rien et le moteur filme
-        // ce qu'il trouve, sans le dire.
+        // The screen is named by the name the engine gives it, never by
+        // the numbered name Windows gives it: the latter is not in the
+        // list the engine looks at, so it names nothing and the engine
+        // films whatever it finds, without saying so.
         let with_both = test_config()
             .with_screen("{aed131a5-3850-5dc6-89be-4967cca4ef04}")
             .with_gpu("NVIDIA GeForce RTX 4070")
@@ -477,10 +475,10 @@ mod tests {
 
     #[test]
     fn the_screen_a_computer_grew_is_named_without_a_word_about_the_others() {
-        // Nommer l'écran à filmer et arranger les écrans sont deux choses
-        // différentes, et elles étaient devenues une seule. Un ordinateur
-        // sans écran branché fait pousser le sien et le nomme ici ; ce
-        // qu'il ne fait plus, c'est demander au moteur d'éteindre le reste.
+        // Naming the screen to film and arranging the screens are two
+        // different things, and they had become one. A computer with no
+        // screen plugged in grows its own and names it here; what it no
+        // longer does is ask the engine to switch off the rest.
         let grown = test_config()
             .with_screen("{64243705-4020-5895-b923-adc862c3457e}")
             .render_conf();
@@ -494,9 +492,9 @@ mod tests {
         // Without this setting, the engine falls back to half the
         // requested rate as soon as the screen stops changing.
         //
-        // Le plafond des sessions et non soixante : ce fichier est écrit
-        // avant qu'on sache à quelle cadence la session s'ouvrira, et le
-        // moteur ne réémet jamais au-dessus de ce qu'elle demande.
+        // The sessions' ceiling, and not sixty: this file is written
+        // before anyone knows at what frame rate the session will open,
+        // and the engine never resends above what the session asks for.
         assert!(
             rendered.contains(&format!(
                 "minimum_fps_target = {}",
@@ -508,10 +506,10 @@ mod tests {
 
     #[test]
     fn a_computer_that_cannot_keep_up_stops_resending_a_still_screen() {
-        // Absente et non baissée : la réponse propre du moteur est la
-        // moitié de la cadence demandée, et c'est ce que « éteint » veut
-        // dire. Écrire un nombre serait en choisir un troisième que
-        // personne n'a demandé.
+        // Absent and not turned down: the engine's own answer is half
+        // the frame rate asked for, and that is what "off" means.
+        // Writing a number would be choosing a third one nobody asked
+        // for.
         let rendered = test_config()
             .with_serving(Serving {
                 steady_rate: false,
@@ -523,11 +521,10 @@ mod tests {
 
     #[test]
     fn the_floor_asked_of_a_running_engine_is_the_one_its_file_carries() {
-        // Le même nombre par les deux chemins : le fichier que le moteur
-        // lit à son démarrage, et la porte par laquelle on le lui demande
-        // pendant qu'il tourne. Zéro quand c'est éteint, qui est la
-        // valeur propre de cette clé chez le moteur : la moitié de la
-        // cadence demandée.
+        // The same number by both paths: the file the engine reads when
+        // it starts, and the door through which it is asked of it while
+        // it runs. Zero when it is off, which is the engine's own value
+        // for this key: half the frame rate asked for.
         assert_eq!(minimum_fps_target(true), zyr_proto::session::FASTEST_RATE);
         assert_eq!(minimum_fps_target(false), 0);
         assert!(test_config().render_conf().contains(&format!(
@@ -538,9 +535,9 @@ mod tests {
 
     #[test]
     fn the_way_the_screen_is_taken_is_the_one_that_was_asked_for() {
-        // Le défaut voit les invites administrateur et l'écran de
-        // connexion ; l'autre est plus rapide sur certaines machines et
-        // ne les voit pas. Les deux doivent pouvoir sortir d'ici.
+        // The default sees the administrator prompts and the sign-in
+        // screen; the other is faster on some machines and does not see
+        // them. Both must be able to come out of here.
         assert!(test_config().render_conf().contains("capture = ddx"));
         let rendered = test_config()
             .with_serving(Serving {

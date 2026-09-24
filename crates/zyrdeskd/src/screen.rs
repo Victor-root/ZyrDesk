@@ -1222,8 +1222,9 @@ mod tests {
         file.write_all(said.as_bytes()).unwrap();
     }
 
-    /// Le cas de Victor, mot pour mot : deux écrans allumés, la télé
-    /// éteinte en troisième, et l'écran virtuel du produit à côté.
+    /// Victor's case, word for word: two screens switched on, the
+    /// television switched off as a third, and the product's virtual
+    /// screen beside them.
     const A_DESK: &str = r#"
 [2026-08-31 09:12:03]: Info: Currently available display devices:
 [
@@ -1262,10 +1263,10 @@ mod tests {
 
     #[test]
     fn only_the_screens_this_computer_is_really_showing_on_are_offered() {
-        // L'écran éteint ne montrerait qu'une image noire, et l'écran que
-        // le produit fait pousser n'est pas un écran que quelqu'un assis
-        // devant la machine peut voir : ni l'un ni l'autre n'est un écran
-        // qu'on demande à regarder.
+        // The switched-off screen would only show a black picture, and
+        // the screen the product grows is not a screen someone sitting at
+        // the machine can see: neither one is a screen anyone asks to
+        // watch.
         let (log, folder) = a_log("ecrans");
         add(&log, A_DESK);
 
@@ -1277,8 +1278,8 @@ mod tests {
         assert_eq!(seen[1].name, "Dell U2412M");
         assert!(!seen[1].main);
 
-        // Et un moteur qui n'a rien écrit ne dit rien, plutôt que de
-        // faire échouer la lecture.
+        // And an engine that has written nothing says nothing,
+        // rather than making the reading fail.
         assert!(on_this_computer(&folder.join("rien.log")).is_empty());
 
         let _ = std::fs::remove_dir_all(&folder);
@@ -1286,9 +1287,9 @@ mod tests {
 
     #[test]
     fn what_the_engine_said_before_the_watch_began_is_not_answered_for() {
-        // Le journal du moteur porte tous ses démarrages précédents. Une
-        // plainte d'il y a trois semaines, c'est un écran que quelqu'un a
-        // remis à la main depuis longtemps.
+        // The engine's log carries all of its earlier starts. A complaint
+        // from three weeks ago is a screen someone put back by hand long
+        // ago.
         let (log, folder) = a_log("avant");
         add(&log, GAVE_UP);
 
@@ -1306,7 +1307,7 @@ mod tests {
         let mut watching = Watching::from_here(&log);
         add(&log, GAVE_UP);
         assert!(watching.gave_up_on_the_screens());
-        // Et pas une deuxième fois : ce qui a été lu est derrière nous.
+        // And not a second time: what has been read is behind us.
         assert!(!watching.gave_up_on_the_screens());
 
         let _ = std::fs::remove_dir_all(&folder);
@@ -1314,9 +1315,9 @@ mod tests {
 
     #[test]
     fn a_line_caught_half_written_is_read_whole_at_the_next_look() {
-        // Le moteur écrit dans ce fichier pendant qu'on le lit. Une
-        // phrase coupée en deux et lue en deux morceaux ne ressemble plus
-        // à rien, et c'est justement celle qu'il ne faut pas manquer.
+        // The engine writes to this file while it is being read. A
+        // sentence cut in two and read in two pieces no longer looks like
+        // anything, and it is precisely the one that must not be missed.
         let (log, folder) = a_log("coupe");
         let mut watching = Watching::from_here(&log);
 
@@ -1331,9 +1332,9 @@ mod tests {
 
     #[test]
     fn a_log_cut_back_from_its_top_does_not_leave_the_watch_lost() {
-        // Le journal est rogné quand il devient trop gros. Repartir d'une
-        // position qui n'existe plus, c'est lire le milieu d'une ligne
-        // pour toujours.
+        // The log is cut back when it grows too big. Starting again from
+        // a position that no longer exists means reading the middle of a
+        // line for ever.
         let (log, folder) = a_log("rogne");
         add(
             &log,

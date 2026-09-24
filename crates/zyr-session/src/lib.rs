@@ -1264,14 +1264,15 @@ mod tests {
 
     #[test]
     fn a_session_that_never_took_is_worth_a_second_introduction() {
-        // Ce que cet ordinateur retient d'un appairage n'est qu'une note
-        // qu'il s'est écrite à lui-même : la machine d'en face peut avoir
-        // été réinstallée, remise à zéro, ou simplement avoir oublié. Le
-        // moteur repart alors en moins d'une seconde, et c'est le seul
-        // signe qu'on en ait.
-        // Et ce que le lecteur a dit est rendu tel quel : c'est la seule
-        // pièce qui distingue un ordinateur qui oublie vraiment d'un
-        // lecteur mort d'autre chose et lu comme tel.
+        // What this computer remembers of a pairing is only a note it
+        // wrote to itself: the far machine may have been reinstalled,
+        // reset, or may simply have forgotten. The engine then leaves
+        // again in less than a second, and that is the only sign of it
+        // there is.
+        //
+        // And what the player said is handed back as it is: it is the
+        // only piece that tells a computer that really forgets apart from
+        // a player that died of something else and was read as such.
         assert_eq!(
             worth_introducing_again(Some(Outcome::Failed), true),
             Some(Outcome::Failed)
@@ -1285,23 +1286,23 @@ mod tests {
             Some(Outcome::Unknown { code: Some(9) })
         );
 
-        // Toujours en cours : la session a pris, on n'y touche pas.
+        // Still running: the session took, so it is left alone.
         assert_eq!(worth_introducing_again(None, true), None);
-        // Terminée toute seule : quelqu'un l'a fermée. Réappairer
-        // rouvrirait une session qu'on vient de quitter.
+        // Ended on its own: somebody closed it. Pairing again
+        // would reopen a session that was just left.
         assert_eq!(worth_introducing_again(Some(Outcome::Ended), true), None);
     }
 
     #[test]
     fn closing_a_session_restarts_no_pairing() {
-        // Fermer une session rend son bureau à l'ordinateur d'en face,
-        // qui reprend le flux, et le moteur s'arrête de la seule façon
-        // qu'il connaisse : sur un échec. Vu d'ici, c'est exactement un
-        // ordinateur qui ne nous reconnaît plus. Sans la question posée
-        // à l'appelant, fermer pendant les secondes qui suivent
-        // l'ouverture faisait repartir un appairage par-dessus une
-        // session qu'on venait de quitter, et le moteur d'en face, à qui
-        // personne ne demandait de code, le refusait.
+        // Closing a session gives its desktop back to the far computer,
+        // which takes the stream back, and the engine stops in the only
+        // way it knows: on a failure. Seen from here, that is exactly a
+        // computer that no longer recognises us. Without the question
+        // put to the caller, closing during the seconds after the
+        // opening set a pairing off again on top of a session that had
+        // just been left, and the far engine, which nobody was asking
+        // for a code, refused it.
         for ending in [
             Some(Outcome::Failed),
             Some(Outcome::Unreachable),
@@ -1319,10 +1320,10 @@ mod tests {
 
     #[test]
     fn an_abandoned_opening_does_not_wait_for_the_service_to_answer() {
-        // Un service qui prend l'appel et ne répond jamais : vu d'ici,
-        // c'est exactement un ordinateur que l'on court après pendant
-        // trente secondes, et c'est là que passait tout le temps d'une
-        // ouverture. Rien dans cette attente ne regardait la croix.
+        // A service that takes the call and never answers: seen from
+        // here, it is exactly a computer being chased for thirty
+        // seconds, and that is where the whole time of an opening
+        // went. Nothing in that wait looked at the cross.
         let channel = format!("zyr-session-test-{}-lachee", std::process::id());
         let listening = channel.clone();
         let (opened, when_open) = std::sync::mpsc::channel();
@@ -1334,8 +1335,8 @@ mod tests {
             runtime.block_on(async move {
                 let mut door = zyr_control::Door::open(&listening).expect("canal d'essai");
                 opened.send(()).expect("canal d'essai annoncé");
-                // Tenue ouverte : une conversation qui se ferme est une
-                // toute autre panne, et se verrait sans rien de ceci.
+                // Held open: a conversation that closes is a whole
+                // other fault, and would show without any of this.
                 let _taken = door.accept().await;
                 std::future::pending::<()>().await;
             });
@@ -1350,9 +1351,9 @@ mod tests {
             .block_on(Service::join_on(&channel))
             .expect("joindre le service d'essai");
 
-        // Lâchée au troisième coup d'œil, ce qui demande qu'il y en ait
-        // eu trois : la question se pose pendant l'attente, et non une
-        // fois avant puis une fois après, qui est ce qui existait déjà.
+        // Let go at the third glance, which requires there to have been
+        // three: the question is asked during the wait, and not once
+        // before and then once after, which is what already existed.
         let looks = std::sync::atomic::AtomicUsize::new(0);
         let began = Instant::now();
         let outcome = answered(&runtime, &mut service, &Request::Standing, &|| {
@@ -1364,9 +1365,9 @@ mod tests {
             looks.load(std::sync::atomic::Ordering::Relaxed) >= 3,
             "{looks:?}"
         );
-        // Et rendue à peu près tout de suite, ce qui est le fond de
-        // l'affaire : sans cela on sortait d'ici une demi-minute après
-        // le clic, quand le service avait fini de courir.
+        // And handed back almost at once, which is the heart of the
+        // matter: without that, this came back half a minute after the
+        // click, when the service had finished chasing.
         assert!(
             began.elapsed() < Duration::from_secs(5),
             "{:?}",
@@ -1376,21 +1377,20 @@ mod tests {
 
     #[test]
     fn giving_up_never_reads_as_a_refusal() {
-        // La moitié de ces demandes sont faites pour pouvoir échouer :
-        // l'ordinateur d'en face refuse de se taire, de changer d'écran,
-        // et l'image vaut la peine quand même. L'abandon emprunte le
-        // même chemin de retour et n'est pas de ceux-là ; rendu comme un
-        // refus, il s'écrivait « les enceintes restent allumées » et
-        // l'ouverture continuait vers une image que plus personne
-        // n'attendait.
+        // Half of these asks are made so that they can fail: the far
+        // computer refuses to go quiet, to change screen, and the
+        // picture is worth having all the same. Giving up takes the same
+        // way back and is not one of those; handed back as a refusal, it
+        // was written "les enceintes restent allumées" and the opening
+        // carried on towards a picture nobody was waiting for any more.
         assert!(matches!(GaveUp::Abandoned.refusal(), Err(Error::Abandoned)));
         assert!(matches!(
             GaveUp::Abandoned.or(Error::Handover),
             Error::Abandoned
         ));
 
-        // Un vrai refus, lui, passe entier : c'est ce qui s'écrit dans
-        // le journal et sur l'écran d'ouverture.
+        // A real refusal, for its part, goes through whole: it is what
+        // gets written in the journal and on the opening screen.
         assert_eq!(
             GaveUp::Said("son moteur est trop ancien".to_string())
                 .refusal()

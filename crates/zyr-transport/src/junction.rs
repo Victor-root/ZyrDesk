@@ -2101,8 +2101,8 @@ mod tests {
     #[tokio::test]
     async fn two_computers_reach_each_other_through_their_cards() {
         let pair = pair();
-        // Chacun ne connaît de l'autre que son adresse réelle, comme un
-        // candidat venu du serveur.
+        // Each knows only the real address of the other, like a
+        // candidate that came from the server.
         pair.client
             .add_candidates(pair.host_card, [pair.host.local_address().unwrap()]);
         pair.host
@@ -2120,10 +2120,10 @@ mod tests {
         let host_side = accepted.unwrap();
         let client_side = connected.unwrap();
 
-        // Le transport ne connaît que les cartes.
+        // The transport knows only the cards.
         assert_eq!(client_side.remote_address(), pair.host_card);
         assert_eq!(host_side.remote_address(), pair.client_card);
-        // Et l'aiguilleur sait par où ça passe vraiment.
+        // And the junction knows which way it really goes.
         let road = pair.client.road(pair.host_card).unwrap();
         assert_eq!(road.through, pair.host.local_address().unwrap());
         assert!(road.round_trip < Duration::from_secs(1));
@@ -2137,8 +2137,8 @@ mod tests {
             .unwrap();
         assert_eq!(&received[..], b"frame");
 
-        // Ce vrai trafic a prouvé la route côté hôte, qui l'a reçu : une
-        // sonde seule ne l'aurait jamais fait.
+        // This real traffic proved the road on the host side, which
+        // received it: a probe alone would never have done so.
         {
             let table = pair.host.inner.table.lock().expect("aiguilleur");
             let expected = table.expected.get(&pair.client_card).unwrap();
@@ -2154,7 +2154,7 @@ mod tests {
             );
         }
 
-        // Chacun a été vu par l'autre, à son adresse réelle.
+        // Each was seen by the other, at its real address.
         assert!(
             pair.client
                 .seen_as()
@@ -2172,8 +2172,8 @@ mod tests {
         let pair = pair();
         pair.host
             .add_candidates(pair.client_card, [pair.client.local_address().unwrap()]);
-        // La connexion part tout de suite, avant qu'aucune adresse ne
-        // soit connue : ses paquets attendent.
+        // The connection starts at once, before any address is known:
+        // its packets wait.
         let connecting = tokio::spawn({
             let end = pair.client_end.clone();
             let card = pair.host_card;
@@ -2194,9 +2194,10 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn a_session_leaves_by_the_relay_and_goes_direct_without_breaking() {
-        // Le cas que le relais existe pour porter : rien ne se joint
-        // directement au départ, la session part quand même, et le
-        // direct la reprend dès qu'il est validé, sans coupure.
+        // The case the relay exists to carry: nothing connects
+        // directly at the start, the session starts anyway, and the
+        // direct road takes it over as soon as it is validated,
+        // without a break.
         let relay = crate::relay::Bare::open();
         let host_identity = Arc::new(Identity::generate().unwrap());
         let client_identity = Arc::new(Identity::generate().unwrap());
@@ -2219,8 +2220,8 @@ mod tests {
         )
         .unwrap();
 
-        // Chaque bout ouvre sa branche : aucune adresse de l'autre n'est
-        // connue, et aucune ne le sera avant la bascule.
+        // Each end opens its branch: no address of the other is known,
+        // and none will be before the switch.
         for (junction, card, identity) in [
             (&host, client_card, &host_identity),
             (&client, host_card, &client_identity),
@@ -2258,7 +2259,8 @@ mod tests {
             .unwrap();
         assert_eq!(&received[..], b"par le relais");
 
-        // Le relais est prouvé côté hôte, qui a reçu ce trafic réel.
+        // The relay is proven on the host side, which received this
+        // real traffic.
         {
             let table = host.inner.table.lock().expect("aiguilleur");
             let expected = table.expected.get(&client_card).unwrap();
@@ -2273,10 +2275,11 @@ mod tests {
             );
         }
 
-        // Le direct devient possible : la bascule est immédiate, et la
-        // même connexion continue, sur la même carte. Une route prouvée
-        // ne protège que face à une inconnue de son espèce ; le direct
-        // reste sans égard pour ce que le relais vient de prouver.
+        // The direct road becomes possible: the switch is immediate,
+        // and the same connection goes on, on the same card. A proven
+        // road only protects against a stranger of its own kind; the
+        // direct road takes no account of what the relay has just
+        // proven.
         client.add_candidates(host_card, [host.local_address().unwrap()]);
         host.add_candidates(client_card, [client.local_address().unwrap()]);
         let direct = tokio::time::timeout(PATIENCE, async {
@@ -2351,8 +2354,8 @@ mod tests {
         let stranger = Identity::generate().unwrap();
         let door = junction(&host_identity);
         let card = door.expect(client_identity.fingerprint(), "s1");
-        // C'est le transport qui lit la prise : sans point d'accès dessus,
-        // personne n'entendrait rien.
+        // It is the transport that reads the socket: without an endpoint
+        // on it, nobody would hear anything.
         let _end = TunnelEndpoint::host_at(
             &host_identity,
             client_identity.fingerprint(),
@@ -2369,7 +2372,8 @@ mod tests {
             number: 1,
             sent: 0,
         };
-        // L'inconnu se fait passer pour le client attendu.
+        // The stranger passes itself off as the expected
+        // client.
         let forged = probe::seal_probe(&stranger, &probe).unwrap();
         raw.send_to(&forged, door.local_address().unwrap())
             .await
@@ -2380,7 +2384,7 @@ mod tests {
         assert!(answered.is_err(), "un écho est parti vers un inconnu");
         assert!(door.road(card).is_none());
 
-        // Le vrai client, lui, reçoit son écho.
+        // The real client, for its part, gets its echo.
         let genuine = probe::seal_probe(&client_identity, &probe).unwrap();
         raw.send_to(&genuine, door.local_address().unwrap())
             .await
@@ -2428,7 +2432,7 @@ mod tests {
         assert_eq!(seen, Some(junction.local_address().unwrap()));
         assert_eq!(junction.seen_as(), vec![junction.local_address().unwrap()]);
 
-        // Un miroir muet : rien, sans rester bloqué.
+        // A silent mirror: nothing, without getting stuck.
         let silent = tokio::net::UdpSocket::bind(local()).await.unwrap();
         let seen = junction.ask_the_mirror(silent.local_addr().unwrap()).await;
         assert_eq!(seen, None);
@@ -2458,24 +2462,24 @@ mod tests {
         let first = expected.number(now);
         assert!(expected.answered(a, first, Duration::from_millis(20), now));
         assert_eq!(moved(expected.elect(now)), Some((None, a)));
-        // Un second chemin à peine plus court ne vaut pas une bascule.
+        // A second path barely shorter is not worth a switch.
         let second = expected.number(now);
         assert!(expected.answered(b, second, Duration::from_millis(18), now));
         assert_eq!(moved(expected.elect(now)), None);
-        // Nettement plus court, si.
+        // Clearly shorter, it is.
         let third = expected.number(now);
         assert!(expected.answered(b, third, Duration::from_millis(1), now));
         assert_eq!(moved(expected.elect(now)), Some((Some(a), b)));
-        // Un écho à un numéro inconnu ne compte pas.
+        // An echo to an unknown number does not count.
         assert!(!expected.answered(a, 999, Duration::from_millis(1), now));
     }
 
     #[test]
     fn a_road_real_traffic_has_crossed_is_not_dropped_for_an_unproven_stranger() {
-        // Une sonde ne prouve que la sonde : une inconnue qui répond
-        // nettement plus vite, hors de toute marge ordinaire, ne doit
-        // pas prendre la place d'une route que du vrai trafic a déjà
-        // traversée, tant qu'elle n'a elle-même rien prouvé.
+        // A probe proves only the probe: a stranger that answers
+        // clearly faster, beyond any ordinary margin, must not take
+        // the place of a road that real traffic has already crossed,
+        // as long as it has proven nothing itself.
         let now = Instant::now();
         let mut expected = expecting(now);
         let a = direct("10.0.0.1:47000");
@@ -2493,18 +2497,18 @@ mod tests {
             "une route prouvée a cédé la place à une inconnue plus rapide mais non prouvée"
         );
 
-        // Elle fait ses preuves à son tour : la règle ordinaire reprend
-        // la main entre deux routes désormais à égalité de preuve.
+        // It proves itself in its turn: the ordinary rule takes over
+        // again between two roads now equal in proof.
         expected.proven(b, now);
         assert_eq!(moved(expected.elect(now)), Some((Some(a), b)));
     }
 
     #[test]
     fn a_road_that_never_carries_anything_gives_way_once_overdue() {
-        // Une route répond à chaque sonde, toujours la meilleure
-        // mesurée, et pourtant rien de réel n'est jamais parti dessus.
-        // Passé PROVEN_WITHIN, une autre route qui répond doit pouvoir
-        // essayer à sa place.
+        // A road answers every probe, always the best measured, and
+        // yet nothing real has ever gone out on it. Past
+        // PROVEN_WITHIN, another road that answers must be able to try
+        // in its place.
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
@@ -2513,15 +2517,15 @@ mod tests {
         assert!(expected.answered(a, first, Duration::from_millis(5), start));
         assert_eq!(moved(expected.elect(start)), Some((None, a)));
 
-        // b répond aussi, nettement plus lentement : la marge ordinaire
-        // laisse la session sur a, qui n'a pourtant jamais rien porté.
+        // b answers too, clearly slower: the ordinary margin leaves the
+        // session on a, which has nevertheless never carried anything.
         let second = expected.number(start);
         assert!(expected.answered(b, second, Duration::from_millis(80), start));
         assert_eq!(moved(expected.elect(start)), None);
 
-        // Le temps passe : a répond toujours aux sondes, plus vite que
-        // b, mais n'a jamais laissé passer le moindre octet réel. b a
-        // droit à son tour malgré sa mesure plus mauvaise.
+        // Time passes: a still answers the probes, faster than b, but
+        // has never let a single real byte through. b gets its turn
+        // despite its worse measurement.
         let later = start + PROVEN_WITHIN;
         assert_eq!(
             moved(expected.elect(later)),
@@ -2529,22 +2533,22 @@ mod tests {
             "une route jamais prouvée a gardé la main indéfiniment"
         );
 
-        // b fait ses preuves : la marge ordinaire s'applique de nouveau,
-        // cette fois en sa faveur, même si a mesure toujours plus court.
+        // b proves itself: the ordinary margin applies again, this time
+        // in its favour, even though a still measures shorter.
         expected.proven(b, later);
         assert_eq!(moved(expected.elect(later)), None);
     }
 
     #[test]
     fn a_card_recovering_from_a_real_outage_gets_its_road_a_fair_chance() {
-        // Le 7 septembre (D168) : une route déjà prouvée depuis
-        // plusieurs minutes est donnée pour morte lors d'une vraie
-        // coupure réseau de quelques secondes (trois sondes ratées,
-        // six secondes), et une route à la même adresse répond
-        // aussitôt après, neuve pour l'aiguilleur puisque celle qui
-        // portait la preuve a disparu avec l'ancienne. Elle doit
-        // avoir, elle aussi, ses vingt secondes pour faire ses
-        // preuves, sans être jugée sur l'instant.
+        // On 7 September (D168): a road already proven for several
+        // minutes is given up for dead during a real network outage
+        // of a few seconds (three missed probes, six seconds), and
+        // a road at the same address answers straight after, new to
+        // the junction since the one that carried the proof
+        // vanished with the old one. It too must have its twenty
+        // seconds to prove itself, without being judged on the
+        // spot.
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
@@ -2554,26 +2558,25 @@ mod tests {
         assert_eq!(moved(expected.elect(start)), Some((None, a)));
         expected.proven(a, start);
 
-        // La coupure : a donnée pour morte, b prend la main un
-        // instant, le temps qu'elle dure.
+        // The outage: a given up for dead, b takes over for a
+        // moment, as long as it lasts.
         let outage = start + Duration::from_secs(6);
         expected.paths.retain(|path| path.through != a);
         let number = expected.number(outage);
         assert!(expected.answered(b, number, Duration::from_millis(5), outage));
         assert_eq!(moved(expected.elect(outage)), Some((Some(a), b)));
 
-        // a répond de nouveau, un instant plus tard : une route
-        // toute neuve pour l'aiguilleur, qui n'a encore rien prouvé
-        // par elle-même.
+        // a answers again, a moment later: a brand new road to the
+        // junction, which has proven nothing by itself yet.
         let reborn = outage + Duration::from_millis(500);
         let number = expected.number(reborn);
         assert!(expected.answered(a, number, Duration::from_millis(1), reborn));
         assert_eq!(moved(expected.elect(reborn)), Some((Some(b), a)));
 
-        // Juste avant ses vingt secondes à elle, toujours rien
-        // prouvé sur cette route neuve : elle ne doit pourtant pas
-        // être sanctionnée, la carte étant encore dans la coupure
-        // dont elle se remet.
+        // Just short of its own twenty seconds, still nothing
+        // proven on this new road: yet it must not be penalised,
+        // the card still being in the outage it is recovering
+        // from.
         let still_fresh = reborn + PROVEN_WITHIN - Duration::from_millis(1);
         assert_eq!(
             moved(expected.elect(still_fresh)),
@@ -2584,14 +2587,14 @@ mod tests {
 
     #[test]
     fn a_card_long_proven_still_gives_way_once_its_own_road_stays_silent() {
-        // Le 8 septembre : une carte qui portait du vrai trafic
-        // depuis dix-neuf minutes perd sa route, en essaie une
-        // autre le temps d'une coupure de quelques secondes, puis
-        // s'installe sur une troisième qui répond à chaque sonde
-        // sans jamais plus rien porter de réel. Rien ne remettait
-        // plus jamais cette route en cause, la carte ayant déjà
-        // fait ses preuves, et la session est morte trente secondes
-        // plus tard faute d'avoir jamais rien reçu (D173).
+        // On 8 September: a card that had been carrying real
+        // traffic for nineteen minutes loses its road, tries
+        // another for the length of an outage of a few seconds,
+        // then settles on a third that answers every probe without
+        // ever carrying anything real again. Nothing ever called
+        // that road into question again, the card having already
+        // proven itself, and the session died thirty seconds later
+        // for never having received anything (D173).
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
@@ -2602,32 +2605,32 @@ mod tests {
         assert_eq!(moved(expected.elect(start)), Some((None, a)));
         expected.proven(a, start);
 
-        // La coupure : a donnée pour morte, b prend la main un
-        // instant.
+        // The outage: a given up for dead, b takes over for a
+        // moment.
         let outage = start + Duration::from_secs(6);
         expected.paths.retain(|path| path.through != a);
         let number = expected.number(outage);
         assert!(expected.answered(b, number, Duration::from_millis(5), outage));
         assert_eq!(moved(expected.elect(outage)), Some((Some(a), b)));
 
-        // c répond à son tour, un peu plus vite, et prend la place
-        // de b : la route qui portera la carte jusqu'au bout, sans
-        // jamais rien y laisser passer de réel.
+        // c answers in its turn, a little faster, and takes the
+        // place of b: the road that will carry the card to the
+        // end, without ever letting anything real through on it.
         let settled = outage + Duration::from_millis(500);
         let number = expected.number(settled);
         assert!(expected.answered(c, number, Duration::from_millis(1), settled));
         assert_eq!(moved(expected.elect(settled)), Some((Some(b), c)));
 
-        // Moins de vingt secondes après la dernière preuve réelle,
-        // c ne doit pas être remise en cause : la carte est encore
-        // dans sa coupure.
+        // Less than twenty seconds after the last real proof, c
+        // must not be called into question: the card is still in
+        // its outage.
         let still_recovering = start + PROVEN_WITHIN - Duration::from_millis(1);
         assert_eq!(moved(expected.elect(still_recovering)), None);
 
-        // Bien après vingt secondes depuis la dernière preuve
-        // réelle, et depuis que c est en service : une autre route
-        // qui répond doit pouvoir essayer à sa place, comme pour
-        // une carte qui n'aurait jamais rien prouvé de sa vie.
+        // Well past twenty seconds since the last real proof, and
+        // since c went into service: another road that answers
+        // must be able to try in its place, as for a card that had
+        // never proven anything in its life.
         let long_after = settled + PROVEN_WITHIN + Duration::from_secs(1);
         assert_eq!(
             moved(expected.elect(long_after)),
@@ -2638,11 +2641,11 @@ mod tests {
 
     #[test]
     fn a_single_missed_probe_does_not_cost_a_road_its_seat() {
-        // Une route qui a raté une seule sonde n'a pas cessé de
-        // répondre : il en faut trois d'affilée pour ça, comme partout
-        // ailleurs dans ce fichier. Céder la place dès la première
-        // ferait basculer la session à chaque paquet perdu sur un lien
-        // qui en perd de temps en temps.
+        // A road that has missed a single probe has not stopped
+        // answering: that takes three in a row, as everywhere else in
+        // this file. Giving way at the first would switch the session
+        // over on every packet lost on a link that loses one now and
+        // then.
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
@@ -2655,8 +2658,8 @@ mod tests {
         assert!(expected.answered(b, second, Duration::from_millis(80), start));
         assert_eq!(moved(expected.elect(start)), None);
 
-        // Un premier tour relance la sonde ; faute d'écho d'ici le
-        // second, faute d'un troisième, elle compte pour manquée.
+        // A first turn sends the probe again; with no echo by the
+        // second, for want of a third, it counts as missed.
         expected.look_over(start + KEEP_EVERY);
         let now = start + KEEP_EVERY * 2;
         expected.look_over(now);
@@ -2667,8 +2670,8 @@ mod tests {
             .unwrap();
         assert_eq!(path.misses, 1);
 
-        // b, bien plus lente, ne doit pas prendre la place de a pour
-        // cette seule sonde manquée.
+        // b, much slower, must not take the place of a over this
+        // single missed probe.
         assert_eq!(
             moved(expected.elect(now)),
             None,
@@ -2678,10 +2681,9 @@ mod tests {
 
     #[test]
     fn a_road_that_misses_once_then_answers_signals_a_recovery() {
-        // Le signal qu'une connexion au-dessus de cette carte attend
-        // pour ne pas patienter jusqu'au bout de ses propres délais :
-        // la route élue s'est tue le temps d'une sonde, puis a répondu
-        // de nouveau.
+        // The signal a connection above this card waits for so as not
+        // to sit out its own timeouts to the end: the elected road
+        // went quiet for the length of a probe, then answered again.
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
@@ -2695,7 +2697,7 @@ mod tests {
         assert!(expected.answered(b, second, Duration::from_millis(80), start));
         assert!(!expected.take_recovery(), "b n'est pas la route élue");
 
-        // Un tour de sonde manqué sur a, comme dans le test au-dessus.
+        // A missed probe round on a, as in the test above.
         expected.look_over(start + KEEP_EVERY);
         let now = start + KEEP_EVERY * 2;
         expected.look_over(now);
@@ -2709,21 +2711,21 @@ mod tests {
             1
         );
 
-        // a répond de nouveau : la route élue revient après un silence.
+        // a answers again: the elected road comes back after a silence.
         let third = expected.number(now);
         assert!(expected.answered(a, third, Duration::from_millis(5), now));
         assert!(
             expected.take_recovery(),
             "le retour de la route élue n'a pas été vu"
         );
-        // Pris une fois, effacé : redemander sans rien de neuf dit non.
+        // Taken once, cleared: asking again with nothing new says no.
         assert!(!expected.take_recovery());
     }
 
     #[test]
     fn a_road_that_never_missed_signals_no_recovery() {
-        // Le cas ordinaire, plusieurs fois par seconde : rien à répéter
-        // à une connexion qui n'a jamais rien à apprendre.
+        // The ordinary case, several times a second: nothing to pass on
+        // to a connection that never has anything to learn.
         let now = Instant::now();
         let mut expected = expecting(now);
         let a = direct("10.0.0.1:47000");
@@ -2742,9 +2744,9 @@ mod tests {
 
     #[test]
     fn a_candidate_recovering_signals_nothing_while_it_is_not_elected() {
-        // Seule la route qui porte vraiment la connexion importe : une
-        // autre qui flanche et revient en arrière-plan n'apprend rien à
-        // personne.
+        // Only the road that really carries the connection matters:
+        // another one that falters and comes back in the background
+        // tells nobody anything.
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
@@ -2756,7 +2758,7 @@ mod tests {
         assert!(expected.answered(b, second, Duration::from_millis(80), start));
         expected.take_recovery();
 
-        // b, non élue, rate un tour de sonde à son propre rythme.
+        // b, not elected, misses a probe round at its own rhythm.
         expected.look_over(start + WARM_EVERY);
         let now = start + WARM_EVERY * 2;
         expected.look_over(now);
@@ -2780,11 +2782,12 @@ mod tests {
 
     #[test]
     fn an_elected_road_given_up_and_taken_up_again_signals_a_recovery() {
-        // Le cas du 7 septembre (`a_card_that_has_ever_carried_anything_
-        // stops_being_second_guessed` ci-dessus) : la route élue est
-        // abandonnée pour de bon puis répond à la même adresse, neuve
-        // pour l'aiguilleur. Le silence a été plus long qu'un simple
-        // tour de sonde manqué, et le signal doit porter tout autant.
+        // The case of 7 September
+        // (`a_card_that_has_ever_carried_anything_stops_being_second_guessed`
+        // above): the elected road is given up for good, then answers at
+        // the same address, new to the junction. The silence was longer
+        // than a single missed probe round, and the signal must carry
+        // just as much.
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
@@ -2815,8 +2818,8 @@ mod tests {
         );
     }
 
-    /// Fait taire la route élue jusqu'à ce que l'aiguilleur en tire les
-    /// conséquences, et rend ce qu'il a décidé.
+    /// Silences the elected road until the junction draws the
+    /// consequences, and returns what it decided.
     fn goes_quiet(expected: &mut Expected, from: Instant) -> Instant {
         let mut now = from;
         for _ in 0..=MISSES_TO_DIE {
@@ -2828,15 +2831,14 @@ mod tests {
 
     #[test]
     fn the_last_road_is_kept_rather_than_leaving_the_session_nowhere_to_send() {
-        // Le 4 septembre : la branche de relais était partie depuis une
-        // demi-minute, il ne restait qu'une route directe, elle s'est tue
-        // huit secondes, elle a été abandonnée, et deux secondes plus
-        // tard elle répondait de nouveau. Entre les deux, plus aucune
-        // route élue : tout ce que le transport confiait disparaissait,
-        // sondes et accusés de réception compris, et l'ordinateur d'en
-        // face mourait d'une absence. Une route qui a raté trois sondes
-        // n'est pas une route prouvée morte ; y envoyer ne coûte rien,
-        // puisque l'autre choix n'envoie nulle part.
+        // On 4 September: the relay branch had been gone for half a
+        // minute, only one direct road was left, it went quiet for eight
+        // seconds, it was given up, and two seconds later it was
+        // answering again. In between, no elected road at all: everything
+        // the transport handed over vanished, probes and acknowledgements
+        // included, and the far computer died of an absence. A road that
+        // has missed three probes is not a road proven dead; sending on
+        // it costs nothing, since the other choice sends nowhere.
         let start = Instant::now();
         let mut expected = expecting(start);
         let only = direct("10.0.0.1:47000");
@@ -2850,18 +2852,18 @@ mod tests {
             Some(only),
             "la session s'est retrouvée sans aucune route où envoyer"
         );
-        // Et elle est toujours sondée, sans quoi son retour passerait
-        // inaperçu.
+        // And it is still probed, without which its return would go
+        // unnoticed.
         assert!(expected.look_over(now + KEEP_EVERY).probe.contains(&only));
     }
 
     #[test]
     fn a_road_that_answers_takes_the_session_from_one_that_has_stopped() {
-        // Le pendant du précédent : garder la dernière route ne doit pas
-        // la laisser faire de l'ombre à une route saine. Une route garde
-        // sa dernière bonne mesure jusqu'au bout, donc la plus malade de
-        // la liste est souvent la plus courte, et choisir sur la seule
-        // longueur donne la session à celle qui meurt.
+        // The counterpart of the previous one: keeping the last road
+        // must not let it overshadow a sound road. A road keeps its last
+        // good measurement to the very end, so the sickest of the list
+        // is often the shortest, and choosing on length alone gives the
+        // session to the one that is dying.
         let start = Instant::now();
         let mut expected = expecting(start);
         let dying = direct("10.0.0.1:47000");
@@ -2870,14 +2872,14 @@ mod tests {
         assert!(expected.answered(dying, number, Duration::from_millis(5), start));
         assert_eq!(moved(expected.elect(start)), Some((None, dying)));
 
-        // La seconde route répond, bien plus longue : la marge la laisse
-        // à sa place tant que la première va bien.
+        // The second road answers, much longer: the margin leaves it
+        // where it is as long as the first one is well.
         let number = expected.number(start);
         assert!(expected.answered(sound, number, Duration::from_millis(80), start));
         assert_eq!(moved(expected.elect(start)), None);
 
-        // La première se tait. La session passe sur la seconde, et c'est
-        // seulement là que l'abandon a un sens : il en reste une.
+        // The first one goes quiet. The session moves to the second, and
+        // only then does giving up make sense: one is left.
         let now = goes_quiet(&mut expected, start);
         assert_eq!(moved(expected.elect(now)), Some((Some(dying), sound)));
         assert_eq!(expected.elected, Some(sound));
@@ -2889,9 +2891,10 @@ mod tests {
 
     #[test]
     fn a_direct_road_beats_the_relay_however_long_it_is() {
-        // La règle du produit : le relais n'est qu'un secours. Un chemin
-        // direct validé prend la session tout de suite, même s'il mesure
-        // dix fois le relais, et la rend au relais dès qu'il meurt.
+        // The rule of the product: the relay is only a fallback. A
+        // validated direct path takes the session at once, even if it
+        // measures ten times the relay, and gives it back to the relay
+        // the moment it dies.
         let now = Instant::now();
         let mut expected = expecting(now);
         let relay = Through::Relay(expected.card);
@@ -2906,21 +2909,21 @@ mod tests {
         assert_eq!(moved(expected.elect(now)), Some((Some(relay), a)));
         assert!(expected.elect(now).is_none());
 
-        // Le direct meurt : la session revient au relais, qui est resté
-        // là tout du long.
+        // The direct road dies: the session goes back to the relay,
+        // which stayed there all along.
         expected.paths.retain(|path| path.through != a);
         assert_eq!(moved(expected.elect(now)), Some((Some(a), relay)));
     }
 
     #[test]
     fn no_road_answering_leaves_the_session_where_it_is() {
-        // Le 4 septembre, une session de vingt et une minutes en 5G : les
-        // deux ordinateurs cessent d'entendre en même temps, le direct
-        // rate une sonde, la session passe au relais, le relais en rate
-        // une à son tour, et elle repart aussitôt sur le direct qu'elle
-        // venait de quitter. Le va-et-vient a mangé quatre des dix
-        // secondes que le moteur accordait alors, sans qu'aucune des
-        // deux routes ne porte quoi que ce soit.
+        // On 4 September, a twenty-one minute session over 5G: both
+        // computers stop hearing at the same time, the direct road misses
+        // a probe, the session moves to the relay, the relay misses one
+        // in its turn, and it goes straight back to the direct road it
+        // had just left. The back and forth ate four of the ten seconds
+        // the engine allowed back then, without either road carrying
+        // anything at all.
         let start = Instant::now();
         let mut expected = expecting(start);
         let relay = Through::Relay(expected.card);
@@ -2932,21 +2935,22 @@ mod tests {
         assert!(expected.answered(road, number, Duration::from_millis(40), start));
         assert_eq!(moved(expected.elect(start)), Some((None, road)));
 
-        // Une passe pour que les deux routes soient sondées, et le relais
-        // seul répond.
+        // One pass so that both roads are probed, and the relay alone
+        // answers.
         let mut now = start + WARM_EVERY;
         expected.look_over(now);
         let number = expected.number(now);
         assert!(expected.answered(relay, number, Duration::from_millis(30), now));
 
-        // Le direct a raté sa sonde, le relais a répondu : la session
-        // passe au relais, ce qui est bien la règle.
+        // The direct road missed its probe, the relay answered: the
+        // session moves to the relay, which is indeed the rule.
         now += WARM_EVERY;
         expected.look_over(now);
         assert_eq!(moved(expected.elect(now)), Some((Some(road), relay)));
 
-        // Le relais rate la sienne et le direct se tait toujours. Plus
-        // rien ne répond nulle part : la session reste où elle est.
+        // The relay misses its own and the direct road is still quiet.
+        // Nothing answers anywhere any more: the session stays where
+        // it is.
         now += WARM_EVERY;
         expected.look_over(now);
         assert!(expected.elect(now).is_none());
@@ -2955,7 +2959,8 @@ mod tests {
 
     #[test]
     fn the_relay_is_never_dropped_to_make_room_for_a_warm_path() {
-        // Y revenir doit coûter une ligne de table, pas une connexion.
+        // Coming back to it must cost a line in a table, not a
+        // connection.
         let now = Instant::now();
         let mut expected = expecting(now);
         let relay = Through::Relay(expected.card);
@@ -2974,26 +2979,27 @@ mod tests {
 
     #[test]
     fn a_session_that_loses_every_road_is_kept_and_probed_as_at_its_opening() {
-        // Une session vit des heures ; ses chemins peuvent tous mourir
-        // six secondes, ce qu'un hoquet de relais ou une box qui lâche sa
-        // traduction donnent, et elle doit être encore là quand ils
-        // reviennent. La patience se compte donc du dernier chemin qui a
-        // répondu, et le rythme des sondes repart de zéro avec elle.
+        // A session lives for hours; its paths can all die for six
+        // seconds, which is what a relay hiccup or a box dropping its
+        // translation produces, and it must still be there when they come
+        // back. The patience is therefore counted from the last path that
+        // answered, and the rhythm of the probes starts again from zero
+        // with it.
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
         let number = expected.number(start);
         assert!(expected.answered(a, number, Duration::from_millis(5), start));
 
-        // Une heure de session : le chemin a répondu tout du long, la
-        // dernière fois à l'instant, et les candidats qui se taisent ne
-        // sont plus sondés que de loin en loin.
+        // An hour into the session: the path has answered all along,
+        // the last time just now, and the candidates that stay quiet
+        // are only probed now and then.
         let late = start + Duration::from_secs(3600);
         let number = expected.number(late);
         assert!(expected.answered(a, number, Duration::from_millis(5), late));
         assert_eq!(expected.every(late), LATE_EVERY);
 
-        // Puis il meurt.
+        // Then it dies.
         expected.paths.clear();
         assert_eq!(
             expected.every(late),
@@ -3004,7 +3010,7 @@ mod tests {
             late.duration_since(expected.answered_at) < EXPECTATION_LIFE,
             "la session a été jetée dès la mort de son chemin"
         );
-        // Et deux minutes sans que rien ne réponde, alors oui.
+        // And two minutes with nothing answering, then yes.
         assert!(
             (late + EXPECTATION_LIFE + Duration::from_secs(1)).duration_since(expected.answered_at)
                 > EXPECTATION_LIFE
@@ -3013,11 +3019,11 @@ mod tests {
 
     #[test]
     fn a_probe_that_never_left_is_not_a_road_that_went_quiet() {
-        // Le 5 septembre, PC-SAV a écrit vingt-trois fois qu'un paquet à
-        // lui n'était pas parti, et deux secondes après chacune de ces
-        // lignes, la route « ne répondait pas à une sonde ». La sonde
-        // sans réponse était la sonde jamais partie : le silence était
-        // le nôtre et la route le payait.
+        // On 5 September, PC-SAV wrote twenty-three times that a packet
+        // of its own had not gone out, and two seconds after each of
+        // those lines, the road "did not answer a probe". The probe with
+        // no answer was the probe that never left: the silence was ours
+        // and the road paid for it.
         let start = Instant::now();
         let mut expected = expecting(start);
         let only = direct("10.0.0.1:47000");
@@ -3028,8 +3034,8 @@ mod tests {
         for _ in 0..=MISSES_TO_DIE {
             now += KEEP_EVERY;
             expected.look_over(now);
-            // Ce que fait l'aiguilleur quand la prise a refusé la sonde
-            // qu'il venait de décider.
+            // What the junction does when the socket has refused the
+            // probe it had just decided on.
             for path in &mut expected.paths {
                 path.asked = false;
             }
@@ -3050,17 +3056,17 @@ mod tests {
         let start = Instant::now();
         let mut expected = expecting(start);
         let a = direct("10.0.0.1:47000");
-        // Une seconde route, bien plus longue, pour que l'abandon soit
-        // seulement permis : la dernière ne se rend jamais, et c'est le
-        // test au-dessus qui le dit.
+        // A second road, much longer, just so that giving up is allowed
+        // at all: the last one never surrenders, and it is the test
+        // above that says so.
         let b = direct("10.0.0.2:47000");
         let number = expected.number(start);
         expected.answered(a, number, Duration::from_millis(5), start);
         let number = expected.number(start);
         expected.answered(b, number, Duration::from_millis(90), start);
         expected.elect(start);
-        // Une sonde toutes les deux secondes, dont trois sans écho :
-        // c'est à la quatrième qu'on sait que le chemin est mort.
+        // A probe every two seconds, three of them without an echo:
+        // it is at the fourth that we know the path is dead.
         let mut now = start;
         for probe in 1..=MISSES_TO_DIE + 1 {
             now += KEEP_EVERY;
@@ -3077,22 +3083,22 @@ mod tests {
             }
         }
         assert!(!expected.paths.iter().any(|path| path.through == a));
-        // Et l'élection qui suit dans la même passe rend la session à la
-        // route qui reste. Sans ça, tout ce que le transport confie
-        // ensuite part dans un chemin mort, sans un mot et sans retour
-        // possible. Elle dit aussi ce qu'on perd, ce qu'une élection
-        // vidée d'abord ne pouvait plus nommer.
+        // And the election that follows in the same pass gives the
+        // session to the road that is left. Without that, everything the
+        // transport hands over afterwards goes down a dead path, without
+        // a word and with no way back. It also says what is lost, which
+        // an election emptied first could no longer name.
         assert_eq!(moved(expected.elect(now)), Some((Some(a), b)));
     }
 
     #[tokio::test]
     async fn a_session_that_ends_late_does_not_take_the_card_of_the_one_after_it() {
-        // Une carte vaut pour un ordinateur, donc deux sessions de suite
-        // vers le même ordinateur la partagent et la seconde la prend à
-        // la première. La fin de la première emportait la carte de la
-        // seconde : à partir de là tout ce que le transport confiait
-        // partait à la poubelle sans un mot, et l'ordinateur d'en face
-        // mourait d'une absence trente secondes plus tard.
+        // A card stands for one computer, so two sessions in a row
+        // towards the same computer share it and the second takes it
+        // from the first. The end of the first carried off the card of
+        // the second: from then on everything the transport handed over
+        // went in the bin without a word, and the far computer died of
+        // an absence thirty seconds later.
         let identity = Arc::new(Identity::generate().unwrap());
         let junction = junction(&identity);
         let peer = Identity::generate().unwrap().fingerprint();
@@ -3116,10 +3122,10 @@ mod tests {
 
     #[tokio::test]
     async fn an_address_named_is_probed_at_once_and_not_again_at_the_look_over() {
-        // Une adresse est nommée à l'ouverture d'une session, ou au fur
-        // et à mesure que l'autre en trouve : attendre le tour d'horloge
-        // suivant coûterait un dixième de seconde là où il se sent, et
-        // laisserait au relais le début de chaque session.
+        // An address is named when a session opens, or as the other end
+        // finds some: waiting for the next turn of the clock would cost
+        // a tenth of a second where it is felt, and would leave the
+        // start of every session to the relay.
         let identity = Arc::new(Identity::generate().unwrap());
         let junction = junction(&identity);
         let card = junction.expect(Identity::generate().unwrap().fingerprint(), "s1");
@@ -3168,7 +3174,7 @@ mod tests {
             expected.look_over(start + Duration::from_millis(200)).probe,
             vec![a]
         );
-        // Après les premières secondes, toutes les deux secondes.
+        // After the first seconds, every two seconds.
         let later = start + EAGER + Duration::from_millis(500);
         assert_eq!(expected.look_over(later).probe, vec![a]);
         assert!(
@@ -3182,8 +3188,8 @@ mod tests {
 
     #[test]
     fn a_buffer_the_system_would_have_sent_in_one_go_is_split_for_a_relay() {
-        // Un relais porte un paquet à la fois : ce que le système aurait
-        // envoyé d'un bloc doit repartir en autant de paquets.
+        // A relay carries one packet at a time: what the system would
+        // have sent in one go must go out again as that many packets.
         let contents = vec![0u8; 2500];
         let split: Vec<usize> = packets(&contents, Some(1200))
             .map(|packet| packet.len())

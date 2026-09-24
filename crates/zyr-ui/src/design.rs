@@ -1,25 +1,24 @@
-//! Le système de design de ZyrDesk, du côté de ce qui est dessiné.
+//! The ZyrDesk design system, on the side of what is drawn.
 //!
-//! Les couleurs, les espacements, les rayons, les ombres et les tailles
-//! de texte sont écrits une seule fois, dans `design.css`, et lus d'ici à
-//! la compilation. Rien n'est recopié : deux copies d'une palette, ce
-//! sont deux palettes, et la première couleur changée dans l'une est le
-//! jour où le produit cesse de se ressembler.
+//! The colours, spacings, radii, shadows and text sizes are written only
+//! once, in `design.css`, and read from here at compile time. Nothing is
+//! copied: two copies of a palette make two palettes, and the first
+//! colour changed in one of them is the day the product stops looking
+//! like itself.
 //!
-//! Plus aucun navigateur ne lit ce fichier. Il garde sa notation parce
-//! qu'elle écrit deux thèmes côte à côte, et parce que le lire à la
-//! compilation est ce qui vérifie que les deux disent bien les mêmes
-//! rôles.
+//! No browser reads this file any more. It keeps its notation because
+//! that notation writes two themes side by side, and because reading it
+//! at compile time is what checks that both really name the same roles.
 //!
-//! Tous les rôles sont extraits, y compris ceux que rien ne dessine
-//! encore : le système de design est une palette, pas une liste de
-//! courses. En extraire seulement ce qui sert aujourd'hui reviendrait à
-//! le rouvrir à chaque écran repris, ce qui est la porte ouverte à une
-//! deuxième palette écrite à la main en attendant.
+//! Every role is extracted, including the ones nothing draws yet: the
+//! design system is a palette, not a shopping list. Extracting only what
+//! is used today would mean reopening it for every screen brought over,
+//! which opens the door to a second palette written by hand in the
+//! meantime.
 #![allow(dead_code)]
 
-/// Une couleur, en quatre nombres entre zéro et un, qui est la façon dont
-/// tout ce qui dessine les veut.
+/// A colour, as four numbers between zero and one, which is how
+/// everything that draws wants them.
 #[derive(Clone, Copy)]
 pub struct Colour {
     pub red: f32,
@@ -29,11 +28,11 @@ pub struct Colour {
 }
 
 impl Colour {
-    /// Rien du tout.
+    /// Nothing at all.
     ///
-    /// Ce sur quoi une fenêtre à calque commence son dessin : là où la
-    /// toile reste de cette couleur, on voit ce qu'il y a derrière la
-    /// fenêtre, et les clics y passent.
+    /// What a layered window starts its drawing on: wherever the
+    /// canvas stays this colour, what is behind the window shows
+    /// through, and clicks go through there.
     pub const TRANSPARENT: Colour = Colour {
         red: 0.0,
         green: 0.0,
@@ -41,11 +40,11 @@ impl Colour {
         alpha: 0.0,
     };
 
-    /// Le noir plein.
+    /// Solid black.
     ///
-    /// Dont seule la part employée sert : c'est ce qu'une boîte de
-    /// dialogue pose sur ce qu'elle recouvre, et le seul endroit du
-    /// produit où une couleur n'est pas un rôle.
+    /// Of which only the portion used matters: it is what a dialog
+    /// box lays over what it covers, and the only place in the
+    /// product where a colour is not a role.
     pub const BLACK: Colour = Colour {
         red: 0.0,
         green: 0.0,
@@ -53,11 +52,12 @@ impl Colour {
         alpha: 1.0,
     };
 
-    /// Celle-ci mêlée à celle-là, dans cette proportion.
+    /// This one mixed with that one, in this proportion.
     ///
-    /// Ce que la feuille de style écrit `color-mix(in srgb, ... 8%,
-    /// ...)` : la teinte d'un rôle passée sur un fond, là où poser une
-    /// deuxième couleur pleine donnerait une couleur de plus à tenir.
+    /// What the stylesheet writes as `color-mix(in srgb, ... 8%,
+    /// ...)`: the tint of a role washed over a background, where
+    /// laying down a second solid colour would give one more colour to
+    /// maintain.
     pub fn mixed_with(self, background: Colour, part: f32) -> Colour {
         let between = |mine: f32, theirs: f32| theirs + (mine - theirs) * part;
         Colour {
@@ -68,12 +68,12 @@ impl Colour {
         }
     }
 
-    /// La même, posée en voile.
+    /// The same, laid on as a veil.
     ///
-    /// Ce que la feuille de style écrit `color-mix(in srgb, ... 12%,
-    /// transparent)` : la teinte d'un rôle employée comme fond, là où
-    /// repeindre avec une deuxième couleur donnerait une couleur de plus
-    /// à tenir.
+    /// What the stylesheet writes as `color-mix(in srgb, ... 12%,
+    /// transparent)`: the tint of a role used as a background, where
+    /// repainting with a second colour would give one more colour to
+    /// maintain.
     pub fn faded(self, part: f32) -> Colour {
         Colour {
             alpha: self.alpha * part,
@@ -82,8 +82,8 @@ impl Colour {
     }
 }
 
-/// Une ombre portée : de combien elle est décalée, de combien elle est
-/// floue, et de quelle couleur.
+/// A drop shadow: how far it is offset, how blurred it is, and in what
+/// colour.
 #[derive(Clone, Copy)]
 pub struct Shadow {
     pub across: f32,
@@ -94,10 +94,11 @@ pub struct Shadow {
 
 include!(concat!(env!("OUT_DIR"), "/design.rs"));
 
-/// La palette du thème que la fenêtre porte.
+/// The palette of the theme the window wears.
 ///
-/// Demandée au système plutôt que gardée ici : c'est le même thème que
-/// l'accueil, et l'accueil le tient déjà de sa fenêtre.
+/// Asked of the system rather than kept here: it is the same theme as
+/// the home window, and the home window already has it from its own
+/// window.
 pub fn palette(light: bool) -> Palette {
     if light { LIGHT } else { DARK }
 }

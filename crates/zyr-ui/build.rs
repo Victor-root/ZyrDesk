@@ -17,11 +17,11 @@ const DESIGN: &str = "design.css";
 
 fn main() {
     println!("cargo:rerun-if-changed={DESIGN}");
-    // L'icône du programme est une ressource Windows fabriquée ici, à
-    // partir de ce fichier-là. Sans cette ligne, Cargo ne refait pas ce
-    // travail quand le dessin change : l'exécutable garde l'ancienne
-    // icône, et on cherche longtemps pourquoi le nouveau logo n'arrive
-    // pas dans la barre des tâches.
+    // The program's icon is a Windows resource made here, from that
+    // file. Without this line, Cargo does not redo that work when the
+    // drawing changes: the executable keeps the old icon, and one
+    // spends a long time looking for why the new logo does not reach
+    // the taskbar.
     println!("cargo:rerun-if-changed=../../packaging/brand/zyrdesk.ico");
 
     let css = std::fs::read_to_string(DESIGN)
@@ -30,11 +30,11 @@ fn main() {
     let out = std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("design.rs");
     std::fs::write(&out, written).expect("le système de design n'a pas pu être écrit");
 
-    // La ressource Windows : le manifeste, l'icône et ce que le programme
-    // dit de lui-même. Ce qui revient est dit et non tu : sur les autres
-    // systèmes c'est « rien à faire », et sous Windows un refus laisserait
-    // un programme sans son icône et sans ses contrôles modernes, ce qui
-    // se cherche longtemps.
+    // The Windows resource: the manifest, the icon and what the program
+    // says about itself. What comes back is said and not kept quiet: on
+    // the other systems it is "nothing to do", and on Windows a refusal
+    // would leave a program without its icon and without its modern
+    // controls, which takes a long time to track down.
     println!("cargo:rerun-if-changed=zyrdesk.manifest");
     let resource_path =
         std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join(RESOURCE);
@@ -46,20 +46,20 @@ fn main() {
     }
 }
 
-/// Ce que Windows lit dans le programme avant de le lancer.
+/// What Windows reads in the program before starting it.
 const RESOURCE: &str = "zyrdesk.rc";
 
-/// La ressource Windows du programme, écrite ici parce qu'elle porte la
-/// version, qui est celle du paquet et n'a donc pas à être recopiée.
+/// The program's Windows resource, written here because it carries the
+/// version, which is the package's and so does not have to be copied
+/// out.
 ///
-/// Le manifeste sous le numéro un, qui est celui que Windows lit dans un
-/// programme. L'icône sous 32512, qui est le numéro d'une icône
-/// d'application : c'est sous celui-là que le système la cherche pour la
-/// barre des tâches, et sous celui-là que `icon.rs` la redemande à la
-/// taille exacte dont il a besoin. Et le nom que le gestionnaire des
-/// tâches affiche, qui est la description du paquet : ZyrDesk fait
-/// tourner plusieurs programmes sur une machine, et chacun doit dire
-/// lequel il est.
+/// The manifest under number one, which is the one Windows reads in a
+/// program. The icon under 32512, which is the number of an application
+/// icon: it is under that one that the system looks for it for the
+/// taskbar, and under that one that `icon.rs` asks for it again at the
+/// exact size it needs. And the name the Task Manager shows, which is
+/// the package's description: ZyrDesk runs several programs on one
+/// machine, and each one has to say which it is.
 fn resource() -> String {
     let folder = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
     let manifest = format!("{folder}/zyrdesk.manifest").replace('\\', "/");

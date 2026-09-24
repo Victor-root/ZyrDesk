@@ -584,9 +584,9 @@ mod tests {
 
     #[test]
     fn one_computer_calls_and_the_other_answers() {
-        // Le tout : une question part, l'autre machine répond à celle qui
-        // a demandé et à elle seule, et elle se retrouve dans la liste
-        // avec son nom et le port de son tunnel.
+        // The whole of it: a question goes out, the other machine answers
+        // the one that asked and that one alone, and it ends up in the
+        // list with its name and the port of its tunnel.
         let list = Found::new();
         let asking = computer("PC-PORTABLE", 1, list.clone());
         let mut answering = computer("PC de Victor", 2, Found::new());
@@ -613,12 +613,12 @@ mod tests {
 
     #[test]
     fn a_computer_that_is_called_learns_who_called_it() {
-        // Le défaut qui a coûté un ordinateur entier. Une machine ne
-        // connaissait que celles qui lui avaient répondu, donc seule
-        // celle qui appelle apprenait quelque chose. Sur un tunnel privé
-        // entre deux machines, où un seul des deux bouts a un voisinage
-        // à balayer, l'autre restait un inconnu pour toujours et
-        // refusait chaque session comme telle.
+        // The fault that cost a whole computer. A machine only knew the
+        // ones that had answered it, so only the one calling learnt
+        // anything. On a private tunnel between two machines, where only
+        // one of the two ends has a neighbourhood to sweep, the other
+        // stayed a stranger forever and refused every session as coming
+        // from one.
         let heard = Found::new();
         let asking = computer("PC-PORTABLE", 1, Found::new());
         let mut answering = computer("PC de Victor", 2, heard.clone());
@@ -641,10 +641,10 @@ mod tests {
 
     #[test]
     fn a_question_from_an_older_zyrdesk_is_still_answered() {
-        // Le mot « who » tout seul est ce que disaient les versions
-        // d'avant. Il ne présente personne, donc il n'apprend rien, mais
-        // il doit toujours recevoir sa réponse : sinon une mise à jour
-        // d'un seul côté couperait la découverte au lieu de l'améliorer.
+        // The word "who" on its own is what the versions before said. It
+        // introduces nobody, so it teaches nothing, but it must still
+        // get its answer: otherwise an update on one side only would cut
+        // discovery off instead of improving it.
         let heard = Found::new();
         let list = Found::new();
         let asking = computer("PC-PORTABLE", 1, list.clone());
@@ -662,9 +662,9 @@ mod tests {
 
     #[test]
     fn a_computer_never_finds_itself() {
-        // Une machine reçoit sa propre diffusion : sans ce garde-fou elle
-        // s'inscrirait dans la liste de ses propres voisins, et l'écran
-        // d'accueil montrerait l'ordinateur sur lequel il est ouvert.
+        // A machine receives its own broadcast: without this safeguard it
+        // would put itself down in the list of its own neighbours, and
+        // the home window would show the computer it is open on.
         let list = Found::new();
         let mut me = computer("PC-BUREAU", 1, list.clone());
         let door = me.socket.local_addr().unwrap();
@@ -676,7 +676,7 @@ mod tests {
             .spoken(),
             door,
         );
-        // La question, puis la réponse qu'elle s'est faite à elle-même.
+        // The question, then the answer it gave itself.
         me.listen();
         me.listen();
 
@@ -685,9 +685,9 @@ mod tests {
 
     #[test]
     fn a_computer_that_says_goodbye_is_off_the_list_at_once() {
-        // Sans cela, une machine qu'on vient de quitter reste affichée en
-        // vert le temps que les autres remarquent son silence, et on leur
-        // propose de s'y connecter.
+        // Without this, a machine that has just been left stays shown in
+        // green until the others notice its silence, and they go on
+        // offering to connect to it.
         let list = Found::new();
         let mut asking = computer("PC-PORTABLE", 1, list.clone());
         let mut answering = computer("PC de Victor", 2, Found::new());
@@ -717,8 +717,8 @@ mod tests {
 
     #[test]
     fn anything_arriving_that_is_not_ours_leaves_no_trace() {
-        // Ce port est ouvert sur le réseau : n'importe quoi peut y
-        // arriver, et rien de tout cela ne doit devenir un ordinateur.
+        // This port is open to the network: anything can arrive on it,
+        // and none of that must become a computer.
         let list = Found::new();
         let mut listening = computer("PC-BUREAU", 1, list.clone());
         let door = listening.socket.local_addr().unwrap();
@@ -741,8 +741,8 @@ mod tests {
                 "192.168.2.20".parse().unwrap(),
                 "10.141.87.37".parse().unwrap(),
             ],
-            // Un nom d'ordinateur porte des espaces, et il est écrit
-            // en dernier pour cela.
+            // A computer's name holds spaces, and it is written last
+            // for that reason.
             name: "PC de Victor".to_string(),
         };
         let nowhere = Itself {
@@ -771,9 +771,9 @@ mod tests {
 
     #[test]
     fn a_line_stays_one_small_datagram_even_on_a_machine_full_of_cards() {
-        // Chaque adresse nommée est une porte de plus à essayer, et la
-        // ligne doit tenir dans un seul datagramme : une machine pleine
-        // d'adaptateurs virtuels en aurait vingt.
+        // Every address named is one more door to try, and the line
+        // must fit in a single datagram: a machine full of virtual
+        // adapters would have twenty.
         let card = Itself {
             port: TUNNEL_PORT,
             fingerprint: fingerprint(),
@@ -789,8 +789,8 @@ mod tests {
 
     #[test]
     fn an_address_nobody_can_read_costs_that_address_and_nothing_more() {
-        // Jeter la ligne entière ferait perdre l'ordinateur au complet
-        // là où il ne manque qu'une de ses portes.
+        // Throwing the whole line away would lose the computer
+        // entirely where only one of its doors is missing.
         assert_eq!(
             read_addresses("192.168.1.20,pas-une-adresse,192.168.2.20"),
             [
@@ -803,10 +803,10 @@ mod tests {
 
     #[test]
     fn a_computer_says_every_address_it_answers_at() {
-        // Le défaut qui a fait ouvrir toutes les sessions par la même
-        // porte : celle par laquelle la réponse était arrivée. Une
-        // machine à quatre adresses n'en disait aucune, et l'autre bout
-        // n'avait rien à essayer.
+        // The fault that made every session open through the same door:
+        // the one the answer had arrived through. A machine with four
+        // addresses named none of them, and the other end had nothing
+        // to try.
         let list = Found::new();
         let mut asking = computer("PC-PORTABLE", 1, list.clone());
         let mut answering = computer("PC de Victor", 2, Found::new());
@@ -828,7 +828,7 @@ mod tests {
 
         let found = list.peers();
         assert_eq!(found.len(), 1, "{found:?}");
-        // Celle d'où la réponse est venue d'abord, puis les autres.
+        // The one the answer came from first, then the others.
         assert_eq!(
             found[0].addresses,
             [
@@ -841,8 +841,8 @@ mod tests {
 
     #[test]
     fn anything_that_is_not_ours_is_dropped() {
-        // Ce port peut recevoir n'importe quoi : rien de ce qui n'a pas
-        // été dit par ce produit ne doit être lu comme un ordinateur.
+        // This port can receive anything: nothing that was not said by
+        // this product must be read as a computer.
         for line in [
             "",
             "bonjour",
@@ -850,10 +850,9 @@ mod tests {
             "zyrdesk 2",
             "zyrdesk 2 bonjour",
             "autrechose 2 who",
-            // Une version que nous ne parlons pas : on se tait plutôt que
-            // de deviner. Celle d'avant lisait la liste d'adresses comme
-            // une empreinte, ce qui est exactement l'erreur à ne pas
-            // commettre en silence.
+            // A version we do not speak: we keep quiet rather than guess.
+            // The one before read the list of addresses as a fingerprint,
+            // which is exactly the mistake not to make in silence.
             "zyrdesk 1 who",
             "zyrdesk 3 who",
             "zyrdesk 2 here",
@@ -868,8 +867,8 @@ mod tests {
 
     #[test]
     fn a_computer_without_a_name_is_not_a_computer() {
-        // Une carte sans titre ne se reconnaît pas : mieux vaut ignorer
-        // l'annonce que d'afficher une ligne vide sur laquelle cliquer.
+        // A card without a title cannot be recognised: better to ignore
+        // the announcement than to show an empty line to click on.
         let line = format!(
             "{MARK} {VERSION} here {TUNNEL_PORT} {NO_ADDRESS} {} ",
             fingerprint()
