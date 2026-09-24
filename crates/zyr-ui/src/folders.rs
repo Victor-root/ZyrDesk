@@ -8,11 +8,10 @@
 //! from anywhere else and handed to the system as it came would open
 //! anything at all.
 
-// Tout ce qui est ici est demandé par l'accueil, que ce programme dessine
-// lui-même, et ce qui dessine n'existe que sous Windows comme les
-// fenêtres qu'il habille. Ailleurs, rien ne pose ces questions : le
-// fichier reste compilé et vérifié, il n'est simplement appelé par
-// personne.
+// Everything here is asked for by the home window, which this program
+// draws itself, and what draws only exists on Windows, like the windows
+// it dresses. Elsewhere, nothing asks these questions: the file stays
+// compiled and checked, it is simply called by nobody.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::{Path, PathBuf};
@@ -101,8 +100,8 @@ mod tests {
 
     #[test]
     fn only_the_folders_the_product_owns_can_be_named() {
-        // Un chemin venu de la page et passé tel quel au système
-        // ouvrirait n'importe quoi.
+        // A path coming from the page and handed to the system
+        // as it is would open anything at all.
         for named in ["logs", "host-engine", "client-engine"] {
             assert!(Which::read(named).is_ok(), "{named}");
         }

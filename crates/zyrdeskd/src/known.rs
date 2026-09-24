@@ -139,8 +139,8 @@ mod tests {
         let computer = Known {
             fingerprint: fingerprint(1),
             host: "192.168.1.20".to_string(),
-            // Un nom d'ordinateur porte des espaces bien plus souvent
-            // qu'on ne le croit, et il est écrit en dernier pour cela.
+            // A computer's name holds spaces far more often than one
+            // would think, and it is written last for that reason.
             name: "PC de Victor".to_string(),
         };
         add(&path, computer.clone()).unwrap();
@@ -151,8 +151,9 @@ mod tests {
 
     #[test]
     fn writing_the_same_computer_again_corrects_it() {
-        // Une adresse qui change est le cas courant : deux lignes pour la
-        // même machine donneraient deux cartes dont une ne marche plus.
+        // An address that changes is the usual case: two lines for the
+        // same machine would give two cards, one of which no longer
+        // works.
         let path = somewhere("correction");
         add(
             &path,
@@ -194,7 +195,7 @@ mod tests {
         .unwrap();
         assert!(remove(&path, fingerprint(1)).unwrap());
         assert!(read(&path).unwrap().is_empty());
-        // Déjà oublié : l'état demandé, atteint.
+        // Already forgotten: the state asked for, reached.
         assert!(!remove(&path, fingerprint(1)).unwrap());
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
@@ -202,8 +203,8 @@ mod tests {
 
     #[test]
     fn a_line_nobody_can_read_is_skipped_and_the_others_stay() {
-        // Ce fichier se corrige à la main : une ligne ratée ne doit pas
-        // faire disparaître l'écran d'accueil.
+        // This file is corrected by hand: one botched line must not
+        // make the home screen disappear.
         let text = format!(
             "# un commentaire\n\
              \n\
@@ -222,8 +223,8 @@ mod tests {
         let computers = read(&path).unwrap();
         assert_eq!(computers.len(), 2, "{computers:?}");
         assert_eq!(computers[0].name, "PC de Victor");
-        // Sans nom, l'adresse fait l'affaire : une carte sans titre ne se
-        // reconnaît pas.
+        // With no name, the address will do: a card with no title cannot
+        // be recognised.
         assert_eq!(computers[1].name, "192.168.1.30");
 
         let _ = fs::remove_dir_all(path.parent().unwrap());

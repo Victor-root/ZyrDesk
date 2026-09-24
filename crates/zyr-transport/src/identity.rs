@@ -123,7 +123,7 @@ impl std::error::Error for IdentityError {}
 
 /// The device's certificate, in its identity folder.
 const CERTIFICATE_FILE: &str = "device.crt";
-/// The device's private key.
+/// The private key of the device.
 const KEY_FILE: &str = "device.key";
 
 fn read(path: &Path) -> Result<Vec<u8>, IdentityError> {
@@ -553,8 +553,9 @@ mod tests {
 
     #[test]
     fn a_device_signs_and_its_certificate_vouches_for_it() {
-        // C'est ainsi qu'un appareil prouve sa clé à un serveur sans la
-        // lui montrer : le serveur n'a que le certificat, et il suffit.
+        // This is how a device proves its key to a server without
+        // showing it: the server only has the certificate, and that is
+        // enough.
         let device = Identity::generate().unwrap();
         let signature = device.sign("un défi".as_bytes()).unwrap();
         assert!(signed_by(
@@ -582,8 +583,8 @@ mod tests {
 
     #[test]
     fn the_public_key_is_found_in_the_certificate_and_outlives_its_renewal() {
-        // Deux certificats sur la même clé ont la même empreinte de clé :
-        // c'est ce qui permet de renouveler le premier sans réépingler.
+        // Two certificates on the same key have the same key fingerprint:
+        // that is what lets the first be renewed without pinning again.
         let key = rcgen::KeyPair::generate().unwrap();
         let first = rcgen::CertificateParams::new(vec!["zyr.exemple.fr".to_string()])
             .unwrap()

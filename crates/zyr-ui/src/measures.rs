@@ -10,9 +10,9 @@
 //! time of nought, and a bar that draws nought where there is no reading
 //! tells the person something untrue. What is missing is left blank.
 
-// La barre qui les montre est celle du bouton flottant, qui n'existe que
-// sous Windows comme la session qu'elle mesure. La lecture, elle, reste
-// compilée et éprouvée partout.
+// The bar that shows them is the floating button's, which only exists
+// under Windows, like the session it measures. The reading itself stays
+// compiled and tested everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 /// One reading, in the words the page shows.
@@ -115,18 +115,18 @@ mod tests {
 
     #[test]
     fn the_one_number_that_is_not_a_window_is_read_too() {
-        // Celui-ci arrive cinq fois par seconde et les autres une : c'est
-        // lui qui allume le voyant du lien, et le lire comme un mot
-        // inconnu laisserait ce voyant éteint sur une image figée.
+        // This one arrives five times a second and the others once: it is
+        // the one that lights the link badge, and reading it as an
+        // unknown word would leave that badge off over a frozen picture.
         let measures = read("codec=HEVC since_frame_ms=1840 fps=0.0");
         assert_eq!(measures.since_frame_ms, Some(1840));
     }
 
     #[test]
     fn a_reading_that_could_not_be_taken_stays_empty() {
-        // Le moteur écrit le nom sans valeur plutôt que zéro : une fenêtre
-        // sans image décodée n'a pas un temps de décodage nul, elle n'a
-        // pas de temps de décodage.
+        // The engine writes the name with no value rather than zero: a
+        // window with no decoded frame does not have a decoding time of
+        // nought, it has no decoding time.
         let measures = read("codec=HEVC decode_ms= network_ms= bitrate_mbps=1.20");
         assert_eq!(measures.decode_ms, None);
         assert_eq!(measures.network_ms, None);

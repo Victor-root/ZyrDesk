@@ -40,8 +40,9 @@ mod tests {
 
     #[test]
     fn the_message_binds_the_server_the_nonce_and_the_purpose() {
-        // Une preuve faite pour un serveur, un défi et un usage ne vaut
-        // pour aucun autre : changer l'un des trois change les octets.
+        // A proof made for one server, one challenge and one purpose is
+        // worth nothing for any other: changing any of the three
+        // changes the bytes.
         let server = ServerKey::generate().public();
         let other = ServerKey::generate().public();
         let reference = challenge_message(&server, "n1", Purpose::Link);

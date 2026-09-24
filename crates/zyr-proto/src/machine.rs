@@ -167,8 +167,8 @@ mod tests {
         for address in &answering {
             assert!(!address.interface.is_empty(), "{address}");
             assert!(!address.address.is_loopback(), "{address}");
-            // Ce qui part dans le journal se lit d'un coup d'œil :
-            // l'adresse, puis la carte entre parenthèses.
+            // What goes into the journal reads at a glance: the
+            // address, then the card in brackets.
             let line = address.to_string();
             assert!(line.starts_with(&address.address.to_string()), "{line}");
             assert!(line.contains(&address.interface), "{line}");
@@ -190,7 +190,7 @@ mod tests {
             broadcast: Some("192.168.1.255".parse().unwrap()),
         };
         let around = card.neighbourhood(256);
-        // 254 machines possibles, moins la nôtre.
+        // 254 possible machines, minus our own.
         assert_eq!(around.len(), 253);
         assert_eq!(around[0], "192.168.1.1".parse::<Ipv4Addr>().unwrap());
         assert_eq!(
@@ -198,16 +198,16 @@ mod tests {
             "192.168.1.254".parse::<Ipv4Addr>().unwrap()
         );
         assert!(!around.contains(&card.address));
-        // Ni l'adresse du réseau ni celle de diffusion : personne n'y
-        // répond, et frapper à ces deux portes-là ne sert à rien.
+        // Neither the network address nor the broadcast one: nobody
+        // answers there, and knocking on those two doors is no use.
         assert!(!around.contains(&"192.168.1.0".parse().unwrap()));
         assert!(!around.contains(&"192.168.1.255".parse().unwrap()));
     }
 
     #[test]
     fn a_network_too_wide_is_left_alone() {
-        // Frapper à soixante-cinq mille portes toutes les trente secondes
-        // serait une nuisance, pas une recherche.
+        // Knocking on sixty-five thousand doors every thirty seconds
+        // would be a nuisance, not a search.
         let wide = Address {
             interface: "Ethernet".to_string(),
             address: "10.0.0.5".parse().unwrap(),
@@ -216,7 +216,7 @@ mod tests {
         };
         assert!(wide.neighbourhood(256).is_empty());
 
-        // Et un masque qui ne laisse la place à personne non plus.
+        // And a mask that leaves room for nobody either.
         let alone = Address {
             interface: "Tunnel".to_string(),
             address: "10.1.1.1".parse().unwrap(),

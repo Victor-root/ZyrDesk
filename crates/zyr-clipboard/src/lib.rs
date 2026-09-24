@@ -252,8 +252,8 @@ mod tests {
 
     #[test]
     fn a_refusal_reads_in_plain_words() {
-        // Ce texte finit dans le journal : il doit se lire, pas se
-        // décoder.
+        // This text ends up in the journal: it has to be read, not
+        // decoded.
         let trouble = Trouble::of("le presse-papiers était pris");
         assert_eq!(trouble.to_string(), "le presse-papiers était pris");
     }
@@ -261,9 +261,9 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn outside_windows_the_answer_is_honest() {
-        // Ni un faux « il est vide » ni un faux « c'est posé » : les deux
-        // mentiraient à qui décide d'envoyer quelque chose à partir de
-        // la réponse.
+        // Neither a false "it is empty" nor a false "it is set": both
+        // would lie to whoever decides to send something based on the
+        // answer.
         assert!(what_it_holds().is_err());
         assert!(Found::of(Clip::text("bonjour")).really.is_empty());
         assert!(hold_this(&Clip::text("bonjour")).is_err());
