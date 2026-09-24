@@ -149,7 +149,13 @@ fn open(
     major: u32,
     functions: &[&[&'static str]],
 ) -> Result<(Library, PathBuf), CodecError> {
-    let path = dir.join(file_name(library, major));
+    // A full path: Windows only searches a DLL's own folder for what it
+    // needs when the DLL was named that way.
+    let named = dir.join(file_name(library, major));
+    let path = std::path::absolute(&named).map_err(|e| CodecError::Library {
+        path: named,
+        reason: e.to_string(),
+    })?;
     // SAFETY: loading FFmpeg runs its initialisers, which only set up
     // its own tables.
     let loaded = unsafe { load(&path) }.map_err(|e| CodecError::Library {
@@ -254,6 +260,15 @@ mod tests {
         let said = refused.to_string();
         assert!(said.starts_with("FFmpeg introuvable"), "{said}");
         assert!(said.contains(&empty.display().to_string()), "{said}");
+    }
+
+    #[test]
+    fn a_relative_folder_is_opened_by_its_full_path() {
+        let refused = Ffmpeg::load(Path::new("no-ffmpeg-here")).err();
+        let Some(CodecError::Library { path, .. }) = refused else {
+            panic!("unexpected: {refused:?}");
+        };
+        assert!(path.is_absolute(), "{}", path.display());
     }
 
     #[test]
