@@ -1,4 +1,4 @@
-//! Diagnostic de la machine : chaque vérification rend un état et un détail.
+//! Checks this machine: every check gives back a status and a detail.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -97,8 +97,8 @@ fn gpu() -> Verification {
                 .map(str::to_string)
                 .collect();
             if names.is_empty() {
-                // Toute machine Windows réelle expose un adaptateur : une liste
-                // vide traduit une requête sans réponse, pas une absence de GPU.
+                // Every real Windows machine shows an adapter: an empty list
+                // means a query that got no answer, not a missing GPU.
                 Verification {
                     name: "Processeur graphique",
                     status: Status::Warning,

@@ -1,6 +1,6 @@
 [package]
 name = "zyr-session"
-description = "Ouverture d'une session distante, de la demande de voie au lecteur lancé"
+description = "Opening a remote session, from asking for a way to the player launched"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

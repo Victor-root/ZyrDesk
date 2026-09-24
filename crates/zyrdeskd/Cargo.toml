@@ -1,8 +1,8 @@
 [package]
 name = "zyrdeskd"
-# Ce que le gestionnaire des tâches affiche. Sans accent : le compilateur
-# de ressources de Windows lit ce nom dans le jeu de caractères du
-# système, et une lettre accentuée y arrive coupée.
+# What the Task Manager shows. No accents: the Windows resource compiler
+# reads this name in the system's character set, and an accented letter
+# arrives there cut in two.
 description = "ZyrDesk : Service de connexion distante"
 version.workspace = true
 edition.workspace = true
@@ -25,9 +25,9 @@ clap.workspace = true
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 
 [dev-dependencies]
-# Le lien de compte s'essaie contre un vrai serveur, dans le même
-# processus, avec un certificat que personne ne garantit : la route de
-# tout serveur auto-hébergé.
+# The account link is tried against a real server, in the same process,
+# with a certificate nobody vouches for: the road of every self-hosted
+# server.
 zyr-server = { path = "../../server/zyr-server" }
 rcgen = "0.14.8"
 

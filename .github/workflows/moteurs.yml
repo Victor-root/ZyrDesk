@@ -1,8 +1,8 @@
 name: Moteurs
 
-# Les moteurs bougent rarement et leur compilation est longue : elle ne
-# se déclenche pas à chaque commit, seulement quand ce qui la décrit
-# change, ou à la demande.
+# The engines rarely move and building them takes long: the build does
+# not run on every commit, only when what describes it changes, or on
+# demand.
 on:
   workflow_dispatch:
   push:
@@ -13,7 +13,7 @@ on:
       - "engines/**"
 
 concurrency:
-  group: moteurs-${{ github.ref }}
+  group: engines-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -26,20 +26,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Seul le moteur client est nécessaire ici, et il tire déjà ses
-          # propres sous-modules pendant la compilation.
+          # Only the client engine is needed here, and it already pulls its
+          # own submodules during the build.
           submodules: false
 
       - name: Récupérer la source du moteur
         run: git submodule update --init --depth 1 engines/moonlight-qt
 
-      # La version de Qt n'est pas un détail : c'est celle sur laquelle
-      # la version épinglée du moteur est construite et testée en amont.
+      # The Qt version is not a detail: it is the one the pinned version of
+      # the engine is built and tested with upstream.
       #
-      # Aucun module supplémentaire n'est demandé : sous Qt 6, tout ce
-      # que le moteur utilise (Quick, Controls, SVG) est déjà dans
-      # l'installation de base, et le réclamer fait échouer l'installation
-      # au lieu de ne rien faire.
+      # No extra module is asked for: under Qt 6, everything the engine
+      # uses (Quick, Controls, SVG) is already in the base installation,
+      # and asking for it makes the installation fail instead of doing
+      # nothing.
       - name: Installer Qt
         uses: jurplel/install-qt-action@v4
         with:
@@ -51,9 +51,9 @@ jobs:
         with:
           arch: x64
 
-      # La compilation vérifie elle-même ce qu'elle produit : un moteur
-      # à qui il manque une bibliothèque ne se voit qu'au premier
-      # lancement, sur la machine de quelqu'un d'autre.
+      # The build checks what it produces itself: an engine missing a
+      # library only shows at its first launch, on somebody else's
+      # machine.
       - name: Compiler le moteur client
         run: ./packaging/engines/build-client-engine.ps1
 
@@ -63,7 +63,7 @@ jobs:
           path: data/engines/client/
           if-no-files-found: error
 
-  hote:
+  host:
     name: Moteur hôte
     runs-on: windows-latest
     defaults:
@@ -72,19 +72,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Seul le moteur hôte est nécessaire ici, et il tire déjà ses
-          # propres sous-modules pendant la compilation.
+          # Only the host engine is needed here, and it already pulls its
+          # own submodules during the build.
           submodules: false
 
       - name: Récupérer la source du moteur
         shell: pwsh
         run: git submodule update --init --depth 1 engines/sunshine
 
-      # Le moteur hôte ne se compile pas avec le compilateur de Microsoft :
-      # sa propre chaîne de compilation est GCC sous MSYS2, et c'est celle
-      # sur laquelle sa version épinglée est construite et testée en amont.
-      # La liste est la sienne, moins ce qui ne sert qu'à sa documentation
-      # et à ses installateurs, que nous ne produisons pas.
+      # The host engine does not build with Microsoft's compiler: its own
+      # toolchain is GCC under MSYS2, and it is the one its pinned version
+      # is built and tested with upstream. The list is its own, minus what
+      # only serves its documentation and its installers, which we do not
+      # produce.
       - uses: msys2/setup-msys2@v2
         with:
           msystem: ucrt64
@@ -105,16 +105,16 @@ jobs:
             mingw-w64-ucrt-x86_64-opus
             mingw-w64-ucrt-x86_64-toolchain
 
-      # L'interface de configuration du moteur est construite par un outil
-      # JavaScript, que MSYS2 ne fournit pas. Le shell MSYS2 ne reprend
-      # pas le PATH de Windows, sans quoi ses propres outils se feraient
-      # masquer par leurs homonymes Windows : le chemin de Node lui est
-      # donc passé explicitement.
+      # The engine's configuration interface is built by a JavaScript tool,
+      # which MSYS2 does not provide. The MSYS2 shell does not take over
+      # the Windows PATH, otherwise its own tools would be hidden by their
+      # Windows namesakes: the path to Node is therefore passed to it
+      # explicitly.
       #
-      # La version suivie est celle que le moteur emploie lui-même pour
-      # construire cette interface, et non un numéro choisi ici : ce
-      # Node-là ne compile rien qui nous appartienne. Le moteur demande
-      # la version en service longue durée du moment, donc nous aussi.
+      # The version followed is the one the engine itself uses to build
+      # that interface, not a number chosen here: that Node builds nothing
+      # of ours. The engine asks for the current long-term support
+      # version, so we do too.
       - uses: actions/setup-node@v6
         with:
           node-version: "lts/*"
@@ -122,12 +122,12 @@ jobs:
       - name: Relever le chemin de Node
         shell: pwsh
         run: |
-          $dossier = Split-Path -Parent (Get-Command node).Source
-          "NODE_DIR=$dossier" >> $env:GITHUB_ENV
+          $folder = Split-Path -Parent (Get-Command node).Source
+          "NODE_DIR=$folder" >> $env:GITHUB_ENV
 
-      # La compilation vérifie elle-même ce qu'elle produit : un moteur
-      # à qui il manque une bibliothèque ne se voit qu'au premier
-      # lancement, sur la machine de quelqu'un d'autre.
+      # The build checks what it produces itself: an engine missing a
+      # library only shows at its first launch, on somebody else's
+      # machine.
       - name: Compiler le moteur hôte
         run: |
           export PATH="${PATH}:$(cygpath "${NODE_DIR}")"

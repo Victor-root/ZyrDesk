@@ -18,11 +18,11 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  qualite:
+  quality:
     name: Format et analyse statique
     runs-on: ubuntu-latest
     steps:
-      # Les moteurs sont des submodules volumineux et inutiles ici.
+      # The engines are large submodules, useless here.
       - uses: actions/checkout@v6
         with:
           submodules: false
@@ -46,14 +46,14 @@ jobs:
           submodules: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # Sans --no-fail-fast, cargo s'arrête au premier binaire de test en
-      # échec : une plateforme qui casse plusieurs choses ne les révèle
-      # qu'une par une, un aller-retour de CI à chaque fois.
+      # Without --no-fail-fast, cargo stops at the first failing test
+      # binary: a platform that breaks several things only reveals them one
+      # at a time, a CI round trip each time.
       - run: cargo test --workspace --all-targets --no-fail-fast
       - name: Diagnostic
         run: cargo run -p zyr-cli -- doctor
 
-  installateur:
+  installer:
     name: Installateur Windows
     runs-on: windows-latest
     steps:
@@ -62,41 +62,41 @@ jobs:
           submodules: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      # NSIS n'est plus fourni par l'image Windows du runner, et son
-      # installateur n'ajoute rien au PATH.
+      # NSIS is no longer provided by the runner's Windows image, and its
+      # installer adds nothing to the PATH.
       #
-      # Demandé plusieurs fois : le dépôt d'où il vient répond parfois
-      # « service indisponible », et une minute de panne chez lui passait
-      # pour un défaut chez nous. Toute la compilation tombait au rouge
-      # sur un commit qui ne touchait pas à l'installateur, ce qui est la
-      # meilleure façon de ne plus regarder le voyant du tout.
+      # Asked for several times: the repository it comes from sometimes
+      # answers "service unavailable", and a minute of outage on its side
+      # passed for a defect on ours. The whole build went red on a commit
+      # that did not touch the installer, which is the best way to stop
+      # looking at the light at all.
       #
-      # Où il se pose n'est pas écrit d'avance : le paquet livre tantôt
-      # la version 32 bits, tantôt la 64, et les deux ne s'installent pas
-      # au même endroit. Le chemin était écrit en dur ici, et le jour où
-      # le paquet a changé de bord, la compilation s'est arrêtée sur un
-      # « makensis introuvable » alors que NSIS venait d'être installé.
-      # Cherché plutôt qu'écrit, et dit franchement s'il manque.
+      # Where it lands is not known in advance: the package ships the 32
+      # bit version one day and the 64 bit one the next, and the two do not
+      # install in the same place. The path used to be written here by
+      # hand, and the day the package switched sides, the build stopped on
+      # a "makensis introuvable" although NSIS had just been installed.
+      # Looked for rather than written, and said plainly when it is missing.
       - name: Installer NSIS
         run: |
-          $essais = 3
-          for ($essai = 1; $essai -le $essais; $essai++) {
+          $attempts = 3
+          for ($attempt = 1; $attempt -le $attempts; $attempt++) {
             choco install nsis --no-progress -y
             if ($LASTEXITCODE -eq 0) { break }
-            if ($essai -eq $essais) {
-              throw "NSIS n'a pas pu être installé en $essais essais"
+            if ($attempt -eq $attempts) {
+              throw "NSIS n'a pas pu être installé en $attempts essais"
             }
-            Write-Host "NSIS non installé (essai $essai sur $essais), nouvel essai dans 20 s"
+            Write-Host "NSIS non installé (essai $attempt sur $attempts), nouvel essai dans 20 s"
             Start-Sleep -Seconds 20
           }
-          $ou = Get-ChildItem -Path "C:\Program Files\NSIS", "C:\Program Files (x86)\NSIS" `
+          $found = Get-ChildItem -Path "C:\Program Files\NSIS", "C:\Program Files (x86)\NSIS" `
             -Filter makensis.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $ou) { throw "makensis introuvable après l'installation de NSIS" }
-          $ou.DirectoryName >> $env:GITHUB_PATH
+          if (-not $found) { throw "makensis introuvable après l'installation de NSIS" }
+          $found.DirectoryName >> $env:GITHUB_PATH
       - run: cargo build --release --workspace
-      # Les guillemets ne sont pas décoratifs : sans eux, PowerShell coupe
-      # -DVERSION=0.1.0 en deux arguments et makensis cherche un script
-      # nommé « .1.0 ».
+      # The quotes are not decoration: without them, PowerShell splits
+      # -DVERSION=0.1.0 into two arguments and makensis looks for a script
+      # named ".1.0".
       - name: Construire l'installateur
         working-directory: packaging/windows
         run: makensis "-DVERSION=0.1.0" zyrdesk-setup.nsi

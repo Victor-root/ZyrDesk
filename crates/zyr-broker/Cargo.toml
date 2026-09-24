@@ -1,6 +1,6 @@
 [package]
 name = "zyr-broker"
-description = "Ce que le service et le serveur ZyrDesk se disent : messages, tickets et laissez-passer signés"
+description = "What the ZyrDesk service and server tell each other: messages, tickets and signed passes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

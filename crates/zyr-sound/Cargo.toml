@@ -1,26 +1,26 @@
 [package]
 name = "zyr-sound"
-description = "Le son de l'ordinateur : couper celui d'un programme, couper celui des enceintes"
+description = "The computer's sound: muting one program, muting the speakers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-# La famille audio de Windows n'existe qu'en COM, et windows-sys ne
-# porte aucune interface COM : il ne connaît que des fonctions, des
-# structures et des constantes. Écrire ces interfaces à la main
-# reviendrait à recopier des tables de fonctions que rien ne vérifie.
-# Le paquet windows est du même éditeur, il est déjà dans le verrou du
-# dépôt (l'interface s'en sert), et le compilateur y contrôle chaque appel.
+# The Windows audio family exists only as COM, and windows-sys carries no
+# COM interface: it only knows functions, structures and constants.
+# Writing those interfaces by hand would mean copying function tables that
+# nothing checks. The windows package comes from the same publisher, it is
+# already in the repository's lock file (the interface uses it), and the
+# compiler checks every call there.
 windows = { version = "0.61.3", features = [
     "Win32_Media_Audio",
-    # Le muet des enceintes, qui est une propriété du périphérique et
-    # non du mélange : c'est ce qui fait qu'il n'atteint pas la capture.
+    # The speakers' mute, which is a property of the device and not of
+    # the mix: that is why it does not reach the capture.
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
-    # IMMDevice::Activate porte un paramètre PROPVARIANT, même
-    # inutilisé : sans ces deux portes, la méthode n'est pas compilée.
+    # IMMDevice::Activate takes a PROPVARIANT parameter, even unused:
+    # without these two features, the method is not compiled.
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",
 ] }

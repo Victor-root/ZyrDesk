@@ -1,6 +1,6 @@
 [package]
 name = "zyr-engine-host"
-description = "Supervision du moteur hôte : génération de configuration et de la liste d'applications"
+description = "Supervision of the host engine: generating its configuration and its list of applications"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

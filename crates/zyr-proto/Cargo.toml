@@ -1,15 +1,15 @@
 [package]
 name = "zyr-proto"
-description = "Types et constantes partagés entre les composants ZyrDesk"
+description = "Types and constants shared between the ZyrDesk components"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-# Ce qu'un presse-papiers porte voyage sur un canal de texte, et une
-# image n'en est pas : ces deux-là sont déjà dans le verrou du dépôt, le
-# premier chez les comptes et le second chez le transport.
+# What a clipboard holds travels on a text channel, and a picture is not
+# text: these two are already in the repository's lock file, the first
+# through the accounts and the second through the transport.
 base64 = "0.23.1"
 if-addrs = "0.15.0"
 rand = "0.10.2"

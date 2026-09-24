@@ -1,65 +1,65 @@
 /*
-  Design system ZyrDesk, version 1.
+  ZyrDesk design system, version 1.
 
-  Un seul endroit décide des couleurs, des espacements, des rythmes.
-  Les vues n'écrivent jamais une valeur en dur : elles nomment un rôle.
-  C'est ce qui permet de changer le thème sans relire chaque écran, et
-  ce qui empêche l'interface de dériver écran par écran.
+  One place decides the colours, the spacings, the rhythms. The views
+  never write a value by hand: they name a role. That is what lets the
+  theme change without rereading every screen, and what keeps the
+  interface from drifting screen by screen.
 
-  Les couleurs portent des noms de rôle et non de teinte. « surface-2 »
-  survit à un changement de palette ; « gris-clair » non.
+  Colours carry names of roles, not of hues. "surface-2" survives a
+  change of palette; "light-grey" does not.
 */
 
 :root {
   color-scheme: dark;
 
-  /* Fonds, du plus profond au plus proche. Trois niveaux, pas plus :
-     au-delà l'oeil ne les distingue plus et le calme se perd. */
+  /* Backgrounds, from the deepest to the nearest. Three levels, no more:
+     beyond that the eye no longer tells them apart and the calm is lost. */
   --background: #0b0d12;
   --surface-1: #12151d;
   --surface-2: #191d27;
   --surface-3: #222735;
 
-  /* Traits. Jamais de bordure dure : une séparation se suggère. */
+  /* Lines. Never a hard border: a separation is suggested. */
   --border: #262c3a;
   --border-strong: #333b4d;
 
-  /* Textes, par importance décroissante. */
+  /* Texts, by decreasing importance. */
   --text: #e8eaf0;
   --text-soft: #a0a7b8;
   --text-faint: #6b7385;
 
-  /* La seule couleur d'accent, réservée à l'action principale et à
-     ce qui est vivant. L'employer ailleurs la dévalue.
+  /* The only accent colour, kept for the main action and for what is
+     alive. Using it anywhere else cheapens it.
 
-     C'est l'or du logo, repris au signe près : un produit dont la marque
-     dit une couleur et dont l'interface en dit une autre est un produit
-     qui se présente deux fois. */
+     It is the gold of the logo, to the digit: a product whose brand says
+     one colour and whose interface says another is a product that
+     introduces itself twice. */
   --accent: #efb536;
   --accent-bright: #f8cd6a;
   --accent-muted: #6a4a12;
   --accent-tint: rgba(239, 181, 54, 0.14);
-  /* Ce qui s'écrit par-dessus l'accent. Une couleur d'accent n'est pas
-     un fond de texte tant qu'on n'a pas dit ce qui se lit dessus : sans
-     ce rôle, chaque écran le devine à sa façon, et le côté allumé d'un
-     interrupteur se lisait en clair sur du clair.
+  /* What is written on top of the accent. An accent colour is not a
+     text background until what reads on it has been said: without this
+     role, every screen guesses it its own way, and the lit side of a
+     switch read light on light.
 
-     Le noir du logo, comme dans le logo : c'est ce qui se lit sur cet
-     or-là, et le blanc n'y tient pas. */
+     The black of the logo, as in the logo: it is what reads on that
+     gold, and white does not hold there. */
   --on-accent: #0b0d12;
 
-  /* États système. Une palette réduite, jamais décorative.
+  /* System states. A small palette, never decorative.
 
-     L'attention penche vers l'orange depuis que l'accent est doré : deux
-     jaunes voisins, l'un qui appelle le clic et l'autre qui prévient, ne
-     se distinguent plus, et c'est justement celui qui prévient qu'il ne
-     faut pas rater. */
+     The warning leans towards orange since the accent became gold: two
+     neighbouring yellows, one calling for the click and the other giving
+     warning, can no longer be told apart, and the one giving warning is
+     precisely the one not to miss. */
   --online: #34d399;
   --warning: #f97316;
   --error: #f87171;
   --offline: #4b5563;
 
-  /* Grille de 8. Tout espacement en descend. */
+  /* A grid of 8. Every spacing comes from it. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -73,28 +73,28 @@
   --radius-large: 16px;
   --radius-round: 999px;
 
-  /* Ombres courtes et douces : elles posent, elles ne dramatisent pas. */
+  /* Short, soft shadows: they set things down, they do not dramatise. */
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.35);
 
-  /* Quatre tailles de texte, pas une de plus. */
+  /* Four text sizes, not one more. */
   --title: 22px;
   --subtitle: 15px;
   --body: 14px;
   --caption: 12px;
 
-  /* Mouvement : assez pour être compris, assez court pour ne pas
-     être attendu. */
+  /* Motion: enough to be understood, short enough not to be waited
+     for. */
   --duration: 180ms;
   --duration-short: 120ms;
   --curve: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
-/* Le thème clair. Il n'est jamais choisi par une requête de média ici :
-   c'est `theme.js` qui tranche, avant le premier affichage, entre ce que
-   demande le système et ce que la personne a choisi. Une seule palette
-   claire existe donc, au lieu d'une pour le système et d'une pour le
-   choix, qui finiraient par diverger. */
+/* The light theme. Nothing here picks it with a media query: the program
+   decides, before the first frame, between what the system asks for and
+   what the person chose (`src/theme.rs`). So only one light palette
+   exists, instead of one for the system and one for the choice, which
+   would end up drifting apart. */
 :root[data-theme="light"] {
   color-scheme: light;
 
@@ -110,9 +110,9 @@
   --text-soft: #4d5566;
   --text-faint: #798091;
 
-  /* Le même or, descendu jusqu'à se lire sur du blanc : l'or du logo y
-     est trop clair pour porter du texte, et un accent qu'on ne lit pas
-     n'est plus un accent. */
+  /* The same gold, brought down until it reads on white: the gold of the
+     logo is too light there to carry text, and an accent nobody can read
+     is no longer an accent. */
   --accent: #b57e06;
   --accent-bright: #8a5f00;
   --accent-muted: #fbe6b4;
@@ -144,8 +144,8 @@ body {
   font-size: var(--body);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  /* Une interface n'est pas un document : rien ne s'y sélectionne par
-     accident. Ce qui se lit vraiment le redemande. */
+  /* An interface is not a document: nothing in it gets selected by
+     accident. What is really meant to be read asks for it again. */
   user-select: none;
 }
 
@@ -156,33 +156,33 @@ p {
   margin: 0;
 }
 
-/* Ce qui est caché doit le rester quoi qu'en dise le composant. C'est la
-   seule règle du projet qui l'emporte de force : sans elle, un composant
-   qui pose son propre affichage réapparaît, et une carte fantôme en bas
-   d'écran ne se voit qu'à l'usage. */
-.cache {
+/* What is hidden must stay hidden, whatever the component says. It is the
+   only rule of the project that wins by force: without it, a component
+   that sets its own display comes back, and a ghost card at the bottom of
+   the screen only shows up in use. */
+.hidden {
   display: none !important;
 }
 
-/* ---- Texte ---------------------------------------------------------- */
+/* ---- Text ----------------------------------------------------------- */
 
-.titre {
+.title {
   font-size: var(--title);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-.sous-titre {
+.subtitle {
   font-size: var(--subtitle);
   font-weight: 600;
 }
 
-.legende {
+.caption {
   font-size: var(--caption);
   color: var(--text-soft);
 }
 
-/* Une étiquette de section : discrète, jamais criarde. */
+/* A section label: discreet, never loud. */
 .section {
   font-size: var(--caption);
   font-weight: 600;
@@ -191,12 +191,12 @@ p {
   color: var(--text-faint);
 }
 
-/* Les chiffres qu'on compare doivent s'aligner. */
-.mesure {
+/* Figures that get compared must line up. */
+.measure {
   font-variant-numeric: tabular-nums;
 }
 
-.empreinte {
+.fingerprint {
   font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
   font-size: var(--caption);
   color: var(--text-faint);
@@ -207,16 +207,16 @@ p {
 
 /* ---- Surfaces ------------------------------------------------------- */
 
-.carte {
+.card {
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-1);
 }
 
-/* ---- Boutons -------------------------------------------------------- */
+/* ---- Buttons -------------------------------------------------------- */
 
-.bouton {
+.button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -236,78 +236,79 @@ p {
     opacity var(--duration-short) var(--curve);
 }
 
-.bouton:hover:not(:disabled) {
+.button:hover:not(:disabled) {
   background: var(--border);
 }
 
-.bouton:disabled {
+.button:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-.bouton:focus-visible {
+.button:focus-visible {
   outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
-.bouton.principal {
+.button.primary {
   background: var(--accent);
   color: var(--on-accent);
 }
 
-.bouton.principal:hover:not(:disabled) {
+.button.primary:hover:not(:disabled) {
   background: var(--accent-bright);
 }
 
-/* Un accent simplement pâli reste l'accent : il continue d'appeler le
-   clic. Une action indisponible perd sa couleur, elle ne perd pas sa
-   place. */
-.bouton.principal:disabled {
+/* An accent that is merely paled is still the accent: it keeps calling
+   for the click. An unavailable action loses its colour, it does not lose
+   its place. */
+.button.primary:disabled {
   background: var(--surface-3);
   color: var(--text-faint);
   opacity: 1;
 }
 
-.bouton.discret {
+.button.quiet {
   background: transparent;
   border-color: var(--border-strong);
   color: var(--text-soft);
 }
 
-.bouton.discret:hover:not(:disabled) {
+.button.quiet:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--text);
 }
 
-/* Un bouton qui attend une confirmation le dit par la couleur autant que
-   par le mot : le mot change sous le doigt, la couleur se voit avant. */
-.bouton.attention {
+/* A button waiting for a confirmation says so by its colour as much as
+   by its word: the word changes under the finger, the colour shows
+   first. */
+.button.warning {
   border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
   color: var(--warning);
 }
 
-.bouton.grand {
+.button.large {
   min-height: 44px;
   padding: 0 var(--space-5);
   font-size: var(--subtitle);
 }
 
-/* Un bouton qui ne porte qu'un dessin reste carré, et garde la même
-   hauteur que ceux qui portent un mot. */
-.bouton.icone {
+/* A button that carries only a drawing stays square, and keeps the same
+   height as those that carry a word. */
+.button.icon {
   width: 36px;
   padding: 0;
 }
 
-.bouton.icone > svg {
+.button.icon > svg {
   width: 18px;
   height: 18px;
 }
 
-/* ---- Choix segmenté -------------------------------------------------- */
+/* ---- Segmented choice ---------------------------------------------- */
 
-/* Trois possibilités qui s'excluent, montrées toutes les trois : la
-   personne voit ce qu'elle peut choisir sans avoir à ouvrir un menu. */
+/* Three possibilities that exclude each other, all three shown: the
+   person sees what they can choose without having to open a menu. */
 .segments {
   display: inline-flex;
   gap: 2px;
@@ -320,8 +321,8 @@ p {
 .segments > button {
   min-height: 26px;
   padding: 0 var(--space-3);
-  /* Un choix qui passe à la ligne cesse de se lire d'un coup d'oeil :
-     le segment s'élargit, jamais le mot ne se coupe. */
+  /* A choice that wraps stops being read at a glance: the segment grows
+     wider, the word is never cut. */
   white-space: nowrap;
   border: none;
   border-radius: 6px;
@@ -350,20 +351,20 @@ p {
   outline-offset: 1px;
 }
 
-/* ---- Champs --------------------------------------------------------- */
+/* ---- Fields --------------------------------------------------------- */
 
-.champ {
+.field {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.champ > label {
+.field > label {
   font-size: var(--caption);
   color: var(--text-soft);
 }
 
-.champ > input {
+.field > input {
   min-height: 40px;
   padding: 0 var(--space-3);
   background: var(--surface-2);
@@ -377,19 +378,19 @@ p {
     background var(--duration-short) var(--curve);
 }
 
-.champ > input::placeholder {
+.field > input::placeholder {
   color: var(--text-faint);
 }
 
-.champ > input:focus {
+.field > input:focus {
   outline: none;
   border-color: var(--accent);
   background: var(--surface-3);
 }
 
-/* ---- Pastille de présence ------------------------------------------- */
+/* ---- Presence dot --------------------------------------------------- */
 
-.pastille {
+.dot {
   display: inline-block;
   width: 8px;
   height: 8px;
@@ -398,30 +399,31 @@ p {
   flex: none;
 }
 
-.pastille.vivante {
+.dot.alive {
   background: var(--online);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--online) 18%, transparent);
 }
 
-.pastille.attention {
+.dot.warning {
   background: var(--warning);
 }
 
-.pastille.erreur {
+.dot.error {
   background: var(--error);
 }
 
-/* L'état ne se lit jamais à la couleur seule : le texte à côté le dit. */
-.etat {
+/* A status is never read from the colour alone: the text beside it says
+   it. */
+.status {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   color: var(--text-soft);
 }
 
-/* ---- Interrupteur --------------------------------------------------- */
+/* ---- Switch --------------------------------------------------------- */
 
-.interrupteur {
+.switch {
   position: relative;
   width: 44px;
   height: 26px;
@@ -436,7 +438,7 @@ p {
     border-color var(--duration) var(--curve);
 }
 
-.interrupteur::after {
+.switch::after {
   content: "";
   position: absolute;
   top: 3px;
@@ -450,29 +452,29 @@ p {
     background var(--duration) var(--curve);
 }
 
-.interrupteur[aria-checked="true"] {
+.switch[aria-checked="true"] {
   background: var(--accent);
   border-color: var(--accent);
 }
 
-.interrupteur[aria-checked="true"]::after {
+.switch[aria-checked="true"]::after {
   transform: translateX(18px);
   background: var(--on-accent);
 }
 
-.interrupteur:focus-visible {
+.switch:focus-visible {
   outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
-.interrupteur:disabled {
+.switch:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-/* ---- Bandeau d'information ------------------------------------------ */
+/* ---- Banner --------------------------------------------------------- */
 
-.bandeau {
+.banner {
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
@@ -483,36 +485,36 @@ p {
   color: var(--text-soft);
 }
 
-.bandeau.alerte {
+.banner.alert {
   border-color: color-mix(in srgb, var(--error) 40%, var(--border));
   background: color-mix(in srgb, var(--error) 8%, var(--surface-2));
 }
 
-.bandeau.attente {
+.banner.waiting {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: var(--accent-tint);
   color: var(--text);
 }
 
-/* Un bandeau qui porte de quoi y remédier : le texte prend la place, le
-   bouton reste à sa taille, et les deux s'alignent au milieu plutôt que
-   de laisser le bouton pendre en haut. */
-.bandeau.avec-action {
+/* A banner that carries the way to fix what it says: the text takes the
+   room, the button keeps its size, and both line up in the middle rather
+   than leaving the button hanging at the top. */
+.banner.with-action {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
 }
 
-.bandeau-mot {
+.banner-text {
   flex: 1;
   min-width: 0;
 }
 
-.bandeau.avec-action > .bouton {
+.banner.with-action > .button {
   flex: none;
 }
 
-/* ---- Code d'appairage ----------------------------------------------- */
+/* ---- Pairing code -------------------------------------------------- */
 
 .code {
   font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
@@ -523,9 +525,9 @@ p {
   user-select: text;
 }
 
-/* ---- Apparitions ----------------------------------------------------- */
+/* ---- Appearing ------------------------------------------------------ */
 
-@keyframes apparait {
+@keyframes appear {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -536,8 +538,8 @@ p {
   }
 }
 
-.apparait {
-  animation: apparait var(--duration) var(--curve);
+.appear {
+  animation: appear var(--duration) var(--curve);
 }
 
 @media (prefers-reduced-motion: reduce) {

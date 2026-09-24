@@ -1,10 +1,10 @@
-; Installateur ZyrDesk pour Windows.
+; ZyrDesk installer for Windows.
 ;
-; Installe les binaires existants, enregistre le service, et se désinstalle
-; sans laisser de résidu. Les composants qui n'existent pas encore (moteurs,
-; interface) sont ajoutés à leur jalon respectif aux emplacements marqués.
+; Installs the existing binaries, registers the service, and uninstalls
+; without leaving anything behind. The components that do not exist yet
+; (engines, interface) are added at their own milestone, where marked.
 ;
-; Construction : makensis -DVERSION=<version> zyrdesk-setup.nsi
+; Build: makensis -DVERSION=<version> zyrdesk-setup.nsi
 
 Unicode true
 SetCompressor /SOLID lzma
@@ -16,23 +16,23 @@ SetCompressor /SOLID lzma
   !define BIN_DIR "..\..\target\release"
 !endif
 
-!define PRODUIT "ZyrDesk"
-!define EDITEUR "Projet ZyrDesk"
+!define PRODUCT "ZyrDesk"
+!define PUBLISHER "Projet ZyrDesk"
 !define SITE "https://github.com/Victor-root/ZyrDesk"
-!define CLE_DESINSTALL "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUIT}"
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT}"
 
-Name "${PRODUIT} ${VERSION}"
-OutFile "${PRODUIT}-Setup-${VERSION}.exe"
-InstallDir "$PROGRAMFILES64\${PRODUIT}"
-InstallDirRegKey HKLM "Software\${PRODUIT}" "InstallDir"
+Name "${PRODUCT} ${VERSION}"
+OutFile "${PRODUCT}-Setup-${VERSION}.exe"
+InstallDir "$PROGRAMFILES64\${PRODUCT}"
+InstallDirRegKey HKLM "Software\${PRODUCT}" "InstallDir"
 RequestExecutionLevel admin
 ShowInstDetails show
 ShowUnInstDetails show
 
 VIProductVersion "${VERSION}.0"
-VIAddVersionKey "ProductName" "${PRODUIT}"
-VIAddVersionKey "CompanyName" "${EDITEUR}"
-VIAddVersionKey "FileDescription" "Installateur ${PRODUIT}"
+VIAddVersionKey "ProductName" "${PRODUCT}"
+VIAddVersionKey "CompanyName" "${PUBLISHER}"
+VIAddVersionKey "FileDescription" "Installateur ${PRODUCT}"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 VIAddVersionKey "LegalCopyright" "GPLv3"
@@ -49,26 +49,26 @@ VIAddVersionKey "LegalCopyright" "GPLv3"
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "French"
 
-; Le produit range ses données dans un sous-dossier « data » de son
-; propre dossier : l'installateur n'a rien à créer ailleurs, et la
-; désinstallation n'a qu'un endroit à nettoyer.
-!define DOSSIER_DONNEES "$INSTDIR\data"
+; The product keeps its data in a "data" subfolder of its own folder: the
+; installer has nothing to create anywhere else, and uninstalling has only
+; one place to clean.
+!define DATA_DIR "$INSTDIR\data"
 
-; L'écran virtuel : ses fichiers signés, et l'endroit où ils sont posés.
-; Le chemin d'arrivée doit rester égal à ce que renvoie
-; paths::virtual_screen_driver_dir() dans crates/zyr-proto/src/paths.rs,
-; qui cherche à côté du programme : NSIS ne sait pas lire le code Rust.
-!ifndef ECRAN_DIR
-  !define ECRAN_DIR "..\..\vendor\ecran-virtuel"
+; The virtual screen: its signed files, and the place they are put. The
+; destination must stay equal to what paths::virtual_screen_driver_dir()
+; returns in crates/zyr-proto/src/paths.rs, which looks next to the
+; program: NSIS cannot read Rust code.
+!ifndef SCREEN_DIR
+  !define SCREEN_DIR "..\..\vendor\ecran-virtuel"
 !endif
-!define DOSSIER_PILOTE_ECRAN "$INSTDIR\vendor\ecran-virtuel"
+!define SCREEN_DRIVER_DIR "$INSTDIR\vendor\ecran-virtuel"
 
-; Le seul port ouvert sur la machine. Doit rester égal à TUNNEL_PORT
-; dans crates/zyr-proto/src/net.rs : NSIS ne sait pas lire le code Rust.
-!define PORT_TUNNEL "47000"
-!define REGLE_PARE_FEU "ZyrDesk (tunnel)"
+; The only port open on the machine. Must stay equal to TUNNEL_PORT in
+; crates/zyr-proto/src/net.rs: NSIS cannot read Rust code.
+!define TUNNEL_PORT "47000"
+!define FIREWALL_RULE "ZyrDesk (tunnel)"
 
-Section "ZyrDesk" SEC_PRINCIPAL
+Section "ZyrDesk" SEC_MAIN
   SectionIn RO
   SetOutPath "$INSTDIR"
 
@@ -76,47 +76,47 @@ Section "ZyrDesk" SEC_PRINCIPAL
   File "${BIN_DIR}\zyrdeskd.exe"
   File "..\..\LICENSE"
 
-  ; M4 : ZyrDesk.exe (interface) et moteurs rebrandés.
+  ; M4: ZyrDesk.exe (interface) and rebranded engines.
 
-  ; L'écran virtuel voyage avec le produit : rien à télécharger, rien à
-  ; installer à part. Ses fichiers sont signés comme un tout, donc ils
-  ; sont posés tels quels, sans être renommés ni retouchés.
+  ; The virtual screen travels with the product: nothing to download,
+  ; nothing to install separately. Its files are signed as a whole, so
+  ; they are put down as they are, neither renamed nor touched.
   ;
-  ; C'est le service qui les pose ensuite dans Windows, à son
-  ; enregistrement, parce que c'est lui qui sait ce qu'il en fait et lui
-  ; qui sait le retirer.
-  SetOutPath "${DOSSIER_PILOTE_ECRAN}"
-  File /nonfatal "${ECRAN_DIR}\MttVDD.inf"
-  File /nonfatal "${ECRAN_DIR}\MttVDD.cat"
-  File /nonfatal "${ECRAN_DIR}\MttVDD.dll"
-  ; Sa licence MIT voyage avec lui : elle exige de conserver son avis de
-  ; copyright dans toute redistribution.
-  File /nonfatal /oname=LICENSE-ecran-virtuel "${ECRAN_DIR}\LICENSE"
-  IfFileExists "${DOSSIER_PILOTE_ECRAN}\MttVDD.inf" ecran_present 0
+  ; It is the service that then installs them into Windows, when it
+  ; registers, because it is the one that knows what it does with them and
+  ; the one that knows how to remove them.
+  SetOutPath "${SCREEN_DRIVER_DIR}"
+  File /nonfatal "${SCREEN_DIR}\MttVDD.inf"
+  File /nonfatal "${SCREEN_DIR}\MttVDD.cat"
+  File /nonfatal "${SCREEN_DIR}\MttVDD.dll"
+  ; Its MIT licence travels with it: it requires keeping its copyright
+  ; notice in any redistribution.
+  File /nonfatal /oname=LICENSE-ecran-virtuel "${SCREEN_DIR}\LICENSE"
+  IfFileExists "${SCREEN_DRIVER_DIR}\MttVDD.inf" screen_present 0
   DetailPrint "Pilote d'écran virtuel absent de la construction : les sessions \
     demandant un écran plus grand que celui de cet ordinateur seront agrandies."
-  ecran_present:
+  screen_present:
   SetOutPath "$INSTDIR"
 
-  ; Une seule règle, pour un seul programme et un seul port : tout ce
-  ; qu'une session transporte passe par le tunnel, et les moteurs ne
-  ; sont joignables que depuis la machine elle-même.
-  DetailPrint "Ouverture du port ${PORT_TUNNEL} pour ZyrDesk..."
-  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${REGLE_PARE_FEU}"'
+  ; A single rule, for a single program and a single port: everything a
+  ; session carries goes through the tunnel, and the engines can only be
+  ; reached from the machine itself.
+  DetailPrint "Ouverture du port ${TUNNEL_PORT} pour ZyrDesk..."
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FIREWALL_RULE}"'
   Pop $0
-  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${REGLE_PARE_FEU}" \
-    dir=in action=allow protocol=UDP localport=${PORT_TUNNEL} \
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="${FIREWALL_RULE}" \
+    dir=in action=allow protocol=UDP localport=${TUNNEL_PORT} \
     program="$INSTDIR\zyrdeskd.exe" description="Accès distant ZyrDesk"'
   Pop $0
   ${If} $0 <> 0
     MessageBox MB_OK|MB_ICONEXCLAMATION \
       "La règle de pare-feu n'a pas pu être créée (code $0).$\n$\n\
        Les autres ordinateurs ne pourront pas joindre celui-ci tant que \
-       le port UDP ${PORT_TUNNEL} restera fermé."
+       le port UDP ${TUNNEL_PORT} restera fermé."
   ${EndIf}
 
-  ; Le service s'enregistre lui-même : l'installateur n'a pas à
-  ; connaître son nom interne ni son compte.
+  ; The service registers itself: the installer does not need to know its
+  ; internal name or its account.
   DetailPrint "Enregistrement du service ZyrDesk..."
   ExecWait '"$INSTDIR\zyrdeskd.exe" install' $0
   ${If} $0 <> 0
@@ -129,49 +129,49 @@ Section "ZyrDesk" SEC_PRINCIPAL
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  WriteRegStr HKLM "Software\${PRODUIT}" "InstallDir" "$INSTDIR"
-  WriteRegStr HKLM "Software\${PRODUIT}" "Version" "${VERSION}"
-  WriteRegStr HKLM "${CLE_DESINSTALL}" "DisplayName" "${PRODUIT}"
-  WriteRegStr HKLM "${CLE_DESINSTALL}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKLM "${CLE_DESINSTALL}" "Publisher" "${EDITEUR}"
-  WriteRegStr HKLM "${CLE_DESINSTALL}" "URLInfoAbout" "${SITE}"
-  WriteRegStr HKLM "${CLE_DESINSTALL}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${CLE_DESINSTALL}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKLM "${CLE_DESINSTALL}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
-  WriteRegDWORD HKLM "${CLE_DESINSTALL}" "NoModify" 1
-  WriteRegDWORD HKLM "${CLE_DESINSTALL}" "NoRepair" 1
+  WriteRegStr HKLM "Software\${PRODUCT}" "InstallDir" "$INSTDIR"
+  WriteRegStr HKLM "Software\${PRODUCT}" "Version" "${VERSION}"
+  WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayName" "${PRODUCT}"
+  WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKLM "${UNINSTALL_KEY}" "Publisher" "${PUBLISHER}"
+  WriteRegStr HKLM "${UNINSTALL_KEY}" "URLInfoAbout" "${SITE}"
+  WriteRegStr HKLM "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKLM "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+  WriteRegStr HKLM "${UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegDWORD HKLM "${UNINSTALL_KEY}" "NoModify" 1
+  WriteRegDWORD HKLM "${UNINSTALL_KEY}" "NoRepair" 1
 
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
-  WriteRegDWORD HKLM "${CLE_DESINSTALL}" "EstimatedSize" "$0"
+  WriteRegDWORD HKLM "${UNINSTALL_KEY}" "EstimatedSize" "$0"
 SectionEnd
 
 Section "Uninstall"
-  ; Le service tient le fichier programme tant qu'il tourne : il est
-  ; arrêté et retiré avant qu'on touche à quoi que ce soit.
+  ; The service holds the program file while it runs: it is stopped and
+  ; removed before anything else is touched.
   DetailPrint "Retrait du service ZyrDesk..."
   ExecWait '"$INSTDIR\zyrdeskd.exe" uninstall'
 
-  DetailPrint "Fermeture du port ${PORT_TUNNEL}..."
-  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${REGLE_PARE_FEU}"'
+  DetailPrint "Fermeture du port ${TUNNEL_PORT}..."
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FIREWALL_RULE}"'
   Pop $0
 
-  ; Les données ne sont supprimées que si l'utilisateur le demande.
-  ; En mode silencieux, elles sont conservées.
-  IfSilent conserver_donnees
+  ; The data is only deleted if the user asks for it. In silent mode, it
+  ; is kept.
+  IfSilent keep_data
   MessageBox MB_YESNO|MB_ICONQUESTION \
     "Supprimer aussi les données ZyrDesk (moteurs, réglages, journaux, appairages) ?" \
-    /SD IDNO IDNO conserver_donnees
-  RMDir /r "${DOSSIER_DONNEES}"
-  Goto donnees_traitees
-  conserver_donnees:
-  DetailPrint "Données conservées dans ${DOSSIER_DONNEES}"
-  donnees_traitees:
+    /SD IDNO IDNO keep_data
+  RMDir /r "${DATA_DIR}"
+  Goto data_handled
+  keep_data:
+  DetailPrint "Données conservées dans ${DATA_DIR}"
+  data_handled:
 
-  ; Le service vient de retirer le pilote de l'écran virtuel de Windows ;
-  ; ses fichiers ne servent plus à rien. Ce ne sont pas des données de
-  ; l'utilisateur, donc ils partent dans tous les cas.
-  RMDir /r "${DOSSIER_PILOTE_ECRAN}"
+  ; The service has just removed the virtual screen driver from Windows;
+  ; its files are no longer of any use. They are not the user's data, so
+  ; they go in every case.
+  RMDir /r "${SCREEN_DRIVER_DIR}"
   RMDir "$INSTDIR\vendor"
 
   Delete "$INSTDIR\zyr-cli.exe"
@@ -180,6 +180,6 @@ Section "Uninstall"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 
-  DeleteRegKey HKLM "${CLE_DESINSTALL}"
-  DeleteRegKey HKLM "Software\${PRODUIT}"
+  DeleteRegKey HKLM "${UNINSTALL_KEY}"
+  DeleteRegKey HKLM "Software\${PRODUCT}"
 SectionEnd

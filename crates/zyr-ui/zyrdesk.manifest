@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!--
-  Ce que Windows doit savoir de ce programme avant de le lancer.
+  What Windows must know about this program before launching it.
 
-  Les contrôles modernes, parce que les trois champs de saisie du
-  dialogue « Ajouter un ordinateur » sont ceux du système et que leur mot
-  en filigrane n'existe que dans leur version six.
+  The modern controls, because the three input fields of the "Ajouter un
+  ordinateur" dialogue are the system's own, and their greyed-out hint
+  only exists in their version six.
 
-  Les vrais pixels, sur chaque écran : tout ce que ce programme dessine
-  est déjà à la bonne taille, et sans ce mot le système l'agrandirait une
-  seconde fois. Redit à l'ouverture par un appel, ceinture et bretelles.
+  Real pixels, on every screen: everything this program draws is already
+  at the right size, and without this word the system would enlarge it a
+  second time. Said again by a call at start-up, belt and braces.
 
-  Les versions de Windows qu'il connaît : sans cette liste, le système
-  fait croire à un programme qu'il tourne sur un Windows plus ancien, et
-  plusieurs de ses réponses changent avec.
+  The Windows versions it knows: without this list, the system makes a
+  program believe it runs on an older Windows, and several of its answers
+  change with that.
 
-  Et les droits de celui qui le lance, sans plus : une élévation est
-  demandée une seule fois, à la mise en service, et par la porte prévue
-  pour ça.
+  And the rights of whoever launches it, no more: elevation is asked for
+  only once, when the service is set up, and through the door meant for
+  it.
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <dependency>
@@ -40,7 +40,7 @@
   </trustInfo>
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
-      <!-- Windows 10 et 11 -->
+      <!-- Windows 10 and 11 -->
       <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
       <!-- Windows 8.1 -->
       <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}" />

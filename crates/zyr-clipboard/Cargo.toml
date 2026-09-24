@@ -1,6 +1,6 @@
 [package]
 name = "zyr-clipboard"
-description = "Le presse-papiers de l'ordinateur : ce qu'il porte, ce qu'on lui donne"
+description = "The computer's clipboard: what it holds, what it is given"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,40 +10,39 @@ repository.workspace = true
 zyr-proto.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-# Le presse-papiers lui-même n'est qu'une poignée de fonctions, mais
-# l'imagerie qui fait d'une capture d'écran un PNG n'existe qu'en COM, et
-# `windows-sys` ne porte aucune interface COM. Le paquet `windows` les
-# décrit toutes, il est déjà dans le verrou du dépôt (l'interface et le
-# son s'en servent), et prendre les deux moitiés au même endroit évite
-# d'avoir deux noms pour un même HANDLE.
+# The clipboard itself is only a handful of functions, but the imaging
+# that turns a screenshot into a PNG exists only as COM, and `windows-sys`
+# carries no COM interface. The `windows` package describes them all, it
+# is already in the repository's lock file (the interface and the sound
+# use it), and taking both halves from the same place avoids having two
+# names for one HANDLE.
 windows = { version = "0.61.3", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
-    # WIC, l'imagerie de Windows : elle seule sait faire un PNG d'une
-    # capture d'écran sans qu'on embarque un encodeur.
+    # WIC, the imaging of Windows: only it can make a PNG out of a
+    # screenshot without bundling an encoder.
     "Win32_Graphics_Imaging",
     "Win32_System_Com",
-    # Le flux en mémoire dans lequel l'encodeur écrit.
+    # The in-memory stream the encoder writes into.
     "Win32_System_Com_StructuredStorage",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
-    # De quoi nommer les attributs d'un fichier ordinaire, pour décrire
-    # ceux qu'on tient à la place de l'autre ordinateur.
+    # What it takes to name the attributes of an ordinary file, to
+    # describe the ones held on behalf of the other computer.
     "Win32_Storage_FileSystem",
-    # CF_UNICODETEXT et CF_DIB, que windows range avec l'OLE, et le
-    # presse-papiers OLE lui-même, seul capable de tenir la place de
-    # fichiers qui ne sont pas encore là.
+    # CF_UNICODETEXT and CF_DIB, which windows files with OLE, and the
+    # OLE clipboard itself, the only one able to stand in for files that
+    # are not there yet.
     "Win32_System_Ole",
-    # Ce qu'un glisser-déposer et un copier de l'explorateur posent au
-    # presse-papiers : une poignée de chemins, lue par la famille du
-    # shell.
+    # What a drag and drop and a copy in Explorer put on the clipboard: a
+    # handful of paths, read by the shell family.
     "Win32_UI_Shell",
-    # La file de messages du fil qui tient le presse-papiers pour les
-    # autres programmes : sans la lire, leurs questions restent sans
-    # réponse et leur coller attend dans le vide.
+    # The message queue of the thread that holds the clipboard for the
+    # other programs: without reading it, their questions go unanswered
+    # and their paste waits for nothing.
     "Win32_UI_WindowsAndMessaging",
 ] }
-# Ce que la macro qui bâtit un objet COM écrit : elle nomme cette
-# caisse-là par son nom, et ne la trouve pas sous celui de la famille.
-# C'est la même, republiée par `windows`, déjà dans le verrou du dépôt.
+# What the macro that builds a COM object writes: it names this crate by
+# its own name, and does not find it under the family's. It is the same
+# one, republished by `windows`, already in the repository's lock file.
 windows-core = "0.61.2"

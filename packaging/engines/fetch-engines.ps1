@@ -71,8 +71,8 @@ $found = gh run list --repo $Repository --workflow $workflow --status success `
     --limit 1 --json databaseId,headSha,headBranch,createdAt
 Assert-Ran "la consultation des compilations"
 
-# Rassemblé avant lecture : la sortie d'un programme arrive ligne par
-# ligne, et un JSON lu ligne par ligne n'est plus un JSON.
+# Gathered before reading: a program's output arrives line by line, and
+# JSON read line by line is no longer JSON.
 $runs = @(($found -join "`n") | ConvertFrom-Json)
 if ($runs.Count -eq 0) {
     Write-Host "Aucune compilation des moteurs n'a encore abouti." -ForegroundColor Yellow

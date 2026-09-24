@@ -1,6 +1,6 @@
 [package]
 name = "zyr-engine-client"
-description = "Supervision du moteur client : état par appareil, lancement de session"
+description = "Supervision of the client engine: per-device state, session launch"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,12 +10,12 @@ repository.workspace = true
 zyr-proto.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-# Un moteur ne survit pas au programme qui l'a lancé, et Windows ne
-# l'assure pas tout seul : il faut le lui demander.
+# An engine does not outlive the program that launched it, and Windows
+# does not see to that on its own: it has to be asked.
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_System_JobObjects",
-    # CreateJobObjectW prend des attributs de sécurité, et windows-sys
-    # range donc toute la fonction derrière cette porte-là.
+    # CreateJobObjectW takes security attributes, so windows-sys files
+    # the whole function behind this feature.
     "Win32_Security",
 ] }

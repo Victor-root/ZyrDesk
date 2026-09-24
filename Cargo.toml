@@ -46,14 +46,14 @@ clap = { version = "4", features = ["derive"] }
 lto = "thin"
 strip = "symbols"
 
-# Le profil de développement sert aux essais de fonctionnement, où l'on
-# recompile souvent et où seule la moitié qui bouge est la nôtre. Nos
-# caisses restent donc non optimisées, pour compiler vite, mais tout ce
-# qu'on ne touche jamais est optimisé une fois pour toutes.
+# The development profile is for trying things out, where we recompile
+# often and only the half that moves is ours. Our crates therefore stay
+# unoptimised, to compile quickly, but everything we never touch is
+# optimised once and for all.
 #
-# Sans cette ligne un essai en profil de développement n'aurait aucun
-# sens : le chiffrement et le transport vivent dans ces dépendances, et
-# non optimisés ils rendent une session inutilisable, ce qui ferait
-# prendre un défaut de compilation pour un défaut de produit.
+# Without this line a trial in the development profile would mean
+# nothing: encryption and transport live in these dependencies, and
+# unoptimised they make a session unusable, which would pass a build
+# setting off as a product defect.
 [profile.dev.package."*"]
 opt-level = 2

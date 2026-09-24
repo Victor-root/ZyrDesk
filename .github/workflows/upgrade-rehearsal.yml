@@ -1,8 +1,8 @@
 name: Suivi des moteurs upstream
 
-# Détecte la dérive entre nos moteurs épinglés et leurs versions upstream.
-# Objectif : découvrir les nouvelles versions en semaines, jamais au moment
-# où une mise à niveau devient urgente. Voir docs/engines/UPGRADING.md.
+# Detects the drift between our pinned engines and their upstream versions.
+# Goal: find out about new versions within weeks, never at the moment an
+# upgrade becomes urgent. See docs/engines/UPGRADING.md.
 
 on:
   schedule:
@@ -14,7 +14,7 @@ permissions:
   issues: write
 
 jobs:
-  derive:
+  drift:
     name: Comparer avec upstream
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +23,7 @@ jobs:
           submodules: false
 
       - name: Relever les versions épinglées et upstream
-        id: releve
+        id: readings
         run: |
           set -euo pipefail
 
@@ -48,10 +48,10 @@ jobs:
             echo "moonlight_head=$moonlight_head"
           } >> "$GITHUB_OUTPUT"
 
-          derive=non
-          [ "$sunshine_pin" != "$sunshine_tag_sha" ] && derive=oui
-          [ "$moonlight_pin" != "$moonlight_head" ] && derive=oui
-          echo "derive=$derive" >> "$GITHUB_OUTPUT"
+          drift=non
+          [ "$sunshine_pin" != "$sunshine_tag_sha" ] && drift=oui
+          [ "$moonlight_pin" != "$moonlight_head" ] && drift=oui
+          echo "drift=$drift" >> "$GITHUB_OUTPUT"
 
           {
             echo "## Moteurs épinglés"
@@ -61,23 +61,23 @@ jobs:
             echo "| Sunshine | \`${sunshine_pin:0:12}\` | \`${sunshine_tag_sha:0:12}\` (${sunshine_tag}) |"
             echo "| Moonlight | \`${moonlight_pin:0:12}\` | \`${moonlight_head:0:12}\` (master) |"
             echo ""
-            echo "Dérive détectée : ${derive}"
+            echo "Dérive détectée : ${drift}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Signaler la dérive
-        if: steps.releve.outputs.derive == 'oui'
+        if: steps.readings.outputs.drift == 'oui'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          S_PIN: ${{ steps.releve.outputs.sunshine_pin }}
-          S_TAG: ${{ steps.releve.outputs.sunshine_tag }}
-          S_SHA: ${{ steps.releve.outputs.sunshine_tag_sha }}
-          M_PIN: ${{ steps.releve.outputs.moonlight_pin }}
-          M_HEAD: ${{ steps.releve.outputs.moonlight_head }}
+          S_PIN: ${{ steps.readings.outputs.sunshine_pin }}
+          S_TAG: ${{ steps.readings.outputs.sunshine_tag }}
+          S_SHA: ${{ steps.readings.outputs.sunshine_tag_sha }}
+          M_PIN: ${{ steps.readings.outputs.moonlight_pin }}
+          M_HEAD: ${{ steps.readings.outputs.moonlight_head }}
         run: |
           set -euo pipefail
-          titre="Moteurs upstream : nouvelles versions disponibles"
-          corps=$(cat <<EOF
+          title="Moteurs upstream : nouvelles versions disponibles"
+          body=$(cat <<EOF
           Le suivi mensuel a détecté des versions upstream plus récentes que nos épinglages.
 
           | Moteur | Épinglé | Upstream disponible |
@@ -91,10 +91,10 @@ jobs:
           Vérifier en priorité si la nouvelle version de Sunshine corrige une faille de sécurité.
           EOF
           )
-          existante=$(gh issue list --state open --search "$titre in:title" \
+          existing=$(gh issue list --state open --search "$title in:title" \
             --json number --jq '.[0].number // empty')
-          if [ -n "$existante" ]; then
-            gh issue comment "$existante" --body "$corps"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
           else
-            gh issue create --title "$titre" --body "$corps"
+            gh issue create --title "$title" --body "$body"
           fi

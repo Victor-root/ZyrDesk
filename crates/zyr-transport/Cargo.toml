@@ -1,6 +1,6 @@
 [package]
 name = "zyr-transport"
-description = "Transport ZyrDesk : budget de paquet, contrôle de congestion média, tunnel chiffré"
+description = "ZyrDesk transport: packet budget, media congestion control, encrypted tunnel"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,12 +9,12 @@ repository.workspace = true
 [dependencies]
 bytes = "1.11.1"
 quinn = "0.11.11"
-# Tenu à cette version : la 0.11.17 soustrait deux fois la taille d'un
-# datagramme jeté de la file d'envoi, dont la comptabilité passe sous
-# zéro dès que la file déborde une fois. Le transport se met alors à
-# émettre depuis une file dont il ne sait plus la taille, puis panique
-# en plein envoi, ce qui tue la session sans un mot. La rafale de
-# zyr-transport le prouve. À relever quand la correction est publiée.
+# Held at this version: 0.11.17 subtracts twice the size of a datagram
+# dropped from the send queue, whose bookkeeping goes below zero as soon
+# as the queue overflows once. The transport then starts sending from a
+# queue whose size it no longer knows, then panics in the middle of a
+# send, which kills the session without a word. The zyr-transport burst
+# test proves it. To be raised once the fix is published.
 quinn-proto = "=0.11.16"
 rcgen = "0.14.8"
 ring = "0.17.14"

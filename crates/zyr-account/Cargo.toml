@@ -1,6 +1,6 @@
 [package]
 name = "zyr-account"
-description = "Le lien de compte d'un appareil : rattachement, canal vivant, présence, rendez-vous"
+description = "A device's account link: attaching, live channel, presence, rendezvous"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "zyr-screen"
-description = "Écran virtuel de l'ordinateur hôte : pose, réglage et retrait du pilote"
+description = "Virtual screen of the host computer: installing, setting and removing the driver"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

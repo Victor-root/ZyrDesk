@@ -1,15 +1,15 @@
 [package]
 name = "zyr-tunnel"
-description = "Multiplexage des flux des moteurs dans une connexion unique"
+description = "Multiplexing of the engines' streams into a single connection"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-# Un morceau de fichier voyage sur un canal de texte, et des octets n'en
-# sont pas : la même caisse que celle qui porte les images, déjà dans le
-# verrou du dépôt.
+# A piece of a file travels on a text channel, and bytes are not text:
+# the same crate as the one that carries pictures, already in the
+# repository's lock file.
 base64 = "0.23.1"
 socket2 = "0.6.5"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "macros", "io-util", "time", "sync"] }
