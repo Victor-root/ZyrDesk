@@ -114,7 +114,7 @@ pub fn show_the_one_running() {
 #[cfg(not(windows))]
 pub fn show_the_one_running() {}
 
-/* ---- L'ouvrir ------------------------------------------------------- */
+/* ---- Opening it ----------------------------------------------------- */
 
 /// Opens the window, hidden.
 ///
@@ -222,7 +222,7 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
 }
 
-/* ---- Ce que la fenêtre répond --------------------------------------- */
+/* ---- What the window answers ---------------------------------------- */
 
 /// SAFETY: called by the system on the thread that made this window,
 /// with the arguments it documents.
@@ -402,7 +402,7 @@ fn say_whether_it_goes_down_or_up(what: usize) {
     ));
 }
 
-/* ---- La montrer, la ranger ------------------------------------------ */
+/* ---- Showing it, putting it away ------------------------------------ */
 
 /// Brings it back, wherever it was left.
 #[cfg(windows)]
@@ -467,7 +467,7 @@ pub fn on_screen() -> bool {
     false
 }
 
-/* ---- Ce qu'elle mesure ---------------------------------------------- */
+/* ---- What it measures ----------------------------------------------- */
 
 /// How much a page pixel counts for on the screen it is on.
 #[cfg(windows)]
@@ -556,7 +556,7 @@ pub fn set_the_inside(width: u32, height: u32) {
 #[cfg(not(windows))]
 pub fn set_the_inside(_large: u32, _height: u32) {}
 
-/* ---- L'agrandir, lui donner l'écran --------------------------------- */
+/* ---- Maximising it, giving it the screen ---------------------------- */
 
 /// Maximises it to what the desktop leaves.
 #[cfg(windows)]
@@ -770,7 +770,7 @@ pub fn take_the_screen(whole: bool) {
 #[cfg(not(windows))]
 pub fn take_the_screen(_whole: bool) {}
 
-/* ---- Son cadre ------------------------------------------------------ */
+/* ---- Its frame ------------------------------------------------------ */
 
 /// Matches the window's frame to the theme.
 ///

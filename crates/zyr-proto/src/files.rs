@@ -71,8 +71,8 @@ mod tests {
         replace(&path, "après").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "après");
 
-        // Le fichier en cours d'écriture ne survit pas au remplacement :
-        // un reste s'accumulerait à chaque écriture.
+        // The file being written does not survive the replacement: a
+        // leftover would pile up with every write.
         let left: Vec<_> = fs::read_dir(&folder).unwrap().collect();
         assert_eq!(left.len(), 1, "{left:?}");
 

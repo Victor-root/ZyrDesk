@@ -43,7 +43,7 @@ use std::time::{Duration, Instant};
 
 use crate::measures::Measures;
 
-/* ---- Ce qu'une lecture dit ------------------------------------------- */
+/* ---- What a reading says --------------------------------------------- */
 
 /// What this module files its journal lines under.
 const TAG: &str = "voyants";
@@ -222,7 +222,7 @@ fn still(until: &mut Option<Instant>, wrong: bool, now: Instant) -> bool {
     until.is_some_and(|end| now < end)
 }
 
-/* ---- La boucle qui les tient ----------------------------------------- */
+/* ---- The loop that keeps them ---------------------------------------- */
 
 /// How many times a second the reading is read again.
 ///
@@ -339,7 +339,7 @@ fn said(reads: &Reads, was: Shown, shown: Shown) {
     }
 }
 
-/* ---- Les pastilles elles-mêmes --------------------------------------- */
+/* ---- The badges themselves ------------------------------------------- */
 
 /// The side of a badge, in page pixels.
 ///

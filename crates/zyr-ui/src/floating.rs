@@ -1853,7 +1853,7 @@ async fn end_the_session(app: &App) -> Result<(), String> {
     Ok(())
 }
 
-/* ---- Ce qui appartient à Windows ------------------------------------- */
+/* ---- What belongs to Windows ----------------------------------------- */
 
 /// Lays the button where the picture is now.
 ///

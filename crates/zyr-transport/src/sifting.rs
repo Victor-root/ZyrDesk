@@ -122,9 +122,9 @@ mod tests {
 
     #[test]
     fn what_is_ours_is_answered_and_taken_out_of_the_batch() {
-        // Un paquet du transport, un des nôtres, un du transport : ce
-        // qui reste doit être les deux paquets du transport collés, et
-        // rien du nôtre.
+        // A transport packet, one of ours, a transport packet: what is
+        // left must be the two transport packets stuck together, and
+        // nothing of ours.
         let mine = probe::who_am_i([1, 2, 3, 4, 5, 6, 7, 8]);
         let mut padded = mine.clone();
         padded.resize(8, 0);

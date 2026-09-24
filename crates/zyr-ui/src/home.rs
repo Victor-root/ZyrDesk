@@ -75,7 +75,7 @@ const FINGERPRINT_LENGTH: usize = 64;
 const MINUTE: u64 = 60;
 const HOUR: u64 = 3600;
 
-/* ---- Ce que l'accueil montre ----------------------------------------- */
+/* ---- What the home window shows -------------------------------------- */
 
 /// What the product says about itself.
 ///
@@ -174,7 +174,7 @@ struct Notice {
     since: std::time::Instant,
 }
 
-/* ---- Où en est l'écran ----------------------------------------------- */
+/* ---- Where the screen stands ----------------------------------------- */
 
 /// What is open on top of the home window.
 #[derive(Clone, Copy, PartialEq)]
@@ -355,7 +355,7 @@ impl State {
     }
 }
 
-/* ---- Ce sur quoi on clique -------------------------------------------- */
+/* ---- What gets clicked ------------------------------------------------ */
 
 /// A switch, and what it controls.
 #[derive(Clone, Copy, PartialEq)]
@@ -539,7 +539,7 @@ impl Pick {
     }
 }
 
-/* ---- Ce que l'écran des réglages contient ----------------------------- */
+/* ---- What the settings screen holds ----------------------------------- */
 
 /// What to decide with, on the right of a setting line.
 enum Control {
@@ -712,7 +712,7 @@ const SETTINGS: &[Element] = &[
     }),
 ];
 
-/* ---- Ce que la feuille de style dit, en pixels de page ---------------- */
+/* ---- What the stylesheet says, in page pixels ------------------------- */
 
 mod layout {
     /// The width beyond which the page stops spreading, and what
@@ -797,7 +797,7 @@ mod layout {
     pub const JOURNAL_AT_LEAST: f32 = 140.0;
 }
 
-/* ---- Ce que la fenêtre tient ------------------------------------------ */
+/* ---- What the window holds -------------------------------------------- */
 
 /// The window carrying the drawing, a child of the one the system frames.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
@@ -830,7 +830,7 @@ fn program() -> Option<App> {
     PROGRAM.lock().expect("programme de l'accueil").clone()
 }
 
-/* ---- La fenêtre -------------------------------------------------------- */
+/* ---- The window -------------------------------------------------------- */
 
 /// Opens the home window's canvas in the window the system frames.
 ///
@@ -1214,7 +1214,7 @@ fn clock(window: windows_sys::Win32::Foundation::HWND) {
     }
 }
 
-/* ---- Le dessin --------------------------------------------------------- */
+/* ---- The drawing ------------------------------------------------------- */
 
 /// What lays out the home window: the canvas, what is shown, where things
 /// stand, and what answers the click once laid down.
@@ -1645,7 +1645,7 @@ fn thumb_of(rail: f32, visible: f32, content: f32, scale: f32) -> f32 {
         .min(rail)
 }
 
-/* ---- La page ----------------------------------------------------------- */
+/* ---- The page ---------------------------------------------------------- */
 
 /// Draws everything on screen and returns what answers the click.
 fn paint_page(canvas: &Canvas, width: f32, height: f32, colours: Palette) -> Vec<(Target, Rect)> {
@@ -2542,7 +2542,7 @@ fn duration(seconds: u64) -> String {
     }
 }
 
-/* ---- Les dialogues ------------------------------------------------------ */
+/* ---- The dialogues ------------------------------------------------------ */
 
 impl Painter<'_> {
     /// Lays down the open dialogue: what it carries, measured at the
@@ -3828,7 +3828,7 @@ const FAR_AWAY: f32 = 20_000.0;
 /// the only way to be there from the first frame.
 const VERY_BOTTOM: f32 = 1.0e9;
 
-/* ---- Ce qui pose, et ce qui se tait ------------------------------------ */
+/* ---- What draws, and what stays silent --------------------------------- */
 
 /// The same gestures as the canvas, but doing nothing when the walk only
 /// measures.
@@ -3888,7 +3888,7 @@ impl Painter<'_> {
     }
 }
 
-/* ---- La souris ---------------------------------------------------------- */
+/* ---- The mouse ---------------------------------------------------------- */
 
 /// What is under this point, the last laid down winning: what was
 /// drawn last is what is on top.
@@ -4016,7 +4016,7 @@ fn invalidate(window: windows_sys::Win32::Foundation::HWND) {
     unsafe { InvalidateRect(window, std::ptr::null(), 0) };
 }
 
-/* ---- Le clavier --------------------------------------------------------- */
+/* ---- The keyboard ------------------------------------------------------- */
 
 /// What the canvas does with a key, and whether it took it.
 fn key_down(
@@ -4127,7 +4127,7 @@ fn set_the_combination(app: &App, doing: Doing, combination: Option<Combination>
     redraw(app);
 }
 
-/* ---- Les champs de saisie ------------------------------------------------ */
+/* ---- The input fields ---------------------------------------------------- */
 
 /// An input field, each in its own place, open for as long as the
 /// dialogue that carries it.
@@ -4599,7 +4599,7 @@ fn rgb(colour: Colour) -> u32 {
     part(colour.red) | (part(colour.green) << 8) | (part(colour.blue) << 16)
 }
 
-/* ---- Ce qu'un clic fait -------------------------------------------------- */
+/* ---- What a click does --------------------------------------------------- */
 
 /// Acts on what has just been clicked.
 ///
@@ -4892,7 +4892,7 @@ async fn write_the_settings(
     crate::settings::choose(chosen).await
 }
 
-/* ---- Ajouter, oublier, se connecter -------------------------------------- */
+/* ---- Adding, forgetting, connecting -------------------------------------- */
 
 /// Writes a computer down and, if it has an address, connects to it.
 ///
@@ -5033,7 +5033,7 @@ fn launch(app: &App, address: &str, fingerprint: &str, name: &str, local_only: b
     });
 }
 
-/* ---- Le compte ------------------------------------------------------------ */
+/* ---- The account ---------------------------------------------------------- */
 
 /// Opens the account dialogue with this machine's name already written.
 fn open_the_account(app: &App) {
@@ -5236,7 +5236,7 @@ fn revoke(app: &App, rank: usize) {
     });
 }
 
-/* ---- Ce que la session raconte ------------------------------------------- */
+/* ---- What the session tells ---------------------------------------------- */
 
 /// One step in the opening of a session.
 ///
@@ -5336,7 +5336,7 @@ fn say_the_trouble(app: &App, text: &str) {
     redraw(app);
 }
 
-/* ---- Le journal ---------------------------------------------------------- */
+/* ---- The journal --------------------------------------------------------- */
 
 fn open_the_journal(app: &App, from: Option<Peer>) {
     // What was written in the box is kept: this journal is opened twice
@@ -5527,7 +5527,7 @@ fn empty_the_journal(app: &App) {
     });
 }
 
-/* ---- Le presse-papiers ---------------------------------------------------- */
+/* ---- The clipboard -------------------------------------------------------- */
 
 /// Copies this text, and has the button say it did.
 ///
@@ -5553,7 +5553,7 @@ fn copy(app: &App, text: &str, target: Target) {
     });
 }
 
-/* ---- Ce qu'on redemande au service --------------------------------------- */
+/* ---- What is asked of the service again ---------------------------------- */
 
 /// Keeps asking again what the service holds.
 ///

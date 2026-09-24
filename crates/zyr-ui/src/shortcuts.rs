@@ -458,7 +458,7 @@ fn engraved_key(key: &str) -> String {
     key.to_string()
 }
 
-/* ---- Ce que la fenêtre demande --------------------------------------- */
+/* ---- What the window asks for ---------------------------------------- */
 
 /// Gives a key to one thing, or takes its key away when nothing is
 /// given.
@@ -481,7 +481,7 @@ pub fn bind(doing: Doing, wanted: Option<Combination>) -> Result<(), String> {
     Ok(())
 }
 
-/* ---- Ce qui appartient à Windows ------------------------------------- */
+/* ---- What belongs to Windows ----------------------------------------- */
 
 /// The thread the combinations belong to.
 ///

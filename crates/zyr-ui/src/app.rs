@@ -248,7 +248,7 @@ pub fn quit() {
 #[cfg(not(windows))]
 pub fn quit() {}
 
-/* ---- Un seul ZyrDesk à la fois -------------------------------------- */
+/* ---- One ZyrDesk at a time ------------------------------------------ */
 
 /// The lock that says a ZyrDesk is already running, held for as long as
 /// it runs.
@@ -295,7 +295,7 @@ pub fn already_open() -> bool {
     false
 }
 
-/* ---- Les écrans ----------------------------------------------------- */
+/* ---- The screens ---------------------------------------------------- */
 
 /// Tells the system that this program counts in real pixels, on every
 /// screen.
@@ -318,7 +318,7 @@ pub fn count_in_real_pixels() {
 #[cfg(not(windows))]
 pub fn count_in_real_pixels() {}
 
-/* ---- Ce qui tourne sans bloquer le fil des fenêtres ------------------ */
+/* ---- What runs without blocking the window thread -------------------- */
 
 /// The task engine, made once and kept.
 ///

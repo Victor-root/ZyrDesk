@@ -405,7 +405,7 @@ fn taken(app: &App) -> Option<Held> {
     *app.picture().held.lock().expect("image tenue")
 }
 
-/* ---- Ce qui appartient à Windows ------------------------------------- */
+/* ---- What belongs to Windows ----------------------------------------- */
 
 /// Strips the engine's window of everything a window of its own would
 /// carry, hands it to ours, and says which window it was and what shape
@@ -2222,7 +2222,7 @@ fn say_the_size_again(engine: windows_sys::Win32::Foundation::HWND, size: (i32, 
     ));
 }
 
-/* ---- Ce que les autres fenêtres montrent de la nôtre ----------------- */
+/* ---- What the other windows show of ours ----------------------------- */
 
 /// Says who photographs this window for Alt+Tab and the taskbar: the
 /// system itself, or this program.
@@ -2407,7 +2407,7 @@ unsafe fn plain_surface(
     }
 }
 
-/* ---- Porter l'image le temps d'un déplacement ----------------------- */
+/* ---- Carrying the picture during a move ----------------------------- */
 
 /// Style the engine's window wore before our window took it in as a
 /// child for the length of a move, and zero the rest of the time.
@@ -2908,7 +2908,7 @@ fn put_the_picture_back(home: windows_sys::Win32::Foundation::HWND) {
     }
 }
 
-/* ---- Agrandir et réduire, en laissant le système jouer -------------- */
+/* ---- Maximising and restoring, letting the system play -------------- */
 
 /// How long the picture stays inside our window after an order to
 /// maximise or come back down, and how long it stays inside afterwards

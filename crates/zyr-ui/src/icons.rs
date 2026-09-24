@@ -149,7 +149,7 @@ pub const TICK: Icon = Icon {
     thickness: 2.2,
     strokes: &[Stroke::SvgPath("M4 12.5l5.5 5.5L20 6")],
 };
-/* ---- L'accueil ------------------------------------------------------- */
+/* ---- The home window ------------------------------------------------- */
 
 pub const JOURNAL: Icon = icon_of(&[
     Stroke::SvgPath("M5 3h11l3 3v15H5z"),
