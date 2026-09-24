@@ -93,14 +93,12 @@ where
 
 #[cfg(windows)]
 mod mechanism {
-    use std::ffi::c_void;
     use std::io;
 
-    use tokio::net::windows::named_pipe::{
-        ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
-    };
+    use tokio::net::windows::named_pipe::{NamedPipeClient, NamedPipeServer, ServerOptions};
 
     use super::Conversation;
+    use crate::windows_pipe;
 
     pub type Heard = Conversation<NamedPipeServer>;
     pub type Spoken = Conversation<NamedPipeClient>;
@@ -121,61 +119,16 @@ mod mechanism {
     /// message.
     const ACCESS: &str = "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
 
-    /// The access list, held while a pipe instance is created with it,
-    /// and given back to Windows afterwards.
-    struct AccessList(*mut c_void);
-
-    impl AccessList {
-        fn build() -> io::Result<Self> {
-            let text: Vec<u16> = ACCESS.encode_utf16().chain(std::iter::once(0)).collect();
-            let mut descriptor: windows_sys::Win32::Security::PSECURITY_DESCRIPTOR =
-                std::ptr::null_mut();
-            // SAFETY: the text is null-terminated UTF-16 and the output
-            // pointer is ours; Windows fills it or says why not.
-            let built = unsafe {
-                windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                    text.as_ptr(),
-                    windows_sys::Win32::Security::Authorization::SDDL_REVISION_1,
-                    &mut descriptor,
-                    std::ptr::null_mut(),
-                )
-            };
-            if built == 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(Self(descriptor))
-        }
-    }
-
-    impl Drop for AccessList {
-        fn drop(&mut self) {
-            // SAFETY: the pointer comes from the call above, which
-            // allocates it, and is given back exactly once.
-            unsafe { windows_sys::Win32::Foundation::LocalFree(self.0) };
-        }
-    }
-
     /// Creates one instance of the pipe, ready to be connected to.
     fn instance(channel: &str, first: bool) -> io::Result<NamedPipeServer> {
-        let list = AccessList::build()?;
-        let mut attributes = windows_sys::Win32::Security::SECURITY_ATTRIBUTES {
-            nLength: size_of::<windows_sys::Win32::Security::SECURITY_ATTRIBUTES>() as u32,
-            lpSecurityDescriptor: list.0,
-            bInheritHandle: 0,
-        };
-        // SAFETY: the attributes live until the call returns, which is
-        // all Windows reads them for.
-        unsafe {
-            ServerOptions::new()
-                // Only the first instance claims the name: without this,
-                // anything started earlier could sit on it and answer in
-                // the service's place.
-                .first_pipe_instance(first)
-                .create_with_security_attributes_raw(
-                    address(channel),
-                    &raw mut attributes as *mut c_void,
-                )
-        }
+        windows_pipe::create(
+            // Only the first instance claims the name: without this,
+            // anything started earlier could sit on it and answer in
+            // the service's place.
+            ServerOptions::new().first_pipe_instance(first),
+            &address(channel),
+            ACCESS,
+        )
     }
 
     /// The channel, open and waiting.
@@ -206,34 +159,12 @@ mod mechanism {
         }
     }
 
-    /// How many times a busy door is tried again before giving up.
-    ///
-    /// A door only ever has one instance genuinely idle at a time; it is
-    /// still busy for the moment between one program being taken in and
-    /// the next spare being made ready. That moment is normally far
-    /// under a millisecond, so this is about tolerating it happening at
-    /// all, not about waiting on a door that is truly not there.
-    const ATTEMPTS: u32 = 50;
-
-    /// How long is left between two tries.
-    const BETWEEN_TRIES: std::time::Duration = std::time::Duration::from_millis(20);
-
+    /// Joins the door, waiting out the instant it may be busy between
+    /// two programs.
     pub async fn call(channel: &str) -> io::Result<Spoken> {
-        let path = address(channel);
-        for attempt in 0..ATTEMPTS {
-            match ClientOptions::new().open(&path) {
-                Ok(client) => return Ok(Conversation::calling(client)),
-                Err(e)
-                    if attempt + 1 < ATTEMPTS
-                        && e.raw_os_error()
-                            == Some(windows_sys::Win32::Foundation::ERROR_PIPE_BUSY as i32) =>
-                {
-                    tokio::time::sleep(BETWEEN_TRIES).await;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-        unreachable!("la boucle rend la main à la dernière tentative")
+        Ok(Conversation::calling(
+            windows_pipe::open(&address(channel)).await?,
+        ))
     }
 }
 

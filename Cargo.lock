@@ -3119,6 +3119,7 @@ dependencies = [
 name = "zyr-control"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "tokio",
  "windows-sys 0.61.2",
  "zyr-broker",

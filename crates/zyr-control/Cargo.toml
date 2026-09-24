@@ -1,13 +1,14 @@
 [package]
 name = "zyr-control"
-description = "Command channel of the ZyrDesk service"
+description = "Command channel of the ZyrDesk service, and the engines' local link"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-tokio = { version = "1.53.1", features = ["net", "io-util", "rt"] }
+bytes = "1.12.1"
+tokio = { version = "1.53.1", features = ["net", "io-util", "rt", "time"] }
 zyr-proto.workspace = true
 zyr-transport.workspace = true
 zyr-broker.workspace = true
@@ -17,7 +18,8 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",
+    "Win32_System_Pipes",
 ] }
 
 [dev-dependencies]
-tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "time"] }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

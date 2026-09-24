@@ -7,10 +7,16 @@
 //!
 //! That is what lets a session survive its window being shut, and what
 //! lets the interface find the session again when it comes back.
+//!
+//! The engines talk to the service over a channel of their own, the
+//! local link, made for one session and closed with it.
 
 pub mod client;
+pub mod link;
 pub mod message;
 pub mod pipe;
+#[cfg(windows)]
+mod windows_pipe;
 
 pub use client::{ControlError, Service};
 pub use message::{
