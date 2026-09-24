@@ -3476,6 +3476,20 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Les deux seuls retards, et pourquoi.** `windows-core` et `windows-numerics` existent en 0.100, mais `windows` 0.62.2, le plus récent, exige leurs versions 0.62 et 0.3 : les prendre casserait `windows`. `generic-array` et `matchit` sont fixés par des bibliothèques tierces (`crypto-common`, `axum`), qui seules peuvent les relever.
 
+## D222. Le moteur ZyrDesk remplace les deux autres d'un coup (2026-09-24, pendant M6)
+
+> Révise « Le chemin » de [D219](#d219-zyrdesk-aura-son-propre-moteur-dédié-aux-performances-2026-09-23-pendant-m6) et l'étape 0 du jalon MZ de [ROADMAP.md](ROADMAP.md).
+
+**Décision de Victor.** *« Je veux que tu fasses la migration des moteurs Sunshine et Moonlight vers notre propre moteur maison, je ne veux plus dépendre de ces deux moteurs […] t'as carte blanche […] ZyrDesk pour l'instant est en état de dev donc personne ne l'utilise. »* D219 prévoyait de faire grandir le nouveau moteur à côté des anciens, avec un réglage pour choisir. Personne n'utilise encore le produit, et garder deux chemins aurait doublé chaque morceau du service, de la fenêtre et du tunnel pour un filet dont personne n'a besoin : la bascule se fait d'un coup. Les anciens moteurs restent lisibles dans l'historique du dépôt, au commit `615bb6e` et avant. La carte blanche tient lieu de la validation du document de conception que D219 demandait : ce document est [MOTEUR.md](MOTEUR.md), et Victor le corrige quand il veut.
+
+**Direct3D 11 plutôt que Vulkan.** Victor penchait pour Vulkan et laissait le choix à ce qui est le mieux. La capture qui voit l'écran de connexion et les invites d'administration n'existe qu'en Direct3D 11, le décodage matériel le plus éprouvé sur les trois marques aussi, et l'affichage passe par DXGI. Vulkan ajouterait une traduction à chaque bout. Le détail est dans [MOTEUR.md](MOTEUR.md) §2.
+
+**FFmpeg compilé par nous.** La dernière version stable, 9.0.2 ([D221](#d221-les-outils-et-les-dépendances-suivent-leur-dernière-version-stable-2026-09-24-pendant-m6)), réduite à ce que le moteur emploie, rangée dans `vendor/ffmpeg` avec le script qui la refait. Elle est chargée au démarrage du moteur et jamais liée à la compilation : `cargo build` sur le PC de Victor ne demande rien de plus qu'avant.
+
+**Plus de ports, des tubes.** Chaque moitié du moteur parle au service de sa machine par un tube nommé dont Windows garde l'accès (le compte système seul chez l'hôte, le compte système et la personne qui a ouvert la session chez le client). Aucun moteur n'écoute sur le réseau, même en local, ce qui ferme aussi la porte par laquelle un programme de la même machine aurait pu envoyer des touches à l'écran de connexion.
+
+**Plus d'appairage.** Le tunnel reconnaît déjà les deux ordinateurs par leurs empreintes ([D17](DECISIONS.md)) ; le code à quatre chiffres des moteurs ne prouvait rien de plus.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
