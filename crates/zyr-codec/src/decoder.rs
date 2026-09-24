@@ -14,7 +14,7 @@ use zyr_media::codec::VideoCodec;
 use crate::d3d11::{D3d11Picture, Pictures};
 use crate::error::CodecError;
 use crate::library::Ffmpeg;
-use crate::owned::{CodecContext, OwnedFrame, OwnedPacket};
+use crate::owned::{CodecContext, LentPacket, OwnedFrame};
 use crate::sys;
 
 /// Where decoded pictures go.
@@ -133,7 +133,7 @@ impl CpuPicture {
 pub struct VideoDecoder {
     ff: Arc<Ffmpeg>,
     context: CodecContext,
-    packet: OwnedPacket,
+    packet: LentPacket,
     /// A frame to receive into, kept from one call to the next.
     spare: Option<OwnedFrame>,
     replaced: u64,
@@ -171,7 +171,7 @@ impl VideoDecoder {
         Ok(Self {
             ff: Arc::clone(ff),
             context,
-            packet: OwnedPacket::new(ff)?,
+            packet: LentPacket::new(ff)?,
             spare: None,
             replaced: 0,
             #[cfg(windows)]

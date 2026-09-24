@@ -5,10 +5,11 @@
 //! a static. Only warnings and worse are written, and at most a handful
 //! in any ten seconds: an encoder that complains about every frame
 //! would otherwise fill the log sixty times a second. What is left out
-//! is counted and said once the ten seconds are over.
+//! is counted, and the count written ahead of the first line of the
+//! next ten seconds.
 
 use std::ffi::{CStr, c_char, c_int, c_void};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use zyr_proto::log::Log;
@@ -44,9 +45,9 @@ pub(crate) fn route(ff: &Ffmpeg, log: &Log) {
         format_line: ff.logging.format_line,
         allowance: Allowance::new(Instant::now()),
     };
-    // A poisoned lock only means a line failed to be written once; the
-    // sink itself is replaced whole.
-    let mut current = SINK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    // A poisoned lock only means a line once failed to be written: the
+    // sink is still whole.
+    let mut current = SINK.lock().unwrap_or_else(PoisonError::into_inner);
     *current = Some(sink);
     // SAFETY: the callback matches what av_log_set_callback expects and
     // lives as long as the program.
@@ -63,9 +64,7 @@ unsafe extern "C" fn write_line(
     if level > sys::AV_LOG_WARNING as c_int {
         return;
     }
-    let Ok(mut sink) = SINK.lock() else {
-        return;
-    };
+    let mut sink = SINK.lock().unwrap_or_else(PoisonError::into_inner);
     let Some(sink) = sink.as_mut() else {
         return;
     };

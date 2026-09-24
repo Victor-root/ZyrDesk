@@ -148,24 +148,24 @@ impl CodecContext {
     /// readers need past the end, before it looks at them.
     pub(crate) fn send_bytes(
         &mut self,
-        packet: &mut OwnedPacket,
+        packet: &mut LentPacket,
         data: &[u8],
     ) -> Result<(), CodecError> {
         let size = c_int::try_from(data.len()).map_err(|_| {
             CodecError::Invalid(format!("paquet de {} octets, trop grand", data.len()))
         })?;
-        let lent = packet.fields();
+        let lent = packet.0.fields();
         lent.data = data.as_ptr().cast_mut();
         lent.size = size;
-        // SAFETY: the packet has no buffer of its own (it is only ever
-        // used to lend), so FFmpeg copies the bytes and never writes to
-        // them; they outlive the call.
+        // SAFETY: a lent packet never has a buffer of its own, so FFmpeg
+        // copies the bytes and never writes to them; they outlive the
+        // call.
         let sent = unsafe {
             self.ff
                 .avcodec
-                .avcodec_send_packet(self.raw.as_ptr(), packet.as_ptr())
+                .avcodec_send_packet(self.raw.as_ptr(), packet.0.as_ptr())
         };
-        let lent = packet.fields();
+        let lent = packet.0.fields();
         lent.data = ptr::null_mut();
         lent.size = 0;
         self.ff
@@ -302,9 +302,19 @@ impl Drop for OwnedPacket {
     fn drop(&mut self) {
         let mut raw = self.raw.as_ptr();
         // SAFETY: allocated by av_packet_alloc, freed once here, with its
-        // buffer. A packet lending bytes is emptied right after the call
-        // that borrowed them, so it never frees what is not FFmpeg's.
+        // buffer. A lent packet is emptied right after the call that
+        // borrowed its bytes, so it never frees what is not FFmpeg's.
         unsafe { self.ff.avcodec.av_packet_free(&mut raw) };
+    }
+}
+
+/// A packet that only ever points at bytes it does not own, to hand
+/// them to a decoder: never received into, so it never holds a buffer.
+pub(crate) struct LentPacket(OwnedPacket);
+
+impl LentPacket {
+    pub(crate) fn new(ff: &Arc<Ffmpeg>) -> Result<Self, CodecError> {
+        OwnedPacket::new(ff).map(Self)
     }
 }
 

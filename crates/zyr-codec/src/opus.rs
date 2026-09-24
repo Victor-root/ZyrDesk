@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::error::CodecError;
 use crate::library::Ffmpeg;
-use crate::owned::{CodecContext, OwnedFrame, OwnedPacket};
+use crate::owned::{CodecContext, LentPacket, OwnedFrame, OwnedPacket};
 use crate::resample::AudioFormat;
 use crate::sys;
 
@@ -106,7 +106,7 @@ impl OpusEncoder {
 /// The player's decoder, FFmpeg's own.
 pub struct OpusDecoder {
     context: CodecContext,
-    packet: OwnedPacket,
+    packet: LentPacket,
     frame: OwnedFrame,
 }
 
@@ -119,7 +119,7 @@ impl OpusDecoder {
         context.open(&[])?;
         Ok(Self {
             context,
-            packet: OwnedPacket::new(ff)?,
+            packet: LentPacket::new(ff)?,
             frame: OwnedFrame::new(ff)?,
         })
     }

@@ -2349,7 +2349,6 @@ pub struct Avutil {
         m: *const AVDictionary,
         prev: *const AVDictionaryEntry,
     ) -> *const AVDictionaryEntry,
-    pub av_dict_count: unsafe extern "C" fn(m: *const AVDictionary) -> ::core::ffi::c_int,
     pub av_dict_set: unsafe extern "C" fn(
         pm: *mut *mut AVDictionary,
         key: *const ::core::ffi::c_char,
@@ -2414,7 +2413,6 @@ impl Avutil {
         let av_channel_layout_uninit =
             unsafe { __library.get(b"av_channel_layout_uninit\0") }.map(|sym| *sym)?;
         let av_dict_iterate = unsafe { __library.get(b"av_dict_iterate\0") }.map(|sym| *sym)?;
-        let av_dict_count = unsafe { __library.get(b"av_dict_count\0") }.map(|sym| *sym)?;
         let av_dict_set = unsafe { __library.get(b"av_dict_set\0") }.map(|sym| *sym)?;
         let av_dict_free = unsafe { __library.get(b"av_dict_free\0") }.map(|sym| *sym)?;
         let av_frame_alloc = unsafe { __library.get(b"av_frame_alloc\0") }.map(|sym| *sym)?;
@@ -2446,7 +2444,6 @@ impl Avutil {
             av_channel_layout_default,
             av_channel_layout_uninit,
             av_dict_iterate,
-            av_dict_count,
             av_dict_set,
             av_dict_free,
             av_frame_alloc,
@@ -2498,9 +2495,6 @@ impl Avutil {
         prev: *const AVDictionaryEntry,
     ) -> *const AVDictionaryEntry {
         unsafe { (self.av_dict_iterate)(m, prev) }
-    }
-    pub unsafe fn av_dict_count(&self, m: *const AVDictionary) -> ::core::ffi::c_int {
-        unsafe { (self.av_dict_count)(m) }
     }
     pub unsafe fn av_dict_set(
         &self,
@@ -2594,7 +2588,6 @@ pub const AVUTIL_FUNCTIONS: &[&str] = &[
     "av_buffer_unref",
     "av_dict_set",
     "av_dict_free",
-    "av_dict_count",
     "av_dict_iterate",
     "av_channel_layout_default",
     "av_channel_layout_uninit",
