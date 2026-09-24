@@ -102,6 +102,18 @@ Il faut le programme `gh` une fois (`winget install --id GitHub.cli && gh auth l
 
 Construction de l'installateur Windows : voir [packaging/windows/README.md](packaging/windows/README.md).
 
+## Conventions du code
+
+Ceci s'adresse autant à une IA qu'à une personne qui reprend le dépôt.
+
+- **Le code s'écrit en anglais** : noms de fichiers et de modules, types, fonctions, variables, constantes, noms des tests, commentaires et documentation du code, dans le Rust comme dans les scripts, la CI et la feuille de style.
+- **Ce que la personne lit reste en français** : textes de l'interface, messages affichés, et tout ce que le programme écrit pour être lu.
+- **Ce qui est écrit sur le disque ou passe sur le réseau garde son nom exact**, même français (valeurs de préférences, clés de `install.env`, champs échangés avec le serveur, règle de pare-feu, dossier `vendor/ecran-virtuel`) : le renommer casserait une installation existante ou le dialogue entre deux versions.
+- **La documentation de `docs/` reste en français**, et l'historique de [docs/DECISIONS.md](docs/DECISIONS.md) ne se réécrit pas.
+- Toute modification du code d'un moteur suit la marque `zyr:` de [docs/engines/STRATEGY.md](docs/engines/STRATEGY.md).
+
+Le détail et ses raisons : [D220](docs/DECISIONS.md#d220-le-code-sécrit-en-anglais-ce-que-la-personne-lit-reste-en-français-2026-09-24-pendant-m6).
+
 ## Documentation
 
 | Document | Contenu |
