@@ -32,7 +32,7 @@ dynlink_cuviddec.h
 /*
  * This copyright notice applies to this header file only:
  *
- * Copyright (c) 2010-2026 NVIDIA Corporation
+ * Copyright (c) 2010-2024 NVIDIA Corporation
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -90,7 +90,7 @@ dynlink_nvcuvid.h
 /*
  * This copyright notice applies to this header file only:
  *
- * Copyright (c) 2010-2026 NVIDIA Corporation
+ * Copyright (c) 2010-2024 NVIDIA Corporation
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -119,7 +119,7 @@ nvEncodeAPI.h
 /*
  * This copyright notice applies to this header file only:
  *
- * Copyright (c) 2010-2026 NVIDIA Corporation
+ * Copyright (c) 2010-2024 NVIDIA Corporation
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation

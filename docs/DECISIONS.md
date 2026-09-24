@@ -3474,7 +3474,9 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **`quinn-proto` quitte l'épinglage de D125.** La 0.11.18 ne décompte plus la file d'envoi qu'à un seul endroit : la double soustraction qui tuait la session ne peut plus se produire, et l'essai de rafale écrit pour la guetter passe. La dépendance reste déclarée avec un plancher à 0.11.18. Un effet de bord mesuré : la file compte désormais trente-deux octets de plus par paquet, la vidéo y tient environ 3 % de moins, et le compteur des paquets jetés reste exact.
 
-**Les deux seuls retards, et pourquoi.** `windows-core` et `windows-numerics` existent en 0.100, mais `windows` 0.62.2, le plus récent, exige leurs versions 0.62 et 0.3 : les prendre casserait `windows`. `generic-array` et `matchit` sont fixés par des bibliothèques tierces (`crypto-common`, `axum`), qui seules peuvent les relever.
+**Les seuls retards, et pourquoi.** `windows-core` et `windows-numerics` existent en 0.100, mais `windows` 0.62.2, le plus récent, exige leurs versions 0.62 et 0.3 : les prendre casserait `windows`. `generic-array` et `matchit` sont fixés par des bibliothèques tierces (`crypto-common`, `axum`), qui seules peuvent les relever.
+
+Les en-têtes NVIDIA avec lesquels FFmpeg est compilé restent en n13.0 (13.0.19.1) plutôt qu'en n13.1. Avec n13.1, NVENC exigerait un pilote NVIDIA 610 ou plus récent ; avec n13.0, il marche dès le pilote 570. Les GeForce 10 (Pascal), dont les pilotes s'arrêtent à la branche R580, garderaient sinon leur encodeur matériel éteint, tout comme les machines dont le pilote n'est pas encore passé en 610, et n13.1 n'apporte rien dont le moteur se sert. Le retard est écrit à côté du numéro dans `packaging/ffmpeg/build.sh`.
 
 ## D222. Le moteur ZyrDesk remplace les deux autres d'un coup (2026-09-24, pendant M6)
 

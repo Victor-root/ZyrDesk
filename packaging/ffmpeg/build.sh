@@ -32,8 +32,12 @@ x264_commit=b35605ace3ddf7c1a5d67a2eb553f034aef41d55
 opus_version=1.6.1
 opus_sha256=6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1
 
-nv_codec_headers_tag=n13.1.15.0
-nv_codec_headers_commit=0a6fba9a2820628b8103464f4c8753ee05838baa
+# Deliberately n13.0 rather than n13.1: NVENC then runs from driver 570
+# instead of 610, which keeps every GeForce 10 (Pascal) card, whose
+# driver branch ends at R580, and anyone on an older driver. n13.1 adds
+# nothing the engine uses.
+nv_codec_headers_tag=n13.0.19.1
+nv_codec_headers_commit=88fee5c37318c991a8762d423530f91681e32e3a
 
 amf_version=1.5.2
 amf_headers_sha256=d3c12eb324edf05e214608b6a395a51dd95770ed9d45520185d6c3a206811c99
