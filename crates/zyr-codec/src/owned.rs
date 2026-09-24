@@ -114,6 +114,20 @@ impl CodecContext {
         Ok(())
     }
 
+    /// Tells an encoder no frame will follow, so it hands over what it
+    /// still holds.
+    pub(crate) fn send_end(&mut self) -> Result<(), CodecError> {
+        // SAFETY: an open context; a null frame is how FFmpeg is told.
+        let sent = unsafe {
+            self.ff
+                .avcodec
+                .avcodec_send_frame(self.raw.as_ptr(), ptr::null())
+        };
+        self.ff
+            .check(sent, &format!("fin du flux de {}", self.name))?;
+        Ok(())
+    }
+
     /// The next packet out of an encoder, into `packet`; false when there
     /// is none yet.
     pub(crate) fn receive_packet(&mut self, packet: &mut OwnedPacket) -> Result<bool, CodecError> {

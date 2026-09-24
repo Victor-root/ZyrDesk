@@ -30,17 +30,31 @@
 //! Without it, the tests that need FFmpeg fail and say so; they never
 //! pass without having run.
 
+#[cfg(windows)]
+mod d3d11;
+mod decoder;
+mod encoder;
 mod error;
 mod library;
 mod log;
 mod opus;
 mod owned;
+mod probe;
 mod resample;
 mod sys;
 #[cfg(test)]
 mod testing;
+mod tuning;
 
+#[cfg(windows)]
+pub use d3d11::{D3d11Picture, GpuFrame, Sampling};
+pub use decoder::{CpuPicture, DecodeOutput, DecodedFrame, PictureLayout, Plane, VideoDecoder};
+pub use encoder::{
+    Applied, Backend, CpuFrame, EncodedPacket, EncoderConfig, Frame, Input, Nv12Planes,
+    VideoEncoder,
+};
 pub use error::CodecError;
 pub use library::Ffmpeg;
 pub use opus::{OPUS_FRAME, OpusDecoder, OpusEncoder};
+pub use probe::{GpuVendor, probe};
 pub use resample::{AudioFormat, Resampler};

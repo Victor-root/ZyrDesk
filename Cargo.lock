@@ -3111,6 +3111,7 @@ name = "zyr-codec"
 version = "0.1.0"
 dependencies = [
  "libloading",
+ "windows",
  "zyr-media",
  "zyr-proto",
 ]

@@ -46,6 +46,8 @@ pub enum CodecError {
     },
     /// FFmpeg could not allocate what was asked for.
     OutOfMemory { what: &'static str },
+    /// Direct3D refused, in the words Windows gives.
+    Graphics { what: &'static str, reason: String },
     /// Something asked of this crate that cannot be done as asked.
     Invalid(String),
 }
@@ -89,6 +91,9 @@ impl fmt::Display for CodecError {
             }
             CodecError::OutOfMemory { what } => {
                 write!(f, "mémoire insuffisante pour {what}")
+            }
+            CodecError::Graphics { what, reason } => {
+                write!(f, "Direct3D refuse {what} : {reason}")
             }
             CodecError::Invalid(reason) => f.write_str(reason),
         }

@@ -11,3 +11,13 @@ libloading = "0.9.0"
 zyr-media.workspace = true
 zyr-proto.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+# Handing FFmpeg the engine's own Direct3D 11 device, and asking that
+# device what it can decode, are COM calls: windows-sys carries no COM
+# interface. The same package the rest of the repository already uses.
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+] }

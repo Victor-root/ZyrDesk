@@ -20,8 +20,13 @@ use core::ffi::{c_char, c_int, c_void};
     clippy::type_complexity
 )]
 mod bindings;
+#[cfg(windows)]
+#[allow(non_snake_case, clippy::upper_case_acronyms)]
+mod d3d11va;
 
 pub use bindings::*;
+#[cfg(windows)]
+pub use d3d11va::*;
 
 /// What FFmpeg calls for every line it logs.
 ///
