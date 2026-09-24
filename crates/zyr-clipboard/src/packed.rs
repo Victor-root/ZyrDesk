@@ -168,24 +168,25 @@ mod tests {
 
     #[test]
     fn an_ordinary_capture_starts_right_after_its_header() {
-        // Le cas de tous les jours : trente-deux bits par pixel, pas de
-        // table de couleurs, pas de masques.
+        // The everyday case: thirty-two bits per pixel, no colour
+        // table, no masks.
         let dib = with_pixels(old_header(32, 0, 0), 64);
         assert_eq!(where_the_pixels_start(&dib), Some(OLDEST_HEADER));
     }
 
     #[test]
     fn the_masks_push_the_pixels_back_by_twelve_bytes() {
-        // Sans ça, chaque couleur est décalée de trois pixels et l'image
-        // devient du bruit coloré.
+        // Without that, every colour is shifted by three pixels and the
+        // picture turns into coloured noise.
         let dib = with_pixels(old_header(32, MASKED, 0), 64);
         assert_eq!(where_the_pixels_start(&dib), Some(OLDEST_HEADER + 12));
     }
 
     #[test]
     fn a_colour_table_pushes_them_back_by_its_own_size() {
-        // Une image de 256 nuances porte ses 256 nuances entre l'entête
-        // et les pixels, même quand l'entête n'en compte aucune.
+        // A picture of 256 shades carries its 256 shades between the
+        // header and the pixels, even when the header counts none of
+        // them.
         let dib = with_pixels(old_header(8, 0, 0), 256 * A_COLOUR + 16);
         assert_eq!(where_the_pixels_start(&dib), Some(OLDEST_HEADER + 256 * 4));
         let dib = with_pixels(old_header(8, 0, 16), 16 * A_COLOUR + 16);
@@ -194,8 +195,8 @@ mod tests {
 
     #[test]
     fn a_recent_header_carries_its_masks_inside_it() {
-        // Le même dessin qu'au-dessus mais avec l'entête le plus récent :
-        // les douze octets ne sont plus derrière lui, ils sont dedans.
+        // The same layout as above but with the newest header: the twelve
+        // bytes are no longer behind it, they are inside it.
         let mut head = vec![0u8; NEWEST_HEADER];
         head[0..4].copy_from_slice(&(NEWEST_HEADER as u32).to_le_bytes());
         head[14..16].copy_from_slice(&32u16.to_le_bytes());
@@ -207,17 +208,17 @@ mod tests {
     #[test]
     fn what_does_not_describe_a_picture_is_left_alone() {
         assert_eq!(where_the_pixels_start(&[]), None);
-        // Un entête plus court qu'aucun entête connu.
+        // A header shorter than any known header.
         assert_eq!(
             where_the_pixels_start(&with_pixels(vec![8, 0, 0, 0], 40)),
             None
         );
-        // Un entête plus long que ce qui a été remis.
+        // A header longer than what was handed over.
         let mut truncated = old_header(32, 0, 0);
         truncated.truncate(20);
         assert_eq!(where_the_pixels_start(&truncated), None);
-        // Un entête qui annonce une table de couleurs plus grande que
-        // tout ce qui a été remis : il ne reste aucun pixel derrière.
+        // A header announcing a colour table larger than everything
+        // handed over: no pixel is left behind it.
         assert_eq!(
             where_the_pixels_start(&with_pixels(old_header(8, 0, 4096), 16)),
             None
@@ -226,9 +227,9 @@ mod tests {
 
     #[test]
     fn a_picture_given_to_the_clipboard_is_turned_upside_down() {
-        // Deux rangées d'un pixel, la première en haut : elles doivent
-        // ressortir dans l'autre sens, un bitmap comptant ses rangées
-        // depuis le bas. C'est l'erreur classique de cet endroit.
+        // Two rows of one pixel, the first at the top: they have to
+        // come out the other way round, since a bitmap counts its rows
+        // from the bottom. It is the classic mistake to make here.
         let top = [1, 2, 3, 255];
         let bottom = [4, 5, 6, 255];
         let packed = a_packed_bitmap(1, 2, &[top, bottom].concat());
@@ -238,9 +239,9 @@ mod tests {
 
     #[test]
     fn what_is_written_reads_back_through_the_reader_next_door() {
-        // Les deux moitiés de ce fichier doivent se répondre : ce qu'on
-        // pose au presse-papiers doit se relire comme on lit ce qu'on y
-        // trouve.
+        // The two halves of this file have to answer each other: what
+        // is put on the clipboard has to read back the way what is
+        // found there is read.
         let packed = a_packed_bitmap(2, 2, &[0u8; 16]);
         assert_eq!(where_the_pixels_start(&packed), Some(NEWEST_HEADER));
         assert_eq!(packed.len(), NEWEST_HEADER + 16);

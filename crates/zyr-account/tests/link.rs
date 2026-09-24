@@ -122,7 +122,8 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
     let server = Server::start().await;
     let identity = Identity::generate().unwrap();
 
-    // Sans épinglage, refusé, avec l'empreinte à comparer.
+    // Without pinning, refused, with the fingerprint to
+    // compare.
     let refused = zyr_account::attach(
         &server.address(),
         Trust::PublicOnly,
@@ -139,7 +140,7 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
         })
     );
 
-    // Une autre clé épinglée, refusé aussi, en le disant.
+    // Another key pinned, refused too, and saying so.
     let other = Identity::generate().unwrap().fingerprint();
     let refused = zyr_account::attach(
         &server.address(),
@@ -158,7 +159,7 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
         })
     );
 
-    // La bonne, et le lien est fait.
+    // The right one, and the link is made.
     let link = zyr_account::attach(
         &server.address(),
         Trust::Pinned(server.fingerprint),
@@ -173,7 +174,7 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
     assert_eq!(link.username, "victor");
     assert_eq!(link.pin, Some(server.fingerprint));
 
-    // Le clair est refusé avant d'être essayé.
+    // Cleartext is refused before it is tried.
     assert!(matches!(
         zyr_account::attach(
             &format!("http://{}", server.address()),
@@ -187,7 +188,7 @@ async fn a_self_signed_server_is_refused_until_its_key_is_pinned() {
         AttachError::Failed(zyr_account::Failure::Address(_))
     ));
 
-    // Un mauvais mot de passe est le code du serveur, en français.
+    // A wrong password comes back as the server's code, in French.
     let refused = zyr_account::attach(
         &server.address(),
         Trust::Pinned(server.fingerprint),
@@ -236,8 +237,8 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
         Some(Registration::Open)
     );
 
-    // Un second appareil se rattache : le premier l'apprend sans rien
-    // demander.
+    // A second device attaches: the first learns of it without asking
+    // anything.
     let laptop_identity = Arc::new(Identity::generate().unwrap());
     let laptop_link = zyr_account::attach(
         &server.address(),
@@ -257,7 +258,7 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
-    // Le PC accepte l'accès distant ; le portable arrive et le voit prêt.
+    // The PC accepts remote access; the laptop arrives and sees it ready.
     pc.set_access(Access::Ready);
     let (laptop, mut laptop_events) =
         Live::open(laptop_link.clone(), laptop_identity.clone(), log());
@@ -270,7 +271,7 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
     assert!(seen.online);
     assert_eq!(seen.access, Access::Ready);
 
-    // Le rendez-vous : le portable va vers le PC.
+    // The rendezvous: the laptop goes towards the PC.
     laptop.say(FromDevice::SessionOpen {
         to: pc_link.device.clone(),
     });
@@ -289,8 +290,8 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
         .unwrap();
     assert_eq!(read.grant, Grant::Owner);
 
-    // Chacun reçoit son propre laissez-passer pour le relais du serveur,
-    // qui ne le laisse joindre que l'autre, et pour cette session-là.
+    // Each one receives its own pass for the server's relay, which lets
+    // it reach only the other one, and for that session only.
     let relay = seen_by_laptop
         .relay
         .as_ref()
@@ -324,7 +325,8 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
     });
     assert_eq!(expect(&mut pc_events).await, Event::SessionEnd { session });
 
-    // Révoqué depuis le PC, le portable l'apprend et doit oublier son lien.
+    // Revoked from the PC, the laptop learns of it and has to forget its
+    // link.
     let rest = Rest::new(&server.address(), trust).unwrap();
     rest.revoke_device(&pc_link.token, &laptop_link.device)
         .await

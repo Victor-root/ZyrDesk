@@ -855,17 +855,17 @@ mod tests {
 
     #[test]
     fn a_screen_survives_being_written_down_and_read_back() {
-        // Ce qui est écrit ici est relu après une session, parfois après
-        // un redémarrage : une seule écriture, une seule lecture.
+        // What is written here is read back after a session, sometimes
+        // after a restart: one single write, one single read.
         let said = seat().to_string();
         assert_eq!(said.parse::<Seat>().unwrap(), seat(), "{said}");
     }
 
     #[test]
     fn a_screen_that_was_off_carries_that_and_nothing_else() {
-        // C'est le cas qui a fâché Victor : sa télé est éteinte presque
-        // toujours, et une session la rallumait. Éteint est un état qu'on
-        // relève et qu'on remet, pas une absence.
+        // This is the case that annoyed Victor: his TV is off almost all
+        // the time, and a session used to turn it back on. Off is a state
+        // that is noted down and put back, not an absence.
         let off = Seat {
             on: false,
             wide: 0,
@@ -884,9 +884,10 @@ mod tests {
 
     #[test]
     fn the_place_of_a_screen_is_kept_including_to_the_left() {
-        // « Mon écran 1 est à droite et l'écran 2 à gauche » : la place
-        // du second est négative, et un relevé qui la perd rend un bureau
-        // en miroir de celui qu'on avait.
+        // "My screen 1 is on the right and screen 2 on the left": the
+        // place of the second is negative, and a record that loses it
+        // gives back a desktop that is the mirror image of the one there
+        // was.
         let said = seat().to_string();
         assert!(said.contains("at=-3840,0"), "{said}");
         assert_eq!(said.parse::<Seat>().unwrap().at, (-3840, 0));
@@ -894,12 +895,12 @@ mod tests {
 
     #[test]
     fn the_magnification_is_part_of_what_is_noted_and_put_back() {
-        // Le cas de Victor, et il a dû le réparer à la main plusieurs
-        // fois : un portable 1920x1200 à qui on demande du 3840x2160 à
-        // 175 % refuse la taille, garde la sienne, et se retrouve
-        // néanmoins à 175 %. Rien n'ayant changé de taille, une remise
-        // qui ne remet que les tailles ne remet rien du tout, et
-        // l'agrandissement reste où la session l'a mis.
+        // Victor's case, and he had to repair it by hand several
+        // times: a 1920x1200 laptop asked for 3840x2160 at 175%
+        // refuses the size, keeps its own, and nonetheless ends up at
+        // 175%. Since nothing changed size, a restore that only puts
+        // back the sizes puts back nothing at all, and the
+        // magnification stays where the session put it.
         let said = seat().to_string();
         assert!(said.contains("scale=175"), "{said}");
         assert_eq!(said.parse::<Seat>().unwrap().scale, 175);
@@ -927,9 +928,9 @@ mod tests {
 
     #[test]
     fn a_line_that_will_not_read_costs_only_that_line() {
-        // Trois écrans remis sur quatre valent mieux qu'aucun, et un
-        // fichier à moitié écrit par une machine qui s'est éteinte est
-        // exactement ce à quoi il faut survivre.
+        // Three screens put back out of four are better than none, and
+        // a file half written by a machine that switched off is
+        // exactly what has to be survived.
         let text = format!("{}\n\nn'importe quoi\n", seat());
         assert_eq!(read(&text), vec![seat()]);
     }

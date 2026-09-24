@@ -106,8 +106,8 @@ mod tests {
 
     #[test]
     fn the_clear_and_the_unreadable_are_refused() {
-        // Le clair se refuse avant d'être essayé : c'est la règle du
-        // produit, et elle vit ici.
+        // The clear is refused before it is tried: that is the
+        // product's rule, and it lives here.
         assert_eq!(
             normalized("http://zyr.exemple.fr"),
             Err(BadAddress::NotHttps)

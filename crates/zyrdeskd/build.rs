@@ -7,14 +7,13 @@
 //! executable among the product's own, which is exactly the moment a name
 //! and a mark are worth having.
 //!
-//! Et le nom que la liste des programmes affiche à côté, qui est la
-//! description du paquet : ZyrDesk fait tourner plusieurs programmes sur
-//! une machine, et chacun doit dire lequel il est. Sans ce nom-là,
-//! Windows montre celui du fichier, qui ne veut rien dire pour la
-//! personne qui le lit.
+//! And the name the list of programs shows beside it, which is the
+//! package's description: ZyrDesk runs several programs on a machine, and
+//! each must say which one it is. Without that name, Windows shows the
+//! file's, which means nothing to the person reading it.
 //!
-//! Rien d'autre n'est posé ici : ce que le fichier dit de lui-même, son
-//! nom et sa version, vient du paquet.
+//! Nothing else is set here: what the file says about itself, its name
+//! and its version, comes from the package.
 
 fn main() {
     // Redone when the drawing changes, which Cargo cannot know on its

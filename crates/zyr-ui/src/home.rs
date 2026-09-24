@@ -1,27 +1,27 @@
-//! L'accueil de ZyrDesk, dessiné par ce programme.
+//! ZyrDesk's home window, drawn by this program.
 //!
-//! C'était la dernière page du produit. Ce qui la remplace tient dans une
-//! fenêtre ordinaire, encadrée par Windows, dont l'intérieur est une
-//! toile : le même dessin que le logo et le menu de la session, la même
-//! palette lue dans la même feuille de style, les mêmes icônes.
+//! It was the product's last page. What replaces it fits in an ordinary
+//! window, framed by Windows, whose inside is a canvas: the same drawing
+//! as the logo and the session menu, the same palette read from the same
+//! style sheet, the same icons.
 //!
-//! **Elle ne décide de rien.** Elle demande au service, par le coeur, et
-//! elle dessine ce qui revient. Le vocabulaire suit celui du produit :
-//! « ordinateur » et non « hôte », « accès distant » et non « service ».
+//! **It decides nothing.** It asks the service, through the core, and
+//! draws what comes back. The vocabulary follows the product's:
+//! "ordinateur" and not "hôte", "accès distant" and not "service".
 //!
-//! # Une seule marche
+//! # One walk
 //!
-//! Dessiner et savoir ce qui est sous la souris sont le même travail :
-//! une passe pose chaque chose et note au passage ce qui répond au clic.
-//! Deux marches se répondraient juste jusqu'au jour où l'une change.
+//! Drawing and knowing what is under the mouse are the same job: one pass
+//! lays down each thing and notes along the way what answers the click.
+//! Two walks would agree only until the day one of them changes.
 //!
-//! # Ce qui n'est pas dessiné ici
+//! # What is not drawn here
 //!
-//! Les champs de saisie. Écrire du texte est le seul endroit où le
-//! système fait mieux que nous : le curseur, la sélection, le
-//! presse-papiers, les claviers qui composent leurs signes. Ce sont donc
-//! de vrais champs de Windows, posés dans le cadre que nous dessinons,
-//! et qui ne vivent que le temps du dialogue qui les porte.
+//! The input fields. Writing text is the one place where the system does
+//! better than we do: the text cursor, the selection, the clipboard, the
+//! keyboards that compose their characters. So these are real Windows
+//! fields, set inside the frame we draw, and they live only as long as
+//! the dialogue that carries them.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
@@ -41,34 +41,35 @@ use crate::settings::Settings;
 use crate::shortcuts::{Combination, Doing, Held};
 use crate::theme::Choice;
 
-/// Ce sous quoi ce module classe ses lignes du journal.
+/// What this module's lines are filed under.
 const TAG: &str = "home";
 
-/// Écrit une ligne sous l'étiquette de ce module.
+/// Writes a line under this module's tag.
 fn note(what: &str) {
     crate::journal::note_about(TAG, what);
 }
 
-/// Ce que le service peut changer sans que personne ne clique : une
-/// session ouverte depuis l'autre bout, un moteur déposé dans son
-/// dossier, le service arrêté. Redemandé à ce rythme.
+/// What the service can change without anyone clicking: a session
+/// opened from the other end, an engine dropped into its folder,
+/// the service stopped. Asked for again this often.
 const REFRESH: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// Le temps qu'un « Copié » reste lisible avant que le bouton reprenne
-/// son mot.
+/// How long a "Copié" stays readable before the button goes back to
+/// its own word.
 const COPIED_TIME: std::time::Duration = std::time::Duration::from_millis(1600);
 
-/// Le temps qu'une demande de confirmation reste armée.
+/// How long a request for confirmation stays armed.
 const CONFIRM_TIME: std::time::Duration = std::time::Duration::from_secs(4);
 
-/// Le temps qu'une bonne nouvelle reste à l'écran avant de s'effacer.
+/// How long a piece of good news stays on screen before it goes away.
 const NOTICE_TIME: std::time::Duration = std::time::Duration::from_secs(6);
 
-/// Ce que le fil qui va et vient met à faire un aller.
+/// How long the thread that goes back and forth takes to
+/// travel one way.
 const BACK_AND_FORTH: std::time::Duration = std::time::Duration::from_millis(1400);
 
-/// Une empreinte fait toujours cette longueur. La vérifier ici évite
-/// d'aller déranger le service pour rien.
+/// A fingerprint is always this long. Checking it here saves
+/// bothering the service for nothing.
 const FINGERPRINT_LENGTH: usize = 64;
 
 const MINUTE: u64 = 60;
@@ -76,44 +77,44 @@ const HOUR: u64 = 3600;
 
 /* ---- Ce que l'accueil montre ----------------------------------------- */
 
-/// Ce que le produit dit de lui-même.
+/// What the product says about itself.
 ///
-/// Rien n'est décidé ici : tout vient du service, et la fenêtre ne fait
-/// que le dessiner. Une session appartient au service et survit à cette
-/// fenêtre fermée, mise à jour ou plantée.
+/// Nothing is decided here: everything comes from the service, and the
+/// window only draws it. A session belongs to the service and survives
+/// this window being closed, updated or crashing.
 #[derive(Default, PartialEq)]
 struct Seen {
     machine: Option<Standing>,
     peers: Vec<Peer>,
     sessions: Vec<Ongoing>,
-    /// Les ordinateurs connectés à celui-ci en ce moment, et qui le
-    /// contrôlent : l'inverse de `sessions`.
+    /// The computers connected to this one right now, and
+    /// controlling it: the reverse of `sessions`.
     watching: Vec<Watcher>,
     engines: Option<Engines>,
     settings: Option<Settings>,
-    /// Le compte, quand le service répond : le lien s'il y en a un, et
-    /// les appareils qui y sont.
+    /// The account, when the service answers: the link if there is
+    /// one, and the devices on it.
     account: Option<AccountState>,
-    /// Les trois raccourcis, écrits comme ils sont gravés sur le clavier
-    /// branché, et rien pour ceux qui n'ont pas de touche.
+    /// The three shortcuts, written as they are engraved on the keyboard
+    /// plugged in, and nothing for those that have no key.
     shortcuts: Vec<(Doing, Option<String>)>,
-    /// Ce que fait tourner cette fenêtre, et le dossier des journaux :
-    /// demandés une fois, ils ne changent pas de la vie du programme.
+    /// What this window runs, and the folder of the journals: asked
+    /// for once, they do not change for the whole life of the program.
     version: String,
     folder: String,
 }
 
 impl Seen {
-    /// Une seule session à la fois depuis cet ordinateur : deux fenêtres
-    /// vidéo en même temps ne se pilotent pas.
+    /// One session at a time from this computer: two video windows at
+    /// once cannot be driven.
     fn busy(&self, state: &State) -> bool {
         state.opening.is_some() || !self.sessions.is_empty()
     }
 
-    /// Le nom sous lequel on reconnaît la machine d'une session.
+    /// The name a session's machine is recognised by.
     ///
-    /// À l'empreinte et non à l'adresse : c'est la seule chose qui ne
-    /// bouge pas d'un réseau à l'autre.
+    /// By the fingerprint and not the address: it is the only thing
+    /// that stays put from one network to another.
     fn name_of(&self, session: &Ongoing) -> String {
         self.peers
             .iter()
@@ -122,28 +123,28 @@ impl Seen {
     }
 }
 
-/// Le compte de cet ordinateur, tel que le service le tient.
+/// This computer's account, as the service holds it.
 #[derive(Default, PartialEq)]
 struct AccountState {
-    /// Le lien, ou rien : sans lien, le produit ne connaît aucun serveur.
+    /// The link, or nothing: without a link, the product knows no server.
     link: Option<Account>,
-    /// Les appareils du compte, cet ordinateur compris, tels que le
-    /// serveur les a dits. Vides tant qu'il n'a rien dit.
+    /// The account's devices, this computer included, as the server
+    /// reported them. Empty as long as it has said nothing.
     devices: Vec<Device>,
 }
 
-/// Ce qu'il reste à faire pour que le produit marche, dit en clair et
-/// avec de quoi y remédier.
+/// What is left to do for the product to work, said plainly and with what
+/// it takes to fix it.
 ///
-/// Sans ça, un moteur absent se lit « démarrage en cours » pour toujours,
-/// et un service arrêté ne se répare que par une commande.
+/// Without this, a missing engine reads "démarrage en cours" forever, and
+/// a stopped service can only be repaired with a command.
 struct ToDo {
     text: &'static str,
     button: &'static str,
     remedy: Remedy,
 }
 
-/// Ce que le bouton d'un tel bandeau va faire.
+/// What the button of such a banner will do.
 #[derive(Clone, Copy)]
 enum Remedy {
     StartTheService,
@@ -152,11 +153,11 @@ enum Remedy {
     SeeTheJournal,
 }
 
-/// Ce qui se passe pendant qu'une session s'ouvre.
+/// What is happening while a session opens.
 ///
-/// Le titre ne bouge pas de toute l'ouverture : ce qui s'y passe est
-/// toujours la même chose, et un titre qui change à chaque étape se lit
-/// comme des nouvelles alors que ce n'en sont pas.
+/// The title does not move for the whole opening: what is happening is
+/// always the same thing, and a title that changes at every step reads
+/// like news when there is none.
 struct Opening {
     towards: String,
     detail: String,
@@ -164,9 +165,9 @@ struct Opening {
     since: std::time::Instant,
 }
 
-/// Le bandeau du haut. Il sert aux deux : ce qui a échoué, et ce qui a
-/// réussi sans laisser de trace ailleurs à l'écran. Un message rouge pour
-/// dire que tout va bien se lirait comme une panne.
+/// The banner at the top. It serves both: what failed, and what succeeded
+/// without leaving a trace anywhere else on screen. A red message to say
+/// that all is well would read as a failure.
 struct Notice {
     text: String,
     is_trouble: bool,
@@ -175,109 +176,109 @@ struct Notice {
 
 /* ---- Où en est l'écran ----------------------------------------------- */
 
-/// Ce qui est ouvert par-dessus l'accueil.
+/// What is open on top of the home window.
 #[derive(Clone, Copy, PartialEq)]
 enum Screen {
     Home,
     Adding,
     Journal,
     Settings,
-    /// Se rattacher à un serveur.
+    /// Attaching to a server.
     Account,
-    /// Renommer un appareil du compte.
+    /// Renaming a device of the account.
     Renaming,
 }
 
-/// Ce qui défile, et où en est son défilement.
+/// What scrolls, and how far it has scrolled.
 #[derive(Clone, Copy, PartialEq)]
 enum Scroller {
     Page,
     Dialogue,
-    /// Le texte du journal, qui défile chez lui dans le dialogue qui le
-    /// porte, comme une page défile dans une fenêtre.
+    /// The journal's text, which scrolls on its own inside the dialogue
+    /// that carries it, the way a page scrolls in a window.
     Lines,
 }
 
-/// Où en est la fenêtre : ce qui est ouvert, ce qui est sous la main, ce
-/// qui attend une réponse.
+/// Where the window stands: what is open, what is under the hand, what
+/// is waiting for an answer.
 struct State {
     screen: Screen,
-    /// Le défilement de la page, celui du dialogue ouvert, et celui du
-    /// texte du journal. Le dernier défile aussi en travers : une ligne
-    /// de journal ne se replie pas.
+    /// The scrolling of the page, that of the open dialogue, and that
+    /// of the journal's text. The last one also scrolls sideways: a
+    /// journal line does not wrap.
     scroll: f32,
     dialogue_scroll: f32,
     lines_scroll: (f32, f32),
-    /// Ce que chaque chose défilante mesurait la dernière fois qu'elle a
-    /// été dessinée, la place qu'elle avait, et la course de son pouce :
-    /// de quoi ne jamais défiler au-delà, et traîner l'ascenseur du même
-    /// pas que celui qui a été dessiné.
+    /// What each scrolling thing measured the last time it was drawn,
+    /// the room it had, and the travel of its thumb: what it takes never
+    /// to scroll past the end, and to drag the scrollbar at the same
+    /// pace as the one that was drawn.
     extents: [(f32, f32, f32); 3],
     hover: Option<Target>,
     pressed: Option<Target>,
-    /// L'ascenseur tenu par une main, et de combien le curseur était
-    /// au-dessus de son haut quand elle l'a pris.
+    /// The scrollbar held by a hand, and how far above its top the
+    /// pointer was when the hand took it.
     held: Option<(Scroller, f32)>,
-    /// Les interrupteurs poussés dont le service n'a pas encore pris
-    /// acte. Sans eux, l'état qui revient est encore l'ancien et
-    /// l'interrupteur reviendrait en arrière sous le doigt.
+    /// The switches pushed that the service has not acknowledged
+    /// yet. Without them, the state that comes back is still the old
+    /// one and the switch would spring back under the finger.
     pushed: Vec<(Toggle, bool)>,
-    /// Le bouton qui vient d'être copié, et depuis quand.
+    /// The button that has just copied, and since when.
     copied: Option<(Target, std::time::Instant)>,
-    /// Le repli du jargon, dans les réglages.
+    /// The jargon fold, in the settings.
     advanced: bool,
-    /// La touche qui attend une combinaison. Une seule à la fois : deux
-    /// boutons qui attendent la même touche se la partageraient.
+    /// The key waiting for a combination. Only one at a time: two
+    /// buttons waiting for the same key would share it.
     listening: Option<Doing>,
-    /// De quel ordinateur est le journal ouvert. Rien pour celui-ci :
-    /// c'est le seul dont on peut aussi vider les fichiers et ouvrir le
-    /// dossier.
+    /// Which computer the open journal belongs to. Nothing for this
+    /// one: it is the only one whose files can also be emptied and
+    /// whose folder can be opened.
     journal_of: Option<Peer>,
-    /// Ce que le journal ouvert montre, une ligne par ligne : le découper
-    /// à chaque image reviendrait à le relire en entier pour n'en
-    /// dessiner que trente lignes.
+    /// What the open journal shows, line by line: cutting it up at every
+    /// frame would mean reading it all again just to draw thirty of its
+    /// lines.
     lines: Vec<String>,
-    /// Le tri auquel cette page répond, et rien tant qu'aucune réponse
-    /// n'est arrivée.
+    /// The sift this page answers, and nothing as long as no answer has
+    /// arrived.
     ///
-    /// « Copier le tri » emporte la page telle qu'elle est à l'écran : il
-    /// faut donc savoir si elle répond bien à ce qui est écrit dans la
-    /// boîte, faute de quoi le bouton emporterait la page d'avant sous le
-    /// nom du tri.
+    /// "Copier le tri" takes the page as it is on screen: so it has to be
+    /// known whether it really answers what is written in the box, or
+    /// else the button would carry off the previous page under the sift's
+    /// name.
     sift: Option<String>,
-    /// Les noms que la page ouverte dit porter, à cocher plutôt qu'à
-    /// taper.
+    /// The names the open page says it carries, to tick rather than
+    /// type.
     ///
-    /// Ils viennent de la page elle-même et jamais d'une liste tenue
-    /// ici : la moitié du temps elle vient d'un autre ordinateur, et un
-    /// nom proposé qu'aucune de ses lignes ne porte serait une impasse
-    /// proposée.
+    /// They come from the page itself and never from a list kept here:
+    /// half the time it comes from another computer, and a name offered
+    /// that none of its lines carries would be a dead end on offer.
     tags: Vec<String>,
-    /// Le tri de la dernière question partie.
+    /// The sift of the last question sent.
     ///
-    /// Chaque question ouvre sa propre conversation avec le service :
-    /// deux lectures lancées coup sur coup peuvent revenir dans l'autre
-    /// sens, et la plus ancienne écraserait la plus récente.
+    /// Each question opens its own conversation with the service: two
+    /// readings started one right after the other can come back in the
+    /// other order, and the older one would overwrite the newer.
     sift_asked: String,
-    /// Depuis quand « Vider » attend sa confirmation.
+    /// When "Vider" started waiting for confirmation.
     emptying: Option<std::time::Instant>,
     notice: Option<Notice>,
-    /// Ce que les réglages ont à redire, qui vit dans leur dialogue.
+    /// What the settings have to complain about, which lives in
+    /// their dialogue.
     trouble: Option<String>,
     opening: Option<Opening>,
-    /// Dans le dialogue de compte : créer le compte plutôt que d'y
-    /// entrer.
+    /// In the account dialogue: creating the account rather than
+    /// signing in to it.
     sign_up: bool,
-    /// La clé qu'un serveur que personne ne garantit a présentée, en
-    /// attente que la personne la compare et la confirme.
+    /// The key presented by a server nobody vouches for, waiting for
+    /// the person to compare it and confirm it.
     pinning: Option<String>,
-    /// Un rattachement en cours : le bouton attend la réponse.
+    /// Attaching in progress: the button awaits the answer.
     attaching: bool,
-    /// Depuis quand « Se détacher » attend sa confirmation.
+    /// When "Se détacher" started waiting for confirmation.
     detaching: Option<std::time::Instant>,
-    /// Quel appareil « Révoquer » attend de confirmer, et depuis quand.
+    /// Which device "Révoquer" is waiting to confirm, and since when.
     revocation: Option<(usize, std::time::Instant)>,
-    /// L'appareil en cours de renommage : son identifiant et son nom.
+    /// The device being renamed: its identifier and its name.
     renaming: Option<(String, String)>,
 }
 
@@ -314,8 +315,8 @@ impl State {
         }
     }
 
-    /// Ce qu'une chose défilante mesure, la place qu'elle a et la course
-    /// de son pouce : ce qui borne son défilement et ce qui le traîne.
+    /// What a scrolling thing measures, the room it has and the travel
+    /// of its thumb: what bounds its scrolling and what drags it.
     fn measured(&self, which: Scroller) -> (f32, f32, f32) {
         self.extents[match which {
             Scroller::Page => 0,
@@ -332,7 +333,7 @@ impl State {
         }] = (content, visible, travel);
     }
 
-    /// De combien cette chose-là défile en ce moment.
+    /// How far that thing is scrolled right now.
     fn scroll(&self, which: Scroller) -> f32 {
         match which {
             Scroller::Page => self.scroll,
@@ -341,7 +342,7 @@ impl State {
         }
     }
 
-    /// Fait défiler, sans jamais sortir de ce qu'il y a à voir.
+    /// Scrolls, without ever leaving what there is to see.
     fn scroll_by(&mut self, which: Scroller, by: f32) {
         let (content, visible, _) = self.measured(which);
         let furthest = (content - visible).max(0.0);
@@ -356,7 +357,7 @@ impl State {
 
 /* ---- Ce sur quoi on clique -------------------------------------------- */
 
-/// Un interrupteur, et ce qu'il commande.
+/// A switch, and what it controls.
 #[derive(Clone, Copy, PartialEq)]
 enum Toggle {
     Access,
@@ -365,14 +366,14 @@ enum Toggle {
     SteadyRate,
     Sound,
     Stats,
-    /// Les deux interrupteurs d'essai réseau : marquer les paquets, et
-    /// écouter sur le port du produit.
+    /// The two network trial switches: marking the packets, and
+    /// listening on the product's port.
     Marking,
     FixedPort,
 }
 
-/// Un choix segmenté : plusieurs possibilités qui s'excluent, montrées
-/// toutes ensemble.
+/// A segmented choice: several options that exclude each other, shown
+/// all together.
 #[derive(Clone, Copy, PartialEq)]
 enum Pick {
     Theme,
@@ -380,63 +381,63 @@ enum Pick {
     Codec,
     Display,
     Mouse,
-    /// Dans le dialogue de compte : y entrer, ou le créer.
+    /// In the account dialogue: signing in, or creating it.
     SignUp,
 }
 
-/// Ce sur quoi on peut cliquer, et ce que ça fait.
+/// What can be clicked, and what it does.
 #[derive(Clone, PartialEq)]
 enum Target {
     OpenJournal,
     OpenSettings,
     CopyFingerprint,
-    /// Le bouton d'un bandeau « ce qu'il reste à faire ».
+    /// The button of a "what is left to do" banner.
     ToFix(usize),
-    /// Une carte d'ordinateur, et le journal de cet ordinateur-là.
+    /// A computer's card, and that computer's journal.
     Peer(usize),
     JournalOf(usize),
-    /// La même carte, mais par ce réseau-ci et rien d'autre : aucun
-    /// serveur consulté, aucune sortie de la maison.
+    /// The same card, but through this network and nothing else: no
+    /// server consulted, no going out of the house.
     Local(usize),
-    /// Déconnecte l'ordinateur qui contrôle celui-ci en ce moment, sur
-    /// cette carte.
+    /// Disconnects the computer controlling this one right now, on
+    /// this card.
     Disconnect(usize),
     Add,
     Switch(Toggle),
-    /// Un des noms que la page du journal porte, par son rang : coché, il
-    /// s'ajoute à la boîte de tri, décoché il en part.
+    /// One of the names the journal page carries, by its rank: ticked, it
+    /// is added to the sift box; unticked, it leaves it.
     Tag(usize),
     Segment(Pick, usize),
     Shortcut(Doing),
-    /// Fermer le dialogue ouvert, quel qu'il soit.
+    /// Closing the open dialogue, whichever it is.
     Close,
     Connect,
-    /// Ce que la touche Entrée fait dans le dialogue ouvert.
+    /// What the Enter key does in the open dialogue.
     Confirm,
     Forget(usize),
     Empty,
     Refresh,
     CopyJournal,
-    /// Ouvrir le dossier des journaux, depuis le journal ou les réglages.
+    /// Opening the journals' folder, from the journal or the settings.
     OpenTheJournals,
     Advanced,
     Scrollbar(Scroller),
-    /// Le compte : ouvrir le dialogue, se rattacher, confirmer la clé
-    /// d'un serveur, se détacher.
+    /// The account: opening the dialogue, attaching, confirming a
+    /// server's key, detaching.
     OpenAccount,
     Attach,
     Pin,
     Detach,
-    /// Un appareil du compte, par son rang : ouvrir son renommage, ou le
-    /// révoquer.
+    /// A device of the account, by its rank: opening its renaming, or
+    /// revoking it.
     OpenRenaming(usize),
     Rename,
     Revoke(usize),
 }
 
 impl Toggle {
-    /// Où est l'interrupteur, d'après ce que le produit dit, et d'après
-    /// ce qu'une main vient de pousser sans réponse encore.
+    /// Where the switch is, going by what the product says, and by what
+    /// a hand has just pushed with no answer yet.
     fn is_on(self, seen: &Seen, state: &State) -> bool {
         if let Some((_, wanted)) = state.pushed.iter().find(|(target, _)| *target == self) {
             return *wanted;
@@ -459,12 +460,12 @@ impl Toggle {
         }
     }
 
-    /// Si on peut le pousser.
+    /// Whether it can be pushed.
     ///
-    /// Un service arrêté n'est pas un accès distant désactivé : l'un est
-    /// un choix, l'autre une panne. L'interrupteur reste alors sur la
-    /// position choisie et devient inactionnable, plutôt que de sauter à
-    /// « non » et de faire croire à une décision que personne n'a prise.
+    /// A stopped service is not remote access turned off: one is a
+    /// choice, the other a failure. The switch then stays in the chosen
+    /// position and can no longer be moved, rather than jumping to "off"
+    /// and suggesting a decision nobody made.
     fn enabled(self, seen: &Seen, state: &State) -> bool {
         if state.pushed.iter().any(|(target, _)| *target == self) {
             return false;
@@ -480,7 +481,7 @@ impl Toggle {
 }
 
 impl Pick {
-    /// Les mots des côtés, dans l'ordre où ils se montrent.
+    /// The words on the sides, in the order they are shown.
     fn words(self) -> Vec<&'static str> {
         match self {
             Pick::Theme => Choice::ALL.iter().map(|choice| choice.word()).collect(),
@@ -492,8 +493,8 @@ impl Pick {
         }
     }
 
-    /// La valeur que porte chaque côté, telle qu'elle voyage et telle
-    /// qu'elle s'écrit dans les réglages.
+    /// The value each side carries, as it travels and as it is
+    /// written in the settings.
     fn values(self) -> Vec<&'static str> {
         match self {
             Pick::Theme | Pick::SignUp => Vec::new(),
@@ -504,8 +505,8 @@ impl Pick {
         }
     }
 
-    /// Lequel est choisi, d'après ce que le produit dit, ou d'après ce
-    /// que la fenêtre tient elle-même pour les deux qui ne voyagent pas.
+    /// Which one is chosen, going by what the product says, or by what
+    /// the window itself holds for the two that do not travel.
     fn current(self, seen: &Seen, state: &State) -> Option<usize> {
         let said = match self {
             Pick::Theme => {
@@ -525,7 +526,7 @@ impl Pick {
         self.values().iter().position(|value| *value == said)
     }
 
-    /// Si on peut en changer.
+    /// Whether it can be changed.
     fn enabled(self, seen: &Seen) -> bool {
         match self {
             Pick::Theme | Pick::SignUp => true,
@@ -540,48 +541,49 @@ impl Pick {
 
 /* ---- Ce que l'écran des réglages contient ----------------------------- */
 
-/// De quoi décider, à droite d'une ligne de réglage.
+/// What to decide with, on the right of a setting line.
 enum Control {
-    /// Rien : la ligne dit seulement où en est le produit.
+    /// Nothing: the line only says where the product
+    /// stands.
     Status,
     Switch(Toggle),
     Segments(Pick),
     Key(Doing),
-    /// Un bouton qui ouvre quelque chose hors de la fenêtre.
+    /// A button that opens something outside the window.
     Opens(&'static str, Target),
 }
 
-/// Une ligne de l'écran des réglages : ce dont il s'agit à gauche, de
-/// quoi en décider à droite.
+/// A line of the settings screen: what it is about on the left, what
+/// to decide it with on the right.
 struct Setting {
     label: &'static str,
     caption: &'static str,
     control: Control,
 }
 
-/// Ce que l'écran des réglages porte, dans l'ordre.
+/// What the settings screen carries, in order.
 enum Element {
-    /// Une étiquette de section, et le mot qui l'explique.
+    /// A section label, and the words that explain it.
     Section(&'static str, &'static str),
-    /// Le repli du jargon : ce qui suit ne se montre qu'ouvert.
+    /// The jargon fold: what follows only shows when open.
     Fold,
     Setting(Setting),
-    /// Le compte : le lien tel qu'il est, et les appareils qui y sont.
-    /// Dessiné à part, parce qu'il n'a pas la forme d'une ligne.
+    /// The account: the link as it stands, and the devices on it.
+    /// Drawn separately, because it does not have the shape of a line.
     Account,
 }
 
-/// L'écran des réglages, ligne par ligne.
+/// The settings screen, line by line.
 ///
-/// Une table et non une suite d'appels : c'est la même mise en page pour
-/// toutes, qu'elles portent un choix segmenté, un interrupteur, une
-/// touche ou un bouton, et une table se lit comme l'écran se lit.
+/// A table and not a string of calls: it is the same layout for all of
+/// them, whether they carry a segmented choice, a switch, a key or a
+/// button, and a table reads the way the screen reads.
 ///
-/// Ce qu'une session demande, taille, débit et codec, se règle dans son
-/// propre menu et pas ici : ce sont les trois nombres qu'on change en
-/// regardant l'image qu'ils changent, et revenir sur cet écran pour en
-/// essayer un, c'est s'éloigner de la seule chose qui dit si ça a marché.
-/// La première ligne rappelle où ils en sont.
+/// What a session asks for (size, bitrate and codec) is set in its own
+/// menu and not here: they are the three numbers one changes while
+/// watching the picture they change, and coming back to this screen to
+/// try one means moving away from the only thing that says whether it
+/// worked. The first line recalls where they stand.
 const SETTINGS: &[Element] = &[
     Element::Setting(Setting {
         label: "Ce qu'une session demande",
@@ -713,105 +715,105 @@ const SETTINGS: &[Element] = &[
 /* ---- Ce que la feuille de style dit, en pixels de page ---------------- */
 
 mod layout {
-    /// La largeur au-delà de laquelle la page ne s'étale plus, et ce qui
-    /// l'entoure : en haut et en bas, puis sur les côtés.
+    /// The width beyond which the page stops spreading, and what
+    /// surrounds it: at the top and bottom, then on the sides.
     pub const PAGE: f32 = 820.0;
     pub const EDGE: f32 = 32.0;
     pub const SIDE: f32 = 24.0;
 
-    /// La marque en haut de la page, et celle de l'écran d'ouverture.
+    /// The brand mark at the top of the page, and the one on the
+    /// opening screen.
     pub const BRAND: f32 = 40.0;
     pub const BIG_BRAND: f32 = 56.0;
 
-    /// Un bouton, un grand bouton, et le dessin d'un bouton à icône.
+    /// A button, a big button, and the drawing on an icon button.
     pub const BUTTON: f32 = 36.0;
     pub const BIG_BUTTON: f32 = 44.0;
     pub const GLYPH: f32 = 18.0;
 
-    /// L'interrupteur : sa taille, son pouce et le jeu autour.
+    /// The switch: its size, its thumb and the play around it.
     pub const SWITCH: (f32, f32) = (44.0, 26.0);
     pub const THUMB: f32 = 18.0;
     pub const SLACK: f32 = 3.0;
 
-    /// Un côté de choix segmenté, et ce qui entoure le groupe.
+    /// One side of a segmented choice, and what surrounds the
+    /// group.
     pub const SEGMENT: f32 = 26.0;
     pub const AROUND: f32 = 2.0;
     pub const SEGMENT_RADIUS: f32 = 6.0;
 
-    /// La pastille de présence, et l'anneau autour de celle qui est
-    /// vivante.
+    /// The presence dot, and the ring around the one that is live.
     pub const DOT: f32 = 8.0;
     pub const RING: f32 = 3.0;
 
-    /// Un champ de saisie.
+    /// An input field.
     pub const FIELD: f32 = 40.0;
 
-    /// L'épaisseur d'un trait et d'une bordure.
+    /// The thickness of a line and of a border.
     pub const HAIRLINE: f32 = 1.0;
 
-    /// Une carte d'ordinateur n'est jamais plus étroite que ça.
+    /// A computer card is never narrower than this.
     pub const CARD: f32 = 240.0;
-    /// Ce qu'une carte d'ordinateur fait de haut, la place du mot qui
-    /// n'apparaît qu'au survol comprise.
+    /// How tall a computer card is, the room for the word that only
+    /// appears on hover included.
     pub const HINT: f32 = 20.0;
 
-    /// La largeur des trois dialogues.
+    /// The width of the three dialogues.
     pub const DIALOGUE: f32 = 460.0;
     pub const DIALOGUE_SETTINGS: f32 = 560.0;
     pub const DIALOGUE_JOURNAL: f32 = 880.0;
 
-    /// La touche d'un raccourci n'est jamais plus étroite que ça.
+    /// A shortcut's key is never narrower than this.
     pub const KEY: f32 = 150.0;
 
-    /// Le fil qui va et vient pendant qu'une session s'ouvre, et la part
-    /// de sa longueur que parcourt le morceau qui s'y déplace.
+    /// The thread that goes back and forth while a session opens, and
+    /// the share of its length covered by the piece that moves along it.
     pub const THREAD: (f32, f32) = (260.0, 3.0);
     pub const PIECE: f32 = 0.4;
 
-    /// Le code d'appairage, plus grand que tout le reste parce qu'il se
-    /// lit de loin, en tapant sur un autre clavier.
+    /// The pairing code, bigger than everything else because it is read
+    /// from a distance, while typing on another keyboard.
     pub const CODE: f32 = 34.0;
 
-    /// L'ascenseur, et ce qui le sépare du bord.
+    /// The scrollbar, and what separates it from the edge.
     pub const SCROLLBAR: f32 = 6.0;
 
-    /// Le dessin de l'écran vide.
+    /// The drawing of the empty screen.
     pub const EMPTY: (f32, f32) = (64.0, 44.0);
 
-    /// Ce qu'un cran de roulette fait défiler.
+    /// How far one notch of the wheel scrolls.
     pub const NOTCH: f32 = 60.0;
 
-    /// Ce qu'une boîte de dialogue pose de noir sur ce qu'elle recouvre.
+    /// How much black a dialogue lays over what it covers.
     pub const VEIL: f32 = 0.55;
 
-    /// La hauteur du texte du journal : ce qu'il prend au plus, en part
-    /// de la fenêtre, et jamais plus que ça.
+    /// The height of the journal's text: the most it takes, as a share
+    /// of the window, and never more than this.
     pub const JOURNAL: (f32, f32) = (0.6, 560.0);
 
-    /// Et jamais moins que ça, quoi que prenne le reste du dialogue :
-    /// une fenêtre de journal où l'on ne voit plus le journal n'en est
-    /// plus une.
+    /// And never less than this, whatever the rest of the dialogue
+    /// takes: a journal window in which the journal can no longer be
+    /// seen is no longer one.
     pub const JOURNAL_AT_LEAST: f32 = 140.0;
 }
 
 /* ---- Ce que la fenêtre tient ------------------------------------------ */
 
-/// La fenêtre qui porte le dessin, fille de celle que le système encadre.
+/// The window carrying the drawing, a child of the one the system frames.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
-/// De combien un pixel de page compte ici, en centièmes.
+/// How much a page pixel counts for here, in hundredths.
 static SCALE: AtomicU32 = AtomicU32::new(100);
 
 static SEEN: Mutex<Option<Seen>> = Mutex::new(None);
 static STATE: Mutex<State> = Mutex::new(State::new());
-/// Ce que la dernière image a posé, et qui répond au clic.
+/// What the last frame laid down that answers the click.
 static CLICKABLES: Mutex<Vec<(Target, Rect)>> = Mutex::new(Vec::new());
-/// Le programme, gardé ici parce que rien n'en donne un à une fenêtre du
-/// système.
+/// The program, kept here because nothing hands one to a system window.
 static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
-// La toile de cette fenêtre, tenue par le fil qui la possède : une
-// surface de dessin et la fenêtre qu'elle habille appartiennent au fil
-// qui les a faites.
+// This window's canvas, held by the thread that owns it: a drawing
+// surface and the window it dresses belong to the thread that made
+// them.
 thread_local! {
     static CANVAS: std::cell::RefCell<Option<Canvas>> = const { std::cell::RefCell::new(None) };
 }
@@ -830,16 +832,15 @@ fn program() -> Option<App> {
 
 /* ---- La fenêtre -------------------------------------------------------- */
 
-/// Ouvre la toile de l'accueil dans la fenêtre que le système encadre.
+/// Opens the home window's canvas in the window the system frames.
 ///
-/// Une fenêtre fille et non la fenêtre elle-même : celle du dehors
-/// appartient à la boîte à outils, qui la pose, la déplace et l'encadre.
-/// Ce qui est à nous est son dedans, et c'est exactement ce qu'une
-/// fenêtre fille est.
+/// A child window and not the window itself: the outer one belongs to
+/// the toolkit, which places it, moves it and frames it. What is ours is
+/// its inside, and that is exactly what a child window is.
 ///
-/// Sur le fil qui possède la fenêtre du dehors : une fenêtre appartient
-/// au fil qui l'a faite, et une fenêtre faite ailleurs n'entendrait
-/// jamais une souris.
+/// On the thread that owns the outer window: a window belongs to the
+/// thread that made it, and a window made elsewhere would never hear a
+/// mouse.
 pub fn raise(app: &App) {
     let outer = crate::main_window::handle() as windows_sys::Win32::Foundation::HWND;
     if outer.is_null() {
@@ -855,32 +856,32 @@ pub fn raise(app: &App) {
     watch(app.clone());
 }
 
-/// La toile, telle que le système la connaît.
+/// The canvas, as the system knows it.
 ///
-/// Lue par la fenêtre qui la porte, qui la redimensionne avec elle et lui
-/// donne le clavier.
+/// Read by the window that carries it, which resizes it along with itself
+/// and gives it the keyboard.
 pub fn its_canvas() -> isize {
     ITS_WINDOW.load(Ordering::Relaxed)
 }
 
-/// De combien un pixel de page compte sur l'écran où la fenêtre est.
+/// How much a page pixel counts for on the screen the window is on.
 ///
-/// Redemandé quand elle change d'écran ou que l'écran change
-/// d'agrandissement : tout ce qui est dessiné en descend, la police des
-/// champs de saisie comprise.
+/// Asked for again when it moves to another screen or when the screen's
+/// magnification changes: everything drawn follows from it, the font of
+/// the input fields included.
 pub fn measure_the_screen(app: &App) {
     let wanted = (crate::main_window::scale() * 100.0).round() as u32;
     if SCALE.swap(wanted, Ordering::Relaxed) == wanted {
         return;
     }
-    // Les champs de saisie sont des fenêtres du système : leur police ne
-    // se remet pas à l'échelle avec le reste, il faut la leur refaire.
+    // The input fields are system windows: their font does not rescale
+    // with the rest, it has to be made again for them.
     dress_the_fields();
     redraw(app);
 }
 
-/// Bâtit la toile et se met devant les messages de la fenêtre qui la
-/// porte.
+/// Builds the canvas and puts itself in front of the messages of the
+/// window that carries it.
 fn build(outer: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -899,27 +900,27 @@ fn build(outer: windows_sys::Win32::Foundation::HWND) {
         right: 0,
         bottom: 0,
     };
-    // SAFETY: une fenêtre du programme, dont le rectangle est lu dans le
-    // nôtre.
+    // SAFETY: a window of the program, whose rectangle is read into
+    // ours.
     if unsafe { GetClientRect(outer, &mut inside) } == 0 {
         note("accueil : la fenêtre ne dit pas sa taille");
         return;
     }
 
-    // SAFETY: une classe déclarée une fois et une fenêtre bâtie dessus,
-    // sur le fil qui pompera ses messages. Une classe déclarée deux fois
-    // est refusée sans autre effet, d'où la réponse non lue.
+    // SAFETY: a class declared once and a window built on it, on the
+    // thread that will pump its messages. A class declared twice is
+    // refused with no other effect, hence the answer left unread.
     let window = unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = WNDCLASSW {
-            // Redessinée en entier dès que sa taille change, comme les
-            // deux autres surfaces que ce programme peint lui-même. Sans
-            // ça, le système ne redemande une image que pour la bande
-            // qui vient d'apparaître, et rien du tout quand la fenêtre
-            // rétrécit : la page restait posée pour la taille d'avant,
-            // centrée sur une largeur qui n'existait plus, donc décalée
-            // à droite et coupée. Visible en revenant d'une fenêtre
-            // agrandie, invisible en l'ouvrant à cette taille-là.
+            // Redrawn whole as soon as its size changes, like the two
+            // other surfaces this program paints itself. Without this,
+            // the system only asks for a new frame for the strip that
+            // has just appeared, and nothing at all when the window
+            // shrinks: the page stayed laid out for the previous size,
+            // centred on a width that no longer existed, so shifted to
+            // the right and cut off. Visible when coming back from a
+            // maximised window, invisible when opening it at that size.
             style: CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(answer),
             cbClsExtra: 0,
@@ -927,9 +928,9 @@ fn build(outer: windows_sys::Win32::Foundation::HWND) {
             hInstance: instance,
             hIcon: std::ptr::null_mut(),
             hCursor: LoadCursorW(std::ptr::null_mut(), IDC_ARROW),
-            // Aucun fond : tout ce que cette fenêtre montre est peint par
-            // nous, et un fond posé par le système serait une couleur de
-            // plus, vue le temps d'une image à chaque redimensionnement.
+            // No background: everything this window shows is painted by
+            // us, and a background laid by the system would be one more
+            // colour, seen for the length of a frame at every resize.
             hbrBackground: std::ptr::null_mut(),
             lpszMenuName: std::ptr::null(),
             lpszClassName: class_name.as_ptr(),
@@ -939,9 +940,9 @@ fn build(outer: windows_sys::Win32::Foundation::HWND) {
             0,
             class_name.as_ptr(),
             std::ptr::null(),
-            // Rognée par ses soeurs : l'image d'une session est posée
-            // par-dessus dans la même fenêtre, et sans ça l'accueil se
-            // redessinerait derrière elle à chaque image.
+            // Clipped by its siblings: a session's picture is laid on
+            // top of it in the same window, and without this the home
+            // window would redraw itself behind it at every frame.
             WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
             0,
             0,
@@ -964,7 +965,7 @@ fn build(outer: windows_sys::Win32::Foundation::HWND) {
     ));
 }
 
-/// Redemande une image, depuis n'importe quel fil.
+/// Asks for a new frame, from any thread.
 pub fn redraw(app: &App) {
     let window = ITS_WINDOW.load(Ordering::Relaxed);
     if window == 0 {
@@ -974,15 +975,15 @@ pub fn redraw(app: &App) {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::Graphics::Gdi::InvalidateRect;
 
-        // SAFETY: une fenêtre à nous, sur le fil qui la possède.
+        // SAFETY: a window of ours, on the thread that owns it.
         unsafe { InvalidateRect(window as HWND, std::ptr::null(), 0) };
     });
 }
 
-/// Ce que la toile répond quand le système lui parle.
+/// What the canvas answers when the system speaks to it.
 ///
-/// SAFETY: appelée par le système sur le fil qui a fait cette fenêtre,
-/// avec les arguments qu'il documente.
+/// SAFETY: called by the system on the thread that made this window,
+/// with the arguments it documents.
 unsafe extern "system" fn answer(
     window: windows_sys::Win32::Foundation::HWND,
     message: u32,
@@ -999,16 +1000,17 @@ unsafe extern "system" fn answer(
     };
 
     match message {
-        // Rien à effacer : chaque image couvre la fenêtre entière, et un
-        // effacement du système entre deux serait un battement de fond nu.
+        // Nothing to erase: every frame covers the whole window, and an
+        // erase by the system in between would be a blink of bare
+        // background.
         WM_ERASEBKGND => 1,
         WM_PAINT => {
             repaint(window);
             0
         }
-        // Demandée et non peinte tout de suite : peindre sans que rien
-        // n'ait été invalidé ne peint rien du tout, le système ne
-        // prêtant alors qu'une surface vide.
+        // Requested and not painted right away: painting when nothing
+        // has been invalidated paints nothing at all, since the system
+        // then lends only an empty surface.
         ANIMATE => {
             invalidate(window);
             0
@@ -1022,8 +1024,8 @@ unsafe extern "system" fn answer(
             0
         }
         WM_LBUTTONDOWN => {
-            // SAFETY: une fenêtre à nous, à qui le clavier est donné pour
-            // qu'Échap, Entrée et les combinaisons arrivent ici.
+            // SAFETY: a window of ours, given the keyboard so that
+            // Escape, Enter and the combinations arrive here.
             unsafe { SetFocus(window) };
             presses(window, where_is(with));
             0
@@ -1051,39 +1053,40 @@ unsafe extern "system" fn answer(
             } else {
                 IDC_ARROW
             };
-            // SAFETY: un curseur du système, demandé par son nom.
+            // SAFETY: a system pointer shape, asked for by name.
             unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), cursor_shape)) };
             1
         }
-        // Le fond d'un champ de saisie, et l'encre dedans : ils
-        // appartiennent au système, qui demande ici de quelle couleur les
-        // peindre pour qu'ils soient de la couleur du reste.
+        // An input field's background, and the ink inside it: they belong
+        // to the system, which asks here what colour to paint them so
+        // that they match the colour of the rest.
         WM_CTLCOLOREDIT => tint_of_the_field(holding),
-        // Un champ dont le texte change change aussi ce que le dialogue
-        // dit sous lui et ce que son bouton permet.
+        // A field whose text changes also changes what the dialogue
+        // says below it and what its button allows.
         WM_COMMAND if (holding >> 16) as u32 & 0xFFFF == EN_CHANGE => {
             invalidate(window);
-            // Et celui du tri relit le journal de lui-même : on écrit, la
-            // page se resserre, sans rien à cliquer. Celui d'ici
-            // seulement : relire celui d'en face ouvre une route jusqu'à
-            // l'autre machine, et une par pause dans la frappe se paierait
-            // en secondes. Là-bas, c'est « Actualiser » ou Entrée qui lit.
+            // And the sift one reads the journal again by itself: one
+            // types, the page narrows, with nothing to click. Only for the
+            // journal from here: reading the far one again opens a road
+            // all the way to the other machine, and one per pause in the
+            // typing would cost seconds. Over there, it is "Actualiser" or
+            // Enter that reads.
             //
-            // Lu puis relâché : le dessin tient l'état pendant qu'il lit
-            // les champs, et les prendre ici dans l'autre ordre serait
-            // deux fils qui s'attendent.
+            // Read then released: the drawing holds the state while it
+            // reads the fields, and taking them here in the other order
+            // would be two threads waiting for each other.
             let sift_box = FIELDS.lock().expect("accueil")[Field::Sift.rank()];
             if with == sift_box && STATE.lock().expect("accueil").journal_of.is_none() {
-                // SAFETY: une horloge posée sur une fenêtre à nous,
-                // depuis le fil qui la possède. La reposer la repart de
-                // zéro, ce qui fait qu'une lettre de plus repousse la
-                // lecture au lieu d'en ajouter une.
+                // SAFETY: a timer set on a window of ours, from the
+                // thread that owns it. Setting it again restarts it
+                // from zero, which is why one more letter pushes the
+                // reading back instead of adding another one.
                 unsafe { SetTimer(window, SIFT_PAUSE, SIFT_PAUSE_MS, None) };
             }
             0
         }
         WM_TIMER if holding == SIFT_PAUSE => {
-            // SAFETY: une horloge à nous, sur le fil qui l'a posée.
+            // SAFETY: a timer of ours, on the thread that set it.
             unsafe { KillTimer(window, SIFT_PAUSE) };
             if let Some(app) = program() {
                 reread_the_journal(&app, After::Show);
@@ -1091,8 +1094,8 @@ unsafe extern "system" fn answer(
             0
         }
         _ => {
-            // Ce qu'un champ de saisie a demandé, fait ici parce que les
-            // deux referment le dialogue et donc détruisent ce champ.
+            // What an input field asked for, done here because both
+            // close the dialogue and so destroy that field.
             if message == ACT {
                 if let Some(app) = program() {
                     act(
@@ -1106,46 +1109,46 @@ unsafe extern "system" fn answer(
                 }
                 return 0;
             }
-            // SAFETY: la réponse du système à tout ce qui n'est pas
-            // répondu ici.
+            // SAFETY: the system's answer to everything not
+            // answered here.
             unsafe { DefWindowProcW(window, message, holding, with) }
         }
     }
 }
 
-/// Le message que rien du système n'envoie, et par lequel un champ de
-/// saisie demande à la toile de faire ce qu'il ne peut pas faire
-/// lui-même.
+/// The message nothing in the system sends, by which an input field
+/// asks the canvas to do what it cannot do itself.
 const ACT: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
-/// Une image de plus du fil qui va et vient, demandée par le rythme.
+/// One more frame of the thread that goes back and forth, asked for
+/// by the pulse.
 const ANIMATE: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
 
-/// L'horloge qui laisse au tri le temps d'être écrit avant de relire.
+/// The timer giving the sift time to be written before reading again.
 const SIFT_PAUSE: usize = 1;
 
-/// Ce qu'on laisse à la dernière lettre, en millisecondes.
+/// How long the last letter is given, in milliseconds.
 ///
-/// La boîte de tri se comporte comme celle d'un logcat : on écrit, la
-/// page se resserre, sans rien à cliquer. Une question par lettre ferait
-/// relire les quatre fichiers treize fois pour « clipboard », donc
-/// c'est la lettre que personne ne suit qui déclenche la lecture.
+/// The sift box behaves like a logcat's: one types, the page narrows,
+/// with nothing to click. One question per letter would read the four
+/// files again thirteen times for "clipboard", so it is the letter
+/// nobody follows that sets off the reading.
 const SIFT_PAUSE_MS: u32 = 300;
 
-/// Où la souris est, en vrais pixels depuis le coin de la toile.
+/// Where the mouse is, in real pixels from the canvas's corner.
 fn where_is(with: windows_sys::Win32::Foundation::LPARAM) -> (f32, f32) {
     let x = (with & 0xFFFF) as i16;
     let y = ((with >> 16) & 0xFFFF) as i16;
     (f32::from(x), f32::from(y))
 }
 
-/// Un mot dans les caractères que Windows compte, fini par le zéro qu'il
-/// cherche.
+/// A word in the characters Windows counts in, ended by the zero it
+/// looks for.
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
 }
 
-/// Dessine l'accueil et le verse dans la fenêtre.
+/// Draws the home window and pours it into the window.
 fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
     use windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect;
@@ -1156,21 +1159,21 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         right: 0,
         bottom: 0,
     };
-    // SAFETY: une fenêtre à nous, dont le rectangle est lu dans le nôtre.
+    // SAFETY: a window of ours, whose rectangle is read into ours.
     if unsafe { GetClientRect(window, &mut inside) } == 0 {
         return;
     }
     let (width, height) = (inside.right.max(1), inside.bottom.max(1));
 
     let mut paint: PAINTSTRUCT = unsafe { std::mem::zeroed() };
-    // SAFETY: une fenêtre à nous, dont la surface est rendue plus bas.
+    // SAFETY: a window of ours, whose surface is given back below.
     let surface = unsafe { BeginPaint(window, &mut paint) };
     if surface.is_null() {
         return;
     }
-    // Chaque image redit où vont les champs : un champ que l'image ne
-    // pose plus, parce que le dialogue a changé de forme, n'a plus de
-    // place et se range.
+    // Every frame says again where the fields go: a field the frame
+    // no longer lays down, because the dialogue has changed shape,
+    // has no place any more and is put away.
     *PLACES.lock().expect("accueil") = [None; Field::COUNT];
     CANVAS.with_borrow_mut(|canvas| {
         if canvas
@@ -1191,16 +1194,18 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         *CLICKABLES.lock().expect("accueil") = clickables;
         canvas.copy_to(windows::Win32::Graphics::Gdi::HDC(surface), 0, 0);
     });
-    // SAFETY: la peinture ouverte juste au-dessus.
+    // SAFETY: the painting opened just above.
     unsafe { EndPaint(window, &paint) };
     place_the_fields();
     clock(window);
 }
 
-/// Fait battre l'accueil tant qu'un fil va et vient, et l'arrête après.
+/// Makes the home window beat while a thread goes back and forth, and
+/// stops it afterwards.
 ///
-/// La seule chose de l'accueil qui bouge sans que personne ne touche à
-/// rien. Ailleurs, rien n'est redessiné tant que rien ne change.
+/// The only thing in the home window that moves without anyone touching
+/// anything. Everywhere else, nothing is redrawn as long as nothing
+/// changes.
 fn clock(window: windows_sys::Win32::Foundation::HWND) {
     if STATE.lock().expect("accueil").opening.is_some() {
         crate::pulse::beat(window, ANIMATE);
@@ -1211,8 +1216,8 @@ fn clock(window: windows_sys::Win32::Foundation::HWND) {
 
 /* ---- Le dessin --------------------------------------------------------- */
 
-/// Ce qui pose l'accueil : la toile, ce qu'on montre, où on en est, et ce
-/// qui répond au clic une fois posé.
+/// What lays out the home window: the canvas, what is shown, where things
+/// stand, and what answers the click once laid down.
 struct Painter<'a> {
     canvas: &'a Canvas,
     scale: f32,
@@ -1220,25 +1225,25 @@ struct Painter<'a> {
     seen: &'a Seen,
     state: &'a State,
     clickables: Vec<(Target, Rect)>,
-    /// Ce que chaque chose défilante mesure, relevé au passage et rendu
-    /// à l'état une fois la marche finie.
+    /// What each scrolling thing measures, picked up along the way and
+    /// handed to the state once the walk is over.
     measures: Vec<(Scroller, f32, f32, f32)>,
-    /// Faux quand un dialogue est ouvert : la page derrière ne répond
-    /// plus au clic, et ce qui est dessiné dessous ne s'allume plus sous
-    /// la souris.
+    /// False when a dialogue is open: the page behind no longer answers
+    /// the click, and what is drawn underneath no longer lights up under
+    /// the mouse.
     live: bool,
-    /// Vrai quand la marche ne fait que mesurer : rien n'est posé, et ce
-    /// qui revient est la hauteur que ça prendrait.
+    /// True when the walk only measures: nothing is laid down, and what
+    /// comes back is the height it would take.
     silent: bool,
 }
 
 impl Painter<'_> {
-    /// Une longueur du système de design, en vrais pixels.
+    /// A length from the design system, in real pixels.
     fn px(&self, page: f32) -> f32 {
         page * self.scale
     }
 
-    /// Une plume de cette taille de page.
+    /// A pen of this page size.
     fn pen(&self, size: f32) -> Pen {
         Pen::of(self.px(size))
     }
@@ -1255,8 +1260,8 @@ impl Painter<'_> {
         self.pen(design::SUBTITLE).in_bold()
     }
 
-    /// L'étiquette d'une section : petite, en capitales, écartée, et
-    /// jamais criarde.
+    /// A section's label: small, in capitals, spaced out, and never
+    /// loud.
     fn section(&self, at: Rect, text: &str) {
         self.draw_text(
             &text.to_uppercase(),
@@ -1266,12 +1271,12 @@ impl Painter<'_> {
         );
     }
 
-    /// La hauteur d'une ligne écrite de cette plume.
+    /// The height of a line written with this pen.
     fn line_height(&self, pen: Pen) -> f32 {
         self.canvas.line_height(pen)
     }
 
-    /// La hauteur d'un bloc replié à cette largeur.
+    /// The height of a block wrapped at this width.
     fn height_of(&self, text: &str, pen: Pen, width: f32) -> f32 {
         if text.is_empty() {
             return 0.0;
@@ -1279,8 +1284,8 @@ impl Painter<'_> {
         self.canvas.height_of(text, pen, width)
     }
 
-    /// Écrit un bloc dans cette largeur, à partir de ce haut, et rend ce
-    /// qu'il a pris.
+    /// Writes a block within this width, from this top down, and gives
+    /// back what it took.
     fn block(&self, left: f32, top: f32, width: f32, text: &str, pen: Pen, ink: Colour) -> f32 {
         let height = self.height_of(text, pen, width);
         if height > 0.0 {
@@ -1289,7 +1294,7 @@ impl Painter<'_> {
         height
     }
 
-    /// Une carte : son ombre, son fond et son trait.
+    /// A card: its shadow, its background and its outline.
     fn card(&self, at: Rect) {
         let radius = self.px(design::RADIUS_LARGE);
         self.shadow(at, radius, self.colours.shadow_1);
@@ -1297,14 +1302,13 @@ impl Painter<'_> {
         self.stroke(at, radius, self.colours.border);
     }
 
-    /// Une carte qui attend d'être remplie : pas de fond, un trait en
-    /// pointillés.
+    /// A card waiting to be filled: no background, a dashed outline.
     fn waiting_card(&self, at: Rect) {
         let radius = self.px(design::RADIUS_LARGE);
         self.dashed(at, radius, self.colours.border_strong);
     }
 
-    /// Un trait de séparation, sur toute cette largeur.
+    /// A separating line, across this whole width.
     fn separator(&self, left: f32, top: f32, width: f32) {
         self.fill(
             Rect::at(left, top, width, self.px(layout::HAIRLINE)),
@@ -1313,7 +1317,8 @@ impl Painter<'_> {
         );
     }
 
-    /// Si cette chose est sous la main, et si elle est enfoncée.
+    /// Whether this thing is under the hand, and whether it is
+    /// pressed.
     fn under_the_hand(&self, target: &Target) -> bool {
         self.live && self.state.hover.as_ref() == Some(target)
     }
@@ -1322,20 +1327,20 @@ impl Painter<'_> {
         self.live && self.state.pressed.as_ref() == Some(target)
     }
 
-    /// Note que ceci répond au clic.
+    /// Notes that this answers the click.
     ///
-    /// Jamais pendant une mesure : une chose mesurée n'est pas posée, et
-    /// ce qui n'est pas posé ne peut pas être cliqué. Un dialogue est
-    /// mesuré tout entier avant d'être dessiné, à un endroit qui n'est
-    /// pas le sien, et prendre ces places-là pour des boutons rendrait
-    /// cliquable un coin de fenêtre où il n'y a rien.
+    /// Never during a measure: a thing measured is not laid down, and
+    /// what is not laid down cannot be clicked. A dialogue is measured
+    /// whole before it is drawn, at a place that is not its own, and
+    /// taking those places for buttons would make clickable a corner of
+    /// the window where there is nothing.
     fn answers(&mut self, target: Target, at: Rect) {
         if self.live && !self.silent {
             self.clickables.push((target, at));
         }
     }
 
-    /// La pastille de présence.
+    /// The presence dot.
     fn dot(&self, at: Rect, ink: Colour, live: bool) {
         let radius = (at.right - at.left) / 2.0;
         if live {
@@ -1346,8 +1351,8 @@ impl Painter<'_> {
     }
 }
 
-/// Ce qu'un bouton est : ce qui appelle le clic, ce qui l'accompagne, et
-/// ce qui prévient avant de détruire.
+/// What a button is: what calls for the click, what goes along with it,
+/// and what warns before destroying.
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Primary,
@@ -1356,7 +1361,7 @@ enum Kind {
 }
 
 impl Painter<'_> {
-    /// Ce qu'un bouton prend de large : son mot et ce qui l'entoure.
+    /// How wide a button is: its word and what surrounds it.
     fn button_width(&self, text: &str, big: bool) -> f32 {
         let pen = if big { self.subtitle() } else { self.body() };
         let around = if big {
@@ -1367,7 +1372,7 @@ impl Painter<'_> {
         self.canvas.width_of(text, pen) + self.px(around) * 2.0
     }
 
-    /// Un bouton portant un mot, à cet endroit.
+    /// A button carrying a word, at this place.
     fn button(&mut self, at: Rect, text: &str, kind: Kind, target: Target, enabled: bool) {
         let radius = self.px(design::RADIUS_SMALL);
         let colours = self.colours;
@@ -1403,8 +1408,8 @@ impl Painter<'_> {
         }
     }
 
-    /// Un bouton qui ne porte qu'un dessin, et garde la même hauteur que
-    /// ceux qui portent un mot.
+    /// A button that carries only a drawing, and keeps the same height
+    /// as those that carry a word.
     fn icon_button(&mut self, at: Rect, icon: &'static Icon, target: Target, quiet: bool) {
         let radius = self.px(design::RADIUS_SMALL);
         let hovered = self.under_the_hand(&target);
@@ -1428,7 +1433,7 @@ impl Painter<'_> {
         self.answers(target, at);
     }
 
-    /// L'interrupteur : son rail, et le pouce qui glisse dedans.
+    /// The switch: its rail, and the thumb that slides in it.
     fn switch(&mut self, left: f32, middle: f32, button: Toggle) -> Rect {
         let (width, height) = (self.px(layout::SWITCH.0), self.px(layout::SWITCH.1));
         let at = Rect::at(left, middle - height / 2.0, width, height);
@@ -1470,7 +1475,7 @@ impl Painter<'_> {
         at
     }
 
-    /// Ce qu'un choix segmenté prend de large.
+    /// How wide a segmented choice is.
     fn segments_width(&self, target: Pick) -> f32 {
         let around = self.px(layout::AROUND);
         let sides: f32 = target
@@ -1485,7 +1490,7 @@ impl Painter<'_> {
         self.canvas.width_of(text, self.caption()) + self.px(design::SPACE_3) * 2.0
     }
 
-    /// Un choix segmenté, posé à partir de ce bord droit.
+    /// A segmented choice, laid out from this right edge.
     fn segments(&mut self, right: f32, middle: f32, target: Pick) -> Rect {
         let width = self.segments_width(target);
         let around = self.px(layout::AROUND);
@@ -1531,8 +1536,8 @@ impl Painter<'_> {
         at
     }
 
-    /// Un bandeau : ce qu'il a à dire, et de quoi y remédier quand il y a
-    /// quelque chose à faire.
+    /// A banner: what it has to say, and what it takes to fix it when
+    /// there is something to do.
     fn banner(
         &mut self,
         left: f32,
@@ -1595,12 +1600,12 @@ impl Painter<'_> {
         height
     }
 
-    /// L'ascenseur d'une chose qui défile, quand il y a plus à voir que
-    /// de place.
+    /// The scrollbar of a thing that scrolls, when there is more to see
+    /// than room.
     ///
-    /// `corner` est l'arrondi de ce qui défile : le pouce s'arrête là où
-    /// le coin commence, faute de quoi il dépasserait de la forme qu'il
-    /// longe.
+    /// `corner` is the rounding of what scrolls: the thumb stops where
+    /// the corner begins, or else it would stick out of the shape it
+    /// runs along.
     fn scrollbar(&mut self, which: Scroller, at: Rect, content: f32, corner: f32) {
         let visible = at.bottom - at.top;
         if content <= visible + 1.0 {
@@ -1631,9 +1636,9 @@ impl Painter<'_> {
     }
 }
 
-/// La hauteur du pouce d'un ascenseur : sur son rail, la part de ce
-/// qu'on voit dans ce qu'il y a, et jamais si petit qu'on ne puisse plus
-/// l'attraper.
+/// The height of a scrollbar's thumb: on its rail, the share of what
+/// there is that can be seen, and never so small that it can no longer
+/// be caught.
 fn thumb_of(rail: f32, visible: f32, content: f32, scale: f32) -> f32 {
     (rail * visible / content)
         .max(design::SPACE_5 * scale)
@@ -1642,7 +1647,7 @@ fn thumb_of(rail: f32, visible: f32, content: f32, scale: f32) -> f32 {
 
 /* ---- La page ----------------------------------------------------------- */
 
-/// Dessine tout ce qui est à l'écran et rend ce qui répond au clic.
+/// Draws everything on screen and returns what answers the click.
 fn paint_page(canvas: &Canvas, width: f32, height: f32, colours: Palette) -> Vec<(Target, Rect)> {
     let nothing = Seen::default();
     let guard = SEEN.lock().expect("accueil");
@@ -1665,9 +1670,9 @@ fn paint_page(canvas: &Canvas, width: f32, height: f32, colours: Palette) -> Vec
         };
         painter.page(width, height);
         if dialogue_open && !opening {
-            // Le fond noirci : ce qui est derrière n'est plus d'actualité
-            // et ne répond plus au clic, ce que la page disait déjà en
-            // rendant son dialogue modal.
+            // The darkened background: what is behind is no longer
+            // current and no longer answers the click, which the page
+            // already said by making its dialogue modal.
             painter.fill(
                 Rect::at(0.0, 0.0, width, height),
                 0.0,
@@ -1688,7 +1693,7 @@ fn paint_page(canvas: &Canvas, width: f32, height: f32, colours: Palette) -> Vec
 }
 
 impl Painter<'_> {
-    /// L'accueil lui-même : ce qu'est cet ordinateur, puis les autres.
+    /// The home window itself: what this computer is, then the others.
     fn page(&mut self, width: f32, height: f32) {
         let side = self.px(layout::SIDE);
         let inside = (width - side * 2.0).clamp(self.px(200.0), self.px(layout::PAGE));
@@ -1702,9 +1707,9 @@ impl Painter<'_> {
         y += self.px(design::SPACE_5);
         y += self.my_computers(x, y, inside, height);
 
-        // La version est sous les yeux sans jamais peser : en bas de la
-        // fenêtre quand la page n'en remplit pas la hauteur, et à la
-        // suite du reste quand elle la dépasse.
+        // The version is in sight without ever weighing on anything: at
+        // the bottom of the window when the page does not fill its
+        // height, and right after the rest when it goes beyond it.
         let version = self.line_height(self.caption());
         let content = y - start + self.px(layout::EDGE) + version;
         let version_y =
@@ -1725,8 +1730,9 @@ impl Painter<'_> {
         );
     }
 
-    /// La marque, le nom du produit, et les deux commandes rangées à
-    /// droite : à portée, jamais au centre de l'attention.
+    /// The brand mark, the product's name, and the two controls
+    /// tucked away on the right: within reach, never at the centre
+    /// of attention.
     fn header(&mut self, x: f32, y: f32, width: f32) -> f32 {
         let brand = self.px(layout::BRAND);
         self.brand(Rect::at(x, y, brand, brand));
@@ -1754,8 +1760,8 @@ impl Painter<'_> {
         brand
     }
 
-    /// Ce qu'est cet ordinateur : son nom, son état, son empreinte, et ce
-    /// qu'il reste à faire pour qu'il marche.
+    /// What this computer is: its name, its state, its fingerprint, and
+    /// what is left to do for it to work.
     fn this_computer(&mut self, x: f32, y: f32, width: f32) -> f32 {
         let tag = self.line_height(self.caption().in_bold());
         self.section(Rect::at(x, y, width, tag), "Cet ordinateur");
@@ -1775,8 +1781,8 @@ impl Painter<'_> {
         taken
     }
 
-    /// La carte de cette machine : son identité en haut, son empreinte en
-    /// bas sur son propre fond.
+    /// This machine's card: its identity at the top, its fingerprint at
+    /// the bottom on its own background.
     fn machine_card(&mut self, x: f32, y: f32, width: f32) -> f32 {
         let inside = self.px(design::SPACE_5);
         let (name, state) = (
@@ -1809,9 +1815,9 @@ impl Painter<'_> {
             top: at.top + top_part,
             ..at
         };
-        // Le fond du bas de la carte : le même rectangle arrondi, vu au
-        // travers de sa moitié basse, ce qu'aucun rectangle arrondi ne
-        // sait être à lui seul.
+        // The background of the card's bottom part: the same rounded
+        // rectangle, seen through its lower half, which no rounded
+        // rectangle can be on its own.
         let radius = self.px(design::RADIUS_LARGE);
         if !self.silent {
             let (canvas, background) = (self.canvas, self.colours.surface_2);
@@ -1820,7 +1826,7 @@ impl Painter<'_> {
         self.separator(bottom.left, bottom.top, width);
         self.stroke(at, radius, self.colours.border);
 
-        // Le haut : le nom, l'état, et l'interrupteur d'accès distant.
+        // The top: the name, the state, and the remote access switch.
         let middle = (at.top + bottom.top) / 2.0;
         let access_caption = "Accès distant";
         let access_width = self.canvas.width_of(access_caption, self.caption());
@@ -1877,7 +1883,7 @@ impl Painter<'_> {
             ),
         );
 
-        // Le bas : l'empreinte, et de quoi la copier.
+        // The bottom: the fingerprint, and how to copy it.
         let bottom_top =
             (bottom.top + bottom.bottom) / 2.0 - (caption + gap + fingerprint_height) / 2.0;
         self.draw_text(
@@ -1921,12 +1927,12 @@ impl Painter<'_> {
     }
 }
 
-/// Ce qui empêche le produit de marcher, dit en clair et avec de quoi y
-/// remédier.
+/// What keeps the product from working, said plainly and with what it
+/// takes to fix it.
 ///
-/// Hors de la marche parce que le clic la relit : le bouton d'un bandeau
-/// ne porte que son rang, et c'est ici que ce rang retrouve ce qu'il
-/// répare.
+/// Outside the walk because the click reads it again: a banner's button
+/// carries only its rank, and it is here that the rank finds again what
+/// it repairs.
 fn what_is_missing(seen: &Seen) -> Vec<ToDo> {
     let mut missings = Vec::new();
     if let Some(said) = seen.machine.as_ref() {
@@ -1964,11 +1970,11 @@ fn what_is_missing(seen: &Seen) -> Vec<ToDo> {
     missings
 }
 impl Painter<'_> {
-    /// Les autres ordinateurs, et ce qui se passe en ce moment.
+    /// The other computers, and what is happening right now.
     ///
-    /// Une session en cours passe avant la liste : c'est la première
-    /// chose à voir en ouvrant la fenêtre, y compris quand ce n'est pas
-    /// elle qui l'a lancée.
+    /// A session in progress comes before the list: it is the first
+    /// thing to see when opening the window, including when the window
+    /// is not the one that started it.
     fn my_computers(&mut self, x: f32, y: f32, width: f32, height: f32) -> f32 {
         let tag = self.line_height(self.caption().in_bold());
         self.section(Rect::at(x, y, width, tag), "Mes ordinateurs");
@@ -1988,9 +1994,9 @@ impl Painter<'_> {
         if self.seen.peers.is_empty() && !self.seen.busy(self.state) {
             return taken + self.no_computer(x, y + taken, width, height - y - taken);
         }
-        // Ce qu'un contact a partagé se range à part : ce n'est pas un
-        // ordinateur à soi, et le dire sur chaque carte ne suffit pas à
-        // les distinguer d'un coup d'oeil.
+        // What a contact has shared is put apart: it is not one's own
+        // computer, and saying so on each card is not enough to tell
+        // them apart at a glance.
         let (mine_ranks, shared): (Vec<usize>, Vec<usize>) =
             (0..self.seen.peers.len()).partition(|rank| {
                 self.seen.peers[*rank]
@@ -2008,10 +2014,11 @@ impl Painter<'_> {
         taken
     }
 
-    /// Le bandeau d'une session en cours.
+    /// The banner of a session in progress.
     ///
-    /// La carte de l'ordinateur, plus bas, porte déjà son adresse et son
-    /// état : ceci dit ce qui se passe, il ne le répète pas.
+    /// The computer's card, further down, already carries its address
+    /// and its state: this says what is happening, it does not repeat
+    /// them.
     fn session_card(&mut self, x: f32, y: f32, width: f32, session: &Ongoing) -> f32 {
         let inside = self.px(design::SPACE_5);
         let (name, text) = (
@@ -2069,8 +2076,8 @@ impl Painter<'_> {
         at.bottom - at.top
     }
 
-    /// La grille de ces ordinateurs-là, par leur rang, et la tuile qui en
-    /// ajoute un quand elle a sa place ici.
+    /// The grid of those computers, by their rank, and the tile that adds
+    /// one when it belongs here.
     fn grid(&mut self, x: f32, y: f32, width: f32, ranks: &[usize], with_add: bool) -> f32 {
         let gap = self.px(design::SPACE_3);
         let narrowest = self.px(layout::CARD);
@@ -2105,9 +2112,10 @@ impl Painter<'_> {
         lines * height + (lines - 1.0) * gap
     }
 
-    /// La pastille d'un ordinateur : verte quand il répond ou que le
-    /// compte le dit prêt, orange quand le compte le dit en ligne sans
-    /// accès distant, grise sinon. Le mot sous le nom dit pourquoi.
+    /// A computer's dot: green when it answers or when the account
+    /// says it is ready, orange when the account says it is online
+    /// without remote access, grey otherwise. The word under the name
+    /// says why.
     fn presence_of(&self, peer: &Peer) -> (Colour, bool) {
         if peer.seen {
             return (self.colours.online, true);
@@ -2121,14 +2129,14 @@ impl Painter<'_> {
         }
     }
 
-    /// Une carte d'ordinateur : cliquer n'importe où s'y connecte, et les
-    /// boutons de son journal et de sa voie locale se posent dans un coin.
+    /// A computer card: clicking anywhere connects to it, and the buttons
+    /// for its journal and its local way sit in a corner.
     fn computer_card(&mut self, at: Rect, rank: usize, inside: f32, name: f32, address: f32) {
         let peer = &self.seen.peers[rank];
         let busy = self.seen.busy(self.state);
-        // La voie locale ne s'offre que pour un ordinateur que ce réseau
-        // annonce : c'est la seule chose qu'elle sait joindre, puisque
-        // c'est la seule adresse qui vienne d'ici.
+        // The local way is only offered for a computer this network
+        // announces: it is the only thing it can reach, since that is
+        // the only address that comes from here.
         let here = peer.seen;
         let local_only = here && !busy && self.under_the_hand(&Target::Local(rank));
         let handle = self
@@ -2136,8 +2144,8 @@ impl Painter<'_> {
             .sessions
             .iter()
             .any(|session| session.fingerprint == peer.fingerprint);
-        // L'inverse de « sienne » : non pas un ordinateur que cette
-        // fenêtre a joint, mais celui qui la contrôle en ce moment.
+        // The reverse of `handle`: not a computer this window has
+        // reached, but the one controlling it right now.
         let controlling = self
             .seen
             .watching
@@ -2145,9 +2153,8 @@ impl Painter<'_> {
             .any(|watching| watching.fingerprint == peer.fingerprint);
         let target = Target::Peer(rank);
         let hovered = !busy && self.under_the_hand(&target);
-        // Enfoncée sous le doigt : un pixel vers le bas, ce que la
-        // feuille de style faisait et qui est tout ce qui dit qu'un clic
-        // a été pris.
+        // Pressed under the finger: one pixel down, which is what the
+        // style sheet did and all that says a click has been taken.
         let at = if self.is_pressed(&target) {
             at.shifted(0.0, self.px(1.0))
         } else {
@@ -2176,11 +2183,11 @@ impl Painter<'_> {
         };
         self.stroke(at, radius, edge);
 
-        // Une carte occupée s'efface par ses mots, pour que le bouton de
-        // son journal reste allumé : c'est justement pendant une session
-        // qu'on veut lire ce que la machine d'en face a écrit. Celle qui
-        // contrôle cet ordinateur ne s'efface pas non plus : c'est
-        // justement elle qu'on veut voir.
+        // A busy card fades out through its words, so that its journal
+        // button stays lit: it is precisely during a session that one
+        // wants to read what the far machine has written. The one
+        // controlling this computer does not fade either: it is
+        // precisely that card one wants to see.
         let opacity = if busy && !handle && !controlling {
             0.5
         } else {
@@ -2200,10 +2207,10 @@ impl Painter<'_> {
         );
         let since = at.left + inside + dot + self.px(design::SPACE_2);
         let button = self.px(layout::BUTTON);
-        // La place des boutons du coin est réservée : sans elle, un nom
-        // un peu long passerait dessous, et il y en a un de plus quand
-        // cet ordinateur est joignable d'ici, et encore un quand il
-        // contrôle celui-ci.
+        // The room for the corner buttons is set aside: without it, a
+        // slightly long name would run underneath them, and there is
+        // one more when this computer can be reached from here, and
+        // another one when it controls this one.
         let buttons = self.px(design::SPACE_6)
             + if here { button } else { 0.0 }
             + if controlling { button } else { 0.0 };
@@ -2218,8 +2225,8 @@ impl Painter<'_> {
                 name,
             ),
         );
-        // La pastille grise ne dit rien à elle seule : ce qui l'explique
-        // est écrit à côté.
+        // The grey dot says nothing on its own: what explains it is
+        // written next to it.
         let below_the_name = at.top + inside + name + self.px(design::SPACE_2);
         self.draw_text(
             &below_the_name_of(peer),
@@ -2232,10 +2239,10 @@ impl Painter<'_> {
                 address,
             ),
         );
-        // Ce qui n'apparaît qu'au survol ne fait pas bouger la carte : sa
-        // place est réservée d'avance. Le mot dit laquelle des deux voies
-        // la main est en train de choisir : sans lui, la maison du coin
-        // serait un dessin sans nom.
+        // What only appears on hover does not make the card move: its
+        // room is set aside in advance. The word says which of the two
+        // ways the hand is choosing: without it, the house in the corner
+        // would be a drawing with no name.
         let hint = self.px(layout::HINT);
         if handle || hovered || local_only || controlling {
             self.draw_text(
@@ -2265,9 +2272,9 @@ impl Painter<'_> {
         if !busy {
             self.answers(target, at);
         }
-        // Toujours là et jamais au premier plan : il attend d'être
-        // cherché, et il ne s'efface pas quand une session occupe la
-        // fenêtre.
+        // Always there and never in the foreground: it waits to be
+        // looked for, and it does not fade when a session takes up
+        // the window.
         let corner = self.px(design::SPACE_3);
         self.icon_button(
             Rect::at(at.right - corner - button, at.top + corner, button, button),
@@ -2275,9 +2282,9 @@ impl Painter<'_> {
             Target::JournalOf(rank),
             !hovered,
         );
-        // La maison, à côté : par ce réseau et rien d'autre. Elle suit la
-        // carte plutôt que le journal, puisqu'elle ouvre une session et
-        // qu'une session de plus ne s'ouvre pas.
+        // The house, next to it: through this network and nothing else.
+        // It follows the card rather than the journal, since it opens a
+        // session and one more session does not open.
         if here && !busy {
             self.icon_button(
                 Rect::at(
@@ -2291,11 +2298,11 @@ impl Painter<'_> {
                 !hovered,
             );
         }
-        // Toujours là quand cet ordinateur contrôle celui-ci, occupé ou
-        // non : c'est justement là qu'on veut pouvoir le rendre. Prend
-        // la place réservée après le journal et, s'il y en a une, la
-        // maison locale, exactement comme le calcul de largeur plus haut
-        // les a comptées.
+        // Always there when that computer controls this one, busy or
+        // not: that is precisely when one wants to be able to send it
+        // back. Takes the room set aside after the journal and, if there
+        // is one, the local house, exactly as the width calculation
+        // above counted them.
         if controlling {
             let slot = if here { 3.0 } else { 2.0 };
             self.icon_button(
@@ -2312,8 +2319,8 @@ impl Painter<'_> {
         }
     }
 
-    /// La tuile qui ajoute un ordinateur : elle suit le rythme des autres
-    /// sans se faire passer pour un ordinateur.
+    /// The tile that adds a computer: it follows the rhythm of the others
+    /// without passing itself off as a computer.
     fn add_tile(&mut self, at: Rect) {
         let busy = self.seen.busy(self.state);
         let hovered = !busy && self.under_the_hand(&Target::Add);
@@ -2348,8 +2355,8 @@ impl Painter<'_> {
         }
     }
 
-    /// L'écran vide : ce qu'on voit sur une machine qui n'a encore trouvé
-    /// personne.
+    /// The empty screen: what is seen on a machine that has not found
+    /// anyone yet.
     fn no_computer(&mut self, x: f32, y: f32, width: f32, rest: f32) -> f32 {
         let drawing = self.px(layout::EMPTY.1);
         let title = self.line_height(self.subtitle());
@@ -2406,8 +2413,8 @@ impl Painter<'_> {
         height
     }
 
-    /// Ce que fait tourner cette fenêtre, et ce que fait tourner le
-    /// service quand les deux ne datent pas du même jour.
+    /// What this window runs, and what the service runs when the
+    /// two do not date from the same day.
     fn the_version(&self) -> (String, Colour) {
         let mine = &self.seen.version;
         if mine.is_empty() {
@@ -2428,7 +2435,7 @@ impl Painter<'_> {
     }
 }
 
-/// Ce que l'état de cette machine se lit.
+/// What this machine's state reads as.
 fn words_of_the_state(said: &Standing) -> String {
     if said.unreachable.is_some() {
         return "Service arrêté".to_string();
@@ -2446,8 +2453,8 @@ fn words_of_the_state(said: &Standing) -> String {
     }
 }
 
-/// Et la couleur de sa pastille. L'état ne se lit jamais à la couleur
-/// seule : le texte à côté le dit.
+/// And the colour of its dot. The state is never read from the colour
+/// alone: the text next to it says it.
 fn colour_of_the_state(said: &Standing, colours: Palette) -> Colour {
     if said.unreachable.is_some() || !said.wanted {
         return colours.offline;
@@ -2462,12 +2469,13 @@ fn colour_of_the_state(said: &Standing, colours: Palette) -> Colour {
     }
 }
 
-/// Ce qui s'écrit sous le nom d'un ordinateur : ce qu'on en sait, et
-/// d'où il vient quand ce n'est pas du réseau.
+/// What is written under a computer's name: what is known about it,
+/// and where it comes from when that is not the network.
 ///
-/// Un ordinateur qui s'annonce montre son adresse. Un ordinateur que
-/// seul le compte porte montre ce que le compte en dit : en ligne et
-/// prêt, en ligne sans accès distant et pourquoi, ou hors ligne.
+/// A computer that announces itself shows its address. A computer
+/// that only the account carries shows what the account says of it:
+/// online and ready, online without remote access and why, or
+/// offline.
 fn below_the_name_of(peer: &Peer) -> String {
     let origin = match &peer.account {
         Some(account) => match &account.shared_by {
@@ -2494,7 +2502,7 @@ fn below_the_name_of(peer: &Peer) -> String {
     }
 }
 
-/// Où en est un appareil du compte, en mots.
+/// Where a device of the account stands, in words.
 fn words_of_the_presence(device: &Device) -> String {
     if device.online {
         return format!("En ligne · {}", device.access.explanation());
@@ -2508,8 +2516,8 @@ fn words_of_the_presence(device: &Device) -> String {
     }
 }
 
-/// Par où passe une session, et combien la route prend, quand le
-/// service le sait.
+/// What a session goes through, and how long the road takes,
+/// when the service knows.
 fn path_of(session: &Ongoing) -> String {
     if session.via.is_empty() {
         return String::new();
@@ -2517,7 +2525,7 @@ fn path_of(session: &Ongoing) -> String {
     format!(", par {} en {} ms", session.via, session.round_trip_ms)
 }
 
-/// Depuis combien de temps une session est ouverte, en mots.
+/// How long a session has been open, in words.
 fn duration(seconds: u64) -> String {
     if seconds < MINUTE {
         return "moins d'une minute".to_string();
@@ -2537,12 +2545,12 @@ fn duration(seconds: u64) -> String {
 /* ---- Les dialogues ------------------------------------------------------ */
 
 impl Painter<'_> {
-    /// Pose le dialogue ouvert : ce qu'il porte, mesuré à la largeur
-    /// qu'il aura, puis dessiné dedans.
+    /// Lays down the open dialogue: what it carries, measured at the
+    /// width it will have, then drawn inside it.
     ///
-    /// La mesure et le dessin sont la même marche : un dialogue mesuré à
-    /// une largeur et dessiné à une autre se répondrait juste jusqu'au
-    /// premier mot qui se replie.
+    /// Measuring and drawing are the same walk: a dialogue measured at
+    /// one width and drawn at another would add up only until the first
+    /// word that wraps.
     fn dialogue(&mut self, width: f32, height: f32) {
         let wanted = self.px(match self.state.screen {
             Screen::Adding | Screen::Account | Screen::Renaming => layout::DIALOGUE,
@@ -2566,9 +2574,9 @@ impl Painter<'_> {
             dialogue_height,
         );
         self.dialogue_background(at);
-        // Serré à sa carte : ce qui a défilé au-dessus du haut du
-        // dialogue, ou sous son bas, se dessinerait sinon par-dessus le
-        // fond noirci.
+        // Clipped to its card: what has scrolled above the top of the
+        // dialogue, or below its bottom, would otherwise be drawn over
+        // the darkened background.
         let canvas = self.canvas;
         canvas.clipped(at, || {
             self.inside(
@@ -2590,8 +2598,8 @@ impl Painter<'_> {
         );
     }
 
-    /// Ce que le dialogue ouvert porte, mesuré quand `silent` et dessiné
-    /// sinon.
+    /// What the open dialogue carries, measured when `silent` and drawn
+    /// otherwise.
     fn inside(&mut self, at: Rect, silent: bool, height: f32) -> f32 {
         let before = self.silent;
         self.silent = before || silent;
@@ -2601,15 +2609,16 @@ impl Painter<'_> {
             Screen::Settings => self.in_the_settings(at),
             Screen::Account => self.in_the_account(at),
             Screen::Renaming => self.in_the_renaming(at),
-            // Il n'y a alors aucun dialogue, et rien ne l'appelle : dit
-            // plutôt que rangé sous un autre écran, qu'il ne serait pas.
+            // There is no dialogue then, and nothing calls this: spelled
+            // out rather than filed under another screen, which it is
+            // not.
             Screen::Home => 0.0,
         };
         self.silent = before;
         taken
     }
 
-    /// Pose le fond d'un dialogue.
+    /// Lays down the background of a dialogue.
     fn dialogue_background(&mut self, at: Rect) {
         let radius = self.px(design::RADIUS_LARGE);
         self.shadow(at, radius, self.colours.shadow_2);
@@ -2617,8 +2626,8 @@ impl Painter<'_> {
         self.stroke(at, radius, self.colours.border_strong);
     }
 
-    /// L'en-tête d'un dialogue : ce dont il s'agit, et la croix qui le
-    /// ferme.
+    /// A dialogue's header: what it is about, and the cross that
+    /// closes it.
     fn dialogue_header(&mut self, at: Rect, title: &str, text: &str) -> f32 {
         let button = self.px(layout::BUTTON);
         let text_width = at.right - at.left - button - self.px(design::SPACE_4);
@@ -2649,11 +2658,12 @@ impl Painter<'_> {
         (title_height + gap + explanation).max(button)
     }
 
-    /// Ce qu'une chose prendrait, sans la poser.
+    /// What a thing would take, without laying it down.
     ///
-    /// Pour ce qui doit être mesuré avant que ce qui vient au-dessus soit
-    /// posé : le dialogue se dessine de haut en bas, et rien d'autre ne
-    /// permet de rendre à l'un la place qu'un autre prendra plus bas.
+    /// For what has to be measured before what comes above it is laid
+    /// down: the dialogue is drawn from top to bottom, and nothing else
+    /// makes it possible to give back to one thing the room another will
+    /// take further down.
     fn measure_only(&mut self, pass: impl FnOnce(&mut Self) -> f32) -> f32 {
         let before = self.silent;
         self.silent = true;
@@ -2662,14 +2672,14 @@ impl Painter<'_> {
         taken
     }
 
-    /// Les noms que la page ouverte porte, en rangées qui se replient, et
-    /// rendus de la hauteur qu'ils ont prise.
+    /// The names the open page carries, in rows that wrap, giving back
+    /// the height they took.
     ///
-    /// Cochés plutôt que tapés, parce que ce sont eux qu'on veut neuf
-    /// fois sur dix et que les retenir par coeur n'est le travail de
-    /// personne. Rien du tout pour une page qui n'en annonce aucun, ce
-    /// qui est le cas d'une page venue d'une moitié plus ancienne du
-    /// produit : tout se tape alors, comme avant.
+    /// Ticked rather than typed, because they are what one wants nine
+    /// times out of ten and learning them by heart is nobody's job.
+    /// Nothing at all for a page that announces none, which is the case
+    /// of a page that came from an older half of the product: everything
+    /// is typed then, as before.
     fn the_tags(&mut self, x: f32, y: f32, width: f32) -> f32 {
         let names = self.state.tags.clone();
         if names.is_empty() {
@@ -2684,9 +2694,10 @@ impl Painter<'_> {
         let (mut line, mut bottom) = (x, y);
         for (rank, name) in names.iter().enumerate() {
             let taken = self.button_width(name, false);
-            // Replié dès qu'un nom déborderait, jamais avant : un
-            // dialogue étroit en met deux par rangée et un large les met
-            // tous sur une, sans que rien n'ait à être compté d'avance.
+            // Wrapped as soon as a name would overflow, never before: a
+            // narrow dialogue puts two per row and a wide one puts them
+            // all on one, without anything having to be counted in
+            // advance.
             if line > x && line + taken > x + width {
                 line = x;
                 bottom += height + between;
@@ -2707,10 +2718,10 @@ impl Painter<'_> {
         bottom + height + self.px(design::SPACE_3) - y
     }
 
-    /// Une rangée d'actions, rangées à droite, et rendue de sa hauteur.
+    /// A row of actions, lined up on the right, giving back its height.
     ///
-    /// Ce qui détruit se pose à gauche, écarté du reste : il ne doit pas
-    /// se trouver sous le doigt qui vise à côté.
+    /// What destroys goes on the left, apart from the rest: it must not
+    /// be under the finger that aims next to it.
     fn actions(&mut self, at: Rect, top: f32, actions: &[(String, Kind, Target, bool)]) -> f32 {
         let height = self.px(layout::BUTTON);
         let gap = self.px(design::SPACE_3);
@@ -2729,7 +2740,7 @@ impl Painter<'_> {
         height
     }
 
-    /// Ajouter un ordinateur, et retirer ceux qui ont été ajoutés.
+    /// Adding a computer, and removing those that were added.
     fn in_the_adding(&mut self, at: Rect) -> f32 {
         let width = at.right - at.left;
         let mut y = at.top;
@@ -2783,9 +2794,9 @@ impl Painter<'_> {
             ],
         );
 
-        // Ce qui a été ajouté à la main se retire là où il a été ajouté :
-        // une carte d'accueil est un bouton entier, et un second bouton
-        // posé dessus lui prendrait son clic.
+        // What was added by hand is removed where it was added: a card on
+        // the home window is a whole button, and a second button laid on
+        // it would steal its click.
         let written_ranks = self.written_ranks();
         if !written_ranks.is_empty() {
             y += self.px(design::SPACE_5);
@@ -2828,7 +2839,7 @@ impl Painter<'_> {
         y - at.top
     }
 
-    /// Les ordinateurs écrits à la main, par leur rang.
+    /// The computers written down by hand, by their rank.
     fn written_ranks(&self) -> Vec<usize> {
         self.seen
             .peers
@@ -2839,8 +2850,8 @@ impl Painter<'_> {
             .collect()
     }
 
-    /// Un champ de saisie : son étiquette, la place du vrai champ que
-    /// Windows porte, et ce qu'il a à redire.
+    /// An input field: its label, the place of the real field Windows
+    /// carries, and what it has to complain about.
     fn field(&mut self, x: f32, y: f32, width: f32, field: Field) -> f32 {
         let tag = self.line_height(self.caption());
         let gap = self.px(design::SPACE_2);
@@ -2884,7 +2895,7 @@ impl Painter<'_> {
             }
     }
 
-    /// Le journal, celui de cet ordinateur ou celui d'en face.
+    /// The journal, this computer's or the far one's.
     fn in_the_journal(&mut self, at: Rect, window_height: f32) -> f32 {
         let width = at.right - at.left;
         let distant = self.state.journal_of.clone();
@@ -2904,24 +2915,23 @@ impl Painter<'_> {
         y += self.dialogue_header(at, &title, &text);
         y += self.px(design::SPACE_4);
 
-        // Ce que les noms prendront, mesuré avant de poser les lignes.
-        // C'est aux lignes de leur rendre cette place : le dialogue doit
-        // tenir dans la fenêtre, et une rangée de noms de plus qui le
-        // ferait grandir mettrait « Copier » hors d'atteinte.
+        // What the names will take, measured before laying down the
+        // lines. It is up to the lines to give them that room: the
+        // dialogue has to fit in the window, and one more row of names
+        // making it grow would put "Copier" out of reach.
         let names = self.measure_only(|painter| painter.the_tags(at.left, y, width));
 
-        // Le journal se lit sur des lignes entières : il prend la place
-        // qu'il peut, sans jamais pousser son dialogue hors de la
-        // fenêtre, et jamais moins que de quoi en lire quelques-unes.
+        // The journal is read in whole lines: it takes what room it
+        // can, without ever pushing its dialogue out of the window, and
+        // never less than enough to read a few of them.
         let lines = ((window_height * layout::JOURNAL.0).min(self.px(layout::JOURNAL.1)) - names)
             .max(self.px(layout::JOURNAL_AT_LEAST));
         self.the_lines(Rect::at(at.left, y, width, lines));
         y += lines + self.px(design::SPACE_4);
 
-        // Les noms que cette page porte, puis la boîte qu'ils
-        // remplissent : la page se resserre d'elle-même sur ce qui est
-        // écrit là, et c'est cette page que « Copier » emporte. Vide,
-        // rien n'est trié.
+        // The names this page carries, then the box they fill: the
+        // page narrows by itself to what is written there, and it is
+        // that page "Copier" takes. Empty, nothing is sifted.
         y += self.the_tags(at.left, y, width);
         y += self.field(at.left, y, width, Field::Sift);
         y += self.px(design::SPACE_3);
@@ -2933,9 +2943,10 @@ impl Painter<'_> {
         let copied =
             self.state.copied.as_ref().map(|(target, _)| target) == Some(&Target::CopyJournal);
         let mut row: Vec<(String, Kind, Target, bool)> = Vec::new();
-        // Ouvrir le dossier n'a de sens que chez soi : celui d'en face est
-        // sur l'autre machine. Vider, si : on vide les deux journaux, on
-        // refait ce qui ne marche pas, et on lit les deux.
+        // Opening the folder only makes sense on one's own computer: the
+        // far one is on the other machine. Emptying does make sense: one
+        // empties both journals, does again what does not work, and reads
+        // both.
         if distant.is_none() {
             row.push((
                 "Ouvrir le dossier".to_string(),
@@ -2960,8 +2971,9 @@ impl Painter<'_> {
             true,
         ));
         let height = self.actions(at, y, &row);
-        // Vider est à l'opposé de Copier : les deux se cliquent dans la
-        // même minute, et se tromper coûte tout ce qu'on allait copier.
+        // "Vider" sits at the opposite end from "Copier": the two are
+        // clicked within the same minute, and a mistake costs
+        // everything one was about to copy.
         let empty_width = self.button_width(if emptying { "Confirmer" } else { "Vider" }, false);
         self.button(
             Rect::at(at.left, y, empty_width, height),
@@ -2973,8 +2985,8 @@ impl Painter<'_> {
         y + height - at.top
     }
 
-    /// Le texte du journal, qui défile chez lui : le plus récent est en
-    /// bas, et une ligne de journal ne se replie pas.
+    /// The journal's text, which scrolls on its own: the most recent is
+    /// at the bottom, and a journal line does not wrap.
     fn the_lines(&mut self, at: Rect) {
         let radius = self.px(design::RADIUS_SMALL);
         self.fill(at, radius, self.colours.surface_2);
@@ -3016,7 +3028,7 @@ impl Painter<'_> {
         self.scrollbar(Scroller::Lines, inside_the_box, content, 0.0);
     }
 
-    /// Les réglages, ligne par ligne.
+    /// The settings, line by line.
     fn in_the_settings(&mut self, at: Rect) -> f32 {
         let width = at.right - at.left;
         let mut y = at.top;
@@ -3093,8 +3105,8 @@ impl Painter<'_> {
         y - at.top
     }
 
-    /// Le compte : le lien tel qu'il est, de quoi en faire un ou le
-    /// défaire, et les appareils qui y sont.
+    /// The account: the link as it stands, what it takes to make
+    /// one or undo it, and the devices on it.
     fn account(&mut self, x: f32, y: f32, width: f32) -> f32 {
         let inside = self.px(design::SPACE_3);
         let button = self.px(layout::BUTTON);
@@ -3134,7 +3146,7 @@ impl Painter<'_> {
             return taken + button + inside;
         };
 
-        // Le lien : qui, où, et si le serveur répond.
+        // The link: who, where, and if the server answers.
         let (text, caption) = (
             self.line_height(self.body()),
             self.line_height(self.caption()),
@@ -3208,7 +3220,7 @@ impl Painter<'_> {
         );
         taken += height + self.px(design::SPACE_4);
 
-        // Les appareils, cet ordinateur compris.
+        // The devices, this computer included.
         let tag = self.line_height(self.caption().in_bold());
         self.section(Rect::at(x, y + taken, width, tag), "Appareils du compte");
         taken += tag + self.px(design::SPACE_2);
@@ -3232,11 +3244,11 @@ impl Painter<'_> {
         taken + inside
     }
 
-    /// Un appareil du compte : son nom, où il en est, et de quoi le
-    /// renommer ou le révoquer.
+    /// A device of the account: its name, where it stands, and what it
+    /// takes to rename or revoke it.
     ///
-    /// Cet ordinateur-ci ne se révoque pas d'ici : « Se détacher », juste
-    /// au-dessus, fait exactement cela et le dit avec le bon mot.
+    /// This computer is not revoked from here: "Se détacher", just above,
+    /// does exactly that and says it with the right word.
     fn device_line(&mut self, x: f32, y: f32, width: f32, rank: usize) -> f32 {
         let Some(device) = self
             .seen
@@ -3344,9 +3356,9 @@ impl Painter<'_> {
         height
     }
 
-    /// Se rattacher à un serveur : le serveur, le compte, et le nom de
-    /// cet ordinateur ; puis, quand le serveur n'est garanti par
-    /// personne, sa clé à comparer.
+    /// Attaching to a server: the server, the account, and this
+    /// computer's name; then, when nobody vouches for the server, its
+    /// key to compare.
     fn in_the_account(&mut self, at: Rect) -> f32 {
         let width = at.right - at.left;
         let mut y = at.top;
@@ -3425,8 +3437,8 @@ impl Painter<'_> {
         y - at.top
     }
 
-    /// La clé d'un serveur que personne ne garantit, à comparer avec ce
-    /// que son installation a affiché avant de la croire.
+    /// The key of a server nobody vouches for, to compare with what its
+    /// installation displayed before believing it.
     fn pinning_box(&mut self, x: f32, y: f32, width: f32, fingerprint: &str) -> f32 {
         let inside = self.px(design::SPACE_4);
         let text_width = width - inside * 2.0;
@@ -3480,7 +3492,7 @@ impl Painter<'_> {
         at.bottom - at.top
     }
 
-    /// Renommer un appareil du compte.
+    /// Renaming a device of the account.
     fn in_the_renaming(&mut self, at: Rect) -> f32 {
         let Some((_, name)) = self.state.renaming.clone() else {
             return 0.0;
@@ -3526,8 +3538,8 @@ impl Painter<'_> {
         y - at.top
     }
 
-    /// Une ligne de réglage : ce dont il s'agit à gauche, de quoi en
-    /// décider à droite.
+    /// A setting line: what it is about on the left, what to decide
+    /// it with on the right.
     fn setting_line(&mut self, x: f32, y: f32, width: f32, setting: &Setting) -> f32 {
         let inside = self.px(design::SPACE_3);
         let control = self.control_width(&setting.control);
@@ -3606,7 +3618,7 @@ impl Painter<'_> {
         height
     }
 
-    /// Ce que la commande d'une ligne prend de large.
+    /// How wide a line's control is.
     fn control_width(&self, control: &Control) -> f32 {
         match control {
             Control::Status => 0.0,
@@ -3631,11 +3643,11 @@ impl Painter<'_> {
         }
     }
 
-    /// Ce qu'une ligne de réglage a à dire sous son mot.
+    /// What a setting line has to say under its word.
     fn caption_of_the_setting(&self, setting: &Setting) -> String {
         match &setting.control {
-            // Ce qu'une session demanderait maintenant, dit par le produit
-            // et non recalculé ici.
+            // What a session would ask for now, as the product says it and
+            // not worked out again here.
             Control::Status => self
                 .seen
                 .settings
@@ -3654,7 +3666,7 @@ impl Painter<'_> {
         }
     }
 
-    /// La combinaison d'un raccourci, telle qu'on la lit.
+    /// A shortcut's combination, as it reads.
     fn words_of_the_key(&self, doing: Doing) -> String {
         if self.state.listening == Some(doing) {
             return "Tapez la combinaison…".to_string();
@@ -3667,9 +3679,9 @@ impl Painter<'_> {
             .unwrap_or_else(|| "Aucune".to_string())
     }
 
-    /// Une combinaison se lit comme des touches et non comme une phrase :
-    /// le caractère fixe met le même espace sous chaque signe, et le
-    /// cadre dit qu'on peut cliquer dessus pour la changer.
+    /// A combination reads as keys and not as a sentence: the fixed-width
+    /// type puts the same space under each character, and the frame says
+    /// it can be clicked to change it.
     fn key(&mut self, at: Rect, doing: Doing) {
         let listening = self.state.listening == Some(doing);
         let target = Target::Shortcut(doing);
@@ -3702,12 +3714,12 @@ impl Painter<'_> {
         self.answers(target, at);
     }
 
-    /// Ce qui est à l'écran pendant qu'une session s'ouvre.
+    /// What is on screen while a session opens.
     ///
-    /// Il prend la fenêtre entière parce que c'est la seule chose qui se
-    /// passe, et parce que c'est la dernière chose qu'on lit avant que le
-    /// moteur pose sa propre image par-dessus : entre les deux il ne doit
-    /// jamais y avoir de trou où l'on se demande si ça marche.
+    /// It takes the whole window because it is the only thing going on,
+    /// and because it is the last thing one reads before the engine lays
+    /// its own picture on top: between the two there must never be a gap
+    /// in which one wonders whether it is working.
     fn opening(&mut self, width: f32, height: f32) {
         let Some(opening) = self.state.opening.as_ref() else {
             return;
@@ -3763,9 +3775,9 @@ impl Painter<'_> {
         );
         y += towards + gap;
 
-        // Une barre qui va et vient. Elle ne mesure rien : ce qu'on
-        // attend ici ne se découpe pas en pourcentages, et une barre qui
-        // prétendrait le contraire mentirait.
+        // A bar that goes back and forth. It measures nothing: what is
+        // being waited for here does not cut into percentages, and a bar
+        // claiming otherwise would be lying.
         let track = Rect::at(middle - wire_width / 2.0, y, wire_width, wire_height);
         self.fill(track, wire_height / 2.0, self.colours.surface_3);
         let part = opening.since.elapsed().as_secs_f32() / BACK_AND_FORTH.as_secs_f32();
@@ -3807,24 +3819,23 @@ impl Painter<'_> {
     }
 }
 
-/// Assez loin pour qu'une ligne de journal ne soit jamais coupée par son
-/// propre cadre : c'est la boîte qui la retient, et elle défile.
+/// Far enough that a journal line is never cut off by its own rect: it
+/// is the box that holds it back, and the box scrolls.
 const FAR_AWAY: f32 = 20_000.0;
 
-/// Plus bas que n'importe quel journal, ce que le dessin ramène ensuite
-/// au bas réel : demander « tout en bas » avant d'avoir mesuré est la
-/// seule façon d'y être dès la première image.
+/// Lower than any journal, which the drawing then brings back to the
+/// real bottom: asking for "the very bottom" before having measured is
+/// the only way to be there from the first frame.
 const VERY_BOTTOM: f32 = 1.0e9;
 
 /* ---- Ce qui pose, et ce qui se tait ------------------------------------ */
 
-/// Les mêmes gestes que la toile, mais qui ne font rien quand la marche
-/// ne fait que mesurer.
+/// The same gestures as the canvas, but doing nothing when the walk only
+/// measures.
 ///
-/// Mesurer et dessiner sont la même marche : ce qu'un dialogue prend de
-/// haut est ce que ses lignes prennent, et l'écrire une seconde fois à
-/// côté serait une arithmétique qui se répond juste jusqu'au premier mot
-/// rallongé.
+/// Measuring and drawing are the same walk: the height a dialogue takes
+/// is what its lines take, and writing it a second time alongside would
+/// be arithmetic that adds up only until the first word made longer.
 impl Painter<'_> {
     fn draw_text(&self, text: &str, pen: Pen, ink: Colour, at: Rect) {
         if !self.silent {
@@ -3838,7 +3849,7 @@ impl Painter<'_> {
         }
     }
 
-    /// Une bordure, qui tient entièrement dans son cadre.
+    /// A border, which fits entirely within its rect.
     fn stroke(&self, at: Rect, radius: f32, ink: Colour) {
         if !self.silent {
             self.canvas
@@ -3846,7 +3857,7 @@ impl Painter<'_> {
         }
     }
 
-    /// Un trait qui attend d'être rempli.
+    /// An outline waiting to be filled.
     fn dashed(&self, at: Rect, radius: f32, ink: Colour) {
         if !self.silent {
             self.canvas.stroke_dashed(
@@ -3879,8 +3890,8 @@ impl Painter<'_> {
 
 /* ---- La souris ---------------------------------------------------------- */
 
-/// Ce qui est sous ce point, le dernier posé gagnant : ce qui a été
-/// dessiné en dernier est ce qui est dessus.
+/// What is under this point, the last laid down winning: what was
+/// drawn last is what is on top.
 fn under(x: f32, y: f32) -> Option<Target> {
     CLICKABLES
         .lock()
@@ -3896,15 +3907,15 @@ fn moves(window: windows_sys::Win32::Foundation::HWND, (x, y): (f32, f32)) {
         TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
     };
 
-    // Demandé à chaque passage : sans lui rien ne dit jamais qu'une main
-    // est partie, et la dernière ligne survolée le resterait.
+    // Asked for on every pass: without it nothing ever says that a hand
+    // has left, and the last line hovered would stay hovered.
     let mut tracking = TRACKMOUSEEVENT {
         cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
         dwFlags: TME_LEAVE,
         hwndTrack: window,
         dwHoverTime: 0,
     };
-    // SAFETY: une fenêtre à nous, et la structure qu'elle demande.
+    // SAFETY: a window of ours, and the structure it asks for.
     unsafe { TrackMouseEvent(&mut tracking) };
 
     let mut state = STATE.lock().expect("accueil");
@@ -3969,12 +3980,12 @@ fn wheel(window: windows_sys::Win32::Foundation::HWND, notches: f32, across: boo
     let mut state = STATE.lock().expect("accueil");
     let which = match state.screen {
         Screen::Home => Scroller::Page,
-        // Le texte du journal défile chez lui : c'est ce qu'on lit dans
-        // ce dialogue, et le dialogue lui-même est fait pour tenir dans
-        // la fenêtre. Sauf quand il n'y tient pas malgré tout, sur un
-        // écran très bas : la molette sert alors d'abord à atteindre ce
-        // qui en dépasse, faute de quoi les boutons du bas sont
-        // inatteignables.
+        // The journal's text scrolls on its own: it is what one reads
+        // in this dialogue, and the dialogue itself is made to fit in
+        // the window. Except when it does not fit all the same, on a
+        // very short screen: the wheel then serves first to reach what
+        // sticks out, or else the buttons at the bottom cannot be
+        // reached.
         Screen::Journal => {
             let (content, visible, _) = state.measured(Scroller::Dialogue);
             if content > visible {
@@ -3987,8 +3998,8 @@ fn wheel(window: windows_sys::Win32::Foundation::HWND, notches: f32, across: boo
     };
     let by = -notches * scale() * layout::NOTCH;
     if across && which == Scroller::Lines {
-        // En travers : une ligne de journal ne se replie pas, et la lire
-        // en entier demande de s'y déplacer.
+        // Sideways: a journal line does not wrap, and reading all of it
+        // means moving along it.
         state.lines_scroll.0 = (state.lines_scroll.0 + by).max(0.0);
     } else {
         state.scroll_by(which, by);
@@ -3997,17 +4008,17 @@ fn wheel(window: windows_sys::Win32::Foundation::HWND, notches: f32, across: boo
     invalidate(window);
 }
 
-/// Redemande une image depuis le fil qui dessine, où l'on est déjà.
+/// Asks for a new frame, from the drawing thread we are already on.
 fn invalidate(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Graphics::Gdi::InvalidateRect;
 
-    // SAFETY: une fenêtre à nous, sur le fil qui la possède.
+    // SAFETY: a window of ours, on the thread that owns it.
     unsafe { InvalidateRect(window, std::ptr::null(), 0) };
 }
 
 /* ---- Le clavier --------------------------------------------------------- */
 
-/// Ce que la toile fait d'une touche, et si elle l'a prise.
+/// What the canvas does with a key, and whether it took it.
 fn key_down(
     window: windows_sys::Win32::Foundation::HWND,
     vk: u32,
@@ -4040,11 +4051,11 @@ fn key_down(
     }
 }
 
-/// Ce qu'une touche vaut quand un raccourci l'attend.
+/// What a key is worth when a shortcut is waiting for it.
 ///
-/// La place de la touche et non le signe dessus : c'est ce que le produit
-/// retient, et c'est ce qui garde un raccourci sous le même doigt d'un
-/// clavier à l'autre.
+/// The key's place and not the character on it: that is what the product
+/// keeps, and it is what keeps a shortcut under the same finger from one
+/// keyboard to another.
 fn the_combination(
     window: windows_sys::Win32::Foundation::HWND,
     doing: Doing,
@@ -4071,9 +4082,8 @@ fn the_combination(
         _ => {}
     }
 
-    // La touche étendue est une autre touche que celle qui porte la même
-    // place dans le bloc principal : refusée plutôt que confondue avec
-    // elle.
+    // The extended key is a different key from the one in the same place
+    // in the main block: refused rather than mistaken for it.
     if with & (1 << 24) != 0 {
         return true;
     }
@@ -4081,7 +4091,8 @@ fn the_combination(
     let Some(place) = crate::shortcuts::placed(scan) else {
         return true;
     };
-    // SAFETY: quatre questions au système sur le clavier de ce fil.
+    // SAFETY: four questions to the system about this thread's
+    // keyboard.
     let modifiers = unsafe {
         Held {
             ctrl: GetKeyState(i32::from(VK_CONTROL)) < 0,
@@ -4101,7 +4112,7 @@ fn the_combination(
     true
 }
 
-/// Écrit une combinaison, ou la retire, et relit les trois.
+/// Writes or removes a combination, and rereads the three.
 fn set_the_combination(app: &App, doing: Doing, combination: Option<Combination>) {
     let mut state = STATE.lock().expect("accueil");
     state.listening = None;
@@ -4118,8 +4129,8 @@ fn set_the_combination(app: &App, doing: Doing, combination: Option<Combination>
 
 /* ---- Les champs de saisie ------------------------------------------------ */
 
-/// Un champ de saisie, chacun à sa place, ouvert le temps du dialogue
-/// qui le porte.
+/// An input field, each in its own place, open for as long as the
+/// dialogue that carries it.
 #[derive(Clone, Copy, PartialEq)]
 enum Field {
     Fingerprint,
@@ -4136,11 +4147,12 @@ enum Field {
 }
 
 impl Field {
-    /// Combien il y en a en tout : chacun a sa place, ouvert ou non.
+    /// How many there are in all: each has its place, open or not.
     const COUNT: usize = 11;
-    /// Ceux du dialogue d'ajout, dans l'ordre où on les remplit.
+    /// Those of the adding dialogue, in the order they are
+    /// filled in.
     const ADD: [Field; 3] = [Field::Fingerprint, Field::Address, Field::Name];
-    /// Ceux du dialogue de compte, les deux derniers pour une inscription.
+    /// Those of the account dialogue, the last two for signing up.
     const ACCOUNT: [Field; 6] = [
         Field::Server,
         Field::User,
@@ -4149,9 +4161,9 @@ impl Field {
         Field::Email,
         Field::Invitation,
     ];
-    /// Celui du renommage d'un appareil.
+    /// The one for renaming a device.
     const RENAMING: [Field; 1] = [Field::NewName];
-    /// Celui qui trie le journal.
+    /// The one that sifts the journal.
     const JOURNAL: [Field; 1] = [Field::Sift];
 
     fn rank(self) -> usize {
@@ -4186,7 +4198,7 @@ impl Field {
         }
     }
 
-    /// Le mot en filigrane, qui dit à quoi ressemble ce qu'on attend.
+    /// The watermark word, showing what the expected text looks like.
     fn example(self) -> &'static str {
         match self {
             Field::Fingerprint => "0829cc7ecb9e9ba5…",
@@ -4203,17 +4215,18 @@ impl Field {
         }
     }
 
-    /// Ce qui s'y tape ne se lit pas par-dessus l'épaule.
+    /// What is typed in it cannot be read over a shoulder.
     fn secret(self) -> bool {
         self == Field::Password
     }
 
-    /// Ceux qui ne se montrent qu'en créant un compte.
+    /// Those that only show when creating an account.
     fn for_sign_up(self) -> bool {
         matches!(self, Field::Email | Field::Invitation)
     }
 
-    /// Ce que le champ a à redire, ou à expliquer, sous lui.
+    /// What the field has to complain about, or to explain,
+    /// below it.
     fn hint(self) -> String {
         match self {
             Field::Fingerprint => {
@@ -4240,16 +4253,16 @@ impl Field {
     }
 }
 
-/// Les champs, et la place que la dernière image leur a donnée.
+/// The fields, and the place the last frame gave them.
 static FIELDS: Mutex<[isize; Field::COUNT]> = Mutex::new([0; Field::COUNT]);
 static PLACES: Mutex<[Option<Rect>; Field::COUNT]> = Mutex::new([None; Field::COUNT]);
-/// La police des champs, faite une fois pour la taille de l'écran.
+/// The fields' font, made once for the size of the screen.
 static FONT: Mutex<isize> = Mutex::new(0);
 
-/// Refait la police des champs à l'échelle de l'écran, et la leur pose.
+/// Remakes the fields' font at the screen's scale, and sets it on them.
 ///
-/// Un champ est une fenêtre du système : il porte sa propre police, qui
-/// ne suit pas ce que nous dessinons.
+/// A field is a system window: it carries its own font, which does not
+/// follow what we draw.
 fn dress_the_fields() {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::Graphics::Gdi::{
@@ -4259,8 +4272,8 @@ fn dress_the_fields() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_SETFONT};
 
     let family = wide(FIELD_FAMILY);
-    // SAFETY: le nom survit à l'appel, et la police qui revient est à
-    // nous jusqu'à ce qu'on la rende.
+    // SAFETY: the name outlives the call, and the font that comes
+    // back is ours until we give it back.
     let font = unsafe {
         CreateFontW(
             -((design::BODY * scale()).round() as i32),
@@ -4285,24 +4298,24 @@ fn dress_the_fields() {
     let mut before = FONT.lock().expect("accueil");
     for edit in FIELDS.lock().expect("accueil").iter() {
         if *edit != 0 {
-            // SAFETY: une fenêtre faite par nous, à qui l'on donne une
-            // police qui lui survivra.
+            // SAFETY: a window made by us, given a font that will
+            // outlive it.
             unsafe { SendMessageW(*edit as HWND, WM_SETFONT, font as usize, 1) };
         }
     }
     if *before != 0 {
-        // SAFETY: la police d'avant, rendue une fois plus personne ne
-        // l'emploie.
+        // SAFETY: the previous font, given back once nobody uses it
+        // any more.
         unsafe { DeleteObject(*before as _) };
     }
     *before = font as isize;
 }
 
-/// La famille des champs : la même que celle du reste du dessin, autant
-/// que le système la connaisse.
+/// The fields' font family: the same as that of the rest of the
+/// drawing, as far as the system knows it.
 const FIELD_FAMILY: &str = "Segoe UI Variable Text";
 
-/// Ouvre ces vrais champs de Windows, vides.
+/// Opens these real Windows fields, empty.
 fn open_the_fields(which_ones: &[Field]) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -4324,8 +4337,8 @@ fn open_the_fields(which_ones: &[Field]) {
         } else {
             0
         };
-        // SAFETY: une fenêtre du système, fille de la nôtre, sur le fil
-        // qui possède les deux.
+        // SAFETY: a system window, a child of ours, on the thread that
+        // owns both.
         let edit = unsafe {
             CreateWindowExW(
                 0,
@@ -4346,9 +4359,9 @@ fn open_the_fields(which_ones: &[Field]) {
             continue;
         }
         let cue = wide(field.example());
-        // SAFETY: une fenêtre du système, à qui l'on donne un mot qui
-        // survit à l'appel, puis un gardien qui lui survit : c'est une
-        // simple fonction de ce programme.
+        // SAFETY: a system window, given a word that outlives the
+        // call, then a guard that outlives it: it is a plain function
+        // of this program.
         unsafe {
             SendMessageW(edit, EM_SETCUEBANNER, 1, cue.as_ptr() as isize);
             SetWindowSubclass(edit, Some(in_a_field), IN_A_FIELD, field.rank());
@@ -4359,18 +4372,18 @@ fn open_the_fields(which_ones: &[Field]) {
     dress_the_fields();
 }
 
-/// Le nom sous lequel notre gardien est posé sur un champ.
+/// The name under which our guard is set on a field.
 const IN_A_FIELD: usize = 3;
 
-/// Ce que les touches d'un dialogue font dans un champ.
+/// What a dialogue's keys do in a field.
 ///
-/// Un champ de Windows est une fenêtre à lui : la tabulation, Entrée et
-/// Échap n'y arrivent jamais jusqu'à nous, et un dialogue où l'on ne
-/// passe pas d'un champ au suivant n'est pas un dialogue. Elles sont donc
-/// prises ici et rendues à qui de droit.
+/// A Windows field is a window of its own: Tab, Enter and Escape never
+/// get through it to us, and a dialogue in which one cannot move from one
+/// field to the next is not a dialogue. So they are caught here and
+/// handed to whoever they belong to.
 ///
-/// SAFETY: appelée par le système sur le fil qui possède ce champ, avec
-/// les arguments qu'il documente.
+/// SAFETY: called by the system on the thread that owns this field, with
+/// the arguments it documents.
 unsafe extern "system" fn in_a_field(
     window: windows_sys::Win32::Foundation::HWND,
     message: u32,
@@ -4388,20 +4401,21 @@ unsafe extern "system" fn in_a_field(
 
     let vk = holding as u16;
     let handle = vk == VK_TAB || vk == VK_RETURN || vk == VK_ESCAPE;
-    // Le signe qui suit la touche est avalé avec elle : sans ça le champ
-    // sonne, la tabulation n'étant pas un signe qu'il accepte.
+    // The character that follows the key is swallowed with it: without
+    // this the field beeps, a tab not being a character it accepts.
     if message == WM_CHAR && (holding == 9 || holding == 13 || holding == 27) {
         return 0;
     }
     if message == WM_KEYDOWN && handle {
         match vk {
             VK_TAB => {
-                // SAFETY: une question au système sur le clavier de ce
-                // fil, puis le clavier donné à un champ à nous.
+                // SAFETY: a question to the system about this thread's
+                // keyboard, then the keyboard given to a field of
+                // ours.
                 let backwards = unsafe { GetKeyState(i32::from(VK_SHIFT)) } < 0;
                 let fields = *FIELDS.lock().expect("accueil");
-                // Le suivant de ceux qui sont ouverts, en tournant : les
-                // places des autres dialogues sont vides.
+                // The next of those that are open, going round: the
+                // places of the other dialogues are empty.
                 let how_many = fields.len();
                 let mut next = rank;
                 for _ in 0..how_many {
@@ -4415,29 +4429,29 @@ unsafe extern "system" fn in_a_field(
                     }
                 }
                 if fields[next] != 0 {
-                    // SAFETY: une fenêtre faite par nous, sur son fil.
+                    // SAFETY: a window made by us, on its thread.
                     unsafe { SetFocus(fields[next] as HWND) };
                 }
             }
-            // Posté et non fait tout de suite : les deux referment le
-            // dialogue, donc détruisent le champ dans lequel on est en
-            // train de répondre.
+            // Posted and not done right away: both close the dialogue,
+            // and so destroy the field we are in the middle of
+            // answering in.
             other => {
                 let canvas = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
                 if !canvas.is_null() {
-                    // SAFETY: une fenêtre à nous, à qui l'on poste un
-                    // message qui n'appartient qu'à nous.
+                    // SAFETY: a window of ours, posted a message that
+                    // belongs only to us.
                     unsafe { PostMessageW(canvas, ACT, usize::from(other == VK_RETURN), 0) };
                 }
             }
         }
         return 0;
     }
-    // SAFETY: les arguments que le système a donnés, rendus tels quels.
+    // SAFETY: the arguments the system gave, handed back as they are.
     unsafe { DefSubclassProc(window, message, holding, with) }
 }
 
-/// Referme les champs ouverts et rend leur place.
+/// Closes the open fields and gives back their places.
 fn close_the_fields() {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::Graphics::Gdi::DeleteObject;
@@ -4446,7 +4460,7 @@ fn close_the_fields() {
     let mut fields = FIELDS.lock().expect("accueil");
     for edit in fields.iter_mut() {
         if *edit != 0 {
-            // SAFETY: une fenêtre faite par nous, détruite une fois.
+            // SAFETY: a window made by us, destroyed once.
             unsafe { DestroyWindow(*edit as HWND) };
             *edit = 0;
         }
@@ -4454,35 +4468,35 @@ fn close_the_fields() {
     *PLACES.lock().expect("accueil") = [None; Field::COUNT];
     let mut font = FONT.lock().expect("accueil");
     if *font != 0 {
-        // SAFETY: une police faite par nous, rendue une fois.
+        // SAFETY: a font made by us, given back once.
         unsafe { DeleteObject(*font as _) };
         *font = 0;
     }
 }
 
-/// Note où le dessin veut ce champ. Il y sera posé une fois l'image
-/// finie : déplacer une fenêtre pendant qu'on peint la sienne mêle deux
-/// dessins.
+/// Notes where the drawing wants this field. It will be set there once
+/// the frame is finished: moving a window while painting one's own
+/// mixes two drawings.
 fn place_the_field(field: Field, at: Rect) {
     PLACES.lock().expect("accueil")[field.rank()] = Some(at);
 }
 
-/// Pose les champs là où la dernière image les a voulus.
+/// Sets the fields where the last frame wanted them.
 fn place_the_fields() {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
 
     let fields = *FIELDS.lock().expect("accueil");
     let places = *PLACES.lock().expect("accueil");
-    // Le texte respire dans son cadre comme la feuille de style le
-    // demande : le vrai champ est posé dedans, jamais sur son trait.
+    // The text breathes inside its frame as the style sheet asks:
+    // the real field is set inside it, never on its outline.
     let inside = design::SPACE_3 * scale();
     for (edit, place) in fields.iter().zip(places.iter()) {
         if *edit == 0 {
             continue;
         }
-        // Un champ ouvert que l'image n'a pas posé se range : réduit à
-        // rien plutôt que laissé où la dernière image l'avait mis.
+        // An open field the frame did not lay down is put away: shrunk
+        // to nothing rather than left where the last frame had put it.
         let (x, y, width, height) = match place {
             Some(place) => (
                 (place.left + inside).round() as i32,
@@ -4492,8 +4506,7 @@ fn place_the_fields() {
             ),
             None => (0, 0, 0, 0),
         };
-        // SAFETY: une fenêtre faite par nous, déplacée sur le fil qui la
-        // possède.
+        // SAFETY: a window made by us, moved on the thread that owns it.
         unsafe {
             SetWindowPos(
                 *edit as HWND,
@@ -4508,11 +4521,11 @@ fn place_the_fields() {
     }
 }
 
-/// Écrit ce texte dans un champ, à la place de ce qu'il portait.
+/// Writes this text into a field, in place of what it held.
 ///
-/// Pour ce qu'un dialogue sait déjà : le nom de cette machine, le nom
-/// d'un appareil à renommer. Un champ vide où il faudrait retaper ce que
-/// la fenêtre affiche à côté serait une copie de plus.
+/// For what a dialogue already knows: this machine's name, the name of a
+/// device to rename. An empty field in which one had to type again what
+/// the window shows next to it would be one more copy.
 fn write_in_the_field(field: Field, text: &str) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::SetWindowTextW;
@@ -4522,12 +4535,12 @@ fn write_in_the_field(field: Field, text: &str) {
         return;
     }
     let words = wide(text);
-    // SAFETY: une fenêtre faite par nous, et un texte qui survit à
-    // l'appel.
+    // SAFETY: a window made by us, and a text that outlives the
+    // call.
     unsafe { SetWindowTextW(edit as HWND, words.as_ptr()) };
 }
 
-/// Ce qui est écrit dans un champ.
+/// What is written in a field.
 fn text_of_the_field(field: Field) -> String {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowTextLengthW, GetWindowTextW};
@@ -4536,8 +4549,8 @@ fn text_of_the_field(field: Field) -> String {
     if edit == 0 {
         return String::new();
     }
-    // SAFETY: une fenêtre faite par nous, dont le texte est lu dans un
-    // tampon de la longueur qu'elle vient d'annoncer.
+    // SAFETY: a window made by us, whose text is read into a buffer of
+    // the length it has just announced.
     unsafe {
         let how_many = GetWindowTextLengthW(edit as HWND);
         if how_many <= 0 {
@@ -4549,11 +4562,11 @@ fn text_of_the_field(field: Field) -> String {
     }
 }
 
-/// De quelle couleur peindre le dedans d'un champ.
+/// What colour to paint the inside of a field.
 ///
-/// Le champ appartient au système, qui le dessine lui-même et demande
-/// ici quelles couleurs employer : sans ça, un champ blanc trouerait une
-/// fenêtre sombre.
+/// The field belongs to the system, which draws it itself and asks here
+/// which colours to use: without this, a white field would punch a hole
+/// in a dark window.
 fn tint_of_the_field(surface: windows_sys::Win32::Foundation::WPARAM) -> isize {
     use windows_sys::Win32::Graphics::Gdi::{
         CreateSolidBrush, DeleteObject, SetBkColor, SetTextColor,
@@ -4561,8 +4574,8 @@ fn tint_of_the_field(surface: windows_sys::Win32::Foundation::WPARAM) -> isize {
 
     let colours = palette();
     let (background, ink) = (colours.surface_2, colours.text);
-    // SAFETY: la surface que le système vient de prêter, et un pinceau
-    // qu'il rendra en même temps qu'il rendra celui d'avant.
+    // SAFETY: the surface the system has just lent, and a brush it
+    // will give back at the same time as it gives back the one before.
     unsafe {
         SetTextColor(surface as _, rgb(ink));
         SetBkColor(surface as _, rgb(background));
@@ -4575,11 +4588,12 @@ fn tint_of_the_field(surface: windows_sys::Win32::Foundation::WPARAM) -> isize {
     }
 }
 
-/// Le pinceau du fond des champs, gardé pour être rendu au suivant : le
-/// système lit celui qu'on rend et ne le garde pas.
+/// The brush for the fields' background, kept so that it can be given
+/// back at the next one: the system reads the one we return and does
+/// not keep it.
 static BRUSH: Mutex<isize> = Mutex::new(0);
 
-/// Une couleur du système de design, dans le nombre que GDI attend.
+/// A colour from the design system, in the number GDI expects.
 fn rgb(colour: Colour) -> u32 {
     let part = |how_many: f32| (how_many.clamp(0.0, 1.0) * 255.0).round() as u32;
     part(colour.red) | (part(colour.green) << 8) | (part(colour.blue) << 16)
@@ -4587,11 +4601,11 @@ fn rgb(colour: Colour) -> u32 {
 
 /* ---- Ce qu'un clic fait -------------------------------------------------- */
 
-/// Agit sur ce qui vient d'être cliqué.
+/// Acts on what has just been clicked.
 ///
-/// Rien n'attend ici : ce qui demande au service part sur son propre fil
-/// et redessine en revenant. Le fil qui dessine ne doit jamais attendre
-/// une réponse qui traverse un tuyau.
+/// Nothing waits here: whatever asks the service goes off on its own
+/// thread and redraws on its way back. The drawing thread must never
+/// wait for an answer that goes through a pipe.
 fn act(app: &App, target: Target) {
     match target {
         Target::OpenJournal => open_the_journal(app, None),
@@ -4645,9 +4659,9 @@ fn act(app: &App, target: Target) {
                 state.screen = Screen::Adding;
                 state.dialogue_scroll = 0.0;
             }
-            // Vidés à chaque ouverture : rouverts pleins de la machine
-            // précédente, ils laisseraient ajouter deux fois le même
-            // ordinateur d'un simple double clic.
+            // Emptied at every opening: reopened full of the previous
+            // machine, they would let the same computer be added twice
+            // with a mere double click.
             close_the_fields();
             open_the_fields(&Field::ADD);
             redraw(app);
@@ -4656,9 +4670,9 @@ fn act(app: &App, target: Target) {
             let mut state = STATE.lock().expect("accueil");
             state.screen = Screen::Home;
             state.listening = None;
-            // Sur la fermeture et non sur son bouton : la touche Échap
-            // ferme aussi, et laissait la confirmation de vidage armée
-            // derrière un dialogue clos.
+            // On closing and not on its button: the Escape key closes
+            // too, and used to leave the emptying confirmation armed
+            // behind a closed dialogue.
             state.emptying = None;
             state.pinning = None;
             state.renaming = None;
@@ -4667,8 +4681,8 @@ fn act(app: &App, target: Target) {
             redraw(app);
         }
         Target::Connect => connect(app),
-        // La touche Entrée fait ce que le bouton principal du dialogue
-        // ouvert ferait.
+        // The Enter key does what the main button of the open dialogue
+        // would do.
         Target::Confirm => {
             let screen = STATE.lock().expect("accueil").screen;
             match screen {
@@ -4678,8 +4692,8 @@ fn act(app: &App, target: Target) {
                     attach(app, pinning);
                 }
                 Screen::Renaming => rename(app),
-                // Entrée dans la boîte de tri relit tout de suite, sans
-                // attendre le repos de l'horloge.
+                // Enter in the sift box reads again right away, without
+                // waiting out the timer's pause.
                 Screen::Journal => reread_the_journal(app, After::Show),
                 Screen::Home | Screen::Settings => {}
             }
@@ -4729,7 +4743,7 @@ fn act(app: &App, target: Target) {
     }
 }
 
-/// Ce que le bouton d'un bandeau « à faire » répare.
+/// What the button of a "to do" banner repairs.
 fn remedy_it(app: &App, rank: usize) {
     let missing = SEEN
         .lock()
@@ -4761,8 +4775,8 @@ fn open_a_folder(app: &App, which: &'static str) {
     }
 }
 
-/// Pousse un interrupteur, et le tient à sa nouvelle place le temps que
-/// le service en prenne acte.
+/// Pushes a switch, and holds it in its new place until the service
+/// acknowledges it.
 fn push(app: &App, button: Toggle) {
     let wanted = {
         let nothing = Seen::default();
@@ -4822,7 +4836,7 @@ fn push(app: &App, button: Toggle) {
     });
 }
 
-/// Choisit un des côtés d'un choix segmenté.
+/// Picks one of the sides of a segmented choice.
 fn pick(app: &App, target: Pick, rank: usize) {
     if target == Pick::Theme {
         if let Some(choice) = Choice::ALL.get(rank) {
@@ -4831,8 +4845,8 @@ fn pick(app: &App, target: Pick, rank: usize) {
         }
         return;
     }
-    // Celui-ci ne voyage nulle part : il change la forme du dialogue de
-    // compte, et rien d'autre.
+    // This one travels nowhere: it changes the shape of the account
+    // dialogue, and nothing else.
     if target == Pick::SignUp {
         STATE.lock().expect("accueil").sign_up = rank == 1;
         redraw(app);
@@ -4843,9 +4857,9 @@ fn pick(app: &App, target: Pick, rank: usize) {
     };
     let app = app.clone();
     crate::app::spawn(async move {
-        // Celui-ci ne décrit pas ce qu'on demande aux autres mais ce que
-        // cet ordinateur fait quand c'est lui qu'on regarde : il ne passe
-        // pas par les mêmes réglages.
+        // This one does not describe what is asked of the others but what
+        // this computer does when it is the one being watched: it does
+        // not go through the same settings.
         let done = if target == Pick::Capture {
             let said = crate::desk::standing().await;
             crate::desk::set_serving(said.steady_rate, value.to_string()).await
@@ -4866,10 +4880,10 @@ fn pick(app: &App, target: Pick, rank: usize) {
     });
 }
 
-/// Change un réglage de session, les autres restant ce qu'ils sont.
+/// Changes one session setting, the others staying as they are.
 ///
-/// L'ensemble part au service pour qu'il n'ait jamais à deviner ce qui
-/// est resté.
+/// The whole set goes to the service so that it never has to guess
+/// what stayed.
 async fn write_the_settings(
     change: impl FnOnce(&mut crate::settings::Chosen),
 ) -> Result<(), String> {
@@ -4880,12 +4894,12 @@ async fn write_the_settings(
 
 /* ---- Ajouter, oublier, se connecter -------------------------------------- */
 
-/// Écrit un ordinateur et, s'il porte une adresse, s'y connecte.
+/// Writes a computer down and, if it has an address, connects to it.
 ///
-/// L'empreinte va dans les deux sens : elle laisse entrer cet
-/// ordinateur-là, et elle sert de repère pour aller vers lui. Sans le
-/// premier des deux, la machine d'en face serait refusée à l'arrivée et
-/// on n'aurait fait que la moitié du chemin.
+/// The fingerprint works both ways: it lets that computer in, and it
+/// serves as a landmark for going to it. Without the first of the two,
+/// the far machine would be refused on arrival and only half the way
+/// would have been done.
 fn connect(app: &App) {
     let fingerprint = text_of_the_field(Field::Fingerprint).trim().to_string();
     let address = text_of_the_field(Field::Address).trim().to_string();
@@ -4909,9 +4923,8 @@ fn connect(app: &App) {
         }
         reread(&app).await;
         if address.is_empty() {
-            // Autoriser ne se voit nulle part ailleurs : sans un mot, le
-            // geste ferait exactement le même effet à l'écran que ne rien
-            // faire.
+            // Authorising shows nowhere else: without a word, the gesture
+            // would look on screen exactly like doing nothing.
             notice(
                 &app,
                 "Cet ordinateur est autorisé à venir sur celui-ci.",
@@ -4931,14 +4944,14 @@ fn connect(app: &App) {
                     .map(|peer| peer.name.clone())
             })
             .unwrap_or_else(|| address.clone());
-        // Un ordinateur qu'on vient d'écrire à la main se joint par la
-        // meilleure voie : se priver du serveur se demande sur une carte,
-        // pour une machine que ce réseau annonce déjà.
+        // A computer just written down by hand is reached by the best
+        // way: going without the server is asked for on a card, for a
+        // machine this network already announces.
         launch(&app, &address, &fingerprint, &seen_name, false);
     });
 }
 
-/// Oublie un ordinateur écrit à la main, des deux listes à la fois.
+/// Forgets a computer written by hand, from both lists at once.
 fn forget(app: &App, fingerprint: String) {
     let app = app.clone();
     crate::app::spawn(async move {
@@ -4952,7 +4965,7 @@ fn forget(app: &App, fingerprint: String) {
     });
 }
 
-/// Déconnecte l'ordinateur qui contrôle celui-ci en ce moment.
+/// Disconnects the computer controlling this one right now.
 fn disconnect(app: &App, fingerprint: String) {
     let app = app.clone();
     crate::app::spawn(async move {
@@ -4965,8 +4978,8 @@ fn disconnect(app: &App, fingerprint: String) {
     });
 }
 
-/// Ouvre une session vers l'ordinateur de cette carte, par la meilleure
-/// voie ou par ce réseau-ci et rien d'autre.
+/// Opens a session to this card's computer, by the best way or through
+/// this network and nothing else.
 fn launch_the_peer(app: &App, rank: usize, local_only: bool) {
     let aimed = SEEN
         .lock()
@@ -4984,10 +4997,10 @@ fn launch_the_peer(app: &App, rank: usize, local_only: bool) {
     }
 }
 
-/// Ouvre une session vers cet ordinateur.
+/// Opens a session to this computer.
 ///
-/// `local_only` la tient sur ce réseau : l'adresse d'ici et rien d'autre,
-/// sans qu'aucun serveur soit consulté.
+/// `local_only` keeps it on this network: the address from here and
+/// nothing else, without any server being consulted.
 fn launch(app: &App, address: &str, fingerprint: &str, name: &str, local_only: bool) {
     {
         let seen = SEEN.lock().expect("accueil");
@@ -5000,8 +5013,8 @@ fn launch(app: &App, address: &str, fingerprint: &str, name: &str, local_only: b
         let mut state = STATE.lock().expect("accueil");
         state.notice = None;
         state.opening = Some(Opening {
-            // Le nom plutôt que l'adresse : personne ne reconnaît son
-            // ordinateur portable à ses quatre nombres.
+            // The name rather than the address: nobody recognises
+            // their laptop by its four numbers.
             towards: name.to_string(),
             detail: "Ouverture du tunnel…".to_string(),
             code: None,
@@ -5022,7 +5035,7 @@ fn launch(app: &App, address: &str, fingerprint: &str, name: &str, local_only: b
 
 /* ---- Le compte ------------------------------------------------------------ */
 
-/// Ouvre le dialogue de compte, avec le nom de cette machine déjà écrit.
+/// Opens the account dialogue with this machine's name already written.
 fn open_the_account(app: &App) {
     {
         let mut state = STATE.lock().expect("accueil");
@@ -5039,11 +5052,11 @@ fn open_the_account(app: &App) {
     redraw(app);
 }
 
-/// Rattache cet ordinateur au compte écrit dans les champs.
+/// Attaches this computer to the account written in the fields.
 ///
-/// `pinning` est la clé d'un serveur que personne ne garantit, une
-/// fois que la personne l'a comparée : sans elle, un tel serveur répond
-/// par sa clé et le dialogue la montre, avec de quoi la confirmer.
+/// `pinning` is the key of a server nobody vouches for, once the person
+/// has compared it: without it, such a server answers with its key and
+/// the dialogue shows it, with a way to confirm it.
 fn attach(app: &App, pinning: Option<String>) {
     let server = text_of_the_field(Field::Server).trim().to_string();
     let user = text_of_the_field(Field::User).trim().to_string();
@@ -5077,8 +5090,8 @@ fn attach(app: &App, pinning: Option<String>) {
     let app = app.clone();
     crate::app::spawn(async move {
         let outcome = crate::desk::attach(request).await;
-        // Ce que l'état retient de la réponse, écrit sous son verrou et
-        // rendu avant d'attendre quoi que ce soit d'autre.
+        // What the state keeps of the answer, written under its lock,
+        // which is released before waiting for anything else.
         let attached = {
             let mut state = STATE.lock().expect("accueil");
             state.attaching = false;
@@ -5098,9 +5111,9 @@ fn attach(app: &App, pinning: Option<String>) {
             redraw(&app);
             return;
         }
-        // Le dialogue se referme sur le fil qui possède ses champs : ce
-        // sont des fenêtres du système, et détruire une fenêtre depuis
-        // un autre fil ne détruit rien.
+        // The dialogue closes on the thread that owns its fields: they
+        // are system windows, and destroying a window from another
+        // thread destroys nothing.
         let held = app.clone();
         let _ = app.run_on_main_thread(move || act(&held, Target::Close));
         reread(&app).await;
@@ -5108,8 +5121,8 @@ fn attach(app: &App, pinning: Option<String>) {
     });
 }
 
-/// Détache cet ordinateur de son compte. Un deuxième clic est demandé,
-/// et l'attente retombe d'elle-même.
+/// Detaches this computer from its account. A second click is asked
+/// for, and the wait lapses by itself.
 fn detach(app: &App) {
     {
         let mut state = STATE.lock().expect("accueil");
@@ -5137,7 +5150,7 @@ fn detach(app: &App) {
     });
 }
 
-/// L'appareil du compte à ce rang, s'il y est encore.
+/// The account's device at this rank, if it is still there.
 fn device_of_the_account(rank: usize) -> Option<Device> {
     SEEN.lock()
         .expect("accueil")
@@ -5146,7 +5159,7 @@ fn device_of_the_account(rank: usize) -> Option<Device> {
         .and_then(|account| account.devices.get(rank).cloned())
 }
 
-/// Ouvre le renommage d'un appareil, son nom déjà écrit.
+/// Opens a device's renaming, its name already written.
 fn open_the_renaming(app: &App, rank: usize) {
     let Some(device) = device_of_the_account(rank) else {
         return;
@@ -5164,7 +5177,7 @@ fn open_the_renaming(app: &App, rank: usize) {
     redraw(app);
 }
 
-/// Renomme l'appareil en cours de renommage avec ce qui est écrit.
+/// Renames the device being renamed with what is written.
 fn rename(app: &App) {
     let new_name = text_of_the_field(Field::NewName).trim().to_string();
     let Some((device, before)) = STATE.lock().expect("accueil").renaming.clone() else {
@@ -5191,8 +5204,8 @@ fn rename(app: &App) {
     });
 }
 
-/// Révoque un appareil du compte. Un deuxième clic est demandé, sur le
-/// même appareil, et l'attente retombe d'elle-même.
+/// Revokes a device of the account. A second click is asked for, on
+/// the same device, and the wait lapses by itself.
 fn revoke(app: &App, rank: usize) {
     {
         let mut state = STATE.lock().expect("accueil");
@@ -5225,10 +5238,10 @@ fn revoke(app: &App, rank: usize) {
 
 /* ---- Ce que la session raconte ------------------------------------------- */
 
-/// Une étape de l'ouverture d'une session.
+/// One step in the opening of a session.
 ///
-/// Appelée par ce qui conduit la session : la fenêtre est la seule à
-/// pouvoir dire où en est ce qui n'a pas encore d'image.
+/// Called by what drives the session: the window is the only one
+/// that can say how far along something is that has no picture yet.
 pub fn step(app: &App, detail: &str, code: Option<String>) {
     {
         let mut state = STATE.lock().expect("accueil");
@@ -5241,8 +5254,8 @@ pub fn step(app: &App, detail: &str, code: Option<String>) {
     redraw(app);
 }
 
-/// L'image se relance avec de nouveaux réglages : personne n'a cliqué
-/// pour ouvrir celle-là, donc c'est ici que l'écran d'ouverture revient.
+/// The picture restarts with new settings: nobody clicked to open this
+/// one, so it is here that the opening screen comes back.
 pub fn relaunched(app: &App) {
     {
         let mut state = STATE.lock().expect("accueil");
@@ -5260,14 +5273,14 @@ pub fn relaunched(app: &App) {
     redraw(app);
 }
 
-/// La session est tombée toute seule et l'image revient.
+/// The session dropped by itself and the picture is coming back.
 ///
-/// Le même écran que l'ouverture, pour la raison qu'il dit la même chose :
-/// il n'y a rien à regarder et quelque chose est en train de se faire.
-/// Le numéro d'essai n'apparaît qu'à partir du deuxième : le premier est
-/// le cas ordinaire et se compte tout seul, alors qu'un troisième dit
-/// quelque chose que la barre qui va et vient ne dira jamais, c'est que
-/// ça ne se passe pas bien.
+/// The same screen as the opening, for the reason that it says the same
+/// thing: there is nothing to watch and something is being done. The
+/// attempt number only appears from the second one on: the first is the
+/// ordinary case and goes without counting, whereas a third says something
+/// the bar that goes back and forth will never say, which is that things
+/// are not going well.
 pub fn coming_back(app: &App, attempt: u32) {
     {
         let mut state = STATE.lock().expect("accueil");
@@ -5289,8 +5302,8 @@ pub fn coming_back(app: &App, attempt: u32) {
     redraw(app);
 }
 
-/// La fenêtre n'a plus rien à raconter : ce qui se passe maintenant se
-/// lit dans ce que tient le service.
+/// The window has nothing more to tell: what is happening now can be
+/// read in what the service holds.
 pub fn put_the_opening_away(app: &App) {
     let app = app.clone();
     crate::app::spawn(async move {
@@ -5300,13 +5313,13 @@ pub fn put_the_opening_away(app: &App) {
     });
 }
 
-/// Une session qui s'est mal terminée, ou qui n'a pas pu s'ouvrir.
+/// A session that ended badly, or that could not open.
 pub fn failed(app: &App, text: &str) {
     notice(app, text, true);
     put_the_opening_away(app);
 }
 
-/// Le bandeau du haut.
+/// The banner at the top.
 fn notice(app: &App, text: &str, is_trouble: bool) {
     STATE.lock().expect("accueil").notice = Some(Notice {
         text: text.to_string(),
@@ -5316,7 +5329,8 @@ fn notice(app: &App, text: &str, is_trouble: bool) {
     redraw(app);
 }
 
-/// Ce que les réglages ont à redire, qui vit dans leur dialogue.
+/// What the settings have to complain about, which lives in
+/// their dialogue.
 fn say_the_trouble(app: &App, text: &str) {
     STATE.lock().expect("accueil").trouble = Some(text.to_string());
     redraw(app);
@@ -5325,9 +5339,9 @@ fn say_the_trouble(app: &App, text: &str) {
 /* ---- Le journal ---------------------------------------------------------- */
 
 fn open_the_journal(app: &App, from: Option<Peer>) {
-    // Ce qui était écrit dans la boîte est repris : on ouvre ce journal
-    // deux fois de suite pour un même tri, une fois ici et une fois en
-    // face, et le retaper serait la moitié du travail.
+    // What was written in the box is kept: this journal is opened twice
+    // in a row for the same sift, once here and once over there, and
+    // typing it again would be half the work.
     let sift = text_of_the_field(Field::Sift);
     {
         let mut state = STATE.lock().expect("accueil");
@@ -5337,8 +5351,8 @@ fn open_the_journal(app: &App, from: Option<Peer>) {
         state.lines_scroll = (0.0, 0.0);
         state.lines = vec!["Lecture…".to_string()];
         state.sift = None;
-        // Ceux de la page précédente ne sont pas ceux de celle-ci, et
-        // c'est le plus vrai en passant de son journal à celui d'en face.
+        // Those of the previous page are not those of this one, and that
+        // is most true when going from one's own journal to the far one.
         state.tags = Vec::new();
     }
     close_the_fields();
@@ -5348,33 +5362,33 @@ fn open_the_journal(app: &App, from: Option<Peer>) {
     reread_the_journal(app, After::Show);
 }
 
-/// Ce qu'on fait de la page une fois lue.
+/// What is done with the page once read.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum After {
-    /// La montrer, et rien de plus.
+    /// Showing it, and nothing more.
     Show,
-    /// La montrer et l'emporter : « Copier le tri » cliqué sur une page
-    /// qui n'était pas encore celle du tri.
+    /// Showing it and taking it: "Copier le tri" clicked on a page that
+    /// was not yet the sift's.
     Take,
 }
 
-/// Redemande la page du journal ouvert, triée comme la boîte le demande.
+/// Asks again for the page of the open journal, sifted as the box asks.
 ///
-/// Appelée depuis le fil qui dessine, qui est le seul à pouvoir lire la
-/// boîte et poser les horloges de cette fenêtre.
+/// Called from the drawing thread, which is the only one that can read
+/// the box and set this window's timers.
 fn reread_the_journal(app: &App, after: After) {
-    // Une lecture qui attendait son repos n'a plus lieu d'être : celle-ci
-    // la remplace.
+    // A reading that was waiting for its pause no longer has any reason
+    // to be: this one replaces it.
     let window = ITS_WINDOW.load(Ordering::Relaxed);
     if window != 0 {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::KillTimer;
-        // SAFETY: une horloge à nous, sur le fil qui l'a posée. Rien si
-        // elle n'était pas posée.
+        // SAFETY: a timer of ours, on the thread that set it. Nothing
+        // if it was not set.
         unsafe { KillTimer(window as HWND, SIFT_PAUSE) };
     }
-    // Lu avant de partir : la question s'en va sur un autre fil, et le
-    // champ appartient à celui qui dessine.
+    // Read before leaving: the question goes off on another thread,
+    // and the field belongs to the drawing one.
     let sift = text_of_the_field(Field::Sift).trim().to_string();
     let from = {
         let mut state = STATE.lock().expect("accueil");
@@ -5391,15 +5405,15 @@ fn reread_the_journal(app: &App, after: After) {
                 sift.clone(),
             )
             .await
-            // Montré dans le journal lui-même : c'est là que regarde la
-            // personne qui vient de cliquer, et un ordinateur qui ne
-            // répond pas est déjà la moitié de la réponse.
+            // Shown in the journal itself: that is where the person who
+            // has just clicked is looking, and a computer that does not
+            // answer is already half the answer.
             .unwrap_or_else(|reason| reason),
         };
-        // Joindre une machine distante prend le temps qu'il faut : le
-        // journal a pu être refermé, avoir changé d'ordinateur ou de tri
-        // entre-temps. Ce qui arrive en retard n'écrase pas ce qui est à
-        // l'écran.
+        // Reaching a distant machine takes as long as it takes: the
+        // journal may have been closed, or switched to another computer
+        // or another sift, in the meantime. What arrives late does not
+        // overwrite what is on screen.
         let mut state = STATE.lock().expect("accueil");
         if state.journal_of != from || state.screen != Screen::Journal || state.sift_asked != sift {
             return;
@@ -5407,29 +5421,31 @@ fn reread_the_journal(app: &App, after: After) {
         state.lines = text.lines().map(str::to_string).collect();
         state.tags = zyr_proto::journal::names_in(&text);
         state.sift = Some(sift);
-        // Le plus récent est en bas : c'est là que se trouve ce qui vient
-        // d'arriver, et c'est ce qu'on ouvre le journal pour lire. Plus
-        // bas que tout plutôt que d'une hauteur comptée : ce qui vient
-        // d'être lu n'a pas encore été mesuré, et c'est le dessin qui
-        // ramènera ce nombre à ce qu'il y a réellement à voir.
+        // The most recent is at the bottom: that is where what has just
+        // happened is, and it is what one opens the journal to read.
+        // Lower than everything rather than by a counted height: what has
+        // just been read has not been measured yet, and it is the drawing
+        // that will bring this number back to what there really is to
+        // see.
         state.lines_scroll = (0.0, VERY_BOTTOM);
         let taken = (after == After::Take).then(|| state.lines.join("\n"));
         drop(state);
         redraw(&app);
         if let Some(whole) = taken {
-            // Posé depuis le fil qui dessine, comme toute copie de cette
-            // fenêtre.
+            // Placed from the drawing thread, like every copy this
+            // window makes.
             let held = app.clone();
             let _ = app.run_on_main_thread(move || copy(&held, &whole, Target::CopyJournal));
         }
     });
 }
 
-/// Coche ou décoche ce nom-là dans la boîte de tri.
+/// Ticks or unticks that name in the sift box.
 ///
-/// Le nom est ajouté ou retiré de ce qui est déjà écrit plutôt que de le
-/// remplacer : cocher deux noms est ce qui garde les deux sujets à la
-/// fois, et ce qu'on avait tapé à la main à côté reste là où il était.
+/// The name is added to or removed from what is already written rather
+/// than replacing it: ticking two names is what keeps both subjects at
+/// once, and what had been typed by hand next to them stays where it
+/// was.
 fn toggle_the_tag(app: &App, rank: usize) {
     let Some(name) = STATE.lock().expect("accueil").tags.get(rank).cloned() else {
         return;
@@ -5445,19 +5461,19 @@ fn toggle_the_tag(app: &App, rank: usize) {
         None => words.push(name),
     }
     write_in_the_field(Field::Sift, &words.join(" "));
-    // Relu tout de suite : un clic a dit ce qu'il voulait, il n'y a plus
-    // de lettre à attendre.
+    // Read again right away: a click has said what it wanted, there is
+    // no letter left to wait for.
     reread_the_journal(app, After::Show);
 }
 
-/// Emporte la page du journal, qui doit répondre à ce qui est écrit dans
-/// la boîte.
+/// Takes the journal page, which has to answer what is written in the
+/// box.
 ///
-/// Le bouton dit « Copier le tri » et ne doit jamais emporter autre
-/// chose : entre le tri collé dans la boîte et la page qui se resserre il
-/// y a le repos de l'horloge et l'aller-retour du service, et c'est juste
-/// assez pour cliquer entre les deux. Une page en retard est donc relue,
-/// et c'est sa réponse qui part.
+/// The button says "Copier le tri" and must never take anything else:
+/// between the sift pasted into the box and the page narrowing there is
+/// the timer's pause and the service's round trip, and that is just
+/// enough time to click in between. A page that is behind is therefore
+/// read again, and it is its answer that goes.
 fn copy_the_journal(app: &App) {
     let sift = text_of_the_field(Field::Sift).trim().to_string();
     let page = {
@@ -5470,8 +5486,8 @@ fn copy_the_journal(app: &App) {
     }
 }
 
-/// Vider efface la seule trace de ce qui vient de se passer. Un deuxième
-/// clic est demandé, et l'attente retombe d'elle-même.
+/// Emptying wipes out the only trace of what has just happened. A second
+/// click is asked for, and the wait lapses by itself.
 fn empty_the_journal(app: &App) {
     let from = {
         let mut state = STATE.lock().expect("accueil");
@@ -5492,8 +5508,8 @@ fn empty_the_journal(app: &App) {
 
     let app = app.clone();
     crate::app::spawn(async move {
-        // Vidé là où il est écrit : celui de cette machine tout de suite,
-        // celui d'en face en le lui demandant.
+        // Emptied where it is written: this machine's right away, the far
+        // one's by asking it.
         let done = match &from {
             None => crate::journal::clear_journal(),
             Some(peer) => {
@@ -5513,19 +5529,19 @@ fn empty_the_journal(app: &App) {
 
 /* ---- Le presse-papiers ---------------------------------------------------- */
 
-/// Copie ce texte, et fait dire au bouton qu'il l'a fait.
+/// Copies this text, and has the button say it did.
 ///
-/// Le presse-papiers peut refuser, et un bouton qui dit « Copié » sur un
-/// refus enverrait quelqu'un coller du vide sur l'autre ordinateur.
+/// The clipboard can refuse, and a button saying "Copié" after a refusal
+/// would send someone to paste nothing on the other computer.
 fn copy(app: &App, text: &str, target: Target) {
     if let Err(e) = zyr_clipboard::hold_this(&zyr_proto::clipboard::Clip::text(text)) {
         note(&format!("copie refusée : {e}"));
         notice(app, "La copie a été refusée par Windows.", true);
         return;
     }
-    // Ce qu'une pose incomplète rendrait ne concerne que les images, et
-    // ce bouton ne copie que du texte : il n'y a qu'une forme à poser, et
-    // elle est posée ou le refus ci-dessus l'a dit.
+    // What an incomplete placing would give back only concerns pictures,
+    // and this button copies nothing but text: there is only one shape to
+    // place, and either it is placed or the refusal above has said so.
     STATE.lock().expect("accueil").copied = Some((target, std::time::Instant::now()));
     redraw(app);
 
@@ -5539,15 +5555,15 @@ fn copy(app: &App, text: &str, target: Target) {
 
 /* ---- Ce qu'on redemande au service --------------------------------------- */
 
-/// Redemande sans arrêt ce que le service tient.
+/// Keeps asking again what the service holds.
 ///
-/// Le service peut démarrer après cette fenêtre, ou s'arrêter pendant
-/// qu'elle est ouverte ; une session peut s'ouvrir depuis l'autre bout.
-/// Rien de tout cela ne passe par un clic.
+/// The service can start after this window, or stop while it is open; a
+/// session can be opened from the other end. None of that goes through
+/// a click.
 fn watch(app: App) {
     crate::app::spawn(async move {
-        // Ce qui ne bouge pas de toute la vie du programme : demandé une
-        // fois.
+        // What does not move for the whole life of the program: asked
+        // for once.
         {
             let mut seen = SEEN.lock().expect("accueil");
             let new = seen.get_or_insert_with(Seen::default);
@@ -5564,11 +5580,12 @@ fn watch(app: App) {
     });
 }
 
-/// Redemande ce que le service dit, et dit si quelque chose a changé.
+/// Asks again what the service says, and says whether anything has
+/// changed.
 ///
-/// Ce qui n'a pas changé n'est pas redessiné : la fenêtre reste souvent
-/// ouverte pendant une session, et repeindre une image identique trois
-/// fois par minute serait du processeur pris à l'image de la session.
+/// What has not changed is not redrawn: the window often stays open
+/// during a session, and repainting an identical frame three times a
+/// minute would be processor time taken from the session's picture.
 async fn reread(app: &App) -> bool {
     let machine = crate::desk::standing().await;
     let peers = crate::desk::peers().await;
@@ -5576,8 +5593,8 @@ async fn reread(app: &App) -> bool {
     let watching = crate::desk::watching().await;
     let engines = crate::folders::engines();
     let settings = crate::settings::settings(app.clone()).await;
-    // Le compte, et ses appareils quand il y a un lien : sans lien il n'y
-    // a rien à demander, et sans service rien à montrer.
+    // The account, and its devices when there is a link: without a link
+    // there is nothing to ask, and without a service nothing to show.
     let account = match crate::desk::account().await {
         Ok(link) => Some(AccountState {
             devices: if link.is_some() {
@@ -5607,9 +5624,9 @@ async fn reread(app: &App) -> bool {
     let mut change = before != *new;
     drop(seen);
 
-    // Une bonne nouvelle s'efface toute seule : restée à l'écran, elle
-    // finit par se lire comme un état. Un ennui reste jusqu'au geste
-    // suivant, puisqu'il attend qu'on y réponde.
+    // Good news goes away by itself: left on screen, it ends up
+    // reading as a state. A problem stays until the next gesture,
+    // since it is waiting to be answered.
     let mut state = STATE.lock().expect("accueil");
     if state
         .notice
@@ -5622,7 +5639,7 @@ async fn reread(app: &App) -> bool {
     change
 }
 
-/// Relit ce que l'écran des réglages montre, et les trois raccourcis.
+/// Rereads what the settings screen shows, and the three shortcuts.
 fn reread_the_settings(app: &App) {
     let app = app.clone();
     crate::app::spawn(async move {

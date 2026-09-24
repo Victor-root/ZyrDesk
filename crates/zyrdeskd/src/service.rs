@@ -508,9 +508,9 @@ fn say_how_the_networks_are_classed(log: &Log) {
             .map(str::trim)
             .filter(|line| !line.is_empty())
             .collect();
-        // Une absence de réponse est elle-même une réponse : sans cette
-        // ligne, on ne saurait pas distinguer « Windows n'a rien dit »
-        // de « le service est trop vieux pour le demander ».
+        // No answer is itself an answer: without this line, there would
+        // be no telling "Windows said nothing" from "the service is too
+        // old to ask for it".
         if classed.is_empty() {
             log.write("Windows did not say how it classes these networks");
             return;
@@ -599,12 +599,13 @@ fn reported(error: &windows_service::Error) -> Option<i32> {
 /// Code Windows returns for a service that never reported in.
 const NEVER_REPORTED: i32 = 1053;
 
-/// Le programme que Windows lance quand on lui demande ce service.
+/// The program Windows starts when it is asked for this service.
 ///
-/// Demandé parce qu'un service inscrit ne pointe pas forcément sur le
-/// programme qu'on vient de compiler : déplacer le dépôt laisse
-/// l'inscription sur l'ancien chemin, et Windows lance alors un programme
-/// qui n'est plus là ou qui n'est plus le bon, sans jamais dire lequel.
+/// Asked because a registered service does not necessarily point at the
+/// program that was just built: moving the repository leaves the
+/// registration on the old path, and Windows then starts a program that
+/// is no longer there or is no longer the right one, without ever saying
+/// which.
 pub fn registered_at() -> Option<std::path::PathBuf> {
     let manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).ok()?;
@@ -616,9 +617,9 @@ pub fn registered_at() -> Option<std::path::PathBuf> {
 
 /// Whether that is Windows saying the service never reported in.
 ///
-/// Ni un refus ni une panne : le programme a été lancé et n'a jamais dit
-/// à Windows qu'il tournait. Ce qu'il est devenu entre les deux ne se lit
-/// nulle part, et surtout pas dans ces mots-là.
+/// Neither a refusal nor a fault: the program was started and never told
+/// Windows it was running. What became of it in between cannot be read
+/// anywhere, and least of all in those words.
 pub fn never_reported(error: &windows_service::Error) -> bool {
     reported(error) == Some(NEVER_REPORTED)
 }

@@ -211,8 +211,8 @@ mod tests {
         let ms = Duration::from_millis;
         let mut said = Said::from(ms(4));
 
-        // Le silence du début n'en est pas un : rien n'est encore parti
-        // d'en face, et une session qui s'ouvre ne se signale pas.
+        // The silence at the start is not one: nothing has left the far
+        // side yet, and a session that is opening is not reported.
         for _ in 0..5 {
             assert!(
                 said.what_changed("way 1", &arriving(0), &path(ms(4)))
@@ -220,7 +220,7 @@ mod tests {
             );
         }
 
-        // Puis ça arrive, et ça s'arrête.
+        // Then it arrives, and it stops.
         assert!(
             said.what_changed("way 1", &arriving(1_000), &path(ms(4)))
                 .is_empty()
@@ -232,8 +232,8 @@ mod tests {
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(lines[0].contains("nothing has come"), "{}", lines[0]);
 
-        // Et le retour se dit, sans quoi le journal laisse croire que la
-        // session est morte là où elle a seulement toussé.
+        // And the return is said, otherwise the journal would suggest
+        // the session died where it only coughed.
         let lines = said.what_changed("way 1", &arriving(1_200), &path(ms(4)));
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(lines[0].contains("sending again"), "{}", lines[0]);
@@ -244,14 +244,14 @@ mod tests {
         let ms = Duration::from_millis;
         let mut said = Said::from(ms(4));
 
-        // Rien à dire tant que rien n'est jeté.
+        // Nothing to say while nothing is thrown away.
         assert!(
             said.what_changed("way 1", &reading(0, 0), &path(ms(4)))
                 .is_empty()
         );
 
-        // Ce qui compte est le moment, pas le nombre : la perte est dite
-        // une fois, et le compte qui grimpe ne se redit pas.
+        // What matters is the moment, not the number: the loss is said
+        // once, and the rising count is not said again.
         let lines = said.what_changed("way 1", &reading(429, 0), &path(ms(4)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("429 so far"), "{}", lines[0]);
@@ -260,7 +260,7 @@ mod tests {
                 .is_empty()
         );
 
-        // L'autre espèce de perte se dit à son tour.
+        // The other kind of loss is said in its turn.
         let lines = said.what_changed("way 1", &reading(900, 3), &path(ms(4)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("no longer carries"), "{}", lines[0]);
@@ -271,20 +271,21 @@ mod tests {
         let ms = Duration::from_millis;
         let mut said = Said::from(ms(11));
 
-        // Le cas qui a valu cette ligne : la session double de longueur
-        // en cours de route parce que le chemin passe soudain ailleurs.
+        // The case this line exists for: the session doubles in length
+        // along the way because the path suddenly goes somewhere else.
         let lines = said.what_changed("way 1", &reading(0, 0), &path(ms(24)));
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("now 24 ms, it was 11 ms"), "{}", lines[0]);
 
-        // Un réseau qui respire n'est pas une nouvelle.
+        // A network breathing is not news.
         assert!(
             said.what_changed("way 1", &reading(0, 0), &path(ms(28)))
                 .is_empty()
         );
 
-        // Et sur un câble, un tiers de milliseconde qui en devient une
-        // double sans que personne ne sente quoi que ce soit.
+        // And on a cable, a third of a millisecond that becomes a
+        // whole one has doubled without anybody feeling anything at
+        // all.
         let mut said = Said::from(Duration::from_micros(300));
         assert!(
             said.what_changed("way 1", &reading(0, 0), &path(ms(1)))

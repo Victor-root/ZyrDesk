@@ -1231,10 +1231,10 @@ mod tests {
 
     #[test]
     fn without_an_engine_the_service_waits_for_one_instead_of_stopping() {
-        // Un ordinateur sans moteur hôte reste un client à part entière.
-        // Un service qui s'arrêterait là lui coûterait le tunnel, la
-        // découverte du réseau et son interface, pour une moitié du
-        // produit dont il n'a peut-être aucun usage.
+        // A computer without a host engine is still a client in its own
+        // right. A service that stopped there would cost it the tunnel,
+        // network discovery and its interface, for one half of the
+        // product it may have no use for.
         if paths::host_engine_exe().is_file() {
             return;
         }

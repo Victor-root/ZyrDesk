@@ -178,14 +178,15 @@ mod tests {
 
     #[test]
     fn a_machine_without_a_sound_card_tells_the_player() {
-        // Huit secondes par session, dépensées avant l'image à se faire
-        // refuser une carte son qui n'existe pas. Le lecteur n'a pas à
-        // le découvrir : ce qui le lance connaît déjà la machine.
+        // Eight seconds per session, spent before the picture on being
+        // refused a sound card that does not exist. The player does not
+        // have to find that out: whatever starts it already knows the
+        // machine.
         let silent = session_arguments("host", &SessionSettings::default(), false);
         assert!(silent.iter().any(|a| a == "--no-sound-card"), "{silent:?}");
 
-        // Et une machine qui en a une ne dit rien : le lecteur fait ce
-        // qu'il a toujours fait.
+        // And a machine that has one says nothing: the player does
+        // what it has always done.
         let with_sound = session_arguments("host", &SessionSettings::default(), true);
         assert!(
             !with_sound.iter().any(|a| a.contains("sound-card")),
@@ -231,8 +232,9 @@ mod tests {
     #[test]
     fn the_engine_always_says_what_the_session_costs() {
         let args = session_arguments("host", &SessionSettings::default(), true);
-        // Rien du moteur n'est dessiné dans l'image : ZyrDesk montre
-        // lui-même ce qu'il y a à dire du lien, dans une fenêtre à lui.
+        // Nothing of the engine is drawn in the picture: ZyrDesk itself
+        // shows what there is to say about the link, in a window of its
+        // own.
         assert!(args.iter().any(|a| a == "--no-connection-warnings"));
         let path = value_of(&args, "--report-stats").expect("un chemin pour les mesures");
         assert!(path.ends_with("session-stats.txt"));
@@ -240,9 +242,9 @@ mod tests {
 
     #[test]
     fn the_engine_follows_what_the_session_should_be() {
-        // C'est par ce fichier qu'un réglage agit pendant que l'image
-        // tourne : sans lui, chaque changement de taille ou de codec
-        // serait un lecteur à relancer.
+        // It is through this file that a setting acts while the
+        // picture runs: without it, every change of size or codec
+        // would be a player to start again.
         let args = session_arguments("host", &SessionSettings::default(), true);
         let path = value_of(&args, "--follow-settings").expect("un chemin à suivre");
         assert!(path.ends_with("session-wanted.txt"));
@@ -250,11 +252,11 @@ mod tests {
 
     #[test]
     fn the_engine_also_follows_the_shape_of_the_pointer() {
-        // Et par un second fichier : le premier dit ce que le flux doit
-        // être, et une ligne qui en diffère le fait reconstruire. Une
-        // forme change chaque fois qu'une main traverse un champ de
-        // texte, ce qui reconstruirait l'image plusieurs fois par
-        // seconde s'ils n'étaient qu'un.
+        // And through a second file: the first says what the stream
+        // must be, and a line that differs from it has the stream
+        // rebuilt. A shape changes every time a hand crosses a text
+        // field, which would rebuild the picture several times a second
+        // if the two were only one.
         let args = session_arguments("host", &SessionSettings::default(), true);
         let path = value_of(&args, "--follow-pointer").expect("un chemin à suivre");
         assert!(path.ends_with("session-pointer.txt"));
@@ -263,10 +265,10 @@ mod tests {
 
     #[test]
     fn the_engine_waits_as_long_as_the_tunnel_before_giving_a_session_up() {
-        // Le 4 septembre, deux sessions sont mortes à la dixième seconde
-        // d'un silence du réseau, la route étant revenue à la septième et
-        // le tunnel en tenant trente : c'est la patience la plus courte
-        // qui décide, et celle du moteur était la sienne.
+        // On 4 September, two sessions died at the tenth second of a
+        // network silence, the road having come back at the seventh and
+        // the tunnel holding on for thirty: it is the shortest patience
+        // that decides, and that was the engine's.
         let args = session_arguments("host", &SessionSettings::default(), true);
         assert_eq!(
             value_of(&args, "--control-timeout"),
@@ -288,12 +290,12 @@ mod tests {
 
     #[test]
     fn the_system_keys_always_belong_to_the_engine() {
-        // Le mode demandé n'est jamais « always » : celui-là avale Alt et
-        // Ctrl en entier, ce qui coupe tous les raccourcis du produit, qui
-        // sont tous des combinaisons Alt. Et c'est toujours le moteur qui
-        // les prend, des deux côtés de l'interrupteur : l'autre façon de
-        // prendre ces touches a été retirée parce qu'elle ne pouvait pas
-        // marcher, pas parce qu'on lui préférait celle-ci.
+        // The mode asked for is never "always": that one swallows Alt and
+        // Ctrl whole, which cuts off every shortcut of the product, all of
+        // them Alt combinations. And it is always the engine that takes
+        // them, on both sides of the switch: the other way of taking these
+        // keys was removed because it could not work, not because this one
+        // was preferred to it.
         let args = session_arguments("host", &SessionSettings::default(), true);
         assert_eq!(value_of(&args, "--capture-system-keys"), Some("zyrdesk"));
         assert!(!args.iter().any(|a| a == "always"));
@@ -312,10 +314,10 @@ mod tests {
 
     #[test]
     fn the_far_desktop_is_always_asked_to_take_the_shape_of_the_session() {
-        // C'est ce drapeau, et lui seul, qui autorise l'ordinateur d'en
-        // face à mettre son bureau à la taille demandée. Sans lui il
-        // garde la sienne, et l'écart entre les deux formes est gravé en
-        // bandes noires dans chaque image envoyée.
+        // It is this flag, and this flag alone, that allows the far
+        // computer to put its desktop at the size asked for. Without it
+        // the far computer keeps its own, and the gap between the two
+        // shapes is burned as black bars into every frame sent.
         let args = session_arguments("host", &SessionSettings::default(), true);
         assert!(args.iter().any(|a| a == "--game-optimization"));
         assert!(!args.iter().any(|a| a == "--no-game-optimization"));

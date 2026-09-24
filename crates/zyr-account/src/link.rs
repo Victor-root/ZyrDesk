@@ -174,8 +174,8 @@ mod tests {
 
     #[test]
     fn a_file_that_is_not_a_link_is_said_rather_than_taken_for_none() {
-        // Un lien illisible n'est pas « pas de lien » : le service doit le
-        // dire, sinon un jeton perdu passerait pour un choix.
+        // An unreadable link is not "no link": the service must say so, or
+        // a lost token would pass for a choice.
         let path = fresh_file("illisible");
         std::fs::write(&path, "server = https://x:443\nusername = v\n").unwrap();
         let refusal = Link::read(&path).unwrap_err();

@@ -1,44 +1,43 @@
-//! Le battement de ce qui bouge à l'écran.
+//! The beat of what moves on screen.
 //!
-//! Une horloge du système ne bat pas plus fin que son tic, quinze
-//! millisecondes et demie, et elle arrondit au tic suivant : un battement
-//! demandé toutes les seize millisecondes tombe en réalité à trente et
-//! une, soit trente-deux images par seconde sur un écran qui en montre
-//! soixante. C'est visible à l'oeil nu sur tout ce qui glisse.
+//! A system timer beats no finer than its tick, fifteen and a half
+//! milliseconds, and it rounds up to the next tick: a beat asked for
+//! every sixteen milliseconds really lands at thirty-one, that is
+//! thirty-two frames a second on a screen that shows sixty. It is visible
+//! to the naked eye on anything that slides.
 //!
-//! Ce qui bouge bat donc au rythme du compositeur de Windows, qui est
-//! celui de l'écran : un fil attend la fin de chaque composition et
-//! réveille les fenêtres qui animent quelque chose. Demander une image de
-//! plus que ce que l'écran montre ne se verrait pas et coûterait pour
-//! rien ; en demander moins se voit tout de suite.
+//! So what moves beats to the pulse of the Windows compositor, which is
+//! the pulse of the screen: a thread waits for the end of each
+//! composition and wakes the windows that are animating something. Asking
+//! for one frame more than the screen shows would not be seen and would
+//! cost for nothing; asking for fewer shows at once.
 //!
-//! Un seul fil pour tout le produit : le compositeur bat pour tout le
-//! monde à la fois, et deux fils qui l'attendent attendraient le même
+//! One thread for the whole product: the compositor beats for everybody
+//! at once, and two threads waiting for it would be waiting for the same
 //! instant.
 
 use std::sync::{Condvar, Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::HWND;
 
-/// Les fenêtres qui bougent en ce moment, et le message qui redessine
-/// chacune. La poignée est retenue en nombre : c'est ce qui traverse un
-/// fil.
+/// The windows moving right now, and the message that redraws each of
+/// them. The handle is kept as a number: that is what crosses a thread.
 static MOVING: Mutex<Vec<(isize, u32)>> = Mutex::new(Vec::new());
 
-/// De quoi rendormir le fil quand plus rien ne bouge : sans lui, il
-/// tournerait à vide au rythme de l'écran pendant que le produit ne fait
-/// rien.
+/// What puts the thread back to sleep when nothing moves any more:
+/// without it, it would spin idly at the pulse of the screen while the
+/// product does nothing.
 static WAKE: Condvar = Condvar::new();
 
-/// Le temps d'une image quand le compositeur ne répond pas. Il ne se
-/// laisse plus arrêter depuis Windows 8, mais un fil qui tournerait sans
-/// jamais attendre prendrait un coeur entier.
+/// The time of one frame when the compositor does not answer. Since
+/// Windows 8 it can no longer be turned off, but a thread that spun
+/// without ever waiting would take a whole core.
 const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
 
-/// Fait battre cette fenêtre-là, qui recevra ce message à chaque image
-/// jusqu'à ce qu'elle demande à s'arrêter.
+/// Makes that window beat: it will receive this message at every frame
+/// until it asks to stop.
 ///
-/// Redemander pour une fenêtre qui bat déjà ne fait rien.
+/// Asking again for a window that already beats does nothing.
 pub fn beat(window: HWND, message: u32) {
     let mut moving = MOVING.lock().expect("rythme");
     let this_one = window as isize;
@@ -50,7 +49,7 @@ pub fn beat(window: HWND, message: u32) {
     WAKE.notify_one();
 }
 
-/// Arrête le battement de cette fenêtre. Rien si elle ne battait pas.
+/// Stops the beat of this window. Nothing if it was not beating.
 pub fn stop(window: HWND) {
     let this_one = window as isize;
     MOVING
@@ -59,8 +58,8 @@ pub fn stop(window: HWND) {
         .retain(|(w, _)| *w != this_one);
 }
 
-/// Le fil qui attend le compositeur, lancé à la première chose qui bouge
-/// et gardé ensuite : il dort tant que rien ne bouge.
+/// The thread that waits for the compositor, started at the first thing
+/// that moves and kept afterwards: it sleeps as long as nothing moves.
 fn start() {
     static THREAD: OnceLock<()> = OnceLock::new();
     THREAD.get_or_init(|| {
@@ -83,15 +82,15 @@ fn run() {
             }
             moving.clone()
         };
-        // SAFETY: rien à lui passer, et l'attente n'appartient à aucune
-        // fenêtre.
+        // SAFETY: nothing to pass it, and the wait belongs to no
+        // window.
         if unsafe { DwmFlush() } < 0 {
             std::thread::sleep(FRAME);
         }
         for (window, message) in beating {
-            // SAFETY: un message déposé dans la file d'une fenêtre. Elle
-            // peut avoir disparu entre-temps, et le système répond alors
-            // que non sans que rien ne soit touché.
+            // SAFETY: a message dropped in the queue of a window. It may
+            // have gone in the meantime, and the system then answers no
+            // without anything being touched.
             unsafe { PostMessageW(window as HWND, message, 0, 0) };
         }
     }

@@ -1350,7 +1350,7 @@ mod tests {
         assert_eq!(again, victor);
         assert_eq!(token.expires, 2_000 + ACCOUNT_TOKEN_LIFE);
         assert_eq!(store.account_of_token(&token.raw, 2_500).unwrap(), victor);
-        // Expiré, ou inconnu : refusé de la même façon.
+        // Expired, or unknown: refused the same way.
         assert!(matches!(
             store
                 .account_of_token(&token.raw, 2_000 + ACCOUNT_TOKEN_LIFE)
@@ -1443,7 +1443,7 @@ mod tests {
                 2,
             )
             .unwrap();
-        // Un code ne sert qu'une fois.
+        // A code works only once.
         assert!(matches!(
             store
                 .create_account(
@@ -1473,7 +1473,7 @@ mod tests {
         assert_eq!(bearer.device, device);
         assert_eq!(bearer.account, victor);
         assert!(!bearer.renew);
-        // Près de la fin, le jeton demande son renouvellement.
+        // Near the end, the token asks to be renewed.
         let late = 1_000 + DEVICE_TOKEN_LIFE - DEVICE_TOKEN_RENEWAL + 1;
         assert!(store.bearer_of_token(&token.raw, late).unwrap().renew);
         let renewed = store.renew_device_token(&device, late).unwrap();
@@ -1504,8 +1504,8 @@ mod tests {
 
     #[test]
     fn a_device_attached_to_another_account_moves_there() {
-        // Un appareil est à son propriétaire : rattaché ailleurs, il quitte
-        // le premier compte, dont les partages sur lui tombent.
+        // A device belongs to its owner: attached elsewhere, it leaves the
+        // first account, whose shares on it fall away.
         let store = store();
         let victor = account(&store, "victor");
         let friend = account(&store, "ami");
@@ -1538,7 +1538,7 @@ mod tests {
         store
             .give_share(&victor.id, &device.id, "ami", &Permission::ALL, None, 1_100)
             .unwrap();
-        // Seul son compte peut le révoquer.
+        // Only its account can revoke it.
         assert!(matches!(
             store
                 .revoke_device(&friend.id, &device.id, 2_000)
@@ -1571,7 +1571,7 @@ mod tests {
         ));
         let asked = store.ask_contact(&victor.id, "ami", 1_000).unwrap();
         assert!(!asked.accepted);
-        // Ni l'un ni l'autre ne redemande tant que ça attend.
+        // Neither one asks again while it is waiting.
         for who in [&victor, &friend] {
             let other = if who.id == victor.id { "ami" } else { "victor" };
             assert!(matches!(
@@ -1579,7 +1579,7 @@ mod tests {
                 Fault::Refused(Code::ContactExists)
             ));
         }
-        // Seul celui qui a été demandé répond.
+        // Only the one who was asked answers.
         assert!(
             store
                 .answer_contact(&victor.id, &asked.id, true, 1_002)
@@ -1600,7 +1600,7 @@ mod tests {
             .unwrap();
         assert_eq!(removed.id, accepted.id);
         assert!(store.contacts_of(&victor.id).unwrap().is_empty());
-        // Et on peut redemander ensuite.
+        // And it can be asked again afterwards.
         let again = store.ask_contact(&friend.id, "victor", 1_004).unwrap();
         assert!(!again.accepted);
         let declined = store
@@ -1620,7 +1620,7 @@ mod tests {
         let (laptop, _, _) = device(&store, &friend, "Portable");
         let (other, _, _) = device(&store, &stranger, "Autre");
 
-        // Pas de partage sans contact accepté.
+        // No share without an accepted contact.
         assert!(matches!(
             store
                 .give_share(&victor.id, &pc.id, "ami", &Permission::ALL, None, 1_100)
@@ -1628,7 +1628,7 @@ mod tests {
             Fault::Refused(Code::NotAContact)
         ));
         friends(&store, &victor, &friend);
-        // Ni sur une machine qui n'est pas la sienne.
+        // Nor on a machine that is not its own.
         assert!(matches!(
             store
                 .give_share(&victor.id, &laptop.id, "ami", &Permission::ALL, None, 1_100)
@@ -1647,7 +1647,7 @@ mod tests {
             .unwrap();
         assert_eq!(share.grantee, friend.id);
 
-        // Le droit : le sien, le partagé, rien.
+        // The right: its own, the shared one, none.
         let (_, right) = store.right_to(&laptop, &pc.id, 1_200).unwrap();
         assert_eq!(
             right,
@@ -1661,12 +1661,12 @@ mod tests {
             store.right_to(&other, &pc.id, 1_200).unwrap_err(),
             Fault::Refused(Code::NoRight)
         ));
-        // Expiré, plus de droit ; retiré, plus de droit.
+        // Expired, no more right; removed, no more right.
         assert!(store.right_to(&laptop, &pc.id, 5_000).is_err());
         assert!(store.shares_of(&friend.id, 5_000).unwrap().is_empty());
         assert_eq!(store.shares_of(&friend.id, 1_200).unwrap().len(), 1);
 
-        // Redonné, c'est le même partage, changé.
+        // Given again, it is the same share, changed.
         let again = store
             .give_share(
                 &victor.id,
@@ -1725,8 +1725,9 @@ mod tests {
 
     #[test]
     fn what_the_relay_carried_is_counted_and_a_direct_session_counts_nothing() {
-        // Le critère du jalon se lit ici : en direct, le compteur du
-        // serveur reste à zéro, et il n'y a même pas de ligne relayée.
+        // The criterion of the milestone can be read here: direct, the
+        // server's counter stays at zero, and there is not even a
+        // relayed row.
         let store = store();
         for session in ["direct", "relayee"] {
             store
@@ -1734,8 +1735,8 @@ mod tests {
                 .unwrap();
         }
         store.session_relayed("relayee", 1_200).unwrap();
-        // Un appareil revenu au relais après une coupure a deux tours à
-        // son nom : ce qu'il a porté s'ajoute.
+        // A device that came back to the relay after a cut has two
+        // rounds under its name: what it carried adds up.
         store.session_relayed("relayee", 800).unwrap();
         for session in ["direct", "relayee"] {
             store.session_ended(session, 1_500).unwrap();
@@ -1751,8 +1752,8 @@ mod tests {
 
     #[test]
     fn the_schema_is_brought_up_once_and_remembered() {
-        // Rouvrir le même fichier ne rejoue rien : la version est écrite
-        // dedans, et une étape déjà faite ne se refait pas.
+        // Opening the same file again replays nothing: the version is
+        // written inside it, and a step already done is not done again.
         let store = store();
         let version = store
             .with(|conn| {
