@@ -125,6 +125,20 @@ pub fn virtual_screen_driver_dir() -> PathBuf {
     project_root().join("vendor").join("ecran-virtuel")
 }
 
+/// The FFmpeg libraries the engine loads when it starts, carried by the
+/// product.
+///
+/// Beside the program for the same reason as the driver above: they are
+/// the product's own files, built once and never changed on this
+/// machine, not something a person leaves behind.
+///
+/// One name answering in both worlds again. Run from the repository it
+/// lands on `vendor/ffmpeg`, where the libraries are kept; installed,
+/// on the same folder next to the program.
+pub fn ffmpeg_dir() -> PathBuf {
+    project_root().join("vendor").join("ffmpeg")
+}
+
 /// Logs of every component.
 pub fn logs_dir() -> PathBuf {
     data_dir().join("logs")
@@ -422,6 +436,14 @@ mod tests {
             resolve_data_dir(Some(OsString::new()), project),
             PathBuf::from("/the/project/data")
         );
+    }
+
+    #[test]
+    fn the_ffmpeg_libraries_sit_beside_the_driver_and_not_under_the_data() {
+        let ffmpeg = ffmpeg_dir();
+        assert!(ffmpeg.ends_with(Path::new("vendor").join("ffmpeg")));
+        assert_eq!(ffmpeg.parent(), virtual_screen_driver_dir().parent());
+        assert!(!ffmpeg.starts_with(data_dir()), "{}", ffmpeg.display());
     }
 
     #[test]
