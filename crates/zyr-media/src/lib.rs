@@ -6,7 +6,9 @@
 //! the messages of the control stream and of the local link, the cadence
 //! at which pictures leave, and the measures a session keeps.
 
+pub mod audio;
 pub mod codec;
+pub mod input;
 pub mod video;
 
 #[cfg(test)]
