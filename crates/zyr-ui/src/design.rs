@@ -21,20 +21,20 @@
 /// Une couleur, en quatre nombres entre zéro et un, qui est la façon dont
 /// tout ce qui dessine les veut.
 #[derive(Clone, Copy)]
-pub struct Couleur {
+pub struct Colour {
     pub red: f32,
     pub green: f32,
     pub blue: f32,
     pub alpha: f32,
 }
 
-impl Couleur {
+impl Colour {
     /// Rien du tout.
     ///
     /// Ce sur quoi une fenêtre à calque commence son dessin : là où la
     /// toile reste de cette couleur, on voit ce qu'il y a derrière la
     /// fenêtre, et les clics y passent.
-    pub const RIEN: Couleur = Couleur {
+    pub const TRANSPARENT: Colour = Colour {
         red: 0.0,
         green: 0.0,
         blue: 0.0,
@@ -46,7 +46,7 @@ impl Couleur {
     /// Dont seule la part employée sert : c'est ce qu'une boîte de
     /// dialogue pose sur ce qu'elle recouvre, et le seul endroit du
     /// produit où une couleur n'est pas un rôle.
-    pub const NOIR: Couleur = Couleur {
+    pub const BLACK: Colour = Colour {
         red: 0.0,
         green: 0.0,
         blue: 0.0,
@@ -58,13 +58,13 @@ impl Couleur {
     /// Ce que la feuille de style écrit `color-mix(in srgb, ... 8%,
     /// ...)` : la teinte d'un rôle passée sur un fond, là où poser une
     /// deuxième couleur pleine donnerait une couleur de plus à tenir.
-    pub fn melee(self, fond: Couleur, part: f32) -> Couleur {
-        let entre = |mien: f32, sien: f32| sien + (mien - sien) * part;
-        Couleur {
-            red: entre(self.red, fond.red),
-            green: entre(self.green, fond.green),
-            blue: entre(self.blue, fond.blue),
-            alpha: entre(self.alpha, fond.alpha),
+    pub fn mixed_with(self, background: Colour, part: f32) -> Colour {
+        let between = |mine: f32, theirs: f32| theirs + (mine - theirs) * part;
+        Colour {
+            red: between(self.red, background.red),
+            green: between(self.green, background.green),
+            blue: between(self.blue, background.blue),
+            alpha: between(self.alpha, background.alpha),
         }
     }
 
@@ -74,8 +74,8 @@ impl Couleur {
     /// transparent)` : la teinte d'un rôle employée comme fond, là où
     /// repeindre avec une deuxième couleur donnerait une couleur de plus
     /// à tenir.
-    pub fn voile(self, part: f32) -> Couleur {
-        Couleur {
+    pub fn faded(self, part: f32) -> Colour {
+        Colour {
             alpha: self.alpha * part,
             ..self
         }
@@ -85,11 +85,11 @@ impl Couleur {
 /// Une ombre portée : de combien elle est décalée, de combien elle est
 /// floue, et de quelle couleur.
 #[derive(Clone, Copy)]
-pub struct Ombre {
+pub struct Shadow {
     pub across: f32,
     pub down: f32,
     pub soft: f32,
-    pub tint: Couleur,
+    pub tint: Colour,
 }
 
 include!(concat!(env!("OUT_DIR"), "/design.rs"));
@@ -98,6 +98,6 @@ include!(concat!(env!("OUT_DIR"), "/design.rs"));
 ///
 /// Demandée au système plutôt que gardée ici : c'est le même thème que
 /// l'accueil, et l'accueil le tient déjà de sa fenêtre.
-pub fn palette(clair: bool) -> Palette {
-    if clair { CLAIR } else { SOMBRE }
+pub fn palette(light: bool) -> Palette {
+    if light { LIGHT } else { DARK }
 }

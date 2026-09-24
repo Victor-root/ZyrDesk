@@ -15,19 +15,19 @@
 
   /* Fonds, du plus profond au plus proche. Trois niveaux, pas plus :
      au-delà l'oeil ne les distingue plus et le calme se perd. */
-  --fond: #0b0d12;
+  --background: #0b0d12;
   --surface-1: #12151d;
   --surface-2: #191d27;
   --surface-3: #222735;
 
   /* Traits. Jamais de bordure dure : une séparation se suggère. */
-  --trait: #262c3a;
-  --trait-fort: #333b4d;
+  --border: #262c3a;
+  --border-strong: #333b4d;
 
   /* Textes, par importance décroissante. */
-  --texte: #e8eaf0;
-  --texte-doux: #a0a7b8;
-  --texte-faible: #6b7385;
+  --text: #e8eaf0;
+  --text-soft: #a0a7b8;
+  --text-faint: #6b7385;
 
   /* La seule couleur d'accent, réservée à l'action principale et à
      ce qui est vivant. L'employer ailleurs la dévalue.
@@ -36,9 +36,9 @@
      dit une couleur et dont l'interface en dit une autre est un produit
      qui se présente deux fois. */
   --accent: #efb536;
-  --accent-vif: #f8cd6a;
-  --accent-sourd: #6a4a12;
-  --accent-voile: rgba(239, 181, 54, 0.14);
+  --accent-bright: #f8cd6a;
+  --accent-muted: #6a4a12;
+  --accent-tint: rgba(239, 181, 54, 0.14);
   /* Ce qui s'écrit par-dessus l'accent. Une couleur d'accent n'est pas
      un fond de texte tant qu'on n'a pas dit ce qui se lit dessus : sans
      ce rôle, chaque écran le devine à sa façon, et le côté allumé d'un
@@ -46,7 +46,7 @@
 
      Le noir du logo, comme dans le logo : c'est ce qui se lit sur cet
      or-là, et le blanc n'y tient pas. */
-  --sur-accent: #0b0d12;
+  --on-accent: #0b0d12;
 
   /* États système. Une palette réduite, jamais décorative.
 
@@ -54,40 +54,40 @@
      jaunes voisins, l'un qui appelle le clic et l'autre qui prévient, ne
      se distinguent plus, et c'est justement celui qui prévient qu'il ne
      faut pas rater. */
-  --en-ligne: #34d399;
-  --attention: #f97316;
-  --erreur: #f87171;
-  --hors-ligne: #4b5563;
+  --online: #34d399;
+  --warning: #f97316;
+  --error: #f87171;
+  --offline: #4b5563;
 
   /* Grille de 8. Tout espacement en descend. */
-  --pas-1: 4px;
-  --pas-2: 8px;
-  --pas-3: 12px;
-  --pas-4: 16px;
-  --pas-5: 24px;
-  --pas-6: 32px;
-  --pas-7: 48px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
 
-  --rayon-petit: 8px;
-  --rayon: 12px;
-  --rayon-grand: 16px;
-  --rayon-rond: 999px;
+  --radius-small: 8px;
+  --radius: 12px;
+  --radius-large: 16px;
+  --radius-round: 999px;
 
   /* Ombres courtes et douces : elles posent, elles ne dramatisent pas. */
-  --ombre-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --ombre-2: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.35);
 
   /* Quatre tailles de texte, pas une de plus. */
-  --titre: 22px;
-  --sous-titre: 15px;
-  --corps: 14px;
-  --legende: 12px;
+  --title: 22px;
+  --subtitle: 15px;
+  --body: 14px;
+  --caption: 12px;
 
   /* Mouvement : assez pour être compris, assez court pour ne pas
      être attendu. */
-  --duree: 180ms;
-  --duree-courte: 120ms;
-  --courbe: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --duration: 180ms;
+  --duration-short: 120ms;
+  --curve: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 /* Le thème clair. Il n'est jamais choisi par une requête de média ici :
@@ -95,37 +95,37 @@
    demande le système et ce que la personne a choisi. Une seule palette
    claire existe donc, au lieu d'une pour le système et d'une pour le
    choix, qui finiraient par diverger. */
-:root[data-theme="clair"] {
+:root[data-theme="light"] {
   color-scheme: light;
 
-  --fond: #f4f5f8;
+  --background: #f4f5f8;
   --surface-1: #ffffff;
   --surface-2: #f7f8fb;
   --surface-3: #eef0f5;
 
-  --trait: #e2e5ec;
-  --trait-fort: #cdd2dd;
+  --border: #e2e5ec;
+  --border-strong: #cdd2dd;
 
-  --texte: #12151d;
-  --texte-doux: #4d5566;
-  --texte-faible: #798091;
+  --text: #12151d;
+  --text-soft: #4d5566;
+  --text-faint: #798091;
 
   /* Le même or, descendu jusqu'à se lire sur du blanc : l'or du logo y
      est trop clair pour porter du texte, et un accent qu'on ne lit pas
      n'est plus un accent. */
   --accent: #b57e06;
-  --accent-vif: #8a5f00;
-  --accent-sourd: #fbe6b4;
-  --accent-voile: rgba(181, 126, 6, 0.1);
-  --sur-accent: #ffffff;
+  --accent-bright: #8a5f00;
+  --accent-muted: #fbe6b4;
+  --accent-tint: rgba(181, 126, 6, 0.1);
+  --on-accent: #ffffff;
 
-  --en-ligne: #059669;
-  --attention: #c2410c;
-  --erreur: #dc2626;
-  --hors-ligne: #9ca3af;
+  --online: #059669;
+  --warning: #c2410c;
+  --error: #dc2626;
+  --offline: #9ca3af;
 
-  --ombre-1: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --ombre-2: 0 6px 20px rgba(16, 24, 40, 0.08);
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-2: 0 6px 20px rgba(16, 24, 40, 0.08);
 }
 
 * {
@@ -138,10 +138,10 @@ body {
 }
 
 body {
-  background: var(--fond);
-  color: var(--texte);
+  background: var(--background);
+  color: var(--text);
   font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  font-size: var(--corps);
+  font-size: var(--body);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   /* Une interface n'est pas un document : rien ne s'y sélectionne par
@@ -167,28 +167,28 @@ p {
 /* ---- Texte ---------------------------------------------------------- */
 
 .titre {
-  font-size: var(--titre);
+  font-size: var(--title);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .sous-titre {
-  font-size: var(--sous-titre);
+  font-size: var(--subtitle);
   font-weight: 600;
 }
 
 .legende {
-  font-size: var(--legende);
-  color: var(--texte-doux);
+  font-size: var(--caption);
+  color: var(--text-soft);
 }
 
 /* Une étiquette de section : discrète, jamais criarde. */
 .section {
-  font-size: var(--legende);
+  font-size: var(--caption);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--texte-faible);
+  color: var(--text-faint);
 }
 
 /* Les chiffres qu'on compare doivent s'aligner. */
@@ -198,8 +198,8 @@ p {
 
 .empreinte {
   font-family: "Cascadia Mono", Consolas, ui-monospace, monospace;
-  font-size: var(--legende);
-  color: var(--texte-faible);
+  font-size: var(--caption);
+  color: var(--text-faint);
   letter-spacing: 0.02em;
   user-select: text;
   word-break: break-all;
@@ -209,9 +209,9 @@ p {
 
 .carte {
   background: var(--surface-1);
-  border: 1px solid var(--trait);
-  border-radius: var(--rayon-grand);
-  box-shadow: var(--ombre-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-1);
 }
 
 /* ---- Boutons -------------------------------------------------------- */
@@ -220,24 +220,24 @@ p {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--pas-2);
+  gap: var(--space-2);
   min-height: 36px;
-  padding: 0 var(--pas-4);
+  padding: 0 var(--space-4);
   border: 1px solid transparent;
-  border-radius: var(--rayon-petit);
+  border-radius: var(--radius-small);
   background: var(--surface-3);
-  color: var(--texte);
+  color: var(--text);
   font: inherit;
   font-weight: 500;
   cursor: pointer;
   transition:
-    background var(--duree-courte) var(--courbe),
-    border-color var(--duree-courte) var(--courbe),
-    opacity var(--duree-courte) var(--courbe);
+    background var(--duration-short) var(--curve),
+    border-color var(--duration-short) var(--curve),
+    opacity var(--duration-short) var(--curve);
 }
 
 .bouton:hover:not(:disabled) {
-  background: var(--trait);
+  background: var(--border);
 }
 
 .bouton:disabled {
@@ -246,17 +246,17 @@ p {
 }
 
 .bouton:focus-visible {
-  outline: 2px solid var(--accent-vif);
+  outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
 .bouton.principal {
   background: var(--accent);
-  color: var(--sur-accent);
+  color: var(--on-accent);
 }
 
 .bouton.principal:hover:not(:disabled) {
-  background: var(--accent-vif);
+  background: var(--accent-bright);
 }
 
 /* Un accent simplement pâli reste l'accent : il continue d'appeler le
@@ -264,32 +264,32 @@ p {
    place. */
 .bouton.principal:disabled {
   background: var(--surface-3);
-  color: var(--texte-faible);
+  color: var(--text-faint);
   opacity: 1;
 }
 
 .bouton.discret {
   background: transparent;
-  border-color: var(--trait-fort);
-  color: var(--texte-doux);
+  border-color: var(--border-strong);
+  color: var(--text-soft);
 }
 
 .bouton.discret:hover:not(:disabled) {
   background: var(--surface-2);
-  color: var(--texte);
+  color: var(--text);
 }
 
 /* Un bouton qui attend une confirmation le dit par la couleur autant que
    par le mot : le mot change sous le doigt, la couleur se voit avant. */
 .bouton.attention {
-  border-color: color-mix(in srgb, var(--attention) 55%, var(--trait));
-  color: var(--attention);
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  color: var(--warning);
 }
 
 .bouton.grand {
   min-height: 44px;
-  padding: 0 var(--pas-5);
-  font-size: var(--sous-titre);
+  padding: 0 var(--space-5);
+  font-size: var(--subtitle);
 }
 
 /* Un bouton qui ne porte qu'un dessin reste carré, et garde la même
@@ -313,40 +313,40 @@ p {
   gap: 2px;
   padding: 2px;
   background: var(--surface-2);
-  border: 1px solid var(--trait);
-  border-radius: var(--rayon-petit);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
 }
 
 .segments > button {
   min-height: 26px;
-  padding: 0 var(--pas-3);
+  padding: 0 var(--space-3);
   /* Un choix qui passe à la ligne cesse de se lire d'un coup d'oeil :
      le segment s'élargit, jamais le mot ne se coupe. */
   white-space: nowrap;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--texte-faible);
+  color: var(--text-faint);
   font: inherit;
-  font-size: var(--legende);
+  font-size: var(--caption);
   cursor: pointer;
   transition:
-    background var(--duree-courte) var(--courbe),
-    color var(--duree-courte) var(--courbe);
+    background var(--duration-short) var(--curve),
+    color var(--duration-short) var(--curve);
 }
 
 .segments > button:hover {
-  color: var(--texte-doux);
+  color: var(--text-soft);
 }
 
 .segments > button[aria-pressed="true"] {
   background: var(--surface-1);
-  color: var(--texte);
-  box-shadow: var(--ombre-1);
+  color: var(--text);
+  box-shadow: var(--shadow-1);
 }
 
 .segments > button:focus-visible {
-  outline: 2px solid var(--accent-vif);
+  outline: 2px solid var(--accent-bright);
   outline-offset: 1px;
 }
 
@@ -355,30 +355,30 @@ p {
 .champ {
   display: flex;
   flex-direction: column;
-  gap: var(--pas-2);
+  gap: var(--space-2);
 }
 
 .champ > label {
-  font-size: var(--legende);
-  color: var(--texte-doux);
+  font-size: var(--caption);
+  color: var(--text-soft);
 }
 
 .champ > input {
   min-height: 40px;
-  padding: 0 var(--pas-3);
+  padding: 0 var(--space-3);
   background: var(--surface-2);
-  border: 1px solid var(--trait);
-  border-radius: var(--rayon-petit);
-  color: var(--texte);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  color: var(--text);
   font: inherit;
   user-select: text;
   transition:
-    border-color var(--duree-courte) var(--courbe),
-    background var(--duree-courte) var(--courbe);
+    border-color var(--duration-short) var(--curve),
+    background var(--duration-short) var(--curve);
 }
 
 .champ > input::placeholder {
-  color: var(--texte-faible);
+  color: var(--text-faint);
 }
 
 .champ > input:focus {
@@ -393,30 +393,30 @@ p {
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: var(--rayon-rond);
-  background: var(--hors-ligne);
+  border-radius: var(--radius-round);
+  background: var(--offline);
   flex: none;
 }
 
 .pastille.vivante {
-  background: var(--en-ligne);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--en-ligne) 18%, transparent);
+  background: var(--online);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--online) 18%, transparent);
 }
 
 .pastille.attention {
-  background: var(--attention);
+  background: var(--warning);
 }
 
 .pastille.erreur {
-  background: var(--erreur);
+  background: var(--error);
 }
 
 /* L'état ne se lit jamais à la couleur seule : le texte à côté le dit. */
 .etat {
   display: inline-flex;
   align-items: center;
-  gap: var(--pas-2);
-  color: var(--texte-doux);
+  gap: var(--space-2);
+  color: var(--text-soft);
 }
 
 /* ---- Interrupteur --------------------------------------------------- */
@@ -427,13 +427,13 @@ p {
   height: 26px;
   flex: none;
   padding: 0;
-  border: 1px solid var(--trait-fort);
-  border-radius: var(--rayon-rond);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-round);
   background: var(--surface-3);
   cursor: pointer;
   transition:
-    background var(--duree) var(--courbe),
-    border-color var(--duree) var(--courbe);
+    background var(--duration) var(--curve),
+    border-color var(--duration) var(--curve);
 }
 
 .interrupteur::after {
@@ -443,11 +443,11 @@ p {
   left: 3px;
   width: 18px;
   height: 18px;
-  border-radius: var(--rayon-rond);
-  background: var(--texte-doux);
+  border-radius: var(--radius-round);
+  background: var(--text-soft);
   transition:
-    transform var(--duree) var(--courbe),
-    background var(--duree) var(--courbe);
+    transform var(--duration) var(--curve),
+    background var(--duration) var(--curve);
 }
 
 .interrupteur[aria-checked="true"] {
@@ -457,11 +457,11 @@ p {
 
 .interrupteur[aria-checked="true"]::after {
   transform: translateX(18px);
-  background: var(--sur-accent);
+  background: var(--on-accent);
 }
 
 .interrupteur:focus-visible {
-  outline: 2px solid var(--accent-vif);
+  outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
@@ -475,23 +475,23 @@ p {
 .bandeau {
   display: flex;
   align-items: flex-start;
-  gap: var(--pas-3);
-  padding: var(--pas-3) var(--pas-4);
-  border: 1px solid var(--trait);
-  border-radius: var(--rayon);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   background: var(--surface-2);
-  color: var(--texte-doux);
+  color: var(--text-soft);
 }
 
 .bandeau.alerte {
-  border-color: color-mix(in srgb, var(--erreur) 40%, var(--trait));
-  background: color-mix(in srgb, var(--erreur) 8%, var(--surface-2));
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border));
+  background: color-mix(in srgb, var(--error) 8%, var(--surface-2));
 }
 
 .bandeau.attente {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--trait));
-  background: var(--accent-voile);
-  color: var(--texte);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--accent-tint);
+  color: var(--text);
 }
 
 /* Un bandeau qui porte de quoi y remédier : le texte prend la place, le
@@ -500,7 +500,7 @@ p {
 .bandeau.avec-action {
   align-items: center;
   justify-content: space-between;
-  gap: var(--pas-4);
+  gap: var(--space-4);
 }
 
 .bandeau-mot {
@@ -519,7 +519,7 @@ p {
   font-size: 34px;
   font-weight: 600;
   letter-spacing: 0.22em;
-  color: var(--accent-vif);
+  color: var(--accent-bright);
   user-select: text;
 }
 
@@ -537,7 +537,7 @@ p {
 }
 
 .apparait {
-  animation: apparait var(--duree) var(--courbe);
+  animation: apparait var(--duration) var(--curve);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -41,7 +41,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::mesures::Mesures;
+use crate::measures::Measures;
 
 /* ---- Ce qu'une lecture dit ------------------------------------------- */
 
@@ -131,14 +131,14 @@ pub struct Reads {
 /// millisecondes devant lui et ne gêne personne. Demander la cadence
 /// voulue aurait coûté un aller-retour au service à chaque lecture, et
 /// aurait eu tort dès que quelqu'un la change en cours de session.
-pub fn read(mesures: &Mesures) -> Reads {
+pub fn read(measures: &Measures) -> Reads {
     let mut reads = Reads::default();
 
-    if let Some(frozen) = mesures.since_frame_ms.filter(|held| *held >= FROZEN_MS) {
+    if let Some(frozen) = measures.since_frame_ms.filter(|held| *held >= FROZEN_MS) {
         reads.link = Some(format!("l'image est figée depuis {frozen} ms"));
-    } else if let Some(lost) = mesures.dropped_network_pct.filter(|pct| *pct >= LOST_PCT) {
+    } else if let Some(lost) = measures.dropped_network_pct.filter(|pct| *pct >= LOST_PCT) {
         reads.link = Some(format!("{lost:.1} % des images se perdent en route"));
-    } else if let Some(late) = mesures
+    } else if let Some(late) = measures
         .dropped_jitter_pct
         .filter(|pct| *pct >= TOO_LATE_PCT)
     {
@@ -153,18 +153,18 @@ pub fn read(mesures: &Mesures) -> Reads {
     // peuvent très bien coincer ensemble, sur deux machines fatiguées ou
     // sur une session trop grande pour les deux, et la pastille sait le
     // dire.
-    if let Some(budget) = mesures
+    if let Some(budget) = measures
         .fps
         .filter(|rate| *rate > 0.0)
         .map(|rate| 1000.0 / rate)
     {
-        if let Some(host) = mesures.host_ms.filter(|each| *each >= budget) {
+        if let Some(host) = measures.host_ms.filter(|each| *each >= budget) {
             reads.far = Some(format!(
                 "l'ordinateur d'en face met {host:.0} ms par image, \
                  pour {budget:.0} ms disponibles"
             ));
         }
-        if let Some(decode) = mesures.decode_ms.filter(|each| *each >= budget) {
+        if let Some(decode) = measures.decode_ms.filter(|each| *each >= budget) {
             reads.here = Some(format!(
                 "cet ordinateur met {decode:.0} ms à décoder une image, \
                  pour {budget:.0} ms disponibles"
@@ -272,8 +272,8 @@ async fn keep_up(app: &crate::app::App) {
         if !crate::floating::a_session_is_up(app) {
             return;
         }
-        let held = crate::floating::the_voyants_are_held_up(app);
-        let Some(mesures) = fresh(started) else {
+        let held = crate::floating::the_badges_are_held_up(app);
+        let Some(measures) = fresh(started) else {
             // Tenues à l'écran, elles sont là avant même que le moteur
             // d'en face ait écrit une seule lecture : ce qu'on regarde
             // alors est les pastilles elles-mêmes, et une session dont
@@ -282,7 +282,7 @@ async fn keep_up(app: &crate::app::App) {
             show(app, Shown::default(), &Reads::default(), held);
             continue;
         };
-        let reads = read(&mesures);
+        let reads = read(&measures);
         let now = Instant::now();
         let shown = steady.after(&reads, now);
         if shown != was {
@@ -301,7 +301,7 @@ async fn keep_up(app: &crate::app::App) {
 
 /// La lecture, si elle est de cette session-ci.
 #[cfg(windows)]
-fn fresh(started: std::time::SystemTime) -> Option<Mesures> {
+fn fresh(started: std::time::SystemTime) -> Option<Measures> {
     let path = zyr_proto::paths::session_stats();
     // L'heure du fichier plutôt que son contenu : rien dans la ligne ne
     // dit quelle session l'a écrite, et son âge le dit sans rien ajouter
@@ -310,7 +310,7 @@ fn fresh(started: std::time::SystemTime) -> Option<Mesures> {
     if written < started {
         return None;
     }
-    Some(crate::mesures::session_measures())
+    Some(crate::measures::session_measures())
 }
 
 /// Dit ce qui vient de changer, et rien d'autre.
@@ -445,14 +445,14 @@ static WHY: std::sync::Mutex<Reads> = std::sync::Mutex::new(Reads {
 
 #[cfg(windows)]
 thread_local! {
-    static TOILE: std::cell::RefCell<Option<crate::paint::Toile>> =
+    static CANVAS: std::cell::RefCell<Option<crate::paint::Canvas>> =
         const { std::cell::RefCell::new(None) };
 }
 
 /// Ce que la fenêtre prend, en vrais pixels sur l'écran qu'elle couvre.
 #[cfg(windows)]
 fn its_size() -> (i32, i32) {
-    let scale = crate::fenetre::echelle();
+    let scale = crate::main_window::scale();
     // Taillée pour la bulle dès le départ, et non agrandie quand elle
     // s'ouvre : redimensionner une fenêtre à calque sous une main qui
     // passe se verrait. Ce qui n'est pas dessiné ne coûte qu'au
@@ -475,7 +475,7 @@ pub fn raise(app: &crate::app::App, anchor: (i32, i32)) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    let owner = crate::fenetre::sienne();
+    let owner = crate::main_window::handle();
     LIT.store(0, Ordering::Relaxed);
     let _ = app.run_on_main_thread(move || build(owner, anchor));
 }
@@ -547,7 +547,7 @@ pub fn lay(_anchor: (i32, i32)) {}
 /// Le coin de la fenêtre, pour une première pastille posée là.
 #[cfg(windows)]
 fn window_corner(anchor: (i32, i32)) -> (i32, i32) {
-    let room = (ROOM * crate::fenetre::echelle()).round() as i32;
+    let room = (ROOM * crate::main_window::scale()).round() as i32;
     (anchor.0 - room, anchor.1 - room)
 }
 
@@ -637,7 +637,7 @@ fn the_hand_over_them(window: isize) -> u8 {
     if unsafe { GetWindowRect(window as HWND, &mut place) } == 0 {
         return 0;
     }
-    let scale = crate::fenetre::echelle();
+    let scale = crate::main_window::scale();
     let side = (BADGE * scale).round() as i32;
     let top = place.top + (ROOM * scale).round() as i32;
     if hand.y < top || hand.y >= top + side {
@@ -759,8 +759,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
-    use crate::design::{Couleur, SOMBRE};
-    use crate::paint::Cadre;
+    use crate::design::{Colour, DARK};
+    use crate::paint::Rect;
 
     let lit = LIT.load(Ordering::Relaxed);
     // Tenues à l'écran, elles sont dessinées toutes les deux et chacune
@@ -768,21 +768,21 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     // cela change et jamais ce qu'elles disent. Deux pastilles toujours
     // allumées ne montreraient rien de leur travail.
     let held = lit & bit::HELD != 0;
-    let scale = crate::fenetre::echelle();
+    let scale = crate::main_window::scale();
     let (wide_px, high) = its_size();
-    TOILE.with_borrow_mut(|toile| {
+    CANVAS.with_borrow_mut(|canvas| {
         // Refaite quand l'écran a changé d'agrandissement : la toile est
         // une image d'une taille donnée, et la fenêtre a suivi.
-        if toile
+        if canvas
             .as_ref()
-            .is_none_or(|had| had.taille() != (wide_px, high))
+            .is_none_or(|had| had.size() != (wide_px, high))
         {
-            *toile = crate::paint::Toile::neuve(wide_px, high);
+            *canvas = crate::paint::Canvas::new(wide_px, high);
         }
-        let Some(toile) = toile.as_ref() else {
+        let Some(canvas) = canvas.as_ref() else {
             return;
         };
-        toile.commence(Couleur::RIEN);
+        canvas.begin(Colour::TRANSPARENT);
         // Chacune a sa place et la garde, même quand l'autre est éteinte :
         // celle de l'image reste la deuxième, avec un vide à sa gauche là
         // où serait celle du lien. Serrées l'une contre l'autre, la
@@ -798,8 +798,8 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
                 continue;
             }
             let left = (ROOM + rank as f32 * (BADGE + BETWEEN)) * scale;
-            let pastille = Cadre::pose(left, ROOM * scale, BADGE * scale, BADGE * scale);
-            let rayon = ROUNDED * scale;
+            let dot = Rect::at(left, ROOM * scale, BADGE * scale, BADGE * scale);
+            let radius = ROUNDED * scale;
             // Sans ombre portée, et c'est le bord qui dit tout. Ces
             // pastilles flottent sur le bureau d'un autre ordinateur, qui
             // peut être de n'importe quelle couleur : une ombre y est
@@ -813,27 +813,19 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             // pastille d'un bureau noir, où l'anneau seul se fondrait. Un
             // seul des deux se voit à la fois, et c'est pour ça qu'il en
             // faut deux.
-            let cerne = if on {
-                SOMBRE.attention
-            } else {
-                SOMBRE.trait_fort
-            };
-            toile.remplis(pastille, rayon, SOMBRE.fond.voile(0.94));
-            toile.trace_dedans(pastille, rayon, RING * scale, cerne);
-            toile.trace_sur(
-                pastille.elargi(scale / 2.0),
-                rayon + scale / 2.0,
+            let ring = if on { DARK.warning } else { DARK.border_strong };
+            canvas.fill(dot, radius, DARK.background.faded(0.94));
+            canvas.stroke_inside(dot, radius, RING * scale, ring);
+            canvas.stroke_on(
+                dot.grown(scale / 2.0),
+                radius + scale / 2.0,
                 scale,
-                SOMBRE.texte.voile(0.16),
+                DARK.text.faded(0.16),
             );
-            let dessin = pastille.elargi(-INSET * scale);
+            let icon_area = dot.grown(-INSET * scale);
             if rank == 0 {
-                let couleur = if on {
-                    SOMBRE.attention
-                } else {
-                    SOMBRE.texte_faible
-                };
-                toile.icone(&crate::icones::LIEN, dessin, couleur);
+                let colour = if on { DARK.warning } else { DARK.text_faint };
+                canvas.icon(&crate::icons::LINK, icon_area, colour);
                 continue;
             }
             // La pastille de l'image porte les deux ordinateurs, celui
@@ -842,33 +834,33 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
             // celui qui coince est repassé par-dessus en clair : c'est
             // tout ce qu'il faut pour dire lequel des deux, et ça se lit
             // sans légende puisque c'est le dessin de la marque.
-            toile.icone(&crate::icones::ECRAN_HOTE, dessin, SOMBRE.texte_faible);
+            canvas.icon(&crate::icons::HOST_SCREEN, icon_area, DARK.text_faint);
             if lit & bit::FAR != 0 {
-                toile.icone(&crate::icones::ECRAN_LA_BAS, dessin, SOMBRE.attention);
+                canvas.icon(&crate::icons::SCREEN_OVER_THERE, icon_area, DARK.warning);
             }
             if lit & bit::HERE != 0 {
-                toile.icone(&crate::icones::ECRAN_ICI, dessin, SOMBRE.attention);
+                canvas.icon(&crate::icons::SCREEN_HERE, icon_area, DARK.warning);
             }
         }
         // La bulle après les pastilles, pour qu'elle passe par-dessus si
         // jamais les deux se touchaient.
         if lit & bit::OVER != 0 {
             let rank = usize::from(lit & bit::OVER_LINK == 0);
-            let mot = what_it_says(rank, &WHY.lock().expect("raisons des voyants"));
-            let plume = crate::paint::Plume::de(WORDS * scale);
-            let dedans = (BUBBLE - 2.0 * PADDING) * scale;
-            let bulle = Cadre::pose(
+            let text = what_it_says(rank, &WHY.lock().expect("raisons des voyants"));
+            let pen = crate::paint::Pen::of(WORDS * scale);
+            let inside = (BUBBLE - 2.0 * PADDING) * scale;
+            let bubble = Rect::at(
                 ROOM * scale,
                 (ROOM + BADGE + UNDER) * scale,
                 BUBBLE * scale,
-                toile.hauteur(&mot, plume, dedans) + 2.0 * PADDING * scale,
+                canvas.height_of(&text, pen, inside) + 2.0 * PADDING * scale,
             );
-            let rayon = CORNER * scale;
-            toile.remplis(bulle, rayon, SOMBRE.surface_1.voile(0.96));
-            toile.trace_dedans(bulle, rayon, scale, SOMBRE.trait_fort);
-            toile.ecris(&mot, plume, SOMBRE.texte, bulle.elargi(-PADDING * scale));
+            let radius = CORNER * scale;
+            canvas.fill(bubble, radius, DARK.surface_1.faded(0.96));
+            canvas.stroke_inside(bubble, radius, scale, DARK.border_strong);
+            canvas.draw_text(&text, pen, DARK.text, bubble.grown(-PADDING * scale));
         }
-        if !toile.finit() {
+        if !canvas.finish() {
             return;
         }
         let mut place = RECT {
@@ -882,7 +874,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         if unsafe { GetWindowRect(window, &mut place) } == 0 {
             return;
         }
-        toile.pose(window as isize, place.left, place.top);
+        canvas.lay_on(window as isize, place.left, place.top);
     });
 }
 
@@ -897,8 +889,8 @@ mod tests {
     use super::*;
 
     /// Une lecture d'une session qui va bien, à soixante images.
-    fn healthy() -> Mesures {
-        Mesures {
+    fn healthy() -> Measures {
+        Measures {
             fps: Some(60.0),
             decode_ms: Some(0.4),
             render_ms: Some(15.0),
@@ -913,7 +905,7 @@ mod tests {
 
     #[test]
     fn a_badge_under_the_hand_says_what_it_reads() {
-        let reads = read(&Mesures {
+        let reads = read(&Measures {
             since_frame_ms: Some(FROZEN_MS),
             ..healthy()
         });
@@ -949,12 +941,12 @@ mod tests {
     fn a_reading_that_says_nothing_lights_nothing_either() {
         // Une session qui vient de s'ouvrir : le moteur n'a pas encore
         // écrit une seconde. Rien n'est su, donc rien ne s'allume.
-        assert_eq!(read(&Mesures::default()), Reads::default());
+        assert_eq!(read(&Measures::default()), Reads::default());
     }
 
     #[test]
     fn a_picture_that_has_stopped_lights_the_link() {
-        let frozen = Mesures {
+        let frozen = Measures {
             since_frame_ms: Some(FROZEN_MS),
             ..healthy()
         };
@@ -965,13 +957,13 @@ mod tests {
 
     #[test]
     fn frames_lost_on_the_way_light_the_link_too() {
-        let lost = Mesures {
+        let lost = Measures {
             dropped_network_pct: Some(LOST_PCT),
             ..healthy()
         };
         assert!(read(&lost).link.is_some_and(|why| why.contains("perdent")));
 
-        let late = Mesures {
+        let late = Measures {
             dropped_jitter_pct: Some(TOO_LATE_PCT),
             ..healthy()
         };
@@ -986,7 +978,7 @@ mod tests {
     fn a_host_that_cannot_keep_up_lights_the_picture() {
         // Vingt-cinq millisecondes par image sur une session qui en sert
         // quarante : son encodage est ce qui donne le rythme.
-        let slow = Mesures {
+        let slow = Measures {
             fps: Some(40.0),
             host_ms: Some(25.0),
             ..healthy()
@@ -1001,7 +993,7 @@ mod tests {
 
     #[test]
     fn a_computer_that_cannot_decode_in_time_lights_it_as_well() {
-        let slow = Mesures {
+        let slow = Measures {
             fps: Some(30.0),
             decode_ms: Some(40.0),
             ..healthy()
@@ -1015,7 +1007,7 @@ mod tests {
     fn two_computers_that_both_struggle_light_both_screens() {
         // Une session trop grande pour les deux machines : la pastille
         // n'a pas à choisir laquelle nommer, elle les allume toutes deux.
-        let both = Mesures {
+        let both = Measures {
             fps: Some(24.0),
             host_ms: Some(45.0),
             decode_ms: Some(50.0),
@@ -1040,7 +1032,7 @@ mod tests {
     fn a_slow_session_that_asked_for_slow_is_not_a_fault() {
         // Trente images par seconde laissent trente-trois millisecondes
         // par image : un hôte à vingt n'est en retard sur rien.
-        let calm = Mesures {
+        let calm = Measures {
             fps: Some(30.0),
             host_ms: Some(20.0),
             decode_ms: Some(5.0),
@@ -1054,7 +1046,7 @@ mod tests {
         // Le temps de rendu comprend l'attente du rafraîchissement de
         // l'écran, donc il approche toujours le temps disponible :
         // compté, ce voyant serait allumé toute la session.
-        let ordinary = Mesures {
+        let ordinary = Measures {
             render_ms: Some(16.6),
             ..healthy()
         };
@@ -1062,12 +1054,12 @@ mod tests {
     }
 
     #[test]
-    fn a_voyant_stays_lit_for_a_moment_after_its_cause_has_gone() {
+    fn a_badge_stays_lit_for_a_moment_after_its_cause_has_gone() {
         // Sans ça il clignote : la cause tient sur une lecture, et il en
         // passe une douzaine par seconde.
         let start = Instant::now();
         let mut steady = Steady::default();
-        let wrong = read(&Mesures {
+        let wrong = read(&Measures {
             since_frame_ms: Some(900),
             ..healthy()
         });
@@ -1094,7 +1086,7 @@ mod tests {
     fn a_cause_that_comes_back_holds_it_on_from_there() {
         let start = Instant::now();
         let mut steady = Steady::default();
-        let wrong = read(&Mesures {
+        let wrong = read(&Measures {
             since_frame_ms: Some(900),
             ..healthy()
         });
@@ -1114,7 +1106,7 @@ mod tests {
     fn the_three_are_counted_apart() {
         let start = Instant::now();
         let mut steady = Steady::default();
-        let only_the_far_one = read(&Mesures {
+        let only_the_far_one = read(&Measures {
             fps: Some(40.0),
             host_ms: Some(25.0),
             ..healthy()

@@ -14,7 +14,7 @@
 //! l'autre.
 //!
 //! Les longueurs se comptent en **pixels de page** quand elles sont
-//! écrites ici, et en vrais pixels partout ailleurs : `echelle` fait le
+//! écrites ici, et en vrais pixels partout ailleurs : `scale` fait le
 //! passage, une fois, au moment de bâtir et à chaque changement d'écran.
 
 // Une fenêtre est une chose du système, et ce produit n'en ouvre que sous
@@ -41,11 +41,11 @@ fn note(what: &str) {
 /// Le plancher n'est pas une préférence : c'est la place qu'il faut pour
 /// que les cartes des ordinateurs tiennent en ligne et que le menu d'une
 /// session ait où s'ouvrir.
-const OUVERTE: (i32, i32) = (1060, 720);
-const JAMAIS_MOINS: (i32, i32) = (880, 600);
+const OPENS_AT: (i32, i32) = (1060, 720);
+const NEVER_SMALLER: (i32, i32) = (880, 600);
 
 /// La fenêtre, telle que le système la connaît.
-static ELLE: AtomicIsize = AtomicIsize::new(0);
+static HANDLE: AtomicIsize = AtomicIsize::new(0);
 /// Si elle prend l'écran entier.
 ///
 /// Retenu plutôt que relu sur la fenêtre, parce que les endroits qui le
@@ -55,13 +55,13 @@ static ELLE: AtomicIsize = AtomicIsize::new(0);
 /// arrondir ses coins avant qu'elle ait bougé. La seule porte d'entrée et
 /// de sortie du plein écran l'écrit, donc il est juste avant que l'une ou
 /// l'autre question soit posée.
-static TOUT_L_ECRAN: AtomicBool = AtomicBool::new(false);
+static FULL_SCREEN: AtomicBool = AtomicBool::new(false);
 
 /// Où elle était et de quoi elle avait l'air avant de prendre l'écran.
 ///
 /// Les deux ensemble : reprendre sa place sans reprendre son cadre la
 /// laisserait sans barre de titre au milieu du bureau.
-static AVANT: Mutex<Option<(isize, isize, [u8; PLACE])>> = Mutex::new(None);
+static BEFORE_FULL_SCREEN: Mutex<Option<(isize, isize, [u8; PLACE])>> = Mutex::new(None);
 
 /// La taille du bloc où le système écrit la place d'une fenêtre.
 ///
@@ -79,51 +79,51 @@ const PLACE: usize = 1;
 /// qui saurait à qui parler.
 static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 
-fn programme() -> Option<App> {
+fn program() -> Option<App> {
     PROGRAM.lock().expect("programme de la fenêtre").clone()
 }
 
 /// La fenêtre, ou zéro tant qu'elle n'est pas ouverte.
-pub fn sienne() -> isize {
-    ELLE.load(Ordering::Relaxed)
+pub fn handle() -> isize {
+    HANDLE.load(Ordering::Relaxed)
 }
 
 /// Le nom de sa classe, sous lequel un second ZyrDesk la retrouve.
-const CLASSE: &str = "ZyrDesk";
+const CLASS_NAME: &str = "ZyrDesk";
 
 /// Le message par lequel un second ZyrDesk demande à celui qui tourne de
 /// se montrer, plutôt que d'ouvrir une deuxième fenêtre.
 #[cfg(windows)]
-const MONTRE_TOI: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
+const SHOW_YOURSELF: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 
 /// Demande à la fenêtre du ZyrDesk qui tourne déjà de revenir.
 #[cfg(windows)]
-pub fn montre_celle_qui_tourne() {
+pub fn show_the_one_running() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, PostMessageW};
 
-    let classe: Vec<u16> = CLASSE.encode_utf16().chain(Some(0)).collect();
+    let class_name: Vec<u16> = CLASS_NAME.encode_utf16().chain(Some(0)).collect();
     // SAFETY: un nom qui survit à l'appel, et un message qui n'appartient
     // qu'à nous, posté à une fenêtre de notre propre classe.
     unsafe {
-        let deja = FindWindowW(classe.as_ptr(), std::ptr::null());
-        if !deja.is_null() {
-            PostMessageW(deja, MONTRE_TOI, 0, 0);
+        let already = FindWindowW(class_name.as_ptr(), std::ptr::null());
+        if !already.is_null() {
+            PostMessageW(already, SHOW_YOURSELF, 0, 0);
         }
     }
 }
 
 #[cfg(not(windows))]
-pub fn montre_celle_qui_tourne() {}
+pub fn show_the_one_running() {}
 
 /* ---- L'ouvrir ------------------------------------------------------- */
 
 /// Ouvre la fenêtre, cachée.
 ///
 /// Cachée : ce qui la remplit n'est pas encore dessiné, et une fenêtre
-/// montrée avant d'avoir été peinte se voit vide. C'est `montre` qui la
+/// montrée avant d'avoir été peinte se voit vide. C'est `show` qui la
 /// découvre, une fois l'accueil posé dedans.
 #[cfg(windows)]
-pub fn ouvre(app: &App) -> Result<(), String> {
+pub fn open(app: &App) -> Result<(), String> {
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::HiDpi::GetDpiForSystem;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -131,34 +131,37 @@ pub fn ouvre(app: &App) -> Result<(), String> {
         SM_CXSCREEN, SM_CYSCREEN, WNDCLASSW, WS_CLIPCHILDREN, WS_OVERLAPPEDWINDOW,
     };
 
-    if sienne() != 0 {
+    if handle() != 0 {
         return Ok(());
     }
     *PROGRAM.lock().expect("programme de la fenêtre") = Some(app.clone());
 
-    let classe = wide(CLASSE);
-    let titre = wide(CLASSE);
+    let class_name = wide(CLASS_NAME);
+    let title = wide(CLASS_NAME);
     // SAFETY: no argument beyond what is asked for.
     let dpi = unsafe { GetDpiForSystem() };
-    let (large, haute) = (pour(OUVERTE.0, dpi as i32), pour(OUVERTE.1, dpi as i32));
+    let (width, height) = (
+        scaled(OPENS_AT.0, dpi as i32),
+        scaled(OPENS_AT.1, dpi as i32),
+    );
     // Au milieu de l'écran principal : c'est là qu'une fenêtre s'ouvre la
     // première fois, et le système ne le fait pas tout seul.
     // SAFETY: no argument beyond the metric asked for.
-    let (ecran_large, ecran_haut) =
+    let (screen_width, screen_height) =
         unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
-    let (x, y) = if ecran_large > large && ecran_haut > haute {
-        ((ecran_large - large) / 2, (ecran_haut - haute) / 2)
+    let (x, y) = if screen_width > width && screen_height > height {
+        ((screen_width - width) / 2, (screen_height - height) / 2)
     } else {
         (CW_USEDEFAULT, CW_USEDEFAULT)
     };
 
     // SAFETY: une classe déclarée une fois et une fenêtre bâtie dessus,
     // sur le fil qui pompera ses messages.
-    let elle = unsafe {
+    let hwnd = unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = WNDCLASSW {
             style: 0,
-            lpfnWndProc: Some(repond),
+            lpfnWndProc: Some(answers),
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: instance,
@@ -170,53 +173,53 @@ pub fn ouvre(app: &App) -> Result<(), String> {
             // redimensionnement.
             hbrBackground: std::ptr::null_mut(),
             lpszMenuName: std::ptr::null(),
-            lpszClassName: classe.as_ptr(),
+            lpszClassName: class_name.as_ptr(),
         };
         RegisterClassW(&class);
         CreateWindowExW(
             0,
-            classe.as_ptr(),
-            titre.as_ptr(),
+            class_name.as_ptr(),
+            title.as_ptr(),
             // Rognée par ses filles : l'accueil et l'image d'une session
             // en sont, et sans ça le système peindrait dessous avant
             // qu'elles se peignent dessus.
             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             x,
             y,
-            large,
-            haute,
+            width,
+            height,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             instance,
             std::ptr::null(),
         )
     };
-    if elle.is_null() {
+    if hwnd.is_null() {
         return Err("la fenêtre de ZyrDesk n'a pas pu s'ouvrir".to_string());
     }
-    ELLE.store(elle as isize, Ordering::Relaxed);
+    HANDLE.store(hwnd as isize, Ordering::Relaxed);
     note(&format!(
-        "fenêtre ouverte par ZyrDesk, {large}x{haute} px à {} %",
+        "fenêtre ouverte par ZyrDesk, {width}x{height} px à {} %",
         dpi * 100 / 96
     ));
     Ok(())
 }
 
 #[cfg(not(windows))]
-pub fn ouvre(_app: &App) -> Result<(), String> {
+pub fn open(_app: &App) -> Result<(), String> {
     Err("ZyrDesk n'ouvre de fenêtre que sous Windows".to_string())
 }
 
 /// Une longueur de page en vrais pixels, sur un écran de cet
 /// agrandissement.
-fn pour(page: i32, dpi: i32) -> i32 {
+fn scaled(page: i32, dpi: i32) -> i32 {
     page * dpi / 96
 }
 
 /// Un mot dans les caractères que Windows compte, fini par le zéro qu'il
 /// cherche.
-fn wide(mot: &str) -> Vec<u16> {
-    mot.encode_utf16().chain(Some(0)).collect()
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(Some(0)).collect()
 }
 
 /* ---- Ce que la fenêtre répond --------------------------------------- */
@@ -224,7 +227,7 @@ fn wide(mot: &str) -> Vec<u16> {
 /// SAFETY: appelée par le système sur le fil qui a fait cette fenêtre,
 /// avec les arguments qu'il documente.
 #[cfg(windows)]
-unsafe extern "system" fn repond(
+unsafe extern "system" fn answers(
     window: windows_sys::Win32::Foundation::HWND,
     message: u32,
     holding: windows_sys::Win32::Foundation::WPARAM,
@@ -252,7 +255,7 @@ unsafe extern "system" fn repond(
         // fenêtre, l'icône près de l'horloge le dit, et « Quitter » là-bas
         // est la seule chose qui arrête le produit.
         WM_CLOSE => {
-            if let Some(app) = programme() {
+            if let Some(app) = program() {
                 if crate::floating::a_session_is_up(&app) || crate::session::opening() {
                     // Pendant qu'une session ne fait que s'ouvrir il n'y a
                     // parfois rien à terminer ; la demande n'atteint alors
@@ -261,7 +264,7 @@ unsafe extern "system" fn repond(
                     // session arrivait en rectangle nu sur le bureau.
                     crate::session::end_it(&app);
                 } else {
-                    cache();
+                    hide();
                 }
             }
             0
@@ -271,20 +274,20 @@ unsafe extern "system" fn repond(
         // plus tard, et un dedans en retard sur son cadre se voit pendant
         // tout un redimensionnement.
         WM_SIZE => {
-            dit_si_elle_descend_ou_remonte(holding);
-            let (large, haute) = ((with & 0xFFFF) as i32, ((with >> 16) & 0xFFFF) as i32);
-            let dedans = crate::accueil::sa_toile();
-            if dedans != 0 {
+            say_whether_it_goes_down_or_up(holding);
+            let (width, height) = ((with & 0xFFFF) as i32, ((with >> 16) & 0xFFFF) as i32);
+            let inside = crate::home::its_canvas();
+            if inside != 0 {
                 // SAFETY: une fenêtre à nous, posée sur le dedans de
                 // celle qui vient de changer de taille.
                 unsafe {
                     SetWindowPos(
-                        dedans as windows_sys::Win32::Foundation::HWND,
+                        inside as windows_sys::Win32::Foundation::HWND,
                         std::ptr::null_mut(),
                         0,
                         0,
-                        large,
-                        haute,
+                        width,
+                        height,
                         SWP_NOACTIVATE | SWP_NOZORDER,
                     )
                 };
@@ -292,9 +295,9 @@ unsafe extern "system" fn repond(
             // Remise au tour suivant et non faite ici : la tenir à sa
             // forme la redimensionne, ce qui ferait revenir ce
             // message-ci pendant qu'on y répond.
-            if let Some(app) = programme() {
-                let sien = app.clone();
-                let _ = app.run_on_main_thread(move || crate::picture::hold_the_shape(&sien));
+            if let Some(app) = program() {
+                let held = app.clone();
+                let _ = app.run_on_main_thread(move || crate::picture::hold_the_shape(&held));
             }
             0
         }
@@ -305,9 +308,9 @@ unsafe extern "system" fn repond(
             // de l'appel, dont on n'écrit qu'un champ.
             unsafe {
                 let dpi = GetDpiForWindow(window).max(96) as i32;
-                let bloc = with as *mut MINMAXINFO;
-                (*bloc).ptMinTrackSize.x = pour(JAMAIS_MOINS.0, dpi);
-                (*bloc).ptMinTrackSize.y = pour(JAMAIS_MOINS.1, dpi);
+                let info = with as *mut MINMAXINFO;
+                (*info).ptMinTrackSize.x = scaled(NEVER_SMALLER.0, dpi);
+                (*info).ptMinTrackSize.y = scaled(NEVER_SMALLER.1, dpi);
             }
             0
         }
@@ -318,22 +321,22 @@ unsafe extern "system" fn repond(
         WM_DPICHANGED => {
             // SAFETY: le système passe ici un rectangle à lui, vivant le
             // temps de l'appel.
-            let veut = unsafe { *(with as *const RECT) };
+            let wanted = unsafe { *(with as *const RECT) };
             // SAFETY: une fenêtre à nous, posée où le système la veut.
             unsafe {
                 SetWindowPos(
                     window,
                     std::ptr::null_mut(),
-                    veut.left,
-                    veut.top,
-                    veut.right - veut.left,
-                    veut.bottom - veut.top,
+                    wanted.left,
+                    wanted.top,
+                    wanted.right - wanted.left,
+                    wanted.bottom - wanted.top,
                     SWP_NOACTIVATE | SWP_NOZORDER,
                 )
             };
             crate::icon::on_the_window();
-            if let Some(app) = programme() {
-                crate::accueil::mesure_l_ecran(&app);
+            if let Some(app) = program() {
+                crate::home::measure_the_screen(&app);
             }
             0
         }
@@ -343,18 +346,18 @@ unsafe extern "system" fn repond(
         // l'image, et le lui reprendre en revenant sur la fenêtre serait
         // le retirer à l'ordinateur d'en face.
         WM_SETFOCUS => {
-            let dedans = crate::accueil::sa_toile();
-            if dedans != 0 && crate::picture::the_engines_window().is_none() {
+            let inside = crate::home::its_canvas();
+            if inside != 0 && crate::picture::the_engines_window().is_none() {
                 // SAFETY: une fenêtre à nous, sur le fil qui la possède.
-                unsafe { SetFocus(dedans as windows_sys::Win32::Foundation::HWND) };
+                unsafe { SetFocus(inside as windows_sys::Win32::Foundation::HWND) };
             }
             0
         }
         _ => {
             // Un second ZyrDesk vient d'être lancé : celui qui tourne se
             // montre, et l'autre s'arrête sans rien ouvrir.
-            if message == MONTRE_TOI {
-                montre();
+            if message == SHOW_YOURSELF {
+                show();
                 return 0;
             }
             // SAFETY: la réponse du système à tout ce qui n'est pas
@@ -366,7 +369,7 @@ unsafe extern "system" fn repond(
 
 /// Où la fenêtre en était la dernière fois qu'on l'a dit.
 #[cfg(windows)]
-static RANGEE: AtomicBool = AtomicBool::new(false);
+static MINIMIZED: AtomicBool = AtomicBool::new(false);
 
 /// Dit quand la fenêtre descend dans la barre des tâches et quand elle en
 /// remonte, avec ce qui tient le premier plan à cet instant.
@@ -379,16 +382,16 @@ static RANGEE: AtomicBool = AtomicBool::new(false);
 /// répond à lui seul du cas où le système ne redemande rien parce qu'il
 /// nous croit déjà devant.
 #[cfg(windows)]
-fn dit_si_elle_descend_ou_remonte(quoi: usize) {
+fn say_whether_it_goes_down_or_up(what: usize) {
     use windows_sys::Win32::UI::WindowsAndMessaging::SIZE_MINIMIZED;
 
-    let rangee = quoi as u32 == SIZE_MINIMIZED;
-    if RANGEE.swap(rangee, Ordering::Relaxed) == rangee {
+    let minimized = what as u32 == SIZE_MINIMIZED;
+    if MINIMIZED.swap(minimized, Ordering::Relaxed) == minimized {
         return;
     }
     note(&format!(
         "fenêtre {} ; le premier plan est {}",
-        if rangee {
+        if minimized {
             "rangée dans la barre des tâches"
         } else {
             "ressortie de la barre des tâches"
@@ -401,46 +404,46 @@ fn dit_si_elle_descend_ou_remonte(quoi: usize) {
 
 /// La ramène, où qu'elle ait été laissée.
 #[cfg(windows)]
-pub fn montre() {
+pub fn show() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         IsIconic, SW_RESTORE, SW_SHOW, SetForegroundWindow, ShowWindow,
     };
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-    if elle.is_null() {
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+    if hwnd.is_null() {
         return;
     }
     // SAFETY: une fenêtre à nous.
     unsafe {
         ShowWindow(
-            elle,
-            if IsIconic(elle) != 0 {
+            hwnd,
+            if IsIconic(hwnd) != 0 {
                 SW_RESTORE
             } else {
                 SW_SHOW
             },
         );
-        SetForegroundWindow(elle);
+        SetForegroundWindow(hwnd);
     }
 }
 
 #[cfg(not(windows))]
-pub fn montre() {}
+pub fn show() {}
 
 /// La range sans rien arrêter.
 #[cfg(windows)]
-pub fn cache() {
+pub fn hide() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-    if !elle.is_null() {
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+    if !hwnd.is_null() {
         // SAFETY: une fenêtre à nous.
-        unsafe { ShowWindow(elle, SW_HIDE) };
+        unsafe { ShowWindow(hwnd, SW_HIDE) };
     }
 }
 
 #[cfg(not(windows))]
-pub fn cache() {}
+pub fn hide() {}
 
 /// Si elle est à l'écran : montrée, et pas rangée dans la barre des
 /// tâches.
@@ -450,16 +453,16 @@ pub fn cache() {}
 /// dessus serait alors la seule chose à l'écran, accroché dans un coin
 /// par-dessus le travail de quelqu'un d'autre.
 #[cfg(windows)]
-pub fn a_l_ecran() -> bool {
+pub fn on_screen() -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
     // SAFETY: un numéro de fenêtre, que les appels sont faits pour peser.
-    !elle.is_null() && unsafe { IsWindowVisible(elle) != 0 && IsIconic(elle) == 0 }
+    !hwnd.is_null() && unsafe { IsWindowVisible(hwnd) != 0 && IsIconic(hwnd) == 0 }
 }
 
 #[cfg(not(windows))]
-pub fn a_l_ecran() -> bool {
+pub fn on_screen() -> bool {
     false
 }
 
@@ -467,30 +470,30 @@ pub fn a_l_ecran() -> bool {
 
 /// De combien un pixel de page compte sur l'écran où elle est.
 #[cfg(windows)]
-pub fn echelle() -> f32 {
+pub fn scale() -> f32 {
     use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-    if elle.is_null() {
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+    if hwnd.is_null() {
         return 1.0;
     }
     // SAFETY: une fenêtre à nous, dont on ne lit qu'une mesure.
-    let dpi = unsafe { GetDpiForWindow(elle) };
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
     if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 }
 }
 
 #[cfg(not(windows))]
-pub fn echelle() -> f32 {
+pub fn scale() -> f32 {
     1.0
 }
 
 /// Ce que son dedans mesure, en vrais pixels.
 #[cfg(windows)]
-pub fn dedans() -> (u32, u32) {
+pub fn inside() -> (u32, u32) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetClientRect;
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
     let mut place = RECT {
         left: 0,
         top: 0,
@@ -498,20 +501,20 @@ pub fn dedans() -> (u32, u32) {
         bottom: 0,
     };
     // SAFETY: une fenêtre à nous, dont le rectangle est lu dans le nôtre.
-    if elle.is_null() || unsafe { GetClientRect(elle, &mut place) } == 0 {
+    if hwnd.is_null() || unsafe { GetClientRect(hwnd, &mut place) } == 0 {
         return (0, 0);
     }
     (place.right.max(0) as u32, place.bottom.max(0) as u32)
 }
 
 #[cfg(not(windows))]
-pub fn dedans() -> (u32, u32) {
+pub fn inside() -> (u32, u32) {
     (0, 0)
 }
 
 /// Donne à son dedans cette taille-là, le cadre venant en plus.
 #[cfg(windows)]
-pub fn pose_le_dedans(large: u32, haute: u32) {
+pub fn set_the_inside(width: u32, height: u32) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForWindow};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -519,54 +522,54 @@ pub fn pose_le_dedans(large: u32, haute: u32) {
         SetWindowPos,
     };
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-    if elle.is_null() {
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+    if hwnd.is_null() {
         return;
     }
-    let mut veut = RECT {
+    let mut wanted = RECT {
         left: 0,
         top: 0,
-        right: large as i32,
-        bottom: haute as i32,
+        right: width as i32,
+        bottom: height as i32,
     };
     // SAFETY: une fenêtre à nous, dont on lit les deux styles pour que le
     // système compte le cadre qu'ils demandent autour du dedans voulu.
     unsafe {
-        let style = GetWindowLongPtrW(elle, GWL_STYLE) as u32;
-        let autres = GetWindowLongPtrW(elle, GWL_EXSTYLE) as u32;
-        let dpi = GetDpiForWindow(elle).max(96);
-        AdjustWindowRectExForDpi(&mut veut, style, 0, autres, dpi);
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+        let others = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        let dpi = GetDpiForWindow(hwnd).max(96);
+        AdjustWindowRectExForDpi(&mut wanted, style, 0, others, dpi);
         SetWindowPos(
-            elle,
+            hwnd,
             std::ptr::null_mut(),
             0,
             0,
-            veut.right - veut.left,
-            veut.bottom - veut.top,
+            wanted.right - wanted.left,
+            wanted.bottom - wanted.top,
             SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
         );
     }
 }
 
 #[cfg(not(windows))]
-pub fn pose_le_dedans(_large: u32, _haute: u32) {}
+pub fn set_the_inside(_large: u32, _height: u32) {}
 
 /* ---- L'agrandir, lui donner l'écran --------------------------------- */
 
 /// L'agrandit à ce que le bureau laisse.
 #[cfg(windows)]
-pub fn agrandis() {
+pub fn maximize() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_MAXIMIZE, ShowWindow};
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-    if !elle.is_null() {
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+    if !hwnd.is_null() {
         // SAFETY: une fenêtre à nous.
-        unsafe { ShowWindow(elle, SW_MAXIMIZE) };
+        unsafe { ShowWindow(hwnd, SW_MAXIMIZE) };
     }
 }
 
 #[cfg(not(windows))]
-pub fn agrandis() {}
+pub fn maximize() {}
 
 /// La rend à la taille qu'elle avait avant d'être agrandie.
 ///
@@ -587,16 +590,16 @@ pub fn agrandis() {}
 /// geste où l'animation du système est voulue, et où tout un pan de
 /// picture.rs compte dessus.
 #[cfg(windows)]
-fn rends_sa_taille() {
+fn restore_its_size() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_RESTORE, ShowWindow};
 
     // Agrandie veut déjà dire qu'elle existe.
-    if est_agrandie() {
-        let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-        joue_les_changements(elle, false);
+    if is_maximized() {
+        let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+        play_the_transitions(hwnd, false);
         // SAFETY: une fenêtre à nous.
-        unsafe { ShowWindow(elle, SW_RESTORE) };
-        joue_les_changements(elle, true);
+        unsafe { ShowWindow(hwnd, SW_RESTORE) };
+        play_the_transitions(hwnd, true);
     }
 }
 
@@ -606,41 +609,41 @@ fn rends_sa_taille() {
 /// Un refus est la réponse d'un Windows qui n'a pas ce réglage, et ne
 /// coûte que l'animation qu'on voulait éviter.
 #[cfg(windows)]
-fn joue_les_changements(elle: windows_sys::Win32::Foundation::HWND, oui: bool) {
+fn play_the_transitions(hwnd: windows_sys::Win32::Foundation::HWND, yes: bool) {
     use windows_sys::Win32::Graphics::Dwm::{
         DWMWA_TRANSITIONS_FORCEDISABLED, DwmSetWindowAttribute,
     };
 
-    let coupe: i32 = i32::from(!oui);
+    let disabled: i32 = i32::from(!yes);
     // SAFETY: une fenêtre à nous, et quatre octets à nous dont la taille
     // est dite.
     unsafe {
         DwmSetWindowAttribute(
-            elle,
+            hwnd,
             DWMWA_TRANSITIONS_FORCEDISABLED as u32,
-            (&raw const coupe).cast(),
+            (&raw const disabled).cast(),
             std::mem::size_of::<i32>() as u32,
         )
     };
 }
 
 #[cfg(windows)]
-pub fn est_agrandie() -> bool {
+pub fn is_maximized() -> bool {
     use windows_sys::Win32::UI::WindowsAndMessaging::IsZoomed;
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
     // SAFETY: un numéro de fenêtre, que l'appel est fait pour peser.
-    !elle.is_null() && unsafe { IsZoomed(elle) != 0 }
+    !hwnd.is_null() && unsafe { IsZoomed(hwnd) != 0 }
 }
 
 #[cfg(not(windows))]
-pub fn est_agrandie() -> bool {
+pub fn is_maximized() -> bool {
     false
 }
 
 /// Si elle prend l'écran entier.
-pub fn tient_l_ecran() -> bool {
-    TOUT_L_ECRAN.load(Ordering::Relaxed)
+pub fn holds_the_screen() -> bool {
+    FULL_SCREEN.load(Ordering::Relaxed)
 }
 
 /// Lui donne l'écran entier, ou le lui reprend.
@@ -649,7 +652,7 @@ pub fn tient_l_ecran() -> bool {
 /// une fenêtre qui retrouve sa place sans retrouver sa barre de titre est
 /// une fenêtre qu'on ne peut plus attraper.
 #[cfg(windows)]
-pub fn prend_l_ecran(tout: bool) {
+pub fn take_the_screen(whole: bool) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
@@ -661,37 +664,37 @@ pub fn prend_l_ecran(tout: bool) {
         WS_THICKFRAME,
     };
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-    if elle.is_null() || TOUT_L_ECRAN.swap(tout, Ordering::Relaxed) == tout {
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+    if hwnd.is_null() || FULL_SCREEN.swap(whole, Ordering::Relaxed) == whole {
         return;
     }
-    let mut avant = AVANT.lock().expect("place de la fenêtre");
-    if tout {
+    let mut before = BEFORE_FULL_SCREEN.lock().expect("place de la fenêtre");
+    if whole {
         let mut place: WINDOWPLACEMENT = unsafe { std::mem::zeroed() };
         place.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
         let mut about: MONITORINFO = unsafe { std::mem::zeroed() };
         about.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
         // SAFETY: une fenêtre à nous, et deux blocs à nous dont la taille
         // est écrite dedans comme les appels le demandent.
-        let (style, autres, lu) = unsafe {
+        let (style, others, read) = unsafe {
             (
-                GetWindowLongPtrW(elle, GWL_STYLE),
-                GetWindowLongPtrW(elle, GWL_EXSTYLE),
-                GetWindowPlacement(elle, &mut place) != 0
+                GetWindowLongPtrW(hwnd, GWL_STYLE),
+                GetWindowLongPtrW(hwnd, GWL_EXSTYLE),
+                GetWindowPlacement(hwnd, &mut place) != 0
                     && GetMonitorInfoW(
-                        MonitorFromWindow(elle, MONITOR_DEFAULTTONEAREST),
+                        MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST),
                         &mut about,
                     ) != 0,
             )
         };
-        if !lu {
-            TOUT_L_ECRAN.store(false, Ordering::Relaxed);
+        if !read {
+            FULL_SCREEN.store(false, Ordering::Relaxed);
             return;
         }
         // SAFETY: la structure du système, recopiée telle quelle pour être
         // rendue telle quelle : ce fichier n'en lit rien.
-        let garde: [u8; PLACE] = unsafe { std::mem::transmute(place) };
-        *avant = Some((style, autres, garde));
+        let kept: [u8; PLACE] = unsafe { std::mem::transmute(place) };
+        *before = Some((style, others, kept));
 
         // Une fenêtre agrandie l'est encore une fois son cadre retiré, et
         // le système la tient à la place qu'il lui a donnée : elle y
@@ -703,49 +706,49 @@ pub fn prend_l_ecran(tout: bool) {
         // hauteur de la barre des tâches. Elle est donc rendue à sa
         // taille avant de prendre l'écran ; l'agrandi est déjà dans le
         // relevé qui la lui rendra tout à l'heure.
-        rends_sa_taille();
+        restore_its_size();
 
         // Relu après ça, et non repris de plus haut : l'agrandi se lit
         // dans le style lui-même, et réécrire celui d'avant redirait au
         // système qu'elle est agrandie alors qu'elle ne l'est plus.
         // SAFETY: une fenêtre à nous, dont on relit le style.
-        let style_rendu = unsafe { GetWindowLongPtrW(elle, GWL_STYLE) };
+        let current_style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
 
-        let sans_cadre = style_rendu & !((WS_CAPTION | WS_THICKFRAME) as isize);
-        let sans_bord = autres
+        let without_frame = current_style & !((WS_CAPTION | WS_THICKFRAME) as isize);
+        let without_border = others
             & !((WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE)
                 as isize);
-        let ou: RECT = about.rcMonitor;
+        let area: RECT = about.rcMonitor;
         // SAFETY: une fenêtre à nous, à qui l'on donne son cadre et sa
         // place, en demandant que le cadre soit recompté.
         unsafe {
-            SetWindowLongPtrW(elle, GWL_STYLE, sans_cadre);
-            SetWindowLongPtrW(elle, GWL_EXSTYLE, sans_bord);
+            SetWindowLongPtrW(hwnd, GWL_STYLE, without_frame);
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, without_border);
             SetWindowPos(
-                elle,
+                hwnd,
                 HWND_TOP,
-                ou.left,
-                ou.top,
-                ou.right - ou.left,
-                ou.bottom - ou.top,
+                area.left,
+                area.top,
+                area.right - area.left,
+                area.bottom - area.top,
                 SWP_FRAMECHANGED | SWP_NOACTIVATE,
             );
         }
         return;
     }
 
-    let Some((style, autres, garde)) = avant.take() else {
+    let Some((style, others, kept)) = before.take() else {
         return;
     };
     // SAFETY: la structure du système, rendue telle qu'elle a été prise.
-    let place: WINDOWPLACEMENT = unsafe { std::mem::transmute(garde) };
+    let place: WINDOWPLACEMENT = unsafe { std::mem::transmute(kept) };
     // SAFETY: une fenêtre à nous, à qui l'on rend son cadre puis sa place.
     unsafe {
-        SetWindowLongPtrW(elle, GWL_STYLE, style);
-        SetWindowLongPtrW(elle, GWL_EXSTYLE, autres);
-        SetWindowPlacement(elle, &place);
+        SetWindowLongPtrW(hwnd, GWL_STYLE, style);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, others);
+        SetWindowPlacement(hwnd, &place);
         SetWindowPos(
-            elle,
+            hwnd,
             std::ptr::null_mut(),
             0,
             0,
@@ -761,7 +764,7 @@ pub fn prend_l_ecran(tout: bool) {
 }
 
 #[cfg(not(windows))]
-pub fn prend_l_ecran(_tout: bool) {}
+pub fn take_the_screen(_whole: bool) {}
 
 /* ---- Son cadre ------------------------------------------------------ */
 
@@ -771,26 +774,26 @@ pub fn prend_l_ecran(_tout: bool) {}
 /// la fenêtre que ce programme ne dessine pas, et sans ça une interface
 /// claire garderait une barre de titre sombre.
 #[cfg(windows)]
-pub fn habille(clair: bool) {
+pub fn dress_the_frame(light: bool) {
     use windows_sys::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
 
-    let elle = sienne() as windows_sys::Win32::Foundation::HWND;
-    if elle.is_null() {
+    let hwnd = handle() as windows_sys::Win32::Foundation::HWND;
+    if hwnd.is_null() {
         return;
     }
-    let sombre: i32 = i32::from(!clair);
+    let dark: i32 = i32::from(!light);
     // SAFETY: une fenêtre à nous, et quatre octets à nous dont la taille
     // est dite. Un refus est la réponse d'un Windows trop ancien pour
     // cette barre-là, et n'empêche rien d'autre.
     unsafe {
         DwmSetWindowAttribute(
-            elle,
+            hwnd,
             DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
-            (&raw const sombre).cast(),
+            (&raw const dark).cast(),
             std::mem::size_of::<i32>() as u32,
         )
     };
 }
 
 #[cfg(not(windows))]
-pub fn habille(_clair: bool) {}
+pub fn dress_the_frame(_light: bool) {}

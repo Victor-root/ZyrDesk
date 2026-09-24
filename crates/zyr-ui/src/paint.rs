@@ -8,8 +8,8 @@
 //!
 //! Une fenêtre ordinaire, elle, est encadrée par le système et opaque :
 //! la toile s'y verse quand le système demande de repeindre. Les deux
-//! dessinent de la même façon et n'en diffèrent qu'à la toute fin, `pose`
-//! d'un côté et `verse` de l'autre.
+//! dessinent de la même façon et n'en diffèrent qu'à la toute fin, `shifted`
+//! d'un côté et `copy_to` de l'autre.
 //!
 //! **Direct2D et DirectWrite**, fournis par Windows : rien n'est
 //! embarqué, et le texte est rendu par le moteur qui rend celui du
@@ -25,7 +25,7 @@
 //!
 //! Les longueurs se comptent ici en **vrais pixels**, comme partout du
 //! côté Rust. Ce que le système de design écrit est en pixels de page :
-//! `echelle` fait le passage, une fois, à l'entrée.
+//! `scale` fait le passage, une fois, à l'entrée.
 //!
 //! C'est une couche complète et non ce dont le premier écran a besoin :
 //! le logo n'en emploie que le remplissage et le contour, le menu y
@@ -66,7 +66,7 @@ use windows::Win32::UI::WindowsAndMessaging::{ULW_ALPHA, UpdateLayeredWindow};
 use windows::core::{HSTRING, Interface};
 use windows_numerics::{Matrix3x2, Vector2};
 
-use crate::design::{Couleur, Ombre};
+use crate::design::{Colour, Shadow};
 
 /// Ce sous quoi ce module classe ses lignes du journal.
 const TAG: &str = "paint";
@@ -83,18 +83,18 @@ fn note(what: &str) {
 /// familles pour un produit, ce sont deux produits. Windows 11 a la
 /// première, Windows 10 la seconde, et DirectWrite descend la liste tout
 /// seul.
-const FAMILLE: &str = "Segoe UI Variable Text";
-const FAMILLE_AVANT: &str = "Segoe UI";
+const FAMILY: &str = "Segoe UI Variable Text";
+const FAMILY_BEFORE: &str = "Segoe UI";
 
 /// La famille à chasse fixe, et celle d'avant, dans le même ordre et pour
 /// la même raison : ce que la feuille de style demande partout où des
 /// signes doivent s'aligner les uns sous les autres.
-const FIXE: &str = "Cascadia Mono";
-const FIXE_AVANT: &str = "Consolas";
+const MONO: &str = "Cascadia Mono";
+const MONO_BEFORE: &str = "Consolas";
 
 /// Un morceau d'icône, écrit dans les mêmes mots que le dessin dont il
 /// vient.
-pub enum Trait {
+pub enum Stroke {
     /// Un « d » de chemin SVG, repris tel quel.
     ///
     /// Repris et non traduit : une icône transcrite à la main est une
@@ -102,9 +102,9 @@ pub enum Trait {
     /// écrites une fois. Ce qui est compris ici est ce dont elles se
     /// servent : aller à, tracer jusqu'à, horizontalement, verticalement,
     /// une courbe, un arc, et refermer.
-    Chemin(&'static str),
+    SvgPath(&'static str),
     /// Un rectangle arrondi : x, y, largeur, hauteur, rayon.
-    Rond(f32, f32, f32, f32, f32),
+    RoundRect(f32, f32, f32, f32, f32),
 }
 
 /// Une icône : ses traits, le repère dans lequel ils sont écrits, et
@@ -113,31 +113,31 @@ pub enum Trait {
 /// Elle porte son repère avec elle, comme le fait un dessin vectoriel :
 /// c'est ce qui permet de la poser dans n'importe quel cadre sans que
 /// personne ait à savoir en quelles unités elle a été dessinée.
-pub struct Icone {
-    pub repere: f32,
-    pub epaisseur: f32,
-    pub traits: &'static [Trait],
+pub struct Icon {
+    pub grid: f32,
+    pub thickness: f32,
+    pub strokes: &'static [Stroke],
 }
 
 /// Où un mot se cale dans le cadre qu'on lui donne.
 #[derive(Clone, Copy, PartialEq)]
-pub enum Cale {
-    Gauche,
+pub enum Align {
+    Left,
     Centre,
-    Droite,
+    Right,
 }
 
 /// Ce qu'un mot fait quand il ne tient pas dans son cadre.
 #[derive(Clone, Copy, PartialEq)]
-pub enum Trop {
+pub enum Overflow {
     /// Il passe à la ligne, comme un paragraphe.
-    ALaLigne,
+    Wrap,
     /// Il s'arrête sur des points de suspension, comme un nom d'ordinateur
     /// plus long que sa carte.
-    Coupe,
+    Ellipsis,
     /// Il continue, et c'est au cadre de le retenir : une ligne de journal
     /// ne se replie pas, elle défile.
-    Depasse,
+    Visible,
 }
 
 /// Comment un mot s'écrit.
@@ -148,69 +148,69 @@ pub enum Trop {
 /// emploient. Une plume est donc à la fois ce qu'on demande et la clé de
 /// ce qui a déjà été fabriqué.
 #[derive(Clone, Copy, PartialEq)]
-pub struct Plume {
-    pub taille: f32,
-    pub gras: bool,
-    pub cale: Cale,
+pub struct Pen {
+    pub size: f32,
+    pub bold: bool,
+    pub align: Align,
     /// À chasse fixe : ce que la feuille de style demande pour une
     /// empreinte, un journal, un code et une combinaison de touches, où
     /// chaque signe doit tenir la place de son voisin.
-    pub fixe: bool,
-    pub trop: Trop,
+    pub mono: bool,
+    pub overflow: Overflow,
     /// Ce qu'on ajoute entre deux signes, en vrais pixels.
     ///
     /// Ce que la feuille de style appelle `letter-spacing` : une étiquette
     /// de section en capitales et un code d'appairage se lisent mal
     /// resserrés, et c'est le seul endroit où l'espace entre les lettres
     /// est un choix du dessin.
-    pub espace: f32,
+    pub spacing: f32,
 }
 
-impl Plume {
+impl Pen {
     /// Un mot ordinaire de cette taille, calé à gauche, qui passe à la
     /// ligne quand il ne tient pas.
-    pub const fn de(taille: f32) -> Self {
-        Plume {
-            taille,
-            gras: false,
-            cale: Cale::Gauche,
-            fixe: false,
-            trop: Trop::ALaLigne,
-            espace: 0.0,
+    pub const fn of(size: f32) -> Self {
+        Pen {
+            size,
+            bold: false,
+            align: Align::Left,
+            mono: false,
+            overflow: Overflow::Wrap,
+            spacing: 0.0,
         }
     }
 
     /// La même, les signes écartés d'autant de fois leur taille : c'est
     /// en `em` que la feuille de style l'écrit.
-    pub fn ecartee(self, part: f32) -> Self {
-        Plume {
-            espace: self.taille * part,
+    pub fn spaced(self, part: f32) -> Self {
+        Pen {
+            spacing: self.size * part,
             ..self
         }
     }
 
-    pub const fn en_gras(self) -> Self {
-        Plume { gras: true, ..self }
+    pub const fn in_bold(self) -> Self {
+        Pen { bold: true, ..self }
     }
 
-    pub const fn a(self, cale: Cale) -> Self {
-        Plume { cale, ..self }
+    pub const fn aligned(self, align: Align) -> Self {
+        Pen { align, ..self }
     }
 
-    pub const fn a_chasse_fixe(self) -> Self {
-        Plume { fixe: true, ..self }
+    pub const fn monospaced(self) -> Self {
+        Pen { mono: true, ..self }
     }
 
-    pub const fn coupee(self) -> Self {
-        Plume {
-            trop: Trop::Coupe,
+    pub const fn ellipsized(self) -> Self {
+        Pen {
+            overflow: Overflow::Ellipsis,
             ..self
         }
     }
 
-    pub const fn qui_depasse(self) -> Self {
-        Plume {
-            trop: Trop::Depasse,
+    pub const fn overflowing(self) -> Self {
+        Pen {
+            overflow: Overflow::Visible,
             ..self
         }
     }
@@ -224,73 +224,73 @@ impl Plume {
 /// oubli : il se pose sur la mise en page d'un mot et non sur la police,
 /// donc deux plumes qui ne diffèrent que par lui partagent la même.
 #[derive(Clone, Copy, PartialEq)]
-struct Clef {
-    taille: u32,
-    gras: bool,
-    cale: Cale,
-    fixe: bool,
-    trop: Trop,
+struct Key {
+    size: u32,
+    bold: bool,
+    align: Align,
+    mono: bool,
+    overflow: Overflow,
 }
 
-impl Clef {
-    fn de(plume: Plume) -> Self {
-        Clef {
-            taille: (plume.taille * 1000.0).round() as u32,
-            gras: plume.gras,
-            cale: plume.cale,
-            fixe: plume.fixe,
-            trop: plume.trop,
+impl Key {
+    fn of(pen: Pen) -> Self {
+        Key {
+            size: (pen.size * 1000.0).round() as u32,
+            bold: pen.bold,
+            align: pen.align,
+            mono: pen.mono,
+            overflow: pen.overflow,
         }
     }
 }
 
 /// Un rectangle en vrais pixels, tel que tout ce fichier le compte.
 #[derive(Clone, Copy)]
-pub struct Cadre {
-    pub gauche: f32,
-    pub haut: f32,
-    pub droite: f32,
-    pub bas: f32,
+pub struct Rect {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
 }
 
-impl Cadre {
+impl Rect {
     /// Le rectangle de coin haut gauche donné, de cette largeur et de
     /// cette hauteur.
-    pub fn pose(gauche: f32, haut: f32, large: f32, haute: f32) -> Self {
-        Cadre {
-            gauche,
-            haut,
-            droite: gauche + large,
-            bas: haut + haute,
+    pub fn at(left: f32, top: f32, width: f32, height: f32) -> Self {
+        Rect {
+            left,
+            top,
+            right: left + width,
+            bottom: top + height,
         }
     }
 
     /// Le même, écarté de tous les côtés. Un écart négatif le resserre.
-    pub fn elargi(&self, de: f32) -> Self {
-        Cadre {
-            gauche: self.gauche - de,
-            haut: self.haut - de,
-            droite: self.droite + de,
-            bas: self.bas + de,
+    pub fn grown(&self, by: f32) -> Self {
+        Rect {
+            left: self.left - by,
+            top: self.top - by,
+            right: self.right + by,
+            bottom: self.bottom + by,
         }
     }
 
     /// Le même, décalé.
-    pub fn decale(&self, de_x: f32, de_y: f32) -> Self {
-        Cadre {
-            gauche: self.gauche + de_x,
-            haut: self.haut + de_y,
-            droite: self.droite + de_x,
-            bas: self.bas + de_y,
+    pub fn shifted(&self, dx: f32, dy: f32) -> Self {
+        Rect {
+            left: self.left + dx,
+            top: self.top + dy,
+            right: self.right + dx,
+            bottom: self.bottom + dy,
         }
     }
 
-    fn dit(&self) -> D2D_RECT_F {
+    fn d2d(&self) -> D2D_RECT_F {
         D2D_RECT_F {
-            left: self.gauche,
-            top: self.haut,
-            right: self.droite,
-            bottom: self.bas,
+            left: self.left,
+            top: self.top,
+            right: self.right,
+            bottom: self.bottom,
         }
     }
 }
@@ -300,56 +300,56 @@ impl Cadre {
 ///
 /// Bâtie une fois par fenêtre et gardée : ce qui coûte ici est de la
 /// bâtir, pas de dessiner dedans.
-pub struct Toile {
-    large: i32,
-    haute: i32,
+pub struct Canvas {
+    width: i32,
+    height: i32,
     surface: HDC,
     bitmap: HBITMAP,
-    avant: HGDIOBJ,
-    cible: ID2D1DCRenderTarget,
-    pinceau: ID2D1SolidColorBrush,
-    ecriture: IDWriteFactory,
+    before: HGDIOBJ,
+    target: ID2D1DCRenderTarget,
+    brush: ID2D1SolidColorBrush,
+    writer: IDWriteFactory,
     /// Les mises en page de texte déjà demandées, une par plume : les
     /// fabriquer coûte, s'en servir non, et un menu emploie deux tailles
     /// pour quinze lignes.
-    polices: std::cell::RefCell<Vec<(Clef, IDWriteTextFormat)>>,
+    fonts: std::cell::RefCell<Vec<(Key, IDWriteTextFormat)>>,
     /// Les chemins déjà lus, une fois chacun : une icône est un texte,
     /// et le relire à chaque image serait le relire quinze fois par
     /// dessin pour le même trait. Ceux qui ne se lisent pas sont retenus
     /// aussi, sans quoi leur refus se redirait à chaque image.
-    chemins: std::cell::RefCell<Vec<(&'static str, Option<ID2D1PathGeometry>)>>,
+    paths: std::cell::RefCell<Vec<(&'static str, Option<ID2D1PathGeometry>)>>,
     /// Le bout des traits et leurs angles, arrondis : c'est ce que les
     /// icônes demandent, et le demander une fois vaut mieux que le
     /// redemander à chaque trait.
     style: ID2D1StrokeStyle,
     /// Et le même en pointillés, pour ce qui attend d'être rempli.
-    pointille: ID2D1StrokeStyle,
-    fabrique: ID2D1Factory,
+    dashed: ID2D1StrokeStyle,
+    factory: ID2D1Factory,
 }
 
-impl Toile {
+impl Canvas {
     /// Une toile de cette taille, en vrais pixels.
     ///
     /// Rendue par le processeur et non par la carte graphique : voir le
     /// haut de ce fichier. C'est aussi ce qui évite d'avoir à survivre à
     /// la perte d'un appareil graphique, ce qui arrive précisément quand
     /// un pilote redémarre, c'est-à-dire au pire moment d'une session.
-    pub fn neuve(large: i32, haute: i32) -> Option<Toile> {
-        if large <= 0 || haute <= 0 {
+    pub fn new(width: i32, height: i32) -> Option<Canvas> {
+        if width <= 0 || height <= 0 {
             return None;
         }
         // SAFETY: chaque objet demandé au système est à nous jusqu'à ce
         // que `Drop` le rende, et rien n'en sort d'ici.
         unsafe {
-            let ecran = GetDC(None);
-            let surface = CreateCompatibleDC(Some(ecran));
-            let mut carte: BITMAPINFO = std::mem::zeroed();
-            carte.bmiHeader = BITMAPINFOHEADER {
+            let screen = GetDC(None);
+            let surface = CreateCompatibleDC(Some(screen));
+            let mut info: BITMAPINFO = std::mem::zeroed();
+            info.bmiHeader = BITMAPINFOHEADER {
                 biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: large,
+                biWidth: width,
                 // À l'endroit, ce qui pour une image se dit d'une hauteur
                 // négative.
-                biHeight: -haute,
+                biHeight: -height,
                 biPlanes: 1,
                 biBitCount: 32,
                 biCompression: BI_RGB.0,
@@ -357,14 +357,14 @@ impl Toile {
             };
             let mut pixels: *mut std::ffi::c_void = std::ptr::null_mut();
             let bitmap =
-                CreateDIBSection(Some(surface), &carte, DIB_RGB_COLORS, &mut pixels, None, 0)
+                CreateDIBSection(Some(surface), &info, DIB_RGB_COLORS, &mut pixels, None, 0)
                     .ok()?;
-            let avant = SelectObject(surface, bitmap.into());
-            ReleaseDC(None, ecran);
+            let before = SelectObject(surface, bitmap.into());
+            ReleaseDC(None, screen);
 
-            let fabrique: ID2D1Factory =
+            let factory: ID2D1Factory =
                 D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).ok()?;
-            let cible = fabrique
+            let target = factory
                 .CreateDCRenderTarget(&D2D1_RENDER_TARGET_PROPERTIES {
                     r#type: D2D1_RENDER_TARGET_TYPE_SOFTWARE,
                     pixelFormat: D2D1_PIXEL_FORMAT {
@@ -380,75 +380,75 @@ impl Toile {
                     minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
                 })
                 .ok()?;
-            let pinceau = cible
+            let brush = target
                 .CreateSolidColorBrush(&D2D1_COLOR_F::default(), None)
                 .ok()?;
-            let ecriture: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()?;
-            let trait_ = |tirets| D2D1_STROKE_STYLE_PROPERTIES {
+            let writer: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).ok()?;
+            let stroke = |dashes| D2D1_STROKE_STYLE_PROPERTIES {
                 startCap: D2D1_CAP_STYLE_ROUND,
                 endCap: D2D1_CAP_STYLE_ROUND,
                 dashCap: D2D1_CAP_STYLE_ROUND,
                 lineJoin: D2D1_LINE_JOIN_ROUND,
                 miterLimit: 10.0,
-                dashStyle: tirets,
+                dashStyle: dashes,
                 dashOffset: 0.0,
             };
-            let style = fabrique
-                .CreateStrokeStyle(&trait_(D2D1_DASH_STYLE_SOLID), None)
+            let style = factory
+                .CreateStrokeStyle(&stroke(D2D1_DASH_STYLE_SOLID), None)
                 .ok()?;
-            let pointille = fabrique
-                .CreateStrokeStyle(&trait_(D2D1_DASH_STYLE_DASH), None)
+            let dashed = factory
+                .CreateStrokeStyle(&stroke(D2D1_DASH_STYLE_DASH), None)
                 .ok()?;
 
-            Some(Toile {
-                large,
-                haute,
+            Some(Canvas {
+                width,
+                height,
                 surface,
                 bitmap,
-                avant,
-                cible,
-                pinceau,
-                ecriture,
-                polices: std::cell::RefCell::new(Vec::new()),
-                chemins: std::cell::RefCell::new(Vec::new()),
+                before,
+                target,
+                brush,
+                writer,
+                fonts: std::cell::RefCell::new(Vec::new()),
+                paths: std::cell::RefCell::new(Vec::new()),
                 style,
-                pointille,
-                fabrique,
+                dashed,
+                factory,
             })
         }
     }
 
     /// Ce qu'elle fait de côté, pour qui doit savoir si elle est encore à
     /// la bonne taille.
-    pub fn taille(&self) -> (i32, i32) {
-        (self.large, self.haute)
+    pub fn size(&self) -> (i32, i32) {
+        (self.width, self.height)
     }
 
     /// Ouvre le dessin, la toile entièrement de cette couleur.
     ///
-    /// `Couleur::RIEN` pour une fenêtre à calque, où la transparence
+    /// `Colour::TRANSPARENT` pour une fenêtre à calque, où la transparence
     /// laisse voir ce qu'il y a derrière ; un fond du système de design
     /// pour une fenêtre ordinaire, qui est opaque et n'a rien derrière.
-    pub fn commence(&self, fond: Couleur) {
-        let tout = RECT {
+    pub fn begin(&self, background: Colour) {
+        let whole = RECT {
             left: 0,
             top: 0,
-            right: self.large,
-            bottom: self.haute,
+            right: self.width,
+            bottom: self.height,
         };
         // SAFETY: une cible et une surface à nous, liées le temps du
         // dessin comme la documentation le demande.
         unsafe {
-            let _ = self.cible.BindDC(self.surface, &tout);
-            self.cible.BeginDraw();
-            self.cible.Clear(Some(&teinte(fond)));
+            let _ = self.target.BindDC(self.surface, &whole);
+            self.target.BeginDraw();
+            self.target.Clear(Some(&tint(background)));
         }
     }
 
     /// Ferme le dessin, et dit si le dessinateur l'a accepté.
-    pub fn finit(&self) -> bool {
+    pub fn finish(&self) -> bool {
         // SAFETY: la cible ouverte juste au-dessus.
-        unsafe { self.cible.EndDraw(None, None).is_ok() }
+        unsafe { self.target.EndDraw(None, None).is_ok() }
     }
 
     /// Remet la toile à la fenêtre, image et transparence comprises, et
@@ -456,14 +456,14 @@ impl Toile {
     ///
     /// Un seul appel pour la place et pour l'image : la fenêtre ne peut
     /// donc pas être vue à son nouvel endroit avec son ancienne image.
-    pub fn pose(&self, fenetre: isize, x: i32, y: i32) -> bool {
-        let ou = POINT { x, y };
-        let taille = SIZE {
-            cx: self.large,
-            cy: self.haute,
+    pub fn lay_on(&self, window: isize, x: i32, y: i32) -> bool {
+        let at = POINT { x, y };
+        let size = SIZE {
+            cx: self.width,
+            cy: self.height,
         };
-        let depuis = POINT { x: 0, y: 0 };
-        let melange = windows::Win32::Graphics::Gdi::BLENDFUNCTION {
+        let source = POINT { x: 0, y: 0 };
+        let blend = windows::Win32::Graphics::Gdi::BLENDFUNCTION {
             BlendOp: windows::Win32::Graphics::Gdi::AC_SRC_OVER as u8,
             BlendFlags: 0,
             SourceConstantAlpha: 255,
@@ -472,14 +472,14 @@ impl Toile {
         // SAFETY: une fenêtre à nous et une surface à nous.
         unsafe {
             UpdateLayeredWindow(
-                HWND(fenetre as *mut std::ffi::c_void),
+                HWND(window as *mut std::ffi::c_void),
                 None,
-                Some(&ou),
-                Some(&taille),
+                Some(&at),
+                Some(&size),
                 Some(self.surface),
-                Some(&depuis),
+                Some(&source),
                 windows::Win32::Foundation::COLORREF(0),
-                Some(&melange),
+                Some(&blend),
                 ULW_ALPHA,
             )
             .is_ok()
@@ -489,23 +489,23 @@ impl Toile {
     /// Verse la toile dans une surface, à cet endroit.
     ///
     /// Ce qu'il faut pour une fenêtre ordinaire, encadrée et opaque, qui
-    /// se repeint quand le système le demande : `pose` remet l'image et
+    /// se repeint quand le système le demande : `shifted` remet l'image et
     /// la place en un seul geste, ce qu'une fenêtre à calque permet et
     /// qu'une fenêtre ordinaire ne connaît pas. La transparence ne
     /// voyage pas ici, et n'a rien à y faire : ce qu'on verse a été
     /// dessiné sur un fond.
-    pub fn verse(&self, vers: HDC, x: i32, y: i32) -> bool {
+    pub fn copy_to(&self, dc: HDC, x: i32, y: i32) -> bool {
         use windows::Win32::Graphics::Gdi::{BitBlt, SRCCOPY};
 
         // SAFETY: une surface à nous, recopiée telle quelle dans celle que
         // le système vient de prêter.
         unsafe {
             BitBlt(
-                vers,
+                dc,
                 x,
                 y,
-                self.large,
-                self.haute,
+                self.width,
+                self.height,
                 Some(self.surface),
                 0,
                 0,
@@ -524,52 +524,52 @@ impl Toile {
     ///
     /// Le masque est celui d'une icône en quatre octets par pixel : tout
     /// à zéro, la transparence étant portée par les pixels eux-mêmes.
-    pub fn en_icone(&self) -> Option<windows::Win32::UI::WindowsAndMessaging::HICON> {
+    pub fn to_icon(&self) -> Option<windows::Win32::UI::WindowsAndMessaging::HICON> {
         use windows::Win32::Graphics::Gdi::CreateBitmap;
         use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 
         // Une ligne d'un dessin à un bit par pixel est comptée en mots de
         // seize bits, ce que la taille ci-dessous arrondit.
-        let par_ligne = ((self.large as usize).div_ceil(16)) * 2;
-        let rien = vec![0u8; par_ligne * self.haute.max(0) as usize];
+        let per_row = ((self.width as usize).div_ceil(16)) * 2;
+        let blank = vec![0u8; per_row * self.height.max(0) as usize];
         // SAFETY: un dessin fait ici et rendu ici, et une icône que le
         // système recopie avant de rendre la main.
         unsafe {
-            let masque = CreateBitmap(
-                self.large,
-                self.haute,
+            let mask = CreateBitmap(
+                self.width,
+                self.height,
                 1,
                 1,
-                Some(rien.as_ptr().cast::<std::ffi::c_void>()),
+                Some(blank.as_ptr().cast::<std::ffi::c_void>()),
             );
-            if masque.is_invalid() {
+            if mask.is_invalid() {
                 return None;
             }
-            let icone = CreateIconIndirect(&ICONINFO {
+            let icon = CreateIconIndirect(&ICONINFO {
                 fIcon: true.into(),
                 xHotspot: 0,
                 yHotspot: 0,
-                hbmMask: masque,
+                hbmMask: mask,
                 hbmColor: self.bitmap,
             });
-            let _ = DeleteObject(masque.into());
-            icone.ok()
+            let _ = DeleteObject(mask.into());
+            icon.ok()
         }
     }
 
     /// Un rectangle aux coins arrondis, rempli.
-    pub fn remplis(&self, cadre: Cadre, rayon: f32, couleur: Couleur) {
+    pub fn fill(&self, rect: Rect, radius: f32, colour: Colour) {
         // SAFETY: un pinceau et une cible à nous, entre un début et une
         // fin de dessin.
         unsafe {
-            self.pinceau.SetColor(&teinte(couleur));
-            self.cible.FillRoundedRectangle(
+            self.brush.SetColor(&tint(colour));
+            self.target.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: cadre.dit(),
-                    radiusX: rayon,
-                    radiusY: rayon,
+                    rect: rect.d2d(),
+                    radiusX: radius,
+                    radiusY: radius,
                 },
-                &self.pinceau,
+                &self.brush,
             );
         }
     }
@@ -579,18 +579,18 @@ impl Toile {
     ///
     /// C'est ce que fait un trait dans un dessin vectoriel, donc c'est ce
     /// qu'il faut pour redessiner un dessin.
-    pub fn trace_sur(&self, cadre: Cadre, rayon: f32, epaisseur: f32, couleur: Couleur) {
+    pub fn stroke_on(&self, rect: Rect, radius: f32, thickness: f32, colour: Colour) {
         // SAFETY: comme au-dessus.
         unsafe {
-            self.pinceau.SetColor(&teinte(couleur));
-            self.cible.DrawRoundedRectangle(
+            self.brush.SetColor(&tint(colour));
+            self.target.DrawRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: cadre.dit(),
-                    radiusX: rayon,
-                    radiusY: rayon,
+                    rect: rect.d2d(),
+                    radiusX: radius,
+                    radiusY: radius,
                 },
-                &self.pinceau,
-                epaisseur,
+                &self.brush,
+                thickness,
                 None,
             );
         }
@@ -602,12 +602,12 @@ impl Toile {
     /// faut pour redessiner une interface que le système de design
     /// décrit. Les deux existent parce que les deux servent, et les
     /// confondre décale un bord d'un demi-trait.
-    pub fn trace_dedans(&self, cadre: Cadre, rayon: f32, epaisseur: f32, couleur: Couleur) {
-        self.trace_sur(
-            cadre.elargi(-epaisseur / 2.0),
-            (rayon - epaisseur / 2.0).max(0.0),
-            epaisseur,
-            couleur,
+    pub fn stroke_inside(&self, rect: Rect, radius: f32, thickness: f32, colour: Colour) {
+        self.stroke_on(
+            rect.grown(-thickness / 2.0),
+            (radius - thickness / 2.0).max(0.0),
+            thickness,
+            colour,
         );
     }
 
@@ -616,20 +616,20 @@ impl Toile {
     /// Ce que la feuille de style écrit `border-style: dashed`, et qui
     /// dit une seule chose dans tout le produit : ceci attend d'être
     /// rempli. Une carte pleine se borde d'un trait continu.
-    pub fn trace_pointille(&self, cadre: Cadre, rayon: f32, epaisseur: f32, couleur: Couleur) {
+    pub fn stroke_dashed(&self, rect: Rect, radius: f32, thickness: f32, colour: Colour) {
         // SAFETY: comme au-dessus, avec le style pointillé fabriqué en
         // même temps que l'autre.
         unsafe {
-            self.pinceau.SetColor(&teinte(couleur));
-            self.cible.DrawRoundedRectangle(
+            self.brush.SetColor(&tint(colour));
+            self.target.DrawRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: cadre.dit(),
-                    radiusX: rayon,
-                    radiusY: rayon,
+                    rect: rect.d2d(),
+                    radiusX: radius,
+                    radiusY: radius,
                 },
-                &self.pinceau,
-                epaisseur,
-                &self.pointille,
+                &self.brush,
+                thickness,
+                &self.dashed,
             );
         }
     }
@@ -641,18 +641,18 @@ impl Toile {
     /// Un flou gaussien demanderait un appareil graphique et ses
     /// tourments, pour une différence que personne ne voit sur une ombre
     /// de seize pixels posée sous une carte.
-    pub fn ombre(&self, cadre: Cadre, rayon: f32, ombre: Ombre, echelle: f32) {
-        let flou = ombre.soft * echelle;
-        if flou <= 0.0 {
+    pub fn shadow(&self, rect: Rect, radius: f32, shadow: Shadow, scale: f32) {
+        let blur = shadow.soft * scale;
+        if blur <= 0.0 {
             return;
         }
-        let pose = cadre.decale(ombre.across * echelle, ombre.down * echelle);
-        let pas = flou.ceil().max(1.0) as i32;
-        let mut voile = ombre.tint;
-        voile.alpha = ombre.tint.alpha / pas as f32;
-        for depuis in 0..pas {
-            let ecart = flou * (1.0 - depuis as f32 / pas as f32);
-            self.remplis(pose.elargi(ecart), rayon + ecart, voile);
+        let shifted = rect.shifted(shadow.across * scale, shadow.down * scale);
+        let steps = blur.ceil().max(1.0) as i32;
+        let mut tint = shadow.tint;
+        tint.alpha = shadow.tint.alpha / steps as f32;
+        for step in 0..steps {
+            let gap = blur * (1.0 - step as f32 / steps as f32);
+            self.fill(shifted.grown(gap), radius + gap, tint);
         }
     }
 
@@ -661,39 +661,36 @@ impl Toile {
     /// Ce qu'il faut pour montrer une partie d'une forme sans en
     /// fabriquer une deuxième : les deux côtés d'un interrupteur sont un
     /// seul rectangle arrondi, et chacun n'en laisse voir que sa moitié.
-    pub fn serre(&self, cadre: Cadre, dedans: impl FnOnce()) {
+    pub fn clipped(&self, rect: Rect, inside: impl FnOnce()) {
         // SAFETY: une cible à nous, entre un début et une fin de dessin,
         // dont la découpe est refermée avant de rendre la main.
         unsafe {
-            self.cible
-                .PushAxisAlignedClip(&cadre.dit(), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+            self.target
+                .PushAxisAlignedClip(&rect.d2d(), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         }
-        dedans();
+        inside();
         // SAFETY: la découpe posée juste au-dessus.
-        unsafe { self.cible.PopAxisAlignedClip() };
+        unsafe { self.target.PopAxisAlignedClip() };
     }
 
     /// Écrit un mot dans ce cadre, calé comme la plume le dit et centré en
     /// hauteur.
     ///
     /// Centré en hauteur, donc un bloc replié veut un cadre de sa propre
-    /// hauteur : `hauteur` la donne.
-    pub fn ecris(&self, mot: &str, plume: Plume, couleur: Couleur, cadre: Cadre) {
-        let Some(mise) = self.mise_en_page(
-            mot,
-            plume,
-            cadre.droite - cadre.gauche,
-            cadre.bas - cadre.haut,
-        ) else {
+    /// hauteur : `height` la donne.
+    pub fn draw_text(&self, text: &str, pen: Pen, colour: Colour, rect: Rect) {
+        let Some(layout) =
+            self.text_layout(text, pen, rect.right - rect.left, rect.bottom - rect.top)
+        else {
             return;
         };
         // SAFETY: une mise en page à nous, employée le temps d'un dessin.
         unsafe {
-            self.pinceau.SetColor(&teinte(couleur));
-            self.cible.DrawTextLayout(
-                vers((cadre.gauche, cadre.haut)),
-                &mise,
-                &self.pinceau,
+            self.brush.SetColor(&tint(colour));
+            self.target.DrawTextLayout(
+                point((rect.left, rect.top)),
+                &layout,
+                &self.brush,
                 D2D1_DRAW_TEXT_OPTIONS_NONE,
             );
         }
@@ -701,9 +698,9 @@ impl Toile {
 
     /// Ce qu'un mot prendrait de large, pour les endroits dont la largeur
     /// est celle de leur ligne la plus longue.
-    pub fn largeur(&self, mot: &str, plume: Plume) -> f32 {
-        self.mesure(mot, plume, AU_LARGE)
-            .map_or(0.0, |mesure| mesure.widthIncludingTrailingWhitespace)
+    pub fn width_of(&self, text: &str, pen: Pen) -> f32 {
+        self.measure(text, pen, UNBOUNDED)
+            .map_or(0.0, |measure| measure.widthIncludingTrailingWhitespace)
     }
 
     /// La hauteur qu'un mot prend, replié à cette largeur.
@@ -711,9 +708,9 @@ impl Toile {
     /// Ce qu'il faut pour empiler des paragraphes : ce que chacun occupe
     /// dépend de la place qu'on lui laisse, et personne ne peut le deviner
     /// sans le mettre en page.
-    pub fn hauteur(&self, mot: &str, plume: Plume, large: f32) -> f32 {
-        self.mesure(mot, plume, large)
-            .map_or(plume.taille, |mesure| mesure.height)
+    pub fn height_of(&self, text: &str, pen: Pen, width: f32) -> f32 {
+        self.measure(text, pen, width)
+            .map_or(pen.size, |measure| measure.height)
     }
 
     /// La hauteur d'une ligne de texte écrite de cette plume.
@@ -723,11 +720,11 @@ impl Toile {
     /// que la police elle-même demande. C'est cette hauteur-là qu'emploie
     /// la mise en page d'une page, et empiler du texte sur sa taille
     /// plutôt que sur sa hauteur serre tout ce qui est empilé.
-    pub fn haute(&self, plume: Plume) -> f32 {
+    pub fn line_height(&self, pen: Pen) -> f32 {
         // Deux lettres qui vont en haut et en bas : la hauteur d'une ligne
         // ne dépend pas de ce qu'on y écrit, mais une ligne vide n'en a
         // pas.
-        self.hauteur("Hg", plume, AU_LARGE)
+        self.height_of("Hg", pen, UNBOUNDED)
     }
 
     /// Ce qu'un mot mesure, mis en page hors de tout dessin.
@@ -736,13 +733,13 @@ impl Toile {
     /// démesurée fait perdre au calcul toute sa précision, et la largeur
     /// revient alors à rien du tout. C'est ce qui écrasait les
     /// interrupteurs du menu à la largeur de leur seule marge.
-    fn mesure(&self, mot: &str, plume: Plume, large: f32) -> Option<DWRITE_TEXT_METRICS> {
-        let mise = self.mise_en_page(mot, plume, large, AU_LARGE)?;
+    fn measure(&self, text: &str, pen: Pen, width: f32) -> Option<DWRITE_TEXT_METRICS> {
+        let layout = self.text_layout(text, pen, width, UNBOUNDED)?;
         // SAFETY: une mise en page à nous, mesurée et rendue aussitôt.
         unsafe {
-            let mut mesure = DWRITE_TEXT_METRICS::default();
-            mise.GetMetrics(&mut mesure).ok()?;
-            Some(mesure)
+            let mut measure = DWRITE_TEXT_METRICS::default();
+            layout.GetMetrics(&mut measure).ok()?;
+            Some(measure)
         }
     }
 
@@ -752,28 +749,28 @@ impl Toile {
     /// Le même chemin pour les deux, et c'est tout l'intérêt : ce qui est
     /// mesuré est exactement ce qui sera dessiné, écart entre les signes
     /// compris.
-    fn mise_en_page(
+    fn text_layout(
         &self,
-        mot: &str,
-        plume: Plume,
-        large: f32,
-        haute: f32,
+        text: &str,
+        pen: Pen,
+        width: f32,
+        height: f32,
     ) -> Option<IDWriteTextLayout> {
-        let police = self.police(plume)?;
+        let font = self.font(pen)?;
         // SAFETY: une fabrique et une mise en page à nous.
         unsafe {
-            let mise: IDWriteTextLayout = self
-                .ecriture
-                .CreateTextLayout(&lettres(mot), &police, large, haute)
+            let layout: IDWriteTextLayout = self
+                .writer
+                .CreateTextLayout(&utf16(text), &font, width, height)
                 .ok()?;
-            if plume.espace != 0.0 {
+            if pen.spacing != 0.0 {
                 // Derrière le mot et non devant : c'est ce que fait
                 // `letter-spacing`, qui écarte les signes sans décaler le
                 // premier de son bord.
-                if let Ok(ecartee) = mise.cast::<IDWriteTextLayout1>() {
-                    let _ = ecartee.SetCharacterSpacing(
+                if let Ok(spaced) = layout.cast::<IDWriteTextLayout1>() {
+                    let _ = spaced.SetCharacterSpacing(
                         0.0,
-                        plume.espace,
+                        pen.spacing,
                         0.0,
                         DWRITE_TEXT_RANGE {
                             startPosition: 0,
@@ -782,7 +779,7 @@ impl Toile {
                     );
                 }
             }
-            Some(mise)
+            Some(layout)
         }
     }
 
@@ -793,57 +790,52 @@ impl Toile {
     /// coup sur une police partagée, elle change aussi celle que les
     /// **mesures** emploient, et une mesure prise dans une boîte alignée à
     /// droite ne vaut plus rien.
-    fn police(&self, plume: Plume) -> Option<IDWriteTextFormat> {
-        let clef = Clef::de(plume);
-        if let Some((_, deja)) = self
-            .polices
-            .borrow()
-            .iter()
-            .find(|(autre, _)| *autre == clef)
-        {
-            return Some(deja.clone());
+    fn font(&self, pen: Pen) -> Option<IDWriteTextFormat> {
+        let key = Key::of(pen);
+        if let Some((_, found)) = self.fonts.borrow().iter().find(|(other, _)| *other == key) {
+            return Some(found.clone());
         }
-        let neuve = self.fabrique_police(plume)?;
-        self.polices.borrow_mut().push((clef, neuve.clone()));
-        Some(neuve)
+        let made = self.make_font(pen)?;
+        self.fonts.borrow_mut().push((key, made.clone()));
+        Some(made)
     }
 
     /// Demande la famille voulue, et celle d'avant si la machine n'a pas
     /// la première.
-    fn fabrique_police(&self, plume: Plume) -> Option<IDWriteTextFormat> {
-        let graisse = if plume.gras {
+    fn make_font(&self, pen: Pen) -> Option<IDWriteTextFormat> {
+        let weight = if pen.bold {
             DWRITE_FONT_WEIGHT_SEMI_BOLD
         } else {
             DWRITE_FONT_WEIGHT_NORMAL
         };
-        let familles = if plume.fixe {
-            [FIXE, FIXE_AVANT]
+        let families = if pen.mono {
+            [MONO, MONO_BEFORE]
         } else {
-            [FAMILLE, FAMILLE_AVANT]
+            [FAMILY, FAMILY_BEFORE]
         };
         // SAFETY: une fabrique à nous ; un refus est une réponse et non
         // une faute, d'où le second essai.
         unsafe {
-            for famille in familles {
-                let Ok(police) = self.ecriture.CreateTextFormat(
-                    &HSTRING::from(famille),
+            for family in families {
+                let Ok(font) = self.writer.CreateTextFormat(
+                    &HSTRING::from(family),
                     None,
-                    graisse,
+                    weight,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
-                    plume.taille,
+                    pen.size,
                     &HSTRING::from("fr-FR"),
                 ) else {
                     continue;
                 };
-                let _ = police.SetTextAlignment(match plume.cale {
-                    Cale::Gauche => DWRITE_TEXT_ALIGNMENT_LEADING,
-                    Cale::Centre => DWRITE_TEXT_ALIGNMENT_CENTER,
-                    Cale::Droite => DWRITE_TEXT_ALIGNMENT_TRAILING,
+                let _ = font.SetTextAlignment(match pen.align {
+                    Align::Left => DWRITE_TEXT_ALIGNMENT_LEADING,
+                    Align::Centre => DWRITE_TEXT_ALIGNMENT_CENTER,
+                    Align::Right => DWRITE_TEXT_ALIGNMENT_TRAILING,
                 });
-                let _ = police.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-                self.pose_le_trop(&police, plume.trop);
-                return Some(police);
+                let _ = font.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                self.set_the_overflow(&font, pen.overflow);
+                return Some(font);
             }
         }
         None
@@ -854,21 +846,21 @@ impl Toile {
     /// Les points de suspension sont un dessin, et un dessin se demande à
     /// la police qui le portera : c'est pour ça que ceci vient après elle
     /// et non avant.
-    fn pose_le_trop(&self, police: &IDWriteTextFormat, trop: Trop) {
-        if trop == Trop::ALaLigne {
+    fn set_the_overflow(&self, font: &IDWriteTextFormat, overflow: Overflow) {
+        if overflow == Overflow::Wrap {
             return;
         }
         // SAFETY: une police à nous, et une marque de coupe demandée à la
         // fabrique pour cette police-là.
         unsafe {
-            let _ = police.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-            if trop != Trop::Coupe {
+            let _ = font.SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+            if overflow != Overflow::Ellipsis {
                 return;
             }
-            let Ok(points) = self.ecriture.CreateEllipsisTrimmingSign(police) else {
+            let Ok(points) = self.writer.CreateEllipsisTrimmingSign(font) else {
                 return;
             };
-            let _ = police.SetTrimming(
+            let _ = font.SetTrimming(
                 &DWRITE_TRIMMING {
                     granularity: DWRITE_TRIMMING_GRANULARITY_CHARACTER,
                     delimiter: 0,
@@ -881,14 +873,14 @@ impl Toile {
 }
 
 /// Assez large pour qu'aucun mot n'aille à la ligne, et pas plus.
-const AU_LARGE: f32 = 100_000.0;
+const UNBOUNDED: f32 = 100_000.0;
 
-impl Drop for Toile {
+impl Drop for Canvas {
     fn drop(&mut self) {
-        // SAFETY: tout ce qui est rendu ici a été demandé dans `neuve`,
+        // SAFETY: tout ce qui est rendu ici a été demandé dans `new`,
         // et dans l'ordre inverse.
         unsafe {
-            let _ = SelectObject(self.surface, self.avant);
+            let _ = SelectObject(self.surface, self.before);
             let _ = DeleteObject(self.bitmap.into());
             let _ = DeleteDC(self.surface);
         }
@@ -897,16 +889,16 @@ impl Drop for Toile {
 
 /// Une couleur du système de design, dans les nombres que le dessinateur
 /// attend.
-fn teinte(couleur: Couleur) -> D2D1_COLOR_F {
+fn tint(colour: Colour) -> D2D1_COLOR_F {
     D2D1_COLOR_F {
-        r: couleur.red,
-        g: couleur.green,
-        b: couleur.blue,
-        a: couleur.alpha,
+        r: colour.red,
+        g: colour.green,
+        b: colour.blue,
+        a: colour.alpha,
     }
 }
 
-impl Toile {
+impl Canvas {
     /// Pose une icône dans ce cadre.
     ///
     /// L'icône est dessinée dans son propre repère et le cadre décide de
@@ -914,47 +906,49 @@ impl Toile {
     /// l'échelle, y compris son épaisseur. C'est ce qui fait qu'une icône
     /// reste elle-même à cent vingt-cinq comme à cent soixante-quinze pour
     /// cent, là où une image agrandie s'épaissit et se brouille.
-    pub fn icone(&self, icone: &Icone, cadre: Cadre, couleur: Couleur) {
-        let part = (cadre.droite - cadre.gauche) / icone.repere;
+    pub fn icon(&self, icon: &Icon, rect: Rect, colour: Colour) {
+        let part = (rect.right - rect.left) / icon.grid;
         // SAFETY: une cible et un pinceau à nous, entre un début et une
         // fin de dessin. Le repère est remis d'aplomb avant de rendre la
         // main, sans quoi tout ce qui suivrait serait dessiné dans celui
         // de l'icône.
         unsafe {
-            self.cible.SetTransform(&Matrix3x2 {
+            self.target.SetTransform(&Matrix3x2 {
                 M11: part,
                 M12: 0.0,
                 M21: 0.0,
                 M22: part,
-                M31: cadre.gauche,
-                M32: cadre.haut,
+                M31: rect.left,
+                M32: rect.top,
             });
-            self.pinceau.SetColor(&teinte(couleur));
-            for trait_ in icone.traits {
-                match trait_ {
-                    Trait::Rond(x, y, large, haute, rayon) => self.cible.DrawRoundedRectangle(
-                        &D2D1_ROUNDED_RECT {
-                            rect: Cadre::pose(*x, *y, *large, *haute).dit(),
-                            radiusX: *rayon,
-                            radiusY: *rayon,
-                        },
-                        &self.pinceau,
-                        icone.epaisseur,
-                        &self.style,
-                    ),
-                    Trait::Chemin(dit) => {
-                        if let Some(chemin) = self.chemin(dit) {
-                            self.cible.DrawGeometry(
-                                &chemin,
-                                &self.pinceau,
-                                icone.epaisseur,
+            self.brush.SetColor(&tint(colour));
+            for stroke in icon.strokes {
+                match stroke {
+                    Stroke::RoundRect(x, y, width, height, radius) => {
+                        self.target.DrawRoundedRectangle(
+                            &D2D1_ROUNDED_RECT {
+                                rect: Rect::at(*x, *y, *width, *height).d2d(),
+                                radiusX: *radius,
+                                radiusY: *radius,
+                            },
+                            &self.brush,
+                            icon.thickness,
+                            &self.style,
+                        )
+                    }
+                    Stroke::SvgPath(said) => {
+                        if let Some(path) = self.path_of(said) {
+                            self.target.DrawGeometry(
+                                &path,
+                                &self.brush,
+                                icon.thickness,
                                 &self.style,
                             );
                         }
                     }
                 }
             }
-            self.cible.SetTransform(&Matrix3x2 {
+            self.target.SetTransform(&Matrix3x2 {
                 M11: 1.0,
                 M12: 0.0,
                 M21: 0.0,
@@ -970,27 +964,27 @@ impl Toile {
     /// Un chemin illisible est retenu comme tel et dit une seule fois. Le
     /// retenir n'est pas de l'économie : sans ça il serait relu, et donc
     /// redit, à chaque image dessinée.
-    fn chemin(&self, dit: &'static str) -> Option<ID2D1PathGeometry> {
-        if let Some((_, deja)) = self
-            .chemins
+    fn path_of(&self, said: &'static str) -> Option<ID2D1PathGeometry> {
+        if let Some((_, found)) = self
+            .paths
             .borrow()
             .iter()
-            .find(|(autre, _)| std::ptr::eq(*autre, dit))
+            .find(|(other, _)| std::ptr::eq(*other, said))
         {
-            return deja.clone();
+            return found.clone();
         }
-        let neuf = self.lis(dit);
-        if neuf.is_none() {
+        let made = self.read_path(said);
+        if made.is_none() {
             // Dit et non tu. Une icône est faite de plusieurs traits :
             // celui qui ne se lit pas disparaît, les autres restent, et
             // ce qui s'affiche est une icône méconnaissable dont rien ne
             // dit qu'elle est incomplète. C'est arrivé une fois, à
             // l'oeil barré du menu, dont le contour est la seule courbe
             // de Bézier du produit.
-            note(&format!("dessin : chemin non lu, « {dit} »"));
+            note(&format!("dessin : chemin non lu, « {said} »"));
         }
-        self.chemins.borrow_mut().push((dit, neuf.clone()));
-        neuf
+        self.paths.borrow_mut().push((said, made.clone()));
+        made
     }
 
     /// Lit un « d » de chemin SVG et en fait une forme.
@@ -1000,105 +994,105 @@ impl Toile {
     /// l'horizontale, à la verticale, une courbe, un arc, et refermer.
     /// Une lettre inconnue arrête la lecture plutôt que d'être sautée :
     /// une icône à moitié dessinée ressemble à un défaut, une icône
-    /// absente à un oubli, et le second se cherche. C'est `chemin` qui le
+    /// absente à un oubli, et le second se cherche. C'est `path` qui le
     /// dit à voix haute.
-    fn lis(&self, dit: &str) -> Option<ID2D1PathGeometry> {
+    fn read_path(&self, said: &str) -> Option<ID2D1PathGeometry> {
         // SAFETY: une forme et son embouchure à nous, refermées avant de
         // sortir.
         unsafe {
-            let forme = self.fabrique.CreatePathGeometry().ok()?;
-            let bouche = forme.Open().ok()?;
-            let mut mots = Mots::sur(dit);
-            let (mut ou, mut depart) = ((0.0f32, 0.0f32), (0.0f32, 0.0f32));
-            let mut ouverte = false;
-            let mut lettre = ' ';
-            while let Some(prochaine) = mots.lettre_ou_nombre() {
-                if let Some(cette) = prochaine {
-                    lettre = cette;
+            let shape = self.factory.CreatePathGeometry().ok()?;
+            let sink = shape.Open().ok()?;
+            let mut words = Tokens::over(said);
+            let (mut at, mut start) = ((0.0f32, 0.0f32), (0.0f32, 0.0f32));
+            let mut figure_open = false;
+            let mut letter = ' ';
+            while let Some(next) = words.letter_or_number() {
+                if let Some(this_one) = next {
+                    letter = this_one;
                 }
-                let relatif = lettre.is_lowercase();
-                let mut nombre = || mots.nombre();
-                match lettre.to_ascii_uppercase() {
+                let relative = letter.is_lowercase();
+                let mut number = || words.number();
+                match letter.to_ascii_uppercase() {
                     'M' => {
-                        let (x, y) = (nombre()?, nombre()?);
-                        ou = if relatif {
-                            (ou.0 + x, ou.1 + y)
+                        let (x, y) = (number()?, number()?);
+                        at = if relative {
+                            (at.0 + x, at.1 + y)
                         } else {
                             (x, y)
                         };
-                        if ouverte {
-                            bouche.EndFigure(D2D1_FIGURE_END_OPEN);
+                        if figure_open {
+                            sink.EndFigure(D2D1_FIGURE_END_OPEN);
                         }
-                        bouche.BeginFigure(vers(ou), D2D1_FIGURE_BEGIN_HOLLOW);
-                        depart = ou;
-                        ouverte = true;
-                        lettre = if relatif { 'l' } else { 'L' };
+                        sink.BeginFigure(point(at), D2D1_FIGURE_BEGIN_HOLLOW);
+                        start = at;
+                        figure_open = true;
+                        letter = if relative { 'l' } else { 'L' };
                     }
                     'L' => {
-                        let (x, y) = (nombre()?, nombre()?);
-                        ou = if relatif {
-                            (ou.0 + x, ou.1 + y)
+                        let (x, y) = (number()?, number()?);
+                        at = if relative {
+                            (at.0 + x, at.1 + y)
                         } else {
                             (x, y)
                         };
-                        bouche.AddLine(vers(ou));
+                        sink.AddLine(point(at));
                     }
                     'H' => {
-                        let x = nombre()?;
-                        ou.0 = if relatif { ou.0 + x } else { x };
-                        bouche.AddLine(vers(ou));
+                        let x = number()?;
+                        at.0 = if relative { at.0 + x } else { x };
+                        sink.AddLine(point(at));
                     }
                     'V' => {
-                        let y = nombre()?;
-                        ou.1 = if relatif { ou.1 + y } else { y };
-                        bouche.AddLine(vers(ou));
+                        let y = number()?;
+                        at.1 = if relative { at.1 + y } else { y };
+                        sink.AddLine(point(at));
                     }
                     'C' => {
                         // Les deux poignées se comptent depuis le point
                         // d'où la courbe part, donc avant de l'avoir
                         // quitté.
-                        let (x1, y1) = (nombre()?, nombre()?);
-                        let (x2, y2) = (nombre()?, nombre()?);
-                        let (x, y) = (nombre()?, nombre()?);
-                        let (une, deux) = if relatif {
-                            ((ou.0 + x1, ou.1 + y1), (ou.0 + x2, ou.1 + y2))
+                        let (x1, y1) = (number()?, number()?);
+                        let (x2, y2) = (number()?, number()?);
+                        let (x, y) = (number()?, number()?);
+                        let (first_control, second_control) = if relative {
+                            ((at.0 + x1, at.1 + y1), (at.0 + x2, at.1 + y2))
                         } else {
                             ((x1, y1), (x2, y2))
                         };
-                        ou = if relatif {
-                            (ou.0 + x, ou.1 + y)
+                        at = if relative {
+                            (at.0 + x, at.1 + y)
                         } else {
                             (x, y)
                         };
-                        bouche.AddBezier(&D2D1_BEZIER_SEGMENT {
-                            point1: vers(une),
-                            point2: vers(deux),
-                            point3: vers(ou),
+                        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                            point1: point(first_control),
+                            point2: point(second_control),
+                            point3: point(at),
                         });
                     }
                     'A' => {
-                        let (rx, ry) = (nombre()?, nombre()?);
-                        let tourne = nombre()?;
-                        let (grand, sens) = (nombre()?, nombre()?);
-                        let (x, y) = (nombre()?, nombre()?);
-                        ou = if relatif {
-                            (ou.0 + x, ou.1 + y)
+                        let (rx, ry) = (number()?, number()?);
+                        let rotation = number()?;
+                        let (large_arc, sweep) = (number()?, number()?);
+                        let (x, y) = (number()?, number()?);
+                        at = if relative {
+                            (at.0 + x, at.1 + y)
                         } else {
                             (x, y)
                         };
-                        bouche.AddArc(&D2D1_ARC_SEGMENT {
-                            point: vers(ou),
+                        sink.AddArc(&D2D1_ARC_SEGMENT {
+                            point: point(at),
                             size: D2D_SIZE_F {
                                 width: rx,
                                 height: ry,
                             },
-                            rotationAngle: tourne,
-                            sweepDirection: if sens != 0.0 {
+                            rotationAngle: rotation,
+                            sweepDirection: if sweep != 0.0 {
                                 D2D1_SWEEP_DIRECTION_CLOCKWISE
                             } else {
                                 D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
                             },
-                            arcSize: if grand != 0.0 {
+                            arcSize: if large_arc != 0.0 {
                                 D2D1_ARC_SIZE_LARGE
                             } else {
                                 D2D1_ARC_SIZE_SMALL
@@ -1106,20 +1100,20 @@ impl Toile {
                         });
                     }
                     'Z' => {
-                        if ouverte {
-                            bouche.EndFigure(D2D1_FIGURE_END_CLOSED);
-                            ouverte = false;
+                        if figure_open {
+                            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                            figure_open = false;
                         }
-                        ou = depart;
+                        at = start;
                     }
                     _ => return None,
                 }
             }
-            if ouverte {
-                bouche.EndFigure(D2D1_FIGURE_END_OPEN);
+            if figure_open {
+                sink.EndFigure(D2D1_FIGURE_END_OPEN);
             }
-            bouche.Close().ok()?;
-            Some(forme)
+            sink.Close().ok()?;
+            Some(shape)
         }
     }
 }
@@ -1129,58 +1123,58 @@ impl Toile {
 /// Un signe moins ouvre un nombre, il ne sépare pas : c'est la règle de
 /// ce langage, et c'est ce qui permet d'écrire « a9 9 0 1 1-12.8 0 » sans
 /// espace avant le douze.
-struct Mots<'a> {
-    reste: &'a str,
+struct Tokens<'a> {
+    rest: &'a str,
 }
 
-impl<'a> Mots<'a> {
-    fn sur(dit: &'a str) -> Self {
-        Mots { reste: dit }
+impl<'a> Tokens<'a> {
+    fn over(said: &'a str) -> Self {
+        Tokens { rest: said }
     }
 
-    fn saute(&mut self) {
-        self.reste = self.reste.trim_start_matches([' ', ',', '\t', '\n']);
+    fn skip(&mut self) {
+        self.rest = self.rest.trim_start_matches([' ', ',', '\t', '\n']);
     }
 
     /// La prochaine chose : une lettre, ou rien quand c'est un nombre qui
     /// vient, ou la fin.
-    fn lettre_ou_nombre(&mut self) -> Option<Option<char>> {
-        self.saute();
-        let premier = self.reste.chars().next()?;
-        if premier.is_ascii_alphabetic() {
-            self.reste = &self.reste[premier.len_utf8()..];
-            return Some(Some(premier));
+    fn letter_or_number(&mut self) -> Option<Option<char>> {
+        self.skip();
+        let first = self.rest.chars().next()?;
+        if first.is_ascii_alphabetic() {
+            self.rest = &self.rest[first.len_utf8()..];
+            return Some(Some(first));
         }
         Some(None)
     }
 
-    fn nombre(&mut self) -> Option<f32> {
-        self.saute();
-        let mut fin = 0;
-        for (at, quoi) in self.reste.char_indices() {
-            let ouvre = at == 0 && (quoi == '-' || quoi == '+');
-            if quoi.is_ascii_digit() || quoi == '.' || ouvre {
-                fin = at + quoi.len_utf8();
+    fn number(&mut self) -> Option<f32> {
+        self.skip();
+        let mut end = 0;
+        for (at, character) in self.rest.char_indices() {
+            let open = at == 0 && (character == '-' || character == '+');
+            if character.is_ascii_digit() || character == '.' || open {
+                end = at + character.len_utf8();
             } else {
                 break;
             }
         }
-        if fin == 0 {
+        if end == 0 {
             return None;
         }
-        let (lu, reste) = self.reste.split_at(fin);
-        self.reste = reste;
-        lu.parse().ok()
+        let (read, rest) = self.rest.split_at(end);
+        self.rest = rest;
+        read.parse().ok()
     }
 }
 
 /// Un point, dans les nombres que le dessinateur attend.
-fn vers(ou: (f32, f32)) -> Vector2 {
-    Vector2 { X: ou.0, Y: ou.1 }
+fn point(at: (f32, f32)) -> Vector2 {
+    Vector2 { X: at.0, Y: at.1 }
 }
 
 /// Un mot dans les caractères que Windows compte, qui ne sont pas ceux
 /// de Rust.
-fn lettres(mot: &str) -> Vec<u16> {
-    mot.encode_utf16().collect()
+fn utf16(text: &str) -> Vec<u16> {
+    text.encode_utf16().collect()
 }

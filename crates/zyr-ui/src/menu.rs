@@ -10,7 +10,7 @@
 //! fichier dit où les choses vont, jamais de quelle couleur elles sont.
 //!
 //! Les longueurs sont écrites en pixels de page, comme dans la feuille de
-//! style, et `echelle` les passe en vrais pixels au moment de dessiner.
+//! style, et `scale` les passe en vrais pixels au moment de dessiner.
 //! C'est le même partage que partout ailleurs, et c'est ce qui permet de
 //! relire une mesure ici et de la retrouver là-bas.
 //!
@@ -26,11 +26,11 @@ use std::time::{Duration, Instant};
 
 use crate::app::App;
 
-use crate::design::{self, Couleur, Palette};
-use crate::floating::{Act, Sens};
-use crate::icones;
-use crate::mesures::Mesures;
-use crate::paint::{Cadre, Cale, Icone, Plume, Toile};
+use crate::design::{self, Colour, Palette};
+use crate::floating::{Act, Opens};
+use crate::icons;
+use crate::measures::Measures;
+use crate::paint::{Align, Canvas, Icon, Pen, Rect};
 use crate::settings::{Offered, SessionMenu};
 use crate::shortcuts::Doing;
 
@@ -48,23 +48,23 @@ fn note(what: &str) {
 /// de connaître toutes ses lignes avant d'en poser une seule, et une
 /// carte aussi large que sa plus longue ligne est ce que la feuille de
 /// style demande depuis toujours.
-enum Ligne {
+enum Line {
     /// Ce que la session coûte : quatre nombres et une phrase.
-    Mesures,
+    Measures,
     /// Un trait entre deux groupes.
-    Separateur,
+    Separator,
     /// Ce que le menu vient de refuser de faire, et pourquoi.
-    Refus,
+    Refusal,
     /// Une ligne qu'on clique, comme la page les appelle.
-    Entree(Entree),
+    Entry(Entry),
     /// Une ligne qui porte un choix entre deux côtés.
-    Bascule(Bascule),
+    Toggle(Toggle),
     /// Une ligne qui porte quelques valeurs côte à côte.
-    Choix(Choix),
+    Choice(Choice),
     /// Une ligne qu'on pousse le long d'une barre.
-    Curseur(Curseur),
+    Slider(Slider),
     /// Une ligne qui ouvre une liste à elle.
-    Liste(Liste),
+    List(List),
 }
 
 /// Une ligne qui porte quelques valeurs sans ordre entre elles.
@@ -73,10 +73,10 @@ enum Ligne {
 /// quelques noms dont un « Automatique » qui n'est pas une valeur mais un
 /// renoncement, et pousser un curseur promettrait un plus et un moins qui
 /// n'existent pas.
-struct Choix {
-    icone: &'static Icone,
-    mot: &'static str,
-    quoi: Reglage,
+struct Choice {
+    icon: &'static Icon,
+    label: &'static str,
+    setting: Setting,
 }
 
 /// Une ligne qu'on règle en poussant un curseur, la valeur écrite
@@ -86,10 +86,10 @@ struct Choix {
 /// regardant l'image bouger. Les crans viennent du produit, un par
 /// mégabit, et le curseur va de zéro au nombre de valeurs moins une : il
 /// pousse des rangs et non des nombres, comme les autres lignes à liste.
-struct Curseur {
-    icone: &'static Icone,
-    mot: &'static str,
-    quoi: Reglage,
+struct Slider {
+    icon: &'static Icon,
+    label: &'static str,
+    setting: Setting,
 }
 
 /// Une ligne qui ouvre une liste à elle, à côté de la carte.
@@ -98,10 +98,10 @@ struct Curseur {
 /// entrées ne sont pas des nombres mais disent lequel des deux
 /// ordinateurs décide, ce qu'aucune barre ne sait dire, et il y en a
 /// quinze en dessous, ce qui fait des crans qu'on ne vise plus.
-struct Liste {
-    icone: &'static Icone,
-    mot: &'static str,
-    quoi: Reglage,
+struct List {
+    icon: &'static Icon,
+    label: &'static str,
+    setting: Setting,
 }
 
 /// Une ligne qui porte un choix plutôt qu'une action.
@@ -114,46 +114,46 @@ struct Liste {
 /// La ligne elle-même ne se clique pas, seulement ses deux côtés : ni
 /// main sous le pointeur ni fond allumé sur le reste, qui promettraient
 /// un clic qui ne fait rien.
-struct Bascule {
-    icone: &'static Icone,
-    mot: &'static str,
+struct Toggle {
+    icon: &'static Icon,
+    label: &'static str,
     /// Les deux côtés, dans l'ordre où ils se lisent. Le second est celui
     /// qui vaut « oui ».
-    cotes: [&'static str; 2],
+    sides: [&'static str; 2],
     /// Ce qu'on demande à la session pour passer d'un côté à l'autre.
-    passe: Act,
+    act: Act,
     /// Où l'on en est : vrai pour le côté de droite.
-    ou: &'static AtomicBool,
+    state: &'static AtomicBool,
 }
 
 /// Une entrée du menu : une icône, un mot, ce qui est écrit à sa droite,
 /// et ce qu'elle demande.
-struct Entree {
-    icone: &'static Icone,
-    mot: &'static str,
-    droite: Droite,
-    fait: Fait,
+struct Entry {
+    icon: &'static Icon,
+    label: &'static str,
+    trailing: Trailing,
+    does: Does,
     /// Écrite dans la couleur des choses qui ne se défont pas. Une seule
     /// ligne du menu l'est, et c'est celle qui coupe la session.
-    grave: bool,
+    destructive: bool,
 }
 
 /// Ce qui s'écrit à droite d'une ligne.
-enum Droite {
+enum Trailing {
     /// Ce que la ligne fait, dit en toutes lettres.
-    Mot(&'static str),
+    Text(&'static str),
     /// La combinaison en place pour ça, ou ce mot-ci tant que personne
     /// ne lui en a donné une.
-    Touche(Doing, &'static str),
+    Key(Doing, &'static str),
 }
 
 /// Ce qu'une ligne demande quand on clique dessus.
 #[derive(Clone, Copy)]
-enum Fait {
+enum Does {
     /// Ce que la session sait faire, dans sa langue.
     Session(Act),
     /// Ranger le bouton jusqu'à ce que le raccourci le rappelle.
-    Ranger,
+    PutAway,
 }
 
 /// Un des réglages que la session porte.
@@ -162,12 +162,12 @@ enum Fait {
 /// qui voyage jusqu'au service, et en avoir un deuxième pour l'affichage
 /// serait deux noms pour un réglage.
 #[derive(Clone, Copy, PartialEq)]
-enum Reglage {
-    Taille,
-    Ecran,
-    Debit,
+enum Setting {
+    Size,
+    Screen,
+    Bitrate,
     Codec,
-    Cadence,
+    Steady,
 }
 
 /// Ce que la carte contient, dans l'ordre.
@@ -176,160 +176,160 @@ enum Reglage {
 /// les mêmes icônes et les mêmes actions. Ce qui manque encore est dit
 /// dans le journal à l'ouverture plutôt que remplacé par du vide qui
 /// ressemblerait à un défaut.
-const LIGNES: [Ligne; 21] = [
-    Ligne::Mesures,
+const LINES: [Line; 21] = [
+    Line::Measures,
     // Juste sous les mesures, donc en tête de ce qu'on lit : ce qui vient
     // d'être refusé se lit avant ce qu'on allait cliquer ensuite. Elle ne
     // prend aucune place tant qu'il n'y a rien à dire.
-    Ligne::Refus,
-    Ligne::Separateur,
-    Ligne::Entree(Entree {
-        icone: &icones::PLEIN_ECRAN,
-        mot: "Fenêtré ou plein écran",
-        droite: Droite::Touche(Doing::Fullscreen, ""),
-        fait: Fait::Session(Act::Fullscreen),
-        grave: false,
+    Line::Refusal,
+    Line::Separator,
+    Line::Entry(Entry {
+        icon: &icons::FULL_SCREEN,
+        label: "Fenêtré ou plein écran",
+        trailing: Trailing::Key(Doing::Fullscreen, ""),
+        does: Does::Session(Act::Fullscreen),
+        destructive: false,
     }),
-    Ligne::Entree(Entree {
-        icone: &icones::STATISTIQUES,
-        mot: "Statistiques",
-        droite: Droite::Mot("Ctrl+Alt+Maj+S"),
-        fait: Fait::Session(Act::Stats),
-        grave: false,
+    Line::Entry(Entry {
+        icon: &icons::STATISTICS,
+        label: "Statistiques",
+        trailing: Trailing::Text("Ctrl+Alt+Maj+S"),
+        does: Does::Session(Act::Stats),
+        destructive: false,
     }),
-    Ligne::Bascule(Bascule {
-        icone: &icones::LIEN,
-        mot: "Voyants",
-        cotes: ["Au besoin", "Tenus"],
-        passe: Act::Voyants,
-        ou: &TENUS,
+    Line::Toggle(Toggle {
+        icon: &icons::LINK,
+        label: "Voyants",
+        sides: ["Au besoin", "Tenus"],
+        act: Act::Badges,
+        state: &HELD,
     }),
-    Ligne::Bascule(Bascule {
-        icone: &icones::SOURIS,
-        mot: "Souris",
-        cotes: ["Bureau", "Jeu"],
-        passe: Act::MouseMode,
-        ou: &EN_JEU,
+    Line::Toggle(Toggle {
+        icon: &icons::MOUSE,
+        label: "Souris",
+        sides: ["Bureau", "Jeu"],
+        act: Act::MouseMode,
+        state: &IN_GAME,
     }),
-    Ligne::Bascule(Bascule {
-        icone: &icones::SON,
-        mot: "Son",
-        cotes: ["Actif", "Coupé"],
-        passe: Act::Sound,
-        ou: &COUPE,
+    Line::Toggle(Toggle {
+        icon: &icons::SOUND,
+        label: "Son",
+        sides: ["Actif", "Coupé"],
+        act: Act::Sound,
+        state: &MUTED,
     }),
-    Ligne::Bascule(Bascule {
-        icone: &icones::CLAVIER,
-        mot: "Clavier",
-        cotes: ["Partagé", "Immersif"],
-        passe: Act::SystemKeys,
-        ou: &IMMERSIF,
+    Line::Toggle(Toggle {
+        icon: &icons::KEYBOARD,
+        label: "Clavier",
+        sides: ["Partagé", "Immersif"],
+        act: Act::SystemKeys,
+        state: &IMMERSIVE,
     }),
-    Ligne::Bascule(Bascule {
-        icone: &icones::PRESSE_PAPIERS,
-        mot: "Presse-papiers",
-        cotes: ["Chacun le sien", "Partagé"],
-        passe: Act::Clipboard,
-        ou: &PARTAGE,
+    Line::Toggle(Toggle {
+        icon: &icons::CLIPBOARD,
+        label: "Presse-papiers",
+        sides: ["Chacun le sien", "Partagé"],
+        act: Act::Clipboard,
+        state: &SHARED,
     }),
-    Ligne::Entree(Entree {
-        icone: &icones::CAD,
-        mot: "Ctrl+Alt+Suppr",
-        droite: Droite::Mot("sur l'ordinateur distant"),
-        fait: Fait::Session(Act::SecureAttention),
-        grave: false,
+    Line::Entry(Entry {
+        icon: &icons::CAD,
+        label: "Ctrl+Alt+Suppr",
+        trailing: Trailing::Text("sur l'ordinateur distant"),
+        does: Does::Session(Act::SecureAttention),
+        destructive: false,
     }),
-    Ligne::Entree(Entree {
-        icone: &icones::VERROU,
-        mot: "Verrouiller",
-        droite: Droite::Mot("l'ordinateur distant"),
-        fait: Fait::Session(Act::LockScreen),
-        grave: false,
+    Line::Entry(Entry {
+        icon: &icons::LOCK,
+        label: "Verrouiller",
+        trailing: Trailing::Text("l'ordinateur distant"),
+        does: Does::Session(Act::LockScreen),
+        destructive: false,
     }),
-    Ligne::Separateur,
-    Ligne::Liste(Liste {
-        icone: &icones::RESOLUTION,
-        mot: "Résolution",
-        quoi: Reglage::Taille,
+    Line::Separator,
+    Line::List(List {
+        icon: &icons::RESOLUTION,
+        label: "Résolution",
+        setting: Setting::Size,
     }),
-    Ligne::Liste(Liste {
-        icone: &icones::ECRAN_HOTE,
-        mot: "Écran de l'hôte",
-        quoi: Reglage::Ecran,
+    Line::List(List {
+        icon: &icons::HOST_SCREEN,
+        label: "Écran de l'hôte",
+        setting: Setting::Screen,
     }),
-    Ligne::Curseur(Curseur {
-        icone: &icones::DEBIT,
-        mot: "Débit",
-        quoi: Reglage::Debit,
+    Line::Slider(Slider {
+        icon: &icons::BITRATE,
+        label: "Débit",
+        setting: Setting::Bitrate,
     }),
-    Ligne::Choix(Choix {
-        icone: &icones::CODEC,
-        mot: "Codec",
-        quoi: Reglage::Codec,
+    Line::Choice(Choice {
+        icon: &icons::CODEC,
+        label: "Codec",
+        setting: Setting::Codec,
     }),
-    Ligne::Choix(Choix {
-        icone: &icones::ECRAN_EN_FACE,
-        mot: "Écran d'en face",
-        quoi: Reglage::Cadence,
+    Line::Choice(Choice {
+        icon: &icons::FAR_SCREEN,
+        label: "Écran d'en face",
+        setting: Setting::Steady,
     }),
-    Ligne::Separateur,
-    Ligne::Entree(Entree {
-        icone: &icones::MASQUER,
-        mot: "Masquer ce bouton",
-        droite: Droite::Touche(Doing::Menu, "jusqu'à la fin"),
-        fait: Fait::Ranger,
-        grave: false,
+    Line::Separator,
+    Line::Entry(Entry {
+        icon: &icons::HIDE,
+        label: "Masquer ce bouton",
+        trailing: Trailing::Key(Doing::Menu, "jusqu'à la fin"),
+        does: Does::PutAway,
+        destructive: false,
     }),
-    Ligne::Entree(Entree {
-        icone: &icones::QUITTER,
-        mot: "Terminer la session",
-        droite: Droite::Touche(Doing::End, "rend le bureau distant"),
-        fait: Fait::Session(Act::End),
-        grave: true,
+    Line::Entry(Entry {
+        icon: &icons::QUIT,
+        label: "Terminer la session",
+        trailing: Trailing::Key(Doing::End, "rend le bureau distant"),
+        does: Does::Session(Act::End),
+        destructive: true,
     }),
 ];
 
 /// Ce que la feuille de style dit d'une ligne, en pixels de page.
-mod tenue {
+mod layout {
     /// La hauteur qu'une ligne ne descend jamais en dessous.
-    pub const LIGNE: f32 = 38.0;
+    pub const LINE: f32 = 38.0;
     /// Le côté d'une icône, et l'espace entre elle et le mot.
-    pub const ICONE: f32 = 18.0;
+    pub const ICON: f32 = 18.0;
     /// Ce qui sépare le mot de ce qui est écrit à sa droite.
-    pub const APRES_LE_MOT: f32 = 24.0;
+    pub const AFTER_THE_LABEL: f32 = 24.0;
     /// L'épaisseur d'un trait de séparation, et celle d'une bordure.
-    pub const TRAIT: f32 = 1.0;
+    pub const HAIRLINE: f32 = 1.0;
     /// La largeur que chaque mesure garde quel que soit son nombre, pour
     /// que la barre ne respire pas au rythme des chiffres.
-    pub const MESURE: f32 = 78.0;
+    pub const READING: f32 = 78.0;
     /// Ce qui sépare deux mesures, et ce qui sépare leur mot de leur
     /// nombre.
-    pub const ENTRE_MESURES: f32 = 16.0;
-    pub const SOUS_LE_MOT: f32 = 2.0;
+    pub const BETWEEN_READINGS: f32 = 16.0;
+    pub const UNDER_THE_LABEL: f32 = 2.0;
     /// La hauteur d'un interrupteur : sa légende, ce qui l'entoure
     /// au-dessus et en dessous, et sa bordure. La page l'obtient de la
     /// hauteur de ligne du navigateur, qui n'existe pas ici : elle est
     /// donc dite.
-    pub const BASCULE: f32 = 24.0;
+    pub const TOGGLE: f32 = 24.0;
     /// La place que prend un curseur, son pouce compris.
-    pub const CURSEUR: f32 = 18.0;
+    pub const SLIDER: f32 = 18.0;
     /// L'épaisseur de la barre d'un curseur, et le côté de son pouce.
-    pub const BARRE: f32 = 4.0;
-    pub const POUCE: f32 = 14.0;
+    pub const BAR: f32 = 4.0;
+    pub const THUMB: f32 = 14.0;
     /// Le côté d'un chevron et d'une coche : plus petits qu'une icône de
     /// ligne, parce que ce sont des marques et non des dessins.
-    pub const MARQUE: f32 = 16.0;
+    pub const BRAND: f32 = 16.0;
 }
 
 /// Un des quatre chiffres de la barre : ce qu'il coûte, comment il se
 /// lit, et où il se prend dans ce que le moteur écrit.
-struct Chiffre {
-    mot: &'static str,
-    unite: &'static str,
+struct Reading {
+    label: &'static str,
+    unit: &'static str,
     /// Combien de décimales : le réseau se lit en millisecondes rondes,
     /// le reste au centième.
-    apres: usize,
-    lu: fn(&Mesures) -> Option<f64>,
+    decimals: usize,
+    read: fn(&Measures) -> Option<f64>,
 }
 
 /// Les quatre mesures, dans l'ordre où elles se lisent : ce que coûte une
@@ -339,30 +339,30 @@ struct Chiffre {
 /// Les mêmes mots et les mêmes unités que la page, parce que ce sont les
 /// mêmes mesures : les inventer ici en donnerait quatre autres, et deux
 /// barres qui ne disent pas la même chose sur le même moteur.
-const MESURES: [Chiffre; 4] = [
-    Chiffre {
-        mot: "Décodage",
-        unite: "ms",
-        apres: 2,
-        lu: |dit| dit.decode_ms,
+const READINGS: [Reading; 4] = [
+    Reading {
+        label: "Décodage",
+        unit: "ms",
+        decimals: 2,
+        read: |said| said.decode_ms,
     },
-    Chiffre {
-        mot: "Encodage",
-        unite: "ms",
-        apres: 2,
-        lu: |dit| dit.host_ms,
+    Reading {
+        label: "Encodage",
+        unit: "ms",
+        decimals: 2,
+        read: |said| said.host_ms,
     },
-    Chiffre {
-        mot: "Réseau",
-        unite: "ms",
-        apres: 0,
-        lu: |dit| dit.network_ms,
+    Reading {
+        label: "Réseau",
+        unit: "ms",
+        decimals: 0,
+        read: |said| said.network_ms,
     },
-    Chiffre {
-        mot: "Débit",
-        unite: "Mb/s",
-        apres: 2,
-        lu: |dit| dit.bitrate_mbps,
+    Reading {
+        label: "Débit",
+        unit: "Mb/s",
+        decimals: 2,
+        read: |said| said.bitrate_mbps,
     },
 ];
 
@@ -371,7 +371,7 @@ const MESURES: [Chiffre; 4] = [
 /// Le moteur ne dit rien plutôt que zéro quand il n'a rien mesuré, et
 /// zéro serait un mensonge : une seconde sans image décodée n'a pas un
 /// temps de décodage nul.
-const RIEN: &str = "-";
+const NO_READING: &str = "-";
 
 /// Combien de temps une mesure qui manque garde ce qu'elle disait.
 ///
@@ -385,56 +385,56 @@ const RIEN: &str = "-";
 ///
 /// Trois secondes et pas plus : au-delà ce n'est plus une lecture qui a
 /// sauté mais une mesure qui n'existe plus, et le tiret dit alors vrai.
-const GARDE: std::time::Duration = std::time::Duration::from_secs(3);
+const KEEP_FOR: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Le rythme du moteur, qui écrit une fois par seconde. Demander plus
 /// souvent relirait le même fichier pour le même nombre.
-const RYTHME: std::time::Duration = std::time::Duration::from_secs(1);
+const REFRESH: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// De combien une couleur teinte le fond quand elle sert de survol : ce
 /// que la feuille de style écrit `color-mix(in srgb, ... 12%,
 /// transparent)`.
-const VOILE: f32 = 0.12;
+const VEIL: f32 = 0.12;
 
 /// La fenêtre de la carte, et ce qu'elle sait d'elle-même.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
-static LARGE: AtomicU32 = AtomicU32::new(0);
-static HAUTE: AtomicU32 = AtomicU32::new(0);
-static OUVERT: AtomicBool = AtomicBool::new(false);
-static CLAIR: AtomicBool = AtomicBool::new(false);
+static WIDTH: AtomicU32 = AtomicU32::new(0);
+static HEIGHT: AtomicU32 = AtomicU32::new(0);
+static OPEN: AtomicBool = AtomicBool::new(false);
+static LIGHT: AtomicBool = AtomicBool::new(false);
 
 /// Ce qui est sous la souris, et ce sur quoi un clic a commencé.
 ///
 /// Écrits par la réponse de la fenêtre, que le système appelle, et lus
 /// par le dessin. Les deux tournent sur le fil qui possède la fenêtre,
 /// donc ces verrous ne sont jamais disputés.
-static SURVOL: Mutex<Option<Cible>> = Mutex::new(None);
-static PRESSEE: Mutex<Option<Cible>> = Mutex::new(None);
+static HOVER: Mutex<Option<Target>> = Mutex::new(None);
+static PRESSED: Mutex<Option<Target>> = Mutex::new(None);
 
 /// Si la souris est dans cette fenêtre, pour ne demander qu'une fois à
 /// être prévenu de son départ.
-static DEDANS: AtomicBool = AtomicBool::new(false);
+static HAND_INSIDE: AtomicBool = AtomicBool::new(false);
 
 /// Ce qu'on peut cliquer, dans la carte ou dans le panneau ouvert.
 #[derive(Clone, Copy, PartialEq)]
-enum Cible {
-    /// Une ligne qu'on clique en entier, par son rang dans `LIGNES`.
-    Ligne(usize),
+enum Target {
+    /// Une ligne qu'on clique en entier, par son rang dans `LINES`.
+    Line(usize),
     /// Un côté d'un interrupteur ou d'une ligne à boutons : le rang de sa
     /// ligne, et lequel des côtés.
-    Cote(usize, usize),
+    Side(usize, usize),
     /// La barre d'un curseur.
-    Barre(usize),
+    Bar(usize),
     /// Une valeur du panneau ouvert, par son rang dans la liste.
-    Valeur(usize),
+    Value(usize),
 }
 
-impl Cible {
+impl Target {
     /// La ligne de la carte dont il s'agit, quand c'en est une.
-    fn ligne(self) -> Option<usize> {
+    fn line(self) -> Option<usize> {
         match self {
-            Cible::Ligne(rang) | Cible::Cote(rang, _) | Cible::Barre(rang) => Some(rang),
-            Cible::Valeur(_) => None,
+            Target::Line(rank) | Target::Side(rank, _) | Target::Bar(rank) => Some(rank),
+            Target::Value(_) => None,
         }
     }
 }
@@ -445,23 +445,23 @@ impl Cible {
 /// Écrits là où ils sont lus plutôt que gardés en nombres : la mise en
 /// forme se fait alors une fois par seconde et non une fois par image, et
 /// le fil qui dessine n'a plus qu'à poser du texte.
-struct Barre {
-    chiffres: [String; 4],
+struct ReadingsBar {
+    figures: [String; 4],
     /// Quand chacune a vraiment été lue, et non recopiée de la lecture
     /// d'avant. Hors de toute comparaison : ces instants bougent à chaque
     /// tour sans que rien ne se lise autrement.
-    lues: [Option<Instant>; 4],
-    flux: String,
+    read_at: [Option<Instant>; 4],
+    stream: String,
 }
 
-static BARRE: Mutex<Barre> = Mutex::new(Barre::vide());
+static READINGS_BAR: Mutex<ReadingsBar> = Mutex::new(ReadingsBar::empty());
 
 /// Le tour de veille des mesures.
 ///
 /// Il change à chaque ouverture et à chaque fermeture, ce qui arrête le
 /// tour précédent : sans ça, ouvrir et refermer vite laisserait deux
 /// veilles derrière la même carte.
-static TOUR: AtomicU32 = AtomicU32::new(0);
+static ROUND: AtomicU32 = AtomicU32::new(0);
 
 /// Où en est chacun des six interrupteurs.
 ///
@@ -469,14 +469,14 @@ static TOUR: AtomicU32 = AtomicU32::new(0);
 /// du produit bascule la souris, et le mélangeur de Windows est ouvert à
 /// tout le monde. Un interrupteur qui montre ce qu'il croit plutôt que ce
 /// qui est est un interrupteur qu'on ne croit pas deux fois.
-static EN_JEU: AtomicBool = AtomicBool::new(false);
-static COUPE: AtomicBool = AtomicBool::new(false);
-static IMMERSIF: AtomicBool = AtomicBool::new(false);
-static PARTAGE: AtomicBool = AtomicBool::new(false);
-static TENUS: AtomicBool = AtomicBool::new(false);
+static IN_GAME: AtomicBool = AtomicBool::new(false);
+static MUTED: AtomicBool = AtomicBool::new(false);
+static IMMERSIVE: AtomicBool = AtomicBool::new(false);
+static SHARED: AtomicBool = AtomicBool::new(false);
+static HELD: AtomicBool = AtomicBool::new(false);
 
 /// De combien un pixel de page vaut de vrais pixels.
-static ECHELLE: AtomicU32 = AtomicU32::new(100);
+static SCALE: AtomicU32 = AtomicU32::new(100);
 
 /// La hauteur d'une ligne de légende et d'une ligne de corps, en vrais
 /// pixels.
@@ -490,20 +490,20 @@ static ECHELLE: AtomicU32 = AtomicU32::new(100);
 /// Mesurées une fois, quand la carte l'est : elles ne dépendent que de la
 /// taille du texte et de l'agrandissement de l'écran, dont aucun ne bouge
 /// pendant une session.
-static HAUTE_LEGENDE: AtomicU32 = AtomicU32::new(0);
-static HAUTE_CORPS: AtomicU32 = AtomicU32::new(0);
+static CAPTION_HEIGHT: AtomicU32 = AtomicU32::new(0);
+static BODY_HEIGHT: AtomicU32 = AtomicU32::new(0);
 
 /// Vers où le menu s'ouvre, donc à quel bord de sa fenêtre la carte est
 /// collée.
-static VERS_LE_HAUT: AtomicBool = AtomicBool::new(false);
+static UPWARD: AtomicBool = AtomicBool::new(false);
 
 /// Si la carte est collée au bord gauche de sa fenêtre plutôt qu'au
 /// droit, et le panneau à sa droite plutôt qu'à sa gauche : décidé par
 /// le bouton quand son bord droit n'a pas la place de porter la carte.
-static VERS_LA_DROITE: AtomicBool = AtomicBool::new(false);
+static RIGHTWARD: AtomicBool = AtomicBool::new(false);
 
 /// Ce que la carte prend de large, mesuré sur toutes ses lignes.
-static LARGE_CARTE: AtomicU32 = AtomicU32::new(0);
+static CARD_WIDTH: AtomicU32 = AtomicU32::new(0);
 
 /// Ce que le menu vient de refuser de faire, et depuis quand.
 ///
@@ -512,36 +512,36 @@ static LARGE_CARTE: AtomicU32 = AtomicU32::new(0);
 /// que dans le journal : un interrupteur qui se refuse à bon droit et se
 /// contente de ne pas basculer est un interrupteur cassé, même quand il
 /// a parfaitement raison.
-static REFUS: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+static REFUSAL: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
 /// Ce que ce refus prend de haut, mesuré au dessin comme la carte l'est.
-static HAUTE_DU_REFUS: AtomicU32 = AtomicU32::new(0);
+static REFUSAL_HEIGHT: AtomicU32 = AtomicU32::new(0);
 
 /// Le temps qu'un refus reste sur la carte.
 ///
 /// Long, parce qu'il porte ce qu'il y a à faire ailleurs et que c'est
 /// ailleurs qu'on part le faire : un refus effacé pendant qu'on lit la
 /// page de Windows serait un refus jamais lu.
-const TEMPS_DU_REFUS: Duration = Duration::from_secs(20);
+const REFUSAL_TIME: Duration = Duration::from_secs(20);
 
 /// Ce qu'il y a à dire d'un refus, tant qu'il est frais.
 ///
 /// Ce qui a passé son temps est oublié au passage : la carte se rouvre
 /// souvent, et un refus d'il y a une heure se relirait comme celui du
 /// clic qu'on vient de faire.
-fn refus_a_dire() -> Option<String> {
-    let mut refus = REFUS.lock().expect("refus du menu");
-    if refus
+fn refusal_to_say() -> Option<String> {
+    let mut refusal = REFUSAL.lock().expect("refus du menu");
+    if refusal
         .as_ref()
-        .is_some_and(|(_, depuis)| depuis.elapsed() >= TEMPS_DU_REFUS)
+        .is_some_and(|(_, since)| since.elapsed() >= REFUSAL_TIME)
     {
-        *refus = None;
+        *refusal = None;
     }
-    refus.as_ref().map(|(dit, _)| dit.clone())
+    refusal.as_ref().map(|(said, _)| said.clone())
 }
 
 /// Le tour de veille des réglages, qui arrête le précédent.
-static TOUR_DES_REGLAGES: AtomicU32 = AtomicU32::new(0);
+static SESSION_MENU_ROUND: AtomicU32 = AtomicU32::new(0);
 
 /// Ce que la session propose et où elle en est, demandé à l'ouverture de
 /// la carte.
@@ -549,17 +549,17 @@ static TOUR_DES_REGLAGES: AtomicU32 = AtomicU32::new(0);
 /// Demandé d'un coup plutôt qu'une liste à la fois : la carte se mesure
 /// sur ce qu'elle contient, donc elle a besoin de tout avant de poser
 /// quoi que ce soit.
-static REGLAGES: Mutex<Option<SessionMenu>> = Mutex::new(None);
+static SESSION_MENU: Mutex<Option<SessionMenu>> = Mutex::new(None);
 
 /// Le sous-menu ouvert, ou rien.
-static PANNEAU: Mutex<Option<Reglage>> = Mutex::new(None);
+static PANEL: Mutex<Option<Setting>> = Mutex::new(None);
 
 /// Le cran où une main tient le curseur du débit, tant qu'elle le tient.
 ///
 /// Ce qui est choisi n'est écrit qu'au relâchement : un curseur poussé
 /// d'un bout à l'autre traverse quinze crans, et chacun d'eux serait un
 /// aller-retour jusqu'au service pour un débit que personne n'a voulu.
-static POUSSE: Mutex<Option<usize>> = Mutex::new(None);
+static PUSHED: Mutex<Option<usize>> = Mutex::new(None);
 
 /// Le programme, pour les endroits que le système appelle et à qui la
 /// boîte à outils ne donne rien.
@@ -572,217 +572,217 @@ static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 /// que cette largeur est celle de sa fenêtre, laquelle ne change pas de
 /// taille d'une session à l'autre. C'est le moment que la page choisit
 /// elle aussi.
-static TOUCHES: Mutex<Vec<(Doing, Option<String>)>> = Mutex::new(Vec::new());
+static KEYS: Mutex<Vec<(Doing, Option<String>)>> = Mutex::new(Vec::new());
 
 // La toile de cette fenêtre, tenue par le fil qui la possède : une
 // surface de dessin et la fenêtre qu'elle habille appartiennent au fil
 // qui les a faites.
 thread_local! {
-    static TOILE: std::cell::RefCell<Option<Toile>> = const { std::cell::RefCell::new(None) };
+    static CANVAS: std::cell::RefCell<Option<Canvas>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Une longueur rangée dans un entier partagé, en centièmes de pixel : un
 /// nombre à virgule ne s'y range pas, et le centième suffit à un écran
 /// agrandi de cent soixante-quinze pour cent.
-fn range(ou: &AtomicU32, combien: f32) {
-    ou.store((combien * 100.0).round() as u32, Ordering::Relaxed);
+fn store(cell: &AtomicU32, how_many: f32) {
+    cell.store((how_many * 100.0).round() as u32, Ordering::Relaxed);
 }
 
-fn lue(ou: &AtomicU32) -> f32 {
-    ou.load(Ordering::Relaxed) as f32 / 100.0
+fn load(cell: &AtomicU32) -> f32 {
+    cell.load(Ordering::Relaxed) as f32 / 100.0
 }
 
-fn echelle() -> f32 {
-    lue(&ECHELLE)
+fn scale() -> f32 {
+    load(&SCALE)
 }
 
 fn palette() -> Palette {
-    design::palette(CLAIR.load(Ordering::Relaxed))
+    design::palette(LIGHT.load(Ordering::Relaxed))
 }
 
-impl Barre {
-    const fn vide() -> Self {
-        Barre {
-            chiffres: [String::new(), String::new(), String::new(), String::new()],
-            lues: [None; 4],
-            flux: String::new(),
+impl ReadingsBar {
+    const fn empty() -> Self {
+        ReadingsBar {
+            figures: [String::new(), String::new(), String::new(), String::new()],
+            read_at: [None; 4],
+            stream: String::new(),
         }
     }
 
     /// Ce qu'une lecture du moteur donne à lire, la précédente à la main.
     ///
     /// La précédente parce qu'une mesure qui manque garde un moment ce
-    /// qu'elle disait plutôt que de s'effacer ; voir `GARDE`.
-    fn de(dit: &Mesures, avant: &Barre, maintenant: Instant) -> Self {
-        let mut chiffres: [String; 4] = std::array::from_fn(|_| String::new());
-        let mut lues = [None; 4];
-        for (rang, quoi) in MESURES.iter().enumerate() {
-            if let Some(nombre) = (quoi.lu)(dit) {
-                chiffres[rang] = format!("{nombre:.*} {}", quoi.apres, quoi.unite);
-                lues[rang] = Some(maintenant);
+    /// qu'elle disait plutôt que de s'effacer ; voir `KEEP_FOR`.
+    fn of(readings: &Measures, before: &ReadingsBar, now: Instant) -> Self {
+        let mut figures: [String; 4] = std::array::from_fn(|_| String::new());
+        let mut read_at = [None; 4];
+        for (rank, reading) in READINGS.iter().enumerate() {
+            if let Some(number) = (reading.read)(readings) {
+                figures[rank] = format!("{number:.*} {}", reading.decimals, reading.unit);
+                read_at[rank] = Some(now);
                 continue;
             }
-            match avant.lues[rang] {
-                Some(quand) if maintenant.duration_since(quand) < GARDE => {
-                    chiffres[rang].clone_from(&avant.chiffres[rang]);
-                    lues[rang] = Some(quand);
+            match before.read_at[rank] {
+                Some(when) if now.duration_since(when) < KEEP_FOR => {
+                    figures[rank].clone_from(&before.figures[rank]);
+                    read_at[rank] = Some(when);
                 }
-                _ => chiffres[rang] = RIEN.to_string(),
+                _ => figures[rank] = NO_READING.to_string(),
             }
         }
-        Barre {
-            chiffres,
-            lues,
-            flux: flux(dit),
+        ReadingsBar {
+            figures,
+            read_at,
+            stream: stream(readings),
         }
     }
 
     /// Si ce qui se lit a changé, les instants mis à part.
-    fn se_lit_autrement(&self, que: &Barre) -> bool {
-        self.chiffres != que.chiffres || self.flux != que.flux
+    fn reads_differently(&self, other: &ReadingsBar) -> bool {
+        self.figures != other.figures || self.stream != other.stream
     }
 }
 
-impl Reglage {
+impl Setting {
     /// Le nom sous lequel il voyage, des deux côtés.
-    fn nom(self) -> &'static str {
+    fn name(self) -> &'static str {
         match self {
-            Reglage::Taille => "asked",
-            Reglage::Ecran => "screen",
-            Reglage::Debit => "bitrate",
-            Reglage::Codec => "codec",
-            Reglage::Cadence => "steady",
+            Setting::Size => "asked",
+            Setting::Screen => "screen",
+            Setting::Bitrate => "bitrate",
+            Setting::Codec => "codec",
+            Setting::Steady => "steady",
         }
     }
 
     /// Les valeurs proposées, dans l'ordre du produit.
-    fn valeurs(self, menu: &SessionMenu) -> Vec<String> {
+    fn values(self, menu: &SessionMenu) -> Vec<String> {
         match self {
-            Reglage::Taille => menu
-                .sizes
+            Setting::Size => menu.sizes.iter().map(|size| size.value.clone()).collect(),
+            Setting::Screen => menu
+                .screens
                 .iter()
-                .map(|taille| taille.value.clone())
+                .map(|screen| screen.id.clone())
                 .collect(),
-            Reglage::Ecran => menu.screens.iter().map(|ecran| ecran.id.clone()).collect(),
-            Reglage::Debit => menu.rates.iter().map(u32::to_string).collect(),
-            Reglage::Codec => menu.codecs.clone(),
+            Setting::Bitrate => menu.rates.iter().map(u32::to_string).collect(),
+            Setting::Codec => menu.codecs.clone(),
             // Deux mots et non une liste : c'est un interrupteur, et ses
             // deux côtés se nomment dans la fenêtre comme ceux d'à côté.
-            Reglage::Cadence => vec!["off".to_string(), "on".to_string()],
+            Setting::Steady => vec!["off".to_string(), "on".to_string()],
         }
     }
 
     /// Ce qui s'écrit pour cette valeur, là où on la choisit.
-    fn dit(self, menu: &SessionMenu, valeur: &str) -> String {
+    fn label(self, menu: &SessionMenu, value: &str) -> String {
         match self {
-            Reglage::Taille => match valeur {
+            Setting::Size => match value {
                 "client" => "Résolution du client".to_string(),
                 "host" => "Résolution de l'hôte".to_string(),
                 _ => menu
                     .sizes
                     .iter()
-                    .find(|taille| taille.value == valeur)
-                    .map_or_else(|| valeur.to_string(), en_pixels),
+                    .find(|size| size.value == value)
+                    .map_or_else(|| value.to_string(), in_pixels),
             },
-            Reglage::Ecran => menu
+            Setting::Screen => menu
                 .screens
                 .iter()
-                .find(|ecran| ecran.id == valeur)
+                .find(|screen| screen.id == value)
                 .map_or_else(
-                    || valeur.to_string(),
-                    |ecran| {
-                        if ecran.main {
-                            format!("{} (principal)", ecran.name)
+                    || value.to_string(),
+                    |screen| {
+                        if screen.main {
+                            format!("{} (principal)", screen.name)
                         } else {
-                            ecran.name.clone()
+                            screen.name.clone()
                         }
                     },
                 ),
-            Reglage::Debit => format!(
+            Setting::Bitrate => format!(
                 "{} Mb/s",
-                (valeur.parse::<f64>().unwrap_or(0.0) / 1000.0).round()
+                (value.parse::<f64>().unwrap_or(0.0) / 1000.0).round()
             ),
-            Reglage::Codec => {
-                if valeur == "auto" {
+            Setting::Codec => {
+                if value == "auto" {
                     "Automatique".to_string()
                 } else {
-                    valeur.to_string()
+                    value.to_string()
                 }
             }
-            Reglage::Cadence => if valeur == "on" { "Fluide" } else { "Économe" }.to_string(),
+            Setting::Steady => if value == "on" { "Fluide" } else { "Économe" }.to_string(),
         }
     }
 
     /// Ce qui s'écrit à droite de la ligne du menu, quand la valeur en
     /// place ne s'y lit pas déjà.
-    fn resume(self, menu: &SessionMenu) -> String {
-        let ou = self.ou(menu);
+    fn summary(self, menu: &SessionMenu) -> String {
+        let current = self.current(menu);
         match self {
             // Ce à quoi le choix revient réellement ici : « client » ne
             // dit pas si on demande du 4K ou du 1080p, et c'est justement
             // ce qu'on veut savoir avant d'ouvrir la session.
-            Reglage::Taille => {
-                if ou == "host" {
+            Setting::Size => {
+                if current == "host" {
                     return "hôte".to_string();
                 }
-                let nombres = menu
+                let pixels = menu
                     .sizes
                     .iter()
-                    .find(|taille| taille.value == ou)
-                    .map_or_else(|| ou.clone(), en_pixels);
-                if ou == "client" {
-                    format!("client, {nombres}")
+                    .find(|size| size.value == current)
+                    .map_or_else(|| current.clone(), in_pixels);
+                if current == "client" {
+                    format!("client, {pixels}")
                 } else {
-                    nombres
+                    pixels
                 }
             }
             // Le nom seul : « (principal) » y prendrait la place du nom
             // sans rien apprendre, la liste le disant déjà.
-            Reglage::Ecran => menu
+            Setting::Screen => menu
                 .screens
                 .iter()
-                .find(|ecran| ecran.id == ou)
-                .map_or_else(String::new, |ecran| ecran.name.clone()),
-            _ => self.dit(menu, &ou),
+                .find(|screen| screen.id == current)
+                .map_or_else(String::new, |screen| screen.name.clone()),
+            _ => self.label(menu, &current),
         }
     }
 
     /// Ce qui s'écrit en colonne de droite dans la liste.
-    fn aparte(self, menu: &SessionMenu, valeur: &str) -> String {
+    fn aside(self, menu: &SessionMenu, value: &str) -> String {
         match self {
             // Le rapport de la taille, dit comme les écrans se vendent :
             // deux nombres se comparent mal, et 21:9 à côté de 16:9 dit
             // tout de suite ce qui va être coupé. Rien pour les deux
             // premières : ce à quoi elles reviennent dépend de l'écran
             // qu'on a en face.
-            Reglage::Taille if valeur != "client" && valeur != "host" => menu
+            Setting::Size if value != "client" && value != "host" => menu
                 .sizes
                 .iter()
-                .find(|taille| taille.value == valeur)
-                .filter(|taille| taille.width > 0)
-                .map_or_else(String::new, |taille| rapport(taille.width, taille.height)),
+                .find(|size| size.value == value)
+                .filter(|size| size.width > 0)
+                .map_or_else(String::new, |size| ratio(size.width, size.height)),
             // La taille de l'écran, comme le rapport l'est pour la
             // résolution : deux écrans se distinguent d'abord par là, et
             // un nom de modèle ne dit rien à qui ne l'a pas acheté.
-            Reglage::Ecran => menu
+            Setting::Screen => menu
                 .screens
                 .iter()
-                .find(|ecran| ecran.id == valeur)
-                .map_or_else(String::new, |ecran| {
-                    format!("{}x{}", ecran.wide, ecran.high)
+                .find(|screen| screen.id == value)
+                .map_or_else(String::new, |screen| {
+                    format!("{}x{}", screen.wide, screen.high)
                 }),
             _ => String::new(),
         }
     }
 
     /// Où l'on en est.
-    fn ou(self, menu: &SessionMenu) -> String {
+    fn current(self, menu: &SessionMenu) -> String {
         match self {
-            Reglage::Taille => menu.now.asked.clone(),
-            Reglage::Ecran => menu.now.screen.clone(),
-            Reglage::Debit => menu.now.bitrate_kbps.to_string(),
-            Reglage::Codec => menu.now.codec.clone(),
-            Reglage::Cadence => if menu.now.steady { "on" } else { "off" }.to_string(),
+            Setting::Size => menu.now.asked.clone(),
+            Setting::Screen => menu.now.screen.clone(),
+            Setting::Bitrate => menu.now.bitrate_kbps.to_string(),
+            Setting::Codec => menu.now.codec.clone(),
+            Setting::Steady => if menu.now.steady { "on" } else { "off" }.to_string(),
         }
     }
 
@@ -792,14 +792,14 @@ impl Reglage {
     /// rien faire : hors session, ou pendant que son moteur démarre, la
     /// question n'a pas de réponse, et une question sans réponse doit
     /// laisser le menu exactement comme il était.
-    fn hors_de_portee(self, menu: &SessionMenu, valeur: &str) -> bool {
-        self == Reglage::Codec && menu.beyond_it.iter().any(|autre| autre == valeur)
+    fn out_of_reach(self, menu: &SessionMenu, value: &str) -> bool {
+        self == Setting::Codec && menu.beyond_it.iter().any(|other| other == value)
     }
 }
 
 /// Une taille, en pixels.
-fn en_pixels(taille: &Offered) -> String {
-    format!("{}x{}", taille.width, taille.height)
+fn in_pixels(size: &Offered) -> String {
+    format!("{}x{}", size.width, size.height)
 }
 
 /// Le rapport d'une taille, réduit comme on le lit sur une fiche d'écran.
@@ -808,13 +808,13 @@ fn en_pixels(taille: &Offered) -> String {
 /// s'écarterait de la première le jour où une taille s'ajoute. Les deux
 /// rapports que personne n'écrit sous leur forme réduite sont dits comme
 /// tout le monde les dit.
-fn rapport(large: u32, haut: u32) -> String {
-    fn pgcd(a: u32, b: u32) -> u32 {
-        if b == 0 { a } else { pgcd(b, a % b) }
+fn ratio(width: u32, top: u32) -> String {
+    fn gcd(a: u32, b: u32) -> u32 {
+        if b == 0 { a } else { gcd(b, a % b) }
     }
 
-    let par = pgcd(large, haut).max(1);
-    match (large / par, haut / par) {
+    let divisor = gcd(width, top).max(1);
+    match (width / divisor, top / divisor) {
         (8, 5) => "16:10".to_string(),
         (683, 384) => "16:9".to_string(),
         (x, y) => format!("{x}:{y}"),
@@ -823,47 +823,47 @@ fn rapport(large: u32, haut: u32) -> String {
 
 /// La ligne grise sous les chiffres : de quoi l'image est faite. Ce qui
 /// manque ne laisse pas de trou, il ne s'écrit pas.
-fn flux(dit: &Mesures) -> String {
-    let mut bouts: Vec<String> = Vec::new();
-    if let Some(codec) = &dit.codec {
-        bouts.push(codec.clone());
+fn stream(said: &Measures) -> String {
+    let mut pieces: Vec<String> = Vec::new();
+    if let Some(codec) = &said.codec {
+        pieces.push(codec.clone());
     }
-    if let (Some(large), Some(haute)) = (dit.width, dit.height) {
-        bouts.push(format!("{large}x{haute}"));
+    if let (Some(width), Some(height)) = (said.width, said.height) {
+        pieces.push(format!("{width}x{height}"));
     }
-    if let Some(images) = dit.fps {
-        bouts.push(format!("{images:.0} images/s"));
+    if let Some(frames) = said.fps {
+        pieces.push(format!("{frames:.0} images/s"));
     }
-    bouts.join(" · ")
+    pieces.join(" · ")
 }
 
-impl Droite {
+impl Trailing {
     /// Ce qui s'écrit, une fois les raccourcis connus.
-    fn dit(&self) -> String {
+    fn text(&self) -> String {
         match self {
-            Droite::Mot(mot) => (*mot).to_string(),
-            Droite::Touche(quoi, sinon) => TOUCHES
+            Trailing::Text(label) => (*label).to_string(),
+            Trailing::Key(doing, otherwise) => KEYS
                 .lock()
                 .expect("raccourcis du menu")
                 .iter()
-                .find(|(autre, _)| autre == quoi)
-                .and_then(|(_, dit)| dit.clone())
-                .unwrap_or_else(|| (*sinon).to_string()),
+                .find(|(other, _)| other == doing)
+                .and_then(|(_, said)| said.clone())
+                .unwrap_or_else(|| (*otherwise).to_string()),
         }
     }
 }
 
-impl Ligne {
+impl Line {
     /// La hauteur que cette ligne prend, en vrais pixels.
-    fn haute(&self, echelle: f32) -> f32 {
+    fn height(&self, scale: f32) -> f32 {
         match self {
-            Ligne::Mesures => hauteur_des_mesures(echelle),
-            Ligne::Separateur => (design::PAS_2 * 2.0 + tenue::TRAIT) * echelle,
+            Line::Measures => readings_height(scale),
+            Line::Separator => (design::SPACE_2 * 2.0 + layout::HAIRLINE) * scale,
             // Mesurée au dessin, où se trouve de quoi mesurer du texte
             // replié, et relue ici comme la largeur de la carte l'est.
-            Ligne::Refus => lue(&HAUTE_DU_REFUS),
-            Ligne::Curseur(_) => hauteur_du_curseur(echelle),
-            _ => tenue::LIGNE * echelle,
+            Line::Refusal => load(&REFUSAL_HEIGHT),
+            Line::Slider(_) => slider_height(scale),
+            _ => layout::LINE * scale,
         }
     }
 
@@ -872,35 +872,38 @@ impl Ligne {
     /// Une machine d'en face qui n'a qu'un écran, ou dont le moteur n'a
     /// pas encore dit lesquels, ne laisse rien à choisir : la ligne
     /// s'efface plutôt que d'ouvrir une liste vide.
-    fn se_voit(&self, menu: Option<&SessionMenu>) -> bool {
+    fn is_visible(&self, menu: Option<&SessionMenu>) -> bool {
         // Sans refus à dire, la ligne n'est pas là du tout : elle ne doit
         // rien coûter les neuf cent quatre-vingt-dix-neuf fois où tout se
         // passe bien.
-        if matches!(self, Ligne::Refus) {
-            return refus_a_dire().is_some();
+        if matches!(self, Line::Refusal) {
+            return refusal_to_say().is_some();
         }
         let Some(menu) = menu else {
             // Sans réponse, la carte se réduit à ce qui ne dépend pas de
             // la session : mieux vaut une carte courte qu'une carte de
             // lignes vides.
-            return !matches!(self, Ligne::Choix(_) | Ligne::Curseur(_) | Ligne::Liste(_));
+            return !matches!(self, Line::Choice(_) | Line::Slider(_) | Line::List(_));
         };
         match self {
-            Ligne::Liste(liste) => !liste.quoi.valeurs(menu).is_empty(),
+            Line::List(list) => !list.setting.values(menu).is_empty(),
             _ => true,
         }
     }
 }
 
-impl Bascule {
+impl Toggle {
     /// Ce qui s'écrit sur ses deux côtés.
-    fn mots(&self) -> Vec<String> {
-        self.cotes.iter().map(|mot| (*mot).to_string()).collect()
+    fn words(&self) -> Vec<String> {
+        self.sides
+            .iter()
+            .map(|label| (*label).to_string())
+            .collect()
     }
 
     /// Lequel des deux est en place.
-    fn en_place(&self) -> usize {
-        usize::from(self.ou.load(Ordering::Relaxed))
+    fn current_side(&self) -> usize {
+        usize::from(self.state.load(Ordering::Relaxed))
     }
 }
 
@@ -909,64 +912,71 @@ impl Bascule {
 /// À part de la ligne pour qu'on puisse le demander avec les réglages
 /// déjà en main : les redemander à ce moment-là reprendrait un verrou
 /// qu'on tient.
-fn mots_de(menu: &SessionMenu, quoi: Reglage) -> Vec<String> {
-    quoi.valeurs(menu)
+fn words_of(menu: &SessionMenu, setting: Setting) -> Vec<String> {
+    setting
+        .values(menu)
         .iter()
-        .map(|valeur| quoi.dit(menu, valeur))
+        .map(|value| setting.label(menu, value))
         .collect()
 }
 
-impl Choix {
+impl Choice {
     /// Ce qui s'écrit sur ses côtés, tel que la session les propose.
-    fn mots(&self) -> Option<Vec<String>> {
-        let reglages = REGLAGES.lock().expect("réglages du menu");
-        Some(mots_de(reglages.as_ref()?, self.quoi))
+    fn words(&self) -> Option<Vec<String>> {
+        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        Some(words_of(session_menu.as_ref()?, self.setting))
     }
 
     /// Lequel est en place, et ceux que la machine d'en face ne sait pas
     /// faire.
-    fn ou(&self) -> Option<(usize, Vec<bool>)> {
-        let reglages = REGLAGES.lock().expect("réglages du menu");
-        let menu = reglages.as_ref()?;
-        let valeurs = self.quoi.valeurs(menu);
-        let ou = self.quoi.ou(menu);
+    fn current(&self) -> Option<(usize, Vec<bool>)> {
+        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let menu = session_menu.as_ref()?;
+        let values = self.setting.values(menu);
+        let current = self.setting.current(menu);
         Some((
-            valeurs.iter().position(|valeur| *valeur == ou)?,
-            valeurs
+            values.iter().position(|value| *value == current)?,
+            values
                 .iter()
-                .map(|valeur| self.quoi.hors_de_portee(menu, valeur))
+                .map(|value| self.setting.out_of_reach(menu, value))
                 .collect(),
         ))
     }
 }
 
-impl Curseur {
+impl Slider {
     /// Le cran où il en est : celui qu'une main tient, sinon celui qui est
     /// écrit.
-    fn cran(&self) -> Option<(usize, usize)> {
-        let reglages = REGLAGES.lock().expect("réglages du menu");
-        let menu = reglages.as_ref()?;
-        let valeurs = self.quoi.valeurs(menu);
-        if valeurs.is_empty() {
+    fn notch(&self) -> Option<(usize, usize)> {
+        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let menu = session_menu.as_ref()?;
+        let values = self.setting.values(menu);
+        if values.is_empty() {
             return None;
         }
-        let ou = self.quoi.ou(menu);
-        let ecrit = valeurs.iter().position(|valeur| *valeur == ou).unwrap_or(0);
-        let tenu = *POUSSE.lock().expect("curseur du menu");
-        Some((tenu.unwrap_or(ecrit).min(valeurs.len() - 1), valeurs.len()))
+        let current = self.setting.current(menu);
+        let written = values
+            .iter()
+            .position(|value| *value == current)
+            .unwrap_or(0);
+        let pushed = *PUSHED.lock().expect("curseur du menu");
+        Some((
+            pushed.unwrap_or(written).min(values.len() - 1),
+            values.len(),
+        ))
     }
 
     /// Ce qui s'écrit à droite de son mot : ce qu'il vaut au cran où il
     /// est, y compris pendant qu'une main le pousse.
-    fn valeur(&self) -> String {
-        let reglages = REGLAGES.lock().expect("réglages du menu");
-        let Some(menu) = reglages.as_ref() else {
+    fn value(&self) -> String {
+        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let Some(menu) = session_menu.as_ref() else {
             return String::new();
         };
-        let valeurs = self.quoi.valeurs(menu);
-        match *POUSSE.lock().expect("curseur du menu") {
-            Some(cran) if cran < valeurs.len() => self.quoi.dit(menu, &valeurs[cran]),
-            _ => self.quoi.resume(menu),
+        let values = self.setting.values(menu);
+        match *PUSHED.lock().expect("curseur du menu") {
+            Some(notch) if notch < values.len() => self.setting.label(menu, &values[notch]),
+            _ => self.setting.summary(menu),
         }
     }
 }
@@ -976,28 +986,28 @@ impl Curseur {
 /// Bâtie sur le fil qui dessine, comme celle du logo : une fenêtre
 /// appartient au fil qui l'a faite, et une fenêtre faite sur le fil de la
 /// veille n'entendrait jamais une souris.
-pub fn raise(app: &App, echelle: f32, clair: bool) {
+pub fn raise(app: &App, scale: f32, light: bool) {
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    let owner = crate::fenetre::sienne();
+    let owner = crate::main_window::handle();
     *PROGRAM.lock().expect("programme du menu") = Some(app.clone());
-    *TOUCHES.lock().expect("raccourcis du menu") = crate::shortcuts::engraved();
+    *KEYS.lock().expect("raccourcis du menu") = crate::shortcuts::engraved();
     // Quatre tirets avant la première lecture, et non quatre vides : la
     // barre est là dès la première ouverture, et ce qu'elle montre alors
     // est ce que le produit montre pour une mesure qui manque.
-    *BARRE.lock().expect("mesures du menu") =
-        Barre::de(&Mesures::default(), &Barre::vide(), Instant::now());
-    range(&ECHELLE, echelle);
-    CLAIR.store(clair, Ordering::Relaxed);
-    OUVERT.store(false, Ordering::Relaxed);
-    *PANNEAU.lock().expect("panneau du menu") = None;
+    *READINGS_BAR.lock().expect("mesures du menu") =
+        ReadingsBar::of(&Measures::default(), &ReadingsBar::empty(), Instant::now());
+    store(&SCALE, scale);
+    LIGHT.store(light, Ordering::Relaxed);
+    OPEN.store(false, Ordering::Relaxed);
+    *PANEL.lock().expect("panneau du menu") = None;
     let _ = app.run_on_main_thread(move || build(owner));
     // Ce que la session propose, demandé une fois : les crans ne changent
     // pas d'un clic à l'autre. La fenêtre est bâtie sans attendre, parce
     // qu'une carte fermée n'a rien à montrer et que la réponse la
     // rattrapera avant la première ouverture.
-    relis_les_reglages(app);
+    reread_the_session_menu(app);
 }
 
 /// Redemande ce que la session propose et où elle en est, et recommence
@@ -1012,31 +1022,31 @@ pub fn raise(app: &App, echelle: f32, clair: bool) {
 ///
 /// Un numéro de tour, comme pour les mesures : deux ouvertures rapprochées
 /// ne laissent pas deux veilles derrière la même carte.
-fn relis_les_reglages(app: &App) {
+fn reread_the_session_menu(app: &App) {
     let app = app.clone();
-    let tour = TOUR_DES_REGLAGES.fetch_add(1, Ordering::Relaxed) + 1;
+    let round = SESSION_MENU_ROUND.fetch_add(1, Ordering::Relaxed) + 1;
     crate::app::spawn(async move {
-        while TOUR_DES_REGLAGES.load(Ordering::Relaxed) == tour
+        while SESSION_MENU_ROUND.load(Ordering::Relaxed) == round
             && ITS_WINDOW.load(Ordering::Relaxed) != 0
         {
-            let lu = crate::settings::session_menu(app.clone()).await;
+            let read = crate::settings::session_menu(app.clone()).await;
             // Rien du tout veut dire qu'elle n'a rien dit, jamais qu'elle
             // ne sait rien faire : c'est donc là-dessus que la question se
             // repose, et nulle part ailleurs.
-            let repondu = !lu.beyond_it.is_empty();
+            let answered = !read.beyond_it.is_empty();
             let change = {
-                let mut reglages = REGLAGES.lock().expect("réglages du menu");
-                let change = reglages.as_ref() != Some(&lu);
-                *reglages = Some(lu);
+                let mut session_menu = SESSION_MENU.lock().expect("réglages du menu");
+                let change = session_menu.as_ref() != Some(&read);
+                *session_menu = Some(read);
                 change
             };
             if change {
-                redessine(&app);
+                redraw(&app);
             }
-            if repondu {
+            if answered {
                 return;
             }
-            tokio::time::sleep(RYTHME).await;
+            tokio::time::sleep(REFRESH).await;
         }
     });
 }
@@ -1047,11 +1057,11 @@ pub fn lower(app: &App) {
     if window == 0 {
         return;
     }
-    OUVERT.store(false, Ordering::Relaxed);
+    OPEN.store(false, Ordering::Relaxed);
     // La veille des mesures ne se range pas d'elle-même : elle suit la
     // carte, et une carte ouverte à la fin d'une session ne se referme
     // pas, elle disparaît.
-    suis_les_mesures(app, false);
+    follow_the_readings(app, false);
     *PROGRAM.lock().expect("programme du menu") = None;
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
@@ -1059,35 +1069,35 @@ pub fn lower(app: &App) {
 
         // SAFETY: une fenêtre à nous, défaite sur le fil qui l'a faite.
         unsafe { DestroyWindow(window as HWND) };
-        TOILE.with_borrow_mut(|toile| *toile = None);
+        CANVAS.with_borrow_mut(|canvas| *canvas = None);
     });
 }
 
 /// Montre la carte, ou la range.
-pub fn montre(ouvert: bool) {
-    if ITS_WINDOW.load(Ordering::Relaxed) == 0 || OUVERT.swap(ouvert, Ordering::Relaxed) == ouvert {
+pub fn show(is_open: bool) {
+    if ITS_WINDOW.load(Ordering::Relaxed) == 0 || OPEN.swap(is_open, Ordering::Relaxed) == is_open {
         return;
     }
     // Une carte rangée ne garde rien de la main qui la lisait : rouverte,
     // elle montrerait une ligne allumée sous une souris posée ailleurs.
-    *SURVOL.lock().expect("survol du menu") = None;
-    *PRESSEE.lock().expect("appui du menu") = None;
-    DEDANS.store(false, Ordering::Relaxed);
+    *HOVER.lock().expect("survol du menu") = None;
+    *PRESSED.lock().expect("appui du menu") = None;
+    HAND_INSIDE.store(false, Ordering::Relaxed);
     let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
         return;
     };
     // Un menu qu'on rouvre s'ouvre sur lui-même : rester dans une liste
     // choisie il y a deux sessions serait un menu qui a l'air d'un autre.
-    *PANNEAU.lock().expect("panneau du menu") = None;
-    *POUSSE.lock().expect("curseur du menu") = None;
+    *PANEL.lock().expect("panneau du menu") = None;
+    *PUSHED.lock().expect("curseur du menu") = None;
     // Ce qui vit dans la carte ne vit que pendant qu'on la regarde. Les
     // interrupteurs et les réglages se relisent à chaque ouverture parce
     // qu'ils peuvent avoir bougé sans elle.
-    suis_les_mesures(&app, ouvert);
-    if ouvert {
+    follow_the_readings(&app, is_open);
+    if is_open {
         let asked = app.clone();
-        crate::app::spawn(async move { relis_les_bascules(&asked).await });
-        relis_les_reglages(&app);
+        crate::app::spawn(async move { reread_the_toggles(&asked).await });
+        reread_the_session_menu(&app);
     }
     let _ = app.run_on_main_thread(move || {
         use windows_sys::Win32::Foundation::HWND;
@@ -1097,28 +1107,28 @@ pub fn montre(ouvert: bool) {
         if window.is_null() {
             return;
         }
-        if ouvert {
+        if is_open {
             repaint(window);
         }
         // SAFETY: une fenêtre à nous, montrée sans prendre le premier
         // plan.
         unsafe {
-            ShowWindow(window, if ouvert { SW_SHOWNOACTIVATE } else { SW_HIDE });
+            ShowWindow(window, if is_open { SW_SHOWNOACTIVATE } else { SW_HIDE });
         }
     });
 }
 
 /// Dit si la carte est ouverte, pour qui a besoin de la basculer.
-pub fn ouvert() -> bool {
-    OUVERT.load(Ordering::Relaxed)
+pub fn is_open() -> bool {
+    OPEN.load(Ordering::Relaxed)
 }
 
 /// Ce que sa fenêtre prend de haut.
 ///
 /// Pour le bouton, qui s'en sert à décider si le menu a la place de
 /// s'ouvrir vers le bas.
-pub fn haute() -> i32 {
-    HAUTE.load(Ordering::Relaxed) as i32
+pub fn height() -> i32 {
+    HEIGHT.load(Ordering::Relaxed) as i32
 }
 
 /// Ce que sa fenêtre prend de large en tout, pour ce sens vertical-là.
@@ -1127,11 +1137,11 @@ pub fn haute() -> i32 {
 /// c'est sa fenêtre entière qui se pose à côté de lui, jamais sa seule
 /// carte, voir `lay`. Pour le bouton, qui s'en sert à décider de quel
 /// bord il y a la place de la faire partir.
-pub fn large(sens: Sens, logo: i32) -> i32 {
-    let large = LARGE.load(Ordering::Relaxed) as i32;
-    match sens {
-        Sens::Cote => logo + (design::PAS_2 * echelle()).round() as i32 + large,
-        _ => large,
+pub fn width(opens: Opens, logo: i32) -> i32 {
+    let width = WIDTH.load(Ordering::Relaxed) as i32;
+    match opens {
+        Opens::Side => logo + (design::SPACE_2 * scale()).round() as i32 + width,
+        _ => width,
     }
 }
 
@@ -1144,8 +1154,8 @@ pub fn large(sens: Sens, logo: i32) -> i32 {
 /// bouton.
 pub fn lay(
     anchor: (i32, i32),
-    sens: Sens,
-    a_droite: bool,
+    opens: Opens,
+    on_the_right: bool,
     logo: i32,
     picture: (i32, i32, i32, i32),
 ) {
@@ -1158,24 +1168,24 @@ pub fn lay(
     if window == 0 {
         return;
     }
-    let (large, haute) = (
-        LARGE.load(Ordering::Relaxed) as i32,
-        HAUTE.load(Ordering::Relaxed) as i32,
+    let (width, height) = (
+        WIDTH.load(Ordering::Relaxed) as i32,
+        HEIGHT.load(Ordering::Relaxed) as i32,
     );
     // La fenêtre est plus grande que la carte, de tout ce que l'ombre
     // déborde : c'est donc la **carte** qu'on pose, et la fenêtre autour
     // d'elle. Posée comme si les deux ne faisaient qu'une, la carte
     // tombait vingt pixels trop bas et vingt trop à gauche, ce qui se
     // voit au premier coup d'oeil à côté de l'ancien menu.
-    let echelle = echelle();
+    let scale = scale();
     // La toile porte la carte dessinée pour le bord d'où elle est
     // partie, et rien ne la redessine d'elle-même : sans ceci, un bord
     // qui vient de changer déplaçait la fenêtre tout de suite, sur une
     // image encore posée pour l'ancien, ce qui se voyait le temps d'un
     // reflet avant le prochain dessin.
     let vertical_change =
-        VERS_LE_HAUT.swap(sens == Sens::Haut, Ordering::Relaxed) != (sens == Sens::Haut);
-    let horizontal_change = VERS_LA_DROITE.swap(a_droite, Ordering::Relaxed) != a_droite;
+        UPWARD.swap(opens == Opens::Up, Ordering::Relaxed) != (opens == Opens::Up);
+    let horizontal_change = RIGHTWARD.swap(on_the_right, Ordering::Relaxed) != on_the_right;
     if (vertical_change || horizontal_change)
         && let Some(app) = PROGRAM.lock().expect("programme du menu").clone()
     {
@@ -1183,41 +1193,44 @@ pub fn lay(
         // la toile, et ceci court sur celui qui suit la main.
         let _ = app.run_on_main_thread(move || repaint(window as HWND));
     }
-    let debord = debord_de_l_ombre(echelle).round() as i32;
-    let carte_haute = haute - debord * 2;
+    let overflow_px = shadow_overflow(scale).round() as i32;
+    let card_height = height - overflow_px * 2;
     // Collée au même bord que le logo, et séparée de lui de l'espace
     // que la feuille de style met entre les deux : son bord droit
     // d'habitude, son bord gauche quand le premier n'a pas la place, ce
     // que le bouton a déjà décidé.
-    let entre = (design::PAS_2 * echelle).round() as i32;
+    let between = (design::SPACE_2 * scale).round() as i32;
     // Le coin que `SetWindowPos` reçoit plus bas prend encore un debord
     // de plus, pour une raison qui reste au-dessus de cette fonction :
     // posée telle quelle, la carte tombait vingt pixels trop à gauche.
     // Quand c'est la carte qui est collée à ce bord-là plutôt que
     // laissée au bord droit, elle porte elle-même un second debord (son
-    // ombre à elle, `carte` la posant à `debord` et non à zéro), et les
+    // ombre à elle, `card` la posant à `overflow_px` et non à zéro), et les
     // deux s'ajoutent sans se répondre : sans le retirer ici deux fois,
     // le bord de la carte serait tombé deux debords après le bouton
     // plutôt qu'au même endroit que lui.
-    let horizontal = if a_droite {
-        anchor.0 - logo - debord * 2
+    let horizontal = if on_the_right {
+        anchor.0 - logo - overflow_px * 2
     } else {
-        anchor.0 - large
+        anchor.0 - width
     };
-    let (gauche, haut) = match sens {
-        Sens::Bas => (horizontal, anchor.1 + logo + entre - debord),
-        Sens::Haut => (horizontal, anchor.1 - logo - entre - carte_haute - debord),
+    let (left, top) = match opens {
+        Opens::Down => (horizontal, anchor.1 + logo + between - overflow_px),
+        Opens::Up => (
+            horizontal,
+            anchor.1 - logo - between - card_height - overflow_px,
+        ),
         // À côté, la carte part du haut du bouton et glisse de ce qu'il
         // faut pour tenir dans l'image : c'est toute sa raison d'être là
         // plutôt que dessous. Sa fenêtre entière et non sa seule carte,
         // le panneau d'une liste s'ouvrant dedans.
-        Sens::Cote => (
-            if a_droite {
-                anchor.0 + entre - debord * 2
+        Opens::Side => (
+            if on_the_right {
+                anchor.0 + between - overflow_px * 2
             } else {
-                anchor.0 - logo - entre - large
+                anchor.0 - logo - between - width
             },
-            (anchor.1 - debord).clamp(picture.1, (picture.3 - haute).max(picture.1)),
+            (anchor.1 - overflow_px).clamp(picture.1, (picture.3 - height).max(picture.1)),
         ),
     };
     // SAFETY: une fenêtre à nous, posée sans être activée ni
@@ -1226,8 +1239,8 @@ pub fn lay(
         SetWindowPos(
             window as HWND,
             std::ptr::null_mut(),
-            gauche + debord,
-            haut,
+            left + overflow_px,
+            top,
             0,
             0,
             SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER,
@@ -1264,26 +1277,26 @@ fn build(owner: isize) {
 
     // La taille se mesure avant que la fenêtre existe : elle dépend du
     // texte, et mesurer du texte demande de quoi le dessiner.
-    let Some(mesure) = Toile::neuve(1, 1) else {
+    let Some(measure) = Canvas::new(1, 1) else {
         note("bouton flottant : le menu n'a pas pu être mesuré");
         return;
     };
-    let echelle = echelle();
+    let scale = scale();
     // La hauteur d'une ligne de texte, demandée à la police une fois pour
     // toutes : tout ce qui est empilé dans cette carte s'appuie dessus.
-    range(
-        &HAUTE_LEGENDE,
-        mesure.haute(Plume::de(design::LEGENDE * echelle)),
+    store(
+        &CAPTION_HEIGHT,
+        measure.line_height(Pen::of(design::CAPTION * scale)),
     );
-    range(
-        &HAUTE_CORPS,
-        mesure.haute(Plume::de(design::CORPS * echelle)),
+    store(
+        &BODY_HEIGHT,
+        measure.line_height(Pen::of(design::BODY * scale)),
     );
-    mesure_la_carte(&mesure, echelle);
-    let (large, haute) = taille(&mesure);
-    LARGE.store(large as u32, Ordering::Relaxed);
-    HAUTE.store(haute as u32, Ordering::Relaxed);
-    drop(mesure);
+    measure_the_card(&measure, scale);
+    let (width, height) = size(&measure);
+    WIDTH.store(width as u32, Ordering::Relaxed);
+    HEIGHT.store(height as u32, Ordering::Relaxed);
+    drop(measure);
 
     // SAFETY: une classe déclarée une fois et une fenêtre bâtie dessus,
     // sur le fil qui pompera ses messages. Une classe déclarée deux fois
@@ -1311,8 +1324,8 @@ fn build(owner: isize) {
             WS_POPUP,
             0,
             0,
-            large,
-            haute,
+            width,
+            height,
             owner as HWND,
             std::ptr::null_mut(),
             instance,
@@ -1325,7 +1338,7 @@ fn build(owner: isize) {
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
     note(&format!(
-        "bouton flottant : menu dessiné par ZyrDesk, {large}x{haute} px au \
+        "bouton flottant : menu dessiné par ZyrDesk, {width}x{height} px au \
          départ ; la fenêtre suit ensuite ce que la carte demande. Il ne \
          reste dans la vue web que la ligne rouge qui porte un refus, \
          lequel n'est donc dit ici que dans ce journal"
@@ -1337,20 +1350,20 @@ fn build(owner: isize) {
 /// Aussi large que sa ligne la plus longue, ce que la feuille de style
 /// demande depuis toujours et qu'aucun nombre écrit à la main ne saurait
 /// tenir : un libellé rallongé couperait son raccourci.
-fn taille(toile: &Toile) -> (i32, i32) {
-    let echelle = echelle();
-    let debord = debord_de_l_ombre(echelle);
-    let panneau = largeur_des_panneaux(toile, echelle);
-    let large = largeur_de_la_carte(echelle)
-        + if panneau > 0.0 {
-            panneau + design::PAS_2 * echelle
+fn size(canvas: &Canvas) -> (i32, i32) {
+    let scale = scale();
+    let overflow_px = shadow_overflow(scale);
+    let panel = panels_width(canvas, scale);
+    let width = card_width(scale)
+        + if panel > 0.0 {
+            panel + design::SPACE_2 * scale
         } else {
             0.0
         };
-    let haute = contenu(echelle).max(hauteur_des_panneaux(echelle));
+    let height = content(scale).max(panels_height(scale));
     (
-        (large + debord * 2.0).ceil() as i32,
-        (haute + debord * 2.0).ceil() as i32,
+        (width + overflow_px * 2.0).ceil() as i32,
+        (height + overflow_px * 2.0).ceil() as i32,
     )
 }
 
@@ -1361,68 +1374,69 @@ fn taille(toile: &Toile) -> (i32, i32) {
 /// raccourci. Mesurée sur **toutes** ses lignes, y compris celles qui ne
 /// se voient pas en ce moment : une carte qui rétrécit quand une ligne
 /// s'en va est une carte qui change de largeur sous la main.
-fn largeur_de_la_carte(echelle: f32) -> f32 {
-    lue(&LARGE_CARTE).max(design::PAS_2 * 2.0 * echelle)
+fn card_width(scale: f32) -> f32 {
+    load(&CARD_WIDTH).max(design::SPACE_2 * 2.0 * scale)
 }
 
 /// La même, mesurée. Rangée ensuite, parce que la mise en page la
 /// redemande à chaque image et que mesurer du texte coûte.
-fn mesure_la_carte(toile: &Toile, echelle: f32) {
-    let reglages = REGLAGES.lock().expect("réglages du menu");
-    let mut large: f32 = 0.0;
-    for ligne in &LIGNES {
-        large = large.max(match ligne {
-            Ligne::Mesures => {
-                (tenue::MESURE * 4.0 + tenue::ENTRE_MESURES * 3.0 + design::PAS_2 * 2.0) * echelle
+fn measure_the_card(canvas: &Canvas, scale: f32) {
+    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let mut width: f32 = 0.0;
+    for line in &LINES {
+        width = width.max(match line {
+            Line::Measures => {
+                (layout::READING * 4.0 + layout::BETWEEN_READINGS * 3.0 + design::SPACE_2 * 2.0)
+                    * scale
             }
             // Replié sur la largeur que les autres lignes décident : un
             // refus est une phrase, et une carte large comme une phrase
             // serait une carte deux fois trop large pour tout le reste.
-            Ligne::Separateur | Ligne::Refus => 0.0,
-            Ligne::Entree(entree) => {
-                let droite =
-                    toile.largeur(&entree.droite.dit(), Plume::de(design::LEGENDE * echelle));
-                autour(toile, entree.mot, droite, echelle)
+            Line::Separator | Line::Refusal => 0.0,
+            Line::Entry(entry) => {
+                let right =
+                    canvas.width_of(&entry.trailing.text(), Pen::of(design::CAPTION * scale));
+                around(canvas, entry.label, right, scale)
             }
-            Ligne::Bascule(bascule) => autour(
-                toile,
-                bascule.mot,
-                cotes_larges(toile, &bascule.mots(), echelle),
-                echelle,
+            Line::Toggle(toggle) => around(
+                canvas,
+                toggle.label,
+                sides_width(canvas, &toggle.words(), scale),
+                scale,
             ),
             // Ses mots sont demandés avec les réglages déjà en main : les
             // redemander à la ligne reprendrait le verrou qu'on tient, ce
             // qui arrête le fil qui dessine pour de bon.
-            Ligne::Choix(choix) => match reglages.as_ref() {
-                Some(menu) => autour(
-                    toile,
-                    choix.mot,
-                    cotes_larges(toile, &mots_de(menu, choix.quoi), echelle),
-                    echelle,
+            Line::Choice(choice) => match session_menu.as_ref() {
+                Some(menu) => around(
+                    canvas,
+                    choice.label,
+                    sides_width(canvas, &words_of(menu, choice.setting), scale),
+                    scale,
                 ),
                 None => 0.0,
             },
             // Sa barre prend toute la largeur, donc elle n'en demande
             // aucune : c'est sa tête qui décide, comme pour les autres.
-            Ligne::Curseur(curseur) => {
-                let valeur = reglages
+            Line::Slider(slider) => {
+                let value = session_menu
                     .as_ref()
-                    .map_or_else(String::new, |menu| curseur.quoi.resume(menu));
-                let droite = toile.largeur(&valeur, Plume::de(design::CORPS * echelle));
-                autour(toile, curseur.mot, droite, echelle)
+                    .map_or_else(String::new, |menu| slider.setting.summary(menu));
+                let right = canvas.width_of(&value, Pen::of(design::BODY * scale));
+                around(canvas, slider.label, right, scale)
             }
-            Ligne::Liste(liste) => {
-                let valeur = reglages
+            Line::List(list) => {
+                let value = session_menu
                     .as_ref()
-                    .map_or_else(String::new, |menu| liste.quoi.resume(menu));
-                let droite = toile.largeur(&valeur, Plume::de(design::LEGENDE * echelle))
-                    + (design::PAS_2 + tenue::MARQUE) * echelle;
-                autour(toile, liste.mot, droite, echelle)
+                    .map_or_else(String::new, |menu| list.setting.summary(menu));
+                let right = canvas.width_of(&value, Pen::of(design::CAPTION * scale))
+                    + (design::SPACE_2 + layout::BRAND) * scale;
+                around(canvas, list.label, right, scale)
             }
         });
     }
-    drop(reglages);
-    range(&LARGE_CARTE, large);
+    drop(session_menu);
+    store(&CARD_WIDTH, width);
 }
 
 /// Ce qu'une ligne prend de large : son icône, son mot, ce qui vient à
@@ -1430,20 +1444,23 @@ fn mesure_la_carte(toile: &Toile, echelle: f32) {
 ///
 /// La même mesure pour toutes les sortes de lignes, parce que c'est la
 /// même mise en page : ce qui change est ce qu'il y a à droite.
-fn autour(toile: &Toile, mot: &str, droite: f32, echelle: f32) -> f32 {
-    toile.largeur(mot, Plume::de(design::CORPS * echelle))
-        + droite
-        + (design::PAS_2 * 2.0 + tenue::ICONE + design::PAS_3 + tenue::APRES_LE_MOT) * echelle
+fn around(canvas: &Canvas, label: &str, right: f32, scale: f32) -> f32 {
+    canvas.width_of(label, Pen::of(design::BODY * scale))
+        + right
+        + (design::SPACE_2 * 2.0 + layout::ICON + design::SPACE_3 + layout::AFTER_THE_LABEL) * scale
 }
 
 /// Ce que les côtés d'une ligne à choix prennent de large, ensemble.
-fn cotes_larges(toile: &Toile, mots: &[String], echelle: f32) -> f32 {
-    mots.iter().map(|mot| cote_large(toile, mot, echelle)).sum()
+fn sides_width(canvas: &Canvas, words: &[String], scale: f32) -> f32 {
+    words
+        .iter()
+        .map(|label| side_width(canvas, label, scale))
+        .sum()
 }
 
 /// Et ce qu'un seul côté prend : son mot et ce qui l'entoure.
-fn cote_large(toile: &Toile, mot: &str, echelle: f32) -> f32 {
-    toile.largeur(mot, Plume::de(design::LEGENDE * echelle)) + design::PAS_3 * 2.0 * echelle
+fn side_width(canvas: &Canvas, label: &str, scale: f32) -> f32 {
+    canvas.width_of(label, Pen::of(design::CAPTION * scale)) + design::SPACE_3 * 2.0 * scale
 }
 
 /// Où tombent les côtés d'une ligne à choix, poussés au bord droit et
@@ -1451,37 +1468,37 @@ fn cote_large(toile: &Toile, mot: &str, echelle: f32) -> f32 {
 ///
 /// Ils forment un seul objet, avec une bordure autour de tous et rien
 /// entre eux.
-fn cotes_de(toile: &Toile, ou: Cadre, mots: &[String], echelle: f32) -> Vec<Cadre> {
-    let larges: Vec<f32> = mots
+fn sides_of(canvas: &Canvas, at: Rect, words: &[String], scale: f32) -> Vec<Rect> {
+    let widths: Vec<f32> = words
         .iter()
-        .map(|mot| cote_large(toile, mot, echelle))
+        .map(|label| side_width(canvas, label, scale))
         .collect();
-    let haute = tenue::BASCULE * echelle;
-    let haut = ou.haut + (ou.bas - ou.haut - haute) / 2.0;
-    let mut gauche = ou.droite - design::PAS_2 * echelle - larges.iter().sum::<f32>();
-    larges
+    let height = layout::TOGGLE * scale;
+    let top = at.top + (at.bottom - at.top - height) / 2.0;
+    let mut left = at.right - design::SPACE_2 * scale - widths.iter().sum::<f32>();
+    widths
         .iter()
-        .map(|large| {
-            let place = Cadre::pose(gauche, haut, *large, haute);
-            gauche += large;
+        .map(|width| {
+            let place = Rect::at(left, top, *width, height);
+            left += width;
             place
         })
         .collect()
 }
 
 /// La barre d'un curseur, sous la tête de sa ligne.
-fn barre_du_curseur(ou: Cadre, echelle: f32) -> Cadre {
-    let bord = design::PAS_2 * echelle;
-    let haut = ou.haut
-        + bord
-        + lue(&HAUTE_CORPS)
-        + tenue::SOUS_LE_MOT * echelle
-        + (tenue::CURSEUR - tenue::BARRE) * echelle / 2.0;
-    Cadre::pose(
-        ou.gauche + bord,
-        haut,
-        ou.droite - ou.gauche - bord * 2.0,
-        tenue::BARRE * echelle,
+fn slider_bar(at: Rect, scale: f32) -> Rect {
+    let edge = design::SPACE_2 * scale;
+    let top = at.top
+        + edge
+        + load(&BODY_HEIGHT)
+        + layout::UNDER_THE_LABEL * scale
+        + (layout::SLIDER - layout::BAR) * scale / 2.0;
+    Rect::at(
+        at.left + edge,
+        top,
+        at.right - at.left - edge * 2.0,
+        layout::BAR * scale,
     )
 }
 
@@ -1489,9 +1506,9 @@ fn barre_du_curseur(ou: Cadre, echelle: f32) -> Cadre {
 ///
 /// Lus dans les lignes plutôt qu'écrits une seconde fois : ajouter une
 /// liste au menu suffit alors à lui donner son panneau.
-fn a_panneau() -> impl Iterator<Item = Reglage> {
-    LIGNES.iter().filter_map(|ligne| match ligne {
-        Ligne::Liste(liste) => Some(liste.quoi),
+fn with_a_panel() -> impl Iterator<Item = Setting> {
+    LINES.iter().filter_map(|line| match line {
+        Line::List(list) => Some(list.setting),
         _ => None,
     })
 }
@@ -1502,38 +1519,39 @@ fn a_panneau() -> impl Iterator<Item = Reglage> {
 /// Le plus large et non celui qui est ouvert : la fenêtre ne peut pas
 /// changer de largeur au moment où l'on ouvre une liste sans que le
 /// dessin qu'elle porte change de place au même instant.
-fn largeur_des_panneaux(toile: &Toile, echelle: f32) -> f32 {
-    let reglages = REGLAGES.lock().expect("réglages du menu");
-    let Some(menu) = reglages.as_ref() else {
+fn panels_width(canvas: &Canvas, scale: f32) -> f32 {
+    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let Some(menu) = session_menu.as_ref() else {
         return 0.0;
     };
-    a_panneau()
-        .map(|quoi| largeur_du_panneau(toile, menu, quoi, echelle))
+    with_a_panel()
+        .map(|setting| panel_width(canvas, menu, setting, scale))
         .fold(0.0, f32::max)
 }
 
 /// Ce qu'un panneau prend de large : sa plus longue valeur.
-fn largeur_du_panneau(toile: &Toile, menu: &SessionMenu, quoi: Reglage, echelle: f32) -> f32 {
-    quoi.valeurs(menu)
+fn panel_width(canvas: &Canvas, menu: &SessionMenu, setting: Setting, scale: f32) -> f32 {
+    setting
+        .values(menu)
         .iter()
-        .map(|valeur| {
-            let aparte = toile.largeur(
-                &quoi.aparte(menu, valeur),
-                Plume::de(design::LEGENDE * echelle),
+        .map(|value| {
+            let aside = canvas.width_of(
+                &setting.aside(menu, value),
+                Pen::of(design::CAPTION * scale),
             );
-            autour(toile, &quoi.dit(menu, valeur), aparte, echelle)
+            around(canvas, &setting.label(menu, value), aside, scale)
         })
         .fold(0.0, f32::max)
 }
 
 /// La hauteur du plus haut des panneaux, pour la même raison.
-fn hauteur_des_panneaux(echelle: f32) -> f32 {
-    let reglages = REGLAGES.lock().expect("réglages du menu");
-    let Some(menu) = reglages.as_ref() else {
+fn panels_height(scale: f32) -> f32 {
+    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let Some(menu) = session_menu.as_ref() else {
         return 0.0;
     };
-    a_panneau()
-        .map(|quoi| hauteur_du_panneau(menu, quoi, echelle))
+    with_a_panel()
+        .map(|setting| panel_height(menu, setting, scale))
         .fold(0.0, f32::max)
 }
 
@@ -1542,106 +1560,106 @@ fn hauteur_des_panneaux(echelle: f32) -> f32 {
 /// Sans titre : on sait où l'on est, la ligne qui l'a ouvert est en face
 /// et son chevron le dit. Une ligne de plus pour redire le mot d'à côté
 /// serait une ligne de moins pour les valeurs.
-fn hauteur_du_panneau(menu: &SessionMenu, quoi: Reglage, echelle: f32) -> f32 {
-    let combien = quoi.valeurs(menu).len();
-    if combien == 0 {
+fn panel_height(menu: &SessionMenu, setting: Setting, scale: f32) -> f32 {
+    let how_many = setting.values(menu).len();
+    if how_many == 0 {
         return 0.0;
     }
-    (design::PAS_2 * 2.0 + tenue::LIGNE * combien as f32) * echelle
+    (design::SPACE_2 * 2.0 + layout::LINE * how_many as f32) * scale
 }
 
 /// Le panneau ouvert dans sa fenêtre, du côté de la carte d'où elle
 /// n'est pas partie : à sa gauche d'habitude, à sa droite quand elle
 /// est elle-même collée au bord gauche de la fenêtre.
-fn panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> Option<Cadre> {
+fn panel(canvas: &Canvas, setting: Setting, scale: f32) -> Option<Rect> {
     // La carte et la ligne d'abord, le verrou des réglages ensuite : les
     // mesurer demande ce même verrou, et un verrou repris pendant qu'on
     // le tient arrête le fil qui dessine pour de bon.
-    let carte = carte(echelle);
-    let ligne = ligne_du_panneau(quoi, echelle)?;
-    let reglages = REGLAGES.lock().expect("réglages du menu");
-    let menu = reglages.as_ref()?;
-    let haute = hauteur_du_panneau(menu, quoi, echelle);
-    if haute <= 0.0 {
+    let card = card(scale);
+    let line = panel_line(setting, scale)?;
+    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let menu = session_menu.as_ref()?;
+    let height = panel_height(menu, setting, scale);
+    if height <= 0.0 {
         return None;
     }
-    let large = largeur_du_panneau(toile, menu, quoi, echelle);
+    let width = panel_width(canvas, menu, setting, scale);
     // Ouvert en face de la ligne qui l'ouvre, sa première valeur sur
     // elle : un panneau de deux valeurs collé en haut de la carte
     // pendant qu'on clique une ligne du bas est un panneau qu'on cherche
     // des yeux. Il descend de ce qu'il faut pour tenir dans la fenêtre,
     // qui est bâtie assez haute pour le plus grand d'entre eux.
-    let bord = design::PAS_2 * echelle;
-    let dedans = debord_de_l_ombre(echelle);
-    let bas = (HAUTE.load(Ordering::Relaxed) as f32 - dedans - haute).max(dedans);
-    let gauche = if VERS_LA_DROITE.load(Ordering::Relaxed) {
-        carte.droite + bord
+    let edge = design::SPACE_2 * scale;
+    let inside = shadow_overflow(scale);
+    let bottom = (HEIGHT.load(Ordering::Relaxed) as f32 - inside - height).max(inside);
+    let left = if RIGHTWARD.load(Ordering::Relaxed) {
+        card.right + edge
     } else {
-        carte.gauche - bord - large
+        card.left - edge - width
     };
-    Some(Cadre::pose(
-        gauche,
-        (ligne.haut - bord).clamp(dedans, bas),
-        large,
-        haute,
+    Some(Rect::at(
+        left,
+        (line.top - edge).clamp(inside, bottom),
+        width,
+        height,
     ))
 }
 
 /// Où tombe la ligne qui ouvre ce panneau, quand elle se voit.
-fn ligne_du_panneau(quoi: Reglage, echelle: f32) -> Option<Cadre> {
-    parcours(echelle)
+fn panel_line(setting: Setting, scale: f32) -> Option<Rect> {
+    walk(scale)
         .into_iter()
-        .find(|(_, ligne, _)| matches!(ligne, Ligne::Liste(liste) if liste.quoi == quoi))
+        .find(|(_, line, _)| matches!(line, Line::List(list) if list.setting == setting))
         .map(|(_, _, place)| place)
 }
 
 /// La place de chacune des valeurs du panneau ouvert.
-fn parcours_du_panneau(toile: &Toile, quoi: Reglage, echelle: f32) -> Vec<Cadre> {
-    let Some(panneau) = panneau(toile, quoi, echelle) else {
+fn panel_walk(canvas: &Canvas, setting: Setting, scale: f32) -> Vec<Rect> {
+    let Some(panel) = panel(canvas, setting, scale) else {
         return Vec::new();
     };
-    let bord = design::PAS_2 * echelle;
-    let combien = REGLAGES
+    let edge = design::SPACE_2 * scale;
+    let how_many = SESSION_MENU
         .lock()
         .expect("réglages du menu")
         .as_ref()
-        .map_or(0, |menu| quoi.valeurs(menu).len());
-    let mut haut = panneau.haut + bord;
-    (0..combien)
+        .map_or(0, |menu| setting.values(menu).len());
+    let mut top = panel.top + edge;
+    (0..how_many)
         .map(|_| {
-            let place = Cadre::pose(
-                panneau.gauche + bord,
-                haut,
-                panneau.droite - panneau.gauche - bord * 2.0,
-                tenue::LIGNE * echelle,
+            let place = Rect::at(
+                panel.left + edge,
+                top,
+                panel.right - panel.left - edge * 2.0,
+                layout::LINE * scale,
             );
-            haut = place.bas;
+            top = place.bottom;
             place
         })
         .collect()
 }
 
 /// De combien l'ombre sort de la carte, de chaque côté.
-fn debord_de_l_ombre(echelle: f32) -> f32 {
-    let ombre = palette().ombre_2;
-    (ombre.soft + ombre.down.abs().max(ombre.across.abs())) * echelle
+fn shadow_overflow(scale: f32) -> f32 {
+    let shadow = palette().shadow_2;
+    (shadow.soft + shadow.down.abs().max(shadow.across.abs())) * scale
 }
 
 /// La hauteur de la barre des mesures.
-fn hauteur_des_mesures(echelle: f32) -> f32 {
-    design::PAS_2 * echelle
-        + lue(&HAUTE_LEGENDE)
-        + tenue::SOUS_LE_MOT * echelle
-        + lue(&HAUTE_CORPS)
-        + design::PAS_1 * echelle
-        + lue(&HAUTE_LEGENDE)
-        + design::PAS_1 * echelle
+fn readings_height(scale: f32) -> f32 {
+    design::SPACE_2 * scale
+        + load(&CAPTION_HEIGHT)
+        + layout::UNDER_THE_LABEL * scale
+        + load(&BODY_HEIGHT)
+        + design::SPACE_1 * scale
+        + load(&CAPTION_HEIGHT)
+        + design::SPACE_1 * scale
 }
 
 /// La hauteur d'une ligne à curseur : sa tête, puis la barre en dessous.
-fn hauteur_du_curseur(echelle: f32) -> f32 {
-    (design::PAS_2 + tenue::SOUS_LE_MOT + tenue::CURSEUR + design::PAS_3) * echelle
-        + lue(&HAUTE_CORPS)
+fn slider_height(scale: f32) -> f32 {
+    (design::SPACE_2 + layout::UNDER_THE_LABEL + layout::SLIDER + design::SPACE_3) * scale
+        + load(&BODY_HEIGHT)
 }
 
 /// La carte dans sa fenêtre.
@@ -1650,35 +1668,35 @@ fn hauteur_du_curseur(echelle: f32) -> f32 {
 /// viennent selon la session, et la fenêtre est bâtie une fois pour la
 /// plus grande des cartes possibles : celle-ci est donc collée au bord
 /// d'où le menu s'ouvre, qui est le seul que personne ne doit voir bouger.
-fn carte(echelle: f32) -> Cadre {
-    let (large, haute) = (
-        LARGE.load(Ordering::Relaxed) as f32,
-        HAUTE.load(Ordering::Relaxed) as f32,
+fn card(scale: f32) -> Rect {
+    let (width, height) = (
+        WIDTH.load(Ordering::Relaxed) as f32,
+        HEIGHT.load(Ordering::Relaxed) as f32,
     );
-    let debord = debord_de_l_ombre(echelle);
-    let dedans = haute - debord * 2.0;
-    let montre = contenu(echelle).min(dedans);
-    let haut = if VERS_LE_HAUT.load(Ordering::Relaxed) {
-        debord + dedans - montre
+    let overflow_px = shadow_overflow(scale);
+    let inside = height - overflow_px * 2.0;
+    let show = content(scale).min(inside);
+    let top = if UPWARD.load(Ordering::Relaxed) {
+        overflow_px + inside - show
     } else {
-        debord
+        overflow_px
     };
-    let gauche = if VERS_LA_DROITE.load(Ordering::Relaxed) {
-        debord
+    let left = if RIGHTWARD.load(Ordering::Relaxed) {
+        overflow_px
     } else {
-        large - debord - largeur_de_la_carte(echelle)
+        width - overflow_px - card_width(scale)
     };
-    Cadre::pose(gauche, haut, largeur_de_la_carte(echelle), montre)
+    Rect::at(left, top, card_width(scale), show)
 }
 
 /// La hauteur de ce que la carte montre en ce moment.
-fn contenu(echelle: f32) -> f32 {
-    let reglages = REGLAGES.lock().expect("réglages du menu");
-    design::PAS_2 * echelle * 2.0
-        + LIGNES
+fn content(scale: f32) -> f32 {
+    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    design::SPACE_2 * scale * 2.0
+        + LINES
             .iter()
-            .filter(|ligne| ligne.se_voit(reglages.as_ref()))
-            .map(|ligne| ligne.haute(echelle))
+            .filter(|line| line.is_visible(session_menu.as_ref()))
+            .map(|line| line.height(scale))
             .sum::<f32>()
 }
 
@@ -1688,30 +1706,30 @@ fn contenu(echelle: f32) -> f32 {
 /// Lue par le dessin et par la souris, une seule fois écrite : une carte
 /// dont les lignes sont dessinées à un endroit et cliquées à un autre est
 /// une carte qui rend le mauvais menu.
-fn parcours(echelle: f32) -> Vec<(usize, &'static Ligne, Cadre)> {
-    let carte = carte(echelle);
-    let bord = design::PAS_2 * echelle;
-    let reglages = REGLAGES.lock().expect("réglages du menu");
-    let mut haut = carte.haut + bord;
-    let mut pose = Vec::with_capacity(LIGNES.len());
-    for (rang, ligne) in LIGNES.iter().enumerate() {
-        if !ligne.se_voit(reglages.as_ref()) {
+fn walk(scale: f32) -> Vec<(usize, &'static Line, Rect)> {
+    let card = card(scale);
+    let edge = design::SPACE_2 * scale;
+    let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+    let mut top = card.top + edge;
+    let mut placed = Vec::with_capacity(LINES.len());
+    for (rank, line) in LINES.iter().enumerate() {
+        if !line.is_visible(session_menu.as_ref()) {
             continue;
         }
-        let haute = ligne.haute(echelle);
-        pose.push((
-            rang,
-            ligne,
-            Cadre::pose(
-                carte.gauche + bord,
-                haut,
-                carte.droite - carte.gauche - bord * 2.0,
-                haute,
+        let height = line.height(scale);
+        placed.push((
+            rank,
+            line,
+            Rect::at(
+                card.left + edge,
+                top,
+                card.right - card.left - edge * 2.0,
+                height,
             ),
         ));
-        haut += haute;
+        top += height;
     }
-    pose
+    placed
 }
 
 /// Ce qui est sous ce point de la fenêtre, quand c'est quelque chose
@@ -1722,50 +1740,50 @@ fn parcours(echelle: f32) -> Vec<(usize, &'static Ligne, Cadre)> {
 /// du texte : la toile de la fenêtre, celle-là même sur laquelle ils ont
 /// été dessinés. Une souris qui viserait d'après une autre mesure que le
 /// dessin viserait à côté.
-fn sous(ou: (i32, i32)) -> Option<Cible> {
-    let (x, y) = (ou.0 as f32, ou.1 as f32);
-    let echelle = echelle();
-    let dedans =
-        |place: &Cadre| x >= place.gauche && x < place.droite && y >= place.haut && y < place.bas;
+fn under(point: (i32, i32)) -> Option<Target> {
+    let (x, y) = (point.0 as f32, point.1 as f32);
+    let scale = scale();
+    let inside =
+        |place: &Rect| x >= place.left && x < place.right && y >= place.top && y < place.bottom;
 
-    if let Some(quoi) = *PANNEAU.lock().expect("panneau du menu") {
-        let dans_le_panneau = TOILE.with_borrow(|toile| {
-            parcours_du_panneau(toile.as_ref()?, quoi, echelle)
+    if let Some(setting) = *PANEL.lock().expect("panneau du menu") {
+        let in_the_panel = CANVAS.with_borrow(|canvas| {
+            panel_walk(canvas.as_ref()?, setting, scale)
                 .iter()
-                .position(dedans)
-                .map(Cible::Valeur)
+                .position(inside)
+                .map(Target::Value)
         });
-        if dans_le_panneau.is_some() {
-            return dans_le_panneau;
+        if in_the_panel.is_some() {
+            return in_the_panel;
         }
     }
 
-    let (rang, ligne, place) = parcours(echelle)
+    let (rank, line, place) = walk(scale)
         .into_iter()
-        .find(|(_, _, place)| dedans(place))?;
-    match ligne {
-        Ligne::Entree(_) | Ligne::Liste(_) => Some(Cible::Ligne(rang)),
-        Ligne::Bascule(bascule) => TOILE.with_borrow(|toile| {
-            cotes_de(toile.as_ref()?, place, &bascule.mots(), echelle)
+        .find(|(_, _, place)| inside(place))?;
+    match line {
+        Line::Entry(_) | Line::List(_) => Some(Target::Line(rank)),
+        Line::Toggle(toggle) => CANVAS.with_borrow(|canvas| {
+            sides_of(canvas.as_ref()?, place, &toggle.words(), scale)
                 .iter()
-                .position(dedans)
-                .map(|cote| Cible::Cote(rang, cote))
+                .position(inside)
+                .map(|side| Target::Side(rank, side))
         }),
-        Ligne::Choix(choix) => TOILE.with_borrow(|toile| {
-            let toile = toile.as_ref()?;
-            cotes_de(toile, place, &choix.mots()?, echelle)
+        Line::Choice(choice) => CANVAS.with_borrow(|canvas| {
+            let canvas = canvas.as_ref()?;
+            sides_of(canvas, place, &choice.words()?, scale)
                 .iter()
-                .position(dedans)
-                .map(|cote| Cible::Cote(rang, cote))
+                .position(inside)
+                .map(|side| Target::Side(rank, side))
         }),
-        Ligne::Curseur(_) => dedans(&barre_du_curseur(place, echelle).elargi(
+        Line::Slider(_) => inside(&slider_bar(place, scale).grown(
             // La barre fait quatre pixels de haut : viser quatre pixels
             // avec une souris est un travail, et personne n'a demandé un
             // travail. Ce qu'on attrape est la hauteur du pouce.
-            (tenue::POUCE - tenue::BARRE) * echelle / 2.0,
+            (layout::THUMB - layout::BAR) * scale / 2.0,
         ))
-        .then_some(Cible::Barre(rang)),
-        Ligne::Mesures | Ligne::Separateur | Ligne::Refus => None,
+        .then_some(Target::Bar(rank)),
+        Line::Measures | Line::Separator | Line::Refusal => None,
     }
 }
 
@@ -1781,95 +1799,102 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
-    let echelle = echelle();
-    let couleurs = palette();
-    let rayon = design::RAYON * echelle;
-    let survol = *SURVOL.lock().expect("survol du menu");
-    let ouvert = *PANNEAU.lock().expect("panneau du menu");
+    let scale = scale();
+    let colours = palette();
+    let radius = design::RADIUS * scale;
+    let hover = *HOVER.lock().expect("survol du menu");
+    let is_open = *PANEL.lock().expect("panneau du menu");
 
-    TOILE.with_borrow_mut(|toile| {
+    CANVAS.with_borrow_mut(|canvas| {
         // Ce qu'il faut de place, mesuré sur la toile qui est là : mesurer
         // du texte ne demande pas la bonne taille de toile, seulement une
         // toile.
-        if toile.is_none() {
-            *toile = Toile::neuve(1, 1);
+        if canvas.is_none() {
+            *canvas = Canvas::new(1, 1);
         }
-        let Some(mesure) = toile.as_ref() else {
+        let Some(measure) = canvas.as_ref() else {
             return;
         };
-        mesure_la_carte(mesure, echelle);
-        let (large, haute) = taille(mesure);
-        if large <= 0 || haute <= 0 {
+        measure_the_card(measure, scale);
+        let (width, height) = size(measure);
+        if width <= 0 || height <= 0 {
             return;
         }
-        LARGE.store(large as u32, Ordering::Relaxed);
-        HAUTE.store(haute as u32, Ordering::Relaxed);
+        WIDTH.store(width as u32, Ordering::Relaxed);
+        HEIGHT.store(height as u32, Ordering::Relaxed);
         // Refaite dès qu'elle n'est plus à la bonne taille, ce qui est
         // aussi le cas de celle d'un pixel qui vient de servir à mesurer.
-        if mesure.taille() != (large, haute) {
-            *toile = Toile::neuve(large, haute);
+        if measure.size() != (width, height) {
+            *canvas = Canvas::new(width, height);
         }
-        let Some(toile) = toile.as_ref() else {
+        let Some(canvas) = canvas.as_ref() else {
             return;
         };
 
-        let carte = carte(echelle);
-        toile.commence(Couleur::RIEN);
-        toile.ombre(carte, rayon, couleurs.ombre_2, echelle);
-        toile.remplis(carte, rayon, couleurs.surface_1);
-        toile.trace_dedans(carte, rayon, tenue::TRAIT * echelle, couleurs.trait_fort);
+        let card = card(scale);
+        canvas.begin(Colour::TRANSPARENT);
+        canvas.shadow(card, radius, colours.shadow_2, scale);
+        canvas.fill(card, radius, colours.surface_1);
+        canvas.stroke_inside(
+            card,
+            radius,
+            layout::HAIRLINE * scale,
+            colours.border_strong,
+        );
 
-        let pinceau = Pinceau {
-            toile,
-            echelle,
-            couleurs,
+        let painter = Painter {
+            canvas,
+            scale,
+            colours,
         };
-        for (rang, ligne, ou) in parcours(echelle) {
-            let sous_la_main = survol.filter(|cible| cible.ligne() == Some(rang));
-            let cote = match sous_la_main {
-                Some(Cible::Cote(_, cote)) => Some(cote),
+        for (rank, line, at) in walk(scale) {
+            let under_the_hand = hover.filter(|target| target.line() == Some(rank));
+            let side = match under_the_hand {
+                Some(Target::Side(_, side)) => Some(side),
                 _ => None,
             };
-            match ligne {
-                Ligne::Mesures => pinceau.mesures(ou),
-                Ligne::Separateur => pinceau.separateur(ou),
-                Ligne::Refus => pinceau.refus(ou),
-                Ligne::Entree(entree) => pinceau.entree(ou, entree, sous_la_main.is_some()),
-                Ligne::Bascule(bascule) => pinceau.cotes(
-                    ou,
-                    &Cotes {
-                        icone: bascule.icone,
-                        mot: bascule.mot,
-                        mots: &bascule.mots(),
-                        en_place: bascule.en_place(),
-                        barres: &[],
+            match line {
+                Line::Measures => painter.measures(at),
+                Line::Separator => painter.separator(at),
+                Line::Refusal => painter.refusal(at),
+                Line::Entry(entry) => painter.entry(at, entry, under_the_hand.is_some()),
+                Line::Toggle(toggle) => painter.sides(
+                    at,
+                    &Sides {
+                        icon: toggle.icon,
+                        label: toggle.label,
+                        words: &toggle.words(),
+                        current_side: toggle.current_side(),
+                        struck: &[],
                     },
-                    cote,
+                    side,
                 ),
-                Ligne::Choix(choix) => {
-                    if let (Some(mots), Some((en_place, barres))) = (choix.mots(), choix.ou()) {
-                        pinceau.cotes(
-                            ou,
-                            &Cotes {
-                                icone: choix.icone,
-                                mot: choix.mot,
-                                mots: &mots,
-                                en_place,
-                                barres: &barres,
+                Line::Choice(choice) => {
+                    if let (Some(words), Some((current_side, struck))) =
+                        (choice.words(), choice.current())
+                    {
+                        painter.sides(
+                            at,
+                            &Sides {
+                                icon: choice.icon,
+                                label: choice.label,
+                                words: &words,
+                                current_side,
+                                struck: &struck,
                             },
-                            cote,
+                            side,
                         );
                     }
                 }
-                Ligne::Curseur(curseur) => pinceau.curseur(ou, curseur),
-                Ligne::Liste(liste) => pinceau.liste(ou, liste, sous_la_main.is_some()),
+                Line::Slider(slider) => painter.slider(at, slider),
+                Line::List(list) => painter.list(at, list, under_the_hand.is_some()),
             }
         }
 
-        if let Some(quoi) = ouvert {
-            pinceau.panneau(quoi, survol);
+        if let Some(setting) = is_open {
+            painter.panel(setting, hover);
         }
-        if !toile.finit() {
+        if !canvas.finish() {
             return;
         }
 
@@ -1889,17 +1914,17 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         // doit voir bouger quand la fenêtre change de taille. Ce sont
         // aussi ceux que `lay` calcule, donc les deux tombent d'accord
         // d'eux-mêmes.
-        let x = if VERS_LA_DROITE.load(Ordering::Relaxed) {
+        let x = if RIGHTWARD.load(Ordering::Relaxed) {
             place.left
         } else {
-            place.right - large
+            place.right - width
         };
-        let y = if VERS_LE_HAUT.load(Ordering::Relaxed) {
-            place.bottom - haute
+        let y = if UPWARD.load(Ordering::Relaxed) {
+            place.bottom - height
         } else {
             place.top
         };
-        toile.pose(window as isize, x, y);
+        canvas.lay_on(window as isize, x, y);
     });
 }
 
@@ -1908,10 +1933,10 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
 ///
 /// Porté ensemble plutôt que passé trois fois à chaque ligne, et le menu
 /// en a maintenant sept sortes.
-struct Pinceau<'a> {
-    toile: &'a Toile,
-    echelle: f32,
-    couleurs: Palette,
+struct Painter<'a> {
+    canvas: &'a Canvas,
+    scale: f32,
+    colours: Palette,
 }
 
 /// Ce qu'une ligne à côtés montre : sa tête, ses mots, celui qui est en
@@ -1919,140 +1944,140 @@ struct Pinceau<'a> {
 ///
 /// Porté ensemble parce que ça se dessine ensemble, et qu'un interrupteur
 /// et une ligne à boutons ne s'en décrivent pas autrement.
-struct Cotes<'a> {
-    icone: &'a Icone,
-    mot: &'a str,
-    mots: &'a [String],
-    en_place: usize,
-    barres: &'a [bool],
+struct Sides<'a> {
+    icon: &'a Icon,
+    label: &'a str,
+    words: &'a [String],
+    current_side: usize,
+    struck: &'a [bool],
 }
 
-impl Pinceau<'_> {
+impl Painter<'_> {
     /// Le début d'une ligne, qui est le même pour toutes : son icône à sa
     /// place, et son mot après.
-    fn tete(&self, ou: Cadre, icone: &Icone, mot: &str, encre: Couleur) {
-        let (toile, echelle) = (self.toile, self.echelle);
-        let cote = tenue::ICONE * echelle;
-        toile.icone(
-            icone,
-            Cadre::pose(
-                ou.gauche + design::PAS_2 * echelle,
-                ou.haut + (ou.bas - ou.haut - cote) / 2.0,
-                cote,
-                cote,
+    fn head(&self, at: Rect, icon: &Icon, label: &str, ink: Colour) {
+        let (canvas, scale) = (self.canvas, self.scale);
+        let side = layout::ICON * scale;
+        canvas.icon(
+            icon,
+            Rect::at(
+                at.left + design::SPACE_2 * scale,
+                at.top + (at.bottom - at.top - side) / 2.0,
+                side,
+                side,
             ),
-            encre,
+            ink,
         );
-        toile.ecris(
-            mot,
-            Plume::de(design::CORPS * echelle),
-            encre,
-            Cadre {
-                gauche: ou.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle,
-                ..ou
+        canvas.draw_text(
+            label,
+            Pen::of(design::BODY * scale),
+            ink,
+            Rect {
+                left: at.left + (design::SPACE_2 + layout::ICON + design::SPACE_3) * scale,
+                ..at
             },
         );
     }
 
     /// Le fond qu'une ligne prend sous la main.
-    fn survol(&self, ou: Cadre, teinte: Option<Couleur>) {
-        if let Some(teinte) = teinte {
-            self.toile
-                .remplis(ou, design::RAYON_PETIT * self.echelle, teinte);
+    fn hover(&self, at: Rect, tint: Option<Colour>) {
+        if let Some(tint) = tint {
+            self.canvas
+                .fill(at, design::RADIUS_SMALL * self.scale, tint);
         }
     }
 
     /// Ce qui s'écrit à droite d'une ligne, dans la couleur des choses
     /// qu'on lit sans les chercher.
-    fn a_droite(&self, ou: Cadre, mot: &str, taille: f32, encre: Couleur) {
-        if mot.is_empty() {
+    fn on_the_right(&self, at: Rect, label: &str, size: f32, ink: Colour) {
+        if label.is_empty() {
             return;
         }
-        self.toile.ecris(
-            mot,
-            Plume::de(taille).a(Cale::Droite),
-            encre,
-            Cadre {
-                droite: ou.droite - design::PAS_2 * self.echelle,
-                ..ou
+        self.canvas.draw_text(
+            label,
+            Pen::of(size).aligned(Align::Right),
+            ink,
+            Rect {
+                right: at.right - design::SPACE_2 * self.scale,
+                ..at
             },
         );
     }
 
     /// Une entrée : son icône, son mot, ce qui est écrit à sa droite, et
     /// le fond que le survol lui met.
-    fn entree(&self, ou: Cadre, entree: &Entree, sous_la_main: bool) {
-        let couleurs = self.couleurs;
-        let encre = if entree.grave {
-            couleurs.erreur
+    fn entry(&self, at: Rect, entry: &Entry, under_the_hand: bool) {
+        let colours = self.colours;
+        let ink = if entry.destructive {
+            colours.error
         } else {
-            couleurs.texte
+            colours.text
         };
         // La ligne qui coupe la session s'allume de sa propre couleur
         // plutôt que du gris des autres : ce n'est pas un survol de plus,
         // c'est celui dont il faut se méfier.
-        self.survol(
-            ou,
-            sous_la_main.then(|| {
-                if entree.grave {
-                    couleurs.erreur.voile(VOILE)
+        self.hover(
+            at,
+            under_the_hand.then(|| {
+                if entry.destructive {
+                    colours.error.faded(VEIL)
                 } else {
-                    couleurs.surface_3
+                    colours.surface_3
                 }
             }),
         );
-        self.tete(ou, entree.icone, entree.mot, encre);
-        self.a_droite(
-            ou,
-            &entree.droite.dit(),
-            design::LEGENDE * self.echelle,
-            couleurs.texte_faible,
+        self.head(at, entry.icon, entry.label, ink);
+        self.on_the_right(
+            at,
+            &entry.trailing.text(),
+            design::CAPTION * self.scale,
+            colours.text_faint,
         );
     }
 
     /// Une ligne qui ouvre une liste : sa valeur en place, puis le chevron
     /// qui dit qu'elle mène ailleurs.
-    fn liste(&self, ou: Cadre, liste: &Liste, sous_la_main: bool) {
-        let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
-        self.survol(ou, sous_la_main.then_some(couleurs.surface_3));
-        self.tete(ou, liste.icone, liste.mot, couleurs.texte);
+    fn list(&self, at: Rect, list: &List, under_the_hand: bool) {
+        let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
+        self.hover(at, under_the_hand.then_some(colours.surface_3));
+        self.head(at, list.icon, list.label, colours.text);
 
-        let marque = tenue::MARQUE * echelle;
-        let bord = design::PAS_2 * echelle;
-        let ouverte = *PANNEAU.lock().expect("panneau du menu") == Some(liste.quoi);
-        toile.icone(
+        let brand = layout::BRAND * scale;
+        let edge = design::SPACE_2 * scale;
+        let open = *PANEL.lock().expect("panneau du menu") == Some(list.setting);
+        canvas.icon(
             // Le chevron dit dans quel sens la liste s'ouvre, donc il se
             // retourne quand elle est ouverte : elle paraît à gauche
             // d'habitude, il pointe vers elle ; à droite quand la carte
             // est elle-même collée au bord gauche de la fenêtre, il
             // pointe vers elle en pointant tout simplement où il pointait
             // déjà, fermée.
-            if ouverte && !VERS_LA_DROITE.load(Ordering::Relaxed) {
-                &icones::RETOUR
+            if open && !RIGHTWARD.load(Ordering::Relaxed) {
+                &icons::BACK
             } else {
-                &icones::CHEVRON
+                &icons::CHEVRON
             },
-            Cadre::pose(
-                ou.droite - bord - marque,
-                ou.haut + (ou.bas - ou.haut - marque) / 2.0,
-                marque,
-                marque,
+            Rect::at(
+                at.right - edge - brand,
+                at.top + (at.bottom - at.top - brand) / 2.0,
+                brand,
+                brand,
             ),
-            couleurs.texte_faible,
+            colours.text_faint,
         );
-        let valeur = REGLAGES
+        let value = SESSION_MENU
             .lock()
             .expect("réglages du menu")
             .as_ref()
-            .map_or_else(String::new, |menu| liste.quoi.resume(menu));
-        self.a_droite(
-            Cadre {
-                droite: ou.droite - marque - bord,
-                ..ou
+            .map_or_else(String::new, |menu| list.setting.summary(menu));
+        self.on_the_right(
+            Rect {
+                right: at.right - brand - edge,
+                ..at
             },
-            &valeur,
-            design::LEGENDE * echelle,
-            couleurs.texte_faible,
+            &value,
+            design::CAPTION * scale,
+            colours.text_faint,
         );
     }
 
@@ -2063,112 +2088,108 @@ impl Pinceau<'_> {
     /// les sépare est ce qu'ils font, pas ce qu'ils montrent : l'un
     /// bascule la session tout de suite, l'autre écrit un choix que la
     /// session prend là où elle est.
-    fn cotes(&self, ou: Cadre, quoi: &Cotes, sous_la_main: Option<usize>) {
-        let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
-        let mots = quoi.mots;
-        self.tete(ou, quoi.icone, quoi.mot, couleurs.texte);
+    fn sides(&self, at: Rect, spec: &Sides, under_the_hand: Option<usize>) {
+        let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
+        let words = spec.words;
+        self.head(at, spec.icon, spec.label, colours.text);
 
-        let cotes = cotes_de(toile, ou, mots, echelle);
-        let Some(entier) = cotes.first().map(|premier| Cadre {
-            gauche: premier.gauche,
-            ..*cotes.last().unwrap_or(premier)
+        let sides = sides_of(canvas, at, words, scale);
+        let Some(whole) = sides.first().map(|first| Rect {
+            left: first.left,
+            ..*sides.last().unwrap_or(first)
         }) else {
             return;
         };
-        let rayon = design::RAYON_PETIT * echelle;
-        for (rang, place) in cotes.iter().enumerate() {
-            let barre = quoi.barres.get(rang).copied().unwrap_or(false);
-            let (fond, encre) = if rang == quoi.en_place {
-                (Some(couleurs.accent_vif), couleurs.sur_accent)
-            } else if barre {
-                (None, couleurs.texte_faible)
-            } else if sous_la_main == Some(rang) {
-                (Some(couleurs.surface_3), couleurs.texte)
+        let radius = design::RADIUS_SMALL * scale;
+        for (rank, place) in sides.iter().enumerate() {
+            let bar = spec.struck.get(rank).copied().unwrap_or(false);
+            let (background, ink) = if rank == spec.current_side {
+                (Some(colours.accent_bright), colours.on_accent)
+            } else if bar {
+                (None, colours.text_faint)
+            } else if under_the_hand == Some(rank) {
+                (Some(colours.surface_3), colours.text)
             } else {
-                (None, couleurs.texte_faible)
+                (None, colours.text_faint)
             };
-            if let Some(fond) = fond {
+            if let Some(background) = background {
                 // Le fond de l'objet entier, vu au travers de ce côté-là :
                 // les côtés n'en forment qu'un, arrondi par dehors et droit
                 // là où ils se touchent, ce qu'aucun rectangle arrondi ne
                 // sait être à lui seul.
-                toile.serre(*place, || toile.remplis(entier, rayon, fond));
+                canvas.clipped(*place, || canvas.fill(whole, radius, background));
             }
-            toile.ecris(
-                &mots[rang],
-                Plume::de(design::LEGENDE * echelle).a(Cale::Centre),
-                encre,
+            canvas.draw_text(
+                &words[rank],
+                Pen::of(design::CAPTION * scale).aligned(Align::Centre),
+                ink,
                 *place,
             );
-            if barre {
+            if bar {
                 // Ce que la machine d'en face ne sait pas faire garde sa
                 // place : une possibilité qui disparaît d'un ordinateur à
                 // l'autre laisse croire à un menu qui change d'avis, là où
                 // c'est la machine regardée qui n'a pas la même carte
                 // graphique. Barré, donc, et non effacé.
-                let milieu = (place.haut + place.bas) / 2.0;
-                let mi_mot = toile.largeur(&mots[rang], Plume::de(design::LEGENDE * echelle)) / 2.0;
-                let au_centre = (place.gauche + place.droite) / 2.0;
-                toile.remplis(
-                    Cadre::pose(
-                        au_centre - mi_mot,
-                        milieu,
-                        mi_mot * 2.0,
-                        tenue::TRAIT * echelle,
+                let middle = (place.top + place.bottom) / 2.0;
+                let half_label =
+                    canvas.width_of(&words[rank], Pen::of(design::CAPTION * scale)) / 2.0;
+                let centre = (place.left + place.right) / 2.0;
+                canvas.fill(
+                    Rect::at(
+                        centre - half_label,
+                        middle,
+                        half_label * 2.0,
+                        layout::HAIRLINE * scale,
                     ),
                     0.0,
-                    couleurs.texte_faible,
+                    colours.text_faint,
                 );
             }
         }
-        toile.trace_dedans(entier, rayon, tenue::TRAIT * echelle, couleurs.r#trait);
+        canvas.stroke_inside(whole, radius, layout::HAIRLINE * scale, colours.border);
     }
 
     /// Une ligne à curseur : sa tête, sa valeur, et la barre en dessous.
-    fn curseur(&self, ou: Cadre, curseur: &Curseur) {
-        let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
+    fn slider(&self, at: Rect, slider: &Slider) {
+        let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
         // Sa tête tient sur la hauteur d'une ligne de corps, la barre
         // prenant le reste.
-        let tete = Cadre {
-            bas: ou.haut + design::PAS_2 * echelle * 2.0 + lue(&HAUTE_CORPS),
-            ..ou
+        let head = Rect {
+            bottom: at.top + design::SPACE_2 * scale * 2.0 + load(&BODY_HEIGHT),
+            ..at
         };
-        self.tete(tete, curseur.icone, curseur.mot, couleurs.texte);
+        self.head(head, slider.icon, slider.label, colours.text);
         // La valeur d'un réglage se lit là où se lisent les raccourcis,
         // mais elle n'en est pas un : c'est ce que la ligne vaut, donc elle
         // se lit comme le reste de la ligne et non en retrait.
-        self.a_droite(
-            tete,
-            &curseur.valeur(),
-            design::CORPS * echelle,
-            couleurs.texte,
-        );
+        self.on_the_right(head, &slider.value(), design::BODY * scale, colours.text);
 
-        let Some((cran, combien)) = curseur.cran() else {
+        let Some((notch, how_many)) = slider.notch() else {
             return;
         };
-        let barre = barre_du_curseur(ou, echelle);
-        let rayon = tenue::BARRE * echelle / 2.0;
-        toile.remplis(barre, rayon, couleurs.r#trait);
-        let part = if combien > 1 {
-            cran as f32 / (combien - 1) as f32
+        let bar = slider_bar(at, scale);
+        let radius = layout::BAR * scale / 2.0;
+        canvas.fill(bar, radius, colours.border);
+        let part = if how_many > 1 {
+            notch as f32 / (how_many - 1) as f32
         } else {
             0.0
         };
-        let pouce = tenue::POUCE * echelle;
+        let thumb = layout::THUMB * scale;
         // Le pouce reste entier dans la barre à ses deux bouts : posé sur
         // sa seule part, il déborderait de la moitié de lui-même.
-        let au = barre.gauche + pouce / 2.0 + (barre.droite - barre.gauche - pouce) * part;
-        let milieu = (barre.haut + barre.bas) / 2.0;
-        toile.remplis(
-            Cadre::pose(barre.gauche, barre.haut, au - barre.gauche, rayon * 2.0),
-            rayon,
-            couleurs.accent_vif,
+        let thumb_x = bar.left + thumb / 2.0 + (bar.right - bar.left - thumb) * part;
+        let middle = (bar.top + bar.bottom) / 2.0;
+        canvas.fill(
+            Rect::at(bar.left, bar.top, thumb_x - bar.left, radius * 2.0),
+            radius,
+            colours.accent_bright,
         );
-        toile.remplis(
-            Cadre::pose(au - pouce / 2.0, milieu - pouce / 2.0, pouce, pouce),
-            pouce / 2.0,
-            couleurs.accent_vif,
+        canvas.fill(
+            Rect::at(thumb_x - thumb / 2.0, middle - thumb / 2.0, thumb, thumb),
+            thumb / 2.0,
+            colours.accent_bright,
         );
     }
 
@@ -2177,17 +2198,17 @@ impl Pinceau<'_> {
     /// Rentré d'un pas de chaque côté, comme la feuille de style le
     /// demande : un trait qui va d'un bord à l'autre coupe la carte en
     /// deux au lieu de séparer deux groupes de lignes.
-    fn separateur(&self, ou: Cadre) {
-        let bord = design::PAS_2 * self.echelle;
-        self.toile.remplis(
-            Cadre::pose(
-                ou.gauche + bord,
-                ou.haut + bord,
-                ou.droite - ou.gauche - bord * 2.0,
-                tenue::TRAIT * self.echelle,
+    fn separator(&self, at: Rect) {
+        let edge = design::SPACE_2 * self.scale;
+        self.canvas.fill(
+            Rect::at(
+                at.left + edge,
+                at.top + edge,
+                at.right - at.left - edge * 2.0,
+                layout::HAIRLINE * self.scale,
             ),
             0.0,
-            self.couleurs.r#trait,
+            self.colours.border,
         );
     }
 
@@ -2196,68 +2217,68 @@ impl Pinceau<'_> {
     /// Replié sur la largeur de la carte : ce qu'un refus a à dire est ce
     /// qu'il faut faire ailleurs, et abréger cela reviendrait à ne rien
     /// dire du tout.
-    fn refus(&self, ou: Cadre) {
-        let Some(dit) = refus_a_dire() else {
+    fn refusal(&self, at: Rect) {
+        let Some(said) = refusal_to_say() else {
             return;
         };
-        let bord = design::PAS_2 * self.echelle;
-        let large = ou.droite - ou.gauche - bord * 2.0;
-        let plume = Plume::de(design::LEGENDE * self.echelle);
+        let edge = design::SPACE_2 * self.scale;
+        let width = at.right - at.left - edge * 2.0;
+        let pen = Pen::of(design::CAPTION * self.scale);
         // Mesuré ici parce qu'ici est le seul endroit qui sache mesurer du
         // texte replié, et rangé pour que la carte s'ouvre dessus, comme
         // sa largeur l'est déjà.
-        let haute = self.toile.hauteur(&dit, plume, large);
-        range(&HAUTE_DU_REFUS, haute + bord * 2.0);
-        self.toile.ecris(
-            &dit,
-            plume,
-            self.couleurs.attention,
-            Cadre::pose(ou.gauche + bord, ou.haut + bord, large, haute),
+        let height = self.canvas.height_of(&said, pen, width);
+        store(&REFUSAL_HEIGHT, height + edge * 2.0);
+        self.canvas.draw_text(
+            &said,
+            pen,
+            self.colours.warning,
+            Rect::at(at.left + edge, at.top + edge, width, height),
         );
     }
 
     /// La barre des quatre mesures : un mot par-dessus un nombre, quatre
     /// fois, et la phrase du flux en dessous.
-    fn mesures(&self, ou: Cadre) {
-        let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
-        let bord = design::PAS_2 * echelle;
-        let haut = ou.haut + bord;
-        let barre = BARRE.lock().expect("mesures du menu");
-        for (rang, quoi) in MESURES.iter().enumerate() {
-            let gauche =
-                ou.gauche + bord + rang as f32 * (tenue::MESURE + tenue::ENTRE_MESURES) * echelle;
-            let colonne = tenue::MESURE * echelle;
-            toile.ecris(
-                quoi.mot,
-                Plume::de(design::LEGENDE * echelle),
-                couleurs.texte_faible,
-                Cadre::pose(gauche, haut, colonne, lue(&HAUTE_LEGENDE)),
+    fn measures(&self, at: Rect) {
+        let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
+        let edge = design::SPACE_2 * scale;
+        let top = at.top + edge;
+        let bar = READINGS_BAR.lock().expect("mesures du menu");
+        for (rank, reading) in READINGS.iter().enumerate() {
+            let left =
+                at.left + edge + rank as f32 * (layout::READING + layout::BETWEEN_READINGS) * scale;
+            let column = layout::READING * scale;
+            canvas.draw_text(
+                reading.label,
+                Pen::of(design::CAPTION * scale),
+                colours.text_faint,
+                Rect::at(left, top, column, load(&CAPTION_HEIGHT)),
             );
-            toile.ecris(
-                &barre.chiffres[rang],
-                Plume::de(design::CORPS * echelle),
-                couleurs.texte,
-                Cadre::pose(
-                    gauche,
-                    haut + lue(&HAUTE_LEGENDE) + tenue::SOUS_LE_MOT * echelle,
-                    colonne,
-                    lue(&HAUTE_CORPS),
+            canvas.draw_text(
+                &bar.figures[rank],
+                Pen::of(design::BODY * scale),
+                colours.text,
+                Rect::at(
+                    left,
+                    top + load(&CAPTION_HEIGHT) + layout::UNDER_THE_LABEL * scale,
+                    column,
+                    load(&BODY_HEIGHT),
                 ),
             );
         }
-        if !barre.flux.is_empty() {
-            toile.ecris(
-                &barre.flux,
-                Plume::de(design::LEGENDE * echelle),
-                couleurs.texte_faible,
-                Cadre::pose(
-                    ou.gauche + bord,
-                    haut + lue(&HAUTE_LEGENDE)
-                        + tenue::SOUS_LE_MOT * echelle
-                        + lue(&HAUTE_CORPS)
-                        + design::PAS_1 * echelle,
-                    ou.droite - ou.gauche - bord * 2.0,
-                    lue(&HAUTE_LEGENDE),
+        if !bar.stream.is_empty() {
+            canvas.draw_text(
+                &bar.stream,
+                Pen::of(design::CAPTION * scale),
+                colours.text_faint,
+                Rect::at(
+                    at.left + edge,
+                    top + load(&CAPTION_HEIGHT)
+                        + layout::UNDER_THE_LABEL * scale
+                        + load(&BODY_HEIGHT)
+                        + design::SPACE_1 * scale,
+                    at.right - at.left - edge * 2.0,
+                    load(&CAPTION_HEIGHT),
                 ),
             );
         }
@@ -2270,58 +2291,63 @@ impl Pinceau<'_> {
     /// face, son chevron s'est retourné vers lui, et la cliquer à nouveau
     /// referme. Un titre qui redit le mot d'à côté prend une ligne pour
     /// n'apprendre rien.
-    fn panneau(&self, quoi: Reglage, survol: Option<Cible>) {
-        let (toile, echelle, couleurs) = (self.toile, self.echelle, self.couleurs);
-        let Some(place) = panneau(toile, quoi, echelle) else {
+    fn panel(&self, setting: Setting, hover: Option<Target>) {
+        let (canvas, scale, colours) = (self.canvas, self.scale, self.colours);
+        let Some(place) = panel(canvas, setting, scale) else {
             return;
         };
-        let rayon = design::RAYON * echelle;
-        toile.ombre(place, rayon, couleurs.ombre_2, echelle);
-        toile.remplis(place, rayon, couleurs.surface_1);
-        toile.trace_dedans(place, rayon, tenue::TRAIT * echelle, couleurs.trait_fort);
+        let radius = design::RADIUS * scale;
+        canvas.shadow(place, radius, colours.shadow_2, scale);
+        canvas.fill(place, radius, colours.surface_1);
+        canvas.stroke_inside(
+            place,
+            radius,
+            layout::HAIRLINE * scale,
+            colours.border_strong,
+        );
 
-        let valeurs = parcours_du_panneau(toile, quoi, echelle);
-        let cote = tenue::MARQUE * echelle;
-        let reglages = REGLAGES.lock().expect("réglages du menu");
-        let Some(menu) = reglages.as_ref() else {
+        let values = panel_walk(canvas, setting, scale);
+        let side = layout::BRAND * scale;
+        let session_menu = SESSION_MENU.lock().expect("réglages du menu");
+        let Some(menu) = session_menu.as_ref() else {
             return;
         };
-        let choisies = quoi.valeurs(menu);
-        let ou = quoi.ou(menu);
-        for (rang, place) in valeurs.iter().enumerate() {
-            let Some(valeur) = choisies.get(rang) else {
+        let values_here = setting.values(menu);
+        let at = setting.current(menu);
+        for (rank, place) in values.iter().enumerate() {
+            let Some(value) = values_here.get(rank) else {
                 break;
             };
-            self.survol(
+            self.hover(
                 *place,
-                (survol == Some(Cible::Valeur(rang))).then_some(couleurs.surface_3),
+                (hover == Some(Target::Value(rank))).then_some(colours.surface_3),
             );
-            if *valeur == ou {
-                toile.icone(
-                    &icones::COCHE,
-                    Cadre::pose(
-                        place.gauche + design::PAS_2 * echelle,
-                        place.haut + (place.bas - place.haut - cote) / 2.0,
-                        cote,
-                        cote,
+            if *value == at {
+                canvas.icon(
+                    &icons::TICK,
+                    Rect::at(
+                        place.left + design::SPACE_2 * scale,
+                        place.top + (place.bottom - place.top - side) / 2.0,
+                        side,
+                        side,
                     ),
-                    couleurs.accent_vif,
+                    colours.accent_bright,
                 );
             }
-            toile.ecris(
-                &quoi.dit(menu, valeur),
-                Plume::de(design::CORPS * echelle),
-                couleurs.texte,
-                Cadre {
-                    gauche: place.gauche + (design::PAS_2 + tenue::ICONE + design::PAS_3) * echelle,
+            canvas.draw_text(
+                &setting.label(menu, value),
+                Pen::of(design::BODY * scale),
+                colours.text,
+                Rect {
+                    left: place.left + (design::SPACE_2 + layout::ICON + design::SPACE_3) * scale,
                     ..*place
                 },
             );
-            self.a_droite(
+            self.on_the_right(
                 *place,
-                &quoi.aparte(menu, valeur),
-                design::LEGENDE * echelle,
-                couleurs.texte_faible,
+                &setting.aside(menu, value),
+                design::CAPTION * scale,
+                colours.text_faint,
             );
         }
     }
@@ -2348,29 +2374,29 @@ unsafe extern "system" fn answer(
 
     match message {
         WM_MOUSEMOVE => {
-            if !DEDANS.swap(true, Ordering::Relaxed) {
+            if !HAND_INSIDE.swap(true, Ordering::Relaxed) {
                 // Demandé dès qu'une main arrive : sans ça rien ne dit
                 // jamais qu'elle est repartie, et la dernière ligne
                 // survolée resterait allumée sous une souris qui n'est
                 // plus là.
-                let mut veille = TRACKMOUSEEVENT {
+                let mut tracking = TRACKMOUSEEVENT {
                     cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
                     dwFlags: TME_LEAVE,
                     hwndTrack: window,
                     dwHoverTime: 0,
                 };
                 // SAFETY: une fenêtre à nous, et la demande est à nous.
-                unsafe { TrackMouseEvent(&mut veille) };
+                unsafe { TrackMouseEvent(&mut tracking) };
             }
-            if pousse(window, point(with)) {
+            if pushes(window, point(with)) {
                 return 0;
             }
-            survole(window, sous(point(with)));
+            hovers(window, under(point(with)));
             0
         }
         WM_MOUSELEAVE => {
-            DEDANS.store(false, Ordering::Relaxed);
-            survole(window, None);
+            HAND_INSIDE.store(false, Ordering::Relaxed);
+            hovers(window, None);
             0
         }
         WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
@@ -2378,23 +2404,23 @@ unsafe extern "system" fn answer(
             // dernier survol : le curseur se décide avant que le
             // mouvement soit annoncé, et la main serait alors en retard
             // d'un geste.
-            let forme = if sous_la_souris(window).is_some() {
+            let cursor = if under_the_mouse(window).is_some() {
                 IDC_HAND
             } else {
                 IDC_ARROW
             };
             // SAFETY: un curseur du système, demandé par son nom.
-            unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), forme)) };
+            unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), cursor)) };
             1
         }
         WM_LBUTTONDOWN => {
-            let cible = sous(point(with));
-            *PRESSEE.lock().expect("appui du menu") = cible;
+            let target = under(point(with));
+            *PRESSED.lock().expect("appui du menu") = target;
             // Un curseur se prend et se pousse : le geste commence ici et
             // ne finit qu'au relâchement, où seul le cran d'arrivée est
             // écrit.
-            if matches!(cible, Some(Cible::Barre(_))) {
-                pousse(window, point(with));
+            if matches!(target, Some(Target::Bar(_))) {
+                pushes(window, point(with));
             }
             0
         }
@@ -2402,15 +2428,15 @@ unsafe extern "system" fn answer(
         // clic veut dire, et c'est ce qui laisse repartir d'un bouton
         // qu'on n'aurait pas dû viser.
         WM_LBUTTONUP => {
-            let pressee = PRESSEE.lock().expect("appui du menu").take();
-            if let Some(Cible::Barre(rang)) = pressee {
-                lache(window, rang);
+            let pressed = PRESSED.lock().expect("appui du menu").take();
+            if let Some(Target::Bar(rank)) = pressed {
+                released(window, rank);
                 return 0;
             }
-            if let Some(cible) = sous(point(with))
-                && Some(cible) == pressee
+            if let Some(target) = under(point(with))
+                && Some(target) == pressed
             {
-                agit(cible);
+                acts(target);
             }
             0
         }
@@ -2430,30 +2456,30 @@ fn point(with: windows_sys::Win32::Foundation::LPARAM) -> (i32, i32) {
 }
 
 /// Ce qui est sous le pointeur, demandé au système.
-fn sous_la_souris(window: windows_sys::Win32::Foundation::HWND) -> Option<Cible> {
+fn under_the_mouse(window: windows_sys::Win32::Foundation::HWND) -> Option<Target> {
     use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
     use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
-    let mut ou = POINT { x: 0, y: 0 };
+    let mut at = POINT { x: 0, y: 0 };
     // SAFETY: un point à nous, et une fenêtre à nous dans laquelle il est
     // ramené.
-    let lu = unsafe { GetCursorPos(&mut ou) != 0 && ScreenToClient(window, &mut ou) != 0 };
-    if !lu {
+    let read = unsafe { GetCursorPos(&mut at) != 0 && ScreenToClient(window, &mut at) != 0 };
+    if !read {
         return None;
     }
-    sous((ou.x, ou.y))
+    under((at.x, at.y))
 }
 
 /// Allume ce qui est sous la souris, et redessine quand ce n'est plus la
 /// même chose.
-fn survole(window: windows_sys::Win32::Foundation::HWND, cible: Option<Cible>) {
-    let mut survol = SURVOL.lock().expect("survol du menu");
-    if *survol == cible {
+fn hovers(window: windows_sys::Win32::Foundation::HWND, target: Option<Target>) {
+    let mut hover = HOVER.lock().expect("survol du menu");
+    if *hover == target {
         return;
     }
-    *survol = cible;
-    drop(survol);
+    *hover = target;
+    drop(hover);
     repaint(window);
 }
 
@@ -2467,104 +2493,104 @@ fn survole(window: windows_sys::Win32::Foundation::HWND, cible: Option<Cible>) {
 /// derrière l'image et ses lignes sont rares : sans cette ligne, une
 /// entrée qui semble ne rien faire ne se distingue pas d'un clic qui n'est
 /// jamais arrivé, et les deux se réparent ailleurs.
-fn agit(cible: Cible) {
+fn acts(target: Target) {
     let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
         return;
     };
-    match (cible, cible.ligne().and_then(|rang| LIGNES.get(rang))) {
-        (Cible::Ligne(_), Some(Ligne::Entree(entree))) => {
-            dit_le_clic(entree.mot);
-            let fait = entree.fait;
+    match (target, target.line().and_then(|rank| LINES.get(rank))) {
+        (Target::Line(_), Some(Line::Entry(entry))) => {
+            say_the_click(entry.label);
+            let does = entry.does;
             // Refermée avant que ce soit parti, comme la page le fait : ce
             // qui suit prend le temps qu'il prend, et une carte laissée
             // ouverte par-dessus serait une nappe posée sur l'image.
-            montre(false);
+            show(false);
             crate::app::spawn(async move {
-                let refus = match fait {
-                    Fait::Session(acte) => crate::floating::ask(&app, acte).await,
-                    Fait::Ranger => crate::floating::hide(&app),
+                let refusal = match does {
+                    Does::Session(session_act) => crate::floating::ask(&app, session_act).await,
+                    Does::PutAway => crate::floating::hide(&app),
                 };
-                dit_le_refus(refus);
+                say_the_refusal(refusal);
             });
         }
-        (Cible::Ligne(_), Some(Ligne::Liste(liste))) => {
+        (Target::Line(_), Some(Line::List(list))) => {
             // La même ligne ouvre et referme : une liste ouverte à côté du
             // menu se referme là où on l'a ouverte, et pas seulement par
             // son titre.
-            let mut panneau = PANNEAU.lock().expect("panneau du menu");
-            *panneau = (*panneau != Some(liste.quoi)).then_some(liste.quoi);
-            drop(panneau);
-            redessine(&app);
+            let mut panel = PANEL.lock().expect("panneau du menu");
+            *panel = (*panel != Some(list.setting)).then_some(list.setting);
+            drop(panel);
+            redraw(&app);
         }
-        (Cible::Cote(_, cote), Some(Ligne::Bascule(bascule))) => {
+        (Target::Side(_, side), Some(Line::Toggle(toggle))) => {
             // Pousser un interrupteur du côté où il est déjà ne fait rien,
             // comme tout interrupteur.
-            if bascule.en_place() == cote {
+            if toggle.current_side() == side {
                 return;
             }
             note(&format!(
                 "menu du bouton flottant : « {} » mis sur « {} »",
-                bascule.mot, bascule.cotes[cote]
+                toggle.label, toggle.sides[side]
             ));
             // La carte reste ouverte : on regarde l'image après avoir
             // basculé, et la rouvrir pour la ligne d'à côté ferait deux
             // gestes pour un réglage.
-            let passe = bascule.passe;
+            let act = toggle.act;
             crate::app::spawn(async move {
-                match crate::floating::ask(&app, passe).await {
+                match crate::floating::ask(&app, act).await {
                     // Relu plutôt que supposé : c'est la seule façon de
                     // montrer où l'on en est vraiment, et le son se lit
                     // dans le mélangeur de Windows et non ici.
-                    Ok(()) => relis_les_bascules(&app).await,
-                    Err(refus) => dit_le_refus(Err(refus)),
+                    Ok(()) => reread_the_toggles(&app).await,
+                    Err(refusal) => say_the_refusal(Err(refusal)),
                 }
             });
         }
-        (Cible::Cote(_, cote), Some(Ligne::Choix(choix))) => {
-            let Some(valeur) = valeur_de(choix.quoi, cote) else {
+        (Target::Side(_, side), Some(Line::Choice(choice))) => {
+            let Some(value) = value_of(choice.setting, side) else {
                 return;
             };
             // Ce que la machine d'en face ne sait pas faire n'est pas un
             // choix : le proposer barré dit pourquoi, le laisser cliquer
             // dirait le contraire.
-            let refuse = REGLAGES
+            let refuse = SESSION_MENU
                 .lock()
                 .expect("réglages du menu")
                 .as_ref()
-                .is_some_and(|menu| choix.quoi.hors_de_portee(menu, &valeur));
+                .is_some_and(|menu| choice.setting.out_of_reach(menu, &value));
             if refuse {
                 return;
             }
-            choisis(&app, choix.quoi, valeur);
+            choose(&app, choice.setting, value);
         }
-        (Cible::Valeur(rang), _) => {
-            let Some(quoi) = *PANNEAU.lock().expect("panneau du menu") else {
+        (Target::Value(rank), _) => {
+            let Some(setting) = *PANEL.lock().expect("panneau du menu") else {
                 return;
             };
-            let Some(valeur) = valeur_de(quoi, rang) else {
+            let Some(value) = value_of(setting, rank) else {
                 return;
             };
             // La liste se referme sur le choix : rester dedans après avoir
             // choisi laisserait croire qu'il reste quelque chose à y faire.
-            *PANNEAU.lock().expect("panneau du menu") = None;
+            *PANEL.lock().expect("panneau du menu") = None;
             // Et la carte avec elle : ce qui est choisi dans une liste se
             // voit tout de suite, ce qu'on veut regarder alors est
             // l'image, et une carte laissée par-dessus serait une nappe
             // posée dessus.
-            montre(false);
-            choisis(&app, quoi, valeur);
+            show(false);
+            choose(&app, setting, value);
         }
         _ => {}
     }
 }
 
 /// La valeur d'un réglage à ce rang-là.
-fn valeur_de(quoi: Reglage, rang: usize) -> Option<String> {
-    REGLAGES
+fn value_of(setting: Setting, rank: usize) -> Option<String> {
+    SESSION_MENU
         .lock()
         .expect("réglages du menu")
         .as_ref()
-        .and_then(|menu| quoi.valeurs(menu).get(rang).cloned())
+        .and_then(|menu| setting.values(menu).get(rank).cloned())
 }
 
 /// Écrit ce choix, le donne à la session là où elle est, et relit ce que
@@ -2572,21 +2598,22 @@ fn valeur_de(quoi: Reglage, rang: usize) -> Option<String> {
 ///
 /// Relu et non supposé : choisir une taille change ce que « client » vaut,
 /// et c'est la réponse qui le porte.
-fn choisis(app: &App, quoi: Reglage, valeur: String) {
+fn choose(app: &App, setting: Setting, value: String) {
     note(&format!(
-        "menu du bouton flottant : {} mis sur « {valeur} »",
-        quoi.nom()
+        "menu du bouton flottant : {} mis sur « {value} »",
+        setting.name()
     ));
     let app = app.clone();
     crate::app::spawn(async move {
-        match crate::settings::choose_session(app.clone(), quoi.nom().to_string(), valeur).await {
-            Ok(choix) => {
-                if let Some(menu) = REGLAGES.lock().expect("réglages du menu").as_mut() {
-                    menu.now = choix;
+        match crate::settings::choose_session(app.clone(), setting.name().to_string(), value).await
+        {
+            Ok(choice) => {
+                if let Some(menu) = SESSION_MENU.lock().expect("réglages du menu").as_mut() {
+                    menu.now = choice;
                 }
-                redessine(&app);
+                redraw(&app);
             }
-            Err(refus) => dit_le_refus(Err(refus)),
+            Err(refusal) => say_the_refusal(Err(refusal)),
         }
     });
 }
@@ -2597,8 +2624,8 @@ fn choisis(app: &App, quoi: Reglage, valeur: String) {
 /// est derrière l'image et ses lignes sont rares : sans cette ligne, une
 /// entrée qui semble ne rien faire ne se distingue pas d'un clic qui n'est
 /// jamais arrivé, et les deux se réparent ailleurs.
-fn dit_le_clic(mot: &str) {
-    note(&format!("menu du bouton flottant : « {mot} » cliqué"));
+fn say_the_click(label: &str) {
+    note(&format!("menu du bouton flottant : « {label} » cliqué"));
 }
 
 /// Et dit un refus, s'il y en a un.
@@ -2606,14 +2633,14 @@ fn dit_le_clic(mot: &str) {
 /// Sur la carte et dans le journal. Sur la carte parce que c'est là que
 /// regarde la personne qui vient de cliquer, et dans le journal parce que
 /// la carte se referme et qu'une phrase lue une fois ne se retrouve plus.
-fn dit_le_refus(refus: Result<(), String>) {
-    let Err(refus) = refus else {
+fn say_the_refusal(refusal: Result<(), String>) {
+    let Err(refusal) = refusal else {
         return;
     };
-    note(&format!("menu du bouton flottant : {refus}"));
-    *REFUS.lock().expect("refus du menu") = Some((refus, Instant::now()));
+    note(&format!("menu du bouton flottant : {refusal}"));
+    *REFUSAL.lock().expect("refus du menu") = Some((refusal, Instant::now()));
     if let Some(app) = PROGRAM.lock().expect("programme du menu").clone() {
-        redessine(&app);
+        redraw(&app);
     }
 }
 
@@ -2622,64 +2649,61 @@ fn dit_le_refus(refus: Result<(), String>) {
 /// Rien n'est écrit tant qu'elle le tient : un curseur poussé d'un bout à
 /// l'autre traverse tous ses crans, et chacun serait un aller-retour
 /// jusqu'au service pour un débit que personne n'a voulu.
-fn pousse(window: windows_sys::Win32::Foundation::HWND, ou: (i32, i32)) -> bool {
-    let Some(Cible::Barre(rang)) = *PRESSEE.lock().expect("appui du menu") else {
+fn pushes(window: windows_sys::Win32::Foundation::HWND, at: (i32, i32)) -> bool {
+    let Some(Target::Bar(rank)) = *PRESSED.lock().expect("appui du menu") else {
         return false;
     };
-    let Some(Ligne::Curseur(curseur)) = LIGNES.get(rang) else {
+    let Some(Line::Slider(slider)) = LINES.get(rank) else {
         return false;
     };
-    let Some((_, combien)) = curseur.cran() else {
+    let Some((_, how_many)) = slider.notch() else {
         return false;
     };
-    let echelle = echelle();
-    let Some((_, _, place)) = parcours(echelle)
-        .into_iter()
-        .find(|(autre, _, _)| *autre == rang)
-    else {
+    let scale = scale();
+    let Some((_, _, place)) = walk(scale).into_iter().find(|(other, _, _)| *other == rank) else {
         return false;
     };
-    let barre = barre_du_curseur(place, echelle);
-    let pouce = tenue::POUCE * echelle;
+    let bar = slider_bar(place, scale);
+    let thumb = layout::THUMB * scale;
     // Le pouce ne va pas d'un bord à l'autre mais d'un centre à l'autre :
     // compté sur la barre entière, les deux crans du bout ne se
     // laisseraient pas atteindre.
-    let course = (barre.droite - barre.gauche - pouce).max(1.0);
-    let part = ((ou.0 as f32 - barre.gauche - pouce / 2.0) / course).clamp(0.0, 1.0);
-    let cran = (part * (combien.max(1) - 1) as f32).round() as usize;
-    let mut tenu = POUSSE.lock().expect("curseur du menu");
-    if *tenu != Some(cran) {
-        *tenu = Some(cran);
-        drop(tenu);
+    let travel = (bar.right - bar.left - thumb).max(1.0);
+    let part = ((at.0 as f32 - bar.left - thumb / 2.0) / travel).clamp(0.0, 1.0);
+    let notch = (part * (how_many.max(1) - 1) as f32).round() as usize;
+    let mut pushed = PUSHED.lock().expect("curseur du menu");
+    if *pushed != Some(notch) {
+        *pushed = Some(notch);
+        drop(pushed);
         repaint(window);
     }
     true
 }
 
 /// Lâche le curseur, et écrit le cran où il a été laissé.
-fn lache(window: windows_sys::Win32::Foundation::HWND, rang: usize) {
-    let Some(cran) = POUSSE.lock().expect("curseur du menu").take() else {
+fn released(window: windows_sys::Win32::Foundation::HWND, rank: usize) {
+    let Some(notch) = PUSHED.lock().expect("curseur du menu").take() else {
         return;
     };
     repaint(window);
-    let Some(Ligne::Curseur(curseur)) = LIGNES.get(rang) else {
+    let Some(Line::Slider(slider)) = LINES.get(rank) else {
         return;
     };
-    let Some(valeur) = valeur_de(curseur.quoi, cran) else {
+    let Some(value) = value_of(slider.setting, notch) else {
         return;
     };
-    let deja = REGLAGES
+    let already = SESSION_MENU
         .lock()
         .expect("réglages du menu")
         .as_ref()
-        .is_some_and(|menu| curseur.quoi.ou(menu) == valeur);
-    if deja {
+        .is_some_and(|menu| slider.setting.current(menu) == value);
+    if already {
         return;
     }
     let Some(app) = PROGRAM.lock().expect("programme du menu").clone() else {
         return;
     };
-    choisis(&app, curseur.quoi, valeur);
+    choose(&app, slider.setting, value);
 }
 
 /// Relit où en sont les quatre interrupteurs, et redessine si ça a bougé.
@@ -2688,64 +2712,64 @@ fn lache(window: windows_sys::Win32::Foundation::HWND, rang: usize) {
 /// qui les bascule et que le moteur ne dit jamais où il en est ; le son se
 /// demande au mélangeur de Windows, qui le sait et qui est ouvert à tout
 /// le monde.
-async fn relis_les_bascules(app: &App) {
+async fn reread_the_toggles(app: &App) {
     /// Pose où en est un interrupteur, et dit si ça a bougé.
-    fn pose(ou: &AtomicBool, vrai: bool) -> bool {
-        ou.swap(vrai, Ordering::Relaxed) != vrai
+    fn set(cell: &AtomicBool, value: bool) -> bool {
+        cell.swap(value, Ordering::Relaxed) != value
     }
 
-    let mut change = pose(&EN_JEU, crate::floating::in_game_mouse(app));
-    change |= pose(&IMMERSIF, crate::floating::keys_to_the_session(app));
-    change |= pose(&PARTAGE, crate::floating::the_clipboard_is_shared(app));
-    change |= pose(&TENUS, crate::floating::the_voyants_are_held_up(app));
+    let mut change = set(&IN_GAME, crate::floating::in_game_mouse(app));
+    change |= set(&IMMERSIVE, crate::floating::keys_to_the_session(app));
+    change |= set(&SHARED, crate::floating::the_clipboard_is_shared(app));
+    change |= set(&HELD, crate::floating::the_badges_are_held_up(app));
     // Sans session le mélangeur n'a rien à dire, et la carte ne s'ouvre
     // pas sans session : un refus se laisse donc tel quel plutôt que
     // d'éteindre l'interrupteur.
-    if let Ok(coupe) = crate::floating::hushed(app).await {
-        change |= pose(&COUPE, coupe);
+    if let Ok(muted) = crate::floating::hushed(app).await {
+        change |= set(&MUTED, muted);
     }
     if change {
-        redessine(app);
+        redraw(app);
     }
 }
 
 /// Suit ce que la session coûte tant que la carte est ouverte, et pas une
 /// seconde de plus : des chiffres que personne ne regarde ne valent ni le
 /// fichier ni le réveil.
-fn suis_les_mesures(app: &App, ouvert: bool) {
+fn follow_the_readings(app: &App, is_open: bool) {
     // Le tour change à chaque appel, ce qui arrête celui d'avant : sans
     // ça, ouvrir et refermer vite laisserait deux veilles derrière la
     // même carte.
-    let tour = TOUR.fetch_add(1, Ordering::Relaxed) + 1;
-    if !ouvert {
+    let round = ROUND.fetch_add(1, Ordering::Relaxed) + 1;
+    if !is_open {
         return;
     }
     let app = app.clone();
     crate::app::spawn(async move {
-        while TOUR.load(Ordering::Relaxed) == tour {
-            let dit = crate::mesures::session_measures();
-            let maintenant = Instant::now();
+        while ROUND.load(Ordering::Relaxed) == round {
+            let said = crate::measures::session_measures();
+            let now = Instant::now();
             // Le verrou est rendu avant l'attente : un verrou tenu à
             // travers une attente est un verrou tenu une seconde. Pris
             // avant la lecture et non après, parce que celle-ci part de
             // la précédente pour les mesures qui manquent.
             let change = {
-                let mut barre = BARRE.lock().expect("mesures du menu");
-                let lue = Barre::de(&dit, &barre, maintenant);
-                let change = barre.se_lit_autrement(&lue);
-                *barre = lue;
+                let mut bar = READINGS_BAR.lock().expect("mesures du menu");
+                let load = ReadingsBar::of(&said, &bar, now);
+                let change = bar.reads_differently(&load);
+                *bar = load;
                 change
             };
             if change {
-                redessine(&app);
+                redraw(&app);
             }
-            tokio::time::sleep(RYTHME).await;
+            tokio::time::sleep(REFRESH).await;
         }
     });
 }
 
 /// Redessine la carte depuis un fil qui n'est pas celui qui la dessine.
-fn redessine(app: &App) {
+fn redraw(app: &App) {
     let _ = app.run_on_main_thread(|| {
         use windows_sys::Win32::Foundation::HWND;
 

@@ -34,7 +34,7 @@ use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 
 use crate::app::App;
 
-use crate::paint::Cadre;
+use crate::paint::Rect;
 
 /// Ce sous quoi ce module classe ses lignes du journal.
 const TAG: &str = "floating";
@@ -58,12 +58,12 @@ mod drawing {
     pub const SIDE: f32 = 440.0;
     pub const ORIGIN: f32 = 36.0;
 
-    use crate::design::Couleur;
+    use crate::design::Colour;
 
     /// The outline, and the two fills, in the numbers everything that
     /// draws wants.
-    const fn teinte(red: u8, green: u8, blue: u8) -> Couleur {
-        Couleur {
+    const fn tint(red: u8, green: u8, blue: u8) -> Colour {
+        Colour {
             red: red as f32 / 255.0,
             green: green as f32 / 255.0,
             blue: blue as f32 / 255.0,
@@ -71,9 +71,9 @@ mod drawing {
         }
     }
 
-    pub const LINE: Couleur = teinte(9, 13, 22);
-    pub const WHITE: Couleur = teinte(255, 255, 255);
-    pub const GOLD: Couleur = teinte(239, 181, 54);
+    pub const LINE: Colour = tint(9, 13, 22);
+    pub const WHITE: Colour = tint(255, 255, 255);
+    pub const GOLD: Colour = tint(239, 181, 54);
 
     /// Half the stroke's width, which is how far it reaches either side
     /// of the path it is drawn on.
@@ -85,7 +85,7 @@ mod drawing {
         pub middle: (f32, f32),
         pub half: (f32, f32),
         pub radius: f32,
-        pub fill: Couleur,
+        pub fill: Colour,
         pub outlined: bool,
     }
 
@@ -151,10 +151,10 @@ const GROWS_IN: std::time::Duration = std::time::Duration::from_millis(120);
 const GROWING: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP;
 
 /// Le curseur à redire, demandé d'ailleurs que du fil de la fenêtre.
-const CURSEUR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+const CURSOR: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
 /// La barre du transfert a bougé, demandé du fil qui la relit.
-const AVANCE: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
+const PROGRESS: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 2;
 
 /// The window itself, and what it is showing.
 static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
@@ -212,7 +212,7 @@ static PROGRAM: Mutex<Option<App>> = Mutex::new(None);
 // travel to that thread first. Saying so here is what makes it
 // impossible to forget.
 thread_local! {
-    static TOILE: std::cell::RefCell<Option<crate::paint::Toile>> =
+    static CANVAS: std::cell::RefCell<Option<crate::paint::Canvas>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -225,7 +225,7 @@ pub fn raise(app: &App, side: u32, upward: bool, mirrored: bool, anchor: (i32, i
     if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return;
     }
-    let owner = crate::fenetre::sienne();
+    let owner = crate::main_window::handle();
     *PROGRAM.lock().expect("programme du logo") = Some(app.clone());
     ITS_BOX.store(box_of(side), Ordering::Relaxed);
     UPWARD.store(upward, Ordering::Relaxed);
@@ -298,7 +298,7 @@ pub fn moving(yes: bool) {
     if window != 0 {
         // SAFETY: un message déposé dans la file d'une fenêtre à nous,
         // depuis le fil qui suit le geste.
-        unsafe { PostMessageW(window as HWND, CURSEUR, 0, 0) };
+        unsafe { PostMessageW(window as HWND, CURSOR, 0, 0) };
     }
 }
 
@@ -315,7 +315,7 @@ pub fn the_bar_moved() {
     let window = ITS_WINDOW.load(Ordering::Relaxed);
     if window != 0 {
         // SAFETY: un message déposé dans la file d'une fenêtre à nous.
-        unsafe { PostMessageW(window as HWND, AVANCE, 0, 0) };
+        unsafe { PostMessageW(window as HWND, PROGRESS, 0, 0) };
     }
 }
 
@@ -519,7 +519,7 @@ fn head_for(window: windows_sys::Win32::Foundation::HWND) {
         growth.to = aim;
         growth.since = Some(std::time::Instant::now());
     }
-    crate::rythme::bat(window, GROWING);
+    crate::pulse::beat(window, GROWING);
 }
 
 /// What fraction of its full size the logo is drawn at right now.
@@ -568,20 +568,20 @@ fn arrived() -> bool {
 /// ce que demande le bouton flottant quand son menu s'ouvre à sa droite
 /// plutôt qu'à sa gauche, pour que le logo fasse face au menu plutôt que
 /// de lui tourner le dos.
-pub fn marque(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored: bool) {
+pub fn brand(canvas: &crate::paint::Canvas, rect: Rect, part: f32, mirrored: bool) {
     for shape in &drawing::SHAPES {
-        let place = placed(cadre, shape, mirrored);
-        let radius = shape.radius * per_unit(cadre);
-        toile.remplis(place, radius, shape.fill.voile(part));
+        let place = placed(rect, shape, mirrored);
+        let radius = shape.radius * per_unit(rect);
+        canvas.fill(place, radius, shape.fill.faded(part));
         if shape.outlined {
             // Sur le bord et non dedans : c'est ce que fait un trait dans
             // le dessin d'origine, et un contour rentré dedans amincirait
             // le logo de la moitié de son trait.
-            toile.trace_sur(
+            canvas.stroke_on(
                 place,
                 radius,
-                drawing::HALF_STROKE * 2.0 * per_unit(cadre),
-                drawing::LINE.voile(part),
+                drawing::HALF_STROKE * 2.0 * per_unit(rect),
+                drawing::LINE.faded(part),
             );
         }
     }
@@ -597,7 +597,7 @@ pub fn marque(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored: bo
 ///
 /// Elle se remplit du côté où le dessin regarde, donc de la droite quand
 /// il est retourné.
-fn fill_the_pane(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored: bool) {
+fn fill_the_pane(canvas: &crate::paint::Canvas, rect: Rect, part: f32, mirrored: bool) {
     /// La vitre de l'écran de devant : le dernier des quatre dessins,
     /// donc celui qui est posé par-dessus tous les autres.
     const PANE: usize = drawing::SHAPES.len() - 1;
@@ -605,17 +605,17 @@ fn fill_the_pane(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored:
     /// Une vitre vide se lit comme une vitre, pas comme une attente.
     const AT_LEAST: f32 = 0.08;
 
-    let pane = placed(cadre, &drawing::SHAPES[PANE], mirrored);
-    let large = (pane.droite - pane.gauche) * part.clamp(AT_LEAST, 1.0);
-    let gauche = if mirrored {
-        pane.droite - large
+    let pane = placed(rect, &drawing::SHAPES[PANE], mirrored);
+    let width = (pane.right - pane.left) * part.clamp(AT_LEAST, 1.0);
+    let left = if mirrored {
+        pane.right - width
     } else {
-        pane.gauche
+        pane.left
     };
-    let filled = Cadre::pose(gauche, pane.haut, large, pane.bas - pane.haut);
-    toile.remplis(
+    let filled = Rect::at(left, pane.top, width, pane.bottom - pane.top);
+    canvas.fill(
         filled,
-        drawing::SHAPES[PANE].radius * per_unit(cadre),
+        drawing::SHAPES[PANE].radius * per_unit(rect),
         drawing::WHITE,
     );
 }
@@ -626,24 +626,24 @@ fn fill_the_pane(toile: &crate::paint::Toile, cadre: Cadre, part: f32, mirrored:
 /// the very same answer for one of those shapes: two ways of working out
 /// where the near screen sits would be two screens that drift apart the
 /// first time the drawing is touched.
-fn placed(cadre: Cadre, shape: &drawing::Round, mirrored: bool) -> Cadre {
-    let per_unit = per_unit(cadre);
-    let gauche = if mirrored {
-        cadre.droite - (shape.middle.0 + shape.half.0 - drawing::ORIGIN) * per_unit
+fn placed(rect: Rect, shape: &drawing::Round, mirrored: bool) -> Rect {
+    let per_unit = per_unit(rect);
+    let left = if mirrored {
+        rect.right - (shape.middle.0 + shape.half.0 - drawing::ORIGIN) * per_unit
     } else {
-        cadre.gauche + (shape.middle.0 - shape.half.0 - drawing::ORIGIN) * per_unit
+        rect.left + (shape.middle.0 - shape.half.0 - drawing::ORIGIN) * per_unit
     };
-    Cadre::pose(
-        gauche,
-        cadre.haut + (shape.middle.1 - shape.half.1 - drawing::ORIGIN) * per_unit,
+    Rect::at(
+        left,
+        rect.top + (shape.middle.1 - shape.half.1 - drawing::ORIGIN) * per_unit,
         shape.half.0 * 2.0 * per_unit,
         shape.half.1 * 2.0 * per_unit,
     )
 }
 
 /// Ce que vaut, dans ce cadre, une unité du repère où le dessin est écrit.
-fn per_unit(cadre: Cadre) -> f32 {
-    (cadre.droite - cadre.gauche) / drawing::SIDE
+fn per_unit(rect: Rect) -> f32 {
+    (rect.right - rect.left) / drawing::SIDE
 }
 
 /// Draws the logo as it stands and hands the whole picture to Windows.
@@ -672,21 +672,21 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
     } else {
         0.0
     };
-    TOILE.with_borrow_mut(|toile| {
-        if toile.is_none() {
-            *toile = crate::paint::Toile::neuve(side, side);
+    CANVAS.with_borrow_mut(|canvas| {
+        if canvas.is_none() {
+            *canvas = crate::paint::Canvas::new(side, side);
         }
-        let Some(toile) = toile.as_ref() else {
+        let Some(canvas) = canvas.as_ref() else {
             return;
         };
         let mirrored = MIRRORED.load(Ordering::Relaxed);
-        let cadre = Cadre::pose(left, top, wide, wide);
-        toile.commence(crate::design::Couleur::RIEN);
-        marque(toile, cadre, 1.0, mirrored);
-        if let Some(part) = crate::transfert::how_far() {
-            fill_the_pane(toile, cadre, part, mirrored);
+        let rect = Rect::at(left, top, wide, wide);
+        canvas.begin(crate::design::Colour::TRANSPARENT);
+        brand(canvas, rect, 1.0, mirrored);
+        if let Some(part) = crate::transfer::how_far() {
+            fill_the_pane(canvas, rect, part, mirrored);
         }
-        if !toile.finit() {
+        if !canvas.finish() {
             return;
         }
 
@@ -702,7 +702,7 @@ fn repaint(window: windows_sys::Win32::Foundation::HWND) {
         if unsafe { GetWindowRect(window, &mut place) } == 0 {
             return;
         }
-        toile.pose(window as isize, place.left, place.top);
+        canvas.lay_on(window as isize, place.left, place.top);
     });
 }
 
@@ -747,18 +747,18 @@ unsafe extern "system" fn answer(
             0
         }
         WM_SETCURSOR if (with as u32 & 0xFFFF) == HTCLIENT => {
-            curseur();
+            cursor();
             1
         }
         // Redit sans que la souris ait bougé : le geste vient de finir et
         // la forme qu'il montrait n'est plus la bonne.
-        CURSEUR => {
-            if sous_la_main(window) {
-                curseur();
+        CURSOR => {
+            if under_the_hand(window) {
+                cursor();
             }
             0
         }
-        AVANCE => {
+        PROGRESS => {
             repaint(window);
             0
         }
@@ -768,7 +768,7 @@ unsafe extern "system" fn answer(
         }
         GROWING => {
             if arrived() {
-                crate::rythme::arrete(window);
+                crate::pulse::stop(window);
             }
             repaint(window);
             0
@@ -779,7 +779,7 @@ unsafe extern "system" fn answer(
 }
 
 /// Pose la forme que le curseur doit avoir sur le logo.
-fn curseur() {
+fn cursor() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         IDC_HAND, IDC_SIZEALL, LoadCursorW, SetCursor,
     };
@@ -797,17 +797,17 @@ fn curseur() {
 ///
 /// Le curseur appartient à tout le monde : le poser alors que la main est
 /// ailleurs changerait la forme montrée par la fenêtre d'à côté.
-fn sous_la_main(window: windows_sys::Win32::Foundation::HWND) -> bool {
+fn under_the_hand(window: windows_sys::Win32::Foundation::HWND) -> bool {
     use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, WindowFromPoint};
 
-    let mut ou = POINT { x: 0, y: 0 };
+    let mut cursor = POINT { x: 0, y: 0 };
     // SAFETY: une place à remplir, et la fenêtre que le système rend.
     unsafe {
-        if GetCursorPos(&mut ou) == 0 {
+        if GetCursorPos(&mut cursor) == 0 {
             return false;
         }
-        WindowFromPoint(ou) == window
+        WindowFromPoint(cursor) == window
     }
 }
 
@@ -834,7 +834,7 @@ fn taken(window: windows_sys::Win32::Foundation::HWND) {
         // A plain click opens and closes the menu; a drag does not, or
         // the button would open its menu every time it was put down.
         if plain {
-            crate::menu::montre(!crate::menu::ouvert());
+            crate::menu::show(!crate::menu::is_open());
         }
     });
 }

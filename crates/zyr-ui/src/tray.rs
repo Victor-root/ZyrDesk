@@ -34,14 +34,14 @@ fn note(what: &str) {
 }
 
 /// Ce que le menu répond quand on choisit une de ses lignes.
-const OUVRIR: usize = 1;
-const QUITTER: usize = 2;
+const OPEN: usize = 1;
+const QUIT: usize = 2;
 
 /// Ce qu'il reste de la marque quand cet ordinateur n'est pas joignable.
 ///
 /// Pâlie plutôt qu'un autre dessin : elle reste reconnaissable à seize
 /// pixels, là où un second symbole ne serait qu'une tache.
-const EN_RETRAIT: f32 = 90.0 / 255.0;
+const DIMMED: f32 = 90.0 / 255.0;
 
 /// What the icon last said, so it is only redrawn when it changes.
 ///
@@ -56,14 +56,14 @@ pub struct Shown(Mutex<Option<(bool, bool)>>);
 
 /// La fenêtre qui reçoit ce que l'icône a à dire, et l'icône elle-même
 /// telle que le système la garde.
-static SA_FENETRE: AtomicIsize = AtomicIsize::new(0);
-static SON_DESSIN: AtomicIsize = AtomicIsize::new(0);
+static ITS_WINDOW: AtomicIsize = AtomicIsize::new(0);
+static ITS_ICON: AtomicIsize = AtomicIsize::new(0);
 
 /// Le numéro sous lequel cette icône est déposée, et le message par
 /// lequel elle parle.
-const ELLE: u32 = 1;
+const ICON_ID: u32 = 1;
 #[cfg(windows)]
-const DIT: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+const CALLBACK: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 
 /// Puts the icon up, for as long as the program runs.
 #[cfg(windows)]
@@ -76,18 +76,18 @@ pub fn raise() -> Result<(), String> {
         CreateWindowExW, HWND_MESSAGE, RegisterClassW, WNDCLASSW,
     };
 
-    if SA_FENETRE.load(Ordering::Relaxed) != 0 {
+    if ITS_WINDOW.load(Ordering::Relaxed) != 0 {
         return Ok(());
     }
-    let classe: Vec<u16> = "ZyrDeskIcone".encode_utf16().chain(Some(0)).collect();
+    let class_name: Vec<u16> = "ZyrDeskIcone".encode_utf16().chain(Some(0)).collect();
     // SAFETY: une classe déclarée une fois et une fenêtre bâtie dessus,
     // sur le fil qui pompera ses messages. Elle ne montre rien : c'est ce
     // que le système demande pour porter une icône.
-    let sienne = unsafe {
+    let hwnd = unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let class = WNDCLASSW {
             style: 0,
-            lpfnWndProc: Some(repond),
+            lpfnWndProc: Some(answers),
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: instance,
@@ -95,12 +95,12 @@ pub fn raise() -> Result<(), String> {
             hCursor: std::ptr::null_mut(),
             hbrBackground: std::ptr::null_mut(),
             lpszMenuName: std::ptr::null(),
-            lpszClassName: classe.as_ptr(),
+            lpszClassName: class_name.as_ptr(),
         };
         RegisterClassW(&class);
         CreateWindowExW(
             0,
-            classe.as_ptr(),
+            class_name.as_ptr(),
             std::ptr::null(),
             0,
             0,
@@ -113,20 +113,20 @@ pub fn raise() -> Result<(), String> {
             std::ptr::null(),
         )
     };
-    if sienne.is_null() {
+    if hwnd.is_null() {
         return Err("l'icône de la zone de notification n'a pas de fenêtre".to_string());
     }
-    SA_FENETRE.store(sienne as isize, Ordering::Relaxed);
+    ITS_WINDOW.store(hwnd as isize, Ordering::Relaxed);
 
-    let mut depose = deposee(sienne);
-    depose.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    depose.uCallbackMessage = DIT;
-    depose.hIcon = dessinee(false);
-    SON_DESSIN.store(depose.hIcon as isize, Ordering::Relaxed);
-    ecris(&mut depose.szTip, "ZyrDesk");
+    let mut data = icon_data(hwnd);
+    data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    data.uCallbackMessage = CALLBACK;
+    data.hIcon = drawn(false);
+    ITS_ICON.store(data.hIcon as isize, Ordering::Relaxed);
+    copy_into(&mut data.szTip, "ZyrDesk");
     // SAFETY: un bloc à nous, dont la taille est écrite dedans comme
     // l'appel le demande.
-    if unsafe { Shell_NotifyIconW(NIM_ADD, &depose) } == 0 {
+    if unsafe { Shell_NotifyIconW(NIM_ADD, &data) } == 0 {
         return Err("Windows n'a pas pris l'icône de la zone de notification".to_string());
     }
     Ok(())
@@ -139,25 +139,25 @@ pub fn raise() -> Result<(), String> {
 
 /// Le bloc que le système attend, rempli de ce qui ne change jamais.
 #[cfg(windows)]
-fn deposee(
-    sienne: windows_sys::Win32::Foundation::HWND,
+fn icon_data(
+    hwnd: windows_sys::Win32::Foundation::HWND,
 ) -> windows_sys::Win32::UI::Shell::NOTIFYICONDATAW {
     use windows_sys::Win32::UI::Shell::NOTIFYICONDATAW;
 
     // SAFETY: un bloc à nous, rempli de zéros puis des seuls champs que
     // les drapeaux annoncent.
-    let mut depose: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
-    depose.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-    depose.hWnd = sienne;
-    depose.uID = ELLE;
-    depose
+    let mut data: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
+    data.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+    data.hWnd = hwnd;
+    data.uID = ICON_ID;
+    data
 }
 
 /// Écrit un mot dans un des champs de longueur fixe du système.
 #[cfg(windows)]
-fn ecris(ou: &mut [u16], mot: &str) {
-    for (place, lettre) in ou.iter_mut().zip(mot.encode_utf16().chain(Some(0))) {
-        *place = lettre;
+fn copy_into(cursor: &mut [u16], text: &str) {
+    for (place, letter) in cursor.iter_mut().zip(text.encode_utf16().chain(Some(0))) {
+        *place = letter;
     }
 }
 
@@ -198,15 +198,15 @@ fn says(app: &App, reachable: bool, playing: bool) {
     if *last == Some((reachable, playing)) {
         return;
     }
-    let sienne = SA_FENETRE.load(Ordering::Relaxed) as HWND;
-    if sienne.is_null() {
+    let hwnd = ITS_WINDOW.load(Ordering::Relaxed) as HWND;
+    if hwnd.is_null() {
         return;
     }
-    let mut depose = deposee(sienne);
-    depose.uFlags = NIF_ICON | NIF_TIP;
-    depose.hIcon = dessinee(!reachable);
-    ecris(
-        &mut depose.szTip,
+    let mut data = icon_data(hwnd);
+    data.uFlags = NIF_ICON | NIF_TIP;
+    data.hIcon = drawn(!reachable);
+    copy_into(
+        &mut data.szTip,
         match (playing, reachable) {
             (true, _) => "ZyrDesk : une session est en cours, cliquez pour revenir à la fenêtre",
             (false, true) => "ZyrDesk : cet ordinateur peut être contrôlé",
@@ -216,13 +216,13 @@ fn says(app: &App, reachable: bool, playing: bool) {
     // SAFETY: un bloc à nous, et l'ancien dessin rendu une fois que le
     // système ne s'en sert plus.
     unsafe {
-        if Shell_NotifyIconW(NIM_MODIFY, &depose) == 0 {
-            let _ = DestroyIcon(depose.hIcon);
+        if Shell_NotifyIconW(NIM_MODIFY, &data) == 0 {
+            let _ = DestroyIcon(data.hIcon);
             return;
         }
-        let avant = SON_DESSIN.swap(depose.hIcon as isize, Ordering::Relaxed);
-        if avant != 0 {
-            let _ = DestroyIcon(avant as _);
+        let before = ITS_ICON.swap(data.hIcon as isize, Ordering::Relaxed);
+        if before != 0 {
+            let _ = DestroyIcon(before as _);
         }
     }
     *last = Some((reachable, playing));
@@ -251,30 +251,30 @@ fn asked_for() -> i32 {
 /// cette taille-là, ce qui est la seule façon d'avoir un bord net à seize
 /// pixels.
 #[cfg(windows)]
-fn dessinee(en_retrait: bool) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
-    let cote = asked_for();
-    let Some(toile) = crate::paint::Toile::neuve(cote, cote) else {
+fn drawn(dimmed: bool) -> windows_sys::Win32::UI::WindowsAndMessaging::HICON {
+    let side = asked_for();
+    let Some(canvas) = crate::paint::Canvas::new(side, side) else {
         return std::ptr::null_mut();
     };
-    toile.commence(crate::design::Couleur::RIEN);
-    crate::logo::marque(
-        &toile,
-        crate::paint::Cadre::pose(0.0, 0.0, cote as f32, cote as f32),
-        if en_retrait { EN_RETRAIT } else { 1.0 },
+    canvas.begin(crate::design::Colour::TRANSPARENT);
+    crate::logo::brand(
+        &canvas,
+        crate::paint::Rect::at(0.0, 0.0, side as f32, side as f32),
+        if dimmed { DIMMED } else { 1.0 },
         false,
     );
-    if !toile.finit() {
+    if !canvas.finish() {
         return std::ptr::null_mut();
     }
-    toile
-        .en_icone()
-        .map_or(std::ptr::null_mut(), |icone| icone.0 as _)
+    canvas
+        .to_icon()
+        .map_or(std::ptr::null_mut(), |icon| icon.0 as _)
 }
 
 /// SAFETY: appelée par le système sur le fil qui a fait cette fenêtre,
 /// avec les arguments qu'il documente.
 #[cfg(windows)]
-unsafe extern "system" fn repond(
+unsafe extern "system" fn answers(
     window: windows_sys::Win32::Foundation::HWND,
     message: u32,
     holding: windows_sys::Win32::Foundation::WPARAM,
@@ -282,13 +282,13 @@ unsafe extern "system" fn repond(
 ) -> windows_sys::Win32::Foundation::LRESULT {
     use windows_sys::Win32::UI::WindowsAndMessaging::{DefWindowProcW, WM_LBUTTONUP, WM_RBUTTONUP};
 
-    if message == DIT {
+    if message == CALLBACK {
         match (with & 0xFFFF) as u32 {
             // Le clic gauche ouvre la fenêtre, ce que tout le monde
             // attend d'une icône là-dessous ; le menu reste sur le bouton
             // droit.
-            WM_LBUTTONUP => ouvre(),
-            WM_RBUTTONUP => deroule(window),
+            WM_LBUTTONUP => open(),
+            WM_RBUTTONUP => pop_up_the_menu(window),
             _ => {}
         }
         return 0;
@@ -299,51 +299,51 @@ unsafe extern "system" fn repond(
 
 /// Ce que le menu de l'icône propose, et ce qu'il fait de la réponse.
 #[cfg(windows)]
-fn deroule(window: windows_sys::Win32::Foundation::HWND) {
+fn pop_up_the_menu(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, MF_SEPARATOR, MF_STRING,
         SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
     };
 
-    let ouvrir: Vec<u16> = "Ouvrir ZyrDesk".encode_utf16().chain(Some(0)).collect();
-    let quitter: Vec<u16> = "Quitter".encode_utf16().chain(Some(0)).collect();
-    let mut ou = POINT { x: 0, y: 0 };
+    let open_label: Vec<u16> = "Ouvrir ZyrDesk".encode_utf16().chain(Some(0)).collect();
+    let quit_label: Vec<u16> = "Quitter".encode_utf16().chain(Some(0)).collect();
+    let mut cursor = POINT { x: 0, y: 0 };
     // SAFETY: un menu fait ici et défait ici, et la place du curseur lue
     // dans un bloc à nous. Le premier plan est donné à cette fenêtre
     // avant de dérouler le menu, faute de quoi le menu resterait ouvert
     // après le clic suivant : c'est ce que le système demande.
-    let choisi = unsafe {
-        GetCursorPos(&mut ou);
+    let chosen = unsafe {
+        GetCursorPos(&mut cursor);
         let menu = CreatePopupMenu();
         if menu.is_null() {
             return;
         }
-        AppendMenuW(menu, MF_STRING, OUVRIR, ouvrir.as_ptr());
+        AppendMenuW(menu, MF_STRING, OPEN, open_label.as_ptr());
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
-        AppendMenuW(menu, MF_STRING, QUITTER, quitter.as_ptr());
+        AppendMenuW(menu, MF_STRING, QUIT, quit_label.as_ptr());
         SetForegroundWindow(window);
-        let choisi = TrackPopupMenu(
+        let chosen = TrackPopupMenu(
             menu,
             TPM_RETURNCMD | TPM_RIGHTBUTTON,
-            ou.x,
-            ou.y,
+            cursor.x,
+            cursor.y,
             0,
             window,
             std::ptr::null(),
         );
         DestroyMenu(menu);
-        choisi
+        chosen
     };
-    match choisi as usize {
-        OUVRIR => ouvre(),
-        QUITTER => quit(),
+    match chosen as usize {
+        OPEN => open(),
+        QUIT => quit(),
         _ => {}
     }
 }
 
-fn ouvre() {
-    crate::fenetre::montre();
+fn open() {
+    crate::main_window::show();
 }
 
 /// Stops everything and leaves.
@@ -360,8 +360,8 @@ fn quit() {
             Ok(()) => note("service arrêté, fermeture"),
             Err(reason) => note(&format!("service non arrêté : {reason}")),
         }
-        retire();
-        crate::app::quitte();
+        remove_the_icon();
+        crate::app::quit();
     });
 }
 
@@ -371,18 +371,18 @@ fn quit() {
 /// passe la souris dessus : le système ne s'aperçoit qu'à ce moment-là
 /// que le programme n'est plus là.
 #[cfg(windows)]
-fn retire() {
+fn remove_the_icon() {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::Shell::{NIM_DELETE, Shell_NotifyIconW};
 
-    let sienne = SA_FENETRE.swap(0, Ordering::Relaxed) as HWND;
-    if sienne.is_null() {
+    let hwnd = ITS_WINDOW.swap(0, Ordering::Relaxed) as HWND;
+    if hwnd.is_null() {
         return;
     }
-    let depose = deposee(sienne);
+    let data = icon_data(hwnd);
     // SAFETY: un bloc à nous, nommant l'icône déposée au démarrage.
-    unsafe { Shell_NotifyIconW(NIM_DELETE, &depose) };
+    unsafe { Shell_NotifyIconW(NIM_DELETE, &data) };
 }
 
 #[cfg(not(windows))]
-fn retire() {}
+fn remove_the_icon() {}

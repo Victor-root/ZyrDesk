@@ -43,11 +43,11 @@ mod paint;
 
 // Les icônes que ce programme dessine, partagées par tous ses écrans.
 #[cfg(windows)]
-mod icones;
+mod icons;
 
 // Le battement de ce qui bouge, réglé sur le compositeur de Windows.
 #[cfg(windows)]
-mod rythme;
+mod pulse;
 
 // Le menu du bouton flottant, dessiné par ce programme.
 #[cfg(windows)]
@@ -55,28 +55,28 @@ mod menu;
 
 // La fenêtre d'accueil, dessinée par ce programme.
 #[cfg(windows)]
-mod accueil;
+mod home;
 
 // La fenêtre elle-même, ouverte par ce programme.
-mod fenetre;
+mod main_window;
 
 /// Hors de Windows il n'y a pas de fenêtre d'accueil, et pas de session
 /// non plus : ce qu'une session raconte pendant qu'elle s'ouvre tombe
 /// alors dans le vide, comme tout le reste de ce qui dessine.
 #[cfg(not(windows))]
-mod accueil {
+mod home {
     use crate::app::App;
 
-    pub fn etape(_app: &App, _detail: &str, _code: Option<String>) {}
-    pub fn relance(_app: &App) {}
-    pub fn reprise(_app: &App, _essai: u32) {}
-    pub fn range_l_ouverture(_app: &App) {}
-    pub fn echoue(_app: &App, _texte: &str) {}
+    pub fn step(_app: &App, _detail: &str, _code: Option<String>) {}
+    pub fn relaunched(_app: &App) {}
+    pub fn coming_back(_app: &App, _attempt: u32) {}
+    pub fn put_the_opening_away(_app: &App) {}
+    pub fn failed(_app: &App, _text: &str) {}
 }
 
-mod mesures;
+mod measures;
 mod picture;
-mod pointeur;
+mod pointer;
 mod service;
 mod session;
 mod settings;
@@ -86,12 +86,12 @@ mod theme;
 // Ce que le bouton flottant montre des fichiers qui arrivent : la vitre
 // de la marque se remplit comme une barre de chargement. Ce qui se lit se
 // compile partout ; ce qui se dessine est celui du bouton.
-mod transfert;
+mod transfer;
 mod tray;
 // Les deux voyants d'une session, dans le coin de l'image opposé au
 // bouton flottant. Ce qui décide se compile partout ; les pastilles sont
 // une fenêtre, donc de Windows.
-mod voyants;
+mod badges;
 
 #[cfg(windows)]
 mod elevated;
@@ -105,17 +105,17 @@ fn main() {
     // Two ZyrDesk running at once would put two floating buttons on the
     // same session. Whoever starts the second one wanted the window
     // back, which is what they get.
-    if app::deja_ouvert() {
+    if app::already_open() {
         return;
     }
     // Ce que ce programme dessine se compte en vrais pixels, sur chaque
     // écran : dit avant qu'une seule fenêtre existe, faute de quoi le
     // système agrandirait lui-même ce qui est déjà à la bonne taille.
-    app::compte_en_vrais_pixels();
+    app::count_in_real_pixels();
     journal::opened();
 
-    let app = app::App::neuf();
-    if let Err(e) = app::ouvre_le_courrier() {
+    let app = app::App::new();
+    if let Err(e) = app::open_the_mailbox() {
         journal::note(&format!("ZyrDesk ne démarre pas : {e}"));
         return;
     }
@@ -123,7 +123,7 @@ fn main() {
     // s'ouvre : une fenêtre qui s'ouvrirait dans le mauvais thème, même
     // le temps d'un battement, se verrait.
     theme::what_was_chosen();
-    if let Err(e) = fenetre::ouvre(&app) {
+    if let Err(e) = main_window::open(&app) {
         journal::note(&format!("ZyrDesk ne démarre pas : {e}"));
         return;
     }
@@ -154,10 +154,10 @@ fn main() {
     // dernier : il demande au service ce qu'il montre, et le service
     // vient d'être réveillé.
     #[cfg(windows)]
-    accueil::raise(&app);
-    fenetre::montre();
+    home::raise(&app);
+    main_window::show();
 
-    app::tourne();
+    app::run();
 }
 
 /// Brings the home window back, wherever it was left.
@@ -166,5 +166,5 @@ fn main() {
 /// told: both are windows the system knows this one owns, and it puts
 /// them back up when it puts this one back up.
 pub fn show_home(_app: &crate::app::App) {
-    fenetre::montre();
+    main_window::show();
 }

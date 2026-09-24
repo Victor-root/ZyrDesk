@@ -47,7 +47,7 @@ pub fn on_the_window() {
         SendMessageW, WM_SETICON,
     };
 
-    let home = crate::fenetre::sienne() as HWND;
+    let home = crate::main_window::handle() as HWND;
     if home.is_null() {
         return;
     }

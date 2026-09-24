@@ -214,37 +214,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn la_ligne_du_journal_dit_ce_qui_manque() {
+    fn the_journal_line_says_what_is_missing() {
         // Elle est là pour un curseur resté en flèche : elle doit
         // distinguer « rien n'est arrivé » de « tout est arrivé et
         // c'était des flèches ».
-        let rien = Seen {
+        let nothing = Seen {
             why: "la session est terminée",
             ..Default::default()
         };
-        let dit = rien.to_string();
-        assert!(dit.contains("0 reçues"), "{dit}");
-        assert!(dit.contains("aucune forme"), "{dit}");
+        let said = nothing.to_string();
+        assert!(said.contains("0 reçues"), "{said}");
+        assert!(said.contains("aucune forme"), "{said}");
 
-        let mut vues = Seen::default();
-        vues.saw(Pointer::Arrow);
-        vues.saw(Pointer::Text);
-        vues.saw(Pointer::Arrow);
-        let dit = vues.to_string();
-        assert!(dit.contains("3 reçues"), "{dit}");
-        assert!(dit.contains("arrow text"), "{dit}");
+        let mut seen = Seen::default();
+        seen.saw(Pointer::Arrow);
+        seen.saw(Pointer::Text);
+        seen.saw(Pointer::Arrow);
+        let said = seen.to_string();
+        assert!(said.contains("3 reçues"), "{said}");
+        assert!(said.contains("arrow text"), "{said}");
 
         // Et un refus se dit sur une seule ligne : le journal aligne ses
         // lignes, et une raison repliée casserait la colonne.
-        let refusee = Seen {
+        let refused = Seen {
             first_refusal: Some("la voie 3\n  n'existe plus".to_string()),
             ..Default::default()
         };
-        let dit = refusee.to_string();
+        let said = refused.to_string();
         assert!(
-            dit.contains("premier refus : la voie 3   n'existe plus"),
-            "{dit}"
+            said.contains("premier refus : la voie 3   n'existe plus"),
+            "{said}"
         );
-        assert_eq!(dit.lines().count(), 1, "{dit}");
+        assert_eq!(said.lines().count(), 1, "{said}");
     }
 }

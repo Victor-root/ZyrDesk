@@ -17,7 +17,7 @@
 
 /// One reading, in the words the page shows.
 #[derive(Default)]
-pub struct Mesures {
+pub struct Measures {
     /// What a frame costs this computer to decode, in milliseconds.
     pub decode_ms: Option<f64>,
     /// And to draw, the wait for the screen's own refresh included.
@@ -53,7 +53,7 @@ pub struct Mesures {
 /// has nothing to show and that is not a fault, it is a bar that fills in
 /// a moment. An error here would put a red line in front of somebody for
 /// something that rights itself.
-pub fn session_measures() -> Mesures {
+pub fn session_measures() -> Measures {
     std::fs::read_to_string(zyr_proto::paths::session_stats())
         .ok()
         .map(|said| read(&said))
@@ -65,8 +65,8 @@ pub fn session_measures() -> Mesures {
 /// Ignoring the rest on purpose: the engine is free to say more than this
 /// window shows, and a word this half has never heard of must not cost the
 /// whole reading.
-fn read(said: &str) -> Mesures {
-    let mut mesures = Mesures::default();
+fn read(said: &str) -> Measures {
+    let mut measures = Measures::default();
     for pair in said.split_whitespace() {
         let Some((name, value)) = pair.split_once('=') else {
             continue;
@@ -75,23 +75,23 @@ fn read(said: &str) -> Mesures {
             continue;
         }
         match name {
-            "decode_ms" => mesures.decode_ms = value.parse().ok(),
-            "render_ms" => mesures.render_ms = value.parse().ok(),
-            "host_ms" => mesures.host_ms = value.parse().ok(),
-            "network_ms" => mesures.network_ms = value.parse().ok(),
-            "network_variance_ms" => mesures.network_variance_ms = value.parse().ok(),
-            "bitrate_mbps" => mesures.bitrate_mbps = value.parse().ok(),
-            "fps" => mesures.fps = value.parse().ok(),
-            "codec" => mesures.codec = Some(value.to_string()),
-            "width" => mesures.width = value.parse().ok(),
-            "height" => mesures.height = value.parse().ok(),
-            "dropped_network_pct" => mesures.dropped_network_pct = value.parse().ok(),
-            "dropped_jitter_pct" => mesures.dropped_jitter_pct = value.parse().ok(),
-            "since_frame_ms" => mesures.since_frame_ms = value.parse().ok(),
+            "decode_ms" => measures.decode_ms = value.parse().ok(),
+            "render_ms" => measures.render_ms = value.parse().ok(),
+            "host_ms" => measures.host_ms = value.parse().ok(),
+            "network_ms" => measures.network_ms = value.parse().ok(),
+            "network_variance_ms" => measures.network_variance_ms = value.parse().ok(),
+            "bitrate_mbps" => measures.bitrate_mbps = value.parse().ok(),
+            "fps" => measures.fps = value.parse().ok(),
+            "codec" => measures.codec = Some(value.to_string()),
+            "width" => measures.width = value.parse().ok(),
+            "height" => measures.height = value.parse().ok(),
+            "dropped_network_pct" => measures.dropped_network_pct = value.parse().ok(),
+            "dropped_jitter_pct" => measures.dropped_jitter_pct = value.parse().ok(),
+            "since_frame_ms" => measures.since_frame_ms = value.parse().ok(),
             _ => {}
         }
     }
-    mesures
+    measures
 }
 
 #[cfg(test)]
@@ -100,17 +100,17 @@ mod tests {
 
     #[test]
     fn a_whole_line_turns_into_numbers() {
-        let mesures = read(
+        let measures = read(
             "codec=HEVC width=1920 height=1080 fps=59.8 decode_ms=0.32 render_ms=0.29 \
              host_ms=2.30 network_ms=1 network_variance_ms=0 bitrate_mbps=0.93 \
              dropped_network_pct=0.00 dropped_jitter_pct=0.14",
         );
-        assert_eq!(mesures.codec.as_deref(), Some("HEVC"));
-        assert_eq!(mesures.width, Some(1920));
-        assert_eq!(mesures.decode_ms, Some(0.32));
-        assert_eq!(mesures.host_ms, Some(2.30));
-        assert_eq!(mesures.bitrate_mbps, Some(0.93));
-        assert_eq!(mesures.dropped_jitter_pct, Some(0.14));
+        assert_eq!(measures.codec.as_deref(), Some("HEVC"));
+        assert_eq!(measures.width, Some(1920));
+        assert_eq!(measures.decode_ms, Some(0.32));
+        assert_eq!(measures.host_ms, Some(2.30));
+        assert_eq!(measures.bitrate_mbps, Some(0.93));
+        assert_eq!(measures.dropped_jitter_pct, Some(0.14));
     }
 
     #[test]
@@ -118,8 +118,8 @@ mod tests {
         // Celui-ci arrive cinq fois par seconde et les autres une : c'est
         // lui qui allume le voyant du lien, et le lire comme un mot
         // inconnu laisserait ce voyant éteint sur une image figée.
-        let mesures = read("codec=HEVC since_frame_ms=1840 fps=0.0");
-        assert_eq!(mesures.since_frame_ms, Some(1840));
+        let measures = read("codec=HEVC since_frame_ms=1840 fps=0.0");
+        assert_eq!(measures.since_frame_ms, Some(1840));
     }
 
     #[test]
@@ -127,23 +127,23 @@ mod tests {
         // Le moteur écrit le nom sans valeur plutôt que zéro : une fenêtre
         // sans image décodée n'a pas un temps de décodage nul, elle n'a
         // pas de temps de décodage.
-        let mesures = read("codec=HEVC decode_ms= network_ms= bitrate_mbps=1.20");
-        assert_eq!(mesures.decode_ms, None);
-        assert_eq!(mesures.network_ms, None);
-        assert_eq!(mesures.bitrate_mbps, Some(1.20));
+        let measures = read("codec=HEVC decode_ms= network_ms= bitrate_mbps=1.20");
+        assert_eq!(measures.decode_ms, None);
+        assert_eq!(measures.network_ms, None);
+        assert_eq!(measures.bitrate_mbps, Some(1.20));
     }
 
     #[test]
     fn a_word_this_window_has_never_heard_of_costs_nothing() {
-        let mesures = read("decode_ms=0.40 quelque_chose_de_neuf=12 fps=60");
-        assert_eq!(mesures.decode_ms, Some(0.40));
-        assert_eq!(mesures.fps, Some(60.0));
+        let measures = read("decode_ms=0.40 quelque_chose_de_neuf=12 fps=60");
+        assert_eq!(measures.decode_ms, Some(0.40));
+        assert_eq!(measures.fps, Some(60.0));
     }
 
     #[test]
     fn a_line_that_is_not_one_reads_as_nothing_rather_than_as_a_fault() {
-        let mesures = read("n'importe quoi");
-        assert!(mesures.codec.is_none());
-        assert!(mesures.decode_ms.is_none());
+        let measures = read("n'importe quoi");
+        assert!(measures.codec.is_none());
+        assert!(measures.decode_ms.is_none());
     }
 }

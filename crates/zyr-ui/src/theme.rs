@@ -41,58 +41,58 @@ fn note(what: &str) {
 
 /// The three answers, spelled as the file spells them.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Choix {
-    Systeme,
-    Clair,
-    Sombre,
+pub enum Choice {
+    System,
+    Light,
+    Dark,
 }
 
-impl Choix {
+impl Choice {
     /// The three, in the order the settings screen offers them.
-    pub const ALL: [Choix; 3] = [Choix::Systeme, Choix::Clair, Choix::Sombre];
+    pub const ALL: [Choice; 3] = [Choice::System, Choice::Light, Choice::Dark];
 
     /// What the file writes.
     fn name(self) -> &'static str {
         match self {
-            Choix::Systeme => "systeme",
-            Choix::Clair => "clair",
-            Choix::Sombre => "sombre",
+            Choice::System => "systeme",
+            Choice::Light => "clair",
+            Choice::Dark => "sombre",
         }
     }
 
     /// What a person reads.
     pub fn word(self) -> &'static str {
         match self {
-            Choix::Systeme => "Système",
-            Choix::Clair => "Clair",
-            Choix::Sombre => "Sombre",
+            Choice::System => "Système",
+            Choice::Light => "Clair",
+            Choice::Dark => "Sombre",
         }
     }
 
-    fn read(said: &str) -> Option<Choix> {
-        Choix::ALL.into_iter().find(|choix| choix.name() == said)
+    fn read(said: &str) -> Option<Choice> {
+        Choice::ALL.into_iter().find(|choice| choice.name() == said)
     }
 
     fn rank(self) -> u8 {
         match self {
-            Choix::Systeme => 0,
-            Choix::Clair => 1,
-            Choix::Sombre => 2,
+            Choice::System => 0,
+            Choice::Light => 1,
+            Choice::Dark => 2,
         }
     }
 
-    fn of(rank: u8) -> Choix {
-        Choix::ALL
+    fn of(rank: u8) -> Choice {
+        Choice::ALL
             .into_iter()
-            .find(|choix| choix.rank() == rank)
-            .unwrap_or(Choix::Systeme)
+            .find(|choice| choice.rank() == rank)
+            .unwrap_or(Choice::System)
     }
 }
 
 /// What was chosen, read from the file once and held in a number from
 /// then on: this is asked for on the thread that draws, where nothing
 /// may touch a disk.
-static CHOISI: AtomicU8 = AtomicU8::new(0);
+static CHOSEN: AtomicU8 = AtomicU8::new(0);
 
 /// And what Windows wants, read by the thread that watches it and by
 /// nobody else.
@@ -100,7 +100,8 @@ static CHOISI: AtomicU8 = AtomicU8::new(0);
 /// One question to the registry per switch, and not one per picture
 /// drawn: what draws asks this hundreds of times while a hand moves
 /// across the window.
-static WINDOWS_VEUT_CLAIR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static WINDOWS_WANTS_LIGHT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
 
 /// Reads back what was chosen the last time somebody chose.
 ///
@@ -108,7 +109,7 @@ static WINDOWS_VEUT_CLAIR: std::sync::atomic::AtomicBool = std::sync::atomic::At
 /// window that opened in the wrong theme even for one beat would be seen
 /// doing it.
 pub fn what_was_chosen() {
-    WINDOWS_VEUT_CLAIR.store(windows_wants_light(), Ordering::Relaxed);
+    WINDOWS_WANTS_LIGHT.store(windows_wants_light(), Ordering::Relaxed);
     let path = zyr_proto::paths::chosen_theme();
     let Ok(written) = std::fs::read_to_string(&path) else {
         return;
@@ -117,14 +118,14 @@ pub fn what_was_chosen() {
         .lines()
         .map(str::trim)
         .find_map(|line| line.strip_prefix("theme")?.trim().strip_prefix('='));
-    if let Some(choix) = said.and_then(|said| Choix::read(said.trim())) {
-        CHOISI.store(choix.rank(), Ordering::Relaxed);
+    if let Some(choice) = said.and_then(|said| Choice::read(said.trim())) {
+        CHOSEN.store(choice.rank(), Ordering::Relaxed);
     }
 }
 
 /// What was chosen: follow Windows unless somebody said otherwise.
-pub fn chosen() -> Choix {
-    Choix::of(CHOISI.load(Ordering::Relaxed))
+pub fn chosen() -> Choice {
+    Choice::of(CHOSEN.load(Ordering::Relaxed))
 }
 
 /// Whether the interface is light right now.
@@ -134,21 +135,21 @@ pub fn chosen() -> Choix {
 /// product, so no screen can hold an opinion of its own.
 pub fn light() -> bool {
     match chosen() {
-        Choix::Clair => true,
-        Choix::Sombre => false,
-        Choix::Systeme => WINDOWS_VEUT_CLAIR.load(Ordering::Relaxed),
+        Choice::Light => true,
+        Choice::Dark => false,
+        Choice::System => WINDOWS_WANTS_LIGHT.load(Ordering::Relaxed),
     }
 }
 
 /// Takes a new choice, writes it down, and puts it on the window.
-pub fn choose(choix: Choix) {
-    CHOISI.store(choix.rank(), Ordering::Relaxed);
+pub fn choose(choice: Choice) {
+    CHOSEN.store(choice.rank(), Ordering::Relaxed);
     let written = format!(
         "# Le thème de l'interface ZyrDesk : systeme, clair ou sombre.\n\
          # « systeme » suit ce que Windows demande.\n\
          # Écrit par ZyrDesk, peut se corriger à la main.\n\
          theme = {}\n",
-        choix.name()
+        choice.name()
     );
     if let Err(e) = zyr_proto::files::replace(&zyr_proto::paths::chosen_theme(), &written) {
         note(&format!("thème non retenu : {e}"));
@@ -168,7 +169,7 @@ pub fn choose(choix: Choix) {
 /// program, which is the only one that knows both halves of the
 /// question.
 pub fn on_the_window() {
-    crate::fenetre::habille(light());
+    crate::main_window::dress_the_frame(light());
 }
 
 /// Follows what Windows wants for as long as the program runs, and has
@@ -230,7 +231,7 @@ pub fn watch(app: App) {
             let now = windows_wants_light();
             if now != said {
                 said = now;
-                WINDOWS_VEUT_CLAIR.store(now, Ordering::Relaxed);
+                WINDOWS_WANTS_LIGHT.store(now, Ordering::Relaxed);
                 note(&format!(
                     "Windows demande maintenant une interface {}",
                     if now { "claire" } else { "sombre" }
@@ -238,9 +239,9 @@ pub fn watch(app: App) {
                 // Only when nobody has chosen: a window forced to a theme
                 // does not follow, and redrawing it here would repaint the
                 // same picture in the same colours.
-                if chosen() == Choix::Systeme {
+                if chosen() == Choice::System {
                     on_the_window();
-                    crate::accueil::redraw(&app);
+                    crate::home::redraw(&app);
                 }
             }
         }
@@ -320,20 +321,20 @@ mod tests {
     fn every_choice_is_written_and_read_back_as_itself() {
         // Le fichier est le seul endroit où le choix survit à la fenêtre :
         // un nom qui ne se relit pas est un choix perdu au redémarrage.
-        for choix in Choix::ALL {
-            assert_eq!(Choix::read(choix.name()), Some(choix));
-            assert!(!choix.word().is_empty());
+        for choice in Choice::ALL {
+            assert_eq!(Choice::read(choice.name()), Some(choice));
+            assert!(!choice.word().is_empty());
         }
-        assert_eq!(Choix::read("bleu"), None);
+        assert_eq!(Choice::read("bleu"), None);
     }
 
     #[test]
     fn a_choice_survives_the_number_it_is_held_as() {
-        for choix in Choix::ALL {
-            assert_eq!(Choix::of(choix.rank()), choix);
+        for choice in Choice::ALL {
+            assert_eq!(Choice::of(choice.rank()), choice);
         }
         // Ce que dit un fichier abîmé : suivre Windows, comme au premier
         // démarrage.
-        assert_eq!(Choix::of(9), Choix::Systeme);
+        assert_eq!(Choice::of(9), Choice::System);
     }
 }

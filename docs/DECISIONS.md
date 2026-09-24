@@ -3456,6 +3456,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Le chemin.** Le nouveau moteur grandit à côté des anciens, avec un réglage qui choisit lequel sert une session. Sunshine et Moonlight restent le filet jusqu'à ce que le nôtre les batte ; alors seulement ils sont débranchés, avec leurs patchs, leurs compilations et leurs caisses de pilotage. Les étapes et leurs critères sont dans [ROADMAP.md](ROADMAP.md), jalon MZ. Avant la première ligne de code, un document de conception est écrit et validé par Victor. Jusqu'au débranchement, la discipline `zyr:` de [engines/STRATEGY.md](engines/STRATEGY.md) reste due sur toute modification des moteurs actuels.
 
+## D220. Le code s'écrit en anglais, ce que la personne lit reste en français (2026-09-24, pendant M6)
+
+**Constat de Victor.** Les conventions du projet devaient être en anglais dès le départ, et le code s'en était éloigné : au moment de s'y remettre, environ mille noms français dans le code, dont plus de huit cents dans l'interface, dix noms de fichiers et près de 4 700 lignes de commentaires en français.
+
+**La règle.** Tout ce qui est du code s'écrit en anglais : noms de fichiers et de modules, types, fonctions, variables, constantes, noms des tests, commentaires et documentation du code, jetons du système de design de `crates/zyr-ui/design.css`. Ce que la personne lit reste en français : les textes de l'interface et les messages qu'elle voit.
+
+**Ce qui garde son nom, même français.** Ce qui est écrit sur le disque ou passe sur le réseau ne se renomme pas, parce qu'un nom changé là casserait une installation existante ou le dialogue entre deux versions : les valeurs des fichiers de préférences (par exemple `systeme`, `clair` et `sombre` pour le thème), les champs échangés avec le serveur, les verbes du tube nommé, les noms des classes de fenêtres. Les fichiers de la CI gardent aussi les leurs. La documentation de `docs/`, écrite pour Victor, reste en français, et l'historique de ce fichier ne se réécrit pas : un nom cité par une décision passée reste celui qu'il était ce jour-là.
+
+**Comment le passage se fait.** Par un outil et non à la main : il découpe chaque fichier en code, commentaires et chaînes, ne renomme que le code, jamais le contenu d'une chaîne, et refuse d'écrire tant qu'un nouveau nom en rencontre un autre dans la même fonction. Chaque étape compile pour Linux et pour Windows et passe clippy et les tests avant d'être enregistrée.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

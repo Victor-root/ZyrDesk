@@ -704,7 +704,7 @@ impl ComingBack {
 /// to take it again a second later is exactly the flicker this road
 /// exists to spare them.
 fn hold_on_before_coming_back(app: &App, coming_back: &ComingBack) -> bool {
-    crate::accueil::reprise(app, coming_back.try_number());
+    crate::home::coming_back(app, coming_back.try_number());
     crate::floating::expect_nothing(app);
     crate::floating::lower(app);
     crate::picture::let_go(app);
@@ -787,7 +787,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
                     lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
                 }
                 if let Some((detail, code)) = told(step) {
-                    crate::accueil::etape(app, &detail, code);
+                    crate::home::step(app, &detail, code);
                 }
             },
             // The one thing this crate can answer and the opening cannot: a
@@ -872,7 +872,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             ));
         }
         note(&opening.how_long_it_took());
-        crate::accueil::range_l_ouverture(app);
+        crate::home::put_the_opening_away(app);
 
         // Waiting costs nothing here and buys the one thing the person
         // wants afterwards: whether the session ended by itself or fell
@@ -886,7 +886,7 @@ fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
             note(&format!(
                 "image relancée avec ce qui est choisi maintenant (le lecteur a dit {ended:?})"
             ));
-            crate::accueil::relance(app);
+            crate::home::relaunched(app);
             asked_afresh(app, &mut wanted, &mut preferred);
             continue;
         }
@@ -1316,7 +1316,7 @@ fn written(step: &Step) -> String {
 /// minimised » is the kind of report that cannot be chased without
 /// knowing which of the two sides it was already on.
 fn how_the_window_stands(_app: &App, when: &str) {
-    if crate::fenetre::sienne() == 0 {
+    if crate::main_window::handle() == 0 {
         note(&format!("{when} : plus de fenêtre d'accueil"));
         return;
     }
@@ -1325,8 +1325,8 @@ fn how_the_window_stands(_app: &App, when: &str) {
     }
     note(&format!(
         "{when} : accueil à l'écran={} plein écran={}",
-        say(crate::fenetre::a_l_ecran()),
-        say(crate::fenetre::tient_l_ecran()),
+        say(crate::main_window::on_screen()),
+        say(crate::main_window::holds_the_screen()),
     ));
 }
 
@@ -1366,9 +1366,9 @@ fn finish(app: &App, ok: bool, message: String) {
     // whole screen down when the front leaves it.
     crate::show_home(app);
     if ok {
-        crate::accueil::range_l_ouverture(app);
+        crate::home::put_the_opening_away(app);
     } else {
-        crate::accueil::echoue(app, &message);
+        crate::home::failed(app, &message);
     }
     how_the_window_stands(app, "fin de session, après");
 }
@@ -1388,12 +1388,12 @@ mod tests {
         assert!(!coming_back.tried());
         // Elle revient, tant que la session ne tient pas assez longtemps
         // entre deux pour que ce soit un nouvel accident.
-        for essai in 1..=COMES_BACK_IN_A_ROW {
+        for attempt in 1..=COMES_BACK_IN_A_ROW {
             assert!(
                 coming_back.after(&fell_over(), Duration::from_secs(2)),
-                "reprise {essai}"
+                "reprise {attempt}"
             );
-            assert_eq!(coming_back.in_a_row, essai);
+            assert_eq!(coming_back.in_a_row, attempt);
         }
         // Passé ce compte, la personne est prévenue plutôt que de
         // regarder un écran qui ne se pose jamais.
@@ -1442,8 +1442,8 @@ mod tests {
         assert!(coming_back.after(&fell_over(), Duration::from_secs(2)));
         // Une reprise qui ne s'ouvre pas est un de ses essais, et ils sont
         // comptés à part parce qu'ils coûtent une demi-minute chacun.
-        for essai in 1..=OPENINGS_MISSED_IN_A_ROW {
-            assert!(coming_back.again(), "essai manqué {essai}");
+        for attempt in 1..=OPENINGS_MISSED_IN_A_ROW {
+            assert!(coming_back.again(), "essai manqué {attempt}");
         }
         assert!(!coming_back.again());
 

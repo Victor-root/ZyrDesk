@@ -23,69 +23,72 @@ use windows_sys::Win32::Foundation::HWND;
 /// Les fenêtres qui bougent en ce moment, et le message qui redessine
 /// chacune. La poignée est retenue en nombre : c'est ce qui traverse un
 /// fil.
-static QUI: Mutex<Vec<(isize, u32)>> = Mutex::new(Vec::new());
+static MOVING: Mutex<Vec<(isize, u32)>> = Mutex::new(Vec::new());
 
 /// De quoi rendormir le fil quand plus rien ne bouge : sans lui, il
 /// tournerait à vide au rythme de l'écran pendant que le produit ne fait
 /// rien.
-static REVEIL: Condvar = Condvar::new();
+static WAKE: Condvar = Condvar::new();
 
 /// Le temps d'une image quand le compositeur ne répond pas. Il ne se
 /// laisse plus arrêter depuis Windows 8, mais un fil qui tournerait sans
 /// jamais attendre prendrait un coeur entier.
-const IMAGE: std::time::Duration = std::time::Duration::from_millis(16);
+const FRAME: std::time::Duration = std::time::Duration::from_millis(16);
 
 /// Fait battre cette fenêtre-là, qui recevra ce message à chaque image
 /// jusqu'à ce qu'elle demande à s'arrêter.
 ///
 /// Redemander pour une fenêtre qui bat déjà ne fait rien.
-pub fn bat(window: HWND, message: u32) {
-    let mut qui = QUI.lock().expect("rythme");
-    let sien = window as isize;
-    if qui.iter().any(|(w, _)| *w == sien) {
+pub fn beat(window: HWND, message: u32) {
+    let mut moving = MOVING.lock().expect("rythme");
+    let this_one = window as isize;
+    if moving.iter().any(|(w, _)| *w == this_one) {
         return;
     }
-    qui.push((sien, message));
-    lance();
-    REVEIL.notify_one();
+    moving.push((this_one, message));
+    start();
+    WAKE.notify_one();
 }
 
 /// Arrête le battement de cette fenêtre. Rien si elle ne battait pas.
-pub fn arrete(window: HWND) {
-    let sien = window as isize;
-    QUI.lock().expect("rythme").retain(|(w, _)| *w != sien);
+pub fn stop(window: HWND) {
+    let this_one = window as isize;
+    MOVING
+        .lock()
+        .expect("rythme")
+        .retain(|(w, _)| *w != this_one);
 }
 
 /// Le fil qui attend le compositeur, lancé à la première chose qui bouge
 /// et gardé ensuite : il dort tant que rien ne bouge.
-fn lance() {
-    static FIL: OnceLock<()> = OnceLock::new();
-    FIL.get_or_init(|| {
+fn start() {
+    static THREAD: OnceLock<()> = OnceLock::new();
+    THREAD.get_or_init(|| {
         std::thread::Builder::new()
             .name("rythme".to_string())
-            .spawn(tourne)
+            .spawn(run)
             .expect("fil du rythme");
     });
 }
 
-fn tourne() {
+fn run() {
     use windows_sys::Win32::Graphics::Dwm::DwmFlush;
     use windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW;
 
     loop {
-        let battantes = {
-            let mut qui = QUI.lock().expect("rythme");
-            while qui.is_empty() {
-                qui = REVEIL.wait(qui).expect("rythme");
+        let beating = {
+            let mut moving = MOVING.lock().expect("rythme");
+            while moving.is_empty() {
+                moving = WAKE.wait(moving).expect("rythme");
             }
-            qui.clone()
+            moving.clone()
         };
         // SAFETY: rien à lui passer, et l'attente n'appartient à aucune
         // fenêtre.
         if unsafe { DwmFlush() } < 0 {
-            std::thread::sleep(IMAGE);
+            std::thread::sleep(FRAME);
         }
-        for (window, message) in battantes {
+        for (window, message) in beating {
             // SAFETY: un message déposé dans la file d'une fenêtre. Elle
             // peut avoir disparu entre-temps, et le système répond alors
             // que non sans que rien ne soit touché.

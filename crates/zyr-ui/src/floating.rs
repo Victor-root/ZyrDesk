@@ -90,7 +90,7 @@ fn margin() -> i32 {
 
 /// Size of the button alone, in page pixels, as the page draws it.
 ///
-/// The same number as the logo's in `bouton.css`, and it has to stay the
+/// The same number as the logo's in `button.css`, and it has to stay the
 /// same number: everything about where the button hangs is worked out
 /// from it, and nothing ever corrects it afterwards. Left behind once
 /// when the logo was made smaller, it hung the button ten real pixels off
@@ -151,7 +151,7 @@ pub enum Act {
     Clipboard,
     /// Whether the two badges in the corner of the picture are drawn at
     /// all times rather than only when they have something to say.
-    Voyants,
+    Badges,
     /// Whether the pointer is kept inside the picture.
     PointerLock,
     End,
@@ -183,7 +183,7 @@ impl Act {
             | Act::LockScreen
             | Act::Sound
             | Act::Clipboard
-            | Act::Voyants
+            | Act::Badges
             | Act::End => None,
         }
     }
@@ -208,7 +208,7 @@ impl Act {
             | Act::LockScreen
             | Act::Sound
             | Act::Clipboard
-            | Act::Voyants
+            | Act::Badges
             | Act::End => None,
         }
     }
@@ -225,7 +225,7 @@ impl std::fmt::Display for Act {
             Act::Sound => "son de la session",
             Act::SystemKeys => "touches système",
             Act::Clipboard => "presse-papiers partagé",
-            Act::Voyants => "voyants montrés en permanence",
+            Act::Badges => "voyants montrés en permanence",
             Act::PointerLock => "pointeur tenu dans l'image",
             Act::End => "fin de la session",
         })
@@ -324,7 +324,7 @@ pub struct Floating {
     /// Not remembered anywhere, and that is the point: a switch that only
     /// exists to look at something must not be left on by a session
     /// nobody was looking at.
-    voyants: AtomicBool,
+    badges: AtomicBool,
     /// Whether this computer is drawing its own pointer over the picture.
     ///
     /// Counted like the three above, and put down whenever a player is
@@ -388,11 +388,11 @@ static NUDGE: AtomicI64 = AtomicI64::new(0);
 /// toujours, il y en a trois, et c'est la place qui reste autour du
 /// bouton qui décide lequel.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Sens {
+pub enum Opens {
     /// Sous le bouton, quand l'image a la place dessous.
-    Bas,
+    Down,
     /// Au-dessus, quand elle ne l'a qu'au-dessus.
-    Haut,
+    Up,
     /// À gauche du bouton, quand ni l'un ni l'autre.
     ///
     /// Un bouton posé à mi-hauteur ne laisse assez de place ni dessous ni
@@ -400,26 +400,26 @@ pub enum Sens {
     /// elle a toute la hauteur de l'image pour elle : elle ne part plus
     /// du bouton, elle se pose à sa gauche et glisse de ce qu'il faut
     /// pour tenir en entier.
-    Cote,
+    Side,
 }
 
-impl Sens {
+impl Opens {
     /// Le sens rangé dans un nombre, le seul type qu'un atomique porte.
-    fn range(self) -> u8 {
+    fn number(self) -> u8 {
         match self {
-            Sens::Bas => 0,
-            Sens::Haut => 1,
-            Sens::Cote => 2,
+            Opens::Down => 0,
+            Opens::Up => 1,
+            Opens::Side => 2,
         }
     }
 
     /// Et relu. Un nombre que personne d'autre n'écrit : tout ce qui
     /// n'est pas un sens connu est le sens par défaut.
-    fn lu(range: u8) -> Self {
-        match range {
-            1 => Sens::Haut,
-            2 => Sens::Cote,
-            _ => Sens::Bas,
+    fn from_number(number: u8) -> Self {
+        match number {
+            1 => Opens::Up,
+            2 => Opens::Side,
+            _ => Opens::Down,
         }
     }
 }
@@ -430,14 +430,14 @@ impl Sens {
 /// session et pend au logo, qui occupe un de ses coins. Décidé ici et
 /// non dans la carte : elle ne sait pas où on l'a posée sur un écran,
 /// et le logo comme elle ont besoin de la réponse.
-static SENS: AtomicU8 = AtomicU8::new(0);
+static OPENS: AtomicU8 = AtomicU8::new(0);
 
 /// Si la fenêtre s'ouvre collée par son bord gauche plutôt que par son
-/// bord droit, décidé au même instant que `SENS` et pour la même
+/// bord droit, décidé au même instant que `OPENS` et pour la même
 /// raison : un bouton posé près du bord gauche de l'image ne laisse pas
 /// à la carte la place de partir de son bord droit comme elle le fait
 /// d'habitude.
-static A_DROITE: AtomicBool = AtomicBool::new(false);
+static TO_THE_RIGHT: AtomicBool = AtomicBool::new(false);
 
 /// The logo alone, in real pixels, which is not the size of the window
 /// holding it.
@@ -485,19 +485,23 @@ fn how_it_shows() -> u32 {
 /// du côté où il reste le plus de place : la mettre à côté ne
 /// l'empêcherait pas d'être coupée et lui coûterait en plus de ne plus
 /// partir du bouton.
-fn ou_s_ouvre(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) -> Sens {
+fn where_it_opens(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) -> Opens {
     let below = picture.3 - anchor.1;
     if height <= below {
-        return Sens::Bas;
+        return Opens::Down;
     }
     let above = anchor.1 + logo().1 - picture.1;
     if height <= above {
-        return Sens::Haut;
+        return Opens::Up;
     }
     if height <= picture.3 - picture.1 {
-        return Sens::Cote;
+        return Opens::Side;
     }
-    if above > below { Sens::Haut } else { Sens::Bas }
+    if above > below {
+        Opens::Up
+    } else {
+        Opens::Down
+    }
 }
 
 /// D'où une fenêtre de cette largeur a la place de partir, pour un
@@ -506,17 +510,17 @@ fn ou_s_ouvre(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) ->
 /// sa droite.
 ///
 /// Une image trop étroite pour elle des deux côtés la garde du côté où
-/// il reste le plus de place, pour la même raison que `ou_s_ouvre`.
-fn ou_s_ouvre_a_droite(picture: (i32, i32, i32, i32), anchor: (i32, i32), width: i32) -> bool {
-    let a_gauche = anchor.0 - picture.0;
-    if width <= a_gauche {
+/// il reste le plus de place, pour la même raison que `where_it_opens`.
+fn opens_rightwards(picture: (i32, i32, i32, i32), anchor: (i32, i32), width: i32) -> bool {
+    let room_left = anchor.0 - picture.0;
+    if width <= room_left {
         return false;
     }
-    let a_droite = picture.2 - (anchor.0 - logo().0);
-    if width <= a_droite {
+    let room_right = picture.2 - (anchor.0 - logo().0);
+    if width <= room_right {
         return true;
     }
-    a_droite > a_gauche
+    room_right > room_left
 }
 
 /// Ce que la fenêtre du menu prend de large en tout pour ce sens
@@ -526,22 +530,22 @@ fn ou_s_ouvre_a_droite(picture: (i32, i32, i32, i32), anchor: (i32, i32), width:
 /// c'est sa fenêtre entière qui se pose à côté de lui, jamais sa seule
 /// carte.
 #[cfg(windows)]
-fn menu_width(sens: Sens) -> i32 {
-    crate::menu::large(sens, logo().0)
+fn menu_width(opens: Opens) -> i32 {
+    crate::menu::width(opens, logo().0)
 }
 
 #[cfg(not(windows))]
-fn menu_width(_sens: Sens) -> i32 {
+fn menu_width(_opens: Opens) -> i32 {
     0
 }
 
 /// Works the direction out again for a window about to be that tall, and
 /// remembers it.
 fn decide_the_direction(picture: (i32, i32, i32, i32), anchor: (i32, i32), height: i32) {
-    let sens = ou_s_ouvre(picture, anchor, height);
-    SENS.store(sens.range(), Ordering::Relaxed);
-    A_DROITE.store(
-        ou_s_ouvre_a_droite(picture, anchor, menu_width(sens)),
+    let opens = where_it_opens(picture, anchor, height);
+    OPENS.store(opens.number(), Ordering::Relaxed);
+    TO_THE_RIGHT.store(
+        opens_rightwards(picture, anchor, menu_width(opens)),
         Ordering::Relaxed,
     );
 }
@@ -829,7 +833,7 @@ pub fn watch(app: App) {
                             .store(preferred.shared_clipboard, Ordering::Relaxed);
                         // Off at every session, whatever the last one
                         // was left on: see the field itself.
-                        state.voyants.store(false, Ordering::Relaxed);
+                        state.badges.store(false, Ordering::Relaxed);
                         state.pointer_held.store(false, Ordering::Relaxed);
                         // What the far computer draws is not put down
                         // here: it lives over there, in an engine this
@@ -860,16 +864,16 @@ pub fn watch(app: App) {
                     // souvent que cette veille ne tourne : elle a sa
                     // propre boucle, relancée ici quand la précédente
                     // s'est arrêtée.
-                    crate::pointeur::follow(&app);
+                    crate::pointer::follow(&app);
                     // Et la santé de la session, relue bien plus souvent
                     // que cette veille-ci ne tourne : ce qu'elle allume
                     // doit se voir dans le tiers de seconde, et cette
                     // veille passe une fois par seconde.
-                    crate::voyants::watch(&app);
+                    crate::badges::watch(&app);
                     // Et ce qui arrive des fichiers qu'on colle, relu au
                     // même rythme et pour la même raison : une barre qui
                     // avance une fois par seconde n'a pas l'air d'avancer.
-                    crate::transfert::watch(&app);
+                    crate::transfer::watch(&app);
                     // Et le clavier appartient à l'image, toujours. Le
                     // menu ne le lui prend plus : la carte que ce
                     // programme dessine n'est jamais activée et ne porte
@@ -943,7 +947,7 @@ fn put_the_button_up(app: &App, process: u32) {
     // Minimised counts as not on screen and has to be asked for
     // separately: a window down in the taskbar still calls itself
     // visible.
-    if !crate::fenetre::a_l_ecran() {
+    if !crate::main_window::on_screen() {
         return;
     }
 
@@ -957,20 +961,20 @@ fn put_the_button_up(app: &App, process: u32) {
     #[cfg(windows)]
     {
         let anchor = hung_from(picture, nudge(), (size, size), margin());
-        let sens = Sens::lu(SENS.load(Ordering::Relaxed));
-        let a_droite = A_DROITE.load(Ordering::Relaxed);
-        crate::logo::raise(app, size as u32, sens == Sens::Haut, a_droite, anchor);
+        let opens = Opens::from_number(OPENS.load(Ordering::Relaxed));
+        let room_right = TO_THE_RIGHT.load(Ordering::Relaxed);
+        crate::logo::raise(app, size as u32, opens == Opens::Up, room_right, anchor);
         // La carte se mesure sur ce que ses lignes demandent, donc elle a
         // besoin de savoir de combien un pixel de page compte ici et quel
         // thème la fenêtre porte.
         // Le thème est demandé au produit et non à la fenêtre : c'est la
         // même réponse pour tous les écrans, et une seule à tenir.
-        crate::menu::raise(app, crate::fenetre::echelle(), crate::theme::light());
+        crate::menu::raise(app, crate::main_window::scale(), crate::theme::light());
     }
     // Et les deux voyants, dans le coin d'en face. Ce qui s'ouvre ici est
     // la fenêtre qui les portera : elle reste rangée tant qu'il n'y a
     // rien à dire, ce qui est la plus grande partie d'une session.
-    crate::voyants::raise(app, the_other_corner(picture));
+    crate::badges::raise(app, the_other_corner(picture));
     lay_the_button(picture);
 }
 
@@ -991,7 +995,7 @@ fn the_other_corner(picture: (i32, i32, i32, i32)) -> (i32, i32) {
 /// hundred and seventy-five per cent the same button is forty-four of one
 /// and seventy-seven of the other.
 fn button_size() -> u32 {
-    (BUTTON * f64::from(crate::fenetre::echelle())).ceil() as u32
+    (BUTTON * f64::from(crate::main_window::scale())).ceil() as u32
 }
 
 /// Takes the button down.
@@ -1009,7 +1013,7 @@ pub fn lower(app: &App) {
         .take()
         .is_some()
     {
-        crate::voyants::lower(app);
+        crate::badges::lower(app);
         #[cfg(windows)]
         {
             crate::menu::lower(app);
@@ -1030,7 +1034,7 @@ pub fn hide(app: &App) -> Result<(), String> {
     HIDDEN.store(true, Ordering::Relaxed);
     #[cfg(windows)]
     {
-        crate::menu::montre(false);
+        crate::menu::show(false);
         crate::logo::shown(app, false);
     }
     Ok(())
@@ -1202,8 +1206,8 @@ pub fn show_the_menu(app: &App) -> Result<(), String> {
     // the pointer back or showing a button that is shown would be undoing
     // what the person did between the two presses.
     #[cfg(windows)]
-    if crate::menu::ouvert() {
-        crate::menu::montre(false);
+    if crate::menu::is_open() {
+        crate::menu::show(false);
         return Ok(());
     }
     // The session first, when it was put away: the button hangs on the
@@ -1211,7 +1215,7 @@ pub fn show_the_menu(app: &App) -> Result<(), String> {
     // the taskbar, is a button floating over somebody else's work. The
     // shortcut asks to do something with the session, so the session
     // comes back.
-    if !crate::fenetre::a_l_ecran() {
+    if !crate::main_window::on_screen() {
         crate::show_home(app);
     }
     // Asked for by name, which takes back the choice of hiding it.
@@ -1245,7 +1249,7 @@ pub fn show_the_menu(app: &App) -> Result<(), String> {
         if in_game_mouse(app) {
             crate::picture::put_the_pointer_on(crate::logo::its_window());
         }
-        crate::menu::montre(true);
+        crate::menu::show(true);
     }
     Ok(())
 }
@@ -1267,8 +1271,8 @@ pub fn the_clipboard_is_shared(app: &App) -> bool {
 
 /// Whether the badges in the corner of the picture are being held on
 /// screen rather than left to show themselves.
-pub fn the_voyants_are_held_up(app: &App) -> bool {
-    app.floating().voyants.load(Ordering::Relaxed)
+pub fn the_badges_are_held_up(app: &App) -> bool {
+    app.floating().badges.load(Ordering::Relaxed)
 }
 
 /// Holds the two badges on screen, or lets them go back to showing
@@ -1282,10 +1286,10 @@ pub fn the_voyants_are_held_up(app: &App) -> bool {
 /// The watch reads this at its own turn, eighty milliseconds away, so
 /// nothing has to be told: they are there, or gone, before the hand has
 /// left the menu.
-fn always_show_the_voyants(app: &App) -> Result<(), String> {
+fn always_show_the_badges(app: &App) -> Result<(), String> {
     let state = app.floating();
-    let held = !state.voyants.load(Ordering::Relaxed);
-    state.voyants.store(held, Ordering::Relaxed);
+    let held = !state.badges.load(Ordering::Relaxed);
+    state.badges.store(held, Ordering::Relaxed);
     note(if held {
         "voyants : tenus à l'écran, allumés ou éteints selon ce qu'ils lisent"
     } else {
@@ -1330,7 +1334,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
         Act::LockScreen => return lock_over_there(app).await,
         Act::Sound => return hush_the_session(app).await,
         Act::Clipboard => return share_the_clipboard(app).await,
-        Act::Voyants => return always_show_the_voyants(app),
+        Act::Badges => return always_show_the_badges(app),
         _ => {}
     }
 
@@ -1380,7 +1384,7 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
 fn the_menu_is_open() -> bool {
     #[cfg(windows)]
     {
-        crate::menu::ouvert()
+        crate::menu::is_open()
     }
     #[cfg(not(windows))]
     {
@@ -1858,13 +1862,13 @@ pub fn lay_the_button(picture: (i32, i32, i32, i32)) {
     // Les voyants suivent l'image d'ici, et non d'une veille à eux : ils
     // sont posés sur le même bord que ce bouton, et une image qu'on
     // redimensionne les emmènerait chacun à son rythme.
-    crate::voyants::lay(the_other_corner(picture));
+    crate::badges::lay(the_other_corner(picture));
 }
 
 /// Ce que la carte du menu prend de haut, qui décide du sens d'ouverture.
 #[cfg(windows)]
 fn menu_height() -> i32 {
-    crate::menu::haute()
+    crate::menu::height()
 }
 
 #[cfg(not(windows))]
@@ -1880,14 +1884,14 @@ fn menu_height() -> i32 {
 /// image de retard étant partie.
 #[cfg(windows)]
 fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
-    let sens = Sens::lu(SENS.load(Ordering::Relaxed));
-    let a_droite = A_DROITE.load(Ordering::Relaxed);
+    let opens = Opens::from_number(OPENS.load(Ordering::Relaxed));
+    let room_right = TO_THE_RIGHT.load(Ordering::Relaxed);
     // Le logo ne bouge que de deux coins, à côté la carte ne partant
     // plus de lui : il garde le coin qu'il a quand elle est dessous. Son
     // dessin, lui, se retourne avec le bord d'où la carte part, pour
     // faire face au menu plutôt que de lui tourner le dos.
-    crate::logo::lay(anchor, sens == Sens::Haut, a_droite);
-    crate::menu::lay(anchor, sens, a_droite, crate::logo::box_side(), picture);
+    crate::logo::lay(anchor, opens == Opens::Up, room_right);
+    crate::menu::lay(anchor, opens, room_right, crate::logo::box_side(), picture);
 
     // Le système remonte une fenêtre possédée avec celle qui la possède,
     // ce qui est juste pour un bouton qui n'est en bas que parce que la
@@ -1902,7 +1906,7 @@ fn put_the_button(picture: (i32, i32, i32, i32), anchor: (i32, i32)) {
     }
     crate::logo::shown_now(up);
     if !up {
-        crate::menu::montre(false);
+        crate::menu::show(false);
     }
 }
 
@@ -2415,74 +2419,77 @@ mod tests {
         // panique y emporte tout le programme. Une fenêtre peut changer
         // de taille sans qu'une main l'ait demandé, donc le cas doit
         // avoir une réponse.
-        let bouton = (91, 91);
+        let button = (91, 91);
         for image in [
             (100, 100, 160, 134),
             (0, 0, 1, 1),
             (500, 500, 500, 500),
             (-50, -50, 10, 10),
         ] {
-            let ou = hung_from(image, (0, 0), bouton, MARGIN);
-            assert!(ou.0 >= image.0 && ou.0 <= image.2, "sur {image:?} : {ou:?}");
-            assert!(ou.1 >= image.1, "sur {image:?} : {ou:?}");
+            let hung = hung_from(image, (0, 0), button, MARGIN);
+            assert!(
+                hung.0 >= image.0 && hung.0 <= image.2,
+                "sur {image:?} : {hung:?}"
+            );
+            assert!(hung.1 >= image.1, "sur {image:?} : {hung:?}");
         }
     }
 
     #[test]
     fn the_button_hangs_in_the_top_right_corner_of_the_picture() {
         let image = (100, 200, 1_000, 800);
-        let ou = hung_from(image, (0, 0), (91, 91), MARGIN);
-        assert_eq!(ou, (1_000 - MARGIN, 200 + MARGIN));
+        let hung = hung_from(image, (0, 0), (91, 91), MARGIN);
+        assert_eq!(hung, (1_000 - MARGIN, 200 + MARGIN));
     }
 
     #[test]
     fn a_button_dragged_past_an_edge_comes_back_against_it() {
         let image = (100, 200, 1_000, 800);
-        let loin = hung_from(image, (5_000, 5_000), (91, 91), MARGIN);
-        assert_eq!(loin, (1_000, 800 - 91));
-        let avant = hung_from(image, (-5_000, -5_000), (91, 91), MARGIN);
-        assert_eq!(avant, (100 + 91, 200));
+        let far = hung_from(image, (5_000, 5_000), (91, 91), MARGIN);
+        assert_eq!(far, (1_000, 800 - 91));
+        let before = hung_from(image, (-5_000, -5_000), (91, 91), MARGIN);
+        assert_eq!(before, (100 + 91, 200));
     }
 
     #[test]
     fn a_menu_with_no_room_below_nor_above_opens_beside_the_button() {
         let image = (0, 0, 1_920, 1_080);
-        let bouton = 91;
-        ITS_LOGO.store(bouton, Ordering::Relaxed);
-        let haute = 700;
+        let button = 91;
+        ITS_LOGO.store(button, Ordering::Relaxed);
+        let tall = 700;
         // Le bouton en haut : la carte tient dessous, où elle se lit
         // depuis lui.
-        assert_eq!(ou_s_ouvre(image, (1_904, 16), haute), Sens::Bas);
+        assert_eq!(where_it_opens(image, (1_904, 16), tall), Opens::Down);
         // En bas : elle ne tient plus que dessus.
-        assert_eq!(ou_s_ouvre(image, (1_904, 1_000), haute), Sens::Haut);
+        assert_eq!(where_it_opens(image, (1_904, 1_000), tall), Opens::Up);
         // À mi-hauteur : ni l'un ni l'autre, et c'est là qu'elle était
         // coupée par le bas de l'image.
-        assert_eq!(ou_s_ouvre(image, (1_904, 500), haute), Sens::Cote);
+        assert_eq!(where_it_opens(image, (1_904, 500), tall), Opens::Side);
         // Une image trop courte pour elle de toute façon : à côté elle
         // serait coupée aussi, donc elle garde le côté où il reste le
         // plus de place.
-        let courte = (0, 0, 1_920, 600);
-        assert_eq!(ou_s_ouvre(courte, (1_904, 300), haute), Sens::Haut);
-        assert_eq!(ou_s_ouvre(courte, (1_904, 100), haute), Sens::Bas);
+        let short = (0, 0, 1_920, 600);
+        assert_eq!(where_it_opens(short, (1_904, 300), tall), Opens::Up);
+        assert_eq!(where_it_opens(short, (1_904, 100), tall), Opens::Down);
     }
 
     #[test]
     fn a_menu_with_no_room_on_the_left_opens_on_the_right_of_the_button() {
         let image = (0, 0, 1_920, 1_080);
         ITS_LOGO.store(91, Ordering::Relaxed);
-        let large = 320;
+        let width = 320;
         // Le bouton près du bord droit de l'image : la carte tient à sa
         // gauche, où elle s'ouvre d'habitude.
-        assert!(!ou_s_ouvre_a_droite(image, (1_904, 16), large));
+        assert!(!opens_rightwards(image, (1_904, 16), width));
         // Près du bord gauche : elle n'y tient plus, et tient à sa
         // droite.
-        assert!(ou_s_ouvre_a_droite(image, (16, 16), large));
+        assert!(opens_rightwards(image, (16, 16), width));
         // Une image trop étroite pour elle des deux côtés : elle garde
         // le côté où il reste le plus de place, pour la même raison que
         // le sens vertical.
-        let etroite = (0, 0, 200, 1_080);
-        assert!(!ou_s_ouvre_a_droite(etroite, (150, 16), large));
-        assert!(ou_s_ouvre_a_droite(etroite, (50, 16), large));
+        let narrow = (0, 0, 200, 1_080);
+        assert!(!opens_rightwards(narrow, (150, 16), width));
+        assert!(opens_rightwards(narrow, (50, 16), width));
     }
 
     #[test]

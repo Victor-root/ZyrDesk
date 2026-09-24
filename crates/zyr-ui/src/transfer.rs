@@ -102,7 +102,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sans_rien_qui_arrive_la_barre_ne_se_dessine_pas() {
+    fn with_nothing_arriving_the_bar_is_not_drawn() {
         // C'est ce qui la fait disparaître d'elle-même : le service
         // enlève le fichier quand tout est là, et il n'y a rien à dire de
         // plus.
@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn un_avancement_se_lit_en_part_du_tout() {
+    fn a_progress_reads_as_a_share_of_the_whole() {
         say(0);
         assert_eq!(how_far(), Some(0.0));
         say(50);

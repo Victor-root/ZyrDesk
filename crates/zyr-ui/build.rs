@@ -36,10 +36,12 @@ fn main() {
     // un programme sans son icône et sans ses contrôles modernes, ce qui
     // se cherche longtemps.
     println!("cargo:rerun-if-changed=zyrdesk.manifest");
-    let ecrite = std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join(RESOURCE);
-    std::fs::write(&ecrite, ressource()).expect("la ressource Windows n'a pas pu être écrite");
-    let gravee = embed_resource::compile(&ecrite, embed_resource::NONE);
-    if let Err(e) = gravee.manifest_optional() {
+    let resource_path =
+        std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join(RESOURCE);
+    std::fs::write(&resource_path, resource())
+        .expect("la ressource Windows n'a pas pu être écrite");
+    let compiled = embed_resource::compile(&resource_path, embed_resource::NONE);
+    if let Err(e) = compiled.manifest_optional() {
         println!("cargo:warning=ressource Windows non gravée : {e}");
     }
 }
@@ -58,26 +60,26 @@ const RESOURCE: &str = "zyrdesk.rc";
 /// tâches affiche, qui est la description du paquet : ZyrDesk fait
 /// tourner plusieurs programmes sur une machine, et chacun doit dire
 /// lequel il est.
-fn ressource() -> String {
-    let dossier = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
-    let manifeste = format!("{dossier}/zyrdesk.manifest").replace('\\', "/");
-    let icone = format!("{dossier}/../../packaging/brand/zyrdesk.ico").replace('\\', "/");
+fn resource() -> String {
+    let folder = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+    let manifest = format!("{folder}/zyrdesk.manifest").replace('\\', "/");
+    let icon = format!("{folder}/../../packaging/brand/zyrdesk.ico").replace('\\', "/");
     let version = std::env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION");
-    let nombres = version
+    let numbers = version
         .split('.')
         .chain(std::iter::repeat("0"))
         .take(4)
         .collect::<Vec<_>>()
         .join(",");
-    let quoi = std::env::var("CARGO_PKG_DESCRIPTION").expect("CARGO_PKG_DESCRIPTION");
+    let what = std::env::var("CARGO_PKG_DESCRIPTION").expect("CARGO_PKG_DESCRIPTION");
     format!(
         r#"#pragma code_page(65001)
-1 24 "{manifeste}"
-32512 ICON "{icone}"
+1 24 "{manifest}"
+32512 ICON "{icon}"
 
 1 VERSIONINFO
-FILEVERSION {nombres}
-PRODUCTVERSION {nombres}
+FILEVERSION {numbers}
+PRODUCTVERSION {numbers}
 FILEOS 0x4L
 FILETYPE 0x1L
 {{
@@ -86,7 +88,7 @@ BLOCK "StringFileInfo"
 BLOCK "040C04B0"
 {{
 VALUE "CompanyName", "ZyrDesk"
-VALUE "FileDescription", "{quoi}"
+VALUE "FileDescription", "{what}"
 VALUE "FileVersion", "{version}"
 VALUE "InternalName", "ZyrDesk"
 VALUE "OriginalFilename", "ZyrDesk.exe"
@@ -138,7 +140,7 @@ fn block<'a>(css: &'a str, selector: &str) -> Vec<(String, &'a str)> {
         .filter_map(|line| line.split_once(':'))
         .filter_map(|(name, value)| {
             let name = name.trim().strip_prefix("--")?;
-            Some((sayable(&name.replace('-', "_")), value.trim()))
+            Some((name.replace('-', "_"), value.trim()))
         })
         .collect()
 }
@@ -159,8 +161,8 @@ enum Sort {
 impl Sort {
     fn kind(&self) -> &'static str {
         match self {
-            Sort::Colour(_) => "Couleur",
-            Sort::Shadow(_) => "Ombre",
+            Sort::Colour(_) => "Colour",
+            Sort::Shadow(_) => "Shadow",
             Sort::Length(_) => "f32",
             Sort::Time(_) => "u64",
         }
@@ -175,42 +177,24 @@ impl Sort {
     }
 }
 
-/// A name Rust will accept, which is the stylesheet's own wherever it
-/// can be.
-///
-/// Escaped rather than renamed when it happens to be one of the
-/// language's own words: `--trait` is a role of the design system and
-/// calling it something else here would be a second name for one thing,
-/// which is exactly what this whole file exists to avoid.
-fn sayable(name: &str) -> String {
-    const RESERVED: [&str; 12] = [
-        "trait", "type", "box", "ref", "move", "fn", "mod", "use", "if", "for", "loop", "match",
-    ];
-    if RESERVED.contains(&name) {
-        format!("r#{name}")
-    } else {
-        name.to_string()
-    }
-}
-
 /// Names the drawing has no use for, and which are therefore not asked to
 /// be readable. Said out loud here rather than skipped in silence: a
 /// value quietly dropped is a value that stops being carried the day
 /// somebody needs it.
-const NOT_DRAWN: [&str; 1] = ["courbe"];
+const NOT_DRAWN: [&str; 1] = ["curve"];
 
 /// The whole of the generated file.
 fn design(css: &str) -> String {
     let dark = block(css, ":root");
-    let light = block(css, r#":root[data-theme="clair"]"#);
+    let light = block(css, r#":root[data-theme="light"]"#);
 
     // The palette is exactly what the light theme says again, and the
     // rest is the same whatever the theme. Read that way, the two follow
     // the stylesheet on their own: a colour added to both blocks joins
     // the palette, a spacing added to one joins the constants.
     let mut palette = String::new();
-    let mut sombre = String::new();
-    let mut clair = String::new();
+    let mut dark_fields = String::new();
+    let mut light_fields = String::new();
     let mut apart = String::new();
 
     for (name, value) in &dark {
@@ -227,8 +211,8 @@ fn design(css: &str) -> String {
                     "« {name} » n'est pas de la même sorte dans les deux thèmes"
                 );
                 let _ = writeln!(palette, "    pub {name}: {},", mine.kind());
-                let _ = writeln!(sombre, "    {name}: {},", mine.written());
-                let _ = writeln!(clair, "    {name}: {},", theirs.written());
+                let _ = writeln!(dark_fields, "    {name}: {},", mine.written());
+                let _ = writeln!(light_fields, "    {name}: {},", theirs.written());
             }
             None => {
                 let _ = writeln!(
@@ -251,10 +235,10 @@ fn design(css: &str) -> String {
          pub struct Palette {{\n{palette}}}\n\
          \n\
          /// Le thème sombre, celui que la feuille de style pose d'abord.\n\
-         pub const SOMBRE: Palette = Palette {{\n{sombre}}};\n\
+         pub const DARK: Palette = Palette {{\n{dark_fields}}};\n\
          \n\
          /// Le thème clair, celui qu'elle redit ensuite.\n\
-         pub const CLAIR: Palette = Palette {{\n{clair}}};\n\
+         pub const LIGHT: Palette = Palette {{\n{light_fields}}};\n\
          \n\
          {apart}"
     )
@@ -325,11 +309,11 @@ fn shadow(value: &str) -> Option<String> {
         return None;
     }
     Some(format!(
-        "Ombre {{ across: {across:?}, down: {down:?}, soft: {soft:?}, tint: {colour} }}"
+        "Shadow {{ across: {across:?}, down: {down:?}, soft: {soft:?}, tint: {colour} }}"
     ))
 }
 
 /// A colour as the drawing wants it: four numbers between nought and one.
 fn written(red: f32, green: f32, blue: f32, alpha: f32) -> String {
-    format!("Couleur {{ red: {red:?}, green: {green:?}, blue: {blue:?}, alpha: {alpha:?} }}")
+    format!("Colour {{ red: {red:?}, green: {green:?}, blue: {blue:?}, alpha: {alpha:?} }}")
 }
