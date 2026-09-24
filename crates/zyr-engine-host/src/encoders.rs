@@ -163,9 +163,9 @@ Info: Found AV1 encoder: av1_nvenc [nvenc]
 
         // Et un moteur qui n'a rien écrit du tout ne dit rien, plutôt
         // que de faire échouer la lecture.
-        let vide = folder.join("vide");
-        std::fs::create_dir_all(&vide).unwrap();
-        assert!(found_for(&vide).is_empty());
+        let empty = folder.join("vide");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(found_for(&empty).is_empty());
 
         std::fs::remove_dir_all(&folder).unwrap();
     }

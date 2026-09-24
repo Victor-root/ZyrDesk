@@ -180,7 +180,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ce_qui_est_du_n_est_pas_ce_qui_a_ete_demande() {
+    fn what_is_owed_is_not_what_was_asked() {
         // Des enceintes déjà muettes avant la session sont laissées
         // telles quelles : les rallumer à la fin défairait un geste que
         // ce produit n'a pas fait.

@@ -1852,10 +1852,10 @@ mod tests {
         // phrase. Comptée depuis la version courante, pour que ce test ne
         // se mette pas à parler de la version du jour à chaque fois qu'on
         // en ajoute une.
-        let autre = VERSION + 1;
-        let refusal = Question::parse(&format!("{autre} ports")).unwrap_err();
+        let newer = VERSION + 1;
+        let refusal = Question::parse(&format!("{newer} ports")).unwrap_err();
         assert!(
-            refusal.contains(&autre.to_string()) && refusal.contains("version"),
+            refusal.contains(&newer.to_string()) && refusal.contains("version"),
             "{refusal}"
         );
 

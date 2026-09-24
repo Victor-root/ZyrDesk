@@ -335,8 +335,8 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     assert_eq!((status, error.error), (401, Code::Unauthorized));
 
     // Un contact, demandé et accepté, puis un partage.
-    let ami = server.register("ami");
-    let (_, portable) = server.link(&ami.token, "PC de l'ami");
+    let friend_account = server.register("ami");
+    let (_, laptop) = server.link(&friend_account.token, "PC de l'ami");
     let (status, asked) = server.post::<ContactInfo>(
         paths::CONTACTS,
         Some(&pc1.token),
@@ -347,9 +347,9 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     assert_eq!(status, 200);
     assert_eq!(asked.status, ContactStatus::Pending);
     assert!(asked.asked_by_me);
-    let (_, seen_by_ami) = server.get::<Vec<ContactInfo>>(paths::CONTACTS, Some(&portable.token));
-    assert_eq!(seen_by_ami[0].username, "victor");
-    assert!(!seen_by_ami[0].asked_by_me);
+    let (_, seen_by_friend) = server.get::<Vec<ContactInfo>>(paths::CONTACTS, Some(&laptop.token));
+    assert_eq!(seen_by_friend[0].username, "victor");
+    assert!(!seen_by_friend[0].asked_by_me);
     // Pas de partage avant l'accord.
     let (status, error) = server.post::<zyr_broker::rest::Error>(
         paths::SHARES,
@@ -363,10 +363,7 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     );
     assert_eq!((status, error.error), (400, Code::NotAContact));
     assert_eq!(
-        server.post_empty(
-            &format!("/v1/contacts/{}/accept", asked.id),
-            &portable.token
-        ),
+        server.post_empty(&format!("/v1/contacts/{}/accept", asked.id), &laptop.token),
         200
     );
     let (status, share) = server.post::<ShareInfo>(
@@ -382,13 +379,13 @@ async fn accounts_devices_contacts_and_shares_from_the_outside() {
     assert_eq!(status, 200);
     assert_eq!(share.with, "ami");
     assert_eq!(share.device.id, pc1.device.id);
-    let (_, received) = server.get::<Vec<ShareInfo>>(paths::SHARES, Some(&portable.token));
+    let (_, received) = server.get::<Vec<ShareInfo>>(paths::SHARES, Some(&laptop.token));
     assert_eq!(received.len(), 1);
     assert_eq!(
-        server.delete(&format!("/v1/shares/{}", share.id), &portable.token),
+        server.delete(&format!("/v1/shares/{}", share.id), &laptop.token),
         204
     );
-    let (_, received) = server.get::<Vec<ShareInfo>>(paths::SHARES, Some(&portable.token));
+    let (_, received) = server.get::<Vec<ShareInfo>>(paths::SHARES, Some(&laptop.token));
     assert!(received.is_empty());
 
     server.stop().await;
@@ -401,8 +398,8 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
     let victor = server.register("victor");
     let (pc_identity, pc) = server.link(&victor.token, "PC de Victor");
     let (other_identity, other) = server.link(&victor.token, "Portable");
-    let ami = server.register("ami");
-    let (friend_identity, friend) = server.link(&ami.token, "PC de l'ami");
+    let friend_account = server.register("ami");
+    let (friend_identity, friend) = server.link(&friend_account.token, "PC de l'ami");
 
     // Une preuve fausse ferme le canal avec la raison.
     let mut liar = connect(&server, &pc.token).await;
@@ -432,8 +429,8 @@ async fn the_live_channel_carries_presence_and_a_rendezvous() {
         unreachable!()
     };
     assert_eq!(me, pc.device.id);
-    let portable = devices.iter().find(|d| d.id == other.device.id).unwrap();
-    assert!(!portable.online);
+    let laptop = devices.iter().find(|d| d.id == other.device.id).unwrap();
+    assert!(!laptop.online);
 
     // Le portable arrive : le PC l'apprend.
     let (mut other_channel, _) =

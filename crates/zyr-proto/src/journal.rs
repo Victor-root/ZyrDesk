@@ -480,7 +480,7 @@ mod tests {
     }
 
     /// Rien de demandé, donc tout gardé.
-    fn tout() -> Sifting {
+    fn everything() -> Sifting {
         Sifting::everything()
     }
 
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn a_file_that_does_not_exist_is_said_rather_than_left_blank() {
         let nowhere = Path::new("/nowhere/zyrdesk/none.log");
-        assert!(read(nowhere, "none", &tout()).contains("rien d'écrit"));
+        assert!(read(nowhere, "none", &everything()).contains("rien d'écrit"));
     }
 
     #[test]
@@ -507,7 +507,7 @@ mod tests {
         let written: Vec<String> = (0..KEPT + 40).map(|line| format!("ligne {line}")).collect();
         std::fs::write(&path, written.join("\n")).unwrap();
 
-        let kept = read(&path, "essai", &tout());
+        let kept = read(&path, "essai", &everything());
         // La fin, qui est là où se trouve la panne, et jamais le début.
         assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
         assert!(!kept.contains("ligne 0\n"), "{kept}");
@@ -531,7 +531,7 @@ mod tests {
         }
         std::fs::write(&path, &written).unwrap();
 
-        let kept = read(&path, "essai", &tout());
+        let kept = read(&path, "essai", &everything());
         assert!(
             kept.ends_with("ligne 39999 avec un peu de matière autour"),
             "fin : {}",
@@ -550,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn le_journal_du_lecteur_commence_ou_sa_session_commence() {
+    fn the_player_journal_starts_where_its_session_starts() {
         // La panne exacte, et pourquoi une ouverture lente est restée
         // trois soirs inexpliquée : les cent vingt dernières lignes du
         // journal du lecteur sont toujours la fin d'une session, jamais
@@ -576,7 +576,7 @@ mod tests {
             &path,
             "session.log",
             SESSION_OPENS,
-            &tout(),
+            &everything(),
             &mut BTreeSet::new(),
         );
         // Le premier mot du lecteur, qui est tout l'objet de la chose.
@@ -602,7 +602,7 @@ mod tests {
             &court,
             "session.log",
             SESSION_OPENS,
-            &tout(),
+            &everything(),
             &mut BTreeSet::new(),
         );
         assert!(!kept.contains("ne sont pas montrées"), "{kept}");
@@ -612,7 +612,7 @@ mod tests {
     }
 
     #[test]
-    fn un_fichier_sans_nom_dit_quel_mot_ajouter_au_tri() {
+    fn a_nameless_file_says_which_word_to_add_to_the_sift() {
         // La panne exacte : demander « touchpad » écarte le journal du
         // lecteur en entier, parce que ses lignes ne portent pas de nom
         // et répondent au sien. La page disait « rien ici ne répond au
@@ -621,31 +621,31 @@ mod tests {
         let folder = a_folder_of_its_own("sans-nom");
 
         // Le journal d'un moteur : aucune ligne n'a d'étiquette.
-        let moteur = folder.join("session.log");
+        let engine = folder.join("session.log");
         std::fs::write(
-            &moteur,
+            &engine,
             "00:00:08 - SDL Info (0): zyr: touchpad: rien pour nous\n",
         )
         .unwrap();
-        let rendu = read(&moteur, "session.log", &Sifting::of("touchpad"));
-        assert!(rendu.contains("ajoutez « session » au tri"), "{rendu}");
+        let shown = read(&engine, "session.log", &Sifting::of("touchpad"));
+        assert!(shown.contains("ajoutez « session » au tri"), "{shown}");
 
         // Un fichier dont les lignes portent des noms ne dit rien de
         // tel : y ajouter son propre nom n'y changerait rien.
         let service = folder.join("service.log");
         std::fs::write(&service, "2026-09-15 18:30:18 I [way] voie 1 ouverte\n").unwrap();
-        let rendu = read(&service, "service.log", &Sifting::of("touchpad"));
-        assert_eq!(rendu, "(rien ici ne répond au tri)", "{rendu}");
+        let shown = read(&service, "service.log", &Sifting::of("touchpad"));
+        assert_eq!(shown, "(rien ici ne répond au tri)", "{shown}");
 
         // Et le tri qui nomme bien le fichier le rend.
-        let rendu = read(&moteur, "session.log", &Sifting::of("touchpad session"));
-        assert!(rendu.contains("rien pour nous"), "{rendu}");
+        let shown = read(&engine, "session.log", &Sifting::of("touchpad session"));
+        assert!(shown.contains("rien pour nous"), "{shown}");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
-    fn un_fichier_sans_marque_garde_sa_fin_comme_avant() {
+    fn a_file_without_a_mark_keeps_its_end_as_before() {
         // La règle ne vaut que là où le produit sait où commence ce
         // qu'il lit. Ailleurs, la fin reste la fin.
         let folder = a_folder_of_its_own("sans-marque");
@@ -657,7 +657,7 @@ mod tests {
             &path,
             "service.log",
             SESSION_OPENS,
-            &tout(),
+            &everything(),
             &mut BTreeSet::new(),
         );
         assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
@@ -667,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn le_tri_se_fait_a_la_lecture_et_non_sur_la_page() {
+    fn the_sift_happens_on_reading_and_not_on_the_page() {
         // C'est toute la différence : seules les cent vingt dernières
         // lignes d'un fichier arrivent sur une page, et six lignes de
         // presse-papiers ne sont presque jamais parmi les cent vingt
@@ -683,13 +683,13 @@ mod tests {
         std::fs::write(&path, &written).unwrap();
 
         // Sans tri, la ligne du début est hors de portée.
-        let tout = read(&path, "service", &tout());
-        assert!(!tout.contains("ce que tient"), "{tout}");
+        let unsifted = read(&path, "service", &everything());
+        assert!(!unsifted.contains("ce que tient"), "{unsifted}");
 
         // Avec, elle est la seule qui reste.
-        let trie = read(&path, "service", &Sifting::of("tag:clipboard"));
+        let sifted = read(&path, "service", &Sifting::of("tag:clipboard"));
         assert_eq!(
-            trie,
+            sifted,
             "2026-09-11 18:55:03 I [clipboard] ce que tient cet ordinateur"
         );
 
@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn ce_qu_on_peut_demander_se_lit_dans_les_fichiers_et_se_relit_en_tete() {
+    fn what_can_be_asked_for_is_read_from_the_files_and_read_back_from_the_heading() {
         // La boîte de tri ne peut pas le deviner : la moitié du temps la
         // page vient d'un autre ordinateur, et un nom proposé qu'aucune
         // ligne ne porte est une impasse proposée.
@@ -750,21 +750,21 @@ mod tests {
     }
 
     #[test]
-    fn un_tri_qui_ne_rend_rien_le_dit_plutot_que_de_laisser_un_blanc() {
+    fn a_sift_that_gives_nothing_says_so_rather_than_leaving_a_blank() {
         // Un blanc se lit comme un fichier vide, et la question devient
         // « est-ce que ça marche ? » au lieu de « il n'y avait rien ».
         let folder = a_folder_of_its_own("tri-vide");
         let path = folder.join("service.log");
         std::fs::write(&path, "2026-09-11 18:55:04 I [ways] voie 1 ouverte\n").unwrap();
 
-        let trie = read(&path, "service", &Sifting::of("tag:clipboard"));
-        assert!(trie.contains("rien ici ne répond au tri"), "{trie}");
+        let sifted = read(&path, "service", &Sifting::of("tag:clipboard"));
+        assert!(sifted.contains("rien ici ne répond au tri"), "{sifted}");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
-    fn une_page_triee_dit_sous_quel_tri_elle_a_ete_prise() {
+    fn a_sifted_page_says_which_sift_it_was_taken_under() {
         // Sinon elle se lit comme un produit qui n'a rien à dire plutôt
         // que comme la réponse à une question.
         let text = Journal::of_this_computer().sifted(&Sifting::of("tag:clipboard"));
@@ -779,7 +779,7 @@ mod tests {
         // Un dossier n'est pas lisible comme un fichier : c'est le
         // moyen portable d'obtenir un refus qui n'est pas « absent ».
         let folder = a_folder_of_its_own("illisible");
-        let refused = read(&folder, "essai", &tout());
+        let refused = read(&folder, "essai", &everything());
         assert!(refused.starts_with("(illisible"), "{refused}");
         std::fs::remove_dir_all(&folder).unwrap();
     }
@@ -792,7 +792,7 @@ mod tests {
         let mut journal = Journal(String::new());
         journal.says("Service", "en marche");
         journal.says("Moteur hôte", "présent");
-        let colonnes: Vec<usize> = journal
+        let columns: Vec<usize> = journal
             .0
             .lines()
             .map(|line| {
@@ -801,7 +801,7 @@ mod tests {
                     .expect("un séparateur par ligne")
             })
             .collect();
-        assert_eq!(colonnes[0], colonnes[1], "{}", journal.0);
+        assert_eq!(columns[0], columns[1], "{}", journal.0);
     }
 
     #[test]

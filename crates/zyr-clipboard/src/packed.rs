@@ -167,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn une_capture_ordinaire_commence_juste_apres_son_entete() {
+    fn an_ordinary_capture_starts_right_after_its_header() {
         // Le cas de tous les jours : trente-deux bits par pixel, pas de
         // table de couleurs, pas de masques.
         let dib = with_pixels(old_header(32, 0, 0), 64);
@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn les_masques_repoussent_les_pixels_de_douze_octets() {
+    fn the_masks_push_the_pixels_back_by_twelve_bytes() {
         // Sans ça, chaque couleur est décalée de trois pixels et l'image
         // devient du bruit coloré.
         let dib = with_pixels(old_header(32, MASKED, 0), 64);
@@ -183,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn une_table_de_couleurs_les_repousse_d_autant() {
+    fn a_colour_table_pushes_them_back_by_its_own_size() {
         // Une image de 256 nuances porte ses 256 nuances entre l'entête
         // et les pixels, même quand l'entête n'en compte aucune.
         let dib = with_pixels(old_header(8, 0, 0), 256 * A_COLOUR + 16);
@@ -193,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn un_entete_recent_porte_ses_masques_en_lui() {
+    fn a_recent_header_carries_its_masks_inside_it() {
         // Le même dessin qu'au-dessus mais avec l'entête le plus récent :
         // les douze octets ne sont plus derrière lui, ils sont dedans.
         let mut head = vec![0u8; NEWEST_HEADER];
@@ -205,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn ce_qui_ne_decrit_pas_une_image_est_laisse_tranquille() {
+    fn what_does_not_describe_a_picture_is_left_alone() {
         assert_eq!(where_the_pixels_start(&[]), None);
         // Un entête plus court qu'aucun entête connu.
         assert_eq!(
@@ -213,9 +213,9 @@ mod tests {
             None
         );
         // Un entête plus long que ce qui a été remis.
-        let mut tronque = old_header(32, 0, 0);
-        tronque.truncate(20);
-        assert_eq!(where_the_pixels_start(&tronque), None);
+        let mut truncated = old_header(32, 0, 0);
+        truncated.truncate(20);
+        assert_eq!(where_the_pixels_start(&truncated), None);
         // Un entête qui annonce une table de couleurs plus grande que
         // tout ce qui a été remis : il ne reste aucun pixel derrière.
         assert_eq!(
@@ -225,19 +225,19 @@ mod tests {
     }
 
     #[test]
-    fn une_image_rendue_au_presse_papiers_est_retournee() {
+    fn a_picture_given_to_the_clipboard_is_turned_upside_down() {
         // Deux rangées d'un pixel, la première en haut : elles doivent
         // ressortir dans l'autre sens, un bitmap comptant ses rangées
         // depuis le bas. C'est l'erreur classique de cet endroit.
-        let haut = [1, 2, 3, 255];
-        let bas = [4, 5, 6, 255];
-        let packed = a_packed_bitmap(1, 2, &[haut, bas].concat());
-        assert_eq!(&packed[NEWEST_HEADER..NEWEST_HEADER + 4], &bas);
-        assert_eq!(&packed[NEWEST_HEADER + 4..NEWEST_HEADER + 8], &haut);
+        let top = [1, 2, 3, 255];
+        let bottom = [4, 5, 6, 255];
+        let packed = a_packed_bitmap(1, 2, &[top, bottom].concat());
+        assert_eq!(&packed[NEWEST_HEADER..NEWEST_HEADER + 4], &bottom);
+        assert_eq!(&packed[NEWEST_HEADER + 4..NEWEST_HEADER + 8], &top);
     }
 
     #[test]
-    fn ce_qui_est_ecrit_se_relit_par_la_lecture_d_a_cote() {
+    fn what_is_written_reads_back_through_the_reader_next_door() {
         // Les deux moitiés de ce fichier doivent se répondre : ce qu'on
         // pose au presse-papiers doit se relire comme on lit ce qu'on y
         // trouve.

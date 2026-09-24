@@ -423,8 +423,8 @@ mod tests {
         );
         assert!(what_the_mirror_answers(b"bonjour", asking).is_none());
         let sender = Identity::generate().unwrap();
-        let sonde = seal_probe(&sender, &probe(&sender, &sender)).unwrap();
-        assert!(what_the_mirror_answers(&sonde, asking).is_none());
+        let sealed = seal_probe(&sender, &probe(&sender, &sender)).unwrap();
+        assert!(what_the_mirror_answers(&sealed, asking).is_none());
 
         let seen: SocketAddr = "82.64.12.7:47000".parse().unwrap();
         let Some(Heard::SeenAs {

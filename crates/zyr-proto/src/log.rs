@@ -272,16 +272,16 @@ mod tests {
     }
 
     #[test]
-    fn chaque_ligne_porte_son_etiquette_et_le_fichier_reste_le_meme() {
+    fn every_line_carries_its_tag_and_the_file_stays_the_same() {
         // C'est ce qui fait qu'on peut demander six lignes au milieu de
         // quatre mille : l'étiquette est sur la ligne, et une copie
         // étiquetée écrit dans le même fichier et dans le même ordre.
         let path = fresh_path("etiquettes");
         let log = Log::open(&path).unwrap();
-        let presse_papiers = log.about("clipboard");
+        let clipboard = log.about("clipboard");
 
         log.write("sans étiquette particulière");
-        presse_papiers.write("ce que tient cet ordinateur");
+        clipboard.write("ce que tient cet ordinateur");
         log.write("et la suite");
 
         let contents = std::fs::read_to_string(&path).unwrap();
@@ -299,13 +299,13 @@ mod tests {
             "{}",
             lines[2]
         );
-        assert_eq!(presse_papiers.tag(), "clipboard");
+        assert_eq!(clipboard.tag(), "clipboard");
 
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
-    fn les_deux_voix_s_ecrivent_dans_l_ordre_ou_les_choses_se_sont_passees() {
+    fn both_voices_are_written_in_the_order_things_happened() {
         // Les deux dans le même fichier et dans cet ordre-là : une chasse
         // est justement le moment où l'on lit l'une contre l'autre, et
         // c'est le tri qui les sépare après coup, par la lettre que

@@ -135,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn un_fichier_seul_traverse_sous_son_nom() {
+    fn a_single_file_crosses_under_its_own_name() {
         let root = a_tree("un-fichier");
         let walk = walked(&[root.join("seul.txt")]);
 
@@ -147,21 +147,21 @@ mod tests {
     }
 
     #[test]
-    fn un_dossier_traverse_entier_et_sous_son_nom() {
+    fn a_folder_crosses_whole_and_under_its_own_name() {
         // C'est ce que fait l'explorateur quand il colle un dossier :
         // le dossier réapparaît, avec ce qu'il y a dedans.
         let root = a_tree("un-dossier");
         let walk = walked(&[root.join("photos")]);
 
-        let mut chemins: Vec<&str> = walk.listed.files().iter().map(|f| f.path()).collect();
-        chemins.sort_unstable();
-        assert_eq!(chemins, vec!["photos/2026/mer.jpg", "photos/lac.jpg"]);
+        let mut paths: Vec<&str> = walk.listed.files().iter().map(|f| f.path()).collect();
+        paths.sort_unstable();
+        assert_eq!(paths, vec!["photos/2026/mer.jpg", "photos/lac.jpg"]);
         assert_eq!(walk.listed.whole(), 10);
         std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
-    fn les_deux_listes_restent_en_face_l_une_de_l_autre() {
+    fn the_two_lists_stay_aligned_with_each_other() {
         // C'est ce qui fait qu'on sait quel fichier ouvrir quand l'autre
         // ordinateur demande le troisième de la liste. Deux listes qui
         // se décalent enverraient le mauvais fichier sous le bon nom.
@@ -170,18 +170,15 @@ mod tests {
 
         assert_eq!(walk.listed.files().len(), walk.really.len());
         for (rank, file) in walk.listed.files().iter().enumerate() {
-            let vraiment = &walk.really[rank];
-            assert!(
-                vraiment.ends_with(file.name()),
-                "{vraiment:?} pour {file:?}"
-            );
-            assert_eq!(std::fs::metadata(vraiment).unwrap().len(), file.bytes());
+            let real = &walk.really[rank];
+            assert!(real.ends_with(file.name()), "{real:?} pour {file:?}");
+            assert_eq!(std::fs::metadata(real).unwrap().len(), file.bytes());
         }
         std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
-    fn ce_qui_n_existe_pas_est_laisse_de_cote_sans_faire_tomber_le_reste() {
+    fn what_does_not_exist_is_left_out_without_bringing_down_the_rest() {
         // Un fichier effacé entre la copie et la lecture est la moitié
         // d'une seconde d'écart, et il ne doit pas coûter les autres.
         let root = a_tree("manquant");
@@ -193,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn une_copie_coupee_au_plafond_le_dit() {
+    fn a_copy_cut_at_the_ceiling_says_so() {
         // Sans ça, un dossier arrive en ayant l'air entier sans l'être,
         // et ce qui manque d'une copie de dix mille fichiers n'est pas
         // une chose qu'on repère en regardant.
@@ -203,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn rien_de_depose_ne_donne_rien() {
+    fn nothing_dropped_gives_nothing() {
         let walk = walked(&[]);
         assert!(walk.listed.is_empty());
         assert!(walk.really.is_empty());

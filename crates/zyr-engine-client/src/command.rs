@@ -177,19 +177,19 @@ mod tests {
     }
 
     #[test]
-    fn une_machine_sans_carte_son_le_dit_au_lecteur() {
+    fn a_machine_without_a_sound_card_tells_the_player() {
         // Huit secondes par session, dépensées avant l'image à se faire
         // refuser une carte son qui n'existe pas. Le lecteur n'a pas à
         // le découvrir : ce qui le lance connaît déjà la machine.
-        let muet = session_arguments("host", &SessionSettings::default(), false);
-        assert!(muet.iter().any(|a| a == "--no-sound-card"), "{muet:?}");
+        let silent = session_arguments("host", &SessionSettings::default(), false);
+        assert!(silent.iter().any(|a| a == "--no-sound-card"), "{silent:?}");
 
         // Et une machine qui en a une ne dit rien : le lecteur fait ce
         // qu'il a toujours fait.
-        let sonore = session_arguments("host", &SessionSettings::default(), true);
+        let with_sound = session_arguments("host", &SessionSettings::default(), true);
         assert!(
-            !sonore.iter().any(|a| a.contains("sound-card")),
-            "{sonore:?}"
+            !with_sound.iter().any(|a| a.contains("sound-card")),
+            "{with_sound:?}"
         );
     }
 
@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn le_moteur_suit_aussi_la_forme_du_curseur() {
+    fn the_engine_also_follows_the_shape_of_the_pointer() {
         // Et par un second fichier : le premier dit ce que le flux doit
         // être, et une ligne qui en diffère le fait reconstruire. Une
         // forme change chaque fois qu'une main traverse un champ de
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn les_touches_systeme_sont_toujours_celles_du_moteur() {
+    fn the_system_keys_always_belong_to_the_engine() {
         // Le mode demandé n'est jamais « always » : celui-là avale Alt et
         // Ctrl en entier, ce qui coupe tous les raccourcis du produit, qui
         // sont tous des combinaisons Alt. Et c'est toujours le moteur qui
@@ -298,11 +298,11 @@ mod tests {
         assert_eq!(value_of(&args, "--capture-system-keys"), Some("zyrdesk"));
         assert!(!args.iter().any(|a| a == "always"));
 
-        let laissees = SessionSettings {
+        let left_alone = SessionSettings {
             system_keys: false,
             ..SessionSettings::default()
         };
-        let args = session_arguments("host", &laissees, true);
+        let args = session_arguments("host", &left_alone, true);
         assert_eq!(
             value_of(&args, "--capture-system-keys"),
             Some("zyrdesk-off")

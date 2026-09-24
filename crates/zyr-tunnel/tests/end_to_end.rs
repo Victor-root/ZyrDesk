@@ -477,7 +477,7 @@ async fn the_client_learns_the_host_engine_ports_from_the_host() {
 }
 
 #[tokio::test]
-async fn l_ordinateur_regarde_apprend_ce_qu_on_lui_demande_de_servir() {
+async fn the_watched_computer_learns_what_it_is_asked_to_serve() {
     // Le défaut que ceci répare : la machine regardée ouvre son tunnel
     // au démarrage de son service, bien avant qu'une session existe, et
     // tenait donc une fenêtre calculée sur un débit nominal quel que
@@ -514,7 +514,7 @@ async fn the_pairing_code_travels_through_the_tunnel() {
 }
 
 #[tokio::test]
-async fn ctrl_alt_suppr_travels_on_the_product_s_own_channel() {
+async fn ctrl_alt_del_travels_on_the_product_s_own_channel() {
     // Windows garde cette combinaison pour lui aux deux bouts : celui qui
     // regarde ne la voit jamais, et celui qui est regardé ne peut pas la
     // recevoir d'un moteur. Elle traverse donc entre les deux moitiés de
@@ -529,7 +529,7 @@ async fn ctrl_alt_suppr_travels_on_the_product_s_own_channel() {
 }
 
 #[tokio::test]
-async fn couper_le_son_de_l_hote_se_demande_depuis_le_client() {
+async fn muting_the_host_is_asked_from_the_client() {
     // C'est celui qui prend la main qui sait si la pièce d'en face doit
     // se taire, et il n'est pas dedans pour aller le dire. La demande
     // traverse donc entre les deux moitiés de ZyrDesk, comme le reste de
@@ -550,7 +550,7 @@ async fn couper_le_son_de_l_hote_se_demande_depuis_le_client() {
 }
 
 #[tokio::test]
-async fn verrouiller_l_ordinateur_distant_passe_par_le_canal_du_produit() {
+async fn locking_the_far_computer_goes_through_the_product_s_own_channel() {
     // Windows+L ne voyage pas : Windows la traite là où aucun programme
     // ne la voit, aux deux bouts d'une session, et c'est exactement ce
     // qui fait qu'un écran de verrouillage vaut quelque chose. La demande
@@ -565,7 +565,7 @@ async fn verrouiller_l_ordinateur_distant_passe_par_le_canal_du_produit() {
 }
 
 #[tokio::test]
-async fn la_cadence_de_l_ecran_immobile_se_demande_depuis_le_client() {
+async fn the_still_screen_rate_is_asked_from_the_client() {
     // Ce que ça coûte est payé là-bas, mais la seule personne capable de
     // dire si l'image est fluide est celle qui la regarde, et elle n'est
     // pas devant la machine qu'il faudrait aller régler.
@@ -771,7 +771,7 @@ async fn the_counters_follow_what_travels() {
 }
 
 #[tokio::test]
-async fn l_ecran_virtuel_se_demande_a_l_ouverture_et_se_rend_a_la_fin() {
+async fn the_virtual_screen_is_asked_for_at_the_opening_and_given_back_at_the_end() {
     // L'écran virtuel dort entre les sessions, ce qui est tout l'intérêt :
     // une machine que personne ne regarde a les écrans que son
     // propriétaire a branchés et pas un de plus. Il faut donc le demander,
@@ -817,7 +817,7 @@ async fn l_ecran_virtuel_se_demande_a_l_ouverture_et_se_rend_a_la_fin() {
 }
 
 #[tokio::test]
-async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
+async fn the_far_machine_s_journal_arrives_whole() {
     // Lire le journal de l'ordinateur distant sans marcher jusqu'à lui,
     // c'est la panne diagnostiquée sur les deux journaux à la fois. Ce
     // qui arrive doit donc être la page entière, lignes comprises : une
@@ -849,13 +849,13 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
     // Et le tri traverse avec la question : il se fait là-bas, avant que
     // la page ne soit coupée, seul ordre où un tri vaut quelque chose.
     bench.emptied.store(false, Ordering::Relaxed);
-    let trie = before_the_end(aside::ask_for_the_journal(
+    let sifted = before_the_end(aside::ask_for_the_journal(
         &bench.connection,
         "tag:clipboard",
     ))
     .await
     .unwrap();
-    assert_eq!(trie, "trié par « tag:clipboard »");
+    assert_eq!(sifted, "trié par « tag:clipboard »");
 
     // Et ce que cette machine sait encoder, qui décide de ce que le menu
     // d'en face a le droit d'offrir. Elle est la seule à le savoir :
@@ -910,7 +910,7 @@ async fn le_journal_de_la_machine_d_en_face_arrive_entier() {
 }
 
 #[tokio::test]
-async fn ce_que_la_machine_d_en_face_atteint_arrive_entier() {
+async fn what_the_far_machine_reaches_arrives_whole() {
     // Le pendant du journal, sur le même canal et pour la même raison :
     // lu depuis ici plutôt qu'en marchant jusqu'à l'autre machine, et
     // entier, une mesure par seconde comprise.
@@ -924,7 +924,7 @@ async fn ce_que_la_machine_d_en_face_atteint_arrive_entier() {
 }
 
 #[tokio::test]
-async fn le_presse_papiers_traverse_le_tunnel_dans_les_deux_sens() {
+async fn the_clipboard_crosses_the_tunnel_both_ways() {
     // Un presse-papiers partagé n'a pas de sens dans un seul sens : ce
     // qu'on copie là-bas doit se coller ici, et ce qu'on copie ici doit
     // se coller là-bas. Un seul message fait les deux.
@@ -932,7 +932,7 @@ async fn le_presse_papiers_traverse_le_tunnel_dans_les_deux_sens() {
 
     // Ce que quelqu'un avait copié en face, remis parce que celui qui
     // demande ne tient rien.
-    let venu = before_the_end(aside::ask_about_the_clipboard(
+    let arrived = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
         None,
         None,
@@ -940,51 +940,54 @@ async fn le_presse_papiers_traverse_le_tunnel_dans_les_deux_sens() {
     .await
     .unwrap()
     .expect("ce qui était copié en face");
-    assert_eq!(venu.said(), Some(HOST_CLIPBOARD));
+    assert_eq!(arrived.said(), Some(HOST_CLIPBOARD));
 
     // Et redemandé en disant qu'on le tient déjà : rien ne revient.
     // C'est ce qui fait tenir la fonction, une question étant posée
     // plusieurs fois par seconde pendant toute une session.
-    let encore = before_the_end(aside::ask_about_the_clipboard(
+    let again = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
         None,
-        Some(venu.stamp()),
+        Some(arrived.stamp()),
     ))
     .await
     .unwrap();
-    assert_eq!(encore, None);
+    assert_eq!(again, None);
 
     // L'autre sens : une image copiée ici, plus lourde qu'une ligne,
     // part par la question elle-même. C'est le seul message de ce canal
     // qui pèse une page en partant, et c'est ce que la lecture en deux
     // temps existe pour laisser passer.
     let image = Clip::picture(vec![0x89; 300_000]);
-    let rien = before_the_end(aside::ask_about_the_clipboard(
+    let nothing = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
         Some(image.clone()),
-        Some(venu.stamp()),
+        Some(arrived.stamp()),
     ))
     .await
     .unwrap();
-    assert_eq!(rien, None, "ce qu'on vient de donner ne doit pas revenir");
+    assert_eq!(
+        nothing, None,
+        "ce qu'on vient de donner ne doit pas revenir"
+    );
     assert_eq!(bench.clipboard.lock().unwrap().as_ref(), Some(&image));
 
     // Et ce qui est copié en face après coup revient, image comprise :
     // les deux sens portent la même chose.
-    let la_bas = Clip::picture(vec![0x50; 200_000]);
-    *bench.clipboard.lock().unwrap() = Some(la_bas.clone());
-    let recu = before_the_end(aside::ask_about_the_clipboard(
+    let over_there = Clip::picture(vec![0x50; 200_000]);
+    *bench.clipboard.lock().unwrap() = Some(over_there.clone());
+    let received = before_the_end(aside::ask_about_the_clipboard(
         &bench.connection,
         None,
         Some(image.stamp()),
     ))
     .await
     .unwrap();
-    assert_eq!(recu, Some(la_bas));
+    assert_eq!(received, Some(over_there));
 }
 
 #[tokio::test]
-async fn une_question_trop_longue_qui_n_est_pas_le_presse_papiers_est_refusee() {
+async fn a_question_too_long_that_is_not_the_clipboard_is_refused() {
     // Le plafond d'une page n'est levé que pour la question qui le
     // nomme : sans ça, n'importe quel verbe inconnu pourrait faire
     // retenir des mégaoctets à un ordinateur qui n'a encore rien
@@ -995,8 +998,8 @@ async fn une_question_trop_longue_qui_n_est_pas_le_presse_papiers_est_refusee() 
     zyr_tunnel::pump::announce(&mut sending, StreamChannel::ZyrDesk)
         .await
         .unwrap();
-    let trop = format!("{} pair 1234 {}", aside::VERSION, "n".repeat(8192));
-    sending.write_all(trop.as_bytes()).await.unwrap();
+    let too_long = format!("{} pair 1234 {}", aside::VERSION, "n".repeat(8192));
+    sending.write_all(too_long.as_bytes()).await.unwrap();
     sending.shutdown().await.unwrap();
 
     // Le canal se ferme sans rien répondre, ce qui est exactement ce
@@ -1010,7 +1013,7 @@ async fn une_question_trop_longue_qui_n_est_pas_le_presse_papiers_est_refusee() 
 }
 
 #[tokio::test]
-async fn les_morceaux_d_un_fichier_traversent_dans_les_deux_sens() {
+async fn the_pieces_of_a_file_cross_both_ways() {
     // Ce qu'un presse-papiers porte d'un fichier est son nom ; les
     // octets suivent, un morceau à la fois, et dans le sens où on les
     // veut. Un seul message porte les deux, comme pour le presse-papiers
@@ -1020,15 +1023,15 @@ async fn les_morceaux_d_un_fichier_traversent_dans_les_deux_sens() {
 
     // Le sens où l'on tire : la machine d'en face a copié, celle-ci
     // colle, donc elle demande.
-    let fichier: Vec<u8> = (0..200_000u32).map(|at| (at % 251) as u8).collect();
-    *bench.has.lock().unwrap() = vec![b"court".to_vec(), fichier.clone()];
+    let file: Vec<u8> = (0..200_000u32).map(|at| (at % 251) as u8).collect();
+    *bench.has.lock().unwrap() = vec![b"court".to_vec(), file.clone()];
 
-    let mut rassemble = Vec::new();
-    let mut depuis = 0u64;
-    while (depuis as usize) < fichier.len() {
+    let mut gathered = Vec::new();
+    let mut offset = 0u64;
+    while (offset as usize) < file.len() {
         let asked = Wanted {
             rank: 1,
-            from: depuis,
+            from: offset,
             how_many: aside::A_PIECE as u32,
         };
         let (given, _) =
@@ -1037,32 +1040,29 @@ async fn les_morceaux_d_un_fichier_traversent_dans_les_deux_sens() {
                 .unwrap();
         let given = given.expect("le morceau demandé");
         assert_eq!(given.rank, 1);
-        assert_eq!(given.from, depuis);
+        assert_eq!(given.from, offset);
         assert!(!given.bytes.is_empty(), "un morceau vide ne finit jamais");
-        depuis += given.bytes.len() as u64;
-        rassemble.extend_from_slice(&given.bytes);
+        offset += given.bytes.len() as u64;
+        gathered.extend_from_slice(&given.bytes);
     }
-    assert_eq!(
-        rassemble, fichier,
-        "le fichier remonté n'est pas le fichier"
-    );
+    assert_eq!(gathered, file, "le fichier remonté n'est pas le fichier");
 
     // Et le sens où l'on pousse : c'est cette machine-ci qui a copié, et
     // celle d'en face qui colle, donc elle dit ce qu'elle veut et on le
     // lui donne. La réponse à un morceau donné dit le morceau suivant,
     // ce qui fait un aller-retour par morceau et pas deux.
-    let voulu = Wanted {
+    let asked_for = Wanted {
         rank: 0,
         from: 4096,
         how_many: 1024,
     };
-    *bench.wants.lock().unwrap() = Some(voulu);
+    *bench.wants.lock().unwrap() = Some(asked_for);
     let (_, wanted) = before_the_end(aside::ask_for_pieces(&bench.connection, None, None))
         .await
         .unwrap();
-    assert_eq!(wanted, Some(voulu));
+    assert_eq!(wanted, Some(asked_for));
 
-    let donne = Given {
+    let piece = Given {
         rank: 0,
         from: 4096,
         bytes: vec![0x2a; 1024],
@@ -1071,10 +1071,10 @@ async fn les_morceaux_d_un_fichier_traversent_dans_les_deux_sens() {
     let (_, wanted) = before_the_end(aside::ask_for_pieces(
         &bench.connection,
         None,
-        Some(donne.clone()),
+        Some(piece.clone()),
     ))
     .await
     .unwrap();
     assert_eq!(wanted, None, "rien voulu de plus veut dire que c'est fini");
-    assert_eq!(*bench.taken.lock().unwrap(), vec![donne]);
+    assert_eq!(*bench.taken.lock().unwrap(), vec![piece]);
 }

@@ -386,12 +386,12 @@ fn check(path: &Path) -> Result<(), String> {
         ),
     }
     match &checked.relay {
-        Some(relais) => {
+        Some(relay) => {
             println!(
                 "  Relais : les appareils y sont envoyés sur {}",
-                relais.address
+                relay.address
             );
-            if relais.resolved.is_none() {
+            if relay.resolved.is_none() {
                 println!(
                     "           mais ce nom ne mène nulle part depuis cette machine, donc pas \
                      davantage depuis les appareils.\n           \

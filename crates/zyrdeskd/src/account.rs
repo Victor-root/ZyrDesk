@@ -1531,16 +1531,16 @@ login_attempts_per_minute = 1000
         // Le PC accepte l'accès distant ; le serveur l'apprend au tour
         // suivant, et le portable le voit prêt en arrivant.
         pc.hosting.open();
-        let portable = Computer::new("portable");
-        portable.attach(&server, "Portable", false).await;
-        portable
+        let laptop = Computer::new("portable");
+        laptop.attach(&server, "Portable", false).await;
+        laptop
             .until("le portable ne voit jamais le PC prêt", |account| {
                 account.devices().iter().any(|device| {
                     device.name == "PC de Victor" && device.online && device.access == Access::Ready
                 })
             })
             .await;
-        let devices = portable.account.devices();
+        let devices = laptop.account.devices();
         assert_eq!(devices.len(), 2);
         assert!(
             devices
@@ -1557,23 +1557,20 @@ login_attempts_per_minute = 1000
         // Le PC est prêt et le serveur est là : c'est par une rencontre
         // qu'on ira le joindre, même si le réseau local le montre déjà.
         assert_eq!(
-            portable
+            laptop
                 .account
                 .met_through_the_server(pc.identity.fingerprint()),
             Some(pc_device.clone())
         );
         // Un ordinateur qui n'est d'aucun compte se joint à son adresse
         // et pas autrement.
-        assert_eq!(
-            portable.account.met_through_the_server(fingerprint(9)),
-            None
-        );
+        assert_eq!(laptop.account.met_through_the_server(fingerprint(9)), None);
 
         // Le rendez-vous : le portable est présenté au PC, qui le laisse
         // entrer sur la foi du ticket et dit où il répond, d'abord ses
         // propres adresses, puis celle que le miroir du serveur lui
         // renvoie, celle de sa prise vue de là.
-        let mut met = portable.account.rendezvous(&pc_device).await.unwrap();
+        let mut met = laptop.account.rendezvous(&pc_device).await.unwrap();
         assert_eq!(met.peer, pc.identity.fingerprint());
         assert_eq!(met.name, "PC de Victor");
         let mirror = SocketAddr::new(
@@ -1606,7 +1603,7 @@ login_attempts_per_minute = 1000
             seen_from_outside(pc.junction.local_address().unwrap(), port)
         );
         pc.until("le PC n'a jamais admis le portable", |account| {
-            account.admitted() == vec![portable.identity.fingerprint()]
+            account.admitted() == vec![laptop.identity.fingerprint()]
         })
         .await;
         // Et il ouvre sa branche de relais en parallèle, sans que rien
@@ -1615,7 +1612,7 @@ login_attempts_per_minute = 1000
         assert!(met.relay.is_some(), "le portable n'a pas eu de relais");
         pc.until_it_says("took the pass").await;
         assert_eq!(server.running.sessions_relayed(), 1);
-        portable.account.ended(&met.session);
+        laptop.account.ended(&met.session);
 
         // Et sa branche se referme avec la session, au lieu de garder sa
         // place sur le relais tant que le service tourne : le relais en
@@ -1634,7 +1631,7 @@ login_attempts_per_minute = 1000
         // Un appareil qui n'est pas prêt est refusé ici même, avec la
         // raison, sans déranger le serveur.
         pc.hosting.held_by(Holdup::EngineMissing);
-        portable
+        laptop
             .until("le portable ne voit jamais le PC sans moteur", |account| {
                 account
                     .devices()
@@ -1642,20 +1639,20 @@ login_attempts_per_minute = 1000
                     .any(|device| device.id == pc_device && device.access == Access::EngineMissing)
             })
             .await;
-        let refused = portable.account.rendezvous(&pc_device).await.unwrap_err();
+        let refused = laptop.account.rendezvous(&pc_device).await.unwrap_err();
         assert!(refused.contains("moteur hôte absent"), "{refused}");
         // Et il ne sert plus à rien de passer par le serveur pour le
         // joindre : ce qu'on sait de lui par ailleurs est tout ce qu'il
         // reste.
         assert_eq!(
-            portable
+            laptop
                 .account
                 .met_through_the_server(pc.identity.fingerprint()),
             None
         );
 
         // Renommé depuis le portable, le PC se voit sous son nouveau nom.
-        portable
+        laptop
             .account
             .rename(&pc_device, "PC du salon")
             .await
@@ -1669,19 +1666,19 @@ login_attempts_per_minute = 1000
         .await;
 
         // Révoqué depuis le PC, le portable oublie son lien tout seul.
-        let portable_device = portable.account.standing().unwrap().device;
-        pc.account.revoke(&portable_device).await.unwrap();
-        portable
+        let laptop_device = laptop.account.standing().unwrap().device;
+        pc.account.revoke(&laptop_device).await.unwrap();
+        laptop
             .until("le portable garde son lien", |account| {
                 account.standing().is_none()
             })
             .await;
         assert!(
-            Link::read(&portable.folder.join("account.conf"))
+            Link::read(&laptop.folder.join("account.conf"))
                 .unwrap()
                 .is_none()
         );
-        assert!(portable.account.devices().is_empty());
+        assert!(laptop.account.devices().is_empty());
 
         // Et le PC se détache lui-même : le fichier part, le serveur ne
         // le compte plus.

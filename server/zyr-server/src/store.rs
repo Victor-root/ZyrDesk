@@ -1508,18 +1508,18 @@ mod tests {
         // le premier compte, dont les partages sur lui tombent.
         let store = store();
         let victor = account(&store, "victor");
-        let ami = account(&store, "ami");
+        let friend = account(&store, "ami");
         let (first, token, identity) = device(&store, &victor, "PC");
-        friends(&store, &victor, &ami);
+        friends(&store, &victor, &friend);
         let share = store
             .give_share(&victor.id, &first.id, "ami", &Permission::ALL, None, 1_100)
             .unwrap();
 
         let (moved, _) = store
-            .link_device(&ami.id, identity.certificate().as_ref(), "PC", 2_000)
+            .link_device(&friend.id, identity.certificate().as_ref(), "PC", 2_000)
             .unwrap();
         assert_ne!(moved.id, first.id);
-        assert_eq!(moved.account, ami.id);
+        assert_eq!(moved.account, friend.id);
         assert!(store.devices_of(&victor.id).unwrap().is_empty());
         assert!(store.bearer_of_token(&token.raw, 2_001).is_err());
         assert_eq!(
@@ -1532,15 +1532,17 @@ mod tests {
     fn a_revoked_device_is_gone_with_its_tokens_and_shares() {
         let store = store();
         let victor = account(&store, "victor");
-        let ami = account(&store, "ami");
+        let friend = account(&store, "ami");
         let (device, token, _) = device(&store, &victor, "PC");
-        friends(&store, &victor, &ami);
+        friends(&store, &victor, &friend);
         store
             .give_share(&victor.id, &device.id, "ami", &Permission::ALL, None, 1_100)
             .unwrap();
         // Seul son compte peut le révoquer.
         assert!(matches!(
-            store.revoke_device(&ami.id, &device.id, 2_000).unwrap_err(),
+            store
+                .revoke_device(&friend.id, &device.id, 2_000)
+                .unwrap_err(),
             Fault::Refused(Code::DeviceUnknown)
         ));
         let revoked = store.revoke_device(&victor.id, &device.id, 2_000).unwrap();
@@ -1550,7 +1552,7 @@ mod tests {
             Fault::Refused(Code::Unauthorized)
         ));
         assert!(store.devices_of(&victor.id).unwrap().is_empty());
-        assert!(store.shares_of(&ami.id, 2_001).unwrap().is_empty());
+        assert!(store.shares_of(&friend.id, 2_001).unwrap().is_empty());
         assert!(store.revoke_device(&victor.id, &device.id, 2_002).is_err());
     }
 
@@ -1558,7 +1560,7 @@ mod tests {
     fn a_contact_is_asked_answered_and_removed() {
         let store = store();
         let victor = account(&store, "victor");
-        let ami = account(&store, "ami");
+        let friend = account(&store, "ami");
         assert!(matches!(
             store.ask_contact(&victor.id, "victor", 1).unwrap_err(),
             Fault::Refused(Code::ContactSelf)
@@ -1570,7 +1572,7 @@ mod tests {
         let asked = store.ask_contact(&victor.id, "ami", 1_000).unwrap();
         assert!(!asked.accepted);
         // Ni l'un ni l'autre ne redemande tant que ça attend.
-        for who in [&victor, &ami] {
+        for who in [&victor, &friend] {
             let other = if who.id == victor.id { "ami" } else { "victor" };
             assert!(matches!(
                 store.ask_contact(&who.id, other, 1_001).unwrap_err(),
@@ -1584,11 +1586,14 @@ mod tests {
                 .is_err()
         );
         let accepted = store
-            .answer_contact(&ami.id, &asked.id, true, 1_002)
+            .answer_contact(&friend.id, &asked.id, true, 1_002)
             .unwrap();
         assert!(accepted.accepted);
-        assert_eq!(accepted.other_than(&victor.id), ami.id);
-        assert_eq!(store.contacts_of(&ami.id).unwrap(), vec![accepted.clone()]);
+        assert_eq!(accepted.other_than(&victor.id), friend.id);
+        assert_eq!(
+            store.contacts_of(&friend.id).unwrap(),
+            vec![accepted.clone()]
+        );
 
         let removed = store
             .remove_contact(&victor.id, &accepted.id, 1_003)
@@ -1596,7 +1601,7 @@ mod tests {
         assert_eq!(removed.id, accepted.id);
         assert!(store.contacts_of(&victor.id).unwrap().is_empty());
         // Et on peut redemander ensuite.
-        let again = store.ask_contact(&ami.id, "victor", 1_004).unwrap();
+        let again = store.ask_contact(&friend.id, "victor", 1_004).unwrap();
         assert!(!again.accepted);
         let declined = store
             .answer_contact(&victor.id, &again.id, false, 1_005)
@@ -1609,11 +1614,11 @@ mod tests {
     fn a_share_names_one_machine_and_one_contact_and_gives_a_right() {
         let store = store();
         let victor = account(&store, "victor");
-        let ami = account(&store, "ami");
-        let etranger = account(&store, "etranger");
+        let friend = account(&store, "ami");
+        let stranger = account(&store, "etranger");
         let (pc, _, _) = device(&store, &victor, "PC de Victor");
-        let (portable, _, _) = device(&store, &ami, "Portable");
-        let (autre, _, _) = device(&store, &etranger, "Autre");
+        let (laptop, _, _) = device(&store, &friend, "Portable");
+        let (other, _, _) = device(&store, &stranger, "Autre");
 
         // Pas de partage sans contact accepté.
         assert!(matches!(
@@ -1622,18 +1627,11 @@ mod tests {
                 .unwrap_err(),
             Fault::Refused(Code::NotAContact)
         ));
-        friends(&store, &victor, &ami);
+        friends(&store, &victor, &friend);
         // Ni sur une machine qui n'est pas la sienne.
         assert!(matches!(
             store
-                .give_share(
-                    &victor.id,
-                    &portable.id,
-                    "ami",
-                    &Permission::ALL,
-                    None,
-                    1_100
-                )
+                .give_share(&victor.id, &laptop.id, "ami", &Permission::ALL, None, 1_100)
                 .unwrap_err(),
             Fault::Refused(Code::ShareInvalid)
         ));
@@ -1647,10 +1645,10 @@ mod tests {
                 1_100,
             )
             .unwrap();
-        assert_eq!(share.grantee, ami.id);
+        assert_eq!(share.grantee, friend.id);
 
         // Le droit : le sien, le partagé, rien.
-        let (_, right) = store.right_to(&portable, &pc.id, 1_200).unwrap();
+        let (_, right) = store.right_to(&laptop, &pc.id, 1_200).unwrap();
         assert_eq!(
             right,
             Grant::Share {
@@ -1660,13 +1658,13 @@ mod tests {
         let (_, own) = store.right_to(&pc, &pc.id, 1_200).unwrap();
         assert_eq!(own, Grant::Owner);
         assert!(matches!(
-            store.right_to(&autre, &pc.id, 1_200).unwrap_err(),
+            store.right_to(&other, &pc.id, 1_200).unwrap_err(),
             Fault::Refused(Code::NoRight)
         ));
         // Expiré, plus de droit ; retiré, plus de droit.
-        assert!(store.right_to(&portable, &pc.id, 5_000).is_err());
-        assert!(store.shares_of(&ami.id, 5_000).unwrap().is_empty());
-        assert_eq!(store.shares_of(&ami.id, 1_200).unwrap().len(), 1);
+        assert!(store.right_to(&laptop, &pc.id, 5_000).is_err());
+        assert!(store.shares_of(&friend.id, 5_000).unwrap().is_empty());
+        assert_eq!(store.shares_of(&friend.id, 1_200).unwrap().len(), 1);
 
         // Redonné, c'est le même partage, changé.
         let again = store
@@ -1683,23 +1681,25 @@ mod tests {
         assert_eq!(again.permissions, [Permission::Connect]);
         assert_eq!(again.expires, None);
 
-        let removed = store.remove_share(&ami.id, &share.id, 1_400).unwrap();
+        let removed = store.remove_share(&friend.id, &share.id, 1_400).unwrap();
         assert_eq!(removed.revoked, Some(1_400));
-        assert!(store.right_to(&portable, &pc.id, 1_401).is_err());
-        assert!(store.remove_share(&ami.id, &share.id, 1_402).is_err());
+        assert!(store.right_to(&laptop, &pc.id, 1_401).is_err());
+        assert!(store.remove_share(&friend.id, &share.id, 1_402).is_err());
     }
 
     #[test]
     fn ending_a_contact_takes_the_shares_between_the_two_with_it() {
         let store = store();
         let victor = account(&store, "victor");
-        let ami = account(&store, "ami");
+        let friend = account(&store, "ami");
         let (pc, _, _) = device(&store, &victor, "PC");
-        let contact = friends(&store, &victor, &ami);
+        let contact = friends(&store, &victor, &friend);
         let share = store
             .give_share(&victor.id, &pc.id, "ami", &Permission::ALL, None, 1_100)
             .unwrap();
-        store.remove_contact(&ami.id, &contact.id, 1_200).unwrap();
+        store
+            .remove_contact(&friend.id, &contact.id, 1_200)
+            .unwrap();
         assert_eq!(
             store.share(&share.id).unwrap().unwrap().revoked,
             Some(1_200)

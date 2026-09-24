@@ -274,8 +274,8 @@ mod tests {
         assert_eq!(folder_identifier(""), "device");
         // Le cas ordinaire depuis que c'est l'empreinte qui nomme : elle
         // passe telle quelle, n'étant déjà que des chiffres hexadécimaux.
-        let empreinte = "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237";
-        assert_eq!(folder_identifier(empreinte), empreinte);
+        let fingerprint = "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237";
+        assert_eq!(folder_identifier(fingerprint), fingerprint);
     }
 
     #[test]

@@ -1293,7 +1293,7 @@ mod tests {
     }
 
     #[test]
-    fn une_session_que_l_on_ferme_ne_relance_aucun_appairage() {
+    fn closing_a_session_restarts_no_pairing() {
         // Fermer une session rend son bureau à l'ordinateur d'en face,
         // qui reprend le flux, et le moteur s'arrête de la seule façon
         // qu'il connaisse : sur un échec. Vu d'ici, c'est exactement un
@@ -1302,7 +1302,7 @@ mod tests {
         // l'ouverture faisait repartir un appairage par-dessus une
         // session qu'on venait de quitter, et le moteur d'en face, à qui
         // personne ne demandait de code, le refusait.
-        for arret in [
+        for ending in [
             Some(Outcome::Failed),
             Some(Outcome::Unreachable),
             Some(Outcome::Unknown { code: Some(9) }),
@@ -1310,15 +1310,15 @@ mod tests {
             None,
         ] {
             assert_eq!(
-                worth_introducing_again(arret.clone(), false),
+                worth_introducing_again(ending.clone(), false),
                 None,
-                "sur {arret:?}"
+                "sur {ending:?}"
             );
         }
     }
 
     #[test]
-    fn une_ouverture_lachee_n_attend_pas_la_reponse_du_service() {
+    fn an_abandoned_opening_does_not_wait_for_the_service_to_answer() {
         // Un service qui prend l'appel et ne répond jamais : vu d'ici,
         // c'est exactement un ordinateur que l'on court après pendant
         // trente secondes, et c'est là que passait tout le temps d'une
@@ -1375,7 +1375,7 @@ mod tests {
     }
 
     #[test]
-    fn un_abandon_ne_se_lit_jamais_comme_un_refus() {
+    fn giving_up_never_reads_as_a_refusal() {
         // La moitié de ces demandes sont faites pour pouvoir échouer :
         // l'ordinateur d'en face refuse de se taire, de changer d'écran,
         // et l'image vaut la peine quand même. L'abandon emprunte le

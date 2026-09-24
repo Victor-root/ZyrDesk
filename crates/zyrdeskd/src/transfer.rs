@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn un_transfert_avance_fichier_par_fichier_et_se_termine() {
+    fn a_transfer_moves_file_by_file_and_finishes() {
         let (log, folder) = a_log("aller");
         let listed = Listing::of(vec![
             Listed::new("un.txt", 3).unwrap(),
@@ -406,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn le_meme_coller_annonce_deux_fois_ne_repart_pas_de_zero() {
+    fn the_same_paste_announced_twice_does_not_start_over() {
         // Celui qui voit le coller le voit à chaque tour de sa boucle :
         // sans ça, le transfert recommencerait quatre fois par seconde et
         // ne dépasserait jamais son premier morceau.
@@ -415,11 +415,11 @@ mod tests {
         // morceau ne finisse pas le transfert.
         let whole = A_PIECE as u64 + 3;
         let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
-        let meme = a_copy("deux-fois");
+        let same = a_copy("deux-fois");
 
-        coming_in(meme, &listed, &log).unwrap();
+        coming_in(same, &listed, &log).unwrap();
         take(&given(0, 0, vec![b'a'; A_PIECE]), &log).unwrap();
-        coming_in(meme, &listed, &log).unwrap();
+        coming_in(same, &listed, &log).unwrap();
         assert_eq!(
             drawn().unwrap().done,
             A_PIECE as u64,
@@ -435,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn un_morceau_qui_ne_tombe_pas_ou_on_attendait_est_jete() {
+    fn a_piece_that_does_not_land_where_expected_is_dropped() {
         // C'est la réponse à une question posée avant que le
         // presse-papiers change : l'écrire mettrait les octets d'une
         // copie dans le fichier d'une autre.
@@ -465,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn un_fichier_plus_court_que_ce_qu_il_annoncait_ne_se_demande_pas_sans_fin() {
+    fn a_file_shorter_than_it_announced_is_not_asked_for_forever() {
         // Un fichier qui a maigri entre la copie et le coller : le
         // morceau court dit la fin, et sans ça on le redemanderait pour
         // toujours.
@@ -481,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn un_transfert_qui_bouge_encore_survit_a_la_session_qui_l_a_ouvert() {
+    fn a_transfer_still_moving_outlives_the_session_that_opened_it() {
         // Une liaison qui cligne ferme une voie et en ouvre une autre.
         // Un transfert accroché à la première, ce sont quatre gigaoctets
         // jetés à quatre-vingts pour cent pour un hoquet : ce qui décide
@@ -509,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn sans_transfert_rien_n_est_voulu_et_rien_ne_se_dessine() {
+    fn without_a_transfer_nothing_is_wanted_and_nothing_is_drawn() {
         // C'est ce que répond un ordinateur où personne ne colle, et
         // c'est ce qui dit à l'autre bout qu'il peut cesser d'envoyer.
         let (log, folder) = a_log("rien");
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn un_avancement_se_lit_en_centiemes_et_jamais_au_dela() {
+    fn progress_reads_in_hundredths_and_never_beyond() {
         assert_eq!(
             HowFar {
                 done: 0,

@@ -305,7 +305,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn personne_ne_demande_tant_que_personne_n_a_demande() {
+    fn nobody_asks_as_long_as_nobody_has_asked() {
         // C'est ce qui décide qu'un ordinateur que personne ne regarde
         // ne lit rien du tout : sans question, plus aucun assistant
         // n'est relancé et le dernier s'éteint tout seul.
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn un_assistant_est_relance_avant_que_le_precedent_ne_meure() {
+    fn a_helper_is_restarted_before_the_previous_one_dies() {
         // Sans ce recouvrement, la lecture s'arrêterait entre deux
         // assistants et le curseur se figerait sur sa dernière forme le
         // temps qu'un autre démarre.
@@ -329,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn un_mot_absent_est_la_fleche_ordinaire() {
+    fn a_missing_word_is_the_ordinary_arrow() {
         // Le service lit ce fichier avant qu'aucun assistant n'ait eu le
         // temps d'écrire : ce moment-là doit être une flèche et non un
         // refus, sans quoi la première session n'aurait pas de curseur.

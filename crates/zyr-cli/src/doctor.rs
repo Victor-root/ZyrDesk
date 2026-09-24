@@ -8,50 +8,50 @@ use zyr_engine_host::{SunshineConfig, ports};
 use zyr_proto::net::{ENGINE_BASE_PORT_MAX, ENGINE_BASE_PORT_MIN};
 use zyr_proto::paths;
 
-enum Etat {
+enum Status {
     Ok,
-    Attention,
-    Echec,
+    Warning,
+    Failure,
 }
 
-impl fmt::Display for Etat {
+impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let symbole = match self {
-            Etat::Ok => "[ OK ]",
-            Etat::Attention => "[ !  ]",
-            Etat::Echec => "[ÉCHEC]",
+        let symbol = match self {
+            Status::Ok => "[ OK ]",
+            Status::Warning => "[ !  ]",
+            Status::Failure => "[ÉCHEC]",
         };
-        write!(f, "{symbole}")
+        write!(f, "{symbol}")
     }
 }
 
 struct Verification {
-    nom: &'static str,
-    etat: Etat,
+    name: &'static str,
+    status: Status,
     detail: String,
 }
 
 pub fn run() -> ExitCode {
     let verifications = [
-        plateforme(),
+        platform(),
         gpu(),
-        ports_moteur(),
-        dossier_donnees(),
-        configuration_moteur(),
-        moteurs(),
+        engine_ports(),
+        data_folder(),
+        engine_configuration(),
+        engines(),
         service(),
     ];
 
     println!("Diagnostic ZyrDesk v{}\n", zyr_proto::PRODUCT_VERSION);
-    let mut echec = false;
+    let mut failed = false;
     for v in &verifications {
-        println!("{} {:24} {}", v.etat, v.nom, v.detail);
-        if matches!(v.etat, Etat::Echec) {
-            echec = true;
+        println!("{} {:24} {}", v.status, v.name, v.detail);
+        if matches!(v.status, Status::Failure) {
+            failed = true;
         }
     }
     println!();
-    if echec {
+    if failed {
         println!("Au moins une vérification a échoué.");
         ExitCode::FAILURE
     } else {
@@ -60,18 +60,18 @@ pub fn run() -> ExitCode {
     }
 }
 
-fn plateforme() -> Verification {
+fn platform() -> Verification {
     let detail = format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH);
     if cfg!(windows) {
         Verification {
-            nom: "Plateforme",
-            etat: Etat::Ok,
+            name: "Plateforme",
+            status: Status::Ok,
             detail,
         }
     } else {
         Verification {
-            nom: "Plateforme",
-            etat: Etat::Attention,
+            name: "Plateforme",
+            status: Status::Warning,
             detail: format!(
                 "{detail} : environnement de développement, non supporté en production"
             ),
@@ -81,40 +81,40 @@ fn plateforme() -> Verification {
 
 #[cfg(windows)]
 fn gpu() -> Verification {
-    let sortie = std::process::Command::new("powershell")
+    let output = std::process::Command::new("powershell")
         .args([
             "-NoProfile",
             "-Command",
             "Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name",
         ])
         .output();
-    match sortie {
+    match output {
         Ok(s) if s.status.success() => {
-            let noms: Vec<String> = String::from_utf8_lossy(&s.stdout)
+            let names: Vec<String> = String::from_utf8_lossy(&s.stdout)
                 .lines()
                 .map(str::trim)
                 .filter(|l| !l.is_empty())
                 .map(str::to_string)
                 .collect();
-            if noms.is_empty() {
+            if names.is_empty() {
                 // Toute machine Windows réelle expose un adaptateur : une liste
                 // vide traduit une requête sans réponse, pas une absence de GPU.
                 Verification {
-                    nom: "Processeur graphique",
-                    etat: Etat::Attention,
+                    name: "Processeur graphique",
+                    status: Status::Warning,
                     detail: "aucun adaptateur listé".to_string(),
                 }
             } else {
                 Verification {
-                    nom: "Processeur graphique",
-                    etat: Etat::Ok,
-                    detail: noms.join(" ; "),
+                    name: "Processeur graphique",
+                    status: Status::Ok,
+                    detail: names.join(" ; "),
                 }
             }
         }
         _ => Verification {
-            nom: "Processeur graphique",
-            etat: Etat::Attention,
+            name: "Processeur graphique",
+            status: Status::Warning,
             detail: "détection impossible (PowerShell indisponible ?)".to_string(),
         },
     }
@@ -123,17 +123,17 @@ fn gpu() -> Verification {
 #[cfg(not(windows))]
 fn gpu() -> Verification {
     Verification {
-        nom: "Processeur graphique",
-        etat: Etat::Attention,
+        name: "Processeur graphique",
+        status: Status::Warning,
         detail: "détection non disponible hors Windows".to_string(),
     }
 }
 
-fn ports_moteur() -> Verification {
+fn engine_ports() -> Verification {
     match ports::free_base() {
         Some(ports) => Verification {
-            nom: "Ports moteur",
-            etat: Etat::Ok,
+            name: "Ports moteur",
+            status: Status::Ok,
             detail: format!(
                 "base {} disponible (plage {}-{})",
                 ports.base(),
@@ -142,8 +142,8 @@ fn ports_moteur() -> Verification {
             ),
         },
         None => Verification {
-            nom: "Ports moteur",
-            etat: Etat::Echec,
+            name: "Ports moteur",
+            status: Status::Failure,
             detail: format!(
                 "aucune base libre dans {}-{}",
                 ENGINE_BASE_PORT_MIN, ENGINE_BASE_PORT_MAX
@@ -152,71 +152,71 @@ fn ports_moteur() -> Verification {
     }
 }
 
-fn dossier_donnees() -> Verification {
-    let dossier = paths::data_dir();
-    let essai = || -> std::io::Result<()> {
-        std::fs::create_dir_all(&dossier)?;
-        let temoin = dossier.join(".doctor-ecriture");
-        std::fs::write(&temoin, b"ok")?;
-        std::fs::remove_file(&temoin)?;
+fn data_folder() -> Verification {
+    let folder = paths::data_dir();
+    let attempt = || -> std::io::Result<()> {
+        std::fs::create_dir_all(&folder)?;
+        let marker = folder.join(".doctor-ecriture");
+        std::fs::write(&marker, b"ok")?;
+        std::fs::remove_file(&marker)?;
         Ok(())
     };
-    match essai() {
+    match attempt() {
         Ok(()) => Verification {
-            nom: "Dossier de données",
-            etat: Etat::Ok,
-            detail: format!("{} accessible en écriture", dossier.display()),
+            name: "Dossier de données",
+            status: Status::Ok,
+            detail: format!("{} accessible en écriture", folder.display()),
         },
         Err(e) => Verification {
-            nom: "Dossier de données",
-            etat: Etat::Echec,
-            detail: format!("{} : {e}", dossier.display()),
+            name: "Dossier de données",
+            status: Status::Failure,
+            detail: format!("{} : {e}", folder.display()),
         },
     }
 }
 
-fn configuration_moteur() -> Verification {
+fn engine_configuration() -> Verification {
     match ports::free_base() {
         Some(ports) => {
             let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
             let directives = config.render_conf().lines().count();
             Verification {
-                nom: "Configuration moteur",
-                etat: Etat::Ok,
+                name: "Configuration moteur",
+                status: Status::Ok,
                 detail: format!("génération OK ({directives} directives)"),
             }
         }
         None => Verification {
-            nom: "Configuration moteur",
-            etat: Etat::Echec,
+            name: "Configuration moteur",
+            status: Status::Failure,
             detail: "impossible sans base de ports libre".to_string(),
         },
     }
 }
 
-fn moteurs() -> Verification {
-    let manquants: Vec<&str> = [
+fn engines() -> Verification {
+    let missing: Vec<&str> = [
         ("hôte", paths::host_engine_exe()),
         ("client", paths::client_engine_exe()),
     ]
     .into_iter()
-    .filter(|(_, chemin): &(&str, PathBuf)| !chemin.is_file())
+    .filter(|(_, path): &(&str, PathBuf)| !path.is_file())
     .map(|(role, _)| role)
     .collect();
 
-    if manquants.is_empty() {
+    if missing.is_empty() {
         Verification {
-            nom: "Moteurs",
-            etat: Etat::Ok,
+            name: "Moteurs",
+            status: Status::Ok,
             detail: "hôte et client en place".to_string(),
         }
     } else {
         Verification {
-            nom: "Moteurs",
-            etat: Etat::Attention,
+            name: "Moteurs",
+            status: Status::Warning,
             detail: format!(
                 "absent(s) : {} (voir « zyr-cli engines status »)",
-                manquants.join(", ")
+                missing.join(", ")
             ),
         }
     }
@@ -224,23 +224,23 @@ fn moteurs() -> Verification {
 
 #[cfg(windows)]
 fn service() -> Verification {
-    let sortie = std::process::Command::new("sc.exe")
+    let output = std::process::Command::new("sc.exe")
         .args(["query", "zyrdeskd"])
         .output();
-    match sortie {
+    match output {
         Ok(s) if s.status.success() => Verification {
-            nom: "Service ZyrDesk",
-            etat: Etat::Ok,
+            name: "Service ZyrDesk",
+            status: Status::Ok,
             detail: "installé".to_string(),
         },
         Ok(_) => Verification {
-            nom: "Service ZyrDesk",
-            etat: Etat::Attention,
+            name: "Service ZyrDesk",
+            status: Status::Warning,
             detail: "non installé (normal : arrive au jalon M3)".to_string(),
         },
         Err(e) => Verification {
-            nom: "Service ZyrDesk",
-            etat: Etat::Attention,
+            name: "Service ZyrDesk",
+            status: Status::Warning,
             detail: format!("état indéterminé : {e}"),
         },
     }
@@ -249,8 +249,8 @@ fn service() -> Verification {
 #[cfg(not(windows))]
 fn service() -> Verification {
     Verification {
-        nom: "Service ZyrDesk",
-        etat: Etat::Attention,
+        name: "Service ZyrDesk",
+        status: Status::Warning,
         detail: "sans objet hors Windows".to_string(),
     }
 }

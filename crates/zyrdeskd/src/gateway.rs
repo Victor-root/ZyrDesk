@@ -1807,19 +1807,19 @@ mod tests {
         // La liste est refaite toutes les cinq secondes : le journal ne
         // doit porter que les moments où elle bouge, sinon il n'y aura
         // plus rien d'autre à y lire.
-        let un = fingerprint(1);
-        let deux = fingerprint(2);
-        assert!(apart(&[un, deux], &[un, deux]).is_empty());
+        let one = fingerprint(1);
+        let two = fingerprint(2);
+        assert!(apart(&[one, two], &[one, two]).is_empty());
         assert!(apart(&[], &[]).is_empty());
 
-        let arrive = apart(&[un], &[un, deux]);
-        assert_eq!(arrive.len(), 1);
-        assert!(arrive[0].starts_with(&deux.to_string()), "{arrive:?}");
-        assert!(arrive[0].contains("may now come in"), "{arrive:?}");
+        let arriving = apart(&[one], &[one, two]);
+        assert_eq!(arriving.len(), 1);
+        assert!(arriving[0].starts_with(&two.to_string()), "{arriving:?}");
+        assert!(arriving[0].contains("may now come in"), "{arriving:?}");
 
-        let part = apart(&[un, deux], &[un]);
-        assert_eq!(part.len(), 1);
-        assert!(part[0].contains("may no longer come in"), "{part:?}");
+        let leaving = apart(&[one, two], &[one]);
+        assert_eq!(leaving.len(), 1);
+        assert!(leaving[0].contains("may no longer come in"), "{leaving:?}");
     }
 
     #[test]

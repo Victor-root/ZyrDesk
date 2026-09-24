@@ -238,11 +238,11 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
 
     // Un second appareil se rattache : le premier l'apprend sans rien
     // demander.
-    let portable_identity = Arc::new(Identity::generate().unwrap());
-    let portable_link = zyr_account::attach(
+    let laptop_identity = Arc::new(Identity::generate().unwrap());
+    let laptop_link = zyr_account::attach(
         &server.address(),
         trust,
-        &portable_identity,
+        &laptop_identity,
         &credentials("victor", false),
         "Portable",
     )
@@ -259,9 +259,9 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
 
     // Le PC accepte l'accès distant ; le portable arrive et le voit prêt.
     pc.set_access(Access::Ready);
-    let (portable, mut portable_events) =
-        Live::open(portable_link.clone(), portable_identity.clone(), log());
-    let snapshot = until_connected(&portable).await;
+    let (laptop, mut laptop_events) =
+        Live::open(laptop_link.clone(), laptop_identity.clone(), log());
+    let snapshot = until_connected(&laptop).await;
     let seen = snapshot
         .devices
         .iter()
@@ -271,19 +271,19 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
     assert_eq!(seen.access, Access::Ready);
 
     // Le rendez-vous : le portable va vers le PC.
-    portable.say(FromDevice::SessionOpen {
+    laptop.say(FromDevice::SessionOpen {
         to: pc_link.device.clone(),
     });
-    let Event::SessionStart(seen_by_portable) = expect(&mut portable_events).await else {
+    let Event::SessionStart(seen_by_laptop) = expect(&mut laptop_events).await else {
         panic!("le portable devait voir la session commencer");
     };
-    assert_eq!(seen_by_portable.peer.device, pc_link.device);
+    assert_eq!(seen_by_laptop.peer.device, pc_link.device);
     let Event::SessionStart(seen_by_pc) = expect(&mut pc_events).await else {
         panic!("le PC devait voir la session commencer");
     };
-    let session = seen_by_portable.session.clone();
+    let session = seen_by_laptop.session.clone();
     assert_eq!(seen_by_pc.session, session);
-    assert_eq!(seen_by_pc.peer.device, portable_link.device);
+    assert_eq!(seen_by_pc.peer.device, laptop_link.device);
     let read = Verifier::new(pc_link.signing_key)
         .ticket_for_host(&seen_by_pc.ticket, pc_identity.fingerprint(), now())
         .unwrap();
@@ -291,12 +291,12 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
 
     // Chacun reçoit son propre laissez-passer pour le relais du serveur,
     // qui ne le laisse joindre que l'autre, et pour cette session-là.
-    let relay = seen_by_portable
+    let relay = seen_by_laptop
         .relay
         .as_ref()
         .expect("le portable n'a pas eu de laissez-passer");
     let mine = Verifier::new(pc_link.signing_key)
-        .pass(&relay.pass, portable_identity.fingerprint(), now())
+        .pass(&relay.pass, laptop_identity.fingerprint(), now())
         .unwrap();
     assert_eq!(mine.session, session);
     assert_eq!(mine.peer, pc_identity.fingerprint());
@@ -313,23 +313,23 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
         candidates: candidates.clone(),
     });
     assert_eq!(
-        expect(&mut portable_events).await,
+        expect(&mut laptop_events).await,
         Event::SessionCandidates {
             session: session.clone(),
             candidates
         }
     );
-    portable.say(FromDevice::SessionEnd {
+    laptop.say(FromDevice::SessionEnd {
         session: session.clone(),
     });
     assert_eq!(expect(&mut pc_events).await, Event::SessionEnd { session });
 
     // Révoqué depuis le PC, le portable l'apprend et doit oublier son lien.
     let rest = Rest::new(&server.address(), trust).unwrap();
-    rest.revoke_device(&pc_link.token, &portable_link.device)
+    rest.revoke_device(&pc_link.token, &laptop_link.device)
         .await
         .unwrap();
-    assert_eq!(expect(&mut portable_events).await, Event::Revoked);
+    assert_eq!(expect(&mut laptop_events).await, Event::Revoked);
     let deadline = tokio::time::Instant::now() + PATIENCE;
     while pc.snapshot().devices.len() > 1 {
         assert!(
@@ -339,7 +339,7 @@ async fn the_live_channel_serves_the_account_and_a_rendezvous() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
-    drop(portable);
+    drop(laptop);
     drop(pc);
     server.stop().await;
 }

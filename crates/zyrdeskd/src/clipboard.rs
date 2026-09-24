@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn un_clip_ecrit_se_relit() {
+    fn a_written_clip_reads_back() {
         let folder = fresh_folder("aller-retour");
         let named = folder.join("clipboard-here.txt");
         let clip = Clip::picture(vec![0x89, b'P', b'N', b'G', 0, 255]);
@@ -800,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    fn une_ligne_qui_ne_correspond_pas_a_ses_octets_est_sautee() {
+    fn a_line_that_does_not_match_its_bytes_is_skipped() {
         // Le service lit entre les deux écritures : ce moment-là doit
         // être « rien à dire ce tour-ci » et jamais la moitié de deux
         // choses collée au presse-papiers d'en face.
@@ -814,7 +814,7 @@ mod tests {
     }
 
     #[test]
-    fn personne_ne_demande_tant_que_personne_n_a_demande() {
+    fn nobody_asks_as_long_as_nobody_has_asked() {
         // C'est ce qui décide qu'un ordinateur que personne ne regarde
         // garde son presse-papiers pour lui : sans question, plus aucun
         // assistant n'est relancé et le dernier s'éteint tout seul.
@@ -827,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn un_assistant_est_relance_avant_que_le_precedent_ne_meure() {
+    fn a_helper_is_restarted_before_the_previous_one_dies() {
         // Sans ce recouvrement, la lecture s'arrêterait entre deux
         // assistants et ce qu'on copie pendant ce temps-là ne partirait
         // jamais.

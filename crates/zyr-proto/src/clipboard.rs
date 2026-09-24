@@ -512,7 +512,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deux_fois_la_meme_chose_porte_le_meme_nom() {
+    fn the_same_thing_twice_carries_the_same_name() {
         // C'est tout ce qui fait tenir la fonction : sans ça, chaque tour
         // renverrait le presse-papiers à l'autre ordinateur pour rien, et
         // ce qui arrive repartirait aussitôt d'où il vient.
@@ -521,19 +521,19 @@ mod tests {
     }
 
     #[test]
-    fn un_texte_et_une_image_des_memes_octets_ne_sont_pas_la_meme_chose() {
+    fn a_text_and_a_picture_of_the_same_bytes_are_not_the_same_thing() {
         // L'espèce entre dans l'empreinte, sans quoi une image qui se
         // trouve avoir les octets d'un texte serait collée comme un
         // texte.
-        let octets = b"PNG".to_vec();
+        let bytes = b"PNG".to_vec();
         assert_ne!(
-            Clip::new(Kind::Text, octets.clone()).stamp(),
-            Clip::new(Kind::Picture, octets).stamp()
+            Clip::new(Kind::Text, bytes.clone()).stamp(),
+            Clip::new(Kind::Picture, bytes).stamp()
         );
     }
 
     #[test]
-    fn un_clip_fait_l_aller_retour_par_le_tunnel() {
+    fn a_clip_makes_the_round_trip_through_the_tunnel() {
         for clip in [
             Clip::text("deux mots"),
             Clip::text(""),
@@ -541,20 +541,20 @@ mod tests {
                 0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00,
             ]),
         ] {
-            let ecrit = clip.on_the_wire();
-            assert_eq!(Clip::from_the_wire(&ecrit).unwrap(), clip);
+            let written = clip.on_the_wire();
+            assert_eq!(Clip::from_the_wire(&written).unwrap(), clip);
         }
     }
 
     #[test]
-    fn une_empreinte_s_ecrit_et_se_relit() {
+    fn a_stamp_is_written_and_read_back() {
         let stamp = Clip::text("bonjour").stamp();
         assert_eq!(stamp.to_string().parse::<Stamp>().unwrap(), stamp);
         assert_eq!(stamp.to_string().len(), 64);
     }
 
     #[test]
-    fn la_tete_nomme_sans_porter() {
+    fn the_head_names_without_carrying() {
         let clip = Clip::picture(vec![1, 2, 3]);
         let head: Head = clip.named().parse().unwrap();
         assert_eq!(head.kind, Kind::Picture);
@@ -567,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn ce_qui_ne_dit_pas_ce_qu_il_porte_est_refuse() {
+    fn what_does_not_say_what_it_carries_is_refused() {
         assert!(Head::at_the_head("").is_err());
         assert!(Head::at_the_head("picture").is_err());
         assert!(Head::at_the_head("son 00").is_err());
@@ -579,21 +579,21 @@ mod tests {
     }
 
     #[test]
-    fn le_plafond_se_lit_sur_le_clip() {
+    fn the_ceiling_is_read_on_the_clip() {
         assert!(!Clip::picture(vec![0; LARGEST]).too_large());
         assert!(Clip::picture(vec![0; LARGEST + 1]).too_large());
     }
 
-    fn listee(path: &str, bytes: u64) -> Listed {
+    fn listed(path: &str, bytes: u64) -> Listed {
         Listed::new(path, bytes).unwrap()
     }
 
     #[test]
-    fn une_liste_de_fichiers_fait_l_aller_retour() {
+    fn a_file_list_makes_the_round_trip() {
         let listing = Listing::of(vec![
-            listee("lac.jpg", 2_400_000),
-            listee("2026/été au bord de l'eau.png", 940),
-            listee("un dossier/un fichier avec des espaces.txt", 0),
+            listed("lac.jpg", 2_400_000),
+            listed("2026/été au bord de l'eau.png", 940),
+            listed("un dossier/un fichier avec des espaces.txt", 0),
         ]);
         let clip = Clip::files(&listing);
         assert_eq!(clip.kind(), Kind::Files);
@@ -603,25 +603,25 @@ mod tests {
     }
 
     #[test]
-    fn une_liste_pese_ce_que_ses_fichiers_pesent_et_non_ce_qu_elle_pese() {
+    fn a_list_weighs_what_its_files_weigh_and_not_what_it_weighs() {
         // C'est tout l'intérêt : cent gigaoctets nommés tiennent en
         // quelques centaines d'octets, et rien ne bouge tant que
         // personne ne colle.
         let listing = Listing::of(vec![
-            listee("gros.iso", 80_000_000_000),
-            listee("encore.iso", 20_000_000_000),
+            listed("gros.iso", 80_000_000_000),
+            listed("encore.iso", 20_000_000_000),
         ]);
         assert_eq!(listing.whole(), 100_000_000_000);
         assert!(Clip::files(&listing).bytes().len() < 100);
         assert_eq!(listing.in_words(), "2 files, 100.0 Go");
         assert_eq!(
-            Listing::of(vec![listee("seul.txt", 3)]).in_words(),
+            Listing::of(vec![listed("seul.txt", 3)]).in_words(),
             "1 file, 3 o"
         );
     }
 
     #[test]
-    fn un_chemin_qui_sort_de_son_dossier_est_refuse() {
+    fn a_path_that_leaves_its_folder_is_refused() {
         // C'est la machine d'en face qui remet ces noms, et un nom est
         // une chose qu'on choisit : sans ça, coller un dossier pourrait
         // écrire n'importe où sur ce disque-ci.
@@ -640,16 +640,16 @@ mod tests {
     }
 
     #[test]
-    fn un_chemin_arrive_avec_des_barres_obliques_dans_un_seul_sens() {
+    fn a_path_arrives_with_its_slashes_one_way_only() {
         // Windows écrit ses chemins avec l'autre barre, et les deux
         // ordinateurs doivent nommer le même fichier pareil.
-        let file = listee(r"2026\lac.jpg", 12);
+        let file = listed(r"2026\lac.jpg", 12);
         assert_eq!(file.path(), "2026/lac.jpg");
         assert_eq!(file.name(), "lac.jpg");
     }
 
     #[test]
-    fn un_poids_se_lit_dans_l_unite_ou_il_veut_dire_quelque_chose() {
+    fn a_weight_reads_in_the_unit_where_it_means_something() {
         assert_eq!(weighed(0), "0 o");
         assert_eq!(weighed(999), "999 o");
         assert_eq!(weighed(1_000), "1.0 ko");
@@ -659,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn un_texte_se_relit_comme_du_texte_et_une_image_non() {
+    fn a_text_reads_back_as_text_and_a_picture_does_not() {
         assert_eq!(Clip::text("bonjour").said(), Some("bonjour"));
         assert_eq!(Clip::picture(vec![0xff, 0xfe]).said(), None);
     }

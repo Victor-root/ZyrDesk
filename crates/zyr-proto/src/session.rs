@@ -965,24 +965,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chaque_forme_de_curseur_a_son_mot_et_un_seul() {
+    fn every_pointer_shape_has_its_word_and_only_one() {
         // Le mot est lu par un moteur qui peut être d'une autre
         // compilation que celle qui l'écrit : deux formes qui
         // partageraient un mot en donneraient une pour l'autre, et une
         // forme sans mot ne partirait jamais.
-        let mut mots: Vec<&str> = Pointer::ALL.iter().map(|forme| forme.word()).collect();
-        mots.sort_unstable();
-        let combien = mots.len();
-        mots.dedup();
-        assert_eq!(mots.len(), combien, "deux formes partagent un mot");
-        for forme in Pointer::ALL {
-            assert!(!forme.word().is_empty());
-            assert_eq!(forme.word().parse::<Pointer>().unwrap(), forme);
+        let mut words: Vec<&str> = Pointer::ALL.iter().map(|shape| shape.word()).collect();
+        words.sort_unstable();
+        let how_many = words.len();
+        words.dedup();
+        assert_eq!(words.len(), how_many, "deux formes partagent un mot");
+        for shape in Pointer::ALL {
+            assert!(!shape.word().is_empty());
+            assert_eq!(shape.word().parse::<Pointer>().unwrap(), shape);
         }
     }
 
     #[test]
-    fn un_mot_inconnu_rend_la_fleche_ordinaire() {
+    fn an_unknown_word_gives_the_ordinary_arrow() {
         // Les deux moitiés du produit s'installent à des jours
         // différents : une machine d'en face plus récente peut nommer
         // une forme que celle-ci n'a jamais entendue. Lui refuser la

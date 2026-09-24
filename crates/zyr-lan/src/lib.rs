@@ -42,10 +42,10 @@ const SERVICE: &str = "_zyrdesk._udp.local.";
 pub const PORT: u16 = 5353;
 
 /// Key the fingerprint travels under.
-const CLE_EMPREINTE: &str = "fp";
+const FINGERPRINT_KEY: &str = "fp";
 
 /// Key the machine's name travels under.
-const CLE_NOM: &str = "nom";
+const NAME_KEY: &str = "nom";
 
 /// How long a computer stays listed after it was last heard from.
 ///
@@ -57,7 +57,7 @@ const CLE_NOM: &str = "nom";
 ///
 /// Short, and not shorter: a wireless card that stumbles for two seconds
 /// must not take the card off the screen and put it back.
-const OUBLI: Duration = Duration::from_secs(12);
+const FORGET_AFTER: Duration = Duration::from_secs(12);
 
 /// A ZyrDesk found on the local network.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,7 +97,7 @@ impl Found {
 
     fn seen_at(&self, now: Instant) -> Vec<Peer> {
         let mut found = self.0.lock().expect("found peers");
-        found.retain(|_, (_, seen)| now.duration_since(*seen) < OUBLI);
+        found.retain(|_, (_, seen)| now.duration_since(*seen) < FORGET_AFTER);
         let mut peers: Vec<Peer> = found.values().map(|(peer, _)| peer.clone()).collect();
         // Rangés par nom : une carte qui change de place à chaque
         // rafraîchissement est insupportable à l'usage, et rien dans
@@ -222,8 +222,8 @@ impl Neighbourhood {
         std::thread::spawn(move || watch(&watching, telling.as_ref()));
 
         let mut fields = std::collections::HashMap::new();
-        fields.insert(CLE_EMPREINTE.to_string(), fingerprint.to_string());
-        fields.insert(CLE_NOM.to_string(), name.to_string());
+        fields.insert(FINGERPRINT_KEY.to_string(), fingerprint.to_string());
+        fields.insert(NAME_KEY.to_string(), name.to_string());
 
         // The addresses are left to the library: it knows the interfaces
         // this machine actually has, and keeps up when one appears.
@@ -394,8 +394,8 @@ fn instance_of(fullname: &str) -> &str {
 /// field, or carrying something that is not a fingerprint, is dropped
 /// rather than shown half-empty.
 fn read(info: &mdns_sd::ResolvedService) -> Option<Peer> {
-    let fingerprint: Fingerprint = info.get_property_val_str(CLE_EMPREINTE)?.parse().ok()?;
-    let name = info.get_property_val_str(CLE_NOM)?.trim();
+    let fingerprint: Fingerprint = info.get_property_val_str(FINGERPRINT_KEY)?.parse().ok()?;
+    let name = info.get_property_val_str(NAME_KEY)?.trim();
     if name.is_empty() {
         return None;
     }
@@ -565,7 +565,10 @@ mod tests {
         // Unplugged, asleep or crashed, it says nothing on its way out.
         let found = Found::new();
         let now = Instant::now();
-        found.note(peer(1, "PC-BUREAU"), now - OUBLI - Duration::from_secs(1));
+        found.note(
+            peer(1, "PC-BUREAU"),
+            now - FORGET_AFTER - Duration::from_secs(1),
+        );
         found.note(peer(2, "PC-SALON"), now);
         let still_there = found.seen_at(now);
         assert_eq!(still_there.len(), 1);
@@ -588,20 +591,20 @@ mod tests {
         let found = Found::new();
         found.note(peer(1, "PC-BUREAU"), Instant::now());
 
-        let ailleurs: IpAddr = "192.168.1.99".parse().unwrap();
-        assert_eq!(found.forget_the_one_at(fingerprint(1), ailleurs), None);
+        let elsewhere: IpAddr = "192.168.1.99".parse().unwrap();
+        assert_eq!(found.forget_the_one_at(fingerprint(1), elsewhere), None);
         assert_eq!(found.peers().len(), 1);
 
-        let chez_lui: IpAddr = "192.168.1.20".parse().unwrap();
+        let its_own: IpAddr = "192.168.1.20".parse().unwrap();
         assert_eq!(
-            found.forget_the_one_at(fingerprint(1), chez_lui),
+            found.forget_the_one_at(fingerprint(1), its_own),
             Some("PC-BUREAU".to_string())
         );
         assert!(found.peers().is_empty());
 
         // Déjà parti : rien à dire, et surtout pas une seconde ligne dans
         // le journal.
-        assert_eq!(found.forget_the_one_at(fingerprint(1), chez_lui), None);
+        assert_eq!(found.forget_the_one_at(fingerprint(1), its_own), None);
     }
 
     #[test]
@@ -610,14 +613,14 @@ mod tests {
         // arrivent en vrac : sans ordre arrêté, on la joindrait tantôt
         // d'un côté tantôt de l'autre, et un essai sur deux échouerait
         // sans que rien ne l'explique.
-        let un: IpAddr = "192.168.1.20".parse().unwrap();
-        let deux: IpAddr = "192.168.2.20".parse().unwrap();
+        let one: IpAddr = "192.168.1.20".parse().unwrap();
+        let two: IpAddr = "192.168.2.20".parse().unwrap();
         let six: IpAddr = "fe80::1".parse().unwrap();
-        assert_eq!(in_order(vec![deux, un]), vec![un, deux]);
-        assert_eq!(in_order(vec![six, deux, un]), vec![un, deux, six]);
+        assert_eq!(in_order(vec![two, one]), vec![one, two]);
+        assert_eq!(in_order(vec![six, two, one]), vec![one, two, six]);
         // La version quatre d'abord : c'est là-dessus que le tunnel est
         // ouvert.
-        assert_eq!(in_order(vec![six, deux]), vec![deux, six]);
+        assert_eq!(in_order(vec![six, two]), vec![two, six]);
     }
 
     #[test]

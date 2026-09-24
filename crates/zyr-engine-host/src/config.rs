@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn ce_produit_ne_depend_de_personne_pour_le_son() {
+    fn this_product_depends_on_nobody_for_sound() {
         // Les deux lignes se tiennent. Sans la première, le moteur
         // installe la carte son de Steam quand il en trouve les fichiers
         // sur la machine. Sans la seconde, il cherche cette même carte et

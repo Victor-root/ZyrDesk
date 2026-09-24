@@ -113,16 +113,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn un_refus_se_lit_en_toutes_lettres() {
+    fn a_refusal_reads_in_plain_words() {
         // Ce texte finit dans le journal et parfois sous les yeux d'une
         // personne : il doit se lire, pas se décoder.
-        let ennui = Trouble::of("le mélangeur n'a pas répondu");
-        assert_eq!(ennui.to_string(), "le mélangeur n'a pas répondu");
+        let trouble = Trouble::of("le mélangeur n'a pas répondu");
+        assert_eq!(trouble.to_string(), "le mélangeur n'a pas répondu");
     }
 
     #[cfg(not(windows))]
     #[test]
-    fn ailleurs_que_sous_windows_la_reponse_est_franche() {
+    fn outside_windows_the_answer_is_honest() {
         // Ni un faux « c'est coupé » ni un faux « c'est actif » : les
         // deux mentiraient à qui affiche un interrupteur.
         assert!(muted(1).is_err());
@@ -133,7 +133,7 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn la_carte_son_est_supposee_presente_faute_de_pouvoir_demander() {
+    fn the_sound_card_is_assumed_present_for_want_of_asking() {
         // La seule des cinq questions qui répond au lieu de refuser, et
         // elle répond oui : ce qui la lit décide d'empêcher un lecteur
         // de chercher une carte son, et un faux « il n'y en a pas »

@@ -162,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn la_forme_du_curseur_ne_s_ecrit_que_lorsqu_elle_change() {
+    fn the_pointer_shape_is_written_only_when_it_changes() {
         // Elle est demandée plusieurs fois par seconde pendant toute une
         // session : réécrire le fichier à chaque fois userait le disque
         // pour un mot identique, et ferait relire le moteur pour rien.
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn ne_plus_suivre_le_curseur_rend_la_fleche_ordinaire() {
+    fn no_longer_following_the_pointer_gives_back_the_ordinary_arrow() {
         // C'est ce que fait `point_like_nothing`, et il écrit au lieu
         // d'effacer : un moteur encore en marche ne lit pas une absence,
         // il resterait sous la dernière forme reçue. Un sablier sur une

@@ -858,7 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn chaque_moitie_de_la_route_est_nommee_datee_et_comptee() {
+    fn each_half_of_the_road_is_named_dated_and_counted() {
         // Le relais est le seul endroit qui voit les deux moitiés d'une
         // route relayée. Sans lui, une moitié qui lâche et une session
         // qui s'arrête s'écrivent exactement pareil sur les deux
@@ -904,10 +904,10 @@ mod tests {
         let start = Instant::now();
         let per_second = 12_000.0;
         let relayed = measured(per_second, start);
-        let mut sonde = zyr_transport::probe::MAGIC.to_vec();
-        sonde.resize(60, 0);
-        let sonde = Bytes::from(sonde);
-        assert!(zyr_transport::probe::is_ours(&sonde));
+        let mut probe = zyr_transport::probe::MAGIC.to_vec();
+        probe.resize(60, 0);
+        let probe = Bytes::from(probe);
+        assert!(zyr_transport::probe::is_ours(&probe));
 
         let packet = Bytes::from(vec![0u8; 1_200]);
         for _ in 0..20 {
@@ -918,14 +918,14 @@ mod tests {
         // La session est à son plafond, et une sonde passe quand même,
         // sur son seau à elle, sans rien ajouter au compte.
         let upkeep = per_second * UPKEEP_SHARE;
-        relayed.carry(0, sonde.clone(), per_second, start);
+        relayed.carry(0, probe.clone(), per_second, start);
         assert_eq!(relayed.carried(), 12_000, "une sonde n'est pas la session");
         assert_eq!(relayed.flow.lock().unwrap().upkeep, upkeep - 60.0);
 
         // Et ce seau-là est borné lui aussi : un centième du débit de
         // la session, cent fois ce qu'il faut aux sondes et rien de plus.
         for _ in 0..3 {
-            relayed.carry(0, sonde.clone(), per_second, start);
+            relayed.carry(0, probe.clone(), per_second, start);
         }
         assert_eq!(relayed.flow.lock().unwrap().upkeep, 0.0);
     }

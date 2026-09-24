@@ -251,16 +251,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn un_refus_se_lit_en_toutes_lettres() {
+    fn a_refusal_reads_in_plain_words() {
         // Ce texte finit dans le journal : il doit se lire, pas se
         // décoder.
-        let ennui = Trouble::of("le presse-papiers était pris");
-        assert_eq!(ennui.to_string(), "le presse-papiers était pris");
+        let trouble = Trouble::of("le presse-papiers était pris");
+        assert_eq!(trouble.to_string(), "le presse-papiers était pris");
     }
 
     #[cfg(not(windows))]
     #[test]
-    fn ailleurs_que_sous_windows_la_reponse_est_franche() {
+    fn outside_windows_the_answer_is_honest() {
         // Ni un faux « il est vide » ni un faux « c'est posé » : les deux
         // mentiraient à qui décide d'envoyer quelque chose à partir de
         // la réponse.

@@ -724,8 +724,8 @@ mod tests {
         let door = listening.socket.local_addr().unwrap();
         let outside = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
 
-        for bruit in [b"bonjour".as_slice(), b"zyrdesk 9 who", &[0xff, 0xfe, 0x00]] {
-            outside.send_to(bruit, door).unwrap();
+        for noise in [b"bonjour".as_slice(), b"zyrdesk 9 who", &[0xff, 0xfe, 0x00]] {
+            outside.send_to(noise, door).unwrap();
             listening.listen();
         }
         assert!(list.peers().is_empty());

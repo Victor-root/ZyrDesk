@@ -280,176 +280,176 @@ mod tests {
     use super::*;
 
     /// Une ligne comme le journal les écrit, dans la voix ordinaire.
-    fn ligne(tag: &str, message: &str) -> String {
+    fn a_line(tag: &str, message: &str) -> String {
         format!("2026-09-11 18:55:03 I [{tag}] {message}")
     }
 
     /// La même, dans celle que seule une chasse veut.
-    fn ligne_de_chasse(tag: &str, message: &str) -> String {
+    fn a_debug_line(tag: &str, message: &str) -> String {
         format!("2026-09-11 18:55:03 D [{tag}] {message}")
     }
 
     #[test]
-    fn une_boite_vide_ne_trie_rien() {
+    fn an_empty_box_sifts_nothing() {
         // C'est ce qui fait que le bouton Copier continue de tout copier
         // tant qu'on ne lui a rien demandé.
-        let tamis = Sifting::of("   ");
-        assert!(tamis.takes_everything());
-        assert!(tamis.keeps(&ligne("clipboard", "peu importe"), "service"));
+        let sift = Sifting::of("   ");
+        assert!(sift.takes_everything());
+        assert!(sift.keeps(&a_line("clipboard", "peu importe"), "service"));
     }
 
     #[test]
-    fn une_etiquette_demandee_ecarte_tout_le_reste() {
+    fn a_tag_asked_for_leaves_out_everything_else() {
         // Le mot seul et la forme longue disent la même chose : le
         // second est ce qui a été tapé pendant des semaines, et rien de
         // ce qui a été appris ne doit cesser de marcher.
         for said in ["clipboard", "tag:clipboard"] {
-            let tamis = Sifting::of(said);
-            assert!(!tamis.takes_everything(), "{said}");
+            let sift = Sifting::of(said);
+            assert!(!sift.takes_everything(), "{said}");
             assert!(
-                tamis.keeps(
-                    &ligne("clipboard", "ce que tient cet ordinateur"),
+                sift.keeps(
+                    &a_line("clipboard", "ce que tient cet ordinateur"),
                     "service"
                 ),
                 "{said}"
             );
             assert!(
-                !tamis.keeps(&ligne("ways", "voie 1 ouverte"), "service"),
+                !sift.keeps(&a_line("ways", "voie 1 ouverte"), "service"),
                 "{said}"
             );
         }
     }
 
     #[test]
-    fn plusieurs_etiquettes_gardent_l_une_ou_l_autre() {
+    fn several_tags_keep_either_one() {
         // Une ligne ne porte qu'une étiquette : les exiger toutes ne
         // garderait jamais rien, ce qui est le contraire de ce que veut
         // celui qui en tape deux.
-        let tamis = Sifting::of("clipboard files");
-        assert!(tamis.keeps(
-            &ligne("clipboard", "ce que tient cet ordinateur"),
+        let sift = Sifting::of("clipboard files");
+        assert!(sift.keeps(
+            &a_line("clipboard", "ce que tient cet ordinateur"),
             "service"
         ));
-        assert!(tamis.keeps(&ligne("files", "1 fichier de 4,7 Go arrive"), "service"));
-        assert!(!tamis.keeps(&ligne("way", "voie 1 ouverte"), "service"));
+        assert!(sift.keeps(&a_line("files", "1 fichier de 4,7 Go arrive"), "service"));
+        assert!(!sift.keeps(&a_line("way", "voie 1 ouverte"), "service"));
     }
 
     #[test]
-    fn une_etiquette_et_un_refus_se_cumulent() {
+    fn a_tag_and_an_exclusion_add_up() {
         // Les étiquettes entre elles font « l'une ou l'autre », tout le
         // reste fait « et » : c'est ce qui rend « le sujet, sans le
         // bruit connu » possible en deux mots.
-        let tamis = Sifting::of("clipboard files -level:debug");
-        assert!(tamis.keeps(&ligne("files", "1 fichier arrive"), "service"));
-        assert!(!tamis.keeps(&ligne_de_chasse("files", "morceau 12 demandé"), "service"));
-        assert!(!tamis.keeps(&ligne("way", "voie 1 ouverte"), "service"));
+        let sift = Sifting::of("clipboard files -level:debug");
+        assert!(sift.keeps(&a_line("files", "1 fichier arrive"), "service"));
+        assert!(!sift.keeps(&a_debug_line("files", "morceau 12 demandé"), "service"));
+        assert!(!sift.keeps(&a_line("way", "voie 1 ouverte"), "service"));
     }
 
     #[test]
-    fn la_casse_ne_compte_pas() {
+    fn case_does_not_matter() {
         // Personne ne se souvient de la casse d'une étiquette lue une
         // fois.
-        let tamis = Sifting::of("TAG:ClipBoard");
-        assert!(tamis.keeps(&ligne("clipboard", "quoi que ce soit"), "service"));
+        let sift = Sifting::of("TAG:ClipBoard");
+        assert!(sift.keeps(&a_line("clipboard", "quoi que ce soit"), "service"));
     }
 
     #[test]
-    fn le_nom_du_fichier_compte_comme_une_etiquette() {
+    fn the_file_name_counts_as_a_tag() {
         // Les moteurs écrivent leur journal à leur façon et ne portent
         // aucune étiquette : sans ça, le leur ne se demanderait pas du
         // tout. Et demander un fichier entier est une chose assez
         // courante pour ne pas mériter un second mot.
-        let tamis = Sifting::of("tag:session");
-        let moteur = "00:00:03 - SDL Info (0): IDR frame request sent";
-        assert!(tamis.keeps(moteur, "session.log"));
-        assert!(!tamis.keeps(moteur, "service.log"));
+        let sift = Sifting::of("tag:session");
+        let engine = "00:00:03 - SDL Info (0): IDR frame request sent";
+        assert!(sift.keeps(engine, "session.log"));
+        assert!(!sift.keeps(engine, "service.log"));
         // Et une ligne étiquetée reste dans son fichier : les deux noms
         // vont ensemble plutôt que l'un à la place de l'autre.
-        let notre = ligne("clipboard", "ce que tient cet ordinateur");
-        assert!(tamis.keeps(&notre, "session.log"));
-        assert!(Sifting::of("tag:clipboard").keeps(&notre, "service.log"));
+        let ours = a_line("clipboard", "ce que tient cet ordinateur");
+        assert!(sift.keeps(&ours, "session.log"));
+        assert!(Sifting::of("tag:clipboard").keeps(&ours, "service.log"));
     }
 
     #[test]
-    fn un_mot_dans_la_ligne_se_demande_entre_guillemets_ou_par_son_nom() {
+    fn a_word_in_the_line_is_asked_for_in_quotes_or_by_its_name() {
         // Les deux formes de la recherche de texte, maintenant qu'un mot
         // nu nomme une partie du produit.
-        for tamis in [
+        for sift in [
             Sifting::of("\"DataObject\""),
             Sifting::of("message:DataObject"),
         ] {
-            assert!(tamis.keeps(&ligne("clipboard", "il tient DataObject"), "service"));
-            assert!(!tamis.keeps(&ligne("clipboard", "il tient du texte"), "service"));
+            assert!(sift.keeps(&a_line("clipboard", "il tient DataObject"), "service"));
+            assert!(!sift.keeps(&a_line("clipboard", "il tient du texte"), "service"));
         }
     }
 
     #[test]
-    fn une_etiquette_et_un_mot_ecarte_se_cumulent() {
+    fn a_tag_and_an_excluded_word_add_up() {
         // C'est ce qui rend une paire comme celle-ci utile : le nom pour
         // le sujet, le moins pour le bruit connu.
-        let tamis = Sifting::of("clipboard -\"DataObject\"");
-        assert!(tamis.keeps(&ligne("clipboard", "15997 octets de texte"), "service"));
-        assert!(!tamis.keeps(&ligne("clipboard", "il tient DataObject"), "service"));
-        assert!(!tamis.keeps(&ligne("ways", "15997 octets de texte"), "service"));
+        let sift = Sifting::of("clipboard -\"DataObject\"");
+        assert!(sift.keeps(&a_line("clipboard", "15997 octets de texte"), "service"));
+        assert!(!sift.keeps(&a_line("clipboard", "il tient DataObject"), "service"));
+        assert!(!sift.keeps(&a_line("ways", "15997 octets de texte"), "service"));
     }
 
     #[test]
-    fn ce_qui_est_entre_guillemets_est_une_seule_chose() {
-        let tamis = Sifting::of("\"deux mots\"");
-        assert!(tamis.keeps(&ligne("ways", "voici deux mots ici"), "service"));
-        assert!(!tamis.keeps(&ligne("ways", "deux, puis mots"), "service"));
+    fn what_is_in_quotes_is_a_single_thing() {
+        let sift = Sifting::of("\"deux mots\"");
+        assert!(sift.keeps(&a_line("ways", "voici deux mots ici"), "service"));
+        assert!(!sift.keeps(&a_line("ways", "deux, puis mots"), "service"));
     }
 
     #[test]
-    fn un_deux_points_au_milieu_d_un_mot_reste_dans_le_mot() {
+    fn a_colon_inside_a_word_stays_in_the_word() {
         // Ce produit écrit des adresses et des heures partout : les lire
         // comme une clé inconnue ne rendrait jamais rien.
-        let tamis = Sifting::of("192.168.1.5:57577");
-        assert!(tamis.keeps(&ligne("ways", "card 192.168.1.5:57577 sondée"), "service"));
+        let sift = Sifting::of("192.168.1.5:57577");
+        assert!(sift.keeps(&a_line("ways", "card 192.168.1.5:57577 sondée"), "service"));
     }
 
     #[test]
-    fn l_etiquette_se_lit_la_ou_le_journal_l_ecrit() {
+    fn the_tag_is_read_where_the_journal_writes_it() {
         // Et nulle part ailleurs : un crochet dans le message est un
         // crochet dans le message.
-        let written = ligne("clipboard", "[pas une étiquette] la suite");
+        let written = a_line("clipboard", "[pas une étiquette] la suite");
         assert_eq!(about(&written), Some(("info", "clipboard")));
         assert_eq!(about("00:00:03 - SDL Info (0): [hevc @ 0x1] rien"), None);
     }
 
     #[test]
-    fn une_voix_se_demande_par_son_nom_ou_par_sa_lettre() {
+    fn a_voice_is_asked_for_by_its_name_or_its_letter() {
         // Ce qui n'est là que pour une chasse noie tout le reste : on
         // doit pouvoir ne garder que ça, ou tout sauf ça.
-        let chasse = ligne_de_chasse("way", "pas un paquet depuis 1098 ms");
-        let dit = ligne("way", "voie 1 ouverte vers PC-SAV");
+        let debug = a_debug_line("way", "pas un paquet depuis 1098 ms");
+        let info = a_line("way", "voie 1 ouverte vers PC-SAV");
 
-        assert!(Sifting::of("level:debug").keeps(&chasse, "service.log"));
-        assert!(!Sifting::of("level:debug").keeps(&dit, "service.log"));
-        assert!(Sifting::of("-level:debug").keeps(&dit, "service.log"));
+        assert!(Sifting::of("level:debug").keeps(&debug, "service.log"));
+        assert!(!Sifting::of("level:debug").keeps(&info, "service.log"));
+        assert!(Sifting::of("-level:debug").keeps(&info, "service.log"));
         // La lettre suffit, et la casse ne compte pas.
-        assert!(Sifting::of("level:D").keeps(&chasse, "service.log"));
+        assert!(Sifting::of("level:D").keeps(&debug, "service.log"));
 
         // Et ce que les moteurs écrivent n'est ni l'un ni l'autre :
         // demander une voix ne doit pas rendre en douce une troisième
         // sorte de ligne.
-        let moteur = "00:00:03 - SDL Info (0): IDR frame request sent";
-        assert!(!Sifting::of("level:debug").keeps(moteur, "session.log"));
-        assert!(!Sifting::of("level:info").keeps(moteur, "session.log"));
-        assert!(Sifting::of("level:engine").keeps(moteur, "session.log"));
+        let engine = "00:00:03 - SDL Info (0): IDR frame request sent";
+        assert!(!Sifting::of("level:debug").keeps(engine, "session.log"));
+        assert!(!Sifting::of("level:info").keeps(engine, "session.log"));
+        assert!(Sifting::of("level:engine").keeps(engine, "session.log"));
     }
 
     #[test]
-    fn ce_qui_a_ete_ecrit_se_relit_tel_quel() {
+    fn what_was_written_reads_back_as_it_was() {
         // La page dira sous quel tri elle a été prise : une page de six
         // lignes qui ne le dit pas se lit comme un produit muet.
-        let tamis = Sifting::of("  tag:clipboard -DataObject  ");
-        assert_eq!(tamis.said(), "tag:clipboard -DataObject");
-        assert_eq!(tamis.to_string(), "tag:clipboard -DataObject");
+        let sift = Sifting::of("  tag:clipboard -DataObject  ");
+        assert_eq!(sift.said(), "tag:clipboard -DataObject");
+        assert_eq!(sift.to_string(), "tag:clipboard -DataObject");
     }
 
     #[test]
-    fn l_etiquette_se_retrouve_la_ou_le_journal_l_a_vraiment_ecrite() {
+    fn the_tag_is_found_where_the_journal_really_wrote_it() {
         // Les deux moitiés se tiennent l'une l'autre : si le journal
         // change la forme de sa date, l'étiquette cesse d'être là où on
         // la cherche, et plus rien ne se trie. Écrit pour de vrai et
