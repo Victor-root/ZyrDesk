@@ -29,8 +29,17 @@ impl Button {
         Button::X2,
     ];
 
+    pub fn from_wire(value: u8) -> Option<Self> {
+        Self::ALL.into_iter().find(|button| button.wire() == value)
+    }
+
+    /// The value written on the wire.
+    pub fn wire(self) -> u8 {
+        self as u8
+    }
+
     fn bit(self) -> u8 {
-        1 << (self as u8)
+        1 << self.wire()
     }
 }
 
@@ -232,6 +241,15 @@ mod tests {
 
     fn button(button: Button, down: bool) -> InputEvent {
         InputEvent::Button { button, down }
+    }
+
+    #[test]
+    fn wire_values_name_the_right_button() {
+        for button in Button::ALL {
+            assert_eq!(Button::from_wire(button.wire()), Some(button));
+        }
+        assert_eq!(Button::from_wire(0), None);
+        assert_eq!(Button::from_wire(6), None);
     }
 
     #[test]

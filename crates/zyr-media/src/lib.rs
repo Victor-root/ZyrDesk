@@ -8,7 +8,9 @@
 
 pub mod audio;
 pub mod codec;
+pub mod control;
 pub mod input;
+pub mod service;
 pub mod video;
 
 #[cfg(test)]
