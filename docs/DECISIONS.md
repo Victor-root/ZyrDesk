@@ -3466,6 +3466,16 @@ Et l'échec d'une voie locale ne s'arrête plus à « ne répond pas ». Les adr
 
 **Comment le passage se fait.** Par un outil et non à la main : il découpe chaque fichier en code, commentaires et chaînes, ne renomme que le code, jamais le contenu d'une chaîne, et refuse d'écrire tant qu'un nouveau nom en rencontre un autre dans la même fonction. Chaque étape compile pour Linux et pour Windows et passe clippy et les tests avant d'être enregistrée.
 
+## D221. Les outils et les dépendances suivent leur dernière version stable (2026-09-24, pendant M6)
+
+**Décision de Victor.** Toujours la dernière version stable des outils, pour ne pas accumuler de dette : Rust, chaque bibliothèque du dépôt, et FFmpeg pour le moteur de [D219](#d219-zyrdesk-aura-son-propre-moteur-dédié-aux-performances-2026-09-23-pendant-m6). Un retard n'est admis que s'il est impossible de faire autrement, et il s'écrit alors dans le manifeste concerné et ici.
+
+**Le relevé du jour.** Rust 1.98.1. `windows` 0.62.2, `quinn` 0.11.12, `mdns-sd` 0.21, `ureq` 3.4, `rustls` 0.23.45 et le reste à l'avenant ; `Cargo.lock` suit. Aucune ligne de code n'a eu à changer, et les 644 essais passent sous Linux, avec clippy muet pour Linux et pour Windows.
+
+**`quinn-proto` quitte l'épinglage de D125.** La 0.11.18 ne décompte plus la file d'envoi qu'à un seul endroit : la double soustraction qui tuait la session ne peut plus se produire, et l'essai de rafale écrit pour la guetter passe. La dépendance reste déclarée avec un plancher à 0.11.18. Un effet de bord mesuré : la file compte désormais trente-deux octets de plus par paquet, la vidéo y tient environ 3 % de moins, et le compteur des paquets jetés reste exact.
+
+**Les deux seuls retards, et pourquoi.** `windows-core` et `windows-numerics` existent en 0.100, mais `windows` 0.62.2, le plus récent, exige leurs versions 0.62 et 0.3 : les prendre casserait `windows`. `generic-array` et `matchit` sont fixés par des bibliothèques tierces (`crypto-common`, `axum`), qui seules peuvent les relever.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.

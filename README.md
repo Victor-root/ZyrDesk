@@ -111,6 +111,7 @@ Ceci s'adresse autant à une IA qu'à une personne qui reprend le dépôt.
 - **L'aide des outils en ligne de commande** (`--help`) naît des commentaires du code : elle est en anglais, comme leurs options.
 - **Ce qui est écrit sur le disque ou passe sur le réseau garde son nom exact**, même français (valeurs de préférences, clés de `install.env`, champs échangés avec le serveur, règle de pare-feu, dossier `vendor/ecran-virtuel`) : le renommer casserait une installation existante ou le dialogue entre deux versions.
 - **La documentation de `docs/` reste en français**, et l'historique de [docs/DECISIONS.md](docs/DECISIONS.md) ne se réécrit pas.
+- **Les outils et les dépendances suivent leur dernière version stable** : Rust, chaque bibliothèque du dépôt et FFmpeg. Un retard se justifie par écrit, dans le manifeste et dans [docs/DECISIONS.md](docs/DECISIONS.md), jamais par commodité.
 - Toute modification du code d'un moteur suit la marque `zyr:` de [docs/engines/STRATEGY.md](docs/engines/STRATEGY.md).
 
 Le détail et ses raisons : [D220](docs/DECISIONS.md#d220-le-code-sécrit-en-anglais-ce-que-la-personne-lit-reste-en-français-2026-09-24-pendant-m6).
