@@ -54,7 +54,7 @@ const EVERY: Duration = Duration::from_secs(1);
 /// How long an answer is waited for before it counts as none.
 const PATIENCE: Duration = Duration::from_secs(1);
 
-/// Sessions open right now, on either side.
+/// The sessions open right now, on either side.
 static SESSIONS: AtomicUsize = AtomicUsize::new(0);
 
 /// Whether the asking is already under way. Set once and never cleared:
@@ -246,8 +246,8 @@ mod tests {
         assert_eq!(&asked[..2], &[0x12, 0x34], "le numéro de la question");
         assert_eq!(&asked[2..4], &[0x01, 0x00], "la récursion est demandée");
         assert_eq!(&asked[4..6], &[0x00, 0x01], "une seule question");
-        // Le nom, étiquette par étiquette, puis « une adresse, sur
-        // Internet ».
+        // The name, label by label, then "an address, on the
+        // Internet".
         assert_eq!(
             &asked[12..],
             b"\x01a\x0croot-servers\x03net\x00\x00\x01\x00\x01"
@@ -256,9 +256,9 @@ mod tests {
 
     #[test]
     fn only_the_answer_to_our_own_question_counts() {
-        // Une réponse porte le numéro demandé et le drapeau qui dit que
-        // c'en est une. Sans ce dernier, notre propre question nous
-        // reviendrait et compterait pour une réponse.
+        // An answer carries the number asked for and the flag that says
+        // it is one. Without the flag, our own question would come back
+        // to us and count as an answer.
         let mut said = question(0x1234);
         assert!(!answers(&said, 0x1234), "la question n'est pas sa réponse");
         said[2] |= 0x80;
