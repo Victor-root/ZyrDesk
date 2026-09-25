@@ -631,6 +631,31 @@ async fn a_computer_is_answered_before_any_session_opens() {
 }
 
 #[tokio::test]
+async fn a_refused_opening_says_why_though_the_connection_goes_at_once() {
+    // An engine that cannot be brought up is refused, and the connection
+    // is let go of the moment the refusal is said: the reason still has
+    // to reach the far end, where it is all anyone will read.
+    let (host_connection, client_connection, _endpoints) = connected().await;
+    let far: Arc<dyn Answers> = Arc::new(FarComputer::default());
+    let refusing = async move {
+        let opening = aside::until_a_session_opens(&host_connection, far, None)
+            .await
+            .unwrap();
+        opening
+            .refused("le moteur s'est arrêté avant de rejoindre sa liaison")
+            .await
+            .unwrap();
+        drop(host_connection);
+    };
+    let ((), asked) = before_the_end(async {
+        tokio::join!(refusing, aside::ask_to_open(&client_connection, SERVED))
+    })
+    .await;
+    let refusal = asked.unwrap_err().to_string();
+    assert!(refusal.contains("s'est arrêté"), "{refusal}");
+}
+
+#[tokio::test]
 async fn ctrl_alt_del_the_speakers_and_the_lock_travel_on_the_product_s_own_channel() {
     // Windows keeps these for itself at both ends: they cross between
     // the two halves of ZyrDesk, and no engine knows anything about them.

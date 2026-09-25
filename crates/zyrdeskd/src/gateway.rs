@@ -76,6 +76,15 @@ const AUTHORIZED_REFRESH: Duration = Duration::from_secs(5);
 /// far computer is told so rather than left waiting.
 const ENGINE_PATIENCE: Duration = Duration::from_secs(10);
 
+/// How often an engine being waited for on its link is looked at, in
+/// case it has already gone.
+///
+/// An engine that falls over as it starts, on an FFmpeg it cannot load
+/// for instance, never reaches its link: without looking, the far
+/// computer waited the whole of the patience above for a refusal that
+/// was known in the first second.
+const ENGINE_LOOKED_AT: Duration = Duration::from_millis(50);
+
 /// How long an engine whose link has closed is given to go by itself.
 ///
 /// What it does in that time is let go of every key and button it was
@@ -101,6 +110,9 @@ pub trait Launched: Send {
     /// The process, as the system numbers it: what the other end of the
     /// engine's link has to be.
     fn process(&self) -> u32;
+
+    /// Whether it has gone already, asked without waiting.
+    fn gone(&self) -> bool;
 
     /// Waits at most that long for it to go by itself, and says with
     /// which code. Nothing when it had to be taken.
@@ -835,6 +847,7 @@ pub struct Gateway {
     /// Where the junction this door stands on is held for the account,
     /// and taken back when the door closes.
     door: Door,
+    log: Log,
 }
 
 /// The sessions this door has taken in, as the rest of the service needs
@@ -1006,6 +1019,7 @@ impl Gateway {
             closing,
             sessions,
             door,
+            log: log.about(TAG),
         })
     }
 
@@ -1013,13 +1027,32 @@ impl Gateway {
     ///
     /// Blocks the calling thread, which must not be one of the runtime's:
     /// it is the supervisor's, which has nothing else to do meanwhile.
+    ///
+    /// What has not gone within the patience is taken, and waited for
+    /// until it is: left running, it would go on holding the port the
+    /// next door opens on, and the engines of its sessions with it.
+    ///
+    /// The patience is counted inside the runtime, the only place its
+    /// timers exist: one made on this thread brought the whole service
+    /// down every time the door closed.
     pub fn close(mut self) {
         let _ = self.closing.send(true);
-        if let Some(serving) = self.serving.take() {
-            let _ = self
-                .runtime
-                .block_on(tokio::time::timeout(CLOSING_PATIENCE, serving));
-        }
+        let Some(mut serving) = self.serving.take() else {
+            return;
+        };
+        self.runtime.block_on(async {
+            if tokio::time::timeout(CLOSING_PATIENCE, &mut serving)
+                .await
+                .is_err()
+            {
+                self.log.write(&format!(
+                    "sessions still letting their engine go after {} s were taken with the door",
+                    CLOSING_PATIENCE.as_secs()
+                ));
+                serving.abort();
+                let _ = serving.await;
+            }
+        });
     }
 
     /// Whether somebody is being served right this moment.
@@ -1304,9 +1337,23 @@ async fn bring_up_the_engine(
         "the engine of this session was started, process {process}, and is waited for on its link"
     ));
 
-    let link = match tokio::time::timeout(ENGINE_PATIENCE, listener.accept()).await {
-        Ok(Ok(link)) => link,
-        Ok(Err(e)) => {
+    let accepting = tokio::time::timeout(ENGINE_PATIENCE, listener.accept());
+    tokio::pin!(accepting);
+    let mut looking = tokio::time::interval(ENGINE_LOOKED_AT);
+    let accepted = loop {
+        tokio::select! {
+            // An engine that reached its link and went in the same
+            // instant came: why it went is on its link.
+            biased;
+            accepted = &mut accepting => break Some(accepted),
+            _ = looking.tick() => if launched.gone() {
+                break None;
+            },
+        }
+    };
+    let link = match accepted {
+        Some(Ok(Ok(link))) => link,
+        Some(Ok(Err(e))) => {
             let refused = format!(
                 "le moteur n'a pas pu rejoindre sa liaison : {}",
                 with_its_code(&e)
@@ -1314,12 +1361,16 @@ async fn bring_up_the_engine(
             let_the_engine_go(launched, log).await;
             return Err(refused);
         }
-        Err(_) => {
+        Some(Err(_)) => {
             let_the_engine_go(launched, log).await;
             return Err(format!(
                 "le moteur n'a pas rejoint sa liaison en {} secondes",
                 ENGINE_PATIENCE.as_secs()
             ));
+        }
+        None => {
+            let_the_engine_go(launched, log).await;
+            return Err("le moteur s'est arrêté avant de rejoindre sa liaison".to_string());
         }
     };
     // The name of a link is no secret to whoever may open one, the
@@ -1719,7 +1770,7 @@ mod tests {
     }
 
     struct StoodIn {
-        gone: std::sync::mpsc::Receiver<()>,
+        thread: std::thread::JoinHandle<()>,
         let_go: Arc<AtomicBool>,
     }
 
@@ -1729,8 +1780,7 @@ mod tests {
 
             let link = link.to_string();
             let told = self.told.clone();
-            let (going, gone) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
+            let thread = std::thread::spawn(move || {
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -1767,10 +1817,9 @@ mod tests {
                         }
                     }
                 });
-                let _ = going.send(());
             });
             Ok(Box::new(StoodIn {
-                gone,
+                thread,
                 let_go: self.let_go.clone(),
             }))
         }
@@ -1783,9 +1832,46 @@ mod tests {
             std::process::id()
         }
 
+        fn gone(&self) -> bool {
+            self.thread.is_finished()
+        }
+
         fn let_go(self: Box<Self>, within: Duration) -> io::Result<Option<u32>> {
             self.let_go.store(true, Ordering::Relaxed);
-            Ok(self.gone.recv_timeout(within).ok().map(|()| 0))
+            let deadline = std::time::Instant::now() + within;
+            while !self.gone() {
+                if std::time::Instant::now() >= deadline {
+                    return Ok(None);
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok(Some(0))
+        }
+    }
+
+    /// An engine that goes before it ever reaches its link, as one that
+    /// cannot load FFmpeg does.
+    struct GoesAtOnce;
+
+    struct WentAtOnce;
+
+    impl Launcher for GoesAtOnce {
+        fn launch(&self, _link: &str) -> io::Result<Box<dyn Launched>> {
+            Ok(Box::new(WentAtOnce))
+        }
+    }
+
+    impl Launched for WentAtOnce {
+        fn process(&self) -> u32 {
+            std::process::id()
+        }
+
+        fn gone(&self) -> bool {
+            true
+        }
+
+        fn let_go(self: Box<Self>, _within: Duration) -> io::Result<Option<u32>> {
+            Ok(Some(3))
         }
     }
 
@@ -1799,12 +1885,23 @@ mod tests {
         .expect("never happened");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn a_session_brings_its_engine_up_and_lets_it_go_at_its_end() {
-        use zyr_control::link::{Channel, connect};
+    /// One session through this door, its engine started by `launcher`,
+    /// on a real connection over loopback, and the far computer's end of
+    /// that connection.
+    struct Served {
+        session: JoinHandle<()>,
+        connection: Connection,
+        machine: Machine,
+        folder: PathBuf,
+        /// What the connection stands on, and what keeps the door from
+        /// closing under the session.
+        _standing: (TunnelEndpoint, TunnelEndpoint, watch::Sender<bool>),
+    }
+
+    async fn a_session_served_by(launcher: Arc<dyn Launcher>, what: &str) -> Served {
         use zyr_transport::{Marking, MediaProfile};
 
-        let (machine, folder) = machine("session");
+        let (machine, folder) = machine(what);
         let log = Log::open(&folder.join("service.log")).unwrap();
         let this = Arc::new(Identity::generate().unwrap());
         let far = Identity::generate().unwrap();
@@ -1830,25 +1927,39 @@ mod tests {
             towards.connect(junction.local_address().unwrap())
         );
 
-        let stand_in = Arc::new(StandIn::default());
         let door = Arc::new(AtTheDoor {
             sessions: Arc::default(),
             machine: machine.clone(),
             fingerprint: this.fingerprint(),
-            launcher: stand_in.clone(),
+            launcher,
             log: log.clone(),
         });
-        let (_closing, closed) = watch::channel(false);
-        let session = tokio::spawn(one_session(
-            taken.unwrap(),
-            junction.clone(),
-            door,
-            closed,
-            log,
-        ));
+        let (closing, closed) = watch::channel(false);
+        let session = tokio::spawn(one_session(taken.unwrap(), junction, door, closed, log));
+        Served {
+            session,
+            connection: reached.unwrap(),
+            machine,
+            folder,
+            _standing: (endpoint, towards, closing),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_session_brings_its_engine_up_and_lets_it_go_at_its_end() {
+        use zyr_control::link::{Channel, connect};
+        use zyr_transport::MediaProfile;
+
+        let stand_in = Arc::new(StandIn::default());
+        let Served {
+            session,
+            connection,
+            machine,
+            folder,
+            _standing,
+        } = a_session_served_by(stand_in.clone(), "session").await;
 
         // The first word of the session, answered once its engine is up.
-        let connection = reached.unwrap();
         let asked = MediaProfile {
             bits_per_second: 30_000_000,
             frames_per_second: 60,
@@ -1912,6 +2023,97 @@ mod tests {
             .unwrap();
         assert!(stand_in.let_go.load(Ordering::Relaxed));
         drop(tunnel);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_engine_that_goes_before_its_link_is_refused_at_once() {
+        let served = a_session_served_by(Arc::new(GoesAtOnce), "gone").await;
+
+        // Told why, and long before the patience a silent engine is given
+        // has run out.
+        let refusal = tokio::time::timeout(
+            ENGINE_PATIENCE / 5,
+            aside::ask_to_open(&served.connection, zyr_transport::MediaProfile::default()),
+        )
+        .await
+        .expect("the refusal waited out the engine's patience")
+        .unwrap_err()
+        .to_string();
+        assert!(refusal.contains("s'est arrêté"), "{refusal}");
+        tokio::time::timeout(Duration::from_secs(10), served.session)
+            .await
+            .expect("the session never ended")
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&served.folder);
+    }
+
+    /// A door standing on nothing but `serving`, the task that holds its
+    /// sessions, told to close through `closing`.
+    fn a_door_holding(
+        runtime: &tokio::runtime::Runtime,
+        serving: JoinHandle<()>,
+        closing: watch::Sender<bool>,
+        what: &str,
+    ) -> (Gateway, PathBuf) {
+        let (machine, folder) = machine(what);
+        let gateway = Gateway {
+            runtime: runtime.handle().clone(),
+            tasks: Vec::new(),
+            serving: Some(serving),
+            closing,
+            sessions: Arc::default(),
+            door: machine.door.clone(),
+            log: Log::open(&folder.join("service.log")).unwrap(),
+        };
+        (gateway, folder)
+    }
+
+    #[test]
+    fn a_door_closes_as_soon_as_its_sessions_have_gone() {
+        // Closed from a thread outside the runtime, as the supervisor
+        // closes it.
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (closing, mut closed) = watch::channel(false);
+        let serving = runtime.spawn(async move {
+            let _ = closed.wait_for(|closing| *closing).await;
+        });
+        let (gateway, folder) = a_door_holding(&runtime, serving, closing, "closed");
+
+        let started = std::time::Instant::now();
+        gateway.close();
+        assert!(started.elapsed() < CLOSING_PATIENCE);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_door_that_closes_takes_what_would_not_go_in_time() {
+        /// Says when it is dropped, which is when its task is.
+        struct Dropped(Arc<AtomicBool>);
+
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let stuck = Dropped(dropped.clone());
+        // A session that never lets its engine go, whatever it is told.
+        let serving = runtime.spawn(async move {
+            let _stuck = stuck;
+            std::future::pending::<()>().await;
+        });
+        let (closing, _closed) = watch::channel(false);
+        let (gateway, folder) = a_door_holding(&runtime, serving, closing, "closing");
+
+        let started = std::time::Instant::now();
+        gateway.close();
+        assert!(started.elapsed() >= CLOSING_PATIENCE);
+        // Taken with the door rather than left running behind it, holding
+        // the port the next door opens on.
+        assert!(dropped.load(Ordering::Relaxed));
         let _ = std::fs::remove_dir_all(&folder);
     }
 }

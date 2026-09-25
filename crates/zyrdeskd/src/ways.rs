@@ -1267,6 +1267,12 @@ async fn tell_the_player(
     log: Log,
 ) {
     let mut every = tokio::time::interval(TELLING);
+    // Once a second at most, even after a stall: what the player missed
+    // meanwhile is stale, and is not worth a burst.
+    every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // What the player says that the service has no use for is written
+    // once: it could say it as fast as its link carries.
+    let mut already_written = false;
     loop {
         tokio::select! {
             _ = every.tick() => {
@@ -1293,11 +1299,15 @@ async fn tell_the_player(
                 }
             }
             said = service.from_link.recv() => match said {
-                Some(said) => log.write(&format!(
-                    "way towards {host}: the player said something the service has no use for \
-                     ({} bytes)",
-                    said.len()
-                )),
+                Some(said) if !already_written => {
+                    already_written = true;
+                    log.write(&format!(
+                        "way towards {host}: the player said something the service has no use \
+                         for ({} bytes), and what else it says of the kind goes unwritten",
+                        said.len()
+                    ));
+                }
+                Some(_) => {}
                 None => return,
             },
         }

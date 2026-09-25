@@ -15,6 +15,7 @@
 use std::fmt;
 use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -148,6 +149,11 @@ pub const A_PIECE: usize = 256 * 1024;
 /// channel uses one: a message that names what it does not carry and a
 /// message that lost a piece on the way must not look alike.
 const NONE: &str = "none";
+
+/// How long a refusal is given to reach the far end before its
+/// connection goes: a few round trips of the worst road a session runs
+/// on.
+const REFUSAL_DELIVERED: Duration = Duration::from_secs(2);
 
 /// What the host side answers on ZyrDesk's own channel.
 ///
@@ -1118,9 +1124,19 @@ impl Opening {
         say(self.answer, Ok(Told::Opened)).await
     }
 
-    /// Tells the far end why it is not, in words written to be read.
+    /// Tells the far end why it is not, in words written to be read, and
+    /// waits until it has them.
+    ///
+    /// A refused session is a connection let go of the moment this
+    /// returns, and a connection let go of takes with it whatever it had
+    /// not delivered yet: without the wait, the far end read « connection
+    /// lost » instead of the one sentence that says what went wrong here.
+    /// Bounded, for a far end that stopped answering.
     pub async fn refused(self, reason: &str) -> io::Result<()> {
-        say(self.answer, Err(reason.to_string())).await
+        let delivered = self.answer.stopped();
+        say(self.answer, Err(reason.to_string())).await?;
+        let _ = tokio::time::timeout(REFUSAL_DELIVERED, delivered).await;
+        Ok(())
     }
 }
 
@@ -1324,14 +1340,14 @@ async fn attended(question: Question, answering: Arc<dyn Answers>) -> Result<Tol
         // for the length of a session, and handing each one to another
         // thread would cost more than the answer.
         Question::Pointer => answering.pointer().map(|shape| Told::Pointer { shape }),
-        // Off it as well: the list is kept under a lock the engine's own
-        // messages take too.
+        // Off it as well: what is answered is written down in the
+        // journal, which is a disk.
         Question::Screens => tokio::task::spawn_blocking(move || answering.screens())
             .await
             .map_err(|e| format!("les écrans n'ont pas pu être lus : {e}"))?
             .map(|listed| Told::Screens { listed }),
-        // And off it too: telling the engine may wait for room on its
-        // link.
+        // And off it too: the engine is told without waiting, and the
+        // choice is written down in the journal, which is a disk.
         Question::FilmThisScreen { id } => {
             tokio::task::spawn_blocking(move || answering.film_this_screen(id))
                 .await

@@ -16,12 +16,20 @@ use zyr_transport::Bytes;
 
 use crate::channel::DatagramChannel;
 
-/// Most payload bytes waiting at once.
+/// Most bytes waiting at once, each datagram weighing what [`weight`]
+/// says.
 ///
 /// Well over a key frame at the highest rate offered, so a burst never
 /// loses a piece of itself while the link is merely busy; the link drains
 /// a gigabyte a second, so what this holds is a few milliseconds of it.
 pub const ROOM: usize = 4 * 1024 * 1024;
+
+/// What one datagram weighs while it waits: its payload, and its place
+/// in the queue. The place counts too, or datagrams carrying nothing
+/// would weigh nothing and pile up without end.
+fn weight(payload: &Bytes) -> usize {
+    payload.len() + std::mem::size_of::<(DatagramChannel, Bytes)>()
+}
 
 /// Datagrams bound for the link, oldest first.
 #[derive(Debug, Default)]
@@ -43,13 +51,13 @@ impl DatagramQueue {
         let mut dropped = 0;
         {
             let mut waiting = self.waiting.lock().expect("datagrammes en attente");
-            waiting.bytes += payload.len();
+            waiting.bytes += weight(&payload);
             waiting.datagrams.push_back((channel, payload));
             while waiting.bytes > ROOM {
                 let Some((_, oldest)) = waiting.datagrams.pop_front() else {
                     break;
                 };
-                waiting.bytes -= oldest.len();
+                waiting.bytes -= weight(&oldest);
                 dropped += 1;
             }
         }
@@ -67,7 +75,7 @@ impl DatagramQueue {
             {
                 let mut waiting = self.waiting.lock().expect("datagrammes en attente");
                 if let Some((channel, payload)) = waiting.datagrams.pop_front() {
-                    waiting.bytes -= payload.len();
+                    waiting.bytes -= weight(&payload);
                     return (channel, payload);
                 }
             }
@@ -106,7 +114,7 @@ mod tests {
     async fn a_full_queue_throws_the_oldest_away() {
         let queue = DatagramQueue::default();
         let size = 1200;
-        let fits = ROOM / size;
+        let fits = ROOM / weight(&datagram(size, 0));
         for turn in 0..fits + 5 {
             let dropped = queue.push(DatagramChannel::Video, datagram(size, (turn % 251) as u8));
             assert_eq!(dropped, u64::from(turn >= fits), "turn {turn}");
@@ -114,6 +122,19 @@ mod tests {
         // What is left starts five datagrams in: the newest are kept.
         let (_, first) = queue.pop().await;
         assert_eq!(first[0], 5);
+    }
+
+    #[tokio::test]
+    async fn datagrams_carrying_nothing_still_fill_the_queue() {
+        // A far end sending empty datagrams to a player that has stopped
+        // reading: they are thrown away like any other, rather than
+        // piling up for as long as the player is gone.
+        let queue = DatagramQueue::default();
+        let fits = ROOM / weight(&Bytes::new());
+        for _ in 0..fits {
+            assert_eq!(queue.push(DatagramChannel::Audio, Bytes::new()), 0);
+        }
+        assert_eq!(queue.push(DatagramChannel::Audio, Bytes::new()), 1);
     }
 
     #[tokio::test]

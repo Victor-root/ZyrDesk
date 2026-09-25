@@ -286,6 +286,13 @@ impl Launched for SessionProcess {
         self.identifier
     }
 
+    fn gone(&self) -> bool {
+        // Safe: the handle stays valid for as long as this structure, and
+        // a wait of no time at all only looks. A wait that fails says
+        // nothing about the process, which is then taken as still there.
+        unsafe { WaitForSingleObject(self.process.0, 0) == WAIT_OBJECT_0 }
+    }
+
     fn let_go(self: Box<Self>, within: Duration) -> io::Result<Option<u32>> {
         // Safe: the handle stays valid for as long as this structure, and
         // the wait is bounded.
@@ -1389,6 +1396,28 @@ mod tests {
         let said = std::fs::read_to_string(&output).unwrap();
         assert!(said.contains("born here"), "{said:?}");
         let _ = std::fs::remove_file(&output);
+    }
+
+    #[test]
+    fn a_process_that_went_is_seen_gone_without_being_waited_for() {
+        let lingering_output = scratch("lingering");
+        let lingering = born(LINGERING, &lingering_output);
+        assert!(!lingering.gone(), "a process still running was seen gone");
+        let _ = Box::new(lingering).let_go(Duration::ZERO);
+
+        let quick_output = scratch("quick");
+        let quick = born("exit 3", &quick_output);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !quick.gone() {
+            assert!(
+                Instant::now() < deadline,
+                "a process that went was never seen gone"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(Box::new(quick).let_go(Duration::ZERO).unwrap(), Some(3));
+        let _ = std::fs::remove_file(&lingering_output);
+        let _ = std::fs::remove_file(&quick_output);
     }
 
     #[test]

@@ -344,6 +344,17 @@ fn say_how_far(coming: &mut Coming, over: bool, log: &Log) {
 mod tests {
     use super::*;
 
+    /// The transfer under way is one for the whole service, and so is
+    /// the folder it lands in: two of these tests at once are two pastes
+    /// fighting over one transfer, and each fails the other.
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+    fn alone() -> std::sync::MutexGuard<'static, ()> {
+        ONE_AT_A_TIME
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn a_log(name: &str) -> (Log, PathBuf) {
         let folder = std::env::temp_dir().join(format!(
             "zyrdeskd-transfer-{}-{name}",
@@ -372,6 +383,7 @@ mod tests {
 
     #[test]
     fn a_transfer_moves_file_by_file_and_finishes() {
+        let _alone = alone();
         let (log, folder) = a_log("aller");
         let listed = Listing::of(vec![
             Listed::new("un.txt", 3).unwrap(),
@@ -412,6 +424,7 @@ mod tests {
         // Whoever notices the paste notices it at every turn of their
         // loop: without this, the transfer would start over four times a
         // second and never get past its first piece.
+        let _alone = alone();
         let (log, folder) = a_log("deux-fois");
         // A full piece of a longer file, so that the first piece does
         // not finish the transfer.
@@ -446,6 +459,7 @@ mod tests {
         // A file of one full piece and three bytes: full, because a piece
         // shorter than what was asked for says the file has ended, and
         // what is wanted here is a first piece that does not say so.
+        let _alone = alone();
         let (log, folder) = a_log("decale");
         let whole = A_PIECE as u64 + 3;
         let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
@@ -473,6 +487,7 @@ mod tests {
         // A file that shrank between the copy and the paste: the short
         // piece says it has ended, and without that it would be asked
         // for again forever.
+        let _alone = alone();
         let (log, folder) = a_log("maigri");
         let listed = Listing::of(vec![Listed::new("un.txt", 4_000_000).unwrap()]);
         coming_in(a_copy("maigri"), &listed, &log).unwrap();
@@ -490,6 +505,7 @@ mod tests {
         // transfer tied to the first is four gigabytes thrown away at
         // eighty per cent for a hiccup: what decides is the last piece
         // received, never the session.
+        let _alone = alone();
         let (log, folder) = a_log("hoquet");
         let whole = A_PIECE as u64 + 3;
         let listed = Listing::of(vec![Listed::new("un.txt", whole).unwrap()]);
@@ -516,6 +532,7 @@ mod tests {
     fn without_a_transfer_nothing_is_wanted_and_nothing_is_drawn() {
         // This is what a computer where nobody is pasting answers, and
         // it is what tells the other end it may stop sending.
+        let _alone = alone();
         let (log, folder) = a_log("rien");
         forget(&log);
         assert_eq!(what_is_still_wanted(), None);
