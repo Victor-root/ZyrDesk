@@ -277,30 +277,7 @@ unsafe extern "system" fn answers(
         WM_SIZE => {
             say_whether_it_goes_down_or_up(holding);
             let (width, height) = ((with & 0xFFFF) as i32, ((with >> 16) & 0xFFFF) as i32);
-            crate::video::fit(width, height);
-            let inside = crate::home::its_canvas();
-            if inside != 0 {
-                // SAFETY: a window of ours, laid over the inside of
-                // the one that has just changed size.
-                unsafe {
-                    SetWindowPos(
-                        inside as windows_sys::Win32::Foundation::HWND,
-                        std::ptr::null_mut(),
-                        0,
-                        0,
-                        width,
-                        height,
-                        SWP_NOACTIVATE | SWP_NOZORDER,
-                    )
-                };
-            }
-            // Put off to the next turn and not done here: holding it
-            // to its shape resizes it, which would bring this very
-            // message back while it is being answered.
-            if let Some(app) = program() {
-                let held = app.clone();
-                let _ = app.run_on_main_thread(move || crate::picture::hold_the_shape(&held));
-            }
+            lay_out(width, height);
             0
         }
         // What it never goes below, counted on the screen it occupies:
@@ -373,6 +350,49 @@ unsafe extern "system" fn answers(
 /// Where the window stood the last time it was said.
 #[cfg(windows)]
 static MINIMIZED: AtomicBool = AtomicBool::new(false);
+
+/// Lays what the window carries over an inside of that size: the
+/// picture of a session first, since it is what is looked at, then the
+/// home canvas.
+#[cfg(windows)]
+fn lay_out(width: i32, height: i32) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos};
+
+    crate::video::fit(width, height);
+    let inside = crate::home::its_canvas();
+    if inside != 0 {
+        // SAFETY: a window of ours, laid over the inside of the one
+        // that has just changed size.
+        unsafe {
+            SetWindowPos(
+                inside as windows_sys::Win32::Foundation::HWND,
+                std::ptr::null_mut(),
+                0,
+                0,
+                width,
+                height,
+                SWP_NOACTIVATE | SWP_NOZORDER,
+            )
+        };
+    }
+    // Put off to the next turn and not done here: holding it to its
+    // shape resizes it, which would bring WM_SIZE back while it is
+    // being answered.
+    if let Some(app) = program() {
+        let held = app.clone();
+        let _ = app.run_on_main_thread(move || crate::picture::hold_the_shape(&held));
+    }
+}
+
+/// The same, from the inside the window has now, for the changes of
+/// frame that come without a WM_SIZE.
+#[cfg(windows)]
+fn lay_out_the_inside() {
+    let (width, height) = inside();
+    if let (Ok(width), Ok(height)) = (i32::try_from(width), i32::try_from(height)) {
+        lay_out(width, height);
+    }
+}
 
 /// Says when the window goes down into the taskbar and when it comes back
 /// up from it, with what holds the front at that moment.
@@ -762,11 +782,19 @@ pub fn take_the_screen(whole: bool) {
     };
     // SAFETY: the system's structure, given back as it was taken.
     let place: WINDOWPLACEMENT = unsafe { std::mem::transmute(kept) };
+    // The frame is counted again before the place is given back, and not
+    // after. A recount that keeps the size changes the inside without the
+    // system saying so: no WM_SIZE follows a move that asked for none, and
+    // the picture, which is sized from that message, stayed as large as
+    // the inside without a frame until the window was next resized by
+    // hand. Given back afterwards, the place is a real change of size,
+    // measured with the frame already there, and its WM_SIZE carries the
+    // right inside.
+    //
     // SAFETY: a window of ours, given back its frame and then its place.
     unsafe {
         SetWindowLongPtrW(hwnd, GWL_STYLE, style);
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, others);
-        SetWindowPlacement(hwnd, &place);
         SetWindowPos(
             hwnd,
             std::ptr::null_mut(),
@@ -780,7 +808,12 @@ pub fn take_the_screen(whole: bool) {
                 | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOSIZE
                 | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOZORDER,
         );
+        SetWindowPlacement(hwnd, &place);
     }
+    // Said once more from the inside as it now is: a place given back
+    // that happens to match the size the window already had brings no
+    // WM_SIZE either.
+    lay_out_the_inside();
 }
 
 #[cfg(not(windows))]
