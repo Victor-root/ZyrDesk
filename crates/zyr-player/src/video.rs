@@ -441,7 +441,7 @@ impl<P: Presenter> Video<P> {
         }
         if let Some(turn) = self.pacer.due(now) {
             self.unshown(now, turn.unshown);
-            self.show(turn.picture, turn.refresh, now);
+            self.show(turn.picture, turn.due, now);
         }
         self.publish();
         self.flow.look(now);
@@ -580,9 +580,9 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    /// Draws a picture, meant for that refresh of the screen when it was
-    /// paced.
-    fn show(&mut self, ready: Ready, refresh: Option<u64>, now: Instant) {
+    /// Draws a picture, meant for the refresh of the screen `due` then
+    /// when it was paced.
+    fn show(&mut self, ready: Ready, due: Option<Instant>, now: Instant) {
         let Ready {
             picture,
             captured_us,
@@ -598,7 +598,7 @@ impl<P: Presenter> Video<P> {
                     tally.since_capture(captured_us, done)
                 };
                 let screen = self.presenter.displayed();
-                self.pacer.after(refresh, done, screen.as_ref());
+                self.pacer.after(due, done, screen.as_ref());
                 self.flow
                     .presented(whole, started, done, since_capture, screen);
                 self.counters.shown += 1;

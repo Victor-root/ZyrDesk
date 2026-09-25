@@ -53,6 +53,16 @@
 //! neither. The screen has changed its rate only when the newest steps
 //! from one refresh to the next agree on another length.
 //!
+//! A refresh is known by when it is, never by the number the system
+//! gives it. A screen left idle between two pictures can pass over a
+//! refresh in its count, as the laptop's did after every stall: counted,
+//! each refresh after it would be taken for the one before, one would go
+//! by with the picture before shown again, and every picture after would
+//! come a refresh late. So the refreshes between two the system timed
+//! are counted from the time between them, and when its count and its
+//! clock disagree, what it says of the pictures shown by then is not
+//! judged.
+//!
 //! Until the screen has said when its refreshes are, a picture is
 //! presented as soon as it is decoded, the newest replacing any not yet
 //! presented.
@@ -112,7 +122,7 @@ const TIMED_KEPT: usize = 128;
 
 /// The refreshes those must span before a refresh's length is measured
 /// from them rather than taken from the system.
-const MEASURED_OVER: u64 = 60;
+const MEASURED_OVER: u32 = 60;
 
 /// The newest refreshes timed that say, between them, when the newest
 /// was: each carried to it, the middle one counts.
@@ -130,58 +140,53 @@ const CHANGED_RATE: u32 = 5;
 /// A picture to present now.
 pub(crate) struct Turn<T> {
     pub(crate) picture: T,
-    /// The refresh it is meant for, once the screen's refreshes are
-    /// known.
-    pub(crate) refresh: Option<u64>,
+    /// When the refresh it is meant for is, once the screen's refreshes
+    /// are known.
+    pub(crate) due: Option<Instant>,
     /// Pictures never to be shown because of it: dropped while waiting,
     /// or presented for the same refresh and replaced before it.
     pub(crate) unshown: u64,
 }
 
-/// Refreshes of the screen: one the system timed, and how long each
-/// lasts.
+/// Refreshes of the screen: when one was, and how long each lasts.
 #[derive(Debug, Clone, Copy)]
 struct Refreshes {
-    count: u64,
     at: Instant,
     period: Duration,
 }
 
 impl Refreshes {
-    /// How long each refresh lasted between two the system timed.
-    fn length(from: (u64, Instant), to: (u64, Instant)) -> Option<Duration> {
-        let refreshes = u32::try_from(to.0.checked_sub(from.0)?)
-            .ok()
-            .filter(|refreshes| *refreshes > 0)?;
-        Some(to.1.checked_duration_since(from.1)? / refreshes)
-    }
-
-    /// When refresh `count` is, before or after the one timed.
-    fn when(&self, count: u64) -> Option<Instant> {
-        let apart = |refreshes: u64| {
+    /// When the last refresh at or before `at` was.
+    fn last_by(&self, at: Instant) -> Option<Instant> {
+        let period = self.period.as_nanos().max(1);
+        let refreshes = |refreshes: u128| {
             u32::try_from(refreshes)
                 .ok()
                 .and_then(|refreshes| self.period.checked_mul(refreshes))
         };
-        if count >= self.count {
-            self.at.checked_add(apart(count - self.count)?)
+        if at >= self.at {
+            self.at
+                .checked_add(refreshes((at - self.at).as_nanos() / period)?)
         } else {
-            self.at.checked_sub(apart(self.count - count)?)
+            self.at
+                .checked_sub(refreshes((self.at - at).as_nanos().div_ceil(period))?)
         }
     }
 
-    /// The last refresh at or before `at`.
-    fn last_by(&self, at: Instant) -> u64 {
-        let period = self.period.as_nanos().max(1);
-        if at >= self.at {
-            let refreshes = (at - self.at).as_nanos() / period;
-            self.count
-                .saturating_add(u64::try_from(refreshes).unwrap_or(u64::MAX))
-        } else {
-            let refreshes = (self.at - at).as_nanos().div_ceil(period);
-            self.count
-                .saturating_sub(u64::try_from(refreshes).unwrap_or(u64::MAX))
-        }
+    /// How many refreshes from `from` on to `to`.
+    fn apart(&self, from: Instant, to: Instant) -> Option<u32> {
+        counted(to.checked_duration_since(from)?, self.period)
+    }
+
+    /// Whether `one` and `other` are the same refresh: less than half a
+    /// refresh apart.
+    fn same(&self, one: Instant, other: Instant) -> bool {
+        one.max(other) - one.min(other) < self.period / 2
+    }
+
+    /// Whether `one` is a refresh after `other`.
+    fn later(&self, one: Instant, other: Instant) -> bool {
+        one > other && !self.same(one, other)
     }
 }
 
@@ -198,7 +203,8 @@ struct Waiting<T> {
 struct Pending {
     /// Its number among the surface's presents.
     id: u64,
-    refresh: u64,
+    /// When the refresh it was presented for is.
+    due: Instant,
     at: Instant,
 }
 
@@ -225,22 +231,29 @@ struct Second {
     apart: [u32; 4],
     /// What the screen said of the pictures presented for a refresh:
     /// shown at it, after it (and of those, how many had half a refresh
-    /// to spare all the same), before it.
+    /// to spare all the same), before it, or by a refresh its count and
+    /// its clock disagreed on, which leaves when they were shown unknown.
     on_time: u32,
     late: u32,
     late_anyway: u32,
     early: u32,
+    unjudged: u32,
 }
 
 /// Decoded pictures, each held until the window of its refresh.
 pub(crate) struct Pacer<T> {
     log: Log,
     refreshes: Option<Refreshes>,
-    /// The refreshes the system timed, each once, oldest first.
+    /// The refreshes the system timed, each once, oldest first, with the
+    /// number it gave them.
     timed: VecDeque<(u64, Instant)>,
+    /// The number the system gave the refresh it timed when its count
+    /// and its clock last disagreed: what it says of a picture shown by
+    /// then can be a refresh off.
+    disagreed: Option<u64>,
     waiting: VecDeque<Waiting<T>>,
-    /// The refresh the last picture was presented for.
-    served: Option<u64>,
+    /// When the refresh the last picture was presented for is.
+    served: Option<Instant>,
     /// Whether that picture was sent again by the host.
     served_repeat: bool,
     /// When the last picture was presented.
@@ -267,6 +280,7 @@ impl<T> Pacer<T> {
             log: log.about(TAG),
             refreshes: None,
             timed: VecDeque::with_capacity(TIMED_KEPT),
+            disagreed: None,
             waiting: VecDeque::new(),
             served: None,
             served_repeat: false,
@@ -330,17 +344,21 @@ impl<T> Pacer<T> {
             self.served_repeat = waiting.repeat;
             return Some(Turn {
                 picture: waiting.picture,
-                refresh: None,
+                due: None,
                 unshown: 0,
             });
         };
         if self.waiting.is_empty() {
             return None;
         }
-        let (refresh, opening) = self.turn(&refreshes, now)?;
-        let again = self.served == Some(refresh);
+        let (due, opening) = self.turn(&refreshes, now)?;
+        let again = self
+            .served
+            .is_some_and(|served| refreshes.same(served, due));
         if now < opening
-            || self.served.is_some_and(|served| served > refresh)
+            || self
+                .served
+                .is_some_and(|served| refreshes.later(served, due))
             || (again && !self.catching_up && !self.served_repeat)
         {
             return None;
@@ -351,7 +369,8 @@ impl<T> Pacer<T> {
             // shows, on purpose: not a miss. Either way the refresh is
             // taken back.
             unshown = 1;
-            self.pending.retain(|pending| pending.refresh != refresh);
+            self.pending
+                .retain(|pending| !refreshes.same(pending.due, due));
             if self.served_repeat {
                 self.second.gave_way += 1;
             } else {
@@ -365,18 +384,19 @@ impl<T> Pacer<T> {
             self.catching_up = false;
         }
         let waiting = self.waiting.pop_front()?;
-        let before_closed = refreshes
-            .when(refresh.saturating_sub(1))
-            .and_then(|before| before.checked_sub(self.cutoff_for(&refreshes) + EARLY_BY));
+        let before_closed =
+            due.checked_sub(refreshes.period + self.cutoff_for(&refreshes) + EARLY_BY);
         self.early(
             before_closed.is_some_and(|closed| waiting.ready <= closed),
             now,
         );
         if let Some(served) = self.served
-            && refresh > served
+            && refreshes.later(due, served)
         {
-            let apart = usize::try_from(refresh - served).unwrap_or(usize::MAX);
-            self.second.apart[apart.min(4) - 1] += 1;
+            let apart = refreshes
+                .apart(served, due)
+                .map_or(4, |apart| apart as usize);
+            self.second.apart[apart.clamp(1, 4) - 1] += 1;
         }
         if waiting.ready < opening {
             self.second.held += 1;
@@ -386,12 +406,12 @@ impl<T> Pacer<T> {
         self.second
             .waited
             .add(now.saturating_duration_since(waiting.ready));
-        self.served = Some(refresh);
+        self.served = Some(due);
         self.served_repeat = waiting.repeat;
         self.seconds.started(now);
         Some(Turn {
             picture: waiting.picture,
-            refresh: Some(refresh),
+            due: Some(due),
             unshown,
         })
     }
@@ -403,18 +423,19 @@ impl<T> Pacer<T> {
             return None;
         }
         let refreshes = self.refreshes?;
-        let (refresh, opening) = self.turn(&refreshes, now)?;
+        let (due, opening) = self.turn(&refreshes, now)?;
         match self.served {
-            Some(served) if served >= refresh => refreshes.when(served)?.checked_add(OPENING),
+            Some(served) if !refreshes.later(due, served) => served.checked_add(OPENING),
             _ => Some(opening),
         }
     }
 
-    /// A picture was presented at `presented`, for `refresh` when it was
-    /// paced, and `screen` is what the screen said right after.
+    /// A picture was presented at `presented`, for the refresh `due` then
+    /// when it was paced, and `screen` is what the screen said right
+    /// after.
     pub(crate) fn after(
         &mut self,
-        refresh: Option<u64>,
+        due: Option<Instant>,
         presented: Instant,
         screen: Option<&Displayed>,
     ) {
@@ -422,13 +443,13 @@ impl<T> Pacer<T> {
         let Some(screen) = screen else {
             return;
         };
-        if let Some(refresh) = refresh {
+        if let Some(due) = due {
             if self.pending.len() == MOST_PENDING {
                 self.pending.pop_front();
             }
             self.pending.push_back(Pending {
                 id: screen.presented,
-                refresh,
+                due,
                 at: presented,
             });
         }
@@ -450,19 +471,15 @@ impl<T> Pacer<T> {
         }
     }
 
-    /// The refresh a picture presented at `at` would be shown at, and
-    /// when the window for that refresh opens.
-    fn turn(&self, refreshes: &Refreshes, at: Instant) -> Option<(u64, Instant)> {
-        let mut refresh = refreshes.last_by(at).checked_add(1)?;
-        if at
-            >= refreshes
-                .when(refresh)?
-                .checked_sub(self.cutoff_for(refreshes))?
-        {
-            refresh += 1;
+    /// When the refresh a picture presented at `at` would be shown at is,
+    /// and when the window for that refresh opens.
+    fn turn(&self, refreshes: &Refreshes, at: Instant) -> Option<(Instant, Instant)> {
+        let mut due = refreshes.last_by(at)?.checked_add(refreshes.period)?;
+        if at >= due.checked_sub(self.cutoff_for(refreshes))? {
+            due = due.checked_add(refreshes.period)?;
         }
-        let opening = refreshes.when(refresh - 1)?.checked_add(OPENING)?;
-        Some((refresh, opening))
+        let opening = due.checked_sub(refreshes.period)?.checked_add(OPENING)?;
+        Some((due, opening))
     }
 
     /// How long before a refresh its window closes: as learnt, but always
@@ -494,6 +511,7 @@ impl<T> Pacer<T> {
     fn forget_the_screen(&mut self) {
         self.refreshes = None;
         self.timed.clear();
+        self.disagreed = None;
         self.served = None;
         self.served_repeat = false;
         self.pending.clear();
@@ -514,15 +532,24 @@ impl<T> Pacer<T> {
         {
             self.forget_the_screen();
         }
+        let newest = (screen.timed, screen.timed_at);
         if self
             .timed
             .back()
             .is_none_or(|&(count, _)| screen.timed > count)
         {
+            let period = self.refreshes.map_or(screen.refresh, |known| known.period);
+            if self
+                .timed
+                .back()
+                .is_some_and(|&last| disagree(last, newest, period))
+            {
+                self.disagreed = Some(screen.timed);
+            }
             if self.timed.len() == TIMED_KEPT {
                 self.timed.pop_front();
             }
-            self.timed.push_back((screen.timed, screen.timed_at));
+            self.timed.push_back(newest);
         }
         let Some(refreshes) = self.rhythm(screen.refresh) else {
             return;
@@ -532,7 +559,7 @@ impl<T> Pacer<T> {
             self.served = self
                 .presented_at
                 .and_then(|at| self.turn(&refreshes, at))
-                .map(|(refresh, _)| refresh);
+                .map(|(due, _)| due);
         }
         self.refreshes = Some(refreshes);
         self.resolve(screen, now);
@@ -551,7 +578,7 @@ impl<T> Pacer<T> {
     /// the middle one kept. A refresh the system misdated moves neither.
     fn rhythm(&mut self, reported: Duration) -> Option<Refreshes> {
         let period = self.period(reported);
-        let &(count, _) = self.timed.back()?;
+        let &(_, newest) = self.timed.back()?;
         if period.is_zero() {
             return None;
         }
@@ -560,20 +587,21 @@ impl<T> Pacer<T> {
             .iter()
             .rev()
             .take(PLACED_BY)
-            .filter_map(|&(timed, at)| {
-                let apart = u32::try_from(count - timed).ok()?;
+            .filter_map(|&(_, at)| {
+                let apart = counted(newest.checked_duration_since(at)?, period)?;
                 at.checked_add(period.checked_mul(apart)?)
             })
             .collect();
         let at = middle(&mut placed)?;
-        Some(Refreshes { count, at, period })
+        Some(Refreshes { at, period })
     }
 
     /// How long a refresh lasts: the middle of the lengths measured
     /// between refreshes timed half the ones kept apart, once those span
     /// [`MEASURED_OVER`] of them, and the system's word until then. The
-    /// middle of the newest steps overrules both when a fifth away: the
-    /// screen changed its rate, and what it timed before is let go of.
+    /// middle of the newest steps, by the system's own count, overrules
+    /// both when a fifth away: the screen changed its rate, and what it
+    /// timed before is let go of.
     fn period(&mut self, reported: Duration) -> Duration {
         let known = self.refreshes.map_or(reported, |known| known.period);
         let newest: Vec<(u64, Instant)> = self
@@ -585,7 +613,7 @@ impl<T> Pacer<T> {
             .collect();
         let mut steps: Vec<Duration> = newest
             .windows(2)
-            .filter_map(|pair| Refreshes::length(pair[1], pair[0]))
+            .filter_map(|pair| length(pair[1], pair[0]))
             .collect();
         if steps.len() >= STEPS_LEAST
             && let Some(step) = middle(&mut steps)
@@ -594,29 +622,48 @@ impl<T> Pacer<T> {
             self.timed.drain(..self.timed.len() - 1);
             return step;
         }
-        let (Some(&first), Some(&last)) = (self.timed.front(), self.timed.back()) else {
+        let (Some(&(_, first)), Some(&(_, last))) = (self.timed.front(), self.timed.back()) else {
             return known;
         };
-        if last.0 - first.0 < MEASURED_OVER {
+        if last.saturating_duration_since(first) < known * MEASURED_OVER {
             return known;
         }
         let half = self.timed.len() / 2;
         let mut lengths: Vec<Duration> = (0..half)
-            .filter_map(|index| Refreshes::length(self.timed[index], self.timed[index + half]))
+            .filter_map(|index| {
+                let apart = self.timed[index + half]
+                    .1
+                    .checked_duration_since(self.timed[index].1)?;
+                Some(apart / counted(apart, known).filter(|refreshes| *refreshes > 0)?)
+            })
             .collect();
         middle(&mut lengths).unwrap_or(known)
     }
 
     /// What the screen says of the presents waiting for its word.
     fn resolve(&mut self, screen: &Displayed, now: Instant) {
+        let Some(refreshes) = self.refreshes else {
+            return;
+        };
+        // When a picture was shown is worked out from the refresh the
+        // system timed, a number of refreshes back by its count: a
+        // refresh it passed over in between, or the one timed misdated by
+        // more than half a refresh, puts it a refresh off. Nothing is
+        // judged by such a refresh, nor by one before it.
+        let trusted = |counted: u64| self.disagreed.is_none_or(|disagreed| counted > disagreed);
+        let (shown_trusted, timed_trusted) = (trusted(screen.at_refresh), trusted(screen.timed));
         while let Some(pending) = self.pending.front().copied() {
             match screen.shown.cmp(&pending.id) {
                 Ordering::Equal => {
                     self.pending.pop_front();
-                    match screen.at_refresh.cmp(&pending.refresh) {
-                        Ordering::Equal => self.second.on_time += 1,
-                        Ordering::Greater => self.missed(pending, now),
-                        Ordering::Less => self.second.early += 1,
+                    if !shown_trusted {
+                        self.second.unjudged += 1;
+                    } else if refreshes.same(screen.at, pending.due) {
+                        self.second.on_time += 1;
+                    } else if screen.at > pending.due {
+                        self.missed(pending, now);
+                    } else {
+                        self.second.early += 1;
                     }
                 }
                 // Shown and followed between two looks, or replaced before
@@ -626,7 +673,9 @@ impl<T> Pacer<T> {
                 }
                 // Its refresh came and went with an older picture on the
                 // screen.
-                Ordering::Less if screen.timed >= pending.refresh => {
+                Ordering::Less
+                    if timed_trusted && !refreshes.later(pending.due, screen.timed_at) =>
+                {
                     self.pending.pop_front();
                     self.missed(pending, now);
                 }
@@ -638,14 +687,10 @@ impl<T> Pacer<T> {
     /// A picture did not make the refresh it was presented for.
     fn missed(&mut self, pending: Pending, now: Instant) {
         self.second.late += 1;
-        let Some(due) = self
-            .refreshes
-            .and_then(|refreshes| refreshes.when(pending.refresh))
-        else {
+        let Some(period) = self.refreshes.map(|known| known.period) else {
             return;
         };
-        let margin = due.saturating_duration_since(pending.at);
-        let period = self.refreshes.map_or(Duration::ZERO, |known| known.period);
+        let margin = pending.due.saturating_duration_since(pending.at);
         if margin >= period / 2 {
             // Late with half a refresh to spare: not the close but the
             // card or the system being slow. Nothing to learn from it.
@@ -678,7 +723,8 @@ impl<T> Pacer<T> {
                  newer ones piled up, {} dropped to take a refresh back, {} sent again that gave \
                  way to a newer one; refreshes from one picture to the next: {one} one, {two} \
                  two, {three} three, {more} more; the screen showed {} at their refresh, {} later \
-                 ({} of them presented with half a refresh to spare), {} sooner; {screen}",
+                 ({} of them presented with half a refresh to spare), {} sooner, {} not judged \
+                 as the screen's count and clock disagreed; {screen}",
                 second.at_once,
                 second.held,
                 second.waited,
@@ -690,9 +736,38 @@ impl<T> Pacer<T> {
                 second.late,
                 second.late_anyway,
                 second.early,
+                second.unjudged,
             )
         });
     }
+}
+
+/// How many refreshes of `period` make up `span`, to the nearest.
+fn counted(span: Duration, period: Duration) -> Option<u32> {
+    let period = period.as_nanos();
+    if period == 0 {
+        return None;
+    }
+    u32::try_from((span.as_nanos() + period / 2) / period).ok()
+}
+
+/// How long each refresh lasted between two the system timed, by its
+/// own count of them.
+fn length(from: (u64, Instant), to: (u64, Instant)) -> Option<Duration> {
+    let refreshes = u32::try_from(to.0.checked_sub(from.0)?)
+        .ok()
+        .filter(|refreshes| *refreshes > 0)?;
+    Some(to.1.checked_duration_since(from.1)? / refreshes)
+}
+
+/// Whether the system counted another number of refreshes between two it
+/// timed than the time between them holds: it passed over one in its
+/// count, or misdated one by more than half a refresh.
+fn disagree(from: (u64, Instant), to: (u64, Instant), period: Duration) -> bool {
+    let by_time =
+        to.1.checked_duration_since(from.1)
+            .and_then(|apart| counted(apart, period));
+    by_time.map(u64::from) != to.0.checked_sub(from.0)
 }
 
 /// The middle one of `values`, which it puts in order around it.
@@ -732,6 +807,10 @@ mod tests {
         /// Refreshes the system says came that many microseconds late, or
         /// early if fewer than nought.
         misdated: Vec<(u64, i64)>,
+        /// Refreshes the system's count passes over, as a screen left
+        /// idle between two pictures can: from each on, it counts one
+        /// fewer.
+        uncounted: Vec<u64>,
         deadline: Duration,
         /// Every present, and the picture it was.
         presents: Vec<(Instant, u32)>,
@@ -745,6 +824,7 @@ mod tests {
                 changed: None,
                 reported: Duration::from_nanos(period_ns),
                 misdated: Vec::new(),
+                uncounted: Vec::new(),
                 deadline,
                 presents: Vec::new(),
             }
@@ -768,6 +848,16 @@ mod tests {
                     from + ((at - self.refresh(from)).as_nanos() / period.as_nanos()) as u64
                 }
                 _ => ((at - self.start).as_nanos() / self.period.as_nanos()) as u64,
+            }
+        }
+
+        /// The refresh nearest `at`.
+        fn nearest(&self, at: Instant) -> u64 {
+            let before = self.last_by(at);
+            if self.refresh(before + 1) - at < at - self.refresh(before) {
+                before + 1
+            } else {
+                before
             }
         }
 
@@ -795,8 +885,19 @@ mod tests {
             refresh
         }
 
+        /// The number the system gives refresh `refresh`.
+        fn counted(&self, refresh: u64) -> u64 {
+            let passed_over = self
+                .uncounted
+                .iter()
+                .filter(|&&uncounted| uncounted <= refresh)
+                .count();
+            refresh - passed_over as u64
+        }
+
         /// What the system says at `now`, as Windows does: the last
-        /// present shown by the last refresh, and when that was.
+        /// present shown by the last refresh, and when that was, worked
+        /// out as the player does from the refresh it timed.
         fn displayed(&self, now: Instant) -> Option<Displayed> {
             let timed = self.last_by(now);
             let (index, &(at, _)) = self
@@ -805,14 +906,16 @@ mod tests {
                 .enumerate()
                 .rev()
                 .find(|(_, (at, _))| self.target(*at) <= timed)?;
-            let at_refresh = self.target(at);
+            let at_refresh = self.counted(self.target(at));
+            let timed_at = self.said_at(timed);
+            let timed = self.counted(timed);
             Some(Displayed {
                 presented: self.presents.len() as u64,
                 shown: index as u64 + 1,
                 at_refresh,
-                at: self.refresh(at_refresh),
+                at: timed_at - self.reported * (timed - at_refresh) as u32,
                 timed,
-                timed_at: self.said_at(timed),
+                timed_at,
                 refresh: self.reported,
                 compositor_missed: 0,
                 compositor_dropped: 0,
@@ -838,8 +941,9 @@ mod tests {
         pacer: Pacer<u32>,
         compositor: Compositor,
         late: Duration,
-        /// Every picture presented, for the refresh it was meant for.
-        presented: Vec<(u32, Option<u64>)>,
+        /// Every picture presented, for when the refresh it was meant for
+        /// is.
+        presented: Vec<(u32, Option<Instant>)>,
         unshown: u64,
         /// The pictures the host sent again, by number.
         repeats: Vec<usize>,
@@ -871,9 +975,9 @@ mod tests {
                 if let Some(turn) = self.pacer.due(now) {
                     self.unshown += turn.unshown;
                     self.compositor.presents.push((now, turn.picture));
-                    self.presented.push((turn.picture, turn.refresh));
+                    self.presented.push((turn.picture, turn.due));
                     let screen = self.compositor.displayed(now);
-                    self.pacer.after(turn.refresh, now, screen.as_ref());
+                    self.pacer.after(turn.due, now, screen.as_ref());
                     continue;
                 }
                 let woken = self.pacer.next_wakeup(now).map(|at| at + self.late);
@@ -1099,7 +1203,7 @@ mod tests {
         let mut meant: Vec<u64> = thread
             .presented
             .iter()
-            .filter_map(|(_, refresh)| *refresh)
+            .filter_map(|&(_, due)| Some(thread.compositor.nearest(due?)))
             .collect();
         let presents = meant.len();
         meant.dedup();
@@ -1181,7 +1285,7 @@ mod tests {
         let mut meant: Vec<u64> = thread
             .presented
             .iter()
-            .filter_map(|(_, refresh)| *refresh)
+            .filter_map(|&(_, due)| Some(thread.compositor.nearest(due?)))
             .collect();
         let presents = meant.len();
         meant.dedup();
@@ -1204,9 +1308,12 @@ mod tests {
         let start = Instant::now();
         let mut compositor = Compositor::new(start, SIXTY_HZ, Duration::from_millis(3));
         // Now and then a refresh said 7 ms late, and once two in a row said
-        // 9 ms early, as while the network was in trouble.
+        // 9 ms early, as while the network was in trouble; and once one said
+        // 9 ms late, more than half a refresh.
         compositor.misdated = (100..580).step_by(13).map(|count| (count, 7_000)).collect();
-        compositor.misdated.extend([(300, -9_000), (301, -9_000)]);
+        compositor
+            .misdated
+            .extend([(300, -9_000), (301, -9_000), (450, 9_000)]);
         let mut thread = Thread::new(compositor, Duration::from_millis(1), &journal.log);
         let decoded = arrivals(
             start,
@@ -1219,6 +1326,7 @@ mod tests {
             &decoded,
             start + Duration::from_secs(10) + Duration::from_millis(30),
         );
+        thread.pacer.look(start + Duration::from_secs(12));
         let steps = thread.steps(60, 598);
         assert!(steps.iter().all(|&step| step == 1), "{steps:?}");
         let period = thread.pacer.refreshes.map(|known| known.period);
@@ -1227,6 +1335,76 @@ mod tests {
                 < Duration::from_micros(20)),
             "{period:?}"
         );
+        // Nor is a picture shown at a misdated refresh taken for one late.
+        let written = journal.written();
+        assert!(written.contains(", 0 later ("), "{written}");
+        assert_eq!(thread.pacer.cutoff, CUTOFF);
+    }
+
+    #[test]
+    fn a_refresh_the_count_passes_over_during_a_stall_moves_nothing() {
+        let start = Instant::now();
+        // Decoded 9.5 ms after a refresh, give or take half a millisecond:
+        // presented at once, 7 ms before the refresh that shows it.
+        let mut decoded = arrivals(
+            start,
+            SIXTY_HZ,
+            Duration::from_micros(9_500),
+            Duration::from_micros(500),
+            600,
+        );
+        // Eight pictures held up 140 ms on the way.
+        let released = decoded[208];
+        for at in &mut decoded[200..208] {
+            *at = released;
+        }
+        let run = |until: Duration, log: &Log| {
+            let mut compositor = Compositor::new(start, SIXTY_HZ, Duration::from_millis(3));
+            // While nothing new reached the screen, its count passed over a
+            // refresh, as the laptop's did after each stall on the
+            // twenty-fifth of September.
+            compositor.uncounted = vec![205];
+            let mut thread = Thread::new(compositor, Duration::from_millis(1), log);
+            thread.run(&decoded, start + until);
+            thread
+        };
+        let sixty_hz = |period: Option<Duration>| {
+            period.is_some_and(|period| {
+                period.abs_diff(Duration::from_nanos(SIXTY_HZ)) < Duration::from_micros(20)
+            })
+        };
+        // A second after the stall, when most of the lengths measured span
+        // the refresh passed over, a refresh still lasts what it lasts.
+        let journal = testing::OwnLog::new("pacing-uncounted-second");
+        let period = run(Duration::from_millis(4_550), &journal.log)
+            .pacer
+            .refreshes
+            .map(|known| known.period);
+        assert!(sixty_hz(period), "{period:?}");
+
+        let journal = testing::OwnLog::new("pacing-uncounted");
+        let mut thread = run(
+            Duration::from_secs(10) + Duration::from_millis(30),
+            &journal.log,
+        );
+        thread.pacer.look(start + Duration::from_secs(12));
+        // Picture n is shown at refresh n + 2. After the stall the pictures
+        // go on one a refresh, none of them a refresh late.
+        let steps = thread.steps(212, 598);
+        assert!(steps.iter().all(|&step| step == 1), "{steps:?}");
+        let shown = thread.compositor.shown(0, 600);
+        assert_eq!(shown[300], Some(298));
+        // Nothing the screen said across the refresh it did not count is
+        // taken as a picture shown late or early, nor as a longer refresh.
+        let written = journal.written();
+        assert!(written.contains(", 0 later ("), "{written}");
+        assert!(
+            written.contains(", 0 sooner, 1 not judged as the screen's count and clock"),
+            "{written}"
+        );
+        assert_eq!(thread.pacer.cutoff, CUTOFF);
+        let period = thread.pacer.refreshes.map(|known| known.period);
+        assert!(sixty_hz(period), "{period:?}");
     }
 
     /// What the screen says when refresh `timed` was at `at`, the last
@@ -1255,7 +1433,9 @@ mod tests {
         assert_eq!(pacer.ready(7u32, at + Duration::from_millis(1), false), 0);
         let later = at + Duration::from_millis(2);
         pacer.after(None, later, Some(&said(2, 5, later)));
-        assert_eq!(pacer.refreshes.map(|known| known.count), Some(5));
+        // Counted afresh from the refresh just timed.
+        assert_eq!(pacer.timed.len(), 1);
+        assert_eq!(pacer.refreshes.map(|known| known.at), Some(later));
         assert_eq!(pacer.waiting.len(), 1);
     }
 
@@ -1288,7 +1468,7 @@ mod tests {
         assert_eq!(pacer.ready(2, now, false), 1);
         assert_eq!(pacer.next_wakeup(now), None);
         let turn = pacer.due(now).unwrap();
-        assert_eq!((turn.picture, turn.refresh, turn.unshown), (2, None, 0));
+        assert_eq!((turn.picture, turn.due, turn.unshown), (2, None, 0));
         assert!(pacer.due(now).is_none());
     }
 
@@ -1423,7 +1603,8 @@ mod tests {
         assert!(pacer.due(at + ms(12)).is_none());
         assert_eq!(pacer.ready(2, at + ms(14), false), 1);
         let turn = pacer.due(at + ms(18)).unwrap();
-        assert_eq!((turn.picture, turn.refresh), (2, Some(1_002)));
+        let two_refreshes_on = at + Duration::from_nanos(2 * SIXTY_HZ);
+        assert_eq!((turn.picture, turn.due), (2, Some(two_refreshes_on)));
         assert!(pacer.waiting.is_empty());
     }
 
