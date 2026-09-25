@@ -29,16 +29,16 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_ADAPTER_DESC1, DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_ACCESS_LOST,
     DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_NOT_CURRENTLY_AVAILABLE,
-    DXGI_ERROR_SESSION_DISCONNECTED, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO,
-    DXGI_OUTDUPL_POINTER_SHAPE_INFO, DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR,
-    DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR, DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME,
-    IDXGIAdapter1, IDXGIFactory1, IDXGIOutput1, IDXGIOutput5, IDXGIOutputDuplication,
-    IDXGIResource,
+    DXGI_ERROR_SESSION_DISCONNECTED, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_DESC,
+    DXGI_OUTDUPL_FRAME_INFO, DXGI_OUTDUPL_POINTER_SHAPE_INFO,
+    DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR, DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR,
+    DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME, IDXGIAdapter1, IDXGIFactory1, IDXGIOutput1,
+    IDXGIOutput5, IDXGIOutputDuplication, IDXGIResource,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
-use windows::core::{Interface, w};
+use windows::core::{IUnknown, Interface, w};
 use zyr_codec::{Frame, GpuVendor, Input, VideoEncoder};
 use zyr_media::service::Display;
 use zyr_proto::log::Log;
@@ -135,6 +135,9 @@ pub(super) struct DuplicatedScreen {
     generation: u64,
     /// Whether duplicating the newer way was refused and said so.
     newer_refused: bool,
+    /// The last duplication said to the log, so that the same one taken
+    /// up again after each desktop switch is said once.
+    described: String,
     filming: Option<Filming>,
     lost: Option<Lost>,
     latest: Option<Latest>,
@@ -161,9 +164,8 @@ impl DuplicatedScreen {
                 first_card(&factory).and_then(|(adapter, card)| Device::on(&adapter, &card, &log))
             }
         }
-        .map_err(|e| trouble(&log, e))?;
-        let converter =
-            Converter::new(&device.device, &device.context).map_err(|e| trouble(&log, e))?;
+        .map_err(trouble)?;
+        let converter = Converter::new(&device).map_err(trouble)?;
         if !converter.renders_nv12() {
             log.write(&format!(
                 "{} cannot draw into NV12 textures: pictures go to the encoders through memory",
@@ -179,6 +181,7 @@ impl DuplicatedScreen {
             converter,
             generation: 1,
             newer_refused: false,
+            described: String::new(),
             filming: None,
             lost: None,
             latest: None,
@@ -209,8 +212,13 @@ impl DuplicatedScreen {
     ) -> Result<Option<String>, ScreenError> {
         let output = &screen.output;
         if output.card.AdapterLuid != self.device.card {
-            self.remake_device(output)
-                .map_err(|e| trouble(&self.log, e))?;
+            self.remake_device(output).map_err(trouble)?;
+        }
+        // DXGI refuses a second duplication of a screen this process
+        // duplicates already (E_INVALIDARG): the one in hand is let go of
+        // first, whether the same screen or another is filmed next.
+        if let Some(filming) = &mut self.filming {
+            filming.duplication = None;
         }
         // Read again: a screen that changed its mode is somewhere else now.
         // SAFETY: a getter on a live output.
@@ -222,29 +230,27 @@ impl DuplicatedScreen {
         let started = Instant::now();
         let duplicated = loop {
             match self.duplicate(output) {
-                Ok(duplication) => break Ok(duplication),
+                Ok(duplicated) => break Ok(duplicated),
                 Err(_) if started.elapsed() < patience => thread::sleep(QUICKLY),
                 Err(e) => break Err(failed(&format!("duplicating {gdi}"), &e)),
             }
         };
-        let (duplication, refused) = match duplicated {
-            Ok(duplication) => {
+        let (duplication, rotation, refused) = match duplicated {
+            Ok((duplication, way)) => {
                 self.lost = None;
-                (Some(duplication), None)
+                // SAFETY: a getter on a live duplication.
+                let desc = unsafe { duplication.GetDesc() };
+                self.describe(&gdi, way, &desc);
+                (Some(duplication), quarter_turns(desc.Rotation.0), None)
             }
             Err(why) => {
                 match &mut self.lost {
                     Some(lost) => lost.last_refusal.clone_from(&why),
                     None => self.lost = Some(Lost::now(why.clone())),
                 }
-                (None, Some(why))
+                (None, 0, Some(why))
             }
         };
-        let rotation = duplication.as_ref().map_or(0, |duplication| {
-            // SAFETY: a getter on a live duplication.
-            let desc = unsafe { duplication.GetDesc() };
-            quarter_turns(desc.Rotation.0)
-        });
         let area = Rect::new(
             area.left,
             area.top,
@@ -267,8 +273,12 @@ impl DuplicatedScreen {
     }
 
     /// Duplicates a screen, with the formats the conversion reads, or the
-    /// older way where the newer one is not there.
-    fn duplicate(&mut self, output: &Output) -> windows::core::Result<IDXGIOutputDuplication> {
+    /// older way where the newer one is not there; which way is said
+    /// with it.
+    fn duplicate(
+        &mut self,
+        output: &Output,
+    ) -> windows::core::Result<(IDXGIOutputDuplication, &'static str)> {
         self.desktop.follow_saying(&self.log);
         if let Ok(output5) = output.output.cast::<IDXGIOutput5>() {
             // SAFETY: a device of the card the screen is plugged into, and
@@ -276,7 +286,7 @@ impl DuplicatedScreen {
             match unsafe {
                 output5.DuplicateOutput1(&self.device.device, 0, &[DXGI_FORMAT_B8G8R8A8_UNORM])
             } {
-                Ok(duplication) => return Ok(duplication),
+                Ok(duplication) => return Ok((duplication, "DuplicateOutput1")),
                 // Refusals of a moment, which the older call would meet
                 // as well.
                 Err(e) if losing(e.code()) => return Err(e),
@@ -294,6 +304,35 @@ impl DuplicatedScreen {
         let output1: IDXGIOutput1 = output.output.cast()?;
         // SAFETY: a device of the card the screen is plugged into.
         unsafe { output1.DuplicateOutput(&self.device.device) }
+            .map(|duplication| (duplication, "DuplicateOutput"))
+    }
+
+    /// Says how a screen is duplicated, when that is not what was said
+    /// last: the format Windows hands its images in (87 is the 8-bit
+    /// BGRA the conversion expects, 10 the 16-bit floats of a screen in
+    /// HDR), its turn, and where the image lies.
+    fn describe(&mut self, gdi: &str, way: &str, desc: &DXGI_OUTDUPL_DESC) {
+        let mode = &desc.ModeDesc;
+        let described = format!(
+            "{gdi} duplicated on {} with {way}: {}x{} at {}/{} Hz, DXGI format {}, rotation {}, \
+             image in {} memory",
+            self.device.name,
+            mode.Width,
+            mode.Height,
+            mode.RefreshRate.Numerator,
+            mode.RefreshRate.Denominator,
+            mode.Format.0,
+            desc.Rotation.0,
+            if desc.DesktopImageInSystemMemory.as_bool() {
+                "system"
+            } else {
+                "video"
+            }
+        );
+        if described != self.described {
+            self.log.write(&described);
+            self.described = described;
+        }
     }
 
     /// What is filmed now, as the engine hears it.
@@ -366,10 +405,30 @@ impl DuplicatedScreen {
     /// if it worked.
     fn try_again(&mut self, since: Instant) -> Result<Option<Captured>, ScreenError> {
         let before = self.aimed();
+        let Some(output) = self.filming.as_ref().map(|filming| filming.output.clone()) else {
+            return Ok(None);
+        };
+        // The device is gone (a driver update, a card reset): a new one on
+        // the same card. Said once it is made; until then, with the other
+        // refusals, at their pace rather than at every try.
         // SAFETY: a question to a live device.
-        if let Err(e) = unsafe { self.device.device.GetDeviceRemovedReason() } {
-            self.log.write(&failed("the Direct3D device", &e));
-            self.device_lost();
+        if let Err(removed) = unsafe { self.device.device.GetDeviceRemovedReason() } {
+            let why = failed("the Direct3D device", &removed);
+            match self.remake_device(&output) {
+                Ok(()) => self.log.write(&format!("{why}: another one is made")),
+                Err(e) => {
+                    if let Some(lost) = &mut self.lost {
+                        lost.last_refusal = format!("{why}, and another cannot be made: {e}");
+                    }
+                    // A card that came back under another name is in
+                    // DXGI's new lists, looked at below; else there is
+                    // nothing more to try now.
+                    // SAFETY: a question to a live factory.
+                    if unsafe { self.factory.IsCurrent() }.as_bool() {
+                        return Ok(None);
+                    }
+                }
+            }
         }
         let Some(filming) = &self.filming else {
             return Ok(None);
@@ -436,23 +495,11 @@ impl DuplicatedScreen {
         }
     }
 
-    /// The device is gone (a driver update, a card reset): a new one on
-    /// the same card.
-    fn device_lost(&mut self) {
-        let Some(filming) = &self.filming else {
-            return;
-        };
-        let output = filming.output.clone();
-        if let Err(e) = self.remake_device(&output) {
-            self.log.write(&e);
-        }
-    }
-
     /// A new device, on the card of `output`: everything made on the one
     /// before is let go of.
     fn remake_device(&mut self, output: &Output) -> Result<(), String> {
         let device = Device::on(&output.adapter, &output.card, &self.log)?;
-        let converter = Converter::new(&device.device, &device.context)?;
+        let converter = Converter::new(&device)?;
         self.device = device;
         self.converter = converter;
         self.generation += 1;
@@ -471,7 +518,7 @@ impl DuplicatedScreen {
         if presented && let Some(resource) = resource {
             let texture: ID3D11Texture2D = resource
                 .cast()
-                .map_err(|e| trouble(&self.log, failed("reading the screen's image", &e)))?;
+                .map_err(|e| trouble(failed("reading the screen's image", &e)))?;
             self.keep(&texture)?;
         }
         if info.LastMouseUpdateTime != 0 {
@@ -503,7 +550,7 @@ impl DuplicatedScreen {
             (latest.width, latest.height, latest.format) == (desc.Width, desc.Height, desc.Format)
         });
         if !fits {
-            self.latest = Some(latest(&self.device, &desc).map_err(|e| trouble(&self.log, e))?);
+            self.latest = Some(latest(&self.device, &desc).map_err(trouble)?);
         }
         if let Some(latest) = &self.latest {
             // SAFETY: two textures of this device, of the same size and
@@ -511,6 +558,19 @@ impl DuplicatedScreen {
             unsafe { self.device.context.CopyResource(&latest.texture, texture) };
         }
         Ok(())
+    }
+
+    /// Whether `texture` was made on the device the pictures are drawn
+    /// with. COM tells two objects apart by what they give for IUnknown.
+    fn made_here(&self, texture: &ID3D11Texture2D) -> bool {
+        // SAFETY: a getter on a live texture; the device comes back owned.
+        let Ok(device) = (unsafe { texture.GetDevice() }) else {
+            return false;
+        };
+        matches!(
+            (device.cast::<IUnknown>(), self.device.device.cast::<IUnknown>()),
+            (Ok(its), Ok(ours)) if its == ours
+        )
     }
 
     /// Reads the pointer's new shape.
@@ -644,7 +704,7 @@ impl Screen for DuplicatedScreen {
             }
             Err(e) => {
                 self.lose(&e);
-                Err(trouble(&self.log, failed("waiting for the screen", &e)))
+                Err(trouble(failed("waiting for the screen", &e)))
             }
         }
     }
@@ -688,20 +748,31 @@ impl Screen for DuplicatedScreen {
             Feed::Texture => {
                 let frame = encoder
                     .frame_for_gpu()
-                    .map_err(|e| trouble(&self.log, e.to_string()))?;
+                    .map_err(|e| trouble(e.to_string()))?;
+                // An encoder opened before the device was made again hands
+                // out textures of the one before, which no view of this
+                // device may name; the engine opens another encoder once
+                // it hears the capture moved.
+                if !self.made_here(frame.texture()) {
+                    return Err(trouble(
+                        "the encoder's texture belongs to a Direct3D device made before the \
+                         current one"
+                            .to_string(),
+                    ));
+                }
                 self.converter
                     .draw_into_texture(&scene, frame.texture())
-                    .map_err(|e| trouble(&self.log, e))?;
+                    .map_err(trouble)?;
                 Ok(Frame::Gpu(frame))
             }
             Feed::Memory => {
                 let mut frame = encoder
                     .frame_for_cpu()
-                    .map_err(|e| trouble(&self.log, e.to_string()))?;
+                    .map_err(|e| trouble(e.to_string()))?;
                 let picture = Size::new(frame.width(), frame.height());
                 self.converter
                     .draw_into_memory(&scene, picture, &mut frame.planes())
-                    .map_err(|e| trouble(&self.log, e))?;
+                    .map_err(trouble)?;
                 Ok(Frame::Cpu(frame))
             }
         }
@@ -808,9 +879,10 @@ fn latest(device: &Device, handed: &D3D11_TEXTURE2D_DESC) -> Result<Latest, Stri
     })
 }
 
-/// Said to the log, and in a sentence for the viewer.
-fn trouble(log: &Log, e: String) -> ScreenError {
-    log.write(&e);
+/// In a sentence for the viewer, with what Windows said. The engine
+/// writes it to the log at a measured pace: a failure that repeats at
+/// every picture is not said at every picture.
+fn trouble(e: String) -> ScreenError {
     ScreenError(format!(
         "La capture de l'écran de l'ordinateur d'en face a échoué : {e}"
     ))

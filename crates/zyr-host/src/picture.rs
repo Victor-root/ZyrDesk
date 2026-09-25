@@ -386,6 +386,26 @@ mod tests {
     }
 
     #[test]
+    fn a_screen_left_of_and_above_the_main_one_is_reached_too() {
+        // A 1920x1080 screen whose corner lies left of and above the main
+        // screen's: the desktop spanning both starts in the negatives.
+        let map = Mapping {
+            picture: Size::new(1920, 1080),
+            placement: Rect::new(0, 0, 1920, 1080),
+            screen: Rect::new(-1920, -300, 1920, 1080),
+            desktop: Rect::new(-1920, -300, 4480, 1740),
+        };
+        assert_eq!(map.desktop_pixel(0, 0), (-1920, -300));
+        assert_eq!(map.desktop_pixel(65535, 65535), (-1, 779));
+        for (x, y) in [(0, 0), (65535, 65535), (40000, 20000)] {
+            let (px, py) = map.desktop_pixel(x, y);
+            let (nx, ny) = map.absolute(x, y);
+            assert_eq!(windows_pixel(nx, map.desktop.x, map.desktop.width), px);
+            assert_eq!(windows_pixel(ny, map.desktop.y, map.desktop.height), py);
+        }
+    }
+
+    #[test]
     fn every_viewer_pixel_reaches_a_distinct_screen_pixel_at_equal_size() {
         let map = Mapping {
             picture: Size::new(640, 480),

@@ -13,6 +13,10 @@
 //! texture of ours and copied back. A card that cannot render into NV12
 //! at all is given the image in red, green and blue, converted to NV12
 //! on the processor.
+//!
+//! A picture takes many calls on the device's one context, which the
+//! encoders' own threads may call too: the device's lock is held from
+//! the first to the last.
 
 use std::ffi::c_void;
 
@@ -33,8 +37,8 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_IMMUTABLE,
     D3D11_USAGE_STAGING, D3D11_VIEWPORT, ID3D11BlendState, ID3D11Buffer, ID3D11ClassLinkage,
     ID3D11DepthStencilView, ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout,
-    ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
-    ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
+    ID3D11Multithread, ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
+    ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_NV12, DXGI_FORMAT_R8_UNORM,
@@ -43,6 +47,7 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::core::{PCSTR, s};
 use zyr_codec::Nv12Planes;
 
+use super::device::{Device, Locked};
 use super::failed;
 use crate::color::{BLACK, bgra_to_nv12, bt709_limited};
 use crate::picture::{Rect, Size};
@@ -103,6 +108,7 @@ struct Readback {
 pub(super) struct Converter {
     device: ID3D11Device,
     context: ID3D11DeviceContext,
+    lock: Option<ID3D11Multithread>,
     vertex: ID3D11VertexShader,
     luma: ID3D11PixelShader,
     chroma: ID3D11PixelShader,
@@ -120,10 +126,8 @@ pub(super) struct Converter {
 }
 
 impl Converter {
-    pub(super) fn new(
-        device: &ID3D11Device,
-        context: &ID3D11DeviceContext,
-    ) -> Result<Self, String> {
+    pub(super) fn new(on: &Device) -> Result<Self, String> {
+        let device = &on.device;
         let vertex_code = compile(s!("main_vs"), s!("vs_5_0"))?;
         let mut vertex = None;
         // SAFETY: bytecode the compiler just made for this stage.
@@ -156,7 +160,8 @@ impl Converter {
         let support = unsafe { device.CheckFormatSupport(DXGI_FORMAT_NV12) }.unwrap_or(0);
         Ok(Self {
             device: device.clone(),
-            context: context.clone(),
+            context: on.context.clone(),
+            lock: on.lock.clone(),
             vertex: vertex.ok_or("the vertex shader came back empty")?,
             luma,
             chroma,
@@ -204,6 +209,7 @@ impl Converter {
         texture: &ID3D11Texture2D,
     ) -> Result<(), String> {
         let picture = size_of_texture(texture);
+        let _locked = Locked::take(self.lock.as_ref());
         self.nv12_passes(scene, texture, picture)
     }
 
@@ -221,6 +227,7 @@ impl Converter {
             readback.staging.clone(),
             readback.nv12,
         );
+        let _locked = Locked::take(self.lock.as_ref());
         if nv12 {
             self.nv12_passes(scene, &target, picture)?;
         } else {
@@ -238,6 +245,15 @@ impl Converter {
         .map_err(|e| failed("reading the picture back", &e))?;
         let pitch = mapped.RowPitch as usize;
         let (width, height) = (picture.width as usize, picture.height as usize);
+        let row = if nv12 { width } else { width * 4 };
+        if pitch < row || mapped.pData.is_null() {
+            // SAFETY: the subresource mapped above, of which nothing was
+            // read.
+            unsafe { self.context.Unmap(&staging, 0) };
+            return Err(format!(
+                "the picture read back has rows {pitch} bytes apart, for {row} bytes a row"
+            ));
+        }
         if nv12 {
             // SAFETY: a mapped NV12 texture holds its luma rows, then its
             // chroma rows, each `pitch` bytes apart and `width` bytes long,
