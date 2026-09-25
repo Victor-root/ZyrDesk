@@ -3312,6 +3312,7 @@ dependencies = [
  "zyr-account",
  "zyr-broker",
  "zyr-clipboard",
+ "zyr-codec",
  "zyr-control",
  "zyr-host",
  "zyr-lan",

@@ -40,22 +40,11 @@ impl Ffmpeg {
     pub fn load(dir: &Path) -> Result<Arc<Ffmpeg>, CodecError> {
         let (avutil, avutil_path) = open(
             dir,
-            "avutil",
-            sys::LIBAVUTIL_VERSION_MAJOR,
+            AVUTIL,
             &[sys::AVUTIL_FUNCTIONS, sys::Logging::FUNCTIONS],
         )?;
-        let (swresample, swresample_path) = open(
-            dir,
-            "swresample",
-            sys::LIBSWRESAMPLE_VERSION_MAJOR,
-            &[sys::SWRESAMPLE_FUNCTIONS],
-        )?;
-        let (avcodec, avcodec_path) = open(
-            dir,
-            "avcodec",
-            sys::LIBAVCODEC_VERSION_MAJOR,
-            &[sys::AVCODEC_FUNCTIONS],
-        )?;
+        let (swresample, swresample_path) = open(dir, SWRESAMPLE, &[sys::SWRESAMPLE_FUNCTIONS])?;
+        let (avcodec, avcodec_path) = open(dir, AVCODEC, &[sys::AVCODEC_FUNCTIONS])?;
 
         let unresolved = |path: &Path, e: libloading::Error| CodecError::Library {
             path: path.to_path_buf(),
@@ -92,6 +81,21 @@ impl Ffmpeg {
     /// FFmpeg's version as its libraries report it, such as "9.0.2".
     pub fn version(&self) -> &str {
         &self.version
+    }
+
+    /// The files of FFmpeg's libraries that `dir` does not hold, under
+    /// the names [`Ffmpeg::load`] opens them by, major version included.
+    ///
+    /// Looked for and not opened: for whoever only needs to know whether
+    /// there is anything to load, without loading it into its own
+    /// process. A file of the right name can still fail to load, which
+    /// only [`Ffmpeg::load`] finds out.
+    pub fn missing_from(dir: &Path) -> Vec<PathBuf> {
+        LIBRARIES
+            .iter()
+            .map(|library| dir.join(file_name(*library)))
+            .filter(|path| !path.is_file())
+            .collect()
     }
 
     /// Sends what FFmpeg says, from warnings up, to the product's log,
@@ -136,8 +140,19 @@ impl Ffmpeg {
     }
 }
 
-/// The file a library has on this system, for a major version.
-fn file_name(library: &str, major: u32) -> String {
+/// A library of FFmpeg, by its name and the major version the bindings
+/// were generated from.
+type Named = (&'static str, u32);
+
+const AVUTIL: Named = ("avutil", sys::LIBAVUTIL_VERSION_MAJOR);
+const SWRESAMPLE: Named = ("swresample", sys::LIBSWRESAMPLE_VERSION_MAJOR);
+const AVCODEC: Named = ("avcodec", sys::LIBAVCODEC_VERSION_MAJOR);
+
+/// The three of them, in the order they are opened.
+const LIBRARIES: [Named; 3] = [AVUTIL, SWRESAMPLE, AVCODEC];
+
+/// The file a library has on this system.
+fn file_name((library, major): Named) -> String {
     if cfg!(windows) {
         format!("{library}-{major}.dll")
     } else {
@@ -154,13 +169,12 @@ fn major_of(version: c_uint) -> u32 {
 /// that the library is the major version expected.
 fn open(
     dir: &Path,
-    library: &str,
-    major: u32,
+    (library, major): Named,
     functions: &[&[&'static str]],
 ) -> Result<(Library, PathBuf), CodecError> {
     // A full path: Windows only searches a DLL's own folder for what it
     // needs when the DLL was named that way.
-    let named = dir.join(file_name(library, major));
+    let named = dir.join(file_name((library, major)));
     let path = std::path::absolute(&named).map_err(|e| CodecError::Library {
         path: named,
         reason: e.to_string(),
@@ -241,7 +255,7 @@ mod tests {
 
     #[test]
     fn library_files_carry_the_major_version_of_the_bindings() {
-        let name = file_name("avcodec", sys::LIBAVCODEC_VERSION_MAJOR);
+        let name = file_name(AVCODEC);
         let expected = if cfg!(windows) {
             "avcodec-63.dll"
         } else {
@@ -262,13 +276,35 @@ mod tests {
 
         match &refused {
             CodecError::Library { path, .. } => {
-                assert_eq!(path, &empty.join(file_name("avutil", 61)));
+                assert_eq!(path, &empty.join(file_name(("avutil", 61))));
             }
             other => panic!("unexpected error: {other:?}"),
         }
         let said = refused.to_string();
         assert!(said.starts_with("FFmpeg introuvable"), "{said}");
         assert!(said.contains(&empty.display().to_string()), "{said}");
+    }
+
+    #[test]
+    fn a_folder_says_which_of_ffmpeg_s_files_it_lacks() {
+        let folder = std::env::temp_dir().join(format!("zyr-codec-lacks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        let every = LIBRARIES.map(|library| folder.join(file_name(library)));
+        assert_eq!(Ffmpeg::missing_from(&folder), every);
+
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(&every[0], b"").unwrap();
+        std::fs::write(&every[2], b"").unwrap();
+        assert_eq!(Ffmpeg::missing_from(&folder), [every[1].clone()]);
+
+        // A library of another major version is not the one the bindings
+        // speak to: it counts as missing.
+        std::fs::write(folder.join(file_name(("swresample", 6))), b"").unwrap();
+        assert_eq!(Ffmpeg::missing_from(&folder), [every[1].clone()]);
+
+        std::fs::write(&every[1], b"").unwrap();
+        assert!(Ffmpeg::missing_from(&folder).is_empty());
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]

@@ -25,6 +25,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use zyr_codec::Ffmpeg;
 use zyr_control::Holdup;
 use zyr_proto::log::Log;
 use zyr_proto::paths;
@@ -66,10 +67,6 @@ const ENGINE_WATCH: Duration = Duration::from_secs(5);
 /// an errand in another session, and one that was refused a moment ago
 /// is refused again for a while.
 const SCREEN_WATCH: Duration = Duration::from_secs(2);
-
-/// The libraries of FFmpeg the engine loads, by the name their files
-/// start with.
-const FFMPEG: [&str; 3] = ["avutil", "swresample", "avcodec"];
 
 /// Identifier of the session attached to the screen, when there is one.
 #[cfg(windows)]
@@ -401,45 +398,17 @@ pub fn run(order: &StopOrder, log: &Log) -> End {
     }
 }
 
-/// Which of FFmpeg's libraries that folder does not hold.
+/// Which of FFmpeg's library files that folder does not hold, by name.
 ///
-/// Looked for by name and not opened: opening them is the engine's, in
-/// the session it runs in, which also checks that they are the version
-/// it was built for. What matters here is only whether there is anything
-/// to open at all.
-fn missing_from(folder: &Path) -> Vec<&'static str> {
-    let files: Vec<String> = std::fs::read_dir(folder)
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .collect()
-        })
-        .unwrap_or_default();
-    FFMPEG
-        .into_iter()
-        .filter(|library| {
-            !files
-                .iter()
-                .any(|file| is_the_library(file, library, cfg!(windows)))
-        })
+/// Looked for and not opened: opening them is the engine's, in the
+/// session it runs in. What matters here is only whether there is
+/// anything to open at all.
+fn missing_from(folder: &Path) -> Vec<String> {
+    Ffmpeg::missing_from(folder)
+        .iter()
+        .filter_map(|file| file.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
         .collect()
-}
-
-/// Whether that file is that FFmpeg library, under the name FFmpeg gives
-/// it: `avcodec-63.dll` on Windows, `libavcodec.so.63` elsewhere.
-fn is_the_library(file: &str, library: &str, on_windows: bool) -> bool {
-    let file = file.to_ascii_lowercase();
-    let major = if on_windows {
-        file.strip_prefix(library)
-            .and_then(|rest| rest.strip_prefix('-'))
-            .and_then(|rest| rest.strip_suffix(".dll"))
-    } else {
-        file.strip_prefix("lib")
-            .and_then(|rest| rest.strip_prefix(library))
-            .and_then(|rest| rest.strip_prefix(".so."))
-    };
-    major.is_some_and(|major| !major.is_empty() && major.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Opens the desk the interface and the command line talk to.
@@ -692,57 +661,6 @@ mod tests {
     fn a_zero_wait_goes_straight_through() {
         let order = StopOrder::new();
         assert!(wait(Duration::ZERO, &order));
-    }
-
-    #[test]
-    fn ffmpeg_is_found_by_the_names_its_libraries_carry() {
-        // The names FFmpeg gives its libraries on each system; the
-        // version is the engine's to check.
-        assert!(is_the_library("avcodec-63.dll", "avcodec", true));
-        assert!(is_the_library("AVUTIL-61.DLL", "avutil", true));
-        assert!(is_the_library("libswresample.so.7", "swresample", false));
-        for (file, library, on_windows) in [
-            // The other system's name.
-            ("libavcodec.so.63", "avcodec", true),
-            ("avcodec-63.dll", "avcodec", false),
-            // Another library whose name starts the same way.
-            ("avcodec_extra-63.dll", "avcodec", true),
-            // What is not a library at all.
-            ("avcodec-.dll", "avcodec", true),
-            ("avcodec-63.dll.txt", "avcodec", true),
-            ("avcodec.lib", "avcodec", true),
-            ("libavcodec.so", "avcodec", false),
-        ] {
-            assert!(
-                !is_the_library(file, library, on_windows),
-                "{file} taken for {library}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_folder_says_which_of_ffmpeg_s_libraries_it_lacks() {
-        let folder = std::env::temp_dir().join(format!(
-            "zyrdeskd-ffmpeg-{}",
-            zyr_proto::random::alphanumeric_string(8)
-        ));
-        assert_eq!(missing_from(&folder), FFMPEG.to_vec());
-
-        std::fs::create_dir_all(&folder).unwrap();
-        let named = |library: &str, major: u32| {
-            if cfg!(windows) {
-                format!("{library}-{major}.dll")
-            } else {
-                format!("lib{library}.so.{major}")
-            }
-        };
-        std::fs::write(folder.join(named("avutil", 61)), b"").unwrap();
-        std::fs::write(folder.join(named("avcodec", 63)), b"").unwrap();
-        assert_eq!(missing_from(&folder), vec!["swresample"]);
-
-        std::fs::write(folder.join(named("swresample", 7)), b"").unwrap();
-        assert!(missing_from(&folder).is_empty());
-        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

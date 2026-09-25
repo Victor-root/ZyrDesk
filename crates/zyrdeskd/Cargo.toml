@@ -11,6 +11,7 @@ repository.workspace = true
 
 [dependencies]
 zyr-proto.workspace = true
+zyr-codec.workspace = true
 zyr-host.workspace = true
 zyr-media.workspace = true
 zyr-clipboard.workspace = true
