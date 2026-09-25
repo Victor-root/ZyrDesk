@@ -6,13 +6,14 @@ Chaque brique, le choix retenu, la raison, et les alternatives sérieusement con
 
 | Brique | Choix | Raison principale |
 |---|---|---|
-| Cœur, service, tunnel, CLI, broker | Rust | Sûreté mémoire pour du code réseau exposé en permanence, performances, écosystème exact (tokio, quinn/iroh, axum, windows-service) |
+| Cœur, service, tunnel, moteur, CLI, broker | Rust | Sûreté mémoire pour du code réseau exposé en permanence, performances, écosystème exact (tokio, quinn/iroh, axum, windows-service) |
 | Interface | Dessinée par le produit, en Direct2D et DirectWrite, dans une fenêtre Win32 à lui | Rien n'est embarqué, le texte est rendu par le moteur du système ; zéro processus de navigateur ; le système de design reste écrit une seule fois. Aucune boîte à outils d'interface : 321 caisses de moins dans le verrou du projet |
-| Moteur | Le moteur ZyrDesk, en Rust, encodage et décodage par FFmpeg ([D219](DECISIONS.md), en construction) | Latence, qualité d'image et fluidité avant tout ; plus aucune jointure avec un programme qu'on ne contrôle pas ; débit de l'encodeur piloté par le tunnel |
-| Moteur hôte, jusqu'au débranchement | Sunshine en processus enfant | Remplacé par le moteur ZyrDesk ([D219](DECISIONS.md)) ; reste le filet tant que le nôtre ne le bat pas |
-| Moteur client, jusqu'au débranchement | moonlight-qt en processus enfant | Remplacé par le moteur ZyrDesk ([D219](DECISIONS.md)) ; reste le filet tant que le nôtre ne le bat pas |
+| Moteur | Le moteur ZyrDesk, écrit en Rust ([D219](DECISIONS.md), [D222](DECISIONS.md)) : capture, conversion, encodage, découpe en paquets, décodage, affichage, son, clavier et souris ([MOTEUR.md](MOTEUR.md)) | Latence, fluidité et qualité d'image avant tout ; plus aucune jointure avec un programme qu'on ne contrôle pas ; le débit de l'encodeur pourra enfin suivre ce que voit le tunnel |
+| Graphisme du moteur | Direct3D 11 et DXGI | La capture qui voit l'écran de connexion n'existe qu'en Direct3D 11, le décodage matériel le plus éprouvé aussi, et l'affichage passe par DXGI : aucune traduction d'un bout à l'autre, rien à installer |
+| Codecs | FFmpeg 9.0.2, compilé par nous, réduit au moteur, chargé au démarrage depuis `vendor/ffmpeg` | Une seule porte vers les encodeurs matériels des trois fabricants, x264 en secours, les décodeurs matériels et Opus ; rien à installer ni à lier à la compilation |
+| Correction d'erreurs | Reed-Solomon (reed-solomon-simd), 20 % de parité par image | Une perte se répare sans attendre d'aller-retour : n'importe quels morceaux en nombre suffisant reconstruisent l'image |
 | Transport | quinn, et sous QUIC une couche de chemins à nous : aiguilleur, sondes signées, branche de relais | Contrôleur média mesuré au banc M2 (D13) ; la migration relais vers direct se fait sans que QUIC le sache, donc sans changer de transport ; examen d'iroh clos par D119 |
-| IPC local | Named pipes (tokio) + RPC typé maison | Natif Windows, simple, contrôle d'accès par identité de l'appelant |
+| IPC local | Named pipes (tokio) : le tube de commande de la fenêtre, et un tube par session entre chaque moitié du moteur et le service | Natif Windows, simple, contrôle d'accès par l'identité Windows, injoignable depuis le réseau |
 | Secrets | DPAPI (profil SYSTEM) côté service, lien de compte compris ; la fenêtre ne tient aucun secret | Standard Windows, zéro dépendance exotique |
 | Serveur (broker et relais) | Un binaire Rust, `zyrdesk-server` : axum + WebSocket + SQLite (rusqlite, WAL, migrations numérotées), quinn pour le relais, AGPLv3 | Auto-hébergeable dès le premier jour sur un Debian, en quelques questions ; SQLite suffit largement ; Postgres possible ensuite ([SERVER.md](SERVER.md)) |
 | Relais | Le nôtre, dans le même binaire : datagrammes QUIC, paquets opaques entre les deux empreintes qu'un laissez-passer nomme | Ne voit que du chiffré, CPU minimal ; pas de blocage en tête de ligne, contrairement aux relais sur TCP (DERP, iroh) |
@@ -41,13 +42,25 @@ Interface : ce qui avait été écarté à l'époque du choix d'origine
 - egui / iced : pas au niveau visuel exigé sans effort massif ; le rendu en mode immédiat consomme du CPU en continu, exactement ce qu'un produit de streaming doit éviter.
 - Electron : validait aussi le besoin (c'est le choix de plusieurs concurrents commerciaux), mais 10 fois plus lourd pour le même résultat, sans bénéfice puisque notre cœur est déjà en Rust.
 
-Le point non négociable derrière ce choix : la fenêtre vidéo est un processus natif séparé (Direct3D via le moteur client). L'interface n'est jamais dans le chemin de la vidéo, donc sa technologie n'influence pas la latence.
+Le point non négociable derrière ce choix : l'image est dessinée par le lecteur, en Direct3D 11, depuis son propre fil, dans une fenêtre enfant qui n'appartient qu'à lui. L'interface n'est jamais dans le chemin de l'image, donc sa technologie n'influence pas la latence.
 
-Moteur client : processus moonlight-qt plutôt qu'un lecteur natif maison sur moonlight-common-c
+Moteur : le nôtre
 
-- La bibliothèque cœur moonlight-common-c a une API C propre et un lecteur maison (fenêtre instantanée, intégration parfaite, reprise plus fine) est la bonne évolution v2/v3.
-- Mais le decodeur/présentateur/frame pacing de moonlight-qt représente des années de cas particuliers Windows réglés (choix DXGI, tearing, pacing sur vsync réel, GPU hybrides). Le réécrire d'emblée = des mois pour retrouver la parité, avec régressions probables, en contradiction avec « ne pas réécrire les moteurs éprouvés ».
-- La frontière processus + superviseur construite en v1 est exactement la couture qui permettra de remplacer le lecteur plus tard sans toucher au reste, avec le banc de performance pour prouver la parité.
+Jusqu'en septembre 2026, l'image, le son et les entrées passaient par Sunshine et moonlight-qt, pilotés en processus enfants ; chaque gros défaut de l'époque vivait à la jointure avec ces deux programmes, et ZyrDesk les a remplacés d'un coup par son propre moteur ([D219](DECISIONS.md), [D222](DECISIONS.md)). Les codecs ne sont pas réinventés, ni ce que Windows fournit : c'est la chaîne entière entre les deux qui est à nous.
+
+Graphisme : Direct3D 11 plutôt que Vulkan
+
+- La capture de l'écran par Windows (Desktop Duplication), la seule qui voit l'écran de connexion et les invites d'administration, ne parle que Direct3D 11.
+- Le décodage matériel le plus éprouvé sur les cartes des trois fabricants passe par Direct3D 11, et l'affichage le plus direct sur Windows par DXGI, la couche d'affichage de Direct3D.
+- Vulkan obligerait à traduire l'image à chaque bout, à la capture et à l'affichage, et chaque traduction coûte du temps ou une copie. Direct3D 11 est le chemin le plus court, et il n'ajoute rien à installer : Windows l'a déjà. Le détail est dans [MOTEUR.md](MOTEUR.md) §2.
+
+Codecs : FFmpeg 9.0.2, compilé par nous et chargé au démarrage
+
+- FFmpeg est la bibliothèque qui parle aux encodeurs matériels des trois fabricants (NVENC chez NVIDIA, AMF chez AMD, Quick Sync chez Intel) et à celui de Windows (Media Foundation), avec x264 en secours logiciel, et aux décodeurs matériels par Direct3D 11. Écrire chacun de ces chemins à la main serait des mois de travail.
+- Les versions toutes faites contiennent des centaines de formats dont le moteur n'a pas l'usage, pèsent plusieurs dizaines de Mo et demandent parfois d'autres fichiers à livrer avec. La nôtre, la dernière version stable ([D221](DECISIONS.md)), ne garde que ce qui sert : trois DLL, moins de 10 Mo, rangées dans `vendor/ffmpeg` avec leurs licences, refaites par `packaging/ffmpeg/build.sh` depuis des sources dont l'empreinte est vérifiée.
+- Chargée au démarrage du moteur et jamais liée à la compilation : `cargo build` ne demande ni FFmpeg ni aucun outil de plus sur le PC de Victor.
+- Les en-têtes NVIDIA restent en version 13.0 plutôt que 13.1 : NVENC marche ainsi dès le pilote 570 au lieu du 610, ce qui garde leur encodeur aux GeForce 10 ([D221](DECISIONS.md)).
+- Licence : avec x264, l'ensemble est sous GPL version 2 ou ultérieure, compatible avec la GPL version 3 de ZyrDesk ; les sources exactes doivent accompagner chaque publication qui contient les DLL (voir `vendor/ffmpeg/README.md`).
 
 Transport : quinn, une couche de chemins à nous, et pas...
 
@@ -64,15 +77,15 @@ Broker : SQLite d'abord
 
 - Un fichier, zéro administration, sauvegarde triviale, largement suffisant pour des milliers d'appareils. Le code d'accès est écrit pour permettre Postgres quand le besoin réel arrive. Choisir Postgres maintenant serait de la complexité d'avance.
 
-Windows : service en Rust maison plutôt que réutiliser le service de Sunshine
+Windows : un service en Rust à nous
 
-- Le service ZyrDesk fait bien plus que lancer le moteur (identité, broker, tunnels, IPC). On réplique en Rust le schéma éprouvé du service Sunshine (duplication du jeton SYSTEM vers la session console, lancement sur le bureau interactif, job object, relance au changement de session) : le schéma est documenté et testé chez eux, l'implémentation nous appartient.
+- Le service ZyrDesk fait bien plus que lancer le moteur (identité, broker, tunnels, IPC). Il suit le schéma éprouvé des services de capture d'écran, celui de Sunshine en particulier : jeton SYSTEM rattaché à la session qui tient l'écran, lancement sur le bureau interactif, objet de tâche qui emporte le moteur avec le service, porte rouverte au changement de session. Le moteur hôte est ce même programme, relancé avec un argument réservé : un binaire de moins à livrer.
 
 Packaging : NSIS plutôt que MSI
 
-- Un seul format, scriptable de bout en bout, suffisant pour app + service + règles pare-feu + (plus tard) pilote optionnel. MSI reconsidérable si un besoin de déploiement d'entreprise apparaît.
+- Un seul format, scriptable de bout en bout, suffisant pour app + service + FFmpeg + règles pare-feu + (plus tard) pilote optionnel. MSI reconsidérable si un besoin de déploiement d'entreprise apparaît.
 
 ## Contraintes transverses actées
 
 - Aucun coût récurrent obligatoire : pas de certificat de signature payant, pas de compte développeur payant, pas de composant propriétaire. Les binaires partent non signés (avertissement SmartScreen documenté, normal pour un jeune projet open source) ; la signature gratuite pour projets open source (SignPath Foundation) sera demandée quand le projet sera public et actif.
-- Toute brique tierce doit être : licence compatible (GPLv3/AGPLv3 côté produit), maintenue, et remplaçable (confinée derrière une interface à nous quand elle est structurante, comme le transport).
+- Toute brique tierce doit être : licence compatible (GPLv3/AGPLv3 côté produit), maintenue, et remplaçable (confinée derrière une interface à nous quand elle est structurante, comme le transport ou FFmpeg).
