@@ -252,9 +252,10 @@ impl D3d11Picture {
 }
 
 /// Pictures a player may still hold while the next ones decode: the one
-/// on screen and one waiting. The decoder's pool is made that much
-/// larger than decoding alone needs.
-const HELD_BY_PLAYER: c_int = 2;
+/// on screen, the one being drawn, and two waiting for their refresh of
+/// the screen. The decoder's pool is made that much larger than decoding
+/// alone needs.
+const HELD_BY_PLAYER: c_int = 4;
 
 /// The decoding side, attached to a decoder's context.
 pub(crate) struct Pictures {

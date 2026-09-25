@@ -81,7 +81,11 @@ pub struct Displayed {
     pub at_refresh: u64,
     /// When that refresh was.
     pub at: Instant,
-    /// How long a refresh of the screen lasts.
+    /// The last refresh the system timed, and when it was: the refreshes
+    /// to come are counted from it.
+    pub timed: u64,
+    pub timed_at: Instant,
+    /// How long a refresh of the screen lasts, as the system says.
     pub refresh: Duration,
     /// Compositions the desktop's compositor missed, and frames it
     /// dropped, since it started.

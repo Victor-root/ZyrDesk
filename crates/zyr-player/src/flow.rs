@@ -405,6 +405,8 @@ mod tests {
             shown,
             at_refresh: refresh,
             at: at + Duration::from_micros(refresh * 16_667),
+            timed: refresh,
+            timed_at: at + Duration::from_micros(refresh * 16_667),
             refresh: Duration::from_micros(16_667),
             compositor_missed: 0,
             compositor_dropped: 0,

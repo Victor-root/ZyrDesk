@@ -1,8 +1,9 @@
 //! Drawing decoded pictures into the window, on the graphics card.
 //!
 //! A flip-model swap chain on the window, as Windows 10 composes best:
-//! pictures are presented with no wait for the screen's refresh, the
-//! newest one wins at composition, and nothing tears. Five buffers
+//! pictures are presented with no wait for the screen's refresh, at the
+//! moment the pacing chose for each, the newest one wins at composition,
+//! and nothing tears. Five buffers
 //! rather than three, whose starvation Moonlight measured on AMD cards;
 //! with no wait they add no delay. The maximum frame latency is left
 //! alone: at 1, Moonlight found presenting waits for the compositor as
@@ -593,13 +594,20 @@ impl Gpu {
     /// What the screen showed of this swap chain's pictures: its own
     /// statistics, and the compositor's for the refresh and what it
     /// missed. Nothing while the system has nothing to say, as before the
-    /// first picture reaches the screen.
+    /// first picture reaches the screen, when it answers with noughts.
     fn displayed(&self) -> Option<Displayed> {
         // SAFETY: a getter on a live swap chain.
         let presented = unsafe { self.swap.GetLastPresentCount() }.ok()?;
         let mut statistics = DXGI_FRAME_STATISTICS::default();
         // SAFETY: the same, into a structure of ours.
         unsafe { self.swap.GetFrameStatistics(&mut statistics) }.ok()?;
+        if statistics.PresentCount == 0
+            || statistics.PresentRefreshCount == 0
+            || statistics.SyncRefreshCount == 0
+            || statistics.SyncQPCTime == 0
+        {
+            return None;
+        }
         let mut timing = DWM_TIMING_INFO {
             cbSize: size_of::<DWM_TIMING_INFO>() as u32,
             ..Default::default()
@@ -623,12 +631,15 @@ impl Gpu {
             * statistics
                 .SyncRefreshCount
                 .saturating_sub(statistics.PresentRefreshCount);
-        let at = Instant::now().checked_sub(since_timed + before_timed)?;
+        let timed_at = Instant::now().checked_sub(since_timed)?;
+        let at = timed_at.checked_sub(before_timed)?;
         Some(Displayed {
             presented: u64::from(presented),
             shown: u64::from(statistics.PresentCount),
             at_refresh: u64::from(statistics.PresentRefreshCount),
             at,
+            timed: u64::from(statistics.SyncRefreshCount),
+            timed_at,
             refresh,
             compositor_missed: timing.cFramesMissed,
             compositor_dropped: timing.cFramesDropped,

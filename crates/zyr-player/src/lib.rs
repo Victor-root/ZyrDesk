@@ -5,7 +5,8 @@
 //! holds open for it, and to nothing else. It keeps four threads of its
 //! own: the link, which reads and writes the pipe on a small runtime;
 //! the video, which assembles, decodes and draws on the same thread, so
-//! that a picture never waits for another thread to pick it up; the
+//! that a picture never waits for another thread to pick it up, only for
+//! the screen's refresh it is meant for; the
 //! sound; and a timer that takes the measures, apart from the picture so
 //! that they keep coming when the picture stops.
 //!
@@ -20,6 +21,7 @@
 mod audio;
 mod flow;
 mod link;
+mod pacing;
 mod present;
 mod seldom;
 mod stats;

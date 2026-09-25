@@ -2,10 +2,12 @@
 //!
 //! Assembling, decoding and drawing follow each other on the same
 //! thread, with nothing handed from one thread to another on the way:
-//! a frame is decoded the moment its last packet is in, and drawn once
-//! the datagrams waiting are all taken in. Frames that arrive together
-//! are all decoded, since each one is the reference of the next, and
-//! only the newest is drawn.
+//! a frame is decoded the moment its last packet is in, and drawn at
+//! the refresh of the screen the pacing gives it ([`crate::pacing`]),
+//! at once when that refresh's window is open. Frames that arrive
+//! together are all decoded, since each one is the reference of the
+//! next, then drawn one a refresh, or only the newest of them when they
+//! piled up behind a stall or the screen's refreshes are not known yet.
 //!
 //! A frame lost for good leaves the decoder without what the frames
 //! after it refer to. They are passed over until a key frame comes, and
@@ -31,6 +33,7 @@ use zyr_proto::log::Log;
 
 use crate::flow::Flow;
 use crate::lock;
+use crate::pacing::Pacer;
 use crate::present::{Fault, Presenter, Rect};
 use crate::seldom::Seldom;
 use crate::stats::Tally;
@@ -333,9 +336,8 @@ pub struct Video<P: Presenter> {
     assembler: Assembler,
     recovery: Recovery,
     decoding: Decoding,
-    /// The newest picture of the frames being settled, drawn once they
-    /// all are.
-    waiting: Option<Ready>,
+    /// The pictures decoded, each waiting for its refresh.
+    pacer: Pacer<Ready>,
     /// The picture on the surface, drawn again when the surface changes
     /// size.
     on_screen: Option<(DecodedFrame, u32)>,
@@ -369,7 +371,7 @@ impl<P: Presenter> Video<P> {
                 opened: None,
                 refused: None,
             },
-            waiting: None,
+            pacer: Pacer::new(&log),
             on_screen: None,
             first_shown: false,
             said: Vec::new(),
@@ -384,8 +386,8 @@ impl<P: Presenter> Video<P> {
     }
 
     /// Takes in one datagram, which the link received at `arrived`, and
-    /// decodes at once the frames it settles, the newest picture waiting
-    /// to be drawn; `now` is this thread's time.
+    /// decodes at once the frames it settles, each picture then waiting
+    /// for its refresh; `now` is this thread's time.
     ///
     /// The assembler goes by when datagrams were received, not by when
     /// this thread gets to them: catching up, it gives up no frame for a
@@ -410,12 +412,17 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    /// When [`Video::settle`] has something to do with no new datagram.
-    pub fn next_wakeup(&self) -> Option<Instant> {
-        match (self.assembler.next_deadline(), self.recovery.next_resend()) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+    /// When [`Video::settle`] has something to do with no new datagram,
+    /// seen at `now`.
+    pub fn next_wakeup(&self, now: Instant) -> Option<Instant> {
+        [
+            self.assembler.next_deadline(),
+            self.recovery.next_resend(),
+            self.pacer.next_wakeup(now),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     /// Every datagram received so far being taken in: gives up the
@@ -425,18 +432,20 @@ impl<P: Presenter> Video<P> {
         self.draw(now)
     }
 
-    /// Asks again for a key frame when due, draws the newest picture
-    /// decoded, and hands over what there is to tell. Gives up no frame:
-    /// datagrams still waiting for this thread may complete it.
+    /// Asks again for a key frame when due, draws the picture whose
+    /// turn it is, and hands over what there is to tell. Gives up no
+    /// frame: datagrams still waiting for this thread may complete it.
     pub fn draw(&mut self, now: Instant) -> Vec<Said> {
         if let Some(recover) = self.recovery.due(now) {
             self.ask(recover, now);
         }
-        if let Some(ready) = self.waiting.take() {
-            self.show(ready, now);
+        if let Some(turn) = self.pacer.due(now) {
+            self.unshown(now, turn.unshown);
+            self.show(turn.picture, turn.refresh, now);
         }
         self.publish();
         self.flow.look(now);
+        self.pacer.look(now);
         std::mem::take(&mut self.said)
     }
 
@@ -484,9 +493,8 @@ impl<P: Presenter> Video<P> {
                             captured_us: frame.captured_us,
                             whole: frame.last_packet,
                         };
-                        if self.waiting.replace(ready).is_some() {
-                            self.unshown(now, 1);
-                        }
+                        let dropped = self.pacer.ready(ready, Instant::now());
+                        self.unshown(now, dropped);
                     }
                     self.assembler.recycle(frame.data);
                 }
@@ -572,7 +580,9 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    fn show(&mut self, ready: Ready, now: Instant) {
+    /// Draws a picture, meant for that refresh of the screen when it was
+    /// paced.
+    fn show(&mut self, ready: Ready, refresh: Option<u64>, now: Instant) {
         let Ready {
             picture,
             captured_us,
@@ -587,13 +597,10 @@ impl<P: Presenter> Video<P> {
                     tally.shown(done, done - started, captured_us);
                     tally.since_capture(captured_us, done)
                 };
-                self.flow.presented(
-                    whole,
-                    started,
-                    done,
-                    since_capture,
-                    self.presenter.displayed(),
-                );
+                let screen = self.presenter.displayed();
+                self.pacer.after(refresh, done, screen.as_ref());
+                self.flow
+                    .presented(whole, started, done, since_capture, screen);
                 self.counters.shown += 1;
                 self.counters.checksum = shown.checksum;
                 if !self.first_shown {
@@ -626,7 +633,7 @@ impl<P: Presenter> Video<P> {
                 ));
                 // Everything made on the old card goes before the new one
                 // is made, and is never drawn on it.
-                self.waiting = None;
+                self.pacer.clear();
                 self.on_screen = None;
                 self.decoding.close();
                 self.counters.renewed += 1;
@@ -707,7 +714,7 @@ pub fn run<P: Presenter>(
     mut tell: impl FnMut(Said) -> bool,
 ) {
     loop {
-        let first = match video.next_wakeup() {
+        let first = match video.next_wakeup(Instant::now()) {
             Some(at) => input.recv_timeout(at.saturating_duration_since(Instant::now())),
             None => input.recv().map_err(|_| RecvTimeoutError::Disconnected),
         };
@@ -893,7 +900,7 @@ mod tests {
             asked.extend(recovers(&video.settle(ms(u64::from(n) * 16))));
         }
         assert_eq!(asked.len(), 1, "one request while it is fresh");
-        assert_eq!(video.next_wakeup(), Some(ms(350)));
+        assert_eq!(video.next_wakeup(ms(128)), Some(ms(350)));
         asked.extend(recovers(&video.settle(ms(349))));
         assert_eq!(asked.len(), 1);
         asked.extend(recovers(&video.settle(ms(350))));
@@ -984,7 +991,7 @@ mod tests {
             video.settle(later);
         }
         assert_eq!(video.presenter.drawn.last(), Some(&looks[2]));
-        assert_eq!(video.next_wakeup(), None, "stream 3 needs nothing");
+        assert_eq!(video.next_wakeup(later), None, "stream 3 needs nothing");
     }
 
     #[test]
@@ -1128,7 +1135,7 @@ mod tests {
             video.presenter.drawn,
             [looks[0], looks[1], looks[2], looks[5]]
         );
-        assert_eq!(video.next_wakeup(), None, "nothing more to ask");
+        assert_eq!(video.next_wakeup(ms(451)), None, "nothing more to ask");
     }
 
     #[test]

@@ -41,7 +41,7 @@ Le tunnel, les identités, le relais, le serveur, l'écran virtuel, le presse-pa
 6. **Tunnel.** Les paquets partent en datagrammes QUIC, chiffrés une seule fois, direct ou par le relais.
 7. **Réassemblage.** Le client reconstruit chaque image dès que tous ses morceaux sont là, ou dès qu'assez de morceaux permettent de réparer les manquants.
 8. **Décodage.** Le décodeur matériel de la carte du client décode dans la mémoire de la carte.
-9. **Affichage.** L'image est dessinée dans la fenêtre du produit, aux proportions exactes, et présentée à l'écran à la prochaine occasion. Une image plus récente remplace toujours une image qui attend encore.
+9. **Affichage.** L'image est dessinée dans la fenêtre du produit, aux proportions exactes, au rythme de l'écran : une image par rafraîchissement au plus, dans l'ordre où elles arrivent ([D228](DECISIONS.md)). Chaque rafraîchissement a sa fenêtre, ouverte juste après le rafraîchissement précédent et fermée 6 ms avant le sien, plus tôt si Windows dit qu'une image a raté le sien. Une image décodée pendant la fenêtre d'un rafraîchissement encore libre est présentée tout de suite ; les autres attendent la fenêtre suivante. Une image en retard coûte un rafraîchissement qui remontre la précédente, jamais un désordre. Quand toutes les images des deux dernières secondes auraient pu passer un rafraîchissement plus tôt, une est sautée pour reprendre ce rafraîchissement. Tant que Windows n'a pas dit quand l'écran se rafraîchit, ou quand des images se sont entassées derrière un arrêt, seule la plus récente est présentée.
 
 Chaque paquet porte l'heure de capture : le client connaît donc la latence de bout en bout de chaque image, pas seulement le temps du réseau.
 
@@ -82,7 +82,7 @@ Ces moyennes cachent justement ce qui fait une image saccadée : une image un pe
 |---|---|---|
 | `pace` | Moteur hôte | L'écart entre deux images envoyées, le temps passé chez l'hôte (attente, dessin, encodage, remise au tube), la taille, ce que l'écran a donné et quand, le retard pris sur la cadence, ce qui a été jeté ; et en fin de session, le temps passé dans le tube |
 | `tunnel` | Chaque service | Ce qui est entré dans le tunnel ou en est sorti, ce qui a attendu dans le service, et ce que la connexion mesure du chemin : aller-retour, paquets envoyés et reçus, pertes |
-| `flow` | Lecteur | Quand chaque image est arrivée entière, combien de temps après sa capture, l'écart entre son premier et son dernier paquet, son décodage, sa présentation, et ce que l'écran en a vraiment montré, rafraîchissement par rafraîchissement, d'après Windows |
+| `flow` | Lecteur | Quand chaque image est arrivée entière, combien de temps après sa capture, l'écart entre son premier et son dernier paquet, son décodage, sa présentation, et ce que l'écran en a vraiment montré, rafraîchissement par rafraîchissement, d'après Windows ; puis le rythme de l'affichage : les images présentées aussitôt ou gardées pour leur rafraîchissement et combien de temps, celles sautées, et combien de temps avant un rafraîchissement sa fenêtre se ferme |
 
 ## 10. Sécurité
 

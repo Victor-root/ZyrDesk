@@ -3590,6 +3590,28 @@ Le déroulé sur les deux PC est [testing/MZ-PROTOCOLE.md](testing/MZ-PROTOCOLE.
 
 **Deux choses de plus à lire dans les mêmes lignes.** Chaque image part d'un seul coup, tous ses paquets à la suite : sur une connexion montante étroite, une rafale peut déborder la file d'attente d'une box, ce qui se lirait en pertes et en écart entre le premier et le dernier paquet d'une image. Et le moteur hôte écrit chaque paquet séparément dans le tube qui le relie au service, ce que la ligne du tube dira en temps d'écriture.
 
+## D228. Les images s'affichent au rythme de l'écran, une par rafraîchissement (2026-09-25, pendant MZ)
+
+**Ce que les journaux ont montré.** Quarante secondes à travers Internet, PC-SAV comme hôte (GTX 1660 Ti), l'ordinateur portable comme client, en Wi-Fi, une fenêtre déplacée sans arrêt :
+
+- l'hôte envoie une image toutes les 16,7 ms, régulier à une milliseconde près ;
+- le réseau les livre moins régulièrement : une image entière toutes les 16,3 ms en médiane, mais 21 à 24 ms d'écart pour les 5 % les plus lentes. Les 70 Ko d'une image mettent 6 ms à arriver du premier au dernier paquet, jusqu'à 10 ms pour les plus grosses : le chemin tient environ 95 Mb/s ;
+- le lecteur présentait chaque image 0,4 ms après son arrivée, sans regarder l'écran. D'après Windows lui-même, chaque seconde, 3 à 8 images n'ont jamais été montrées, et autant de rafraîchissements ont remontré l'image d'avant. C'est l'à-coup que Victor voyait, avec 60 images par seconde au compteur.
+
+**La cause est celle de [D227](#d227-la-fluidité-se-mesure-image-par-image-à-chaque-étape-du-trajet-2026-09-25-pendant-mz).** Une image arrivait tantôt juste avant le moment où Windows compose l'écran, tantôt juste après, et chaque écart se voyait. Moonlight, toujours lancé avec sa cadence, ne le faisait pas.
+
+**Ce qui change.** Le lecteur présente au plus une image par rafraîchissement, dans l'ordre d'arrivée ([MOTEUR.md](MOTEUR.md), section 3). Chaque rafraîchissement a une fenêtre, ouverte une demi-milliseconde après le rafraîchissement précédent et fermée 6 ms avant le sien. Une image décodée pendant la fenêtre d'un rafraîchissement encore libre est présentée tout de suite, les autres attendent la fenêtre suivante. Deux images attendent au plus : au-delà, elles se sont entassées derrière un arrêt, et seule la plus récente reste. Quand toutes les images des deux dernières secondes auraient pu passer un rafraîchissement plus tôt, une est sautée pour reprendre ce rafraîchissement. Les rafraîchissements, leur durée et ce qui a été montré viennent des statistiques que Windows tient pour la fenêtre. La durée est mesurée plutôt que crue, et un écran qui change de fréquence est suivi dès le rafraîchissement suivant. Le décodeur garde deux images de plus en réserve pour celles qui attendent.
+
+**Les 6 ms, et pourquoi jamais moins.** C'est un peu plus que les 3,3 à 5,7 ms que le compositeur du portable a demandés dans ce journal. Quand Windows dit qu'une image a raté le rafraîchissement pour lequel elle était présentée, la fenêtre se ferme plus tôt, d'une milliseconde de plus que la marge ratée, puis revient vers les 6 ms d'un quart de milliseconde toutes les vingt secondes sans nouveau raté. Elle ne descend jamais en dessous : rien ne garantit que Windows signale chaque raté, et gagner une fraction de milliseconde ne vaut pas des à-coups que personne ne verrait dans le journal.
+
+**Ce que ça coûte.** Presque rien en moyenne sur ce réseau : les images arrivées juste après le moment de Windows passaient déjà un rafraîchissement plus tard ; maintenant elles y passent toutes, régulièrement. Seules celles qui arrivent entre 6 ms et le vrai moment de Windows avant un rafraîchissement attendent le suivant, par prudence. Quand l'irrégularité du réseau chevauche ce moment, toutes les images attendent le rafraîchissement suivant : 16,7 ms de plus à 60 Hz tant que ça dure, au lieu du désordre. Et comme l'écran de l'hôte et celui du client ne battent jamais exactement ensemble, une image est sautée ou montrée deux fois toutes les vingt secondes environ. Celle-là est inévitable tant que l'hôte ne règle pas son pas sur l'écran du client. Douze essais simulent tout cela contre un compositeur, jusqu'à trente secondes d'horloges décalées dans les deux sens.
+
+**Ce qui se lit dans le journal.** Une quatrième ligne par seconde sous `flow`, qui commence par `pacing:` : les images présentées aussitôt ou gardées pour leur rafraîchissement, et combien de temps, celles sautées, ce que l'écran en a fait, et quand les fenêtres se ferment. Les étiquettes à envoyer ne changent pas.
+
+**Un défaut du journal, corrigé au passage.** La ligne de l'écran de la première seconde disait que 1 452 086 rafraîchissements avaient remontré l'image d'avant. Avant que la première image atteigne l'écran, Windows répond par des zéros, qui étaient pris pour un compte. Ils sont maintenant ignorés.
+
+**Ce qui reste, lu dans les mêmes journaux.** L'encodage prend 8 ms par image sur la GTX 1660 Ti, en HEVC par NVENC, là où il devrait en prendre deux ou trois : c'est un quart de la latence, et le prochain chantier. Les 6 ms entre le premier et le dernier paquet d'une image tiennent à sa taille et au débit du chemin : le débit choisi et les 20 % de paquets de réparation sont les leviers. Enfin le client était en Wi-Fi, qui ajoute sa propre irrégularité.
+
 ## Décisions ouvertes (défauts proposés, à confirmer avant le jalon concerné)
 
 - O1 (avant M5). Concurrence de sessions : défaut = 1 spectateur entrant actif avec reprise possible (takeover), plusieurs sessions sortantes autorisées.
