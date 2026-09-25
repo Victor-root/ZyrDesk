@@ -7,7 +7,43 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# The link hands each frame over as a `Bytes`, which travels on to the
+# video and sound threads without a copy.
+bytes = "1.12.1"
+# The link runs on a small runtime of its own, one thread.
+tokio = { version = "1.53.1", features = ["rt", "sync", "time", "macros"] }
 zyr-codec.workspace = true
 zyr-control.workspace = true
 zyr-media.workspace = true
 zyr-proto.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Direct3D 11, DXGI and WASAPI exist only as COM interfaces, which
+# windows-sys does not carry. The same package the rest of the
+# repository already uses for them.
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    # D3DCompile, from the d3dcompiler_47.dll every Windows 10 has.
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Direct3D11",
+    # DwmEnableMMCSS.
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    # MonitorFromWindow, to find the graphics card driving the window.
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    # The float sub-format of the sound card's own format.
+    "Win32_Media_KernelStreaming",
+    "Win32_Media_Multimedia",
+    "Win32_Security",
+    "Win32_System_Com",
+    # IMMDevice::Activate takes a PROPVARIANT parameter, even unused:
+    # without these two features, the method is not compiled.
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_Threading",
+    # GetClientRect, the size of the window the swap chain is made for.
+    "Win32_UI_WindowsAndMessaging",
+] }

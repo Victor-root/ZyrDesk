@@ -3177,6 +3177,9 @@ dependencies = [
 name = "zyr-player"
 version = "0.1.0"
 dependencies = [
+ "bytes",
+ "tokio",
+ "windows",
  "zyr-codec",
  "zyr-control",
  "zyr-media",
