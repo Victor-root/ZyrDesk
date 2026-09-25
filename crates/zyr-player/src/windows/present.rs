@@ -474,8 +474,12 @@ impl Gpu {
         let (views, texture_size) = if direct {
             self.views_of(source, &source_description, picture.index())?
         } else {
-            let slice = picture.index() * source_description.MipLevels.max(1);
-            self.copied(source, slice, (width, height))?
+            self.copied(
+                source,
+                &source_description,
+                picture.index(),
+                (width, height),
+            )?
         };
 
         let (texture_width, texture_height) = (texture_size.0 as f32, texture_size.1 as f32);
@@ -598,6 +602,7 @@ impl Gpu {
     fn copied(
         &mut self,
         source: &ID3D11Texture2D,
+        description: &D3D11_TEXTURE2D_DESC,
         slice: u32,
         (width, height): (u32, u32),
     ) -> Result<(Planes, (u32, u32)), Fault> {
@@ -651,17 +656,20 @@ impl Gpu {
         let Some(private) = &self.private else {
             return Err(Fault::Failed("no texture to copy into".to_string()));
         };
+        // Never past the source, whose surfaces decoders make at least
+        // that large anyway.
         let area = D3D11_BOX {
             left: 0,
             top: 0,
             front: 0,
-            right: size.0,
-            bottom: size.1,
+            right: size.0.min(description.Width),
+            bottom: size.1.min(description.Height),
             back: 1,
         };
-        // SAFETY: two NV12 textures of this device; the area lies inside
-        // both, the decoder's surfaces being at least the picture's size
-        // rounded up.
+        // The subresource of mip 0 of that slice.
+        let subresource = slice * description.MipLevels.max(1);
+        // SAFETY: two NV12 textures of this device, and an area inside
+        // both.
         unsafe {
             self.device.context.CopySubresourceRegion(
                 &private.texture,
@@ -670,7 +678,7 @@ impl Gpu {
                 0,
                 0,
                 source,
-                slice,
+                subresource,
                 Some(&area),
             )
         };
