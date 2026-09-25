@@ -11,12 +11,10 @@
 //! behind.
 
 use std::fmt;
-use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
 use zyr_broker::rest::Access;
-use zyr_proto::net::EnginePorts;
 use zyr_proto::session::{Preferred, Serving, WantedScreen};
 use zyr_transport::{Fingerprint, MediaProfile};
 
@@ -27,7 +25,7 @@ use zyr_transport::{Fingerprint, MediaProfile};
 /// than misunderstand each other quietly. A field that goes counts as
 /// much as one that arrives, since the two halves would then no longer
 /// be saying the same things to each other.
-pub const PROTOCOL: u32 = 30;
+pub const PROTOCOL: u32 = 31;
 
 /// Identifies one way out, for as long as it stays open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -42,18 +40,17 @@ impl fmt::Display for WayId {
 /// What stands between a computer meant to be reachable and being one.
 ///
 /// Only ever read when it is not reachable. Without it, an engine that
-/// is missing and an engine that is starting look exactly alike from a
-/// window, and the second one never stops looking like it is about to
+/// cannot run and a door that is opening look exactly alike from a
+/// window, and the first one never stops looking like it is about to
 /// work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Holdup {
     /// Nothing is wrong: it is on its way up.
     #[default]
     Starting,
-    /// The host engine is not on this machine.
+    /// FFmpeg is missing from `vendor/ffmpeg`, and the engine cannot make
+    /// a picture without it.
     EngineMissing,
-    /// It is there, and it will not stay up.
-    EngineWontStand,
 }
 
 impl Holdup {
@@ -61,7 +58,6 @@ impl Holdup {
         match self {
             Holdup::Starting => "starting",
             Holdup::EngineMissing => "engine-missing",
-            Holdup::EngineWontStand => "engine-wont-stand",
         }
     }
 
@@ -70,7 +66,6 @@ impl Holdup {
     fn read(said: &str) -> Self {
         match said {
             "engine-missing" => Holdup::EngineMissing,
-            "engine-wont-stand" => Holdup::EngineWontStand,
             _ => Holdup::Starting,
         }
     }
@@ -112,14 +107,6 @@ pub enum Request {
         /// two apart when a session goes quiet.
         only_here: bool,
     },
-    /// Hands the far computer, through an open way, the code its engine
-    /// is waiting for.
-    ///
-    /// This is what spares the person a walk to the other computer. The
-    /// two computers recognised each other by fingerprint before the way
-    /// opened, so the code proves nothing they have not already proven,
-    /// and nobody is ever shown one.
-    Pair { way: WayId, pin: String },
     /// Asks the far computer to press Ctrl+Alt+Suppr on itself.
     ///
     /// Through the way and never through the engines. Windows keeps that
@@ -145,24 +132,6 @@ pub enum Request {
     /// only one who knows that the room should go quiet, and a setting on
     /// that machine would have to be walked over to.
     Hush { way: WayId, quiet: bool },
-    /// Asks the far computer to resend a still screen at full rate while
-    /// this session watches it, or to stop doing it.
-    ///
-    /// The same reasoning as the hush: what it costs is paid over there,
-    /// and the only person who can tell whether the picture feels smooth
-    /// is the one looking at it. Asked at the opening of a session and
-    /// again whenever the person changes their mind: its engine takes it
-    /// where it stands, and the answer says it is starting over only when
-    /// that engine cannot be asked.
-    SteadyFar { way: WayId, rate: bool },
-    /// Asks the far computer to serve this session's picture at that
-    /// rate, in kilobits a second, from now on.
-    ///
-    /// Asked in the middle of a session and nowhere else: at its opening
-    /// the rate travels with the stream, negotiated between the two
-    /// engines. Its engine takes this where it stands, which is the one
-    /// road that changes the rate without the picture stopping.
-    BitrateFar { way: WayId, kbps: u32 },
     /// Asks the far computer to wake its virtual screen for a picture
     /// like that one, or, with nothing asked for, to put it back to sleep.
     ///
@@ -170,18 +139,12 @@ pub enum Request {
     /// screen could not draw, and it sleeps whenever no session wants it:
     /// a machine nobody is looking at has the screens its owner plugged
     /// in and no others. Asked at the opening of a session and answered
-    /// before the picture opens, because the far engine has to find it.
+    /// before the picture opens, because the picture is made at the size
+    /// this answers.
     FarScreen {
         way: WayId,
         wanted: Option<WantedScreen>,
     },
-    /// Asks the far computer which pictures its engine can make.
-    ///
-    /// Asked through an open way, so during a session: the answer decides
-    /// what that session's menu may offer, and a codec that computer
-    /// cannot make has no business being offered. Nothing said back is
-    /// « it has not said », never « none ».
-    FarCodecs { way: WayId },
     /// Asks the far computer what shape its pointer has right now.
     ///
     /// Asked through an open way, so during a session, and asked several
@@ -191,16 +154,6 @@ pub enum Request {
     /// Nothing is remembered of it at either end; a shape is worth
     /// nothing a moment after it was read.
     FarPointer { way: WayId },
-    /// Tells the far computer to draw its own pointer into the picture,
-    /// or to stop drawing it.
-    ///
-    /// Asked through an open way, and said rather than toggled: the
-    /// switch it reaches lives in that computer's engine, which was
-    /// started with its service and outlives every session. A toggle
-    /// there cannot be read from here, so a session that ended without
-    /// putting it back left the next one turning it the wrong way while
-    /// believing the opposite, and a screen with two pointers or none.
-    FarPointerDrawn { way: WayId, drawn: bool },
     /// Asks the far computer which screens it is showing on.
     ///
     /// Asked through an open way, so during a session: a machine with two
@@ -211,10 +164,8 @@ pub enum Request {
     /// Asks the far computer to serve its picture from that screen.
     ///
     /// Nothing named is its main screen, which is what every session asks
-    /// for until somebody says otherwise. Its engine reads which screen
-    /// to film when it starts, so the answer says whether it is on that
-    /// screen already or whether it is starting over, which takes the way
-    /// with it.
+    /// for until somebody says otherwise. Its engine changes screen where
+    /// it stands, so this is answered like any other order carried out.
     FilmFarScreen { way: WayId, id: Option<String> },
     /// Ties an open way to the process using it: the way closes on its
     /// own once that process is gone, whatever became of whoever asked.
@@ -376,10 +327,6 @@ impl Request {
                 // says no to.
                 only_here: fields.flag("here", false),
             }),
-            "pair" => Ok(Request::Pair {
-                way: WayId(fields.parsed("way")?),
-                pin: fields.text("pin")?.to_string(),
-            }),
             "sas" => Ok(Request::SecureAttention {
                 way: WayId(fields.parsed("way")?),
             }),
@@ -390,14 +337,6 @@ impl Request {
                 way: WayId(fields.parsed("way")?),
                 quiet: fields.text("quiet")? == "yes",
             }),
-            "steady" => Ok(Request::SteadyFar {
-                way: WayId(fields.parsed("way")?),
-                rate: fields.text("rate")? == "yes",
-            }),
-            "bitrate" => Ok(Request::BitrateFar {
-                way: WayId(fields.parsed("way")?),
-                kbps: fields.parsed("kbps")?,
-            }),
             "farscreen" => Ok(Request::FarScreen {
                 way: WayId(fields.parsed("way")?),
                 wanted: match fields.text("screen")? {
@@ -406,13 +345,6 @@ impl Request {
                 },
             }),
             "farpointer" => Ok(Request::FarPointer {
-                way: WayId(fields.parsed("way")?),
-            }),
-            "farpointerdrawn" => Ok(Request::FarPointerDrawn {
-                way: WayId(fields.parsed("way")?),
-                drawn: fields.text("drawn")? == "yes",
-            }),
-            "farcodecs" => Ok(Request::FarCodecs {
                 way: WayId(fields.parsed("way")?),
             }),
             "farscreens" => Ok(Request::FarScreens {
@@ -529,29 +461,18 @@ impl fmt::Display for Request {
                 media.frames_per_second,
                 said(*only_here)
             ),
-            Request::Pair { way, pin } => write!(f, "pair way={way} pin={pin}"),
             Request::SecureAttention { way } => write!(f, "sas way={way}"),
             Request::LockScreen { way } => write!(f, "lock way={way}"),
-            Request::SteadyFar { way, rate } => {
-                write!(f, "steady way={way} rate={}", said(*rate))
-            }
-            Request::BitrateFar { way, kbps } => write!(f, "bitrate way={way} kbps={kbps}"),
             Request::FarScreen { way, wanted } => match wanted {
                 Some(screen) => write!(f, "farscreen way={way} screen={screen}"),
                 None => write!(f, "farscreen way={way} screen=none"),
             },
             Request::Hush { way, quiet } => write!(f, "hush way={way} quiet={}", said(*quiet)),
-            Request::FarCodecs { way } => write!(f, "farcodecs way={way}"),
             Request::FarPointer { way } => write!(f, "farpointer way={way}"),
-            Request::FarPointerDrawn { way, drawn } => write!(
-                f,
-                "farpointerdrawn way={way} drawn={}",
-                if *drawn { "yes" } else { "no" }
-            ),
             Request::FarScreens { way } => write!(f, "farscreens way={way}"),
             // « main » rather than nothing at all: a field with no value
             // is a field nobody wrote, and the identifiers themselves are
-            // the far computer's own digests, written between braces.
+            // device paths, full of backslashes, which none is spelled as.
             Request::FilmFarScreen { way, id } => write!(
                 f,
                 "filmfar way={way} screen={}",
@@ -724,16 +645,13 @@ pub struct Standing {
     pub ways: usize,
 }
 
-/// Where a remote engine now appears, on this computer.
+/// A way open towards a remote computer, and where its player connects.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reached {
     pub way: WayId,
-    /// Local address standing in for the remote computer.
-    pub address: IpAddr,
-    /// Ports of the remote engine, mirrored on that address.
-    pub engine: EnginePorts,
-    /// Largest packet the path takes in one piece.
-    pub packet: u16,
+    /// Name of the local link the player connects to: through it, the
+    /// far computer's engine.
+    pub link: String,
 }
 
 /// A ZyrDesk this computer can show on its home screen.
@@ -857,9 +775,8 @@ pub struct Session {
     /// Number the system knows the player by. What lets a window find
     /// the session's own window among all the others.
     pub process: u32,
-    /// Local address the client engine reaches that computer at, through
-    /// the tunnel. What anything else driving the same engine has to be
-    /// given: from outside, the far computer only exists there.
+    /// Name of the local link the player of this session connects to:
+    /// from this computer, the far one only exists there.
     pub at: String,
     /// How long the picture has been up.
     pub since: Duration,
@@ -910,9 +827,6 @@ pub enum Answer {
     Showing {
         size: Option<(u32, u32)>,
     },
-    /// What the far computer's engine can encode, in the product's own
-    /// spelling, one name after another. Empty is « it has not said ».
-    Codecs(String),
     /// The shape the far computer's pointer has right now.
     Pointer(zyr_proto::session::Pointer),
     /// The screens the far computer is showing on, one to a line.
@@ -921,16 +835,6 @@ pub enum Answer {
     /// same reason: a newline here would be read as the start of another
     /// message. Empty is « it has not said ».
     Screens(String),
-    /// The far computer is as it was asked to be, or is starting its
-    /// engine over to be it, which takes the way with it.
-    ///
-    /// The answer to both of the asks its engine only reads at its start:
-    /// which of its screens to film, and whether it resends a still
-    /// screen at full rate. Which of the two it answers is whichever was
-    /// asked.
-    Settled {
-        starting_over: bool,
-    },
     /// One computer's journal, whole.
     ///
     /// The only answer that carries a page rather than a handful of
@@ -982,10 +886,7 @@ impl Answer {
             })),
             "reached" => Ok(Answer::Reached(Reached {
                 way: WayId(fields.parsed("way")?),
-                address: fields.parsed("address")?,
-                engine: EnginePorts::new(fields.parsed("base")?)
-                    .map_err(|e| Malformed(e.to_string()))?,
-                packet: fields.parsed("packet")?,
+                link: unpacked(fields.text("link")?),
             })),
             "peer" => Ok(Answer::Peer(Peer {
                 name: unpacked(fields.text("name")?),
@@ -1006,7 +907,7 @@ impl Answer {
                 towards: unpacked(fields.text("towards")?),
                 peer: fields.parsed("peer")?,
                 process: fields.parsed("process")?,
-                at: fields.text("at")?.to_string(),
+                at: unpacked(fields.text("at")?),
                 since: Duration::from_secs(fields.parsed("since")?),
                 via: fields.text("via").unwrap_or_default().to_string(),
                 round_trip_ms: fields.parsed("rtt").unwrap_or(0),
@@ -1026,14 +927,10 @@ impl Answer {
                     ),
                 },
             }),
-            "codecs" => Ok(Answer::Codecs(rest.trim().to_string())),
             // A shape this build does not know is the ordinary
             // arrow: reading cannot fail.
             "pointer" => Ok(Answer::Pointer(rest.trim().parse().unwrap_or_default())),
             "screens" => Ok(Answer::Screens(unfolded(rest.trim()))),
-            "settled" => Ok(Answer::Settled {
-                starting_over: rest.trim() == "starting-over",
-            }),
             "journal" => Ok(Answer::Journal(unfolded(rest.trim()))),
             "done" => Ok(Answer::Done),
             "no" => Ok(Answer::Refused(unfolded(rest.trim()))),
@@ -1091,11 +988,9 @@ impl fmt::Display for Answer {
             ),
             Answer::Reached(reached) => write!(
                 f,
-                "reached way={} address={} base={} packet={}",
+                "reached way={} link={}",
                 reached.way,
-                reached.address,
-                reached.engine.base(),
-                reached.packet
+                packed(&reached.link)
             ),
             Answer::Peer(peer) => {
                 write!(
@@ -1129,7 +1024,7 @@ impl fmt::Display for Answer {
                 packed(&session.towards),
                 session.peer,
                 session.process,
-                session.at,
+                packed(&session.at),
                 session.since.as_secs(),
                 session.via,
                 session.round_trip_ms
@@ -1146,18 +1041,8 @@ impl fmt::Display for Answer {
                 Some((wide, high)) => write!(f, "showing size={wide}x{high}"),
                 None => f.write_str("showing size=none"),
             },
-            Answer::Codecs(named) => write!(f, "codecs {named}"),
             Answer::Pointer(shape) => write!(f, "pointer {shape}"),
             Answer::Screens(listed) => write!(f, "screens {}", folded(listed)),
-            Answer::Settled { starting_over } => write!(
-                f,
-                "settled {}",
-                if *starting_over {
-                    "starting-over"
-                } else {
-                    "already"
-                }
-            ),
             Answer::Journal(text) => write!(f, "journal {}", folded(text)),
             Answer::Done => f.write_str("done"),
             // The reason travels on one line: a newline would be read as
@@ -1391,10 +1276,6 @@ mod tests {
                 },
                 only_here: false,
             },
-            Request::Pair {
-                way: WayId(3),
-                pin: "0429".to_string(),
-            },
             Request::Hold {
                 way: WayId(3),
                 process: 11248,
@@ -1402,20 +1283,6 @@ mod tests {
             Request::Release { way: WayId(3) },
             Request::SecureAttention { way: WayId(3) },
             Request::LockScreen { way: WayId(3) },
-            Request::SteadyFar {
-                way: WayId(3),
-                rate: true,
-            },
-            Request::SteadyFar {
-                way: WayId(3),
-                rate: false,
-            },
-            // The rate is asked for in the middle of a session, in
-            // kilobits per second, as the far engine reads it.
-            Request::BitrateFar {
-                way: WayId(3),
-                kbps: 20_000,
-            },
             Request::Hush {
                 way: WayId(3),
                 quiet: true,
@@ -1497,18 +1364,7 @@ mod tests {
             Request::Journal {
                 sift: "tag:clipboard -\"deux mots\"".to_string(),
             },
-            // An address written by hand can carry a space, here as
-            // everywhere else.
-            Request::FarCodecs { way: WayId(7) },
             Request::FarPointer { way: WayId(7) },
-            Request::FarPointerDrawn {
-                way: WayId(7),
-                drawn: true,
-            },
-            Request::FarPointerDrawn {
-                way: WayId(7),
-                drawn: false,
-            },
             Request::FarScreens { way: WayId(7) },
             // Nothing named means the main screen, and it is what every
             // session asks for as long as nobody has said otherwise.
@@ -1518,7 +1374,13 @@ mod tests {
             },
             Request::FilmFarScreen {
                 way: WayId(7),
-                id: Some("{daeac860-f4db-5208-b1f5-cf59444fb768}".to_string()),
+                id: Some(
+                    r"MONITOR\GSM5B7F\{4d36e96e-e325-11ce-bfc1-08002be10318}\0003".to_string(),
+                ),
+            },
+            Request::FilmFarScreen {
+                way: WayId(7),
+                id: Some(r"\\.\DISPLAY3".to_string()),
             },
             Request::FarJournal {
                 host: "pc de victor.local".to_string(),
@@ -1635,11 +1497,15 @@ mod tests {
                 },
                 ways: 0,
             }),
+            // A pipe's name is full of backslashes, and a temporary folder
+            // may hold a space: both cross the field whole.
             Answer::Reached(Reached {
                 way: WayId(3),
-                address: "127.77.0.1".parse().unwrap(),
-                engine: EnginePorts::new(42000).unwrap(),
-                packet: 1353,
+                link: r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string(),
+            }),
+            Answer::Reached(Reached {
+                way: WayId(4),
+                link: "/tmp/mon dossier/zyrdesk-link-8fKq2Lr0/link".to_string(),
             }),
             Answer::Peer(Peer {
                 // A computer name contains spaces far more often
@@ -1699,7 +1565,7 @@ mod tests {
                 towards: "192.168.1.20".to_string(),
                 peer: fingerprint(),
                 process: 11248,
-                at: "127.77.0.1:47989".to_string(),
+                at: r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string(),
                 since: Duration::from_secs(742),
                 via: "192.168.1.20:47000".to_string(),
                 round_trip_ms: 12,
@@ -1722,15 +1588,11 @@ mod tests {
             // One line per screen, folded to travel the way the
             // journal just above does.
             Answer::Screens(
-                "{aaa} main 2560x1440 ROG PG279Q\n{bbb} other 1920x1080 Dell U2412M".to_string(),
+                "MONITOR\\GSM5B7F\\0003 main 2560x1440 ROG PG279Q\n\\\\.\\DISPLAY2 other \
+                 1920x1080 Dell U2412M"
+                    .to_string(),
             ),
             Answer::Screens(String::new()),
-            Answer::Settled {
-                starting_over: true,
-            },
-            Answer::Settled {
-                starting_over: false,
-            },
             Answer::Done,
             Answer::Refused("cet ordinateur a refusé l'accès".to_string()),
             Answer::Account(None),
@@ -1900,11 +1762,7 @@ mod tests {
         // update it.
         assert_eq!(Holdup::read("un-empechement-inedit"), Holdup::Starting);
         assert_eq!(Holdup::read(""), Holdup::Starting);
-        for holdup in [
-            Holdup::Starting,
-            Holdup::EngineMissing,
-            Holdup::EngineWontStand,
-        ] {
+        for holdup in [Holdup::Starting, Holdup::EngineMissing] {
             assert_eq!(Holdup::read(holdup.spelled()), holdup);
         }
     }
@@ -1962,7 +1820,7 @@ mod tests {
                 towards: name.to_string(),
                 peer: fingerprint(),
                 process: 11248,
-                at: "127.77.0.1:47989".to_string(),
+                at: r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string(),
                 since: Duration::from_secs(0),
                 via: String::new(),
                 round_trip_ms: 0,
