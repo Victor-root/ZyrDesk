@@ -1139,7 +1139,7 @@ mod tests {
     }
 
     #[test]
-    fn a_screen_that_changes_its_rate_is_followed_at_once() {
+    fn a_screen_that_changes_its_rate_is_followed_within_a_few_refreshes() {
         let journal = testing::OwnLog::new("pacing-rate");
         let start = Instant::now();
         let decoded = arrivals(

@@ -223,7 +223,7 @@ Les journaux des **deux PC**, pris **juste après** l'essai raté, sans rien red
 2. ouvrir la session, puis déplacer une fenêtre en rond sur l'hôte pendant 30 secondes, sans s'arrêter ;
 3. terminer la session ;
 4. dans la boîte de tri, taper les noms, puis **Copier le tri** :
-   - sur le **PC hôte** : `pace engine tunnel`. Les lignes `pace` disent, image par image, quand chacune est partie du moteur et ce qu'elle y a attendu ; les lignes `tunnel` ce qui a traversé le service, et ce que la connexion mesure du chemin ;
+   - sur le **PC hôte** : `pace engine tunnel`. Les lignes `pace` disent, image par image, quand chacune est partie du moteur et ce qu'elle y a attendu ; les lignes `engine` disent, au début, si le pilote NVIDIA garde la carte à pleine vitesse ; les lignes `tunnel` ce qui a traversé le service, et ce que la connexion mesure du chemin ;
    - sur le **PC client** : `flow measures tunnel`. Les lignes `flow` disent quand chaque image est arrivée, son décodage, et ce que l'écran en a vraiment montré ; les lignes `tunnel` la même chose que sur l'hôte, dans l'autre sens.
 
 Dire aussi comment chaque PC était relié à Internet (câble, Wi-Fi, fibre, 4G) et la fréquence de l'écran du client (60 Hz, 144 Hz…).
