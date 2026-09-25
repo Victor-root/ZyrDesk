@@ -17,7 +17,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_TIMEOUT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio::{
     AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
     AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, IAudioClient,
@@ -225,6 +225,14 @@ impl Output {
         loop {
             // SAFETY: an event of ours.
             let woken = unsafe { WaitForSingleObject(self.wake.0, PATIENCE_MS) };
+            if woken == WAIT_FAILED {
+                // Never waiting again would spin: the card is opened
+                // anew, with an event of its own.
+                return Played::DeviceGone(failure(
+                    "WaitForSingleObject on the sound card's event",
+                    &windows::core::Error::from_thread(),
+                ));
+            }
             let now = Instant::now();
             loop {
                 match input.try_recv() {

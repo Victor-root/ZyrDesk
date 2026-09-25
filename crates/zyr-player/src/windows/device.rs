@@ -131,12 +131,9 @@ pub fn create(hwnd: HWND, log: &Log) -> Result<Device, String> {
         }
     }
     Err(if refused.is_empty() {
-        "Aucune carte graphique de cet ordinateur ne peut afficher l'image.".to_string()
+        "no graphics card to draw with".to_string()
     } else {
-        format!(
-            "Aucune carte graphique de cet ordinateur ne peut afficher l'image ({}).",
-            refused.join(" ; ")
-        )
+        format!("no graphics card makes a device: {}", refused.join("; "))
     })
 }
 

@@ -72,6 +72,10 @@ cbuffer Reach : register(b0)
     // never bleeds into the colours.
     float2 luma_reach;
     float2 chroma_reach;
+    // Half a luma texel to the right: each chroma sample lies on the
+    // first of the two luma columns it covers, as H.264 and HEVC site it
+    // by default and the host makes it, not between them.
+    float2 chroma_shift;
 };
 
 Texture2DArray<float> luma : register(t0);
@@ -99,7 +103,7 @@ float4 paint(Between between) : SV_Target
 {
     float2 at = between.at * luma_reach;
     float y = luma.Sample(smooth, float3(at, 0.0));
-    float2 uv = chroma.Sample(smooth, float3(min(at, chroma_reach), 0.0));
+    float2 uv = chroma.Sample(smooth, float3(min(at + chroma_shift, chroma_reach), 0.0));
     float3 yuv = float3(y, uv) - float3(16.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0);
     float3 rgb = float3(
         1.1644 * yuv.x + 1.7927 * yuv.z,
@@ -111,6 +115,10 @@ float4 paint(Between between) : SV_Target
 
 /// The views of the two planes of an NV12 picture: luma, then chroma.
 type Planes = [Option<ID3D11ShaderResourceView>; 2];
+
+/// The shaders' constants, as laid out in two registers of four floats:
+/// luma reach, chroma reach, chroma shift, and two unused.
+type Reach = [f32; 8];
 
 /// Buffers of the swap chain: the three the default frame latency
 /// queues, the one drawn into, and one the compositor may hold on to.
@@ -163,11 +171,29 @@ impl Screen {
             .as_mut()
             .ok_or_else(|| Fault::Lost("the graphics card is still being made again".to_string()))
     }
+
+    /// Lets go of everything made on the card, the swap chain destroyed
+    /// for good before this returns. Direct3D 11 destroys what is let go
+    /// of only when the context next flushes, and a window takes one
+    /// swap chain at a time: its next one could not be made otherwise.
+    fn let_go(&mut self) {
+        let Some(gpu) = self.gpu.take() else {
+            return;
+        };
+        let context = gpu.device.context.clone();
+        drop(gpu);
+        // SAFETY: plain calls on a live context, which unbind what it
+        // still holds and destroy what nothing holds any more.
+        unsafe {
+            context.ClearState();
+            context.Flush();
+        }
+    }
 }
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        self.gpu = None;
+        self.let_go();
         if self.mmcss {
             // SAFETY: as when it was turned on.
             if let Err(e) = unsafe { DwmEnableMMCSS(false) } {
@@ -212,9 +238,19 @@ impl Presenter for Screen {
         self.gpu.as_ref().and_then(|gpu| gpu.rect)
     }
 
+    fn lost(&self) -> Option<String> {
+        let gpu = self.gpu.as_ref()?;
+        // SAFETY: a question to the device, answered with a code.
+        let removed = unsafe { gpu.device.device.GetDeviceRemovedReason() }.err()?;
+        Some(format!(
+            "GetDeviceRemovedReason: {}",
+            code_and_words(removed.code(), &removed.message())
+        ))
+    }
+
     fn renew(&mut self) -> Result<(), String> {
         // The old swap chain goes first: a window takes one at a time.
-        self.gpu = None;
+        self.let_go();
         self.gpu = Some(Gpu::create(self.hwnd, &self.log)?);
         Ok(())
     }
@@ -276,7 +312,7 @@ impl Drawing {
             .map_err(|e| failure("CreateSamplerState", &e))?;
 
         let buffer = D3D11_BUFFER_DESC {
-            ByteWidth: size_of::<[f32; 4]>() as u32,
+            ByteWidth: size_of::<Reach>() as u32,
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
             CPUAccessFlags: 0,
@@ -311,7 +347,7 @@ struct Gpu {
     hidden: bool,
     drawing: Drawing,
     /// What the constants hold now.
-    reach: [f32; 4],
+    reach: Reach,
     views: Option<Views>,
     private: Option<Private>,
     rect: Option<Rect>,
@@ -398,7 +434,7 @@ impl Gpu {
         let made =
             unsafe { swap.GetDesc1() }.map_err(|e| failure("GetDesc1 of the swap chain", &e))?;
 
-        let reach = [1.0; 4];
+        let reach = [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         let gpu = Gpu {
             device,
             swap,
@@ -431,14 +467,18 @@ impl Gpu {
         }
         self.hidden = false;
         // Nothing may hold on to the old buffers: the view of the one
-        // drawn into, and the context's binding of it.
+        // drawn into, and the context's binding of it, which the flush
+        // destroys for good rather than whenever the context next
+        // flushes.
         self.target = None;
-        // SAFETY: unbinding every render target.
+        // SAFETY: unbinding every render target, then plain calls on a
+        // live context.
         unsafe {
             self.device
                 .context
-                .OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>)
-        };
+                .OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
+            self.device.context.Flush();
+        }
         // Zero for everything: the same number of buffers and format, at
         // the window's size as it is now.
         // SAFETY: no reference to a buffer is left, as above.
@@ -488,6 +528,10 @@ impl Gpu {
             height as f32 / texture_height,
             width.saturating_sub(1) as f32 / texture_width,
             height.saturating_sub(1) as f32 / texture_height,
+            0.5 / texture_width,
+            0.0,
+            0.0,
+            0.0,
         ];
         if reach != self.reach {
             self.reach = reach;
@@ -685,9 +729,9 @@ impl Gpu {
         Ok((private.views.clone(), private.size))
     }
 
-    fn upload(&self, reach: [f32; 4]) {
-        // SAFETY: the whole of a constant buffer of this device, from
-        // four floats that outlive the call.
+    fn upload(&self, reach: Reach) {
+        // SAFETY: the whole of a constant buffer of this device, from as
+        // many floats as it holds, which outlive the call.
         unsafe {
             self.device.context.UpdateSubresource(
                 &self.drawing.constants,
@@ -716,20 +760,6 @@ impl Gpu {
             Err(e) => format!("removed: {}", code_and_words(e.code(), &e.message())),
         };
         Fault::Lost(format!("{text}; {reason}"))
-    }
-}
-
-impl Drop for Gpu {
-    fn drop(&mut self) {
-        // A swap chain is destroyed once the context lets go of it and
-        // flushes: otherwise the window would still be taken when the
-        // next one is made on it.
-        self.target = None;
-        // SAFETY: plain calls on a live context.
-        unsafe {
-            self.device.context.ClearState();
-            self.device.context.Flush();
-        }
     }
 }
 

@@ -589,7 +589,9 @@ fn on_window(hwnd: isize, shared: VideoShared) {
     match windows::Screen::open(hwnd, &shared.log) {
         Ok(screen) => play(screen, shared),
         Err(reason) => {
-            let _ = shared.inner.send(Inner::Failed(reason));
+            let _ = shared.inner.send(Inner::Failed(format!(
+                "L'image ne peut pas s'afficher sur cet ordinateur : {reason}"
+            )));
         }
     }
 }

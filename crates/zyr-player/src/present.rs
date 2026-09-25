@@ -83,6 +83,11 @@ pub trait Presenter {
     /// Where the last picture was drawn, if one was.
     fn picture_rect(&self) -> Option<Rect>;
 
+    /// Why the graphics card went away, if it did. Asked when the
+    /// decoder fails: working on the same card, it meets the loss before
+    /// any drawing does.
+    fn lost(&self) -> Option<String>;
+
     /// Makes everything again after [`Fault::Lost`].
     fn renew(&mut self) -> Result<(), String>;
 }
@@ -177,6 +182,10 @@ impl Presenter for Headless {
     fn picture_rect(&self) -> Option<Rect> {
         let picture = self.picture?;
         letterbox(picture, self.surface.unwrap_or(picture))
+    }
+
+    fn lost(&self) -> Option<String> {
+        None
     }
 
     fn renew(&mut self) -> Result<(), String> {

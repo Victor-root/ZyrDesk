@@ -302,6 +302,9 @@ pub struct Video<P: Presenter> {
     assembler: Assembler,
     recovery: Recovery,
     decoding: Decoding,
+    /// The newest picture of the frames being settled, drawn once they
+    /// all are.
+    waiting: Option<(DecodedFrame, u32)>,
     /// The picture on the surface, drawn again when the surface changes
     /// size.
     on_screen: Option<(DecodedFrame, u32)>,
@@ -332,6 +335,7 @@ impl<P: Presenter> Video<P> {
                 opened: None,
                 refused: None,
             },
+            waiting: None,
             on_screen: None,
             first_shown: false,
             counters: PictureTallies::default(),
@@ -364,7 +368,6 @@ impl<P: Presenter> Video<P> {
     /// for a key frame when one is needed.
     pub fn settle(&mut self, now: Instant) -> Vec<Said> {
         let mut said = Vec::new();
-        let mut newest: Option<(DecodedFrame, u32)> = None;
         while let Some(assembled) = self.assembler.poll(now) {
             match assembled {
                 Assembled::Lost { stream, frame } => {
@@ -379,7 +382,7 @@ impl<P: Presenter> Video<P> {
                 Assembled::Frame(frame) => {
                     lock(&self.tally).assembled(now, frame.data.len(), frame.host_latency_us);
                     if let Some(picture) = self.decode(&frame, now, &mut said)
-                        && newest.replace((picture, frame.captured_us)).is_some()
+                        && self.waiting.replace((picture, frame.captured_us)).is_some()
                     {
                         self.unshown(now, 1);
                     }
@@ -390,7 +393,7 @@ impl<P: Presenter> Video<P> {
         if let Some(recover) = self.recovery.due(now) {
             self.ask(recover, &mut said);
         }
-        if let Some((picture, captured_us)) = newest {
+        if let Some((picture, captured_us)) = self.waiting.take() {
             self.show(picture, captured_us, now, &mut said);
         }
         self.publish();
@@ -454,15 +457,23 @@ impl<P: Presenter> Video<P> {
                         frame.frame, frame.stream
                     )
                 });
-                if let Some(recover) = self.recovery.broken(now) {
-                    self.ask(recover, said);
+                match self.presenter.lost() {
+                    Some(reason) => self.fault(Fault::Lost(reason), now, said),
+                    None => {
+                        if let Some(recover) = self.recovery.broken(now) {
+                            self.ask(recover, said);
+                        }
+                    }
                 }
                 None
             }
             Decoded::Refused(notice) => {
                 self.counters.skipped += 1;
                 if let Some(text) = notice {
-                    said.push(Said::Notice(text));
+                    match self.presenter.lost() {
+                        Some(reason) => self.fault(Fault::Lost(reason), now, said),
+                        None => said.push(Said::Notice(text)),
+                    }
                 }
                 None
             }
@@ -490,7 +501,12 @@ impl<P: Presenter> Video<P> {
                 }
                 self.on_screen = Some((picture, captured_us));
             }
-            Err(fault) => self.fault(fault, now, said),
+            Err(fault) => {
+                // Made on a card that may be going: let go of before a
+                // new one is made.
+                drop(picture);
+                self.fault(fault, now, said);
+            }
         }
     }
 
@@ -507,7 +523,8 @@ impl<P: Presenter> Video<P> {
                     "the graphics card went away ({reason}): making everything again"
                 ));
                 // Everything made on the old card goes before the new one
-                // is made.
+                // is made, and is never drawn on it.
+                self.waiting = None;
                 self.on_screen = None;
                 self.decoding.close();
                 self.counters.renewed += 1;
@@ -633,12 +650,13 @@ mod tests {
     use zyr_media::codec::CodecSet;
 
     /// Records the fingerprint of every picture drawn, and can be told
-    /// to lose its graphics card.
+    /// to lose its graphics card, when drawing or before.
     #[derive(Default)]
     struct Recording {
         inner: Headless,
         drawn: Vec<u64>,
         lose_next: bool,
+        gone: bool,
         renewed: u32,
     }
 
@@ -668,10 +686,22 @@ mod tests {
             self.inner.picture_rect()
         }
 
+        fn lost(&self) -> Option<String> {
+            self.gone
+                .then(|| "GetDeviceRemovedReason: DXGI_ERROR_DEVICE_REMOVED".to_string())
+        }
+
         fn renew(&mut self) -> Result<(), String> {
             self.renewed += 1;
+            self.gone = false;
             Ok(())
         }
+    }
+
+    /// A frame the decoder refuses: a picture parameter set naming a
+    /// sequence parameter set that never came.
+    fn refused() -> Encoded {
+        (vec![0, 0, 0, 1, 0x68, 0x9a, 0x80], false)
     }
 
     fn video(presenter: Recording) -> Video<Recording> {
@@ -840,6 +870,53 @@ mod tests {
         video.settle(at);
         assert_eq!(video.counters.skipped, 1);
         assert_eq!(video.presenter.drawn.len(), 1);
+    }
+
+    #[test]
+    fn a_frame_refused_on_a_card_still_there_only_asks_for_a_key_frame() {
+        let (packets, _) = h264(1, &[]);
+        let mut video = video(Recording::default());
+        let at = Instant::now();
+        frame_in(&mut video, 1, 0, &packets[0], at);
+        video.settle(at);
+        frame_in(&mut video, 1, 1, &refused(), at);
+        assert_eq!(
+            recovers(&video.settle(at)),
+            [Recover {
+                stream: 1,
+                frame: 0
+            }]
+        );
+        assert_eq!(video.counters.broken, 1);
+        assert_eq!(video.presenter.renewed, 0);
+    }
+
+    #[test]
+    fn a_decoder_failing_because_the_card_went_away_makes_everything_again() {
+        let (packets, looks) = h264(3, &[2]);
+        let mut video = video(Recording::default());
+        let at = Instant::now();
+        frame_in(&mut video, 1, 0, &packets[0], at);
+        video.settle(at);
+        // Frame 1 decodes; frame 2, arriving with it, meets the card gone.
+        frame_in(&mut video, 1, 1, &packets[1], at);
+        frame_in(&mut video, 1, 2, &refused(), at);
+        video.presenter.gone = true;
+        assert_eq!(
+            recovers(&video.settle(at)),
+            [Recover {
+                stream: 1,
+                frame: 1
+            }]
+        );
+        assert_eq!(video.presenter.renewed, 1);
+        assert_eq!(video.counters.renewed, 1);
+        // Frame 1 was made on the card gone: never drawn on the new one.
+        assert_eq!(video.presenter.drawn, [looks[0]]);
+        // The key frame asked for plays on the new card.
+        frame_in(&mut video, 1, 3, &packets[2], at);
+        video.settle(at);
+        assert_eq!(video.presenter.drawn, [looks[0], looks[2]]);
     }
 
     #[test]
