@@ -21,6 +21,7 @@
 
 use std::ffi::c_void;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::{
@@ -39,18 +40,19 @@ use windows::Win32::Graphics::Direct3D11::{
     ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D,
     ID3D11VertexShader,
 };
-use windows::Win32::Graphics::Dwm::DwmEnableMMCSS;
+use windows::Win32::Graphics::Dwm::{DWM_TIMING_INFO, DwmEnableMMCSS, DwmGetCompositionTimingInfo};
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_UNSPECIFIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_NV12,
     DXGI_FORMAT_R8_UNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
     DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET,
-    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_FEATURE_PRESENT_ALLOW_TEARING,
+    DXGI_ERROR_DRIVER_INTERNAL_ERROR, DXGI_FEATURE_PRESENT_ALLOW_TEARING, DXGI_FRAME_STATISTICS,
     DXGI_MWA_NO_WINDOW_CHANGES, DXGI_PRESENT, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
     DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIFactory5, IDXGISwapChain1,
 };
+use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 use windows::core::{BOOL, Error, HRESULT, Interface, PCSTR, s, w};
 use zyr_codec::{D3d11Picture, DecodeOutput, DecodedFrame, Ffmpeg, VideoDecoder};
@@ -59,7 +61,7 @@ use zyr_proto::log::Log;
 
 use super::device::{self, Device, INTEL};
 use super::{FineTimers, Multimedia, code_and_words, failure};
-use crate::present::{Fault, Presenter, Rect, Shown, letterbox};
+use crate::present::{Displayed, Fault, Presenter, Rect, Shown, letterbox};
 
 /// The shaders, compiled when the player starts: d3dcompiler_47.dll
 /// comes with every Windows 10, and nothing is built ahead of time.
@@ -256,6 +258,10 @@ impl Presenter for Screen {
         self.let_go();
         self.gpu = Some(Gpu::create(self.hwnd, &self.log)?);
         Ok(())
+    }
+
+    fn displayed(&self) -> Option<Displayed> {
+        self.gpu.as_ref()?.displayed()
     }
 }
 
@@ -582,6 +588,51 @@ impl Gpu {
             return Err(self.fault("Present", presented));
         }
         Ok(())
+    }
+
+    /// What the screen showed of this swap chain's pictures: its own
+    /// statistics, and the compositor's for the refresh and what it
+    /// missed. Nothing while the system has nothing to say, as before the
+    /// first picture reaches the screen.
+    fn displayed(&self) -> Option<Displayed> {
+        // SAFETY: a getter on a live swap chain.
+        let presented = unsafe { self.swap.GetLastPresentCount() }.ok()?;
+        let mut statistics = DXGI_FRAME_STATISTICS::default();
+        // SAFETY: the same, into a structure of ours.
+        unsafe { self.swap.GetFrameStatistics(&mut statistics) }.ok()?;
+        let mut timing = DWM_TIMING_INFO {
+            cbSize: size_of::<DWM_TIMING_INFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: no window names the whole compositor; the structure
+        // says its own size.
+        unsafe { DwmGetCompositionTimingInfo(HWND::default(), &mut timing) }.ok()?;
+        let (mut now, mut frequency) = (0i64, 0i64);
+        // SAFETY: plain out values.
+        unsafe {
+            QueryPerformanceCounter(&mut now).ok()?;
+            QueryPerformanceFrequency(&mut frequency).ok()?;
+        }
+        let frequency = u64::try_from(frequency).ok().filter(|ticks| *ticks > 0)?;
+        let ticks = |count: u64| Duration::from_secs_f64(count as f64 / frequency as f64);
+        let refresh = ticks(timing.qpcRefreshPeriod);
+        // The refresh the last picture appeared at, from the last one the
+        // system timed: that many refreshes before it.
+        let since_timed = ticks(u64::try_from(now - statistics.SyncQPCTime).unwrap_or(0));
+        let before_timed = refresh
+            * statistics
+                .SyncRefreshCount
+                .saturating_sub(statistics.PresentRefreshCount);
+        let at = Instant::now().checked_sub(since_timed + before_timed)?;
+        Some(Displayed {
+            presented: u64::from(presented),
+            shown: u64::from(statistics.PresentCount),
+            at_refresh: u64::from(statistics.PresentRefreshCount),
+            at,
+            refresh,
+            compositor_missed: timing.cFramesMissed,
+            compositor_dropped: timing.cFramesDropped,
+        })
     }
 
     /// The view of the back buffer, made again after a resize.

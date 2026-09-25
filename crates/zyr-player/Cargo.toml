@@ -45,6 +45,9 @@ windows = { version = "0.62.2", features = [
     # without these two features, the method is not compiled.
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",
+    # QueryPerformanceCounter, to place on this clock the refresh the
+    # screen showed a picture at.
+    "Win32_System_Performance",
     "Win32_System_Threading",
     # GetClientRect, the size of the window the swap chain is made for.
     "Win32_UI_WindowsAndMessaging",

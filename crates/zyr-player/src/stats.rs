@@ -171,14 +171,22 @@ impl Tally {
             self.interval_ms
                 .add(now, ms(now.saturating_duration_since(before)));
         }
-        let local_now = self.clock.us(now);
-        if let Some(captured) = self.offset.captured_to_local(captured_us, local_now) {
-            // Below zero is the estimate of the host's clock erring by
-            // more than the latency itself, never a picture from the
-            // future.
-            let latency_us = (i128::from(local_now) - i128::from(captured)).max(0);
-            self.latency_ms.add(now, latency_us as f64 / 1000.0);
+        if let Some(latency) = self.since_capture(captured_us, now) {
+            self.latency_ms.add(now, ms(latency));
         }
+    }
+
+    /// How long before `at` a picture captured at `captured_us` on the
+    /// host's clock was captured, once the two clocks are known apart.
+    pub fn since_capture(&self, captured_us: u32, at: Instant) -> Option<Duration> {
+        let local_at = self.clock.us(at);
+        let captured = self.offset.captured_to_local(captured_us, local_at)?;
+        // Below zero is the estimate of the host's clock erring by more
+        // than the latency itself, never a picture from the future.
+        let latency_us = (i128::from(local_at) - i128::from(captured)).max(0);
+        Some(Duration::from_micros(
+            u64::try_from(latency_us).unwrap_or(u64::MAX),
+        ))
     }
 
     /// A pong came back at `now` for a ping sent at `sent_us`, the

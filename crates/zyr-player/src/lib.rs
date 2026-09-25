@@ -18,6 +18,7 @@
 //! the tests and the diagnostic command line use.
 
 mod audio;
+mod flow;
 mod link;
 mod present;
 mod seldom;

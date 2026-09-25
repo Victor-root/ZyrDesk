@@ -58,6 +58,34 @@ pub fn log(tag: &'static str) -> Log {
         .about(tag)
 }
 
+/// A journal of one test's own, for a test that reads back what was
+/// written: the run's shared journal holds every test's lines at once.
+pub struct OwnLog {
+    pub log: Log,
+    path: PathBuf,
+}
+
+impl OwnLog {
+    pub fn new(test: &str) -> Self {
+        let path = std::env::temp_dir()
+            .join(format!("zyr-player-tests-{}", std::process::id()))
+            .join(format!("{test}.log"));
+        let log = Log::open(&path).expect("a journal of the test's own opens");
+        Self { log, path }
+    }
+
+    /// Everything written so far.
+    pub fn written(&self) -> String {
+        std::fs::read_to_string(&self.path).unwrap_or_default()
+    }
+}
+
+impl Drop for OwnLog {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 /// One encoded frame, and whether it is a key frame.
 pub type Encoded = (Vec<u8>, bool);
 

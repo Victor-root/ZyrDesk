@@ -7,6 +7,7 @@
 
 use std::hash::{DefaultHasher, Hasher};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use zyr_codec::{CpuPicture, DecodeOutput, DecodedFrame, Ffmpeg, PictureLayout, VideoDecoder};
 use zyr_media::codec::{CodecSet, VideoCodec};
@@ -64,6 +65,30 @@ pub struct Shown {
     pub checksum: Option<u64>,
 }
 
+/// What the screen really showed, as the system tells it.
+///
+/// Presenting a picture is asking for it to be shown; the compositor then
+/// shows it at a refresh of the screen, a later one, or never when a
+/// newer picture came before its refresh. Only this says which.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Displayed {
+    /// Pictures presented so far on this surface.
+    pub presented: u64,
+    /// The last of them the screen showed, counted the same way.
+    pub shown: u64,
+    /// The refresh of the screen it appeared at, counted since the screen
+    /// started.
+    pub at_refresh: u64,
+    /// When that refresh was.
+    pub at: Instant,
+    /// How long a refresh of the screen lasts.
+    pub refresh: Duration,
+    /// Compositions the desktop's compositor missed, and frames it
+    /// dropped, since it started.
+    pub compositor_missed: u64,
+    pub compositor_dropped: u64,
+}
+
 /// Something decoded pictures are drawn on.
 pub trait Presenter {
     /// Where the decoder is to put its pictures for this presenter;
@@ -90,6 +115,12 @@ pub trait Presenter {
 
     /// Makes everything again after [`Fault::Lost`].
     fn renew(&mut self) -> Result<(), String>;
+
+    /// What the screen showed of the pictures presented, when the system
+    /// says. Nothing where there is no screen.
+    fn displayed(&self) -> Option<Displayed> {
+        None
+    }
 }
 
 /// The width and height of a decoded picture.

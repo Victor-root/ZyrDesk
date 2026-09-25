@@ -29,6 +29,7 @@ use zyr_media::codec::VideoCodec;
 use zyr_media::video::{Assembled, AssembledFrame, Assembler, AssemblyLimits};
 use zyr_proto::log::Log;
 
+use crate::flow::Flow;
 use crate::lock;
 use crate::present::{Fault, Presenter, Rect};
 use crate::seldom::Seldom;
@@ -318,6 +319,14 @@ struct Hushed {
     asked: Seldom,
 }
 
+/// A picture decoded and waiting for its turn on the surface.
+struct Ready {
+    picture: DecodedFrame,
+    captured_us: u32,
+    /// When its frame came whole.
+    whole: Instant,
+}
+
 /// Datagrams in, pictures out.
 pub struct Video<P: Presenter> {
     presenter: P,
@@ -326,7 +335,7 @@ pub struct Video<P: Presenter> {
     decoding: Decoding,
     /// The newest picture of the frames being settled, drawn once they
     /// all are.
-    waiting: Option<(DecodedFrame, u32)>,
+    waiting: Option<Ready>,
     /// The picture on the surface, drawn again when the surface changes
     /// size.
     on_screen: Option<(DecodedFrame, u32)>,
@@ -338,6 +347,7 @@ pub struct Video<P: Presenter> {
     tally: Arc<Mutex<Tally>>,
     tallies: Arc<Mutex<Tallies>>,
     rect: Arc<Mutex<Option<Rect>>>,
+    flow: Flow,
     log: Log,
 }
 
@@ -368,6 +378,7 @@ impl<P: Presenter> Video<P> {
             tally,
             tallies,
             rect,
+            flow: Flow::new(&log),
             log,
         }
     }
@@ -381,6 +392,8 @@ impl<P: Presenter> Video<P> {
     /// packet late on the network by less than the grace, and it never
     /// holds more frames than it can.
     pub fn take(&mut self, datagram: &[u8], arrived: Instant, now: Instant) {
+        self.flow
+            .datagram(now.saturating_duration_since(arrived), now);
         if let Err(e) = self.assembler.push(datagram, arrived) {
             self.hushed.malformed.note(&self.log, now, |times| {
                 format!("video datagram refused: {e} ({times} since last said)")
@@ -419,10 +432,11 @@ impl<P: Presenter> Video<P> {
         if let Some(recover) = self.recovery.due(now) {
             self.ask(recover, now);
         }
-        if let Some((picture, captured_us)) = self.waiting.take() {
-            self.show(picture, captured_us, now);
+        if let Some(ready) = self.waiting.take() {
+            self.show(ready, now);
         }
         self.publish();
+        self.flow.look(now);
         std::mem::take(&mut self.said)
     }
 
@@ -449,6 +463,7 @@ impl<P: Presenter> Video<P> {
             match assembled {
                 Assembled::Lost { stream, frame } => {
                     lock(&self.tally).lost(now);
+                    self.flow.lost(now);
                     self.hushed.lost.note(&self.log, now, |times| {
                         format!("frame {frame} of stream {stream} lost ({times} since last said)")
                     });
@@ -457,11 +472,21 @@ impl<P: Presenter> Video<P> {
                     }
                 }
                 Assembled::Frame(frame) => {
-                    lock(&self.tally).assembled(now, frame.data.len(), frame.host_latency_us);
-                    if let Some(picture) = self.decode(&frame, now)
-                        && self.waiting.replace((picture, frame.captured_us)).is_some()
-                    {
-                        self.unshown(now, 1);
+                    let since_capture = {
+                        let mut tally = lock(&self.tally);
+                        tally.assembled(now, frame.data.len(), frame.host_latency_us);
+                        tally.since_capture(frame.captured_us, frame.last_packet)
+                    };
+                    self.flow.whole(&frame, since_capture);
+                    if let Some(picture) = self.decode(&frame, now) {
+                        let ready = Ready {
+                            picture,
+                            captured_us: frame.captured_us,
+                            whole: frame.last_packet,
+                        };
+                        if self.waiting.replace(ready).is_some() {
+                            self.unshown(now, 1);
+                        }
                     }
                     self.assembler.recycle(frame.data);
                 }
@@ -472,6 +497,7 @@ impl<P: Presenter> Video<P> {
     fn decode(&mut self, frame: &AssembledFrame, now: Instant) -> Option<DecodedFrame> {
         if self.recovery.whole(frame) == Verdict::Skip {
             self.counters.skipped += 1;
+            self.flow.skipped();
             self.hushed.skipped.note(&self.log, now, |times| {
                 format!(
                     "frame {} of stream {} passed over, waiting for a key frame ({times} since \
@@ -484,6 +510,7 @@ impl<P: Presenter> Video<P> {
         let waited = now.saturating_duration_since(frame.last_packet);
         if waited > FALLEN_BEHIND {
             self.counters.behind += 1;
+            self.flow.behind();
             self.hushed.behind.note(&self.log, now, |times| {
                 format!(
                     "fallen {} ms behind: frame {} of stream {} dropped undecoded, a key frame \
@@ -505,6 +532,7 @@ impl<P: Presenter> Video<P> {
                 replaced,
             } => {
                 lock(&self.tally).decoded(now, took);
+                self.flow.decoded(took);
                 self.counters.decoded += 1;
                 self.recovery.decoded(frame.frame);
                 self.unshown(now, replaced);
@@ -512,6 +540,7 @@ impl<P: Presenter> Video<P> {
             }
             Decoded::Broken(reason) => {
                 self.counters.broken += 1;
+                self.flow.refused();
                 self.hushed.broken.note(&self.log, now, |times| {
                     format!(
                         "frame {} of stream {} refused by the decoder: {reason} ({times} since \
@@ -531,6 +560,7 @@ impl<P: Presenter> Video<P> {
             }
             Decoded::Refused(notice) => {
                 self.counters.skipped += 1;
+                self.flow.refused();
                 if let Some(text) = notice {
                     match self.presenter.lost() {
                         Some(reason) => self.fault(Fault::Lost(reason), now),
@@ -542,12 +572,28 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    fn show(&mut self, picture: DecodedFrame, captured_us: u32, now: Instant) {
+    fn show(&mut self, ready: Ready, now: Instant) {
+        let Ready {
+            picture,
+            captured_us,
+            whole,
+        } = ready;
         let started = Instant::now();
         match self.presenter.present(&picture) {
             Ok(shown) => {
                 let done = Instant::now();
-                lock(&self.tally).shown(done, done - started, captured_us);
+                let since_capture = {
+                    let mut tally = lock(&self.tally);
+                    tally.shown(done, done - started, captured_us);
+                    tally.since_capture(captured_us, done)
+                };
+                self.flow.presented(
+                    whole,
+                    started,
+                    done,
+                    since_capture,
+                    self.presenter.displayed(),
+                );
                 self.counters.shown += 1;
                 self.counters.checksum = shown.checksum;
                 if !self.first_shown {
@@ -621,6 +667,7 @@ impl<P: Presenter> Video<P> {
         }
         self.counters.unshown += count;
         lock(&self.tally).unshown(now, count);
+        self.flow.unshown(count);
         self.hushed.unshown.note(&self.log, now, |times| {
             format!("a newer picture took the place of one not yet shown ({times} since last said)")
         });
