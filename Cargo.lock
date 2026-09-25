@@ -3182,6 +3182,7 @@ dependencies = [
  "bytes",
  "tokio",
  "windows",
+ "windows-core",
  "zyr-codec",
  "zyr-control",
  "zyr-media",

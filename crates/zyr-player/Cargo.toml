@@ -49,3 +49,7 @@ windows = { version = "0.62.2", features = [
     # GetClientRect, the size of the window the swap chain is made for.
     "Win32_UI_WindowsAndMessaging",
 ] }
+# What the macro that builds a COM object writes (the object Windows
+# tells of another default sound card): it names this crate by its own
+# name. The same one `windows` republishes, already in the lock file.
+windows-core = "0.62.2"

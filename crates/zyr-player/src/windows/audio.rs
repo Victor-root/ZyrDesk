@@ -9,20 +9,25 @@
 //! person sees it.
 //!
 //! A computer with no sound card has no sound thread: Windows says at
-//! once that there is no default device. A device that goes away
-//! mid-session (headphones unplugged) is looked for again every second,
-//! the packets being taken at the card's pace meanwhile.
+//! once that there is no default device. Another default card chosen
+//! mid-session (headphones plugged in, a choice in the taskbar) is
+//! followed as soon as Windows tells. A device that goes away is looked
+//! for again every second, the packets being taken at the card's pace
+//! meanwhile.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_FAILED, WAIT_TIMEOUT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, PROPERTYKEY, WAIT_FAILED, WAIT_TIMEOUT};
 use windows::Win32::Media::Audio::{
     AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
-    AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, IAudioClient,
-    IAudioClient3, IAudioRenderClient, IAudioSessionControl, IMMDeviceEnumerator,
-    ISimpleAudioVolume, MMDeviceEnumerator, WAVEFORMATEX, WAVEFORMATEXTENSIBLE, eConsole, eRender,
+    AUDCLNT_STREAMFLAGS_EVENTCALLBACK, AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, DEVICE_STATE,
+    EDataFlow, ERole, IAudioClient, IAudioClient3, IAudioRenderClient, IAudioSessionControl,
+    IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, ISimpleAudioVolume,
+    MMDeviceEnumerator, WAVEFORMATEX, WAVEFORMATEXTENSIBLE, eConsole, eRender,
 };
 use windows::Win32::Media::KernelStreaming::WAVE_FORMAT_EXTENSIBLE;
 use windows::Win32::Media::Multimedia::{KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, WAVE_FORMAT_IEEE_FLOAT};
@@ -31,7 +36,7 @@ use windows::Win32::System::Com::{
     CoUninitialize,
 };
 use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
-use windows::core::{Interface, w};
+use windows::core::{Interface, PCWSTR, implement, w};
 use zyr_proto::log::Log;
 
 use super::{Multimedia, failure};
@@ -51,8 +56,8 @@ const PERIOD: i64 = 100_000;
 /// in milliseconds.
 const PATIENCE_MS: u32 = 200;
 
-/// How long to wait before looking for a device again once one went
-/// away.
+/// How long to wait before looking for a device again once none could
+/// be opened.
 const LOOK_AGAIN: Duration = Duration::from_secs(1);
 
 /// The sound thread on the sound card, until the link lets go of
@@ -60,7 +65,19 @@ const LOOK_AGAIN: Duration = Duration::from_secs(1);
 pub fn run(mut sound: Sound, input: &Receiver<Bytes>, muted: &Muted, log: &Log) {
     let _com = Com::up();
     let _pro_audio = Multimedia::join(w!("Pro Audio"), log);
-    let mut output = match Output::open(log) {
+    // SAFETY: a standard class asked of COM, with no aggregation.
+    let devices: IMMDeviceEnumerator =
+        match unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) } {
+            Ok(devices) => devices,
+            Err(e) => {
+                log.write(&format!(
+                    "the sound card refuses to play: {}",
+                    failure("CoCreateInstance(MMDeviceEnumerator)", &e)
+                ));
+                return;
+            }
+        };
+    let mut output = match Output::open(&devices, log) {
         Ok(output) => output,
         Err(Opening::Nothing(reason)) => {
             log.debug(|| format!("no sound card to play on: {reason}"));
@@ -71,21 +88,34 @@ pub fn run(mut sound: Sound, input: &Receiver<Bytes>, muted: &Muted, log: &Log) 
             return;
         }
     };
+    // Made after COM was brought up on this thread, so let go of before
+    // COM is taken down.
+    let following = Following::ask(&devices, log);
     loop {
-        let reason = match output.play(&mut sound, input, muted) {
+        // A card chosen is opened at once. One gone is given a second
+        // first: Windows may not have chosen another yet, and the same
+        // card, opened again, would fail again at once.
+        let mut wait = match output.play(&mut sound, input, muted, following.as_ref()) {
             Played::LinkGone => return,
-            Played::DeviceGone(reason) => reason,
+            Played::Chosen => {
+                log.write("another default sound card was chosen: playing on it");
+                false
+            }
+            Played::DeviceGone(reason) => {
+                log.write(&format!("the sound card went away: {reason}"));
+                true
+            }
         };
-        log.write(&format!("the sound card went away: {reason}"));
         drop(output);
-        // Looked for every second, for as long as the session lasts if
-        // need be: said once in a while, not every time.
+        // Then every second, for as long as the session lasts if need
+        // be: said once in a while, not every time.
         let mut still = Seldom::new();
         output = loop {
-            if !pace(&mut sound, input, Some(Instant::now() + LOOK_AGAIN)) {
+            if wait && !pace(&mut sound, input, Some(Instant::now() + LOOK_AGAIN)) {
                 return;
             }
-            match Output::open(log) {
+            wait = true;
+            match Output::open(&devices, log) {
                 Ok(output) => break output,
                 Err(Opening::Nothing(reason) | Opening::Refused(reason)) => {
                     still.note(log, Instant::now(), |times| {
@@ -94,6 +124,94 @@ pub fn run(mut sound: Sound, input: &Receiver<Bytes>, muted: &Muted, log: &Log) 
                 }
             }
         };
+    }
+}
+
+/// Windows telling that another default sound card was chosen, for as
+/// long as this lives.
+struct Following {
+    devices: IMMDeviceEnumerator,
+    told: IMMNotificationClient,
+    chosen: Arc<AtomicBool>,
+}
+
+impl Following {
+    /// Asks Windows to tell. Refused, the session plays on the card it
+    /// opened, and the journal says why.
+    fn ask(devices: &IMMDeviceEnumerator, log: &Log) -> Option<Following> {
+        let chosen = Arc::new(AtomicBool::new(false));
+        let told: IMMNotificationClient = Chosen {
+            chosen: Arc::clone(&chosen),
+        }
+        .into();
+        // SAFETY: an object of ours, unregistered when this is dropped,
+        // the enumerator being kept alive until then.
+        match unsafe { devices.RegisterEndpointNotificationCallback(&told) } {
+            Ok(()) => Some(Following {
+                devices: devices.clone(),
+                told,
+                chosen,
+            }),
+            Err(e) => {
+                log.write(&failure("RegisterEndpointNotificationCallback", &e));
+                None
+            }
+        }
+    }
+
+    /// Whether another default card was chosen since last asked.
+    fn chosen(&self) -> bool {
+        self.chosen.swap(false, Ordering::Relaxed)
+    }
+}
+
+impl Drop for Following {
+    fn drop(&mut self) {
+        // SAFETY: the object registered with this enumerator, let go of
+        // from outside any call Windows makes to it.
+        let _ = unsafe {
+            self.devices
+                .UnregisterEndpointNotificationCallback(&self.told)
+        };
+    }
+}
+
+/// What Windows calls, from a thread of its own. It only raises a flag,
+/// which the sound thread reads each time it wakes: the thread feeding
+/// the card never waits on Windows to know.
+#[implement(IMMNotificationClient)]
+struct Chosen {
+    chosen: Arc<AtomicBool>,
+}
+
+impl IMMNotificationClient_Impl for Chosen_Impl {
+    fn OnDefaultDeviceChanged(
+        &self,
+        flow: EDataFlow,
+        role: ERole,
+        _: &PCWSTR,
+    ) -> windows::core::Result<()> {
+        // The card the desktop plays to, the kind of card opened.
+        if flow == eRender && role == eConsole {
+            self.chosen.store(true, Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    fn OnDeviceStateChanged(&self, _: &PCWSTR, _: DEVICE_STATE) -> windows::core::Result<()> {
+        Ok(())
+    }
+
+    fn OnDeviceAdded(&self, _: &PCWSTR) -> windows::core::Result<()> {
+        Ok(())
+    }
+
+    fn OnDeviceRemoved(&self, _: &PCWSTR) -> windows::core::Result<()> {
+        Ok(())
+    }
+
+    fn OnPropertyValueChanged(&self, _: &PCWSTR, _: &PROPERTYKEY) -> windows::core::Result<()> {
+        Ok(())
     }
 }
 
@@ -108,6 +226,8 @@ enum Opening {
 /// Why playing stopped.
 enum Played {
     LinkGone,
+    /// Another default card was chosen.
+    Chosen,
     DeviceGone(String),
 }
 
@@ -127,12 +247,8 @@ struct Output {
 }
 
 impl Output {
-    fn open(log: &Log) -> Result<Output, Opening> {
+    fn open(devices: &IMMDeviceEnumerator, log: &Log) -> Result<Output, Opening> {
         let refused = |what: &str, e: &windows::core::Error| Opening::Refused(failure(what, e));
-        // SAFETY: a standard class asked of COM, with no aggregation.
-        let devices: IMMDeviceEnumerator =
-            unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }
-                .map_err(|e| refused("CoCreateInstance(MMDeviceEnumerator)", &e))?;
         // SAFETY: an interface of ours; no device is an error at once.
         let device = unsafe { devices.GetDefaultAudioEndpoint(eRender, eConsole) }
             .map_err(|e| Opening::Nothing(failure("GetDefaultAudioEndpoint", &e)))?;
@@ -228,8 +344,14 @@ impl Output {
     }
 
     /// Fills the card each time it has room, until the link or the card
-    /// goes.
-    fn play(&mut self, sound: &mut Sound, input: &Receiver<Bytes>, muted: &Muted) -> Played {
+    /// goes, or another is chosen.
+    fn play(
+        &mut self,
+        sound: &mut Sound,
+        input: &Receiver<Bytes>,
+        muted: &Muted,
+        following: Option<&Following>,
+    ) -> Played {
         loop {
             // SAFETY: an event of ours.
             let woken = unsafe { WaitForSingleObject(self.wake.0, PATIENCE_MS) };
@@ -240,6 +362,9 @@ impl Output {
                     "WaitForSingleObject on the sound card's event",
                     &windows::core::Error::from_thread(),
                 ));
+            }
+            if following.is_some_and(Following::chosen) {
+                return Played::Chosen;
             }
             let now = Instant::now();
             loop {
