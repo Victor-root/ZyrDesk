@@ -117,6 +117,16 @@ fn ffmpeg() -> Arc<Ffmpeg> {
     }))
 }
 
+/// Who may open the tests' links: the system, and every account signed
+/// in whatever the way. The service opens the engine's link to the
+/// system alone and the player's to the accounts at the machine, which a
+/// test run by a service on Windows is neither.
+fn in_tests() -> Access {
+    Access::SystemAnd {
+        user_sid: "S-1-5-11".to_string(),
+    }
+}
+
 /// Held by each test for as long as it runs.
 fn one_at_a_time() -> MutexGuard<'static, ()> {
     static ALONE: Mutex<()> = Mutex::new(());
@@ -329,7 +339,7 @@ async fn host_side(
         .guaranteed_usable_datagram()
         .and_then(|usable| usable.checked_sub(1))
         .unwrap();
-    let listener = LinkListener::create(Access::SystemOnly).unwrap();
+    let listener = LinkListener::create(in_tests()).unwrap();
     let name = listener.name().to_string();
     let engine_log = log.clone();
     thread::spawn(move || {
@@ -363,7 +373,7 @@ async fn hear_the_engine(mut from_link: mpsc::Receiver<Bytes>, told: Arc<Mutex<V
 /// player, the tunnel waiting on it, and the player told once a second
 /// how the tunnel stands. Hands back the tunnel and the link's name.
 fn client_side(connection: Connection, log: Log) -> (Tunnel, String) {
-    let listener = LinkListener::create(Access::SystemAndInteractive).unwrap();
+    let listener = LinkListener::create(in_tests()).unwrap();
     let name = listener.name().to_string();
     let (side, way) = service_channel();
     let tunnel = Tunnel::client(connection.clone(), listener, side, Some(log));
