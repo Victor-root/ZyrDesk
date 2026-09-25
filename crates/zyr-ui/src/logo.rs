@@ -498,8 +498,7 @@ fn build(owner: isize, anchor: (i32, i32)) {
     // SAFETY: a window of ours, shown without taking the front.
     unsafe { ShowWindow(window, SW_SHOWNOACTIVATE) };
     note(&format!(
-        "bouton flottant : logo dessiné par ZyrDesk, sans vue web ; \
-         fenêtre de {side} px, dessin de {:.0} au repos et {side} sous la main",
+        "bouton flottant : logo dessiné par ZyrDesk ; fenêtre de {side} px, dessin de {:.0} au repos et {side} sous la main",
         side as f32 * STANDING
     ));
 }

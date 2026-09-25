@@ -103,6 +103,17 @@ impl OpusEncoder {
     }
 }
 
+impl Drop for OpusEncoder {
+    /// Drains what libopus still holds for its look-ahead, so that it
+    /// closes empty: closed with it, it says in the journal that a frame
+    /// was left behind at the end of every session.
+    fn drop(&mut self) {
+        if self.context.send_end().is_ok() {
+            while let Ok(true) = self.context.receive_packet(&mut self.packet) {}
+        }
+    }
+}
+
 /// The player's decoder, FFmpeg's own.
 pub struct OpusDecoder {
     context: CodecContext,

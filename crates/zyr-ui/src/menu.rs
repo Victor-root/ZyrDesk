@@ -506,10 +506,8 @@ static CARD_WIDTH: AtomicU32 = AtomicU32::new(0);
 
 /// What the menu has just refused to do, and since when.
 ///
-/// The web view's menu carried a red line for that. The one ZyrDesk draws
-/// had not carried it over, so a refusal only went to the journal: a
-/// switch that rightly refuses and simply does not flip is a broken
-/// switch, even when it is perfectly right.
+/// Said on the card, in red: a switch that rightly refuses and simply
+/// does not flip is a broken switch, even when it is perfectly right.
 static REFUSAL: Mutex<Option<(String, Instant)>> = Mutex::new(None);
 
 /// How tall this refusal is, measured when drawing, as the card is.
@@ -1324,9 +1322,7 @@ fn build(owner: isize) {
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
     note(&format!(
         "bouton flottant : menu dessiné par ZyrDesk, {width}x{height} px au \
-         départ ; la fenêtre suit ensuite ce que la carte demande. Il ne \
-         reste dans la vue web que la ligne rouge qui porte un refus, \
-         lequel n'est donc dit ici que dans ce journal"
+         départ ; la fenêtre suit ensuite ce que la carte demande"
     ));
 }
 
@@ -2465,10 +2461,6 @@ fn hovers(window: windows_sys::Win32::Foundation::HWND, target: Option<Target>) 
 }
 
 /// Does what the thing just clicked asks for.
-///
-/// A refusal only goes to the journal while the web view's menu is still
-/// there: it is the one carrying the red line that says it, and drawing a
-/// second one here would make two places to keep up for the same sentence.
 ///
 /// Said before it goes off, and not only when it refuses. This menu is
 /// behind the picture and its lines are few: without this line, an entry

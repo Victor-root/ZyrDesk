@@ -928,7 +928,7 @@ fn build(outer: windows_sys::Win32::Foundation::HWND) {
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
     note(&format!(
-        "accueil dessiné par ZyrDesk, sans vue web : toile de {}x{} px",
+        "accueil dessiné par ZyrDesk : toile de {}x{} px",
         inside.right, inside.bottom
     ));
 }
