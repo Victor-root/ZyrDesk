@@ -9,6 +9,7 @@
 
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 use zyr_control::link::{Channel, LinkReader, LinkWriter};
@@ -32,6 +33,14 @@ const PIECE: usize = 64 * 1024;
 /// Reliable, so never dropped: a full queue makes whoever feeds it wait,
 /// which only happens to a session whose other end has stopped reading.
 pub(crate) const CONTROL_WAITING: usize = 256;
+
+/// How long what one end said as it left may take to reach the other.
+///
+/// A goodbye is said and the link closed in one breath, and the tunnel
+/// reads both at once. The session ends there, but the goodbye is what
+/// tells the other end how it ended: it is carried on first, for as long
+/// as this allows.
+const LAST_WORDS_WITHIN: Duration = Duration::from_secs(2);
 
 /// Tunnel counters, read by the watch over a session and by the bench.
 #[derive(Debug, Default)]
@@ -144,9 +153,10 @@ pub fn nudge(connection: &Connection) -> io::Result<()> {
 /// Everything between one link and the connection, until either ends.
 ///
 /// The link closing is the ordinary end of a session; the engine's
-/// stream ending is the other side's. The three halves run in one task,
-/// so that the moment one of them stops, the link is let go of with
-/// them.
+/// stream ending is the other side's. Either way, what the end that
+/// left said before it went is carried on to the other first. The three
+/// halves run in one task, so that once the session is over, the link
+/// is let go of with them.
 pub(crate) async fn between(
     link: zyr_control::link::Link,
     engine_stream: impl Future<Output = io::Result<(SendStream, RecvStream)>>,
@@ -159,17 +169,46 @@ pub(crate) async fn between(
     let ServiceSide { outgoing, incoming } = service;
     let (towards_the_stream, from_the_link) = mpsc::channel(CONTROL_WAITING);
     let (towards_the_link, from_the_stream) = mpsc::channel(CONTROL_WAITING);
+    let reading = off_the_link(reader, towards_the_stream, connection, &incoming, counters);
+    let writing = onto_the_link(writer, from_the_stream, datagrams, outgoing, counters);
+    let carrying = along_the_stream(engine_stream, towards_the_link, from_the_link, counters);
+    tokio::pin!(reading, writing, carrying);
     tokio::select! {
-        read = off_the_link(reader, &towards_the_stream, connection, &incoming, counters) => read,
-        written = onto_the_link(writer, from_the_stream, datagrams, outgoing, counters) => written,
-        carried = along_the_stream(engine_stream, &towards_the_link, from_the_link, counters) => carried,
+        // The link before the stream: when both end at once, what the
+        // link said last still has to go along the stream.
+        biased;
+        read = &mut reading => {
+            read?;
+            last_words(carrying).await
+        }
+        carried = &mut carrying => {
+            carried?;
+            last_words(writing).await
+        }
+        written = &mut writing => written,
     }
 }
 
+/// Waits for what the end that left said last to reach the other end,
+/// for a moment at most.
+async fn last_words(delivered: impl Future<Output = io::Result<()>>) -> io::Result<()> {
+    tokio::time::timeout(LAST_WORDS_WITHIN, delivered)
+        .await
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                "les derniers mots d'un bout du tunnel n'ont pas atteint l'autre à temps",
+            )
+        })?
+}
+
 /// Hands every frame the link carries to where it belongs.
+///
+/// Holds the way to the stream for as long as the link is read: its
+/// closing is what tells the stream that nothing more is coming.
 async fn off_the_link(
     mut reader: LinkReader,
-    towards_the_stream: &mpsc::Sender<Bytes>,
+    towards_the_stream: mpsc::Sender<Bytes>,
     connection: &Connection,
     service: &mpsc::Sender<Bytes>,
     counters: &Counters,
@@ -227,7 +266,8 @@ fn into_the_tunnel(
 ///
 /// What the service said before the tunnel was up goes before anything
 /// else, which is what lets the service speak first on a link it hands
-/// over.
+/// over. Done once the far end's stream has ended and all it said is on
+/// the link.
 async fn onto_the_link(
     mut writer: LinkWriter,
     mut from_the_stream: mpsc::Receiver<Bytes>,
@@ -241,7 +281,10 @@ async fn onto_the_link(
     loop {
         tokio::select! {
             biased;
-            Some(piece) = from_the_stream.recv() => {
+            piece = from_the_stream.recv() => {
+                let Some(piece) = piece else {
+                    return Ok(());
+                };
                 writer.send(Channel::Control, &piece).await?;
                 Counters::bump(&counters.control_to_link);
             }
@@ -257,17 +300,30 @@ async fn onto_the_link(
 /// Carries the engine's control stream both ways, once it exists.
 ///
 /// Until then, what the link says on it waits in its queue: nothing of a
-/// reliable stream is ever dropped.
+/// reliable stream is ever dropped. A link that closes before the stream
+/// exists, having said nothing, leaves nothing to carry. Done once
+/// either end has left: the way to the link goes with it, which tells
+/// the link nothing more is coming.
 async fn along_the_stream(
     engine_stream: impl Future<Output = io::Result<(SendStream, RecvStream)>>,
-    towards_the_link: &mpsc::Sender<Bytes>,
-    from_the_link: mpsc::Receiver<Bytes>,
+    towards_the_link: mpsc::Sender<Bytes>,
+    mut from_the_link: mpsc::Receiver<Bytes>,
     counters: &Counters,
 ) -> io::Result<()> {
-    let (sending, receiving) = engine_stream.await?;
+    tokio::pin!(engine_stream);
+    let mut first = None;
+    let (sending, receiving) = loop {
+        tokio::select! {
+            stream = &mut engine_stream => break stream?,
+            piece = from_the_link.recv(), if first.is_none() => match piece {
+                Some(piece) => first = Some(piece),
+                None => return Ok(()),
+            },
+        }
+    };
     tokio::select! {
-        read = stream_to_link(receiving, towards_the_link) => read,
-        written = link_to_stream(sending, from_the_link, counters) => written,
+        read = stream_to_link(receiving, &towards_the_link) => read,
+        written = link_to_stream(sending, first, from_the_link, counters) => written,
     }
 }
 
@@ -290,15 +346,30 @@ async fn stream_to_link(
     Ok(())
 }
 
+/// The link's control stream, piece by piece, towards the far end, from
+/// the `first` piece it said before the stream existed. Once the link
+/// has closed, the stream ends, and this waits until the far end has
+/// everything the link said before.
 async fn link_to_stream(
     mut sending: SendStream,
+    first: Option<Bytes>,
     mut from_the_link: mpsc::Receiver<Bytes>,
     counters: &Counters,
 ) -> io::Result<()> {
-    while let Some(piece) = from_the_link.recv().await {
+    let mut first = first;
+    loop {
+        let piece = match first.take() {
+            Some(piece) => piece,
+            None => match from_the_link.recv().await {
+                Some(piece) => piece,
+                None => break,
+            },
+        };
         sending.write_all(&piece).await.map_err(io::Error::other)?;
         Counters::bump(&counters.control_to_tunnel);
     }
+    sending.finish().map_err(io::Error::other)?;
+    sending.stopped().await.map_err(io::Error::other)?;
     Ok(())
 }
 

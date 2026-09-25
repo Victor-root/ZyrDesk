@@ -309,10 +309,27 @@ struct Bench {
     far: Arc<FarComputer>,
 }
 
-impl Bench {
+/// A session, open, whose player has not come yet: the tunnel on both
+/// sides, the engine's end of the host's link, and the name of the
+/// client's.
+struct Waiting {
+    endpoints: (TunnelEndpoint, TunnelEndpoint),
+    connection: Connection,
+    host: Tunnel,
+    client: Tunnel,
+    engine: End,
+    host_service: ServiceEnd,
+    client_service: ServiceEnd,
+    served: MediaProfile,
+    far: Arc<FarComputer>,
+    /// What the player connects to.
+    player_link: String,
+}
+
+impl Waiting {
     /// The real sequence, not a shortcut: the question that opens the
     /// session, the engine brought up behind it and the service saying
-    /// its first word to it, the answer, then the player.
+    /// its first word to it, the answer, then the way.
     async fn bring_up() -> Self {
         let (host_connection, client_connection, endpoints) = connected().await;
         let far = Arc::new(FarComputer::default());
@@ -340,29 +357,54 @@ impl Bench {
         opened.unwrap();
 
         let listener = LinkListener::create(Access::SystemAndInteractive).unwrap();
-        let name = listener.name().to_string();
+        let player_link = listener.name().to_string();
         let (side, client_service) = service_channel();
         let client = Tunnel::client(client_connection.clone(), listener, side, None);
         assert!(!client.connected());
-        let player = End::of(before_the_end(link::connect(&name)).await.unwrap());
 
-        let mut bench = Self {
-            _endpoints: endpoints,
+        let mut waiting = Self {
+            endpoints,
             connection: client_connection,
             host,
             client,
             engine,
-            player,
             host_service,
             client_service,
             served,
             far,
+            player_link,
         };
         // What the service said before the tunnel was up is the first
         // thing the engine hears.
-        let (channel, said) = bench.engine.next().await;
+        let (channel, said) = waiting.engine.next().await;
         assert_eq!((channel, &said[..]), (Channel::Service, SETUP));
-        bench
+        waiting
+    }
+
+    async fn the_player_comes(self) -> Bench {
+        let player = End::of(
+            before_the_end(link::connect(&self.player_link))
+                .await
+                .unwrap(),
+        );
+        Bench {
+            _endpoints: self.endpoints,
+            connection: self.connection,
+            host: self.host,
+            client: self.client,
+            engine: self.engine,
+            player,
+            host_service: self.host_service,
+            client_service: self.client_service,
+            served: self.served,
+            far: self.far,
+        }
+    }
+}
+
+impl Bench {
+    async fn bring_up() -> Self {
+        Waiting::bring_up().await.the_player_comes().await
     }
 
     /// Waits for the engine's stream to stand, which the player's first
@@ -565,6 +607,46 @@ async fn the_engine_leaving_ends_the_tunnel_on_both_sides() {
     before_the_end(bench.client.wait()).await.unwrap();
     bench.client.close().await;
     bench.player.closed().await;
+}
+
+#[tokio::test]
+async fn what_the_player_says_as_it_leaves_reaches_the_engine() {
+    let mut bench = Bench::bring_up().await;
+    bench.the_player_speaks_first().await;
+
+    // Its last words and its leaving in one breath, as a player that
+    // says goodbye does: the tunnel reads both at once.
+    bench.player.say(Channel::Control, b"goodbye").await;
+    drop(bench.player);
+    assert_eq!(bench.engine.control(7).await, b"goodbye");
+    bench.engine.closed().await;
+}
+
+#[tokio::test]
+async fn what_the_engine_says_as_it_leaves_reaches_the_player() {
+    let mut bench = Bench::bring_up().await;
+    bench.the_player_speaks_first().await;
+
+    bench.engine.say(Channel::Control, b"goodbye").await;
+    drop(bench.engine);
+    assert_eq!(bench.player.control(7).await, b"goodbye");
+    bench.player.closed().await;
+}
+
+#[tokio::test]
+async fn what_the_engine_said_before_leaving_waits_for_the_player_to_come() {
+    // An engine that could not go on says why and goes, before any
+    // player came: the player that comes still hears it.
+    let mut waiting = Waiting::bring_up().await;
+    waiting.engine.say(Channel::Control, b"goodbye").await;
+    drop(waiting.engine);
+    let mut player = End::of(
+        before_the_end(link::connect(&waiting.player_link))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(player.control(7).await, b"goodbye");
+    player.closed().await;
 }
 
 #[tokio::test]
