@@ -6,11 +6,11 @@
 //! desktop's size would be scaled; the process's work comes first on
 //! the graphics card, and its threads before those of the programs on
 //! the screen, which a game keeps busy (the link and the input, which
-//! sit in no multimedia class, would otherwise wait behind it); the
-//! desktop's compositor is scheduled as multimedia, so that its images
-//! come on time; and the threads that capture sit in the multimedia
-//! scheduler's classes. Each refusal is said and costs only what it was
-//! for.
+//! sit in no multimedia class, would otherwise wait behind it); an
+//! NVIDIA card is kept at full speed (see `nvidia`); the desktop's
+//! compositor is scheduled as multimedia, so that its images come on
+//! time; and the threads that capture sit in the multimedia scheduler's
+//! classes. Each refusal is said and costs only what it was for.
 
 use windows::Wdk::Graphics::Direct3D::{
     D3DKMT_SCHEDULINGPRIORITYCLASS_HIGH, D3DKMTSetProcessSchedulingPriorityClass,
@@ -83,6 +83,9 @@ impl Tuned {
                 status.0 as u32
             ));
         }
+        // Before this process makes its Direct3D device, which is when the
+        // driver reads it.
+        super::nvidia::full_speed(log);
         // SAFETY: the pseudo handle of this process, which is never closed;
         // nought means the class could not be read.
         let before = unsafe { GetPriorityClass(GetCurrentProcess()) };

@@ -12,6 +12,7 @@ mod desktop;
 mod device;
 mod displays;
 mod inject;
+mod nvidia;
 mod sound;
 mod tuning;
 
