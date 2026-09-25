@@ -22,12 +22,26 @@ jobs:
     name: Format et analyse statique
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets
+
+  # Most of the engine (capture, hardware encoders, the player's drawing,
+  # the service's sessions) only compiles on Windows: the analysis above
+  # never sees it.
+  quality-windows:
+    name: Analyse statique (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets
 
   tests:
@@ -38,13 +52,40 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # The engine's tests run FFmpeg for real. Windows finds the build
+      # kept in vendor/ffmpeg by itself; Linux gets its own, made by the
+      # same script from the same sources, and made again only when the
+      # script changes.
+      - name: Retrouver FFmpeg pour Linux
+        id: ffmpeg
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/ffmpeg
+          key: ffmpeg-linux-${{ hashFiles('packaging/ffmpeg/build.sh') }}
+      - name: Compiler FFmpeg pour Linux
+        if: runner.os == 'Linux' && steps.ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q nasm pkg-config make gcc git curl xz-utils
+          bash packaging/ffmpeg/build.sh linux "$RUNNER_TEMP/ffmpeg"
+      # Kept as soon as it is built: left to the end of the job, it would
+      # be thrown away with every failing test and built again next time.
+      - name: Garder FFmpeg pour Linux
+        if: runner.os == 'Linux' && steps.ffmpeg.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/ffmpeg
+          key: ${{ steps.ffmpeg.outputs.cache-primary-key }}
       # Without --no-fail-fast, cargo stops at the first failing test
       # binary: a platform that breaks several things only reveals them one
       # at a time, a CI round trip each time.
       - run: cargo test --workspace --all-targets --no-fail-fast
+        env:
+          ZYR_FFMPEG_DIR: ${{ runner.os == 'Linux' && format('{0}/ffmpeg/lib', runner.temp) || '' }}
       - name: Diagnostic
         run: cargo run -p zyr-cli -- doctor
 
@@ -52,7 +93,7 @@ jobs:
     name: Installateur Windows
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # NSIS is no longer provided by the runner's Windows image, and its

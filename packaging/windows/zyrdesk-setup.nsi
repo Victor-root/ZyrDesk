@@ -1,8 +1,8 @@
 ; ZyrDesk installer for Windows.
 ;
 ; Installs the existing binaries, registers the service, and uninstalls
-; without leaving anything behind. The components that do not exist yet
-; (engines, interface) are added at their own milestone, where marked.
+; without leaving anything behind. The interface (ZyrDesk.exe) is not
+; packaged yet: it is added at its own milestone, where marked.
 ;
 ; Build: makensis -DVERSION=<version> zyrdesk-setup.nsi
 
@@ -63,6 +63,15 @@ VIAddVersionKey "LegalCopyright" "GPLv3"
 !endif
 !define SCREEN_DRIVER_DIR "$INSTDIR\vendor\ecran-virtuel"
 
+; FFmpeg, which the engine loads when it starts, on either side of a
+; session. The destination must stay equal to what paths::ffmpeg_dir()
+; returns in crates/zyr-proto/src/paths.rs, and the file names to what
+; crates/zyr-codec/src/library.rs opens: NSIS cannot read Rust code.
+!ifndef FFMPEG_DIR
+  !define FFMPEG_DIR "..\..\vendor\ffmpeg"
+!endif
+!define FFMPEG_LIBRARY_DIR "$INSTDIR\vendor\ffmpeg"
+
 ; The only port open on the machine. Must stay equal to TUNNEL_PORT in
 ; crates/zyr-proto/src/net.rs: NSIS cannot read Rust code.
 !define TUNNEL_PORT "47000"
@@ -76,7 +85,7 @@ Section "ZyrDesk" SEC_MAIN
   File "${BIN_DIR}\zyrdeskd.exe"
   File "..\..\LICENSE"
 
-  ; M4: ZyrDesk.exe (interface) and rebranded engines.
+  ; M4: ZyrDesk.exe (interface).
 
   ; The virtual screen travels with the product: nothing to download,
   ; nothing to install separately. Its files are signed as a whole, so
@@ -96,11 +105,22 @@ Section "ZyrDesk" SEC_MAIN
   DetailPrint "Pilote d'écran virtuel absent de la construction : les sessions \
     demandant un écran plus grand que celui de cet ordinateur seront agrandies."
   screen_present:
+
+  ; FFmpeg travels with the product too. Without it no session makes or
+  ; shows a picture, so unlike the virtual screen its absence stops the
+  ; build of the installer. Its licences go with it: the GPL and the
+  ; notices of what it is built from ask for their text to accompany it.
+  SetOutPath "${FFMPEG_LIBRARY_DIR}"
+  File "${FFMPEG_DIR}\avcodec-63.dll"
+  File "${FFMPEG_DIR}\avutil-61.dll"
+  File "${FFMPEG_DIR}\swresample-7.dll"
+  SetOutPath "${FFMPEG_LIBRARY_DIR}\licenses"
+  File "${FFMPEG_DIR}\licenses\*"
   SetOutPath "$INSTDIR"
 
   ; A single rule, for a single program and a single port: everything a
-  ; session carries goes through the tunnel, and the engines can only be
-  ; reached from the machine itself.
+  ; session carries goes through the tunnel, and the engine only speaks
+  ; to the service of its own machine, through a local pipe.
   DetailPrint "Ouverture du port ${TUNNEL_PORT} pour ZyrDesk..."
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FIREWALL_RULE}"'
   Pop $0
@@ -160,7 +180,7 @@ Section "Uninstall"
   ; is kept.
   IfSilent keep_data
   MessageBox MB_YESNO|MB_ICONQUESTION \
-    "Supprimer aussi les données ZyrDesk (moteurs, réglages, journaux, appairages) ?" \
+    "Supprimer aussi les données ZyrDesk (réglages, journaux, appairages) ?" \
     /SD IDNO IDNO keep_data
   RMDir /r "${DATA_DIR}"
   Goto data_handled
@@ -170,8 +190,10 @@ Section "Uninstall"
 
   ; The service has just removed the virtual screen driver from Windows;
   ; its files are no longer of any use. They are not the user's data, so
-  ; they go in every case.
+  ; they go in every case, as FFmpeg does: stopping the service took the
+  ; engine that had it loaded with it.
   RMDir /r "${SCREEN_DRIVER_DIR}"
+  RMDir /r "${FFMPEG_LIBRARY_DIR}"
   RMDir "$INSTDIR\vendor"
 
   Delete "$INSTDIR\zyr-cli.exe"
