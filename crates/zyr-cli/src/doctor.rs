@@ -1,11 +1,10 @@
 //! Checks this machine: every check gives back a status and a detail.
 
 use std::fmt;
-use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 
-use zyr_engine_host::{SunshineConfig, ports};
-use zyr_proto::net::{ENGINE_BASE_PORT_MAX, ENGINE_BASE_PORT_MIN};
+use zyr_codec::Ffmpeg;
 use zyr_proto::paths;
 
 enum Status {
@@ -32,13 +31,13 @@ struct Verification {
 }
 
 pub fn run() -> ExitCode {
+    let (ffmpeg, loaded) = ffmpeg();
     let verifications = [
         platform(),
         gpu(),
-        engine_ports(),
         data_folder(),
-        engine_configuration(),
-        engines(),
+        ffmpeg,
+        encoders(loaded.as_ref()),
         service(),
     ];
 
@@ -55,7 +54,7 @@ pub fn run() -> ExitCode {
         println!("Au moins une vérification a échoué.");
         ExitCode::FAILURE
     } else {
-        println!("Machine prête pour ce stade du projet.");
+        println!("Machine prête pour ZyrDesk.");
         ExitCode::SUCCESS
     }
 }
@@ -129,29 +128,6 @@ fn gpu() -> Verification {
     }
 }
 
-fn engine_ports() -> Verification {
-    match ports::free_base() {
-        Some(ports) => Verification {
-            name: "Ports moteur",
-            status: Status::Ok,
-            detail: format!(
-                "base {} disponible (plage {}-{})",
-                ports.base(),
-                ENGINE_BASE_PORT_MIN,
-                ENGINE_BASE_PORT_MAX
-            ),
-        },
-        None => Verification {
-            name: "Ports moteur",
-            status: Status::Failure,
-            detail: format!(
-                "aucune base libre dans {}-{}",
-                ENGINE_BASE_PORT_MIN, ENGINE_BASE_PORT_MAX
-            ),
-        },
-    }
-}
-
 fn data_folder() -> Verification {
     let folder = paths::data_dir();
     let attempt = || -> std::io::Result<()> {
@@ -175,50 +151,107 @@ fn data_folder() -> Verification {
     }
 }
 
-fn engine_configuration() -> Verification {
-    match ports::free_base() {
-        Some(ports) => {
-            let config = SunshineConfig::new(ports, paths::host_state_dir(), paths::logs_dir());
-            let directives = config.render_conf().lines().count();
+/// FFmpeg, loaded as the player and the host engine load it.
+///
+/// Loaded for real rather than looked for: a file of the right name can
+/// still be the wrong build, or miss what it leans on, and only loading
+/// it says so. Handed back loaded, for the encoders to be tried with.
+///
+/// Outside Windows the folder holds Windows' libraries and nothing else,
+/// so its absence there is said and not failed on: FFmpeg for this
+/// system is only ever loaded by the tests.
+fn ffmpeg() -> (Verification, Option<Arc<Ffmpeg>>) {
+    let folder = paths::ffmpeg_dir();
+    match Ffmpeg::load(&folder) {
+        Ok(ffmpeg) => (
             Verification {
-                name: "Configuration moteur",
+                name: "FFmpeg",
                 status: Status::Ok,
-                detail: format!("génération OK ({directives} directives)"),
-            }
-        }
-        None => Verification {
-            name: "Configuration moteur",
+                detail: format!(
+                    "présent et chargeable, version {} ({})",
+                    ffmpeg.version(),
+                    folder.display()
+                ),
+            },
+            Some(ffmpeg),
+        ),
+        Err(e) => (
+            Verification {
+                name: "FFmpeg",
+                status: if cfg!(windows) {
+                    Status::Failure
+                } else {
+                    Status::Warning
+                },
+                detail: e.to_string(),
+            },
+            None,
+        ),
+    }
+}
+
+/// The encoders that really open on the graphics card of the main screen,
+/// tried the way a session tries them.
+///
+/// A warning and not a failure when none does: this computer can still
+/// reach others, it simply cannot be reached for a picture.
+#[cfg(windows)]
+fn encoders(ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
+    const NAME: &str = "Encodeurs vidéo";
+    let Some(ffmpeg) = ffmpeg else {
+        return Verification {
+            name: NAME,
             status: Status::Failure,
-            detail: "impossible sans base de ports libre".to_string(),
+            detail: "impossibles à essayer sans FFmpeg".to_string(),
+        };
+    };
+    let journal = crate::journal();
+    let log = match zyr_proto::log::Log::open(&journal) {
+        Ok(log) => log,
+        Err(e) => {
+            return Verification {
+                name: NAME,
+                status: Status::Warning,
+                detail: format!("essai impossible sans journal {} : {e}", journal.display()),
+            };
+        }
+    };
+    // What FFmpeg says of the encoders it leaves out goes to that
+    // journal, which is where anybody wondering why one is missing looks.
+    ffmpeg.log_into(&log);
+    match zyr_host::encoders(ffmpeg, &log) {
+        Ok(found) if found.is_empty() => Verification {
+            name: NAME,
+            status: Status::Warning,
+            detail: format!(
+                "aucun ne s'ouvre : cet ordinateur ne pourra pas être contrôlé (voir {})",
+                journal.display()
+            ),
+        },
+        Ok(found) => Verification {
+            name: NAME,
+            status: Status::Ok,
+            detail: found
+                .iter()
+                .filter_map(|(codec, backend)| backend.encoder_name(*codec))
+                .collect::<Vec<_>>()
+                .join(", "),
+        },
+        Err(e) => Verification {
+            name: NAME,
+            status: Status::Warning,
+            detail: format!("essai impossible : {e}"),
         },
     }
 }
 
-fn engines() -> Verification {
-    let missing: Vec<&str> = [
-        ("hôte", paths::host_engine_exe()),
-        ("client", paths::client_engine_exe()),
-    ]
-    .into_iter()
-    .filter(|(_, path): &(&str, PathBuf)| !path.is_file())
-    .map(|(role, _)| role)
-    .collect();
-
-    if missing.is_empty() {
-        Verification {
-            name: "Moteurs",
-            status: Status::Ok,
-            detail: "hôte et client en place".to_string(),
-        }
-    } else {
-        Verification {
-            name: "Moteurs",
-            status: Status::Warning,
-            detail: format!(
-                "absent(s) : {} (voir « zyr-cli engines status »)",
-                missing.join(", ")
-            ),
-        }
+#[cfg(not(windows))]
+fn encoders(_ffmpeg: Option<&Arc<Ffmpeg>>) -> Verification {
+    Verification {
+        name: "Encodeurs vidéo",
+        status: Status::Warning,
+        detail: "essayés sur la carte graphique de l'écran principal, sous Windows seulement"
+            .to_string(),
     }
 }
 
@@ -236,7 +269,9 @@ fn service() -> Verification {
         Ok(_) => Verification {
             name: "Service ZyrDesk",
             status: Status::Warning,
-            detail: "non installé (normal : arrive au jalon M3)".to_string(),
+            detail:
+                "non installé : sans lui, aucune session ne s'ouvre dans un sens ni dans l'autre"
+                    .to_string(),
         },
         Err(e) => Verification {
             name: "Service ZyrDesk",

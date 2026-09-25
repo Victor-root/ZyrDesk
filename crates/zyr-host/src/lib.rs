@@ -138,6 +138,21 @@ fn served(link_name: &str, ffmpeg: Arc<Ffmpeg>, log: &Log) -> Ending {
     run(link_name, platform::parts(ffmpeg, log), log.clone())
 }
 
+/// The encoders that really open on this computer, best first, tried the
+/// way a session tries them before its first picture: on the graphics
+/// card of the main screen, fed the way the capture feeds them.
+///
+/// What the diagnostic command lists. Only on Windows, the one system
+/// with a screen for the engine to film. The error is in French, for
+/// the person reading the diagnosis.
+#[cfg(windows)]
+pub fn encoders(
+    ffmpeg: &Arc<Ffmpeg>,
+    log: &Log,
+) -> Result<Vec<(zyr_media::codec::VideoCodec, zyr_codec::Backend)>, String> {
+    platform::encoders(ffmpeg, &log.about(TAG))
+}
+
 #[cfg(not(windows))]
 fn served(_link_name: &str, _ffmpeg: Arc<Ffmpeg>, log: &Log) -> Ending {
     let why = "the host engine films a Windows screen, and this is not Windows".to_string();

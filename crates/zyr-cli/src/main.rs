@@ -3,8 +3,6 @@ mod bench;
 mod connect;
 mod cpu;
 mod doctor;
-mod engines;
-mod host;
 mod identity;
 mod measurement;
 mod probe;
@@ -17,9 +15,9 @@ use clap::{Parser, Subcommand};
     version = zyr_proto::PRODUCT_VERSION,
     about = "ZyrDesk technical tool",
     long_about = "ZyrDesk technical tool.\n\n\
-                  At this stage of the project it drives the engines \
-                  directly, to check performance on a local network. The \
-                  service and the interface take over at later milestones."
+                  For diagnosis without a window: checking this machine, \
+                  opening a session and reading what it costs, measuring \
+                  the tunnel between two computers."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -30,17 +28,7 @@ struct Cli {
 enum Command {
     /// Checks that this machine is ready for ZyrDesk
     Doctor,
-    /// Inspects the engines in place
-    Engines {
-        #[command(subcommand)]
-        action: engines::Action,
-    },
-    /// Makes this computer reachable from elsewhere
-    Host {
-        #[command(subcommand)]
-        action: host::Action,
-    },
-    /// Opens a session on a remote computer
+    /// Opens a session on a remote computer and prints what it costs
     Connect(connect::Args),
     /// Shows this machine's fingerprint
     Identity,
@@ -59,8 +47,6 @@ enum Command {
 fn main() -> std::process::ExitCode {
     match Cli::parse().command {
         Command::Doctor => doctor::run(),
-        Command::Engines { action } => engines::run(action),
-        Command::Host { action } => host::run(action),
         Command::Connect(args) => connect::run(args),
         Command::Identity => identity::run(),
         Command::Bench { action } => bench::run(action),
@@ -73,4 +59,14 @@ pub fn failure(context: &str, error: impl std::fmt::Display) -> std::process::Ex
     eprintln!("Échec : {context}");
     eprintln!("  {error}");
     std::process::ExitCode::FAILURE
+}
+
+/// Where what this tool's sessions and checks say in passing is written:
+/// the player's lines, and why FFmpeg left an encoder out.
+///
+/// Its own file, beside the product's journals: the command line is a
+/// tool for diagnosis, and what it says is read after the fact rather
+/// than mixed into what the product says of itself.
+pub fn journal() -> std::path::PathBuf {
+    zyr_proto::paths::logs_dir().join("cli.log")
 }

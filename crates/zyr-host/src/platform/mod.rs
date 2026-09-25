@@ -19,7 +19,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
-use zyr_codec::Ffmpeg;
+use zyr_codec::{Backend, Ffmpeg};
+use zyr_media::codec::VideoCodec;
 use zyr_proto::log::Log;
 
 use crate::Parts;
@@ -42,6 +43,30 @@ pub fn parts(ffmpeg: Arc<Ffmpeg>, log: &Log) -> Parts {
         }),
         sound: Box::new(sound::Loopback::new(ffmpeg, log.clone())),
     }
+}
+
+/// The encoders that open on the card of the main screen, tried as the
+/// engine tries them.
+///
+/// On a thread of its own, the way the engine makes its screen: the
+/// capture puts its thread on the input desktop and in the capture
+/// class, which is no business of the caller's thread.
+pub fn encoders(ffmpeg: &Arc<Ffmpeg>, log: &Log) -> Result<Vec<(VideoCodec, Backend)>, String> {
+    let ffmpeg = Arc::clone(ffmpeg);
+    let log = log.clone();
+    std::thread::Builder::new()
+        .name("zyr-host-encoders".to_string())
+        .spawn(move || {
+            let screen = capture::DuplicatedScreen::new(log).map_err(|e| e.0)?;
+            Ok(zyr_codec::probe(
+                &ffmpeg,
+                &screen.encoder_input(),
+                screen.vendor(),
+            ))
+        })
+        .map_err(|e| format!("l'essai des encodeurs ne démarre pas : {e}"))?
+        .join()
+        .map_err(|_| "l'essai des encodeurs s'est arrêté sur une erreur interne".to_string())?
 }
 
 /// A refusal of Windows, as the log says it: what was being done, the

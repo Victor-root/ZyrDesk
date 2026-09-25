@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 zyr-proto.workspace = true
 zyr-codec.workspace = true
+zyr-media.workspace = true
 zyr-transport.workspace = true
 zyr-control.workspace = true
 zyr-sound.workspace = true

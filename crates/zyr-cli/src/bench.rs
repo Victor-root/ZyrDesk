@@ -3,9 +3,9 @@
 //! The question this bench answers is simple: between two computers,
 //! does the tunnel add anything to the trip? So it measures the same
 //! trip twice, with the same packets at the same cadence: once over bare
-//! UDP, once through the whole tunnel, engine ports included. Only the
-//! gap between the two means anything; the absolute values also carry
-//! the system's own noise.
+//! UDP, once through the whole tunnel, local links included, the way a
+//! session's pictures travel. Only the gap between the two means
+//! anything; the absolute values also carry the system's own noise.
 //!
 //! The two computers have to know each other's fingerprint.
 //! `zyr-cli identity` shows it on each machine. It never changes once
@@ -18,54 +18,29 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Args, Subcommand};
-use zyr_proto::net::{EnginePorts, device_loopback_addr};
+use zyr_control::link::{self, Access, Link, LinkListener};
 use zyr_proto::paths;
-use zyr_transport::{Fingerprint, Identity, Media, MediaProfile, Path, TunnelEndpoint};
-use zyr_tunnel::pump::open_socket;
-use zyr_tunnel::{Answers, Tunnel};
+use zyr_transport::mtu::MUX_OVERHEAD;
+use zyr_transport::{Connection, Fingerprint, Identity, Media, MediaProfile, Path, TunnelEndpoint};
+use zyr_tunnel::aside::{self, Given, Wanted};
+use zyr_tunnel::{Answers, Tunnel, service_channel};
 
 use crate::cpu::{self, Stopwatch};
 use crate::failure;
 use crate::measurement::{Outcome, gap, milliseconds};
-use crate::probe::{self, Cadence};
+use crate::probe::{self, Cadence, Road, open_socket};
 
-/// The bench's port, outside the range reserved for the engines.
+/// The bench's port, apart from the product's own.
 const TUNNEL_PORT: u16 = 47010;
 /// Echo reached without the tunnel, which serves as the reference.
 const DIRECT_PORT: u16 = 47011;
-/// Port base the bench lends to its fake engines.
-const ENGINE_BASE: u16 = 42900;
-/// The bench measures one path at a time and no more.
-const DEVICE: u16 = 0;
-/// The host engine listens on the local machine only.
-const ENGINE: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
-/// What the bench answers on ZyrDesk's own channel.
-///
-/// Its engines are echo sockets: they have ports and nothing else, so
-/// there is nobody here to hand a pairing code to.
-struct NoEngine {
-    ports: EnginePorts,
-    /// What the tunnel of this measurement is being asked to carry.
-    media: Media,
-}
+/// What the bench answers on ZyrDesk's own channel: nothing, since it
+/// has no screen, no speakers and no journal. Only the session itself is
+/// served, by a stand-in engine that sends every picture straight back.
+struct Bench;
 
-impl Answers for NoEngine {
-    fn engine(&self) -> EnginePorts {
-        self.ports
-    }
-
-    /// The bench sizes its tunnel on the session that opens on it, like
-    /// the service does: measuring a window worked out from anything
-    /// else would be measuring something the product never runs.
-    fn a_session_is_opening(&self, serving: MediaProfile) {
-        self.media.serving(serving);
-    }
-
-    fn hand_over_the_code(&self, _pin: &str, _name: &str) -> Result<(), String> {
-        Err("le banc de mesure n'a pas de moteur à appairer".to_string())
-    }
-
+impl Answers for Bench {
     fn secure_attention(&self) -> Result<(), String> {
         Err("le banc de mesure ne presse aucune touche".to_string())
     }
@@ -76,18 +51,6 @@ impl Answers for NoEngine {
 
     fn lock_the_screen(&self) -> Result<(), String> {
         Err("le banc de mesure n'a pas d'écran à verrouiller".to_string())
-    }
-
-    fn serve_steady(&self, _rate: bool) -> Result<zyr_tunnel::Settled, String> {
-        Err("le banc de mesure n'a pas de moteur à régler".to_string())
-    }
-
-    fn serve_at(&self, _kbps: u32) -> Result<(), String> {
-        Err("le banc de mesure n'a pas de moteur à régler".to_string())
-    }
-
-    fn draw_the_pointer(&self, _drawn: bool) -> Result<(), String> {
-        Err("le banc de mesure n'a pas de moteur à régler".to_string())
     }
 
     fn screen_for_a_session(
@@ -109,19 +72,15 @@ impl Answers for NoEngine {
         Err("le banc de mesure ne tient pas de journal".to_string())
     }
 
-    fn codecs(&self) -> Result<String, String> {
-        Err("le banc de mesure n'encode rien".to_string())
+    fn pointer(&self) -> Result<zyr_proto::session::Pointer, String> {
+        Err("le banc de mesure n'a pas de curseur".to_string())
     }
 
     fn screens(&self) -> Result<String, String> {
         Err("le banc de mesure ne filme aucun écran".to_string())
     }
 
-    fn pointer(&self) -> Result<zyr_proto::session::Pointer, String> {
-        Err("le banc de mesure n'a pas de curseur".to_string())
-    }
-
-    fn film_this_screen(&self, _id: Option<String>) -> Result<zyr_tunnel::Settled, String> {
+    fn film_this_screen(&self, _id: Option<String>) -> Result<(), String> {
         Err("le banc de mesure ne filme aucun écran".to_string())
     }
 
@@ -135,15 +94,9 @@ impl Answers for NoEngine {
 
     fn pieces(
         &self,
-        _asking: Option<zyr_tunnel::aside::Wanted>,
-        _giving: Option<zyr_tunnel::aside::Given>,
-    ) -> Result<
-        (
-            Option<zyr_tunnel::aside::Given>,
-            Option<zyr_tunnel::aside::Wanted>,
-        ),
-        String,
-    > {
+        _asking: Option<Wanted>,
+        _giving: Option<Given>,
+    ) -> Result<(Option<Given>, Option<Wanted>), String> {
         Err("le banc de mesure ne copie aucun fichier".to_string())
     }
 }
@@ -225,22 +178,15 @@ fn profile(rate_mbps: u64, frames_per_second: u32) -> MediaProfile {
     }
 }
 
-/// The measured side: two echoes, one per path, and the tunnel serving them.
+/// The measured side: two echoes, one per road, and the tunnel serving
+/// the second.
 async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
     let identity = Identity::load_or_create(&paths::identity_dir())?;
-    let ports = EnginePorts::new(ENGINE_BASE)?;
 
     // Reference: the same echo, reached without going through the tunnel.
     let direct = open_socket(SocketAddr::new(EVERY_INTERFACE, DIRECT_PORT))?;
     tokio::spawn(async move {
         let _ = probe::echo(direct).await;
-    });
-
-    // Fake engine: the tunnel hands it what it receives on the video
-    // channel, and it sends it straight back.
-    let engine = open_socket(SocketAddr::new(ENGINE, ports.video()))?;
-    tokio::spawn(async move {
-        let _ = probe::echo(engine).await;
     });
 
     let media = Media::from(profile(args.rate, 60));
@@ -273,14 +219,7 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
         // while waiting.
         tokio::spawn(async move {
             let observed = connection.clone();
-            match Tunnel::host(
-                connection,
-                ENGINE,
-                Arc::new(NoEngine { ports, media }),
-                None,
-            )
-            .await
-            {
+            match serve(connection, &media).await {
                 Ok(mut tunnel) => {
                     let (without, with) = serve_and_measure(&mut tunnel).await;
                     // The return trip is only visible from here: the
@@ -290,18 +229,45 @@ async fn hold_the_bench(args: HostArgs) -> Result<(), Box<dyn Error>> {
                 }
                 Err(e) => println!("Tunnel impossible : {e}"),
             }
+            // The tunnel is sized for whatever comes next, as the service
+            // does once a session has gone.
+            media.serving_nobody();
             println!("Mesure terminée.\n");
         });
     }
 }
 
+/// Opens the session the other bench asks for, the way the service does:
+/// its engine brought up on a link of its own, the answer, then the
+/// tunnel.
+///
+/// The engine is a stand-in that sends every picture straight back, so
+/// what the other bench measures is the whole road a picture takes.
+async fn serve(
+    connection: Connection,
+    media: &Media,
+) -> Result<Tunnel, Box<dyn Error + Send + Sync>> {
+    let answering: Arc<dyn Answers> = Arc::new(Bench);
+    let opening = aside::until_a_session_opens(&connection, answering.clone(), None).await?;
+    // The bench sizes its tunnel on the session that opens on it, like the
+    // service does: measuring a window worked out from anything else
+    // would be measuring something the product never runs.
+    media.serving(opening.serving());
+    let listener = LinkListener::create(Access::SystemAndInteractive)?;
+    let name = listener.name().to_string();
+    let (engine, accepted) = tokio::join!(link::connect(&name), listener.accept());
+    tokio::spawn(probe::echo_pictures(engine?));
+    // Nothing is said to the stand-in, and what it says is heard by
+    // nobody: the service's half goes at once, which the tunnel takes as
+    // a service with nothing to say.
+    let (side, _) = service_channel();
+    opening.opened().await?;
+    Ok(Tunnel::host(connection, answering, accepted?, side, None))
+}
+
 /// The measuring side: the same trip twice, then the report.
 async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     let identity = Identity::load_or_create(&paths::identity_dir())?;
-    let ports = EnginePorts::new(ENGINE_BASE)?;
-    let listen = IpAddr::V4(
-        device_loopback_addr(DEVICE).ok_or("aucune adresse locale disponible pour le banc")?,
-    );
 
     println!("Empreinte de cet ordinateur : {}", identity.fingerprint());
     println!("Connexion à {}...", args.address);
@@ -312,10 +278,11 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
         0 => Path::Direct,
         loss_per_thousand => Path::Degraded { loss_per_thousand },
     };
+    let serving = profile(args.rate, args.fps);
     let endpoint = TunnelEndpoint::client_on_path(
         &identity,
         args.pair,
-        profile(args.rate, args.fps),
+        serving,
         SocketAddr::new(EVERY_INTERFACE, 0),
         path,
     )?;
@@ -323,13 +290,16 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
         .connect(SocketAddr::new(args.address, TUNNEL_PORT))
         .await?;
 
-    let usable = connection
+    // What one picture datagram of the engine may weigh on this path:
+    // what the path can never stop carrying, less the byte naming its
+    // channel.
+    let size = connection
         .guaranteed_usable_datagram()
+        .and_then(|usable| usable.checked_sub(MUX_OVERHEAD))
         .ok_or("le chemin n'accepte aucun datagramme")?;
-    let size = zyr_transport::packet_size(usable)?;
 
     let cadence = Cadence {
-        size: size.bytes,
+        size,
         rate_mbps: args.rate,
         frames_per_second: args.fps,
         duration: Duration::from_secs(args.duration),
@@ -354,39 +324,55 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
     println!("\nMesure directe...");
     let direct_computation = Stopwatch::start();
     let direct = probe::probe(
-        open_socket(SocketAddr::new(EVERY_INTERFACE, 0))?,
-        SocketAddr::new(args.address, DIRECT_PORT),
+        Road::Bare {
+            socket: open_socket(SocketAddr::new(EVERY_INTERFACE, 0))?,
+            echo: SocketAddr::new(args.address, DIRECT_PORT),
+        },
         cadence,
     )
     .await?;
     let direct_load = direct_computation.and_then(|s| s.load());
 
     println!("Mesure à travers le tunnel...");
-    let tunnel = Tunnel::client(connection.clone(), listen, ports, None).await?;
+    let (tunnel, player) = open_the_session(&connection, serving).await?;
     let tunnel_computation = Stopwatch::start();
-    let through_tunnel = probe::probe(
-        open_socket(SocketAddr::new(listen, 0))?,
-        SocketAddr::new(listen, ports.video()),
-        cadence,
-    )
-    .await?;
+    let through_tunnel = probe::probe(Road::Tunnel(player), cadence).await?;
     let tunnel_load = tunnel_computation.and_then(|s| s.load());
 
-    report(&direct, &through_tunnel, &size, &connection, &tunnel);
+    report(&direct, &through_tunnel, size, &connection, &tunnel);
     report_computation(args.rate, direct_load, tunnel_load);
 
     // Closing cleanly frees the other bench straight away, instead of
     // leaving it to wait for the connection to expire.
-    drop(tunnel);
+    tunnel.close().await;
     endpoint.close().await;
     Ok(())
+}
+
+/// Opens the session on the other bench, and brings its tunnel up on
+/// this side the way a way does: a link for the player, the tunnel on
+/// it, and the player connected.
+///
+/// The way tells its player how the tunnel stands; this one has nothing
+/// to tell, and its half of the service goes at once.
+async fn open_the_session(
+    connection: &Connection,
+    serving: MediaProfile,
+) -> Result<(Tunnel, Link), Box<dyn Error>> {
+    aside::ask_to_open(connection, serving).await?;
+    let listener = LinkListener::create(Access::SystemAndInteractive)?;
+    let name = listener.name().to_string();
+    let (side, _) = service_channel();
+    let tunnel = Tunnel::client(connection.clone(), listener, side, None);
+    let player = link::connect(&name).await?;
+    Ok((tunnel, player))
 }
 
 fn report(
     direct: &Outcome,
     through_tunnel: &Outcome,
-    size: &zyr_transport::PacketSize,
-    connection: &zyr_transport::Connection,
+    size: u16,
+    connection: &Connection,
     tunnel: &Tunnel,
 ) {
     println!("\n--- Sans tunnel (référence) ---");
@@ -394,10 +380,7 @@ fn report(
 
     println!("\n--- À travers le tunnel ---");
     detail(through_tunnel);
-    println!("  taille de paquet   {} octets", size.bytes);
-    if size.reduced_by_the_path {
-        println!("                     réduite par le chemin");
-    }
+    println!("  taille de paquet   {size} octets");
     println!(
         "  aller-retour vu par le transport   {}",
         milliseconds(connection.round_trip())
@@ -412,8 +395,8 @@ fn report(
     let reading = tunnel.reading();
     if reading.too_large > 0 {
         println!(
-            "  {} paquets trop gros pour le chemin : la taille demandée au \
-             moteur devra baisser",
+            "  {} paquets trop gros pour le chemin : il s'est rétréci sous \
+             ce qu'il promettait",
             reading.too_large
         );
     }
@@ -422,6 +405,13 @@ fn report(
             "  {} paquets jetés faute de place dans la file d'envoi : le chemin \
              ne prend pas les paquets au rythme où le moteur les fait",
             reading.crowded
+        );
+    }
+    if reading.crowded_here > 0 {
+        println!(
+            "  {} paquets jetés ici faute de place vers le lecteur : il ne les \
+             prenait pas assez vite",
+            reading.crowded_here
         );
     }
     if reading.unreadable > 0 {
@@ -488,7 +478,7 @@ async fn serve_and_measure(tunnel: &mut Tunnel) -> (Option<f64>, Option<f64>) {
                 return (load_without, with_tunnel.and_then(|s| s.load()));
             }
             _ = tokio::time::sleep(WATCH_STEP) => {
-                if with_tunnel.is_none() && counters.reading().to_engine > 0 {
+                if with_tunnel.is_none() && counters.reading().to_link > 0 {
                     load_without = without_tunnel.take().and_then(|s| s.load());
                     with_tunnel = Stopwatch::start();
                 }
@@ -531,7 +521,7 @@ fn report_computation(rate_mbps: u64, direct: Option<f64>, tunnel: Option<f64>) 
 /// Each end knows only what it sent: the transport detects losses only
 /// through the acknowledgements that come back to it. The two halves of
 /// the trip therefore need both terminals.
-fn breakdown(tunnel: &Tunnel, connection: &zyr_transport::Connection, way: &str) -> String {
+fn breakdown(tunnel: &Tunnel, connection: &Connection, way: &str) -> String {
     let dropped = tunnel
         .reading()
         .to_tunnel
@@ -557,4 +547,65 @@ fn detail(outcome: &Outcome) {
         outcome.loss()
     );
     println!("  débit tenu         {:.1} Mb/s", outcome.rate());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn pictures_sent_through_the_tunnel_come_back_from_the_stand_in_engine() {
+        // The whole road a measurement takes, on loopback: the session
+        // opened the way the other bench opens it, the stand-in engine at
+        // the far end, and the probe on the player's end of the link.
+        let host_identity = Identity::generate().unwrap();
+        let client_identity = Identity::generate().unwrap();
+        let loopback = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0);
+        let media = Media::from(profile(1, 30));
+        let host_endpoint = TunnelEndpoint::host(
+            &host_identity,
+            client_identity.fingerprint(),
+            media.clone(),
+            loopback,
+        )
+        .unwrap();
+        let meeting_point = host_endpoint.local_address().unwrap();
+        let serving = profile(10, 60);
+        let client_endpoint = TunnelEndpoint::client(
+            &client_identity,
+            host_identity.fingerprint(),
+            serving,
+            loopback,
+        )
+        .unwrap();
+        let (host_side, client_side) = tokio::join!(
+            host_endpoint.accept(),
+            client_endpoint.connect(meeting_point)
+        );
+        let client_side = client_side.unwrap();
+
+        let (served, opened) = tokio::join!(
+            serve(host_side.unwrap(), &media),
+            open_the_session(&client_side, serving)
+        );
+        let host_tunnel = served.unwrap();
+        let (tunnel, player) = opened.unwrap();
+        // Sized on what the session asked for, as the service sizes it.
+        assert_eq!(media.now(), serving);
+
+        let size = client_side.guaranteed_usable_datagram().unwrap() - MUX_OVERHEAD;
+        let cadence = Cadence {
+            size,
+            rate_mbps: 5,
+            frames_per_second: 60,
+            duration: Duration::from_millis(300),
+        };
+        let outcome = probe::probe(Road::Tunnel(player), cadence).await.unwrap();
+        assert!(outcome.sent > 0);
+        assert_eq!(outcome.lost(), 0, "nothing gets lost over loopback");
+        assert!(host_tunnel.reading().to_link > 0);
+
+        tunnel.close().await;
+        host_tunnel.close().await;
+    }
 }

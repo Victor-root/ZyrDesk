@@ -1,25 +1,36 @@
-//! Opens a session on a remote computer.
+//! Opens a session on a remote computer, and plays it without a window.
 //!
 //! Nothing is held here, and almost nothing is decided here either: the
-//! opening of a session lives in `zyr-session`, which the interface uses
-//! word for word. What belongs to this command is reading the options,
-//! saying out loud what is happening, and waiting for the end, since a
-//! command that hands back before the session is over would look like it
-//! had failed.
-//!
-//! A direct mode without the tunnel is kept for diagnosis, to tell a
-//! tunnel problem from an engine problem in minutes. It never appears in
-//! the interface.
+//! opening lives in `zyr-session` and the player in `zyr-player`, both
+//! used word for word by the interface. The player is started without a
+//! window: it decodes and counts every picture and every sound, and draws
+//! none. What belongs to this command is reading the options, saying out
+//! loud what is happening, and printing what the session costs once a
+//! second until it ends or Ctrl+C is pressed.
 
 use std::process::ExitCode;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 use clap::Args as ClapArgs;
-use zyr_engine_client::SessionOutcome;
-use zyr_proto::session::{Codec, DisplayMode, SessionSettings, parse_resolution};
+use zyr_player::{Ending, Event, Measures, Player, Surface};
+use zyr_proto::log::Log;
+use zyr_proto::session::{Codec, Preferred, SessionSettings, parse_resolution};
 use zyr_session::{Step, Wanted};
 use zyr_transport::Fingerprint;
 
 use crate::failure;
+
+/// How often what the session costs is printed.
+const EVERY: Duration = Duration::from_secs(1);
+
+/// How long a player told to stop is given to say it has.
+///
+/// Stopping is a goodbye on a local link, answered at once; a player that
+/// has not said it by then is not going to, and the command ends anyway.
+const STOPPING_TAKES: Duration = Duration::from_secs(3);
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -27,14 +38,8 @@ pub struct Args {
     host: String,
 
     /// Fingerprint of the remote computer, shown there by "zyr-cli identity"
-    #[arg(long, value_name = "FINGERPRINT", required_unless_present = "direct")]
-    pair: Option<Fingerprint>,
-
-    /// Goes straight to the remote engine, without the tunnel and
-    /// without the service. For diagnosis only: the address then carries
-    /// the engine's port.
-    #[arg(long, conflicts_with = "pair")]
-    direct: bool,
+    #[arg(long, value_name = "FINGERPRINT")]
+    pair: Fingerprint,
 
     /// Requested resolution, for example 1920x1080
     #[arg(long, default_value = "1920x1080")]
@@ -51,22 +56,6 @@ pub struct Args {
     /// Video codec: auto, h264, hevc or av1
     #[arg(long, default_value = "auto")]
     codec: String,
-
-    /// Display: fullscreen or windowed
-    #[arg(long, default_value = "fullscreen")]
-    display: String,
-
-    /// Shows the performance statistics over the video
-    #[arg(long)]
-    stats: bool,
-
-    /// Relative mouse, suited to games, instead of the desktop mouse
-    #[arg(long)]
-    relative_mouse: bool,
-
-    /// Pairs again even if this computer is already known
-    #[arg(long)]
-    pair_again: bool,
 }
 
 pub fn run(args: Args) -> ExitCode {
@@ -74,23 +63,30 @@ pub fn run(args: Args) -> ExitCode {
         Ok(settings) => settings,
         Err(message) => return failure("réglages de session invalides", message),
     };
+    let journal = crate::journal();
+    let log = match Log::open(&journal) {
+        Ok(log) => log,
+        Err(e) => return failure(&format!("journal {}", journal.display()), e),
+    };
+
+    // Ctrl+C lets go of the opening where it stands, and of the session
+    // once it plays.
+    let interrupted = Arc::new(AtomicBool::new(false));
+    if let Err(e) = on_ctrl_c(Arc::clone(&interrupted)) {
+        return failure("écoute de Ctrl+C", e);
+    }
 
     let wanted = Wanted {
         host: args.host.clone(),
         peer: args.pair,
         settings,
-        pair_again: args.pair_again,
         // The command line is the diagnostic path: it asks nothing of
-        // the far computer's speakers, nor of the rate it serves a still
-        // screen at. Both are choices made in the window, along with
-        // everything else a session looks like, and both leave that
-        // computer exactly as its own settings had it.
+        // the far computer's speakers, which it leaves exactly as its own
+        // settings had them.
         hush_the_far_speakers: false,
-        steady_far_rate: zyr_proto::session::Serving::default().steady_rate,
-        // The command line is there for diagnosis: it asks for a size
-        // and so for the screen needed to carry it. But it measures no
-        // screen, so it has no magnification to ask for: the far
-        // computer keeps its own.
+        // It asks for a size and so for the screen needed to carry it.
+        // But it measures no screen, so it has no magnification to ask
+        // for: the far computer keeps its own.
         wants_a_screen_over_there: true,
         far_magnification: 0,
         // And the main screen of the far machine, which is what every
@@ -104,84 +100,185 @@ pub fn run(args: Args) -> ExitCode {
         // in the window.
         only_here: false,
     };
+    let asked_at = Instant::now();
+    let still_wanted = || !interrupted.load(Ordering::Relaxed);
+    let mut opened =
+        match zyr_session::open(&wanted, &mut |step| tell(step, &args.host), &still_wanted) {
+            Ok(opened) => opened,
+            Err(zyr_session::Error::Abandoned) => {
+                println!("Ouverture abandonnée.");
+                return ExitCode::SUCCESS;
+            }
+            Err(e) => return reported(e),
+        };
 
-    // Nothing here can close a session while it is opening: the command
-    // line waits for the opening to finish before it listens to anybody.
-    let running = match zyr_session::open(&wanted, &mut |step| tell(step, &args.host), &|| true) {
-        Ok(running) => running,
-        Err(e) => return reported(e, &args.host),
+    println!("Connexion à {}...", args.host);
+    let (said, heard) = mpsc::channel();
+    let player = match Player::start(
+        &opened.link,
+        // A still screen is sent again at the full rate, as in the
+        // window by default: what is measured is then a steady stream.
+        zyr_session::player_wants(&opened.settings, Preferred::default().steady_far_rate),
+        Surface::Headless,
+        log,
+        Box::new(move |event| {
+            let _ = said.send(event);
+        }),
+    ) {
+        Ok(player) => player,
+        Err(e) => return failure("démarrage du lecteur", e),
     };
+    if let Err(refused) = opened.way.hold() {
+        println!("  Le service n'a pas pris la session en charge : {refused}");
+        println!("  Elle ne figurera pas parmi les sessions en cours.");
+    }
 
-    let log = running.log().to_path_buf();
-    match running.wait() {
-        Ok(SessionOutcome::Ended) => {
+    let ending = watch(&player, &heard, &interrupted, asked_at);
+    // The way goes back to the service only now, with the player gone.
+    drop(opened);
+    ended(ending, &journal)
+}
+
+/// Follows the session until it ends, printing what it costs once a
+/// second, and stops it on Ctrl+C.
+///
+/// `None` is a player told to stop that never said it had.
+fn watch(
+    player: &Player,
+    heard: &mpsc::Receiver<Event>,
+    interrupted: &AtomicBool,
+    asked_at: Instant,
+) -> Option<Ending> {
+    let mut next = Instant::now() + EVERY;
+    let mut stopped_at: Option<Instant> = None;
+    loop {
+        if stopped_at.is_none() && interrupted.load(Ordering::Relaxed) {
+            println!("Arrêt demandé.");
+            player.stop();
+            stopped_at = Some(Instant::now());
+        }
+        if stopped_at.is_some_and(|at| at.elapsed() > STOPPING_TAKES) {
+            return None;
+        }
+        let now = Instant::now();
+        if now >= next {
+            println!("{}", measured(&player.measures()));
+            next += EVERY;
+        }
+        // Short enough that Ctrl+C is felt at once.
+        let waited = next
+            .saturating_duration_since(Instant::now())
+            .min(Duration::from_millis(100));
+        match heard.recv_timeout(waited) {
+            Ok(Event::Streaming {
+                codec,
+                width,
+                height,
+            }) => println!("Image : {} en {width}x{height}.", codec.name()),
+            Ok(Event::FirstPicture) => println!(
+                "Première image décodée, {} ms après la demande.",
+                asked_at.elapsed().as_millis()
+            ),
+            Ok(Event::Notice(text)) => println!("  {text}"),
+            Ok(Event::Ended(ending)) => return Some(ending),
+            Err(RecvTimeoutError::Timeout) => {}
+            // Nothing can be told any more: the player is gone with every
+            // way it had of saying so.
+            Err(RecvTimeoutError::Disconnected) => return Some(Ending::LinkLost),
+        }
+    }
+}
+
+/// Says how the session ended, and hands back the exit code that goes
+/// with it.
+fn ended(ending: Option<Ending>, journal: &std::path::Path) -> ExitCode {
+    let journal = format!("Journal : {}", journal.display());
+    match ending {
+        Some(Ending::Asked) => {
             println!("Session terminée.");
-            println!("  Journal : {}", log.display());
+            println!("  {journal}");
             ExitCode::SUCCESS
         }
-        Ok(SessionOutcome::Failed) => failure(
-            "la session s'est arrêtée sur une erreur",
-            format!("Journal : {}", log.display()),
-        ),
-        Ok(SessionOutcome::Unreachable) => failure(
-            "l'ordinateur distant n'a pas répondu",
-            format!("Journal : {}", log.display()),
-        ),
-        Ok(SessionOutcome::NotPaired) => failure(
-            "l'ordinateur distant ne reconnaît plus celui-ci",
-            format!("Journal : {}", log.display()),
-        ),
-        Ok(SessionOutcome::Unknown { code }) => {
-            let code = code
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "interrompu".to_string());
-            failure(
-                "le moteur s'est arrêté sans dire pourquoi",
-                format!("code {code}\n  Journal : {}", log.display()),
-            )
+        Some(Ending::HostLeft) => {
+            println!("L'ordinateur distant a mis fin à la session.");
+            println!("  {journal}");
+            ExitCode::SUCCESS
         }
-        Err(e) => failure("surveillance de la session", e),
+        Some(Ending::LinkLost) => failure(
+            "la session s'est interrompue sans un mot de l'ordinateur distant",
+            journal,
+        ),
+        Some(Ending::EngineFailed(why)) => failure(
+            "la session s'est arrêtée sur une erreur",
+            format!("{why}\n  {journal}"),
+        ),
+        None => failure(
+            "le lecteur ne s'est pas arrêté à temps",
+            format!(
+                "{} s après la demande\n  {journal}",
+                STOPPING_TAKES.as_secs()
+            ),
+        ),
     }
+}
+
+/// Sets `interrupted` when Ctrl+C is pressed.
+///
+/// On a thread and a small runtime of their own: the rest of this command
+/// waits on the session and never on a runtime.
+fn on_ctrl_c(interrupted: Arc<AtomicBool>) -> std::io::Result<()> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    std::thread::Builder::new()
+        .name("zyr-cli-ctrl-c".to_string())
+        .spawn(move || {
+            if runtime.block_on(tokio::signal::ctrl_c()).is_ok() {
+                interrupted.store(true, Ordering::Relaxed);
+            }
+        })?;
+    Ok(())
+}
+
+/// What the session costs, on one line.
+///
+/// A reading not taken yet is a dash and never a nought: a player with no
+/// decoded picture has no decoding time, not a decoding time of nothing.
+fn measured(measures: &Measures) -> String {
+    let ms = |value: Option<f64>| value.map_or("-".to_string(), |ms| format!("{ms:.1} ms"));
+    let picture = match (&measures.codec, measures.width, measures.height) {
+        (Some(codec), Some(width), Some(height)) => format!("{codec} {width}x{height}"),
+        _ => "image -".to_string(),
+    };
+    format!(
+        "{picture}, {} im/s | décodage {} | affichage {} | hôte {} | réseau {} | débit {} | \
+         pertes {} | latence {}",
+        measures
+            .fps
+            .map_or("-".to_string(), |fps| format!("{fps:.1}")),
+        ms(measures.decode_ms),
+        ms(measures.render_ms),
+        ms(measures.host_ms),
+        ms(measures.network_ms),
+        measures
+            .bitrate_mbps
+            .map_or("-".to_string(), |mbps| format!("{mbps:.1} Mb/s")),
+        measures
+            .dropped_network_pct
+            .map_or("-".to_string(), |pct| format!("{pct:.1} %")),
+        ms(measures.latency_ms),
+    )
 }
 
 /// Says what is happening, in the order it happens.
 fn tell(step: Step, host: &str) {
     match step {
-        Step::Reached { packet } => {
-            println!("Tunnel établi avec {host}.");
-            println!("  Taille de paquet : {packet} octets.");
+        Step::Reached => println!("Tunnel établi avec {host}."),
+        Step::FarScreenLeftAlone { refused } => {
+            println!("  {host} garde l'écran qu'il filme : {refused}");
         }
-        Step::Pairing { again: None } => {
-            println!("Premier accès à cet ordinateur : présentation en cours...");
-        }
-        Step::Pairing {
-            again: Some(stopped),
-        } => {
-            println!("Cet ordinateur ne nous reconnaît plus : nouvelle présentation...");
-            println!("  Le lecteur s'est arrêté sur {stopped:?}.");
-        }
-        Step::PairingNeeded { pin } => {
-            println!("Premier accès à cet ordinateur, sans tunnel pour porter le code.\n");
-            println!("  Sur {host}, lancez maintenant :");
-            println!("\n      zyr-cli host pin {pin}\n");
-            println!("  En attente de l'autorisation...");
-        }
-        Step::Paired => println!("  Les deux ordinateurs se connaissent.\n"),
-        Step::NoSoundCardHere => {
-            println!("  Cet ordinateur n'a pas de sortie audio : la session sera muette.");
-        }
-        Step::Starting => println!("Connexion à {host}..."),
-        // Nothing to say about it here: the command line has
-        // no floating button to hang on it.
-        Step::Showing { .. } => {}
         Step::SpeakersLeftAlone { refused } => {
             println!("  Les enceintes de {host} restent allumées : {refused}");
-        }
-        Step::FarPointerLeftAlone { refused } => {
-            println!("  Le curseur de {host} n'a pas été réglé : {refused}");
-        }
-        Step::RateLeftAlone { refused } => {
-            println!("  {host} garde sa cadence d'écran immobile : {refused}");
         }
         Step::ScreenLeftAlone { refused } => {
             println!("  {host} n'a pas réveillé son écran virtuel : {refused}");
@@ -189,47 +286,28 @@ fn tell(step: Step, host: &str) {
         Step::ScreenOverThere { wide, high } => {
             println!("  {host} affiche {wide}x{high}, c'est ce qui est demandé au lecteur");
         }
-        Step::FarScreenChanging => {
-            println!("  {host} change d'écran, son moteur redémarre...");
-        }
-        Step::FarRateChanging => {
-            println!("  {host} change sa cadence d'écran immobile, son moteur redémarre...");
-        }
-        Step::FarScreenLeftAlone { refused } => {
-            println!("  {host} garde l'écran qu'il filme : {refused}");
+        Step::NoSoundCardHere => {
+            println!("  Cet ordinateur n'a pas de sortie audio : la session sera muette.");
         }
     }
 }
 
 /// Turns a failure into the message and the exit code that go with it.
-fn reported(e: zyr_session::Error, host: &str) -> ExitCode {
+fn reported(e: zyr_session::Error) -> ExitCode {
     use zyr_session::Error;
     match e {
-        Error::EngineMissing(path) => failure(
-            "moteur client introuvable",
-            format!(
-                "{}\n  Lancez « zyr-cli engines status » pour la marche à suivre.",
-                path.display()
-            ),
+        Error::EngineMissing(_) => failure(
+            "FFmpeg manque",
+            format!("{e}\n  Lancez « zyr-cli doctor » pour vérifier cet ordinateur."),
         ),
         Error::Service(reason) => failure("ouverture du tunnel", reason),
-        Error::Pairing(reason) => pairing_failed(reason, host),
-        Error::Handover(reason) => pairing_failed(reason, host),
         other => failure("ouverture de la session", other),
     }
-}
-
-fn pairing_failed(reason: impl std::fmt::Display, host: &str) -> ExitCode {
-    failure(
-        "appairage",
-        format!("{reason}\n  Vérifiez que l'accès distant est actif sur {host}."),
-    )
 }
 
 fn build_settings(args: &Args) -> Result<SessionSettings, String> {
     let (width, height) = parse_resolution(&args.resolution).map_err(|e| e.to_string())?;
     let codec: Codec = args.codec.parse()?;
-    let display_mode: DisplayMode = args.display.parse()?;
     if args.fps == 0 {
         return Err("le nombre d'images par seconde doit être supérieur à zéro".to_string());
     }
@@ -242,16 +320,46 @@ fn build_settings(args: &Args) -> Result<SessionSettings, String> {
         fps: args.fps,
         bitrate_kbps: args.bitrate,
         codec,
-        display_mode,
-        // Decided by the service once the path is known, left to the
-        // engine when going direct.
-        packet_size: None,
-        absolute_mouse: !args.relative_mouse,
-        stats_overlay: args.stats,
-        // Alt+Tab and the Windows key go into the session, as under the
-        // interface. Nothing here can switch them back: the menu that
-        // does it is the one of the floating button, which this command
-        // does not open.
-        system_keys: true,
+        // Nothing here draws a pointer of its own, so the far computer
+        // draws its own into the picture, as it does for a game.
+        absolute_mouse: false,
+        ..SessionSettings::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reading_not_taken_yet_is_a_dash_and_never_a_nought() {
+        let line = measured(&Measures::default());
+        assert!(line.starts_with("image -, - im/s"), "{line}");
+        assert!(line.contains("décodage - |"), "{line}");
+        assert!(!line.contains('0'), "{line}");
+    }
+
+    #[test]
+    fn a_whole_reading_fits_on_one_line() {
+        let line = measured(&Measures {
+            codec: Some("HEVC".to_string()),
+            width: Some(1920),
+            height: Some(1080),
+            fps: Some(59.96),
+            decode_ms: Some(1.24),
+            render_ms: Some(0.3),
+            host_ms: Some(4.56),
+            network_ms: Some(1.0),
+            bitrate_mbps: Some(18.44),
+            dropped_network_pct: Some(0.0),
+            latency_ms: Some(12.34),
+            ..Measures::default()
+        });
+        assert_eq!(
+            line,
+            "HEVC 1920x1080, 60.0 im/s | décodage 1.2 ms | affichage 0.3 ms | hôte 4.6 ms | \
+             réseau 1.0 ms | débit 18.4 Mb/s | pertes 0.0 % | latence 12.3 ms"
+        );
+        assert_eq!(line.lines().count(), 1);
+    }
 }

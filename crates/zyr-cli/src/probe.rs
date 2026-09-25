@@ -4,13 +4,20 @@
 //! them: that rhythm is what puts a path to the test, not a steady flow.
 //! Each packet carries its own age, so the round trip reads itself on
 //! return without the two computers having to agree on the time.
+//!
+//! The same packets take two roads: a bare UDP socket, answered by an
+//! echo on the other computer, and the player's end of a local link,
+//! answered through the whole tunnel by a stand-in engine that sends
+//! every picture it receives straight back.
 
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::UdpSocket;
+use zyr_control::link::{Channel, Link, LinkReader, LinkWriter};
 
 use crate::measurement::{Outcome, RoundTrip};
 
@@ -22,6 +29,15 @@ const GRACE: Duration = Duration::from_millis(500);
 
 /// No UDP datagram goes beyond this size.
 const BUFFER: usize = 65_535;
+
+/// Buffers the echoes' sockets ask for.
+///
+/// The system default, often 64 KiB, is only about ten milliseconds of
+/// video at a common rate: the echo being starved of CPU for the length
+/// of one preemption is enough for the kernel to drop packets, silently,
+/// and the bare road would then be measured worse than it is. Four
+/// mebibytes comfortably cover a scheduling hiccup.
+const SOCKET_BUFFER: usize = 4 * 1024 * 1024;
 
 /// Sending rhythm, modelled on a video encoder's.
 #[derive(Debug, Clone, Copy)]
@@ -44,6 +60,70 @@ impl Cadence {
     }
 }
 
+/// Opens a UDP socket sized for a video stream.
+///
+/// The system may grant only part of the buffers asked for, or refuse:
+/// it then keeps its own, which stay usable.
+///
+/// To be called from a running async runtime: the socket has to register
+/// with it to be watched.
+pub fn open_socket(address: SocketAddr) -> io::Result<UdpSocket> {
+    let domain = match address {
+        SocketAddr::V4(_) => Domain::IPV4,
+        SocketAddr::V6(_) => Domain::IPV6,
+    };
+    let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
+    let _ = socket.set_recv_buffer_size(SOCKET_BUFFER);
+    let _ = socket.set_send_buffer_size(SOCKET_BUFFER);
+    socket.set_nonblocking(true)?;
+    ignore_unreachable_reports(&socket)?;
+    socket.bind(&address.into())?;
+    UdpSocket::from_std(socket.into())
+}
+
+/// Stops Windows from failing a receive because of an earlier send.
+///
+/// Sending a datagram to a port nobody listens on draws an ICMP reply,
+/// and Windows hands that back as an error on the *next* receive, on a
+/// socket which is otherwise perfectly fine. The echo answers the last
+/// packets of a measurement after the other bench has closed the socket
+/// that sent them: without this, the echo would die there, and the next
+/// measurement would find nobody answering. Every other system keeps
+/// those reports away from an unconnected socket; this asks Windows to
+/// do the same.
+#[cfg(windows)]
+fn ignore_unreachable_reports(socket: &Socket) -> io::Result<()> {
+    use std::os::windows::io::AsRawSocket;
+    use windows_sys::Win32::Networking::WinSock::{SIO_UDP_CONNRESET, SOCKET, WSAIoctl};
+
+    let report: u32 = 0;
+    let mut answered: u32 = 0;
+    // SAFETY: the socket is ours and open, and the value read from lives
+    // until the call returns.
+    let outcome = unsafe {
+        WSAIoctl(
+            socket.as_raw_socket() as SOCKET,
+            SIO_UDP_CONNRESET,
+            (&raw const report).cast(),
+            size_of::<u32>() as u32,
+            std::ptr::null_mut(),
+            0,
+            &mut answered,
+            std::ptr::null_mut(),
+            None,
+        )
+    };
+    if outcome != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn ignore_unreachable_reports(_socket: &Socket) -> io::Result<()> {
+    Ok(())
+}
+
 /// Sends back everything that arrives, unchanged.
 pub async fn echo(socket: UdpSocket) -> io::Result<()> {
     let mut buffer = vec![0u8; BUFFER];
@@ -53,24 +133,82 @@ pub async fn echo(socket: UdpSocket) -> io::Result<()> {
     }
 }
 
+/// Where the probe's packets go, and come back from.
+pub enum Road {
+    /// A socket, answered by [`echo`] at that address.
+    Bare { socket: UdpSocket, echo: SocketAddr },
+    /// The player's end of a local link: the packets leave as pictures,
+    /// and come back as pictures once the tunnel has carried them to the
+    /// other bench and back.
+    Tunnel(Link),
+}
+
+/// Where the packets leave from.
+enum Out {
+    Bare(Arc<UdpSocket>),
+    Tunnel(LinkWriter),
+}
+
+impl Out {
+    async fn send(&mut self, packet: &[u8]) -> io::Result<()> {
+        match self {
+            Out::Bare(socket) => socket.send(packet).await.map(drop),
+            Out::Tunnel(writer) => writer.send(Channel::Video, packet).await,
+        }
+    }
+}
+
+/// Where they come back.
+enum Back {
+    Bare(Arc<UdpSocket>),
+    Tunnel(LinkReader),
+}
+
+impl Back {
+    /// Waits for the next packet back and copies it into `buffer`: its
+    /// length, or `None` once nothing more can come.
+    async fn next(&mut self, buffer: &mut [u8]) -> Option<usize> {
+        match self {
+            Back::Bare(socket) => socket.recv(buffer).await.ok(),
+            Back::Tunnel(reader) => loop {
+                match reader.next().await {
+                    Ok(Some((Channel::Video, packet))) => {
+                        let length = packet.len().min(buffer.len());
+                        buffer[..length].copy_from_slice(&packet[..length]);
+                        return Some(length);
+                    }
+                    // What else the link says is not the probe's.
+                    Ok(Some(_)) => {}
+                    Ok(None) | Err(_) => return None,
+                }
+            },
+        }
+    }
+}
+
 /// Sends at the requested cadence and times what comes back.
-pub async fn probe(socket: UdpSocket, target: SocketAddr, cadence: Cadence) -> io::Result<Outcome> {
+pub async fn probe(road: Road, cadence: Cadence) -> io::Result<Outcome> {
     if (cadence.size as usize) < TIMESTAMP {
         return Err(io::Error::other(format!(
             "a probe packet is at least {TIMESTAMP} bytes"
         )));
     }
 
-    socket.connect(target).await?;
-    let socket = Arc::new(socket);
-    let start = Instant::now();
-
-    let receiver = {
-        let socket = socket.clone();
-        tokio::spawn(async move { gather(&socket, start, cadence.duration).await })
+    let (mut out, back) = match road {
+        Road::Bare { socket, echo } => {
+            socket.connect(echo).await?;
+            let socket = Arc::new(socket);
+            (Out::Bare(socket.clone()), Back::Bare(socket))
+        }
+        Road::Tunnel(link) => {
+            let (reader, writer) = link.split();
+            (Out::Tunnel(writer), Back::Tunnel(reader))
+        }
     };
+    let start = Instant::now();
+    let receiver = tokio::spawn(gather(back, start, cadence.duration));
 
-    let (sent, duration) = send(&socket, start, cadence).await?;
+    let (sent, duration) = send(&mut out, start, cadence).await?;
     let measurements = receiver.await.map_err(io::Error::other)?;
     Ok(Outcome::from(
         measurements,
@@ -82,7 +220,7 @@ pub async fn probe(socket: UdpSocket, target: SocketAddr, cadence: Cadence) -> i
 
 /// Sends until the time is up, and reports how many packets went out and
 /// over how long.
-async fn send(socket: &UdpSocket, start: Instant, cadence: Cadence) -> io::Result<(u64, Duration)> {
+async fn send(out: &mut Out, start: Instant, cadence: Cadence) -> io::Result<(u64, Duration)> {
     let mut packet = vec![0u8; cadence.size as usize];
     let mut rhythm = tokio::time::interval(cadence.interval());
     let per_frame = cadence.packets_per_frame();
@@ -93,7 +231,7 @@ async fn send(socket: &UdpSocket, start: Instant, cadence: Cadence) -> io::Resul
         for _ in 0..per_frame {
             let age = start.elapsed().as_nanos() as u64;
             packet[..TIMESTAMP].copy_from_slice(&age.to_le_bytes());
-            socket.send(&packet).await?;
+            out.send(&packet).await?;
             sent += 1;
         }
     }
@@ -102,12 +240,12 @@ async fn send(socket: &UdpSocket, start: Instant, cadence: Cadence) -> io::Resul
 }
 
 /// Gathers the returns, up to the deadline plus the grace period.
-async fn gather(socket: &UdpSocket, start: Instant, duration: Duration) -> Vec<RoundTrip> {
+async fn gather(mut back: Back, start: Instant, duration: Duration) -> Vec<RoundTrip> {
     let mut measurements = Vec::new();
     let mut buffer = vec![0u8; BUFFER];
 
     let _ = tokio::time::timeout(duration + GRACE, async {
-        while let Ok(read) = socket.recv(&mut buffer).await {
+        while let Some(read) = back.next(&mut buffer).await {
             if let Some(round_trip) = time_it(&buffer[..read], start) {
                 measurements.push(round_trip);
             }
@@ -116,6 +254,18 @@ async fn gather(socket: &UdpSocket, start: Instant, duration: Duration) -> Vec<R
     .await;
 
     measurements
+}
+
+/// Sends back every picture that arrives on the link, unchanged: the
+/// stand-in engine at the far end of the tunnel.
+pub async fn echo_pictures(link: Link) -> io::Result<()> {
+    let (mut reader, mut writer) = link.split();
+    while let Some((channel, packet)) = reader.next().await? {
+        if channel == Channel::Video {
+            writer.send(Channel::Video, &packet).await?;
+        }
+    }
+    Ok(())
 }
 
 /// Reads back the age written in a packet and works out its round trip.
@@ -130,6 +280,8 @@ fn time_it(packet: &[u8], start: Instant) -> Option<RoundTrip> {
 
 #[cfg(test)]
 mod tests {
+    use zyr_control::link::{self, Access, LinkListener};
+
     use super::*;
 
     fn cadence(size: u16, rate: u64, fps: u32) -> Cadence {
@@ -203,6 +355,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_stand_in_engine_sends_back_the_pictures_and_nothing_else() {
+        let listener = LinkListener::create(Access::SystemOnly).unwrap();
+        let name = listener.name().to_string();
+        let (player, engine) = tokio::join!(link::connect(&name), listener.accept());
+        tokio::spawn(echo_pictures(engine.unwrap()));
+
+        let (mut reader, mut writer) = player.unwrap().split();
+        writer.send(Channel::Control, b"hello").await.unwrap();
+        writer.send(Channel::Video, b"picture").await.unwrap();
+        let (channel, back) = reader.next().await.unwrap().unwrap();
+        assert_eq!((channel, &back[..]), (Channel::Video, &b"picture"[..]));
+    }
+
+    #[tokio::test]
+    async fn a_probe_through_a_link_measures_what_the_engine_sends_back() {
+        let listener = LinkListener::create(Access::SystemOnly).unwrap();
+        let name = listener.name().to_string();
+        let (player, engine) = tokio::join!(link::connect(&name), listener.accept());
+        tokio::spawn(echo_pictures(engine.unwrap()));
+
+        let mut cadence = cadence(1160, 10, 60);
+        cadence.duration = Duration::from_millis(200);
+        let outcome = probe(Road::Tunnel(player.unwrap()), cadence).await.unwrap();
+
+        assert!(outcome.sent > 0);
+        assert_eq!(outcome.lost(), 0, "nothing gets lost on a local link");
+    }
+
+    #[tokio::test]
     async fn a_full_probe_measures_what_comes_back() {
         let listener = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let target = listener.local_addr().unwrap();
@@ -213,7 +394,15 @@ mod tests {
         let mut cadence = cadence(1300, 10, 60);
         cadence.duration = Duration::from_millis(200);
         let sender = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let outcome = probe(sender, target, cadence).await.unwrap();
+        let outcome = probe(
+            Road::Bare {
+                socket: sender,
+                echo: target,
+            },
+            cadence,
+        )
+        .await
+        .unwrap();
 
         assert!(outcome.sent > 0);
         assert_eq!(outcome.lost(), 0, "nothing gets lost over loopback");
@@ -223,7 +412,11 @@ mod tests {
     #[tokio::test]
     async fn a_packet_too_short_to_carry_its_age_is_refused() {
         let sender = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let target: SocketAddr = "127.0.0.1:9".parse().unwrap();
-        assert!(probe(sender, target, cadence(4, 10, 60)).await.is_err());
+        let echo: SocketAddr = "127.0.0.1:9".parse().unwrap();
+        let road = Road::Bare {
+            socket: sender,
+            echo,
+        };
+        assert!(probe(road, cadence(4, 10, 60)).await.is_err());
     }
 }

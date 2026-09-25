@@ -23,8 +23,10 @@ use std::time::Duration;
 
 use zyr_codec::Ffmpeg;
 use zyr_control::{Answer, CHANNEL, Request, Service, WayId};
+use zyr_media::codec::CodecChoice;
+use zyr_media::control::Wanted as PlayerWants;
 use zyr_proto::paths;
-use zyr_proto::session::{SessionSettings, WantedScreen};
+use zyr_proto::session::{Codec, SessionSettings, WantedScreen};
 use zyr_transport::{Fingerprint, MediaProfile};
 
 /// What is being asked for.
@@ -285,6 +287,34 @@ pub struct Opened {
     pub settings: SessionSettings,
     /// The way itself, given back to the service when this is dropped.
     pub way: Driving,
+}
+
+/// What the player asks the far computer's engine for, out of a session's
+/// settings.
+///
+/// `steady` is whether a still screen is sent again at the full rate: the
+/// viewer's choice, since only the person looking can tell whether a
+/// pointer moving over a still desktop feels smooth. The far computer
+/// draws its pointer into the picture when this end draws none of its
+/// own, which is a session whose mouse is relative, and always sends its
+/// sound: a player with nowhere to play it lets it go.
+pub fn player_wants(settings: &SessionSettings, steady: bool) -> PlayerWants {
+    let at_most = |value: u32| u16::try_from(value).unwrap_or(u16::MAX);
+    PlayerWants {
+        width: at_most(settings.width),
+        height: at_most(settings.height),
+        fps: at_most(settings.fps),
+        bitrate_kbps: settings.bitrate_kbps,
+        codec: match settings.codec {
+            Codec::Auto => CodecChoice::Auto,
+            Codec::H264 => CodecChoice::H264,
+            Codec::Hevc => CodecChoice::Hevc,
+            Codec::Av1 => CodecChoice::Av1,
+        },
+        draw_pointer: !settings.absolute_mouse,
+        audio: true,
+        steady,
+    }
 }
 
 /// Opens a way to a session, reporting what happens as it happens.
@@ -870,6 +900,46 @@ mod tests {
             GaveUp::Said("refusé".to_string()).or(Error::Service),
             Error::Service(reason) if reason == "refusé"
         ));
+    }
+
+    #[test]
+    fn the_player_asks_for_what_the_session_is_set_to() {
+        let settings = SessionSettings {
+            width: 2560,
+            height: 1440,
+            fps: 120,
+            bitrate_kbps: 50_000,
+            codec: Codec::Hevc,
+            absolute_mouse: true,
+            ..SessionSettings::default()
+        };
+        assert_eq!(
+            player_wants(&settings, true),
+            PlayerWants {
+                width: 2560,
+                height: 1440,
+                fps: 120,
+                bitrate_kbps: 50_000,
+                codec: CodecChoice::Hevc,
+                draw_pointer: false,
+                audio: true,
+                steady: true,
+            }
+        );
+        // A relative mouse draws no pointer here, so the far computer
+        // draws its own into the picture.
+        let game = SessionSettings {
+            absolute_mouse: false,
+            ..settings
+        };
+        assert!(player_wants(&game, false).draw_pointer);
+        // And a size no picture could carry is held at the largest one
+        // that travels, rather than wrapped round to a tiny one.
+        let absurd = SessionSettings {
+            width: 70_000,
+            ..settings
+        };
+        assert_eq!(player_wants(&absurd, false).width, u16::MAX);
     }
 
     #[test]
