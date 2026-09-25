@@ -80,6 +80,9 @@ pub struct Tally {
     tunnel_ms: Option<(Instant, f64)>,
     last_frame: Option<Instant>,
     last_shown: Option<Instant>,
+    /// Whether any frame came yet, whole or lost: from then on, a second
+    /// without any is a rate of nothing, not an unknown one.
+    began: bool,
 }
 
 impl Tally {
@@ -103,6 +106,7 @@ impl Tally {
             tunnel_ms: None,
             last_frame: None,
             last_shown: None,
+            began: false,
         }
     }
 
@@ -114,6 +118,7 @@ impl Tally {
 
     /// A frame came whole out of the assembler.
     pub fn assembled(&mut self, now: Instant, bytes: usize, host_latency_us: u32) {
+        self.began = true;
         self.frames.add(now, 1.0);
         self.bits.add(now, bytes as f64 * 8.0);
         self.host_ms.add(now, f64::from(host_latency_us) / 1000.0);
@@ -121,6 +126,7 @@ impl Tally {
 
     /// A frame could not be completed.
     pub fn lost(&mut self, now: Instant) {
+        self.began = true;
         self.lost.add(now, 1.0);
     }
 
@@ -187,9 +193,6 @@ impl Tally {
         ] {
             rolling.expire(now);
         }
-        // Once frames have come, a second without any is a rate of
-        // nothing, not an unknown one.
-        let flowing = self.last_frame.is_some() || !self.lost.is_empty();
         let expected = self.frames.len() + self.lost.len();
         let tunnel = self
             .tunnel_ms
@@ -199,13 +202,13 @@ impl Tally {
             codec: self.codec.map(|codec| codec.name().to_string()),
             width: self.size.map(|(width, _)| width),
             height: self.size.map(|(_, height)| height),
-            fps: flowing.then(|| self.frames.per_second()),
+            fps: self.began.then(|| self.frames.per_second()),
             decode_ms: self.decode_ms.mean(),
             render_ms: self.render_ms.mean(),
             host_ms: self.host_ms.mean(),
             network_ms: tunnel.or_else(|| self.round_trip_ms.mean()),
             network_variance_ms: self.round_trip_ms.deviation(),
-            bitrate_mbps: flowing.then(|| self.bits.per_second() / 1e6),
+            bitrate_mbps: self.began.then(|| self.bits.per_second() / 1e6),
             dropped_network_pct: (expected > 0)
                 .then(|| self.lost.len() as f64 * 100.0 / expected as f64),
             dropped_jitter_pct: (!self.decoded.is_empty())
@@ -324,6 +327,19 @@ mod tests {
         assert_eq!(measures.decode_ms, None);
         assert_eq!(measures.dropped_network_pct, None);
         assert_eq!(measures.since_frame_ms, Some(5_000.0 - 29.0 * 33.0));
+    }
+
+    #[test]
+    fn frames_waiting_for_a_key_frame_are_still_received() {
+        let at = Instant::now();
+        let mut tally = Tally::new(Clock { epoch: at });
+        for n in 0..10u64 {
+            tally.assembled(ms_after(at, n * 10), 1_000, 0);
+        }
+        let measures = tally.measures(ms_after(at, 100));
+        assert_eq!(measures.fps, Some(10.0));
+        assert_eq!(measures.decode_ms, None);
+        assert_eq!(measures.since_frame_ms, None);
     }
 
     #[test]
