@@ -3238,8 +3238,8 @@ name = "zyr-session"
 version = "0.1.0"
 dependencies = [
  "tokio",
+ "zyr-codec",
  "zyr-control",
- "zyr-engine-client",
  "zyr-proto",
  "zyr-sound",
  "zyr-transport",

@@ -1,6 +1,6 @@
 [package]
 name = "zyr-session"
-description = "Opening a remote session, from asking for a way to the player launched"
+description = "Opening a remote session, from asking for a way to the link its player connects to"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 
 [dependencies]
 zyr-proto.workspace = true
-zyr-engine-client.workspace = true
+zyr-codec.workspace = true
 zyr-transport.workspace = true
 zyr-control.workspace = true
 zyr-sound.workspace = true

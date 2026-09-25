@@ -29,9 +29,9 @@ pub fn mute_speakers(_quiet: bool) -> Result<(), Trouble> {
 /// Yes, since nothing here can say otherwise.
 ///
 /// The one question of the five that answers rather than refusing, and
-/// it says yes: what reads it decides whether to stop a player from
-/// looking for a sound card, and a false « there is none » would take
-/// the sound away from a machine that has one.
+/// it says yes: what reads it tells a person their session is silent,
+/// and a false « there is none » would say so of a machine that has
+/// sound.
 pub fn anything_to_play_through() -> bool {
     true
 }

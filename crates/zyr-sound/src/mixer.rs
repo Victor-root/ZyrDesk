@@ -105,8 +105,7 @@ fn playing_to() -> Result<IMMDevice, Trouble> {
 ///
 /// The same question `playing_to` already asks, kept to its answer: a
 /// machine with no sound output has no default endpoint, and Windows
-/// says so at once. What takes eight seconds is not knowing, it is
-/// trying to open one that is not there.
+/// says so at once.
 pub fn anything_to_play_through() -> bool {
     let _com = Com::up();
     playing_to().is_ok()

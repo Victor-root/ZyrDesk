@@ -15,9 +15,9 @@
 //! what the engine records is the mix the audio engine hands to the
 //! device, copied before the device applies its own volume and mute. The
 //! speakers therefore fall silent and the stream keeps its sound. The
-//! usual answer to this, the engines' own included, is a second sound
-//! card that no cable leads to, published by somebody else and installed
-//! behind the person's back; this needs nothing of the sort.
+//! usual answer to this is a second sound card that no cable leads to,
+//! published by somebody else and installed behind the person's back;
+//! this needs nothing of the sort.
 //!
 //! # The border
 //!
@@ -95,15 +95,13 @@ pub fn mute_speakers(quiet: bool) -> Result<(), Trouble> {
 
 /// Whether this computer has anything to play a session's sound through.
 ///
-/// Asked before a player is started, so that a computer with no sound
-/// output is never sent looking for one. Windows answers that question
-/// at once; what takes eight seconds, every session, is opening a card
-/// that is not there, and those eight seconds are spent before the
-/// picture.
+/// Asked as a session opens, so that a silent session is said to be
+/// silent for the reason it is: a sound card missing here, and nothing
+/// the far computer did. Windows answers at once.
 ///
-/// Yes wherever it cannot be asked. A false « there is none » would take
-/// the sound away from a machine that has one, which is the worse of the
-/// two mistakes by far.
+/// Yes wherever it cannot be asked. A false « there is none » would tell
+/// somebody their sound is missing on a machine that has some, which is
+/// the worse of the two mistakes by far.
 pub fn anything_to_play_through() -> bool {
     mixer::anything_to_play_through()
 }
@@ -135,10 +133,9 @@ mod tests {
     #[test]
     fn the_sound_card_is_assumed_present_for_want_of_asking() {
         // The only one of the five questions that answers instead of
-        // refusing, and it answers yes: what reads it decides on
-        // keeping a player from looking for a sound card, and a false
-        // "there is none" would take the sound away from a machine that
-        // has one.
+        // refusing, and it answers yes: what reads it tells a person
+        // their session is silent, and a false "there is none" would say
+        // so of a machine that has sound.
         assert!(anything_to_play_through());
     }
 }

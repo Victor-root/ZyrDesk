@@ -1,62 +1,39 @@
 //! Opening a session on a remote computer, end to end.
 //!
-//! Three things have to happen in order, and none of them belongs to
-//! whoever asked: the service opens a way and hands back a local address
-//! standing in for the remote computer, the engine pairs with it if the
-//! two have never met, and the engine is started on that address. The
-//! service is then told which process the way serves, so it closes on
-//! its own whatever becomes of the caller.
+//! The service opens a way to the remote computer and hands back the
+//! name of the local link its player connects to: through that link, the
+//! far computer's engine. Before any picture is asked for, the far
+//! computer is told what the player cannot say for itself: which of its
+//! screens to film, whether its speakers go quiet, and what screen to
+//! show on. The player is then started by whoever asked, with the link's
+//! name, since it lives in their process: the window draws its picture,
+//! the command line counts it.
 //!
 //! This lives apart from the command line and the interface because both
 //! do exactly the same thing here, and the difference between them is
 //! only how they say it: one prints, the other draws.
 //!
 //! Progress is reported as it happens rather than returned at the end:
-//! opening a session takes seconds, and a window with nothing to say for
-//! all of them looks stuck.
-//!
-//! Pairing happens here too, and nobody is asked for anything. The
-//! engines demand that a code shown on one computer be typed on the
-//! other; the tunnel already recognised both computers by fingerprint
-//! before it opened, so the code goes through it. The order is the whole
-//! mechanism: the far engine refuses a code as long as nobody is asking
-//! it for one, so ours is started and left waiting first.
-//!
-//! And what this computer remembers of a pairing is only a note it wrote
-//! to itself: the far one decides, and can have forgotten. A session that
-//! stops before showing anything is therefore taken as that, and the two
-//! are introduced again rather than the person being told it failed.
+//! opening a way takes seconds, and a window with nothing to say for all
+//! of them looks stuck.
 
 use std::fmt;
-use std::io;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use zyr_control::{Answer, Request, Service, WayId};
-use zyr_engine_client::state::folder_identifier;
-use zyr_engine_client::{ClientEngine, DeviceState, EngineError, Session, SessionOutcome};
+use zyr_codec::Ffmpeg;
+use zyr_control::{Answer, CHANNEL, Request, Service, WayId};
 use zyr_proto::paths;
-use zyr_proto::random;
 use zyr_proto::session::{SessionSettings, WantedScreen};
 use zyr_transport::{Fingerprint, MediaProfile};
-
-// Handed back by `Running::wait`, so callers do not have to reach past
-// this crate to the engine driver to name what they were given.
-pub use zyr_engine_client::SessionOutcome as Outcome;
 
 /// What is being asked for.
 pub struct Wanted {
     /// Address of the remote computer, as the person wrote it.
     pub host: String,
     /// Fingerprint the remote computer is recognised by.
-    ///
-    /// Without one there is no tunnel: the engine is pointed straight at
-    /// the address, which is the diagnostic path and never how a session
-    /// is opened for real.
-    pub peer: Option<Fingerprint>,
+    pub peer: Fingerprint,
     pub settings: SessionSettings,
-    /// Pairs again even if the two computers already know each other.
-    pub pair_again: bool,
     /// Whether the far computer's speakers fall silent for the length of
     /// the session.
     ///
@@ -68,15 +45,6 @@ pub struct Wanted {
     /// engine, and the far computer gives its sound back when the way
     /// closes, whatever became of this end.
     pub hush_the_far_speakers: bool,
-    /// Whether the far computer is asked to resend a still screen at
-    /// full rate while this session watches it.
-    ///
-    /// Asked here and nowhere else, for the same reason as the speakers:
-    /// what it costs is paid over there, and the only person who can tell
-    /// whether the picture feels smooth is the one looking at it. Its
-    /// engine reads it when it starts, so it is asked before the session
-    /// opens and never inside one.
-    pub steady_far_rate: bool,
     /// Whether the far computer is asked for a screen of its own making
     /// to carry this session's picture.
     ///
@@ -102,9 +70,9 @@ pub struct Wanted {
     /// watching: they are the one looking at it, and they are not in the
     /// room to lean over and drag a window across.
     ///
-    /// Its engine reads which screen to film when it starts and never
-    /// again, so this is settled before the session opens, and changing
-    /// it starts that engine over.
+    /// Asked before the picture, so that the first picture is already of
+    /// that screen. Its engine changes screen where it stands afterwards,
+    /// asked on the same way.
     pub far_screen: Option<String>,
     /// Whether the session may only be opened on this local network,
     /// with nothing asked of any server.
@@ -121,58 +89,15 @@ pub struct Wanted {
 /// What is happening, as it happens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Step {
-    /// The way is open, and the path takes packets of that size.
-    Reached { packet: u16 },
-    /// The two computers have never met, and are being introduced.
-    /// Nothing is asked of anyone.
+    /// The way is open, and the far computer is being told what the
+    /// session wants of it.
+    Reached,
+    /// The far computer would not change which of its screens it serves
+    /// from, and the session goes on regardless.
     ///
-    /// `again` holds what the player stopped on when they believed they
-    /// already knew each other and the far one turned out not to agree,
-    /// which is what a pairing forgotten on the other side looks like
-    /// from here. `None` on a first meeting.
-    ///
-    /// What it stopped on is carried rather than dropped: an
-    /// introduction redone at every single session is either a far
-    /// computer that truly forgets or a player that died of something
-    /// else and was read as one, and the exit code is the only thing
-    /// that tells the two apart.
-    Pairing { again: Option<SessionOutcome> },
-    /// The same, without a tunnel to carry the code: it has to be typed
-    /// on the other computer. Only the diagnostic path ever gets here.
-    PairingNeeded { pin: String },
-    /// They know each other now.
-    Paired,
-    /// This computer has nothing to play the session's sound through,
-    /// and its player is started knowing it.
-    ///
-    /// Worth saying out loud: the session is silent and the person is
-    /// owed the reason, which is a sound card missing here and not
-    /// anything the far computer did.
-    NoSoundCardHere,
-    /// The engine is starting.
-    Starting,
-    /// The engine is running, and this is the process it runs as.
-    ///
-    /// Said as soon as it is known and long before the session is
-    /// believed: whoever asked is the only one who knows this number
-    /// until the service is told, and the floating button hangs on that
-    /// process. Waiting for the session to be believed would put the
-    /// button up several seconds after the picture.
-    ///
-    /// `at` is where the engine reaches the far computer on this
-    /// machine. Carried for the same reason as the process: until the
-    /// service believes the session, whoever asked is the only one who
-    /// can end it, and ending is asked at that address.
-    Showing { process: u32, at: String },
-    /// The far computer would not settle what it does with its own
-    /// pointer, and the session goes on regardless.
-    ///
-    /// What that costs is two pointers on a desktop, or one that lags,
-    /// which is a session slightly less pleasant and not a session
-    /// missing. The watch that follows the picture says it again every
-    /// second, so a far computer that was merely busy is put right at
-    /// the next turn.
-    FarPointerLeftAlone { refused: String },
+    /// What it costs is being served the screen it is already on, which
+    /// is what every session got before this was offered.
+    FarScreenLeftAlone { refused: String },
     /// The far computer would not silence its own speakers, and the
     /// session goes on regardless.
     ///
@@ -181,14 +106,6 @@ pub enum Step {
     /// Windows would not have it, still has a perfectly good session to
     /// give.
     SpeakersLeftAlone { refused: String },
-    /// The far computer would not change the rate it serves a still
-    /// screen at, and the session goes on regardless.
-    ///
-    /// Worth saying and never worth failing over either: what it costs is
-    /// the smoothness of a pointer over a desktop where nothing else is
-    /// moving, which is a session slightly less pleasant and not a
-    /// session missing.
-    RateLeftAlone { refused: String },
     /// The far computer would not wake its virtual screen, and the
     /// session goes on regardless.
     ///
@@ -202,66 +119,23 @@ pub enum Step {
     ///
     /// What a session set to leave that computer's screen alone is
     /// entirely built on: its size is unknown here until it says it, and
-    /// asking the engine for anything else would scale the picture twice
-    /// for nothing.
+    /// asking for a picture of any other size would scale it for
+    /// nothing.
     ScreenOverThere { wide: u32, high: u32 },
-    /// The far computer is starting its engine over so as to be served
-    /// from another of its screens, which takes the way with it.
+    /// This computer has nothing to play the session's sound through.
     ///
-    /// Said rather than passed over in silence: it is several seconds of
-    /// an opening that would otherwise look stuck, and it is the one
-    /// step of an opening this end asked for and can explain.
-    FarScreenChanging,
-    /// The far computer is starting its engine over so as to serve a
-    /// still screen the way this session asked, which takes the way with
-    /// it just the same.
-    FarRateChanging,
-    /// The far computer would not change which of its screens it serves
-    /// from, and the session goes on regardless.
-    ///
-    /// What it costs is being served the screen it is already on, which
-    /// is what every session got before this was offered.
-    FarScreenLeftAlone { refused: String },
+    /// Worth saying out loud: the session is silent and the person is
+    /// owed the reason, which is a sound card missing here and not
+    /// anything the far computer did.
+    NoSoundCardHere,
 }
-
-/// How long the engines are given to meet, the code having travelled on
-/// its own.
-///
-/// Generous: what is being waited on is two engines exchanging
-/// certificates over a tunnel, not a person.
-const PAIRING_PATIENCE: Duration = Duration::from_secs(30);
-
-/// The same, when somebody has to walk to the other computer.
-const PAIRING_BY_HAND: Duration = Duration::from_secs(180);
-
-/// How long a session is watched before it is believed.
-///
-/// Long enough that an engine turned away at the door has stopped. That
-/// is not always quick: the engine reaches the far computer over plain
-/// text, is refused the encrypted channel that says the two have met,
-/// and then takes about five seconds to call that computer offline and
-/// give up. Three seconds, which is what this was, ran out first: the
-/// session was called live, the engine died just after, and the person
-/// read that the far computer had not answered instead of the two being
-/// introduced again.
-///
-/// The cost of waiting longer is that the floating button, which the
-/// service only knows about once this is over, arrives a few seconds
-/// after the picture. That is the right way round: a button that is late
-/// is a nuisance, a session declared live and dead in the same breath is
-/// a fault.
-///
-/// It is only ever waited when the pairing was skipped, so a first
-/// session never pays it.
-const SESSION_TAKES: Duration = Duration::from_secs(6);
 
 /// Stops the opening where it stands when the person has let it go.
 ///
-/// Written once and called at every step that can take seconds: opening
-/// a way, waiting for a far engine to start over, introducing the two
-/// computers, starting the player. An opening only asked about at its
-/// very end is an opening a person cannot close, and the close is a
-/// click on the cross of the window they are watching it in.
+/// Written once and called between the steps that can take seconds. An
+/// opening only asked about at its very end is an opening a person
+/// cannot close, and the close is a click on the cross of the window
+/// they are watching it in.
 fn carry_on(still_wanted: &dyn Fn() -> bool) -> Result<(), Error> {
     if still_wanted() {
         return Ok(());
@@ -269,8 +143,8 @@ fn carry_on(still_wanted: &dyn Fn() -> bool) -> Result<(), Error> {
     Err(Error::Abandoned)
 }
 
-/// How long that watch waits before looking up to ask whether the session
-/// is still wanted.
+/// How long a wait for the service lasts before looking up to ask
+/// whether the session is still wanted.
 ///
 /// Short enough that a click to close is felt almost at once, long enough
 /// that the wait is not a spin.
@@ -317,8 +191,8 @@ impl GaveUp {
 }
 
 /// The service answering something else entirely, said the one way.
-fn unexpected(answer: Answer) -> GaveUp {
-    GaveUp::Said(format!("réponse inattendue du service : {answer}"))
+fn unexpected(answer: Answer) -> String {
+    format!("réponse inattendue du service : {answer}")
 }
 
 /// Waits for the service to answer, and lets go the moment the person
@@ -367,24 +241,11 @@ fn answered(
 
 #[derive(Debug)]
 pub enum Error {
-    /// The engine is not on this machine.
-    EngineMissing(PathBuf),
+    /// FFmpeg is not all there: these of its files are missing from
+    /// `vendor/ffmpeg`, and the player decodes the picture with it.
+    EngineMissing(Vec<PathBuf>),
     /// The service could not be asked, or refused.
     Service(String),
-    /// The engine refused the pairing, or could not be run.
-    Pairing(EngineError),
-    /// The far computer would not take the code its engine was waiting
-    /// for.
-    Handover(String),
-    /// The engine could not be started.
-    Engine(EngineError),
-    /// The far computer would not let go of what it was showing.
-    Closing(EngineError),
-    /// The device's own state could not be reset.
-    State(io::Error),
-    /// What the player is to follow while it streams could not be written
-    /// down for it.
-    Following(io::Error),
     /// The person closed the window on the opening before there was a
     /// picture, so it was let go of.
     ///
@@ -397,19 +258,16 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::EngineMissing(path) => {
-                write!(f, "moteur client introuvable : {}", path.display())
-            }
-            Error::Service(reason) => f.write_str(reason),
-            Error::Pairing(e) => write!(f, "appairage refusé : {e}"),
-            Error::Handover(reason) => f.write_str(reason),
-            Error::Engine(e) => write!(f, "démarrage de la session : {e}"),
-            Error::Closing(e) => write!(f, "fermeture sur l'ordinateur distant : {e}"),
-            Error::State(e) => write!(f, "réinitialisation de l'appairage : {e}"),
-            Error::Following(e) => write!(
+            Error::EngineMissing(files) => write!(
                 f,
-                "ce que la session demande n'a pas pu être écrit pour le lecteur : {e}"
+                "FFmpeg introuvable, l'image ne peut pas être décodée sans lui : il manque {}",
+                files
+                    .iter()
+                    .map(|file| file.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
+            Error::Service(reason) => f.write_str(reason),
             Error::Abandoned => f.write_str("ouverture abandonnée avant l'image"),
         }
     }
@@ -417,638 +275,194 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// A session under way, and the way that serves it.
-///
-/// Dropping this changes nothing: the service was told which process to
-/// watch, and closes the way when that process is gone. Whoever wants to
-/// know how the session ended waits for it; whoever does not, walks away.
-pub struct Running {
-    session: Session,
-    /// The way the service holds for this session, kept to be let go of.
-    ///
-    /// Never read, and named so. It is here for exactly as long as the
-    /// session lasts, and gives the way back the moment this is dropped,
-    /// whichever road the caller took to get there.
-    _driving: Option<Driving>,
-    /// Where everything the engine says was collected.
-    log: PathBuf,
-    /// What the player was started with, once the far computer had said
-    /// what it would be showing.
-    settings: SessionSettings,
+/// A way open towards the far computer, ready for its player.
+pub struct Opened {
+    /// Name of the local link the player connects to: through it, the
+    /// far computer's engine.
+    pub link: String,
+    /// What the player is to ask for: what was wanted, at the size the
+    /// far computer said it will be showing.
+    pub settings: SessionSettings,
+    /// The way itself, given back to the service when this is dropped.
+    pub way: Driving,
 }
 
-impl Running {
-    /// Number the system knows the engine by.
-    pub fn process_id(&self) -> u32 {
-        self.session.process_id()
-    }
-
-    pub fn log(&self) -> &std::path::Path {
-        &self.log
-    }
-
-    /// What the player was started with.
-    ///
-    /// Not what was asked for: the far computer answers what it will be
-    /// showing, and that is what the player was told. It is what every
-    /// change made while the picture runs starts from, since the player
-    /// is told the whole line each time and nothing else remembers it.
-    pub fn settings(&self) -> SessionSettings {
-        self.settings
-    }
-
-    /// Waits for the session to end.
-    ///
-    /// The way goes back on its own a line later, when this is dropped.
-    pub fn wait(mut self) -> io::Result<SessionOutcome> {
-        self.session.wait()
-    }
-}
-
-/// Tells the player what to become, through the file it follows, and
-/// hands back the line it was told.
-///
-/// What a change made in the middle of a session comes down to on this
-/// side: the player reads the line a few times a second and makes its
-/// stream over in its own window when it differs from what the stream is.
-/// The line carries the whole of what the player was started with, so
-/// whoever calls this hands over what it was started with, one thing
-/// changed.
-pub fn tell_the_player(settings: &SessionSettings) -> Result<String, Error> {
-    zyr_engine_client::follow::write(settings).map_err(Error::Following)?;
-    Ok(zyr_engine_client::follow::line(settings))
-}
-
-/// Tells the player what shape to give the pointer it draws.
-///
-/// Its own file beside the line above, and never that line: what is
-/// written there is what the stream is to be, and a line that differs
-/// from the stream makes the player build it again. A shape changes
-/// every time a hand crosses a text field.
-///
-/// Answers whether anything was written, so a shape that has not moved
-/// costs no disk: this is asked many times a second for the length of a
-/// session.
-pub fn point_like(shape: zyr_proto::session::Pointer) -> Result<bool, Error> {
-    zyr_engine_client::follow::point_like(shape).map_err(Error::Following)
-}
-
-/// Names the ordinary pointer, there being no far one to follow any
-/// more.
-///
-/// Said to the player and not merely forgotten: it may well still be
-/// running, and it would stay under whatever shape the last answer left
-/// it with. That is an hourglass over a machine that is not busy, or no
-/// pointer at all where the last answer was that the far computer was
-/// drawing its own.
-pub fn point_like_nothing() {
-    zyr_engine_client::follow::point_like_nothing();
-}
-
-/// Tells the far computer to close what it was showing.
-///
-/// Leaving a session and closing it are two different things, and both
-/// are worth having. Leaving keeps the far computer's desktop open and
-/// waiting, so coming back takes no time at all; closing hands it back,
-/// which is what to do when one is done for the day.
-///
-/// `peer` and `host` name the computer whose stored pairing is to be
-/// used, exactly as the session that is being closed named it; see
-/// [`state_of`]. `at` is where the tunnel puts it on this machine, which
-/// is the only address the engine can reach it at, and it only exists
-/// while that tunnel stands.
-pub fn close_on_the_far_computer(peer: Option<&str>, host: &str, at: &str) -> Result<(), Error> {
-    let exe = paths::client_engine_exe();
-    if !exe.is_file() {
-        return Err(Error::EngineMissing(exe));
-    }
-    let state = state_of(peer, host);
-    ClientEngine::new(&exe, state)
-        .with_log(paths::logs_dir().join("session.log"))
-        .quit(at)
-        .map_err(Error::Closing)
-}
-
-/// Where one far computer's engine state lives.
-///
-/// Filed under its fingerprint, which is what it is rather than what it
-/// was called: the same computer is named by its address when the local
-/// network shows it and by its device when the account does, and a name
-/// is not unique either. Filed under the name, opening a session and
-/// closing it looked in two different folders as soon as the two were
-/// not named the same way, which is exactly what an account session
-/// does. The closing then found no pairing where nothing had ever been
-/// written, the far computer refused it, and its engine spent seconds
-/// talking to a player that had already gone.
-///
-/// The address stands in only where there is no fingerprint at all, on
-/// the diagnostic path that points the engine straight at a computer.
-fn state_of(peer: Option<&str>, host: &str) -> DeviceState {
-    DeviceState::for_device(&folder_identifier(peer.unwrap_or(host)))
-}
-
-/// How many times the far computer is given to come back after starting
-/// its engine over for this session.
-///
-/// Three would do for the two changes themselves: one ask apiece to set
-/// them going, one to find them both done. The rest is for an engine that
-/// takes its time, and there is an end to it: a computer that answers
-/// « starting over » for ever is a computer this session cannot open on,
-/// and saying so beats waiting.
-const ENGINE_TRIES: u32 = 8;
-
-/// How long its engine is given between two asks.
-///
-/// An engine's whole start, near enough: it is stopped, started again and
-/// waited for on its own ports, and asking again sooner only costs a
-/// refusal and another wait.
-const ENGINE_COMES_BACK: Duration = Duration::from_secs(2);
-
-/// Opens the way, and settles the two things the far computer's engine
-/// only reads when it starts: which of its screens this session is served
-/// from, and whether it resends a still screen at full rate.
-///
-/// The three are one errand because either of the last two can undo the
-/// first. That computer's engine reads them when it starts and never
-/// again, so a change of one starts it over, and starting it over closes
-/// every way through it, this one included. It says which of the two
-/// happened rather than letting this end find out from a way that broke
-/// underneath it, so what is left to do here is let go, give it a moment,
-/// and ask again on a fresh way until both answers are that it is already
-/// that way.
-///
-/// The ordinary session never goes round twice: it asks for the far
-/// computer's main screen and for the rate that computer already serves
-/// at, and both answers come back on the first ask.
-fn the_way_and_what_its_engine_reads_once(
-    wanted: &Wanted,
-    peer: Fingerprint,
-    settings: &SessionSettings,
-    told: &mut dyn FnMut(Step),
-    still_wanted: &dyn Fn() -> bool,
-) -> Result<Driving, Error> {
-    let mut asked_already = false;
-    let mut last = String::new();
-    for attempt in 0..ENGINE_TRIES {
-        if attempt > 0 {
-            std::thread::sleep(ENGINE_COMES_BACK);
-        }
-        // Asked at every round: this is where an opening spends its
-        // seconds when the far computer's engine is starting over, and
-        // it is exactly where somebody gives up on it.
-        carry_on(still_wanted)?;
-        let mut driving =
-            match Driving::towards(&wanted.host, peer, settings, wanted.only_here, still_wanted) {
-                Ok(driving) => driving,
-                // Never one of the rounds below: nobody waits out a far
-                // computer's engine for a session that has been let go of.
-                Err(GaveUp::Abandoned) => return Err(Error::Abandoned),
-                // A computer that cannot be reached is ordinarily the end of
-                // the opening. While its engine is starting over, which is a
-                // thing this session asked it to do, it is a moment to wait
-                // through and nothing more.
-                Err(GaveUp::Said(reason)) if asked_already => {
-                    last = reason;
-                    continue;
-                }
-                Err(GaveUp::Said(reason)) => return Err(Error::Service(reason)),
-            };
-        told(Step::Reached {
-            packet: driving.packet,
-        });
-        // The screen first: it is the one of the two a session is opened
-        // on, and a far computer that refuses it still has a picture to
-        // give.
-        match driving.film_this_far_screen(wanted.far_screen.clone(), still_wanted) {
-            Ok(false) => {}
-            Ok(true) => {
-                told(Step::FarScreenChanging);
-                asked_already = true;
-                // Let go rather than wait to be pushed: that way is about
-                // to be closed from the other end.
-                drop(driving);
-                continue;
-            }
-            // Never fatal. A far computer that will not change screen
-            // serves the one it is on, which is what every session was
-            // served before this was offered.
-            Err(gone) => told(Step::FarScreenLeftAlone {
-                refused: gone.refusal()?,
-            }),
-        }
-        // And the rate, on the same way and in the same round: it starts
-        // that engine over exactly as the screen does, and a session that
-        // asked for it and then opened its picture through the way that
-        // was about to go is a session that fell over on the first
-        // picture.
-        match driving.serve_steady_over_there(wanted.steady_far_rate, still_wanted) {
-            Ok(false) => return Ok(driving),
-            Ok(true) => {
-                told(Step::FarRateChanging);
-                asked_already = true;
-                drop(driving);
-            }
-            // Never fatal either. What a refusal costs is the smoothness
-            // of a pointer over a desktop where nothing else is moving,
-            // which is a session slightly less pleasant and not a session
-            // missing.
-            Err(gone) => {
-                told(Step::RateLeftAlone {
-                    refused: gone.refusal()?,
-                });
-                return Ok(driving);
-            }
-        }
-    }
-    Err(Error::Service(format!(
-        "l'ordinateur distant n'est pas revenu après avoir redémarré son moteur.{}",
-        if last.is_empty() {
-            String::new()
-        } else {
-            format!("\n  Détail : {last}")
-        }
-    )))
-}
-
-/// Opens a session, reporting what happens as it happens.
+/// Opens a way to a session, reporting what happens as it happens.
 ///
 /// `still_wanted` is asked at every step of the opening that can take
 /// seconds, and answered « no » it gives up where it stands and comes
 /// back `Abandoned`: an opening is watched on a screen with a cross in
 /// its corner, and a cross that does nothing for half a minute is a
-/// cross nobody believes twice. Whatever had been started by then is
-/// stopped on the way out.
-///
-/// It is asked during the watch that follows the picture too, and there
-/// for a second reason: in those few seconds the player stopping is read
-/// as the far computer having turned this one away, a person who closes
-/// the session stops the player just the same, and only whoever took
-/// that click can tell the two apart.
+/// cross nobody believes twice. A way opened by then is given back on
+/// the way out.
 pub fn open(
     wanted: &Wanted,
     told: &mut dyn FnMut(Step),
     still_wanted: &dyn Fn() -> bool,
-) -> Result<Running, Error> {
-    let exe = paths::client_engine_exe();
-    if !exe.is_file() {
-        return Err(Error::EngineMissing(exe));
+) -> Result<Opened, Error> {
+    // First, and before anything is asked of anybody: without FFmpeg the
+    // player has nothing to decode with, and a far computer woken for a
+    // picture that can never be shown is a far computer disturbed for
+    // nothing.
+    let missing = Ffmpeg::missing_from(&paths::ffmpeg_dir());
+    if !missing.is_empty() {
+        return Err(Error::EngineMissing(missing));
+    }
+    opened_on(CHANNEL, wanted, told, still_wanted)
+}
+
+/// The same, through the service listening on `channel`: the product's
+/// own, or one a test stands in for it.
+fn opened_on(
+    channel: &str,
+    wanted: &Wanted,
+    told: &mut dyn FnMut(Step),
+    still_wanted: &dyn Fn() -> bool,
+) -> Result<Opened, Error> {
+    let (mut driving, link) =
+        Driving::towards(channel, wanted, still_wanted).map_err(|gone| gone.or(Error::Service))?;
+    told(Step::Reached);
+
+    // The screen first: it is the one the whole picture is made of, and a
+    // far computer that refuses it still has a picture to give, of the
+    // screen it is already on.
+    if let Err(gone) = driving.film_this_far_screen(wanted.far_screen.clone(), still_wanted) {
+        told(Step::FarScreenLeftAlone {
+            refused: gone.refusal()?,
+        });
     }
 
-    let mut settings = wanted.settings;
-
-    // The way stands before the engine is told anything: what the engine
-    // is handed is a local address that only exists once it is open.
-    //
-    // And what the far computer's engine only reads when it starts is
-    // settled on that way before anything else, because settling it can
-    // take the way away; see `the_way_and_what_its_engine_reads_once`.
-    let mut driving = match wanted.peer {
-        Some(peer) => Some(the_way_and_what_its_engine_reads_once(
-            wanted,
-            peer,
-            &settings,
-            told,
-            still_wanted,
-        )?),
-        None => None,
-    };
-    let target = match &driving {
-        Some(driving) => {
-            settings.packet_size = Some(u32::from(driving.packet));
-            driving.target.clone()
-        }
-        None => wanted.host.clone(),
-    };
-
-    // Asked as soon as the way stands, before the engine is started: a
-    // session that never opens has still said it, and the far computer
-    // gives its sound back when the way closes either way.
-    //
-    // A refusal is written down and never fatal. A far computer that
-    // cannot silence its own speakers, because nobody is signed in on it
-    // or because Windows would not have it, is a far computer that still
-    // has a perfectly good session to give.
-    if let Some(driving) = &mut driving
-        && let Err(gone) = driving.hush_the_far_speakers(wanted.hush_the_far_speakers, still_wanted)
-    {
+    // Asked before the picture is: a session that never shows one has
+    // still said it, and the far computer gives its sound back when the
+    // way closes either way.
+    if let Err(gone) = driving.hush_the_far_speakers(wanted.hush_the_far_speakers, still_wanted) {
         told(Step::SpeakersLeftAlone {
             refused: gone.refusal()?,
         });
     }
 
-    // And its pointer, in the same breath and for the same reason: a
-    // desktop is driven by the pointer this computer draws, so the far
-    // one is not to be in the picture at all; a game is the other way
-    // round and it is the only pointer there is. Said here rather than
-    // left to the watch that follows the picture, which cannot name the
-    // way until the service believes in the session, several seconds
-    // later. A refusal is written down and never fatal: two pointers, or
-    // one that lags, is a session slightly less pleasant and not a
-    // session missing.
-    if let Some(driving) = &mut driving
-        && let Err(gone) = driving.draw_the_far_pointer(!settings.absolute_mouse, still_wanted)
-    {
-        told(Step::FarPointerLeftAlone {
+    // And the virtual screen over there, asked for the size this session
+    // is about to ask of the picture. Before the picture, because the
+    // engine can only film a screen that is already there, and asked at
+    // all because that screen sleeps between sessions: a machine nobody
+    // is looking at has the screens its owner plugged in and no others.
+    //
+    // Asked with nothing wanted as well: that is how a session that
+    // leaves the far computer as it is learns what it will be showing,
+    // and how a screen an earlier session grew is put back to sleep.
+    let mut settings = wanted.settings;
+    let asked_for = wanted.wants_a_screen_over_there.then_some(WantedScreen {
+        wide: settings.width,
+        high: settings.height,
+        scale: wanted.far_magnification,
+    });
+    match driving.far_screen(asked_for, still_wanted) {
+        // What that computer says it will be showing wins over what this
+        // end guessed. It is the only one that knows: a session asking it
+        // to keep its own screen has no way to work that size out from
+        // here, and a session that asked for a size is told the same one
+        // back.
+        Ok(Some((wide, high))) => {
+            if (wide, high) != (settings.width, settings.height) {
+                settings.width = wide;
+                settings.height = high;
+                told(Step::ScreenOverThere { wide, high });
+            }
+        }
+        Ok(None) => {}
+        Err(gone) => told(Step::ScreenLeftAlone {
             refused: gone.refusal()?,
-        });
+        }),
     }
 
-    // And the virtual screen over there, asked for the size this session
-    // is about to ask its engine for. Before that engine is started,
-    // because it can only capture a screen that is already there, and
-    // asked at all because that screen sleeps between sessions: a machine
-    // nobody is looking at has the screens its owner plugged in and no
-    // others.
-    //
-    // A refusal costs the sharpness of a picture larger than the far
-    // machine's own screen and nothing else, so it is written down and
-    // the session goes on: that is what every session did before this
-    // screen existed.
-    if let Some(driving) = &mut driving {
-        let asked_for = wanted.wants_a_screen_over_there.then_some(WantedScreen {
-            wide: settings.width,
-            high: settings.height,
-            scale: wanted.far_magnification,
-        });
-        match driving.far_screen(asked_for, still_wanted) {
-            // What that computer says it will be showing wins over what
-            // this end guessed. It is the only one that knows: a session
-            // asking it to keep its own screen has no way to work that
-            // size out from here, and a session that asked for a size is
-            // told the same one back.
-            Ok(Some((wide, high))) => {
-                if (wide, high) != (settings.width, settings.height) {
-                    settings.width = wide;
-                    settings.height = high;
-                    told(Step::ScreenOverThere { wide, high });
-                }
-            }
-            Ok(None) => {}
-            Err(gone) => told(Step::ScreenLeftAlone {
-                refused: gone.refusal()?,
-            }),
-        }
+    if !zyr_sound::anything_to_play_through() {
+        told(Step::NoSoundCardHere);
     }
 
     // The far computer has been asked everything it is asked before a
     // picture: what it answered took seconds, and a person who closed the
     // window during them is not to be handed a session now.
     carry_on(still_wanted)?;
-
-    let recognised = wanted.peer.map(|peer| peer.to_string());
-    let state = state_of(recognised.as_deref(), &wanted.host);
-    if wanted.pair_again {
-        state.forget().map_err(Error::State)?;
-    }
-
-    let already_known = state.has_a_paired_host();
-    let log = paths::logs_dir().join("session.log");
-    let engine = ClientEngine::new(&exe, state).with_log(&log);
-
-    if !already_known {
-        introduce(&engine, &target, driving.as_mut(), None, told, still_wanted)?;
-        told(Step::Paired);
-    }
-
-    // What the player is to follow while it streams, written before it is
-    // started so that its first reading is what it was started with: from
-    // then on a session changes size or codec through this file, the
-    // player making its stream over where it stands.
-    tell_the_player(&settings)?;
-
-    // Asked once, here, and handed to every player this opening starts:
-    // a computer with no sound output must never be sent looking for
-    // one. Windows answers at once; what takes eight seconds is opening
-    // a card that is not there, and those eight seconds were spent
-    // before the picture at every single session.
-    let sound_card = zyr_sound::anything_to_play_through();
-    if !sound_card {
-        told(Step::NoSoundCardHere);
-    }
-
-    carry_on(still_wanted)?;
-    told(Step::Starting);
-    let mut session = engine
-        .start_session(&target, &settings, sound_card)
-        .map_err(Error::Engine)?;
-    told(Step::Showing {
-        process: session.process_id(),
-        at: target.clone(),
-    });
-    // A player started for somebody who has already gone is stopped here
-    // rather than left running: nothing else knows about it yet, and
-    // there is a whole picture between this and the moment the service
-    // does.
-    if let Err(gone) = carry_on(still_wanted) {
-        let _ = session.stop();
-        return Err(gone);
-    }
-
-    // What this computer remembers of a pairing is a note it wrote to
-    // itself, and the far computer is the only one that decides. It can
-    // have been reinstalled, reset, or simply have forgotten, and the
-    // engine then turns the session away in under a second, into a log
-    // nobody reads. Watched here rather than believed: the two are
-    // introduced again, and the session opens.
-    //
-    // Only when the pairing was skipped. Having just been introduced and
-    // still being turned away is another fault entirely, and doing it
-    // twice would not make it any better.
-    if already_known && let Some(stopped) = gave_up_at_once(&mut session, still_wanted)? {
-        introduce(
-            &engine,
-            &target,
-            driving.as_mut(),
-            Some(stopped),
-            told,
-            still_wanted,
-        )?;
-        told(Step::Paired);
-        carry_on(still_wanted)?;
-        told(Step::Starting);
-        session = engine
-            .start_session(&target, &settings, sound_card)
-            .map_err(Error::Engine)?;
-        told(Step::Showing {
-            process: session.process_id(),
-            at: target.clone(),
-        });
-    }
-
-    // From here the session belongs to the engine and to the service.
-    // Whoever asked for it may go.
-    if let Some(driving) = &mut driving {
-        driving.hold(session.process_id());
-    }
-
-    Ok(Running {
-        session,
-        _driving: driving,
-        log,
+    Ok(Opened {
+        link,
         settings,
+        way: driving,
     })
 }
 
-/// Introduces two engines that have never met.
+/// The service, and the way it holds for a session.
 ///
-/// Ours is started first and left waiting, because the far one refuses a
-/// code as long as nobody is asking it for one. The code then goes
-/// through the tunnel, which recognised both computers before it opened,
-/// and only then is the outcome waited for.
-fn introduce(
-    engine: &ClientEngine,
-    target: &str,
-    driving: Option<&mut Driving>,
-    again: Option<SessionOutcome>,
-    told: &mut dyn FnMut(Step),
-    still_wanted: &dyn Fn() -> bool,
-) -> Result<(), Error> {
-    let pin = random::pairing_pin();
-
-    let met = |settled: Result<bool, EngineError>| match settled {
-        Ok(true) => Ok(()),
-        // The engine is stopped by the pairing's own way out, so there is
-        // nothing left of it to take down here.
-        Ok(false) => Err(Error::Abandoned),
-        Err(e) => Err(Error::Pairing(e)),
-    };
-
-    let Some(driving) = driving else {
-        // No tunnel, so no channel to carry the code: the diagnostic
-        // path, and the only place anybody still types one.
-        told(Step::PairingNeeded { pin: pin.clone() });
-        return met(engine
-            .start_pairing(target, &pin)
-            .map_err(Error::Pairing)?
-            .settled(PAIRING_BY_HAND, still_wanted));
-    };
-
-    told(Step::Pairing { again });
-    let pairing = engine.start_pairing(target, &pin).map_err(Error::Pairing)?;
-    driving
-        .hand_over_the_code(&pin, still_wanted)
-        .map_err(|gone| gone.or(Error::Handover))?;
-    met(pairing.settled(PAIRING_PATIENCE, still_wanted))
-}
-
-/// Whether the engine stopped before showing anything.
-///
-/// A session that has taken is still running when this returns, and one
-/// the far engine turned away is long gone. Ending straight away of its
-/// own accord is not a failure and is left alone: somebody closed it.
-///
-/// Which the exit code does not say. Closing a session hands the far
-/// computer its desktop back, that computer takes the stream away, and
-/// the engine stops the only way it knows how, on a failure: exactly what
-/// a computer that no longer knows this one looks like. So the caller is
-/// asked, in small steps rather than once at the end, and the watch drops
-/// the moment the session stops being wanted. Without it, closing a
-/// session during these few seconds had the two computers introduced
-/// again over a session the person had just left, and the far engine,
-/// asked for a pairing nobody was waiting for, refused it.
-fn gave_up_at_once(
-    session: &mut Session,
-    still_wanted: &dyn Fn() -> bool,
-) -> Result<Option<SessionOutcome>, Error> {
-    let deadline = Instant::now() + SESSION_TAKES;
-    while Instant::now() < deadline {
-        if !still_wanted() {
-            return Ok(None);
-        }
-        let stopped = session
-            .settled(WATCH_STEP)
-            .map_err(|e| Error::Engine(EngineError::Io(e)))?;
-        if stopped.is_some() {
-            return Ok(worth_introducing_again(stopped, still_wanted()));
-        }
-    }
-    Ok(None)
-}
-
-/// Whether what the engine stopped on is worth introducing the two
-/// computers again.
-///
-/// Still running is a session that has taken. Ending of its own accord is
-/// somebody who closed it, and pairing over that would reopen a session
-/// they had just left.
-///
-/// And a session no longer wanted is never worth it, whatever the engine
-/// stopped on. Closing a session hands the far computer its desktop back,
-/// that computer takes the stream away, and the engine stops on a
-/// failure: from here that is indistinguishable from a computer that no
-/// longer knows this one. Only the caller knows, so the caller is asked.
-fn worth_introducing_again(
-    stopped: Option<SessionOutcome>,
-    still_wanted: bool,
-) -> Option<SessionOutcome> {
-    if !still_wanted {
-        return None;
-    }
-    match stopped {
-        Some(
-            outcome @ (SessionOutcome::Failed
-            | SessionOutcome::Unreachable
-            | SessionOutcome::NotPaired
-            | SessionOutcome::Unknown { .. }),
-        ) => Some(outcome),
-        _ => None,
-    }
-}
-
-/// The service, and the way it holds for this session.
-struct Driving {
+/// The way goes back to the service when this is dropped.
+pub struct Driving {
     runtime: tokio::runtime::Runtime,
     service: Service,
     way: WayId,
-    /// Address the client engine is given, standing in for the remote
-    /// computer.
-    target: String,
-    /// Packet size the path allows, imposed on the engine.
-    packet: u16,
 }
 
 impl Driving {
-    /// Asks the service for a way to that computer.
+    /// Joins the service on `channel` and asks it for a way to that
+    /// computer, handing back the name of the link its player connects
+    /// to.
     fn towards(
-        host: &str,
-        peer: Fingerprint,
-        settings: &SessionSettings,
-        only_here: bool,
+        channel: &str,
+        wanted: &Wanted,
         still_wanted: &dyn Fn() -> bool,
-    ) -> Result<Self, GaveUp> {
+    ) -> Result<(Self, String), GaveUp> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| GaveUp::Said(e.to_string()))?;
-
         let mut service = runtime
-            .block_on(Service::join())
+            .block_on(Service::join_on(channel))
             .map_err(|e| GaveUp::Said(e.to_string()))?;
         // The window the transport keeps open follows the session that
         // was actually asked for, not a nominal one.
         let request = Request::Reach {
-            host: host.to_string(),
-            peer,
+            host: wanted.host.clone(),
+            peer: wanted.peer,
             media: MediaProfile {
-                bits_per_second: u64::from(settings.bitrate_kbps) * 1000,
-                frames_per_second: settings.fps,
+                bits_per_second: u64::from(wanted.settings.bitrate_kbps) * 1000,
+                frames_per_second: wanted.settings.fps,
             },
-            only_here,
+            only_here: wanted.only_here,
         };
-
         let reached = match answered(&runtime, &mut service, &request, still_wanted)? {
             Answer::Reached(reached) => reached,
             Answer::Refused(reason) => return Err(GaveUp::Said(reason)),
-            other => return Err(unexpected(other)),
+            other => return Err(GaveUp::Said(unexpected(other))),
         };
+        Ok((
+            Self {
+                runtime,
+                service,
+                way: reached.way,
+            },
+            reached.link,
+        ))
+    }
 
-        Ok(Self {
-            runtime,
-            service,
-            way: reached.way,
-            target: format!("{}:{}", reached.address, reached.engine.http()),
-            packet: reached.packet,
-        })
+    /// Ties the way to this process, once its player plays.
+    ///
+    /// Until then the way is an attempt under way, which the service
+    /// keeps out of the sessions it lists. From then on it is a session:
+    /// named to whoever asks, and closed by the service should this
+    /// process go without a word.
+    ///
+    /// A refusal is answered in words to show, and is never fatal: the
+    /// way still closes with its player's link. What it costs is a
+    /// session the service does not list, which a window opened
+    /// afterwards cannot find.
+    pub fn hold(&mut self) -> Result<(), String> {
+        let request = Request::Hold {
+            way: self.way,
+            process: std::process::id(),
+        };
+        match self.runtime.block_on(self.service.ask(&request)) {
+            Ok(Answer::Done) => Ok(()),
+            Ok(Answer::Refused(reason)) => Err(reason),
+            Ok(other) => Err(unexpected(other)),
+            Err(e) => Err(e.to_string()),
+        }
     }
 
     /// Asks the far computer to wake its virtual screen for a picture
@@ -1056,8 +470,8 @@ impl Driving {
     /// alone.
     ///
     /// Answers the size that computer will be showing, which is the one
-    /// ask of the three that comes back with something: a session told to
-    /// leave that machine as it is cannot know what that is until it asks.
+    /// ask that comes back with something: a session told to leave that
+    /// machine as it is cannot know what that is until it asks.
     fn far_screen(
         &mut self,
         wanted: Option<WantedScreen>,
@@ -1067,69 +481,18 @@ impl Driving {
         match self.ask(&Request::FarScreen { way, wanted }, still_wanted)? {
             Answer::Showing { size } => Ok(size),
             Answer::Refused(reason) => Err(GaveUp::Said(reason)),
-            other => Err(unexpected(other)),
+            other => Err(GaveUp::Said(unexpected(other))),
         }
     }
 
-    /// Asks the far computer to serve its picture from that screen, and
-    /// says whether it is starting its engine over to do it.
-    ///
-    /// Starting over takes this very way with it, so the answer is worth
-    /// carrying whole rather than being reduced to done or not done.
+    /// Asks the far computer to serve its picture from that screen.
     fn film_this_far_screen(
         &mut self,
         id: Option<String>,
         still_wanted: &dyn Fn() -> bool,
-    ) -> Result<bool, GaveUp> {
-        let way = self.way;
-        self.settled(&Request::FilmFarScreen { way, id }, still_wanted)
-    }
-
-    /// Asks the far computer to resend a still screen at full rate, or
-    /// to stop doing it, and says whether it is starting its engine over
-    /// to do it.
-    ///
-    /// The same answer as the screen above, for the same reason: its
-    /// engine reads this at its start and never again.
-    fn serve_steady_over_there(
-        &mut self,
-        rate: bool,
-        still_wanted: &dyn Fn() -> bool,
-    ) -> Result<bool, GaveUp> {
-        let way = self.way;
-        self.settled(&Request::SteadyFar { way, rate }, still_wanted)
-    }
-
-    /// Asks one of the two things the far engine only reads when it
-    /// starts, and says whether it is starting over to honour it.
-    fn settled(
-        &mut self,
-        request: &Request,
-        still_wanted: &dyn Fn() -> bool,
-    ) -> Result<bool, GaveUp> {
-        match self.ask(request, still_wanted)? {
-            Answer::Settled { starting_over } => Ok(starting_over),
-            Answer::Refused(reason) => Err(GaveUp::Said(reason)),
-            other => Err(unexpected(other)),
-        }
-    }
-
-    /// Asks the far computer whether its engine draws its own pointer
-    /// into the picture.
-    ///
-    /// Said as soon as the way stands and before the player is started,
-    /// because that is the moment the way exists and the window does not
-    /// yet know it: for the first seconds of a session the service does
-    /// not believe in it, so the window had nothing to name and could
-    /// say nothing. A session opened on a desktop then showed two
-    /// pointers, its own and the far one, until those seconds were up.
-    fn draw_the_far_pointer(
-        &mut self,
-        drawn: bool,
-        still_wanted: &dyn Fn() -> bool,
     ) -> Result<(), GaveUp> {
         let way = self.way;
-        self.asked(&Request::FarPointerDrawn { way, drawn }, still_wanted)
+        self.asked(&Request::FilmFarScreen { way, id }, still_wanted)
     }
 
     /// Asks the far computer to silence its speakers, or to let them
@@ -1144,12 +507,12 @@ impl Driving {
     }
 
     /// One ask of the service that is either done or refused, and nothing
-    /// else. Three of them have exactly this shape.
+    /// else.
     fn asked(&mut self, request: &Request, still_wanted: &dyn Fn() -> bool) -> Result<(), GaveUp> {
         match self.ask(request, still_wanted)? {
             Answer::Done => Ok(()),
             Answer::Refused(reason) => Err(GaveUp::Said(reason)),
-            other => Err(unexpected(other)),
+            other => Err(GaveUp::Said(unexpected(other))),
         }
     }
 
@@ -1163,46 +526,9 @@ impl Driving {
         answered(&self.runtime, &mut self.service, request, still_wanted)
     }
 
-    /// Hands the far computer the code its engine is waiting for.
-    ///
-    /// The service does the sending: it is the one holding the way, and
-    /// the way is the only thing that already knows both computers.
-    fn hand_over_the_code(
-        &mut self,
-        pin: &str,
-        still_wanted: &dyn Fn() -> bool,
-    ) -> Result<(), GaveUp> {
-        let way = self.way;
-        self.asked(
-            &Request::Pair {
-                way,
-                pin: pin.to_string(),
-            },
-            still_wanted,
-        )
-    }
-
-    /// Tells the service which process the way now serves, so it closes
-    /// on its own whatever becomes of whoever asked.
-    fn hold(&mut self, process: u32) {
-        let request = Request::Hold {
-            way: self.way,
-            process,
-        };
-        // A refusal counts as much as a channel that broke: either way
-        // nothing watches the session, and saying so is the only thing
-        // that keeps that from being discovered at the next restart.
-        let unwatched = match self.runtime.block_on(self.service.ask(&request)) {
-            Ok(Answer::Done) => return,
-            Ok(other) => other.to_string(),
-            Err(e) => e.to_string(),
-        };
-        eprintln!("Avertissement : le service n'a pas pris la session en charge ({unwatched}).");
-        eprintln!("  Elle se fermera avec le programme qui l'a lancée.");
-    }
-
     /// Gives the way back at the end of the session. The service would
-    /// close it on its own; saying so frees the address at once.
+    /// close it on its own once its player's link closes; saying so frees
+    /// it at once, and frees one no player ever came to.
     fn let_go(&mut self) {
         let request = Request::Release { way: self.way };
         let _ = self.runtime.block_on(self.service.ask(&request));
@@ -1211,15 +537,11 @@ impl Driving {
 
 /// The way goes back whatever happens to whoever asked for it.
 ///
-/// A guard and not a line at the end of the road that works. Every road
-/// out of `open` after the way stands used to leave it standing: an
-/// engine that would not start, a pairing refused, a session watched and
-/// found wanting. The service closes a way when the process it was told
-/// to watch goes, and it is told that at the very end of `open`, so a way
-/// abandoned before then was a way nobody would ever close. One of them
-/// stayed open for the rest of the evening after a pairing was refused,
-/// with the window showing « Sessions ouvertes: 1 » over no session at
-/// all.
+/// A guard and not a line at the end of the road that works: every road
+/// out of a session, the opening given up half way included, has to give
+/// the way back, and a way nobody gives back is a way the service only
+/// closes once its patience for a player runs out, with the window
+/// showing « Sessions ouvertes: 1 » over no session at all until then.
 ///
 /// Releasing a way twice is not an error, which is what makes this safe
 /// beside anything else that might already have said it.
@@ -1231,91 +553,256 @@ impl Drop for Driving {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+    use std::time::Instant;
+
+    use zyr_control::{Door, Reached};
+
     use super::*;
 
     fn wanted() -> Wanted {
         Wanted {
             host: "192.168.1.20".to_string(),
-            peer: None,
+            peer: "0829cc7ecb9e9ba53cd36e6f342268ddf3c8ef05a49d1d7944ac6332c89cf237"
+                .parse()
+                .unwrap(),
             settings: SessionSettings::default(),
-            pair_again: false,
-            hush_the_far_speakers: false,
-            steady_far_rate: true,
+            hush_the_far_speakers: true,
             wants_a_screen_over_there: true,
-            far_magnification: 0,
-            far_screen: None,
+            far_magnification: 150,
+            far_screen: Some(r"MONITOR\GSM5B7F\0003".to_string()),
             only_here: false,
         }
     }
 
+    /// A service of its own for a test, on a channel of its own, which
+    /// answers each request as `answering` says and writes down what it
+    /// was asked, in order.
+    fn a_service(
+        what: &str,
+        answering: impl Fn(&Request) -> Option<Answer> + Send + 'static,
+    ) -> (String, Arc<Mutex<Vec<Request>>>) {
+        let channel = format!("zyr-session-test-{}-{what}", std::process::id());
+        let listening = channel.clone();
+        let asked = Arc::new(Mutex::new(Vec::new()));
+        let writing = Arc::clone(&asked);
+        let (opened, when_open) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("exécuteur du service d'essai");
+            runtime.block_on(async move {
+                let mut door = Door::open(&listening).expect("canal d'essai");
+                opened.send(()).expect("canal d'essai annoncé");
+                let mut heard = door.accept().await.expect("un appel");
+                while let Ok(Some(line)) = heard.hear().await {
+                    let request = Request::parse(&line).expect("une demande lisible");
+                    let answer = answering(&request);
+                    writing.lock().unwrap().push(request);
+                    match answer {
+                        Some(answer) => heard.say(&answer.to_string()).await.expect("répondu"),
+                        // Held without an answer: a service still
+                        // chasing the far computer.
+                        None => std::future::pending::<()>().await,
+                    }
+                }
+            });
+        });
+        when_open.recv().expect("canal d'essai ouvert");
+        (channel, asked)
+    }
+
+    /// What an ordinary far computer answers.
+    fn willing(request: &Request) -> Option<Answer> {
+        Some(match request {
+            Request::Reach { .. } => Answer::Reached(Reached {
+                way: WayId(7),
+                link: r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1".to_string(),
+            }),
+            Request::Hush { .. } => {
+                Answer::Refused("personne n'est connecté sur cet ordinateur".to_string())
+            }
+            Request::FarScreen { .. } => Answer::Showing {
+                size: Some((2560, 1440)),
+            },
+            _ => Answer::Done,
+        })
+    }
+
+    /// Waits for the service to have been asked `count` things.
+    fn until_asked(asked: &Mutex<Vec<Request>>, count: usize) -> Vec<Request> {
+        let began = Instant::now();
+        loop {
+            let so_far = asked.lock().unwrap().clone();
+            if so_far.len() >= count || began.elapsed() > Duration::from_secs(5) {
+                return so_far;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     #[test]
-    fn a_missing_engine_is_reported_before_anything_is_attempted() {
-        // Nothing else can be checked without two computers; what
-        // matters here is that the check comes first, since everything
-        // after it opens a tunnel or writes to disk.
-        if paths::client_engine_exe().is_file() {
+    fn a_missing_ffmpeg_is_reported_before_anything_is_attempted() {
+        // Nothing else can be checked without the service; what matters
+        // here is that the check comes first, since everything after it
+        // asks the far computer to change something.
+        if Ffmpeg::missing_from(&paths::ffmpeg_dir()).is_empty() {
             return;
         }
         let mut steps = Vec::new();
         let outcome = open(&wanted(), &mut |step| steps.push(step), &|| true);
-        assert!(matches!(outcome, Err(Error::EngineMissing(_))));
+        assert!(
+            matches!(&outcome, Err(Error::EngineMissing(files)) if !files.is_empty()),
+            "{:?}",
+            outcome.err()
+        );
         assert!(steps.is_empty(), "{steps:?}");
     }
 
     #[test]
-    fn a_session_that_never_took_is_worth_a_second_introduction() {
-        // What this computer remembers of a pairing is only a note it
-        // wrote to itself: the far machine may have been reinstalled,
-        // reset, or may simply have forgotten. The engine then leaves
-        // again in less than a second, and that is the only sign of it
-        // there is.
-        //
-        // And what the player said is handed back as it is: it is the
-        // only piece that tells a computer that really forgets apart from
-        // a player that died of something else and was read as such.
+    fn an_opening_tells_the_far_computer_what_it_wants_in_order() {
+        let (channel, asked) = a_service("ordre", willing);
+        let wanted = wanted();
+        let mut steps = Vec::new();
+        let opened = opened_on(&channel, &wanted, &mut |step| steps.push(step), &|| true)
+            .expect("une voie ouverte");
+
+        assert_eq!(opened.link, r"\\.\pipe\ZyrDesk-link-8fKq2Lr0aZ3x9Wm1");
+        // The size the far computer said wins over the one asked for, and
+        // nothing else of what was wanted moves.
         assert_eq!(
-            worth_introducing_again(Some(Outcome::Failed), true),
-            Some(Outcome::Failed)
+            (opened.settings.width, opened.settings.height),
+            (2560, 1440)
         );
+        assert_eq!(opened.settings.fps, wanted.settings.fps);
+        assert_eq!(opened.settings.bitrate_kbps, wanted.settings.bitrate_kbps);
+
+        let way = WayId(7);
         assert_eq!(
-            worth_introducing_again(Some(Outcome::Unreachable), true),
-            Some(Outcome::Unreachable)
+            asked.lock().unwrap().clone(),
+            vec![
+                Request::Reach {
+                    host: wanted.host.clone(),
+                    peer: wanted.peer,
+                    media: MediaProfile {
+                        bits_per_second: 20_000_000,
+                        frames_per_second: 60,
+                    },
+                    only_here: false,
+                },
+                Request::FilmFarScreen {
+                    way,
+                    id: wanted.far_screen.clone(),
+                },
+                Request::Hush { way, quiet: true },
+                Request::FarScreen {
+                    way,
+                    wanted: Some(WantedScreen {
+                        wide: 1920,
+                        high: 1080,
+                        scale: 150,
+                    }),
+                },
+            ]
         );
-        assert_eq!(
-            worth_introducing_again(Some(Outcome::Unknown { code: Some(9) }), true),
-            Some(Outcome::Unknown { code: Some(9) })
+        // The refusal is written down and stepped over, and the size is
+        // said since it is not what was asked.
+        assert_eq!(steps[0], Step::Reached);
+        assert!(
+            steps.contains(&Step::SpeakersLeftAlone {
+                refused: "personne n'est connecté sur cet ordinateur".to_string()
+            }),
+            "{steps:?}"
+        );
+        assert!(
+            steps.contains(&Step::ScreenOverThere {
+                wide: 2560,
+                high: 1440
+            }),
+            "{steps:?}"
         );
 
-        // Still running: the session took, so it is left alone.
-        assert_eq!(worth_introducing_again(None, true), None);
-        // Ended on its own: somebody closed it. Pairing again
-        // would reopen a session that was just left.
-        assert_eq!(worth_introducing_again(Some(Outcome::Ended), true), None);
+        // The way is tied to this process once its player plays, and
+        // given back when it is let go of.
+        let Opened { mut way, .. } = opened;
+        way.hold().expect("tenue");
+        drop(way);
+        let asked = until_asked(&asked, 6);
+        assert_eq!(
+            asked[4..],
+            [
+                Request::Hold {
+                    way: WayId(7),
+                    process: std::process::id()
+                },
+                Request::Release { way: WayId(7) }
+            ]
+        );
     }
 
     #[test]
-    fn closing_a_session_restarts_no_pairing() {
-        // Closing a session gives its desktop back to the far computer,
-        // which takes the stream back, and the engine stops in the only
-        // way it knows: on a failure. Seen from here, that is exactly a
-        // computer that no longer recognises us. Without the question
-        // put to the caller, closing during the seconds after the
-        // opening set a pairing off again on top of a session that had
-        // just been left, and the far engine, which nobody was asking
-        // for a code, refused it.
-        for ending in [
-            Some(Outcome::Failed),
-            Some(Outcome::Unreachable),
-            Some(Outcome::Unknown { code: Some(9) }),
-            Some(Outcome::Ended),
-            None,
-        ] {
-            assert_eq!(
-                worth_introducing_again(ending.clone(), false),
-                None,
-                "sur {ending:?}"
-            );
-        }
+    fn a_session_that_leaves_the_far_screen_alone_asks_for_none_and_takes_its_size() {
+        let (channel, asked) = a_service("sans-ecran", willing);
+        let wanted = Wanted {
+            wants_a_screen_over_there: false,
+            ..wanted()
+        };
+        let opened = opened_on(&channel, &wanted, &mut |_| {}, &|| true).expect("ouverte");
+        assert_eq!(
+            (opened.settings.width, opened.settings.height),
+            (2560, 1440)
+        );
+        assert!(
+            asked.lock().unwrap().contains(&Request::FarScreen {
+                way: WayId(7),
+                wanted: None
+            }),
+            "{asked:?}"
+        );
+    }
+
+    #[test]
+    fn a_refused_way_is_the_end_of_the_opening() {
+        let (channel, _) = a_service("refus", |_| {
+            Some(Answer::Refused(
+                "192.168.1.20 n'a pas répondu en 15 secondes".to_string(),
+            ))
+        });
+        let mut steps = Vec::new();
+        let outcome = opened_on(&channel, &wanted(), &mut |step| steps.push(step), &|| true);
+        assert!(
+            matches!(&outcome, Err(Error::Service(reason)) if reason.contains("n'a pas répondu")),
+            "{:?}",
+            outcome.err()
+        );
+        assert!(steps.is_empty(), "{steps:?}");
+    }
+
+    #[test]
+    fn an_opening_let_go_of_after_the_way_gives_the_way_back() {
+        // Let go of once the far computer has been asked everything: the
+        // way was open by then, and is released rather than left to the
+        // service's patience.
+        let (channel, asked) = a_service("lachee-apres", willing);
+        let reached = std::sync::atomic::AtomicBool::new(false);
+        let outcome = opened_on(
+            &channel,
+            &wanted(),
+            &mut |step| {
+                if step == Step::Reached {
+                    reached.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            },
+            &|| !reached.load(std::sync::atomic::Ordering::Relaxed),
+        );
+        assert!(
+            matches!(outcome, Err(Error::Abandoned)),
+            "{:?}",
+            outcome.err()
+        );
+        let asked = until_asked(&asked, 5);
+        assert_eq!(asked.last(), Some(&Request::Release { way: WayId(7) }));
     }
 
     #[test]
@@ -1324,25 +811,7 @@ mod tests {
         // here, it is exactly a computer being chased for thirty
         // seconds, and that is where the whole time of an opening
         // went. Nothing in that wait looked at the cross.
-        let channel = format!("zyr-session-test-{}-lachee", std::process::id());
-        let listening = channel.clone();
-        let (opened, when_open) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("exécuteur du service d'essai");
-            runtime.block_on(async move {
-                let mut door = zyr_control::Door::open(&listening).expect("canal d'essai");
-                opened.send(()).expect("canal d'essai annoncé");
-                // Held open: a conversation that closes is a whole
-                // other fault, and would show without any of this.
-                let _taken = door.accept().await;
-                std::future::pending::<()>().await;
-            });
-        });
-        when_open.recv().expect("canal d'essai ouvert");
-
+        let (channel, _) = a_service("lachee", |_| None);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -1385,33 +854,39 @@ mod tests {
         // carried on towards a picture nobody was waiting for any more.
         assert!(matches!(GaveUp::Abandoned.refusal(), Err(Error::Abandoned)));
         assert!(matches!(
-            GaveUp::Abandoned.or(Error::Handover),
+            GaveUp::Abandoned.or(Error::Service),
             Error::Abandoned
         ));
 
         // A real refusal, for its part, goes through whole: it is what
         // gets written in the journal and on the opening screen.
         assert_eq!(
-            GaveUp::Said("son moteur est trop ancien".to_string())
+            GaveUp::Said("son écran ne se laisse pas filmer".to_string())
                 .refusal()
                 .unwrap(),
-            "son moteur est trop ancien"
+            "son écran ne se laisse pas filmer"
         );
         assert!(matches!(
-            GaveUp::Said("refusé".to_string()).or(Error::Handover),
-            Error::Handover(reason) if reason == "refusé"
+            GaveUp::Said("refusé".to_string()).or(Error::Service),
+            Error::Service(reason) if reason == "refusé"
         ));
     }
 
     #[test]
     fn every_failure_says_something_a_person_can_act_on() {
         let messages = [
-            Error::EngineMissing(PathBuf::from("/nowhere/zyrdesk-session")).to_string(),
+            Error::EngineMissing(vec![PathBuf::from("/nowhere/vendor/ffmpeg/avcodec-63.dll")])
+                .to_string(),
             Error::Service("192.168.1.20 ne répond pas".to_string()).to_string(),
         ];
         for message in messages {
             assert!(!message.is_empty());
             assert!(!message.starts_with("Error"), "{message}");
         }
+        assert!(
+            Error::EngineMissing(vec![PathBuf::from("avcodec-63.dll")])
+                .to_string()
+                .contains("avcodec-63.dll")
+        );
     }
 }
