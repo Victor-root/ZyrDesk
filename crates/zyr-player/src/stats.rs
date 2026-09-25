@@ -34,6 +34,11 @@ const ROUND_TRIPS_OVER: Duration = Duration::from_secs(5);
 /// How long the tunnel's own round trip stands once told.
 const TUNNEL_FRESH: Duration = Duration::from_secs(3);
 
+/// Pictures decoded in the window before the share replaced says
+/// anything: over fewer, one picture alone is several percent, and a
+/// single one replaced reads as a link that shakes.
+const REPLACED_OUT_OF: usize = 30;
+
 /// The player's clock, in microseconds since it started: what pings
 /// carry and what the host's clock is placed against.
 #[derive(Debug, Clone, Copy)]
@@ -139,7 +144,14 @@ impl Tally {
 
     /// Pictures decoded that a newer one replaced before they were
     /// shown.
+    ///
+    /// Not counted before the first picture is shown: the surface is
+    /// still being made then, and the pictures it lets pass are the
+    /// start of the session, not ones the link brought too late.
     pub fn unshown(&mut self, now: Instant, count: u64) {
+        if self.last_shown.is_none() {
+            return;
+        }
         for _ in 0..count {
             self.unshown.add(now, 1.0);
         }
@@ -211,7 +223,7 @@ impl Tally {
             bitrate_mbps: self.began.then(|| self.bits.per_second() / 1e6),
             dropped_network_pct: (expected > 0)
                 .then(|| self.lost.len() as f64 * 100.0 / expected as f64),
-            dropped_jitter_pct: (!self.decoded.is_empty())
+            dropped_jitter_pct: (self.decoded.len() >= REPLACED_OUT_OF)
                 .then(|| self.unshown.len() as f64 * 100.0 / self.decoded.len() as f64),
             since_frame_ms: self
                 .last_frame
@@ -362,13 +374,34 @@ mod tests {
     fn pictures_replaced_before_being_shown_count_as_jitter() {
         let at = Instant::now();
         let mut tally = Tally::new(Clock { epoch: at });
-        for n in 0..4u64 {
+        tally.shown(at, Duration::from_millis(1), 0);
+        for n in 0..40u64 {
             tally.decoded(ms_after(at, n), Duration::from_millis(1));
         }
-        tally.unshown(ms_after(at, 3), 3);
+        tally.unshown(ms_after(at, 39), 4);
         assert_eq!(
-            tally.measures(ms_after(at, 10)).dropped_jitter_pct,
-            Some(75.0)
+            tally.measures(ms_after(at, 50)).dropped_jitter_pct,
+            Some(10.0)
+        );
+    }
+
+    #[test]
+    fn the_start_of_a_session_is_not_jitter() {
+        let at = Instant::now();
+        let mut tally = Tally::new(Clock { epoch: at });
+        for n in 0..8u64 {
+            tally.decoded(ms_after(at, n), Duration::from_millis(1));
+        }
+        // Replaced while the surface was still being made.
+        tally.unshown(ms_after(at, 7), 3);
+        tally.shown(ms_after(at, 8), Duration::from_millis(1), 0);
+        assert_eq!(tally.measures(ms_after(at, 9)).dropped_jitter_pct, None);
+        for n in 10..40u64 {
+            tally.decoded(ms_after(at, n), Duration::from_millis(1));
+        }
+        assert_eq!(
+            tally.measures(ms_after(at, 50)).dropped_jitter_pct,
+            Some(0.0)
         );
     }
 }
