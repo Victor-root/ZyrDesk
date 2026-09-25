@@ -615,23 +615,21 @@ impl Gpu {
         // SAFETY: no window names the whole compositor; the structure
         // says its own size.
         unsafe { DwmGetCompositionTimingInfo(HWND::default(), &mut timing) }.ok()?;
-        let (mut now, mut frequency) = (0i64, 0i64);
-        // SAFETY: plain out values.
-        unsafe {
-            QueryPerformanceCounter(&mut now).ok()?;
-            QueryPerformanceFrequency(&mut frequency).ok()?;
-        }
+        let mut frequency = 0i64;
+        // SAFETY: a plain out value.
+        unsafe { QueryPerformanceFrequency(&mut frequency) }.ok()?;
         let frequency = u64::try_from(frequency).ok().filter(|ticks| *ticks > 0)?;
         let ticks = |count: u64| Duration::from_secs_f64(count as f64 / frequency as f64);
         let refresh = ticks(timing.qpcRefreshPeriod);
+        let (counter, now) = counter_now()?;
         // The refresh the last picture appeared at, from the last one the
         // system timed: that many refreshes before it.
-        let since_timed = ticks(u64::try_from(now - statistics.SyncQPCTime).unwrap_or(0));
+        let since_timed = ticks(u64::try_from(counter - statistics.SyncQPCTime).unwrap_or(0));
         let before_timed = refresh
             * statistics
                 .SyncRefreshCount
                 .saturating_sub(statistics.PresentRefreshCount);
-        let timed_at = Instant::now().checked_sub(since_timed)?;
+        let timed_at = now.checked_sub(since_timed)?;
         let at = timed_at.checked_sub(before_timed)?;
         Some(Displayed {
             presented: u64::from(presented),
@@ -826,6 +824,25 @@ impl Gpu {
         };
         Fault::Lost(format!("{text}; {reason}"))
     }
+}
+
+/// The performance counter and the moment it was read, taken close
+/// enough together to date what the system stamps with the counter: a
+/// thread put aside between the two would date every refresh late.
+fn counter_now() -> Option<(i64, Instant)> {
+    const CLOSE_ENOUGH: Duration = Duration::from_micros(50);
+    for _ in 0..3 {
+        let before = Instant::now();
+        let mut counter = 0i64;
+        // SAFETY: a plain out value.
+        unsafe { QueryPerformanceCounter(&mut counter) }.ok()?;
+        let after = Instant::now();
+        let apart = after - before;
+        if apart <= CLOSE_ENOUGH {
+            return Some((counter, before + apart / 2));
+        }
+    }
+    None
 }
 
 /// Views of the two planes of one slice of an NV12 texture: luma, then
