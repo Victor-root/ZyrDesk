@@ -58,7 +58,7 @@ use zyr_media::codec::CodecSet;
 use zyr_proto::log::Log;
 
 use super::device::{self, Device, INTEL};
-use super::{Multimedia, code_and_words, failure};
+use super::{FineTimers, Multimedia, code_and_words, failure};
 use crate::present::{Fault, Presenter, Rect, Shown, letterbox};
 
 /// The shaders, compiled when the player starts: d3dcompiler_47.dll
@@ -143,6 +143,8 @@ pub struct Screen {
     mmcss: bool,
     /// The video thread itself, scheduled as playback.
     _playback: Multimedia,
+    /// Waits as short as asked while the window plays.
+    _timers: FineTimers,
     log: Log,
 }
 
@@ -155,6 +157,7 @@ impl Screen {
             gpu: None,
             mmcss: false,
             _playback: Multimedia::join(w!("Playback"), log),
+            _timers: FineTimers::ask(log),
             log: log.clone(),
         };
         // SAFETY: a switch for this process, taking a plain value.

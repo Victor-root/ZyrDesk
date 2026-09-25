@@ -12,6 +12,7 @@ mod present;
 pub use present::Screen;
 
 use windows::Win32::Foundation::HANDLE;
+use windows::Win32::Media::{TIMERR_NOERROR, timeBeginPeriod, timeEndPeriod};
 use windows::Win32::System::Threading::{
     AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW,
 };
@@ -61,6 +62,34 @@ impl Drop for Multimedia {
         if let Some(handle) = self.0 {
             // SAFETY: the handle joined on this same thread, left once.
             let _ = unsafe { AvRevertMmThreadCharacteristics(handle) };
+        }
+    }
+}
+
+/// The process's timers waking to the millisecond for as long as this
+/// lives, rather than every 15.6 ms: the video thread waits 3 ms for a
+/// late packet before a frame is given up and a key frame asked for.
+struct FineTimers(bool);
+
+impl FineTimers {
+    const MS: u32 = 1;
+
+    /// Refused, timers keep their pace, and the journal says so.
+    fn ask(log: &Log) -> Self {
+        // SAFETY: a plain value, undone once with the same value on drop.
+        let granted = unsafe { timeBeginPeriod(Self::MS) } == TIMERR_NOERROR;
+        if !granted {
+            log.write("timers to the millisecond were refused (timeBeginPeriod)");
+        }
+        Self(granted)
+    }
+}
+
+impl Drop for FineTimers {
+    fn drop(&mut self) {
+        if self.0 {
+            // SAFETY: the value given to timeBeginPeriod, once.
+            unsafe { timeEndPeriod(Self::MS) };
         }
     }
 }

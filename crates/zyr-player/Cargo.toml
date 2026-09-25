@@ -33,6 +33,8 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_Dxgi_Common",
     # MonitorFromWindow, to find the graphics card driving the window.
     "Win32_Graphics_Gdi",
+    # timeBeginPeriod, timers to the millisecond while a window plays.
+    "Win32_Media",
     "Win32_Media_Audio",
     # The float sub-format of the sound card's own format.
     "Win32_Media_KernelStreaming",
