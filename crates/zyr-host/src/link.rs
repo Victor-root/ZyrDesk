@@ -9,6 +9,9 @@
 //! then sound, then pictures. Sound and pictures go through bounded
 //! queues that a media thread never waits on: what finds one full is
 //! dropped, and counted by whoever dropped it.
+//!
+//! The link closes once every thread that writes to it has let go of its
+//! queues and what they left in them is out, or when it fails.
 
 use std::io;
 use std::sync::mpsc;
@@ -37,16 +40,9 @@ const AUDIO_QUEUE: usize = 16;
 /// What the other threads hand the link.
 #[derive(Clone)]
 pub(crate) struct Outbox {
-    reliable: queue::UnboundedSender<Reliable>,
+    reliable: queue::UnboundedSender<(Channel, Vec<u8>)>,
     video: queue::Sender<Packets>,
     audio: queue::Sender<Vec<u8>>,
-}
-
-enum Reliable {
-    Frame(Channel, Vec<u8>),
-    /// Nothing more will be written: the link can close once what came
-    /// before is out.
-    End,
 }
 
 /// What became of a packet handed to the link.
@@ -65,13 +61,11 @@ impl Outbox {
         message.write(&mut out);
         // A closed queue means the link is gone, which the engine hears
         // from the link itself.
-        let _ = self.reliable.send(Reliable::Frame(Channel::Control, out));
+        let _ = self.reliable.send((Channel::Control, out));
     }
 
     pub(crate) fn service(&self, message: &ToService) {
-        let _ = self
-            .reliable
-            .send(Reliable::Frame(Channel::Service, message.encode()));
+        let _ = self.reliable.send((Channel::Service, message.encode()));
     }
 
     pub(crate) fn video(&self, packets: Packets) -> Sent {
@@ -80,11 +74,6 @@ impl Outbox {
 
     pub(crate) fn audio(&self, datagram: Vec<u8>) -> Sent {
         sent(self.audio.try_send(datagram))
-    }
-
-    /// The last thing written: the link closes after what came before.
-    pub(crate) fn end(&self) {
-        let _ = self.reliable.send(Reliable::End);
     }
 }
 
@@ -103,7 +92,7 @@ pub(crate) struct Handlers {
 }
 
 /// Carries `link`, made on `runtime`, on a thread of its own until the
-/// link closes or [`Outbox::end`] is written.
+/// link closes or every [`Outbox`] is gone.
 pub(crate) fn start(
     runtime: Runtime,
     link: Link,
@@ -119,7 +108,15 @@ pub(crate) fn start(
         video,
         audio,
     };
-    let pongs = outbox.clone();
+    // Pongs have a queue of their own, which the link alone holds: the
+    // others' queues closing is what ends it.
+    let (pongs, pong_queue) = queue::unbounded_channel();
+    let queues = Queues {
+        reliable: reliable_queue,
+        pongs: pong_queue,
+        video: video_queue,
+        audio: audio_queue,
+    };
     let thread = thread::Builder::new()
         .name("engine link".to_string())
         .spawn(move || {
@@ -127,7 +124,7 @@ pub(crate) fn start(
             let ended = runtime.block_on(async {
                 tokio::select! {
                     ended = read(reader, &handlers, &pongs, clock, &log) => ended,
-                    ended = write(writer, reliable_queue, video_queue, audio_queue) => ended,
+                    ended = write(writer, queues) => ended,
                 }
             });
             if let Some(e) = &ended {
@@ -144,7 +141,7 @@ pub(crate) fn start(
 async fn read(
     mut reader: LinkReader,
     handlers: &Handlers,
-    pongs: &Outbox,
+    pongs: &queue::UnboundedSender<Vec<u8>>,
     clock: HostClock,
     log: &Log,
 ) -> Option<String> {
@@ -185,7 +182,7 @@ async fn read(
 fn pass_on(
     message: Result<FromPlayer, WireError>,
     handlers: &Handlers,
-    pongs: &Outbox,
+    pongs: &queue::UnboundedSender<Vec<u8>>,
     clock: HostClock,
 ) {
     let asked = match message {
@@ -194,10 +191,14 @@ fn pass_on(
             return;
         }
         Ok(FromPlayer::Ping { sent_us }) => {
-            pongs.player(&ToPlayer::Pong {
+            let mut pong = Vec::new();
+            ToPlayer::Pong {
                 sent_us,
                 host_us: clock.now(),
-            });
+            }
+            .write(&mut pong);
+            // The writer, on this same thread, lives as long as the reader.
+            let _ = pongs.send(pong);
             let _ = handlers.input.send(input::Command::Heard);
             return;
         }
@@ -216,23 +217,27 @@ fn pass_on(
     let _ = handlers.events.send(Event::Link(asked));
 }
 
-/// Writes what the others hand in, until [`Reliable::End`]: `None` then,
-/// the error if the link failed.
-async fn write(
-    mut writer: LinkWriter,
-    mut reliable: queue::UnboundedReceiver<Reliable>,
-    mut video: queue::Receiver<Packets>,
-    mut audio: queue::Receiver<Vec<u8>>,
-) -> Option<String> {
+/// What the link writes, from whom.
+struct Queues {
+    reliable: queue::UnboundedReceiver<(Channel, Vec<u8>)>,
+    pongs: queue::UnboundedReceiver<Vec<u8>>,
+    video: queue::Receiver<Packets>,
+    audio: queue::Receiver<Vec<u8>>,
+}
+
+/// Writes what the others hand in, until none of them is left: `None`
+/// then, the error if the link failed.
+async fn write(mut writer: LinkWriter, mut queues: Queues) -> Option<String> {
     loop {
         let written = tokio::select! {
             biased;
-            message = reliable.recv() => match message {
-                Some(Reliable::Frame(channel, bytes)) => writer.send(channel, &bytes).await,
-                Some(Reliable::End) | None => return None,
+            message = queues.reliable.recv() => match message {
+                Some((channel, bytes)) => writer.send(channel, &bytes).await,
+                None => return None,
             },
-            Some(datagram) = audio.recv() => writer.send(Channel::Audio, &datagram).await,
-            Some(packets) = video.recv() => {
+            Some(pong) = queues.pongs.recv() => writer.send(Channel::Control, &pong).await,
+            Some(datagram) = queues.audio.recv() => writer.send(Channel::Audio, &datagram).await,
+            Some(packets) = queues.video.recv() => {
                 let mut written = Ok(());
                 for datagram in packets.iter() {
                     written = writer.send(Channel::Video, datagram).await;

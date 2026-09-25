@@ -119,9 +119,8 @@ pub(crate) fn run(runtime: Runtime, link: Link, parts: Parts, log: &Log) -> Endi
     for thread in others {
         let _ = thread.join();
     }
-    // Every other writer is gone: the link closes once what they left
+    // The last writer lets go: the link closes once what the writers left
     // behind is out.
-    engine.outbox.end();
     drop(engine);
     let _ = link.join();
     ending
