@@ -3298,6 +3298,7 @@ dependencies = [
  "windows-sys 0.61.2",
  "zyr-broker",
  "zyr-clipboard",
+ "zyr-codec",
  "zyr-control",
  "zyr-proto",
  "zyr-session",

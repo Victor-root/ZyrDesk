@@ -108,18 +108,6 @@ const GRIP: i32 = 4;
 /// How often the button catches up with the mouse while being dragged.
 const FOLLOW: Duration = Duration::from_millis(8);
 
-/// Pause between two looks at whether the player has stopped.
-const STOP_STEP: Duration = Duration::from_millis(10);
-
-/// How long the player is given to stop by itself once the far computer
-/// has been asked to hand its desktop back.
-///
-/// Past it the player is stopped here. Long enough that a far computer
-/// which answers takes the picture away itself, which is how a session
-/// ends when everything works; short enough that one which has stopped
-/// answering does not hold the person in front of a picture that is over.
-const CLOSING_SHOWS: Duration = Duration::from_secs(3);
-
 /// How long a drag may last before it is called over.
 ///
 /// A mouse unplugged mid-drag, or a button released where nothing
@@ -247,30 +235,6 @@ pub struct Floating {
     /// broke looks like. Without this, the one thing the person asked for
     /// would be reported back to them as an error.
     closing: std::sync::atomic::AtomicBool,
-    /// Player this window has just started and the service does not know
-    /// about yet.
-    ///
-    /// A session is only handed to the service once it has been watched
-    /// long enough to be believed, and the button would arrive that many
-    /// seconds after the picture. Whoever started the engine knows its
-    /// number straight away, and the button hangs on nothing else.
-    ///
-    /// The way to the far computer travels with it, for the same reason:
-    /// during those seconds this window is the only thing that can end
-    /// the session, and ending is asked at that address. Without it, the
-    /// cross and the menu both answered « aucune session en cours » over
-    /// a running picture until the service caught up.
-    expected: Mutex<Option<Expected>>,
-    /// Whether the service named this player among its sessions, the
-    /// last time it was asked.
-    ///
-    /// Compared against itself from one watch to the next: a way not yet
-    /// registered, in the first seconds of a session, and one the service
-    /// has stopped naming after really holding it, look exactly alike
-    /// from a single answer alone. Only the second is a session ended
-    /// from outside this window, kicked or otherwise, and it is what
-    /// tells the two apart.
-    confirmed: AtomicBool,
     /// Whether the session's mouse is in game mode right now.
     ///
     /// Kept by this program because this program is what sets it: the
@@ -326,58 +290,6 @@ pub struct Floating {
     /// exists to look at something must not be left on by a session
     /// nobody was looking at.
     badges: AtomicBool,
-    /// Whether this computer is drawing its own pointer over the picture.
-    ///
-    /// Counted like the three above, and put down whenever a player is
-    /// adopted: this is the engine's own switch, it lives in that
-    /// player, and a player started again starts it where the engine
-    /// leaves it, which is off.
-    /// Whether the far computer has been asked to stop drawing its
-    /// pointer into what it sends.
-    ///
-    /// The one switch of the set that does not belong to a player. It
-    /// lives in the far computer's engine, which is started with that
-    /// computer's service and outlives every session towards it, so it
-    /// is never put down with a player: opening the picture again in the
-    /// middle of a session hands us a new player and changes nothing
-    /// over there, and a belief put down with the player would throw
-    /// that switch a second time and give the pointer back under a
-    /// session still watching a desktop.
-    ///
-    /// What puts it down is giving the pointer back, which really does
-    /// put it back where it was found. That is why nothing puts it down
-    /// when a session opens either: a session that closed properly left
-    /// this false and the far computer drawing, and one that did not is
-    /// better served by a belief that still matches what was left over
-    /// there than by a fresh one that does not.
-    ///
-    /// It cannot be read back, and that is the whole of what is fragile
-    /// here: a session ending without passing through the closing below,
-    /// which is a machine that crashes or a network that goes, leaves
-    /// that computer's engine drawing nothing until its service restarts
-    /// it. What that costs is two pointers, or none, on a later session
-    /// towards a different computer; it is seen at once and is one
-    /// switch away, and nothing about it is silent.
-    far_pointer_hidden: AtomicBool,
-    /// Whether the last thing said about it was refused.
-    ///
-    /// So that a run of refusals is one line and not one a second, and
-    /// so that the run ending is one line too: what has to be read here
-    /// is when it started and when it stopped.
-    far_pointer_refused: AtomicBool,
-}
-
-/// What this window knows of a session it started, before the service
-/// believes it.
-struct Expected {
-    process: u32,
-    /// The far computer, as the person named it.
-    towards: String,
-    /// And as it recognised itself, which is what its engine state is
-    /// filed under: a name changes with the road taken to it.
-    peer: Option<String>,
-    /// Where the tunnel puts it on this machine.
-    at: String,
 }
 
 static NUDGE: AtomicI64 = AtomicI64::new(0);
@@ -651,95 +563,17 @@ pub fn a_session_is_up(app: &App) -> bool {
         .is_some()
 }
 
-/// Says which player this window has just started, before anybody else
-/// knows, and where the session it shows can be ended.
-pub fn expect(
-    app: &App,
-    process: u32,
-    towards: &str,
-    peer: Option<&zyr_transport::Fingerprint>,
-    at: &str,
-) {
-    *app.floating().expected.lock().expect("session attendue") = Some(Expected {
-        process,
-        towards: towards.to_string(),
-        peer: peer.map(|peer| peer.to_string()),
-        at: at.to_string(),
-    });
-}
-
-/// Forgets it, the session being over one way or another.
-pub fn expect_nothing(app: &App) {
-    *app.floating().expected.lock().expect("session attendue") = None;
-}
-
-/// The player the button belongs to right now, and whether the service
-/// itself is the one naming it.
+/// The player the button belongs to right now: that of the first
+/// session the service holds.
 ///
-/// The service first: it knows every session on this computer, including
-/// those another window opened. Failing that, the one this window has
-/// just started, for as long as it has a picture up. That second answer
-/// is what puts the button on screen with the picture rather than
-/// several seconds behind it, and it is also what a session the service
-/// has stopped naming looks like the moment it does, before its own
-/// engine has any way to know: nothing in a single answer tells the two
-/// apart, which is why the watch keeps its own memory of which one it
-/// was last time.
-async fn seen(app: &App) -> Option<(u32, bool)> {
-    if let Some(session) = crate::session::sessions().await.into_iter().next() {
-        return Some((session.process, true));
-    }
-    let expected = app
-        .floating()
-        .expected
-        .lock()
-        .expect("session attendue")
-        .as_ref()
-        .map(|expected| expected.process);
-    // Still running, and never « still showing a window ». Minimising
-    // ZyrDesk hides the picture, because the system takes an owned
-    // window down with the one that owns it; read as the session being
-    // over, that let go of the picture and closed the button under a
-    // session that was still running, and the cross went back to merely
-    // putting the window away. The session is the player, so the player
-    // is what is asked about.
-    expected
-        .filter(|process| still_running(*process))
-        .map(|process| (process, false))
-}
-
-/// The player the button belongs to right now.
-pub async fn player(app: &App) -> Option<u32> {
-    seen(app).await.map(|(process, _)| process)
-}
-
-/// Whether that player is still running.
-#[cfg(windows)]
-pub(crate) fn still_running(process: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
-    use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-    };
-
-    // SAFETY: a refused or finished process gives a null handle, which
-    // is one of the answers; a real one is closed right below.
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process) };
-    if handle.is_null() {
-        return false;
-    }
-    let mut code = 0u32;
-    // SAFETY: the handle is live and the slot is ours.
-    let asked = unsafe { GetExitCodeProcess(handle, &mut code) };
-    // SAFETY: the handle came from the call above and is closed once.
-    unsafe { CloseHandle(handle) };
-    // A handle can outlive the process it names: only the exit code says
-    // which of the two this is.
-    asked != 0 && code == STILL_ACTIVE as u32
-}
-
-#[cfg(not(windows))]
-pub(crate) fn still_running(_process: u32) -> bool {
-    false
+/// The service and not this window: it knows every session on this
+/// computer, including those another window opened.
+async fn seen() -> Option<u32> {
+    crate::session::sessions()
+        .await
+        .into_iter()
+        .next()
+        .map(|session| session.process)
 }
 
 /// Stops that player, and says whether it was there to be stopped.
@@ -788,35 +622,13 @@ pub fn watch(app: App) {
     crate::app::spawn(async move {
         loop {
             tokio::time::sleep(LOOK).await;
-            match seen(&app).await {
-                Some((process, in_service)) => {
+            match seen().await {
+                Some(process) => {
                     // The picture first: the button hangs from the corner
                     // of it, and a corner read before the picture has
                     // been laid in our window is the wrong corner.
                     crate::picture::hold(&app, process);
                     let fresh = adopt(&app, process);
-                    let was_confirmed =
-                        app.floating().confirmed.swap(in_service, Ordering::Relaxed);
-                    if !fresh && was_confirmed && !in_service {
-                        // The service no longer names this way, when it
-                        // named it a moment before, and the player still
-                        // believes it is running: a session ended from
-                        // elsewhere (a kick, a setting that closes the
-                        // sessions in progress), which its engine would
-                        // only notice by itself from its silence, up to
-                        // thirty seconds later. Stopped here and treated as
-                        // deliberate, by the same path the cross of the
-                        // window takes.
-                        note(&format!(
-                            "le service ne connaît plus la voie du lecteur {process}, arrêté ici"
-                        ));
-                        Floating::closing(&app, true);
-                        stop_the_player(process);
-                        crate::picture::shut_the_pointer_in(false);
-                        crate::picture::let_go(&app);
-                        lower(&app);
-                        continue;
-                    }
                     if fresh {
                         // A session just adopted starts on the two sides
                         // its settings asked for; every toggle after that
@@ -851,7 +663,6 @@ pub fn watch(app: App) {
                     // close left a moment with no pointer at all.
                     if !the_menu_is_open() {
                         keep_the_pointer_in_step(&app, process).await;
-                        keep_the_far_pointer_in_step(&app).await;
                     }
                     // And the pointer of this computer stays inside the
                     // picture as long as the mouse is in game mode:
@@ -1350,14 +1161,6 @@ pub async fn ask(app: &App, act: Act) -> Result<(), String> {
     match act {
         Act::MouseMode => {
             let _ = app.floating().game_mouse.fetch_xor(true, Ordering::Relaxed);
-            // The two pointer switches belong to this change and are
-            // thrown with it rather than left to the watch. The moment
-            // the mode reaches the engine it stops drawing the pointer
-            // this window asked it for, and the far computer's is still
-            // hidden: between the two there is no pointer at all. Asked
-            // from the menu, that hole lasted as long as the menu stayed
-            // open, the watch holding off for it.
-            keep_the_far_pointer_in_step(app).await;
         }
         Act::PointerLock => {
             let _ = app
@@ -1430,117 +1233,6 @@ async fn keep_the_pointer_in_step(app: &App, process: u32) {
             });
         }
         Err(reason) => note(&format!("pointeur non réglé : {reason}")),
-    }
-}
-
-/// Puts the pointer a desktop is driven with on this side of the network,
-/// and gives it back to the far computer for a game.
-///
-/// A pointer drawn by the far computer is that computer's answer to a
-/// movement that has crossed the network twice and been encoded on the
-/// way: it arrives after the hand has already moved on, and no amount of
-/// bitrate shortens it. A desktop is aimed at, so that is felt on every
-/// click. This computer knows where the hand is with no network at all,
-/// and drawing the pointer here is what every remote desktop product
-/// does.
-///
-/// Two switches for one idea, one at each end, because the pointer is two
-/// things: the engine here hides ours the moment it is over the picture,
-/// and the engine over there draws its own into the stream. Throwing only
-/// the first would leave two pointers on screen, one under the hand and
-/// one behind it.
-///
-/// They are thrown in the order that keeps one pointer on screen at every
-/// moment, and never nought: the far one is only taken away once this one
-/// is drawn, and given back before this one goes. Each is thrown on its
-/// own and either can be refused, so the order is all there is.
-///
-/// A game is the other way round. What a game reads is movement and not a
-/// place, the pointer belongs to the game and is drawn by it, and a
-/// second one drawn here would sit in the middle of the picture doing
-/// nothing. So the far computer draws its own again there.
-///
-/// The switch on this side needs nothing said to it: the engine draws
-/// that pointer because it was asked to follow the file of shapes, and
-/// hides it by itself in game mouse mode, the mode doing it.
-///
-/// Said at every turn of the watch and not only when it changes. It is a
-/// value the far engine is told and not a switch flipped, so saying it
-/// twice says it once and costs that engine one comparison. And what it
-/// was left doing by whoever watched that computer before is not
-/// something this window can know: speaking only on a change means
-/// speaking from a belief, and a session that opened in game mouse mode
-/// agreed with its own belief, said nothing, and watched an engine that
-/// had stopped drawing. No pointer at all, again.
-async fn keep_the_far_pointer_in_step(app: &App) {
-    let drawn = in_game_mouse(app);
-    let state = app.floating();
-    // What was last said and got through, and nothing else: it decides
-    // what the journal says, never what is said to the far computer. One
-    // line a second would drown every other line of a session.
-    match say_whether_the_far_pointer_is_drawn(app, drawn).await {
-        Ok(()) => {
-            let was_refused = state.far_pointer_refused.swap(false, Ordering::Relaxed);
-            let moved = state.far_pointer_hidden.swap(!drawn, Ordering::Relaxed) == drawn;
-            if moved || was_refused {
-                note(if drawn {
-                    "l'ordinateur distant dessine à nouveau son curseur dans l'image"
-                } else {
-                    "l'ordinateur distant ne dessine plus son curseur dans l'image"
-                });
-            }
-        }
-        // Said once for a run of them and again when it stops, never at
-        // every turn. A refusal repeated every second is a page of the
-        // same line, and one said only the first time is a session that
-        // went wrong in silence for as long as it lasted: both hide
-        // exactly what has to be read here.
-        Err(reason) => {
-            if !state.far_pointer_refused.swap(true, Ordering::Relaxed) {
-                note(&format!("curseur d'en face non réglé : {reason}"));
-            }
-        }
-    }
-}
-
-/// Says to the far computer whether its engine draws its own pointer.
-///
-/// Said and never toggled, which is why it goes round by the two
-/// services rather than as a keystroke into the picture. A keystroke
-/// only flips that switch, and what it flips lives in an engine started
-/// with its service: nobody can read where it stands, every session
-/// shares it, and one session that ended without putting it back left
-/// the next one flipping it the wrong way while believing the opposite.
-/// Said, asking twice for the same thing asks for nothing.
-async fn say_whether_the_far_pointer_is_drawn(app: &App, drawn: bool) -> Result<(), String> {
-    let way = the_way_of_this_session(app).await?;
-    crate::service::ask(&zyr_control::Request::FarPointerDrawn { way, drawn })
-        .await
-        .map(|_| ())
-}
-
-/// Gives the far computer its pointer back, the session being over.
-///
-/// Said before the way is closed, which is the last moment anything can
-/// be said to that computer at all: the switch lives in its engine, and
-/// that engine is started with its service and outlives every session.
-///
-/// It is politeness and no longer a duty. A session that opens says what
-/// it wants of that pointer and gets it, whatever the one before left
-/// behind; this only spares the machine being watched a pointer missing
-/// from its own pictures until somebody watches it again. Said whatever
-/// this window last asked for, for the same reason as above: what that
-/// engine is doing is not something this window knows.
-async fn give_the_far_pointer_back(app: &App) {
-    let state = app.floating();
-    match say_whether_the_far_pointer_is_drawn(app, true).await {
-        Ok(()) => {
-            state.far_pointer_hidden.store(false, Ordering::Relaxed);
-            note("curseur rendu à l'ordinateur distant avant la fin de la session");
-        }
-        Err(reason) => note(&format!(
-            "curseur non rendu à l'ordinateur distant : {reason}"
-        )),
     }
 }
 
@@ -1646,23 +1338,6 @@ fn hand_over_and_type(_act: Act, _process: u32) -> Result<(), String> {
     Err("les sessions ne tournent que sous Windows".to_string())
 }
 
-/// Waits a moment for that player to stop, and says whether it did.
-///
-/// The player and not its window. A player that has lost its far
-/// computer keeps a window, and puts its own notice in it: read from the
-/// window, a session that had nothing left to show counted as over, and
-/// nothing took it off the screen.
-async fn the_player_has_stopped(process: u32) -> bool {
-    let until = std::time::Instant::now() + CLOSING_SHOWS;
-    while std::time::Instant::now() < until {
-        if !still_running(process) {
-            return true;
-        }
-        tokio::time::sleep(STOP_STEP).await;
-    }
-    false
-}
-
 /// Presses Ctrl+Alt+Suppr on the far computer.
 ///
 /// It goes nowhere near the picture, and could not. Windows keeps that
@@ -1728,35 +1403,18 @@ async fn the_way_of_this_session(app: &App) -> Result<zyr_control::WayId, String
     Ok(zyr_control::WayId(ours.way))
 }
 
-/// Ends the session: the far computer is handed its desktop back, and
-/// the picture goes here whatever that computer has to say about it.
+/// Ends the session: the player the button hangs on is stopped, and
+/// the far computer's engine goes with the way.
 ///
-/// The two halves are deliberately not tied together. Handing the desktop
-/// back is a question asked over the network, and a computer that has
-/// stopped answering takes fifteen seconds to be found out; the person
-/// who just closed the session must not be held in front of a dead
-/// picture for as long as that takes. So the question is asked on a
-/// thread of its own, the player is given a moment to stop of its own
-/// accord, which is what happens when the far computer answers, and it is
-/// stopped here when it does not.
-///
-/// Where to ask comes from the service first: it knows every session on
-/// this computer, including those another window opened. And it is the
-/// session the button hangs on that is ended, never merely the first of
-/// the list: with two sessions open, ending from this window must end
-/// this window's.
-///
-/// The service is not the only source, because for the first seconds of
-/// a session it does not believe in it yet: until then the way is what
-/// this window wrote down when it started the player, and without that
-/// fallback the cross and the menu answered « aucune session en cours »
-/// over a running picture.
+/// It is the session the button hangs on that is ended, never merely the
+/// first of the list: with two sessions open, ending from this window
+/// must end this window's.
 ///
 /// And before there is a player at all, there is an opening: a tunnel
-/// being raced for, a far engine starting over, two computers being
-/// introduced. Closing then is closing that, and it is said before
-/// anything else here so the opening reads it at its very next step
-/// rather than after the question below has been round the service.
+/// being raced for, the far computer being asked for its screen. Closing
+/// then is closing that, and it is said before anything else here so the
+/// opening reads it at its very next step rather than after the question
+/// below has been round the service.
 async fn end_the_session(app: &App) -> Result<(), String> {
     let opening = crate::session::opening();
     if opening {
@@ -1764,92 +1422,23 @@ async fn end_the_session(app: &App) -> Result<(), String> {
     }
     let watched = *app.floating().watched.lock().expect("session suivie");
 
-    let mut sessions = crate::session::sessions().await;
+    let sessions = crate::session::sessions().await;
     let ours = watched
-        .and_then(|process| {
-            sessions
-                .iter()
-                .position(|session| session.process == process)
-        })
-        .or_else(|| (!sessions.is_empty()).then_some(0));
-
-    let (process, towards, peer, at) = match ours {
-        Some(place) => {
-            let session = sessions.swap_remove(place);
-            (
-                session.process,
-                session.towards,
-                Some(session.fingerprint),
-                session.at,
-            )
+        .and_then(|process| sessions.iter().find(|session| session.process == process))
+        .or_else(|| sessions.first());
+    let Some(session) = ours else {
+        // An opening with no player yet has been let go of above, and
+        // that is the whole of what closing means at that moment.
+        if opening {
+            return Ok(());
         }
-        None => {
-            let expected = app
-                .floating()
-                .expected
-                .lock()
-                .expect("session attendue")
-                .as_ref()
-                .map(|expected| {
-                    (
-                        expected.process,
-                        expected.towards.clone(),
-                        expected.peer.clone(),
-                        expected.at.clone(),
-                    )
-                });
-            // An opening with no player yet has been let go of above,
-            // and that is the whole of what closing means at that
-            // moment: there is nothing to hand back and nothing to stop.
-            match expected {
-                Some(session) => session,
-                None if opening => return Ok(()),
-                None => return Err("aucune session en cours".to_string()),
-            }
-        }
+        return Err("aucune session en cours".to_string());
     };
-    note(&format!("fermeture demandée sur {towards} à travers {at}"));
-    // Before anything else is asked, and through the player while there
-    // still is one: the far computer's pointer is given back over its own
-    // session's stream, and in a moment there will be no stream.
-    give_the_far_pointer_back(app).await;
-    // Said before the asking, and never taken back. The engine can lose
-    // its stream and stop before the far computer has finished answering,
-    // and a session reported as broken to whoever just closed it would be
-    // a lie; and the player is stopped here in any case, which is that
-    // person's doing too.
+    note(&format!("fermeture demandée sur {}", session.towards));
+    // Said before the player stops, and never taken back: a session
+    // reported as broken to whoever just closed it would be a lie.
     Floating::closing(app, true);
-
-    // Asked on a thread of its own, and nothing here waits for it. What
-    // comes back only reaches the journal: by the time it does, the
-    // session is over on this side one way or the other, and a refusal
-    // shown then would be a red line across a home screen about a session
-    // the person has already left.
-    crate::app::spawn(async move {
-        let answered = crate::app::spawn_blocking(move || {
-            zyr_session::close_on_the_far_computer(peer.as_deref(), &towards, &at)
-        })
-        .await;
-        note(&match answered {
-            Ok(Ok(())) => "bureau distant rendu".to_string(),
-            Ok(Err(e)) => format!(
-                "bureau distant non rendu : {}",
-                e.to_string().replace('\n', " ")
-            ),
-            Err(e) => format!("bureau distant non rendu : {e}"),
-        });
-    });
-
-    // The far computer letting its desktop go is what stops the player,
-    // and that is how a session ends when everything works. Given a
-    // moment, and no more.
-    if the_player_has_stopped(process).await {
-        return Ok(());
-    }
-    note(&format!(
-        "l'ordinateur distant n'a pas rendu la main à temps : lecteur {process} arrêté ici"
-    ));
-    stop_the_player(process);
+    stop_the_player(session.process);
     Ok(())
 }
 

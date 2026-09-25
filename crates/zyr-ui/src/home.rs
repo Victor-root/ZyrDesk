@@ -33,7 +33,6 @@ use crate::app::App;
 
 use crate::design::{self, Colour, Palette};
 use crate::desk::{Attached, Peer, Standing, Watcher};
-use crate::folders::Engines;
 use crate::icons;
 use crate::paint::{Align, Canvas, Icon, Pen, Rect};
 use crate::session::Ongoing;
@@ -90,7 +89,9 @@ struct Seen {
     /// The computers connected to this one right now, and
     /// controlling it: the reverse of `sessions`.
     watching: Vec<Watcher>,
-    engines: Option<Engines>,
+    /// Whether FFmpeg is where this window's player loads it from, once
+    /// looked at.
+    ffmpeg_here: Option<bool>,
     settings: Option<Settings>,
     /// The account, when the service answers: the link if there is
     /// one, and the devices on it.
@@ -148,9 +149,7 @@ struct ToDo {
 #[derive(Clone, Copy)]
 enum Remedy {
     StartTheService,
-    HostEngine,
-    ClientEngine,
-    SeeTheJournal,
+    Ffmpeg,
 }
 
 /// What is happening while a session opens.
@@ -161,7 +160,6 @@ enum Remedy {
 struct Opening {
     towards: String,
     detail: String,
-    code: Option<String>,
     since: std::time::Instant,
 }
 
@@ -770,10 +768,6 @@ mod layout {
     /// the share of its length covered by the piece that moves along it.
     pub const THREAD: (f32, f32) = (260.0, 3.0);
     pub const PIECE: f32 = 0.4;
-
-    /// The pairing code, bigger than everything else because it is read
-    /// from a distance, while typing on another keyboard.
-    pub const CODE: f32 = 34.0;
 
     /// The scrollbar, and what separates it from the edge.
     pub const SCROLLBAR: f32 = 6.0;
@@ -1935,36 +1929,31 @@ impl Painter<'_> {
 /// it repairs.
 fn what_is_missing(seen: &Seen) -> Vec<ToDo> {
     let mut missings = Vec::new();
-    if let Some(said) = seen.machine.as_ref() {
-        if said.unreachable.is_some() {
-            missings.push(ToDo {
-                text: "Le service ZyrDesk ne tourne pas. Cet ordinateur ne peut ni être \
-                        contrôlé ni en contrôler un autre.",
-                button: "Démarrer le service",
-                remedy: Remedy::StartTheService,
-            });
-        } else if said.wanted && said.holdup == "engineMissing" {
-            missings.push(ToDo {
-                text: "Le moteur hôte n'est pas installé : cet ordinateur ne peut pas être \
-                        contrôlé. Déposez-le dans son dossier, il sera repris tout seul.",
-                button: "Ouvrir le dossier",
-                remedy: Remedy::HostEngine,
-            });
-        } else if said.wanted && said.holdup == "engineWontStand" {
-            missings.push(ToDo {
-                text: "Le moteur hôte ne tient pas en marche. Coupez puis rallumez l'accès \
-                        distant pour réessayer ; le journal dit pourquoi.",
-                button: "Voir le journal",
-                remedy: Remedy::SeeTheJournal,
-            });
-        }
-    }
-    if seen.engines.as_ref().is_some_and(|said| !said.client_here) {
+    if seen
+        .machine
+        .as_ref()
+        .is_some_and(|said| said.unreachable.is_some())
+    {
         missings.push(ToDo {
-            text: "Le moteur client n'est pas installé : cet ordinateur ne peut en contrôler \
-                    aucun autre.",
+            text: "Le service ZyrDesk ne tourne pas. Cet ordinateur ne peut ni être \
+                    contrôlé ni en contrôler un autre.",
+            button: "Démarrer le service",
+            remedy: Remedy::StartTheService,
+        });
+    }
+    // One folder to fill, whoever noticed it empty: this window, whose
+    // player decodes with FFmpeg, or the service, whose engine encodes
+    // with it. Said once either way.
+    let the_service_lacks_it = seen
+        .machine
+        .as_ref()
+        .is_some_and(|said| said.wanted && said.holdup == "engineMissing");
+    if seen.ffmpeg_here == Some(false) || the_service_lacks_it {
+        missings.push(ToDo {
+            text: "FFmpeg manque : cet ordinateur ne peut ni être contrôlé ni en contrôler \
+                    un autre. Déposez-le dans son dossier, il sera repris tout seul.",
             button: "Ouvrir le dossier",
-            remedy: Remedy::ClientEngine,
+            remedy: Remedy::Ffmpeg,
         });
     }
     missings
@@ -2447,8 +2436,7 @@ fn words_of_the_state(said: &Standing) -> String {
         return "Prêt à être contrôlé".to_string();
     }
     match said.holdup {
-        "engineMissing" => "Moteur hôte absent".to_string(),
-        "engineWontStand" => "Le moteur hôte ne démarre pas".to_string(),
+        "engineMissing" => "FFmpeg absent".to_string(),
         _ => "Démarrage en cours…".to_string(),
     }
 }
@@ -3738,23 +3726,8 @@ impl Painter<'_> {
         let detail = self
             .height_of(&opening.detail, self.caption(), words_width)
             .max(self.line_height(self.caption()));
-        let code = opening.code.as_ref().map(|code| {
-            (
-                code.clone(),
-                self.line_height(self.pen(layout::CODE).in_bold()),
-            )
-        });
         let gap = self.px(design::SPACE_4);
-        let content = brand
-            + gap
-            + title
-            + gap
-            + towards
-            + gap
-            + wire_height
-            + gap
-            + detail
-            + code.as_ref().map_or(0.0, |(_, height)| gap + height);
+        let content = brand + gap + title + gap + towards + gap + wire_height + gap + detail;
 
         let middle = width / 2.0;
         let mut y = (height - content) / 2.0;
@@ -3803,19 +3776,6 @@ impl Painter<'_> {
             self.colours.text_faint,
             Rect::at(middle - words_width / 2.0, y, words_width, detail),
         );
-        if let Some((code, code_height)) = code {
-            y += detail + gap;
-            self.draw_text(
-                &code,
-                self.pen(layout::CODE)
-                    .in_bold()
-                    .monospaced()
-                    .aligned(Align::Centre)
-                    .spaced(0.22),
-                self.colours.accent_bright,
-                Rect::at(0.0, y, width, code_height),
-            );
-        }
     }
 }
 
@@ -4762,9 +4722,7 @@ fn remedy_it(app: &App, rank: usize) {
                 redraw(&app);
             });
         }
-        Some(Remedy::HostEngine) => open_a_folder(app, "host-engine"),
-        Some(Remedy::ClientEngine) => open_a_folder(app, "client-engine"),
-        Some(Remedy::SeeTheJournal) => open_the_journal(app, None),
+        Some(Remedy::Ffmpeg) => open_a_folder(app, "ffmpeg"),
         None => {}
     }
 }
@@ -5017,7 +4975,6 @@ fn launch(app: &App, address: &str, fingerprint: &str, name: &str, local_only: b
             // their laptop by its four numbers.
             towards: name.to_string(),
             detail: "Ouverture du tunnel…".to_string(),
-            code: None,
             since: std::time::Instant::now(),
         });
     }
@@ -5242,62 +5199,13 @@ fn revoke(app: &App, rank: usize) {
 ///
 /// Called by what drives the session: the window is the only one
 /// that can say how far along something is that has no picture yet.
-pub fn step(app: &App, detail: &str, code: Option<String>) {
+pub fn step(app: &App, detail: &str) {
     {
         let mut state = STATE.lock().expect("accueil");
         let Some(opening) = state.opening.as_mut() else {
             return;
         };
         opening.detail = detail.to_string();
-        opening.code = code;
-    }
-    redraw(app);
-}
-
-/// The picture restarts with new settings: nobody clicked to open this
-/// one, so it is here that the opening screen comes back.
-pub fn relaunched(app: &App) {
-    {
-        let mut state = STATE.lock().expect("accueil");
-        let towards = state
-            .opening
-            .as_ref()
-            .map_or_else(String::new, |already| already.towards.clone());
-        state.opening = Some(Opening {
-            towards,
-            detail: "Nouveaux réglages, l'image se relance…".to_string(),
-            code: None,
-            since: std::time::Instant::now(),
-        });
-    }
-    redraw(app);
-}
-
-/// The session dropped by itself and the picture is coming back.
-///
-/// The same screen as the opening, for the reason that it says the same
-/// thing: there is nothing to watch and something is being done. The
-/// attempt number only appears from the second one on: the first is the
-/// ordinary case and goes without counting, whereas a third says something
-/// the bar that goes back and forth will never say, which is that things
-/// are not going well.
-pub fn coming_back(app: &App, attempt: u32) {
-    {
-        let mut state = STATE.lock().expect("accueil");
-        let towards = state
-            .opening
-            .as_ref()
-            .map_or_else(String::new, |already| already.towards.clone());
-        state.opening = Some(Opening {
-            towards,
-            detail: if attempt > 1 {
-                format!("Connexion perdue, reprise en cours… ({attempt}ᵉ essai)")
-            } else {
-                "Connexion perdue, reprise en cours…".to_string()
-            },
-            code: None,
-            since: std::time::Instant::now(),
-        });
     }
     redraw(app);
 }
@@ -5591,7 +5499,7 @@ async fn reread(app: &App) -> bool {
     let peers = crate::desk::peers().await;
     let sessions = crate::session::sessions().await;
     let watching = crate::desk::watching().await;
-    let engines = crate::folders::engines();
+    let ffmpeg_here = crate::folders::ffmpeg_here();
     let settings = crate::settings::settings(app.clone()).await;
     // The account, and its devices when there is a link: without a link
     // there is nothing to ask, and without a service nothing to show.
@@ -5614,7 +5522,7 @@ async fn reread(app: &App) -> bool {
         peers: std::mem::replace(&mut new.peers, peers),
         sessions: std::mem::replace(&mut new.sessions, sessions),
         watching: std::mem::replace(&mut new.watching, watching),
-        engines: new.engines.replace(engines),
+        ffmpeg_here: new.ffmpeg_here.replace(ffmpeg_here),
         settings: new.settings.replace(settings),
         account: std::mem::replace(&mut new.account, account),
         shortcuts: new.shortcuts.clone(),

@@ -24,6 +24,8 @@ embed-resource = "3.0.11"
 [dependencies]
 zyr-proto.workspace = true
 zyr-clipboard.workspace = true
+# Whether FFmpeg is all there, which the home screen says.
+zyr-codec.workspace = true
 zyr-control.workspace = true
 zyr-session.workspace = true
 zyr-sound.workspace = true

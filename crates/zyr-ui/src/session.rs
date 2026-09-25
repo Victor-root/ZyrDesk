@@ -4,27 +4,26 @@
 //! The whole opening sequence lives in `zyr-session`, shared with the
 //! command line. What is here is the shape it takes in a window: it runs
 //! away from the interface thread, and what happens on the way is sent
-//! back as events rather than waited for, because pairing shows a code
-//! and then waits for someone to walk to the other computer.
+//! back as events rather than waited for, because opening a way to
+//! another computer takes seconds, and the window keeps drawing all the
+//! while.
 //!
 //! A window is not where a session lives, though. Asking the service
 //! what it holds is what lets a window opened afterwards, or reopened
 //! after a crash, show the session instead of an empty home screen.
 
-// Restarting the picture and finding out which way it travels are only
-// asked for from the floating button's menu, which only exists on
-// Windows, like the session itself.
+// Changing the far computer's screen and finding out which way a
+// session travels are only asked for from the floating button's menu,
+// which only exists on Windows, like the session itself.
 #![cfg_attr(not(windows), allow(dead_code))]
 
-use std::io;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::app::App;
-use zyr_control::{Answer, Request, WayId};
-use zyr_proto::session::{FarScreen, Preferred, SessionSettings, WantedScreen};
-use zyr_session::{Outcome, Step, Wanted};
+use zyr_control::{Answer, Request};
+use zyr_proto::session::{FarScreen, Preferred, SessionSettings};
+use zyr_session::{Step, Wanted};
 
 use crate::service;
 
@@ -114,38 +113,9 @@ pub fn opening() -> bool {
     OPENING.load(Ordering::Relaxed)
 }
 
-/// The player that was stopped so the picture could be opened again,
-/// rather than because the session was over.
-///
-/// Read by whoever was waiting on that player, the instant it stops:
-/// stopping it is the only way to change what it was told, and the two
-/// reasons to stop it look exactly alike from the outside.
-///
-/// The player and not a plain yes: a second ask, landing on a player that
-/// had already gone, would otherwise leave a yes behind that reopened the
-/// session after the person closed it. Named this way it can only ever
-/// reopen the picture it was written for.
-static OPEN_AGAIN: AtomicU32 = AtomicU32::new(0);
-
-/// What the player is showing right now: what it was started with, and
-/// what it has since been told to become.
-///
-/// Kept because it cannot be read back from anywhere, and it is what every
-/// change made in the middle of a session starts from. A session changes
-/// one thing at a time, and the player is told the whole line each time:
-/// told the rate alone, it would read the size as a size it has never
-/// been given. Written back into as the player is told, so the next
-/// change starts from what it was told last.
-///
-/// Which of the far computer's screens is watched is not in here, nor is
-/// the rate that computer resends a still screen at: both are that
-/// computer's and not the player's.
-static SHOWN: Mutex<Option<SessionSettings>> = Mutex::new(None);
-
 /// What a session this window is not driving is told.
 ///
-/// The numbers to change it with live on this window's own thread, and a
-/// session opened elsewhere has nobody here to hear this.
+/// Its player lives in another program, and nothing here can reach it.
 const NOT_FROM_HERE: &str = "cette session n'a pas été ouverte depuis cette fenêtre.\n  \
                              Les réglages s'appliqueront à la prochaine.";
 
@@ -212,39 +182,22 @@ pub fn ask_for_the_far_screen(id: Option<String>) {
 /// reinitialization of its capture and costs this end nothing at all.
 /// The picture is on the other screen within the second, and the session
 /// never stops.
-///
-/// Two roads over there still end in that engine starting over, and it
-/// says so rather than letting this end find out from a way that breaks:
-/// an engine of an older build, which does not know how to be asked, and
-/// a computer that has never named its main screen. The picture is then
-/// opened again, which is what it took for every change of screen before
-/// this, and the opening screen says what is happening.
-pub async fn watch_the_far_screen(app: App, id: Option<String>) -> Result<(), String> {
+pub async fn watch_the_far_screen(id: Option<String>) -> Result<(), String> {
     let way = the_way_in_use()
         .await
         .ok_or("aucune session en cours".to_string())?;
-    let starting_over = match crate::service::ask(&Request::FilmFarScreen {
+    match crate::service::ask(&Request::FilmFarScreen {
         way,
         id: id.clone(),
     })
     .await?
     {
-        Answer::Settled { starting_over } => starting_over,
+        Answer::Done => {}
         Answer::Refused(reason) => return Err(reason),
         other => return Err(crate::service::unexpected(other)),
-    };
-    ask_for_the_far_screen(id);
-    note(&format!(
-        "écran de l'ordinateur distant : {}",
-        if starting_over {
-            "son moteur redémarre pour en changer, l'image est relancée"
-        } else {
-            "changé sans rien relancer"
-        }
-    ));
-    if starting_over {
-        return apply_session(app).await;
     }
+    ask_for_the_far_screen(id);
+    note("écran de l'ordinateur distant changé sans rien relancer");
     Ok(())
 }
 
@@ -254,7 +207,7 @@ pub async fn watch_the_far_screen(app: App, id: Option<String>) -> Result<(), St
 /// What the shortcut does. A far computer with one screen has nothing to
 /// move to, and that is not a failure: it is the ordinary machine, and
 /// the key is simply quiet on it.
-pub async fn watch_the_next_far_screen(app: App) -> Result<(), String> {
+pub async fn watch_the_next_far_screen() -> Result<(), String> {
     // Asked of the far computer when this end has never asked: the list
     // is filled when the menu is opened, and a key that only worked
     // after somebody had opened the menu once would be a key that
@@ -270,7 +223,7 @@ pub async fn watch_the_next_far_screen(app: App) -> Result<(), String> {
     // as the menu does: the two are one answer said two ways, and a
     // session that names it would be told « you have it » by a computer
     // that answers the same thing to nobody naming anything.
-    watch_the_far_screen(app, (!next.main).then(|| next.id.clone())).await
+    watch_the_far_screen((!next.main).then(|| next.id.clone())).await
 }
 
 /// The screen after that one in the list, and round to the first after
@@ -313,160 +266,17 @@ pub fn remember_the_far_screens(screens: &[FarScreen]) {
     *FAR_SCREENS.lock().expect("écrans d'en face") = screens.to_vec();
 }
 
-/// One of the settings a session takes where it stands, once it has been
-/// written down.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Changed {
-    /// How much picture is asked for.
-    Size,
-    /// How much rate carries it.
-    Rate,
-    Codec,
-    /// Whether the far computer resends a still screen at full rate.
-    SteadyFarRate,
-}
-
 /// Gives the session in progress what was just chosen, where it stands.
 ///
 /// Nothing at all when no session is on screen: the next one opens with
 /// what was written down, and that is the whole of what a choice made
-/// outside a session means.
-///
-/// Four settings, three roads. The rate and the still screen's cadence
-/// are the far engine's, asked of it through the way and taken where it
-/// stands. The codec is the player's, told through the file it follows,
-/// on which it makes its stream over in the same window. The size is
-/// both: the far computer is asked for a screen of that size, or for its
-/// own, exactly as at the opening, and what it answers it will be showing
-/// is what the player is told to become.
-///
-/// What cannot be taken where it stands is opened again, which is what
-/// every one of these cost before: a far engine that cannot be asked, one
-/// of an older build or one that has stopped answering, says so, and the
-/// picture goes away and comes back with the new settings.
-pub async fn take_where_it_stands(
-    app: App,
-    changed: Changed,
-    preferred: Preferred,
-) -> Result<(), String> {
-    let Some(way) = the_way_in_use().await else {
-        return Ok(());
-    };
-    let Some(shown) = *SHOWN.lock().expect("réglages de l'image") else {
-        return Err(NOT_FROM_HERE.to_string());
-    };
-    match changed {
-        Changed::Rate => serve_at(app, way, shown, preferred.bitrate_kbps).await,
-        Changed::Codec => tell_the_player(SessionSettings {
-            codec: preferred.codec,
-            ..shown
-        }),
-        Changed::Size => become_that_size(app, way, shown, preferred).await,
-        Changed::SteadyFarRate => serve_steady(app, way, preferred.steady_far_rate).await,
+/// outside a session means. This window plays no session of its own, so
+/// one in progress belongs to another program, and is told so.
+pub async fn take_where_it_stands() -> Result<(), String> {
+    match the_way_in_use().await {
+        Some(_) => Err(NOT_FROM_HERE.to_string()),
+        None => Ok(()),
     }
-}
-
-/// Tells the player what to become, through the file it follows, and
-/// keeps it as what is shown.
-fn tell_the_player(settings: SessionSettings) -> Result<(), String> {
-    let told = zyr_session::tell_the_player(&settings).map_err(|e| e.to_string())?;
-    *SHOWN.lock().expect("réglages de l'image") = Some(settings);
-    note(&format!("le lecteur suit maintenant « {told} »"));
-    Ok(())
-}
-
-/// Asks the far computer to serve at that rate, where its engine stands.
-///
-/// The player is told too, though nothing changes for it on the spot:
-/// what it holds is what the next stream it makes over announces, and
-/// that has to be the rate the person last chose.
-async fn serve_at(app: App, way: WayId, shown: SessionSettings, kbps: u32) -> Result<(), String> {
-    match crate::service::ask(&Request::BitrateFar { way, kbps }).await? {
-        Answer::Done => {}
-        // An engine over there that cannot be asked: the picture is opened
-        // again, which negotiates the rate the way every change of rate
-        // did before.
-        Answer::Refused(reason) => {
-            note(&format!(
-                "débit : l'ordinateur distant n'a pas pu être réglé où il est ({reason}), \
-                 l'image est relancée"
-            ));
-            return apply_session(app).await;
-        }
-        other => return Err(crate::service::unexpected(other)),
-    }
-    note(&format!(
-        "débit : l'ordinateur distant sert à {} Mb/s sans rien relancer",
-        kbps / 1000
-    ));
-    tell_the_player(SessionSettings {
-        bitrate_kbps: kbps,
-        ..shown
-    })
-}
-
-/// Asks the far computer to resend a still screen at full rate, or to
-/// stop, where its engine stands.
-async fn serve_steady(app: App, way: WayId, rate: bool) -> Result<(), String> {
-    let starting_over = match crate::service::ask(&Request::SteadyFar { way, rate }).await? {
-        Answer::Settled { starting_over } => starting_over,
-        Answer::Refused(reason) => return Err(reason),
-        other => return Err(crate::service::unexpected(other)),
-    };
-    note(&format!(
-        "écran d'en face : {}",
-        if starting_over {
-            "son moteur redémarre pour changer de cadence, l'image est relancée"
-        } else {
-            "cadence changée sans rien relancer"
-        }
-    ));
-    if starting_over {
-        return apply_session(app).await;
-    }
-    Ok(())
-}
-
-/// Gives the session the size chosen now: the far computer's screen
-/// first, then the player, then our own window.
-async fn become_that_size(
-    app: App,
-    way: WayId,
-    shown: SessionSettings,
-    preferred: Preferred,
-) -> Result<(), String> {
-    let (guessed, magnification) = what_to_ask_for(&app, preferred);
-    let wanted = preferred
-        .asked
-        .wants_a_screen_over_there()
-        .then_some(WantedScreen {
-            wide: guessed.width,
-            high: guessed.height,
-            scale: magnification,
-        });
-    // What that computer says it will be showing wins over what this end
-    // guessed, exactly as at the opening. A refusal costs the sharpness of
-    // the picture and nothing else, and the session goes on.
-    let (width, height) = match crate::service::ask(&Request::FarScreen { way, wanted }).await? {
-        Answer::Showing {
-            size: Some((wide, high)),
-        } => (wide, high),
-        Answer::Showing { size: None } => (guessed.width, guessed.height),
-        Answer::Refused(reason) => {
-            note(&format!(
-                "l'ordinateur distant n'a pas préparé son écran : {reason}"
-            ));
-            (guessed.width, guessed.height)
-        }
-        other => return Err(crate::service::unexpected(other)),
-    };
-    tell_the_player(SessionSettings {
-        width,
-        height,
-        ..shown
-    })?;
-    crate::picture::reshape(&app, (width as i32, height as i32));
-    Ok(())
 }
 
 /// Opens a session towards that computer.
@@ -517,11 +327,9 @@ pub async fn connect(
     let (settings, far_magnification) = what_to_ask_for(&app, preferred);
     let wanted = Wanted {
         host: host.trim().to_string(),
-        peer: Some(peer),
+        peer,
         settings,
-        pair_again: false,
         hush_the_far_speakers: preferred.mute_far_speakers,
-        steady_far_rate: preferred.steady_far_rate,
         wants_a_screen_over_there: preferred.asked.wants_a_screen_over_there(),
         far_magnification,
         far_screen: None,
@@ -529,9 +337,8 @@ pub async fn connect(
     };
 
     // On a thread of its own, and not one of the interface's: the
-    // opening blocks for as long as a pairing takes, which is as long as
-    // it takes someone to walk to another computer.
-    std::thread::spawn(move || drive(&app, wanted, preferred));
+    // opening blocks for as long as the far computer takes to answer.
+    std::thread::spawn(move || drive(&app, wanted));
     Ok(())
 }
 
@@ -557,436 +364,53 @@ fn what_to_ask_for(app: &App, preferred: Preferred) -> (SessionSettings, u32) {
     (settings, preferred.asked.magnification(screen))
 }
 
-/// How many times in a row the picture is brought back before the person
-/// is told instead.
+/// What the opening says once the way stands: the picture it opened for
+/// has nowhere to go yet.
+const NOT_WIRED: &str = "le nouveau moteur n'est pas encore branché sur la fenêtre";
+
+/// Opens the way to the session, and says what came of it.
 ///
-/// A session that falls over, comes back and falls over again within the
-/// minute is not a network that hiccups: it is one that cannot carry a
-/// session at all just now, and bringing the picture back forever would
-/// hide that behind a screen that never settles.
-const COMES_BACK_IN_A_ROW: u32 = 5;
-
-/// How many of those may fail to open at all, one after the other.
-///
-/// Its own count, and a much shorter one, because the two failures cost
-/// wildly different amounts of time. A picture that came back and fell
-/// over again was answered in seconds; an opening that finds nobody
-/// takes fifteen seconds twice over, the service asking a second time on
-/// its own (D171). The far computer being off is exactly what this looks
-/// like, and telling the person that after a minute is honest where
-/// telling them after three would be a product that hangs.
-const OPENINGS_MISSED_IN_A_ROW: u32 = 2;
-
-/// A session that stood this long before falling over is a fresh
-/// accident and not the same one over again, so the count starts over.
-const HELD_LONG_ENOUGH: Duration = Duration::from_secs(60);
-
-/// The pause before the picture is asked for again.
-///
-/// The far computer has its own tidying to do once its client vanishes:
-/// it puts the desk back the way it found it, and starts its engine over
-/// when it was filming a screen it grew for the session. It also learns
-/// that the client is gone by its own patience running out, which can
-/// leave it half a minute behind this end. Waiting a moment costs the
-/// person nothing they can feel and spares one try landing on a computer
-/// that is still holding the session that just fell over.
-const BEFORE_COMING_BACK: Duration = Duration::from_secs(3);
-
-/// How often the pause looks up to see whether it is still wanted.
-const WHILE_WAITING: Duration = Duration::from_millis(50);
-
-/// The picture brought back after a session fell over on its own.
-///
-/// A road between two homes goes quiet for a few seconds now and then,
-/// and thirty seconds of it end a session by design (D138). What that
-/// cost until now was the whole session: the engine gone, the picture
-/// gone, the person back on the home screen with something to click and
-/// a far computer to wait for again. Every fix written for this so far
-/// has tried to make that half-minute unlosable, which is a race that
-/// cannot be won: it takes one outage a little too long, or one
-/// unlucky cascade, and the session is over.
-///
-/// This is the other answer, and it is the one the products people
-/// compare this to give: falling over stops costing the session. The
-/// picture comes back by the road the person walked by hand all evening,
-/// and it comes back on its own.
-struct ComingBack {
-    /// How many times in a row, with nothing between them long enough to
-    /// call the next one a fresh accident.
-    in_a_row: u32,
-    /// How many of those did not manage to open, in a row.
-    missed: u32,
-}
-
-impl ComingBack {
-    fn none() -> Self {
-        Self {
-            in_a_row: 0,
-            missed: 0,
-        }
-    }
-
-    /// The picture is up again: whatever it took to get here is spent,
-    /// and the next opening that fails is the first of its own row.
-    fn opened(&mut self) {
-        self.missed = 0;
-    }
-
-    /// Which try the person is being shown, counting both roads: a
-    /// picture that fell over again and an opening that found nobody are
-    /// one wait as they see it.
-    fn try_number(&self) -> u32 {
-        self.in_a_row + self.missed
-    }
-
-    /// Whether the picture is worth bringing back, the player having
-    /// stopped without anybody asking for it.
-    ///
-    /// Only what a session falling over looks like: the player saying its
-    /// stream failed, or going without a word. A player that ended
-    /// cleanly is the far computer hanging up, which is its decision and
-    /// not an accident to undo; one that never reached that computer has
-    /// already answered the question a new try would ask again.
-    fn after(&mut self, ended: &io::Result<Outcome>, held: Duration) -> bool {
-        if !matches!(ended, Ok(Outcome::Failed) | Ok(Outcome::Unknown { .. })) {
-            return false;
-        }
-        if held >= HELD_LONG_ENOUGH {
-            self.in_a_row = 0;
-        }
-        self.once_more()
-    }
-
-    /// The same, an opening having failed rather than a picture having
-    /// fallen over.
-    ///
-    /// Only while the picture was already coming back: a session that
-    /// never opened in the first place is the person's own try, answered
-    /// where they can see it, and the service has already asked twice by
-    /// then (D171).
-    fn again(&mut self) -> bool {
-        if !self.tried() || self.missed >= OPENINGS_MISSED_IN_A_ROW {
-            return false;
-        }
-        self.missed += 1;
-        true
-    }
-
-    fn once_more(&mut self) -> bool {
-        if self.in_a_row >= COMES_BACK_IN_A_ROW {
-            return false;
-        }
-        self.in_a_row += 1;
-        true
-    }
-
-    /// Whether the picture has been brought back at all.
-    fn tried(&self) -> bool {
-        self.in_a_row > 0
-    }
-
-    fn how_it_went(&self) -> String {
-        format!(
-            "l'image a été reprise {} fois de suite sans que la session tienne",
-            self.in_a_row
-        )
-    }
-}
-
-/// Puts down what belonged to the player that is gone, says what is
-/// happening, and waits out the moment the far computer needs.
-///
-/// Answers whether to go on: a person who closes the window during the
-/// pause is heard at once, and there is nothing left to come back to.
-///
-/// What is deliberately not put down here is the screen and the window.
-/// It is one session as the person sees it, and handing the screen back
-/// to take it again a second later is exactly the flicker this road
-/// exists to spare them.
-fn hold_on_before_coming_back(app: &App, coming_back: &ComingBack) -> bool {
-    crate::home::coming_back(app, coming_back.try_number());
-    crate::floating::expect_nothing(app);
-    crate::floating::lower(app);
-    crate::picture::let_go(app);
-    waited_out(app, BEFORE_COMING_BACK)
-}
-
-/// Waits that long, unless the person closes the window meanwhile.
-///
-/// Answers whether the wait ran its course. Looked up from rather than
-/// slept through: a cross pressed during it would otherwise be answered
-/// three seconds later, by a picture coming back that nobody wants.
-fn waited_out(app: &App, how_long: Duration) -> bool {
-    let until = std::time::Instant::now() + how_long;
-    while std::time::Instant::now() < until {
-        if crate::floating::Floating::a_close_was_asked_for(app) {
-            return false;
-        }
-        std::thread::sleep(WHILE_WAITING);
-    }
-    true
-}
-
-/// What the far computer is asked for when the way is opened again.
-///
-/// Everything it was told went with the old way, so all of it is asked
-/// afresh, and with what is chosen now rather than what was chosen when
-/// the session opened. Shared by the two roads that open a way again: the
-/// settings a session could not take where it stood, and a picture
-/// brought back after the session fell over.
-fn asked_afresh(app: &App, wanted: &mut Wanted, preferred: &mut Preferred) {
-    // What is kept when the service cannot be asked is what the picture
-    // was already showing, never the ordinary settings: the person asked
-    // for one thing to change, not for three others to go back to what
-    // the product does by default.
-    *preferred = crate::app::block_on(crate::settings::what_was_chosen()).unwrap_or(*preferred);
-    (wanted.settings, wanted.far_magnification) = what_to_ask_for(app, *preferred);
-    wanted.hush_the_far_speakers = preferred.mute_far_speakers;
-    wanted.steady_far_rate = preferred.steady_far_rate;
-    // And whether that computer is to grow a screen for this session at
-    // all, which is the one thing the resolution decides over there. Left
-    // as the first opening set it, a session moved to « the host's own
-    // resolution » went on waking a virtual screen on the far machine and
-    // asking it for a size, which is exactly what that choice exists not
-    // to do.
-    wanted.wants_a_screen_over_there = preferred.asked.wants_a_screen_over_there();
-    // And which of that computer's screens to be served from, which is
-    // the whole reason a person opens the picture again on a machine with
-    // two of them, and what a picture coming back has to land on again.
-    wanted.far_screen = the_far_screen();
-}
-
-/// Opens the session and holds it, from the first tunnel to the last
-/// picture.
-///
-/// It opens more than once for two reasons. What the person chose could
-/// not be taken where the session stood, which is a far engine that
-/// cannot be asked: the picture is opened again, everything around it
-/// stands, this thread and the pairing included, and what it costs is the
-/// few seconds an opening takes. Or the session fell over on its own,
-/// which is what a road that goes quiet for too long comes to: the
-/// picture is brought back the same way, and `ComingBack` says how long
-/// that is worth trying.
-fn drive(app: &App, mut wanted: Wanted, mut preferred: Preferred) {
+/// The picture itself is not played here: the way is given back as soon
+/// as it stands, and the person is told why there is nothing to watch.
+fn drive(app: &App, wanted: Wanted) {
     note(&format!("session demandée vers {}", wanted.host));
-    let mut coming_back = ComingBack::none();
-    loop {
-        let towards = wanted.host.clone();
-        let mut opening = Opening::begins();
-        let running = match zyr_session::open(
-            &wanted,
-            &mut |step| {
-                note(&written(&step));
-                opening.reached(&step);
-                // The floating button hangs on that process, and this window
-                // is the only one that knows its number until the service
-                // does; the way travels with it, so the session can be ended
-                // during the seconds the service does not believe in it yet.
-                if let Step::Showing { process, at } = &step {
-                    crate::floating::expect(app, *process, &towards, wanted.peer.as_ref(), at);
-                    lay_the_picture_as_soon_as_it_opens(app.clone(), *process);
-                }
-                if let Some((detail, code)) = told(step) {
-                    crate::home::step(app, &detail, code);
-                }
-            },
-            // The one thing this crate can answer and the opening cannot: a
-            // player the person stopped and a player the far computer turned
-            // away both look like an engine that lost its stream.
-            &|| !crate::floating::Floating::a_close_was_asked_for(app),
-        ) {
-            Ok(running) => running,
-            // Let go of by the person, from the cross of the window or
-            // the shortcut: there is nothing to show them about it, they
-            // are the one who asked. The flag is taken here rather than
-            // left standing, since no session will end to take it.
-            Err(zyr_session::Error::Abandoned) => {
-                crate::floating::Floating::was_closed_on_purpose(app);
-                note("ouverture abandonnée : la session a été fermée avant l'image");
-                return finish(app, true, String::new());
+    let mut opening = Opening::begins();
+    let opened = match zyr_session::open(
+        &wanted,
+        &mut |step| {
+            note(&written(&step));
+            opening.reached(&step);
+            if let Some(detail) = told(step) {
+                crate::home::step(app, &detail);
             }
-            Err(e) => {
-                note(&format!(
-                    "session non ouverte : {}",
-                    e.to_string().replace('\n', " ")
-                ));
-                // A picture on its way back that did not open is one of
-                // its tries and not the end of them: the far computer can
-                // still be holding the session that just fell over, which
-                // it learns of by its own patience running out.
-                if coming_back.again() {
-                    if !hold_on_before_coming_back(app, &coming_back) {
-                        return closed_during_the_pause(app);
-                    }
-                    asked_afresh(app, &mut wanted, &mut preferred);
-                    continue;
-                }
-                if coming_back.tried() {
-                    return finish(
-                        app,
-                        false,
-                        format!("{}\n  {}", e, coming_back.how_it_went()),
-                    );
-                }
-                return finish(app, false, e.to_string());
-            }
-        };
-
-        let showing_since = std::time::Instant::now();
-        let process = running.process_id();
-        if coming_back.tried() {
-            // Worth its own line, and worth reading tomorrow: this is
-            // the whole of what a session that used to die looks like
-            // now, and the journal is where anybody finds out whether it
-            // held.
-            note(&format!(
-                "l'image est revenue après {} reprise(s), la session continue",
-                coming_back.try_number()
-            ));
-        }
-        coming_back.opened();
-        note(&format!("session en cours, lecteur {process}"));
-        // What the player was started with, which is what every change
-        // made while it runs starts from.
-        *SHOWN.lock().expect("réglages de l'image") = Some(running.settings());
-
-        // Waited for here, and this is the whole of what the opening
-        // screen is for: it covers the seconds between somebody asking
-        // for a session and there being something to look at. Said the
-        // moment the service took the session instead, it was said too
-        // early whenever the two computers had to be introduced again,
-        // because the wait that hid the difference the rest of the time
-        // is skipped on that road. The person then watched their home
-        // screen for four seconds, with a session card on it and no
-        // picture, and the picture arrived with no announcement at all.
-        //
-        // Costs nothing where it was already right: by the time the
-        // service holds an ordinary session, the picture has been in our
-        // window for seconds.
-        if lay_the_picture_when_it_opens(app, process) {
-            opening.picture_laid(crate::picture::laid_at(app));
-        } else if !crate::floating::Floating::a_close_was_asked_for(app) {
-            note(&format!(
-                "le lecteur {process} n'a pas ouvert d'image, l'écran d'ouverture est retiré \
-                 quand même"
-            ));
-        }
-        note(&opening.how_long_it_took());
-        crate::home::put_the_opening_away(app);
-
-        // Waiting costs nothing here and buys the one thing the person
-        // wants afterwards: whether the session ended by itself or fell
-        // over.
-        let ended = running.wait();
-
-        // Asked for again rather than over. Read before anything else is:
-        // a player stopped to be told something new looks exactly like one
-        // that stopped for good, and only this tells the two apart.
-        if OPEN_AGAIN.swap(0, Ordering::SeqCst) == process {
-            note(&format!(
-                "image relancée avec ce qui est choisi maintenant (le lecteur a dit {ended:?})"
-            ));
-            crate::home::relaunched(app);
-            asked_afresh(app, &mut wanted, &mut preferred);
-            continue;
-        }
-
-        let on_purpose = crate::floating::Floating::was_closed_on_purpose(app);
-        note(&match &ended {
-            Ok(outcome) if on_purpose => {
-                format!("session fermée volontairement, le lecteur a dit {outcome:?}")
-            }
-            Ok(outcome) => format!("session terminée : {outcome:?}"),
-            Err(e) => format!("session terminée sur une erreur système : {e}"),
-        });
-
-        // Closing the far computer's desktop takes the stream away from
-        // the engine, which stops the only way it knows how: on a
-        // failure. It is still exactly what was asked for.
-        if on_purpose {
+        },
+        &|| !crate::floating::Floating::a_close_was_asked_for(app),
+    ) {
+        Ok(opened) => opened,
+        // Let go of by the person, from the cross of the window or the
+        // shortcut: there is nothing to show them about it, they are the
+        // one who asked. The flag is taken here rather than left
+        // standing, since no session will end to take it.
+        Err(zyr_session::Error::Abandoned) => {
+            crate::floating::Floating::was_closed_on_purpose(app);
+            note("ouverture abandonnée : la session a été fermée avant l'image");
             return finish(app, true, String::new());
         }
-
-        // Nobody asked for this one, so the picture comes back rather
-        // than the session ending under the person. The window keeps the
-        // screen and this thread keeps everything it knows, so what they
-        // see is a picture that freezes and returns.
-        if coming_back.after(&ended, showing_since.elapsed()) {
+        Err(e) => {
             note(&format!(
-                "la session est tombée toute seule, l'image est reprise ({} sur {})",
-                coming_back.in_a_row, COMES_BACK_IN_A_ROW
+                "session non ouverte : {}",
+                e.to_string().replace('\n', " ")
             ));
-            if !hold_on_before_coming_back(app, &coming_back) {
-                return closed_during_the_pause(app);
-            }
-            asked_afresh(app, &mut wanted, &mut preferred);
-            continue;
+            return finish(app, false, e.to_string());
         }
-
-        return match ended {
-            Ok(Outcome::Ended) => finish(app, true, String::new()),
-            _ if coming_back.tried() => finish(
-                app,
-                false,
-                format!(
-                    "La session n'a pas tenu : {}.\n  \
-                     Le réseau entre les deux ordinateurs ne la porte pas en ce moment.",
-                    coming_back.how_it_went()
-                ),
-            ),
-            Ok(Outcome::Failed) => finish(
-                app,
-                false,
-                "La session s'est arrêtée sur une erreur.".into(),
-            ),
-            Ok(Outcome::Unreachable) => {
-                finish(app, false, "L'ordinateur distant n'a pas répondu.".into())
-            }
-            Ok(Outcome::NotPaired) => finish(
-                app,
-                false,
-                "L'ordinateur distant ne reconnaît plus celui-ci.".into(),
-            ),
-            Ok(Outcome::Unknown { .. }) => finish(
-                app,
-                false,
-                "Le lecteur s'est arrêté sans dire pourquoi.".into(),
-            ),
-            Err(e) => finish(app, false, e.to_string()),
-        };
-    }
-}
-
-/// Opens the picture again with what is chosen now, the session standing.
-///
-/// The road left for what cannot be taken where it stands, which is a far
-/// engine that cannot be asked: one of an older build, or one that has
-/// stopped answering. The player is stopped and started, which the person
-/// sees as the picture going away and coming back, and everything else
-/// stands.
-///
-/// Only a session this window is driving: the numbers to open it again
-/// with live on that window's own thread, and a session opened elsewhere
-/// has nobody here to hear this.
-pub async fn apply_session(app: App) -> Result<(), String> {
-    if !opening() {
-        return Err(NOT_FROM_HERE.to_string());
-    }
-    let process = crate::floating::player(&app)
-        .await
-        .ok_or("aucune session en cours")?;
-
-    // Written down before the player is stopped, and never after: whoever
-    // is waiting on that player wakes the instant it goes, and reads this
-    // to know whether the session is over or beginning again.
-    OPEN_AGAIN.store(process, Ordering::SeqCst);
+    };
+    note(&opening.how_long_it_took());
     note(&format!(
-        "réglages appliqués : le lecteur {process} est relancé"
+        "voie ouverte vers {}, lien {} ; {NOT_WIRED}, la voie est rendue",
+        wanted.host, opened.link
     ));
-    if !crate::floating::stop_the_player(process) {
-        return Err("l'image n'a pas pu être relancée".to_string());
-    }
-    Ok(())
+    drop(opened);
+    finish(app, false, NOT_WIRED.to_string())
 }
 
 /// Ends the session in progress, the person having closed the window on
@@ -1006,111 +430,6 @@ pub fn end_it(app: &App) {
     });
 }
 
-/// How long an opening usually takes.
-///
-/// Past this delay, nothing is given up: it is the moment the wait is
-/// told to the journal. It used to be told by giving up instead, and
-/// that is what was seen on a slow machine: the opening screen taken
-/// away at twenty seconds, the home window given back with its green
-/// session card, and the picture arriving nine seconds later on a
-/// screen the person believed had failed.
-const WINDOW_TAKES: Duration = Duration::from_secs(20);
-
-/// And the wall, which is not a waiting time but a safeguard.
-///
-/// What ends this wait is the player opening its picture, the person
-/// closing, or the player going away. This ceiling is only there so that
-/// no thread runs forever if none of the three ever happens, and it is
-/// wide on purpose: an opening that takes a minute is a slow opening, not
-/// a failed one.
-const WINDOW_AT_MOST: Duration = Duration::from_secs(180);
-
-/// The rhythm once the opening has gone on for a while.
-///
-/// The millisecond of `WINDOW_STEP` is there so that the engine's window
-/// is never seen before it is laid in ours, and that race is run the
-/// instant it opens. Past the time an opening usually takes, it costs more than it
-/// brings: a frame is sixteen milliseconds, and sixteen milliseconds do
-/// not show.
-const WINDOW_STEP_AFTER: Duration = Duration::from_millis(16);
-
-/// How often it is looked for while it does.
-///
-/// Once a millisecond, which is a lot to ask of a machine and is asked
-/// for a few seconds at most. What is being raced is the engine settling
-/// its own window: it creates it hidden and shows it once its size, its
-/// place and its icon are done, and everything of ours has to happen
-/// inside that. Losing that race costs an empty frame on screen, which is
-/// the one thing this whole arrangement exists to avoid.
-const WINDOW_STEP: Duration = Duration::from_millis(1);
-
-/// The player whose slowness has already been told.
-///
-/// Two threads wait for the same picture, and so said the same
-/// sentence twice, six seconds apart, which reads as two slow
-/// openings instead of one. The player and not a plain yes: the next
-/// session must be able to say it in its turn.
-static SAID_IT_DRAGS: AtomicU32 = AtomicU32::new(0);
-
-/// Lays the picture in our window the moment the engine opens it.
-///
-/// The session watch would do it too, but it comes round once a second,
-/// and that second is exactly what is seen: an ordinary window with a
-/// title bar, at the size of the stream, in the middle of whichever
-/// screen the system calls first, over the top of ours. Waited for at
-/// the rhythm of a frame instead.
-///
-/// On a thread of its own and never on the spot: this is called from
-/// inside the opening, and holding it there would hold back everything
-/// the window is waiting to be told.
-fn lay_the_picture_as_soon_as_it_opens(app: App, process: u32) {
-    std::thread::spawn(move || {
-        lay_the_picture_when_it_opens(&app, process);
-    });
-}
-
-/// The waiting itself, so that whoever needs the answer can have it.
-///
-/// Answers whether the picture ended up in our window. Called from two
-/// places at once and none the worse for it: laying a picture already
-/// laid does nothing, and the lock inside is there for exactly this.
-fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
-    let began = std::time::Instant::now();
-    let mut long = false;
-    while began.elapsed() < WINDOW_AT_MOST {
-        if crate::picture::hold(app, process) {
-            return true;
-        }
-        // A picture nobody is waiting for any more is not waited for
-        // here either: this is where an opening spends its last twenty
-        // seconds, and a person who closes the window during them was
-        // otherwise left watching the opening screen to the end of it.
-        if crate::floating::Floating::a_close_was_asked_for(app) {
-            return false;
-        }
-        // A player that is gone will open nothing more, and the opening
-        // screen has nothing left to cover. That ending is the one that
-        // was missing: without it, there was only the stopwatch to stop
-        // the wait, so it also stopped the ones that were about to
-        // succeed.
-        if !crate::floating::still_running(process) {
-            return false;
-        }
-        if !long && began.elapsed() >= WINDOW_TAKES {
-            long = true;
-            if SAID_IT_DRAGS.swap(process, Ordering::SeqCst) != process {
-                note(&format!(
-                    "le lecteur {process} n'a pas encore ouvert d'image après {} s ; l'écran \
-                     d'ouverture reste tant qu'il tourne",
-                    WINDOW_TAKES.as_secs()
-                ));
-            }
-        }
-        std::thread::sleep(if long { WINDOW_STEP_AFTER } else { WINDOW_STEP });
-    }
-    false
-}
-
 /// The same moment, as the opening screen shows it, when it shows it at
 /// all.
 ///
@@ -1118,47 +437,13 @@ fn lay_the_picture_when_it_opens(app: &App, process: u32) -> bool {
 /// silence its own speakers has nothing to do with what the person is
 /// waiting for, and putting it there would replace « the picture is
 /// coming » with a sentence about sound.
-fn told(step: Step) -> Option<(String, Option<String>)> {
+fn told(step: Step) -> Option<String> {
     Some(match step {
-        Step::Reached { packet } => (format!("Tunnel établi, paquets de {packet} octets."), None),
-        Step::Pairing { again: None } => (
-            "Premier accès à cet ordinateur : les deux font connaissance. Rien à faire."
-                .to_string(),
-            None,
-        ),
-        Step::Pairing { again: Some(_) } => (
-            "Cet ordinateur ne nous reconnaît plus : les deux font connaissance à nouveau. Rien \
-             à faire."
-                .to_string(),
-            None,
-        ),
-        Step::PairingNeeded { pin } => (
-            "Tapez ce code sur l'ordinateur que vous voulez contrôler :".to_string(),
-            Some(pin),
-        ),
-        Step::Paired => ("Les deux ordinateurs se connaissent.".to_string(), None),
-        Step::NoSoundCardHere => (
-            "Cet ordinateur n'a pas de sortie audio : la session sera muette.".to_string(),
-            None,
-        ),
-        Step::Starting => ("Démarrage de l'image…".to_string(), None),
-        Step::Showing { .. } => ("L'image arrive…".to_string(), None),
-        // The two of these the person is left waiting through, so they
-        // are the ones that go on the opening screen: the far computer is
-        // starting its engine over, and that is several seconds during
-        // which nothing else would say anything at all.
-        Step::FarScreenChanging => (
-            "L'ordinateur distant change d'écran, il redémarre…".to_string(),
-            None,
-        ),
-        Step::FarRateChanging => (
-            "L'ordinateur distant change sa façon d'envoyer un écran immobile, il redémarre…"
-                .to_string(),
-            None,
-        ),
+        Step::Reached => "Tunnel établi, l'ordinateur distant se prépare…".to_string(),
+        Step::NoSoundCardHere => {
+            "Cet ordinateur n'a pas de sortie audio : la session sera muette.".to_string()
+        }
         Step::SpeakersLeftAlone { .. }
-        | Step::FarPointerLeftAlone { .. }
-        | Step::RateLeftAlone { .. }
         | Step::ScreenLeftAlone { .. }
         | Step::FarScreenLeftAlone { .. }
         | Step::ScreenOverThere { .. } => return None,
@@ -1167,27 +452,15 @@ fn told(step: Step) -> Option<(String, Option<String>)> {
 
 /// How long an opening took, in its parts.
 ///
-/// One line at the end rather than four timestamps to subtract by hand.
-/// Opening a session is the wait a person actually feels, it is made of
-/// four very different things, and only one of them is ours to shorten:
-/// guessing which one has already cost an evening, twice. Written where
-/// the timestamps in this journal cannot answer, since they are cut to
-/// the second and every part of this is smaller than that.
-///
-/// The last part is not a wait for the picture, and calling it one made
-/// this line lie by four seconds. The picture is laid the moment its
-/// window opens, well before; what comes after is this program watching
-/// the player for a while to be sure it does not die on the spot, which
-/// is what a far computer refusing the session looks like. So the
-/// picture is timed on its own, from the ask and from the player's own
-/// start: it is the only one of these durations a person actually sits
-/// through, and it was the only one this line never held.
+/// One line at the end rather than timestamps to subtract by hand.
+/// Opening a session is the wait a person actually feels, and only one
+/// part of it is ours to shorten: guessing which one has already cost an
+/// evening, twice. Written where the timestamps in this journal cannot
+/// answer, since they are cut to the second and every part of this is
+/// smaller than that.
 struct Opening {
     asked: std::time::Instant,
     reached: Option<std::time::Duration>,
-    starting: Option<std::time::Duration>,
-    showing: Option<std::time::Duration>,
-    shown: Option<std::time::Duration>,
 }
 
 impl Opening {
@@ -1195,62 +468,34 @@ impl Opening {
         Self {
             asked: std::time::Instant::now(),
             reached: None,
-            starting: None,
-            showing: None,
-            shown: None,
         }
     }
 
-    /// Notes when the picture itself landed, which no step says.
+    /// Notes when the way stood.
     ///
-    /// Yet it is the only duration the person feels: everything else
-    /// happens while they watch the opening screen, and what they are
-    /// waiting for is the picture. It was written nowhere, and so an
-    /// opening of twenty-five seconds could not be read in any line of
-    /// this journal.
-    ///
-    /// The moment comes from the picture itself and never from the clock
-    /// read here: it is often laid by the other thread while this one is
-    /// still watching the player hold.
-    fn picture_laid(&mut self, at: Option<std::time::Instant>) {
-        self.shown = at.map(|at| at.saturating_duration_since(self.asked));
-    }
-
-    /// Notes when a step was reached, for the three that mark a boundary.
-    ///
-    /// The questions put to the far computer say nothing when they are
-    /// answered, only when they are refused, so they cannot be timed one
-    /// by one from here. They all sit between the tunnel standing and the
-    /// player starting, and that is how they are counted: together.
+    /// The questions put to the far computer afterwards say nothing when
+    /// they are answered, only when they are refused, so they cannot be
+    /// timed one by one from here. They all sit between the tunnel
+    /// standing and the end of the opening, and that is how they are
+    /// counted: together.
     fn reached(&mut self, step: &Step) {
-        let so_far = self.asked.elapsed();
-        match step {
-            Step::Reached { .. } => self.reached = Some(so_far),
-            Step::Starting => self.starting = Some(so_far),
-            Step::Showing { .. } => self.showing = Some(so_far),
-            _ => {}
+        if *step == Step::Reached {
+            self.reached = Some(self.asked.elapsed());
         }
     }
 
     fn how_long_it_took(&self) -> String {
         let whole = self.asked.elapsed();
-        let since =
-            |from: Option<std::time::Duration>, to: Option<std::time::Duration>| match (from, to) {
-                (Some(from), Some(to)) => format!("{} ms", to.saturating_sub(from).as_millis()),
-                _ => "non mesuré".to_string(),
-            };
-        format!(
-            "session tenue après {} ms : {} pour joindre l'ordinateur distant, {} à lui demander \
-             ce qu'il faut, {} à lancer le lecteur, {} à le regarder tenir. L'image, elle, est \
-             arrivée {} après la demande, dont {} entre le lecteur et elle",
-            whole.as_millis(),
-            since(Some(std::time::Duration::ZERO), self.reached),
-            since(self.reached, self.starting),
-            since(self.starting, self.showing),
-            since(self.showing, Some(whole)),
-            since(Some(std::time::Duration::ZERO), self.shown),
-            since(self.showing, self.shown),
-        )
+        match self.reached {
+            Some(reached) => format!(
+                "ouverture faite en {} ms : {} ms pour joindre l'ordinateur distant, {} ms à lui \
+                 demander ce qu'il faut",
+                whole.as_millis(),
+                reached.as_millis(),
+                whole.saturating_sub(reached).as_millis(),
+            ),
+            None => format!("ouverture faite en {} ms", whole.as_millis()),
+        }
     }
 }
 
@@ -1262,33 +507,10 @@ impl Opening {
 /// afterwards, when there is nothing left on screen to look at.
 fn written(step: &Step) -> String {
     match step {
-        Step::Reached { packet } => format!("tunnel ouvert, paquets de {packet} octets"),
-        Step::Pairing { again: None } => "présentation des deux ordinateurs".to_string(),
-        Step::Pairing {
-            again: Some(stopped),
-        } => format!(
-            "l'ordinateur distant ne reconnaît plus celui-ci, nouvelle présentation (le lecteur \
-             s'est arrêté sur {stopped:?})"
-        ),
-        Step::PairingNeeded { .. } => {
-            "en attente du code à taper sur l'ordinateur distant".to_string()
-        }
-        Step::Paired => "les deux ordinateurs se connaissent".to_string(),
-        Step::NoSoundCardHere => "cet ordinateur n'a pas de sortie audio, le lecteur est lancé \
-             sans en chercher une"
-            .to_string(),
-        Step::Starting => "démarrage du lecteur".to_string(),
-        Step::Showing { process, .. } => format!("lecteur en marche, processus {process}"),
+        Step::Reached => "tunnel ouvert".to_string(),
+        Step::NoSoundCardHere => "cet ordinateur n'a pas de sortie audio".to_string(),
         Step::SpeakersLeftAlone { refused } => {
             format!("les enceintes de l'ordinateur distant restent allumées : {refused}")
-        }
-        Step::FarPointerLeftAlone { refused } => {
-            format!(
-                "le curseur de l'ordinateur distant n'a pas été réglé à l'ouverture : {refused}"
-            )
-        }
-        Step::RateLeftAlone { refused } => {
-            format!("l'ordinateur distant garde sa cadence d'écran immobile : {refused}")
         }
         Step::ScreenLeftAlone { refused } => {
             format!("l'ordinateur distant n'a pas réveillé son écran virtuel : {refused}")
@@ -1296,13 +518,6 @@ fn written(step: &Step) -> String {
         Step::ScreenOverThere { wide, high } => format!(
             "l'ordinateur distant affiche {wide}x{high}, c'est ce qui est demandé au lecteur"
         ),
-        Step::FarScreenChanging => {
-            "l'ordinateur distant change d'écran, son moteur redémarre et la voie sera rouverte"
-                .to_string()
-        }
-        Step::FarRateChanging => "l'ordinateur distant change sa cadence d'écran immobile, son \
-                                  moteur redémarre et la voie sera rouverte"
-            .to_string(),
         Step::FarScreenLeftAlone { refused } => {
             format!("l'ordinateur distant garde l'écran qu'il filme : {refused}")
         }
@@ -1330,26 +545,9 @@ fn how_the_window_stands(_app: &App, when: &str) {
     ));
 }
 
-/// The person closed the window while the picture was on its way back.
-///
-/// The flag is taken here rather than left standing, since no session
-/// will end to take it: nothing was running when they pressed the cross.
-fn closed_during_the_pause(app: &App) {
-    crate::floating::Floating::was_closed_on_purpose(app);
-    note("reprise abandonnée : la session a été fermée pendant l'attente");
-    finish(app, true, String::new());
-}
-
 fn finish(app: &App, ok: bool, message: String) {
     how_the_window_stands(app, "fin de session, avant");
     OPENING.store(false, Ordering::SeqCst);
-    // A session that is over asks for nothing, and shows nothing. Both
-    // are put down here rather than left standing: an « open it again »
-    // that outlived its session has nothing left to name, and a picture
-    // nobody is showing would be told what to become by the next choice.
-    OPEN_AGAIN.store(0, Ordering::SeqCst);
-    *SHOWN.lock().expect("réglages de l'image") = None;
-    crate::floating::expect_nothing(app);
     // Taken down here rather than left to the watch. The watch comes
     // round once a second and asks the service what it holds, and until
     // it does the button hangs over a picture that has gone. Whoever
@@ -1376,82 +574,6 @@ fn finish(app: &App, ok: bool, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A session that fell over the instant it opened.
-    fn fell_over() -> io::Result<Outcome> {
-        Ok(Outcome::Failed)
-    }
-
-    #[test]
-    fn a_picture_that_falls_over_comes_back_a_bounded_number_of_times() {
-        let mut coming_back = ComingBack::none();
-        assert!(!coming_back.tried());
-        // It comes back, as long as the session does not stand long
-        // enough in between for it to be a new accident.
-        for attempt in 1..=COMES_BACK_IN_A_ROW {
-            assert!(
-                coming_back.after(&fell_over(), Duration::from_secs(2)),
-                "reprise {attempt}"
-            );
-            assert_eq!(coming_back.in_a_row, attempt);
-        }
-        // Past that count, the person is told rather than left
-        // watching a screen that never settles.
-        assert!(!coming_back.after(&fell_over(), Duration::from_secs(2)));
-        assert!(coming_back.tried());
-    }
-
-    #[test]
-    fn a_session_that_stood_long_enough_starts_the_count_over() {
-        let mut coming_back = ComingBack::none();
-        for _ in 0..COMES_BACK_IN_A_ROW {
-            assert!(coming_back.after(&fell_over(), Duration::from_secs(2)));
-        }
-        assert!(!coming_back.after(&fell_over(), Duration::from_secs(2)));
-        // A session that stood for a minute and then falls over is a
-        // new failure, and not the same one starting again.
-        assert!(coming_back.after(&fell_over(), HELD_LONG_ENOUGH));
-        assert_eq!(coming_back.in_a_row, 1);
-    }
-
-    #[test]
-    fn a_session_the_far_computer_ended_is_not_brought_back() {
-        let mut coming_back = ComingBack::none();
-        // Hanging up is a decision of the far computer, not an accident
-        // to undo.
-        assert!(!coming_back.after(&Ok(Outcome::Ended), Duration::from_secs(2)));
-        // And a computer never reached has already answered the
-        // question a comeback would ask again.
-        assert!(!coming_back.after(&Ok(Outcome::Unreachable), Duration::from_secs(2)));
-        assert!(!coming_back.tried());
-        // A player that goes away without a word, yes: from where the
-        // person sits, it is the same thing as a session falling over.
-        assert!(coming_back.after(
-            &Ok(Outcome::Unknown { code: Some(1) }),
-            Duration::from_secs(2)
-        ));
-    }
-
-    #[test]
-    fn an_opening_that_finds_nobody_is_only_retried_while_coming_back() {
-        let mut coming_back = ComingBack::none();
-        // The first attempt is the person's: they clicked, and the
-        // failure is told where they see it.
-        assert!(!coming_back.again());
-
-        assert!(coming_back.after(&fell_over(), Duration::from_secs(2)));
-        // A comeback that does not open is one of its tries, and they are
-        // counted apart because they cost half a minute each.
-        for attempt in 1..=OPENINGS_MISSED_IN_A_ROW {
-            assert!(coming_back.again(), "essai manqué {attempt}");
-        }
-        assert!(!coming_back.again());
-
-        // With the picture back, what it took to get there has been
-        // spent.
-        coming_back.opened();
-        assert!(coming_back.again());
-    }
 
     fn far_screen(id: &str, main: bool) -> FarScreen {
         FarScreen {

@@ -53,8 +53,8 @@ pub struct Standing {
     pub fingerprint: String,
     /// Whether this computer can be reached right now.
     pub hosting: bool,
-    /// What is in the way when it is not: « starting », « engineMissing »
-    /// or « engineWontStand ».
+    /// What is in the way when it is not: « starting » or
+    /// « engineMissing », which is FFmpeg missing.
     pub holdup: &'static str,
     /// Whether it is meant to be: the position of the switch.
     pub wanted: bool,
@@ -110,7 +110,6 @@ fn named(holdup: Holdup) -> &'static str {
     match holdup {
         Holdup::Starting => "starting",
         Holdup::EngineMissing => "engineMissing",
-        Holdup::EngineWontStand => "engineWontStand",
     }
 }
 
@@ -538,11 +537,7 @@ mod tests {
 
     #[test]
     fn every_holdup_has_a_name_the_window_knows() {
-        for holdup in [
-            Holdup::Starting,
-            Holdup::EngineMissing,
-            Holdup::EngineWontStand,
-        ] {
+        for holdup in [Holdup::Starting, Holdup::EngineMissing] {
             let name = named(holdup);
             assert!(!name.is_empty());
             assert!(!name.contains('-'), "{name}");

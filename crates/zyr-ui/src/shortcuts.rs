@@ -639,9 +639,8 @@ fn do_it(app: &crate::app::App, doing: Doing) {
         // Not one of the things a session is asked for: it is asked of
         // the far computer, which changes screen where it stands.
         Doing::NextScreen => {
-            let app = app.clone();
             crate::app::spawn(async move {
-                if let Err(e) = crate::session::watch_the_next_far_screen(app.clone()).await {
+                if let Err(e) = crate::session::watch_the_next_far_screen().await {
                     note(&format!("raccourci d'écran sans effet : {e}"));
                 }
             });

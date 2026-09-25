@@ -27,7 +27,6 @@ use zyr_proto::session::{
 };
 
 use crate::service;
-use crate::session::Changed;
 
 /// What this module files its journal lines under.
 const TAG: &str = "settings";
@@ -245,7 +244,9 @@ pub async fn session_menu(app: crate::app::App) -> SessionMenu {
         rates: RATES_OFFERED.to_vec(),
         codecs: CODECS_OFFERED.iter().map(Codec::to_string).collect(),
         screens: the_far_computers_screens().await,
-        beyond_it: beyond_the_far_computer().await,
+        // What the far computer cannot make is learnt by the player that
+        // plays its session, and this window plays none.
+        beyond_it: Vec::new(),
         now: SessionChoice::of(preferred, screen),
     }
 }
@@ -285,47 +286,13 @@ fn offered(screen: &FarScreen) -> OfferedScreen {
     }
 }
 
-/// The codecs the far computer of the session in progress cannot make.
-///
-/// Worked out from what it says it can, and not the other way round: a
-/// computer names what it found, and anything it did not name is either
-/// beyond it or a codec this product has never heard of. « Automatique »
-/// is never beyond anybody, being the choice not to choose.
-///
-/// Nothing at all when there is no session, when the way is gone, or when
-/// that computer's engine has not said: an unanswered question must leave
-/// the menu exactly as it was rather than grey half of it out.
-async fn beyond_the_far_computer() -> Vec<String> {
-    let Some(way) = crate::session::the_way_in_use().await else {
-        return Vec::new();
-    };
-    let Ok(Answer::Codecs(named)) = service::ask(&Request::FarCodecs { way }).await else {
-        return Vec::new();
-    };
-    let can: Vec<Codec> = named
-        .split_whitespace()
-        .filter_map(|it| it.parse().ok())
-        .collect();
-    if can.is_empty() {
-        return Vec::new();
-    }
-    CODECS_OFFERED
-        .iter()
-        .filter(|codec| **codec != Codec::Auto && !can.contains(codec))
-        .map(Codec::to_string)
-        .collect()
-}
-
 /// Sets one line of the session menu to one of the values it offers,
 /// writes the result down, gives it to the session in progress where it
 /// stands, and hands back where the lines stand.
 ///
 /// Written down first, so the next session opens with it whatever becomes
-/// of this one; then taken by the session on screen, which is what
-/// `take_where_it_stands` does: the far engine changes rate or cadence
-/// where it is, the player makes its stream over in its own window for a
-/// size or a codec, and nothing is reopened. Every click acts, and none
-/// of them costs the picture.
+/// of this one; then given to the session on screen, which is what
+/// `take_where_it_stands` does.
 ///
 /// A value the product does not offer is refused rather than written
 /// down. These come from a list the product handed over itself, so a
@@ -337,14 +304,13 @@ pub async fn choose_session(
     value: String,
 ) -> Result<SessionChoice, String> {
     let mut preferred = preferred().await;
-    let changed = match which.as_str() {
+    match which.as_str() {
         "asked" => {
             let asked = value.parse::<Asked>()?;
             if !SIZES_OFFERED.contains(&asked) {
                 return Err(format!("taille non proposée : {value}"));
             }
             preferred.asked = asked;
-            Changed::Size
         }
         "bitrate" => {
             let rate = value
@@ -354,7 +320,6 @@ pub async fn choose_session(
                 return Err(format!("débit non proposé : {value}"));
             }
             preferred.bitrate_kbps = rate;
-            Changed::Rate
         }
         "codec" => {
             let codec = value.parse::<Codec>()?;
@@ -362,7 +327,6 @@ pub async fn choose_session(
                 return Err(format!("codec non proposé : {value}"));
             }
             preferred.codec = codec;
-            Changed::Codec
         }
         // Written down in no settings file, so it never reaches the
         // service that keeps them: which of the far computer's screens is
@@ -384,7 +348,7 @@ pub async fn choose_session(
             // any other way, that computer serves its main screen to
             // whoever names no screen at all.
             let id = (!picked.main).then_some(picked.id);
-            crate::session::watch_the_far_screen(app.clone(), id).await?;
+            crate::session::watch_the_far_screen(id).await?;
             return Ok(SessionChoice::of(
                 preferred,
                 crate::picture::the_screen_of_this_computer(&app),
@@ -392,18 +356,15 @@ pub async fn choose_session(
         }
         // Two words and not a list: it is a switch, and the two sides are
         // named in the window like the ones beside them.
-        "steady" => {
-            match value.as_str() {
-                "on" => preferred.steady_far_rate = true,
-                "off" => preferred.steady_far_rate = false,
-                other => return Err(format!("cadence non proposée : {other}")),
-            }
-            Changed::SteadyFarRate
-        }
+        "steady" => match value.as_str() {
+            "on" => preferred.steady_far_rate = true,
+            "off" => preferred.steady_far_rate = false,
+            other => return Err(format!("cadence non proposée : {other}")),
+        },
         other => return Err(format!("réglage inconnu : {other}")),
-    };
+    }
     write_down(preferred).await?;
-    crate::session::take_where_it_stands(app.clone(), changed, preferred).await?;
+    crate::session::take_where_it_stands().await?;
     Ok(SessionChoice::of(
         preferred,
         crate::picture::the_screen_of_this_computer(&app),

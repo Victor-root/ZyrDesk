@@ -349,8 +349,3 @@ where
 {
     runtime().spawn_blocking(work)
 }
-
-/// Waits for a task from a thread that is not one.
-pub fn block_on<F: std::future::Future>(task: F) -> F::Output {
-    runtime().block_on(task)
-}

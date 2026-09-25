@@ -67,9 +67,7 @@ mod main_window;
 mod home {
     use crate::app::App;
 
-    pub fn step(_app: &App, _detail: &str, _code: Option<String>) {}
-    pub fn relaunched(_app: &App) {}
-    pub fn coming_back(_app: &App, _attempt: u32) {}
+    pub fn step(_app: &App, _detail: &str) {}
     pub fn put_the_opening_away(_app: &App) {}
     pub fn failed(_app: &App, _text: &str) {}
 }

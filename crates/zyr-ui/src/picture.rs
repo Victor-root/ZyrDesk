@@ -145,31 +145,6 @@ fn note_the_shape(shape: (i32, i32)) {
     );
 }
 
-/// Gives the picture in hand another shape, its stream having been made
-/// over at another size under it.
-///
-/// The engine's window is not read again for it: sized by ours, it would
-/// only tell us our own size back. What is known is what the far computer
-/// said it would be showing, which is what the stream is made of from now
-/// on, and the window is held to it as it was held to the first shape.
-pub fn reshape(app: &App, shape: (i32, i32)) {
-    let process = {
-        let mut held = app.picture().held.lock().expect("image tenue");
-        let Some(held) = held.as_mut() else {
-            return;
-        };
-        held.shape = shape;
-        held.process
-    };
-    note(&format!(
-        "l'image du lecteur {process} prend la forme {}x{}",
-        shape.0, shape.1
-    ));
-    note_the_shape(shape);
-    hold_the_shape(app);
-    fit(app);
-}
-
 /// A window taken in hand, and what is known of it.
 #[derive(Clone, Copy)]
 struct Held {
@@ -188,15 +163,6 @@ struct Held {
     /// computer answers with what its screen turned out to be able to
     /// do.
     shape: (i32, i32),
-    /// The moment it was laid.
-    ///
-    /// Written here because this is the only place that knows it. Two
-    /// threads race to lay a picture, and whichever loses learns nothing
-    /// from its own call but « already held » : an opening that read the
-    /// clock when its own call came back therefore measured its own
-    /// waiting, not the picture, and floored every fast session at the
-    /// length of the watch running beside it.
-    at: std::time::Instant,
 }
 
 /// Takes that player's window in hand and lays it over ours, and says
@@ -225,7 +191,6 @@ pub fn hold(app: &App, process: u32) -> bool {
                 process,
                 window,
                 shape,
-                at: std::time::Instant::now(),
             });
             // The shape is worth writing down: it is the size the far
             // computer's picture actually arrives at, which is the
@@ -243,15 +208,6 @@ pub fn hold(app: &App, process: u32) -> bool {
     }
     fit(app);
     true
-}
-
-/// When the picture in hand was laid, for whoever is timing an opening.
-pub fn laid_at(app: &App) -> Option<std::time::Instant> {
-    app.picture()
-        .held
-        .lock()
-        .expect("image tenue")
-        .map(|held| held.at)
 }
 
 /// Lets go, the session being over.

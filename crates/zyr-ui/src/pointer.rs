@@ -8,9 +8,8 @@
 //! nothing else, and that shape exists only over there.
 //!
 //! So it is asked for, several times a second while a session is on the
-//! screen, and written into the file the player follows. Nothing is kept
-//! from one question to the next: a shape is worth nothing a moment
-//! later.
+//! screen. Nothing is kept from one question to the next: a shape is
+//! worth nothing a moment later.
 //!
 //! A single connection to the service for the whole session, and not one
 //! per question as everywhere else in this window: elsewhere it is a
@@ -69,7 +68,6 @@ pub fn follow(app: &App) {
     let app = app.clone();
     crate::app::spawn(async move {
         let seen = keep_it_in_step(&app).await;
-        zyr_session::point_like_nothing();
         note(&format!("forme du curseur : {seen}"));
         FOLLOWING.store(false, Ordering::SeqCst);
     });
@@ -81,7 +79,6 @@ async fn keep_it_in_step(app: &App) -> Seen {
     let mut way = None;
     let mut talking = None;
     let mut refused = 0;
-    let mut in_a_game = false;
     loop {
         tokio::time::sleep(ASK_EVERY).await;
         if !crate::floating::a_session_is_up(app) {
@@ -107,30 +104,13 @@ async fn keep_it_in_step(app: &App) -> Seen {
         // is hidden: asking for a shape nobody will show would be twenty
         // round trips a second for nothing. The loop stays alive, because
         // the person can come back to the desktop without closing.
-        //
-        // The ordinary arrow is set on the way out, and never the last
-        // shape received. The player keeps whichever one it is left with,
-        // and one of the thirteen is not a shape at all: "theirs" is an
-        // empty shape, for the moments when the far computer draws its
-        // pointer itself. Left there, it makes invisible any pointer this
-        // player would show afterwards.
         if crate::floating::in_game_mouse(app) {
-            if !in_a_game {
-                in_a_game = true;
-                zyr_session::point_like_nothing();
-            }
             continue;
         }
-        in_a_game = false;
         match asked(&mut talking, asking).await {
             Ok(shape) => {
                 refused = 0;
                 seen.saw(shape);
-                if let Err(reason) = zyr_session::point_like(shape) {
-                    seen.why = "la forme n'a pas pu être écrite pour le lecteur";
-                    note(&format!("forme du curseur non écrite : {reason}"));
-                    return seen;
-                }
             }
             Err(reason) => {
                 // The connection is thrown away, and the way forgotten:

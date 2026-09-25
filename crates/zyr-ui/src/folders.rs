@@ -1,7 +1,7 @@
 //! The folders the person may have to look into, and what is in them.
 //!
-//! Three of them: where the product writes down what it has to say, and
-//! where each engine is expected. The window names them and opens them
+//! Two of them: where the product writes down what it has to say, and
+//! where FFmpeg is expected. The window names them and opens them
 //! itself, so nobody is ever walked through a disk over the phone.
 //!
 //! Which folder is decided here and never elsewhere: a path arriving
@@ -23,16 +23,14 @@ use zyr_proto::paths;
 #[derive(Clone, Copy)]
 enum Which {
     Logs,
-    HostEngine,
-    ClientEngine,
+    Ffmpeg,
 }
 
 impl Which {
     fn read(named: &str) -> Result<Self, String> {
         match named {
             "logs" => Ok(Which::Logs),
-            "host-engine" => Ok(Which::HostEngine),
-            "client-engine" => Ok(Which::ClientEngine),
+            "ffmpeg" => Ok(Which::Ffmpeg),
             other => Err(format!("dossier inconnu : {other}")),
         }
     }
@@ -40,32 +38,19 @@ impl Which {
     fn path(self) -> PathBuf {
         match self {
             Which::Logs => paths::logs_dir(),
-            Which::HostEngine => paths::host_engine_dir(),
-            Which::ClientEngine => paths::client_engine_dir(),
+            Which::Ffmpeg => paths::ffmpeg_dir(),
         }
     }
 }
 
-/// What the engines look like on this machine.
+/// Whether FFmpeg is all there, where the player and the host engine load
+/// it from.
 ///
-/// The two halves are told apart on purpose: without the host engine
-/// this computer cannot be controlled, without the client one it cannot
-/// control anything, and neither costs the other.
-#[derive(PartialEq)]
-pub struct Engines {
-    pub host_here: bool,
-    pub client_here: bool,
-    pub host_folder: String,
-    pub client_folder: String,
-}
-
-pub fn engines() -> Engines {
-    Engines {
-        host_here: paths::host_engine_exe().is_file(),
-        client_here: paths::client_engine_exe().is_file(),
-        host_folder: paths::host_engine_dir().display().to_string(),
-        client_folder: paths::client_engine_dir().display().to_string(),
-    }
+/// Both halves of a session need it, one to decode and the other to
+/// encode: without it this computer can neither be controlled nor
+/// control another.
+pub fn ffmpeg_here() -> bool {
+    zyr_codec::Ffmpeg::missing_from(&paths::ffmpeg_dir()).is_empty()
 }
 
 /// Where the product writes what it has to say.
@@ -102,7 +87,7 @@ mod tests {
     fn only_the_folders_the_product_owns_can_be_named() {
         // A path coming from the page and handed to the system
         // as it is would open anything at all.
-        for named in ["logs", "host-engine", "client-engine"] {
+        for named in ["logs", "ffmpeg"] {
             assert!(Which::read(named).is_ok(), "{named}");
         }
         for named in ["C:\\Windows", "..", "", "identity"] {
@@ -111,15 +96,13 @@ mod tests {
     }
 
     #[test]
-    fn each_named_folder_is_one_the_product_writes_in() {
-        let root = paths::data_dir();
-        for named in ["logs", "host-engine", "client-engine"] {
-            let path = Which::read(named).unwrap().path();
-            assert!(
-                path.starts_with(&root),
-                "{} hors du dossier",
-                path.display()
-            );
-        }
+    fn each_named_folder_is_one_of_the_product_s_own() {
+        let logs = Which::read("logs").unwrap().path();
+        assert!(
+            logs.starts_with(paths::data_dir()),
+            "{} hors du dossier",
+            logs.display()
+        );
+        assert_eq!(Which::read("ffmpeg").unwrap().path(), paths::ffmpeg_dir());
     }
 }
