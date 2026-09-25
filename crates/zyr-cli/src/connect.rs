@@ -102,15 +102,15 @@ pub fn run(args: Args) -> ExitCode {
     };
     let asked_at = Instant::now();
     let still_wanted = || !interrupted.load(Ordering::Relaxed);
-    let opened =
-        match zyr_session::open(&wanted, &mut |step| tell(step, &args.host), &still_wanted) {
-            Ok(opened) => opened,
-            Err(zyr_session::Error::Abandoned) => {
-                println!("Ouverture abandonnée.");
-                return ExitCode::SUCCESS;
-            }
-            Err(e) => return reported(e),
-        };
+    let opened = match zyr_session::open(&wanted, &mut |step| tell(step, &args.host), &still_wanted)
+    {
+        Ok(opened) => opened,
+        Err(zyr_session::Error::Abandoned) => {
+            println!("Ouverture abandonnée.");
+            return ExitCode::SUCCESS;
+        }
+        Err(e) => return reported(e),
+    };
 
     println!("Connexion à {}...", args.host);
     let (said, heard) = mpsc::channel();

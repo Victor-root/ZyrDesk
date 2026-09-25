@@ -24,6 +24,6 @@ pub use endpoint::{
 pub use identity::{AllowedPeers, Fingerprint, Identity, signed_by};
 pub use junction::{Junction, Road, card_of, is_card};
 pub use marking::Marking;
-pub use mtu::{PacketSize, packet_size};
+pub use mtu::datagram_budget;
 pub use path::Path;
 pub use relay::{Branch, Doorway, RelayError, Wanted};

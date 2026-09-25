@@ -1,6 +1,7 @@
-//! What the session is costing right now, read from the engine.
+//! What the session is costing right now, read from what its player
+//! writes.
 //!
-//! The engine writes one line a second and nothing else; this reads it
+//! A player writes one line a second and nothing else; this reads it
 //! when somebody is looking, which is while the floating menu is open.
 //! Nothing polls in the background: numbers nobody is reading are worth
 //! neither the file nor the thread.
@@ -54,10 +55,20 @@ pub struct Measures {
 /// a moment. An error here would put a red line in front of somebody for
 /// something that rights itself.
 pub fn session_measures() -> Measures {
-    std::fs::read_to_string(zyr_proto::paths::session_stats())
+    std::fs::read_to_string(readings())
         .ok()
         .map(|said| read(&said))
         .unwrap_or_default()
+}
+
+/// Where the readings are taken from: a file a player writes once a
+/// second, replaced whole each time.
+///
+/// Nothing of this product writes it since its own engine replaced the
+/// one that did, and this window plays no session of its own: a reading
+/// is always empty until the window reads its own player's instead.
+pub fn readings() -> std::path::PathBuf {
+    zyr_proto::paths::data_dir().join("session-stats.txt")
 }
 
 /// Reads that line, taking what it knows and ignoring the rest.

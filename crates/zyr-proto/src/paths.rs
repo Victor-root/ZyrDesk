@@ -55,49 +55,11 @@ pub fn executable_name(base: &str) -> String {
     }
 }
 
-/// Engine binaries.
-pub fn engines_dir() -> PathBuf {
-    data_dir().join("engines")
-}
-
-/// Host engine, derived from Sunshine.
-pub fn host_engine_dir() -> PathBuf {
-    engines_dir().join("host")
-}
-
-/// Host engine executable, as expected on disk.
-///
-/// The name is the product's own, never the upstream project's: it is
-/// what the user sees in the task manager.
-pub fn host_engine_exe() -> PathBuf {
-    host_engine_dir().join(executable_name("zyrdesk-host-engine"))
-}
-
-/// Client engine, derived from Moonlight.
-pub fn client_engine_dir() -> PathBuf {
-    engines_dir().join("client")
-}
-
-/// Client engine executable, as expected on disk.
-pub fn client_engine_exe() -> PathBuf {
-    client_engine_dir().join(executable_name("zyrdesk-session"))
-}
-
 /// Cryptographic identity of this machine.
 ///
 /// It has to last: this is what other devices pin.
 pub fn identity_dir() -> PathBuf {
     data_dir().join("identity")
-}
-
-/// Configuration and state generated for the host engine.
-pub fn host_state_dir() -> PathBuf {
-    data_dir().join("host")
-}
-
-/// Isolated client engine state for one remote device.
-pub fn device_state_dir(device_id: &str) -> PathBuf {
-    data_dir().join("devices").join(device_id)
 }
 
 /// Where the virtual screen keeps its settings and its own log.
@@ -125,8 +87,8 @@ pub fn virtual_screen_driver_dir() -> PathBuf {
     project_root().join("vendor").join("ecran-virtuel")
 }
 
-/// The FFmpeg libraries the engine loads when it starts, carried by the
-/// product.
+/// The FFmpeg libraries the engine loads when it starts, on either side
+/// of a session, carried by the product.
 ///
 /// Beside the program for the same reason as the driver above: they are
 /// the product's own files, built once and never changed on this
@@ -192,48 +154,9 @@ pub fn hushed_speakers() -> PathBuf {
     data_dir().join("hushed-speakers.txt")
 }
 
-/// Where the client engine writes what the session is costing, once a
-/// second, replaced whole each time.
-///
-/// Beside the logs rather than with the settings: it is not a choice
-/// anybody made, it is a reading, and it is worth nothing once the session
-/// it describes is over.
-pub fn session_stats() -> PathBuf {
-    data_dir().join("session-stats.txt")
-}
-
-/// Where the client engine reads what the session should be, a few times
-/// a second, and makes its stream over when it changes.
-///
-/// The other half of the file above, and beside it for the same reason:
-/// what is written there is what the session asks for right now, which is
-/// worth nothing once it is over.
-pub fn session_wanted() -> PathBuf {
-    data_dir().join("session-wanted.txt")
-}
-
-/// Where the client engine reads the shape the pointer is to take, and
-/// gives its own pointer that shape.
-///
-/// Apart from the file above, and deliberately: what is written there is
-/// what the stream is to be, and a line that differs from the stream
-/// makes the engine build it again. The shape changes whenever a hand
-/// crosses a text field, which is many times a second and must cost
-/// nothing at all. One word on its own line, so that reading it can
-/// never be read as asking for a new stream.
-pub fn session_pointer() -> PathBuf {
-    data_dir().join("session-pointer.txt")
-}
-
 /// Where the computer being watched writes the shape its own pointer has
-/// right now, on the session that owns its screen.
-///
-/// Beside the file above and never the same one: that one is written on
-/// the computer doing the watching, for its engine to read; this one is
-/// written on the computer being watched, for its own service to read
-/// and hand over. The two never live on the same machine at the same
-/// moment, and naming them alike would make a session towards oneself
-/// read its own answer.
+/// right now, on the session that owns its screen, for its own service
+/// to read and hand over.
 pub fn pointer_here() -> PathBuf {
     data_dir().join("pointer-here.txt")
 }
@@ -377,22 +300,12 @@ mod tests {
     fn everything_lives_under_the_single_root() {
         let root = data_dir();
         for path in [
-            engines_dir(),
-            host_engine_dir(),
-            host_engine_exe(),
-            client_engine_dir(),
-            client_engine_exe(),
             identity_dir(),
-            host_state_dir(),
-            device_state_dir("desk-pc"),
             logs_dir(),
             authorized_devices(),
             known_computers(),
             preferences(),
             hushed_speakers(),
-            session_stats(),
-            session_wanted(),
-            session_pointer(),
             pointer_here(),
             clipboard_here(),
             clipboard_wanted(),
@@ -444,23 +357,6 @@ mod tests {
         assert!(ffmpeg.ends_with(Path::new("vendor").join("ffmpeg")));
         assert_eq!(ffmpeg.parent(), virtual_screen_driver_dir().parent());
         assert!(!ffmpeg.starts_with(data_dir()), "{}", ffmpeg.display());
-    }
-
-    #[test]
-    fn each_device_gets_its_own_folder() {
-        assert_ne!(device_state_dir("a"), device_state_dir("b"));
-    }
-
-    #[test]
-    fn the_executables_carry_the_product_name() {
-        for exe in [host_engine_exe(), client_engine_exe()] {
-            let name = exe.file_name().unwrap().to_string_lossy().to_lowercase();
-            assert!(name.starts_with("zyrdesk"), "{name}");
-            assert!(
-                !name.contains("sunshine") && !name.contains("moonlight"),
-                "{name}"
-            );
-        }
     }
 
     #[test]

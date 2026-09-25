@@ -302,7 +302,7 @@ async fn keep_up(app: &crate::app::App) {
 /// The reading, if it belongs to this session.
 #[cfg(windows)]
 fn fresh(started: std::time::SystemTime) -> Option<Measures> {
-    let path = zyr_proto::paths::session_stats();
+    let path = crate::measures::readings();
     // The file's time rather than its contents: nothing in the line says
     // which session wrote it, and its age says so without adding
     // anything to what the engine writes.

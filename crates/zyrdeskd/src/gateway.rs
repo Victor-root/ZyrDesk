@@ -1318,7 +1318,7 @@ async fn bring_up_the_engine(
     // that names the channel of every datagram.
     let datagram_budget = connection
         .guaranteed_usable_datagram()
-        .and_then(|usable| usable.checked_sub(1))
+        .and_then(zyr_transport::datagram_budget)
         .ok_or("le chemin n'annonce aucune taille de datagramme")?;
     let listener = LinkListener::create(Access::SystemOnly).map_err(|e| {
         format!(

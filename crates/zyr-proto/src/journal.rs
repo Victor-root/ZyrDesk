@@ -70,41 +70,19 @@ const KEPT: usize = 120;
 /// already narrowed down what comes out: keeping more only lengthens the
 /// page where that is exactly what was wanted. Without this, the
 /// beginning of a start-up stays out of reach whatever is asked for, and
-/// that is precisely what is being looked for when an opening drags: the
-/// engine writes some forty lines just to open its decoder, and a
-/// hundred and twenty do not even reach back to its first word.
+/// that is precisely what is being looked for when an opening drags.
 const KEPT_WHEN_ASKED: usize = 500;
-
-/// How the player of a session opens its journal.
-///
-/// Written by whatever launches it, and read here: it is the only mark
-/// that says where what a player told begins, since the player itself
-/// sets none. Shared rather than copied on both sides, otherwise
-/// touching up one word on one side would silently cut off the reading
-/// on the other.
-pub const SESSION_OPENS: &str = "--- session towards ";
-
-/// How many lines are kept from each end of a journal whose beginning is
-/// known.
-///
-/// Its beginning explains an opening that drags, its end explains a
-/// session that falls over, and its middle is the same frame decoded
-/// forty thousand times. Both ends, then, and what is missing between
-/// the two is counted out loud.
-const KEPT_EACH_END: usize = 150;
 
 /// The files gathered, in the order they are read.
 ///
-/// The third column is what opens one run of that file, where anything
-/// does. Without it the last hundred and twenty lines of the client
-/// engine's journal are always the end of a session, and the start of
-/// one, which is where an opening explains itself, was out of reach
-/// whatever anybody asked for.
-const FILES: [(&str, &str, &str); 4] = [
-    ("service.log", "Le service", ""),
-    ("session.log", "Le moteur client", SESSION_OPENS),
-    ("engine-console.log", "Le moteur hôte", ""),
-    ("interface.log", "La fenêtre", ""),
+/// The host engine writes two: its own journal, and what its console
+/// says, which is where a crash leaves its last words. The player writes
+/// into the journal of the program it plays in.
+const FILES: [(&str, &str); 4] = [
+    ("service.log", "Le service"),
+    ("engine.log", "Le moteur hôte"),
+    ("engine-console.log", "La console du moteur hôte"),
+    ("interface.log", "La fenêtre"),
 ];
 
 /// The files emptied with the others and never gathered.
@@ -147,8 +125,7 @@ impl Journal {
         let _ = writeln!(self.0, "{label:<17}: {value}");
     }
 
-    /// Closes the heading on the engines in place, then gathers the
-    /// files.
+    /// Closes the heading, then gathers the files.
     pub fn gathered(self) -> String {
         self.sifted(&Sifting::everything())
     }
@@ -160,13 +137,6 @@ impl Journal {
     /// anything: only the end of each file reaches a page, and six lines
     /// about the clipboard are almost never among the last of a session.
     pub fn sifted(mut self, sift: &Sifting) -> String {
-        let here = |present: bool| if present { "présent" } else { "absent" };
-        self.says("Moteur hôte", here(paths::host_engine_exe().is_file()));
-        self.says("Moteur client", here(paths::client_engine_exe().is_file()));
-        let engines = engines_build();
-        if !engines.is_empty() {
-            self.says("Moteurs", &engines);
-        }
         self.says("Journaux", &paths::logs_dir().display().to_string());
         // Said in the heading, because a page of six lines that does not
         // say what it was sifted through reads as a product with nothing
@@ -181,12 +151,11 @@ impl Journal {
         // name offered that no line carries is a dead end offered.
         let mut named = BTreeSet::new();
         let mut bodies = String::new();
-        for (file, what, opens) in FILES {
+        for (file, what) in FILES {
             let _ = write!(bodies, "\n\n--- {what} ({file}) ---\n");
             bodies.push_str(&last_lines(
                 &paths::logs_dir().join(file),
                 file,
-                opens,
                 sift,
                 &mut named,
             ));
@@ -210,7 +179,7 @@ impl Journal {
 /// test and nothing else: a journal carrying three weeks of unrelated
 /// lines is a journal nobody reads to the end.
 ///
-/// Emptied rather than deleted. The service and the engines hold these
+/// Emptied rather than deleted. The service and the engine hold these
 /// files open while they run, and Windows does not let go of a file
 /// somebody is writing to; emptying works all the same, the next line
 /// appended landing at the start of a file that is now blank.
@@ -218,11 +187,7 @@ impl Journal {
 /// Answers what could not be emptied, said in words meant to be read.
 pub fn emptied() -> Vec<String> {
     let mut refused = Vec::new();
-    for (file, what) in FILES
-        .iter()
-        .map(|(file, what, _)| (file, what))
-        .chain(ALSO_EMPTIED.iter().map(|(file, what)| (file, what)))
-    {
+    for (file, what) in FILES.iter().chain(ALSO_EMPTIED.iter()) {
         if let Err(e) = empty(&paths::logs_dir().join(file)) {
             refused.push(format!("{what} ({file}) : {e}"));
         }
@@ -261,39 +226,6 @@ fn own_addresses() -> String {
         .join(", ")
 }
 
-/// Which build produced the engines sitting on this machine.
-///
-/// Written by the script that fetches them. Without it, an engine that
-/// is present says nothing about whether it is the one this code
-/// expects, and the two drift apart in silence: the engines are the one
-/// half of the product that a `git pull` does not carry.
-fn engines_build() -> String {
-    match std::fs::read_to_string(paths::engines_dir().join("build.txt")) {
-        Ok(text) => build_from(&text),
-        // No file at all: engines put there by hand, which stays
-        // perfectly valid and simply says nothing about where they came
-        // from.
-        Err(_) => String::new(),
-    }
-}
-
-/// What that file says, kept apart from the disk so that what the script
-/// writes and what is read here can be checked against each other.
-fn build_from(text: &str) -> String {
-    let said = |key: &str| {
-        text.lines()
-            .filter(|line| !line.trim_start().starts_with('#'))
-            .filter_map(|line| line.split_once('='))
-            .find(|(name, _)| name.trim() == key)
-            .map(|(_, value)| value.trim().to_string())
-    };
-    match (said("run"), said("date")) {
-        (Some(run), Some(date)) => format!("compilation {run} du {date}"),
-        (Some(run), None) => format!("compilation {run}"),
-        _ => String::new(),
-    }
-}
-
 /// The end of a file, or a word saying why there is none.
 ///
 /// Only the end is ever read from disk. A log can have grown for months,
@@ -301,27 +233,14 @@ fn build_from(text: &str) -> String {
 /// program on a file nobody asked to see all of.
 ///
 /// `within` is what the file is called, which stands in for a tag on the
-/// lines that carry none: the engines write their own journals in their
-/// own shape, and this is what lets one of them be asked for whole.
-///
-/// `opens` is what starts one run of that file, where anything does.
-/// Given one, the reading begins at the last of them rather than at
-/// however many lines fit from the end, and keeps both ends of what
-/// follows: the beginning explains an opening that dragged, the end
-/// explains a session that fell over, and the two are never within a
-/// hundred and twenty lines of each other.
+/// lines that carry none: a console writes in no shape of ours, and this
+/// is what lets it be asked for whole.
 ///
 /// Every name met on the way is put in `named`, whether or not its line
 /// survives the sifting. That is the whole point of collecting them
 /// here: what can be asked for is what the files hold, not what is left
 /// once the asking has been done.
-fn last_lines(
-    path: &Path,
-    within: &str,
-    opens: &str,
-    sift: &Sifting,
-    named: &mut BTreeSet<String>,
-) -> String {
+fn last_lines(path: &Path, within: &str, sift: &Sifting, named: &mut BTreeSet<String>) -> String {
     use std::io::{Read, Seek, SeekFrom};
 
     // How much of the end is read, at most. Far more than the lines
@@ -333,11 +252,7 @@ fn last_lines(
     // sitting at the end of it.
     const READ_AT_MOST: u64 = 256 * 1024;
     const READ_AT_MOST_WHEN_ASKED: u64 = 4 * 1024 * 1024;
-    // And as wide for a file whose own beginning is being looked for:
-    // a cut that lands past the mark loses it, and losing it puts the
-    // reading back on the end of the file, which is the very thing the
-    // mark exists to get away from.
-    let read_at_most = if sift.takes_everything() && opens.is_empty() {
+    let read_at_most = if sift.takes_everything() {
         READ_AT_MOST
     } else {
         READ_AT_MOST_WHEN_ASKED
@@ -363,8 +278,8 @@ fn last_lines(
         Err(e) => return format!("(illisible : {e})"),
     };
 
-    // Read as it comes, accents or not: a log the engine wrote in
-    // another encoding is shown with holes rather than refused whole.
+    // Read as it comes, accents or not: what a console wrote in another
+    // encoding is shown with holes rather than refused whole.
     let text = String::from_utf8_lossy(&end);
     let lines: Vec<&str> = text.lines().collect();
     // The first line of a cut read is half a line: dropped with the rest
@@ -374,20 +289,14 @@ fn last_lines(
     } else {
         &lines[..]
     };
-    // And where this file says out loud where one run of it begins, that
-    // is where the reading begins.
-    let (whole, from_its_start) = match last_mark(whole, opens) {
-        Some(at) => (&whole[at..], true),
-        None => (whole, false),
-    };
     // Asked of every line read and not of the ones kept, which is the
     // point: what is being looked for is rare, and a file's last hundred
     // and twenty lines almost never hold it.
     //
     // A line with no name of its own answers to the file it is in, so
-    // that is what goes in the list for it: the engines write whole
-    // journals that way, and theirs would otherwise be impossible to ask
-    // for from a list of names.
+    // that is what goes in the list for it: a console writes a whole
+    // file that way, which would otherwise be impossible to ask for from
+    // a list of names.
     let stem = within.strip_suffix(".log").unwrap_or(within);
     let mut answered: Vec<&str> = Vec::new();
     // The names in this file itself, to know what to say if it gives
@@ -406,9 +315,6 @@ fn last_lines(
     if answered.is_empty() && !sift.takes_everything() {
         return nothing_here(sift, stem, &its_own);
     }
-    if from_its_start {
-        return both_ends(&answered);
-    }
     let kept = if sift.takes_everything() {
         KEPT
     } else {
@@ -426,11 +332,11 @@ fn last_lines(
 /// same news.
 ///
 /// A file whose lines carry no name answers to its own, and to that
-/// alone. Asking for "touchpad" therefore leaves out the player's
-/// journal entirely, including the lines that talk about the touchpad,
-/// and the page used to say "rien ici ne répond au tri": that reads like
-/// an engine that said nothing, when it had said everything. An
-/// evening's hunt went into it. The sentence now names the word to add.
+/// alone. Asking for "panicked" therefore leaves out the engine's
+/// console entirely, including the lines that say it, and the page used
+/// to say "rien ici ne répond au tri": that reads like a file that said
+/// nothing, when it had said everything. An evening's hunt went into it.
+/// The sentence now names the word to add.
 fn nothing_here(sift: &Sifting, stem: &str, its_own: &BTreeSet<String>) -> String {
     let nameless = its_own.len() == 1 && its_own.contains(stem);
     if sift.asks_for_a_name() && nameless {
@@ -442,43 +348,13 @@ fn nothing_here(sift: &Sifting, stem: &str, its_own: &BTreeSet<String>) -> Strin
     "(rien ici ne répond au tri)".to_string()
 }
 
-/// Where the last run of a file begins, when the file says so.
-fn last_mark(lines: &[&str], opens: &str) -> Option<usize> {
-    if opens.is_empty() {
-        return None;
-    }
-    lines.iter().rposition(|line| line.starts_with(opens))
-}
-
-/// Both ends of what one run said, and the count of what lies between.
-///
-/// Whole while it fits, which is the ordinary case: a session that
-/// opened and closed says a few hundred lines. What overflows is a
-/// session that ran, and what it wrote while it ran is the same frame
-/// decoded over and over.
-fn both_ends(lines: &[&str]) -> String {
-    if lines.len() <= KEPT_EACH_END * 2 {
-        return lines.join("\n");
-    }
-    let dropped = lines.len() - KEPT_EACH_END * 2;
-    let mut kept = lines[..KEPT_EACH_END].join("\n");
-    let _ = write!(
-        kept,
-        "\n({dropped} lignes du milieu ne sont pas montrées)\n"
-    );
-    kept.push_str(&lines[lines.len() - KEPT_EACH_END..].join("\n"));
-    kept
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The names met on the way are not what these tests are about, and
-    /// neither is the opening mark, which only the player's journal
-    /// carries.
+    /// The names met on the way are not what these tests are about.
     fn read(path: &Path, within: &str, sift: &Sifting) -> String {
-        last_lines(path, within, "", sift, &mut BTreeSet::new())
+        last_lines(path, within, sift, &mut BTreeSet::new())
     }
 
     /// Nothing asked for, so everything kept.
@@ -554,121 +430,42 @@ mod tests {
     }
 
     #[test]
-    fn the_player_journal_starts_where_its_session_starts() {
-        // The exact fault, and why a slow opening went unexplained for
-        // three evenings: the last hundred and twenty lines of the
-        // player's journal are always the end of a session, never its
-        // start, and its start was precisely what was being looked for.
-        let folder = a_folder_of_its_own("depart");
-        let path = folder.join("session.log");
-
-        let mut written = String::new();
-        let _ = writeln!(written, "{SESSION_OPENS}une-session-d-avant ---");
-        for line in 0..KEPT + 40 {
-            let _ = writeln!(written, "vieille ligne {line}");
-        }
-        let _ = writeln!(written, "{SESSION_OPENS}127.77.0.1:42000 ---");
-        let _ = writeln!(written, "00:00:00 - le lecteur ouvre la bouche");
-        for line in 0..KEPT + 40 {
-            let _ = writeln!(written, "00:00:12 - ligne {line}");
-        }
-        let _ = writeln!(written, "00:00:27 - image posée");
-        std::fs::write(&path, &written).unwrap();
-
-        let kept = last_lines(
-            &path,
-            "session.log",
-            SESSION_OPENS,
-            &everything(),
-            &mut BTreeSet::new(),
-        );
-        // The player's first word, which is the whole point of the
-        // thing.
-        assert!(kept.starts_with(SESSION_OPENS), "{}", &kept[..80]);
-        assert!(
-            kept.contains("le lecteur ouvre la bouche"),
-            "début manquant"
-        );
-        // Its last line, which explains a session that
-        // falls over.
-        assert!(kept.ends_with("00:00:27 - image posée"), "fin manquante");
-        // And nothing of the session before.
-        assert!(!kept.contains("vieille ligne"), "{kept}");
-
-        // A short session fits whole, without announcing
-        // anything.
-        let court = folder.join("court.log");
-        let mut written = String::new();
-        let _ = writeln!(written, "{SESSION_OPENS}127.77.0.1:42000 ---");
-        for line in 0..20 {
-            let _ = writeln!(written, "00:00:0{} - ligne {line}", line % 10);
-        }
-        std::fs::write(&court, &written).unwrap();
-        let kept = last_lines(
-            &court,
-            "session.log",
-            SESSION_OPENS,
-            &everything(),
-            &mut BTreeSet::new(),
-        );
-        assert!(!kept.contains("ne sont pas montrées"), "{kept}");
-        assert_eq!(kept.lines().count(), 21, "{kept}");
-
-        std::fs::remove_dir_all(&folder).unwrap();
-    }
-
-    #[test]
     fn a_nameless_file_says_which_word_to_add_to_the_sift() {
-        // The exact fault: asking for "touchpad" leaves out the
-        // player's journal entirely, because its lines carry no name
+        // The exact fault: asking for "panicked" leaves out the
+        // engine's console entirely, because its lines carry no name
         // and answer to its own. The page used to say "rien ici ne
-        // répond au tri", which reads like an engine that said nothing
+        // répond au tri", which reads like a file that said nothing
         // when it had said everything.
         let folder = a_folder_of_its_own("sans-nom");
 
-        // An engine's journal: no line has a tag.
-        let engine = folder.join("session.log");
+        // A console: no line has a tag.
+        let console = folder.join("engine-console.log");
         std::fs::write(
-            &engine,
-            "00:00:08 - SDL Info (0): zyr: touchpad: rien pour nous\n",
+            &console,
+            "thread 'zyr-host-pictures' panicked at src/pipeline.rs:512:9\n",
         )
         .unwrap();
-        let shown = read(&engine, "session.log", &Sifting::of("touchpad"));
-        assert!(shown.contains("ajoutez « session » au tri"), "{shown}");
+        let shown = read(&console, "engine-console.log", &Sifting::of("panicked"));
+        assert!(
+            shown.contains("ajoutez « engine-console » au tri"),
+            "{shown}"
+        );
 
         // A file whose lines carry names says nothing of the kind:
         // adding its own name to it would change nothing.
         let service = folder.join("service.log");
         std::fs::write(&service, "2026-09-15 18:30:18 I [way] voie 1 ouverte\n").unwrap();
-        let shown = read(&service, "service.log", &Sifting::of("touchpad"));
+        let shown = read(&service, "service.log", &Sifting::of("panicked"));
         assert_eq!(shown, "(rien ici ne répond au tri)", "{shown}");
 
         // And the sift that does name the file gives it
         // back.
-        let shown = read(&engine, "session.log", &Sifting::of("touchpad session"));
-        assert!(shown.contains("rien pour nous"), "{shown}");
-
-        std::fs::remove_dir_all(&folder).unwrap();
-    }
-
-    #[test]
-    fn a_file_without_a_mark_keeps_its_end_as_before() {
-        // The rule only holds where the product knows where what it
-        // reads begins. Elsewhere, the end stays the end.
-        let folder = a_folder_of_its_own("sans-marque");
-        let path = folder.join("service.log");
-        let written: Vec<String> = (0..KEPT + 40).map(|line| format!("ligne {line}")).collect();
-        std::fs::write(&path, written.join("\n")).unwrap();
-
-        let kept = last_lines(
-            &path,
-            "service.log",
-            SESSION_OPENS,
-            &everything(),
-            &mut BTreeSet::new(),
+        let shown = read(
+            &console,
+            "engine-console.log",
+            &Sifting::of("panicked engine-console"),
         );
-        assert!(kept.ends_with(&format!("ligne {}", KEPT + 39)), "{kept}");
-        assert!(kept.starts_with("(le début n'est pas montré)"), "{kept}");
+        assert!(shown.contains("pipeline.rs"), "{shown}");
 
         std::fs::remove_dir_all(&folder).unwrap();
     }
@@ -717,13 +514,7 @@ mod tests {
         std::fs::write(&path, &written).unwrap();
 
         let mut named = BTreeSet::new();
-        last_lines(
-            &path,
-            "service.log",
-            "",
-            &Sifting::of("clipboard"),
-            &mut named,
-        );
+        last_lines(&path, "service.log", &Sifting::of("clipboard"), &mut named);
         // Collected even when the sift leaves them out: what can be
         // asked for is what the files carry, not what is left once the
         // asking is done.
@@ -733,18 +524,20 @@ mod tests {
         );
 
         // A line with no name answers to the name of its file, otherwise
-        // an engine's journal could not be asked for from a list.
-        let engine = folder.join("session.log");
-        std::fs::write(&engine, "00:00:03 - SDL Info (0): IDR demandée\n").unwrap();
+        // a console could not be asked for from a list.
+        let console = folder.join("engine-console.log");
+        std::fs::write(&console, "thread 'main' panicked at src/lib.rs:1:1\n").unwrap();
         let mut named = BTreeSet::new();
         last_lines(
-            &engine,
-            "session.log",
-            SESSION_OPENS,
+            &console,
+            "engine-console.log",
             &Sifting::everything(),
             &mut named,
         );
-        assert_eq!(named.iter().cloned().collect::<Vec<_>>(), ["session"]);
+        assert_eq!(
+            named.iter().cloned().collect::<Vec<_>>(),
+            ["engine-console"]
+        );
 
         // And what the heading writes, the box reads back as it
         // is.
@@ -801,7 +594,7 @@ mod tests {
         // it is perfectly straight.
         let mut journal = Journal(String::new());
         journal.says("Service", "en marche");
-        journal.says("Moteur hôte", "présent");
+        journal.says("Accès distant", "activé");
         let columns: Vec<usize> = journal
             .0
             .lines()
@@ -825,37 +618,9 @@ mod tests {
         assert!(lines.next().unwrap().starts_with("Ordinateur"), "{text}");
         // And the four files are there, named, even the ones this
         // computer has never written.
-        for (file, what, _) in FILES {
+        for (file, what) in FILES {
             assert!(text.contains(&format!("--- {what} ({file}) ---")), "{text}");
         }
-    }
-
-    #[test]
-    fn the_engines_build_is_read_from_what_the_script_writes() {
-        // Word for word what packaging/engines/fetch-engines.ps1 writes:
-        // the two must be talking about the same thing, otherwise the
-        // journal would say "engines present" without ever saying which
-        // ones.
-        let written = "# Moteurs ZyrDesk : d'où viennent ceux qui sont en place.\n\
-             # Écrit par packaging/engines/fetch-engines.ps1, à ne pas corriger à la main.\n\
-             run = 17392044\n\
-             commit = a9f7db93c1\n\
-             branche = develop\n\
-             date = 2026-08-18T20:31:00Z\n";
-        assert_eq!(
-            build_from(written),
-            "compilation 17392044 du 2026-08-18T20:31:00Z"
-        );
-    }
-
-    #[test]
-    fn engines_put_there_by_hand_say_nothing_rather_than_lie() {
-        // Putting the engines there yourself stays perfectly valid:
-        // there is then nothing to say about where they came from, and
-        // above all nothing to make up.
-        assert!(build_from("").is_empty());
-        assert!(build_from("n'importe quoi").is_empty());
-        assert!(build_from("# run = 1\n").is_empty());
     }
 
     #[test]
@@ -865,7 +630,7 @@ mod tests {
         // it is not in it. But emptying the journal before a test must
         // empty it too, otherwise three weeks of records get read
         // against a five-minute session.
-        let gathered: Vec<&str> = FILES.iter().map(|(file, _, _)| *file).collect();
+        let gathered: Vec<&str> = FILES.iter().map(|(file, _)| *file).collect();
         let also: Vec<&str> = ALSO_EMPTIED.iter().map(|(file, _)| *file).collect();
         assert!(also.contains(&"reach.log"));
         assert!(also.contains(&"reach-distant.log"));

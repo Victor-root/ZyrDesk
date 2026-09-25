@@ -1927,10 +1927,9 @@ fn a_finger_holds(named: windows_sys::Win32::UI::Input::KeyboardAndMouse::VIRTUA
 /// answered the same way the question would be asked of Windows itself: a
 /// hotkey of our own, on a thread of our own, id chosen so nothing else in
 /// this program is asking for it at the same time. A refusal can then only
-/// mean something outside this program got there first: Sunshine and
-/// Moonlight answer to nobody's global shortcuts, and this program's own
-/// are registered on a thread of their own from a fixed, different set of
-/// keys (`shortcuts.rs`).
+/// mean something outside this program got there first: this program's
+/// own are registered on a thread of their own from a fixed, different
+/// set of keys (`shortcuts.rs`).
 ///
 /// Given back at once when it is won: keeping it would be claiming, for
 /// the rest of the program's life, a combination that is none of its

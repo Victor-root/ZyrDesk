@@ -835,17 +835,22 @@ mod tests {
         assert!(pair.host_side.usable_datagram().is_some());
     }
 
+    /// A picture datagram worth sending: below this, a key frame takes
+    /// hundreds more of them, and each one costs its headers.
+    const A_PICTURE_DATAGRAM: u16 = 1024;
+
     #[tokio::test]
     async fn the_usable_datagram_allows_a_video_packet() {
         let pair = pair().await;
         let usable = pair.client_side.usable_datagram().unwrap();
-        let size = crate::mtu::packet_size(usable).expect("a local path must allow a video packet");
-        assert!(size.bytes >= crate::mtu::MINIMUM_SIZE);
+        let budget =
+            crate::mtu::datagram_budget(usable).expect("a local path must allow a datagram");
+        assert!(budget >= A_PICTURE_DATAGRAM, "{budget}");
     }
 
     #[tokio::test]
     async fn the_room_promised_is_never_more_than_the_room_of_the_moment() {
-        // The packet size asked of the engine holds for the whole
+        // The datagram size the engine is told holds for the whole
         // session, while the road, for its part, can narrow along the
         // way: the transport then falls back to the guaranteed floor. A
         // size taken from the measurement of the moment then no longer
@@ -857,12 +862,11 @@ mod tests {
         assert!(promised <= now, "{promised} promis contre {now} mesurés");
         // And enough of it is left for a real video packet, or the
         // caution would only serve to refuse sessions.
-        let size = crate::mtu::packet_size(promised).expect("le plancher doit rester utilisable");
+        let budget =
+            crate::mtu::datagram_budget(promised).expect("le plancher doit rester utilisable");
         assert!(
-            size.bytes >= crate::mtu::MINIMUM_SIZE,
-            "{} octets de paquet pour un plancher de {} (promis {promised}, mesuré {now})",
-            size.bytes,
-            crate::mtu::MINIMUM_SIZE
+            budget >= A_PICTURE_DATAGRAM,
+            "{budget} octets par datagramme (promis {promised}, mesuré {now})"
         );
     }
 

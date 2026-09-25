@@ -26,8 +26,8 @@
 //! changes nothing until that probe has gone out and been answered. On
 //! the fourth of September the road came back seven seconds into a
 //! silence and the computer watching stayed mute for three more, which
-//! is exactly what the client engine's control channel does not survive:
-//! it gives up after ten. The window is now what the connection could
+//! is exactly what the client engine of the time did not survive: it
+//! gave up after ten. The window is now what the connection could
 //! possibly have out before it dies of the same silence, and no hiccup
 //! ever fills it.
 //!
@@ -388,9 +388,9 @@ mod tests {
         // back seven seconds after going silent, and the computer
         // watching stayed mute for three more seconds, its window being
         // full and the transport sending nothing but its probes, spaced
-        // several seconds apart. The client engine gives up after ten
-        // seconds of silence: the session died of an outage that the
-        // tunnel, for its part, had got through. The window therefore
+        // several seconds apart. The client engine of the time gave up
+        // after ten seconds of silence: the session died of an outage
+        // that the tunnel, for its part, had got through. The window therefore
         // holds everything the stream makes during the longest silence a
         // connection survives, the transport's idle limit, with room to
         // spare for what travels beside the picture.

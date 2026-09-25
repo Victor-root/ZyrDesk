@@ -11,26 +11,19 @@ pub enum Codec {
     Av1,
 }
 
-impl Codec {
-    /// Value expected by the command line of the client
-    /// engine.
-    pub fn engine_value(self) -> &'static str {
-        match self {
-            Codec::Auto => "auto",
-            Codec::H264 => "H.264",
-            Codec::Hevc => "HEVC",
-            Codec::Av1 => "AV1",
-        }
-    }
-}
-
-/// The same spelling travels between our own programs.
+/// The spelling that travels between our own programs and is written
+/// down in the settings, and the one a person reads in the menu.
 ///
 /// One spelling and one reader rather than two of each: a second table
 /// would drift from this one the day a codec is added.
 impl fmt::Display for Codec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.engine_value())
+        f.write_str(match self {
+            Codec::Auto => "auto",
+            Codec::H264 => "H.264",
+            Codec::Hevc => "HEVC",
+            Codec::Av1 => "AV1",
+        })
     }
 }
 
@@ -50,17 +43,14 @@ impl std::str::FromStr for Codec {
 
 /// How the session sits on the screen.
 ///
-/// Two, and they describe the product's own window: the picture is shown
-/// inside it rather than in a window of the engine's, so how it is shown
-/// is a question about that window and not about the engine. The engine
-/// is always started windowed, its window is stripped of its frame and
-/// laid over ours, and it follows ours wherever it goes.
+/// Two, and they describe the product's own window: the picture is drawn
+/// inside it, so how it is shown is a question about that window.
 ///
-/// The exclusive full screen the engine can do is gone with that.
-/// Nothing can be drawn over a window that owns the screen exclusively,
-/// and the floating button of a session is drawn over it. It cost
-/// nothing to lose: on Windows 10 and later the compositor hands the
-/// screen straight to a swap chain of the kind the engine uses.
+/// There is no exclusive full screen. Nothing can be drawn over a window
+/// that owns the screen exclusively, and the floating button of a session
+/// is drawn over it. It costs nothing: on Windows 10 and later the
+/// compositor hands the screen straight to a flip swap chain like the
+/// one the picture is drawn with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DisplayMode {
     /// The window takes the whole screen.
@@ -106,8 +96,7 @@ impl std::str::FromStr for DisplayMode {
 
 /// Settings of one session.
 ///
-/// The defaults mirror the client engine's own for 1080p60, which the
-/// comparison against unmanaged engines required at milestone M1. The
+/// The defaults are 1080p at sixty frames a second and 20 Mb/s. The
 /// window it opens in is ours to decide, and is decided once, where
 /// `DisplayMode` says why.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,10 +107,6 @@ pub struct SessionSettings {
     pub bitrate_kbps: u32,
     pub codec: Codec,
     pub display_mode: DisplayMode,
-    /// Packet size to impose. `None` lets the engine decide, which is
-    /// what it did before the tunnel existed; the tunnel now computes it
-    /// from what the path actually carries.
-    pub packet_size: Option<u32>,
     /// Absolute mouse: right for a desktop, wrong for games that aim
     /// with relative motion.
     pub absolute_mouse: bool,
@@ -143,7 +128,6 @@ impl Default for SessionSettings {
             bitrate_kbps: 20_000,
             codec: Codec::Auto,
             display_mode: DisplayMode::default(),
-            packet_size: None,
             absolute_mouse: true,
             stats_overlay: false,
             system_keys: true,
@@ -391,17 +375,17 @@ impl Asked {
 /// One of the far computer's own screens, as that computer names it.
 ///
 /// A machine with two screens plugged in serves one of them, and which
-/// one is not something this end can work out: the identifier is a digest
-/// that computer's engine alone computes, and nothing here has any
-/// business recomputing it. So the whole description is asked for and
-/// carried as it comes.
+/// one is not something this end can work out: the identifier is that
+/// computer's own name for the screen, and nothing here has any business
+/// making it up. So the whole description is asked for and carried as it
+/// comes.
 ///
 /// Only the screens that computer is actually showing on are ever
 /// described this way. One that is switched off is not a screen anybody
 /// asks to look at, and offering it would offer a black picture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FarScreen {
-    /// What the far computer's engine takes orders by. Opaque here on
+    /// What the far computer films the screen by. Opaque here on
     /// purpose: it is read from that computer and handed straight back to
     /// it.
     pub id: String,
@@ -667,11 +651,6 @@ impl Default for Serving {
 }
 
 /// What the person chose once, and every session then honours.
-///
-/// Apart from `SessionSettings` on purpose: the packet size is not a
-/// choice anyone makes, it is what the path turns out to carry, and it
-/// is settled when the tunnel stands. Putting it here would offer a
-/// dial that the tunnel overrules a second later.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Preferred {
     /// How much picture to ask for.
@@ -725,29 +704,25 @@ pub struct Preferred {
     pub system_keys: bool,
     /// Whether the far computer resends a still screen at full rate.
     ///
-    /// A setting of that machine's engine, asked for from here, for the
-    /// same reason its speakers are: the person who can tell whether the
-    /// picture feels smooth is the one watching it, and they are not in
-    /// front of the machine that would have to be told.
+    /// Asked of that machine's engine by the player, for the same reason
+    /// its speakers are asked from here: the person who can tell whether
+    /// the picture feels smooth is the one watching it, and they are not
+    /// in front of the machine that would have to be told.
     ///
     /// It costs that machine a whole frame encoded sixty times a second
     /// over a desktop where nothing moves, and it buys a pointer that
     /// glides instead of stepping. Which of the two is worth more depends
     /// on the machine and on what is being done with it, so it is a
-    /// choice and not a default worth defending.
-    ///
-    /// Its engine reads it when it starts and never again, so changing it
-    /// starts that engine over. The menu therefore treats it like the
-    /// size, the rate and the codec: written down, and applied when the
-    /// picture is opened again.
+    /// choice; on by default, a desktop being mostly a pointer moving
+    /// over things that do not.
     pub steady_far_rate: bool,
     /// Whether the two computers share one clipboard for the length of
     /// the session.
     ///
     /// What is copied on either of them can then be pasted on the other,
-    /// text and pictures alike. Nothing of it travels through the
-    /// engines: their protocol has no clipboard channel and never will,
-    /// so it goes on the product's own channel inside the tunnel.
+    /// text and pictures alike. Nothing of it travels through the engine:
+    /// it goes between the two services, on the product's own channel
+    /// inside the tunnel.
     ///
     /// On until somebody says otherwise, which is the opposite of the
     /// three switches above and for a reason: this one is not a taste but
@@ -770,7 +745,7 @@ impl Default for Preferred {
             stats_overlay: false,
             mute_far_speakers: false,
             system_keys: true,
-            steady_far_rate: Serving::default().steady_rate,
+            steady_far_rate: true,
             shared_clipboard: true,
         }
     }
@@ -796,7 +771,6 @@ impl Preferred {
             absolute_mouse: self.absolute_mouse,
             stats_overlay: self.stats_overlay,
             system_keys: self.system_keys,
-            ..SessionSettings::default()
         }
     }
 }
@@ -898,10 +872,10 @@ pub enum Pointer {
 }
 
 impl Pointer {
-    /// The word that travels, and the one the engine reads.
+    /// The word that travels, and the one the computer watching reads.
     ///
     /// Short and lowercase, like every other word on that line, and
-    /// unchanged once written: it is read by a build of the engine that
+    /// unchanged once written: it is read by a build of the product that
     /// may be older or newer than the one writing it.
     pub fn word(self) -> &'static str {
         match self {
@@ -967,7 +941,7 @@ mod tests {
 
     #[test]
     fn every_pointer_shape_has_its_word_and_only_one() {
-        // The word is read by an engine that may come from another
+        // The word is read by a product that may come from another
         // build than the one that writes it: two shapes sharing a word
         // would give one for the other, and a shape without a word
         // would never go out.
@@ -1006,11 +980,11 @@ mod tests {
     }
 
     #[test]
-    fn codecs_carry_the_engine_spelling() {
-        assert_eq!(Codec::Auto.engine_value(), "auto");
-        assert_eq!(Codec::H264.engine_value(), "H.264");
-        assert_eq!(Codec::Hevc.engine_value(), "HEVC");
-        assert_eq!(Codec::Av1.engine_value(), "AV1");
+    fn codecs_are_spelled_as_a_person_reads_them() {
+        assert_eq!(Codec::Auto.to_string(), "auto");
+        assert_eq!(Codec::H264.to_string(), "H.264");
+        assert_eq!(Codec::Hevc.to_string(), "HEVC");
+        assert_eq!(Codec::Av1.to_string(), "AV1");
     }
 
     #[test]
@@ -1286,14 +1260,13 @@ mod tests {
             display_mode: DisplayMode::Windowed,
             absolute_mouse: false,
             stats_overlay: true,
-            // Nothing of this field reaches the engine: it does not
-            // describe the picture, it says what is asked of the far
-            // machine.
+            // Nothing of this field reaches the picture: it says what is
+            // asked of the far machine.
             mute_far_speakers: true,
             system_keys: false,
             steady_far_rate: false,
-            // Nor this one: a shared clipboard goes through no engine,
-            // their protocol having no channel for it.
+            // Nor this one: a shared clipboard goes through the services
+            // and never through the engine.
             shared_clipboard: false,
         };
         let settings = preferred.settings(Some(a_screen(3840, 2160)));
@@ -1306,8 +1279,6 @@ mod tests {
         // The side the switch is left on is the side the next session
         // opens on.
         assert!(!settings.system_keys);
-        // The packet size is not a choice: the tunnel decides it.
-        assert_eq!(settings.packet_size, None);
     }
 
     #[test]
@@ -1321,12 +1292,11 @@ mod tests {
     }
 
     #[test]
-    fn defaults_are_1080p60_with_no_imposed_packet_size() {
+    fn defaults_are_1080p60() {
         let settings = SessionSettings::default();
         assert_eq!(
             (settings.width, settings.height, settings.fps),
             (1920, 1080, 60)
         );
-        assert_eq!(settings.packet_size, None);
     }
 }

@@ -20,8 +20,9 @@ use std::time::Duration;
 use clap::{Args, Subcommand};
 use zyr_control::link::{self, Access, Link, LinkListener};
 use zyr_proto::paths;
-use zyr_transport::mtu::MUX_OVERHEAD;
-use zyr_transport::{Connection, Fingerprint, Identity, Media, MediaProfile, Path, TunnelEndpoint};
+use zyr_transport::{
+    Connection, Fingerprint, Identity, Media, MediaProfile, Path, TunnelEndpoint, datagram_budget,
+};
 use zyr_tunnel::aside::{self, Given, Wanted};
 use zyr_tunnel::{Answers, Tunnel, service_channel};
 
@@ -290,12 +291,11 @@ async fn measure(args: ClientArgs) -> Result<(), Box<dyn Error>> {
         .connect(SocketAddr::new(args.address, TUNNEL_PORT))
         .await?;
 
-    // What one picture datagram of the engine may weigh on this path:
-    // what the path can never stop carrying, less the byte naming its
-    // channel.
+    // What one picture datagram of the engine weighs at most on this
+    // path, which is what the service tells the engine.
     let size = connection
         .guaranteed_usable_datagram()
-        .and_then(|usable| usable.checked_sub(MUX_OVERHEAD))
+        .and_then(datagram_budget)
         .ok_or("le chemin n'accepte aucun datagramme")?;
 
     let cadence = Cadence {
@@ -593,7 +593,10 @@ mod tests {
         // Sized on what the session asked for, as the service sizes it.
         assert_eq!(media.now(), serving);
 
-        let size = client_side.guaranteed_usable_datagram().unwrap() - MUX_OVERHEAD;
+        let size = client_side
+            .guaranteed_usable_datagram()
+            .and_then(datagram_budget)
+            .unwrap();
         let cadence = Cadence {
             size,
             rate_mbps: 5,

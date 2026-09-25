@@ -10,9 +10,9 @@
 //!
 //! A plain word is the name of a part of the product, and that is nine
 //! askings out of ten: `clipboard` keeps the lines that part wrote.
-//! Lines the engines write carry no name of their own, so the file they
-//! are in stands in for one, and `session` is the client engine's whole
-//! log.
+//! Lines a console writes carry no name of their own, so the file they
+//! are in stands in for one, and `engine-console` is the host engine's
+//! console whole.
 //!
 //! Several of them keep **one or the other**, because a line carries one
 //! name and never two: `clipboard files` is both subjects at once, which
@@ -152,10 +152,10 @@ impl Sifting {
     ///
     /// `within` is the file the line is in, and it counts as a name of
     /// its own beside the one the line carries. Two reasons, and both
-    /// matter: the engines write their own journals in their own shape
-    /// and carry no name at all, so the file is the only one theirs has;
-    /// and asking for one whole file is a thing somebody wants often
-    /// enough that it should not need a second word for it.
+    /// matter: a console writes in no shape of ours and carries no name
+    /// at all, so the file is the only one it has; and asking for one
+    /// whole file is a thing somebody wants often enough that it should
+    /// not need a second word for it.
     ///
     /// The names asked for are weighed together as « one or the other »,
     /// and everything else as « and ». A line carries one name: asking
@@ -214,7 +214,7 @@ impl fmt::Display for Sifting {
 /// straight after the date, in that order, so a letter or a bracket
 /// anywhere in the message is part of the message and nothing else.
 ///
-/// Nothing at all for a line the engines wrote, which carries neither.
+/// Nothing at all for a line a console wrote, which carries neither.
 pub(crate) fn about(line: &str) -> Option<(&'static str, &str)> {
     let rest = line.get(AFTER_THE_DATE..)?.strip_prefix(' ')?;
     let (voice, rest) = rest.split_at_checked(1)?;
@@ -228,8 +228,8 @@ pub(crate) fn about(line: &str) -> Option<(&'static str, &str)> {
 
 /// What a voice is called, in the word somebody would type.
 ///
-/// Lines the engines wrote are neither, and are called so: asking for
-/// one level or the other must not quietly hand over a third kind.
+/// Lines a console wrote are neither, and are called so: asking for one
+/// level or the other must not quietly hand over a third kind.
 const SOMEBODY_ELSE: &str = "engine";
 
 fn named(voice: &str) -> &'static str {
@@ -355,18 +355,17 @@ mod tests {
 
     #[test]
     fn the_file_name_counts_as_a_tag() {
-        // The engines write their journal their own way and carry no
-        // tag: without this, theirs could not be asked for at all. And
-        // asking for a whole file is a common enough thing not to
-        // deserve a second word.
-        let sift = Sifting::of("tag:session");
-        let engine = "00:00:03 - SDL Info (0): IDR frame request sent";
-        assert!(sift.keeps(engine, "session.log"));
-        assert!(!sift.keeps(engine, "service.log"));
+        // A console writes its own way and carries no tag: without
+        // this, it could not be asked for at all. And asking for a whole
+        // file is a common enough thing not to deserve a second word.
+        let sift = Sifting::of("tag:engine-console");
+        let console = "thread 'zyr-host-pictures' panicked at src/pipeline.rs:512:9";
+        assert!(sift.keeps(console, "engine-console.log"));
+        assert!(!sift.keeps(console, "service.log"));
         // And a tagged line stays in its file: the two names go
         // together rather than one in place of the other.
         let ours = a_line("clipboard", "ce que tient cet ordinateur");
-        assert!(sift.keeps(&ours, "session.log"));
+        assert!(sift.keeps(&ours, "engine-console.log"));
         assert!(Sifting::of("tag:clipboard").keeps(&ours, "service.log"));
     }
 
@@ -414,7 +413,7 @@ mod tests {
         // the message.
         let written = a_line("clipboard", "[pas une étiquette] la suite");
         assert_eq!(about(&written), Some(("info", "clipboard")));
-        assert_eq!(about("00:00:03 - SDL Info (0): [hevc @ 0x1] rien"), None);
+        assert_eq!(about("[hevc @ 0x55d4c1a2e340] rien de décodé"), None);
     }
 
     #[test]
@@ -430,13 +429,13 @@ mod tests {
         // The letter is enough, and case does not count.
         assert!(Sifting::of("level:D").keeps(&debug, "service.log"));
 
-        // And what the engines write is neither one nor the other:
+        // And what a console writes is neither one nor the other:
         // asking for a voice must not quietly hand back a third kind
         // of line.
-        let engine = "00:00:03 - SDL Info (0): IDR frame request sent";
-        assert!(!Sifting::of("level:debug").keeps(engine, "session.log"));
-        assert!(!Sifting::of("level:info").keeps(engine, "session.log"));
-        assert!(Sifting::of("level:engine").keeps(engine, "session.log"));
+        let console = "thread 'zyr-host-pictures' panicked at src/pipeline.rs:512:9";
+        assert!(!Sifting::of("level:debug").keeps(console, "engine-console.log"));
+        assert!(!Sifting::of("level:info").keeps(console, "engine-console.log"));
+        assert!(Sifting::of("level:engine").keeps(console, "engine-console.log"));
     }
 
     #[test]
