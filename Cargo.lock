@@ -3151,10 +3151,12 @@ name = "zyr-host"
 version = "0.1.0"
 dependencies = [
  "tokio",
+ "windows",
  "zyr-codec",
  "zyr-control",
  "zyr-media",
  "zyr-proto",
+ "zyr-screen",
 ]
 
 [[package]]

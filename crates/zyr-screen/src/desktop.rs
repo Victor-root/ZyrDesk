@@ -107,6 +107,22 @@ pub fn the_screen_the_driver_grew(driver: &dyn crate::driver::Driver) -> Option<
     })
 }
 
+/// What each screen of the desktop calls itself, beside the name Windows
+/// takes orders about it under.
+///
+/// The host engine names the screens it can film this way, so that the
+/// virtual screen is recognised by [`crate::Driver::is_its_screen`]
+/// among them like everywhere else.
+pub fn how_the_screens_introduce_themselves() -> Vec<(String, String)> {
+    let Some((paths, _)) = as_windows_has_it() else {
+        return Vec::new();
+    };
+    paths
+        .iter()
+        .filter_map(|path| Some((gdi_name(path)?, how_it_introduces_itself(path)?)))
+        .collect()
+}
+
 fn ending_at_its_nought(letters: &[u16]) -> String {
     let end = letters
         .iter()
