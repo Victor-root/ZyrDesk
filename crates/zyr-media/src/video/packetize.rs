@@ -1,9 +1,18 @@
 //! Cutting a frame into datagrams, with the parity that repairs them.
 //!
-//! The shard size follows the frame: a frame that fits in one datagram
-//! goes out in one datagram of its own size, and a large one is spread
-//! evenly over as few full datagrams as it needs, so that no packet is
-//! sent mostly empty.
+//! The shard size follows the frame: a large frame is spread evenly over
+//! as few full datagrams as it needs, so that no packet is sent mostly
+//! empty, and a small one goes out in datagrams just over half the
+//! budget.
+//!
+//! That floor is what makes the parity of a small frame worth anything.
+//! The transport packs datagrams that fit together into one packet, so
+//! two small shards of the same frame would travel together and one lost
+//! packet would take a shard and the parity meant to replace it: the
+//! end-to-end test lost seven small frames in twenty-one hit at 5 %
+//! loss, where independent losses would have lost one. A datagram longer
+//! than half the budget never shares a packet with another one, and a
+//! lost packet costs exactly one shard again.
 
 use std::fmt;
 
@@ -15,6 +24,13 @@ use crate::codec::VideoCodec;
 /// Parity added to each frame when nothing else is decided, in percent
 /// of its data shards.
 pub const DEFAULT_FEC_PERCENT: u8 = 20;
+
+/// How far past half the budget the smallest datagram reaches.
+///
+/// Room for what the transport puts around each datagram inside a packet
+/// (its frame type, its length and the channel byte), with margin: two
+/// datagrams of half the budget plus this can never be packed together.
+const PAST_HALF: usize = 16;
 
 /// One encoded frame, as the encoder hands it over.
 #[derive(Debug, Clone, Copy)]
@@ -96,6 +112,8 @@ impl Packets {
 /// Cuts frames into datagrams for one path.
 pub struct Packetizer {
     largest_shard: usize,
+    /// So that no two datagrams of a frame share a packet.
+    smallest_shard: usize,
     fec_percent: u8,
     /// Kept from frame to frame so that its working space is reused.
     encoder: Option<ReedSolomonEncoder>,
@@ -111,8 +129,14 @@ impl Packetizer {
         let room = datagram_budget
             .saturating_sub(VIDEO_HEADER)
             .min(MAX_SHARD_BYTES);
+        let largest_shard = room - room % 2;
+        let smallest_shard = (datagram_budget / 2 + PAST_HALF)
+            .saturating_sub(VIDEO_HEADER)
+            .next_multiple_of(2)
+            .min(largest_shard);
         Self {
-            largest_shard: room - room % 2,
+            largest_shard,
+            smallest_shard,
             fec_percent,
             encoder: None,
         }
@@ -135,7 +159,10 @@ impl Packetizer {
             return Err(PacketizeError::TooLarge { size, most });
         }
         let data = size.div_ceil(self.largest_shard);
-        let shard = size.div_ceil(data).next_multiple_of(2);
+        let shard = size
+            .div_ceil(data)
+            .next_multiple_of(2)
+            .max(self.smallest_shard);
         let parity = self.parity_for(data);
         let each = VIDEO_HEADER + shard;
 
@@ -259,13 +286,32 @@ mod tests {
     }
 
     #[test]
-    fn a_one_byte_frame_takes_one_small_packet_and_its_parity() {
+    fn a_one_byte_frame_takes_one_packet_past_half_the_budget_and_its_parity() {
         let mut packetizer = Packetizer::new(BUDGET, DEFAULT_FEC_PERCENT);
         let (k, m, s, packets) = cut(&mut packetizer, &[7]);
-        assert_eq!((k, m, s), (1, 1, 2));
+        assert_eq!((k, m, s), (1, 1, 568));
         let first = packets.iter().next().unwrap();
-        assert_eq!(first.len(), VIDEO_HEADER + 2);
-        assert_eq!(&first[VIDEO_HEADER..], &[7, 0]);
+        assert_eq!(first.len(), VIDEO_HEADER + 568);
+        assert_eq!(first[VIDEO_HEADER], 7);
+        assert!(first[VIDEO_HEADER + 1..].iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn no_two_datagrams_of_a_frame_can_share_a_packet() {
+        let mut packetizer = Packetizer::new(BUDGET, DEFAULT_FEC_PERCENT);
+        let mut packets = Packets::new();
+        for size in (1..4 * SHARD).step_by(37) {
+            let data = vec![3u8; size];
+            packetizer.packetize(&frame(&data), &mut packets).unwrap();
+            for packet in packets.iter() {
+                assert!(
+                    packet.len() >= BUDGET / 2 + PAST_HALF,
+                    "a frame of {size} bytes made a datagram of {} bytes",
+                    packet.len()
+                );
+                assert!(packet.len() <= BUDGET);
+            }
+        }
     }
 
     #[test]
@@ -360,10 +406,11 @@ mod tests {
     fn a_huge_budget_stays_within_what_a_header_describes() {
         let mut packetizer = Packetizer::new(1 << 20, 0);
         let (k, _, s, _) = cut(&mut packetizer, &vec![1u8; 200_000]);
-        assert_eq!((k, s), (4, 50_000));
-        let (_, _, s, _) = cut(&mut packetizer, &vec![1u8; 70_000]);
-        assert_eq!(s, 35_000);
+        assert_eq!((k, s), (4, MAX_SHARD_BYTES));
+        let (k, _, s, _) = cut(&mut packetizer, &vec![1u8; 70_000]);
+        assert_eq!((k, s), (2, MAX_SHARD_BYTES));
         assert!(packetizer.largest_shard <= MAX_SHARD_BYTES);
+        assert!(packetizer.smallest_shard <= packetizer.largest_shard);
     }
 
     #[test]
