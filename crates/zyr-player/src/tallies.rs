@@ -25,6 +25,9 @@ pub struct PictureTallies {
     pub unshown: u64,
     /// Whole frames passed over while waiting for a key frame.
     pub skipped: u64,
+    /// Times the player fell so far behind the host that it dropped what
+    /// waited for the decoder and asked for a key frame.
+    pub behind: u64,
     /// Frames the decoder refused.
     pub broken: u64,
     /// Key frames asked for, the repeated requests included.
@@ -81,8 +84,8 @@ impl fmt::Display for Tallies {
             f,
             "video packets {} (duplicate {}, late {}, unneeded {}, malformed {}, overflow {}, \
              crowded {}), frames whole {} (repaired {}, parity used {}), lost {}, superseded {}; \
-             pictures decoded {}, shown {}, unshown {}, skipped {}, broken {}, undrawn {}, \
-             key frames asked {}, redrawn {}, renewed {}; sound packets {} (late {}, \
+             pictures decoded {}, shown {}, unshown {}, skipped {}, fallen behind {}, broken {}, \
+             undrawn {}, key frames asked {}, redrawn {}, renewed {}; sound packets {} (late {}, \
              duplicate {}, dropped {}, crowded {}, unplayed {}, malformed {}), decoded {}, \
              concealed {}, broken {}, underruns {}; control unreadable {}; input sent {}, \
              pressed again {}, too early {}",
@@ -102,6 +105,7 @@ impl fmt::Display for Tallies {
             p.shown,
             p.unshown,
             p.skipped,
+            p.behind,
             p.broken,
             p.undrawn,
             p.recovers,

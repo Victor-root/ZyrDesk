@@ -395,6 +395,21 @@ fn a_whole_session_plays_and_ends_when_asked() {
 }
 
 #[test]
+fn a_player_whose_every_handle_is_dropped_says_goodbye_like_a_stop() {
+    let engine = Engine::start();
+    let (player, events) = player(&engine);
+    engine.open();
+    assert!(matches!(next_event(&events), Event::Streaming { .. }));
+    let clone = player.clone();
+    drop(player);
+    engine.silent_for(Duration::from_millis(100));
+    drop(clone);
+    engine.expect(ToEngine::Bye);
+    assert_eq!(next_event(&events), Event::Ended(Ending::Asked));
+    assert!(matches!(engine.next(), Heard::Closed));
+}
+
+#[test]
 fn a_link_that_closes_without_a_goodbye_is_lost() {
     let engine = Engine::start();
     let (_player, events) = player(&engine);

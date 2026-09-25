@@ -293,7 +293,11 @@ impl Session {
                 }
             }
             Channel::Video => {
-                if let Err(refused) = self.video.try_send(VideoInput::Datagram(payload)) {
+                let datagram = VideoInput::Datagram {
+                    datagram: payload,
+                    arrived: Instant::now(),
+                };
+                if let Err(refused) = self.video.try_send(datagram) {
                     self.video_refused(refused);
                 }
             }

@@ -2,15 +2,22 @@
 //!
 //! Assembling, decoding and drawing follow each other on the same
 //! thread, with nothing handed from one thread to another on the way:
-//! a frame is drawn the moment its last packet is in and decoded.
-//! Frames that arrive together are all decoded, since each one is the
-//! reference of the next, and only the newest is drawn.
+//! a frame is decoded the moment its last packet is in, and drawn once
+//! the datagrams waiting are all taken in. Frames that arrive together
+//! are all decoded, since each one is the reference of the next, and
+//! only the newest is drawn.
 //!
 //! A frame lost for good leaves the decoder without what the frames
 //! after it refer to. They are passed over until a key frame comes, and
 //! one is asked for, once, then again every quarter second while none
 //! comes, never once per frame: a flood of requests is what a struggling
 //! network can afford least.
+//!
+//! A player that falls behind the host, its decoder slower than the
+//! stream or the thread held up, would show every picture after that as
+//! late as the backlog. Past [`FALLEN_BEHIND`], what waits is dropped
+//! undecoded instead and a key frame asked for, which the backlog, only
+//! passed over, no longer delays.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -35,9 +42,16 @@ pub const TAG: &str = "picture";
 /// made again.
 pub const RESEND: Duration = Duration::from_millis(250);
 
-/// Datagrams taken in one go before the frames they complete are
-/// settled: a key frame's worth, so that a burst is assembled whole
-/// rather than settled after every packet.
+/// How long a whole frame may wait for the decoder. Longer, and the
+/// player has fallen behind: the frame is dropped undecoded and a key
+/// frame asked for. As long as Moonlight lets its 15 frames wait at
+/// 60 fps, and well beyond what a slow decoder spends on a key frame,
+/// which must not pass for falling behind.
+pub const FALLEN_BEHIND: Duration = Duration::from_millis(250);
+
+/// Datagrams taken in at most before the newest picture is drawn: a key
+/// frame's worth, so that a burst is drawn once, whole, rather than
+/// picture after picture.
 const BURST: usize = 1024;
 
 /// A key frame to ask the host for.
@@ -291,9 +305,11 @@ struct Hushed {
     malformed: Seldom,
     lost: Seldom,
     skipped: Seldom,
+    behind: Seldom,
     broken: Seldom,
     unshown: Seldom,
     undrawn: Seldom,
+    asked: Seldom,
 }
 
 /// Datagrams in, pictures out.
@@ -309,6 +325,8 @@ pub struct Video<P: Presenter> {
     /// size.
     on_screen: Option<(DecodedFrame, u32)>,
     first_shown: bool,
+    /// What there is to tell the rest of the player, told once drawn.
+    said: Vec<Said>,
     counters: PictureTallies,
     hushed: Hushed,
     tally: Arc<Mutex<Tally>>,
@@ -338,6 +356,7 @@ impl<P: Presenter> Video<P> {
             waiting: None,
             on_screen: None,
             first_shown: false,
+            said: Vec::new(),
             counters: PictureTallies::default(),
             hushed: Hushed::default(),
             tally,
@@ -347,13 +366,21 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    /// Takes one datagram in.
-    pub fn push(&mut self, datagram: &[u8], now: Instant) {
-        if let Err(e) = self.assembler.push(datagram, now) {
+    /// Takes in one datagram, which the link received at `arrived`, and
+    /// decodes at once the frames it settles, the newest picture waiting
+    /// to be drawn; `now` is this thread's time.
+    ///
+    /// The assembler goes by when datagrams were received, not by when
+    /// this thread gets to them: catching up, it gives up no frame for a
+    /// packet late on the network by less than the grace, and it never
+    /// holds more frames than it can.
+    pub fn take(&mut self, datagram: &[u8], arrived: Instant, now: Instant) {
+        if let Err(e) = self.assembler.push(datagram, arrived) {
             self.hushed.malformed.note(&self.log, now, |times| {
                 format!("video datagram refused: {e} ({times} since last said)")
             });
         }
+        self.assemble(arrived, now);
     }
 
     /// When [`Video::settle`] has something to do with no new datagram.
@@ -364,11 +391,47 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    /// Decodes every frame settled by now, draws the newest, and asks
-    /// for a key frame when one is needed.
+    /// Every datagram received so far being taken in: gives up the
+    /// frames that can no longer be completed by `now`, then draws.
     pub fn settle(&mut self, now: Instant) -> Vec<Said> {
-        let mut said = Vec::new();
-        while let Some(assembled) = self.assembler.poll(now) {
+        self.assemble(now, now);
+        self.draw(now)
+    }
+
+    /// Asks again for a key frame when due, draws the newest picture
+    /// decoded, and hands over what there is to tell. Gives up no frame:
+    /// datagrams still waiting for this thread may complete it.
+    pub fn draw(&mut self, now: Instant) -> Vec<Said> {
+        if let Some(recover) = self.recovery.due(now) {
+            self.ask(recover, now);
+        }
+        if let Some((picture, captured_us)) = self.waiting.take() {
+            self.show(picture, captured_us, now);
+        }
+        self.publish();
+        std::mem::take(&mut self.said)
+    }
+
+    /// The surface is now this large: the picture is drawn again at once
+    /// rather than left stretched until the next one.
+    pub fn resize(&mut self, width: u32, height: u32, now: Instant) {
+        match self.presenter.resize(width, height) {
+            Ok(()) => {
+                if let Some((picture, _)) = &self.on_screen {
+                    match self.presenter.present(picture) {
+                        Ok(_) => self.counters.redrawn += 1,
+                        Err(fault) => self.fault(fault, now),
+                    }
+                }
+            }
+            Err(fault) => self.fault(fault, now),
+        }
+    }
+
+    /// Decodes every frame the assembler settles by `clock`, on the
+    /// timeline of the datagrams' arrival.
+    fn assemble(&mut self, clock: Instant, now: Instant) {
+        while let Some(assembled) = self.assembler.poll(clock) {
             match assembled {
                 Assembled::Lost { stream, frame } => {
                     lock(&self.tally).lost(now);
@@ -376,12 +439,12 @@ impl<P: Presenter> Video<P> {
                         format!("frame {frame} of stream {stream} lost ({times} since last said)")
                     });
                     if let Some(recover) = self.recovery.lost(stream, now) {
-                        self.ask(recover, &mut said);
+                        self.ask(recover, now);
                     }
                 }
                 Assembled::Frame(frame) => {
                     lock(&self.tally).assembled(now, frame.data.len(), frame.host_latency_us);
-                    if let Some(picture) = self.decode(&frame, now, &mut said)
+                    if let Some(picture) = self.decode(&frame, now)
                         && self.waiting.replace((picture, frame.captured_us)).is_some()
                     {
                         self.unshown(now, 1);
@@ -390,41 +453,9 @@ impl<P: Presenter> Video<P> {
                 }
             }
         }
-        if let Some(recover) = self.recovery.due(now) {
-            self.ask(recover, &mut said);
-        }
-        if let Some((picture, captured_us)) = self.waiting.take() {
-            self.show(picture, captured_us, now, &mut said);
-        }
-        self.publish();
-        said
     }
 
-    /// The surface is now this large: the picture is drawn again at once
-    /// rather than left stretched until the next one.
-    pub fn resize(&mut self, width: u32, height: u32, now: Instant) -> Vec<Said> {
-        let mut said = Vec::new();
-        match self.presenter.resize(width, height) {
-            Ok(()) => {
-                if let Some((picture, _)) = &self.on_screen {
-                    match self.presenter.present(picture) {
-                        Ok(_) => self.counters.redrawn += 1,
-                        Err(fault) => self.fault(fault, now, &mut said),
-                    }
-                }
-            }
-            Err(fault) => self.fault(fault, now, &mut said),
-        }
-        self.publish();
-        said
-    }
-
-    fn decode(
-        &mut self,
-        frame: &AssembledFrame,
-        now: Instant,
-        said: &mut Vec<Said>,
-    ) -> Option<DecodedFrame> {
+    fn decode(&mut self, frame: &AssembledFrame, now: Instant) -> Option<DecodedFrame> {
         if self.recovery.whole(frame) == Verdict::Skip {
             self.counters.skipped += 1;
             self.hushed.skipped.note(&self.log, now, |times| {
@@ -434,6 +465,23 @@ impl<P: Presenter> Video<P> {
                     frame.frame, frame.stream
                 )
             });
+            return None;
+        }
+        let waited = now.saturating_duration_since(frame.last_packet);
+        if waited > FALLEN_BEHIND {
+            self.counters.behind += 1;
+            self.hushed.behind.note(&self.log, now, |times| {
+                format!(
+                    "fallen {} ms behind: frame {} of stream {} dropped undecoded, a key frame \
+                     asked for ({times} since last said)",
+                    waited.as_millis(),
+                    frame.frame,
+                    frame.stream
+                )
+            });
+            if let Some(recover) = self.recovery.broken(now) {
+                self.ask(recover, now);
+            }
             return None;
         }
         match self.decoding.decode(frame, &self.presenter, &self.log) {
@@ -458,10 +506,10 @@ impl<P: Presenter> Video<P> {
                     )
                 });
                 match self.presenter.lost() {
-                    Some(reason) => self.fault(Fault::Lost(reason), now, said),
+                    Some(reason) => self.fault(Fault::Lost(reason), now),
                     None => {
                         if let Some(recover) = self.recovery.broken(now) {
-                            self.ask(recover, said);
+                            self.ask(recover, now);
                         }
                     }
                 }
@@ -471,8 +519,8 @@ impl<P: Presenter> Video<P> {
                 self.counters.skipped += 1;
                 if let Some(text) = notice {
                     match self.presenter.lost() {
-                        Some(reason) => self.fault(Fault::Lost(reason), now, said),
-                        None => said.push(Said::Notice(text)),
+                        Some(reason) => self.fault(Fault::Lost(reason), now),
+                        None => self.said.push(Said::Notice(text)),
                     }
                 }
                 None
@@ -480,13 +528,7 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    fn show(
-        &mut self,
-        picture: DecodedFrame,
-        captured_us: u32,
-        now: Instant,
-        said: &mut Vec<Said>,
-    ) {
+    fn show(&mut self, picture: DecodedFrame, captured_us: u32, now: Instant) {
         let started = Instant::now();
         match self.presenter.present(&picture) {
             Ok(shown) => {
@@ -497,7 +539,7 @@ impl<P: Presenter> Video<P> {
                 if !self.first_shown {
                     self.first_shown = true;
                     self.log.write("first picture shown");
-                    said.push(Said::FirstPicture);
+                    self.said.push(Said::FirstPicture);
                 }
                 self.on_screen = Some((picture, captured_us));
             }
@@ -505,12 +547,12 @@ impl<P: Presenter> Video<P> {
                 // Made on a card that may be going: let go of before a
                 // new one is made.
                 drop(picture);
-                self.fault(fault, now, said);
+                self.fault(fault, now);
             }
         }
     }
 
-    fn fault(&mut self, fault: Fault, now: Instant, said: &mut Vec<Said>) {
+    fn fault(&mut self, fault: Fault, now: Instant) {
         match fault {
             Fault::Failed(reason) => {
                 self.counters.undrawn += 1;
@@ -532,14 +574,14 @@ impl<P: Presenter> Video<P> {
                     Ok(()) => {
                         self.log.write("the graphics card is back");
                         if let Some(recover) = self.recovery.broken(now) {
-                            self.ask(recover, said);
+                            self.ask(recover, now);
                         }
                     }
                     Err(reason) => {
                         self.log.write(&format!(
                             "the graphics card could not be made again: {reason}"
                         ));
-                        said.push(Said::Failed(format!(
+                        self.said.push(Said::Failed(format!(
                             "La carte graphique de cet ordinateur ne répond plus : {reason}"
                         )));
                     }
@@ -548,15 +590,15 @@ impl<P: Presenter> Video<P> {
         }
     }
 
-    fn ask(&mut self, recover: Recover, said: &mut Vec<Said>) {
+    fn ask(&mut self, recover: Recover, now: Instant) {
         self.counters.recovers += 1;
-        self.log.debug(|| {
+        self.hushed.asked.note(&self.log, now, |times| {
             format!(
-                "asking for a key frame of stream {} after frame {}",
+                "key frame of stream {} asked for after frame {} ({times} since last said)",
                 recover.stream, recover.frame
             )
         });
-        said.push(Said::Recover(recover));
+        self.said.push(Said::Recover(recover));
     }
 
     fn unshown(&mut self, now: Instant, count: u64) {
@@ -584,7 +626,9 @@ impl<P: Presenter> Video<P> {
 /// What reaches the video thread.
 #[derive(Debug)]
 pub enum VideoInput {
-    Datagram(Bytes),
+    /// A video datagram, and when the link received it: how long it
+    /// then waited for this thread is how far behind the player is.
+    Datagram { datagram: Bytes, arrived: Instant },
     /// A wake-up: the surface changed size. The size itself waits in a
     /// slot of its own, only the newest one mattering.
     Resized,
@@ -609,22 +653,31 @@ pub fn run<P: Presenter>(
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
+        // Whether every datagram received so far is in: only then may
+        // time alone give a frame up.
+        let mut caught_up = false;
         for _ in 0..BURST {
             match input.try_recv() {
                 Ok(message) => take(&mut video, message),
-                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Empty) => {
+                    caught_up = true;
+                    break;
+                }
                 Err(TryRecvError::Disconnected) => return,
             }
         }
         let now = Instant::now();
-        let mut said = Vec::new();
         // Looked at on every turn, the wake-up having possibly found the
         // way full.
         let resized = lock(size).take();
         if let Some((width, height)) = resized {
-            said.extend(video.resize(width, height, now));
+            video.resize(width, height, now);
         }
-        said.extend(video.settle(now));
+        let said = if caught_up {
+            video.settle(now)
+        } else {
+            video.draw(now)
+        };
         for one in said {
             if !tell(one) {
                 return;
@@ -635,7 +688,9 @@ pub fn run<P: Presenter>(
 
 fn take<P: Presenter>(video: &mut Video<P>, message: VideoInput) {
     match message {
-        VideoInput::Datagram(datagram) => video.push(&datagram, Instant::now()),
+        VideoInput::Datagram { datagram, arrived } => {
+            video.take(&datagram, arrived, Instant::now());
+        }
         VideoInput::Resized => {}
     }
 }
@@ -648,6 +703,7 @@ mod tests {
     use crate::testing::{self, Encoded, HEIGHT, WIDTH, h264};
     use zyr_codec::DecodeOutput;
     use zyr_media::codec::CodecSet;
+    use zyr_media::video::VideoHeader;
 
     /// Records the fingerprint of every picture drawn, and can be told
     /// to lose its graphics card, when drawing or before.
@@ -717,7 +773,7 @@ mod tests {
 
     fn frame_in(video: &mut Video<Recording>, stream: u16, n: u32, packet: &Encoded, now: Instant) {
         for datagram in testing::datagrams(stream, n, packet, n * 16_000) {
-            video.push(&datagram, now);
+            video.take(&datagram, now, now);
         }
     }
 
@@ -900,8 +956,8 @@ mod tests {
         video.settle(at);
         // Frame 1 decodes; frame 2, arriving with it, meets the card gone.
         frame_in(&mut video, 1, 1, &packets[1], at);
-        frame_in(&mut video, 1, 2, &refused(), at);
         video.presenter.gone = true;
+        frame_in(&mut video, 1, 2, &refused(), at);
         assert_eq!(
             recovers(&video.settle(at)),
             [Recover {
@@ -928,6 +984,7 @@ mod tests {
         video.settle(at);
         assert_eq!(*lock(&video.rect), Some((0, 0, WIDTH, HEIGHT)));
         video.resize(640, 640, at);
+        video.draw(at);
         assert_eq!(video.counters.redrawn, 1);
         assert_eq!(video.presenter.drawn, [looks[0], looks[0]]);
         assert_eq!(*lock(&video.rect), Some((0, 80, 640, 480)));
@@ -938,12 +995,104 @@ mod tests {
         let (packets, _) = h264(2, &[]);
         let mut video = video(Recording::default());
         let at = Instant::now();
-        video.push(&[1, 2, 3], at);
-        video.push(&[], at);
+        video.take(&[1, 2, 3], at, at);
+        video.take(&[], at, at);
         frame_in(&mut video, 1, 0, &packets[0], at);
         frame_in(&mut video, 1, 1, &packets[1], at);
         video.settle(at);
         assert_eq!(video.assembler.counters().malformed, 2);
         assert_eq!(video.counters.decoded, 2);
+    }
+
+    #[test]
+    fn a_player_fallen_behind_drops_what_waited_and_starts_again_at_a_key_frame() {
+        let (packets, looks) = h264(6, &[5]);
+        let mut video = video(Recording::default());
+        let at = Instant::now();
+        let ms = |n: u64| at + Duration::from_millis(n);
+        for n in 0..3u32 {
+            frame_in(
+                &mut video,
+                1,
+                n,
+                &packets[n as usize],
+                ms(u64::from(n) * 16),
+            );
+            assert!(recovers(&video.settle(ms(u64::from(n) * 16))).is_empty());
+        }
+        // Frames 3 and 4 came in time, but the thread reaches them late:
+        // decoding them would keep every picture after them that late.
+        for n in 3..5u32 {
+            for datagram in testing::datagrams(1, n, &packets[n as usize], n * 16_000) {
+                video.take(&datagram, ms(u64::from(n) * 16), ms(400));
+            }
+        }
+        assert_eq!(
+            recovers(&video.settle(ms(400))),
+            [Recover {
+                stream: 1,
+                frame: 2
+            }]
+        );
+        assert_eq!(video.counters.behind, 1);
+        assert_eq!(video.counters.skipped, 1, "frame 4, after the drop");
+        // The key frame asked for plays at once.
+        frame_in(&mut video, 1, 5, &packets[5], ms(450));
+        assert!(recovers(&video.settle(ms(451))).is_empty());
+        assert_eq!(video.counters.decoded, 4);
+        assert_eq!(
+            video.presenter.drawn,
+            [looks[0], looks[1], looks[2], looks[5]]
+        );
+        assert_eq!(video.next_wakeup(), None, "nothing more to ask");
+    }
+
+    #[test]
+    fn a_long_burst_is_assembled_as_it_comes_and_loses_nothing() {
+        // More frames than the assembler holds unsettled, all at once, as
+        // a thread held up finds them.
+        let count = AssemblyLimits::default().max_pending_frames + 8;
+        let (packets, looks) = h264(count, &[]);
+        let mut video = video(Recording::default());
+        let at = Instant::now();
+        for (n, packet) in packets.iter().enumerate() {
+            frame_in(&mut video, 1, n as u32, packet, at);
+        }
+        assert_eq!(video.settle(at), [Said::FirstPicture]);
+        let assembly = video.assembler.counters();
+        assert_eq!((assembly.frames_lost, assembly.overflow), (0, 0));
+        assert_eq!(video.counters.decoded, count as u64);
+        assert_eq!(video.presenter.drawn, [looks[count - 1]]);
+    }
+
+    #[test]
+    fn a_frame_still_on_its_way_to_the_thread_is_not_given_up() {
+        let (packets, looks) = h264(2, &[]);
+        let mut video = video(Recording::default());
+        let at = Instant::now();
+        let ms = |n: u64| at + Duration::from_millis(n);
+        // Frame 0 without its parity, so that only its last data shard,
+        // late, completes it.
+        let mut first = testing::datagrams(1, 0, &packets[0], 0);
+        let (header, _) = VideoHeader::read(&first[0]).unwrap();
+        first.truncate(usize::from(header.data));
+        let late = first.pop().unwrap();
+        let second = testing::datagrams(1, 1, &packets[1], 16_000);
+        // The network put frame 1 ahead of the end of frame 0, within the
+        // grace; the thread, catching up, has not got to that end yet.
+        for datagram in &first {
+            video.take(datagram, ms(0), ms(50));
+        }
+        video.take(&second[0], ms(1), ms(50));
+        assert!(video.draw(ms(50)).is_empty());
+        assert_eq!(video.assembler.counters().frames_lost, 0);
+        video.take(&late, ms(2), ms(50));
+        for datagram in &second[1..] {
+            video.take(datagram, ms(2), ms(50));
+        }
+        video.settle(ms(51));
+        assert_eq!(video.assembler.counters().frames_lost, 0);
+        assert_eq!(video.counters.decoded, 2);
+        assert_eq!(video.presenter.drawn, [looks[1]]);
     }
 }

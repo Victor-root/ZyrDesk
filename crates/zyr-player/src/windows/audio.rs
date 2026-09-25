@@ -78,6 +78,9 @@ pub fn run(mut sound: Sound, input: &Receiver<Bytes>, muted: &Muted, log: &Log) 
         };
         log.write(&format!("the sound card went away: {reason}"));
         drop(output);
+        // Looked for every second, for as long as the session lasts if
+        // need be: said once in a while, not every time.
+        let mut still = Seldom::new();
         output = loop {
             if !pace(&mut sound, input, Some(Instant::now() + LOOK_AGAIN)) {
                 return;
@@ -85,7 +88,9 @@ pub fn run(mut sound: Sound, input: &Receiver<Bytes>, muted: &Muted, log: &Log) 
             match Output::open(log) {
                 Ok(output) => break output,
                 Err(Opening::Nothing(reason) | Opening::Refused(reason)) => {
-                    log.debug(|| format!("still no sound card: {reason}"));
+                    still.note(log, Instant::now(), |times| {
+                        format!("still no sound card ({times} tries since last said): {reason}")
+                    });
                 }
             }
         };
@@ -159,23 +164,26 @@ impl Output {
                 format!("in periods of {frames} frames, the smallest"),
             ),
             tried => {
-                let client = match tried {
-                    Some(Err(e)) => {
-                        log.write(&format!(
-                            "{}: 10 ms periods instead",
-                            failure("InitializeSharedAudioStream", &e)
-                        ));
+                // Why the smallest period could not be had, said with
+                // the outcome, in one line: a card refusing is looked
+                // at again every second.
+                let (client, instead) = match tried {
+                    Some(Err(e)) => (
                         // A client whose initialisation failed is not
                         // tried again: a fresh one is.
                         // SAFETY: as above.
                         unsafe { device.Activate::<IAudioClient>(CLSCTX_ALL, None) }
-                            .map_err(|e| refused("Activate(IAudioClient)", &e))?
-                    }
-                    _ => client,
+                            .map_err(|e| refused("Activate(IAudioClient)", &e))?,
+                        format!(
+                            ", the smallest refused ({})",
+                            failure("InitializeSharedAudioStream", &e)
+                        ),
+                    ),
+                    _ => (client, String::new()),
                 };
                 let how = in_ten_ms_periods(&client, native, &mixed)
-                    .map_err(|e| refused("IAudioClient::Initialize", &e))?;
-                (client, how.to_string())
+                    .map_err(|e| refused(&format!("IAudioClient::Initialize{instead}"), &e))?;
+                (client, format!("{how}{instead}"))
             }
         };
 
