@@ -41,6 +41,14 @@
 //! and never past them: a miss the system fails to report must not be
 //! invited.
 //!
+//! The screen's rhythm comes from the refreshes the system times, one
+//! with each present. A refresh lasts the middle of the lengths measured
+//! across the last two seconds or so, and the newest refresh was when
+//! the middle of the newest few, each carried to it, says: a refresh the
+//! system misdates, as it did while the network was in trouble, moves
+//! neither. The screen has changed its rate only when the newest steps
+//! from one refresh to the next agree on another length.
+//!
 //! Until the screen has said when its refreshes are, a picture is
 //! presented as soon as it is decoded, the newest replacing any not yet
 //! presented.
@@ -89,12 +97,25 @@ const MOST_WAITING: usize = 2;
 /// Presents remembered until the screen says what became of them.
 const MOST_PENDING: usize = 16;
 
-/// The refreshes a refresh's length is measured over, at least; past
-/// ten times as many, it is measured afresh from the newest.
+/// The refreshes the system timed that the screen's rhythm is drawn
+/// from, the newest kept.
+const TIMED_KEPT: usize = 128;
+
+/// The refreshes those must span before a refresh's length is measured
+/// from them rather than taken from the system.
 const MEASURED_OVER: u64 = 60;
 
-/// How far one refresh may be from the length known before the screen
-/// is taken to have changed its rate: a fifth.
+/// The newest refreshes timed that say, between them, when the newest
+/// was: each carried to it, the middle one counts.
+const PLACED_BY: usize = 9;
+
+/// The newest steps from one refresh timed to the next whose middle says
+/// whether the screen changed its rate, and how many at least.
+const STEPS_SEEN: usize = 5;
+const STEPS_LEAST: usize = 3;
+
+/// How far the middle of those steps may be from the length known
+/// before the screen is taken to have changed its rate: a fifth.
 const CHANGED_RATE: u32 = 5;
 
 /// A picture to present now.
@@ -206,10 +227,8 @@ struct Second {
 pub(crate) struct Pacer<T> {
     log: Log,
     refreshes: Option<Refreshes>,
-    /// The refresh a refresh's length is measured from, and when it was.
-    measured_from: Option<(u64, Instant)>,
-    /// The last refresh the system timed, and when it was.
-    last_timed: Option<(u64, Instant)>,
+    /// The refreshes the system timed, each once, oldest first.
+    timed: VecDeque<(u64, Instant)>,
     waiting: VecDeque<Waiting<T>>,
     /// The refresh the last picture was presented for.
     served: Option<u64>,
@@ -238,8 +257,7 @@ impl<T> Pacer<T> {
         Self {
             log: log.about(TAG),
             refreshes: None,
-            measured_from: None,
-            last_timed: None,
+            timed: VecDeque::with_capacity(TIMED_KEPT),
             waiting: VecDeque::new(),
             served: None,
             served_repeat: false,
@@ -457,8 +475,7 @@ impl<T> Pacer<T> {
     /// Everything the screen said: its refreshes are counted afresh.
     fn forget_the_screen(&mut self) {
         self.refreshes = None;
-        self.measured_from = None;
-        self.last_timed = None;
+        self.timed.clear();
         self.served = None;
         self.served_repeat = false;
         self.pending.clear();
@@ -473,19 +490,24 @@ impl<T> Pacer<T> {
         // A count gone back is a count started again: nothing said before
         // compares with it.
         if self
-            .last_timed
-            .is_some_and(|(count, _)| screen.timed < count)
+            .timed
+            .back()
+            .is_some_and(|&(count, _)| screen.timed < count)
         {
             self.forget_the_screen();
         }
-        let period = self.period(screen);
-        if period.is_zero() {
-            return;
+        if self
+            .timed
+            .back()
+            .is_none_or(|&(count, _)| screen.timed > count)
+        {
+            if self.timed.len() == TIMED_KEPT {
+                self.timed.pop_front();
+            }
+            self.timed.push_back((screen.timed, screen.timed_at));
         }
-        let refreshes = Refreshes {
-            count: screen.timed,
-            at: screen.timed_at,
-            period,
+        let Some(refreshes) = self.rhythm(screen.refresh) else {
+            return;
         };
         if self.refreshes.is_none() {
             // The picture presented last is on its refresh already.
@@ -506,34 +528,65 @@ impl<T> Pacer<T> {
         }
     }
 
-    /// How long a refresh lasts: measured over at least
-    /// [`MEASURED_OVER`] of them, the system's word until then, and the
-    /// last refresh's own length when the screen changed its rate.
-    fn period(&mut self, screen: &Displayed) -> Duration {
-        let timed = (screen.timed, screen.timed_at);
-        let known = self.refreshes.map_or(screen.refresh, |known| known.period);
-        let last = self.last_timed.replace(timed);
-        if let Some(step) = last.and_then(|last| Refreshes::length(last, timed))
+    /// The screen's refreshes as the ones timed say: how long each lasts,
+    /// and when the newest was, each of the newest few carried to it and
+    /// the middle one kept. A refresh the system misdated moves neither.
+    fn rhythm(&mut self, reported: Duration) -> Option<Refreshes> {
+        let period = self.period(reported);
+        let &(count, _) = self.timed.back()?;
+        if period.is_zero() {
+            return None;
+        }
+        let mut placed: Vec<Instant> = self
+            .timed
+            .iter()
+            .rev()
+            .take(PLACED_BY)
+            .filter_map(|&(timed, at)| {
+                let apart = u32::try_from(count - timed).ok()?;
+                at.checked_add(period.checked_mul(apart)?)
+            })
+            .collect();
+        let at = middle(&mut placed)?;
+        Some(Refreshes { count, at, period })
+    }
+
+    /// How long a refresh lasts: the middle of the lengths measured
+    /// between refreshes timed half the ones kept apart, once those span
+    /// [`MEASURED_OVER`] of them, and the system's word until then. The
+    /// middle of the newest steps overrules both when a fifth away: the
+    /// screen changed its rate, and what it timed before is let go of.
+    fn period(&mut self, reported: Duration) -> Duration {
+        let known = self.refreshes.map_or(reported, |known| known.period);
+        let newest: Vec<(u64, Instant)> = self
+            .timed
+            .iter()
+            .rev()
+            .take(STEPS_SEEN + 1)
+            .copied()
+            .collect();
+        let mut steps: Vec<Duration> = newest
+            .windows(2)
+            .filter_map(|pair| Refreshes::length(pair[1], pair[0]))
+            .collect();
+        if steps.len() >= STEPS_LEAST
+            && let Some(step) = middle(&mut steps)
             && step.abs_diff(known) > known / CHANGED_RATE
         {
-            self.measured_from = Some(timed);
+            self.timed.drain(..self.timed.len() - 1);
             return step;
         }
-        let Some(from) = self.measured_from else {
-            self.measured_from = Some(timed);
+        let (Some(&first), Some(&last)) = (self.timed.front(), self.timed.back()) else {
             return known;
         };
-        if timed.0.saturating_sub(from.0) < MEASURED_OVER {
+        if last.0 - first.0 < MEASURED_OVER {
             return known;
         }
-        let Some(measured) = Refreshes::length(from, timed) else {
-            self.measured_from = Some(timed);
-            return known;
-        };
-        if timed.0 - from.0 >= MEASURED_OVER * 10 {
-            self.measured_from = Some(timed);
-        }
-        measured
+        let half = self.timed.len() / 2;
+        let mut lengths: Vec<Duration> = (0..half)
+            .filter_map(|index| Refreshes::length(self.timed[index], self.timed[index + half]))
+            .collect();
+        middle(&mut lengths).unwrap_or(known)
     }
 
     /// What the screen says of the presents waiting for its word.
@@ -624,6 +677,15 @@ impl<T> Pacer<T> {
     }
 }
 
+/// The middle one of `values`, which it puts in order around it.
+fn middle<V: Ord + Copy>(values: &mut [V]) -> Option<V> {
+    if values.is_empty() {
+        return None;
+    }
+    let half = values.len() / 2;
+    Some(*values.select_nth_unstable(half).1)
+}
+
 /// What the last second gathered goes to the journal with the session,
 /// however it ends.
 impl<T> Drop for Pacer<T> {
@@ -649,6 +711,9 @@ mod tests {
         changed: Option<(u64, Duration)>,
         /// What the system says a refresh lasts.
         reported: Duration,
+        /// Refreshes the system says came that many microseconds late, or
+        /// early if fewer than nought.
+        misdated: Vec<(u64, i64)>,
         deadline: Duration,
         /// Every present, and the picture it was.
         presents: Vec<(Instant, u32)>,
@@ -661,6 +726,7 @@ mod tests {
                 period: Duration::from_nanos(period_ns),
                 changed: None,
                 reported: Duration::from_nanos(period_ns),
+                misdated: Vec::new(),
                 deadline,
                 presents: Vec::new(),
             }
@@ -684,6 +750,21 @@ mod tests {
                     from + ((at - self.refresh(from)).as_nanos() / period.as_nanos()) as u64
                 }
                 _ => ((at - self.start).as_nanos() / self.period.as_nanos()) as u64,
+            }
+        }
+
+        /// When the system says refresh `count` was.
+        fn said_at(&self, count: u64) -> Instant {
+            let off = self
+                .misdated
+                .iter()
+                .find(|(misdated, _)| *misdated == count)
+                .map_or(0, |(_, micros)| *micros);
+            let shift = Duration::from_micros(off.unsigned_abs());
+            if off < 0 {
+                self.refresh(count) - shift
+            } else {
+                self.refresh(count) + shift
             }
         }
 
@@ -713,7 +794,7 @@ mod tests {
                 at_refresh,
                 at: self.refresh(at_refresh),
                 timed,
-                timed_at: self.refresh(timed),
+                timed_at: self.said_at(timed),
                 refresh: self.reported,
                 compositor_missed: 0,
                 compositor_dropped: 0,
@@ -1096,6 +1177,37 @@ mod tests {
         assert!(
             shown.windows(2).all(|pair| pair[1] <= pair[0] + 1),
             "{shown:?}"
+        );
+    }
+
+    #[test]
+    fn a_misdated_refresh_moves_neither_the_rhythm_nor_the_windows() {
+        let journal = testing::OwnLog::new("pacing-misdated");
+        let start = Instant::now();
+        let mut compositor = Compositor::new(start, SIXTY_HZ, Duration::from_millis(3));
+        // Now and then a refresh said 7 ms late, and once two in a row said
+        // 9 ms early, as while the network was in trouble.
+        compositor.misdated = (100..580).step_by(13).map(|count| (count, 7_000)).collect();
+        compositor.misdated.extend([(300, -9_000), (301, -9_000)]);
+        let mut thread = Thread::new(compositor, Duration::from_millis(1), &journal.log);
+        let decoded = arrivals(
+            start,
+            SIXTY_HZ,
+            Duration::from_millis(8),
+            Duration::from_millis(2),
+            600,
+        );
+        thread.run(
+            &decoded,
+            start + Duration::from_secs(10) + Duration::from_millis(30),
+        );
+        let steps = thread.steps(60, 598);
+        assert!(steps.iter().all(|&step| step == 1), "{steps:?}");
+        let period = thread.pacer.refreshes.map(|known| known.period);
+        assert!(
+            period.is_some_and(|period| period.abs_diff(Duration::from_nanos(SIXTY_HZ))
+                < Duration::from_micros(20)),
+            "{period:?}"
         );
     }
 
