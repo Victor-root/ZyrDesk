@@ -655,6 +655,7 @@ unsafe extern "system" fn answer(
             if let Some(player) = crate::session::player() {
                 player.release_everything();
             }
+            crate::system_keys::forget_what_was_taken();
             crate::picture::shut_the_pointer_in(crate::picture::Cage::Free);
             // SAFETY: no argument; the mouse is only let go if ours.
             unsafe {

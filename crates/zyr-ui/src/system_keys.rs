@@ -284,14 +284,39 @@ pub fn lay_again() {
 #[cfg(not(windows))]
 pub fn lay_again() {}
 
+/// Forgets the keys taken, the picture having lost the keyboard.
+///
+/// The player lets go of everything over there at that moment, so their
+/// releases, when they come, are this computer's again. Kept, a key whose
+/// release happened where no hook sees it, on the screen Ctrl+Alt+Suppr
+/// or Windows+L bring up, would stay « taken », and its next press would
+/// go to the session from any window at all.
+pub fn forget_what_was_taken() {
+    TAKEN.store(0, Ordering::Relaxed);
+}
+
 /// Lays the hook, on the thread that will hold it.
 #[cfg(windows)]
 fn put() -> isize {
     use windows_sys::Win32::Foundation::GetLastError;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, WH_KEYBOARD_LL};
 
     PLAYER.with_borrow_mut(|player| *player = crate::session::player());
+    // The modifiers let go of where no hook sees them, on the screen
+    // Ctrl+Alt+Suppr brings up, would read as held for ever, and every
+    // Tab after that as Alt+Tab. Put down here, as the keyboard comes
+    // back to the picture, when the system's own reading of the keys has
+    // long settled; a modifier is only ever put down, never made up.
+    let mut held = HELD.load(Ordering::Relaxed);
+    for modifier in &MODIFIERS {
+        // SAFETY: a plain question about one key.
+        if held & modifier.bit != 0 && unsafe { GetAsyncKeyState(modifier.named as i32) } >= 0 {
+            held &= !modifier.bit;
+        }
+    }
+    HELD.store(held, Ordering::Relaxed);
     // SAFETY: a hook of the whole desk, answered by a plain function of
     // this program, which is the module named.
     let hook = unsafe {

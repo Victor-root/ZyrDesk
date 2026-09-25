@@ -108,9 +108,6 @@ pub fn takes_the_shape(app: &App, (wide, high): (u32, u32)) {
     if !note_the_shape(shape) {
         return;
     }
-    // The size the far computer's picture actually arrives at, which is
-    // the answer to what a black band on screen means.
-    note(&format!("l'image arrive en {wide}x{high}"));
     let held = app.clone();
     let _ = app.run_on_main_thread(move || hold_the_shape(&held));
 }

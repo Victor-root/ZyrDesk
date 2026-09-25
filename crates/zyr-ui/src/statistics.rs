@@ -321,6 +321,9 @@ fn build(owner: isize, anchor: (i32, i32)) {
         return;
     }
     ITS_WINDOW.store(window as isize, Ordering::Relaxed);
+    // What was read while the window was being made is drawn now: the
+    // loop only asks again when the figures change.
+    repaint();
 }
 
 /// Draws the card with what it says now, and shows it.
